@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — logging: Fixed a log call blocking on the sink after shutdown, and `SR_THROW_IF` naming the logger header as the place of every exception (`logger.cpp`, `logger.hpp`).
 - 2026-10-11 — core: Changed `span` to one class in every language mode; C++20 code converts to and from `std::span`, and an rvalue container binds only as a span of const (`span.hpp`).
 - 2026-10-11 — core: Changed the `Result` accessors to throw `SushiException` on the wrong alternative in place of `std::bad_variant_access` (`result.hpp`).
 - 2026-10-11 — core: Made `sushi_ptr(T*)` explicit and the counter of `RefCounted` private; added comparisons with a raw pointer (`sushi_ptr.hpp`, `ref_counted.hpp`).

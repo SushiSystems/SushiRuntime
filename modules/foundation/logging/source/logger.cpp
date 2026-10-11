@@ -31,6 +31,7 @@
 
 #include <SushiRuntime/logging/logger.hpp>
 
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
@@ -205,13 +206,28 @@ namespace SushiRuntime
                             return;
                         }
 
+                        // Once set, sink_abandoned_ stays set and sink_mutex_ is never released.
+                        if (sink_abandoned_.load(std::memory_order_acquire))
+                        {
+                            write_to_stderr(line);
+                            return;
+                        }
+
                         std::lock_guard<std::mutex> lock(sink_mutex_);
                         deliver(level, line);
                     }
 
-                    /** @brief Swaps the sink in once no call into the old one is running. */
+                    /**
+                     * @brief Swaps the sink in once no call into the old one is running.
+                     *
+                     * Does nothing after shut_down() found sink_mutex_ abandoned.
+                     */
                     void set_sink(LogSink sink)
                     {
+                        // Once set, sink_abandoned_ stays set and sink_mutex_ is never released.
+                        if (sink_abandoned_.load(std::memory_order_acquire))
+                            return;
+
                         // The old sink leaves in the parameter and dies after the unlock.
                         std::lock_guard<std::mutex> lock(sink_mutex_);
                         std::swap(sink_, sink);
@@ -235,7 +251,8 @@ namespace SushiRuntime
                      * @brief Stops the thread and delivers what it left queued on this thread.
                      *
                      * Records are dropped when the sink's mutex is held, which happens only
-                     * when the operating system ended the thread inside a sink call.
+                     * when the operating system ended the thread inside a sink call. That
+                     * mutex is then recorded as abandoned, and no later call takes it.
                      */
                     void shut_down()
                     {
@@ -259,7 +276,10 @@ namespace SushiRuntime
 
                         std::unique_lock<std::mutex> lock(sink_mutex_, std::try_to_lock);
                         if (!lock.owns_lock())
+                        {
+                            sink_abandoned_.store(true, std::memory_order_release);
                             return;
+                        }
 
                         for (Record& record : remaining)
                             deliver(record.level, record.line);
@@ -383,6 +403,8 @@ namespace SushiRuntime
                     std::mutex sink_mutex_;
                     /// @brief The sink of the process; empty means stderr.
                     LogSink sink_;
+                    /// @brief Set once when shut_down() finds sink_mutex_ held; never cleared.
+                    std::atomic<bool> sink_abandoned_{false};
             };
 
             /** @brief Shuts the writer it was given down when the library's statics die. */

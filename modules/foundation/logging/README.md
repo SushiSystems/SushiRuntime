@@ -92,7 +92,7 @@ does not compile.
 | --- | --- |
 | Asynchronous (the default) | The logger's own thread, never a pool worker |
 | Synchronous | The thread that made the log call, before the call returns |
-| After the library's static destruction | The thread that made the log call |
+| After the library's static destruction | The thread that made the log call; no sink is called when its mutex was abandoned, and the line goes to stderr |
 
 One mutex is held across every sink call, so a sink is never entered twice at once and needs no
 lock of its own.
@@ -122,12 +122,14 @@ asynchronous record. If the thread cannot start, the logger says so on stderr an
 When the library's statics are destroyed the logger stops its thread and joins it. On Linux the
 thread delivers what is queued before it exits. On Windows the operating system has already ended
 the thread by then, so the exiting thread delivers what the queue still holds. From that point each
-log call delivers its own record on the calling thread.
+log call delivers its own record on the calling thread, unless the sink's mutex was abandoned as
+described below; then the record goes to stderr and the sink is not called.
 
 Two cases lose records at exit. A process that ends without static destruction (`std::abort`,
 `TerminateProcess`, `_exit`) loses whatever was queued. On Windows, a thread ended inside a sink
 call leaves the sink's mutex held; the exiting thread sees that and drops the queued records
-without waiting.
+without waiting. That mutex is then recorded as abandoned and never taken again, so `set_log_sink`
+returns without replacing the sink.
 
 A sink that is still installed at exit is called during static destruction, so it must not use
 objects that are destroyed before the library's statics.

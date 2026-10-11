@@ -170,6 +170,40 @@ namespace SushiRuntime
 /** @brief Forwards to Core::set_log_synchronous(); tests pass true to read records in order. */
 #define SR_LOGGER_SET_SYNC_MODE(mode) SushiRuntime::Core::set_log_synchronous(mode)
 
+namespace SushiRuntime
+{
+    namespace Core
+    {
+        namespace Detail
+        {
+            /**
+             * @brief Logs the formatted message at error level, then throws it as invalid_state.
+             * @param file The source file of the call the record names.
+             * @param line The line of that call.
+             * @param function The function that holds that call.
+             * @param format The format string; each {} takes the next value.
+             */
+            template <typename... Args>
+            [[noreturn]] void throw_invalid_state(const char* file, int line, const char* function,
+                                                  std::string_view format, const Args&... args)
+            {
+                std::string message = sr_format(format, args...);
+                if constexpr (K_LOG_LEVEL_CEILING >= LogLevel::Error)
+                {
+                    if (active_log_level.load(std::memory_order_relaxed) >=
+                            static_cast<int>(LogLevel::Error) &&
+                        is_log_enabled(LogLevel::Error))
+                    {
+                        log_record(LogLevel::Error, file, line, function,
+                                   "Runtime exception: {}", message);
+                    }
+                }
+                throw SushiException(Error{Errc::invalid_state, std::move(message)});
+            }
+        } // namespace Detail
+    } // namespace Core
+} // namespace SushiRuntime
+
 /**
  * @brief Logs the message at error level and throws it when @p condition holds.
  *
@@ -180,10 +214,6 @@ namespace SushiRuntime
     do                                                                                       \
     {                                                                                        \
         if (condition)                                                                       \
-        {                                                                                    \
-            std::string msg_ = SushiRuntime::Core::Detail::sr_format(__VA_ARGS__);           \
-            SR_LOG_ERROR("Runtime exception: {}", msg_);                                     \
-            throw SushiRuntime::Core::SushiException(SushiRuntime::Core::Error{              \
-                SushiRuntime::Core::Errc::invalid_state, std::move(msg_)});                  \
-        }                                                                                    \
+            SushiRuntime::Core::Detail::throw_invalid_state(__FILE__, __LINE__, __func__,    \
+                                                            __VA_ARGS__);                    \
     } while (0)

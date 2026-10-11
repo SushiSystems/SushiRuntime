@@ -84,6 +84,20 @@ namespace
             /// @brief The level the process had when the test began.
             Core::LogLevel saved_level_ = Core::LogLevel::Warn;
     };
+
+    /** @brief Calls SR_THROW_IF from a member function, with a member named msg_ as argument. */
+    class ThrowIfMemberHolder
+    {
+        public:
+            /** @brief Throws through SR_THROW_IF, formatting the member msg_. */
+            void fail() const
+            {
+                SR_THROW_IF(true, "value: {}", msg_);
+            }
+
+            /// @brief The text the macro must format; the caller's msg_, not a new local.
+            std::string msg_ = "inner";
+    };
 }
 
 /** @brief Tests that a call above the process level leaves its arguments unevaluated. */
@@ -241,4 +255,26 @@ TEST_F(Unit_LoggerTest, ThrowIfThrowsSushiExceptionWithInvalidState)
     EXPECT_NO_THROW({ SR_THROW_IF(false, "Should not fail {}", ++evaluations); });
     EXPECT_EQ(evaluations, 0);
     EXPECT_EQ(records.size(), 2u);
+}
+
+/** @brief Tests that SR_THROW_IF formats a member named msg_ from the calling member function. */
+TEST_F(Unit_LoggerTest, ThrowIfFormatsACallerMemberNamedMsg)
+{
+    SeenRecords records;
+    Core::set_log_sink(collect_into(&records));
+    ThrowIfMemberHolder holder;
+
+    try
+    {
+        holder.fail();
+        FAIL() << "SR_THROW_IF did not throw on a true condition";
+    }
+    catch (const Core::SushiException& error)
+    {
+        EXPECT_EQ(error.error().code, Core::Errc::invalid_state);
+        EXPECT_STREQ(error.what(), "value: inner");
+    }
+
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_NE(records[0].line.find("value: inner"), std::string::npos) << records[0].line;
 }
