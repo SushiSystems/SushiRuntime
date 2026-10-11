@@ -253,12 +253,12 @@ namespace
             std::uint32_t* c = counter.data();
             std::uint32_t* m = marks.data();
 
-            graph.add(field,
-                      [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+            graph.add_rule(field,
+                           [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
             graph.add(std::size_t{1}, Reads{}, Writes(counter),
                       [c, count](std::size_t) { c[0] = count; });
-            graph.add(sized_from_device(counter), K_COUNT_CAPACITY, Reads{},
-                      Writes(marks), [m](std::size_t i) { m[i] = 1u; });
+            graph.add_dynamic(sized_from_device(counter), K_COUNT_CAPACITY, Reads{},
+                              Writes(marks), [m](std::size_t i) { m[i] = 1u; });
         }
 
         State<int> field;              /**< Incremented once per step. */

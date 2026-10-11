@@ -165,7 +165,7 @@ TEST(Integration_Cancellation, CancelStopsRunUntilFromAnotherThread)
     for (std::size_t i = 0; i < N; ++i) field[i] = 0;
 
     auto g = rt.graph();
-    g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+    g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     // The second predicate call follows the first whole step, so the report holds one.
     Internal::Observability::RunReport report;
@@ -186,7 +186,7 @@ TEST(Integration_Cancellation, NextRunIsNotCancelledAfterReset)
     for (std::size_t i = 0; i < N; ++i) field[i] = 0;
 
     auto g = rt.graph();
-    g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+    g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     Internal::Observability::RunReport cancelled_report;
     ASSERT_NO_FATAL_FAILURE(cancel_unbounded_run(g, 1, cancelled_report));

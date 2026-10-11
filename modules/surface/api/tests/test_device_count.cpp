@@ -63,8 +63,8 @@ TEST(Integration_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
           [c, w](std::size_t) { c[0] = w[0] * 3u; });
 
     // Consumer: iterate exactly that many elements.
-    g.add(sized_from_device(counter), CAPACITY, Reads(), Writes(marks),
-          [m](std::size_t i) { m[i] = static_cast<int>(i); });
+    g.add_dynamic(sized_from_device(counter), CAPACITY, Reads(), Writes(marks),
+                  [m](std::size_t i) { m[i] = static_cast<int>(i); });
 
     const std::uint32_t multipliers[] = { 5, 200, 1, 0, 1000 };
     for (std::uint32_t multiplier : multipliers)
@@ -110,8 +110,8 @@ TEST(Integration_DeviceCount, CounterIsRegisteredAsAReadAutomatically)
     auto g = rt.graph();
     g.add(std::size_t{1}, Reads(), Writes(counter),
           [c](std::size_t) { c[0] = LIVE; });
-    g.add(sized_from_device(counter), CAPACITY, Reads(), Writes(out),
-          [o](std::size_t i) { o[i] = 1; });
+    g.add_dynamic(sized_from_device(counter), CAPACITY, Reads(), Writes(out),
+                  [o](std::size_t i) { o[i] = 1; });
 
     g.run().value();
 
@@ -147,14 +147,14 @@ TEST(Integration_DeviceCount, ChainedProducerCountsInOneComposition)
     g.add(std::size_t{1}, Reads(), Writes(first), [c1](std::size_t) { c1[0] = 700u; });
 
     // Stage 1: iterate it, and produce the next count from how much it did.
-    g.add(sized_from_device(first), CAPACITY, Reads(), Writes(stage1),
-          [s1](std::size_t i) { s1[i] = 1; });
+    g.add_dynamic(sized_from_device(first), CAPACITY, Reads(), Writes(stage1),
+                  [s1](std::size_t i) { s1[i] = 1; });
     g.add(std::size_t{1}, Reads(first), Writes(second),
           [c1, c2](std::size_t) { c2[0] = c1[0] / 2u; });
 
     // Stage 2: iterate the second count.
-    g.add(sized_from_device(second), CAPACITY, Reads(), Writes(stage2),
-          [s2](std::size_t i) { s2[i] = 1; });
+    g.add_dynamic(sized_from_device(second), CAPACITY, Reads(), Writes(stage2),
+                  [s2](std::size_t i) { s2[i] = 1; });
 
     for (std::size_t i = 0; i < CAPACITY; ++i) { stage1[i] = 0; stage2[i] = 0; }
     g.run().value();
@@ -184,10 +184,10 @@ TEST(Integration_DeviceCount, WhenComposesWithDeviceSize)
 
     auto g = rt.graph();
     g.add(std::size_t{1}, Reads(), Writes(counter), [c](std::size_t) { c[0] = 100u; });
-    g.add(sized_from_device(counter)
+    g.add_dynamic(sized_from_device(counter)
               .when([&enabled] { return enabled; }),
-          CAPACITY, Reads(), Writes(out),
-          [o](std::size_t i) { o[i] += 1; });
+                  CAPACITY, Reads(), Writes(out),
+                  [o](std::size_t i) { o[i] += 1; });
 
     for (std::size_t i = 0; i < CAPACITY; ++i) o[i] = 0;
 
@@ -221,8 +221,8 @@ TEST(Integration_DeviceCount, CountOverCapacityFailsTheRun)
     auto g = rt.graph();
     g.add(std::size_t{1}, Reads(), Writes(counter),
           [c](std::size_t) { c[0] = static_cast<std::uint32_t>(CAPACITY) + 1u; });
-    g.add(sized_from_device(counter), CAPACITY, Reads(), Writes(out),
-          [o](std::size_t i) { o[i] = 1; });
+    g.add_dynamic(sized_from_device(counter), CAPACITY, Reads(), Writes(out),
+                  [o](std::size_t i) { o[i] = 1; });
 
     EXPECT_FALSE(g.run().has_value());
 
@@ -267,9 +267,9 @@ TEST(Integration_DeviceCount, ReadsTheCountAtTheGivenIndex)
     int* o = out.data();
 
     auto g = rt.graph();
-    ASSERT_NO_THROW(g.add(sized_from_device(plan, SLOT),
-                          CAPACITY, Reads(), Writes(out),
-                          [o](std::size_t i) { o[i] = static_cast<int>(i); }));
+    ASSERT_NO_THROW(g.add_dynamic(sized_from_device(plan, SLOT),
+                                  CAPACITY, Reads(), Writes(out),
+                                  [o](std::size_t i) { o[i] = static_cast<int>(i); }));
     g.run().value();
 
     for (std::size_t i = 0; i < 3; ++i)
@@ -291,9 +291,9 @@ TEST(Integration_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
     plan[SLOT] = 4;
 
     auto g = rt.graph();
-    EXPECT_NO_THROW(g.add(based_at_device(plan, SLOT),
-                          CAPACITY, Reads(), Writes(out),
-                          [](std::size_t) {}));
+    EXPECT_NO_THROW(g.add_dynamic(based_at_device(plan, SLOT),
+                                  CAPACITY, Reads(), Writes(out),
+                                  [](std::size_t) {}));
 }
 
 /** @brief Tests that the member setters check their slot as the free builders do. */

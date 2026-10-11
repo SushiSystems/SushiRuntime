@@ -94,11 +94,11 @@ TEST(Integration_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
     auto right = seeded_state(rt);
 
     auto graph = rt.graph();
-    graph.add(Coupled(out, left, right),
-              [](std::size_t i, const Word* current, Word* next, const Word* a, const Word* b)
-              {
+    graph.add_coupled(Coupled(out, left, right),
+                      [](std::size_t i, const Word* current, Word* next, const Word* a, const Word* b)
+                      {
                   next[i] = current[i] + a[i] * b[i];
-              });
+                      });
     graph.run().value();
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
@@ -122,15 +122,15 @@ TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWi
 
     auto graph = rt.graph();
     graph.set_profiling(true);
-    graph.add(whole, [](std::size_t i, const Word* current, Word* next)
+    graph.add_rule(whole, [](std::size_t i, const Word* current, Word* next)
     {
         next[i] = current[i];
     });
-    graph.add(K_PREFIX, Coupled(prefix, input),
-              [](std::size_t i, const Word* current, Word* next, const Word* other)
-              {
+    graph.add_coupled(K_PREFIX, Coupled(prefix, input),
+                      [](std::size_t i, const Word* current, Word* next, const Word* other)
+                      {
                   next[i] = current[i] + other[i];
-              });
+                      });
     graph.add_untracked(K_PREFIX + 1, [words](std::size_t i) { words[i] = 1u; });
 
     const auto report = graph.run().value();

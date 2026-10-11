@@ -19,7 +19,7 @@ and InOut are the same wrapper for the other two access intents.
 ### Coupled
 
 Coupled(out, in0, ...) names the States of one update rule: the first is written, the others are
-read. add(Coupled(out, in0), fn) hands the kernel the current and next field of `out`, then the
+read. add_coupled(Coupled(out, in0), kernel) hands the kernel the current and next field of `out`, then the
 current field of each State read, in argument order. Every read sees the previous step's data,
 because a State advances only after all of a step's kernels have run.
 
@@ -27,12 +27,12 @@ Each State read arrives as a `const A*`, and a kernel that declares the paramete
 compile. The node registers those fields as reads, so two rules that read one State run
 unordered; a kernel that could write through the pointer would race with the other.
 
-Up to v0.3 the same rule was written add(out, in0, ..., fn). Two States side by side said nothing
+Up to v0.3 the same rule was written add(out, in0, ..., kernel). Two States side by side said nothing
 about which one is written, and the form had no place for a launch. Coupled is one access
 descriptor, like Reads with Writes or a list of captures, so it sits after the launch the way they
-do: add(Extent, Coupled(u, v), fn) runs a coupled rule over a sub-box.
+do: add_coupled(Extent, Coupled(u, v), kernel) runs a coupled rule over a sub-box.
 
-Coupled holds references and no copies. A rule over one State is add(state, fn), so a Coupled with
+Coupled holds references and no copies. A rule over one State is add_rule(state, kernel), so a Coupled with
 nothing to read does not compile.
 
 ## placement.hpp

@@ -67,7 +67,7 @@ TEST(Integration_LaunchReach, AnExtentWhoseEndWrapsIsRefusedAtAdd)
     auto graph = rt.graph();
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_WRAPPING_ORIGIN)};
 
-    graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
+    graph.add_rule(window, field, [](sycl::id<1>, const Word*, Word*) {});
 
     ASSERT_NE(graph.refusal(), nullptr) << "a launch that ends past SIZE_MAX was recorded";
     EXPECT_EQ(graph.refusal()->code, ErrorCode::InvalidGraph);

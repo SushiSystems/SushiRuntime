@@ -130,7 +130,7 @@ neither has a return value that could carry a failure. A recording the recorder 
 therefore kept: the recorder stores the `Error` of the first one, records nothing for that call,
 and returns rule_count() from it. refusal() returns the stored error, or null when nothing was
 refused. Its message opens with the call as the caller wrote it and the position the rule would
-have had, such as `add(launch, state, fn), rule 1: `.
+have had, such as `add_rule(launch, state, kernel), rule 1: `.
 
 Five checks refuse a recording, each a function that returns `std::optional<Error>`:
 launch_refusal(), offload_parameters_refusal(), parameters_refusal() and
@@ -219,9 +219,10 @@ late-binding refreshers and the distributed live-IO re-pointers. Each view belon
 each replayed step. The DynamicGraph composer uses the same type, so both drive the loop
 identically.
 
-### state_rule(Dynamic, State, fn)
+### dynamic_kernel(Dynamic, State, kernel)
 
-The late-bound State rule mirrors kernel(Dynamic, ...) but reads the State's current and next
+The late-bound State rule mirrors dynamic_kernel(Dynamic, capacity, ...) but reads the State's
+current and next
 pointers fresh each submit, following the swap, and registers the once-per-step advance, so a
 stepped field can vary its active count or sleep entirely with no recompile.
 
@@ -298,22 +299,39 @@ access:
 
 Late binding exists for `Reads` and `Writes` (with a capacity) and for `State` only. The capture
 (`In`, `Out`, `InOut`) and `Coupled` forms have no Dynamic overload. For a varying size there, use
-`Reads` and `Writes` with the pointers captured by hand; for one State, `add(Dynamic, state, kernel)`.
+`Reads` and `Writes` with the pointers captured by hand; for one State, `add_dynamic(Dynamic, state, kernel)`.
 
-### Which add do I call
+### One verb per kind of node
+
+| Verb | Records | Recorder member |
+| --- | --- | --- |
+| `add(launch, reads, writes, kernel[, options])`, `add(launch, captures..., kernel[, options])` | A tracked kernel | `kernel` |
+| `add_rule(state, kernel[, options])`, `add_rule(launch, state, kernel[, options])` | A rule over one `State` | `state_rule` |
+| `add_coupled(Coupled(...), kernel[, options])`, `add_coupled(launch, Coupled(...), kernel[, options])` | A rule over several states | `coupled_rule` |
+| `add_dynamic(Dynamic, capacity, reads, writes, kernel[, options])`, `add_dynamic(Dynamic, state, kernel[, options])` | A late-bound window | `dynamic_kernel` |
+| `add_task(reads, writes, body[, options])` | A body that takes the queue | `task` |
+| `add_host(reads, writes, body[, options])` | Host work | `host` |
+| `add_untracked(...)` | A kernel with no declared access | `untracked_kernel` |
+| `extend(extension)` | What an extension records through `Recorder&` | (none) |
+
+`add` has three templates: the two tracked forms above and `add(reads, writes, kernel)`, whose
+kernel takes the `sycl::handler` and is recorded by `raw_kernel`. A wrong argument to `add`
+therefore names at most three candidates in the compiler's message.
+
+### Which verb do I call
 
 | The kernel | Call |
 | --- | --- |
-| steps one field from its previous value | `add(state, kernel)` |
-| steps one field and reads others | `add(Coupled(out, in0, ...), kernel)` |
-| does either over part of the field | the same with a launch first: `add(Extent{...}.at(origin), state, kernel)` |
+| steps one field from its previous value | `add_rule(state, kernel)` |
+| steps one field and reads others | `add_coupled(Coupled(out, in0, ...), kernel)` |
+| does either over part of the field | the same with a launch first: `add_rule(Extent{...}.at(origin), state, kernel)` |
 | reads and writes buffers, and should receive their pointers | `add(launch, In(a), Out(b), kernel)` |
 | captures its own pointers | `add(launch, Reads(a), Writes(b), kernel)` |
-| has a live size or an on/off switch that changes per step | `add(sized(...), capacity, Reads(a), Writes(b), kernel)` or `add(sized(...), state, kernel)` |
+| has a live size or an on/off switch that changes per step | `add_dynamic(sized(...), capacity, Reads(a), Writes(b), kernel)` or `add_dynamic(sized(...), state, kernel)` |
 | may run on another machine | `add("name"_op, n, Reads(a), Writes(b), local)` or `add("name"_op, state, local)` |
 | drives the sycl::handler itself | `add(Reads(a), Writes(b), kernel)` |
-| submits several command groups, or calls a library that takes the queue | `add_task(Reads(a), Writes(b), kernel)` |
-| is host C++ and submits no device work | `add_host(Reads(a), Writes(b), kernel)` |
+| submits several command groups, or calls a library that takes the queue | `add_task(Reads(a), Writes(b), body)` |
+| is host C++ and submits no device work | `add_host(Reads(a), Writes(b), body)` |
 | shares no data with any other rule | `add_untracked(launch, kernel)`, with `On(buffer)` when the buffer is not on device 0 |
 | is recorded by a library through the Recorder | `extend(extension)` |
 
@@ -329,7 +347,7 @@ only error: the overload does not instantiate the recording call after a failed 
 overloads are selected by the launch and the access alone, so a mistyped callable can no longer
 empty the overload set.
 
-### add(launch, Reads, Writes, fn)
+### add(launch, Reads, Writes, kernel)
 
 The kernel captures raw USM pointers, and Reads(...) and Writes(...) tell the dependency tracker
 which Buffers, States or regions those pointers belong to. A count calls `kernel(i)`, an Extent calls
@@ -347,7 +365,7 @@ memcpy) while the declared regions still order it. It has no launch because the 
 none. The shaped overloads are the better choice wherever one fits, since they cannot get the
 launch geometry and the declared data out of step.
 
-### add(launch, In/Out/InOut..., fn)
+### add(launch, In/Out/InOut..., kernel)
 
 The caller passes the buffers a kernel touches as In(buf), Out(buf) or InOut(buf). The runtime
 registers the reads and writes and hands `kernel` the raw element pointers, in argument order, after
@@ -361,14 +379,14 @@ checks that everything before the callable is a capture, and the call site reads
 `In(a), Out(c), kernel` or `In(a), Out(c), kernel, options`. The options must be written as a
 `NodeOptions` object there, because a braced list cannot be deduced into a pack.
 
-### add(state, fn)
+### add_rule(state, kernel)
 
 This is the canonical stepped rule: it reads the State's current field and writes its next field,
 and the dependency tracker keys on those two buffers. The runtime supplies the current and next
 pointers to `kernel` at execution time, so under run(n) the same compiled node follows the
 double-buffer swap with no recompilation. A State takes exactly one update rule per step.
 
-### add(launch, state, fn)
+### add_rule(launch, state, kernel)
 
 The launch form runs the same rule over a count, an Extent or an NdRange: a prefix of the field,
 a sub-box for boundary or halo handling, or a tiled launch. `kernel` receives the launch's index
@@ -378,7 +396,7 @@ The launch is compared with the State when the rule is added. A launch that reac
 State is refused with `InvalidGraph`, naming the rule, the launch with its origin and
 the State's size; `api/detail/README.md` says what "reaches" means for each launch.
 
-### add(Coupled, fn) and add(launch, Coupled, fn)
+### add_coupled(Coupled, kernel) and add_coupled(launch, Coupled, kernel)
 
 A coupled rule writes the next field of one State from its own current field and the current
 field of one or more others. It is the building block for coupled systems such as
@@ -391,7 +409,7 @@ The whole-field form iterates the size of the State written, and add() refuses t
 every State
 named.
 
-### add(Dynamic, capacity, Reads, Writes, fn)
+### add_dynamic(Dynamic, capacity, Reads, Writes, kernel)
 
 The rule is compiled once, and the Dynamic built from when() and sized() lets its iteration size
 and whether it runs vary every step with no recompile. The buffers are allocated for `capacity`
@@ -406,9 +424,9 @@ based_at() and based_at_device() move where the rule starts, for a slice whose o
 between steps, such as a graph colour. The callable still receives absolute indices, and the
 window must fit the capacity: one that does not fails the run.
 
-### add(Dynamic, state, fn)
+### add_dynamic(Dynamic, state, kernel)
 
-This is the late-bound form of add(state, fn). The State's full allocation is the capacity;
+This is the late-bound form of add_rule(state, kernel). The State's full allocation is the capacity;
 sized() iterates a prefix of it (a changing number of active cells, for example), and when() can
 skip the step's kernel. The double-buffer swap is followed as in the static form.
 
@@ -430,24 +448,24 @@ carried in TaskMetadata, element counts for example.
 
 ### add(OperationID, state, local, params)
 
-This overload is the distributed counterpart of add(state, fn): the State's step may ship to a
+This overload is the distributed counterpart of add_rule(state, kernel): the State's step may ship to a
 worker or run its local fallback, with the same graph correct either way. Because a State rotates
 its allocations each step, the node tracks the step's read and write buffers through live pointer
 lists the runtime re-points before every step, so the compiled plan stays replayable while the
 offload follows the double-buffer swap. The State must be registered with State::distributed()
 first so both allocations can cross to a worker.
 
-### add_untracked(launch, fn)
+### add_untracked(launch, kernel)
 
 add_untracked() records no read or write region: the rule is both a root and a leaf, ordered
 against nothing. That is correct for self-contained work (seeding a buffer no other rule of this
 graph reads, a benchmark kernel) and wrong the moment another rule shares data with it. Whenever
-ordering matters, name the data and use add().
+ordering matters, name the data and use a tracked verb.
 
 The launch is a count, an Extent or an NdRange, and the kernel receives the same index as in
-add(). A count also takes a range kernel, and add_untracked(fn) takes a raw kernel.
+add(). A count also takes a range kernel, and add_untracked(kernel) takes a raw kernel.
 
-### add_untracked(launch, On, fn)
+### add_untracked(launch, On, kernel)
 
 The runtime places a rule on the device that owns the first region it writes. An untracked rule
 names no region, so it states its device: On(buffer) and On(state) name the device of a handle
@@ -455,7 +473,7 @@ and watch the handle, On(DeviceIndex) names a device. Without an On the rule run
 where Runtime::buffer() and Runtime::state() allocate by default. An On that names a device the
 runtime does not have is refused with `InvalidAccess`.
 
-### add_task(Reads, Writes, fn)
+### add_task(Reads, Writes, body)
 
 A raw kernel is one command group: the runtime calls `queue.submit()` and hands `kernel` the handler.
 A task body is handed the queue itself, `kernel(sycl::queue&, const std::vector<sycl::event>&)`, so
@@ -473,17 +491,17 @@ its order comes from its regions.
 The node is ordered by Reads and Writes like any other, runs once per step, and is taken by the
 chain layer as a kernel is.
 
-### add_host(Reads, Writes, fn)
+### add_host(Reads, Writes, body)
 
-add_host(Reads, Writes, fn) is for host C++ that submits no device work: gameplay logic, AI,
+add_host(Reads, Writes, body) is for host C++ that submits no device work: gameplay logic, AI,
 navigation, the CPU half of a broadphase. The caller names the data it touches so the tracker
 orders it against the rest of the graph; the runtime then runs `kernel` on a worker thread, with no
 SYCL queue submission, and releases its successors through the same path as any kernel. The
 shared USM it reads is visible because the task runs only after its predecessors complete.
 
-### add_host(fn)
+### add_host(body)
 
-add_host(fn) is the dependency-free form: with no Reads or Writes the task is both a root and a
+add_host(body) is the dependency-free form: with no Reads or Writes the task is both a root and a
 leaf, so it is for self-contained host work (telemetry, a per-step callback) that needs no
 ordering against other tasks.
 

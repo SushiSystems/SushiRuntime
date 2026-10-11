@@ -62,8 +62,8 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesTheRun)
     Word* words = target.data();
 
     auto graph = rt.graph();
-    graph.add(sized_from_device(*counter, 0), K_WIDTH, Reads(), Writes(target),
-              [words](std::size_t i) { words[i] = 1u; });
+    graph.add_dynamic(sized_from_device(*counter, 0), K_WIDTH, Reads(), Writes(target),
+                      [words](std::size_t i) { words[i] = 1u; });
     EXPECT_EQ(graph.recorder().watched_allocation_count(), 2u)
         << "the target and the counter are both watched";
     ASSERT_TRUE(graph.run());
@@ -85,8 +85,8 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedBaseBufferRefusesTheRun)
     Word* words = target.data();
 
     auto graph = rt.graph();
-    graph.add(based_at_device(*base), K_WIDTH, Reads(), Writes(target),
-              [words](std::size_t i) { words[i] = 1u; });
+    graph.add_dynamic(based_at_device(*base), K_WIDTH, Reads(), Writes(target),
+                      [words](std::size_t i) { words[i] = 1u; });
     ASSERT_TRUE(graph.run());
 
     base.reset();
@@ -104,8 +104,8 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesAStateRule)
     std::optional<Buffer<Word>> counter(host_slot(rt, K_LIVE));
 
     auto graph = rt.graph();
-    graph.add(sized_from_device(*counter), field,
-              [](std::size_t i, const Word* current, Word* next) { next[i] = current[i]; });
+    graph.add_dynamic(sized_from_device(*counter), field,
+                      [](std::size_t i, const Word* current, Word* next) { next[i] = current[i]; });
     ASSERT_TRUE(graph.run());
 
     counter.reset();

@@ -48,13 +48,13 @@ namespace
         auto sim = rt.graph();
 
         // v_next = v_cur + 1.
-        sim.add(v, [](std::size_t i, const int* vc, int* vn)
+        sim.add_rule(v, [](std::size_t i, const int* vc, int* vn)
         {
             vn[i] = vc[i] + 1;
         });
 
         // v_cur is the previous step's v, not the v_next of the rule above; see README.md.
-        sim.add(Coupled(u, v), [](std::size_t i, const int* uc, int* un, const int* vc)
+        sim.add_coupled(Coupled(u, v), [](std::size_t i, const int* uc, int* un, const int* vc)
         {
             un[i] = uc[i] + vc[i];
         });

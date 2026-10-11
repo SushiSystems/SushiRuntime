@@ -45,16 +45,17 @@ namespace SushiRuntime
     {
         static_assert(sizeof...(Inputs) >= 1,
                       "Coupled(out, in0, ...) names at least one State to read besides the "
-                      "one written; a rule over one State is add(state, fn).");
+                      "one written; a rule over one State is add_rule(state, kernel).");
 
         State<Out>& out;                      /**< The State whose next field is written. */
         std::tuple<State<Inputs>&...> inputs; /**< The States read, in argument order. */
 
         /**
          * @brief Names the States of one coupled rule.
-         * @param written The State written; alive at every run, free to move after add().
+         * @param written The State written; alive at every run, free to move after
+         *                add_coupled().
          * @param read    The further States read; each alive at every run, free to move
-         *                after add().
+         *                after add_coupled().
          */
         explicit Coupled(State<Out>& written, State<Inputs>&... read) noexcept
             : out(written), inputs(read...)

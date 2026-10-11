@@ -118,13 +118,13 @@ TEST(Integration_AsyncStep, MatchesTheSynchronousResult)
     auto synchronous = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) synchronous.current()[i] = 1;
     auto sg = rt.graph();
-    sg.add(synchronous, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] * 2; });
+    sg.add_rule(synchronous, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] * 2; });
     sg.run(STEPS).value();
 
     auto asynchronous = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) asynchronous.current()[i] = 1;
     auto ag = rt.graph();
-    ag.add(asynchronous, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] * 2; });
+    ag.add_rule(asynchronous, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] * 2; });
     for (std::size_t s = 0; s < STEPS; ++s)
         ag.run_async().value().wait().value();
 
@@ -143,7 +143,7 @@ TEST(Integration_AsyncStep, StateAdvancesOnWaitNotOnSubmit)
     for (std::size_t i = 0; i < N; ++i) field.current()[i] = 5;
 
     auto g = rt.graph();
-    g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+    g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     const int* const before_submit = field.current();
     auto step = g.run_async().value();

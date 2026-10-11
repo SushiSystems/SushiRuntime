@@ -85,10 +85,10 @@ namespace SushiRuntime
                 is_launch_kernel_v<Launch, F> ||
                 (std::is_same_v<Launch, std::size_t> && is_range_kernel_v<F>);
             static_assert(accepted,
-                "add(launch, reads, writes, fn) and add_untracked(launch, fn) take "
-                "fn(index): index is std::size_t for a count, sycl::id<N> for an Extent<N>, "
-                "and sycl::nd_item<N>, optionally followed by sycl::id<N>, for an "
-                "NdRange<N>; a count also takes fn(std::size_t begin, std::size_t end, "
+                "add(launch, reads, writes, kernel) and add_untracked(launch, kernel) take "
+                "kernel(index): index is std::size_t for a count, sycl::id<N> for an "
+                "Extent<N>, and sycl::nd_item<N>, optionally followed by sycl::id<N>, for an "
+                "NdRange<N>; a count also takes kernel(std::size_t begin, std::size_t end, "
                 "sycl::handler&).");
             return accepted;
         }
@@ -102,8 +102,8 @@ namespace SushiRuntime
         {
             constexpr bool accepted = is_launch_kernel_v<Launch, F, Pointers...>;
             static_assert(accepted,
-                "add(launch, In/Out/InOut..., fn) takes fn(index, pointers...): one pointer "
-                "per capture in argument order, const T* for In<T> and T* for Out<T> and "
+                "add(launch, In/Out/InOut..., kernel) takes kernel(index, pointers...): one "
+                "pointer per capture in argument order, const T* for In<T> and T* for Out<T> and "
                 "InOut<T>, after the index of the launch (std::size_t for a count, "
                 "sycl::id<N> for an Extent<N>, sycl::nd_item<N>, optionally followed by "
                 "sycl::id<N>, for an NdRange<N>).");
@@ -119,10 +119,10 @@ namespace SushiRuntime
         {
             constexpr bool accepted = is_launch_kernel_v<Launch, F, const T*, T*>;
             static_assert(accepted,
-                "add(state, fn) and add(launch, state, fn) take fn(index, const T* current, "
-                "T* next) for a State<T>: index is std::size_t for the whole field or a "
-                "count, sycl::id<N> for an Extent<N>, and sycl::nd_item<N>, optionally "
-                "followed by sycl::id<N>, for an NdRange<N>.");
+                "add_rule(state, kernel) and add_rule(launch, state, kernel) take "
+                "kernel(index, const T* current, T* next) for a State<T>: index is "
+                "std::size_t for the whole field or a count, sycl::id<N> for an Extent<N>, "
+                "and sycl::nd_item<N>, optionally followed by sycl::id<N>, for an NdRange<N>.");
             return accepted;
         }
 
@@ -137,10 +137,10 @@ namespace SushiRuntime
             constexpr bool accepted =
                 is_launch_kernel_v<Launch, F, const Out*, Out*, const Inputs*...>;
             static_assert(accepted,
-                "add(Coupled(out, in0, ...), fn) and add(launch, Coupled(out, in0, ...), fn) "
-                "take fn(index, const T* current, T* next, const A* in0, ...): the two "
-                "fields of the State written, then the current field of each State read, "
-                "in argument order, after the index of the launch.");
+                "add_coupled(Coupled(out, in0, ...), kernel) and add_coupled(launch, "
+                "Coupled(out, in0, ...), kernel) take kernel(index, const T* current, T* next, "
+                "const A* in0, ...): the two fields of the State written, then the current "
+                "field of each State read, in argument order, after the index of the launch.");
             return accepted;
         }
 
@@ -150,9 +150,9 @@ namespace SushiRuntime
         {
             constexpr bool accepted = is_per_element_v<F>;
             static_assert(accepted,
-                "add(Dynamic, capacity, reads, writes, fn) and add(OperationID, n, reads, writes, "
-                "local) take a callable invoked as fn(std::size_t i) for each element "
-                "index.");
+                "add_dynamic(Dynamic, capacity, reads, writes, kernel) and add(OperationID, n, "
+                "reads, writes, local) take a callable invoked as kernel(std::size_t i) for "
+                "each element index.");
             return accepted;
         }
 
@@ -162,8 +162,8 @@ namespace SushiRuntime
         {
             constexpr bool accepted = is_raw_kernel_v<F>;
             static_assert(accepted,
-                "add(reads, writes, fn) and add_untracked(placement, fn) take a raw kernel "
-                "invoked as fn(sycl::handler&), which submits its own command group; a "
+                "add(reads, writes, kernel) and add_untracked(placement, kernel) take a raw "
+                "kernel invoked as kernel(sycl::handler&), which submits its own command group; a "
                 "per-element kernel needs a launch as the first argument.");
             return accepted;
         }
@@ -174,8 +174,9 @@ namespace SushiRuntime
         {
             constexpr bool accepted = std::is_invocable_v<F>;
             static_assert(accepted,
-                "add_host(reads, writes, fn) and add_host(fn) take a task invoked as fn() "
-                "with no argument; it runs on a worker thread and captures what it needs.");
+                "add_host(reads, writes, body) and add_host(body) take a body invoked as "
+                "body() with no argument; it runs on a worker thread and captures what it "
+                "needs.");
             return accepted;
         }
 
@@ -185,8 +186,8 @@ namespace SushiRuntime
         {
             constexpr bool accepted = is_task_body_v<F>;
             static_assert(accepted,
-                "add_task(reads, writes, fn) takes a body invoked as "
-                "fn(sycl::queue&, const std::vector<sycl::event>&) that returns the "
+                "add_task(reads, writes, body) takes a body invoked as "
+                "body(sycl::queue&, const std::vector<sycl::event>&) that returns the "
                 "sycl::event which ends its work.");
             return accepted;
         }
@@ -197,8 +198,9 @@ namespace SushiRuntime
         {
             constexpr bool accepted = std::is_invocable_v<std::decay_t<F>&, std::size_t>;
             static_assert(accepted,
-                "before_each_step(fn) takes a hook invoked as fn(std::size_t finished_steps) "
-                "on the thread that runs the graph, before each step.");
+                "before_each_step(hook) takes a hook invoked as "
+                "hook(std::size_t finished_steps) on the thread that runs the graph, before "
+                "each step.");
             return accepted;
         }
 
@@ -208,8 +210,8 @@ namespace SushiRuntime
         {
             constexpr bool accepted = std::is_invocable_v<F, Recorder&>;
             static_assert(accepted,
-                "extend(fn) takes an extension invoked once as "
-                "fn(SushiRuntime::Recorder&), which records its nodes through the "
+                "extend(extension) takes an extension invoked once as "
+                "extension(SushiRuntime::Recorder&), which records its nodes through the "
                 "recorder it is handed.");
             return accepted;
         }
@@ -223,7 +225,7 @@ namespace SushiRuntime
         {
             constexpr bool accepted = (is_capture_v<Captures> && ...);
             static_assert(accepted,
-                "add(launch, In/Out/InOut..., fn) takes only In(buffer), Out(buffer) or "
+                "add(launch, In/Out/InOut..., kernel) takes only In(buffer), Out(buffer) or "
                 "InOut(buffer) between the launch and the callable, and the callable comes "
                 "last.");
             return accepted;

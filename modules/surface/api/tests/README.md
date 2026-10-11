@@ -321,7 +321,7 @@ a host readback round-trip correctly without the host ever indexing the allocati
 
 ### `StateStepsResident`
 
-A device-resident `State` steps with the fluent `add(state, kernel)` rule and is seeded and read back
+A device-resident `State` steps with the fluent `add_rule(state, kernel)` rule and is seeded and read back
 through its range API. The field stays resident across all steps, and only the windowed readback
 touches the host.
 
@@ -585,11 +585,11 @@ The file covers the hardened fluent surface:
 
 - `add_untracked(Extent<2>, kernel)`, a multidimensional per-element map
 - `add_untracked(NdRange<2>, kernel)`, a tiled work-group kernel
-- `add(State, Extent<2>, kernel)`, a multidimensional stepped stencil
+- `add_rule(Extent<2>, state, kernel)`, a multidimensional stepped stencil
 - `add(out, in0, in1, kernel)`, a variadic coupled update that reads three fields
 - `add(Reads, Writes, n, kernel)`, the handle-based dependency wrappers
 - `add(Extent, In/Out, kernel)`, buffer arguments captured automatically
-- `add(State, Extent with offset, kernel)`, an interior-only (halo) update
+- `add_rule(Extent with offset, state, kernel)`, an interior-only (halo) update
 
 ### `Extent2DPerElementMap`
 
@@ -603,7 +603,7 @@ global linear index, and a correct result proves that `nd_item` indexing works.
 
 ### `State2DSteppedUpdate`
 
-`add(State, Extent<2>, kernel)` is a multidimensional stepped update. Each step adds the row index to
+`add_rule(Extent<2>, state, kernel)` is a multidimensional stepped update. Each step adds the row index to
 every cell, so after S steps a cell in row y holds `S*y`.
 
 ### `VariadicCoupledThreeInputs`
@@ -1323,7 +1323,7 @@ recorded.
 
 ### `CoupledRulesReadEveryStateNamed`
 
-`add(Coupled(out, in), kernel)` and `add(count, Coupled(out, in), kernel)` each hand the kernel the
+`add_coupled(Coupled(out, in), kernel)` and `add_coupled(count, Coupled(out, in), kernel)` each hand the kernel the
 current field of the State read after the two fields of the State written.
 
 ### `ACoupledInputSmallerThanTheOutputIsRefusedAtAdd`
@@ -1333,7 +1333,7 @@ A coupled rule over the whole field whose input State is shorter than its output
 
 ### `DynamicTakesItsCapacityBeforeItsAccess`
 
-`add(sized(...), capacity, Reads, Writes, kernel)` runs over the live count only.
+`add_dynamic(sized(...), capacity, Reads, Writes, kernel)` runs over the live count only.
 
 ### `UntrackedKernelRunsOnTheDeviceOfTheBufferNamed`
 
@@ -1362,7 +1362,7 @@ and no rule is recorded.
 ### `ARefusedAddIsKeptAndReturnedByTheNextRun`
 
 Three adds are made, the second with a launch past its State. `refusal()` then holds an
-`InvalidGraph` error whose message begins with `add(launch, state, fn), rule 1: `, and the graph
+`InvalidGraph` error whose message begins with `add_rule(launch, state, kernel), rule 1: `, and the graph
 holds the two valid rules. A later refused `add_untracked` does not replace it. Two runs in a row
 return that error and leave the target as it was. After `recorder().clear()` the refusal is gone,
 and a rule added then runs.
@@ -1399,12 +1399,12 @@ field with `K_CANARY`, so an element a kernel did not write is recognisable.
 
 ### `ACoupledRuleReadsItsInputsThroughConstPointers`
 
-`add(Coupled(out, left, right), kernel)` with a kernel that takes both inputs as `const Word*` writes
+`add_coupled(Coupled(out, left, right), kernel)` with a kernel that takes both inputs as `const Word*` writes
 `current + a * b` into `out` and leaves both inputs as they were.
 
 ### `StateCoupledAndUntrackedNodesReportTheirLaunchWidth`
 
-A profiled graph holds `add(state, kernel)`, `add(count, Coupled, kernel)` and `add_untracked(count, kernel)`.
+A profiled graph holds `add_rule(state, kernel)`, `add_coupled(count, Coupled, kernel)` and `add_untracked(count, kernel)`.
 Their node events report the State's size and the two counts as `launched_width`. The three nodes
 share no region and may finish in any order, so the widths are compared sorted.
 
@@ -1481,12 +1481,12 @@ address of element 0 changes. Three steps then advance element 0 and leave eleme
 
 ### `ACoupledRuleFollowsItsMovedStates`
 
-`add(Coupled(out, input), kernel)` is recorded and both States are moved. Two steps leave three times
+`add_coupled(Coupled(out, input), kernel)` is recorded and both States are moved. Two steps leave three times
 the seed in the State written and the seed in the State read.
 
 ### `ADynamicStateRuleFollowsAMovedState`
 
-`add(sized(...), state, kernel)` is recorded and the State moved. Three steps advance the live prefix
+`add_dynamic(sized(...), state, kernel)` is recorded and the State moved. Three steps advance the live prefix
 on one compiled plan.
 
 ### `TheViewFollowsAdvanceMoveAndDestruction`

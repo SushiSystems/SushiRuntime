@@ -233,7 +233,7 @@ namespace
     template <class Builder>
     void record_field(Builder& builder, Tiles& tiles)
     {
-        builder.add(tiles.field, [](std::size_t i, const Word* cur, Word* next)
+        builder.add_rule(tiles.field, [](std::size_t i, const Word* cur, Word* next)
         {
             next[i] = cur[i] * 5u + static_cast<Word>(i % 7);
         });
@@ -532,7 +532,7 @@ namespace
               {
                   stamp_cell(captured_in, captured_out, idx[0], idx[1]);
               });
-        g.add(box_by_origin(), field, [in](sycl::id<2> idx, const Word* cur, Word* next)
+        g.add_rule(box_by_origin(), field, [in](sycl::id<2> idx, const Word* cur, Word* next)
         {
             const std::size_t cell = idx[0] * GRID_COLS + idx[1];
             const std::size_t slot = (idx[0] - BOX_ROW0) * BOX_COLS + (idx[1] - BOX_COL0);

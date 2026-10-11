@@ -189,15 +189,15 @@ points at the caller's add() line.
 
 | Function | Family |
 | --- | --- |
-| accepts_kernel | add(launch, reads, writes, fn), add_untracked(launch, fn) |
-| accepts_captured_kernel, accepts_captures | add(launch, In/Out/InOut..., fn) |
-| accepts_state_rule | add(state, fn), add(launch, state, fn), add(Dynamic, state, fn), add(OperationID, state, fn) |
-| accepts_coupled_rule | add(Coupled, fn), add(launch, Coupled, fn) |
-| accepts_per_element | add(Dynamic, capacity, reads, writes, fn), add(OperationID, n, reads, writes, fn) |
-| accepts_raw_kernel | add(reads, writes, fn), add_untracked(fn), add_untracked(On, fn) |
-| accepts_task | add_task(reads, writes, fn) |
+| accepts_kernel | add(launch, reads, writes, kernel), add_untracked(launch, kernel) |
+| accepts_captured_kernel, accepts_captures | add(launch, In/Out/InOut..., kernel) |
+| accepts_state_rule | add_rule(state, kernel), add_rule(launch, state, kernel), add_dynamic(Dynamic, state, kernel), add(OperationID, state, local) |
+| accepts_coupled_rule | add_coupled(Coupled, kernel), add_coupled(launch, Coupled, kernel) |
+| accepts_per_element | add_dynamic(Dynamic, capacity, reads, writes, kernel), add(OperationID, n, reads, writes, local) |
+| accepts_raw_kernel | add(reads, writes, kernel), add_untracked(kernel), add_untracked(On, kernel) |
+| accepts_task | add_task(reads, writes, body) |
 | accepts_host_task, accepts_extension | add_host, extend |
-| accepts_step_hook | before_each_step(fn) |
+| accepts_step_hook | before_each_step(hook) |
 
 Each function returns what it asserted. The overload records inside `if constexpr` on that
 value, so after a failed assertion the recording call is not instantiated and the caller reads
@@ -225,8 +225,8 @@ record.
 
 submit_launch() is the one parallel_for of each launch. Every emitter that runs a kernel over a
 launch calls it with the values the kernel receives after its index: none for a plain kernel, the
-capture pointers, or the State fields. A launch is therefore written once, and add(NdRange,
-state, fn) or add(count, In(a), fn) exist because the emitters are generic over it and for no
+capture pointers, or the State fields. A launch is therefore written once, and add_rule(NdRange,
+state, kernel) or add(count, In(a), kernel) exist because the emitters are generic over it and for no
 other reason. The Extent form adds the origin to each id. The NdRange form adds it only for a
 kernel that takes the id as a second parameter.
 

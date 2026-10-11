@@ -55,7 +55,8 @@
 namespace SushiRuntime
 {
     /**
-     * @brief Gives a type that owns a Recorder the fluent add() overloads, each returning it.
+     * @brief Gives a type that owns a Recorder one fluent verb per kind of node, each
+     *        returning it.
      *
      * A verb returns the builder, so a recording the recorder refuses is kept for refusal()
      * and records nothing.
@@ -108,12 +109,12 @@ namespace SushiRuntime
             /**
              * @brief Adds the per-step update rule of a State over its whole field.
              * @param state The state this rule evolves; alive when the graph runs and
-             *        free to move after add().
+             *        free to move after add_rule().
              * @param kernel Callable invoked as kernel(i, const T* current, T* next).
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class F>
-            Derived& add(State<T>& state, F&& kernel, NodeOptions options = {})
+            Derived& add_rule(State<T>& state, F&& kernel, NodeOptions options = {})
             {
                 if constexpr (Detail::accepts_state_rule<std::size_t, T, F>())
                     sink().state_rule(state, std::forward<F>(kernel), options);
@@ -123,14 +124,14 @@ namespace SushiRuntime
             /**
              * @brief Adds the per-step update rule of a State over a launch.
              * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
-             * @param state Alive when the graph runs; free to move after add().
+             * @param state Alive when the graph runs; free to move after add_rule().
              * @param kernel Callable invoked as kernel(index, const T* current, T* next).
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class Launch, typename T, class F,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
-            Derived& add(Launch launch, State<T>& state, F&& kernel,
-                         NodeOptions options = {})
+            Derived& add_rule(Launch launch, State<T>& state, F&& kernel,
+                              NodeOptions options = {})
             {
                 if constexpr (Detail::accepts_state_rule<Detail::launch_t<Launch>, T, F>())
                     sink().state_rule(state, Detail::launch_of(launch),
@@ -141,19 +142,17 @@ namespace SushiRuntime
             /**
              * @brief Adds a rule that writes one State from several, over its whole field.
              * @param states Coupled(out, in0, ...); every State is alive when the graph
-             *        runs and free to move after add().
+             *        runs and free to move after add_coupled().
              * @param kernel Callable invoked as kernel(i, current, next, in0, ...).
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename Out, typename... Inputs, class F>
-            Derived& add(Coupled<Out, Inputs...> states, F&& kernel, NodeOptions options = {})
+            Derived& add_coupled(Coupled<Out, Inputs...> states, F&& kernel,
+                                 NodeOptions options = {})
             {
                 if constexpr (Detail::accepts_coupled_rule<std::size_t, F, Out, Inputs...>())
-                    std::apply([&](State<Inputs>&... inputs)
-                    {
-                        sink().coupled_rule(K_ADD_COUPLED, states.out,
-                                            std::forward<F>(kernel), options, inputs...);
-                    }, states.inputs);
+                    sink().coupled_rule(states, std::forward<F>(kernel), options,
+                                        K_ADD_COUPLED);
                 return self();
             }
 
@@ -161,22 +160,19 @@ namespace SushiRuntime
              * @brief Adds a rule that writes one State from several, over a launch.
              * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
              * @param states Coupled(out, in0, ...); every State is alive when the graph
-             *        runs and free to move after add().
+             *        runs and free to move after add_coupled().
              * @param kernel Callable invoked as kernel(index, current, next, in0, ...).
              */
             template <class Launch, typename Out, typename... Inputs, class F,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
-            Derived& add(Launch launch, Coupled<Out, Inputs...> states, F&& kernel,
-                         NodeOptions options = {})
+            Derived& add_coupled(Launch launch, Coupled<Out, Inputs...> states, F&& kernel,
+                                 NodeOptions options = {})
             {
                 if constexpr (Detail::accepts_coupled_rule<Detail::launch_t<Launch>, F, Out,
                                                            Inputs...>())
-                    std::apply([&](State<Inputs>&... inputs)
-                    {
-                        sink().coupled_rule(K_ADD_LAUNCH_COUPLED, Detail::launch_of(launch),
-                                            states.out, std::forward<F>(kernel), options,
-                                            inputs...);
-                    }, states.inputs);
+                    sink().coupled_rule(Detail::launch_of(launch), states,
+                                        std::forward<F>(kernel), options,
+                                        K_ADD_LAUNCH_COUPLED);
                 return self();
             }
 
@@ -203,12 +199,12 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class F>
-            Derived& add(Dynamic window, std::size_t capacity, const Reads& reads,
-                         const Writes& writes, F&& kernel, NodeOptions options = {})
+            Derived& add_dynamic(Dynamic window, std::size_t capacity, const Reads& reads,
+                                 const Writes& writes, F&& kernel, NodeOptions options = {})
             {
                 if constexpr (Detail::accepts_per_element<F>())
-                    sink().kernel(std::move(window), capacity, Access(reads, writes),
-                                  std::forward<F>(kernel), options);
+                    sink().dynamic_kernel(std::move(window), capacity, Access(reads, writes),
+                                          std::forward<F>(kernel), options);
                 return self();
             }
 
@@ -220,12 +216,12 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class F>
-            Derived& add(Dynamic window, State<T>& state, F&& kernel,
-                         NodeOptions options = {})
+            Derived& add_dynamic(Dynamic window, State<T>& state, F&& kernel,
+                                 NodeOptions options = {})
             {
                 if constexpr (Detail::accepts_state_rule<std::size_t, T, F>())
-                    sink().state_rule(std::move(window), state, std::forward<F>(kernel),
-                                      options);
+                    sink().dynamic_kernel(std::move(window), state, std::forward<F>(kernel),
+                                          options);
                 return self();
             }
 
@@ -328,45 +324,45 @@ namespace SushiRuntime
 
             /**
              * @brief Adds a pure-CPU task ordered by the data it touches.
-             * @param task Nullary callable run once per step; must not submit SYCL work.
+             * @param body Nullary callable run once per step; must not submit SYCL work.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class F>
-            Derived& add_host(const Reads& reads, const Writes& writes, F&& task,
+            Derived& add_host(const Reads& reads, const Writes& writes, F&& body,
                               NodeOptions options = {})
             {
                 if constexpr (Detail::accepts_host_task<F>())
-                    sink().host(Access(reads, writes), std::forward<F>(task), options);
+                    sink().host(Access(reads, writes), std::forward<F>(body), options);
                 return self();
             }
 
             /**
              * @brief Adds an untracked pure-CPU task that runs every step.
-             * @param task Nullary callable run once per step; must not submit SYCL work.
+             * @param body Nullary callable run once per step; must not submit SYCL work.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class F>
-            Derived& add_host(F&& task, NodeOptions options = {})
+            Derived& add_host(F&& body, NodeOptions options = {})
             {
                 if constexpr (Detail::accepts_host_task<F>())
-                    sink().host(Access(), std::forward<F>(task), options);
+                    sink().host(Access(), std::forward<F>(body), options);
                 return self();
             }
 
             /**
              * @brief Adds a task that submits its own work, ordered by the data it touches.
-             * @param task Callable invoked once per step as
-             *        task(sycl::queue&, const std::vector<sycl::event>&); it waits for nothing
+             * @param body Callable invoked once per step as
+             *        body(sycl::queue&, const std::vector<sycl::event>&); it waits for nothing
              *        and returns the event that ends its work.
              * @param options What the node states beyond its access.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class F>
-            Derived& add_task(const Reads& reads, const Writes& writes, F&& task,
+            Derived& add_task(const Reads& reads, const Writes& writes, F&& body,
                               NodeOptions options = {})
             {
                 if constexpr (Detail::accepts_task<F>())
-                    sink().task(Access(reads, writes), std::forward<F>(task), options);
+                    sink().task(Access(reads, writes), std::forward<F>(body), options);
                 return self();
             }
 
@@ -410,8 +406,8 @@ namespace SushiRuntime
 
             /**
              * @brief Returns how many rules have been added.
-             * @return One per add(), add_untracked(), add_task() or add_host() call, and one
-             *         per extend() call or Recorder::rule() scope that recorded a node.
+             * @return One per call of an add verb, and one per extend() call or
+             *         Recorder::rule() scope that recorded a node.
              */
             [[nodiscard]] std::size_t size() const noexcept { return view().rule_count(); }
 
@@ -443,22 +439,25 @@ namespace SushiRuntime
             ~BuilderSurface() = default;
 
         private:
-            /// @brief Names add(launch, state, fn) in the messages of its refusals.
-            static constexpr const char* K_ADD_LAUNCH_STATE = "add(launch, state, fn)";
-            /// @brief Names add(Coupled(out, in0, ...), fn) in the messages of its refusals.
-            static constexpr const char* K_ADD_COUPLED = "add(Coupled(out, in0, ...), fn)";
-            /// @brief Names add(launch, Coupled(out, in0, ...), fn) in its refusals.
+            /// @brief Names add_rule(launch, state, kernel) in the messages of its refusals.
+            static constexpr const char* K_ADD_LAUNCH_STATE = "add_rule(launch, state, kernel)";
+            /// @brief Names add_coupled(Coupled(out, in0, ...), kernel) in its refusals.
+            static constexpr const char* K_ADD_COUPLED =
+                "add_coupled(Coupled(out, in0, ...), kernel)";
+            /// @brief Names add_coupled(launch, Coupled(out, in0, ...), kernel) in its refusals.
             static constexpr const char* K_ADD_LAUNCH_COUPLED =
-                "add(launch, Coupled(out, in0, ...), fn)";
-            /// @brief Names add_untracked(launch, fn) in the messages of its refusals.
-            static constexpr const char* K_ADD_UNTRACKED_LAUNCH = "add_untracked(launch, fn)";
-            /// @brief Names add_untracked(launch, On(...), fn) in its refusals.
+                "add_coupled(launch, Coupled(out, in0, ...), kernel)";
+            /// @brief Names add_untracked(launch, kernel) in the messages of its refusals.
+            static constexpr const char* K_ADD_UNTRACKED_LAUNCH =
+                "add_untracked(launch, kernel)";
+            /// @brief Names add_untracked(launch, On(...), kernel) in its refusals.
             static constexpr const char* K_ADD_UNTRACKED_LAUNCH_ON =
-                "add_untracked(launch, On(...), fn)";
-            /// @brief Names add_untracked(fn) in the messages of its refusals.
-            static constexpr const char* K_ADD_UNTRACKED_RAW = "add_untracked(fn)";
-            /// @brief Names add_untracked(On(...), fn) in the messages of its refusals.
-            static constexpr const char* K_ADD_UNTRACKED_RAW_ON = "add_untracked(On(...), fn)";
+                "add_untracked(launch, On(...), kernel)";
+            /// @brief Names add_untracked(kernel) in the messages of its refusals.
+            static constexpr const char* K_ADD_UNTRACKED_RAW = "add_untracked(kernel)";
+            /// @brief Names add_untracked(On(...), kernel) in the messages of its refusals.
+            static constexpr const char* K_ADD_UNTRACKED_RAW_ON =
+                "add_untracked(On(...), kernel)";
             /// @brief Names add(OperationID, n, reads, writes, local, params) in its refusals.
             static constexpr const char* K_ADD_OFFLOAD =
                 "add(OperationID, n, reads, writes, local, params)";

@@ -51,7 +51,7 @@ int main()
         heat[i] = (i == N / 2) ? 1.0f : 0.0f;
 
     SushiRuntime::Graph graph = runtime.graph();
-    graph.add(heat, [](std::size_t i, const float* cur, float* next)
+    graph.add_rule(heat, [](std::size_t i, const float* cur, float* next)
     {
         const float left  = (i == 0)     ? cur[i] : cur[i - 1];
         const float right = (i == N - 1) ? cur[i] : cur[i + 1];

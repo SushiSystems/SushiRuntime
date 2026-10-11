@@ -43,7 +43,7 @@ TEST(Integration_CompletionLatch, ManyStepReplayReachesCorrectState)
 
     auto g = rt.graph();
     // Each step adds 1 to every cell: after STEPS steps every cell equals STEPS.
-    g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+    g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     auto rep = g.run(STEPS).value();
 
@@ -62,7 +62,7 @@ TEST(Integration_CompletionLatch, ReRunsCleanlyOnTheSamePlan)
     for (std::size_t i = 0; i < N; ++i) field[i] = 0;
 
     auto g = rt.graph();
-    g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+    g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     // The latch resets between the three run() calls and the sentinel still signals; see README.md.
     g.run(10).value();

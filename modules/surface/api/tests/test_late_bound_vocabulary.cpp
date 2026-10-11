@@ -138,8 +138,8 @@ namespace
     {
         int* m = marks.data();
         auto g = rt.graph();
-        g.add(std::move(window), capacity, Reads{}, Writes(marks),
-              [m](std::size_t i) { m[i] = 1; });
+        g.add_dynamic(std::move(window), capacity, Reads{}, Writes(marks),
+                      [m](std::size_t i) { m[i] = 1; });
         g.run().value();
 
         std::size_t ran = 0;
@@ -307,7 +307,7 @@ TEST(Integration_LateBoundVocabulary, MembersChainOnANamedDynamic)
         .based_at([] { return std::size_t{10}; });
 
     auto g = rt.graph();
-    g.add(std::move(window), CAPACITY, Reads{}, Writes(buf), [p](std::size_t i) { p[i] += 1; });
+    g.add_dynamic(std::move(window), CAPACITY, Reads{}, Writes(buf), [p](std::size_t i) { p[i] += 1; });
     g.run().value();
 
     for (std::size_t i = 0; i < CAPACITY; ++i)
