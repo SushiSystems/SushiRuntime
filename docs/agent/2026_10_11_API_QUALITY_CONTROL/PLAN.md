@@ -11,8 +11,11 @@ pass, whose repair plan stood in this file until this rewrite; its open items ar
 
 - Inline: one session owns every build, every diff read and every commit. On 2026-10-11 the owner
   allowed mechanical source edits to be dispatched to `haiku` at `high`, one worker at a time.
-- One task, one acceptance criterion, one build: `sr build --distributed --jobs 4`, then
-  `sr test --distributed`. A consumer step uses `sb`, `sa` or `se` with four threads.
+- One task, one acceptance criterion. On 2026-10-11, after stage 1, the owner stopped the build
+  per task: stages 2 to 5 are checked with `clang -fsyntax-only` over every entry of
+  `compile_commands.json`, and the first build and test run after stage 1 is the one of stage 7,
+  when SushiBLAS and SushiAI are reached. Link errors and run-time behaviour of stages 2 to 5
+  are found there.
 - One build runs at a time on the machine.
 - One commit per task, staged by path, with its tests, its README, its changelog line.
 - Every removal and every rename is breaking and carries `!`. No alias and no forwarder is left
