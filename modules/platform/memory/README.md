@@ -2,8 +2,7 @@
 
 Allocation ownership, the USM registry and epoch-based reclamation.
 
-Everything is in `SushiRuntime::Memory`. `resource_region.hpp` and `resource_liveness.hpp` keep each
-`Core::` spelling as a deprecated forwarder.
+Everything is in `SushiRuntime::Memory`.
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.

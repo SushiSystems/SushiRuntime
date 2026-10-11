@@ -37,9 +37,7 @@ It depends on the C++ standard library and on `core` (`export.hpp`, `error.hpp`,
 `SR_THROW_IF` throws `Core::SushiException` with `Errc::invalid_state`; the message is the
 formatted text and is logged once.
 
-`Core::LogType`, its enumerators `OFF`, `ERR`, `WARN`, `INFO`, `DEBUG` and `Core::ACTIVE_LOG_LEVEL`
-are deprecated spellings of `LogLevel`, its enumerators and `K_LOG_LEVEL_CEILING`. Everything in
-`Core::Detail` belongs to the macros.
+Everything in `Core::Detail` belongs to the macros.
 
 ## Level
 

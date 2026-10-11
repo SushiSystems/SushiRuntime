@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — build: Breaking change: Removed the `Core::` aliases of the memory and observability types, the old `LogLevel` spellings, `LogType`, `ACTIVE_LOG_LEVEL` and the 15 forwarding headers of moved include paths.
 - 2026-10-11 — execution: Breaking change: Removed the 31 deprecated forwarders of `RuntimeContext`, four of `TaskGraph` and two of the rebalancer interfaces (`runtime_context.hpp`, `task_graph.hpp`, `rebalancer_interfaces.hpp`).
 - 2026-10-11 — core: Added `SR_ASSERT`, `SR_VERIFY` and `SR_FATAL`, which stop the process through a handler `set_assertion_handler()` replaces (`assert.hpp`, `assert.cpp`, `test_assert.cpp`).
 - 2026-10-11 — docs: Recorded that the WSL `venv/` folder was deleted from the root and that the install path of `sr` under WSL is open (`REMAINING_WORK.md`).

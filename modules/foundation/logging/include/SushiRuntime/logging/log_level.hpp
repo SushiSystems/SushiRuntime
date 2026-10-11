@@ -49,17 +49,8 @@ namespace SushiRuntime
             Error = 1, /**< An operation failed. */
             Warn  = 2, /**< The runtime recovered or fell back. */
             Info  = 3, /**< A lifecycle event. */
-            Debug = 4, /**< Internal state at a decision point. */
-
-            OFF   [[deprecated("use LogLevel::Off")]]   = Off,   /**< Equals Off. */
-            ERR   [[deprecated("use LogLevel::Error")]] = Error, /**< Equals Error. */
-            WARN  [[deprecated("use LogLevel::Warn")]]  = Warn,  /**< Equals Warn. */
-            INFO  [[deprecated("use LogLevel::Info")]]  = Info,  /**< Equals Info. */
-            DEBUG [[deprecated("use LogLevel::Debug")]] = Debug  /**< Equals Debug. */
+            Debug = 4  /**< Internal state at a decision point. */
         };
-
-        /** @brief Names LogLevel by the spelling it had before v0.4.0. */
-        using LogType [[deprecated("use LogLevel")]] = LogLevel;
 
         #if !SR_ENABLE_LOGGING
             /** @brief Holds the highest level this translation unit compiles log calls for. */
@@ -71,10 +62,6 @@ namespace SushiRuntime
             /** @brief Holds the highest level this translation unit compiles log calls for. */
             constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Debug;
         #endif
-
-        /** @brief Names K_LOG_LEVEL_CEILING by the spelling it had before v0.4.0. */
-        [[deprecated("use K_LOG_LEVEL_CEILING")]]
-        constexpr LogLevel ACTIVE_LOG_LEVEL = K_LOG_LEVEL_CEILING;
 
         /**
          * @brief Sets the level of the whole process; records above it are dropped unformatted.

@@ -268,12 +268,4 @@ namespace SushiRuntime
         };
 
     } // namespace Observability
-
-    namespace Core
-    {
-        /** @brief Names Observability::ProfilingLedger by its spelling before v0.4.0. */
-        using ProfilingLedger [[deprecated("use Observability::ProfilingLedger")]] =
-            Observability::ProfilingLedger;
-
-    } // namespace Core
 } // namespace SushiRuntime

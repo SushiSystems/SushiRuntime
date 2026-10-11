@@ -4,38 +4,12 @@
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
 
-# Composes the module object libraries into the one shared library, writes the forwarding
-# headers of moved include paths. cmake/SushiRuntimeInstall.cmake installs and exports it.
-
-include("${CMAKE_CURRENT_LIST_DIR}/SushiRuntimeMovedHeaders.cmake")
-
-# Old include paths resolve through this root. Only the library target carries it, so a
-# module cannot include an old path.
-set(SR_FORWARDING_INCLUDE_ROOT "${PROJECT_BINARY_DIR}/forwarding/include")
-
-# Writes one forwarding header per row of SUSHIRUNTIME_MOVED_HEADERS.
-function(sushiruntime_write_forwarding_headers)
-    foreach(row IN LISTS SUSHIRUNTIME_MOVED_HEADERS)
-        string(REPLACE "|" ";" paths "${row}")
-        list(POP_FRONT paths old_path)
-        list(GET paths 0 SR_FORWARDING_FIRST_TARGET)
-        get_filename_component(SR_FORWARDING_FILE_NAME "${old_path}" NAME)
-        set(SR_FORWARDING_INCLUDES "")
-        foreach(new_path IN LISTS paths)
-            string(APPEND SR_FORWARDING_INCLUDES "#include <${new_path}>\n")
-        endforeach()
-        configure_file(
-            "${SR_CMAKE_DIR}/SushiRuntimeForwardingHeader.hpp.in"
-            "${SR_FORWARDING_INCLUDE_ROOT}/${old_path}"
-            @ONLY)
-    endforeach()
-endfunction()
+# Composes the module object libraries into the one shared library.
+# cmake/SushiRuntimeInstall.cmake installs and exports it.
 
 # Declares the shared library `sushiruntime` (alias SushiRuntime::SushiRuntime) from the
 # object libraries the modules recorded.
 function(sushiruntime_compose_library)
-    sushiruntime_write_forwarding_headers()
-
     # Before 1.0 a minor release may break the ABI, so the minor number is part of the name
     # a program is linked against.
     if(PROJECT_VERSION_MAJOR EQUAL 0)
@@ -59,7 +33,6 @@ function(sushiruntime_compose_library)
         target_include_directories(sushiruntime PUBLIC "$<BUILD_INTERFACE:${include_root}>")
     endforeach()
     target_include_directories(sushiruntime PUBLIC
-        "$<BUILD_INTERFACE:${SR_FORWARDING_INCLUDE_ROOT}>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 
     sushiruntime_apply_build_policy(sushiruntime)

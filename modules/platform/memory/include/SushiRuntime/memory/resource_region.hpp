@@ -113,14 +113,4 @@ namespace SushiRuntime
         };
 
     } // namespace Memory
-
-    namespace Core
-    {
-        /** @brief Deprecated Core:: name for Memory::ResourceID. */
-        using ResourceID [[deprecated("use Memory::ResourceID")]] = Memory::ResourceID;
-
-        /** @brief Deprecated Core:: name for Memory::ResourceRegion. */
-        using ResourceRegion [[deprecated("use Memory::ResourceRegion")]] = Memory::ResourceRegion;
-
-    } // namespace Core
 } // namespace SushiRuntime
