@@ -52,27 +52,29 @@ namespace SushiRuntime
              * @param device_index The device queue to inspect.
              * @return The queried capabilities.
              */
-            SUSHIRUNTIME_API InteropCapabilities query_capabilities(
+            [[nodiscard]] SUSHIRUNTIME_API InteropCapabilities query_capabilities(
                 Execution::RuntimeContext& context, std::size_t device_index);
 
             /**
              * @brief Allocates host memory another API can import.
-             * @return An allocation aligned and rounded to alignment.
+             * @return An allocation aligned and rounded to alignment, or an empty one that
+             *         allocates nothing when @p bytes is zero.
              * @throws Core::SushiException With allocation_failed on a non-power-of-two
-             *        alignment, or when the allocation fails.
+             *        alignment, a size that overflows when rounded, or a failed allocation.
              */
-            SUSHIRUNTIME_API Memory::Allocation export_host_memory(
+            [[nodiscard]] SUSHIRUNTIME_API Memory::Allocation export_host_memory(
                 const std::shared_ptr<Execution::RuntimeContext>& context, std::size_t bytes,
                 std::size_t device_index, std::size_t alignment);
 
             /**
              * @brief Imports device memory another API exported.
-             * @param descriptor Names the exported handle and its device.
-             * @throws Core::SushiException With unsupported when the device cannot import
-             *        external memory, or invalid_access when @p descriptor names another
-             *        platform's handle kind, a region past its allocation or another device.
+             * @param descriptor Names the exported handle; the caller keeps ownership of it.
+             * @return The mapped region, or an empty allocation that imports nothing when
+             *         @p bytes is zero and @p descriptor passes every check.
+             * @throws Core::SushiException With unsupported when the device cannot import, or
+             *        invalid_access when @p descriptor is refused (see the module README).
              */
-            SUSHIRUNTIME_API Memory::Allocation import_device_memory(
+            [[nodiscard]] SUSHIRUNTIME_API Memory::Allocation import_device_memory(
                 const std::shared_ptr<Execution::RuntimeContext>& context,
                 const ExternalMemoryDescriptor& descriptor, std::size_t bytes,
                 std::size_t device_index);

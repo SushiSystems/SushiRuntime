@@ -21,7 +21,7 @@
 
 /**
  * @file interop.hpp
- * @brief Declares Interop, the fluent facade over the memory pairing entry points.
+ * @brief Declares Interop, the Buffer-typed facade over the memory pairing entry points.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/interop/README.md
  */
@@ -43,8 +43,10 @@ namespace SushiRuntime
 {
     namespace API
     {
+        class Runtime;
+
         /**
-         * @brief Provides a fluent seam onto SushiRuntime's SYCL/Vulkan interop primitives.
+         * @brief Wraps SushiRuntime's SYCL/Vulkan interop primitives in Buffer-typed calls.
          *
          * See docs/design/SYCL_VULKAN_INTEROP.md §3 in the SushiEngine repository.
          */
@@ -52,20 +54,12 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Binds the facade to the runtime context it forwards to.
-                 * @param context The context whose queues the facade acts on.
-                 */
-                explicit Interop(std::shared_ptr<Execution::RuntimeContext> context) noexcept
-                    : context_(std::move(context))
-                {
-                }
-
-                /**
                  * @brief Reports what @p device offers a memory pairing.
                  * @param device The device queue to inspect.
                  * @return The queried capabilities.
                  */
-                SushiRuntime::Interop::InteropCapabilities capabilities(DeviceIndex device) const
+                [[nodiscard]] SushiRuntime::Interop::InteropCapabilities
+                capabilities(DeviceIndex device) const
                 {
                     return SushiRuntime::Interop::Detail::query_capabilities(*context_, device.value());
                 }
@@ -79,8 +73,8 @@ namespace SushiRuntime
                  * @return The buffer, its address and its rounded byte size.
                  */
                 template <typename T>
-                SushiRuntime::Interop::HostExport<T> export_host(std::size_t count, DeviceIndex device,
-                                                                 std::size_t alignment)
+                [[nodiscard]] SushiRuntime::Interop::HostExport<T>
+                export_host(std::size_t count, DeviceIndex device, std::size_t alignment) const
                 {
                     Memory::Allocation allocation = SushiRuntime::Interop::Detail::export_host_memory(
                         context_, count * sizeof(T), device.value(), alignment);
@@ -94,14 +88,15 @@ namespace SushiRuntime
                 /**
                  * @brief Imports a device buffer another API exported.
                  * @tparam T        Element type.
-                 * @param descriptor Names the exported handle and its device.
+                 * @param descriptor Names the exported handle; the caller keeps ownership of it.
                  * @param count     Number of elements to import.
                  * @param device    The device queue to import on.
-                 * @return A device-resident buffer over the imported region.
+                 * @return A device-resident buffer over the region; empty when @p count is 0.
                  */
                 template <typename T>
-                Buffer<T> import_device(const SushiRuntime::Interop::ExternalMemoryDescriptor& descriptor,
-                                        std::size_t count, DeviceIndex device)
+                [[nodiscard]] Buffer<T>
+                import_device(const SushiRuntime::Interop::ExternalMemoryDescriptor& descriptor,
+                              std::size_t count, DeviceIndex device) const
                 {
                     Memory::Allocation allocation = SushiRuntime::Interop::Detail::import_device_memory(
                         context_, descriptor, count * sizeof(T), device.value());
@@ -109,7 +104,18 @@ namespace SushiRuntime
                 }
 
             private:
-                /** @brief Holds the runtime context the facade forwards to. */
+                friend class Runtime;
+
+                /**
+                 * @brief Binds the facade to the runtime context it forwards to.
+                 * @param context Must not be null.
+                 */
+                explicit Interop(std::shared_ptr<Execution::RuntimeContext> context) noexcept
+                    : context_(std::move(context))
+                {
+                }
+
+                /** @brief Holds the runtime context the facade forwards to; never null. */
                 std::shared_ptr<Execution::RuntimeContext> context_;
         };
 

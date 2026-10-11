@@ -42,9 +42,17 @@ namespace SushiRuntime
          */
         struct InteropCapabilities
         {
-            bool host_export = false;   /**< Reports whether the device's queue offers host USM. */
-            bool device_import = false; /**< Reports whether the device imports exported memory. */
-            std::optional<DeviceUuid> device_uuid; /**< Holds the device's UUID, when it has one. */
+            /** @brief Reports whether the device's queue offers host USM. */
+            bool host_export = false;
+            /**
+             * @brief Reports whether import_device can import on the device.
+             *
+             * True only when the toolchain has the bindless-images extension, the device is a
+             * GPU, it reports the external-memory-import aspect and device_uuid holds a value.
+             */
+            bool device_import = false;
+            /** @brief Holds the device's UUID, when it has one. */
+            std::optional<DeviceUuid> device_uuid;
         };
 
     } // namespace Interop

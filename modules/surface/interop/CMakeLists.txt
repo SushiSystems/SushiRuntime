@@ -9,7 +9,7 @@ sushiruntime_add_module(
     SYCL
     SOURCES interop.cpp
     DEPENDS core memory
-    PRIVATE_DEPENDS device execution)
+    PRIVATE_DEPENDS logging device execution)
 
 sushiruntime_add_module_tests(
     MODULE interop

@@ -13,13 +13,15 @@ Buffer. This folder depends on that one, never the reverse.
 
 ### Interop
 
-Runtime::interop() returns the facade by value. It holds a shared_ptr to the RuntimeContext, and so
+Runtime::interop() returns the facade by value and is the only way to get one: the constructor is
+private and Runtime is its friend, so a facade never holds a null context. It holds a shared_ptr to
+the RuntimeContext, and so
 does every Buffer it returns, so the context stays alive until the last of them is destroyed.
 
 capabilities() is the question to ask before either call below. host_export is true when the device
 offers host USM (sycl::aspect::usm_host_allocations). device_import is true only when the toolchain has the bindless-images extension, the
-device is a GPU and it reports the external-memory-import aspect. device_uuid is empty when the
-device does not report one.
+device is a GPU, it reports the external-memory-import aspect and it reports a UUID. device_uuid is
+empty when the device does not report one.
 
 ### export_host
 
@@ -36,13 +38,21 @@ it, the host may not index it. The runtime records the mapped address in its USM
 that touches the Buffer is routed to the importing device like any other.
 
 The call throws SushiException with unsupported when the device cannot import (see capabilities()),
-and with invalid_access when the descriptor's handle kind belongs to another platform, when its
-region ends past allocation_bytes, or when the device reports no UUID or a UUID different from
+and with invalid_access when the descriptor's kind is Unspecified (the default) or belongs to
+another platform, when an OpaqueWin32 handle is null or an OpaqueFd handle is above INT_MAX, when
+its region ends past allocation_bytes, or when the device's UUID differs from
 ExternalMemoryDescriptor::device. A throw part-way through releases whatever steps had completed.
 
+A count of zero with a descriptor that passes those checks returns an empty Buffer and imports
+nothing.
+
+SushiRuntime never closes or duplicates ExternalMemoryDescriptor::handle; the caller keeps
+ownership of it. `modules/surface/interop/README.md` lists each point of the call and what is not
+established about the SYCL backend.
+
 Destroying the Buffer removes the address from the registry, unmaps the region and releases the
-SYCL import handle, in that order. It makes no other call, so freeing the allocation stays with the
-API that exported it.
+SYCL import handle, in that order. A step that fails is logged at ERROR and the later steps still
+run. It makes no other call, so freeing the allocation stays with the API that exported it.
 
 ## host_export.hpp
 
