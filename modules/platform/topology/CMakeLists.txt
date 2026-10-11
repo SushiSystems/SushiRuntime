@@ -5,7 +5,7 @@
 # Commercial use requires a licence from Sushi Systems.
 
 sushiruntime_add_module(
-    NAME topology TIER platform
+    NAME topology TIER platform INTERNAL
     SYCL
     SOURCES
         affinity.cpp

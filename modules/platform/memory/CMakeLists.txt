@@ -5,7 +5,7 @@
 # Commercial use requires a licence from Sushi Systems.
 
 sushiruntime_add_module(
-    NAME memory TIER platform
+    NAME memory TIER platform INTERNAL
     SYCL
     SOURCES usm_allocator.cpp
     DEPENDS core

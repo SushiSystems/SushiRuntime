@@ -1,6 +1,7 @@
 # memory
 
 Allocation ownership, the USM registry and epoch-based reclamation.
+The module is internal: its headers are for the other modules of the library and are not installed.
 
 Everything is in `SushiRuntime::Internal::Memory`.
 

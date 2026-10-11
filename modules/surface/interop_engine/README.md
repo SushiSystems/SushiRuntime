@@ -4,6 +4,7 @@ The non-template entry points behind the `Interop` facade: they query a device, 
 memory and import device memory against the engine's `RuntimeContext`. The module is internal:
 its header is in `include/SushiRuntime/interop_engine/` for `api` to include, and it is not
 installed.
+The module is internal: its headers are for the other modules of the library and are not installed.
 
 It depends on `core`, `memory` and `interop` in its header, and on `logging`, `device` and
 `execution` in its source.

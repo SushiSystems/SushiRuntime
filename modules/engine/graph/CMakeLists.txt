@@ -5,7 +5,7 @@
 # Commercial use requires a licence from Sushi Systems.
 
 sushiruntime_add_module(
-    NAME graph TIER engine
+    NAME graph TIER engine INTERNAL
     SYCL
     SOURCES compiled_graph.cpp dependency_tracker.cpp task_graph.cpp
     DEPENDS core memory observability task region

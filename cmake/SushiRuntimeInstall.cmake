@@ -15,10 +15,11 @@ include(GNUInstallDirs)
 set(SR_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/SushiRuntime"
     CACHE STRING "Where the SushiRuntime CMake package files are installed")
 
-# Installs the `sushiruntime` target, the include roots the modules recorded, the export
+# Installs the `sushiruntime` target, the include roots of the public modules, the export
 # set and the package configuration files. Call it after sushiruntime_compose_library().
 function(sushiruntime_install_package)
-    get_property(include_roots GLOBAL PROPERTY SUSHIRUNTIME_INSTALLED_INCLUDE_ROOTS)
+    # A module declared INTERNAL is absent from this list, so its headers are not installed.
+    get_property(include_roots GLOBAL PROPERTY SUSHIRUNTIME_PUBLIC_INCLUDE_ROOTS)
 
     # The export set carries the library and the floating-point contract it links
     # PUBLIC. CMake refuses to export a target whose interface names a target no export

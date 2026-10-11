@@ -1,6 +1,7 @@
 # device
 
 The device inventory and the SYCL queues built on it.
+The module is internal: its headers are for the other modules of the library and are not installed.
 
 ## What the module owns
 

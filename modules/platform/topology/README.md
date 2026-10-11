@@ -1,6 +1,7 @@
 # topology
 
 Hardware discovery, NUMA mapping and thread affinity.
+The module is internal: its headers are for the other modules of the library and are not installed.
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.

@@ -5,7 +5,7 @@
 # Commercial use requires a licence from Sushi Systems.
 
 sushiruntime_add_module(
-    NAME task TIER engine
+    NAME task TIER engine INTERNAL
     SYCL
     SOURCES node_placement.cpp node_widths.cpp
     DEPENDS core memory observability report region)

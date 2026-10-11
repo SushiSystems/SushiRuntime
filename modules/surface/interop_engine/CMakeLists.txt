@@ -5,7 +5,7 @@
 # Commercial use requires a licence from Sushi Systems.
 
 sushiruntime_add_module(
-    NAME interop_engine TIER surface
+    NAME interop_engine TIER surface INTERNAL
     SYCL
     SOURCES interop_engine.cpp
     DEPENDS core memory interop

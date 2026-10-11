@@ -5,7 +5,7 @@
 # Commercial use requires a licence from Sushi Systems.
 
 sushiruntime_add_module(
-    NAME scheduler TIER engine
+    NAME scheduler TIER engine INTERNAL
     SYCL
     SOURCES
         dispatch_placement.cpp
