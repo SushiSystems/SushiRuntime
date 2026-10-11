@@ -38,6 +38,8 @@
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_widths.hpp>
+#include <SushiRuntime/task/late_bindings.hpp>
+#include <SushiRuntime/task/task_work.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;

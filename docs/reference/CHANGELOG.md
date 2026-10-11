@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 2026-10-12 — api: Breaking change: Compiled `Recorder::record`, `PlanCache` and `RegionComposer` into the library; no header of the graph folder includes an engine header (`recorder.cpp`, `plan_cache.cpp`).
+- 2026-10-12 — api: Breaking change: Moved the scheduler loop and the chain loop of `StepDriver` into the library, behind `Detail::run_steps` (`step_run.hpp`, `step_run.cpp`).
+- 2026-10-12 — api: Breaking change: Replaced the replay callable of a recorded node with `Detail::NodeDescription`, the regions, the type-erased work and a kind (`node_description.hpp`, `node_emitters.cpp`).
+- 2026-10-12 — api: Breaking change: Added `ContextHandle`, which a recorder, a region and both graph types hold in place of a shared pointer to the engine's context (`context_handle.hpp`).
+- 2026-10-12 — api: Breaking change: Moved three headers that name engine types out of the installed tree into `source/` and removed `usm_scratch.hpp` and `live_fields.hpp` (`boundary_access.hpp`).
+- 2026-10-12 — region: Breaking change: Moved `Liveness`, `LivenessToken`, `LivenessObserver` and `make_liveness` from the `memory` module to `region`, declared in `SushiRuntime` (`liveness.hpp`).
 - 2026-10-12 — cmake: Breaking change: Added the `INTERNAL` mark of `sushiruntime_add_module`; the eleven modules that carry it are no longer installed (`SushiRuntimeModule.cmake`, `SushiRuntimeInstall.cmake`).
 - 2026-10-12 — task: Breaking change: Removed the using-declaration that named `TaskMetadata` in `SushiRuntime`; the type is `Internal::Graph::TaskMetadata` only (`task_types.hpp`).
 - 2026-10-12 — machine: Breaking change: Renamed `HardwareFilterConfig` to `DeviceFilter` and moved it out of `topology/hw_discovery.hpp` (`machine/device_filter.hpp`).

@@ -6,7 +6,15 @@
 
 sushiruntime_add_module(
     NAME api TIER surface
-    HEADER_ONLY SYCL
+    SYCL
+    SOURCES
+        context_handle.cpp
+        late_window.cpp
+        node_emitters.cpp
+        plan_cache.cpp
+        recorder.cpp
+        region_composer.cpp
+        step_run.cpp
     DEPENDS
         core
         logging

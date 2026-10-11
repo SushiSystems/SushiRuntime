@@ -32,7 +32,7 @@
 #include <vector>
 
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
-#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -70,6 +70,6 @@ namespace SushiRuntime
 
         std::vector<BufferRegion> reads;    /**< Read regions, in the order given. */
         std::vector<BufferRegion> writes;   /**< Write regions, in the order given. */
-        std::vector<Internal::Memory::LivenessObserver> lives;  /**< Observers a run checks first. */
+        std::vector<LivenessObserver> lives;  /**< Observers a run checks first. */
     };
 } // namespace SushiRuntime

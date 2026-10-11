@@ -35,18 +35,20 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
-        /** @brief Declares the test-only friend access to DynamicGraph::plan_. */
+        /** @brief Declares the test-only friend access to the plan of a DynamicGraph. */
         struct DynamicGraphNodeEventsTestAccess
         {
             static const SushiRuntime::Internal::Graph::CompiledGraph&
             plan(const DynamicGraph& g) noexcept
             {
-                return g.plan_;
+                return g.compiled_plan();
             }
         };
     }

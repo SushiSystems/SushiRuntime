@@ -32,7 +32,7 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
-#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 
 namespace SushiRuntime
 {
@@ -45,7 +45,7 @@ namespace SushiRuntime
     {
         const T* ptr;  /**< Element pointer handed to the kernel. */
         void* key;     /**< Read dependency key for this argument. */
-        Internal::Memory::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
+        LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
         static constexpr bool reads = true;   /**< Contributes a read key. */
         static constexpr bool writes = false; /**< Contributes no write key. */
 
@@ -71,7 +71,7 @@ namespace SushiRuntime
     {
         T* ptr;        /**< Element pointer handed to the kernel. */
         void* key;     /**< Write dependency key for this argument. */
-        Internal::Memory::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
+        LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
         static constexpr bool reads = false;  /**< Contributes no read key. */
         static constexpr bool writes = true;  /**< Contributes a write key. */
 
@@ -97,7 +97,7 @@ namespace SushiRuntime
     {
         T* ptr;        /**< Element pointer handed to the kernel. */
         void* key;     /**< Dependency key counted as both read and write. */
-        Internal::Memory::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
+        LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
         static constexpr bool reads = true;   /**< Contributes a read key. */
         static constexpr bool writes = true;  /**< Contributes a write key. */
 

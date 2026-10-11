@@ -181,3 +181,14 @@ declare `LogLevel`, `set_log_level`, `log_level`, `LogSink`, `set_log_sink` and
 calls; the `SR_LOG_*` macros and `log_write` stay in `logging/logger.hpp`, which the surface does
 not include. A consumer's test calls `set_log_synchronous(true)` before it installs a sink, so
 each record has reached the sink when the call that logged it returns.
+
+## context_handle.hpp
+
+### ContextHandle
+
+A ContextHandle shares ownership of one runtime's context. Every graph, recorder and region
+holds one, so the context lives as long as the last of them. The header forward-declares the
+context and includes no header of the engine: a program that holds a handle can copy it and test
+it for emptiness, and nothing more. The library reaches the context through
+`Detail::ContextAccess`, the handle's one friend, which the internal module `execution` declares
+(modules/engine/execution/README.md).

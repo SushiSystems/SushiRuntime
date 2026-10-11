@@ -31,7 +31,7 @@
 #include <memory>
 #include <utility>
 
-#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 
 namespace SushiRuntime
 {
@@ -94,14 +94,14 @@ namespace SushiRuntime
              * @return An empty observer for a handle that owns no allocation.
              */
             template <typename T>
-            static Internal::Memory::LivenessObserver liveness(const Buffer<T>& buffer) noexcept
+            static LivenessObserver liveness(const Buffer<T>& buffer) noexcept
             {
                 return buffer.liveness_;
             }
 
             /** @brief Returns the observer of the State's current field. */
             template <typename T>
-            static Internal::Memory::LivenessObserver liveness(const State<T>& state) noexcept
+            static LivenessObserver liveness(const State<T>& state) noexcept
             {
                 return liveness(state.current_);
             }

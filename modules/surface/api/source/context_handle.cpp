@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* resource_liveness.hpp                                                  */
+/* context_handle.cpp                                                     */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,43 +20,40 @@
 /**************************************************************************/
 
 /**
- * @file resource_liveness.hpp
- * @brief Declares the liveness token a data handle owns and a graph weakly observes.
+ * @file context_handle.cpp
+ * @brief Implements ContextAccess, which returns the context a surface handle shares.
  * @author Mustafa Garip
- * @see modules/platform/memory/README.md
+ * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
  */
 
-#pragma once
+#include <SushiRuntime/execution/context_access.hpp>
 
 #include <memory>
 
+#include <SushiRuntime/api/runtime/context_handle.hpp>
+#include <SushiRuntime/api/runtime/runtime.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
+
 namespace SushiRuntime
 {
-    namespace Internal::Memory
+    namespace Detail
     {
-        /**
-         * @brief An empty object whose lifetime mirrors a data handle's allocation.
-         *
-         * Owned through a shared_ptr by the handle and observed through a weak_ptr by
-         * any graph that recorded the handle. It holds no data because only its
-         * liveness matters; a non-expired weak observer means the allocation behind
-         * the recorded pointer is still valid.
-         */
-        struct Liveness
+        Internal::Execution::RuntimeContext&
+        ContextAccess::context(const ContextHandle& handle) noexcept
         {
-        };
-
-        /** @brief The owning side of a liveness token, held by a data handle. */
-        using LivenessToken = std::shared_ptr<Liveness>;
-
-        /** @brief The observing side of a liveness token, held by a graph. */
-        using LivenessObserver = std::weak_ptr<Liveness>;
-
-        /** @brief Creates a fresh live token for a newly allocated handle. */
-        inline LivenessToken make_liveness()
-        {
-            return std::make_shared<Liveness>();
+            return *handle.context_;
         }
 
-    } // namespace Memory
+        const std::shared_ptr<Internal::Execution::RuntimeContext>&
+        ContextAccess::shared(const ContextHandle& handle) noexcept
+        {
+            return handle.context_;
+        }
+
+        Internal::Execution::RuntimeContext&
+        ContextAccess::context(const Runtime& runtime) noexcept
+        {
+            return *runtime.context_;
+        }
+    } // namespace Detail
 } // namespace SushiRuntime

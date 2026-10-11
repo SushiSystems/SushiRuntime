@@ -34,7 +34,7 @@
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
-#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -67,25 +67,25 @@ namespace SushiRuntime
 
         // Only typed handles are watched; a bare BufferRegion yields an empty observer.
         template <typename T>
-        inline Internal::Memory::LivenessObserver liveness_of(const Buffer<T>& b) noexcept
+        inline LivenessObserver liveness_of(const Buffer<T>& b) noexcept
         {
             return HandleAccess::liveness(b);
         }
         template <typename T>
-        inline Internal::Memory::LivenessObserver liveness_of(const State<T>& s) noexcept
+        inline LivenessObserver liveness_of(const State<T>& s) noexcept
         {
             return HandleAccess::liveness(s);
         }
-        inline Internal::Memory::LivenessObserver liveness_of(const BufferRegion&) noexcept { return {}; }
+        inline LivenessObserver liveness_of(const BufferRegion&) noexcept { return {}; }
 
         /**
          * @brief Appends a handle's observer only when it watches an allocation.
          * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
          */
         template <class Handle>
-        inline void gather_life(std::vector<Internal::Memory::LivenessObserver>& out, const Handle& h)
+        inline void gather_life(std::vector<LivenessObserver>& out, const Handle& h)
         {
-            Internal::Memory::LivenessObserver o = liveness_of(h);
+            LivenessObserver o = liveness_of(h);
             if (!o.expired())
                 out.push_back(std::move(o));
         }
@@ -100,7 +100,7 @@ namespace SushiRuntime
     struct Reads
     {
         std::vector<BufferRegion> keys;  /**< Read regions, in argument order. */
-        std::vector<Internal::Memory::LivenessObserver> lives; /**< Observers of typed handles read. */
+        std::vector<LivenessObserver> lives; /**< Observers of typed handles read. */
 
         /**
          * @brief Collects the read region and liveness of each handle passed.
@@ -122,7 +122,7 @@ namespace SushiRuntime
     struct Writes
     {
         std::vector<BufferRegion> keys;  /**< Write regions, in argument order. */
-        std::vector<Internal::Memory::LivenessObserver> lives; /**< Observers of the typed handles written. */
+        std::vector<LivenessObserver> lives; /**< Observers of the typed handles written. */
 
         /**
          * @brief Collects the write region and liveness of each handle passed.

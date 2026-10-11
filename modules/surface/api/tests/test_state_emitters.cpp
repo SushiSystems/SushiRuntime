@@ -21,7 +21,7 @@
 
 /**
  * @file test_state_emitters.cpp
- * @brief Tests the nodes of State and coupled rules: const inputs, launch width, each emitter.
+ * @brief Tests the nodes of State and coupled rules: const inputs, launch width, each description.
  * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
@@ -40,9 +40,14 @@
 #include <SushiRuntime/api/detail/emit_dynamic.hpp>
 #include <SushiRuntime/api/detail/emit_state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
+#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/task/late_bindings.hpp>
+
+#include "node_emitters.hpp"
 
 using namespace SushiRuntime;
 
@@ -74,14 +79,13 @@ namespace
         return Detail::HandleAccess::view(state);
     }
 
-    /** @brief Replays one emit callable onto a backing graph of its own and runs the plan once. */
-    template <class Emit>
-    void run_once(Runtime& rt, const Emit& emit)
+    /** @brief Adds one described node to a backing graph of its own and runs the plan once. */
+    void run_once(Runtime& rt, const Detail::NodeDescription& description)
     {
         Internal::Graph::TaskGraph backing;
-        emit(backing, std::nullopt);
+        Detail::add_described_node(backing, description, std::nullopt);
         Internal::Graph::CompiledGraph plan = backing.compile().value();
-        rt.unsafe_context().execution_engine().execute(plan).value();
+        Detail::ContextAccess::context(rt).execution_engine().execute(plan).value();
     }
 } // namespace
 
@@ -143,55 +147,55 @@ TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWi
     EXPECT_EQ(widths, (std::vector<std::size_t>{K_PREFIX, K_PREFIX + 1, K_WIDTH}));
 }
 
-/** @brief Tests the State emitter over a launch, replayed outside a recorder. */
+/** @brief Tests the State emitter over a launch, added outside a recorder. */
 TEST(Integration_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
-    auto emit = Detail::state_launch_node(
+    const Detail::NodeDescription described = Detail::state_launch_node(
         view_of(field), K_PREFIX, [](std::size_t i, const Word* current, Word* next)
         {
             next[i] = current[i] + 1u;
         });
 
-    run_once(rt, emit);
+    run_once(rt, described);
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
         ASSERT_EQ(field.next()[i], i < K_PREFIX ? static_cast<Word>(i) + K_SEED + 1u : K_CANARY)
             << "at i=" << i;
 }
 
-/** @brief Tests the coupled emitter over a launch, replayed outside a recorder. */
+/** @brief Tests the coupled emitter over a launch, added outside a recorder. */
 TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
 {
     auto rt = Runtime::create().value();
     auto out = seeded_state(rt);
     auto input = seeded_state(rt);
-    auto emit = Detail::coupled_launch_node(
+    const Detail::NodeDescription described = Detail::coupled_launch_node(
         view_of(out), std::make_tuple(view_of(input)), out.size(),
         [](std::size_t i, const Word* current, Word* next, const Word* other)
         {
             next[i] = current[i] + 2u * other[i];
         });
 
-    run_once(rt, emit);
+    run_once(rt, described);
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
         ASSERT_EQ(out.next()[i], 3u * (static_cast<Word>(i) + K_SEED)) << "at i=" << i;
 }
 
-/** @brief Tests the late-bound State emitter, replayed outside a recorder. */
+/** @brief Tests the late-bound State emitter, added outside a recorder. */
 TEST(Integration_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     bindings->count.store(K_PREFIX);
-    auto emit = Detail::dynamic_state_node(
+    const Detail::NodeDescription described = Detail::dynamic_state_node(
         view_of(field), field.size(), bindings, nullptr, std::vector<BufferRegion>{},
         [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
-    run_once(rt, emit);
+    run_once(rt, described);
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
         ASSERT_EQ(field.next()[i], i < K_PREFIX ? static_cast<Word>(i) + K_SEED + 1u : K_CANARY)

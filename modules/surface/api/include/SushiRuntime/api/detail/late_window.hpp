@@ -38,12 +38,37 @@
 
 #include <SushiRuntime/api/detail/device_fault.hpp>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/task/late_bindings.hpp>
+#include <SushiRuntime/core/export.hpp>
 
 namespace SushiRuntime
 {
+    namespace Internal::Graph
+    {
+        struct LateBindings;
+    } // namespace Internal::Graph
+
     namespace Detail
     {
+        /**
+         * @brief Holds what a late-bound node's per-step controls say at one submit.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        struct LateWindow
+        {
+            std::size_t count = 0;                     /**< Host count; unused when rest_of_capacity. */
+            std::size_t base = 0;                      /**< Host base. */
+            const std::uint32_t* count_slot = nullptr; /**< Device-written count, or null. */
+            const std::uint32_t* base_slot = nullptr;  /**< Device-written base, or null. */
+            bool rest_of_capacity = false;             /**< No host count was set for the step. */
+        };
+
+        /**
+         * @brief Reads a node's per-step controls once, for the submit of one step.
+         * @return The host count and base, and the address of each device slot the node has.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API LateWindow read_late_window(
+            const Internal::Graph::LateBindings& bindings) noexcept;
+
         /**
          * @brief Holds the half-open element window a late-bound node iterates this step.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
@@ -55,27 +80,22 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Resolves a host-sized late-bound node's base and count at dispatch.
-         *
-         * Reads the step-boundary values only, with K_USE_BAKED meaning the rest
-         * of capacity; a node with a device count or base never comes here.
+         * @brief Resolves a host-sized late-bound node's base and count at dispatch; a
+         *        window that states no host count takes the rest of capacity from its base.
          * @param fault The node's fault record; a window that does not fit is written there
          *        as K_DEVICE_FAULT_WINDOW.
          * @return The range, or nothing for a window that does not fit the capacity.
          */
         [[nodiscard]] inline std::optional<LiveRange> resolve_live_range(
-            const ::SushiRuntime::Internal::Graph::LateBindings& lb, std::size_t capacity,
-            std::uint32_t* fault) noexcept
+            const LateWindow& window, std::size_t capacity, std::uint32_t* fault) noexcept
         {
             LiveRange range;
-            range.base = lb.base.load(std::memory_order_relaxed);
+            range.base = window.base;
 
-            const std::size_t live = lb.count.load(std::memory_order_relaxed);
-            // K_USE_BAKED means the rest of the capacity from the base, not the whole buffer.
-            range.count =
-                (live == ::SushiRuntime::Internal::Graph::LateBindings::K_USE_BAKED)
-                    ? capacity - (range.base < capacity ? range.base : capacity)
-                    : live;
+            // No host count means the rest of the capacity from the base, not the whole buffer.
+            range.count = window.rest_of_capacity
+                ? capacity - (range.base < capacity ? range.base : capacity)
+                : window.count;
 
             if (range.base > capacity || range.count > capacity - range.base)
             {
@@ -115,7 +135,7 @@ namespace SushiRuntime
             std::size_t host_count = 0;      /**< Host count when @c count_slot is null. */
             std::size_t host_base = 0;       /**< Host base when @c base_slot is null. */
             std::size_t capacity = 0;        /**< Capacity the window must fit. */
-            bool rest_of_capacity = false;   /**< Whether the host count is K_USE_BAKED. */
+            bool rest_of_capacity = false;   /**< Whether the step states no host count. */
             std::uint32_t* fault = nullptr;  /**< The node's fault record. */
         };
 
@@ -131,27 +151,26 @@ namespace SushiRuntime
          */
         template <class F>
         inline void submit_late_window(sycl::handler& h,
-                                       const ::SushiRuntime::Internal::Graph::LateBindings& lb,
+                                       const Internal::Graph::LateBindings& lb,
                                        std::size_t capacity, std::uint32_t* fault,
                                        const F& kernel)
         {
-            if (lb.device_count == nullptr && lb.device_base == nullptr)
+            const LateWindow window = read_late_window(lb);
+            if (window.count_slot == nullptr && window.base_slot == nullptr)
             {
-                const std::optional<LiveRange> range = resolve_live_range(lb, capacity, fault);
+                const std::optional<LiveRange> range =
+                    resolve_live_range(window, capacity, fault);
                 submit_live_range(h, range ? *range : LiveRange{}, kernel);
                 return;
             }
 
             DeviceWindow w;
-            w.count_slot = (lb.device_count != nullptr)
-                ? lb.device_count + lb.device_count_index : nullptr;
-            w.base_slot = (lb.device_base != nullptr)
-                ? lb.device_base + lb.device_base_index : nullptr;
-            w.host_count = lb.count.load(std::memory_order_relaxed);
-            w.host_base = lb.base.load(std::memory_order_relaxed);
+            w.count_slot = window.count_slot;
+            w.base_slot = window.base_slot;
+            w.host_count = window.count;
+            w.host_base = window.base;
             w.capacity = capacity;
-            w.rest_of_capacity =
-                (w.host_count == ::SushiRuntime::Internal::Graph::LateBindings::K_USE_BAKED);
+            w.rest_of_capacity = window.rest_of_capacity;
             w.fault = fault;
 
             // One work-item even at capacity zero, so a fault there is still recorded.

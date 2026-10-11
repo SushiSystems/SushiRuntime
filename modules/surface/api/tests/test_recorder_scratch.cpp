@@ -33,6 +33,7 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 
 using namespace SushiRuntime;
 

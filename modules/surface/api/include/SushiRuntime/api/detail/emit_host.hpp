@@ -21,7 +21,7 @@
 
 /**
  * @file emit_host.hpp
- * @brief Declares the replay callable of a task that runs on a worker thread.
+ * @brief Declares the description of a task that runs on a worker thread.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
@@ -29,32 +29,29 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
-#include <optional>
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
-        /** @brief Builds the replay of a nullary host task ordered by the regions it names. */
+        /** @brief Describes a nullary host task ordered by the regions it names. */
         template <class F>
-        auto host_node(std::vector<BufferRegion> reads,
-                       std::vector<BufferRegion> writes, F&& kernel,
-                       std::size_t width)
+        NodeDescription host_node(std::vector<BufferRegion> reads,
+                                  std::vector<BufferRegion> writes, F&& kernel,
+                                  std::size_t width)
         {
-            return [kernel = std::forward<F>(kernel), reads = std::move(reads),
-                    writes = std::move(writes), width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
-            {
-                backing_graph.add_native(reads, writes, kernel, {},
-                                         registration).baked_width = width;
-            };
+            NodeDescription description;
+            description.kind = NodeKind::Host;
+            description.reads = std::move(reads);
+            description.writes = std::move(writes);
+            description.width = width;
+            description.work = WorkerWork(std::forward<F>(kernel));
+            return description;
         }
     } // namespace Detail
 } // namespace SushiRuntime

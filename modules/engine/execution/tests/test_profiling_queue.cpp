@@ -31,6 +31,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/execution/runtime_settings.hpp>
 
 #include "test_helpers.hpp"
 #include "test_context.hpp"

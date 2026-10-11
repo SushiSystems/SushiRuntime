@@ -40,7 +40,7 @@
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -162,7 +162,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the observer of the device slot's buffer. */
-            static const Internal::Memory::LivenessObserver& slot_life(const LateCount& count) noexcept
+            static const LivenessObserver& slot_life(const LateCount& count) noexcept
             {
                 return count.slot_.life;
             }

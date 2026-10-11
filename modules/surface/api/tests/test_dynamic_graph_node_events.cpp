@@ -32,6 +32,8 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/task/node.hpp>
 
 #include "dynamic_graph_plan_access.hpp"
 

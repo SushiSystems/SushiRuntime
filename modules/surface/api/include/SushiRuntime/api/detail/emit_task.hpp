@@ -21,7 +21,7 @@
 
 /**
  * @file emit_task.hpp
- * @brief Declares the replay callable of a task that submits its own work on a queue.
+ * @brief Declares the description of a task that submits its own work on a queue.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
@@ -29,42 +29,35 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
-#include <optional>
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
-#include <SushiRuntime/task/task_types.hpp>
-#include <SushiRuntime/task/task_work.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
         /**
-         * @brief Builds the replay of a task body ordered by the regions it names.
+         * @brief Describes a task body ordered by the regions it names.
          * @param kernel Callable invoked as kernel(sycl::queue&, const std::vector<sycl::event>&);
          *        it returns the event that ends its work.
-         * @param width Launch width stamped on the node.
+         * @param width Launch width baked on the node.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class F>
-        auto task_node(std::vector<BufferRegion> reads,
-                       std::vector<BufferRegion> writes, F&& kernel,
-                       std::size_t width)
+        NodeDescription task_node(std::vector<BufferRegion> reads,
+                                  std::vector<BufferRegion> writes, F&& kernel,
+                                  std::size_t width)
         {
-            return [kernel = std::forward<F>(kernel), reads = std::move(reads),
-                    writes = std::move(writes), width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
-            {
-                backing_graph.add_task(::SushiRuntime::Internal::Graph::TaskMetadata{}, reads,
-                                       writes,
-                            ::SushiRuntime::Internal::Graph::HostWork(kernel), {},
-                            registration).baked_width = width;
-            };
+            NodeDescription description;
+            description.kind = NodeKind::Task;
+            description.reads = std::move(reads);
+            description.writes = std::move(writes);
+            description.width = width;
+            description.work = QueueWork(std::forward<F>(kernel));
+            return description;
         }
     } // namespace Detail
 } // namespace SushiRuntime

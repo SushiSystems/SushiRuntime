@@ -47,6 +47,7 @@
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
 #include <SushiRuntime/api/runtime/advanced_controls.hpp>
+#include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/api/runtime/runtime_config.hpp>
 
 namespace SushiRuntime
@@ -90,13 +91,16 @@ namespace SushiRuntime
             ~Runtime() = default;
 
             /** @brief Returns a new, empty graph that runs on this runtime. */
-            [[nodiscard]] Graph graph() const { return Graph(context_); }
+            [[nodiscard]] Graph graph() const { return Graph(ContextHandle(context_)); }
 
             /**
              * @brief Returns a new, empty graph whose work is grouped into regions.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
-            [[nodiscard]] DynamicGraph dynamic_graph() const { return DynamicGraph(context_); }
+            [[nodiscard]] DynamicGraph dynamic_graph() const
+            {
+                return DynamicGraph(ContextHandle(context_));
+            }
 
             /**
              * @brief Allocates a typed buffer of @p count elements on one device.
@@ -175,6 +179,8 @@ namespace SushiRuntime
             }
 
         private:
+            friend struct Detail::ContextAccess;
+
             /** @brief Returns the settings the context takes from a RuntimeConfig. */
             [[nodiscard]] static Internal::Execution::RuntimeSettings
             settings_of(const RuntimeConfig& config) noexcept

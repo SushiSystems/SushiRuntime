@@ -57,40 +57,36 @@
 #include <SushiRuntime/api/detail/emit_task.hpp>
 #include <SushiRuntime/api/detail/emit_tracked.hpp>
 #include <SushiRuntime/api/detail/emit_untracked.hpp>
-#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
-#include <SushiRuntime/api/detail/host_slot_check.hpp>
 #include <SushiRuntime/api/detail/late_count_resolution.hpp>
-#include <SushiRuntime/api/detail/live_fields.hpp>
+#include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/detail/node_spec.hpp>
 #include <SushiRuntime/api/detail/node_stamp.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
-#include <SushiRuntime/api/detail/usm_scratch.hpp>
 #include <SushiRuntime/api/graph/access.hpp>
 #include <SushiRuntime/api/graph/device_sized.hpp>
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/api/launch/extent.hpp>
 #include <SushiRuntime/api/launch/nd_range.hpp>
+#include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/api/vocabulary/coupled.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
 #include <SushiRuntime/api/vocabulary/placement.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/memory/resource_liveness.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
-#include <SushiRuntime/task/late_bindings.hpp>
-#include <SushiRuntime/task/task_types.hpp>
 
 namespace SushiRuntime
 {
-    class PlanCache;
-    class RegionComposer;
+    namespace Detail
+    {
+        struct RecorderReplay;
+    } // namespace Detail
 
     /**
      * @brief Owns the nodes recorded for one graph or region and replays them.
@@ -140,10 +136,10 @@ namespace SushiRuntime
             };
 
             /**
-             * @brief Starts an empty recorder on a runtime context.
-             * @param context Context the recorder allocates scratch from and keeps alive.
+             * @brief Starts an empty recorder on a runtime.
+             * @param context Runtime the recorder allocates scratch from and keeps alive.
              */
-            explicit Recorder(std::shared_ptr<Internal::Execution::RuntimeContext> context)
+            explicit Recorder(ContextHandle context) noexcept
                 : context_(std::move(context))
             {
             }
@@ -266,11 +262,9 @@ namespace SushiRuntime
             std::size_t dynamic_kernel(Dynamic window, std::size_t capacity, Access access,
                                        F&& kernel_body, NodeOptions options = {})
             {
-                if (!admits(options) ||
-                    !admit(Detail::host_device_slots_refusal(*context_, window, next_rule())))
+                if (!admits(options) || !admit(device_slots_refusal(window)))
                     return rule_count();
-                auto bindings = std::make_shared<::SushiRuntime::Internal::Graph::LateBindings>();
-                Detail::adopt_device_bindings(*bindings, window, access.reads, access.lives);
+                auto bindings = Detail::make_late_bindings(window, access.reads, access.lives);
                 Result<std::uint32_t*> fault = fault_record_for(window);
                 if (!admit(fault))
                     return rule_count();
@@ -357,7 +351,7 @@ namespace SushiRuntime
             {
                 if (!admit(placement_refusal(call, placement)))
                     return rule_count();
-                std::vector<Internal::Memory::LivenessObserver> lives;
+                std::vector<LivenessObserver> lives;
                 const std::size_t device = placed_device(placement, lives);
                 return record(Detail::untracked_launch_node(count, device,
                                                             std::forward<F>(kernel_body)),
@@ -378,7 +372,7 @@ namespace SushiRuntime
             {
                 if (!admit(placement_refusal(call, placement)))
                     return rule_count();
-                std::vector<Internal::Memory::LivenessObserver> lives;
+                std::vector<LivenessObserver> lives;
                 const std::size_t device = placed_device(placement, lives);
                 return record(Detail::untracked_range_node(count, device,
                                                            std::forward<F>(kernel_body)),
@@ -400,7 +394,7 @@ namespace SushiRuntime
             {
                 if (!admit(placement_refusal(call, placement)))
                     return rule_count();
-                std::vector<Internal::Memory::LivenessObserver> lives;
+                std::vector<LivenessObserver> lives;
                 const std::size_t device = placed_device(placement, lives);
                 return record(Detail::untracked_launch_node(extent, device,
                                                             std::forward<F>(kernel_body)),
@@ -423,7 +417,7 @@ namespace SushiRuntime
             {
                 if (!admit(placement_refusal(call, placement)))
                     return rule_count();
-                std::vector<Internal::Memory::LivenessObserver> lives;
+                std::vector<LivenessObserver> lives;
                 const std::size_t device = placed_device(placement, lives);
                 return record(Detail::untracked_launch_node(range, device,
                                                             std::forward<F>(kernel_body)),
@@ -444,7 +438,7 @@ namespace SushiRuntime
             {
                 if (!admit(placement_refusal(call, placement)))
                     return rule_count();
-                std::vector<Internal::Memory::LivenessObserver> lives;
+                std::vector<LivenessObserver> lives;
                 const std::size_t device = placed_device(placement, lives);
                 return record(
                     Detail::untracked_raw_node(device, std::forward<F>(kernel_body)),
@@ -463,13 +457,12 @@ namespace SushiRuntime
                 if (!admits(options))
                     return rule_count();
                 auto view = steps_.view_for(state);
-                std::vector<Internal::Memory::LivenessObserver> lives;
+                std::vector<LivenessObserver> lives;
                 Detail::gather_life(lives, state);
+                Detail::LiveFields live = live_fields_of(options, view);
                 const std::size_t rule = record(
-                    Detail::with_live_fields(
-                        Detail::state_launch_node(view, view->size,
-                                                  std::forward<F>(kernel_body)),
-                        live_fields_of(options, view)),
+                    Detail::state_launch_node(view, view->size, std::forward<F>(kernel_body),
+                                              std::move(live)),
                     lives, options);
                 steps_.register_advance(std::move(view));
                 return rule;
@@ -495,12 +488,12 @@ namespace SushiRuntime
                                                   "the State")))
                     return rule_count();
                 auto view = steps_.view_for(state);
-                std::vector<Internal::Memory::LivenessObserver> lives;
+                std::vector<LivenessObserver> lives;
                 Detail::gather_life(lives, state);
+                Detail::LiveFields live = live_fields_of(options, view);
                 const std::size_t rule = record(
-                    Detail::with_live_fields(
-                        Detail::state_launch_node(view, launch, std::forward<F>(kernel_body)),
-                        live_fields_of(options, view)),
+                    Detail::state_launch_node(view, launch, std::forward<F>(kernel_body),
+                                              std::move(live)),
                     lives, options);
                 steps_.register_advance(std::move(view));
                 return rule;
@@ -517,26 +510,23 @@ namespace SushiRuntime
             std::size_t dynamic_kernel(Dynamic window, State<T>& state, F&& kernel_body,
                                        NodeOptions options = {})
             {
-                if (!admits(options) ||
-                    !admit(Detail::host_device_slots_refusal(*context_, window, next_rule())))
+                if (!admits(options) || !admit(device_slots_refusal(window)))
                     return rule_count();
                 auto view = steps_.view_for(state);
-                auto bindings = std::make_shared<::SushiRuntime::Internal::Graph::LateBindings>();
 
                 std::vector<BufferRegion> slot_reads;
-                std::vector<Internal::Memory::LivenessObserver> lives;
-                Detail::adopt_device_bindings(*bindings, window, slot_reads, lives);
+                std::vector<LivenessObserver> lives;
+                auto bindings = Detail::make_late_bindings(window, slot_reads, lives);
                 Result<std::uint32_t*> fault = fault_record_for(window);
                 if (!admit(fault))
                     return rule_count();
 
                 Detail::gather_life(lives, state);
+                Detail::LiveFields live = live_fields_of(options, view);
                 const std::size_t rule = record(
-                    Detail::with_live_fields(
-                        Detail::dynamic_state_node(
-                            view, view->size, bindings, *fault, std::move(slot_reads),
-                            std::forward<F>(kernel_body)),
-                        live_fields_of(options, view)),
+                    Detail::dynamic_state_node(
+                        view, view->size, bindings, *fault, std::move(slot_reads),
+                        std::forward<F>(kernel_body), std::move(live)),
                     lives, options);
                 steps_.register_advance(std::move(view));
                 steps_.register_binding_updater(std::move(bindings), std::move(window));
@@ -606,7 +596,7 @@ namespace SushiRuntime
             std::size_t resolve(const std::array<LateCount, K>& counts, DeviceIndex device,
                                 Access access, Fill fill, NodeOptions options = {})
             {
-                std::vector<Internal::Memory::LivenessObserver> lives;
+                std::vector<LivenessObserver> lives;
                 bool reads_device = false;
                 for (const LateCount& count : counts)
                     reads_device =
@@ -635,18 +625,10 @@ namespace SushiRuntime
             [[nodiscard]] Result<T*> scratch(std::size_t count, DeviceIndex device,
                                              Residency residency)
             {
-                Result<std::shared_ptr<T>> owned =
-                    Detail::make_usm_scratch<T>(context_, count, device, residency);
-                if (!owned)
-                    return make_error(std::move(owned.error()));
-                Error thrown = Detail::translate_exceptions(
-                    ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [this, &owned]()
-                {
-                    scratch_.push_back(std::static_pointer_cast<void>(*owned));
-                });
-                if (thrown.code != ErrorCode::Ok)
-                    return make_error(std::move(thrown));
-                return owned->get();
+                Result<void*> block = scratch_block(count, sizeof(T), device, residency);
+                if (!block)
+                    return make_error(std::move(block.error()));
+                return static_cast<T*>(*block);
             }
 
             /**
@@ -722,65 +704,39 @@ namespace SushiRuntime
             [[nodiscard]] const Detail::StepMachinery& steps() const noexcept { return steps_; }
 
         private:
-            // The two plan builders replay the recorded nodes; replay() names the engine's graph.
-            friend class PlanCache;
-            friend class RegionComposer;
-
-            /**
-             * @brief Adds every recorded node to a backing graph, in recording order.
-             *
-             * The nodes of one rule share a registration index reserved on target. Each
-             * carries what its NodeOptions stated, and the rule's name when it stated none.
-             * @param visit Called as visit(rule, node) once node is added and named.
-             */
-            template <class Visit>
-            void replay(::SushiRuntime::Internal::Graph::TaskGraph& target, Visit&& visit) const
-            {
-                std::uint32_t stamped = Detail::NodeSpec::K_NO_RULE;
-                std::optional<std::uint32_t> reserved;
-                for (std::size_t node = 0; node < specs_.size(); ++node)
-                {
-                    const Detail::NodeSpec& spec = specs_[node];
-                    if (spec.rule != stamped)
-                    {
-                        stamped = spec.rule;
-                        reserved = target.reserve_registration();
-                    }
-                    spec.emit(target, reserved);
-                    target.name_last_node(rule_names_[spec.rule]);
-                    spec.stamp.apply(*target.last_node_added());
-                    visit(static_cast<std::size_t>(spec.rule), node);
-                }
-            }
+            // The plan builders of the library read the recorded nodes through this seam.
+            friend struct Detail::RecorderReplay;
 
             /**
              * @brief Appends one node; every recording member ends here.
-             * @param emit    Replay callable invoked as emit(TaskGraph&, registration).
+             * @param description What the library adds to a plan for the node; moved from.
              * @param lives   Observers of the handles the node names; moved from.
              * @param options What the caller stated; its name and parameters are copied.
              * @return The position of the rule the node belongs to, or rule_count() when
              *         options are refused.
              */
-            template <class Emit>
-            std::size_t record(Emit&& emit,
-                               std::vector<Internal::Memory::LivenessObserver>& lives,
-                               const NodeOptions& options = {})
-            {
-                if (!admits(options))
-                    return rule_count();
-                Detail::NodeSpec spec(std::forward<Emit>(emit));
-                spec.stamp = Detail::NodeStamp(options, label_of(options.name));
-                if (!scope_open_ || !scope_has_node_)
-                    rule_names_.push_back(nullptr);
-                scope_has_node_ = true;
-                spec.rule = static_cast<std::uint32_t>(rule_names_.size() - 1);
+            SUSHIRUNTIME_API std::size_t record(Detail::NodeDescription&& description,
+                                                std::vector<LivenessObserver>& lives,
+                                                const NodeOptions& options = {});
 
-                specs_.push_back(std::move(spec));
-                for (Internal::Memory::LivenessObserver& life : lives)
-                    watch(std::move(life));
-                ++generation_;
-                return rule_names_.size() - 1;
-            }
+            /**
+             * @brief Allocates USM this recorder owns, for scratch().
+             * @param count Elements to allocate; must be non-zero.
+             * @return The base address, or an AllocationFailed error.
+             * @pre The byte size of count elements fits std::size_t.
+             */
+            [[nodiscard]] SUSHIRUNTIME_API Result<void*> scratch_block(std::size_t count,
+                                                                       std::size_t element_size,
+                                                                       DeviceIndex device,
+                                                                       Residency residency);
+
+            /**
+             * @brief Returns the refusal of a Dynamic whose device count or base slot is not
+             *        host USM this runtime allocated.
+             * @return An InvalidAccess error naming the next rule, or nothing.
+             */
+            [[nodiscard]] SUSHIRUNTIME_API std::optional<Error>
+            device_slots_refusal(const Dynamic& window) const;
 
             /** @brief Names coupled_rule(Coupled, kernel) in a message of its own. */
             static constexpr const char* K_COUPLED_RULE =
@@ -802,7 +758,7 @@ namespace SushiRuntime
             std::size_t record_coupled(Launch launch, State<T>& out, F&& kernel_body,
                                        const NodeOptions& options, State<Inputs>&... inputs)
             {
-                std::vector<Internal::Memory::LivenessObserver> lives;
+                std::vector<LivenessObserver> lives;
                 Detail::gather_life(lives, out);
                 (Detail::gather_life(lives, inputs), ...);
 
@@ -815,10 +771,8 @@ namespace SushiRuntime
                     },
                     views);
                 const std::size_t rule = record(
-                    Detail::with_live_fields(
-                        Detail::coupled_launch_node(out_view, std::move(views), launch,
-                                                    std::forward<F>(kernel_body)),
-                        std::move(live)),
+                    Detail::coupled_launch_node(out_view, std::move(views), launch,
+                                                std::forward<F>(kernel_body), std::move(live)),
                     lives, options);
                 steps_.register_advance(std::move(out_view));
                 return rule;
@@ -883,21 +837,8 @@ namespace SushiRuntime
              * @param call Names the call the user wrote in the message.
              * @return An InvalidAccess error naming the rule, or nothing.
              */
-            [[nodiscard]] std::optional<Error> placement_refusal(const char* call,
-                                                                 const On& placement) const
-            {
-                const std::size_t device = placement.device.value();
-                const std::size_t count = context_->devices().count();
-                if (device < count)
-                    return std::nullopt;
-                return Error{
-                    ErrorCode::InvalidAccess,
-                    std::string(call) + ", rule " + std::to_string(next_rule()) +
-                        ": On(DeviceIndex{" + std::to_string(device) +
-                        "}) names no device, the runtime has " + std::to_string(count) +
-                        " device(s); name a device below that, or place the kernel "
-                        "with On(buffer)."};
-            }
+            [[nodiscard]] SUSHIRUNTIME_API std::optional<Error>
+            placement_refusal(const char* call, const On& placement) const;
 
             /**
              * @brief Hands over the observer of the handle a placement names.
@@ -906,7 +847,7 @@ namespace SushiRuntime
              * @pre placement_refusal() returned nothing for placement.
              */
             std::size_t placed_device(const On& placement,
-                                      std::vector<Internal::Memory::LivenessObserver>& lives) const
+                                      std::vector<LivenessObserver>& lives) const
             {
                 if (!placement.life.expired())
                     lives.push_back(placement.life);
@@ -949,11 +890,11 @@ namespace SushiRuntime
              * @brief Keeps one observer per allocation, however many nodes name it.
              * @param life Observer of a handle a node names.
              */
-            void watch(Internal::Memory::LivenessObserver life)
+            void watch(LivenessObserver life)
             {
                 // observers_ is sorted by owner; the binary search below depends on it.
                 const auto at = std::lower_bound(observers_.begin(), observers_.end(), life,
-                                                 std::owner_less<Internal::Memory::LivenessObserver>());
+                                                 std::owner_less<LivenessObserver>());
                 if (at == observers_.end() || life.owner_before(*at))
                     observers_.insert(at, std::move(life));
             }
@@ -988,39 +929,14 @@ namespace SushiRuntime
              * @param device Device whose context the record's host USM belongs to.
              * @return K_DEVICE_FAULT_WORDS words this recorder owns, or the error of scratch().
              */
-            Result<std::uint32_t*> fault_record(DeviceIndex device)
-            {
-                Result<std::uint32_t*> words =
-                    scratch<std::uint32_t>(Detail::K_DEVICE_FAULT_WORDS, device, Residency::Host);
-                if (!words)
-                    return words;
-                for (std::size_t w = 0; w < Detail::K_DEVICE_FAULT_WORDS; ++w)
-                    (*words)[w] = 0;
-                steps_.register_fault_record(*words);
-                return words;
-            }
+            SUSHIRUNTIME_API Result<std::uint32_t*> fault_record(DeviceIndex device);
 
             /**
              * @brief Allocates a zeroed fault record only host code writes.
              * @return K_DEVICE_FAULT_WORDS words of host memory this recorder owns, or an
              *         AllocationFailed error.
              */
-            Result<std::uint32_t*> host_fault_record()
-            {
-                std::uint32_t* words = nullptr;
-                Error thrown = Detail::translate_exceptions(
-                    ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [this, &words]()
-                {
-                    std::shared_ptr<std::uint32_t[]> owned(
-                        new std::uint32_t[Detail::K_DEVICE_FAULT_WORDS]());
-                    scratch_.push_back(std::shared_ptr<void>(owned, owned.get()));
-                    steps_.register_fault_record(owned.get());
-                    words = owned.get();
-                });
-                if (thrown.code != ErrorCode::Ok)
-                    return make_error(std::move(thrown));
-                return words;
-            }
+            SUSHIRUNTIME_API Result<std::uint32_t*> host_fault_record();
 
             /**
              * @brief Allocates a fault record for a late-bound node.
@@ -1028,24 +944,10 @@ namespace SushiRuntime
              * @return The record, in host USM of the slot's device or in host memory when
              *         window has no device slot, or the error of the allocation.
              */
-            Result<std::uint32_t*> fault_record_for(const Dynamic& window)
-            {
-                const std::uint32_t* count_words =
-                    Detail::DynamicAccess::count_slot(window).words;
-                const std::uint32_t* slot = (count_words != nullptr)
-                    ? count_words : Detail::DynamicAccess::base_slot(window).words;
-                if (slot == nullptr)
-                    return host_fault_record();
-                void* address = const_cast<void*>(static_cast<const void*>(slot));
-                Internal::Memory::USMAllocator& memory = context_->memory();
-                const std::optional<void*> base = memory.containing_base(address);
-                const std::optional<std::size_t> device =
-                    memory.device_of(base ? *base : address);
-                return fault_record(DeviceIndex{device.value_or(0)});
-            }
+            SUSHIRUNTIME_API Result<std::uint32_t*> fault_record_for(const Dynamic& window);
 
-            /** @brief The context scratch comes from; the scratch keeps it alive. */
-            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
+            /** @brief The runtime scratch comes from; the scratch keeps it alive. */
+            ContextHandle context_;
 
             /** @brief The recorded nodes, in recording order. */
             std::vector<Detail::NodeSpec> specs_;
@@ -1060,7 +962,7 @@ namespace SushiRuntime
             std::unordered_set<std::string> labels_;
 
             /** @brief One liveness observer per allocation the nodes name, sorted by owner. */
-            std::vector<Internal::Memory::LivenessObserver> observers_;
+            std::vector<LivenessObserver> observers_;
 
             /** @brief The per-step hooks of the recorded nodes. */
             Detail::StepMachinery steps_;
@@ -1077,7 +979,4 @@ namespace SushiRuntime
             /** @brief Whether the open rule scope has recorded a node. */
             bool scope_has_node_ = false;
     };
-
-
-
 } // namespace SushiRuntime

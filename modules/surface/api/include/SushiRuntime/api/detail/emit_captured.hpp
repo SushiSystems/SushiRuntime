@@ -21,7 +21,7 @@
 
 /**
  * @file emit_captured.hpp
- * @brief Declares the replay callable of an Extent launch that receives its data as pointers.
+ * @brief Declares the description of an Extent launch that receives its data as pointers.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
@@ -29,8 +29,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
-#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -39,9 +37,9 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/detail/emit_launch.hpp>
+#include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/graph/access.hpp>
 #include <SushiRuntime/api/graph/node_options.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -93,29 +91,30 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Builds the replay of a launch that hands its kernel one pointer per capture.
+         * @brief Describes a launch that hands its kernel one pointer per capture.
          * @tparam Launch   std::size_t, Extent<N> or NdRange<N>.
          * @tparam Pointers A std::tuple of raw pointers, handed to kernel after the index.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Launch, class Pointers, class F>
-        auto captured_node(std::vector<BufferRegion> reads,
-                           std::vector<BufferRegion> writes,
-                           Launch launch, Pointers pointers, F&& kernel, std::size_t width)
+        NodeDescription captured_node(std::vector<BufferRegion> reads,
+                                      std::vector<BufferRegion> writes,
+                                      Launch launch, Pointers pointers, F&& kernel,
+                                      std::size_t width)
         {
-            return [kernel = std::forward<F>(kernel), launch, reads = std::move(reads),
-                    writes = std::move(writes), pointers, width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
-            {
-                backing_graph.add_node([kernel, launch, pointers](sycl::handler& h)
+            NodeDescription description;
+            description.reads = std::move(reads);
+            description.writes = std::move(writes);
+            description.width = width;
+            description.work = CommandGroupWork(
+                [kernel = std::forward<F>(kernel), launch, pointers](sycl::handler& h)
                 {
                     std::apply([&h, &kernel, &launch](auto... pointer)
                     {
                         submit_launch(h, launch, kernel, pointer...);
                     }, pointers);
-                }, reads, writes, {}, registration).baked_width = width;
-            };
+                });
+            return description;
         }
     } // namespace Detail
 } // namespace SushiRuntime

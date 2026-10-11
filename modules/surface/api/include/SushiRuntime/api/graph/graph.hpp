@@ -34,27 +34,28 @@
 #include <utility>
 
 #include <SushiRuntime/api/detail/error_translation.hpp>
+#include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
+#include <SushiRuntime/api/detail/step_run.hpp>
 #include <SushiRuntime/api/graph/builder_surface.hpp>
 #include <SushiRuntime/api/graph/plan_cache.hpp>
 #include <SushiRuntime/api/graph/plan_view.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/graph/step_driver.hpp>
+#include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/report/run_report.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
-        /** @brief Grants the registration index tests a friend seam onto Graph::plan_. */
+        /** @brief Grants the registration index tests a friend seam onto the graph's plan. */
         struct RegistrationIndexTestAccess;
 
-        /** @brief Grants the node event record tests a friend seam onto Graph::plan_. */
+        /** @brief Grants the node event record tests a friend seam onto the graph's plan. */
         struct NodeEventRecordsTestAccess;
     }
 
@@ -123,8 +124,7 @@ namespace SushiRuntime
             [[nodiscard]] const Recorder& recorder() const noexcept { return recorder_; }
 
             /** @brief Stands for "this rule has no index yet". */
-            static constexpr std::uint32_t K_NO_REGISTRATION =
-                ::SushiRuntime::Internal::Graph::TaskGraph::K_NO_REGISTRATION;
+            static constexpr std::uint32_t K_NO_REGISTRATION = Detail::K_NO_REGISTRATION;
 
             /**
              * @brief Returns the registration index the rule at position rule took.
@@ -178,14 +178,14 @@ namespace SushiRuntime
             static constexpr const char* K_DANGLING_RESOURCE =
                 "Graph references a Buffer/State freed before the run.";
 
-            explicit Graph(std::shared_ptr<Internal::Execution::RuntimeContext> context)
-                : PlanCache(context->settings().profiling), context_(std::move(context)),
-                recorder_(context_)
+            explicit Graph(ContextHandle context)
+                : PlanCache(Detail::profiling_default(context)), context_(std::move(context)),
+                  recorder_(context_)
             {
             }
 
-            /** @brief Returns the context whose engine runs this graph. */
-            Internal::Execution::RuntimeContext& run_context() noexcept { return *context_; }
+            /** @brief Returns the runtime whose engine runs this graph. */
+            const ContextHandle& run_context() const noexcept { return context_; }
 
             /** @brief Records the profiling request; a changed one rebuilds the plan. */
             void request_profiling(bool requested) noexcept
@@ -221,13 +221,13 @@ namespace SushiRuntime
             [[nodiscard]] bool plan_is_stale() const noexcept { return stale(recorder_); }
 
             /** @brief Builds the plan from the recorder, or returns why it has none. */
-            [[nodiscard]] Result<void> rebuild_plan() { return build(recorder_, *context_); }
+            [[nodiscard]] Result<void> rebuild_plan() { return build(recorder_, context_); }
 
             /** @brief Returns success: a built plan needs no further preparation. */
             [[nodiscard]] Result<void> prepare_run() noexcept { return {}; }
 
             /** @brief Returns the plan a step runs. */
-            ::SushiRuntime::Internal::Graph::CompiledGraph& run_plan() noexcept { return plan_; }
+            Internal::Graph::CompiledGraph& run_plan() noexcept { return compiled_plan(); }
 
             /** @brief Returns the per-step hooks of the recorded tasks. */
             [[nodiscard]] const Detail::StepMachinery& run_steps() const noexcept
@@ -238,13 +238,11 @@ namespace SushiRuntime
             /** @brief Restores the plan's per-run state before a step. */
             void rearm_plan() noexcept { rearm(); }
 
-            /** @brief Returns whether the steps run as an in-order chain from this thread. */
-            [[nodiscard]] bool runs_chained() const
-            {
-                return plan_.chain.chainable && !context_->settings().force_scheduler;
-            }
+            /** @brief Returns true: a plan that classifies as a chain may run as one. */
+            [[nodiscard]] bool may_chain() const noexcept { return true; }
 
-            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
+            /** @brief The runtime this graph runs on. */
+            ContextHandle context_;
 
             /** @brief Owns the recorded tasks, their scratch and their per-step hooks. */
             Recorder recorder_;

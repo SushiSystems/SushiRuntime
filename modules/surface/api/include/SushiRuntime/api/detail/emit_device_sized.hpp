@@ -21,7 +21,7 @@
 
 /**
  * @file emit_device_sized.hpp
- * @brief Declares the replay callable of a launch that reads its live width on the device.
+ * @brief Declares the description of a launch that reads its live width on the device.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
@@ -30,15 +30,14 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/graph/device_sized.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -46,50 +45,50 @@ namespace SushiRuntime
     namespace Detail
     {
         /**
-         * @brief Builds the replay of a node run at capacity that reads its width on device.
+         * @brief Describes a node run at capacity that reads its width on device.
          *
          * Work-items at or past *launch.live_width return at once; launch.live_words feeds
          * kernel one or two words by its arity (docs/design/GRAPH_REPLAY.md §D.2).
          * @pre The reads name the regions launch.live_width and launch.live_words lie in.
          */
         template <class F>
-        auto device_sized_node(std::vector<BufferRegion> reads,
-                               std::vector<BufferRegion> writes,
-                               DeviceSized launch, F kernel, std::size_t width)
+        NodeDescription device_sized_node(std::vector<BufferRegion> reads,
+                                          std::vector<BufferRegion> writes,
+                                          DeviceSized launch, F kernel, std::size_t width)
         {
-            return [kernel, launch, reads = std::move(reads), writes = std::move(writes), width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
-                    std::optional<std::uint32_t> registration)
+            NodeDescription description;
+            description.reads = std::move(reads);
+            description.writes = std::move(writes);
+            description.width = width;
+            description.work = CommandGroupWork([kernel, launch](sycl::handler& h)
             {
-                backing_graph.add_node([kernel, launch](sycl::handler& h)
+                if (launch.capacity == 0)
                 {
-                    if (launch.capacity == 0)
-                    {
-                        h.single_task([]() {});
+                    h.single_task([]() {});
+                    return;
+                }
+                const std::uint32_t* live_count = launch.live_width;
+                const std::uint32_t* live_scalar = launch.live_words;
+                h.parallel_for(sycl::range<1>(launch.capacity),
+                               [kernel, live_count, live_scalar](sycl::id<1> id)
+                {
+                    const std::size_t t = id[0];
+                    if (live_count != nullptr && t >= static_cast<std::size_t>(*live_count))
                         return;
-                    }
-                    const std::uint32_t* live_count = launch.live_width;
-                    const std::uint32_t* live_scalar = launch.live_words;
-                    h.parallel_for(sycl::range<1>(launch.capacity),
-                                   [kernel, live_count, live_scalar](sycl::id<1> id)
+                    if constexpr (std::is_invocable_v<const F&, std::size_t,
+                                                      std::size_t, std::size_t>)
+                        kernel(t, static_cast<std::size_t>(live_scalar[0]),
+                           static_cast<std::size_t>(live_scalar[1]));
+                    else if constexpr (std::is_invocable_v<const F&, std::size_t, std::size_t>)
+                        kernel(t, static_cast<std::size_t>(live_scalar[0]));
+                    else
                     {
-                        const std::size_t t = id[0];
-                        if (live_count != nullptr && t >= static_cast<std::size_t>(*live_count))
-                            return;
-                        if constexpr (std::is_invocable_v<const F&, std::size_t,
-                                                          std::size_t, std::size_t>)
-                            kernel(t, static_cast<std::size_t>(live_scalar[0]),
-                               static_cast<std::size_t>(live_scalar[1]));
-                        else if constexpr (std::is_invocable_v<const F&, std::size_t, std::size_t>)
-                            kernel(t, static_cast<std::size_t>(live_scalar[0]));
-                        else
-                        {
-                            (void)live_scalar;
-                            kernel(t);
-                        }
-                    });
-                }, reads, writes, {}, registration).baked_width = width;
-            };
+                        (void)live_scalar;
+                        kernel(t);
+                    }
+                });
+            });
+            return description;
         }
     } // namespace Detail
 } // namespace SushiRuntime

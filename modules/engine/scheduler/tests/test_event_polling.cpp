@@ -30,6 +30,7 @@
 #include <set>
 #include <gtest/gtest.h>
 #include <SushiRuntime/scheduler/event_polling.hpp>
+#include <SushiRuntime/task/task.hpp>
 
 using SushiRuntime::Internal::Scheduler::EventPolling;
 using SushiRuntime::Internal::Scheduler::Task;

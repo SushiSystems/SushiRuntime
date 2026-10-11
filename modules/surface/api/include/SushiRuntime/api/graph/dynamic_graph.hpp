@@ -36,22 +36,23 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
+#include <SushiRuntime/api/detail/step_run.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/api/graph/region.hpp>
 #include <SushiRuntime/api/graph/region_composer.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/graph/step_driver.hpp>
+#include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/compiled_graph.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
-        /** @brief Grants a test a friend seam onto DynamicGraph::plan_/states_. */
+        /** @brief Grants a test a friend seam onto the graph's plan. */
         struct DynamicGraphNodeEventsTestAccess;
     }
 
@@ -201,8 +202,7 @@ namespace SushiRuntime
             }
 
             /** @brief Stands for "this rule has no index yet". */
-            static constexpr std::uint32_t K_NO_REGISTRATION =
-                ::SushiRuntime::Internal::Graph::TaskGraph::K_NO_REGISTRATION;
+            static constexpr std::uint32_t K_NO_REGISTRATION = Detail::K_NO_REGISTRATION;
 
             /**
              * @brief Returns the registration index a rule of a region carries in the plan.
@@ -242,13 +242,13 @@ namespace SushiRuntime
             static constexpr const char* K_DANGLING_RESOURCE =
                 "DynamicGraph region references a Buffer/State freed before the run.";
 
-            explicit DynamicGraph(std::shared_ptr<Internal::Execution::RuntimeContext> context)
-                : RegionComposer(context->settings().profiling), context_(std::move(context))
+            explicit DynamicGraph(ContextHandle context)
+                : RegionComposer(Detail::profiling_default(context)), context_(std::move(context))
             {
             }
 
-            /** @brief Returns the context whose engine runs this graph. */
-            Internal::Execution::RuntimeContext& run_context() noexcept { return *context_; }
+            /** @brief Returns the runtime whose engine runs this graph. */
+            const ContextHandle& run_context() const noexcept { return context_; }
 
             /**
              * @brief Records the profiling request; a changed one rebuilds every region.
@@ -342,7 +342,7 @@ namespace SushiRuntime
              */
             [[nodiscard]] Result<void> prepare_run()
             {
-                if (plan_.roots.empty())
+                if (!has_roots())
                     return make_error(Error{ErrorCode::InvalidGraph,
                                             "DynamicGraph has no runnable tasks."});
                 refresh_updaters();
@@ -350,7 +350,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the plan a step runs. */
-            ::SushiRuntime::Internal::Graph::CompiledGraph& run_plan() noexcept { return plan_; }
+            Internal::Graph::CompiledGraph& run_plan() noexcept { return compiled_plan(); }
 
             /** @brief Returns the per-step hooks aggregated from the live regions. */
             [[nodiscard]] const Detail::StepMachinery& run_steps() const noexcept
@@ -362,7 +362,7 @@ namespace SushiRuntime
             void rearm_plan() { rearm(); }
 
             /** @brief Returns false: a composed plan always runs on the scheduler. */
-            [[nodiscard]] bool runs_chained() const noexcept { return false; }
+            [[nodiscard]] bool may_chain() const noexcept { return false; }
 
             /** @brief Returns whether a structural change or new tasks require a recompose. */
             [[nodiscard]] bool needs_commit() const
@@ -425,7 +425,8 @@ namespace SushiRuntime
                 retired_.clear();
             }
 
-            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
+            /** @brief The runtime this graph runs on. */
+            ContextHandle context_;
 
             /**
              * @brief Holds the live regions by key; unique_ptr keeps each Region's address

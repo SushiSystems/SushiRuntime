@@ -45,7 +45,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
-#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/strong_id.hpp>
@@ -472,7 +472,7 @@ namespace SushiRuntime
                   size_(count),
                   device_index_(device_index),
                   residency_(residency),
-                  liveness_(Internal::Memory::make_liveness())
+                  liveness_(make_liveness())
             {
                 const std::size_t bytes =
                     Detail::checked_byte_count("Buffer adoption", count, sizeof(T));
@@ -591,7 +591,7 @@ namespace SushiRuntime
             std::size_t size_ = 0;
             DeviceIndex device_index_ = DeviceIndex{0};
             Residency residency_ = Residency::Shared;
-            Internal::Memory::LivenessToken liveness_;
+            LivenessToken liveness_;
     };
 
 

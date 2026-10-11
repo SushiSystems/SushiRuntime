@@ -1,7 +1,11 @@
 # api/detail
 
-Internals of the fluent API: callable traits, the replay callable of each node shape, late-count
-resolution, the per-step machinery and report building.
+Internals of the fluent API: callable traits, the description of each node shape, late-count
+resolution, the per-step machinery and the calls a step driver makes into the library.
+
+The headers of this folder are installed and include no header of the engine. The code that
+names an engine type sits in `modules/surface/api/source/`; its private headers are described
+here too, each under its own name, and are marked as such.
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
@@ -36,7 +40,7 @@ coupled rule cannot write a State its node registered as a read.
 ### read_keys_of_views
 
 read_keys_of_views() gathers the read keys of a tuple of views, in order: the key of a State's
-current field is the address `view->current` holds. add_coupled_node() calls it at every replay, so
+current field is the address `view->current` holds. A coupled rule calls it at every plan build, so
 the dependency tracker labels a coupled input with the key the single-State rule gives that field.
 
 ## handle_access.hpp
@@ -63,6 +67,8 @@ they are friends of the handles; it serves code that builds a handle without a r
 is the unit test of the adopting constructor (tests/unit/test_allocation.cpp).
 
 ## run_report_builder.hpp
+
+A private header of `source/`.
 
 ### fill_run_report
 
@@ -125,7 +131,9 @@ so a State advances exactly once per step (one update rule per field).
 register_binding_updater() wires a Dynamic's providers to a node's bindings: it pushes a per-step
 updater that polls when()/sized() on the driver thread and stores the results into the shared block
 the kernel and scheduler read. It is skipped when the Dynamic carries no providers, because the
-defaults (always enabled, full range) already hold, so an unused tag costs nothing.
+defaults (always enabled, full range) already hold, so an unused tag costs nothing. It is defined
+in `source/late_window.cpp`, because the block is the engine's `LateBindings` and the header only
+forward-declares it.
 
 ### reset_updaters
 
@@ -157,14 +165,15 @@ list.
 
 ## emit_dynamic.hpp
 
-### adopt_device_bindings
+### make_late_bindings
 
-adopt_device_bindings() copies a Dynamic's device count slot and its device base slot onto the
-node's bindings. For each slot the Dynamic has, it registers the slot as a read and hands the
-caller the liveness observer of the slot's buffer. The read region orders the node behind whoever
-writes the slot, and the caller did not have to name it. The observer goes to Recorder::record()
-with the node's other observers, so a run after the buffer was destroyed is refused with
-`DanglingResource`.
+make_late_bindings() creates the per-step controls of a late-bound node and points them at a
+Dynamic's device count slot and device base slot. For each slot the Dynamic has, it registers the
+slot as a read and hands the caller the liveness observer of the slot's buffer. The read region
+orders the node behind whoever writes the slot, and the caller did not have to name it. The
+observer goes to Recorder::record() with the node's other observers, so a run after the buffer
+was destroyed is refused with `DanglingResource`. The controls are the engine's `LateBindings`,
+which the header forward-declares; the function is defined in `source/late_window.cpp`.
 
 ### register_device_slot
 
@@ -255,82 +264,156 @@ bound the index the way a State's does.
 
 ## emit_*.hpp
 
-### Replay callables
+### Node descriptions
 
-Each emit header builds the replay callable of one node shape: a lambda invoked as
-emit(Internal::Graph::TaskGraph&, registration) every time a Recorder replays. The lambda adds one node, hands
-the registration through (empty means the backing graph draws a fresh index) and stamps the launch
-width where the shape has one. None of them knows the Recorder, so a shape can be read, changed or
-added without touching the recording state.
+Each emit header builds the NodeDescription of one node shape. The template takes the caller's
+kernel, wraps it once in the `std::function` the engine runs (a command group, a queue body or a
+worker body), and fills the regions, the width and the few fields its kind needs. The header
+needs `sycl::handler` and the vocabulary types and nothing of the engine. None of the templates
+knows the Recorder, so a shape can be read, changed or added without touching the recording
+state.
 
-The emitters are generic over the launch: launch_node, untracked_launch_node, captured_node,
+The builders are generic over the launch: launch_node, untracked_launch_node, captured_node,
 state_launch_node and coupled_launch_node each take a count, an Extent or an NdRange and call
-submit_launch(). A rule over the whole field has no emitter of its own: the Recorder passes the
+submit_launch(). A rule over the whole field has no builder of its own: the Recorder passes the
 State's size as the count.
+
+The work is built at record time and copied at each plan build. The kernel's own type is gone
+after the record call returns; the per-element path stays a template inside the command group, so
+device code is what it was when the kernel was copied per plan build.
 
 ### Launch width
 
-Every emitter that knows how many work-items its node launches stamps that number on
-Node::baked_width, which a profiled run reports as the node's launched width. A width stated
-through NodeOptions replaces the one in the table on every shape: NodeStamp::apply() writes it
-after the emitter has run.
+Every builder that knows how many work-items its node launches writes that number in
+NodeDescription::width, which the library bakes on Node::baked_width and a profiled run reports
+as the node's launched width. A width stated through NodeOptions replaces the one in the table on
+every shape: apply_stamp() writes it after the node is added.
 
-| Emitter | Width stamped |
+| Builder | Width described |
 | --- | --- |
 | launch_node, range_node, raw_node, captured_node, task_node, host_node, device_sized_node, late_count_resolver_node | the width NodeOptions states |
 | dynamic_node | the width NodeOptions states, or the capacity |
-| add_state_node, add_coupled_node, untracked_launch_node | launch_count() of the launch |
+| state_launch_node, coupled_launch_node, untracked_launch_node | launch_count() of the launch |
 | untracked_range_node | the count |
 | dynamic_state_node | the State's size |
 | untracked_raw_node | none |
 
-untracked_raw_node() stamps none: a raw command group submits its own work and takes no launch,
-so its width is the one NodeOptions states, or unknown.
+untracked_raw_node() describes none: a raw command group submits its own work and takes no
+launch, so its width is the one NodeOptions states, or unknown.
 
 ### task_node
 
-task_node() adds its node with TaskGraph::add_task() and a host-side work only, which is the
-engine's form for a body that receives the queue. The engine calls such a node "host" because the
-body runs on a worker thread; the node still counts as one that submits device work, so the chain
-layer takes it. The body is wrapped in the engine's HostWork explicitly: add_task() has a second
-overload that takes a device work first, and a generic lambda would convert to both.
+task_node() describes a node of kind Task, which the library adds with TaskGraph::add_task() and a
+host-side work only, the engine's form for a body that receives the queue. The engine calls such
+a node "host" because the body runs on a worker thread; the node still counts as one that submits
+device work, so the chain layer takes it. The body is wrapped in a QueueWork explicitly:
+add_task() has a second overload that takes a device work first, and a generic lambda would
+convert to both.
 
-### State emitters
+### State builders
 
 state_launch_node(view, launch, kernel), coupled_launch_node(out_view, views, launch, kernel)
 and dynamic_state_node(view, capacity, ...) take the
 State's view and no `State<T>*`, so a rule does not depend on where the State object lives. A
 State's size does not change after it is allocated, so it is passed by value. The keys of a State
-swap at every step, so they are read at each replay, from the view: the read key is the address in
-`view->current` and the write key the address in `view->next`. The State keeps its view written
-(api/data/README.md), so a replay needs no resync before it.
-
-## live_fields.hpp
-
-### LiveFields and with_live_fields
-
-A State rule that names an operation may be run by something other than the local pool, and
-whatever runs it must know which field is current at that step. LiveFields holds two shared
-lists of addresses: the current field of every State the rule reads, the one written first, and
-the next field of the State written. with_live_fields() wraps the rule's replay callable: after
-the callable has added its node, the wrapper hands the lists to the node with
-`Node::set_live_io()`. A rule that names no operation carries null lists and its node is left
-as the callable added it. The Recorder builds the lists and registers the hook that rewrites them
-before each step, because the fields swap at every step.
+swap at every step, so the description carries no region: its `state_access` callable names them
+at each plan build, from the view. The read key is the address in `view->current` and the write
+key the address in `view->next`. The State keeps its view written (api/data/README.md), so a
+plan build needs no resync before it.
 
 ### untracked_launch_node
 
-An untracked node names no region, so its replay states the device with Node::place_on(). The
-device is always stated, device 0 included, so the node's placement does not depend on what the
-engine does with a node that states none.
+An untracked node names no region, so its description states the device, which the library
+passes to Node::place_on(). The device is always stated, device 0 included, so the node's
+placement does not depend on what the engine does with a node that states none.
 
 ### captured_access
 
 captured_access() turns a list of In, Out and InOut captures into the Access the node is ordered
-by. It lives with the captured emitter so that the builder's capture overload only splits its
-argument pack.
+by. It lives with the captured builder so that the builder surface's capture overload only splits
+its argument pack.
+
+## node_description.hpp
+
+### NodeDescription
+
+A NodeDescription is what crosses from the header templates into the compiled library: the
+regions read and written, the work with its type erased, the width, and a NodeKind. It is one
+closed struct. The fields a kind does not use stay at their defaults.
+
+| Kind | Added with | Fields beyond regions, work and width |
+| --- | --- | --- |
+| Kernel | `add_node(work, reads, writes)` | none |
+| Untracked | `add_node(work)`, then `place_on(device)` | `device` |
+| Task | `add_task(reads, writes, queue work)` | none |
+| Host | `add_native(reads, writes, worker work)` | none |
+| State | `add_node` with the regions `state_access` names | `state_access`, `live` |
+| Dynamic | `add_node` with `bindings` | `bindings` |
+| DynamicState | `add_node` with the named regions and `bindings` | `state_access`, `live`, `bindings` |
+
+A launch sized on the device and the late-count resolver are of kind Kernel: what sets them apart
+is inside the command group their header builds.
+
+### LiveFields
+
+A State rule that names an operation may be run by something other than the local pool, and
+whatever runs it must know which field is current at that step. LiveFields holds two shared
+lists of addresses: the current field of every State the rule reads, the one written first, and
+the next field of the State written. The description of a State rule carries them, and the
+library hands them to the node with `Node::set_live_io()` after it adds the node. A rule that
+names no operation carries null lists and its node is left as it was added. The Recorder builds
+the lists and registers the hook that rewrites them before each step, because the fields swap at
+every step.
+
+### K_NO_REGISTRATION
+
+K_NO_REGISTRATION is the value Graph and DynamicGraph return for a rule that has no registration
+index yet. `source/node_emitters.cpp` asserts at compile time that it equals the engine's
+`TaskGraph::K_NO_REGISTRATION`.
+
+## node_emitters.hpp
+
+A private header of `source/`.
+
+### add_described_node
+
+add_described_node() adds one described node to the engine's graph. A table holds one function
+per NodeKind, in enumerator order, and the call indexes it; a `static_assert` ties the table's
+length to the last enumerator. A new kind is one enumerator, one function and one table entry,
+and no header template of another kind changes.
+
+### apply_stamp
+
+apply_stamp() writes a NodeStamp on the node just added, once per plan build, and writes only
+what was stated. A kind's function therefore needs no parameter for a name, an operation or a
+parameter list, and a kind added later gets all three with no code of its own.
+
+## step_run.hpp
+
+### StepTarget
+
+A StepDriver is a class template over the graph that owns it; the loops that run a plan are not.
+StepTarget is what the template hands the library for one call: the runtime, the plan, the
+per-step hooks, the node count, whether the graph allows a chain, and a function pointer that
+restores the plan's run state. The pointers are borrowed for the call.
+
+### StepPredicate
+
+run_for() and run_until() take a stop test of any type. StepPredicate refers to it through one
+object pointer and one function pointer, so run_steps() is a plain function and a step costs one
+indirect call for the test and one for the rearm, against a floor of several microseconds per
+node.
+
+### run_steps
+
+run_steps() holds the scheduler loop and the chain loop. A chain is taken when the graph allows
+it, the plan classified as one, and the runtime was not told to force the scheduler. With a
+caller's hook registered the chain waits after every step, because a hook may write what a kernel
+reads.
 
 ## host_slot_check.hpp
+
+A private header of `source/`.
 
 ### host_slot_refusal
 
@@ -392,6 +475,13 @@ a value modulo 2^32. It is a constexpr comparison with no call, which a device k
 
 ## late_window.hpp
 
+### LateWindow and read_late_window
+
+The per-step controls of a late-bound node are the engine's `LateBindings`. The header templates
+that submit such a node do not see that type: read_late_window() reads the controls once per
+submit and returns a LateWindow, the host count and base and the address of each device slot.
+That is one call into the library per late-bound node and step, and nothing per element.
+
 ### LiveRange
 
 A LiveRange is the half-open element window a late-bound node iterates this step: where it starts
@@ -417,11 +507,11 @@ written against absolute indices stays correct whether or not its node happens t
 
 ### NodeSpec
 
-NodeSpecs are the recorded task specifications: each replays one add() onto a fresh backing graph.
-The fluent Graph is the source of truth so it can rebuild and recompile when mutated. A spec is
-recorded as {emitter, stamp, rule} and not as a bare callable. The name of a rule lives in the
-recorder, which owns the text and hands it to every node of the rule when the plan is built; that
-is what lets name() attach one after the add() call has already returned.
+NodeSpecs are the recorded task specifications: each holds the description the library adds to a
+fresh backing graph at every plan build. The fluent Graph is the source of truth so it can rebuild
+and recompile when mutated. A spec is recorded as {description, stamp, rule}. The name of a rule
+lives in the recorder, which owns the text and hands it to every node of the rule when the plan is
+built; that is what lets name() attach one after the add() call has already returned.
 
 ## node_stamp.hpp
 
@@ -431,25 +521,13 @@ A NodeStamp is the part of a NodeOptions a recorded node keeps. It borrows nothi
 caller: the name points into the recorder's label set, and the parameters are copied into an
 inline array of K_MAX_NODE_PARAMETERS words, so recording a node allocates nothing for them.
 
-apply() writes the stamp on the node an emitter added, once per replay, and writes only what was
-stated. An emitter therefore needs no parameter for a name, an operation or a parameter list, and
-a shape added later gets all three with no code of its own.
+apply_stamp() of `source/node_emitters.hpp` writes the stamp on the node. K_MAX_NODE_PARAMETERS is
+stated here and asserted equal to the engine's `TaskMetadata::K_MAX_PARAMS` at compile time.
 
 ### parameters_refusal
 
 parameters_refusal() returns an `InvalidGraph` error for more parameters than a node carries.
 Recorder::record() asks it before it touches the recorder, so a refused node leaves no trace.
-
-## usm_scratch.hpp
-
-### make_usm_scratch
-
-make_usm_scratch() allocates on the device and with the residency the caller names. A rule passes
-those of the data it works on, so its nodes never straddle a device context and a device-resident
-field is not dragged into host-addressable memory. The returned pointer owns the
-allocation through a deleter that keeps the context alive, so scratch cannot outlive the runtime
-that owns it. It returns `Result<std::shared_ptr<T>>`, with `AllocationFailed` when the device
-returns nothing.
 
 ## error_translation.hpp
 
