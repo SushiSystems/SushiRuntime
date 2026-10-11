@@ -85,7 +85,7 @@ TEST(Integration_InteropHostExport, ImportOnAQueueWithoutTheExtensionThrowsUnsup
     Interop::ExternalMemoryDescriptor descriptor;
     try
     {
-        interop.import_device<float>(descriptor, 4, DeviceIndex{0});
+        static_cast<void>(interop.import_device<float>(descriptor, 4, DeviceIndex{0}));
         FAIL() << "import_device returned on a device without import";
     }
     catch (const SushiException& error)

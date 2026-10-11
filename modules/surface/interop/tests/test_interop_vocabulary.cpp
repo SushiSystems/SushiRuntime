@@ -21,15 +21,18 @@
 
 /**
  * @file test_interop_vocabulary.cpp
- * @brief Tests the interop vocabulary's UUID equality and default capabilities.
+ * @brief Tests the interop vocabulary's UUID equality and its default values.
  * @author Sushi (mustafagarip@sushisystems.io)
  */
 
 #include <gtest/gtest.h>
 #include <SushiRuntime/interop/device_uuid.hpp>
+#include <SushiRuntime/interop/external_memory.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
 
 using SushiRuntime::Interop::DeviceUuid;
+using SushiRuntime::Interop::ExternalHandleKind;
+using SushiRuntime::Interop::ExternalMemoryDescriptor;
 using SushiRuntime::Interop::InteropCapabilities;
 
 TEST(Unit_InteropVocabulary, UuidsCompareByEveryByte)
@@ -56,4 +59,14 @@ TEST(Unit_InteropVocabulary, DefaultCapabilitiesOfferNothing)
     EXPECT_FALSE(capabilities.host_export);
     EXPECT_FALSE(capabilities.device_import);
     EXPECT_FALSE(capabilities.device_uuid.has_value());
+}
+
+TEST(Unit_InteropVocabulary, ADefaultDescriptorStatesNoHandleKind)
+{
+    ExternalMemoryDescriptor descriptor;
+
+    EXPECT_EQ(descriptor.kind, ExternalHandleKind::Unspecified);
+    EXPECT_EQ(descriptor.handle, 0u);
+    EXPECT_EQ(descriptor.allocation_bytes, 0u);
+    EXPECT_EQ(descriptor.offset, 0u);
 }

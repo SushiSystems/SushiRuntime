@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <memory>
 #include <string>
@@ -40,6 +41,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include "bindless_detection.hpp"
 #include <SushiRuntime/interop/interop.hpp>
+#include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
@@ -78,15 +80,16 @@ namespace SushiRuntime
 
                 InteropCapabilities capabilities;
                 capabilities.host_export = device.has(sycl::aspect::usm_host_allocations);
-                capabilities.device_import = Detail::BINDLESS_IMAGES_AVAILABLE
-                    && context.devices().is_gpu(device_index)
-                    && device.has(sycl::aspect::ext_oneapi_external_memory_import);
                 if (device.has(sycl::aspect::ext_intel_device_info_uuid))
                 {
                     DeviceUuid uuid;
                     uuid.bytes = device.get_info<sycl::ext::intel::info::device::uuid>();
                     capabilities.device_uuid = uuid;
                 }
+                capabilities.device_import = Detail::BINDLESS_IMAGES_AVAILABLE
+                    && context.devices().is_gpu(device_index)
+                    && device.has(sycl::aspect::ext_oneapi_external_memory_import)
+                    && capabilities.device_uuid.has_value();
                 return capabilities;
             }
 
@@ -104,6 +107,7 @@ namespace SushiRuntime
             {
                 switch (kind)
                 {
+                    case ExternalHandleKind::Unspecified: return "Unspecified";
                     case ExternalHandleKind::OpaqueWin32: return "OpaqueWin32";
                     case ExternalHandleKind::OpaqueFd:    return "OpaqueFd";
                 }
@@ -137,12 +141,31 @@ namespace SushiRuntime
              */
             void require_importable(const ExternalMemoryDescriptor& descriptor, std::size_t bytes)
             {
+                if (descriptor.kind == ExternalHandleKind::Unspecified)
+                    throw descriptor_error(
+                        std::string("descriptor.kind is Unspecified; the exporter must state ") +
+                        "it, and this platform imports " + kind_name(K_PLATFORM_HANDLE_KIND) +
+                        " handles.");
+
                 if (descriptor.kind != K_PLATFORM_HANDLE_KIND)
                     throw descriptor_error(
                         std::string("descriptor.kind is ") + kind_name(descriptor.kind) +
                         " (value " + std::to_string(static_cast<unsigned>(descriptor.kind)) +
                         ") and this platform imports " + kind_name(K_PLATFORM_HANDLE_KIND) +
                         " handles only.");
+
+                if (descriptor.kind == ExternalHandleKind::OpaqueWin32 && descriptor.handle == 0)
+                    throw descriptor_error(
+                        "descriptor.handle is null; set it to the Win32 NT handle the exporting "
+                        "API returned.");
+
+                if (descriptor.kind == ExternalHandleKind::OpaqueFd &&
+                    descriptor.handle > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+                    throw descriptor_error(
+                        "descriptor.handle is " + std::to_string(descriptor.handle) +
+                        ", above the largest file descriptor, " +
+                        std::to_string(std::numeric_limits<int>::max()) +
+                        "; set it to the descriptor the exporting API returned.");
 
                 if (descriptor.offset > descriptor.allocation_bytes ||
                     bytes > descriptor.allocation_bytes - descriptor.offset)
@@ -174,6 +197,61 @@ namespace SushiRuntime
                         "; import on the device that exported the handle.");
             }
 
+            /// @brief Runs one step of releasing an import and logs a failure in place of a throw.
+            template <typename Step>
+            void run_release_step(const char* name, std::size_t device_index, Step&& step) noexcept
+            {
+                try
+                {
+                    step();
+                }
+                catch (const std::exception& error)
+                {
+                    SR_LOG_ERROR("Interop: {} threw '{}' while releasing an import on device {}; "
+                                 "the remaining release steps still run.",
+                                 name, error.what(), device_index);
+                }
+                catch (...)
+                {
+                    SR_LOG_ERROR("Interop: {} threw an unknown exception while releasing an import "
+                                 "on device {}; the remaining release steps still run.",
+                                 name, device_index);
+                }
+            }
+
+            /// @brief Names which steps of one import completed and what each produced.
+            struct ImportProgress
+            {
+                Experimental::external_mem memory{}; /**< Holds the SYCL import handle. */
+                void* address = nullptr;             /**< Holds the mapped address, once mapped. */
+                bool imported = false;               /**< Tells whether memory is held. */
+                bool mapped = false;                 /**< Tells whether address is mapped. */
+                bool adopted = false;                /**< Tells whether address is registered. */
+            };
+
+            /// @brief Undoes the completed steps of @p progress in reverse order, each on its own.
+            void release_import(Execution::RuntimeContext& context, std::size_t device_index,
+                                const ImportProgress& progress) noexcept
+            {
+                if (progress.adopted)
+                    run_release_step("UsmAllocator::forget", device_index, [&]
+                    {
+                        context.memory().forget(progress.address);
+                    });
+                if (progress.mapped)
+                    run_release_step("unmap_external_linear_memory", device_index, [&]
+                    {
+                        Experimental::unmap_external_linear_memory(
+                            progress.address, context.devices().queue(device_index));
+                    });
+                if (progress.imported)
+                    run_release_step("release_external_memory", device_index, [&]
+                    {
+                        Experimental::release_external_memory(
+                            progress.memory, context.devices().queue(device_index));
+                    });
+            }
+
             /// @brief Unmaps and releases imported device memory.
             class DeviceImportOwner final : public Memory::IAllocationOwner
             {
@@ -188,17 +266,13 @@ namespace SushiRuntime
                     /// @brief Forgets, unmaps and releases @p address.
                     void release(void* address) noexcept override
                     {
-                        try
-                        {
-                            sycl::queue& queue = context_->devices().queue(device_index_);
-                            context_->memory().forget(address);
-                            Experimental::unmap_external_linear_memory(address, queue);
-                            Experimental::release_external_memory(memory_, queue);
-                        }
-                        catch (...)
-                        {
-                            // release never throws: a failed unwind here would terminate the process.
-                        }
+                        ImportProgress progress;
+                        progress.memory = memory_;
+                        progress.address = address;
+                        progress.imported = true;
+                        progress.mapped = true;
+                        progress.adopted = true;
+                        release_import(*context_, device_index_, progress);
                     }
 
                 private:
@@ -223,21 +297,8 @@ namespace SushiRuntime
                     /// @brief Releases the recorded steps in reverse order, unless disarmed.
                     ~ImportGuard()
                     {
-                        if (!armed_)
-                            return;
-                        try
-                        {
-                            sycl::queue& queue = context_->devices().queue(device_index_);
-                            if (adopted_)
-                                context_->memory().forget(address_);
-                            if (mapped_)
-                                Experimental::unmap_external_linear_memory(address_, queue);
-                            Experimental::release_external_memory(memory_, queue);
-                        }
-                        catch (...)
-                        {
-                            // A destructor running during unwind must never throw itself.
-                        }
+                        if (armed_)
+                            release_import(*context_, device_index_, progress_);
                     }
 
                     ImportGuard(const ImportGuard&) = delete;
@@ -246,19 +307,20 @@ namespace SushiRuntime
                     /// @brief Records the imported handle, arming the guard.
                     void mark_imported(Experimental::external_mem memory) noexcept
                     {
-                        memory_ = memory;
+                        progress_.memory = memory;
+                        progress_.imported = true;
                         armed_ = true;
                     }
 
                     /// @brief Records the mapped address.
                     void mark_mapped(void* address) noexcept
                     {
-                        address_ = address;
-                        mapped_ = true;
+                        progress_.address = address;
+                        progress_.mapped = true;
                     }
 
                     /// @brief Records that the address was adopted into the USM registry.
-                    void mark_adopted() noexcept { adopted_ = true; }
+                    void mark_adopted() noexcept { progress_.adopted = true; }
 
                     /// @brief Disarms the guard once ownership has moved to its final owner.
                     void disarm() noexcept { armed_ = false; }
@@ -268,15 +330,9 @@ namespace SushiRuntime
                     std::shared_ptr<Execution::RuntimeContext> context_;
                     /// @brief Holds the importing queue index.
                     std::size_t device_index_;
-                    /// @brief Holds the imported memory handle, once armed.
-                    Experimental::external_mem memory_{};
-                    /// @brief Holds the mapped address, once mapped.
-                    void* address_ = nullptr;
-                    /// @brief Tells whether the address was mapped.
-                    bool mapped_ = false;
-                    /// @brief Tells whether the address was adopted into the USM registry.
-                    bool adopted_ = false;
-                    /// @brief Tells whether an import handle is held and must be released.
+                    /// @brief Holds the steps completed so far.
+                    ImportProgress progress_;
+                    /// @brief Tells whether the destructor must release the completed steps.
                     bool armed_ = false;
             };
 #endif
@@ -345,6 +401,9 @@ namespace SushiRuntime
                         std::to_string(device_index) + ").device_import is false."});
                 require_importable(descriptor, bytes);
                 require_same_device(capabilities, descriptor, device_index);
+
+                if (bytes == 0)
+                    return Memory::Allocation();
 
                 ImportGuard guard(context, device_index);
 

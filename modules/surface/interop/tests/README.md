@@ -9,8 +9,8 @@ A section is named after a test file, and a subsection after the test, helper or
 ## test_interop_import.cpp
 
 The file covers what `import_device` refuses and what `capabilities()` reports. It builds a
-`Runtime` over the devices of the machine it runs on. No test imports memory: every descriptor here
-holds a handle of zero and is refused before the handle is used.
+`Runtime` over the devices of the machine it runs on. No test imports a real allocation. The descriptors hold a placeholder
+handle of 1; the refusal tests expect a refusal, and the zero-element test requests no elements.
 
 ### `first_device_where_import_is`
 
@@ -20,8 +20,8 @@ whose device is missing is reported as skipped.
 
 ### `acceptable_descriptor`
 
-`acceptable_descriptor` builds a descriptor with this platform's handle kind, an allocation of 64
-bytes and the UUID of the chosen device. Each test then breaks one field, so the refusal it sees
+`acceptable_descriptor` builds a descriptor with this platform's handle kind, the placeholder handle 1,
+an allocation of 64 bytes and the UUID of the chosen device. Each test then breaks one field, so the refusal it sees
 can only come from that field.
 
 ### `HostExportReportsWhetherTheQueueOffersHostUsm`
@@ -51,3 +51,36 @@ offset first, so the subtraction that follows cannot wrap.
 The descriptor carries the device's own UUID with the last byte inverted. The message spells both
 UUIDs in hexadecimal. A device that reports no UUID is refused with its own message; no test
 reaches that case, because a device cannot be made to drop its UUID.
+
+### `ADeviceThatImportsReportsItsUuid`
+
+For every device that imports external memory, the capabilities report a device UUID.
+
+### `ADefaultDescriptorIsRefusedForItsUnstatedKind`
+
+A default-constructed descriptor is refused with `Errc::invalid_access` on the first device that
+imports. The message says that `descriptor.kind` is Unspecified and that the exporter must state it.
+
+### `ANullWin32HandleIsRefusedByName`
+
+Compiled on Windows only. A descriptor whose handle is 0 is refused with `Errc::invalid_access` on the
+first device that imports, and the message says that `descriptor.handle` is null.
+
+### `AFileDescriptorAboveIntIsRefusedWithItsValue`
+
+Compiled on platforms other than Windows only. A handle one above the largest `int` is refused with
+`Errc::invalid_access` on the first device that imports, and the message spells the handle value.
+
+### `ZeroElementsImportNothingAndReturnAnEmptyBuffer`
+
+`import_device` with a count of zero, on the first device that imports, returns a buffer that is empty
+and has size zero.
+
+## test_interop_vocabulary.cpp
+
+The file covers the default values of the interop vocabulary.
+
+### `ADefaultDescriptorStatesNoHandleKind`
+
+A default `ExternalMemoryDescriptor` has the kind `Unspecified`, a handle of 0, and an allocation size
+and an offset of 0.

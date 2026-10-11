@@ -27,6 +27,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <gtest/gtest.h>
@@ -54,6 +55,9 @@ namespace
     /// @brief Size the test descriptors state for the exported allocation.
     constexpr std::uint64_t K_ALLOCATION_BYTES = 64;
 
+    /// @brief Handle value that passes the descriptor checks; no test hands it to a device.
+    constexpr std::uint64_t K_PLACEHOLDER_HANDLE = 1;
+
     /** @brief Returns the first device whose device_import equals @p imports, if any. */
     std::optional<std::size_t> first_device_where_import_is(Runtime& runtime, bool imports)
     {
@@ -69,6 +73,7 @@ namespace
     {
         Interop::ExternalMemoryDescriptor descriptor{};
         descriptor.kind = K_NATIVE_KIND;
+        descriptor.handle = K_PLACEHOLDER_HANDLE;
         descriptor.allocation_bytes = K_ALLOCATION_BYTES;
         descriptor.offset = 0;
         const auto uuid = runtime.interop().capabilities(DeviceIndex{index}).device_uuid;
@@ -124,6 +129,86 @@ TEST(Unit_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
         << refusal.message;
     EXPECT_NE(refusal.message.find("device_import is false"), std::string::npos)
         << refusal.message;
+}
+
+TEST(Unit_InteropImport, ADeviceThatImportsReportsItsUuid)
+{
+    auto runtime = Runtime::create();
+    const std::size_t count = runtime.advanced().device_count();
+
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        const Interop::InteropCapabilities capabilities =
+            runtime.interop().capabilities(DeviceIndex{index});
+        if (capabilities.device_import)
+            EXPECT_TRUE(capabilities.device_uuid.has_value()) << "device " << index;
+    }
+}
+
+TEST(Unit_InteropImport, ADefaultDescriptorIsRefusedForItsUnstatedKind)
+{
+    auto runtime = Runtime::create();
+    const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
+    if (!index)
+        GTEST_SKIP() << "no device imports external memory";
+
+    const Interop::ExternalMemoryDescriptor descriptor;
+    const Core::Error refusal = refusal_of(runtime, descriptor, 4, *index);
+
+    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_NE(refusal.message.find("descriptor.kind is Unspecified"), std::string::npos)
+        << refusal.message;
+    EXPECT_NE(refusal.message.find("the exporter must state it"), std::string::npos)
+        << refusal.message;
+}
+
+#if defined(_WIN32)
+TEST(Unit_InteropImport, ANullWin32HandleIsRefusedByName)
+{
+    auto runtime = Runtime::create();
+    const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
+    if (!index)
+        GTEST_SKIP() << "no device imports external memory";
+
+    Interop::ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
+    descriptor.handle = 0;
+    const Core::Error refusal = refusal_of(runtime, descriptor, 4, *index);
+
+    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_NE(refusal.message.find("descriptor.handle is null"), std::string::npos)
+        << refusal.message;
+}
+#else
+TEST(Unit_InteropImport, AFileDescriptorAboveIntIsRefusedWithItsValue)
+{
+    auto runtime = Runtime::create();
+    const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
+    if (!index)
+        GTEST_SKIP() << "no device imports external memory";
+
+    Interop::ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
+    descriptor.handle = static_cast<std::uint64_t>(std::numeric_limits<int>::max()) + 1;
+    const Core::Error refusal = refusal_of(runtime, descriptor, 4, *index);
+
+    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_NE(refusal.message.find("descriptor.handle is " + std::to_string(descriptor.handle)),
+              std::string::npos)
+        << refusal.message;
+}
+#endif
+
+TEST(Unit_InteropImport, ZeroElementsImportNothingAndReturnAnEmptyBuffer)
+{
+    auto runtime = Runtime::create();
+    const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
+    if (!index)
+        GTEST_SKIP() << "no device imports external memory";
+
+    const Buffer<float> buffer = runtime.interop().import_device<float>(
+        acceptable_descriptor(runtime, *index), 0, DeviceIndex{*index});
+
+    EXPECT_TRUE(buffer.empty());
+    EXPECT_EQ(buffer.size(), 0u);
 }
 
 TEST(Unit_InteropImport, AHandleKindOfAnotherPlatformIsRefusedByName)
