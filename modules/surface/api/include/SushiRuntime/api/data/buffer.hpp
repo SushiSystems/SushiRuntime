@@ -438,40 +438,6 @@ namespace SushiRuntime
                     return std::move(*this);
                 }
 
-                /** @brief Forwards to is_host_accessible(). */
-                [[deprecated("use is_host_accessible()")]]
-                bool host_accessible() const noexcept
-                {
-                    return is_host_accessible();
-                }
-
-                /**
-                 * @brief Forwards to write_range(ElementRange, span<const T>) with range.count
-                 *        elements at @p src.
-                 * @throws SushiException With invalid_access when @p src is null and range.count
-                 *        is not zero.
-                 */
-                [[deprecated("use write_range(ElementRange, span<const T>)")]]
-                void write_range(ElementRange range, const T* src) const
-                {
-                    write_window("Buffer::write_range", range, span<const T>(src, range.count));
-                }
-
-                /** @brief Forwards to detail::HandleAccess::key(). */
-                [[deprecated("name the Buffer in Reads(...) or Writes(...) instead")]]
-                void* dependency_key() const noexcept
-                {
-                    return detail::HandleAccess::key(*this);
-                }
-
-                /** @brief Forwards to detail::HandleAccess::liveness(). */
-                [[deprecated("internal to the graph layer; declare the access with Reads, Writes, "
-                             "In, Out or InOut")]]
-                Memory::LivenessObserver liveness() const noexcept
-                {
-                    return detail::HandleAccess::liveness(*this);
-                }
-
             private:
                 friend class Runtime;
                 friend class Interop;

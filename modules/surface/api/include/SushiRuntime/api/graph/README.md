@@ -17,7 +17,6 @@ symbol or passage it explains, and that header's file block cites this page.
 | `access.hpp` | Access, what one node reads and writes |
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
 | `node_options.hpp` | NodeOptions |
-| `backing_graph.hpp` | BackingGraph, the deprecated name of `Graph::TaskGraph` |
 | `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_host(), add_emitter(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
 | `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), their try_ forms, cancel(), set_profiling() and the step loop |
@@ -364,8 +363,7 @@ same graph is correct with or without a cluster.
 
 `reads` and `writes` are Reads(...) and Writes(...). The dependency tracker orders the task by them,
 and the distributed layer resolves them to network buffer handles. `params` are scalar arguments
-carried in TaskMetadata, element counts for example. The form that takes two lists of base
-pointers is deprecated and forwards here.
+carried in TaskMetadata, element counts for example.
 
 ### add(OpID, state, local, params)
 
@@ -430,10 +428,6 @@ the last node only.
 Device work an emitter records must wait on the dependency events it is handed
 (`h.depends_on(deps)`); a chained plan relies on that for its order.
 
-The parameter type was spelled `BackingGraph` up to v0.3. The alias named nothing a caller could
-look up, so the contract now names the engine type. `API::BackingGraph` is deprecated in v0.4.0 and
-names the same type.
-
 ### extend
 
 extend(extension) calls `extension(Recorder&)` once, when it is called, and the nodes the
@@ -461,21 +455,6 @@ name() copies the label, so a temporary string is a valid argument. Every node o
 reports the name; an emitter is the exception, because the backing graph can name only the last
 node an emitter added. An empty label returns the rule to the default name, and so does a null
 `const char*`.
-
-### Deprecated spellings
-
-v0.4.0 keeps each spelling it replaces as a `[[deprecated]]` member that forwards to the new one
-and holds no code of its own.
-
-| Deprecated | Replacement |
-| --- | --- |
-| `add(Reads, Writes, launch, fn)` | `add(launch, Reads, Writes, fn)` |
-| `add(state, Extent, fn)` | `add(Extent, state, fn)` |
-| `add(out, in0, ..., fn)` | `add(Coupled(out, in0, ...), fn)` |
-| `add(Dynamic, Reads, Writes, capacity, fn)` | `add(Dynamic, capacity, Reads, Writes, fn)` |
-| `add(vector<void*>, vector<void*>, n, fn)`, and the same after a `Dynamic` | `Reads(pointer...)` and `Writes(pointer...)`: a base pointer converts to the region of its whole buffer |
-| `add(op, n, vector<void*>, vector<void*>, local, params)` | `add(op, n, Reads(pointer...), Writes(pointer...), local, params)`: the same conversion |
-| `name_last(label)` | `name(label)` |
 
 ## plan_cache.hpp
 
@@ -684,8 +663,7 @@ set_profiling() asks for per-node device timing on this graph and returns the gr
 with the calls around it. It is `noexcept` on both graph types and allocates nothing: the owner
 stores the request, and a request that changed makes the next run rebuild the plan with it; the
 value already stored rebuilds nothing. is_profiling_requested() reads the
-request back. set_profiling_requested() and profiling_requested() are the deprecated spellings and
-forward to these two.
+request back.
 
 ### StepDriver: moves
 

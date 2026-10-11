@@ -111,8 +111,7 @@ are not, because a chain on a named Dynamic drops its last reference on purpose.
 ### One source per control
 
 The live size has two possible sources, a host provider and a device slot, and so does the base.
-The member that sets one source clears the other, so the source set last decides. Up to v0.3,
-and_sized() after sized_from_device() kept both and the device slot won without saying so.
+The member that sets one source clears the other, so the source set last decides.
 
 ### checked_device_slot and DeviceSlot
 
@@ -126,12 +125,6 @@ The observer reaches the recorder with the read region of the slot, so a graph t
 sized_from_device(counter) or based_at_device(slot) refuses to run with `dangling_resource` once
 that buffer is destroyed. slot_buffer_key() returns the dependency key of the slot's buffer and
 holds the one const_cast from the read-only word pointer.
-
-### and_when, and_sized, and_based_at
-
-The three `and_` members are deprecated in v0.4.0 and forward to when(), sized() and based_at().
-and_sized_from_device(pointer, index) and and_based_at_device(pointer, index) are removed: they took
-a bare pointer and skipped the check above.
 
 ### sized_from_device
 

@@ -206,10 +206,6 @@ namespace SushiRuntime
                 static constexpr std::uint32_t NO_REGISTRATION =
                     ::SushiRuntime::Graph::TaskGraph::NO_REGISTRATION;
 
-                /** @brief Names the same value as NO_REGISTRATION. */
-                [[deprecated("use NO_REGISTRATION")]]
-                static constexpr std::uint32_t no_registration = NO_REGISTRATION;
-
                 /**
                  * @brief Returns the registration index a rule of a region carries in the plan.
                  * @param rule Position in the region's add() order, below its size().
@@ -230,10 +226,6 @@ namespace SushiRuntime
                  * holds across runs that only read the regions.
                  */
                 using RegionComposer::compose_count;
-
-                /** @brief Forwards to compose_count(). */
-                [[deprecated("use compose_count")]]
-                [[nodiscard]] std::size_t compile_count() const noexcept { return compose_count(); }
 
                 using StepDriver<DynamicGraph>::is_profiling_requested;
                 using StepDriver<DynamicGraph>::set_profiling;

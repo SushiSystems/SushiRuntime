@@ -74,9 +74,6 @@ the header, so it compares the release the caller compiled against with the rele
 library the loader found, and a mismatch fails with a message naming both instead of failing later
 in an unrelated call.
 
-The two-argument `create(devices, config)` is deprecated. It copies `config`, replaces its `devices`
-with the first argument and forwards.
-
 ### Copy and const
 
 A `Runtime` moves and does not copy. A copy would be a second handle to the same context, which
@@ -106,7 +103,7 @@ two each step. It validates its `DeviceIndex` as `buffer()` does.
 The rebalancer is off unless `RuntimeConfig::rebalancer` asked for it. Running it trades run-to-run
 reproducibility and the jitter floor for throughput, by migrating tasks between workers on a 5 ms
 heartbeat. That is worth it for long batch work and wrong for a simulation frame.
-`set_rebalancer_enabled()` is safe to call between runs. `rebalancer(bool)` is its deprecated name.
+`set_rebalancer_enabled()` is safe to call between runs.
 
 ### unsafe_context
 

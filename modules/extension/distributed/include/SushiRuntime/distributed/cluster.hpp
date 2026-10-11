@@ -139,28 +139,6 @@ namespace SushiRuntime
                                                     std::shared_ptr<ITransport> transport,
                                                     ClusterOptions options = ClusterOptions());
 
-                /** @brief Attaches with an empty secret and default timings. */
-                [[deprecated("use attach(runtime, transport, ClusterOptions)")]]
-                [[nodiscard]] static Cluster attach(
-                    API::Runtime& runtime, std::shared_ptr<ITransport> transport,
-                    sushi_ptr<KernelRegistry> kernels,
-                    std::shared_ptr<IOffloadPolicy> policy = nullptr)
-                {
-                    return attach(runtime, std::move(transport),
-                                  legacy_options(std::move(kernels), std::move(policy)));
-                }
-
-                /** @brief Attaches to a bare context with an empty secret and default timings. */
-                [[deprecated("use attach(context, transport, ClusterOptions)")]]
-                [[nodiscard]] static Cluster attach(
-                    Execution::RuntimeContext& context, std::shared_ptr<ITransport> transport,
-                    sushi_ptr<KernelRegistry> kernels,
-                    std::shared_ptr<IOffloadPolicy> policy = nullptr)
-                {
-                    return attach(context, std::move(transport),
-                                  legacy_options(std::move(kernels), std::move(policy)));
-                }
-
                 /** @brief Copies the handle; both name the same master. */
                 Cluster(const Cluster&) = default;
 
@@ -239,16 +217,6 @@ namespace SushiRuntime
 
                 /** @brief Wraps the state attach() built. */
                 explicit Cluster(std::shared_ptr<State> state) noexcept;
-
-                /** @brief Builds the options of the four-argument attach(). */
-                [[nodiscard]] static ClusterOptions legacy_options(
-                    sushi_ptr<KernelRegistry> kernels, std::shared_ptr<IOffloadPolicy> policy)
-                {
-                    ClusterOptions options;
-                    options.kernels = std::move(kernels);
-                    options.policy  = std::move(policy);
-                    return options;
-                }
 
                 /** @brief The registry and the master; shared by every copy of the handle. */
                 std::shared_ptr<State> state_;

@@ -46,22 +46,9 @@ namespace SushiRuntime
         struct Extent
         {
             static_assert(N >= 1 && N <= 3, "Extent supports 1, 2, or 3 dimensions.");
-            static_assert(std::is_standard_layout_v<sycl::id<N>>,
-                          "origin and offset share one object, which needs a standard-layout id.");
 
             sycl::range<N> extent;  /**< Work-items per dimension. */
-
-            /**
-             * @brief Holds the origin under two names, origin and the deprecated offset.
-             * @see modules/surface/api/include/SushiRuntime/api/launch/README.md
-             */
-            union
-            {
-                sycl::id<N> origin = sycl::id<N>{};  /**< Index of the first work-item. */
-
-                /** @brief Names the same value as origin. */
-                [[deprecated("use origin")]] sycl::id<N> offset;
-            };
+            sycl::id<N> origin = sycl::id<N>{};  /**< Index of the first work-item. */
 
             /**
              * @brief A 1-D extent from a plain element count (origin 0).

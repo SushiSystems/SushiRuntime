@@ -338,20 +338,6 @@ namespace SushiRuntime
                     return owner().profiling_request();
                 }
 
-                /** @brief Requests or withdraws per-node device timing for this graph. */
-                [[deprecated("use set_profiling")]]
-                void set_profiling_requested(bool requested) noexcept
-                {
-                    set_profiling(requested);
-                }
-
-                /** @brief Returns whether this graph requests per-node device timing. */
-                [[deprecated("use is_profiling_requested")]]
-                bool profiling_requested() const noexcept
-                {
-                    return is_profiling_requested();
-                }
-
             protected:
                 StepDriver() = default;
 

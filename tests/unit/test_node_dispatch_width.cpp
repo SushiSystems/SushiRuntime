@@ -80,15 +80,7 @@ TEST(Unit_NodeDispatchWidth, DefaultConstructedNodeReportsUnknown)
     EXPECT_EQ(node.baked_width, std::size_t{Observability::WIDTH_UNKNOWN});
 }
 
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-
-static_assert(noexcept(std::declval<TaskGraph&>().width_last_node(std::size_t{0})),
-              "width_last_node must stay noexcept, like its name_last_node sibling.");
-
-/** @brief Tests that last_node_width(), deprecated in v0.4.0, reports an unstamped node. */
+/** @brief Tests that a node added without a stamp reports the unknown width. */
 TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 {
     RuntimeContext ctx;
@@ -96,34 +88,33 @@ TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 
     graph.add_node(noop_work());
 
-    EXPECT_EQ(graph.last_node_width(), std::size_t{Observability::WIDTH_UNKNOWN});
+    EXPECT_EQ(graph.last_node_added()->baked_width, std::size_t{Observability::WIDTH_UNKNOWN});
 }
 
-TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsTheNodeNameLastNodeNames)
+/** @brief Tests that a width set on a node and a name given after it land on that node. */
+TEST(Unit_NodeDispatchWidth, BakedWidthAndNameStampTheNodeTheyAreSetOn)
 {
     RuntimeContext ctx;
     TaskGraph graph;
 
-    graph.add_node(noop_work());
-    graph.width_last_node(4096);
+    graph.add_node(noop_work()).baked_width = 4096;
     graph.name_last_node("stamped");
 
-    EXPECT_EQ(graph.last_node_width(), std::size_t{4096});
     ASSERT_NE(graph.last_node_added(), nullptr);
+    EXPECT_EQ(graph.last_node_added()->baked_width, std::size_t{4096});
     EXPECT_STREQ(graph.last_node_added()->metadata.name, "stamped");
 }
 
-/** @brief Verifies width_last_node() stamps the second of two nodes, not the first. */
-TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsOnlyTheMostRecentNode)
+/** @brief Verifies a width set on the second of two nodes leaves the first one unknown. */
+TEST(Unit_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
 {
     RuntimeContext ctx;
     TaskGraph graph;
 
     graph.add_node(noop_work());
     graph.name_last_node("first");
-    graph.add_node(noop_work());
+    graph.add_node(noop_work()).baked_width = 4096;
     graph.name_last_node("second");
-    graph.width_last_node(4096);
 
     Graph::CompiledGraph plan = graph.compile();
     ASSERT_EQ(plan.all_nodes.size(), 2u);
@@ -131,21 +122,6 @@ TEST(Unit_NodeDispatchWidth, WidthLastNodeStampsOnlyTheMostRecentNode)
     EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{Observability::WIDTH_UNKNOWN});
     EXPECT_EQ(find_named(plan, "second").baked_width, std::size_t{4096});
 }
-
-TEST(Unit_NodeDispatchWidth, WidthLastNodeOnAnEmptyGraphLeavesTheWidthUnknown)
-{
-    RuntimeContext ctx;
-    TaskGraph graph;
-
-    graph.width_last_node(4096);
-
-    EXPECT_EQ(graph.last_node_width(), std::size_t{Observability::WIDTH_UNKNOWN});
-    EXPECT_EQ(graph.last_node_added(), nullptr);
-}
-
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
 
 /**
  * @brief Tests that a node without late bindings reports its baked width as both launched and live.

@@ -341,34 +341,3 @@ TEST(Integration_LateBoundVocabulary, MembersChainOnANamedDynamic)
     g.run();
     EXPECT_EQ(buf[10], 1) << "a disabled step must run no element";
 }
-
-/** @brief Tests that and_when, and_sized and and_based_at set what their replacements set. */
-TEST(Integration_LateBoundVocabulary, DeprecatedSettersForwardToTheirReplacements)
-{
-    constexpr std::size_t CAPACITY = 32;
-
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(CAPACITY);
-    int* p = buf.data();
-    for (std::size_t i = 0; i < CAPACITY; ++i)
-        buf[i] = 0;
-
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-    API::Dynamic window = API::Dynamic()
-                              .and_when([] { return true; })
-                              .and_sized([] { return std::size_t{6}; })
-                              .and_based_at([] { return std::size_t{20}; });
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-
-    auto g = rt.graph();
-    g.add(std::move(window), CAPACITY, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = 1; });
-    g.run();
-
-    for (std::size_t i = 0; i < CAPACITY; ++i)
-        ASSERT_EQ(buf[i], (i >= 20 && i < 26) ? 1 : 0) << "element " << i;
-}

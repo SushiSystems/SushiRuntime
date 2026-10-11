@@ -136,26 +136,6 @@ TEST(Integration_RuntimeEntry, EveryFieldReachesTheRuntime)
     EXPECT_FALSE(view.is_rebalancer_enabled());
 }
 
-/** @brief Tests that the two-argument create() builds what the one-struct form builds. */
-TEST(Integration_RuntimeEntry, TheDeprecatedTwoArgumentCreateStillWorks)
-{
-    DeviceFilter devices;
-    RuntimeConfig config;
-    config.worker_count = 2;
-
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-    const Runtime rt = Runtime::create(devices, config);
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-
-    EXPECT_EQ(rt.advanced().worker_pool().count, 2u);
-    EXPECT_EQ(rt.advanced().device_count(), Runtime::create(config).advanced().device_count());
-}
-
 /** @brief Tests that a moved Runtime keeps the context its handles were made from. */
 TEST(Integration_RuntimeEntry, AMovedRuntimeKeepsItsContext)
 {

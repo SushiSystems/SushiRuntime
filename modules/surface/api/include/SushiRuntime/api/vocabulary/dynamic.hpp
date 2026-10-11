@@ -238,42 +238,6 @@ namespace SushiRuntime
                     return std::move(based_at_device(slot, index));
                 }
 
-                /** @brief Forwards to when() on a named Dynamic. */
-                [[deprecated("use when")]] Dynamic& and_when(WhenProvider pred) &
-                {
-                    return when(std::move(pred));
-                }
-
-                /** @brief Forwards to when() while chaining inline. */
-                [[deprecated("use when")]] Dynamic and_when(WhenProvider pred) &&
-                {
-                    return std::move(when(std::move(pred)));
-                }
-
-                /** @brief Forwards to sized() on a named Dynamic. */
-                [[deprecated("use sized")]] Dynamic& and_sized(CountProvider count) &
-                {
-                    return sized(std::move(count));
-                }
-
-                /** @brief Forwards to sized() while chaining inline. */
-                [[deprecated("use sized")]] Dynamic and_sized(CountProvider count) &&
-                {
-                    return std::move(sized(std::move(count)));
-                }
-
-                /** @brief Forwards to based_at() on a named Dynamic. */
-                [[deprecated("use based_at")]] Dynamic& and_based_at(BaseProvider base) &
-                {
-                    return based_at(std::move(base));
-                }
-
-                /** @brief Forwards to based_at() while chaining inline. */
-                [[deprecated("use based_at")]] Dynamic and_based_at(BaseProvider base) &&
-                {
-                    return std::move(based_at(std::move(base)));
-                }
-
             private:
                 friend struct detail::DynamicAccess;
 

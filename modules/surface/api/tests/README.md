@@ -567,7 +567,7 @@ reader observe an unwritten half.
 ### `BufferAllocateUseAndReadBack`
 
 A standalone `Buffer<T>` is allocated, seeded on the host, used in a graph task through
-`dependency_key()` and read back. The test verifies the lifecycle of owning USM.
+`Reads` and `Writes` on its data pointer and read back. The test verifies the lifecycle of owning USM.
 
 ### `GraphSizeTracksAdds`
 
@@ -762,19 +762,11 @@ to 77.
 ### `TheSizeSourceSetLastWins`
 
 A device slot holds 3 and a host provider returns 5. `sized_from_device(counter).sized(host)` runs
-five elements and `sized(host).sized_from_device(counter)` runs three. Up to v0.3 the first form ran
-three, because `and_sized()` left the device slot in place.
-
+five elements and `sized(host).sized_from_device(counter)` runs three.
 ### `MembersChainOnANamedDynamic`
 
 `when`, `sized` and `based_at` chain on a named `Dynamic`, which then moves into `add()`. Elements
 10 to 13 run once, and a second run with the predicate false runs none.
-
-### `DeprecatedSettersForwardToTheirReplacements`
-
-`and_when`, `and_sized` and `and_based_at` still set the three controls: elements 20 to 25 run. The
-calls sit between pragmas that silence the deprecation warning, because the tree compiles with
-`-Werror`.
 
 ## test_late_count.cpp
 
@@ -1250,11 +1242,6 @@ runtime; `tests/integration/test_co_tenancy.cpp` reads `first_core` back on a ma
 reserve. The api struct is mapped to the engine's settings by hand in one function, so a field that
 function forgets would otherwise keep its default silently.
 
-### `TheDeprecatedTwoArgumentCreateStillWorks`
-
-The two-argument `create(devices, config)` must build what the one-struct form builds. The call sits
-between pragmas that silence the deprecation warning, because the tree compiles with `-Werror`.
-
 ### `AMovedRuntimeKeepsItsContext`
 
 A move hands the context over and does not build a second one.
@@ -1324,20 +1311,6 @@ rule with a short input, a Coupled launch past its State, `add_untracked` with a
 lacks (both the launch and the raw form), and an offload with nine parameters (both the task and
 the State rule). Each message begins with the spelling of the call the user wrote, and no rule is
 recorded.
-
-### `DeprecatedSpellingsForwardToTheNewOnes`
-
-Each spelling v0.4.0 deprecates (the old argument orders, `name_last`, `no_registration`,
-`Extent::offset`) still records the same rule. The test switches the deprecation warning off for
-its own body and is deleted with the forwarders.
-
-### `DeprecatedRawPointerFormsForwardToTheRegionForms`
-
-The per-element, the Dynamic and the offload forms that take two lists of base pointers each
-record the same rules and nodes as their `Reads` and `Writes` form. The rule that takes the
-pointers is followed by a rule over the same buffer, which waits for it, so every word ends at
-`(x + 1) * 3`. The test switches the deprecation warning off for its own body and is
-deleted with the forwarders.
 
 ## test_callable_traits.cpp
 
