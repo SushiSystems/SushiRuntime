@@ -219,7 +219,7 @@ TEST(Integration_StateMove, AStateAssignedOverRefusesTheRun)
 
     const auto refused = graph.try_run();
     ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, Errc::dangling_resource);
+    EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
 }
 
 /** @brief Tests that a late-bound State rule replayed after one step reads the current field. */

@@ -34,7 +34,7 @@ It depends on the C++ standard library and on `core` (`export.hpp`, `error.hpp`,
 | `LogSink` | The callable that receives each record |
 | `set_log_sink(sink)` | Replaces the sink of the process |
 
-`SR_THROW_IF` throws `SushiException` with `Errc::invalid_state`; the message is the
+`SR_THROW_IF` throws `SushiException` with `ErrorCode::InvalidState`; the message is the
 formatted text and is logged once.
 
 Everything in `Detail` belongs to the macros.

@@ -58,7 +58,7 @@ namespace SushiRuntime
          *
          * Reads the step-boundary values only, with K_USE_BAKED meaning the rest
          * of capacity; a node with a device count or base never comes here.
-         * @throws SushiException With invalid_graph for a window that does not fit.
+         * @throws SushiException With InvalidGraph for a window that does not fit.
          */
         inline LiveRange resolve_live_range(
             const ::SushiRuntime::Internal::Graph::LateBindings& lb, std::size_t capacity)
@@ -75,7 +75,7 @@ namespace SushiRuntime
 
             if (range.base > capacity || range.count > capacity - range.base)
                 throw SushiException(Error{
-                    Errc::invalid_graph,
+                    ErrorCode::InvalidGraph,
                     "A late-bound task's live window starts at " +
                     std::to_string(range.base) + " and covers " +
                     std::to_string(range.count) +

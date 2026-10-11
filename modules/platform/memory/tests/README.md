@@ -53,7 +53,7 @@ them. It replaces a sleep: the test waits for a count, not for time.
 A thread takes a slot at its first `EpochGuard` and returns it when the thread exits, not when the
 guard is destroyed. The test starts one thread more than there are slots and parks every one of
 them, so at least one finds no slot, whether or not the main thread already holds one. That thread
-gets `SushiException` with `Errc::unsupported` and a message that carries the slot count.
+gets `SushiException` with `ErrorCode::Unsupported` and a message that carries the slot count.
 
 After the parked threads exit, one more thread takes a guard without a throw, which shows the
 slots came back.

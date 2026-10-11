@@ -46,9 +46,9 @@ lambda registers without a cast.
 
 A `WorkerAgent` seals the registry in its constructor, before it reads the operations it sends in
 `PROOF` and before the exec thread exists, and `run_worker()` seals it on entry. From then on
-`register_kernel()` throws `invalid_state`, because the exec thread reads the map without a lock
+`register_kernel()` throws `InvalidState`, because the exec thread reads the map without a lock
 and the master was already told which operations the worker runs. An empty `Kernel` is refused
-with `invalid_access` at any time. A `Cluster` only keeps `ClusterOptions::kernels` alive and reads
+with `InvalidAccess` at any time. A `Cluster` only keeps `ClusterOptions::kernels` alive and reads
 nothing from it, so attach() does not seal it. A view a kernel receives is valid until the event
 the kernel returned completes: the exec thread holds the cache pins across that wait.
 
@@ -76,7 +76,7 @@ coordinator stops a transport only when its own `start()` call started it.
 attach() checks, in this order, that no run is in flight on the runtime
 (`ExecutionEngine::run_in_progress()`), that the transport is not null, that `liveness_timeout`
 and `handshake_timeout` are at least 1 ms, that the secret is not empty on a Network transport and
-that `chunk_bytes` lies between 4 KiB and 1 MiB less 64. Each refusal throws `invalid_state` before
+that `chunk_bytes` lies between 4 KiB and 1 MiB less 64. Each refusal throws `InvalidState` before
 anything is built or stopped. A liveness or handshake timeout of 0 would count every peer as
 expired on the monitor's first pass; `task_deadline` is the one timing where 0 means no bound, and
 `Cluster::liveness_timeout()` refuses a value below 1 ms like attach() does. It then builds the

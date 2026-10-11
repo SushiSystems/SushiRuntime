@@ -208,7 +208,7 @@ namespace SushiRuntime
             {
                 state->coordinator.stop();
                 throw SushiException(Error{
-                    Errc::invalid_state,
+                    ErrorCode::InvalidState,
                     "Cluster::attach: the master did not start: " + started.message +
                         (context.offload() != nullptr
                              ? "; the cluster attached before stays installed."

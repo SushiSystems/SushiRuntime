@@ -205,7 +205,7 @@ TEST(Integration_NodeOptionsWidth, MoreParametersThanANodeCarriesAreRefused)
     options.parameters = parameters;
 
     auto g = rt.graph();
-    Errc refused = Errc::ok;
+    ErrorCode refused = ErrorCode::Ok;
     try
     {
         g.add(WIDE, Reads(), Writes(values), [v](std::size_t i) { v[i] = 0u; }, options);
@@ -215,6 +215,6 @@ TEST(Integration_NodeOptionsWidth, MoreParametersThanANodeCarriesAreRefused)
         refused = e.error().code;
     }
 
-    EXPECT_EQ(refused, Errc::invalid_graph);
+    EXPECT_EQ(refused, ErrorCode::InvalidGraph);
     EXPECT_EQ(g.size(), 0u);
 }

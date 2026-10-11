@@ -30,7 +30,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/version.hpp>
 
-using SushiRuntime::Errc;
+using SushiRuntime::ErrorCode;
 using SushiRuntime::SushiException;
 using SushiRuntime::Version;
 
@@ -45,7 +45,7 @@ namespace
         }
         catch (const SushiException& mismatch)
         {
-            EXPECT_EQ(mismatch.error().code, Errc::unsupported);
+            EXPECT_EQ(mismatch.error().code, ErrorCode::Unsupported);
             return mismatch.what();
         }
         return std::string();

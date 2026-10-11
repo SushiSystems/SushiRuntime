@@ -124,7 +124,7 @@ TEST(Unit_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
     const Error refusal =
         refusal_of(runtime, acceptable_descriptor(runtime, *index), 4, *index);
 
-    EXPECT_EQ(refusal.code, Errc::unsupported);
+    EXPECT_EQ(refusal.code, ErrorCode::Unsupported);
     EXPECT_NE(refusal.message.find("device " + std::to_string(*index)), std::string::npos)
         << refusal.message;
     EXPECT_NE(refusal.message.find("device_import is false"), std::string::npos)
@@ -155,7 +155,7 @@ TEST(Unit_InteropImport, ADefaultDescriptorIsRefusedForItsUnstatedKind)
     const ExternalMemoryDescriptor descriptor;
     const Error refusal = refusal_of(runtime, descriptor, 4, *index);
 
-    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
     EXPECT_NE(refusal.message.find("descriptor.kind is Unspecified"), std::string::npos)
         << refusal.message;
     EXPECT_NE(refusal.message.find("the exporter must state it"), std::string::npos)
@@ -174,7 +174,7 @@ TEST(Unit_InteropImport, ANullWin32HandleIsRefusedByName)
     descriptor.handle = 0;
     const Error refusal = refusal_of(runtime, descriptor, 4, *index);
 
-    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
     EXPECT_NE(refusal.message.find("descriptor.handle is null"), std::string::npos)
         << refusal.message;
 }
@@ -190,7 +190,7 @@ TEST(Unit_InteropImport, AFileDescriptorAboveIntIsRefusedWithItsValue)
     descriptor.handle = static_cast<std::uint64_t>(std::numeric_limits<int>::max()) + 1;
     const Error refusal = refusal_of(runtime, descriptor, 4, *index);
 
-    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
     EXPECT_NE(refusal.message.find("descriptor.handle is " + std::to_string(descriptor.handle)),
               std::string::npos)
         << refusal.message;
@@ -222,7 +222,7 @@ TEST(Unit_InteropImport, AHandleKindOfAnotherPlatformIsRefusedByName)
     descriptor.kind = K_FOREIGN_KIND;
     const Error refusal = refusal_of(runtime, descriptor, 4, *index);
 
-    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
     EXPECT_NE(refusal.message.find("descriptor.kind is"), std::string::npos) << refusal.message;
 }
 
@@ -237,7 +237,7 @@ TEST(Unit_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
     descriptor.offset = 60;
     const Error past_the_end = refusal_of(runtime, descriptor, 4, *index);
 
-    EXPECT_EQ(past_the_end.code, Errc::invalid_access);
+    EXPECT_EQ(past_the_end.code, ErrorCode::InvalidAccess);
     EXPECT_NE(past_the_end.message.find("16 bytes at offset 60"), std::string::npos)
         << past_the_end.message;
     EXPECT_NE(past_the_end.message.find("allocation of 64 bytes"), std::string::npos)
@@ -246,7 +246,7 @@ TEST(Unit_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
     // An offset beyond the allocation must not wrap the subtraction; see README.md.
     descriptor.offset = K_ALLOCATION_BYTES + 1;
     const Error offset_outside = refusal_of(runtime, descriptor, 0, *index);
-    EXPECT_EQ(offset_outside.code, Errc::invalid_access);
+    EXPECT_EQ(offset_outside.code, ErrorCode::InvalidAccess);
     EXPECT_NE(offset_outside.message.find("offset 65"), std::string::npos)
         << offset_outside.message;
 }
@@ -264,7 +264,7 @@ TEST(Unit_InteropImport, AnotherDevicesUUIDIsRefusedWithBothUUIDs)
     descriptor.device.bytes[15] = static_cast<std::uint8_t>(descriptor.device.bytes[15] ^ 0xFFu);
     const Error refusal = refusal_of(runtime, descriptor, 4, *index);
 
-    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
     EXPECT_NE(refusal.message.find("descriptor.device is"), std::string::npos) << refusal.message;
     EXPECT_NE(refusal.message.find("and device " + std::to_string(*index) + " is"),
               std::string::npos)

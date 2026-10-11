@@ -114,7 +114,7 @@ namespace SushiRuntime
             SushiException empty_set_error()
             {
                 return SushiException(Error{
-                    Errc::unsupported,
+                    ErrorCode::Unsupported,
                     "The device set holds no device, so no NUMA node resolves to one."});
             }
         } // namespace
@@ -289,7 +289,7 @@ namespace SushiRuntime
                 return;
 
             throw SushiException(Error{
-                Errc::invalid_access,
+                ErrorCode::InvalidAccess,
                 "Device index " + std::to_string(index) + " is out of bounds; the set holds "
                     + std::to_string(infos_.size()) + " device(s)."});
         }

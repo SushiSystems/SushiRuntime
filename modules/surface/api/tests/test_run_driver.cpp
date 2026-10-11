@@ -147,7 +147,7 @@ namespace
 
     /** @brief Returns the code of the SushiException call throws, or ok when it returns. */
     template <class Call>
-    Errc code_thrown_by(Call&& call)
+    ErrorCode code_thrown_by(Call&& call)
     {
         try
         {
@@ -157,34 +157,34 @@ namespace
         {
             return e.error().code;
         }
-        return Errc::ok;
+        return ErrorCode::Ok;
     }
 
-    /** @brief Expects kernel_failed from every way of running a graph whose task throws. */
+    /** @brief Expects KernelFailed from every way of running a graph whose task throws. */
     template <class G>
     void expect_kernel_failed_everywhere(G& graph)
     {
         const auto run = graph.try_run();
         ASSERT_FALSE(run.has_value());
-        EXPECT_EQ(run.error().code, Errc::kernel_failed);
+        EXPECT_EQ(run.error().code, ErrorCode::KernelFailed);
         EXPECT_NE(run.error().message.find(K_TASK_FAILURE), std::string::npos);
 
         Internal::Observability::RunReport report;
         const auto reused = graph.try_run(report);
         ASSERT_FALSE(reused.has_value());
-        EXPECT_EQ(reused.error().code, Errc::kernel_failed);
+        EXPECT_EQ(reused.error().code, ErrorCode::KernelFailed);
         EXPECT_FALSE(report.is_successful);
 
         auto step = graph.try_run_async();
         ASSERT_TRUE(step.has_value()) << step.error().message;
         const auto waited = step->try_wait();
         ASSERT_FALSE(waited.has_value());
-        EXPECT_EQ(waited.error().code, Errc::kernel_failed);
+        EXPECT_EQ(waited.error().code, ErrorCode::KernelFailed);
         EXPECT_NE(waited.error().message.find(K_TASK_FAILURE), std::string::npos);
 
-        EXPECT_EQ(code_thrown_by([&graph]() { graph.run(); }), Errc::kernel_failed);
+        EXPECT_EQ(code_thrown_by([&graph]() { graph.run(); }), ErrorCode::KernelFailed);
         EXPECT_EQ(code_thrown_by([&graph]() { graph.run_async().wait(); }),
-                  Errc::kernel_failed);
+                  ErrorCode::KernelFailed);
     }
 
     /** @brief Calls each try_ entry once and expects success; twelve steps run in all. */
@@ -340,7 +340,7 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that a Graph reports a throwing host task as kernel_failed from every entry. */
+/** @brief Tests that a Graph reports a throwing host task as KernelFailed from every entry. */
 TEST(Integration_RunDriver, GraphReportsAThrowingHostTaskAsKernelFailed)
 {
     auto rt  = Runtime::create();
@@ -364,7 +364,7 @@ TEST(Integration_RunDriver, DynamicGraphReportsAThrowingHostTaskAsKernelFailed)
     expect_kernel_failed_everywhere(world);
 }
 
-/** @brief Tests that an exception thrown while the plan is built is compile_failed. */
+/** @brief Tests that an exception thrown while the plan is built is CompileFailed. */
 TEST(Integration_RunDriver, AThrowingBuildIsCompileFailed)
 {
     auto rt  = Runtime::create();
@@ -378,12 +378,12 @@ TEST(Integration_RunDriver, AThrowingBuildIsCompileFailed)
 
     const auto run = g.try_run();
     ASSERT_FALSE(run.has_value());
-    EXPECT_EQ(run.error().code, Errc::compile_failed);
+    EXPECT_EQ(run.error().code, ErrorCode::CompileFailed);
     EXPECT_NE(run.error().message.find(K_BUILD_FAILURE), std::string::npos);
 
     const auto step = g.try_run_async();
     ASSERT_FALSE(step.has_value());
-    EXPECT_EQ(step.error().code, Errc::compile_failed);
+    EXPECT_EQ(step.error().code, ErrorCode::CompileFailed);
 }
 
 /** @brief Tests that both graph types run through every try_ entry. */
@@ -410,7 +410,7 @@ TEST(Integration_RunDriver, EveryTryEntryRunsOnBothGraphs)
     EXPECT_EQ(dynamic_count[0], STEPS_OF_ALL_ENTRIES);
 }
 
-/** @brief Tests that a run refused for the graph's state reports invalid_state. */
+/** @brief Tests that a run refused for the graph's state reports InvalidState. */
 TEST(Integration_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 {
     auto rt  = Runtime::create();
@@ -429,11 +429,11 @@ TEST(Integration_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 
     const auto refused = g.try_run();
     ASSERT_FALSE(refused.has_value());
-    EXPECT_EQ(refused.error().code, Errc::invalid_state);
+    EXPECT_EQ(refused.error().code, ErrorCode::InvalidState);
 
     const auto second = g.try_run_async();
     ASSERT_FALSE(second.has_value());
-    EXPECT_EQ(second.error().code, Errc::invalid_state);
+    EXPECT_EQ(second.error().code, ErrorCode::InvalidState);
 
     released.store(true, std::memory_order_release);
     EXPECT_TRUE(step.try_wait().has_value());
@@ -441,7 +441,7 @@ TEST(Integration_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 
     const auto twice = step.try_wait();
     ASSERT_FALSE(twice.has_value());
-    EXPECT_EQ(twice.error().code, Errc::invalid_state);
+    EXPECT_EQ(twice.error().code, ErrorCode::InvalidState);
 }
 
 /** @brief Tests that set_profiling() chains and is read back on both graph types. */
@@ -541,7 +541,7 @@ TEST(Integration_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
 
     const auto late = step.try_wait();
     ASSERT_FALSE(late.has_value());
-    EXPECT_EQ(late.error().code, Errc::invalid_state);
+    EXPECT_EQ(late.error().code, ErrorCode::InvalidState);
 
     EXPECT_TRUE(moved.try_run().has_value()) << "the destination must run";
     EXPECT_EQ(buf[0], 14);

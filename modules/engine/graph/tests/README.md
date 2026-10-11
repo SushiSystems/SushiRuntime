@@ -40,13 +40,13 @@ through the reference are what the "last node" accessors then read back.
 ### `ARegistrationTheGraphNeverIssuedIsRefused`
 
 `add_node()` on an empty graph is given `K_NO_REGISTRATION`, then, after one `reserve_registration()`,
-the index one past it. Both throw `Errc::invalid_graph`. The first message must name the call, the
+the index one past it. Both throw `ErrorCode::InvalidGraph`. The first message must name the call, the
 index, the count issued and `reserve_registration()`. No node was added by either call.
 
 ### `EveryAddOverloadRefusesAnUnissuedRegistration`
 
 Six of the seven add overloads are each given index 7 on a graph that issued none, and each throws
-`Errc::invalid_graph`; the test above covers the seventh. A node added afterwards over the same regions has an `in_degree` of
+`ErrorCode::InvalidGraph`; the test above covers the seventh. A node added afterwards over the same regions has an `in_degree` of
 zero and compiles into a plan of one root, so no refused call left an access in the tracker.
 
 ### `AReservedRegistrationIsAcceptedTwice`
@@ -60,7 +60,7 @@ The references stay valid across `compile()`: the plan's `all_nodes` holds the s
 
 ### `CompileWithNoRootThrowsInvalidGraphNamingANode`
 
-Two nodes that wait on each other leave no root. The test expects `Errc::invalid_graph` and a
+Two nodes that wait on each other leave no root. The test expects `ErrorCode::InvalidGraph` and a
 message with the node count and one of the two, named by its label and registration index.
 
 ### `CompileWithACycleBehindARootThrowsInvalidGraphNamingANode`

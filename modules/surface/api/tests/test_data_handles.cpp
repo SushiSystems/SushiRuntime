@@ -60,11 +60,11 @@ namespace
         return Error{};
     }
 
-    /** @brief Expects an invalid_access error whose message holds the window and the size. */
+    /** @brief Expects an InvalidAccess error whose message holds the window and the size. */
     void expect_window_rejected(const Error& error, const char* call,
                                 ElementRange range, std::size_t size)
     {
-        EXPECT_EQ(error.code, Errc::invalid_access) << error.message;
+        EXPECT_EQ(error.code, ErrorCode::InvalidAccess) << error.message;
         EXPECT_NE(error.message.find(call), std::string::npos) << error.message;
         EXPECT_NE(error.message.find("offset " + std::to_string(range.offset)), std::string::npos)
             << error.message;
@@ -164,7 +164,7 @@ TEST(Integration_DataHandles, RejectedWriteCopiesNothing)
     const std::vector<int> source(K_SIZE, 9);
     const Error error = error_of([&]() { buf.write_range({K_SIZE - 2, 5}, source); });
 
-    EXPECT_EQ(error.code, Errc::invalid_access);
+    EXPECT_EQ(error.code, ErrorCode::InvalidAccess);
     for (std::size_t i = 0; i < K_SIZE; ++i)
         ASSERT_EQ(buf[i], 7) << "at i=" << i;
 }
@@ -210,17 +210,17 @@ TEST(Integration_DataHandles, NullOrShortSourceWithACountThrows)
     const std::vector<int> two(2, 1);
 
     const Error null_buffer = error_of([&]() { buf.write_range({0, 4}, span<const int>()); });
-    EXPECT_EQ(null_buffer.code, Errc::invalid_access);
+    EXPECT_EQ(null_buffer.code, ErrorCode::InvalidAccess);
     EXPECT_NE(null_buffer.message.find("count 4"), std::string::npos) << null_buffer.message;
 
     const Error null_state =
         error_of([&]() { field.write_range({0, 4}, span<const int>()); });
-    EXPECT_EQ(null_state.code, Errc::invalid_access);
+    EXPECT_EQ(null_state.code, ErrorCode::InvalidAccess);
     EXPECT_NE(null_state.message.find("State::write_range"), std::string::npos)
         << null_state.message;
 
     const Error short_source = error_of([&]() { buf.write_range({0, 4}, two); });
-    EXPECT_EQ(short_source.code, Errc::invalid_access);
+    EXPECT_EQ(short_source.code, ErrorCode::InvalidAccess);
     EXPECT_NE(short_source.message.find("holds 2"), std::string::npos) << short_source.message;
     EXPECT_NE(short_source.message.find("count 4"), std::string::npos) << short_source.message;
 }
@@ -235,12 +235,12 @@ TEST(Integration_DataHandles, OverflowingElementCountThrowsBeforeAllocating)
     const std::size_t count = std::numeric_limits<std::size_t>::max() / sizeof(double) + 2;
 
     const Error buffer_error = error_of([&]() { auto buf = rt.buffer<double>(count); });
-    EXPECT_EQ(buffer_error.code, Errc::allocation_failed);
+    EXPECT_EQ(buffer_error.code, ErrorCode::AllocationFailed);
     EXPECT_NE(buffer_error.message.find(std::to_string(count)), std::string::npos)
         << buffer_error.message;
 
     const Error state_error = error_of([&]() { auto field = rt.state<double>(count); });
-    EXPECT_EQ(state_error.code, Errc::allocation_failed);
+    EXPECT_EQ(state_error.code, ErrorCode::AllocationFailed);
     EXPECT_NE(state_error.message.find(std::to_string(count)), std::string::npos)
         << state_error.message;
 }
@@ -305,14 +305,14 @@ TEST(Integration_DataHandles, DistributedRefusesADeviceResidentBuffer)
     auto buf = rt.buffer<float>(8, DeviceIndex{0}, Residency::Device);
 
     const Error lvalue = error_of([&]() { buf.distributed(); });
-    EXPECT_EQ(lvalue.code, Errc::invalid_access) << lvalue.message;
+    EXPECT_EQ(lvalue.code, ErrorCode::InvalidAccess) << lvalue.message;
     EXPECT_NE(lvalue.message.find("Buffer::distributed()"), std::string::npos) << lvalue.message;
     EXPECT_NE(lvalue.message.find("Device residency"), std::string::npos) << lvalue.message;
 
     const Error rvalue = error_of([&]() {
         (void)rt.buffer<float>(8, DeviceIndex{0}, Residency::Device).distributed();
     });
-    EXPECT_EQ(rvalue.code, Errc::invalid_access) << rvalue.message;
+    EXPECT_EQ(rvalue.code, ErrorCode::InvalidAccess) << rvalue.message;
     EXPECT_NE(rvalue.message.find("Buffer::distributed()"), std::string::npos) << rvalue.message;
 }
 
@@ -325,7 +325,7 @@ TEST(Integration_DataHandles, DistributedRefusesADeviceResidentState)
     auto field = rt.state<float>(8, DeviceIndex{0}, Residency::Device);
 
     const Error error = error_of([&]() { field.distributed(); });
-    EXPECT_EQ(error.code, Errc::invalid_access) << error.message;
+    EXPECT_EQ(error.code, ErrorCode::InvalidAccess) << error.message;
     EXPECT_NE(error.message.find("State::distributed()"), std::string::npos) << error.message;
     EXPECT_EQ(error.message.find("Buffer::"), std::string::npos) << error.message;
 }
@@ -358,11 +358,11 @@ TEST(Integration_DataHandles, HostAccessOnADeviceStateNamesTheState)
     const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device);
 
     const Error indexed = error_of([&]() { (void)field[0]; });
-    EXPECT_EQ(indexed.code, Errc::invalid_access) << indexed.message;
+    EXPECT_EQ(indexed.code, ErrorCode::InvalidAccess) << indexed.message;
     EXPECT_NE(indexed.message.find("State::operator[]"), std::string::npos) << indexed.message;
 
     const Error bulk = error_of([&]() { (void)field.host(); });
-    EXPECT_EQ(bulk.code, Errc::invalid_access) << bulk.message;
+    EXPECT_EQ(bulk.code, ErrorCode::InvalidAccess) << bulk.message;
     EXPECT_NE(bulk.message.find("State::host"), std::string::npos) << bulk.message;
 }
 
@@ -377,7 +377,7 @@ TEST(Integration_DataHandles, DeviceIndexThatNamesNoDeviceIsRefused)
 
     const Error buffer_error =
         error_of([&]() { auto buf = rt.buffer<float>(8, past_the_end); });
-    EXPECT_EQ(buffer_error.code, Errc::invalid_access) << buffer_error.message;
+    EXPECT_EQ(buffer_error.code, ErrorCode::InvalidAccess) << buffer_error.message;
     EXPECT_NE(buffer_error.message.find("Runtime::buffer"), std::string::npos)
         << buffer_error.message;
     EXPECT_NE(buffer_error.message.find("device index " + std::to_string(count)),
@@ -389,7 +389,7 @@ TEST(Integration_DataHandles, DeviceIndexThatNamesNoDeviceIsRefused)
 
     const Error state_error =
         error_of([&]() { auto field = rt.state<float>(8, past_the_end); });
-    EXPECT_EQ(state_error.code, Errc::invalid_access) << state_error.message;
+    EXPECT_EQ(state_error.code, ErrorCode::InvalidAccess) << state_error.message;
     EXPECT_NE(state_error.message.find("Runtime::state"), std::string::npos)
         << state_error.message;
 }

@@ -164,7 +164,7 @@ node's bindings. For each slot the Dynamic has, it registers the slot as a read 
 caller the liveness observer of the slot's buffer. The read region orders the node behind whoever
 writes the slot, and the caller did not have to name it. The observer goes to Recorder::record()
 with the node's other observers, so a run after the buffer was destroyed is refused with
-`dangling_resource`.
+`DanglingResource`.
 
 ### register_device_slot
 
@@ -234,7 +234,7 @@ kernel that takes the id as a second parameter.
 
 A State rule or a coupled rule hands its kernel the fields of a State, so the recorder knows the
 size the kernel indexes into and compares the launch with it when the rule is recorded.
-require_launch_within() throws `invalid_graph` naming the call, the rule, the launch with its
+require_launch_within() throws `InvalidGraph` naming the call, the rule, the launch with its
 origin and the size it was compared with. Up to v0.3 nothing compared them, and a launch larger
 than its State wrote past the allocation on the device.
 
@@ -308,7 +308,7 @@ two addresses into its live read and write lists at each replay. The State keeps
 
 ### require_offload_parameters
 
-TaskMetadata holds K_MAX_PARAMS parameters. require_offload_parameters() throws `invalid_graph`
+TaskMetadata holds K_MAX_PARAMS parameters. require_offload_parameters() throws `InvalidGraph`
 for a longer list, naming the call, the count given and the limit, and Recorder::offload() and
 offload_rule() call it before they record. offload_metadata() copies every parameter it is handed
 and states that check as its precondition.
@@ -341,7 +341,7 @@ node, so the containment search never meets a dispatch. A null slot passes.
 A resolver node reads a host count on the host and a device count in its kernel.
 late_count_source() runs once per step, when the resolver is submitted. For a device count it copies
 the address of the slot and reads nothing. For a host count it calls the provider, and for a fixed
-count it takes the capacity; a provider that returns more than the capacity throws `invalid_graph`
+count it takes the capacity; a provider that returns more than the capacity throws `InvalidGraph`
 there. read_live_count() runs in the kernel: it reads the slot, and a value above the capacity
 becomes zero and a K_DEVICE_FAULT_LATE_COUNT record.
 
@@ -415,7 +415,7 @@ operation and the parameters themselves, from the arguments of their verbs.
 
 ### require_parameters_fit
 
-require_parameters_fit() throws `invalid_graph` for more parameters than a node carries.
+require_parameters_fit() throws `InvalidGraph` for more parameters than a node carries.
 Recorder::record() calls it before it touches the recorder, so a refused node leaves no trace.
 
 ## usm_scratch.hpp

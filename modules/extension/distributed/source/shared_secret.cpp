@@ -47,7 +47,7 @@ namespace SushiRuntime
             [[noreturn]] void refuse(std::string message)
             {
                 throw SushiException(
-                    Error{Errc::invalid_access, std::move(message)});
+                    Error{ErrorCode::InvalidAccess, std::move(message)});
             }
 
             /**

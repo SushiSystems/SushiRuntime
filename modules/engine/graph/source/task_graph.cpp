@@ -146,7 +146,7 @@ namespace SushiRuntime
             /**
              * @brief Refuses a registration index this graph did not issue.
              * @param call The public call checked, as its message names it.
-             * @throws SushiException With Errc::invalid_graph for an index at or above
+             * @throws SushiException With ErrorCode::InvalidGraph for an index at or above
              *         the count of indices issued.
              * @see modules/engine/graph/README.md
              */
@@ -167,7 +167,7 @@ namespace SushiRuntime
                     "graph, or none to draw a fresh one.",
                     call, *registration, issued);
                 SR_LOG_ERROR("{}", message);
-                throw SushiException(Error{Errc::invalid_graph, message});
+                throw SushiException(Error{ErrorCode::InvalidGraph, message});
             }
 
             /**
@@ -521,7 +521,7 @@ namespace SushiRuntime
         /**
          * @brief Compiles the graph from the candidates tagged at insertion (modules/engine/graph/README.md).
          * @return The compiled graph ready to run; empty when no node was added.
-         * @throws SushiException With Errc::invalid_graph for no root or a cycle.
+         * @throws SushiException With ErrorCode::InvalidGraph for no root or a cycle.
          */
         CompiledGraph TaskGraph::compile()
         {
@@ -585,7 +585,7 @@ namespace SushiRuntime
                 SR_LOG_ERROR("{}", message);
                 // The tracker is drained before the throw (modules/engine/graph/README.md).
                 impl_->tracker.reset();
-                throw SushiException(Error{Errc::invalid_graph, message});
+                throw SushiException(Error{ErrorCode::InvalidGraph, message});
             }
 
             // A root set does not rule out a disjoint cycle (modules/engine/graph/README.md).
@@ -641,7 +641,7 @@ namespace SushiRuntime
                                                            : std::string("an unidentified node"));
                     SR_LOG_ERROR("{}", message);
                     impl_->tracker.reset(); // same UAF-avoidance as the no-roots path
-                    throw SushiException(Error{Errc::invalid_graph, message});
+                    throw SushiException(Error{ErrorCode::InvalidGraph, message});
                 }
             }
 

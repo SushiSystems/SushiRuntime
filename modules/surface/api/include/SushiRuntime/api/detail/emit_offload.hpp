@@ -53,7 +53,7 @@ namespace SushiRuntime
          * @brief Refuses more parameters than the metadata of an offloadable task holds.
          * @param call  Names the call the user wrote in the message.
          * @param given How many parameters the call passed.
-         * @throws SushiException With invalid_graph for more than
+         * @throws SushiException With InvalidGraph for more than
          *         TaskMetadata::K_MAX_PARAMS.
          */
         inline void require_offload_parameters(const char* call, std::size_t given)
@@ -62,7 +62,7 @@ namespace SushiRuntime
             if (given <= limit)
                 return;
             throw SushiException(Error{
-                Errc::invalid_graph,
+                ErrorCode::InvalidGraph,
                 std::string(call) + ": " + std::to_string(given) +
                     " parameters were given and an offloadable task carries at most " +
                     std::to_string(limit) + "; pass at most that many."});

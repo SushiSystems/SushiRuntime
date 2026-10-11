@@ -257,7 +257,7 @@ namespace SushiRuntime
             /**
              * @brief Records a per-element launch whose window is bound per step.
              * @param capacity Upper bound the live window must fit; also the default width.
-             * @throws SushiException With invalid_access for a slot outside host USM.
+             * @throws SushiException With InvalidAccess for a slot outside host USM.
              */
             template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
             std::size_t kernel(Dynamic window, std::size_t capacity, Access access, F&& kernel_body,
@@ -340,7 +340,7 @@ namespace SushiRuntime
              * @param kernel_body        Callable invoked as kernel_body(i) for each index.
              * @param placement Device the node runs on; a handle it names is watched.
              * @param call      Names the call the user wrote in a thrown message.
-             * @throws SushiException With invalid_access for an unknown device.
+             * @throws SushiException With InvalidAccess for an unknown device.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
@@ -361,7 +361,7 @@ namespace SushiRuntime
              * @param kernel_body        Callable invoked as kernel_body(0, count, sycl::handler&).
              * @param placement Device the node runs on; a handle it names is watched.
              * @param call      Names the call the user wrote in a thrown message.
-             * @throws SushiException With invalid_access for an unknown device.
+             * @throws SushiException With InvalidAccess for an unknown device.
              */
             template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
             std::size_t untracked_kernel(std::size_t count, F&& kernel_body,
@@ -382,7 +382,7 @@ namespace SushiRuntime
              *                           origin applied.
              * @param placement Device the node runs on; a handle it names is watched.
              * @param call      Names the call the user wrote in a thrown message.
-             * @throws SushiException With invalid_access for an unknown device.
+             * @throws SushiException With InvalidAccess for an unknown device.
              */
             template <int N, class F>
             std::size_t untracked_kernel(Extent<N> extent, F&& kernel_body,
@@ -404,7 +404,7 @@ namespace SushiRuntime
              *                  origin.
              * @param placement Device the node runs on; a handle it names is watched.
              * @param call      Names the call the user wrote in a thrown message.
-             * @throws SushiException With invalid_access for an unknown device.
+             * @throws SushiException With InvalidAccess for an unknown device.
              */
             template <int N, class F>
             std::size_t untracked_kernel(NdRange<N> range, F&& kernel_body,
@@ -424,7 +424,7 @@ namespace SushiRuntime
              * @param kernel_body        Callable invoked as kernel_body(sycl::handler&).
              * @param placement Device the node runs on; a handle it names is watched.
              * @param call      Names the call the user wrote in a thrown message.
-             * @throws SushiException With invalid_access for an unknown device.
+             * @throws SushiException With InvalidAccess for an unknown device.
              */
             template <class F>
             std::size_t untracked_raw_kernel(
@@ -464,7 +464,7 @@ namespace SushiRuntime
              * @param kernel_body    Callable invoked as kernel_body(index, const T* current,
              *                       T* next).
              * @param call  Names the call the user wrote in a thrown message.
-             * @throws SushiException With invalid_graph for a launch past the state.
+             * @throws SushiException With InvalidGraph for a launch past the state.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class Launch, class F,
@@ -489,7 +489,7 @@ namespace SushiRuntime
              * @brief Records a State rule whose window is bound per step.
              * @param state The state the rule evolves; its size is the capacity. Alive at
              *        every run, free to move.
-             * @throws SushiException With invalid_access for a slot outside host USM.
+             * @throws SushiException With InvalidAccess for a slot outside host USM.
              */
             template <typename T, class F>
             std::size_t state_rule(Dynamic window, State<T>& state, F&& kernel_body,
@@ -521,7 +521,7 @@ namespace SushiRuntime
              * @param out    The field written; alive at every run, free to move.
              * @param kernel_body     Callable invoked as kernel_body(i, current, next, a, ...).
              * @param inputs The fields read, under the same rule as out.
-             * @throws SushiException With invalid_graph for an input smaller than out.
+             * @throws SushiException With InvalidGraph for an input smaller than out.
              */
             template <typename T, class F, class... Inputs>
             std::size_t coupled_rule(const char* call, State<T>& out, F&& kernel_body,
@@ -536,7 +536,7 @@ namespace SushiRuntime
 
             /**
              * @brief Records a coupled rule over the whole field, with node options.
-             * @throws SushiException With invalid_graph for an input smaller than out.
+             * @throws SushiException With InvalidGraph for an input smaller than out.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class F, class... Inputs>
@@ -549,7 +549,7 @@ namespace SushiRuntime
 
             /**
              * @brief Records a coupled rule over the whole field, named as this member.
-             * @throws SushiException With invalid_graph for an input smaller than out.
+             * @throws SushiException With InvalidGraph for an input smaller than out.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class F, class... Inputs>
@@ -565,7 +565,7 @@ namespace SushiRuntime
              * @param out    The field written; alive at every run, free to move.
              * @param kernel_body     Callable invoked as kernel_body(index, current, next, a, ...).
              * @param inputs The fields read, under the same rule as out.
-             * @throws SushiException With invalid_graph for a launch past a State.
+             * @throws SushiException With InvalidGraph for a launch past a State.
              */
             template <class Launch, typename T, class F, class... Inputs,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
@@ -583,7 +583,7 @@ namespace SushiRuntime
 
             /**
              * @brief Records a coupled rule over a launch, with node options.
-             * @throws SushiException With invalid_graph for a launch past a State.
+             * @throws SushiException With InvalidGraph for a launch past a State.
              */
             template <class Launch, typename T, class F, class... Inputs,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
@@ -597,7 +597,7 @@ namespace SushiRuntime
 
             /**
              * @brief Records a coupled rule over a launch, named as this member.
-             * @throws SushiException With invalid_graph for a launch past a State.
+             * @throws SushiException With InvalidGraph for a launch past a State.
              */
             template <class Launch, typename T, class F, class... Inputs,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
@@ -614,7 +614,7 @@ namespace SushiRuntime
              * @param local  Callable invoked as local(i) for i in [0, count) when run here.
              * @param params Scalar parameters sent with the kernel name.
              * @param call   Names the call the user wrote in a thrown message.
-             * @throws SushiException With invalid_graph for too many parameters.
+             * @throws SushiException With InvalidGraph for too many parameters.
              */
             template <class F>
             std::size_t offload(::SushiRuntime::OperationID op, std::size_t count, Access access,
@@ -634,7 +634,7 @@ namespace SushiRuntime
              * @pre state was registered with State::distributed().
              * @param local Local fallback invoked as local(i, const T* current, T* next).
              * @param call  Names the call the user wrote in a thrown message.
-             * @throws SushiException With invalid_graph for too many parameters.
+             * @throws SushiException With InvalidGraph for too many parameters.
              */
             template <typename T, class F>
             std::size_t offload_rule(::SushiRuntime::OperationID op, State<T>& state, F&& local,
@@ -696,7 +696,7 @@ namespace SushiRuntime
              * @brief Allocates USM this recorder owns and frees with itself.
              * @param count Elements to allocate; must be non-zero.
              * @return The base pointer; build ordering regions from it.
-             * @throws SushiException With allocation_failed when the device has no room.
+             * @throws SushiException With AllocationFailed when the device has no room.
              */
             template <typename T>
             [[nodiscard]] T* scratch(std::size_t count, DeviceIndex device, Residency residency)
@@ -806,7 +806,7 @@ namespace SushiRuntime
              * @param lives   Observers of the handles the node names; moved from.
              * @param options What the caller stated; its name and parameters are copied.
              * @return The position of the rule the node belongs to.
-             * @throws SushiException With invalid_graph for too many parameters.
+             * @throws SushiException With InvalidGraph for too many parameters.
              */
             template <class Emit>
             std::size_t record(Emit&& emit,
@@ -875,7 +875,7 @@ namespace SushiRuntime
              * @param call  Names the call the user wrote in the message.
              * @param lives Gains the placement's observer when it watches an allocation.
              * @return Index of the device the node is placed on.
-             * @throws SushiException With invalid_access for a device the runtime
+             * @throws SushiException With InvalidAccess for a device the runtime
              *         does not have.
              */
             std::size_t placed_device(const char* call, const On& placement,
@@ -885,7 +885,7 @@ namespace SushiRuntime
                 const std::size_t count = context_->devices().count();
                 if (device >= count)
                     throw SushiException(Error{
-                        Errc::invalid_access,
+                        ErrorCode::InvalidAccess,
                         std::string(call) + ": On(DeviceIndex{" + std::to_string(device) +
                             "}) names no device, the runtime has " + std::to_string(count) +
                             " device(s); name a device below that, or place the kernel "

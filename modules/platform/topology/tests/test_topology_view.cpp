@@ -38,7 +38,7 @@
 #include <SushiRuntime/topology/topology_view.hpp>
 
 using namespace SushiRuntime::Internal::Topology;
-using SushiRuntime::Errc;
+using SushiRuntime::ErrorCode;
 using SushiRuntime::Error;
 using SushiRuntime::SushiException;
 
@@ -219,7 +219,7 @@ TEST(Unit_TopologyView, NullDistanceModelIsRejected)
 
     const Error refusal = refusal_of([&] { TopologyView view(provider, nullptr); });
 
-    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
     EXPECT_NE(refusal.message.find("distance model is null"), std::string::npos)
         << refusal.message;
 }
@@ -231,7 +231,7 @@ TEST(Unit_TopologyView, NullInnerProviderIsRejected)
 {
     const Error refusal = refusal_of([] { RemappingTopologyProvider provider(nullptr, 2); });
 
-    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
     EXPECT_NE(refusal.message.find("inner provider is null"), std::string::npos)
         << refusal.message;
 }
@@ -244,7 +244,7 @@ TEST(Unit_TopologyView, RaggedDistanceMatrixIsRejectedWithItsRow)
     const Error refusal =
         refusal_of([] { MatrixDistanceModel model({{10, 21, 21}, {21, 10}, {21, 21, 10}}); });
 
-    EXPECT_EQ(refusal.code, Errc::invalid_access);
+    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
     EXPECT_NE(refusal.message.find("row 1 holds 2 entries"), std::string::npos)
         << refusal.message;
     EXPECT_NE(refusal.message.find("has 3 rows"), std::string::npos) << refusal.message;

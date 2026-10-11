@@ -173,7 +173,7 @@ namespace SushiRuntime
                  *
                  * Workers registered earlier keep the value their WELCOME carried.
                  * @param timeout At least K_MINIMUM_TIMEOUT.
-                 * @throws SushiException With invalid_state for a shorter value.
+                 * @throws SushiException With InvalidState for a shorter value.
                  */
                 Cluster& liveness_timeout(std::chrono::milliseconds timeout);
 

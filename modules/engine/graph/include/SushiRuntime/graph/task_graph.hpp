@@ -81,7 +81,7 @@ namespace SushiRuntime
                  * @brief Adds a device task whose work receives a sycl::handler.
                  * @param registration Index to stamp on this node; none draws a fresh one.
                  * @pre registration, when given, is an index reserve_registration() returned here.
-                 * @throws SushiException With Errc::invalid_graph for any other index.
+                 * @throws SushiException With ErrorCode::InvalidGraph for any other index.
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
@@ -201,7 +201,7 @@ namespace SushiRuntime
                  * @brief Resolves data dependencies and produces a CompiledGraph ready to execute.
                  * @pre Every node is inserted first; not thread-safe against add_node() or
                  *        add_task().
-                 * @throws SushiException With Errc::invalid_graph, naming one node that
+                 * @throws SushiException With ErrorCode::InvalidGraph, naming one node that
                  *         cannot run, when the graph has no root or holds a cycle.
                  * @see modules/engine/graph/README.md
                  */

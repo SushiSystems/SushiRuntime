@@ -177,7 +177,7 @@ TEST(Integration_RuntimeEntry, AQueueOfAnUnknownDeviceIsRefused)
     const Runtime runtime = Runtime::create();
     const AdvancedControls controls = runtime.advanced();
 
-    Errc refused = Errc::ok;
+    ErrorCode refused = ErrorCode::Ok;
     try
     {
         static_cast<void>(controls.queue(DeviceIndex{controls.device_count()}));
@@ -187,5 +187,5 @@ TEST(Integration_RuntimeEntry, AQueueOfAnUnknownDeviceIsRefused)
         refused = failure.error().code;
     }
 
-    EXPECT_EQ(refused, Errc::invalid_access);
+    EXPECT_EQ(refused, ErrorCode::InvalidAccess);
 }

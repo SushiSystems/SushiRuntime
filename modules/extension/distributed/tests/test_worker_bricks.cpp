@@ -1234,7 +1234,7 @@ namespace
 
     /** @brief Returns the code of the exception a call throws, or ok when it throws none. */
     template <typename Call>
-    Errc refusal_of(Call call)
+    ErrorCode refusal_of(Call call)
     {
         try
         {
@@ -1244,7 +1244,7 @@ namespace
         {
             return error.error().code;
         }
-        return Errc::ok;
+        return ErrorCode::Ok;
     }
 } // namespace
 
@@ -1262,9 +1262,9 @@ TEST(Unit_KernelRegistryTest, SealedRegistryRefusesRegistration)
 
     EXPECT_TRUE(kernels->is_sealed());
     EXPECT_EQ(refusal_of([&] { kernels->register_kernel(late, idle_kernel()); }),
-              Errc::invalid_state);
+              ErrorCode::InvalidState);
     EXPECT_EQ(refusal_of([&] { kernels->register_kernel(early, idle_kernel()); }),
-              Errc::invalid_state)
+              ErrorCode::InvalidState)
         << "a sealed registry replaced a kernel";
     EXPECT_TRUE(kernels->has(early));
     EXPECT_FALSE(kernels->has(late));
@@ -1278,11 +1278,11 @@ TEST(Unit_KernelRegistryTest, EmptyKernelIsRefused)
     const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
 
     EXPECT_EQ(refusal_of([&] { kernels->register_kernel(operation, KernelRegistry::Kernel()); }),
-              Errc::invalid_access);
+              ErrorCode::InvalidAccess);
     EXPECT_FALSE(kernels->has(operation)) << "an empty kernel would be sent in PROOF";
 
     kernels->seal();
     EXPECT_EQ(refusal_of([&] { kernels->register_kernel(operation, KernelRegistry::Kernel()); }),
-              Errc::invalid_access)
+              ErrorCode::InvalidAccess)
         << "an empty kernel is named as the fault before the seal is";
 }

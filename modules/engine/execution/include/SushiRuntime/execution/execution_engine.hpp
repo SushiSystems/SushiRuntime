@@ -124,7 +124,7 @@ namespace SushiRuntime
             virtual void submit(CompiledGraph& /*graph*/)
             {
                 throw SushiException(Error{
-                    Errc::unsupported,
+                    ErrorCode::Unsupported,
                     "This execution engine does not support asynchronous runs."});
             }
 
@@ -138,7 +138,7 @@ namespace SushiRuntime
             virtual void complete()
             {
                 throw SushiException(Error{
-                    Errc::unsupported,
+                    ErrorCode::Unsupported,
                     "This execution engine does not support asynchronous runs."});
             }
 

@@ -196,7 +196,7 @@ TEST(Integration_LateCount, NonHostDeviceSlotIsRejectedAtConstruction)
     }
     catch (const SushiException& e)
     {
-        EXPECT_EQ(e.error().code, Errc::invalid_access);
+        EXPECT_EQ(e.error().code, ErrorCode::InvalidAccess);
     }
 }
 

@@ -50,7 +50,7 @@ namespace SushiRuntime
 
         /**
          * @brief Refuses more parameters than a node carries.
-         * @throws SushiException With invalid_graph for more than K_MAX_NODE_PARAMETERS.
+         * @throws SushiException With InvalidGraph for more than K_MAX_NODE_PARAMETERS.
          */
         inline void require_parameters_fit(const NodeOptions& options)
         {
@@ -58,7 +58,7 @@ namespace SushiRuntime
             if (given <= K_MAX_NODE_PARAMETERS)
                 return;
             throw SushiException(Error{
-                Errc::invalid_graph,
+                ErrorCode::InvalidGraph,
                 "NodeOptions::parameters: " + std::to_string(given) +
                     " parameters were given and a node carries at most " +
                     std::to_string(K_MAX_NODE_PARAMETERS) + "; pass at most that many."});

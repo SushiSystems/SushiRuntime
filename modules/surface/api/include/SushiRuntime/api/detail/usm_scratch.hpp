@@ -57,7 +57,7 @@ namespace SushiRuntime
 
             if (raw == nullptr)
                 throw SushiException(Error{
-                    Errc::allocation_failed,
+                    ErrorCode::AllocationFailed,
                     "Recorder scratch allocation of " + std::to_string(bytes) +
                     " bytes failed (out of USM memory)."});
 

@@ -47,18 +47,18 @@ destination returns the pointee.
 
 ## test_error.cpp
 
-The file covers `Errc`, its `to_string` and `SushiException`.
+The file covers `ErrorCode`, its `to_string` and `SushiException`.
 
 ### `EveryEnumeratorKeepsItsNumber`
 
-`Errc` is stored as a `std::uint8_t` and crosses the library boundary inside `Error`. A consumer
+`ErrorCode` is stored as a `std::uint8_t` and crosses the library boundary inside `Error`. A consumer
 built against an older header compares the numbers it compiled in, so a new enumerator goes at the
-end and the test pins each number, `invalid_state` at 9.
+end and the test pins each number, `InvalidState` at 9.
 
 ### `AHandlerForRuntimeErrorCatchesSushiException`
 
 Code written before the library threw one type catches `std::runtime_error`. The test catches
-through that base, checks `what()`, and recovers the `Errc` with a `dynamic_cast`.
+through that base, checks `what()`, and recovers the `ErrorCode` with a `dynamic_cast`.
 
 ## test_ref_counted.cpp
 
@@ -68,21 +68,16 @@ a race.
 
 ## test_result.cpp
 
-The file covers the value and error accessors of `Result`, and the `SushiException` that each misused
-access throws.
+The file covers the eight accessors of `Result`: `value()` and `operator*` on a const and a
+non-const `Result`, `operator->` on both, and `error()` on both. It covers `Result<void>` too. An
+accessor used on the wrong side stops the process, so those cases are death tests in the suite
+`Unit_ResultDeathTest`, which GoogleTest runs before the other suites.
 
-### `exception_from`
+### `K_ERROR_OF_VALUE`, `K_VALUE_OF_ERROR`, `lost_device`
 
-`exception_from` runs an access that must throw and returns the `SushiException` it threw. It throws
-`std::logic_error` when the access throws nothing else.
-
-### `expect_device_lost`, `expect_value_read_on_error`, `expect_error_read_on_value`
-
-The three helpers check the error code and the message of an exception. `expect_device_lost` expects
-`Errc::device_lost` with the message "lost the device". `expect_value_read_on_error` expects
-`Errc::invalid_state` with the message "Result::value(): the result holds an error.".
-`expect_error_read_on_value` expects `Errc::invalid_state` with the message "Result::error(): the
-result holds a value.".
+`K_ERROR_OF_VALUE` is the pattern of the line `error()` makes the handler write on a value.
+`K_VALUE_OF_ERROR` is the text a value accessor hands the handler when the error type is not
+`Error`. `lost_device` returns `ErrorCode::DeviceLost` with the message "lost the device".
 
 ### `SuccessValueIsReadThroughEveryValueAccessor`
 
@@ -90,31 +85,38 @@ The test reads an `int` through `value()` and `operator*`, writes it through `va
 through a const reference. It reads a `std::string` through `operator->` on a value and on a const
 reference.
 
-### `ValueOnErrorThrowsTheStoredErrorUnchanged`
-
-`value()` on a `Result` that holds an error throws a `SushiException` that carries the stored error, with
-the same code and message.
-
-### `EveryValueAccessorOnErrorThrowsTheStoredError`
-
-Each value accessor on an error throws the stored `device_lost` error. The accessors are `value()`,
-`operator*` and `operator->`, each on a `Result` of `int` and of `std::string`, and each on a const and a
-non-const `Result`.
-
-### `ValueOnNonErrorErrorTypeThrowsInvalidState`
-
-For a `Result` whose error type is `int`, every value accessor on an error throws `Errc::invalid_state`
-with the message "Result::value(): the result holds an error.".
-
-### `ErrorOnSuccessThrowsInvalidState`
-
-`error()` on a `Result` that holds a value, const or non-const, throws `Errc::invalid_state` with the
-message "Result::error(): the result holds a value.".
-
 ### `ErrorOnErrorReturnsTheStoredError`
 
-`error()` on a `Result` that holds an error returns the stored error, const or non-const, with its code
-and message.
+`error()` on a `Result` that holds an error returns the stored code and message, and a write
+through the non-const form is read back through the const one.
+
+### `TheErrorTypeDefaultsToError`
+
+`Result<int>` is `Result<int, Error>`, and `Result<void>` is `Result<void, Error>`.
+
+### `EveryValueAccessorOnAnErrorStopsWithTheStoredMessage`
+
+Each of the six value accessors on a `Result` that holds `lost_device()` stops the process, and
+the line the handler writes holds "lost the device".
+
+### `EveryValueAccessorOnAnErrorOfAnotherTypeStops`
+
+For a `Result` whose error type is `int`, the same six accessors stop the process with the text
+of `K_VALUE_OF_ERROR`.
+
+### `ErrorOnAValueStops`
+
+`error()` on a `Result` that holds a value, const or non-const, stops the process.
+
+### `VoidSuccessHoldsNoErrorAndValueReturns`, `VoidErrorReturnsTheStoredError`
+
+A default-constructed `Result<void>` is a success, and `value()` returns. One built from
+`make_error` reports no value and returns the stored error from both forms of `error()`.
+
+### `VoidValueOnAnErrorStopsWithTheStoredMessage`, `VoidErrorOnSuccessStops`
+
+`value()` on a failed `Result<void>` stops the process with the stored message, or with
+`K_VALUE_OF_ERROR` when the error type is `int`. `error()` on a success stops the process.
 
 ## test_span.cpp
 

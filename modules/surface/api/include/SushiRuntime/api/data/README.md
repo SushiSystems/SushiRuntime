@@ -11,24 +11,24 @@ symbol or passage it explains, and that header's file block cites this page.
 
 read_range(), write_range() and region() take an ElementRange, on a Buffer and on a State alike, and
 follow one rule: the window `[offset, offset + count)` must lie inside `[0, size())`. A window that
-does not fit throws `SushiException` with `Errc::invalid_access`, and the message holds the
+does not fit throws `SushiException` with `ErrorCode::InvalidAccess`, and the message holds the
 call, the offset, the count and the size. Nothing is copied and nothing is clamped, because a
 shortened copy hides the wrong count until the missing elements are read somewhere else. The check
 subtracts and does not add, so an offset and a count whose sum wraps around are rejected too.
 
 A zero-length window is accepted at every offset up to and including size(), and it touches neither
-the device nor the source. write_range() with a non-zero count also throws `invalid_access` when
+the device nor the source. write_range() with a non-zero count also throws `InvalidAccess` when
 its source is null or holds fewer than `count` elements; a longer source is accepted and its first
 `count` elements are copied.
 
 ### Allocation
 
-A device index that names no device of the runtime throws `Errc::invalid_access` before anything is
+A device index that names no device of the runtime throws `ErrorCode::InvalidAccess` before anything is
 allocated. The message names the calling function (`Runtime::buffer` or `Runtime::state`), the
 index, the device count, and `advanced().devices()`, which lists the devices by index.
 
 The byte size of a handle is `count * sizeof(T)`, checked before anything is allocated: a count
-whose byte size does not fit `std::size_t` throws `Errc::allocation_failed` and names the largest
+whose byte size does not fit `std::size_t` throws `ErrorCode::AllocationFailed` and names the largest
 count that fits. When the device returns no memory, the message states what was asked for (element
 count, element size, bytes, residency and device) and gives no cause, since the allocator reports
 none.
@@ -104,7 +104,7 @@ form of add() keeps is listed here.
 | a State as the rule's own State, or in `Coupled` | the State's StateView, shared | the rule steps the moved-to State |
 
 Two things still end a recording. A handle destroyed or move-assigned over releases its token, and
-the next run is refused with `dangling_resource`. A State must not be moved while a step that names
+the next run is refused with `DanglingResource`. A State must not be moved while a step that names
 it is running or pending: the step advances the State through the view's `owner` when it ends.
 
 ### operator[]
@@ -166,7 +166,7 @@ distributed() hands the allocation to the offload coordinator installed on the r
 through Internal::Graph::OffloadCoordinator::share(). It is opt-in: only a shared buffer can cross to a worker,
 and the master stays authoritative for it. It does nothing on an empty handle, and nothing when no
 coordinator is installed, so a buffer is shared only if Distributed::Cluster::attach() ran first.
-A handle that owns memory and is device-resident throws `Errc::invalid_access` before the
+A handle that owns memory and is device-resident throws `ErrorCode::InvalidAccess` before the
 coordinator is consulted, with or without a cluster attached. The offload path reads the allocation
 on the host, so the handle must be Shared or Host.
 
@@ -247,7 +247,7 @@ State::distributed() is opt-in and mirrors Buffer::distributed(). It exposes eac
 allocations to the cluster so a stepped graph can offload its update rule. The two allocations keep
 stable handles for the State's lifetime; only which one is read and which is written rotates each
 step, and the offload path follows that from the live pointers. It does nothing on an empty State
-or when no offload coordinator is installed. A device-resident State throws `Errc::invalid_access`,
+or when no offload coordinator is installed. A device-resident State throws `ErrorCode::InvalidAccess`,
 as Buffer::distributed() does, and the message names `State::distributed()`.
 
 ### State::read_range

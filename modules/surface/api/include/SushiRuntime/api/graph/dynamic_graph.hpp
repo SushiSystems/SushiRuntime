@@ -325,12 +325,12 @@ namespace SushiRuntime
 
             /**
              * @brief Gathers every live region's per-step hooks, in region-key order.
-             * @throws SushiException With invalid_graph when the plan has no root.
+             * @throws SushiException With InvalidGraph when the plan has no root.
              */
             void prepare_run()
             {
                 if (plan_.roots.empty())
-                    throw SushiException(Error{Errc::invalid_graph,
+                    throw SushiException(Error{ErrorCode::InvalidGraph,
                                                   "DynamicGraph has no runnable tasks."});
                 refresh_updaters();
             }

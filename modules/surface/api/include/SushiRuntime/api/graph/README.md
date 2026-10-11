@@ -38,7 +38,7 @@ questions the driver asks.
 
 A Graph moves and does not copy. The source of a move is an empty graph on the same runtime:
 size(), node_count() and compile_count() are zero, it has no step hook, a run is refused with
-`invalid_graph`, and add() records onto it again. The plan moves with the rules, so the destination
+`InvalidGraph`, and add() records onto it again. The plan moves with the rules, so the destination
 does not recompile.
 
 A graph must not be moved while a step started with run_async() is pending: the RunHandle holds the
@@ -209,7 +209,7 @@ stepped field can vary its active count or sleep entirely with no recompile.
 offload() is the single funnel for both the raw-pointer and the Reads/Writes offload overloads.
 Setting op_id is what makes compile() consider the node offloadable; otherwise the local
 parallel_for runs. offload() and offload_rule() refuse more than `TaskMetadata::K_MAX_PARAMS`
-parameters with `invalid_graph` when the rule is recorded.
+parameters with `InvalidGraph` when the rule is recorded.
 
 ## node_options.hpp
 
@@ -229,7 +229,7 @@ as a braced list.
 
 The recorder copies `name` and `parameters` when the node is recorded, so a temporary string and
 a local array are valid arguments. A node carries eight parameters; a longer list is refused with
-`invalid_graph` and records nothing.
+`InvalidGraph` and records nothing.
 
 A node that names an operation is one another machine may run. The chain layer does not take
 such a node, so a graph that holds one runs on the scheduler, and on a runtime with a cluster
@@ -353,7 +353,7 @@ a sub-box for boundary or halo handling, or a tiled launch. `kernel` receives th
 before the two pointers.
 
 The launch is compared with the State when the rule is added. A launch that reaches past the
-State throws `invalid_graph` at the add() call, naming the rule, the launch with its origin and
+State throws `InvalidGraph` at the add() call, naming the rule, the launch with its origin and
 the State's size; `api/detail/README.md` says what "reaches" means for each launch.
 
 ### add(Coupled, fn) and add(launch, Coupled, fn)
@@ -364,7 +364,7 @@ reaction-diffusion with several species. All reads see the previous step's data 
 update): every State advances only after all of a step's kernels have run. Each field takes
 exactly one update rule per step.
 
-The whole-field form iterates the size of the State written, and add() throws `invalid_graph`
+The whole-field form iterates the size of the State written, and add() throws `InvalidGraph`
 when a State read is smaller than that. The launch form compares the launch with every State
 named.
 
@@ -430,7 +430,7 @@ The runtime places a rule on the device that owns the first region it writes. An
 names no region, so it states its device: On(buffer) and On(state) name the device of a handle
 and watch the handle, On(DeviceIndex) names a device. Without an On the rule runs on device 0,
 where Runtime::buffer() and Runtime::state() allocate by default. An On that names a device the
-runtime does not have throws `invalid_access` at the call.
+runtime does not have throws `InvalidAccess` at the call.
 
 ### add_task(Reads, Writes, fn)
 
@@ -587,23 +587,23 @@ toolchain a rethrow from a helper called inside a catch block crashes the proces
 | Thrown | While the plan is built | Once a step may have started |
 | --- | --- | --- |
 | `SushiException` | Its own Error | Its own Error |
-| `sycl::exception` | `kernel_failed` | `kernel_failed` |
-| Any other exception, such as one a host task throws | `compile_failed` | `kernel_failed` |
+| `sycl::exception` | `KernelFailed` | `KernelFailed` |
+| Any other exception, such as one a host task throws | `CompileFailed` | `KernelFailed` |
 
 The build phase is plan_is_stale(), rebuild_plan() and prepare_run(). Everything after it is the
 step phase, and RunHandle::try_wait() settles a step through the same ladder, so a throwing host
-task is `kernel_failed` from try_run() and from try_wait() alike. The try blocks surround the whole
+task is `KernelFailed` from try_run() and from try_wait() alike. The try blocks surround the whole
 loop, not one step.
 
 ### entry_refusal
 
 entry_refusal() answers before anything touches the plan. A graph with nothing recorded is
-`invalid_graph`. A graph with a pending asynchronous step is `invalid_state`: a synchronous run
+`InvalidGraph`. A graph with a pending asynchronous step is `InvalidState`: a synchronous run
 re-arms every node's in-degree, and doing that while the workers walk the DAG would rewrite the
-scheduling state under them. A graph whose recorded handle was freed is `dangling_resource`.
+scheduling state under them. A graph whose recorded handle was freed is `DanglingResource`.
 
 A runtime has one engine, so at most one run is in flight on it. While the engine reports a run in
-progress, every run entry of every graph on that runtime is `invalid_state`: another graph's
+progress, every run entry of every graph on that runtime is `InvalidState`: another graph's
 pending run_async() step, another graph's blocking run on another thread, or a run started from
 inside a task of a run. The caller settles the run in flight first, by letting its blocking call
 return or by waiting on its RunHandle. Without the refusal the second run would clear the first
@@ -667,7 +667,7 @@ On a DynamicGraph a pending structural change (a region added or dropped) is com
 step is submitted, exactly as a synchronous run does.
 
 try_run_async() returns the handle or the Error that kept the step from starting: the refusals of
-entry_refusal(), `unsupported` from an engine that cannot start a run without blocking, and a build
+entry_refusal(), `Unsupported` from an engine that cannot start a run without blocking, and a build
 or submission failure mapped by guarded(). run_async() throws that Error.
 
 ### run_async: pre-step order
@@ -692,7 +692,7 @@ for the last step of run(8). A caller that counts across runs keeps the count in
 
 A hook records nothing and changes no plan: the graph compiles once however many hooks it has and
 however often they run. A hook must not record on the graph or start a run. An exception a hook
-throws ends the run as `kernel_failed` before that step is submitted, and the States have
+throws ends the run as `KernelFailed` before that step is submitted, and the States have
 advanced once per step before it.
 
 A hook may write memory the kernels of the next step read, so a graph that has a hook ends each
@@ -735,7 +735,7 @@ The marker of a pending step never moves, and the driver's move operations leave
 on either side. Moving a graph whose step is pending breaks a precondition, so a debug build
 asserts. A release build waits for the step in the move, advances the States as wait() would, and
 drops the outcome, which is what destroying the handle does. Both graphs are then runnable. The
-handle still names the source, and its wait() returns `invalid_state`, because the step it was
+handle still names the source, and its wait() returns `InvalidState`, because the step it was
 given is over.
 
 Copying the marker to the destination, which the defaulted move did, left a destination that
@@ -1178,7 +1178,7 @@ task exception**. Call `wait()` (or `try_wait()`) whenever the result matters, w
 always.
 
 Exactly one run may be in flight per runtime. While a handle is pending, every run entry of every
-graph on the runtime is refused with `invalid_state`, as the entry_refusal section describes.
+graph on the runtime is refused with `InvalidState`, as the entry_refusal section describes.
 
 ### operator=(RunHandle&&)
 
@@ -1197,7 +1197,7 @@ when it is broken. A graph may be destroyed while its handle is pending. Its des
 the step, advances the States and drops the report, as destroying the handle would.
 
 After either, the handle owns no step: pending() is false, ready() is true, its destructor does
-nothing, and wait() or try_wait() returns `invalid_state` with a message that says the graph was
+nothing, and wait() or try_wait() returns `InvalidState` with a message that says the graph was
 moved or destroyed and the report dropped. The handle costs one shared pointer more than the
 values it carries, and no allocation: the record is the graph's.
 
@@ -1217,9 +1217,9 @@ a handle that owns none is ready, whatever run the engine holds.
 ### wait()
 
 wait() completes the step's lifecycle, in which every State advances to the field it just wrote, and
-consumes the handle, so a second call throws `invalid_state` instead of waiting on a step that is no
+consumes the handle, so a second call throws `InvalidState` instead of waiting on a step that is no
 longer running. wait() calls try_wait() and throws the Error it got as a `SushiException`. A
-task exception therefore arrives as `kernel_failed` carrying the task's text, the same as from
+task exception therefore arrives as `KernelFailed` carrying the task's text, the same as from
 run(), and the state advance is skipped in that case, exactly as a failed synchronous run of one
 step leaves its states untouched.
 

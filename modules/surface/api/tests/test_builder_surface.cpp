@@ -75,7 +75,7 @@ namespace
 
     /** @brief Returns the message of the error a builder call throws, or "" when none. */
     template <class Call>
-    std::string refusal_of(Errc expected, Call&& call)
+    std::string refusal_of(ErrorCode expected, Call&& call)
     {
         try
         {
@@ -162,7 +162,7 @@ TEST(Integration_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
     auto graph = rt.graph();
 
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
-    const std::string refusal = refusal_of(Errc::invalid_graph, [&]
+    const std::string refusal = refusal_of(ErrorCode::InvalidGraph, [&]
     {
         graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
     });
@@ -213,7 +213,7 @@ TEST(Integration_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd
     auto input = seeded_state(rt, K_PREFIX);
     auto graph = rt.graph();
 
-    const std::string refusal = refusal_of(Errc::invalid_graph, [&]
+    const std::string refusal = refusal_of(ErrorCode::InvalidGraph, [&]
     {
         graph.add(Coupled(output, input),
                   [](std::size_t, const Word*, Word*, const Word*) {});
@@ -277,7 +277,7 @@ TEST(Integration_BuilderSurface, PlacementIsCheckedAndItsHandleWatched)
     const std::size_t count = rt.advanced().device_count();
     auto graph = rt.graph();
 
-    const std::string refusal = refusal_of(Errc::invalid_access, [&]
+    const std::string refusal = refusal_of(ErrorCode::InvalidAccess, [&]
     {
         graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
     });
@@ -293,7 +293,7 @@ TEST(Integration_BuilderSurface, PlacementIsCheckedAndItsHandleWatched)
     }
     const auto result = graph.try_run();
     ASSERT_FALSE(result);
-    EXPECT_EQ(result.error().code, Errc::dangling_resource);
+    EXPECT_EQ(result.error().code, ErrorCode::DanglingResource);
 }
 
 /** @brief Tests that extend() runs its callable once and counts what it records as one rule. */
@@ -335,13 +335,13 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
     auto graph = rt.graph();
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
 
-    const std::string state_refusal = refusal_of(Errc::invalid_graph, [&]
+    const std::string state_refusal = refusal_of(ErrorCode::InvalidGraph, [&]
     {
         graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
     });
     EXPECT_TRUE(begins_with(state_refusal, "add(launch, state, fn), rule 0: ")) << state_refusal;
 
-    const std::string coupled_refusal = refusal_of(Errc::invalid_graph, [&]
+    const std::string coupled_refusal = refusal_of(ErrorCode::InvalidGraph, [&]
     {
         graph.add(Coupled(output, input),
                   [](std::size_t, const Word*, Word*, const Word*) {});
@@ -349,7 +349,7 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
     EXPECT_TRUE(begins_with(coupled_refusal, "add(Coupled(out, in0, ...), fn), rule 0: "))
         << coupled_refusal;
 
-    const std::string launch_coupled_refusal = refusal_of(Errc::invalid_graph, [&]
+    const std::string launch_coupled_refusal = refusal_of(ErrorCode::InvalidGraph, [&]
     {
         graph.add(window, Coupled(output, input),
                   [](sycl::id<1>, const Word*, Word*, const Word*) {});
@@ -358,20 +358,20 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
                             "add(launch, Coupled(out, in0, ...), fn), rule 0: "))
         << launch_coupled_refusal;
 
-    const std::string untracked_refusal = refusal_of(Errc::invalid_access, [&]
+    const std::string untracked_refusal = refusal_of(ErrorCode::InvalidAccess, [&]
     {
         graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
     });
     EXPECT_TRUE(begins_with(untracked_refusal, "add_untracked(launch, On(...), fn): "))
         << untracked_refusal;
 
-    const std::string raw_refusal = refusal_of(Errc::invalid_access, [&]
+    const std::string raw_refusal = refusal_of(ErrorCode::InvalidAccess, [&]
     {
         graph.add_untracked(On(DeviceIndex{count}), [](sycl::handler&) {});
     });
     EXPECT_TRUE(begins_with(raw_refusal, "add_untracked(On(...), fn): ")) << raw_refusal;
 
-    const std::string offload_refusal = refusal_of(Errc::invalid_graph, [&]
+    const std::string offload_refusal = refusal_of(ErrorCode::InvalidGraph, [&]
     {
         graph.add("builder.check"_op, K_WIDTH, Reads(target), Writes(target),
                   [](std::size_t) {}, {1, 2, 3, 4, 5, 6, 7, 8, 9});
@@ -379,7 +379,7 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
     EXPECT_TRUE(begins_with(offload_refusal, "add(OperationID, n, reads, writes, local, params): "))
         << offload_refusal;
 
-    const std::string offload_rule_refusal = refusal_of(Errc::invalid_graph, [&]
+    const std::string offload_rule_refusal = refusal_of(ErrorCode::InvalidGraph, [&]
     {
         graph.add("builder.check"_op, field, [](std::size_t, const Word*, Word*) {},
                   {1, 2, 3, 4, 5, 6, 7, 8, 9});

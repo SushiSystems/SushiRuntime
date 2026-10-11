@@ -57,7 +57,7 @@ namespace SushiRuntime
          * @brief Allocates host memory another API can import.
          * @return An allocation aligned and rounded to alignment, or an empty one that
          *         allocates nothing when @p bytes is zero.
-         * @throws SushiException With allocation_failed on a non-power-of-two
+         * @throws SushiException With AllocationFailed on a non-power-of-two
          *        alignment, a size that overflows when rounded, or a failed allocation.
          */
         [[nodiscard]] SUSHIRUNTIME_API Internal::Memory::Allocation export_host_memory(
@@ -70,7 +70,7 @@ namespace SushiRuntime
          * @return The mapped region, or an empty allocation that imports nothing when
          *         @p bytes is zero and @p descriptor passes every check.
          * @throws SushiException With unsupported when the device cannot import, or
-         *        invalid_access when @p descriptor is refused (see the module README).
+         *        InvalidAccess when @p descriptor is refused (see the module README).
          */
         [[nodiscard]] SUSHIRUNTIME_API Internal::Memory::Allocation import_device_memory(
             const std::shared_ptr<Internal::Execution::RuntimeContext>& context,

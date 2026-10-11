@@ -74,7 +74,7 @@ TEST(Integration_LaunchReach, AnExtentWhoseEndWrapsIsRefusedAtAdd)
     }
     catch (const SushiException& refused)
     {
-        EXPECT_EQ(refused.error().code, Errc::invalid_graph);
+        EXPECT_EQ(refused.error().code, ErrorCode::InvalidGraph);
     }
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 }

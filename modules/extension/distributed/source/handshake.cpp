@@ -81,7 +81,7 @@ namespace SushiRuntime
             }
 
             throw SushiException(Error{
-                Errc::unsupported,
+                ErrorCode::Unsupported,
                 "cannot draw a handshake nonce from std::random_device: " + failure});
         }
 

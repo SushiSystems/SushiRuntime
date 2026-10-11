@@ -122,7 +122,7 @@ namespace SushiRuntime
              * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
              * @param state Alive when the graph runs; free to move after add().
              * @param kernel Callable invoked as kernel(index, const T* current, T* next).
-             * @throws SushiException With invalid_graph for a launch past the state.
+             * @throws SushiException With InvalidGraph for a launch past the state.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class Launch, typename T, class F,
@@ -141,7 +141,7 @@ namespace SushiRuntime
              * @param states Coupled(out, in0, ...); every State is alive when the graph
              *        runs and free to move after add().
              * @param kernel Callable invoked as kernel(i, current, next, in0, ...).
-             * @throws SushiException With invalid_graph for an input smaller than out.
+             * @throws SushiException With InvalidGraph for an input smaller than out.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename Out, typename... Inputs, class F>
@@ -162,7 +162,7 @@ namespace SushiRuntime
              * @param states Coupled(out, in0, ...); every State is alive when the graph
              *        runs and free to move after add().
              * @param kernel Callable invoked as kernel(index, current, next, in0, ...).
-             * @throws SushiException With invalid_graph for a launch past a State.
+             * @throws SushiException With InvalidGraph for a launch past a State.
              */
             template <class Launch, typename Out, typename... Inputs, class F,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
@@ -200,7 +200,7 @@ namespace SushiRuntime
              *        late binding exists for these two forms only.
              * @param capacity Upper bound the live window must fit.
              * @param kernel Callable invoked as kernel(i) for each live index.
-             * @throws SushiException With invalid_access for a slot outside host USM.
+             * @throws SushiException With InvalidAccess for a slot outside host USM.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class F>
@@ -218,7 +218,7 @@ namespace SushiRuntime
              *        exists for these two forms only.
              * @param state The state this rule evolves; its size is the capacity.
              * @param kernel Callable invoked as kernel(i, const T* current, T* next).
-             * @throws SushiException With invalid_access for a slot outside host USM.
+             * @throws SushiException With InvalidAccess for a slot outside host USM.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class F>
@@ -287,7 +287,7 @@ namespace SushiRuntime
              * @brief Adds a kernel that names no region and runs on the device stated.
              * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
              * @param placement On(buffer), On(state) or On(DeviceIndex).
-             * @throws SushiException With invalid_access for a device the runtime
+             * @throws SushiException With InvalidAccess for a device the runtime
              *         does not have.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
@@ -320,7 +320,7 @@ namespace SushiRuntime
              * @brief Adds a raw kernel that names no region and runs on the device stated.
              * @param placement On(buffer), On(state) or On(DeviceIndex).
              * @param kernel Callable invoked as kernel(sycl::handler&).
-             * @throws SushiException With invalid_access for a device the runtime
+             * @throws SushiException With InvalidAccess for a device the runtime
              *         does not have.
              */
             template <class F>

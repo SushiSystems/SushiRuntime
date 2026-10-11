@@ -15,7 +15,7 @@ The twelve public headers under `include/SushiRuntime/core/`:
 | `bit.hpp` | `popcount_u64` and `countr_zero_u64`, two 64-bit bit queries for the C++17 baseline |
 | `common.hpp` | The `Backend` enumeration and the size constants `K_CACHE_LINE_SIZE`, `K_MAX_SUPPORTED_XPU`, `K_MAX_NUMA_NODES`, `K_MAX_WORKER_THREADS` and `K_DEFAULT_ALIGNMENT` |
 | `delegate.hpp` | `Delegate`, a move-only callable stored inline, with no heap allocation |
-| `error.hpp` | `Errc`, its `to_string` overload, `Error` and `SushiException` |
+| `error.hpp` | `ErrorCode`, its `to_string` overload, `Error` and `SushiException` |
 | `export.hpp` | `SUSHIRUNTIME_API`, `SR_API` and `SR_TYPE_API`, the symbol visibility macros |
 | `operation_id.hpp` | `OperationID`, the 32-bit FNV-1a hash of an operation's name, and the `_op` literal in `Literals` |
 | `ref_counted.hpp` | `RefCounted`, the intrusive reference count that `sushi_ptr` manages |
@@ -112,14 +112,14 @@ translation units.
 
 ## error.hpp
 
-### Errc, Error and SushiException
+### ErrorCode, Error and SushiException
 
-`Errc` is a `std::uint8_t` enumeration with one code per failure class, and `to_string` returns the
-name of each code. `Error` pairs an `Errc` with a message. `SushiException` derives from
-`std::runtime_error`, holds an `Error`, and returns it from `error()`. The throwing entry points,
-such as `Result::value()` and `require_matching_version()`, throw `SushiException`.
+`ErrorCode` is a `std::uint8_t` enumeration with one code per failure class, and `to_string` returns
+the spelling of the enumerator, or "Unknown" for a number outside the enumeration. `Error` pairs an
+`ErrorCode` with a message. `SushiException` derives from `std::runtime_error`, holds an `Error`,
+and returns it from `error()`; `require_matching_version()` throws it.
 
-New enumerators go at the end of `Errc`. `tests/test_error.cpp` pins the number of each one.
+New enumerators go at the end of `ErrorCode`. `tests/test_error.cpp` pins the number of each one.
 
 ## export.hpp
 
@@ -159,16 +159,22 @@ through an earlier reference.
 
 ### Result
 
-`Result<T, E>` holds a value of type `T` or an error of type `E` in a `std::variant`. `has_value()`
-and `explicit operator bool` report which one is held. `make_error` wraps an error payload in
+`Result<T, E>` holds a value of type `T` or an error of type `E` in a `std::variant`. `E` defaults
+to `Error`, so `Result<T>` is the type a function of the library returns. `has_value()` and
+`explicit operator bool` report which one is held. `make_error` wraps an error payload in
 `ErrorWrapper`, and the `Result` constructor that takes an `ErrorWrapper` stores it as the error.
+
+`Result<void, E>` is the form of a function that returns nothing on success. It is
+default-constructed as a success, holds the error in a `std::optional`, and has `has_value()`,
+`operator bool`, `value()` and `error()`.
 
 ### Accessors
 
-`value()`, `operator*` and `operator->` return the success value. When the result holds an error,
-they throw `SushiException`: the exception carries the stored `Error` when `E` is
-`Error`, and otherwise carries `Errc::invalid_state`. `error()` throws
-`SushiException` with `Errc::invalid_state` when the result holds a value.
+`value()`, `operator*` and `operator->` return the success value, and `error()` returns the error.
+Calling one on the wrong side is a rule the caller broke, so it stops the process through
+`SR_VERIFY`. For a value accessor on an `Error` the handler prints the stored message, so a
+program that calls `value()` without a check stops with the reason on standard error. For another
+error type the handler prints "the Result holds an error".
 
 ## span.hpp
 

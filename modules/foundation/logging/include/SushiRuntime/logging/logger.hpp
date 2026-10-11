@@ -172,7 +172,7 @@ namespace SushiRuntime
     namespace Detail
     {
         /**
-         * @brief Logs the formatted message at error level, then throws it as invalid_state.
+         * @brief Logs the formatted message at error level, then throws it as InvalidState.
          * @param file The source file of the call the record names.
          * @param line The line of that call.
          * @param function The function that holds that call.
@@ -193,7 +193,7 @@ namespace SushiRuntime
                                "Runtime exception: {}", message);
                 }
             }
-            throw SushiException(Error{Errc::invalid_state, std::move(message)});
+            throw SushiException(Error{ErrorCode::InvalidState, std::move(message)});
         }
     } // namespace Detail
 } // namespace SushiRuntime
@@ -201,7 +201,7 @@ namespace SushiRuntime
 /**
  * @brief Logs the message at error level and throws it when @p condition holds.
  *
- * Throws SushiException with Errc::invalid_state. The arguments after the condition are
+ * Throws SushiException with ErrorCode::InvalidState. The arguments after the condition are
  * a format string and its values, and are evaluated only when the condition holds.
  */
 #define SR_THROW_IF(condition, ...)                                                          \

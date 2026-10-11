@@ -76,11 +76,11 @@ namespace SushiRuntime
 
         /**
          * @brief Builds the error of a LateCount whose live count exceeds its capacity.
-         * @return An invalid_graph error naming both numbers, for a host or a device count.
+         * @return An InvalidGraph error naming both numbers, for a host or a device count.
          */
         inline Error late_count_overflow(std::size_t live, std::size_t capacity)
         {
-            return Error{Errc::invalid_graph,
+            return Error{ErrorCode::InvalidGraph,
                 "LateCount: the live count (" + std::to_string(live) +
                 ") exceeds the capacity it was planned for (" + std::to_string(capacity) +
                 "); build the LateCount with a capacity that covers the largest count."};
@@ -89,7 +89,7 @@ namespace SushiRuntime
         /**
          * @brief Clears a fault record the device wrote and throws the error it names.
          * @param record K_DEVICE_FAULT_WORDS host-USM words, read after its step finished.
-         * @throws SushiException With invalid_graph when the record holds a fault.
+         * @throws SushiException With InvalidGraph when the record holds a fault.
          */
         inline void throw_if_device_fault(std::uint32_t* record)
         {
@@ -102,7 +102,7 @@ namespace SushiRuntime
             record[0] = K_DEVICE_FAULT_NONE;
             if (kind == K_DEVICE_FAULT_LATE_COUNT)
                 throw SushiException(late_count_overflow(count, capacity));
-            throw SushiException(Error{Errc::invalid_graph,
+            throw SushiException(Error{ErrorCode::InvalidGraph,
                 "A late-bound task's live window starts at " + std::to_string(base) +
                 " and covers " + std::to_string(count) +
                 " elements, which does not fit the capacity it was compiled for (" +

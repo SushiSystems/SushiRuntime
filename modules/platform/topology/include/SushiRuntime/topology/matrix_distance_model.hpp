@@ -49,7 +49,7 @@ namespace SushiRuntime
                  *
                  * Initializes the internal distance matrix and validates its dimensions.
                  * @param matrix The square distance matrix representing NUMA node latencies (takes ownership).
-                 * @throws SushiException With Errc::invalid_access for a ragged matrix.
+                 * @throws SushiException With ErrorCode::InvalidAccess for a ragged matrix.
                  */
                 explicit MatrixDistanceModel(std::vector<std::vector<int>> matrix)
                     : matrix_(std::move(matrix))
@@ -57,7 +57,7 @@ namespace SushiRuntime
                     for (std::size_t row = 0; row < matrix_.size(); ++row)
                         if (matrix_[row].size() != matrix_.size())
                             throw SushiException(Error{
-                                Errc::invalid_access,
+                                ErrorCode::InvalidAccess,
                                 "MatrixDistanceModel: row " + std::to_string(row) + " holds " +
                                     std::to_string(matrix_[row].size()) +
                                     " entries and the matrix has " +

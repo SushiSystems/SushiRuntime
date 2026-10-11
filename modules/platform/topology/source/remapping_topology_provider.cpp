@@ -38,7 +38,7 @@ namespace SushiRuntime
          * Wraps an existing provider to map devices into synthetic NUMA nodes.
          * @param inner The underlying topology provider to wrap.
          * @param fake_node_count The number of synthetic NUMA nodes to simulate.
-         * @throws SushiException With Errc::invalid_access if the inner provider is null.
+         * @throws SushiException With ErrorCode::InvalidAccess if the inner provider is null.
          */
         RemappingTopologyProvider::RemappingTopologyProvider(std::shared_ptr<TopologyProvider> inner,
                                                              int fake_node_count)
@@ -46,7 +46,7 @@ namespace SushiRuntime
         {
             if (!inner_)
                 throw SushiException(Error{
-                    Errc::invalid_access,
+                    ErrorCode::InvalidAccess,
                     "RemappingTopologyProvider: the inner provider is null; pass the provider "
                     "whose devices are to be remapped."});
             if (fake_node_count_ < 1)

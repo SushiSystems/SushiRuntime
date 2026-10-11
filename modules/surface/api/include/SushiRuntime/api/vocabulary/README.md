@@ -41,7 +41,7 @@ nothing to read does not compile.
 
 A kernel added with add_untracked() names no region, so the runtime cannot read its device from
 its data. On states it. On(buffer) and On(state) take the device of the handle and keep its
-liveness observer, so a graph whose handle was destroyed is refused with `dangling_resource`
+liveness observer, so a graph whose handle was destroyed is refused with `DanglingResource`
 like any other. On(DeviceIndex) names the device outright and watches nothing.
 
 Without an On the kernel runs on DeviceIndex{0}, the default device of Runtime::buffer() and
@@ -122,7 +122,7 @@ Internal::Graph::LateBindings stores, and the buffer's liveness observer. The me
 never a bare pointer, because a pointer carries neither a residency nor a size to check.
 
 The observer reaches the recorder with the read region of the slot, so a graph that recorded
-sized_from_device(counter) or based_at_device(slot) refuses to run with `dangling_resource` once
+sized_from_device(counter) or based_at_device(slot) refuses to run with `DanglingResource` once
 that buffer is destroyed. slot_buffer_key() returns the dependency key of the slot's buffer and
 holds the one const_cast from the read-only word pointer.
 
@@ -185,9 +185,9 @@ It has three factories and no public constructor, so a LateCount has exactly one
 | `from_device(capacity, slot, index)` | the word `slot[index]` | in the resolver's kernel, after its producer |
 
 Each factory checks its arguments where it is called. A capacity past the largest uint32 throws
-`invalid_graph`, because a live count is published as a uint32 word. from_host() throws
-`invalid_access` for an empty provider. from_device() runs checked_device_slot(), so a slot outside
-Residency::Host or an index past the buffer throws `invalid_access` before any graph sees the count.
+`InvalidGraph`, because a live count is published as a uint32 word. from_host() throws
+`InvalidAccess` for an empty provider. from_device() runs checked_device_slot(), so a slot outside
+Residency::Host or an index past the buffer throws `InvalidAccess` before any graph sees the count.
 
 A from_host() provider and a Dynamic provider are the same type and are called at different
 points. The Dynamic one is called before the step, on the thread that called run() or run_async().
@@ -211,7 +211,7 @@ from_device() keeps the DeviceSlot checked_device_slot() returns, the type a Dyn
 sized_from_device(): the buffer's first word, the index and the buffer's liveness observer. It
 keeps no pointer to the Buffer handle. The resolver reads the whole buffer, so it is ordered after
 the kernel that writes the count, and a graph whose slot buffer was destroyed is refused with
-`dangling_resource` like any other.
+`DanglingResource` like any other.
 
 ### LateCountAccess
 

@@ -82,7 +82,7 @@ namespace SushiRuntime
             /** @brief Refuses a constructor argument the caller must not pass. */
             [[noreturn]] void refuse(const char* message)
             {
-                throw SushiException(Error{Errc::invalid_access, message});
+                throw SushiException(Error{ErrorCode::InvalidAccess, message});
             }
 
             /** @brief Returns the transport, or refuses a null one. */

@@ -243,7 +243,7 @@ TEST(Unit_EpochReclamationTest, AThreadPastTheSlotLimitIsRefusedWithTheLimit)
             {
                 const std::string message = refusal.what();
                 const bool as_specified =
-                    refusal.error().code == SushiRuntime::Errc::unsupported &&
+                    refusal.error().code == SushiRuntime::ErrorCode::Unsupported &&
                     message.find(std::to_string(K_EPOCH_SLOTS) + " epoch slots") !=
                         std::string::npos;
                 (as_specified ? refused : refused_otherwise).fetch_add(1);

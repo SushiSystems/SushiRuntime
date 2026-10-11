@@ -62,7 +62,7 @@ namespace SushiRuntime
         public:
             /**
              * @brief Creates a runtime on the devices and with the settings of one struct.
-             * @throws SushiException With Errc::unsupported when the loaded library
+             * @throws SushiException With ErrorCode::Unsupported when the loaded library
              *         is of another release than these headers, or when no device passes
              *         config.devices.
              */
@@ -90,7 +90,7 @@ namespace SushiRuntime
 
             /**
              * @brief Allocates a typed buffer of @p count elements on one device.
-             * @throws SushiException With Errc::invalid_access when @p device names no
+             * @throws SushiException With ErrorCode::InvalidAccess when @p device names no
              *         device of this runtime; the message names Runtime::buffer, the index,
              *         the device count and advanced().devices().
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
@@ -105,7 +105,7 @@ namespace SushiRuntime
 
             /**
              * @brief Allocates a double-buffered field of @p count elements on one device.
-             * @throws SushiException With Errc::invalid_access when @p device names no
+             * @throws SushiException With ErrorCode::InvalidAccess when @p device names no
              *         device of this runtime; the message names Runtime::state, the index,
              *         the device count and advanced().devices().
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
@@ -131,7 +131,7 @@ namespace SushiRuntime
 
             /**
              * @brief Blocks until every device queue of this runtime has finished its work.
-             * @throws SushiException With Errc::kernel_failed when a queue reports a
+             * @throws SushiException With ErrorCode::KernelFailed when a queue reports a
              *         failed command.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
@@ -143,7 +143,7 @@ namespace SushiRuntime
                 }
                 catch (const sycl::exception& failure)
                 {
-                    throw SushiException(Error{Errc::kernel_failed, failure.what()});
+                    throw SushiException(Error{ErrorCode::KernelFailed, failure.what()});
                 }
             }
 

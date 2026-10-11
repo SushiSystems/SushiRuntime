@@ -76,7 +76,7 @@ namespace SushiRuntime
          * @param message Text of the Error; null-terminated.
          * @return The Error, with an empty message when the text could not be allocated.
          */
-        [[nodiscard]] inline Error error_without_throwing(Errc code,
+        [[nodiscard]] inline Error error_without_throwing(ErrorCode code,
                                                                 const char* message) noexcept
         {
             try
@@ -232,7 +232,7 @@ namespace SushiRuntime
 
                 if (owner_ == nullptr)
                     return make_error(Detail::error_without_throwing(
-                        Errc::invalid_state,
+                        ErrorCode::InvalidState,
                         "RunHandle::wait(): this handle owns no step, because it was "
                         "already waited for or moved from; start a step with run_async()."));
 
@@ -244,13 +244,13 @@ namespace SushiRuntime
 
                 if (!owned)
                     return make_error(Detail::error_without_throwing(
-                        Errc::invalid_state,
+                        ErrorCode::InvalidState,
                         "RunHandle::wait(): the graph was moved or destroyed while this step "
                         "was pending, which ended the step and dropped its report; wait on "
                         "the handle first."));
 
                 Error failure = owner->settle_async_step(state_, reuse);
-                if (failure.code != Errc::ok)
+                if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
                 return &reuse;
             }

@@ -54,7 +54,7 @@ TEST(Integration_CrossContextGuard, NodeSpanningTwoContextsFailsCleanly)
     // The run fails with an error and the runtime stays usable afterward; see README.md.
     auto result = g.try_run();
     ASSERT_FALSE(result) << "a cross-context node must not run successfully";
-    EXPECT_EQ(result.error().code, Errc::invalid_graph);
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidGraph);
 
     // A well-formed, co-located graph still runs on the same runtime afterward.
     for (std::size_t i = 0; i < N; ++i) a[i] = static_cast<int>(i);

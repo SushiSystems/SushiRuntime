@@ -181,7 +181,7 @@ TEST(Integration_FluentLifecycle, MutationRecompiles)
 /**
  * @brief Tests that an empty graph is reported as invalid.
  *
- * The non-throwing try_run() channel reports an invalid_graph error without throwing an exception.
+ * The non-throwing try_run() channel reports an InvalidGraph error without throwing an exception.
  */
 TEST(Integration_FluentLifecycle, EmptyGraphIsInvalid)
 {
@@ -190,14 +190,14 @@ TEST(Integration_FluentLifecycle, EmptyGraphIsInvalid)
 
     auto r = sim.try_run();
     ASSERT_FALSE(r);
-    EXPECT_EQ(r.error().code, Errc::invalid_graph);
+    EXPECT_EQ(r.error().code, ErrorCode::InvalidGraph);
 }
 
 /**
  * @brief A graph that outlives a Buffer it recorded fails cleanly, not with UB.
  *
  * The graph tracks the liveness of every typed handle it touches, so a run after
- * the Buffer was freed returns a dangling_resource error through try_run() instead
+ * the Buffer was freed returns a DanglingResource error through try_run() instead
  * of dispatching a kernel against released memory.
  */
 TEST(Integration_FluentLifecycle, DanglingResourceIsReported)
@@ -215,5 +215,5 @@ TEST(Integration_FluentLifecycle, DanglingResourceIsReported)
 
     auto r = sim.try_run();
     ASSERT_FALSE(r);
-    EXPECT_EQ(r.error().code, Errc::dangling_resource);
+    EXPECT_EQ(r.error().code, ErrorCode::DanglingResource);
 }

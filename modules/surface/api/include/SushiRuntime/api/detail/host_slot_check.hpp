@@ -65,7 +65,7 @@ namespace SushiRuntime
 
         /**
          * @brief Throws unless slot is null or lands in host USM.
-         * @throws SushiException With invalid_access for a slot that is
+         * @throws SushiException With InvalidAccess for a slot that is
          *        not host USM and for one this context never allocated.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
@@ -79,13 +79,13 @@ namespace SushiRuntime
                 return;
             const std::optional<void*> base = context.memory().containing_base(address);
             if (!base)
-                throw SushiException(Error{Errc::invalid_access,
+                throw SushiException(Error{ErrorCode::InvalidAccess,
                     std::string(what) + ": this runtime never allocated the slot, so "
                     "its residency is unknowable; pass a Residency::Host buffer this "
                     "runtime allocated, with the element's index."});
             if (usm_kind_of(context, *base) == sycl::usm::alloc::host)
                 return;
-            throw SushiException(Error{Errc::invalid_access,
+            throw SushiException(Error{ErrorCode::InvalidAccess,
                 std::string(what) + ": the slot lies inside an allocation that is not "
                 "Residency::Host, and the host reads it while kernels may run; pass a "
                 "Residency::Host buffer, with the element's index."});
@@ -97,7 +97,7 @@ namespace SushiRuntime
          * Resolves each slot's owning queue through the context's registry and
          * requires sycl::usm::alloc::host there (docs/architecture/ARCHITECTURE.md,
          * "Late-bound device values"). A recorder runs it before it records the node.
-         * @throws SushiException With invalid_access for a non-host slot.
+         * @throws SushiException With InvalidAccess for a non-host slot.
          */
         inline void require_host_device_slots(Internal::Execution::RuntimeContext& context,
                                               const Dynamic& dyn)

@@ -345,6 +345,6 @@ TEST(Integration_LateBindings, SharedSlotIsRejectedByTheMemberSetter)
     }
     catch (const SushiException& e)
     {
-        EXPECT_EQ(e.error().code, Errc::invalid_access);
+        EXPECT_EQ(e.error().code, ErrorCode::InvalidAccess);
     }
 }

@@ -175,7 +175,7 @@ TEST(Integration_LateBoundVocabulary, FromDeviceRejectsAnIndexPastTheSlot)
     const Error error =
         error_of([&] { (void)LateCount::from_device(CAPACITY, slot, slot.size()); });
 
-    EXPECT_EQ(error.code, Errc::invalid_access);
+    EXPECT_EQ(error.code, ErrorCode::InvalidAccess);
     EXPECT_NE(error.message.find("LateCount::from_device"), std::string::npos) << error.message;
     EXPECT_NE(error.message.find("index 3"), std::string::npos) << error.message;
     EXPECT_NE(error.message.find("3 elements"), std::string::npos) << error.message;
@@ -193,7 +193,7 @@ TEST(Integration_LateBoundVocabulary, FromDeviceRejectsASlotThatIsNotHostResiden
     for (const Buffer<std::uint32_t>* rejected : {&resident, &shared})
     {
         const Error error = error_of([&] { (void)LateCount::from_device(8, *rejected); });
-        EXPECT_EQ(error.code, Errc::invalid_access);
+        EXPECT_EQ(error.code, ErrorCode::InvalidAccess);
         EXPECT_NE(error.message.find("Residency::Host"), std::string::npos) << error.message;
     }
 }
@@ -204,7 +204,7 @@ TEST(Integration_LateBoundVocabulary, FromHostRejectsAnEmptyProvider)
     const Error error =
         error_of([] { (void)LateCount::from_host(8, LateCount::Provider{}); });
 
-    EXPECT_EQ(error.code, Errc::invalid_access);
+    EXPECT_EQ(error.code, ErrorCode::InvalidAccess);
     EXPECT_NE(error.message.find("LateCount::from_host"), std::string::npos) << error.message;
 }
 
@@ -220,13 +220,13 @@ TEST(Integration_LateBoundVocabulary, EveryFactoryRejectsACapacityPastAUint32)
     auto rt   = Runtime::create();
     auto slot = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
 
-    EXPECT_EQ(error_of([&] { (void)LateCount::fixed(over); }).code, Errc::invalid_graph);
+    EXPECT_EQ(error_of([&] { (void)LateCount::fixed(over); }).code, ErrorCode::InvalidGraph);
     EXPECT_EQ(error_of([&] {
                   (void)LateCount::from_host(over, [] { return std::size_t{0}; });
               }).code,
-              Errc::invalid_graph);
+              ErrorCode::InvalidGraph);
     EXPECT_EQ(error_of([&] { (void)LateCount::from_device(over, slot); }).code,
-              Errc::invalid_graph);
+              ErrorCode::InvalidGraph);
 
     EXPECT_EQ(LateCount::fixed(limit).capacity(), limit);
 }

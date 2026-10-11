@@ -106,7 +106,7 @@ namespace SushiRuntime
          * @brief Throws unless two versions agree by major and minor.
          * @param headers The version the caller's headers declare.
          * @param loaded  The version the loaded library reports.
-         * @throws SushiException With Errc::unsupported, naming both versions.
+         * @throws SushiException With ErrorCode::Unsupported, naming both versions.
          */
         inline void require_same_release(const Version& headers, const Version& loaded)
         {
@@ -117,7 +117,7 @@ namespace SushiRuntime
                 loaded.major < headers.major ||
                 (loaded.major == headers.major && loaded.minor < headers.minor);
             throw SushiException(Error{
-                Errc::unsupported,
+                ErrorCode::Unsupported,
                 "SushiRuntime headers are " + dotted(headers) + " and the loaded library is " +
                     dotted(loaded) + "; " + (library_is_older ? "an older" : "a newer") +
                     " sushiruntime shared library is earlier on the loader path."});
@@ -126,7 +126,7 @@ namespace SushiRuntime
 
     /**
      * @brief Throws unless the loaded library matches these headers, by major and minor.
-     * @throws SushiException With Errc::unsupported, naming both versions.
+     * @throws SushiException With ErrorCode::Unsupported, naming both versions.
      * @see modules/foundation/core/README.md
      */
     inline void require_matching_version()

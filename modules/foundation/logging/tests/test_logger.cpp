@@ -196,7 +196,7 @@ TEST_F(Unit_LoggerTest, ThrowingSinkLeavesTheRecordOnStderr)
 {
     set_log_sink([](LogLevel, std::string_view)
     {
-        throw SushiException(Error{Errc::invalid_state, "sink failure"});
+        throw SushiException(Error{ErrorCode::InvalidState, "sink failure"});
     });
 
     testing::internal::CaptureStderr();
@@ -228,7 +228,7 @@ TEST_F(Unit_LoggerTest, AsynchronousRecordsArriveBeforeSynchronousModeReturns)
     }
 }
 
-/** @brief Tests that SR_THROW_IF throws invalid_state, logs once and is silent on false. */
+/** @brief Tests that SR_THROW_IF throws InvalidState, logs once and is silent on false. */
 TEST_F(Unit_LoggerTest, ThrowIfThrowsSushiExceptionWithInvalidState)
 {
     SeenRecords records;
@@ -241,7 +241,7 @@ TEST_F(Unit_LoggerTest, ThrowIfThrowsSushiExceptionWithInvalidState)
     }
     catch (const SushiException& error)
     {
-        EXPECT_EQ(error.error().code, Errc::invalid_state);
+        EXPECT_EQ(error.error().code, ErrorCode::InvalidState);
         EXPECT_STREQ(error.what(), "Expected failure 404");
     }
 
@@ -271,7 +271,7 @@ TEST_F(Unit_LoggerTest, ThrowIfFormatsACallerMemberNamedMsg)
     }
     catch (const SushiException& error)
     {
-        EXPECT_EQ(error.error().code, Errc::invalid_state);
+        EXPECT_EQ(error.error().code, ErrorCode::InvalidState);
         EXPECT_STREQ(error.what(), "value: inner");
     }
 

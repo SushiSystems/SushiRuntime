@@ -116,7 +116,7 @@ TEST(Integration_RegionCommit, AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegion
 
     const auto failed = world.try_run();
     ASSERT_FALSE(failed.has_value());
-    EXPECT_EQ(failed.error().code, Errc::compile_failed);
+    EXPECT_EQ(failed.error().code, ErrorCode::CompileFailed);
     EXPECT_EQ(world.compose_count(), composed) << "a commit that threw composed nothing";
     expect_producer_orders_consumer(world);
 

@@ -76,13 +76,13 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns whether a device is a GPU.
-                 * @throws SushiException With Errc::invalid_access on a bad index.
+                 * @throws SushiException With ErrorCode::InvalidAccess on a bad index.
                  */
                 [[nodiscard]] bool is_gpu(std::size_t index) const;
 
                 /**
                  * @brief Returns the plain queue of a device, built at construction.
-                 * @throws SushiException With Errc::invalid_access on a bad index.
+                 * @throws SushiException With ErrorCode::InvalidAccess on a bad index.
                  */
                 [[nodiscard]] sycl::queue& queue(std::size_t index);
 
@@ -90,7 +90,7 @@ namespace SushiRuntime
                  * @brief Returns a device's queue of one flavour, building it on first use.
                  * @param flavour Properties asked for; a device whose plain queue is in-order
                  *                gets an in-order queue whatever is asked.
-                 * @throws SushiException With Errc::invalid_access on a bad index.
+                 * @throws SushiException With ErrorCode::InvalidAccess on a bad index.
                  * @see modules/platform/device/README.md
                  */
                 [[nodiscard]] sycl::queue& queue(std::size_t index, QueueFlavour flavour);
@@ -104,7 +104,7 @@ namespace SushiRuntime
                 /**
                  * @brief Returns the lowest-indexed device of a NUMA node, or device 0 when the
                  *        node has none.
-                 * @throws SushiException With Errc::unsupported when the set is empty.
+                 * @throws SushiException With ErrorCode::Unsupported when the set is empty.
                  */
                 [[nodiscard]] std::size_t device_for_numa(int numa_node) const;
 
@@ -148,7 +148,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Throws when an index names no device.
-                 * @throws SushiException With Errc::invalid_access.
+                 * @throws SushiException With ErrorCode::InvalidAccess.
                  */
                 void require_index(std::size_t index) const;
 
@@ -171,7 +171,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns the next device of a NUMA node's rotation on this thread.
-                 * @throws SushiException With Errc::unsupported when the set is empty.
+                 * @throws SushiException With ErrorCode::Unsupported when the set is empty.
                  */
                 [[nodiscard]] std::size_t next_device_for_numa(int numa_node) const;
 

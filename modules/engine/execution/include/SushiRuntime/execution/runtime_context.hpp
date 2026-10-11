@@ -63,7 +63,7 @@ namespace SushiRuntime
                  * @brief Creates a runtime context and scans for hardware matching config.
                  * @param provider Topology source; null selects the hwloc default.
                  * @param distance_model NUMA distance model; null selects the hwloc default.
-                 * @throws SushiException With Errc::unsupported when no device passes config.
+                 * @throws SushiException With ErrorCode::Unsupported when no device passes config.
                  * @see modules/engine/execution/README.md
                  */
                 explicit RuntimeContext(const Internal::Topology::HardwareFilterConfig& config = {},

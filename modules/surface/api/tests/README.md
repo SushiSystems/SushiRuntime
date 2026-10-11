@@ -75,7 +75,7 @@ structural change is committed before the step is submitted.
 
 A runtime has one engine, so one graph's pending step occupies it. While the step of the first graph
 is held open at a gate, `run()`, `try_run()` and `try_run_async()` on a second graph of the same
-runtime must each report `invalid_state` and must not run the second graph's task. The first
+runtime must each report `InvalidState` and must not run the second graph's task. The first
 graph's handle must then complete with a successful report, and the second graph must run once the
 step is settled. `expect_refused_as_invalid_state` checks one `Result` for that code.
 
@@ -91,7 +91,7 @@ A handle may outlive its graph. The graph is destroyed in an inner scope while i
 with the gate released just before, and the handle is destroyed at the end of the test. The buffer
 must hold the task's write when the scope closes, which shows that the destructor waited for the
 step before the plan died. `expect_step_ended_by_its_graph` then expects `pending()` false,
-`ready()` true and `invalid_state` from `try_wait()`, none of which may read the dead graph. The
+`ready()` true and `InvalidState` from `try_wait()`, none of which may read the dead graph. The
 `Graph` test also runs a new graph on the runtime, which a step left behind would refuse.
 
 ### `ARegionDroppedWhileAStepIsPendingFinishesTheStep`
@@ -121,7 +121,7 @@ the file needs no cluster and no more devices than that file.
 ### `error_of`, `expect_window_rejected`, `expect_every_range_call_rejects`
 
 `error_of` runs a call and returns the `Error` of the `SushiException` it throws, or an error
-of code `ok`. `expect_window_rejected` checks one such error for `invalid_access` and for a message
+of code `Ok`. `expect_window_rejected` checks one such error for `InvalidAccess` and for a message
 that holds the call, `offset <n>`, `count <n>` and `size <n>`. `expect_every_range_call_rejects`
 applies it to `read_range`, `write_range` and `region` of one handle, which is how the Buffer test
 and the State test stay the same test.
@@ -129,7 +129,7 @@ and the State test stay the same test.
 ### `BufferRejectsAWindowPastTheEnd`, `StateRejectsAWindowPastTheEnd`
 
 A window `{size, 1}` starts one past the end, and `{size - 2, 5}` starts inside and runs over. All
-three range calls throw `invalid_access` for both, and the message holds the offset, the count and
+three range calls throw `InvalidAccess` for both, and the message holds the offset, the count and
 the size.
 
 ### `WindowWhoseEndWrapsIsRejected`
@@ -155,13 +155,13 @@ value.
 
 ### `NullOrShortSourceWithACountThrows`
 
-`write_range` with a count of four throws `invalid_access` for a null source, on a Buffer and on a
+`write_range` with a count of four throws `InvalidAccess` for a null source, on a Buffer and on a
 State, and for a source of two elements.
 
 ### `OverflowingElementCountThrowsBeforeAllocating`
 
 The count is chosen so that `count * sizeof(double)` wraps to eight bytes, a size any allocator
-grants. `Runtime::buffer` and `Runtime::state` throw `allocation_failed` with the count in the
+grants. `Runtime::buffer` and `Runtime::state` throw `AllocationFailed` with the count in the
 message.
 
 ### `StateAndBufferAnswerTheSharedQueriesAlike`
@@ -177,7 +177,7 @@ a compile error from the `static_assert` in `Buffer`, so no test can run it.
 
 ### `DistributedRefusesADeviceResidentBuffer`, `DistributedRefusesADeviceResidentState`
 
-`distributed()` on a device-resident handle throws `invalid_access` for both overloads of Buffer and
+`distributed()` on a device-resident handle throws `InvalidAccess` for both overloads of Buffer and
 State. The message names `Buffer::distributed()` or `State::distributed()`, and the residency. The
 tests run without a cluster, which shows the refusal does not depend on one.
 
@@ -188,12 +188,12 @@ or on a moved-to handle. No coordinator is attached, so the call only logs its w
 
 ### `HostAccessOnADeviceStateNamesTheState`
 
-`operator[]` and `host()` on a device-resident State throw `invalid_access` with `State::operator[]`
+`operator[]` and `host()` on a device-resident State throw `InvalidAccess` with `State::operator[]`
 and `State::host` in the message, not `Buffer`.
 
 ### `DeviceIndexThatNamesNoDeviceIsRefused`
 
-`buffer()` and `state()` with a device index equal to the device count throw `invalid_access`. The
+`buffer()` and `state()` with a device index equal to the device count throw `InvalidAccess`. The
 message names `Runtime::buffer` or `Runtime::state`, the index, the device count and
 `advanced().devices()`.
 
@@ -705,7 +705,7 @@ in the middle of a run.
 ### `SharedSlotIsRejectedByTheMemberSetter`
 
 `Dynamic::sized_from_device` on a named Dynamic rejects a slot inside `Shared` memory where it is
-called, with `invalid_access`, as the free builder does.
+called, with `InvalidAccess`, as the free builder does.
 
 ## test_late_bound_vocabulary.cpp
 
@@ -724,23 +724,23 @@ and returns how many elements were set.
 
 ### `FromDeviceRejectsAnIndexPastTheSlot`
 
-`LateCount::from_device(64, slot, slot.size())` on a slot of three elements throws `invalid_access`
+`LateCount::from_device(64, slot, slot.size())` on a slot of three elements throws `InvalidAccess`
 where it is called, and the message holds the call, `index 3` and `3 elements`. The last valid
 index is accepted. Up to v0.3 the index was a public field nobody checked until the first run.
 
 ### `FromDeviceRejectsASlotThatIsNotHostResident`
 
-A `Device` slot and a `Shared` slot are both refused with `invalid_access`, and the message names
+A `Device` slot and a `Shared` slot are both refused with `InvalidAccess`, and the message names
 `Residency::Host`.
 
 ### `FromHostRejectsAnEmptyProvider`
 
 An empty provider would read as a fixed count, which `fixed()` already spells, so `from_host`
-throws `invalid_access`.
+throws `InvalidAccess`.
 
 ### `EveryFactoryRejectsACapacityPastAUint32`
 
-A capacity one above the largest uint32 throws `invalid_graph` from all three factories, and the
+A capacity one above the largest uint32 throws `InvalidGraph` from all three factories, and the
 largest uint32 itself is accepted. The test is skipped where `std::size_t` is no wider than a
 uint32.
 
@@ -801,7 +801,7 @@ scheduler. A second graph with a count that fits then runs clean on the same run
 ### `NonHostDeviceSlotIsRejectedAtConstruction`
 
 A device slot that is not `Residency::Host` is rejected by `LateCount::from_device` with
-`invalid_access`, before a recorder sees the count.
+`InvalidAccess`, before a recorder sees the count.
 
 ### `ResolverSeesTheCountItsPredecessorJustWrote`
 
@@ -875,7 +875,7 @@ row reports the node's name and no operation, the second the rule's name.
 
 ### `MoreParametersThanANodeCarriesAreRefused`
 
-Nine parameters are refused with `invalid_graph`, and the graph holds no rule afterwards.
+Nine parameters are refused with `InvalidGraph`, and the graph holds no rule afterwards.
 
 ## test_recorder_scratch.cpp
 
@@ -961,7 +961,7 @@ A rule named and then given a null `const char*` reports the name an unnamed rul
 ### `MovedFromGraphIsEmpty`
 
 After a move the source reports no rule, no node and no compile, refuses a run with
-`invalid_graph`, and then records and runs a new rule. The destination runs without compiling again.
+`InvalidGraph`, and then records and runs a new rule. The destination runs without compiling again.
 
 ### `MovedFromDynamicGraphHasNoRegions`
 
@@ -976,7 +976,7 @@ raises it to two, and naming the first again leaves it there.
 ### `ADroppedBufferIsStillDetected`, `ADroppedBufferIsStillDetectedInARegion`
 
 A buffer named by the first and the last of six rules is destroyed after a good run. The next run
-is refused with `dangling_resource`, on a `Graph` and on a `DynamicGraph`.
+is refused with `DanglingResource`, on a `Graph` and on a `DynamicGraph`.
 
 ### `refusal_of`
 
@@ -1011,7 +1011,7 @@ second node into a rule that no longer existed.
 ### `AnOffloadRuleTakesAtMostEightParameters`
 
 `add(OperationID, count, Reads, Writes, local, params)` and `add(OperationID, state, local, params)` with nine
-parameters throw `invalid_graph`; the first message holds `9 parameters` and `at most 8`, and
+parameters throw `InvalidGraph`; the first message holds `9 parameters` and `at most 8`, and
 neither rule is recorded. Both forms record with eight. A `static_assert` ties the literals to
 `TaskMetadata::K_MAX_PARAMS`. The graph is not run.
 
@@ -1058,7 +1058,7 @@ Four steps advance both, so the form is not specific to regions and survives a c
 ## test_run_driver.cpp
 
 The file covers the run entries `StepDriver` gives `Graph` and `DynamicGraph`: that both types
-expose the same ones, which `Errc` each kind of failure carries, and what a report counts.
+expose the same ones, which `ErrorCode` each kind of failure carries, and what a report counts.
 
 ### `RunEntries`
 
@@ -1072,21 +1072,21 @@ either, or declared differently, fails the compile.
 
 `expect_kernel_failed_everywhere` runs a graph whose host task throws `std::runtime_error` through
 `try_run()`, `try_run(report)`, `try_run_async()` with `try_wait()`, `run()` and
-`run_async().wait()`, and expects `Errc::kernel_failed` with the task's text from each.
+`run_async().wait()`, and expects `ErrorCode::KernelFailed` with the task's text from each.
 `code_thrown_by` returns the code of the `SushiException` a call throws; any other exception type
 leaves the helper and fails the test.
 
 ### `GraphReportsAThrowingHostTaskAsKernelFailed`, `DynamicGraphReportsAThrowingHostTaskAsKernelFailed`
 
-A host task that throws is a failed step, so both graph types report `kernel_failed` from the
-synchronous and the asynchronous path. `try_run()` used to report `compile_failed` for it, and
+A host task that throws is a failed step, so both graph types report `KernelFailed` from the
+synchronous and the asynchronous path. `try_run()` used to report `CompileFailed` for it, and
 `wait()` used to let the task's own exception through.
 
 ### `AThrowingBuildIsCompileFailed`
 
 No code of the caller runs when the plan is built except the copy of each recorded callable into
 its node. The second task is a `Testing::RefusingFill` whose copy throws, so the build throws. It
-must yield `compile_failed` from `try_run()` and from `try_run_async()`, which shows that the code
+must yield `CompileFailed` from `try_run()` and from `try_run_async()`, which shows that the code
 follows the phase and not the exception type.
 
 ### `EveryTryEntryRunsOnBothGraphs`
@@ -1098,7 +1098,7 @@ budget, and two each from the two `try_run_until` forms.
 
 ### `ARunWhileAStepIsPendingIsInvalidState`
 
-While a step is held open at a gate, `try_run()` and `try_run_async()` must return `invalid_state`,
+While a step is held open at a gate, `try_run()` and `try_run_async()` must return `InvalidState`,
 and so must a second `try_wait()` on the handle once the step has been waited for.
 
 ### `SetProfilingChainsAndReadsBack`
@@ -1124,7 +1124,7 @@ request the composer keeps reaches the plan at the commit after each change and 
 
 Moving a graph while its step is pending breaks a precondition. A debug build asserts, so the test
 is skipped there. In a release build the move must wait for the step, the handle must then report
-`pending()` false and `ready()` true, its `try_wait()` must return `invalid_state`, and the
+`pending()` false and `ready()` true, its `try_wait()` must return `InvalidState`, and the
 destination must run. The gate is released before the move, so the move returns as soon as the task
 has run.
 
@@ -1276,7 +1276,7 @@ the same queue brings the values to a host vector. The test names no type of `In
 
 ### `AQueueOfAnUnknownDeviceIsRefused`
 
-`advanced().queue()` asked for the device after the last one throws `invalid_access`.
+`advanced().queue()` asked for the device after the last one throws `InvalidAccess`.
 
 ## test_builder_surface.cpp
 
@@ -1302,7 +1302,7 @@ origin.
 
 ### `ALaunchPastItsStateIsRefusedAtAdd`
 
-An Extent whose origin plus size passes the State's size throws `invalid_graph` from add(). The
+An Extent whose origin plus size passes the State's size throws `InvalidGraph` from add(). The
 message names the rule, the extent with its origin and the State's size, and the rule is not
 recorded.
 
@@ -1314,7 +1314,7 @@ current field of the State read after the two fields of the State written.
 ### `ACoupledInputSmallerThanTheOutputIsRefusedAtAdd`
 
 A coupled rule over the whole field whose input State is shorter than its output throws
-`invalid_graph` from add().
+`InvalidGraph` from add().
 
 ### `DynamicTakesItsCapacityBeforeItsAccess`
 
@@ -1328,8 +1328,8 @@ is 0 and the test proves only that the forms record and run; with two it proves 
 
 ### `PlacementIsCheckedAndItsHandleWatched`
 
-`On(DeviceIndex{device_count})` throws `invalid_access` naming the index and the count. A graph
-whose `On(buffer)` handle was destroyed before the run is refused with `dangling_resource`.
+`On(DeviceIndex{device_count})` throws `InvalidAccess` naming the index and the count. A graph
+whose `On(buffer)` handle was destroyed before the run is refused with `DanglingResource`.
 
 ### `ExtendRecordsOneNamedRule`
 
@@ -1402,7 +1402,7 @@ allocates the one-word `Residency::Host` buffer.
 ### `ADestroyedCountBufferRefusesTheRun`, `ADestroyedBaseBufferRefusesTheRun`
 
 A graph records a rule with `sized_from_device(counter)` or `based_at_device(base)` and runs once.
-The buffer is then destroyed and the next `try_run()` returns `dangling_resource`. The count case
+The buffer is then destroyed and the next `try_run()` returns `DanglingResource`. The count case
 also checks that the recorder watches two allocations, the target and the counter.
 
 ### `ADestroyedCountBufferRefusesAStateRule`
@@ -1422,7 +1422,7 @@ origin `SIZE_MAX - 3` reach `SIZE_MAX`.
 
 ### `AnExtentWhoseEndWrapsIsRefusedAtAdd`
 
-`add(extent, state, kernel)` with that extent over a State of 8 elements throws `invalid_graph` and
+`add(extent, state, kernel)` with that extent over a State of 8 elements throws `InvalidGraph` and
 records nothing. A wrapped sum would be 4, which is inside the State.
 
 ## test_device_fault.cpp
@@ -1476,7 +1476,7 @@ State yields an empty view and not a null pointer.
 ### `AStateAssignedOverRefusesTheRun`
 
 A State with a recorded rule is move-assigned a new State. The next `try_run()` returns
-`dangling_resource`.
+`DanglingResource`.
 
 ### `ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField`
 
@@ -1578,7 +1578,7 @@ named `c` and a boundary in-degree of one on `c`.
 
 Regions 0, 1 and 2 share one buffer: `a` writes it, `b` and `c` read it. After one run region 1 is
 dropped and region 3 is added with a `Testing::RefusingFill`, a host task whose copy throws while
-its flag is set and which writes a buffer of its own. The run returns `compile_failed`,
+its flag is set and which writes a buffer of its own. The run returns `CompileFailed`,
 `compose_count()` has not moved and the edge `a -> c` is still in the plan. The flag is then
 cleared, the next run succeeds and composes once, the edge `a -> c` is there, and `c` holds what
 `a` wrote in the second step.
