@@ -590,8 +590,8 @@ namespace
             /** @brief Allocates a buffer the fixture owns and shares it with the master. */
             SharedBytes& add_buffer(std::size_t size)
             {
-                buffers_.push_back(
-                    std::make_unique<SharedBytes>(master_runtime_->unsafe_context().memory(), size));
+                Internal::Memory::USMAllocator& memory = master_runtime_->unsafe_context().memory();
+                buffers_.push_back(std::make_unique<SharedBytes>(memory, size));
                 SharedBytes& buffer = *buffers_.back();
                 cluster_->share(buffer.data(), buffer.size());
                 return buffer;

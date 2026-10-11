@@ -112,11 +112,8 @@ namespace SushiRuntime
     {
         /**
          * @brief Allocates USM of the given residency on one device queue.
-         * @param context          Runtime context that performs and records the allocation.
-         * @param bytes        Allocation size in bytes.
-         * @param device_index Device queue that owns the allocation.
-         * @param residency    Kind of USM to allocate.
-         * @param alignment    Byte alignment of the address; 0 asks for the device default.
+         * @param context   Performs and records the allocation.
+         * @param alignment Byte alignment of the address; 0 asks for the device default.
          * @return The USM pointer, or nullptr on failure.
          */
         inline void* malloc_residency_on(Internal::Execution::RuntimeContext& context,
@@ -125,15 +122,16 @@ namespace SushiRuntime
                                          std::size_t alignment = 0)
         {
             const std::size_t device = device_index.value();
+            using Kind = Internal::Memory::USMKind;
             Internal::Memory::USMAllocator& memory = context.memory();
             switch (residency)
             {
                 case Residency::Device:
-                    return memory.allocate({Internal::Memory::USMKind::Device, bytes, alignment, device});
+                    return memory.allocate({Kind::Device, bytes, alignment, device});
                 case Residency::Host:
-                    return memory.allocate({Internal::Memory::USMKind::Host, bytes, alignment, device});
+                    return memory.allocate({Kind::Host, bytes, alignment, device});
                 case Residency::Shared:
-                    return memory.allocate({Internal::Memory::USMKind::Shared, bytes, alignment, device});
+                    return memory.allocate({Kind::Shared, bytes, alignment, device});
             }
             return nullptr;
         }
@@ -416,7 +414,6 @@ namespace SushiRuntime
             /**
              * @brief Allocates count elements of USM pinned to one device.
              * @param call Names the public operation in a message.
-             * @param alignment Byte alignment of the address; 0 asks for the device default.
              * @return The buffer, or an AllocationFailed error when the device returns nothing.
              * @pre device_index names a device, the byte size of count fits std::size_t, and
              *      alignment is 0 or a power of two.
