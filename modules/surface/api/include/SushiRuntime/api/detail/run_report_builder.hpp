@@ -39,75 +39,72 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /**
+         * @brief Returns how many dispatches the offload coordinator has accepted so far.
+         * @return Zero when the context has no coordinator.
+         */
+        [[nodiscard]] inline std::uint64_t offloaded_dispatches(
+            const Internal::Execution::RuntimeContext& ctx) noexcept
         {
-            /**
-             * @brief Returns how many dispatches the offload coordinator has accepted so far.
-             * @return Zero when the context has no coordinator.
-             */
-            [[nodiscard]] inline std::uint64_t offloaded_dispatches(
-                const Execution::RuntimeContext& ctx) noexcept
+            const auto* offload = ctx.offload();
+            return offload != nullptr ? offload->statistics().offloaded : 0;
+        }
+
+        /**
+         * @brief Assembles a RunReport from a finished run's raw measurements.
+         * @param report The report to overwrite; reset before it is filled.
+         * @param offloaded_before What offloaded_dispatches() returned before the run.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        inline void fill_run_report(
+            Internal::Observability::RunReport&                   report,
+            Internal::Execution::RuntimeContext&         ctx,
+            const Internal::Execution::ExecutionMetrics& before,
+            const Internal::Execution::ExecutionMetrics& after,
+            std::uint64_t                      offloaded_before,
+            std::size_t                        total_tasks,
+            double                             compile_ms,
+            double                             total_ms)
+        {
+            report.reset();
+            report.is_successful = true;
+            report.total_tasks_executed = total_tasks;
+            report.graph_analysis_duration_ms = compile_ms;
+            report.total_duration_ms = total_ms;
+
+            // The device class comes from the runtime's own inventory, which does not allocate.
+            Internal::Observability::NUMANodeStatistics node;
+            const Internal::Device::DeviceQueueSet& devices = ctx.devices();
+            if (devices.count() > 0 && devices.is_gpu(0))
+                node.gpu_tasks_executed = total_tasks;
+            else
+                node.cpu_tasks_executed = total_tasks;
+
+            // Steal counts are the scheduler's after-minus-before counters over the whole run.
+            const std::size_t stolen_intra = after.local_steals  - before.local_steals;
+            const std::size_t stolen_inter = after.remote_steals - before.remote_steals;
+            const std::size_t completed    = after.tasks_completed - before.tasks_completed;
+            node.tasks_stolen_intra_numa = stolen_intra;
+            node.tasks_stolen_inter_numa = stolen_inter;
+            const std::size_t stolen_total = stolen_intra + stolen_inter;
+            node.tasks_popped_local = (completed > stolen_total) ? (completed - stolen_total) : 0;
+            report.numa_statistics.push_back(node);
+
+            // report.reset() zeroed the offload figures; they stay zero with no coordinator.
+            if (const auto* offload = ctx.offload())
             {
-                const auto* offload = ctx.offload();
-                return offload != nullptr ? offload->statistics().offloaded : 0;
+                const auto offload_statistics = offload->statistics();
+                const std::uint64_t offloaded_now = offload_statistics.offloaded;
+                auto& distributed = report.distributed_statistics;
+                // A coordinator installed during the run starts below the earlier reading.
+                distributed.tasks_offloaded_to_network = static_cast<std::size_t>(
+                    offloaded_now >= offloaded_before ? offloaded_now - offloaded_before
+                                                      : offloaded_now);
+                distributed.remote_nodes_involved = offload_statistics.alive_workers;
             }
+        }
 
-            /**
-             * @brief Assembles a RunReport from a finished run's raw measurements.
-             * @param report The report to overwrite; reset before it is filled.
-             * @param offloaded_before What offloaded_dispatches() returned before the run.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            inline void fill_run_report(
-                Observability::RunReport&                   report,
-                Execution::RuntimeContext&         ctx,
-                const Execution::ExecutionMetrics& before,
-                const Execution::ExecutionMetrics& after,
-                std::uint64_t                      offloaded_before,
-                std::size_t                        total_tasks,
-                double                             compile_ms,
-                double                             total_ms)
-            {
-                report.reset();
-                report.is_successful = true;
-                report.total_tasks_executed = total_tasks;
-                report.graph_analysis_duration_ms = compile_ms;
-                report.total_duration_ms = total_ms;
-
-                // The device class comes from the runtime's own inventory, which does not allocate.
-                Observability::NUMANodeStatistics node;
-                const Device::DeviceQueueSet& devices = ctx.devices();
-                if (devices.count() > 0 && devices.is_gpu(0))
-                    node.gpu_tasks_executed = total_tasks;
-                else
-                    node.cpu_tasks_executed = total_tasks;
-
-                // Steal counts are the scheduler's after-minus-before counters over the whole run.
-                const std::size_t stolen_intra = after.local_steals  - before.local_steals;
-                const std::size_t stolen_inter = after.remote_steals - before.remote_steals;
-                const std::size_t completed    = after.tasks_completed - before.tasks_completed;
-                node.tasks_stolen_intra_numa = stolen_intra;
-                node.tasks_stolen_inter_numa = stolen_inter;
-                const std::size_t stolen_total = stolen_intra + stolen_inter;
-                node.tasks_popped_local = (completed > stolen_total) ? (completed - stolen_total) : 0;
-                report.numa_statistics.push_back(node);
-
-                // report.reset() zeroed the offload figures; they stay zero with no coordinator.
-                if (const auto* offload = ctx.offload())
-                {
-                    const auto offload_statistics = offload->statistics();
-                    const std::uint64_t offloaded_now = offload_statistics.offloaded;
-                    auto& distributed = report.distributed_statistics;
-                    // A coordinator installed during the run starts below the earlier reading.
-                    distributed.tasks_offloaded_to_network = static_cast<std::size_t>(
-                        offloaded_now >= offloaded_before ? offloaded_now - offloaded_before
-                                                          : offloaded_now);
-                    distributed.remote_nodes_involved = offload_statistics.alive_workers;
-                }
-            }
-
-        } // namespace detail
-    } // namespace API
+    } // namespace detail
 } // namespace SushiRuntime

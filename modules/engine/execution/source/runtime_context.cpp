@@ -49,14 +49,14 @@
 
 namespace SushiRuntime
 {
-    namespace Execution
+    namespace Internal::Execution
     {
         namespace
         {
             /** @brief Converts a discovered hardware node to the descriptor a device set takes. */
-            Device::DeviceDescriptor describe_device(const Topology::HardwareNode& node)
+            Internal::Device::DeviceDescriptor describe_device(const Internal::Topology::HardwareNode& node)
             {
-                Device::DeviceDescriptor descriptor;
+                Internal::Device::DeviceDescriptor descriptor;
                 descriptor.device = node.sycl_dev;
                 descriptor.info.name = node.name;
                 descriptor.info.backend = node.sycl_dev.get_backend();
@@ -66,19 +66,19 @@ namespace SushiRuntime
 
                 // The node's own flag names a GPU, so devices().is_gpu() answers as discovery did.
                 if (node.is_gpu)
-                    descriptor.info.kind = Device::DeviceKind::Gpu;
+                    descriptor.info.kind = Internal::Device::DeviceKind::Gpu;
                 else if (node.sycl_dev.is_cpu())
-                    descriptor.info.kind = Device::DeviceKind::Cpu;
+                    descriptor.info.kind = Internal::Device::DeviceKind::Cpu;
                 else if (node.sycl_dev.is_accelerator())
-                    descriptor.info.kind = Device::DeviceKind::Accelerator;
+                    descriptor.info.kind = Internal::Device::DeviceKind::Accelerator;
                 else
-                    descriptor.info.kind = Device::DeviceKind::Other;
+                    descriptor.info.kind = Internal::Device::DeviceKind::Other;
 
                 return descriptor;
             }
 
             /** @brief Builds the exception for a filter that no SYCL device passed. */
-            Core::SushiException no_device_error(const Topology::HardwareFilterConfig& config)
+            SushiException no_device_error(const Internal::Topology::HardwareFilterConfig& config)
             {
                 std::string detail = "No SYCL device satisfied the hardware filter. Active filter: ";
                 detail += "cpu=";
@@ -92,31 +92,31 @@ namespace SushiRuntime
                 detail += ". Either the machine exposes no SYCL device (no GPU driver and no "
                           "OpenCL CPU runtime installed) or every device it exposes was excluded.";
 
-                return Core::SushiException(Core::Error{Core::Errc::unsupported, std::move(detail)});
+                return SushiException(Error{Errc::unsupported, std::move(detail)});
             }
 
             /**
              * @brief Discovers the devices that pass a filter and builds their queues.
              * @param provider Asked once for the hardware nodes.
-             * @throws Core::SushiException With Errc::unsupported when no device passes.
+             * @throws SushiException With Errc::unsupported when no device passes.
              * @see modules/engine/execution/README.md
              */
-            Device::DeviceQueueSet probe_devices(Topology::ITopologyProvider& provider,
-                                                 const Topology::HardwareFilterConfig& config,
+            Internal::Device::DeviceQueueSet probe_devices(Internal::Topology::ITopologyProvider& provider,
+                                                 const Internal::Topology::HardwareFilterConfig& config,
                                                  bool profiling)
             {
                 try
                 {
-                    const std::vector<Topology::HardwareNode> nodes = provider.enumerate(config);
+                    const std::vector<Internal::Topology::HardwareNode> nodes = provider.enumerate(config);
                     if (nodes.empty())
                         throw no_device_error(config);
 
-                    std::vector<Device::DeviceDescriptor> descriptors;
+                    std::vector<Internal::Device::DeviceDescriptor> descriptors;
                     descriptors.reserve(nodes.size());
-                    for (const Topology::HardwareNode& node : nodes)
+                    for (const Internal::Topology::HardwareNode& node : nodes)
                         descriptors.push_back(describe_device(node));
 
-                    return Device::DeviceQueueSet(std::move(descriptors), profiling);
+                    return Internal::Device::DeviceQueueSet(std::move(descriptors), profiling);
                 }
                 catch (const std::exception& error)
                 {
@@ -131,7 +131,7 @@ namespace SushiRuntime
          * @brief Holds the parts of a RuntimeContext in the order they are built.
          * @see modules/engine/execution/README.md
          */
-        struct RuntimeContext::Impl : public Core::RefCounted
+        struct RuntimeContext::Impl : public RefCounted
         {
             /**
              * @brief Builds every part but the engine, which needs the finished context.
@@ -139,13 +139,13 @@ namespace SushiRuntime
              * @param distance_model Must not be null.
              */
             Impl(const RuntimeSettings& runtime_settings,
-                 const Topology::HardwareFilterConfig& config,
-                 Topology::ITopologyProvider& provider,
-                 std::shared_ptr<const Topology::INUMADistanceModel> distance_model)
+                 const Internal::Topology::HardwareFilterConfig& config,
+                 Internal::Topology::ITopologyProvider& provider,
+                 std::shared_ptr<const Internal::Topology::INUMADistanceModel> distance_model)
                 : settings(runtime_settings),
                   topology(provider, std::move(distance_model)),
                   devices(probe_devices(provider, config, settings.profiling)),
-                  memory(std::make_shared<Memory::USMAllocator>(devices.plain_queues()))
+                  memory(std::make_shared<Internal::Memory::USMAllocator>(devices.plain_queues()))
             {
             }
 
@@ -189,17 +189,17 @@ namespace SushiRuntime
              * @param provider Null selects HwlocTopologyProvider.
              * @param distance_model Null selects HwlocDistanceModel.
              */
-            static sushi_ptr<Impl> create(const Topology::HardwareFilterConfig& config,
-                                          std::shared_ptr<Topology::ITopologyProvider> provider,
-                                          std::shared_ptr<Topology::INUMADistanceModel> distance_model,
+            static sushi_ptr<Impl> create(const Internal::Topology::HardwareFilterConfig& config,
+                                          std::shared_ptr<Internal::Topology::ITopologyProvider> provider,
+                                          std::shared_ptr<Internal::Topology::INUMADistanceModel> distance_model,
                                           const RuntimeSettings& runtime_settings)
             {
                 SR_LOG_INFO("Initializing compute stack...");
 
                 if (!provider)
-                    provider = std::make_shared<Topology::HwlocTopologyProvider>();
+                    provider = std::make_shared<Internal::Topology::HwlocTopologyProvider>();
                 if (!distance_model)
-                    distance_model = std::make_shared<Topology::HwlocDistanceModel>();
+                    distance_model = std::make_shared<Internal::Topology::HwlocDistanceModel>();
 
                 return make_sushi<Impl>(runtime_settings, config, *provider,
                                         std::move(distance_model));
@@ -209,27 +209,27 @@ namespace SushiRuntime
             RuntimeSettings settings;
 
             /** @brief Core-to-NUMA map and NUMA distances. */
-            Topology::TopologyView topology;
+            Internal::Topology::TopologyView topology;
 
             /** @brief Device inventory and every SYCL queue. */
-            Device::DeviceQueueSet devices;
+            Internal::Device::DeviceQueueSet devices;
 
             /** @brief USM allocator; shared because an allocation's owner may outlive the context. */
-            std::shared_ptr<Memory::USMAllocator> memory;
+            std::shared_ptr<Internal::Memory::USMAllocator> memory;
 
             /** @brief Byte counters of explicit transfers (modules/engine/execution/README.md). */
-            Observability::TransferCounters transfers;
+            Internal::Observability::TransferCounters transfers;
 
             /** @brief Installed offload coordinator, co-owned; null when there is none. */
-            std::shared_ptr<Graph::OffloadCoordinator> offload;
+            std::shared_ptr<Internal::Graph::OffloadCoordinator> offload;
 
             /** @brief Execution engine; built last, by RuntimeContext's constructor. */
             std::unique_ptr<ExecutionEngine> engine;
         };
 
-        RuntimeContext::RuntimeContext(const Topology::HardwareFilterConfig& config,
-                                       std::shared_ptr<Topology::ITopologyProvider> provider,
-                                       std::shared_ptr<Topology::INUMADistanceModel> distance_model,
+        RuntimeContext::RuntimeContext(const Internal::Topology::HardwareFilterConfig& config,
+                                       std::shared_ptr<Internal::Topology::ITopologyProvider> provider,
+                                       std::shared_ptr<Internal::Topology::INUMADistanceModel> distance_model,
                                        const RuntimeSettings& settings)
             : impl_(Impl::create(config, std::move(provider), std::move(distance_model), settings))
         {
@@ -244,27 +244,27 @@ namespace SushiRuntime
             return impl_->settings;
         }
 
-        const Topology::TopologyView& RuntimeContext::topology() const noexcept
+        const Internal::Topology::TopologyView& RuntimeContext::topology() const noexcept
         {
             return impl_->topology;
         }
 
-        Device::DeviceQueueSet& RuntimeContext::devices() noexcept
+        Internal::Device::DeviceQueueSet& RuntimeContext::devices() noexcept
         {
             return impl_->devices;
         }
 
-        Memory::USMAllocator& RuntimeContext::memory() noexcept
+        Internal::Memory::USMAllocator& RuntimeContext::memory() noexcept
         {
             return *impl_->memory;
         }
 
-        const std::shared_ptr<Memory::USMAllocator>& RuntimeContext::shared_memory() const noexcept
+        const std::shared_ptr<Internal::Memory::USMAllocator>& RuntimeContext::shared_memory() const noexcept
         {
             return impl_->memory;
         }
 
-        Observability::TransferCounters& RuntimeContext::transfers() noexcept
+        Internal::Observability::TransferCounters& RuntimeContext::transfers() noexcept
         {
             return impl_->transfers;
         }
@@ -281,7 +281,7 @@ namespace SushiRuntime
             impl_->stop_work();
         }
 
-        void RuntimeContext::install_offload(std::shared_ptr<Graph::OffloadCoordinator> offload)
+        void RuntimeContext::install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator> offload)
         {
             SR_THROW_IF(!impl_->engine,
                         "ExecutionEngine is not initialized: the context is still being built.");
@@ -291,12 +291,12 @@ namespace SushiRuntime
             impl_->offload = std::move(offload);
         }
 
-        Graph::OffloadCoordinator* RuntimeContext::offload() const noexcept
+        Internal::Graph::OffloadCoordinator* RuntimeContext::offload() const noexcept
         {
             return impl_->offload.get();
         }
 
-        Graph::OffloadSink& RuntimeContext::offload_sink()
+        Internal::Graph::OffloadSink& RuntimeContext::offload_sink()
         {
             SR_THROW_IF(!impl_->engine,
                         "ExecutionEngine is not initialized: the context is still being built.");

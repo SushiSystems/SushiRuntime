@@ -44,12 +44,12 @@ namespace
      * @brief Records the resolver of one late count; its fill copies the live value to out[0].
      * @param out Receives the live count; must outlive the graph.
      */
-    void record_live_count_copy(API::Recorder& recorder, const LateCount& count,
-                                const API::Buffer<std::uint32_t>& out)
+    void record_live_count_copy(Recorder& recorder, const LateCount& count,
+                                const Buffer<std::uint32_t>& out)
     {
         std::uint32_t* target = out.data();
         recorder.resolve(std::array<LateCount, 1>{count}, out.device_index(),
-                         API::Access(Reads(), Writes(out)),
+                         Access(Reads(), Writes(out)),
                          [target](const std::array<std::size_t, 1>& live)
                          {
                              target[0] = static_cast<std::uint32_t>(live[0]);
@@ -57,7 +57,7 @@ namespace
     }
 
     /** @brief Returns a LateCount of the given capacity that reads its live value from slot[0]. */
-    LateCount device_count(const API::Buffer<std::uint32_t>& slot, std::size_t capacity)
+    LateCount device_count(const Buffer<std::uint32_t>& slot, std::size_t capacity)
     {
         return LateCount::from_device(capacity, slot);
     }
@@ -196,7 +196,7 @@ TEST(Integration_LateCount, NonHostDeviceSlotIsRejectedAtConstruction)
     }
     catch (const SushiException& e)
     {
-        EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
+        EXPECT_EQ(e.error().code, Errc::invalid_access);
     }
 }
 

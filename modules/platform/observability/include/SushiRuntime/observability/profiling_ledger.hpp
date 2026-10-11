@@ -38,7 +38,7 @@
 
 namespace SushiRuntime
 {
-    namespace Observability
+    namespace Internal::Observability
     {
         /**
          * @brief Stores one run's node event records per plan, at a high-water-mark size.

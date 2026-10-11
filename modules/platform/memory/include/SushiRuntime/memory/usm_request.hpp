@@ -33,7 +33,7 @@
 
 namespace SushiRuntime
 {
-    namespace Memory
+    namespace Internal::Memory
     {
         /** @brief Names the three kinds of USM an allocation can be. */
         enum class USMKind : std::uint8_t

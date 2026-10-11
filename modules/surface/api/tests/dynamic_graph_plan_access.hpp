@@ -38,20 +38,17 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /** @brief Declares the test-only friend access to DynamicGraph::plan_. */
+        struct DynamicGraphNodeEventsTestAccess
         {
-            /** @brief Declares the test-only friend access to DynamicGraph::plan_. */
-            struct DynamicGraphNodeEventsTestAccess
+            static const SushiRuntime::Internal::Graph::CompiledGraph&
+            plan(const DynamicGraph& g) noexcept
             {
-                static const SushiRuntime::Graph::CompiledGraph&
-                plan(const DynamicGraph& g) noexcept
-                {
-                    return g.plan_;
-                }
-            };
-        }
+                return g.plan_;
+            }
+        };
     }
 }
 
@@ -64,9 +61,9 @@ namespace SushiRuntime
          * @return The node, or nullptr with a test failure when none or several carry it.
          * @pre The graph requested profiling, so plan.all_nodes is filled.
          */
-        inline const Graph::Node* find_plan_node(const Graph::CompiledGraph& plan, const char* name)
+        inline const Internal::Graph::Node* find_plan_node(const Internal::Graph::CompiledGraph& plan, const char* name)
         {
-            const Graph::Node* found = nullptr;
+            const Internal::Graph::Node* found = nullptr;
             for (const auto& n : plan.all_nodes)
             {
                 if (n->metadata.name != nullptr && std::string(n->metadata.name) == name)
@@ -80,14 +77,14 @@ namespace SushiRuntime
         }
 
         /** @brief Returns whether a cross-region edge leads from one node to another. */
-        inline bool has_boundary_edge(const Graph::Node& from, const Graph::Node& to)
+        inline bool has_boundary_edge(const Internal::Graph::Node& from, const Internal::Graph::Node& to)
         {
             const auto& successors = from.region.boundary_successors;
             return std::find(successors.begin(), successors.end(), &to) != successors.end();
         }
 
         /** @brief Returns how many cross-region edges end at a node. */
-        inline int boundary_in_degree(const Graph::Node& node)
+        inline int boundary_in_degree(const Internal::Graph::Node& node)
         {
             return node.region.boundary_in_degree.load(std::memory_order_relaxed);
         }

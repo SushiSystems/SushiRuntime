@@ -64,7 +64,7 @@ namespace SushiRuntime
 
         /**
          * @brief Returns a nonce drawn from std::random_device.
-         * @throws Core::SushiException With Errc::unsupported when the platform has no
+         * @throws SushiException With Errc::unsupported when the platform has no
          *         random source.
          */
         [[nodiscard]] SUSHIRUNTIME_API HandshakeNonce make_nonce();

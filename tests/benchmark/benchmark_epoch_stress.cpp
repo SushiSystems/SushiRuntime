@@ -33,7 +33,7 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 
-using namespace SushiRuntime::Memory;
+using namespace SushiRuntime::Internal::Memory;
 
 namespace
 {

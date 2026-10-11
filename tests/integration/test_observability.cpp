@@ -56,7 +56,7 @@ TEST(Integration_Observability, ProfilingOffLeavesBreakdownEmpty)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
     auto rep = g.run(4);
 
     EXPECT_TRUE(rep.node_timings.empty());
@@ -78,13 +78,13 @@ TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
 
     auto g = rt.graph();
     // A heavier kernel and a lighter one, two distinct plan nodes.
-    g.add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i)
+    g.add(N, Reads{}, Writes(a), [pa](std::size_t i)
     {
         float v = static_cast<float>(i);
         for (int k = 0; k < 64; ++k) v = v * 1.0001f + 1.0f;
         pa[i] = v;
     });
-    g.add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] = static_cast<float>(i); });
+    g.add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] = static_cast<float>(i); });
 
     auto rep = g.run(STEPS);
 
@@ -111,7 +111,7 @@ TEST(Integration_Observability, NamingTheLastNodeReachesNodeTiming)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(N, API::Reads{}, API::Writes(buf),
+    g.add(N, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<int>(i); }).name("seed");
 
     auto rep = g.run(STEPS);
@@ -136,11 +136,11 @@ TEST(Integration_Observability, EveryAddShapeCanBeNamed)
     auto g = rt.graph();
 
     // Plain tracked per-element.
-    g.add(N, API::Reads(a), API::Writes(b),
+    g.add(N, Reads(a), Writes(b),
           [pa, pb](std::size_t i) { pb[i] = pa[i] + 1.0f; }).name("plain");
 
     // Variadic capture shape: the pack's last element is the callable.
-    g.add(API::Extent<1>{N}, API::In(b), API::Out(c),
+    g.add(Extent<1>{N}, In(b), Out(c),
           [](sycl::id<1> i, const float* in, float* out) { out[i] = in[i] * 2.0f; })
      .name("captured");
 
@@ -149,10 +149,10 @@ TEST(Integration_Observability, EveryAddShapeCanBeNamed)
      .name("stateful");
 
     // Host shape.
-    g.add_host(API::Reads(c), API::Writes{}, [] {}).name("host");
+    g.add_host(Reads(c), Writes{}, [] {}).name("host");
 
     // Dynamic per-element shape.
-    g.add(API::sized([] { return N; }), N, API::Reads(a), API::Writes(b),
+    g.add(sized([] { return N; }), N, Reads(a), Writes(b),
           [pa, pb](std::size_t i) { pb[i] = pa[i]; }).name("dynamic");
 
     auto rep = g.run();
@@ -176,7 +176,7 @@ TEST(Integration_Observability, UnnamedNodeStillReportsTheDefaultLabel)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
     auto rep = g.run();
 
     ASSERT_EQ(rep.node_timings.size(), 1u);
@@ -195,10 +195,10 @@ TEST(Integration_Observability, ProfilingOnPopulatesWorkerSplit)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
+    g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
     auto rep = g.run(16);
 
-    EXPECT_EQ(rep.layer, Observability::ExecutionLayer::Scheduler);
+    EXPECT_EQ(rep.layer, Internal::Observability::ExecutionLayer::Scheduler);
     ASSERT_FALSE(rep.worker_timings.empty());
     EXPECT_GE(rep.scheduling_overhead_ms, 0.0);
 

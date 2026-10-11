@@ -36,107 +36,101 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    /**
+     * @brief Wraps a Buffer captured for read so add() registers it and passes its pointer.
+     * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
+     */
+    template <typename T>
+    struct In
     {
-        /**
-         * @brief Wraps a Buffer captured for read so add() registers it and passes its pointer.
-         * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
-         */
-        template <typename T>
-        struct In
-        {
-            const T* ptr;  /**< Element pointer handed to the kernel. */
-            void* key;     /**< Read dependency key for this argument. */
-            Memory::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
-            static constexpr bool reads = true;   /**< Contributes a read key. */
-            static constexpr bool writes = false; /**< Contributes no write key. */
-
-            /**
-             * @brief Captures @p b as a read-only kernel argument.
-             * @param b Buffer to read. Alive when the graph runs; free to move after add().
-             */
-            In(const Buffer<T>& b)
-                : ptr(b.data()),
-                  key(detail::HandleAccess::key(b)),
-                  life(detail::HandleAccess::liveness(b))
-            {
-
-            }
-        };
+        const T* ptr;  /**< Element pointer handed to the kernel. */
+        void* key;     /**< Read dependency key for this argument. */
+        Internal::Memory::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
+        static constexpr bool reads = true;   /**< Contributes a read key. */
+        static constexpr bool writes = false; /**< Contributes no write key. */
 
         /**
-         * @brief A kernel argument captured for write, with auto dependency tracking.
-         * @tparam T Element type of the wrapped buffer.
+         * @brief Captures @p b as a read-only kernel argument.
+         * @param b Buffer to read. Alive when the graph runs; free to move after add().
          */
-        template <typename T>
-        struct Out
+        In(const Buffer<T>& b)
+            : ptr(b.data()),
+              key(detail::HandleAccess::key(b)),
+              life(detail::HandleAccess::liveness(b))
         {
-            T* ptr;        /**< Element pointer handed to the kernel. */
-            void* key;     /**< Write dependency key for this argument. */
-            Memory::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
-            static constexpr bool reads = false;  /**< Contributes no read key. */
-            static constexpr bool writes = true;  /**< Contributes a write key. */
 
-            /**
-             * @brief Captures @p b as a write-only kernel argument.
-             * @param b Buffer to write. Alive when the graph runs; free to move after add().
-             */
-            Out(Buffer<T>& b)
-                : ptr(b.data()),
-                  key(detail::HandleAccess::key(b)),
-                  life(detail::HandleAccess::liveness(b))
-            {
+        }
+    };
 
-            }
-        };
+    /**
+     * @brief A kernel argument captured for write, with auto dependency tracking.
+     * @tparam T Element type of the wrapped buffer.
+     */
+    template <typename T>
+    struct Out
+    {
+        T* ptr;        /**< Element pointer handed to the kernel. */
+        void* key;     /**< Write dependency key for this argument. */
+        Internal::Memory::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
+        static constexpr bool reads = false;  /**< Contributes no read key. */
+        static constexpr bool writes = true;  /**< Contributes a write key. */
 
         /**
-         * @brief A kernel argument captured for read-modify-write tracking.
-         * @tparam T Element type of the wrapped buffer.
+         * @brief Captures @p b as a write-only kernel argument.
+         * @param b Buffer to write. Alive when the graph runs; free to move after add().
          */
-        template <typename T>
-        struct InOut
+        Out(Buffer<T>& b)
+            : ptr(b.data()),
+              key(detail::HandleAccess::key(b)),
+              life(detail::HandleAccess::liveness(b))
         {
-            T* ptr;        /**< Element pointer handed to the kernel. */
-            void* key;     /**< Dependency key counted as both read and write. */
-            Memory::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
-            static constexpr bool reads = true;   /**< Contributes a read key. */
-            static constexpr bool writes = true;  /**< Contributes a write key. */
 
-            /**
-             * @brief Captures @p b as a read-and-write kernel argument.
-             * @param b Buffer read and written in place. Alive when the graph runs;
-             *          free to move after add().
-             */
-            InOut(Buffer<T>& b)
-                : ptr(b.data()),
-                  key(detail::HandleAccess::key(b)),
-                  life(detail::HandleAccess::liveness(b))
-            {
+        }
+    };
 
-            }
-        };
+    /**
+     * @brief A kernel argument captured for read-modify-write tracking.
+     * @tparam T Element type of the wrapped buffer.
+     */
+    template <typename T>
+    struct InOut
+    {
+        T* ptr;        /**< Element pointer handed to the kernel. */
+        void* key;     /**< Dependency key counted as both read and write. */
+        Internal::Memory::LivenessObserver life; /**< Observer of the captured buffer's lifetime. */
+        static constexpr bool reads = true;   /**< Contributes a read key. */
+        static constexpr bool writes = true;  /**< Contributes a write key. */
 
-        // The guides let In(buf), Out(buf) and InOut(buf) omit the element type.
-        template <typename T> In(const Buffer<T>&) -> In<T>;
-        template <typename T> Out(Buffer<T>&) -> Out<T>;
-        template <typename T> InOut(Buffer<T>&) -> InOut<T>;
-
-        namespace detail
+        /**
+         * @brief Captures @p b as a read-and-write kernel argument.
+         * @param b Buffer read and written in place. Alive when the graph runs;
+         *          free to move after add().
+         */
+        InOut(Buffer<T>& b)
+            : ptr(b.data()),
+              key(detail::HandleAccess::key(b)),
+              life(detail::HandleAccess::liveness(b))
         {
-            /** @brief Tells the In/Out/InOut capture wrappers apart from the trailing callable. */
-            template <class T> struct is_capture : std::false_type {};
-            template <class T> struct is_capture<In<T>>    : std::true_type {};
-            template <class T> struct is_capture<Out<T>>   : std::true_type {};
-            template <class T> struct is_capture<InOut<T>> : std::true_type {};
-            template <class T>
-            inline constexpr bool is_capture_v = is_capture<std::decay_t<T>>::value;
-        } // namespace detail
 
-    } // namespace API
+        }
+    };
 
-    using API::In;
-    using API::Out;
-    using API::InOut;
+    // The guides let In(buf), Out(buf) and InOut(buf) omit the element type.
+    template <typename T> In(const Buffer<T>&) -> In<T>;
+    template <typename T> Out(Buffer<T>&) -> Out<T>;
+    template <typename T> InOut(Buffer<T>&) -> InOut<T>;
+
+    namespace detail
+    {
+        /** @brief Tells the In/Out/InOut capture wrappers apart from the trailing callable. */
+        template <class T> struct is_capture : std::false_type {};
+        template <class T> struct is_capture<In<T>>    : std::true_type {};
+        template <class T> struct is_capture<Out<T>>   : std::true_type {};
+        template <class T> struct is_capture<InOut<T>> : std::true_type {};
+        template <class T>
+        inline constexpr bool is_capture_v = is_capture<std::decay_t<T>>::value;
+    } // namespace detail
+
+
 
 } // namespace SushiRuntime

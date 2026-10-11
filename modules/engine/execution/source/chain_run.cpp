@@ -39,7 +39,7 @@
 
 namespace SushiRuntime
 {
-    namespace Execution
+    namespace Internal::Execution
     {
         namespace
         {
@@ -61,7 +61,7 @@ namespace SushiRuntime
         ChainRun::ChainRun(RuntimeContext& ctx, CompiledGraph& graph)
             : graph_(graph),
               queue_(ctx.devices().queue(graph.chain.queue_index,
-                                         Device::QueueFlavour{true, graph.profiling})),
+                                         Internal::Device::QueueFlavour{true, graph.profiling})),
               profiling_(graph.profiling),
               // RuntimeContext builds an ExecutionEngine and no other engine, so the cast holds.
               run_mark_(static_cast<ExecutionEngine&>(ctx.get_execution_engine()))
@@ -118,7 +118,7 @@ namespace SushiRuntime
          */
         void ChainRun::submit_step(std::uint32_t step)
         {
-            for (Graph::Node* node : graph_.chain.order)
+            for (Internal::Graph::Node* node : graph_.chain.order)
             {
                 // The step machinery wrote enabled on this thread before this step.
                 if (node->bindings_ && !node->bindings_->enabled.load(std::memory_order_relaxed))
@@ -165,9 +165,9 @@ namespace SushiRuntime
         /**
          * @brief Submits one node's device work to the queue.
          */
-        sycl::event ChainRun::submit_node(Graph::Node& node)
+        sycl::event ChainRun::submit_node(Internal::Graph::Node& node)
         {
-            if (node.get_execution_mode() == Scheduler::Task::ExecutionMode::HOST)
+            if (node.get_execution_mode() == Internal::Scheduler::Task::ExecutionMode::HOST)
             {
                 std::vector<sycl::event> deps;
                 deps.reserve(node.sycl_deps.size());
@@ -191,9 +191,9 @@ namespace SushiRuntime
          * the run waits once in @ref wait, so no caller reads a per-node event
          * on this path.
          */
-        void ChainRun::submit_node_discarding(Graph::Node& node)
+        void ChainRun::submit_node_discarding(Internal::Graph::Node& node)
         {
-            if (node.get_execution_mode() == Scheduler::Task::ExecutionMode::HOST)
+            if (node.get_execution_mode() == Internal::Scheduler::Task::ExecutionMode::HOST)
             {
                 std::vector<sycl::event> deps;
                 deps.reserve(node.sycl_deps.size());
@@ -214,11 +214,11 @@ namespace SushiRuntime
         /**
          * @brief Submits one node and keeps its event for the ledger (modules/engine/execution/README.md).
          */
-        void ChainRun::submit_profiled(Graph::Node& node, std::uint32_t step)
+        void ChainRun::submit_profiled(Internal::Graph::Node& node, std::uint32_t step)
         {
-            Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
-            const Scheduler::Task* task = &node;
-            const bool is_kernel = node.get_execution_mode() == Scheduler::Task::ExecutionMode::KERNEL;
+            Internal::Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
+            const Internal::Scheduler::Task* task = &node;
+            const bool is_kernel = node.get_execution_mode() == Internal::Scheduler::Task::ExecutionMode::KERNEL;
             const bool owns_pairing = is_kernel && !pairing_claimed_ && ledger.claim_pairing_owner(task);
             if (is_kernel)
                 pairing_claimed_ = true;
@@ -232,7 +232,7 @@ namespace SushiRuntime
             }
 
             graph_.chain.pending_events.push_back(
-                PendingEvent{&node, step, std::move(event), Graph::snapshot_widths(node)});
+                PendingEvent{&node, step, std::move(event), Internal::Graph::snapshot_widths(node)});
         }
 
         /**
@@ -240,23 +240,23 @@ namespace SushiRuntime
          */
         void ChainRun::record_events()
         {
-            Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
+            Internal::Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
             for (const PendingEvent& pe : graph_.chain.pending_events)
             {
-                Observability::EventTimestamps times;
-                if (!Observability::read_event_timestamps(pe.event, times))
+                Internal::Observability::EventTimestamps times;
+                if (!Internal::Observability::read_event_timestamps(pe.event, times))
                     continue;
 
-                const Scheduler::Task* task = pe.node;
+                const Internal::Scheduler::Task* task = pe.node;
                 if (times.has_submit && ledger.is_pairing_owner(task))
                     ledger.set_pairing_event_ns(times.submit_ns);
 
                 const std::uint32_t index = pe.node->registration_index;
                 const std::uint32_t slot = ledger.claim_slot(index);
-                if (slot == Observability::ProfilingLedger::npos)
+                if (slot == Internal::Observability::ProfilingLedger::npos)
                     continue;
 
-                Observability::NodeEventRecord rec{};
+                Internal::Observability::NodeEventRecord rec{};
                 rec.node_index = index;
                 rec.invocation = pe.step;
                 rec.launched_width = pe.widths.launched;

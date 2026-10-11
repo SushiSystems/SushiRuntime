@@ -35,7 +35,7 @@ using namespace SushiRuntime;
 namespace
 {
     // True once any device queue this runtime built carries enable_profiling.
-    bool any_profiling_queue_built(Execution::RuntimeContext& ctx)
+    bool any_profiling_queue_built(Internal::Execution::RuntimeContext& ctx)
     {
         for (std::size_t i = 0; i < ctx.devices().count(); ++i)
             if (ctx.devices().has_profiling_queue(i))
@@ -60,12 +60,12 @@ TEST(Integration_GraphProfilingSwitch, TwoGraphsIndependentSwitch)
     auto requested = rt.graph();
     requested.set_profiling(true);
     EXPECT_TRUE(requested.is_profiling_requested());
-    requested.add(N, API::Reads{}, API::Writes(a),
+    requested.add(N, Reads{}, Writes(a),
                   [pa](std::size_t i) { pa[i] = static_cast<int>(i); });
 
     auto plain = rt.graph();
     EXPECT_FALSE(plain.is_profiling_requested());
-    plain.add(N, API::Reads{}, API::Writes(b),
+    plain.add(N, Reads{}, Writes(b),
               [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
 
     // A request alone, before any run, must not build a queue.
@@ -91,7 +91,7 @@ TEST(Integration_GraphProfilingSwitch, ChangedRequestRecompilesOnceAndSwitches)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     auto rep_off = g.run();
     EXPECT_TRUE(rep_off.node_timings.empty());
@@ -124,7 +124,7 @@ TEST(Integration_GraphProfilingSwitch, NUMAFallbackBranchUsesProfilingQueue)
 
     auto g = rt.graph();
     g.set_profiling(true);
-    g.add(N, API::Reads{}, API::Writes{}, [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads{}, Writes{}, [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     auto rep = g.run();
     EXPECT_FALSE(rep.node_timings.empty())

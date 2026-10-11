@@ -31,11 +31,11 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 
-using SushiRuntime::Core::Errc;
-using SushiRuntime::Core::Error;
-using SushiRuntime::Core::make_error;
-using SushiRuntime::Core::Result;
-using SushiRuntime::Core::SushiException;
+using SushiRuntime::Errc;
+using SushiRuntime::Error;
+using SushiRuntime::make_error;
+using SushiRuntime::Result;
+using SushiRuntime::SushiException;
 
 namespace
 {

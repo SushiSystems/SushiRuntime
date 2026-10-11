@@ -35,7 +35,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Counts the tasks submitted for a run and wakes a waiter when the last one leaves.

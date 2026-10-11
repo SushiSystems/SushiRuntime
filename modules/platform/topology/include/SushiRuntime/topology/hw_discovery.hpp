@@ -37,7 +37,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         /**
          * @brief PCI Bus-Device-Function (BDF) address.

@@ -48,7 +48,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph { class OffloadSink; }
+    namespace Internal::Graph { class OffloadSink; }
 
     namespace Distributed
     {
@@ -109,7 +109,7 @@ namespace SushiRuntime
                  * @brief Starts the thread; called once, after the transport started.
                  * @param sink Receives the tasks taken back; outlives stop().
                  */
-                void start(Graph::OffloadSink& sink);
+                void start(Internal::Graph::OffloadSink& sink);
 
                 /**
                  * @brief Wakes the thread and joins it; a second call does nothing.
@@ -194,7 +194,7 @@ namespace SushiRuntime
                 std::thread thread_;
 
                 /// @brief Receives the tasks taken back; set by start().
-                Graph::OffloadSink* sink_ = nullptr;
+                Internal::Graph::OffloadSink* sink_ = nullptr;
 
                 /// @brief Tasks past the task deadline.
                 std::atomic<std::uint64_t> reaped_deadline_{0};

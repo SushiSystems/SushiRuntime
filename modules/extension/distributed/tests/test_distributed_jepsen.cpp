@@ -65,9 +65,9 @@
 #include "test_helpers.hpp"
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Graph;
-using namespace SushiRuntime::Graph::Literals;
+using namespace SushiRuntime::Internal::Execution;
+using namespace SushiRuntime::Internal::Graph;
+using namespace SushiRuntime::Internal::Graph::Literals;
 using namespace SushiRuntime::Distributed;
 
 namespace

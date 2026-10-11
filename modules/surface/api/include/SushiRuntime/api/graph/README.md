@@ -409,7 +409,7 @@ ordering against other tasks.
 ### add_emitter
 
 add_emitter(emitter) records work the fluent verbs do not shape: `emitter` receives the engine's
-SushiRuntime::Graph::TaskGraph and adds its own nodes with add_node(), add_task() or add_native().
+SushiRuntime::Internal::Graph::TaskGraph and adds its own nodes with add_node(), add_task() or add_native().
 It is for a library above the runtime that already records through the lower-level graph and wants
 that work inside a Graph or a Region without restating each task as an add() overload. The runtime
 learns nothing about that library; it calls `emitter` and takes the nodes.
@@ -443,7 +443,7 @@ a real graph a list of identical labels. Chaining name() onto any add() names th
 added:
 
 ```cpp
-sim.add(n, API::Reads(a), API::Writes(b), integrate).name("integrate");
+sim.add(n, Reads(a), Writes(b), integrate).name("integrate");
 ```
 
 A trailing name argument would have been shorter, but the capture form ends in a parameter pack
@@ -530,7 +530,7 @@ Graph and DynamicGraph take every run entry from the driver, so the two cannot d
 
 A try_ form is `noexcept` and returns a `Result`: the report, a pointer to the caller's report, or
 the RunHandle. The throwing form calls its try_ form and throws the Error it got as a
-`Core::SushiException`, so both report a failure with the same code and text.
+`SushiException`, so both report a failure with the same code and text.
 `modules/surface/api/tests/test_run_driver.cpp` holds the list as `static_assert`s over both types.
 
 No try_ form throws, also when memory runs out while it builds an Error: every Error of the driver
@@ -550,7 +550,7 @@ toolchain a rethrow from a helper called inside a catch block crashes the proces
 
 | Thrown | While the plan is built | Once a step may have started |
 | --- | --- | --- |
-| `Core::SushiException` | Its own Error | Its own Error |
+| `SushiException` | Its own Error | Its own Error |
 | `sycl::exception` | `kernel_failed` | `kernel_failed` |
 | Any other exception, such as one a host task throws | `compile_failed` | `kernel_failed` |
 
@@ -591,14 +591,14 @@ reads what step k wrote only if the States advance between the two submissions. 
 recorded by any step of such a run is therefore seen at the end, and by then every step but the
 last has advanced. run_for() and run_until() wait and check after every step on both layers.
 
-### run(Observability::RunReport&)
+### run(Internal::Observability::RunReport&)
 
-run(Observability::RunReport&) is the allocation-free form of run(). A fixed-step loop keeps one report alive
+run(Internal::Observability::RunReport&) is the allocation-free form of run(). A fixed-step loop keeps one report alive
 and passes it every tick; the report is reset and refilled in place, so after the first run the
 per-run vectors are reused and not reallocated:
 
 ```cpp
-Observability::RunReport report;
+Internal::Observability::RunReport report;
 while (running)
     simulation.run(report);
 ```
@@ -616,7 +616,7 @@ the returned handle:
 ```cpp
 auto step = simulation.run_async();
 extract_previous_frame();
-Observability::RunReport report = step.wait();
+Internal::Observability::RunReport report = step.wait();
 ```
 
 It runs one step only. The multi-step drivers (run(n), run_for, run_until) stay synchronous, because
@@ -1103,7 +1103,7 @@ extract and then settle up:
 ```cpp
 auto step = simulation.run_async();
 extract_previous_frame();          // overlaps with the step
-Observability::RunReport report = step.wait();
+Internal::Observability::RunReport report = step.wait();
 ```
 
 The handle is move-only and owns the obligation to finish the step: its destructor waits if `wait()`
@@ -1154,7 +1154,7 @@ a handle that owns none is ready, whatever run the engine holds.
 
 wait() completes the step's lifecycle, in which every State advances to the field it just wrote, and
 consumes the handle, so a second call throws `invalid_state` instead of waiting on a step that is no
-longer running. wait() calls try_wait() and throws the Error it got as a `Core::SushiException`. A
+longer running. wait() calls try_wait() and throws the Error it got as a `SushiException`. A
 task exception therefore arrives as `kernel_failed` carrying the task's text, the same as from
 run(), and the state advance is skipped in that case, exactly as a failed synchronous run of one
 step leaves its states untouched.
@@ -1165,9 +1165,9 @@ try_wait() is the implementation of every wait: it resets the report, consumes t
 that the handle still owns its step and asks the driver to settle it. It is `noexcept` and returns
 the report or the Error that ended the step.
 
-### wait(Observability::RunReport&)
+### wait(Internal::Observability::RunReport&)
 
-wait(Observability::RunReport&) is the allocation-free counterpart of wait(), for the same reason
+wait(Internal::Observability::RunReport&) is the allocation-free counterpart of wait(), for the same reason
 Graph::run(RunReport&) exists: an overlapped frame loop settles a step every tick, and a report it
 already owns costs nothing to refill. The report is reset before it is written, so a stale field
 from the previous step can never survive into this one.

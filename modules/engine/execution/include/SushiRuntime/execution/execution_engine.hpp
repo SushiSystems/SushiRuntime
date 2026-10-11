@@ -45,15 +45,15 @@
 namespace SushiRuntime
 {
 
-    namespace Graph { class OffloadCoordinator; class OffloadSink; }
+    namespace Internal::Graph { class OffloadCoordinator; class OffloadSink; }
 
-    namespace Execution
+    namespace Internal::Execution
     {
         class RuntimeContext;
         class ChainRun;
 
-        /** @brief Names Graph::CompiledGraph under its former namespace. */
-        using CompiledGraph = Graph::CompiledGraph;
+        /** @brief Names Internal::Graph::CompiledGraph under its former namespace. */
+        using CompiledGraph = Internal::Graph::CompiledGraph;
 
         /**
          * @brief Cumulative scheduler counters, snapshotted to report a run.
@@ -116,29 +116,29 @@ namespace SushiRuntime
             /**
              * @brief Starts a run and returns immediately, without waiting.
              * @pre Exactly one complete() follows, and the plan stays alive until it returns.
-             * @throws Core::SushiException If the engine does not support this,
+             * @throws SushiException If the engine does not support this,
              *        is shut down, the graph has no roots, or a run is already
              *        in progress.
              * @see modules/engine/execution/README.md
              */
             virtual void submit(CompiledGraph& /*graph*/)
             {
-                throw Core::SushiException(Core::Error{
-                    Core::Errc::unsupported,
+                throw SushiException(Error{
+                    Errc::unsupported,
                     "This execution engine does not support asynchronous runs."});
             }
 
             /**
              * @brief Blocks until the run started by submit() has finished.
              * @pre submit() was called.
-             * @throws Core::SushiException If the engine does not support this.
+             * @throws SushiException If the engine does not support this.
              * @throws The first exception a task threw during the run.
              * @see modules/engine/execution/README.md
              */
             virtual void complete()
             {
-                throw Core::SushiException(Core::Error{
-                    Core::Errc::unsupported,
+                throw SushiException(Error{
+                    Errc::unsupported,
                     "This execution engine does not support asynchronous runs."});
             }
 
@@ -213,7 +213,7 @@ namespace SushiRuntime
              * @param report The report whose profiling rows are populated.
              */
             virtual void collect_profiling(CompiledGraph& /*graph*/,
-                                           Observability::RunReport& /*report*/) const {}
+                                           Internal::Observability::RunReport& /*report*/) const {}
 
             /**
              * @brief Reports whether a run handed to this engine has not been collected yet.
@@ -329,7 +329,7 @@ namespace SushiRuntime
              * @see modules/engine/execution/README.md
              */
             void collect_profiling(CompiledGraph& graph,
-                                   Observability::RunReport& report) const override;
+                                   Internal::Observability::RunReport& report) const override;
 
             /**
              * @brief Reports whether a scheduled or a chained run is in progress on this engine.
@@ -344,10 +344,10 @@ namespace SushiRuntime
              * @pre No run is in flight.
              * @param offload Not owned; null removes the installed one.
              */
-            void install_offload(Graph::OffloadCoordinator* offload);
+            void install_offload(Internal::Graph::OffloadCoordinator* offload);
 
             /** @brief Returns the sink an offload coordinator hands its nodes back to. */
-            [[nodiscard]] Graph::OffloadSink& offload_sink() noexcept;
+            [[nodiscard]] Internal::Graph::OffloadSink& offload_sink() noexcept;
 
         private:
             friend class ChainRun;

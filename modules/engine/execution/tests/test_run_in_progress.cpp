@@ -46,12 +46,12 @@
 
 namespace
 {
-    using SushiRuntime::Execution::ChainRun;
-    using SushiRuntime::Execution::IExecutionEngine;
-    using SushiRuntime::Execution::RuntimeContext;
-    using SushiRuntime::Graph::CompiledGraph;
-    using SushiRuntime::Graph::TaskGraph;
-    using SushiRuntime::Graph::TaskMetadata;
+    using SushiRuntime::Internal::Execution::ChainRun;
+    using SushiRuntime::Internal::Execution::IExecutionEngine;
+    using SushiRuntime::Internal::Execution::RuntimeContext;
+    using SushiRuntime::Internal::Graph::CompiledGraph;
+    using SushiRuntime::Internal::Graph::TaskGraph;
+    using SushiRuntime::Internal::Graph::TaskMetadata;
 
     /** @brief Implements only the pure members, so every query keeps its default. */
     class MinimalEngine final : public IExecutionEngine
@@ -92,7 +92,7 @@ namespace
             DeviceFloats(RuntimeContext& context, std::size_t count)
                 : context_(context),
                   data_(static_cast<float*>(context.memory().allocate(
-                      {SushiRuntime::Memory::USMKind::Shared, count * sizeof(float), 0, 0})))
+                      {SushiRuntime::Internal::Memory::USMKind::Shared, count * sizeof(float), 0, 0})))
             {
 
             }
@@ -123,9 +123,9 @@ namespace
     /** @brief Compiles and classifies a plan of one kernel that fills @p data with ones. */
     CompiledGraph compile_chain_candidate(RuntimeContext& context, float* data, std::size_t count)
     {
-        const std::vector<SushiRuntime::Memory::ResourceRegion> none;
-        const std::vector<SushiRuntime::Memory::ResourceRegion> writes{
-            SushiRuntime::Memory::ResourceRegion(data)};
+        const std::vector<SushiRuntime::Internal::Memory::ResourceRegion> none;
+        const std::vector<SushiRuntime::Internal::Memory::ResourceRegion> writes{
+            SushiRuntime::Internal::Memory::ResourceRegion(data)};
 
         TaskGraph graph;
         graph.add_node([data, count](sycl::handler& handler)
@@ -138,7 +138,7 @@ namespace
 
         CompiledGraph plan = graph.compile();
         plan.capture_base_state();
-        plan.chain = SushiRuntime::Execution::classify_chain(plan, context);
+        plan.chain = SushiRuntime::Internal::Execution::classify_chain(plan, context);
         return plan;
     }
 } // namespace

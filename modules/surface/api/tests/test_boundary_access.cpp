@@ -40,8 +40,8 @@ using namespace SushiRuntime;
 
 namespace
 {
-    using Interval = Memory::ResourceRegion;
-    using Intervals = std::vector<Memory::ResourceRegion>;
+    using Interval = Internal::Memory::ResourceRegion;
+    using Intervals = std::vector<Internal::Memory::ResourceRegion>;
 
     /** @brief Number of bytes of the allocation the pin tests slice. */
     constexpr std::size_t K_BYTES = 20;
@@ -50,8 +50,8 @@ namespace
     constexpr std::size_t K_ELEMENTS = 20;
 
     /** @brief Returns the pin of a node in a pin list, or nullptr when the node has none. */
-    const API::detail::Pin* pin_of(const std::vector<API::detail::Pin>& pins,
-                                   const Graph::Node& node)
+    const detail::Pin* pin_of(const std::vector<detail::Pin>& pins,
+                                   const Internal::Graph::Node& node)
     {
         for (const auto& pin : pins)
             if (pin.node == &node)
@@ -62,13 +62,13 @@ namespace
     /** @brief Returns whether one interval of a list fully contains wanted. */
     bool holds(const Intervals& intervals, const Interval& wanted)
     {
-        return API::detail::covered_by_any(wanted, intervals);
+        return detail::covered_by_any(wanted, intervals);
     }
 
     /** @brief Returns the plan of a graph that requested profiling. */
-    const Graph::CompiledGraph& plan_of(const DynamicGraph& world)
+    const Internal::Graph::CompiledGraph& plan_of(const DynamicGraph& world)
     {
-        return API::detail::DynamicGraphNodeEventsTestAccess::plan(world);
+        return detail::DynamicGraphNodeEventsTestAccess::plan(world);
     }
 } // namespace
 
@@ -78,17 +78,17 @@ TEST(Unit_BoundaryAccess, AReadPastItsPredecessorsWriteKeepsAnEntryPin)
     unsigned char bytes[K_BYTES] = {};
     void* base = bytes;
 
-    Graph::TaskGraph graph;
-    Graph::Node& p = graph.add_native({}, {Interval(base, 0, 10)}, [] {});
-    Graph::Node& q = graph.add_native({Interval(base, 5, 15)}, {}, [] {});
+    Internal::Graph::TaskGraph graph;
+    Internal::Graph::Node& p = graph.add_native({}, {Interval(base, 0, 10)}, [] {});
+    Internal::Graph::Node& q = graph.add_native({Interval(base, 5, 15)}, {}, [] {});
     const auto nodes = graph.take_nodes();
 
-    const auto access = API::detail::compute_boundary_access(nodes);
+    const auto access = detail::compute_boundary_access(nodes);
     ASSERT_EQ(access.count(base), 1u);
     const auto& entry = access.at(base).entry;
 
     ASSERT_NE(pin_of(entry, p), nullptr);
-    const API::detail::Pin* q_pin = pin_of(entry, q);
+    const detail::Pin* q_pin = pin_of(entry, q);
     ASSERT_NE(q_pin, nullptr) << "bytes [15,20) of q are ordered behind no earlier region";
     EXPECT_TRUE(holds(q_pin->reads, Interval(base, 15, 5)));
     EXPECT_TRUE(q_pin->writes.empty());
@@ -100,12 +100,12 @@ TEST(Unit_BoundaryAccess, AReadInsideItsPredecessorsWriteHasNoEntryPin)
     unsigned char bytes[K_BYTES] = {};
     void* base = bytes;
 
-    Graph::TaskGraph graph;
-    Graph::Node& p = graph.add_native({}, {Interval(base, 0, 20)}, [] {});
-    Graph::Node& q = graph.add_native({Interval(base, 5, 15)}, {}, [] {});
+    Internal::Graph::TaskGraph graph;
+    Internal::Graph::Node& p = graph.add_native({}, {Interval(base, 0, 20)}, [] {});
+    Internal::Graph::Node& q = graph.add_native({Interval(base, 5, 15)}, {}, [] {});
     const auto nodes = graph.take_nodes();
 
-    const auto access = API::detail::compute_boundary_access(nodes);
+    const auto access = detail::compute_boundary_access(nodes);
     const auto& entry = access.at(base).entry;
 
     EXPECT_NE(pin_of(entry, p), nullptr);
@@ -119,16 +119,16 @@ TEST(Unit_BoundaryAccess, AWriteBehindAReadingPredecessorKeepsItsWritePin)
     unsigned char bytes[K_BYTES] = {};
     void* base = bytes;
 
-    Graph::TaskGraph graph;
-    Graph::Node& p = graph.add_native({Interval(base, 0, 10)}, {}, [] {});
-    Graph::Node& q = graph.add_native({}, {Interval(base, 0, 10)}, [] {});
+    Internal::Graph::TaskGraph graph;
+    Internal::Graph::Node& p = graph.add_native({Interval(base, 0, 10)}, {}, [] {});
+    Internal::Graph::Node& q = graph.add_native({}, {Interval(base, 0, 10)}, [] {});
     const auto nodes = graph.take_nodes();
 
-    const auto access = API::detail::compute_boundary_access(nodes);
+    const auto access = detail::compute_boundary_access(nodes);
     const auto& entry = access.at(base).entry;
 
     ASSERT_NE(pin_of(entry, p), nullptr);
-    const API::detail::Pin* q_pin = pin_of(entry, q);
+    const detail::Pin* q_pin = pin_of(entry, q);
     ASSERT_NE(q_pin, nullptr) << "a reader does not follow the readers of earlier regions";
     EXPECT_TRUE(holds(q_pin->writes, Interval(base, 0, 10)));
 }
@@ -139,19 +139,19 @@ TEST(Unit_BoundaryAccess, OnlyAContainingSuccessorWriteShadowsAnExit)
     unsigned char bytes[K_BYTES] = {};
     void* base = bytes;
 
-    Graph::TaskGraph contained;
-    Graph::Node& inner = contained.add_native({}, {Interval(base, 5, 5)}, [] {});
-    Graph::Node& outer = contained.add_native({}, {Interval(base, 0, 20)}, [] {});
+    Internal::Graph::TaskGraph contained;
+    Internal::Graph::Node& inner = contained.add_native({}, {Interval(base, 5, 5)}, [] {});
+    Internal::Graph::Node& outer = contained.add_native({}, {Interval(base, 0, 20)}, [] {});
     const auto contained_nodes = contained.take_nodes();
-    const auto shadowed = API::detail::compute_boundary_access(contained_nodes);
+    const auto shadowed = detail::compute_boundary_access(contained_nodes);
     EXPECT_EQ(pin_of(shadowed.at(base).exit, inner), nullptr);
     EXPECT_NE(pin_of(shadowed.at(base).exit, outer), nullptr);
 
-    Graph::TaskGraph partial;
-    Graph::Node& wide = partial.add_native({}, {Interval(base, 0, 20)}, [] {});
-    Graph::Node& narrow = partial.add_native({}, {Interval(base, 5, 5)}, [] {});
+    Internal::Graph::TaskGraph partial;
+    Internal::Graph::Node& wide = partial.add_native({}, {Interval(base, 0, 20)}, [] {});
+    Internal::Graph::Node& narrow = partial.add_native({}, {Interval(base, 5, 5)}, [] {});
     const auto partial_nodes = partial.take_nodes();
-    const auto kept = API::detail::compute_boundary_access(partial_nodes);
+    const auto kept = detail::compute_boundary_access(partial_nodes);
     EXPECT_NE(pin_of(kept.at(base).exit, wide), nullptr) << "bytes outside [5,10) stay live";
     EXPECT_NE(pin_of(kept.at(base).exit, narrow), nullptr);
 }
@@ -172,13 +172,13 @@ TEST(Integration_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfC
 
     auto world = rt.dynamic_graph();
     world.set_profiling(true);
-    world.region(1).add_host(API::Reads{}, API::Writes(shared.region({15, 5})),
+    world.region(1).add_host(Reads{}, Writes(shared.region({15, 5})),
                              [cells]() { for (std::size_t i = 15; i < 20; ++i) cells[i] = 7; })
                    .name("w");
-    world.region(2).add_host(API::Reads{}, API::Writes(shared.region({0, 10})),
+    world.region(2).add_host(Reads{}, Writes(shared.region({0, 10})),
                              [cells]() { for (std::size_t i = 0; i < 10; ++i) cells[i] = 1; })
                    .name("p");
-    world.region(2).add_host(API::Reads(shared.region({5, 15})), API::Writes(total),
+    world.region(2).add_host(Reads(shared.region({5, 15})), Writes(total),
                              [cells, sum]()
                              {
                                  int read = 0;
@@ -188,8 +188,8 @@ TEST(Integration_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfC
                    .name("q");
     world.run();
 
-    const Graph::Node* w = Testing::find_plan_node(plan_of(world), "w");
-    const Graph::Node* q = Testing::find_plan_node(plan_of(world), "q");
+    const Internal::Graph::Node* w = Testing::find_plan_node(plan_of(world), "w");
+    const Internal::Graph::Node* q = Testing::find_plan_node(plan_of(world), "q");
     ASSERT_NE(w, nullptr);
     ASSERT_NE(q, nullptr);
     EXPECT_TRUE(Testing::has_boundary_edge(*w, *q)) << "q reads [15,20) unordered against w";
@@ -213,13 +213,13 @@ TEST(Integration_BoundaryAccess, AReaderItsPredecessorCoversGainsNoEdge)
 
     auto world = rt.dynamic_graph();
     world.set_profiling(true);
-    world.region(1).add_host(API::Reads{}, API::Writes(shared.region({15, 5})),
+    world.region(1).add_host(Reads{}, Writes(shared.region({15, 5})),
                              [cells]() { for (std::size_t i = 15; i < 20; ++i) cells[i] = 7; })
                    .name("w");
-    world.region(2).add_host(API::Reads{}, API::Writes(shared),
+    world.region(2).add_host(Reads{}, Writes(shared),
                              [cells]() { for (std::size_t i = 0; i < 20; ++i) cells[i] += 1; })
                    .name("p");
-    world.region(2).add_host(API::Reads(shared.region({5, 15})), API::Writes(total),
+    world.region(2).add_host(Reads(shared.region({5, 15})), Writes(total),
                              [cells, sum]()
                              {
                                  int read = 0;
@@ -229,9 +229,9 @@ TEST(Integration_BoundaryAccess, AReaderItsPredecessorCoversGainsNoEdge)
                    .name("q");
     world.run();
 
-    const Graph::Node* w = Testing::find_plan_node(plan_of(world), "w");
-    const Graph::Node* p = Testing::find_plan_node(plan_of(world), "p");
-    const Graph::Node* q = Testing::find_plan_node(plan_of(world), "q");
+    const Internal::Graph::Node* w = Testing::find_plan_node(plan_of(world), "w");
+    const Internal::Graph::Node* p = Testing::find_plan_node(plan_of(world), "p");
+    const Internal::Graph::Node* q = Testing::find_plan_node(plan_of(world), "q");
     ASSERT_NE(w, nullptr);
     ASSERT_NE(p, nullptr);
     ASSERT_NE(q, nullptr);
@@ -260,19 +260,19 @@ TEST(Integration_BoundaryAccess, AnEarlierReaderOrdersAWriterBehindAReadingPrede
 
     auto world = rt.dynamic_graph();
     world.set_profiling(true);
-    world.region(1).add_host(API::Reads(shared.region({0, 10})), API::Writes(early),
+    world.region(1).add_host(Reads(shared.region({0, 10})), Writes(early),
                              [cells, first]() { first[0] = cells[0]; })
                    .name("r");
-    world.region(2).add_host(API::Reads(shared.region({0, 10})), API::Writes(late),
+    world.region(2).add_host(Reads(shared.region({0, 10})), Writes(late),
                              [cells, second]() { second[0] = cells[0]; })
                    .name("p");
-    world.region(2).add_host(API::Reads{}, API::Writes(shared.region({0, 10})),
+    world.region(2).add_host(Reads{}, Writes(shared.region({0, 10})),
                              [cells]() { for (std::size_t i = 0; i < 10; ++i) cells[i] = 9; })
                    .name("q");
     world.run();
 
-    const Graph::Node* r = Testing::find_plan_node(plan_of(world), "r");
-    const Graph::Node* q = Testing::find_plan_node(plan_of(world), "q");
+    const Internal::Graph::Node* r = Testing::find_plan_node(plan_of(world), "r");
+    const Internal::Graph::Node* q = Testing::find_plan_node(plan_of(world), "q");
     ASSERT_NE(r, nullptr);
     ASSERT_NE(q, nullptr);
     EXPECT_TRUE(Testing::has_boundary_edge(*r, *q)) << "q overwrites what r still reads";

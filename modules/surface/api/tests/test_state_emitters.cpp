@@ -54,7 +54,7 @@ namespace
     constexpr Word CANARY = 0xDEADBEEFu;
 
     /** @brief Allocates a State whose current field holds index plus SEED and next CANARY. */
-    API::State<Word> seeded_state(Runtime& rt, std::size_t count = WIDTH)
+    State<Word> seeded_state(Runtime& rt, std::size_t count = WIDTH)
     {
         auto state = rt.state<Word>(count);
         for (std::size_t i = 0; i < count; ++i)
@@ -66,9 +66,9 @@ namespace
     }
 
     /** @brief Returns the view a State owns and shares with the graphs that record it. */
-    std::shared_ptr<API::detail::StateView<Word>> view_of(const API::State<Word>& state)
+    std::shared_ptr<detail::StateView<Word>> view_of(const State<Word>& state)
     {
-        return API::detail::HandleAccess::view(state);
+        return detail::HandleAccess::view(state);
     }
 } // namespace
 
@@ -81,7 +81,7 @@ TEST(Integration_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
     auto right = seeded_state(rt);
 
     auto graph = rt.graph();
-    graph.add(API::Coupled(out, left, right),
+    graph.add(Coupled(out, left, right),
               [](std::size_t i, const Word* current, Word* next, const Word* a, const Word* b)
               {
                   next[i] = current[i] + a[i] * b[i];
@@ -113,7 +113,7 @@ TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWi
     {
         next[i] = current[i];
     });
-    graph.add(PREFIX, API::Coupled(prefix, input),
+    graph.add(PREFIX, Coupled(prefix, input),
               [](std::size_t i, const Word* current, Word* next, const Word* other)
               {
                   next[i] = current[i] + other[i];
@@ -135,14 +135,14 @@ TEST(Integration_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
 {
     auto rt = Runtime::create();
     auto field = seeded_state(rt);
-    auto emit = API::detail::state_launch_node(
+    auto emit = detail::state_launch_node(
         view_of(field), PREFIX, [](std::size_t i, const Word* current, Word* next)
         {
             next[i] = current[i] + 1u;
         });
 
     auto graph = rt.graph();
-    graph.add_emitter([emit](Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
+    graph.add_emitter([emit](Internal::Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
     graph.run();
 
     for (std::size_t i = 0; i < WIDTH; ++i)
@@ -156,7 +156,7 @@ TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
     auto rt = Runtime::create();
     auto out = seeded_state(rt);
     auto input = seeded_state(rt);
-    auto emit = API::detail::coupled_launch_node(
+    auto emit = detail::coupled_launch_node(
         view_of(out), std::make_tuple(view_of(input)), out.size(),
         [](std::size_t i, const Word* current, Word* next, const Word* other)
         {
@@ -164,7 +164,7 @@ TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
         });
 
     auto graph = rt.graph();
-    graph.add_emitter([emit](Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
+    graph.add_emitter([emit](Internal::Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
     graph.run();
 
     for (std::size_t i = 0; i < WIDTH; ++i)
@@ -176,14 +176,14 @@ TEST(Integration_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWind
 {
     auto rt = Runtime::create();
     auto field = seeded_state(rt);
-    auto bindings = std::make_shared<Graph::LateBindings>();
+    auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     bindings->count.store(PREFIX);
-    auto emit = API::detail::dynamic_state_node(
-        view_of(field), field.size(), bindings, nullptr, std::vector<Memory::ResourceRegion>{},
+    auto emit = detail::dynamic_state_node(
+        view_of(field), field.size(), bindings, nullptr, std::vector<Internal::Memory::ResourceRegion>{},
         [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
     auto graph = rt.graph();
-    graph.add_emitter([emit](Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
+    graph.add_emitter([emit](Internal::Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
     graph.run();
 
     for (std::size_t i = 0; i < WIDTH; ++i)

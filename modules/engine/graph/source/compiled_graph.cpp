@@ -37,7 +37,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         /**
          * @brief Captures the base in-degree state of all nodes in the graph.
@@ -79,7 +79,7 @@ namespace SushiRuntime
             {
                 if (n->is_sentinel) continue;
                 ++profiling_multiplicities[n->registration_index];
-                if (n->get_execution_mode() == SushiRuntime::Scheduler::Task::ExecutionMode::HOST &&
+                if (n->get_execution_mode() == SushiRuntime::Internal::Scheduler::Task::ExecutionMode::HOST &&
                     !n->submits_device_work())
                     profiling_host_native[n->registration_index] = true;
             }

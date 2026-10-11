@@ -8,7 +8,7 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_node_event_record.cpp
 
-The file covers the layout of `Observability::NodeEventRecord` and checks that `RunReport::reset()` keeps the
+The file covers the layout of `Internal::Observability::NodeEventRecord` and checks that `RunReport::reset()` keeps the
 capacity of `node_events` while it zeroes the clock pairing. The engine copies `NodeEventRecord`
 field for field with no translation, so the tests pin its size and triviality.
 

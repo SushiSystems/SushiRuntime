@@ -401,7 +401,7 @@ namespace
             StopSignal stop_signal_;
 
             /// @brief The runtime the agent's kernels would run on.
-            Execution::RuntimeContext context_;
+            Internal::Execution::RuntimeContext context_;
 
             /// @brief The exit code of the serving thread; declared last, so it ends first.
             std::future<WorkerExitCode> exit_code_;

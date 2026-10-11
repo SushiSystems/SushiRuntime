@@ -37,10 +37,10 @@
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 
-using namespace SushiRuntime::Topology;
-using SushiRuntime::Core::Errc;
-using SushiRuntime::Core::Error;
-using SushiRuntime::Core::SushiException;
+using namespace SushiRuntime::Internal::Topology;
+using SushiRuntime::Errc;
+using SushiRuntime::Error;
+using SushiRuntime::SushiException;
 
 namespace
 {

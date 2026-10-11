@@ -46,97 +46,94 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /**
+         * @brief Adds the node of a rule that reads a State's current field into its next.
+         * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
+         * @param view The State's own view; its fields are the node's read and write keys.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <typename T, class Launch, class F>
+        void add_state_node(::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                            std::optional<std::uint32_t> registration,
+                            const std::shared_ptr<StateView<T>>& view, const Launch& launch,
+                            const F& fn)
         {
-            /**
-             * @brief Adds the node of a rule that reads a State's current field into its next.
-             * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
-             * @param view The State's own view; its fields are the node's read and write keys.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            template <typename T, class Launch, class F>
-            void add_state_node(::SushiRuntime::Graph::TaskGraph& bg,
-                                std::optional<std::uint32_t> registration,
-                                const std::shared_ptr<StateView<T>>& view, const Launch& launch,
-                                const F& fn)
+            bg.add_node([fn, view, launch](sycl::handler& h)
             {
-                bg.add_node([fn, view, launch](sycl::handler& h)
-                {
-                    // The view is read at each submit, so the kernel follows the swap.
-                    const T* current = view->current;
-                    T* next = view->next;
-                    submit_launch(h, launch, fn, current, next);
-                }, { Memory::ResourceRegion(static_cast<void*>(view->current)) },
-                { Memory::ResourceRegion(static_cast<void*>(view->next)) }, {},
-                registration).baked_width = launch_count(launch);
-            }
+                // The view is read at each submit, so the kernel follows the swap.
+                const T* current = view->current;
+                T* next = view->next;
+                submit_launch(h, launch, fn, current, next);
+            }, { Internal::Memory::ResourceRegion(static_cast<void*>(view->current)) },
+            { Internal::Memory::ResourceRegion(static_cast<void*>(view->next)) }, {},
+            registration).baked_width = launch_count(launch);
+        }
 
-            /**
-             * @brief Builds the replay of a State rule.
-             * @tparam Launch std::size_t, Extent<N> or NdRange<N>; the State's size for the
-             *         whole field.
-             * @param view The State's own view, read at every replay and every submit.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            template <typename T, class Launch, class F>
-            auto state_launch_node(std::shared_ptr<StateView<T>> view, Launch launch, F&& fn)
+        /**
+         * @brief Builds the replay of a State rule.
+         * @tparam Launch std::size_t, Extent<N> or NdRange<N>; the State's size for the
+         *         whole field.
+         * @param view The State's own view, read at every replay and every submit.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <typename T, class Launch, class F>
+        auto state_launch_node(std::shared_ptr<StateView<T>> view, Launch launch, F&& fn)
+        {
+            return [fn = std::forward<F>(fn), view, launch]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                    std::optional<std::uint32_t> registration)
             {
-                return [fn = std::forward<F>(fn), view, launch]
-                       (::SushiRuntime::Graph::TaskGraph& bg,
-                        std::optional<std::uint32_t> registration)
-                {
-                    add_state_node(bg, registration, view, launch, fn);
-                };
-            }
+                add_state_node(bg, registration, view, launch, fn);
+            };
+        }
 
-            /**
-             * @brief Adds the node of a rule that writes one State from several current fields.
-             * @tparam Views A std::tuple of the views of the States read, in argument order.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            template <typename T, class Views, class Launch, class F>
-            void add_coupled_node(::SushiRuntime::Graph::TaskGraph& bg,
-                                  std::optional<std::uint32_t> registration,
-                                  const std::shared_ptr<StateView<T>>& out_view,
-                                  const Views& views, const Launch& launch, const F& fn)
+        /**
+         * @brief Adds the node of a rule that writes one State from several current fields.
+         * @tparam Views A std::tuple of the views of the States read, in argument order.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <typename T, class Views, class Launch, class F>
+        void add_coupled_node(::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                              std::optional<std::uint32_t> registration,
+                              const std::shared_ptr<StateView<T>>& out_view,
+                              const Views& views, const Launch& launch, const F& fn)
+        {
+            using Seq = std::make_index_sequence<std::tuple_size<Views>::value>;
+            std::vector<Internal::Memory::ResourceRegion> reads = read_keys_of_views(views, Seq{});
+            reads.insert(reads.begin(),
+                         Internal::Memory::ResourceRegion(static_cast<void*>(out_view->current)));
+            bg.add_node([fn, out_view, views, launch](sycl::handler& h)
             {
-                using Seq = std::make_index_sequence<std::tuple_size<Views>::value>;
-                std::vector<Memory::ResourceRegion> reads = read_keys_of_views(views, Seq{});
-                reads.insert(reads.begin(),
-                             Memory::ResourceRegion(static_cast<void*>(out_view->current)));
-                bg.add_node([fn, out_view, views, launch](sycl::handler& h)
+                const T* current = out_view->current;
+                T* next = out_view->next;
+                // The inputs are resolved at each submit, so the kernel holds raw pointers.
+                std::apply([&h, &fn, &launch, current, next](auto... input)
                 {
-                    const T* current = out_view->current;
-                    T* next = out_view->next;
-                    // The inputs are resolved at each submit, so the kernel holds raw pointers.
-                    std::apply([&h, &fn, &launch, current, next](auto... input)
-                    {
-                        submit_launch(h, launch, fn, current, next, input...);
-                    }, views_current(views, Seq{}));
-                }, reads, { Memory::ResourceRegion(static_cast<void*>(out_view->next)) }, {},
-                registration).baked_width = launch_count(launch);
-            }
+                    submit_launch(h, launch, fn, current, next, input...);
+                }, views_current(views, Seq{}));
+            }, reads, { Internal::Memory::ResourceRegion(static_cast<void*>(out_view->next)) }, {},
+            registration).baked_width = launch_count(launch);
+        }
 
-            /**
-             * @brief Builds the replay of a coupled rule.
-             * @tparam Views  A std::tuple of the views of the States read, in argument order.
-             * @tparam Launch std::size_t, Extent<N> or NdRange<N>; the written State's size for
-             *         the whole field.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            template <typename T, class Views, class Launch, class F>
-            auto coupled_launch_node(std::shared_ptr<StateView<T>> out_view, Views views,
-                                     Launch launch, F&& fn)
+        /**
+         * @brief Builds the replay of a coupled rule.
+         * @tparam Views  A std::tuple of the views of the States read, in argument order.
+         * @tparam Launch std::size_t, Extent<N> or NdRange<N>; the written State's size for
+         *         the whole field.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <typename T, class Views, class Launch, class F>
+        auto coupled_launch_node(std::shared_ptr<StateView<T>> out_view, Views views,
+                                 Launch launch, F&& fn)
+        {
+            return [fn = std::forward<F>(fn), out_view, views, launch]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                    std::optional<std::uint32_t> registration)
             {
-                return [fn = std::forward<F>(fn), out_view, views, launch]
-                       (::SushiRuntime::Graph::TaskGraph& bg,
-                        std::optional<std::uint32_t> registration)
-                {
-                    add_coupled_node(bg, registration, out_view, views, launch, fn);
-                };
-            }
-        } // namespace detail
-    } // namespace API
+                add_coupled_node(bg, registration, out_view, views, launch, fn);
+            };
+        }
+    } // namespace detail
 } // namespace SushiRuntime

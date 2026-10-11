@@ -30,7 +30,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         struct Node;
 

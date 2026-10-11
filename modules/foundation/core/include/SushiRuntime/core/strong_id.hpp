@@ -33,53 +33,49 @@
 
 namespace SushiRuntime
 {
-    namespace Core
+    /**
+     * @brief Wraps an integer in a distinct type identified by a phantom Tag.
+     * @tparam Tag A phantom type that names the identifier's domain.
+     * @tparam Rep The underlying integer representation.
+     * @see modules/foundation/core/README.md
+     */
+    template <class Tag, class Rep = std::size_t>
+    class StrongID
     {
-        /**
-         * @brief Wraps an integer in a distinct type identified by a phantom Tag.
-         * @tparam Tag A phantom type that names the identifier's domain.
-         * @tparam Rep The underlying integer representation.
-         * @see modules/foundation/core/README.md
-         */
-        template <class Tag, class Rep = std::size_t>
-        class StrongID
-        {
-            public:
-                /** @brief Constructs the zero identifier. */
-                constexpr StrongID() noexcept : raw_(Rep{}) {}
+        public:
+            /** @brief Constructs the zero identifier. */
+            constexpr StrongID() noexcept : raw_(Rep{}) {}
 
-                /** @brief Wraps @p v as an identifier of this domain. */
-                explicit constexpr StrongID(Rep v) noexcept : raw_(v) {}
+            /** @brief Wraps @p v as an identifier of this domain. */
+            explicit constexpr StrongID(Rep v) noexcept : raw_(v) {}
 
-                /**
-                 * @brief Returns the wrapped integer value.
-                 * @return The integer this identifier wraps.
-                 */
-                [[nodiscard]] constexpr Rep value() const noexcept { return raw_; }
+            /**
+             * @brief Returns the wrapped integer value.
+             * @return The integer this identifier wraps.
+             */
+            [[nodiscard]] constexpr Rep value() const noexcept { return raw_; }
 
-                /** @brief True when both identifiers wrap the same integer. */
-                [[nodiscard]] friend constexpr bool operator==(StrongID a, StrongID b) noexcept
-                {
-                    return a.raw_ == b.raw_;
-                }
+            /** @brief True when both identifiers wrap the same integer. */
+            [[nodiscard]] friend constexpr bool operator==(StrongID a, StrongID b) noexcept
+            {
+                return a.raw_ == b.raw_;
+            }
 
-                /** @brief True when the identifiers wrap different integers. */
-                [[nodiscard]] friend constexpr bool operator!=(StrongID a, StrongID b) noexcept
-                {
-                    return a.raw_ != b.raw_;
-                }
+            /** @brief True when the identifiers wrap different integers. */
+            [[nodiscard]] friend constexpr bool operator!=(StrongID a, StrongID b) noexcept
+            {
+                return a.raw_ != b.raw_;
+            }
 
-                /** @brief True when the integer of @p a is less than that of @p b. */
-                [[nodiscard]] friend constexpr bool operator<(StrongID a, StrongID b) noexcept
-                {
-                    return a.raw_ < b.raw_;
-                }
+            /** @brief True when the integer of @p a is less than that of @p b. */
+            [[nodiscard]] friend constexpr bool operator<(StrongID a, StrongID b) noexcept
+            {
+                return a.raw_ < b.raw_;
+            }
 
-            private:
-                Rep raw_; /**< The wrapped integer value. */
-        };
-
-    } // namespace Core
+        private:
+            Rep raw_; /**< The wrapped integer value. */
+    };
 } // namespace SushiRuntime
 
 namespace std
@@ -90,10 +86,10 @@ namespace std
      * @tparam Rep The underlying integer representation.
      */
     template <class Tag, class Rep>
-    struct hash<SushiRuntime::Core::StrongID<Tag, Rep>>
+    struct hash<SushiRuntime::StrongID<Tag, Rep>>
     {
         /** @brief Returns the hash of the integer that @p id wraps. */
-        [[nodiscard]] std::size_t operator()(SushiRuntime::Core::StrongID<Tag, Rep> id) const
+        [[nodiscard]] std::size_t operator()(SushiRuntime::StrongID<Tag, Rep> id) const
         {
             return std::hash<Rep>{}(id.value());
         }

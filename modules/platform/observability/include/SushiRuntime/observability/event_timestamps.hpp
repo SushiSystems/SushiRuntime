@@ -33,7 +33,7 @@
 
 namespace SushiRuntime
 {
-    namespace Observability
+    namespace Internal::Observability
     {
         /** @brief Holds one event's profiling timestamps on the backend's event clock. */
         struct EventTimestamps

@@ -25,7 +25,7 @@ returns, and the child still dies.
 
 ## test_delegate.cpp
 
-The file covers `Core::Delegate`: the empty state, invocation and return values, argument
+The file covers `Delegate`: the empty state, invocation and return values, argument
 forwarding, move semantics (a move leaves the source empty), destruction of the erased target, and
 that a move-only target is held without a copy.
 
@@ -47,7 +47,7 @@ destination returns the pointee.
 
 ## test_error.cpp
 
-The file covers `Core::Errc`, its `to_string` and `Core::SushiException`.
+The file covers `Errc`, its `to_string` and `SushiException`.
 
 ### `EveryEnumeratorKeepsItsNumber`
 
@@ -217,7 +217,7 @@ A `release()` on the raw pointer then destroys the object.
 
 ## test_strong_id.cpp
 
-The file covers `Core::StrongID`. Its `static_assert`s state that an id is trivially copyable, has
+The file covers `StrongID`. Its `static_assert`s state that an id is trivially copyable, has
 the size of its representation and does not convert from an integer.
 
 ### `DefaultIsZero`, `ExplicitConstructionKeepsValue`

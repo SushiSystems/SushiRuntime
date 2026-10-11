@@ -55,7 +55,7 @@ TEST(Performance_DynamicGraph, ManyRegionsStreamingMutations)
     for (std::size_t r = 0; r < REGIONS; ++r)
     {
         int* p = bufs[r].data();
-        world.region(r).add(N, API::Reads{}, API::Writes(bufs[r]),
+        world.region(r).add(N, Reads{}, Writes(bufs[r]),
                             [p](std::size_t i) { p[i] += 1; });
     }
 
@@ -70,7 +70,7 @@ TEST(Performance_DynamicGraph, ManyRegionsStreamingMutations)
     {
         const std::size_t r = (m * 7 + 3) % REGIONS;
         int* p = bufs[r].data();
-        world.region(r).add(N, API::Reads{}, API::Writes(bufs[r]),
+        world.region(r).add(N, Reads{}, Writes(bufs[r]),
                             [p](std::size_t i) { p[i] += 1; });
         world.run(1);
         EXPECT_EQ(world.compose_count(), 2u + m) << "one recompose per mutation at m=" << m;

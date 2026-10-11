@@ -34,7 +34,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Holds the first exception of a run and whether the run was cancelled.

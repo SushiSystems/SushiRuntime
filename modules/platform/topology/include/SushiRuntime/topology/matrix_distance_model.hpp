@@ -35,7 +35,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         /**
          * @brief Models NUMA distances from an explicit in-memory matrix, for tests.
@@ -49,15 +49,15 @@ namespace SushiRuntime
                  *
                  * Initializes the internal distance matrix and validates its dimensions.
                  * @param matrix The square distance matrix representing NUMA node latencies (takes ownership).
-                 * @throws Core::SushiException With Errc::invalid_access for a ragged matrix.
+                 * @throws SushiException With Errc::invalid_access for a ragged matrix.
                  */
                 explicit MatrixDistanceModel(std::vector<std::vector<int>> matrix)
                     : matrix_(std::move(matrix))
                 {
                     for (std::size_t row = 0; row < matrix_.size(); ++row)
                         if (matrix_[row].size() != matrix_.size())
-                            throw Core::SushiException(Core::Error{
-                                Core::Errc::invalid_access,
+                            throw SushiException(Error{
+                                Errc::invalid_access,
                                 "MatrixDistanceModel: row " + std::to_string(row) + " holds " +
                                     std::to_string(matrix_[row].size()) +
                                     " entries and the matrix has " +

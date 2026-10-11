@@ -21,7 +21,7 @@
 
 /**
  * @file test_device_count.cpp
- * @brief Tests API::sized_from_device, which sizes a task from a count written earlier in the step.
+ * @brief Tests sized_from_device, which sizes a task from a count written earlier in the step.
  * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
@@ -63,7 +63,7 @@ TEST(Integration_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
           [c, w](std::size_t) { c[0] = w[0] * 3u; });
 
     // Consumer: iterate exactly that many elements.
-    g.add(API::sized_from_device(counter), CAPACITY, Reads(), Writes(marks),
+    g.add(sized_from_device(counter), CAPACITY, Reads(), Writes(marks),
           [m](std::size_t i) { m[i] = static_cast<int>(i); });
 
     const std::uint32_t multipliers[] = { 5, 200, 1, 0, 1000 };
@@ -110,7 +110,7 @@ TEST(Integration_DeviceCount, CounterIsRegisteredAsAReadAutomatically)
     auto g = rt.graph();
     g.add(std::size_t{1}, Reads(), Writes(counter),
           [c](std::size_t) { c[0] = LIVE; });
-    g.add(API::sized_from_device(counter), CAPACITY, Reads(), Writes(out),
+    g.add(sized_from_device(counter), CAPACITY, Reads(), Writes(out),
           [o](std::size_t i) { o[i] = 1; });
 
     g.run();
@@ -147,13 +147,13 @@ TEST(Integration_DeviceCount, ChainedProducerCountsInOneComposition)
     g.add(std::size_t{1}, Reads(), Writes(first), [c1](std::size_t) { c1[0] = 700u; });
 
     // Stage 1: iterate it, and produce the next count from how much it did.
-    g.add(API::sized_from_device(first), CAPACITY, Reads(), Writes(stage1),
+    g.add(sized_from_device(first), CAPACITY, Reads(), Writes(stage1),
           [s1](std::size_t i) { s1[i] = 1; });
     g.add(std::size_t{1}, Reads(first), Writes(second),
           [c1, c2](std::size_t) { c2[0] = c1[0] / 2u; });
 
     // Stage 2: iterate the second count.
-    g.add(API::sized_from_device(second), CAPACITY, Reads(), Writes(stage2),
+    g.add(sized_from_device(second), CAPACITY, Reads(), Writes(stage2),
           [s2](std::size_t i) { s2[i] = 1; });
 
     for (std::size_t i = 0; i < CAPACITY; ++i) { stage1[i] = 0; stage2[i] = 0; }
@@ -184,7 +184,7 @@ TEST(Integration_DeviceCount, WhenComposesWithDeviceSize)
 
     auto g = rt.graph();
     g.add(std::size_t{1}, Reads(), Writes(counter), [c](std::size_t) { c[0] = 100u; });
-    g.add(API::sized_from_device(counter)
+    g.add(sized_from_device(counter)
               .when([&enabled] { return enabled; }),
           CAPACITY, Reads(), Writes(out),
           [o](std::size_t i) { o[i] += 1; });
@@ -221,7 +221,7 @@ TEST(Integration_DeviceCount, CountOverCapacityFailsTheRun)
     auto g = rt.graph();
     g.add(std::size_t{1}, Reads(), Writes(counter),
           [c](std::size_t) { c[0] = static_cast<std::uint32_t>(CAPACITY) + 1u; });
-    g.add(API::sized_from_device(counter), CAPACITY, Reads(), Writes(out),
+    g.add(sized_from_device(counter), CAPACITY, Reads(), Writes(out),
           [o](std::size_t i) { o[i] = 1; });
 
     EXPECT_THROW(g.run(), SushiException);
@@ -245,18 +245,18 @@ TEST(Integration_DeviceCount, RejectsACounterThatIsNotHostResident)
     {
         try
         {
-            (void)API::sized_from_device(*rejected);
+            (void)sized_from_device(*rejected);
             ADD_FAILURE() << "a non-Host counter was accepted";
         }
         catch (const SushiException& e)
         {
-            EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
+            EXPECT_EQ(e.error().code, Errc::invalid_access);
             EXPECT_NE(std::string(e.what()).find("Residency::Host"), std::string::npos)
                 << e.what();
         }
     }
-    EXPECT_THROW((void)API::sized_from_device(host, 5), SushiException);
-    EXPECT_NO_THROW((void)API::sized_from_device(host, 1));
+    EXPECT_THROW((void)sized_from_device(host, 5), SushiException);
+    EXPECT_NO_THROW((void)sized_from_device(host, 1));
 }
 
 /** @brief Tests that a count is read from the element the index names, not from element zero. */
@@ -276,7 +276,7 @@ TEST(Integration_DeviceCount, ReadsTheCountAtTheGivenIndex)
     int* o = out.data();
 
     auto g = rt.graph();
-    ASSERT_NO_THROW(g.add(API::sized_from_device(plan, SLOT),
+    ASSERT_NO_THROW(g.add(sized_from_device(plan, SLOT),
                           CAPACITY, Reads(), Writes(out),
                           [o](std::size_t i) { o[i] = static_cast<int>(i); }));
     g.run();
@@ -300,7 +300,7 @@ TEST(Integration_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
     plan[SLOT] = 4;
 
     auto g = rt.graph();
-    EXPECT_NO_THROW(g.add(API::based_at_device(plan, SLOT),
+    EXPECT_NO_THROW(g.add(based_at_device(plan, SLOT),
                           CAPACITY, Reads(), Writes(out),
                           [](std::size_t) {}));
 }
@@ -312,7 +312,7 @@ TEST(Integration_DeviceCount, MemberSettersRefuseASlotThatIsNotHostResident)
     auto resident = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Device);
     auto host     = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host);
 
-    API::Dynamic dyn;
+    Dynamic dyn;
     try
     {
         dyn.sized_from_device(resident, 1);
@@ -320,7 +320,7 @@ TEST(Integration_DeviceCount, MemberSettersRefuseASlotThatIsNotHostResident)
     }
     catch (const SushiException& e)
     {
-        EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
+        EXPECT_EQ(e.error().code, Errc::invalid_access);
         const std::string message(e.what());
         EXPECT_NE(message.find("sized_from_device"), std::string::npos) << message;
         EXPECT_NE(message.find("Residency::Device"), std::string::npos) << message;
@@ -332,7 +332,7 @@ TEST(Integration_DeviceCount, MemberSettersRefuseASlotThatIsNotHostResident)
     }
     catch (const SushiException& e)
     {
-        EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
+        EXPECT_EQ(e.error().code, Errc::invalid_access);
         const std::string message(e.what());
         EXPECT_NE(message.find("based_at_device"), std::string::npos) << message;
         EXPECT_NE(message.find("index 4"), std::string::npos) << message;

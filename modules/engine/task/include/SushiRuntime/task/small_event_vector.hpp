@@ -35,7 +35,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         /**
          * @brief Stores a node's SYCL event dependencies, inline up to STATIC_CAP events.

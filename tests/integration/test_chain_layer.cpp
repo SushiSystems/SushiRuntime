@@ -47,7 +47,7 @@ namespace
         std::vector<std::uint32_t> mix;    /**< Reads acc, so it orders after it. */
         std::vector<std::uint32_t> gated;  /**< Written only on the steps its when() allows. */
         /** @brief Layer of the last run. */
-        Observability::ExecutionLayer layer = Observability::ExecutionLayer::Scheduler;
+        Internal::Observability::ExecutionLayer layer = Internal::Observability::ExecutionLayer::Scheduler;
         std::size_t tasks = 0;             /**< total_tasks_executed summed over the runs. */
     };
 
@@ -85,13 +85,13 @@ namespace
         {
             next[i] = cur[i] * 0.75f + static_cast<float>(i % 7) * 0.125f;
         });
-        g.add(API::sized([&size_tick] { return 1 + (size_tick++ * 37) % N; }),
-              N, API::Reads{}, API::Writes(acc),
+        g.add(sized([&size_tick] { return 1 + (size_tick++ * 37) % N; }),
+              N, Reads{}, Writes(acc),
               [pa](std::size_t i) { pa[i] = pa[i] * 31u + static_cast<std::uint32_t>(i) + 1u; });
-        g.add(N, API::Reads(acc), API::Writes(mix),
+        g.add(N, Reads(acc), Writes(mix),
               [pa, pm](std::size_t i) { pm[i] = (pm[i] ^ (pa[i] * 2654435761u)) + 7u; });
-        g.add(API::when([&gate_tick] { return (gate_tick++ % 3) != 0; }),
-              N, API::Reads(mix), API::Writes(gated),
+        g.add(when([&gate_tick] { return (gate_tick++ % 3) != 0; }),
+              N, Reads(mix), Writes(gated),
               [pm, pg](std::size_t i) { pg[i] = pg[i] * 17u + pm[i]; });
         if (native_tail)
             g.add_host([] {});
@@ -141,16 +141,16 @@ TEST(Integration_ChainLayer, ChainMatchesForcedSchedulerBitForBit)
     constexpr std::size_t STEPS = 40;
 
     auto chained_rt = Runtime::create();
-    API::RuntimeConfig forced;
+    RuntimeConfig forced;
     forced.force_scheduler = true;
     auto scheduled_rt = Runtime::create(forced);
 
     const Outputs chained   = run_workload(chained_rt, RUNS, STEPS, false);
     const Outputs scheduled = run_workload(scheduled_rt, RUNS, STEPS, false);
 
-    EXPECT_EQ(chained.layer, Observability::ExecutionLayer::Chain)
+    EXPECT_EQ(chained.layer, Internal::Observability::ExecutionLayer::Chain)
         << "a plan of tracked kernels on one device must take the chain";
-    EXPECT_EQ(scheduled.layer, Observability::ExecutionLayer::Scheduler)
+    EXPECT_EQ(scheduled.layer, Internal::Observability::ExecutionLayer::Scheduler)
         << "force_scheduler must keep every plan on the scheduler";
     expect_identical(chained, scheduled);
 }
@@ -165,8 +165,8 @@ TEST(Integration_ChainLayer, NonChainablePlanMatchesChainBitForBit)
     const Outputs chained = run_workload(rt, RUNS, STEPS, false);
     const Outputs native  = run_workload(rt, RUNS, STEPS, true);
 
-    EXPECT_EQ(chained.layer, Observability::ExecutionLayer::Chain);
-    EXPECT_EQ(native.layer, Observability::ExecutionLayer::Scheduler)
+    EXPECT_EQ(chained.layer, Internal::Observability::ExecutionLayer::Chain);
+    EXPECT_EQ(native.layer, Internal::Observability::ExecutionLayer::Scheduler)
         << "a native host task must keep the plan on the scheduler";
 
     EXPECT_TRUE(same_bytes(chained.field, native.field));
@@ -185,12 +185,12 @@ TEST(Integration_ChainLayer, RunUntilSeesEveryStepsResult)
     std::uint32_t* pc = counter.data();
 
     auto g = rt.graph();
-    g.add(1, API::Reads{}, API::Writes(counter), [pc](std::size_t) { pc[0] += 1u; });
+    g.add(1, Reads{}, Writes(counter), [pc](std::size_t) { pc[0] += 1u; });
 
     // The stop test reads a device result, so the chain must wait after every step.
     const auto report = g.run_until([&counter] { return counter[0] >= TARGET; });
 
-    EXPECT_EQ(report.layer, Observability::ExecutionLayer::Chain);
+    EXPECT_EQ(report.layer, Internal::Observability::ExecutionLayer::Chain);
     EXPECT_EQ(report.total_tasks_executed, static_cast<std::size_t>(TARGET));
     EXPECT_EQ(counter[0], TARGET);
 }
@@ -212,12 +212,12 @@ TEST(Integration_ChainLayer, ProfiledChainRecordsEveryDispatch)
 
     auto g = rt.graph();
     g.set_profiling(true);
-    g.add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i) { pa[i] += 1; });
-    g.add(N, API::Reads(a), API::Writes(b), [pa, pb](std::size_t i) { pb[i] += pa[i]; });
+    g.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
+    g.add(N, Reads(a), Writes(b), [pa, pb](std::size_t i) { pb[i] += pa[i]; });
 
     const auto report = g.run(STEPS);
 
-    EXPECT_EQ(report.layer, Observability::ExecutionLayer::Chain)
+    EXPECT_EQ(report.layer, Internal::Observability::ExecutionLayer::Chain)
         << "profiling must not move a chainable plan off layer 1";
     ASSERT_EQ(report.node_events.size(), 2 * STEPS);
 

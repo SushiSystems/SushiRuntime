@@ -40,12 +40,12 @@ namespace
 {
     /** @brief Records one device task on @p bg running @p kernel over [0, n), ordered by regions. */
     template <class Kernel>
-    void record_device_task(Graph::TaskGraph& bg, const char* name,
-                            std::vector<Memory::ResourceRegion> reads,
-                            std::vector<Memory::ResourceRegion> writes, std::size_t n,
+    void record_device_task(Internal::Graph::TaskGraph& bg, const char* name,
+                            std::vector<Internal::Memory::ResourceRegion> reads,
+                            std::vector<Internal::Memory::ResourceRegion> writes, std::size_t n,
                             Kernel kernel)
     {
-        Graph::TaskMetadata meta{};
+        Internal::Graph::TaskMetadata meta{};
         meta.name = name;
         bg.add_task(meta, reads, writes,
             [kernel, n](sycl::queue& q, const std::vector<sycl::event>& deps) -> sycl::event
@@ -75,13 +75,13 @@ TEST(Integration_RegionEmitter, EmittedNodesOrderAgainstANeighbourRegion)
     int* py = y.data();
 
     auto world = rt.dynamic_graph();
-    world.region(10).add_emitter([px](Graph::TaskGraph& bg)
+    world.region(10).add_emitter([px](Internal::Graph::TaskGraph& bg)
     {
         record_device_task(bg, "fill", {}, {px}, N,
                            [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
         record_device_task(bg, "triple", {px}, {px}, N, [px](std::size_t i) { px[i] *= 3; });
     });
-    world.region(11).add(N, API::Reads(x), API::Writes(y),
+    world.region(11).add(N, Reads(x), Writes(y),
                          [px, py](std::size_t i) { py[i] = px[i] * 2; });
 
     world.run();
@@ -104,14 +104,14 @@ TEST(Integration_RegionEmitter, AnEmitterIsOneRule)
         x[i] = 0;
 
     auto world = rt.dynamic_graph();
-    world.region(0).add_emitter([px](Graph::TaskGraph& bg)
+    world.region(0).add_emitter([px](Internal::Graph::TaskGraph& bg)
     {
         record_device_task(bg, "first", {}, {px}, N, [px](std::size_t i) { px[i] += 1; });
         record_device_task(bg, "second", {px}, {px}, N, [px](std::size_t i) { px[i] += 1; });
     });
     world.run();
 
-    const API::Region* found = world.find_region(0);
+    const Region* found = world.find_region(0);
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found->size(), 1u);
     EXPECT_EQ(world.size(), 1u);
@@ -134,7 +134,7 @@ TEST(Integration_RegionEmitter, AnEmitterReplaysOnlyWhenItsRegionIsRebuilt)
     int* pb = b.data();
 
     const auto emitted = std::make_shared<int>(0);
-    const auto emitter = [pa, emitted](Graph::TaskGraph& bg)
+    const auto emitter = [pa, emitted](Internal::Graph::TaskGraph& bg)
     {
         ++*emitted;
         record_device_task(bg, "advance_a", {pa}, {pa}, N, [pa](std::size_t i) { pa[i] += 1; });
@@ -142,13 +142,13 @@ TEST(Integration_RegionEmitter, AnEmitterReplaysOnlyWhenItsRegionIsRebuilt)
 
     auto world = rt.dynamic_graph();
     world.region(0).add_emitter(emitter);
-    world.region(1).add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] += 1; });
+    world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 1; });
 
     world.run(3);
     EXPECT_EQ(*emitted, 1) << "a replayed step does not call the emitter";
     EXPECT_EQ(world.compose_count(), 1u);
 
-    world.region(1).add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] += 1; });
+    world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 1; });
     world.run();
     EXPECT_EQ(*emitted, 1) << "rebuilding a neighbour leaves this region's nodes alone";
 
@@ -180,11 +180,11 @@ TEST(Integration_RegionEmitter, AStaticGraphTakesAnEmitter)
     int* py = y.data();
 
     auto graph = rt.graph();
-    graph.add_emitter([px](Graph::TaskGraph& bg)
+    graph.add_emitter([px](Internal::Graph::TaskGraph& bg)
     {
         record_device_task(bg, "count_up", {px}, {px}, N, [px](std::size_t i) { px[i] += 1; });
     });
-    graph.add(N, API::Reads(x), API::Writes(y), [px, py](std::size_t i) { py[i] = px[i] * 10; });
+    graph.add(N, Reads(x), Writes(y), [px, py](std::size_t i) { py[i] = px[i] * 10; });
 
     graph.run(4);
 

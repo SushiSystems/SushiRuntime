@@ -38,7 +38,7 @@
 
 namespace SushiRuntime
 {
-    namespace Device
+    namespace Internal::Device
     {
         namespace
         {
@@ -98,11 +98,11 @@ namespace SushiRuntime
             /**
              * @brief Returns this thread's next rotation position and advances it.
              * @param is_fallback True to advance the one cursor every device-less node shares.
-             * @pre numa_node is in [0, Core::MAX_NUMA_NODES) unless is_fallback.
+             * @pre numa_node is in [0, MAX_NUMA_NODES) unless is_fallback.
              */
             std::size_t next_rotation(bool is_fallback, int numa_node) noexcept
             {
-                static thread_local std::size_t numa_cursors[Core::MAX_NUMA_NODES] = {0};
+                static thread_local std::size_t numa_cursors[MAX_NUMA_NODES] = {0};
                 static thread_local std::size_t fallback_cursor = 0;
 
                 if (is_fallback)
@@ -111,10 +111,10 @@ namespace SushiRuntime
             }
 
             /** @brief Builds the exception an operation on an empty set throws. */
-            Core::SushiException empty_set_error()
+            SushiException empty_set_error()
             {
-                return Core::SushiException(Core::Error{
-                    Core::Errc::unsupported,
+                return SushiException(Error{
+                    Errc::unsupported,
                     "The device set holds no device, so no NUMA node resolves to one."});
             }
         } // namespace
@@ -146,7 +146,7 @@ namespace SushiRuntime
                 info.index = index;
 
                 if (info.numa_node < 0
-                    || static_cast<std::size_t>(info.numa_node) >= Core::MAX_NUMA_NODES)
+                    || static_cast<std::size_t>(info.numa_node) >= MAX_NUMA_NODES)
                 {
                     SR_LOG_WARN("Device {} reported invalid NUMA {}. Falling back to NUMA 0 for "
                                 "queue mapping.",
@@ -288,8 +288,8 @@ namespace SushiRuntime
             if (index < infos_.size())
                 return;
 
-            throw Core::SushiException(Core::Error{
-                Core::Errc::invalid_access,
+            throw SushiException(Error{
+                Errc::invalid_access,
                 "Device index " + std::to_string(index) + " is out of bounds; the set holds "
                     + std::to_string(infos_.size()) + " device(s)."});
         }
@@ -334,7 +334,7 @@ namespace SushiRuntime
             for (const DeviceInfo& info : infos_)
             {
                 outside_route_.devices.push_back(info.index);
-                // numa_node was clamped to [0, Core::MAX_NUMA_NODES) by the constructor.
+                // numa_node was clamped to [0, MAX_NUMA_NODES) by the constructor.
                 const std::size_t node = static_cast<std::size_t>(info.numa_node);
                 if (node + 1 > node_count)
                     node_count = node + 1;

@@ -36,7 +36,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Offers each offloadable node a worker dispatches to the installed coordinator.
@@ -50,7 +50,7 @@ namespace SushiRuntime
                  * @pre The pool runs no node.
                  * @param coordinator Not owned; null removes the installed one.
                  */
-                void install(Graph::OffloadCoordinator* coordinator) noexcept
+                void install(Internal::Graph::OffloadCoordinator* coordinator) noexcept
                 {
                     coordinator_ = coordinator;
                 }
@@ -65,8 +65,8 @@ namespace SushiRuntime
                     if (coordinator_ == nullptr || !task.is_graph_node())
                         return false;
 
-                    Graph::Node& node = static_cast<Graph::Node&>(task);
-                    const Graph::OffloadState* state = node.offload_state();
+                    Internal::Graph::Node& node = static_cast<Internal::Graph::Node&>(task);
+                    const Internal::Graph::OffloadState* state = node.offload_state();
                     if (state == nullptr || !state->offloadable)
                         return false;
 
@@ -78,7 +78,7 @@ namespace SushiRuntime
 
             private:
                 /// @brief Coordinator nodes are offered to; null when none is installed.
-                Graph::OffloadCoordinator* coordinator_ = nullptr;
+                Internal::Graph::OffloadCoordinator* coordinator_ = nullptr;
         };
 
     } // namespace Scheduler

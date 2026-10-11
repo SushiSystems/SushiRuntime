@@ -42,11 +42,11 @@
 
 using namespace SushiRuntime;
 
-static_assert(std::is_nothrow_move_constructible<API::State<std::uint32_t>>::value,
+static_assert(std::is_nothrow_move_constructible<State<std::uint32_t>>::value,
               "a State must move without throwing");
-static_assert(std::is_nothrow_move_assignable<API::State<std::uint32_t>>::value,
+static_assert(std::is_nothrow_move_assignable<State<std::uint32_t>>::value,
               "a State must move-assign without throwing");
-static_assert(!std::is_copy_constructible<API::State<std::uint32_t>>::value,
+static_assert(!std::is_copy_constructible<State<std::uint32_t>>::value,
               "a State must not copy");
 
 namespace
@@ -62,7 +62,7 @@ namespace
     constexpr Word MARK = 1000;
 
     /** @brief Allocates a State whose current field holds index plus SEED and next CANARY. */
-    API::State<Word> seeded_state(Runtime& rt)
+    State<Word> seeded_state(Runtime& rt)
     {
         auto state = rt.state<Word>(WIDTH);
         for (std::size_t i = 0; i < WIDTH; ++i)
@@ -74,7 +74,7 @@ namespace
     }
 
     /** @brief Adds the rule next = current + 1 over the whole of field. */
-    void add_increment(API::Graph& graph, API::State<Word>& field)
+    void add_increment(Graph& graph, State<Word>& field)
     {
         graph.add(field, [](std::size_t i, const Word* current, Word* next)
         {
@@ -83,7 +83,7 @@ namespace
     }
 
     /** @brief Expects the first count words of field to hold index plus SEED plus added. */
-    void expect_advanced(const API::State<Word>& field, Word added, std::size_t count = WIDTH)
+    void expect_advanced(const State<Word>& field, Word added, std::size_t count = WIDTH)
     {
         ASSERT_EQ(field.size(), WIDTH);
         for (std::size_t i = 0; i < count; ++i)
@@ -99,7 +99,7 @@ TEST(Integration_StateMove, ARuleFollowsAStateMovedAfterAdd)
     auto graph = rt.graph();
     add_increment(graph, field);
 
-    API::State<Word> moved = std::move(field);
+    State<Word> moved = std::move(field);
     graph.run(STEPS);
 
     expect_advanced(moved, static_cast<Word>(STEPS));
@@ -109,7 +109,7 @@ TEST(Integration_StateMove, ARuleFollowsAStateMovedAfterAdd)
 TEST(Integration_StateMove, ARuleFollowsAStateItsVectorReallocated)
 {
     auto rt = Runtime::create();
-    std::vector<API::State<Word>> fields;
+    std::vector<State<Word>> fields;
     fields.push_back(seeded_state(rt));
     auto graph = rt.graph();
     add_increment(graph, fields[0]);
@@ -130,14 +130,14 @@ TEST(Integration_StateMove, ACoupledRuleFollowsItsMovedStates)
     auto out = seeded_state(rt);
     auto input = seeded_state(rt);
     auto graph = rt.graph();
-    graph.add(API::Coupled(out, input),
+    graph.add(Coupled(out, input),
               [](std::size_t i, const Word* current, Word* next, const Word* other)
               {
                   next[i] = current[i] + other[i];
               });
 
-    API::State<Word> moved_input = std::move(input);
-    API::State<Word> moved_out = std::move(out);
+    State<Word> moved_input = std::move(input);
+    State<Word> moved_out = std::move(out);
     graph.run(std::size_t{2});
 
     for (std::size_t i = 0; i < WIDTH; ++i)
@@ -155,10 +155,10 @@ TEST(Integration_StateMove, ADynamicStateRuleFollowsAMovedState)
     auto field = seeded_state(rt);
     std::size_t live = PREFIX;
     auto graph = rt.graph();
-    graph.add(API::sized([&live] { return live; }), field,
+    graph.add(sized([&live] { return live; }), field,
               [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
-    API::State<Word> moved = std::move(field);
+    State<Word> moved = std::move(field);
     graph.run(STEPS);
 
     EXPECT_EQ(graph.compile_count(), 1u);
@@ -168,10 +168,10 @@ TEST(Integration_StateMove, ADynamicStateRuleFollowsAMovedState)
 /** @brief Tests what a State writes into its view at an advance, a move and its destruction. */
 TEST(Integration_StateMove, TheViewFollowsAdvanceMoveAndDestruction)
 {
-    using API::detail::HandleAccess;
+    using detail::HandleAccess;
 
     auto rt = Runtime::create();
-    std::shared_ptr<API::detail::StateView<Word>> view;
+    std::shared_ptr<detail::StateView<Word>> view;
     {
         auto field = seeded_state(rt);
         Word* const first = field.current();
@@ -185,7 +185,7 @@ TEST(Integration_StateMove, TheViewFollowsAdvanceMoveAndDestruction)
         EXPECT_EQ(view->current, second);
         EXPECT_EQ(view->next, first);
 
-        API::State<Word> moved = std::move(field);
+        State<Word> moved = std::move(field);
         EXPECT_EQ(HandleAccess::view(moved), view) << "the moved-to State must keep the view";
         EXPECT_EQ(view->current, second);
 
@@ -199,7 +199,7 @@ TEST(Integration_StateMove, TheViewFollowsAdvanceMoveAndDestruction)
     HandleAccess::advance(*view);
     EXPECT_EQ(view->current, nullptr) << "a view without its State must stay empty";
 
-    API::State<Word> empty;
+    State<Word> empty;
     const auto unowned = HandleAccess::view(empty);
     ASSERT_NE(unowned, nullptr);
     EXPECT_EQ(unowned->current, nullptr);
@@ -219,7 +219,7 @@ TEST(Integration_StateMove, AStateAssignedOverRefusesTheRun)
 
     const auto refused = graph.try_run();
     ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, Core::Errc::dangling_resource);
+    EXPECT_EQ(refused.error().code, Errc::dangling_resource);
 }
 
 /** @brief Tests that a late-bound State rule replayed after one step reads the current field. */
@@ -231,15 +231,15 @@ TEST(Integration_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentFi
     std::size_t live = WIDTH;
 
     auto graph = rt.graph();
-    graph.add(WIDTH, API::Reads{}, API::Writes(field),
+    graph.add(WIDTH, Reads{}, Writes(field),
               [second](std::size_t i) { second[i] = MARK; });
-    graph.add(API::sized([&live] { return live; }), field,
+    graph.add(sized([&live] { return live; }), field,
               [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
     graph.run();
     ASSERT_EQ(field.current(), second);
 
     // The first rule still writes `second`, which is now the field the State rule reads.
-    Graph::TaskGraph replayed;
+    Internal::Graph::TaskGraph replayed;
     std::int32_t waited_on = -1;
     graph.recorder().replay(replayed, [&](std::size_t rule, std::size_t)
     {

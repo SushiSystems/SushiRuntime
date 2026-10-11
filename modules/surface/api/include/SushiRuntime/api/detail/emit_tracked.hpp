@@ -42,64 +42,61 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /**
+         * @brief Builds the replay of a launch ordered by the regions it names.
+         * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
+         * @param width Launch width stamped on the node.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <class Launch, class F>
+        auto launch_node(std::vector<Internal::Memory::ResourceRegion> reads,
+                         std::vector<Internal::Memory::ResourceRegion> writes,
+                         Launch launch, F&& fn, std::size_t width)
         {
-            /**
-             * @brief Builds the replay of a launch ordered by the regions it names.
-             * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
-             * @param width Launch width stamped on the node.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            template <class Launch, class F>
-            auto launch_node(std::vector<Memory::ResourceRegion> reads,
-                             std::vector<Memory::ResourceRegion> writes,
-                             Launch launch, F&& fn, std::size_t width)
+            return [fn = std::forward<F>(fn), launch, reads = std::move(reads),
+                    writes = std::move(writes), width]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                    std::optional<std::uint32_t> registration)
             {
-                return [fn = std::forward<F>(fn), launch, reads = std::move(reads),
-                        writes = std::move(writes), width]
-                       (::SushiRuntime::Graph::TaskGraph& bg,
-                        std::optional<std::uint32_t> registration)
+                bg.add_node([fn, launch](sycl::handler& h)
                 {
-                    bg.add_node([fn, launch](sycl::handler& h)
-                    {
-                        submit_launch(h, launch, fn);
-                    }, reads, writes, {}, registration).baked_width = width;
-                };
-            }
+                    submit_launch(h, launch, fn);
+                }, reads, writes, {}, registration).baked_width = width;
+            };
+        }
 
-            /** @brief Builds the replay of a launch that drives the handler over [0, n) itself. */
-            template <class F>
-            auto range_node(std::vector<Memory::ResourceRegion> reads,
-                            std::vector<Memory::ResourceRegion> writes,
-                            std::size_t n, F&& fn, std::size_t width)
+        /** @brief Builds the replay of a launch that drives the handler over [0, n) itself. */
+        template <class F>
+        auto range_node(std::vector<Internal::Memory::ResourceRegion> reads,
+                        std::vector<Internal::Memory::ResourceRegion> writes,
+                        std::size_t n, F&& fn, std::size_t width)
+        {
+            return [fn = std::forward<F>(fn), n, reads = std::move(reads),
+                    writes = std::move(writes), width]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                    std::optional<std::uint32_t> registration)
             {
-                return [fn = std::forward<F>(fn), n, reads = std::move(reads),
-                        writes = std::move(writes), width]
-                       (::SushiRuntime::Graph::TaskGraph& bg,
-                        std::optional<std::uint32_t> registration)
+                bg.add_node([fn, n](sycl::handler& h)
                 {
-                    bg.add_node([fn, n](sycl::handler& h)
-                    {
-                        fn(std::size_t{0}, n, h);
-                    }, reads, writes, {}, registration).baked_width = width;
-                };
-            }
+                    fn(std::size_t{0}, n, h);
+                }, reads, writes, {}, registration).baked_width = width;
+            };
+        }
 
-            /** @brief Builds the replay of a raw command group. */
-            template <class F>
-            auto raw_node(std::vector<Memory::ResourceRegion> reads,
-                          std::vector<Memory::ResourceRegion> writes, F&& fn, std::size_t width)
+        /** @brief Builds the replay of a raw command group. */
+        template <class F>
+        auto raw_node(std::vector<Internal::Memory::ResourceRegion> reads,
+                      std::vector<Internal::Memory::ResourceRegion> writes, F&& fn, std::size_t width)
+        {
+            return [fn = std::forward<F>(fn), reads = std::move(reads),
+                    writes = std::move(writes), width]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                    std::optional<std::uint32_t> registration)
             {
-                return [fn = std::forward<F>(fn), reads = std::move(reads),
-                        writes = std::move(writes), width]
-                       (::SushiRuntime::Graph::TaskGraph& bg,
-                        std::optional<std::uint32_t> registration)
-                {
-                    bg.add_node(fn, reads, writes, {}, registration).baked_width = width;
-                };
-            }
-        } // namespace detail
-    } // namespace API
+                bg.add_node(fn, reads, writes, {}, registration).baked_width = width;
+            };
+        }
+    } // namespace detail
 } // namespace SushiRuntime

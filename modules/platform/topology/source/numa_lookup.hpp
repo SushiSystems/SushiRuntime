@@ -36,7 +36,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         /**
          * @brief Returns the OS index of the NUMA node local to a hwloc object.

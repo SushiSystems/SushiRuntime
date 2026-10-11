@@ -39,8 +39,8 @@
 #include "test_helpers.hpp"
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Graph;
+using namespace SushiRuntime::Internal::Execution;
+using namespace SushiRuntime::Internal::Graph;
 using SushiRuntime::Test::make_order_recorder;
 
 /**

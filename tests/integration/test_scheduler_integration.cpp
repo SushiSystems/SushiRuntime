@@ -38,8 +38,8 @@
 #include "test_helpers.hpp"
 #include "scheduler_fixture.hpp"
 
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Scheduler;
+using namespace SushiRuntime::Internal::Execution;
+using namespace SushiRuntime::Internal::Scheduler;
 using SushiRuntime::Test::make_scheduler;
 using SushiRuntime::Test::AtomicCounterTask;
 using SushiRuntime::Test::PriorityTrackingTask;

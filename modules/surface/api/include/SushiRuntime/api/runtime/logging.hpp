@@ -33,8 +33,5 @@
 
 namespace SushiRuntime
 {
-    using Core::LogLevel;
-    using Core::set_log_level;
-    using Core::set_log_sink;
 
 } // namespace SushiRuntime

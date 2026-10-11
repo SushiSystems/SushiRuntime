@@ -50,7 +50,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Polls hardware events in a lock-free manner.
@@ -62,7 +62,7 @@ namespace SushiRuntime
                 struct PolledEvent
                 {
                     sycl::event event;
-                    SushiRuntime::Scheduler::Task* task = nullptr;
+                    SushiRuntime::Internal::Scheduler::Task* task = nullptr;
                     /**
                      * @brief Marks synchronous host work as already complete.
                      * @see modules/engine/scheduler/README.md
@@ -85,7 +85,7 @@ namespace SushiRuntime
                     std::uint32_t step = 0;
 
                     /** @brief The dispatched node's widths, snapshotted where the event is armed. */
-                    SushiRuntime::Graph::NodeWidths widths{};
+                    SushiRuntime::Internal::Graph::NodeWidths widths{};
                 };
 
                 /**
@@ -169,7 +169,7 @@ namespace SushiRuntime
                  * @pre No worker is polling.
                  * @param offload Not owned; null for none.
                  */
-                void set_offload_coordinator(Graph::OffloadCoordinator* offload) noexcept
+                void set_offload_coordinator(Internal::Graph::OffloadCoordinator* offload) noexcept
                 {
                     offload_ = offload;
                 }
@@ -184,7 +184,7 @@ namespace SushiRuntime
                  * @brief Wires the plan's event ledger for the round about to run.
                  * @param ledger The plan's ledger, or null when it does not profile.
                  */
-                void set_ledger(Observability::ProfilingLedger* ledger) noexcept
+                void set_ledger(Internal::Observability::ProfilingLedger* ledger) noexcept
                 {
                     ledger_.store(ledger, std::memory_order_release);
                 }
@@ -228,11 +228,11 @@ namespace SushiRuntime
                 QuiescenceLatch* quiescence_ = nullptr;
 
                 /** @brief Told of each locally completed graph node; null for none. */
-                Graph::OffloadCoordinator* offload_ = nullptr;
+                Internal::Graph::OffloadCoordinator* offload_ = nullptr;
                 /** @brief Whether to accumulate per-node kernel timing on completion. */
                 std::atomic<bool> profiling_{false};
                 /** @brief The armed round's event ledger, or null when it does not profile. */
-                std::atomic<Observability::ProfilingLedger*> ledger_{nullptr};
+                std::atomic<Internal::Observability::ProfilingLedger*> ledger_{nullptr};
                 /** @brief Maximum value for the backoff counter. */
                 static constexpr size_t MAX_BACKOFF = 64;
                 /** @brief No-progress polls before forcing a blocking wait. */
@@ -364,10 +364,10 @@ namespace SushiRuntime
                  * @pre offload_ is not null.
                  * @param task The reaped task; null or a non-graph task is not reported.
                  */
-                void report_local_completion(SushiRuntime::Scheduler::Task* task) noexcept
+                void report_local_completion(SushiRuntime::Internal::Scheduler::Task* task) noexcept
                 {
                     if (task && task->is_graph_node())
-                        offload_->on_local_completion(*static_cast<Graph::Node*>(task));
+                        offload_->on_local_completion(*static_cast<Internal::Graph::Node*>(task));
                 }
 
                 /**
@@ -379,12 +379,12 @@ namespace SushiRuntime
                     if (!pe.task)
                         return;
 
-                    Observability::EventTimestamps times;
-                    const bool have_start_end = pe.has_event && Observability::read_event_timestamps(pe.event, times);
+                    Internal::Observability::EventTimestamps times;
+                    const bool have_start_end = pe.has_event && Internal::Observability::read_event_timestamps(pe.event, times);
 
                     if (have_start_end)
                     {
-                        if (Observability::ProfilingLedger* ledger =
+                        if (Internal::Observability::ProfilingLedger* ledger =
                                 ledger_.load(std::memory_order_acquire))
                         {
                             if (times.has_submit && ledger->is_pairing_owner(pe.task))
@@ -392,11 +392,11 @@ namespace SushiRuntime
 
                             if (pe.task->is_graph_node())
                             {
-                                auto* node = static_cast<SushiRuntime::Graph::Node*>(pe.task);
+                                auto* node = static_cast<SushiRuntime::Internal::Graph::Node*>(pe.task);
                                 const std::uint32_t slot = ledger->claim_slot(node->registration_index);
-                                if (slot != Observability::ProfilingLedger::npos)
+                                if (slot != Internal::Observability::ProfilingLedger::npos)
                                 {
-                                    Observability::NodeEventRecord rec{};
+                                    Internal::Observability::NodeEventRecord rec{};
                                     rec.node_index = node->registration_index;
                                     rec.invocation = pe.step;
                                     rec.launched_width = pe.widths.launched;
@@ -418,18 +418,18 @@ namespace SushiRuntime
                  * @see modules/engine/scheduler/README.md
                  */
                 template<typename QueueType>
-                void trigger_successors(SushiRuntime::Scheduler::Task* task, QueueType& queue)
+                void trigger_successors(SushiRuntime::Internal::Scheduler::Task* task, QueueType& queue)
                 {
                     if (!task)
                     {
                         return;
                     }
 
-                    static thread_local SushiRuntime::Scheduler::ReadySink freed;
+                    static thread_local SushiRuntime::Internal::Scheduler::ReadySink freed;
                     freed.clear();
                     task->on_complete(freed);
 
-                    for (SushiRuntime::Scheduler::Task* succ : freed)
+                    for (SushiRuntime::Internal::Scheduler::Task* succ : freed)
                     {
                         succ->add_ref();
                         add_inflight();

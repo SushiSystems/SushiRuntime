@@ -38,12 +38,12 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Interface for tasks that can be split for load balancing.
          */
-        class SR_TYPE_API Task : public Core::RefCounted
+        class SR_TYPE_API Task : public RefCounted
         {
         public:
             enum class ExecutionMode { KERNEL, HOST };

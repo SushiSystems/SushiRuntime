@@ -62,15 +62,15 @@
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
-using namespace SushiRuntime::Graph::Literals;
-using SushiRuntime::Execution::RuntimeContext;
+using namespace SushiRuntime::Internal::Graph::Literals;
+using SushiRuntime::Internal::Execution::RuntimeContext;
 using SushiRuntime::Test::MeasurementLabel;
 using SushiRuntime::Test::RunStatistics;
 
 namespace
 {
     /** @brief Names the kernel that writes each input element plus one to the output. */
-    constexpr Graph::OpID K_INCREMENT = "benchmark.increment"_op;
+    constexpr Internal::Graph::OpID K_INCREMENT = "benchmark.increment"_op;
 
     /** @brief Bounds every wait on a condition, so a broken cluster fails a test and hangs none. */
     constexpr std::chrono::seconds K_WAIT{60};
@@ -86,7 +86,7 @@ namespace
 
     /** @brief Runs K_INCREMENT: output[i] = input[i] + 1 over the output's element count. */
     sycl::event increment(sycl::queue& queue, span<const BufferView> inputs,
-                          span<const BufferView> outputs, const Graph::TaskMetadata&)
+                          span<const BufferView> outputs, const Internal::Graph::TaskMetadata&)
     {
         const float* source = inputs[0].as<const float>();
         float* target = outputs[0].as<float>();
@@ -197,7 +197,7 @@ namespace
         public:
             /**
              * @brief Attaches a master on the pair's master end, then starts the workers.
-             * @throws Core::SushiException When the master does not start.
+             * @throws SushiException When the master does not start.
              */
             OffloadRig(const TransportPair& transports, std::size_t worker_count)
                 : kernels_(make_kernels()),
@@ -297,8 +297,8 @@ namespace
             SharedFloats(RuntimeContext& context, std::size_t count)
                 : context_(&context), count_(count)
             {
-                Memory::USMRequest request;
-                request.kind = Memory::USMKind::Shared;
+                Internal::Memory::USMRequest request;
+                request.kind = Internal::Memory::USMKind::Shared;
                 request.bytes = bytes();
                 data_ = static_cast<float*>(context.memory().allocate(request));
                 context.offload()->share(data_, bytes());
@@ -403,10 +403,10 @@ namespace
             }
 
             /** @brief Builds and compiles a graph of one registered task per buffer pair. */
-            [[nodiscard]] Graph::CompiledGraph compile() const
+            [[nodiscard]] Internal::Graph::CompiledGraph compile() const
             {
-                Graph::TaskGraph graph(rig_.master().offload());
-                Graph::TaskMetadata metadata;
+                Internal::Graph::TaskGraph graph(rig_.master().offload());
+                Internal::Graph::TaskMetadata metadata;
                 metadata.name = "benchmark_increment";
                 metadata.op_id = K_INCREMENT;
 
@@ -471,7 +471,7 @@ namespace
         {
             base += 1.0f;
             batch.refill(base);
-            Graph::CompiledGraph compiled = batch.compile();
+            Internal::Graph::CompiledGraph compiled = batch.compile();
 
             const auto begin = std::chrono::steady_clock::now();
             rig.master().get_execution_engine().execute(compiled);

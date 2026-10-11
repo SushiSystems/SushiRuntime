@@ -62,10 +62,10 @@ namespace
     constexpr std::size_t TILE_ROWS = 3;
     constexpr std::size_t TILE_COLS = 4;
 
-    constexpr API::DynamicGraph::RegionKey KEY_SCALE = 10;
-    constexpr API::DynamicGraph::RegionKey KEY_MIX   = 20;
-    constexpr API::DynamicGraph::RegionKey KEY_FOLD  = 30;
-    constexpr API::DynamicGraph::RegionKey KEY_FIELD = 40;
+    constexpr DynamicGraph::RegionKey KEY_SCALE = 10;
+    constexpr DynamicGraph::RegionKey KEY_MIX   = 20;
+    constexpr DynamicGraph::RegionKey KEY_FOLD  = 30;
+    constexpr DynamicGraph::RegionKey KEY_FIELD = 40;
 
     /** @brief Holds every output of one workload run, copied out, in a fixed order. */
     struct Snapshot
@@ -73,7 +73,7 @@ namespace
         std::vector<const char*> names; /**< One label per image, for failure messages. */
         std::vector<Image> images;      /**< The output buffers, in the order they were taken. */
         /** @brief Layer the last blocking run reported. */
-        Observability::ExecutionLayer layer = Observability::ExecutionLayer::Scheduler;
+        Internal::Observability::ExecutionLayer layer = Internal::Observability::ExecutionLayer::Scheduler;
     };
 
     /** @brief Appends one named output to a snapshot. */
@@ -112,9 +112,9 @@ namespace
     }
 
     /** @brief Returns a configuration that keeps every plan on the scheduler layer. */
-    API::RuntimeConfig scheduler_only()
+    RuntimeConfig scheduler_only()
     {
-        API::RuntimeConfig config;
+        RuntimeConfig config;
         config.force_scheduler = true;
         return config;
     }
@@ -128,14 +128,14 @@ namespace
 
     /**
      * @brief Steps a graph the given way and records the layer a blocking run reports.
-     * @tparam Runnable API::Graph or API::DynamicGraph.
+     * @tparam Runnable Graph or DynamicGraph.
      */
     template <class Runnable>
     void drive(Runnable& graph, Drive how, std::size_t steps, Snapshot& shot)
     {
         if (how == Drive::Blocking)
         {
-            const Observability::RunReport report = graph.run(steps);
+            const Internal::Observability::RunReport report = graph.run(steps);
             EXPECT_TRUE(report.is_successful);
             shot.layer = report.layer;
             return;
@@ -163,10 +163,10 @@ namespace
             }
         }
 
-        API::Buffer<Word> scale; /**< Rewritten from itself every step. */
-        API::Buffer<Word> mix;   /**< Reads scale, so it orders after it. */
-        API::Buffer<Word> fold;  /**< Reads scale and mix, so it orders last. */
-        API::State<Word> field;  /**< Evolves on its own, independent of the buffers. */
+        Buffer<Word> scale; /**< Rewritten from itself every step. */
+        Buffer<Word> mix;   /**< Reads scale, so it orders after it. */
+        Buffer<Word> fold;  /**< Reads scale and mix, so it orders last. */
+        State<Word> field;  /**< Evolves on its own, independent of the buffers. */
     };
 
     /** @brief Copies every tile output into a snapshot. */
@@ -180,13 +180,13 @@ namespace
 
     /**
      * @brief Records the kernel that rewrites the scale buffer.
-     * @tparam Builder API::Graph or API::Region.
+     * @tparam Builder Graph or Region.
      */
     template <class Builder>
     void record_scale(Builder& builder, Tiles& tiles)
     {
         Word* scale = tiles.scale.data();
-        builder.add(TILE_N, API::Reads(tiles.scale), API::Writes(tiles.scale),
+        builder.add(TILE_N, Reads(tiles.scale), Writes(tiles.scale),
                     [scale](std::size_t i)
                     {
                         scale[i] = scale[i] * 31u + static_cast<Word>(i) + 1u;
@@ -195,14 +195,14 @@ namespace
 
     /**
      * @brief Records the kernel that mixes scale into the mix buffer.
-     * @tparam Builder API::Graph or API::Region.
+     * @tparam Builder Graph or Region.
      */
     template <class Builder>
     void record_mix(Builder& builder, Tiles& tiles)
     {
         const Word* scale = tiles.scale.data();
         Word* mix = tiles.mix.data();
-        builder.add(TILE_N, API::Reads(tiles.scale), API::Writes(tiles.mix),
+        builder.add(TILE_N, Reads(tiles.scale), Writes(tiles.mix),
                     [scale, mix](std::size_t i)
                     {
                         mix[i] = (mix[i] ^ (scale[i] * 2654435761u)) + 7u;
@@ -211,7 +211,7 @@ namespace
 
     /**
      * @brief Records the kernel that folds scale and mix into the fold buffer.
-     * @tparam Builder API::Graph or API::Region.
+     * @tparam Builder Graph or Region.
      */
     template <class Builder>
     void record_fold(Builder& builder, Tiles& tiles)
@@ -219,7 +219,7 @@ namespace
         const Word* scale = tiles.scale.data();
         const Word* mix = tiles.mix.data();
         Word* fold = tiles.fold.data();
-        builder.add(TILE_N, API::Reads(tiles.scale, tiles.mix), API::Writes(tiles.fold),
+        builder.add(TILE_N, Reads(tiles.scale, tiles.mix), Writes(tiles.fold),
                     [scale, mix, fold](std::size_t i)
                     {
                         fold[i] = fold[i] * 17u + scale[i] + mix[i];
@@ -228,7 +228,7 @@ namespace
 
     /**
      * @brief Records the per-step update rule of the State.
-     * @tparam Builder API::Graph or API::Region.
+     * @tparam Builder Graph or Region.
      */
     template <class Builder>
     void record_field(Builder& builder, Tiles& tiles)
@@ -356,7 +356,7 @@ namespace
      * @tparam Pass A trivially copyable type with a const apply().
      */
     template <class Pass>
-    void record_pass(API::Graph& g, const API::Reads& reads, const API::Writes& writes,
+    void record_pass(Graph& g, const Reads& reads, const Writes& writes,
                      Pass pass, PassSite site)
     {
         if (site == PassSite::Host)
@@ -391,13 +391,13 @@ namespace
         Word* pd = d.data();
 
         auto g = rt.graph();
-        g.add(HOST_N, API::Reads(a), API::Writes(a),
+        g.add(HOST_N, Reads(a), Writes(a),
               [pa](std::size_t i) { pa[i] = pa[i] * 31u + static_cast<Word>(i) + 1u; });
-        record_pass(g, API::Reads(a), API::Writes(b), MixPass{pa, pb}, site);
-        g.add(HOST_N, API::Reads(b), API::Writes(c),
+        record_pass(g, Reads(a), Writes(b), MixPass{pa, pb}, site);
+        g.add(HOST_N, Reads(b), Writes(c),
               [pb, pc](std::size_t i) { pc[i] = pc[i] * 17u + pb[i]; });
-        record_pass(g, API::Reads(c), API::Writes(d), ScanPass{pc, pd}, site);
-        g.add(HOST_N, API::Reads(a, d), API::Writes(a),
+        record_pass(g, Reads(c), Writes(d), ScanPass{pc, pd}, site);
+        g.add(HOST_N, Reads(a, d), Writes(a),
               [pa, pd](std::size_t i) { pa[i] += pd[i]; });
 
         Snapshot shot;
@@ -482,7 +482,7 @@ namespace
     }
 
     /** @brief Allocates a grid-sized buffer on a device of @p rt holding the starting words. */
-    API::Buffer<Word> seeded_grid(Runtime& rt, API::DeviceIndex device = API::DeviceIndex{0})
+    Buffer<Word> seeded_grid(Runtime& rt, DeviceIndex device = DeviceIndex{0})
     {
         auto grid = rt.buffer<Word>(GRID_N, device);
         for (std::size_t k = 0; k < GRID_N; ++k)
@@ -491,7 +491,7 @@ namespace
     }
 
     /** @brief Allocates the read-only input grid on a device of @p rt. */
-    API::Buffer<Word> source_grid(Runtime& rt, API::DeviceIndex device = API::DeviceIndex{0})
+    Buffer<Word> source_grid(Runtime& rt, DeviceIndex device = DeviceIndex{0})
     {
         auto grid = rt.buffer<Word>(GRID_N, device);
         for (std::size_t k = 0; k < GRID_N; ++k)
@@ -523,9 +523,9 @@ namespace
         Word* tiles_out  = by_tiles.data();
 
         auto g = rt.graph();
-        g.add(box_by_origin(), API::Reads(source, by_origin), API::Writes(by_origin),
+        g.add(box_by_origin(), Reads(source, by_origin), Writes(by_origin),
               [in, origin_out](sycl::id<2> idx) { stamp_cell(in, origin_out, idx[0], idx[1]); });
-        g.add(box_by_rebase(), API::Reads(source, by_rebase), API::Writes(by_rebase),
+        g.add(box_by_rebase(), Reads(source, by_rebase), Writes(by_rebase),
               [in, rebase_out](sycl::id<2> idx) { stamp_cell(in, rebase_out, idx[0], idx[1]); });
         g.add(box_by_origin(), In(source), InOut(by_capture),
               [](sycl::id<2> idx, const Word* captured_in, Word* captured_out)
@@ -538,7 +538,7 @@ namespace
             const std::size_t slot = (idx[0] - BOX_ROW0) * BOX_COLS + (idx[1] - BOX_COL0);
             next[slot] = stamp(cur[slot], in[cell], cell);
         });
-        g.add(box_tiles(), API::Reads(source, by_tiles), API::Writes(by_tiles),
+        g.add(box_tiles(), Reads(source, by_tiles), Writes(by_tiles),
               [in, tiles_out](sycl::nd_item<2> item)
               {
                   stamp_cell(in, tiles_out, item.get_global_id(0) + BOX_ROW0,
@@ -607,7 +607,7 @@ namespace
      */
     Snapshot run_placed_untracked_launches(Runtime& rt)
     {
-        const API::DeviceIndex device{rt.advanced().device_count() - 1};
+        const DeviceIndex device{rt.advanced().device_count() - 1};
         auto source    = source_grid(rt, device);
         auto by_extent = seeded_grid(rt, device);
         auto by_tiles  = seeded_grid(rt, device);
@@ -618,11 +618,11 @@ namespace
 
         // The two kernels are unordered; each is the only writer of its own buffer.
         auto g = rt.graph();
-        g.add_untracked(box_by_origin(), API::On(by_extent), [in, extent_out](sycl::id<2> idx)
+        g.add_untracked(box_by_origin(), On(by_extent), [in, extent_out](sycl::id<2> idx)
         {
             stamp_cell(in, extent_out, idx[0], idx[1]);
         });
-        g.add_untracked(box_tiles(), API::On(device), [in, tiles_out](sycl::nd_item<2> item)
+        g.add_untracked(box_tiles(), On(device), [in, tiles_out](sycl::nd_item<2> item)
         {
             stamp_cell(in, tiles_out, item.get_global_id(0) + BOX_ROW0,
                        item.get_global_id(1) + BOX_COL0);
@@ -660,9 +660,9 @@ TEST(Integration_LayerEquivalence, DynamicRegionsMatchOneStaticGraph)
     const Snapshot dynamic_default   = run_dynamic_tiles(chained_rt, script, Drive::Blocking);
     const Snapshot dynamic_scheduled = run_dynamic_tiles(scheduled_rt, script, Drive::Blocking);
 
-    EXPECT_EQ(static_chained.layer, Observability::ExecutionLayer::Chain)
+    EXPECT_EQ(static_chained.layer, Internal::Observability::ExecutionLayer::Chain)
         << "the static graph of tracked kernels must take the chain";
-    EXPECT_EQ(static_scheduled.layer, Observability::ExecutionLayer::Scheduler);
+    EXPECT_EQ(static_scheduled.layer, Internal::Observability::ExecutionLayer::Scheduler);
 
     expect_identical(static_chained, static_scheduled, "static chain vs static scheduler");
     expect_identical(static_chained, dynamic_default, "static chain vs dynamic");
@@ -683,8 +683,8 @@ TEST(Integration_LayerEquivalence, DroppedAndReaddedRegionMatchesStaticGraphs)
     const Snapshot dynamic_default   = run_dynamic_tiles(chained_rt, script, Drive::Blocking);
     const Snapshot dynamic_scheduled = run_dynamic_tiles(scheduled_rt, script, Drive::Blocking);
 
-    EXPECT_EQ(static_chained.layer, Observability::ExecutionLayer::Chain);
-    EXPECT_EQ(static_scheduled.layer, Observability::ExecutionLayer::Scheduler);
+    EXPECT_EQ(static_chained.layer, Internal::Observability::ExecutionLayer::Chain);
+    EXPECT_EQ(static_scheduled.layer, Internal::Observability::ExecutionLayer::Scheduler);
 
     expect_identical(static_chained, static_scheduled, "static chain vs static scheduler");
     expect_identical(static_chained, dynamic_default, "static chain vs dynamic");
@@ -702,8 +702,8 @@ TEST(Integration_LayerEquivalence, HostTasksAmongKernelsMatchAcrossLayers)
     const Snapshot host_scheduled = run_pass_chain(scheduled_rt, PassSite::Host);
     const Snapshot device_chained = run_pass_chain(default_rt, PassSite::Device);
 
-    EXPECT_EQ(host_scheduled.layer, Observability::ExecutionLayer::Scheduler);
-    EXPECT_EQ(device_chained.layer, Observability::ExecutionLayer::Chain)
+    EXPECT_EQ(host_scheduled.layer, Internal::Observability::ExecutionLayer::Scheduler);
+    EXPECT_EQ(device_chained.layer, Internal::Observability::ExecutionLayer::Chain)
         << "the same chain written as kernels only must take the chain";
 
     expect_identical(host_default, host_scheduled, "host tasks: default vs forced scheduler");
@@ -723,8 +723,8 @@ TEST(Integration_LayerEquivalence, AsyncStepsMatchBlockingRun)
     const Snapshot async_default      = run_static_tiles(chained_rt, script, Drive::Asynchronous);
     const Snapshot async_scheduled    = run_static_tiles(scheduled_rt, script, Drive::Asynchronous);
 
-    EXPECT_EQ(blocking_chained.layer, Observability::ExecutionLayer::Chain);
-    EXPECT_EQ(blocking_scheduled.layer, Observability::ExecutionLayer::Scheduler);
+    EXPECT_EQ(blocking_chained.layer, Internal::Observability::ExecutionLayer::Chain);
+    EXPECT_EQ(blocking_scheduled.layer, Internal::Observability::ExecutionLayer::Scheduler);
 
     expect_identical(blocking_chained, async_default, "run(N) on the chain vs run_async");
     expect_identical(blocking_scheduled, async_scheduled, "run(N) vs run_async, forced scheduler");
@@ -754,9 +754,9 @@ TEST(Integration_LayerEquivalence, OffsetLaunchFormsMatchAcrossLayers)
     const Snapshot chained   = run_tracked_launches(chained_rt);
     const Snapshot scheduled = run_tracked_launches(scheduled_rt);
 
-    EXPECT_EQ(chained.layer, Observability::ExecutionLayer::Chain)
+    EXPECT_EQ(chained.layer, Internal::Observability::ExecutionLayer::Chain)
         << "tracked Extent and NdRange kernels on one device must take the chain";
-    EXPECT_EQ(scheduled.layer, Observability::ExecutionLayer::Scheduler);
+    EXPECT_EQ(scheduled.layer, Internal::Observability::ExecutionLayer::Scheduler);
 
     expect_identical(reference, chained, "host reference vs chain");
     expect_identical(reference, scheduled, "host reference vs forced scheduler");
@@ -773,7 +773,7 @@ TEST(Integration_LayerEquivalence, UntrackedOffsetLaunchesMatchAcrossLayers)
     const Snapshot default_layer   = run_untracked_launches(default_rt);
     const Snapshot scheduler_layer = run_untracked_launches(scheduled_rt);
 
-    EXPECT_EQ(scheduler_layer.layer, Observability::ExecutionLayer::Scheduler);
+    EXPECT_EQ(scheduler_layer.layer, Internal::Observability::ExecutionLayer::Scheduler);
 
     expect_identical(reference, default_layer, "host reference vs default layer");
     expect_identical(reference, scheduler_layer, "host reference vs forced scheduler");
@@ -790,7 +790,7 @@ TEST(Integration_LayerEquivalence, PlacedUntrackedLaunchesMatchAcrossLayers)
     const Snapshot default_layer   = run_placed_untracked_launches(default_rt);
     const Snapshot scheduler_layer = run_placed_untracked_launches(scheduled_rt);
 
-    EXPECT_EQ(scheduler_layer.layer, Observability::ExecutionLayer::Scheduler);
+    EXPECT_EQ(scheduler_layer.layer, Internal::Observability::ExecutionLayer::Scheduler);
 
     expect_identical(reference, default_layer, "host reference vs default layer");
     expect_identical(reference, scheduler_layer, "host reference vs forced scheduler");

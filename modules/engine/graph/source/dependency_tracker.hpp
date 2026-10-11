@@ -37,7 +37,7 @@
 
 namespace SushiRuntime 
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         struct Node; 
 
@@ -50,7 +50,7 @@ namespace SushiRuntime
         {
             Node* task;
             bool is_write;
-            SushiRuntime::Memory::ResourceRegion region; /**< Byte interval this access touches. */
+            SushiRuntime::Internal::Memory::ResourceRegion region; /**< Byte interval this access touches. */
             AccessNode* prev; // Immutable once linked to the history
         };
 
@@ -59,7 +59,7 @@ namespace SushiRuntime
          *
          * Maintains an atomic pointer to the most recent access event, aligned to hardware cache lines to prevent false sharing.
          */
-        struct alignas(SushiRuntime::Core::CACHE_LINE_SIZE) ResourceState 
+        struct alignas(SushiRuntime::CACHE_LINE_SIZE) ResourceState 
         {
             /**
              * @brief Points atomically to the most recent access event in the history.
@@ -95,7 +95,7 @@ namespace SushiRuntime
                  * @brief Maps an allocation's identity to a shard index with a SplitMix64 hash.
                  * @see modules/engine/graph/README.md
                  */
-                inline size_t get_shard_idx(SushiRuntime::Memory::ResourceID base) const
+                inline size_t get_shard_idx(SushiRuntime::Internal::Memory::ResourceID base) const
                 {
                     uint64_t z = reinterpret_cast<uint64_t>(base);
                     z += 0x9e3779b97f4a7c15;
@@ -131,7 +131,7 @@ namespace SushiRuntime
                  * @param region The byte interval accessed; a bare base pointer names the whole
                  *        buffer.
                  */
-                void resolve(Node* node, const SushiRuntime::Memory::ResourceRegion& region, bool is_write);
+                void resolve(Node* node, const SushiRuntime::Internal::Memory::ResourceRegion& region, bool is_write);
 
                 /**
                  * @brief Enforces an explicit execution ordering constraint between two tasks.

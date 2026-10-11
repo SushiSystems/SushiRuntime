@@ -41,7 +41,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Represents a splittable work-stealing task over a contiguous index range.
@@ -79,7 +79,7 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Creates a new range task over [start, end).
-                 * @pre start <= end; a reversed range throws Core::SushiException.
+                 * @pre start <= end; a reversed range throws SushiException.
                  * @param name Persistent label, stored not copied.
                  */
                 template <typename Func>

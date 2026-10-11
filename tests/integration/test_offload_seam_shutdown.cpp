@@ -43,13 +43,13 @@ namespace
 {
     using SushiRuntime::make_sushi;
     using SushiRuntime::sushi_ptr;
-    using SushiRuntime::Graph::Node;
+    using SushiRuntime::Internal::Graph::Node;
 
     /** @brief Records, in its first stop(), whether the worker pool still runs a node. */
-    class PoolProbingCoordinator final : public SushiRuntime::Graph::OffloadCoordinator
+    class PoolProbingCoordinator final : public SushiRuntime::Internal::Graph::OffloadCoordinator
     {
         public:
-            void bind(SushiRuntime::Graph::OffloadSink& sink) override
+            void bind(SushiRuntime::Internal::Graph::OffloadSink& sink) override
             {
                 sink_ = &sink;
             }
@@ -74,7 +74,7 @@ namespace
 
             }
 
-            [[nodiscard]] SushiRuntime::Graph::OffloadStatistics
+            [[nodiscard]] SushiRuntime::Internal::Graph::OffloadStatistics
             statistics() const noexcept override
             {
                 return {};
@@ -134,7 +134,7 @@ namespace
             /// @brief Signalled when the probe node has run.
             std::condition_variable probe_ran_cv_;
             /// @brief The scheduler, as bind() received it.
-            SushiRuntime::Graph::OffloadSink* sink_ = nullptr;
+            SushiRuntime::Internal::Graph::OffloadSink* sink_ = nullptr;
             /// @brief The node the first stop() hands to the pool.
             sushi_ptr<Node> probe_;
             /// @brief Calls of stop().
@@ -155,7 +155,7 @@ TEST(Integration_OffloadSeam, ShutdownStopsCoordinatorBeforeEngine)
         std::make_shared<PoolProbingCoordinator>();
 
     {
-        SushiRuntime::Execution::RuntimeContext context;
+        SushiRuntime::Internal::Execution::RuntimeContext context;
         context.install_offload(coordinator);
 
         context.shutdown();

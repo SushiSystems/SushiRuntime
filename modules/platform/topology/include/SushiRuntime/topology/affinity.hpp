@@ -32,7 +32,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         /**
          * @brief Pins the calling thread to a specific logical CPU core.

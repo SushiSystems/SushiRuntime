@@ -39,7 +39,7 @@ using namespace SushiRuntime;
 namespace
 {
     /** @brief Runs a small graph and checks every element of its output. */
-    void expect_runs_correctly(API::Runtime& rt)
+    void expect_runs_correctly(Runtime& rt)
     {
         constexpr std::size_t N = 512;
 
@@ -48,7 +48,7 @@ namespace
         int* p = buf.data();
 
         auto g = rt.graph();
-        g.add(N, API::Reads{}, API::Writes(buf),
+        g.add(N, Reads{}, Writes(buf),
               [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
         g.run();
 
@@ -71,7 +71,7 @@ TEST(Integration_CoTenancy, DefaultsToOneWorkerPerCoreFromCoreZero)
 
     EXPECT_EQ(pool.count, machine_cores());
     EXPECT_EQ(pool.first_core, 0u);
-    EXPECT_EQ(pool.pinning, API::PinPolicy::Pin);
+    EXPECT_EQ(pool.pinning, PinPolicy::Pin);
 }
 
 /**
@@ -85,7 +85,7 @@ TEST(Integration_CoTenancy, ReservesTheCoresTheHostAskedFor)
 
     const std::size_t reserved = 2;
 
-    API::RuntimeConfig config;
+    RuntimeConfig config;
     config.worker_count = cores - reserved;
     config.first_core   = reserved;
 
@@ -101,7 +101,7 @@ TEST(Integration_CoTenancy, ReservesTheCoresTheHostAskedFor)
 /** @brief Tests that a single worker still executes the whole graph. */
 TEST(Integration_CoTenancy, ASingleWorkerStillExecutesTheWholeGraph)
 {
-    API::RuntimeConfig config;
+    RuntimeConfig config;
     config.worker_count = 1;
 
     auto rt = Runtime::create(config);
@@ -113,15 +113,15 @@ TEST(Integration_CoTenancy, ASingleWorkerStillExecutesTheWholeGraph)
 /** @brief Tests that the Float policy keeps the requested pool size and binds no worker. */
 TEST(Integration_CoTenancy, FloatPolicyRunsUnpinned)
 {
-    API::RuntimeConfig config;
+    RuntimeConfig config;
     config.worker_count = 2;
-    config.pinning      = API::PinPolicy::Float;
+    config.pinning      = PinPolicy::Float;
 
     auto rt = Runtime::create(config);
     const auto pool = rt.advanced().worker_pool();
 
     EXPECT_EQ(pool.count, 2u);
-    EXPECT_EQ(pool.pinning, API::PinPolicy::Float);
+    EXPECT_EQ(pool.pinning, PinPolicy::Float);
 
     expect_runs_correctly(rt);
 }
@@ -131,7 +131,7 @@ TEST(Integration_CoTenancy, AnOutOfRangeCoreRangeIsClampedNotIgnored)
 {
     const std::size_t cores = machine_cores();
 
-    API::RuntimeConfig config;
+    RuntimeConfig config;
     config.worker_count = 4;
     config.first_core   = cores + 8;   // entirely past the last core
 

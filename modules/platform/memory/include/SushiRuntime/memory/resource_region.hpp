@@ -32,7 +32,7 @@
 
 namespace SushiRuntime
 {
-    namespace Memory
+    namespace Internal::Memory
     {
         /**
          * @brief Identity of the allocation a resource region belongs to.

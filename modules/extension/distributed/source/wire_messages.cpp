@@ -36,7 +36,7 @@ namespace SushiRuntime::Distributed::Wire
         constexpr std::size_t K_OP_ID_BYTES = 4;
 
         /** @brief Holds the number of scalar parameters a task's metadata carries at most. */
-        constexpr std::size_t K_MAX_PARAMS = Graph::TaskMetadata::K_MAX_PARAMS;
+        constexpr std::size_t K_MAX_PARAMS = Internal::Graph::TaskMetadata::K_MAX_PARAMS;
 
         /** @brief Appends a handle as id, version, size: 20 bytes. */
         void put_handle(FieldWriter& writer, const BufferHandle& handle)
@@ -75,7 +75,7 @@ namespace SushiRuntime::Distributed::Wire
         }
 
         /** @brief Returns how many leading parameters reach the last one that is not zero. */
-        std::uint8_t used_param_count(const Graph::TaskMetadata& metadata) noexcept
+        std::uint8_t used_param_count(const Internal::Graph::TaskMetadata& metadata) noexcept
         {
             std::size_t count = K_MAX_PARAMS;
             while (count > 0 && metadata.params[count - 1] == 0)
@@ -84,7 +84,7 @@ namespace SushiRuntime::Distributed::Wire
         }
 
         /** @brief Appends task type, priority, affinity, then the used parameters. */
-        void put_metadata(FieldWriter& writer, const Graph::TaskMetadata& metadata)
+        void put_metadata(FieldWriter& writer, const Internal::Graph::TaskMetadata& metadata)
         {
             writer.put_enum(metadata.task_type);
             writer.put_i32(static_cast<std::int32_t>(metadata.priority));
@@ -97,10 +97,10 @@ namespace SushiRuntime::Distributed::Wire
         }
 
         /** @brief Reads the metadata fields; parameters past the sent count stay zero. */
-        void get_metadata(FieldReader& reader, Graph::TaskMetadata& metadata) noexcept
+        void get_metadata(FieldReader& reader, Internal::Graph::TaskMetadata& metadata) noexcept
         {
             metadata.task_type =
-                reader.get_enum(Graph::TaskType::NONE, Graph::TaskType::CONTROL_FLOW);
+                reader.get_enum(Internal::Graph::TaskType::NONE, Internal::Graph::TaskType::CONTROL_FLOW);
             metadata.priority = reader.get_i32();
             metadata.numa_affinity = reader.get_i32();
 
@@ -154,7 +154,7 @@ namespace SushiRuntime::Distributed::Wire
         FieldWriter writer(out);
         writer.put_bytes({worker_proof.data(), worker_proof.size()});
         writer.put_count(ops.size());
-        for (const Graph::OpID& op : ops)
+        for (const Internal::Graph::OpID& op : ops)
             writer.put_u32(op.value);
         writer.put_u32(max_jobs);
         writer.put_u64(cache_budget);
@@ -171,7 +171,7 @@ namespace SushiRuntime::Distributed::Wire
         out.ops.clear();
         out.ops.reserve(count);
         for (std::uint32_t index = 0; index < count; ++index)
-            out.ops.push_back(Graph::OpID(reader.get_u32()));
+            out.ops.push_back(Internal::Graph::OpID(reader.get_u32()));
 
         out.max_jobs = reader.get_u32();
         out.cache_budget = reader.get_u64();
@@ -250,9 +250,9 @@ namespace SushiRuntime::Distributed::Wire
                                              TaskDispatchMessage& out)
     {
         FieldReader reader(payload);
-        out.metadata = Graph::TaskMetadata{};
+        out.metadata = Internal::Graph::TaskMetadata{};
         out.task_id = reader.get_u64();
-        out.metadata.op_id = Graph::OpID(reader.get_u32());
+        out.metadata.op_id = Internal::Graph::OpID(reader.get_u32());
         get_metadata(reader, out.metadata);
         get_handles(reader, out.inputs);
         get_handles(reader, out.outputs);

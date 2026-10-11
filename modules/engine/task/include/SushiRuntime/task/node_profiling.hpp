@@ -33,7 +33,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         /**
          * @brief Holds per-run profiling accumulators, summed across a run's steps.

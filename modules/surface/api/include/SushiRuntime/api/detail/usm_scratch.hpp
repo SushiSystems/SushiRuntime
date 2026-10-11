@@ -39,33 +39,30 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /**
+         * @brief Allocates USM scratch that returns to its context when the last owner lets go.
+         * @param count Elements to allocate; must be non-zero.
+         * @throws SushiException If the allocation fails.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <typename T>
+        inline std::shared_ptr<T> make_usm_scratch(
+            std::shared_ptr<Internal::Execution::RuntimeContext> ctx,
+            std::size_t count, DeviceIndex device_index, Residency residency)
         {
-            /**
-             * @brief Allocates USM scratch that returns to its context when the last owner lets go.
-             * @param count Elements to allocate; must be non-zero.
-             * @throws Core::SushiException If the allocation fails.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            template <typename T>
-            inline std::shared_ptr<T> make_usm_scratch(
-                std::shared_ptr<Execution::RuntimeContext> ctx,
-                std::size_t count, DeviceIndex device_index, Residency residency)
-            {
-                const std::size_t bytes = count * sizeof(T);
-                void* raw = malloc_residency_on(*ctx, bytes, device_index, residency);
+            const std::size_t bytes = count * sizeof(T);
+            void* raw = malloc_residency_on(*ctx, bytes, device_index, residency);
 
-                if (raw == nullptr)
-                    throw Core::SushiException(Core::Error{
-                        Core::Errc::allocation_failed,
-                        "Recorder scratch allocation of " + std::to_string(bytes) +
-                        " bytes failed (out of USM memory)."});
+            if (raw == nullptr)
+                throw SushiException(Error{
+                    Errc::allocation_failed,
+                    "Recorder scratch allocation of " + std::to_string(bytes) +
+                    " bytes failed (out of USM memory)."});
 
-                return std::shared_ptr<T>(static_cast<T*>(raw),
-                                          [ctx](T* p) { ctx->memory().release(p); });
-            }
-        } // namespace detail
-    } // namespace API
+            return std::shared_ptr<T>(static_cast<T*>(raw),
+                                      [ctx](T* p) { ctx->memory().release(p); });
+        }
+    } // namespace detail
 } // namespace SushiRuntime

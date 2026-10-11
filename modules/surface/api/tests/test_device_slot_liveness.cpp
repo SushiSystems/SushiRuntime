@@ -45,7 +45,7 @@ namespace
     constexpr Word LIVE = 24;
 
     /** @brief Allocates a one-word Residency::Host buffer that holds value. */
-    API::Buffer<Word> host_slot(Runtime& rt, Word value)
+    Buffer<Word> host_slot(Runtime& rt, Word value)
     {
         auto slot = rt.buffer<Word>(1, DeviceIndex{0}, Residency::Host);
         slot[0] = value;
@@ -58,11 +58,11 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesTheRun)
 {
     auto rt = Runtime::create();
     auto target = rt.buffer<Word>(WIDTH);
-    std::optional<API::Buffer<Word>> counter(host_slot(rt, LIVE));
+    std::optional<Buffer<Word>> counter(host_slot(rt, LIVE));
     Word* words = target.data();
 
     auto graph = rt.graph();
-    graph.add(API::sized_from_device(*counter, 0), WIDTH, API::Reads(), API::Writes(target),
+    graph.add(sized_from_device(*counter, 0), WIDTH, Reads(), Writes(target),
               [words](std::size_t i) { words[i] = 1u; });
     EXPECT_EQ(graph.recorder().watched_allocation_count(), 2u)
         << "the target and the counter are both watched";
@@ -73,7 +73,7 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesTheRun)
     EXPECT_TRUE(graph.recorder().has_dangling_resource());
     auto refused = graph.try_run();
     ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, Core::Errc::dangling_resource);
+    EXPECT_EQ(refused.error().code, Errc::dangling_resource);
 }
 
 /** @brief Tests that a run is refused once the buffer of based_at_device() is destroyed. */
@@ -81,11 +81,11 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedBaseBufferRefusesTheRun)
 {
     auto rt = Runtime::create();
     auto target = rt.buffer<Word>(WIDTH);
-    std::optional<API::Buffer<Word>> base(host_slot(rt, 0u));
+    std::optional<Buffer<Word>> base(host_slot(rt, 0u));
     Word* words = target.data();
 
     auto graph = rt.graph();
-    graph.add(API::based_at_device(*base), WIDTH, API::Reads(), API::Writes(target),
+    graph.add(based_at_device(*base), WIDTH, Reads(), Writes(target),
               [words](std::size_t i) { words[i] = 1u; });
     ASSERT_TRUE(graph.try_run());
 
@@ -93,7 +93,7 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedBaseBufferRefusesTheRun)
 
     auto refused = graph.try_run();
     ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, Core::Errc::dangling_resource);
+    EXPECT_EQ(refused.error().code, Errc::dangling_resource);
 }
 
 /** @brief Tests that a late-bound State rule watches its count buffer as well as its State. */
@@ -101,10 +101,10 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesAStateRule)
 {
     auto rt = Runtime::create();
     auto field = rt.state<Word>(WIDTH);
-    std::optional<API::Buffer<Word>> counter(host_slot(rt, LIVE));
+    std::optional<Buffer<Word>> counter(host_slot(rt, LIVE));
 
     auto graph = rt.graph();
-    graph.add(API::sized_from_device(*counter), field,
+    graph.add(sized_from_device(*counter), field,
               [](std::size_t i, const Word* current, Word* next) { next[i] = current[i]; });
     ASSERT_TRUE(graph.try_run());
 
@@ -112,5 +112,5 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesAStateRule)
 
     auto refused = graph.try_run();
     ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, Core::Errc::dangling_resource);
+    EXPECT_EQ(refused.error().code, Errc::dangling_resource);
 }

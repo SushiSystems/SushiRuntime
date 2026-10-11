@@ -29,7 +29,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         std::optional<unsigned> local_numa_os_index(hwloc_topology_t topology, hwloc_obj_t object)
         {

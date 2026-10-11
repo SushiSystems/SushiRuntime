@@ -106,14 +106,14 @@ namespace
     /** @brief Returns a dispatch whose every wire field is drawn from @p random. */
     TaskDispatchMessage random_dispatch(std::mt19937_64& random)
     {
-        const auto first_type = static_cast<std::uint64_t>(Graph::TaskType::NONE);
-        const auto last_type = static_cast<std::uint64_t>(Graph::TaskType::CONTROL_FLOW);
+        const auto first_type = static_cast<std::uint64_t>(Internal::Graph::TaskType::NONE);
+        const auto last_type = static_cast<std::uint64_t>(Internal::Graph::TaskType::CONTROL_FLOW);
 
         TaskDispatchMessage message;
         message.task_id = random();
         message.metadata.name = "never_on_the_wire";
-        message.metadata.op_id = Graph::OpID(static_cast<std::uint32_t>(random()));
-        message.metadata.task_type = static_cast<Graph::TaskType>(
+        message.metadata.op_id = Internal::Graph::OpID(static_cast<std::uint32_t>(random()));
+        message.metadata.task_type = static_cast<Internal::Graph::TaskType>(
             first_type + random() % (last_type - first_type + 1));
         message.metadata.priority = static_cast<std::int32_t>(random());
         message.metadata.numa_affinity = static_cast<std::int32_t>(random());
@@ -185,7 +185,7 @@ namespace
         hello.node_name = "worker-a";
 
         ProofMessage proof;
-        proof.ops = {Graph::OpID(7), Graph::OpID(8), Graph::OpID(9)};
+        proof.ops = {Internal::Graph::OpID(7), Internal::Graph::OpID(8), Internal::Graph::OpID(9)};
         proof.max_jobs = 16;
         proof.cache_budget = 1u << 20;
 
@@ -376,7 +376,7 @@ namespace
     std::optional<int> pick(const std::vector<WorkerStats>& workers, std::uint64_t bytes)
     {
         LeastLoadedOffloadPolicy policy;
-        const sushi_ptr<Graph::Node> node = make_sushi<Graph::Node>();
+        const sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
         return policy.pick_worker(
             *node, span<const WorkerStats>(workers.data(), workers.size()), bytes);
     }
@@ -411,7 +411,7 @@ TEST(Unit_DistributedTest, SeededDispatchesSurviveAWholeFrame)
         EXPECT_EQ(received.metadata.task_type, sent.metadata.task_type);
         EXPECT_EQ(received.metadata.priority, sent.metadata.priority);
         EXPECT_EQ(received.metadata.numa_affinity, sent.metadata.numa_affinity);
-        for (std::size_t index = 0; index < Graph::TaskMetadata::K_MAX_PARAMS; ++index)
+        for (std::size_t index = 0; index < Internal::Graph::TaskMetadata::K_MAX_PARAMS; ++index)
             EXPECT_EQ(received.metadata.params[index], sent.metadata.params[index])
                 << "parameter " << index;
         EXPECT_STRNE(received.metadata.name, sent.metadata.name);

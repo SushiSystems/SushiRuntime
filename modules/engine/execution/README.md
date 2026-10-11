@@ -32,7 +32,7 @@ once when the run starts and once when it ends; submit_step() does not touch it.
 
 ### Including the Node definition
 
-CompiledGraph holds sushi_ptr\<Graph::Node> members and is exported from the DLL (SUSHIRUNTIME_API).
+CompiledGraph holds sushi_ptr\<Internal::Graph::Node> members and is exported from the DLL (SUSHIRUNTIME_API).
 On Windows, exporting a class forces its implicit special members to be instantiated at the class
 definition, which requires Node to be complete in execution_engine.hpp; a forward declaration
 triggers "member access into incomplete type" under clang. Including the definition keeps the build
@@ -172,7 +172,7 @@ per setting. The settings are fixed at construction.
 
 ### install_offload and offload
 
-install_offload() gives the scheduler the Graph::OffloadCoordinator that may run graph nodes
+install_offload() gives the scheduler the Internal::Graph::OffloadCoordinator that may run graph nodes
 elsewhere; null removes it. The context shares ownership of the coordinator: it calls stop() on the
 one still installed in shutdown() and again when the context is destroyed, and releases it in the
 destructor, after the engine has shut down.
@@ -212,7 +212,7 @@ deterministic simulation wants, because that is the primary workload. A batch co
 the parts it does not need.
 
 The type lives in the Execution layer and not in API because RuntimeContext and TaskScheduler
-consume it, and a lower layer may not depend on a higher one. API::RuntimeConfig is the public
+consume it, and a lower layer may not depend on a higher one. RuntimeConfig is the public
 spelling of this same type.
 
 ### worker_count
@@ -222,7 +222,7 @@ thread, an audio callback, asset I/O and the compositor. Taking every core means
 threads are preempted by workers. Naming a smaller count, together with first_core, is how the host
 reserves cores for itself.
 
-The count is clamped to Core::MAX_WORKER_THREADS.
+The count is clamped to MAX_WORKER_THREADS.
 
 ### first_core
 
@@ -242,7 +242,7 @@ workloads turn it on explicitly.
 
 RuntimeSettings is what the caller asked for; WorkerPoolInfo is what the runtime could give. They
 diverge when the requested core range does not fit the machine, or when the count exceeds
-Core::MAX_WORKER_THREADS. A host that reserved cores should verify against WorkerPoolInfo and not
+MAX_WORKER_THREADS. A host that reserved cores should verify against WorkerPoolInfo and not
 against its own request, because a reservation is only worth something if it actually happened.
 
 ## Implementation
@@ -476,9 +476,9 @@ queues and before the `ExecutionEngine` reads the worker-pool and rebalancer cho
 
 #### Construction order
 
-`Impl` builds its members in declaration order: the settings, the `Topology::TopologyView`,
-the `Device::DeviceQueueSet`, the `Memory::USMAllocator` (from the set's plain queues) and the
-`Observability::TransferCounters`. The topology provider is asked for the core map and the
+`Impl` builds its members in declaration order: the settings, the `Internal::Topology::TopologyView`,
+the `Internal::Device::DeviceQueueSet`, the `Internal::Memory::USMAllocator` (from the set's plain queues) and the
+`Internal::Observability::TransferCounters`. The topology provider is asked for the core map and the
 hardware nodes during that construction and is not kept.
 
 The `ExecutionEngine` is constructed after all of them, so it receives a context
@@ -500,7 +500,7 @@ The destructor then clears the allocator's release observer: a `Buffer` holds th
 through `shared_memory()` and can release its memory after the context is gone, and the
 observer it would call is the coordinator `Impl` is about to release. The engine is destroyed
 next, which removes any dangling reference to a queue or to another `Impl` member. Only then
-is it safe to drain outstanding GPU work, which the `Device::DeviceQueueSet` does in its own
+is it safe to drain outstanding GPU work, which the `Internal::Device::DeviceQueueSet` does in its own
 destructor when `Impl`'s members are destroyed, so every hardware operation has completed
 before the SYCL objects it used go out of scope.
 
@@ -520,12 +520,12 @@ kernel's device start and end timestamps. The two properties compose, and the FP
 keeps its in-order guarantee.
 
 The queues themselves, their lazy build and the NUMA rotation live in
-`Device::DeviceQueueSet`; `modules/platform/device/README.md` describes them. The context
+`Internal::Device::DeviceQueueSet`; `modules/platform/device/README.md` describes them. The context
 keeps no queue of its own. `devices().queue(i, {false, true})` asks the set for the flavour
 `{in_order = false, profiling = true}` and `devices().queue(i, {true, profiling})` for
 `{in_order = true, profiling}`.
 
-`describe_device()` turns each `Topology::HardwareNode` into a `Device::DeviceDescriptor`, so
+`describe_device()` turns each `Internal::Topology::HardwareNode` into a `Internal::Device::DeviceDescriptor`, so
 the device module includes no topology header. A node whose `is_gpu` flag is set becomes
 `DeviceKind::Gpu` whatever SYCL reports, which keeps `devices().is_gpu()` answering from the flag
 discovery recorded. Descriptors are built by walking the node list in order, one per node
@@ -541,7 +541,7 @@ adds that "BB-5b's try_create() turns this into a returned Error rather than a t
 
 #### Transfer counters
 
-`transfers`, an `Observability::TransferCounters`, counts only the explicit transfers the
+`transfers`, an `Internal::Observability::TransferCounters`, counts only the explicit transfers the
 runtime starts itself: the selective readback in `Buffer::read_range` and `write_range`, and
 the distributed path. `RunReport` uses them to say how much the host pulled from and pushed
 to the device during a run. Implicit shared-USM page migration by the driver is invisible to
@@ -550,7 +550,7 @@ monotonic counters read at a run boundary, with no ordering dependency on other 
 
 #### USM ownership
 
-`Memory::USMAllocator` maps a USM pointer to the index of its owning queue. Each allocation
+`Internal::Memory::USMAllocator` maps a USM pointer to the index of its owning queue. Each allocation
 made by `RuntimeContext::memory().allocate()` is recorded, so the scheduler can run a task on
 the exact queue and context its data was allocated on. The record is the source of truth;
 pointer introspection stays only as a best-effort fallback.
@@ -573,7 +573,7 @@ owner the first is already acting on. The free goes against the owning queue's c
 which correctness requires; without a record it falls back to queue 0 as a best effort and
 logs a WARN. An address recorded through `memory().adopt()` is forgotten and not freed.
 
-The allocator tells a `Memory::USMReleaseObserver` about a release before the record is
+The allocator tells a `Internal::Memory::USMReleaseObserver` about a release before the record is
 dropped and the memory freed. The context installs none; `Distributed::Cluster::attach()`
 installs its coordinator there, and `~Impl` clears whatever is installed.
 
@@ -583,7 +583,7 @@ makes it a registration-time query and not a dispatch-time one.
 
 #### Offload coordinator
 
-`install_offload()` hands a `Graph::OffloadCoordinator` to the engine, which forwards it to
+`install_offload()` hands a `Internal::Graph::OffloadCoordinator` to the engine, which forwards it to
 the scheduler's `set_offload_coordinator()`, and keeps the `shared_ptr` whose address
 `offload()` returns. The context shares ownership so that the coordinator outlives the
 engine's shutdown whatever its installer does with its own reference. Installing another

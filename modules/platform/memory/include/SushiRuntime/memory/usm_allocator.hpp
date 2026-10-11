@@ -42,7 +42,7 @@
 
 namespace SushiRuntime
 {
-    namespace Memory
+    namespace Internal::Memory
     {
         /**
          * @brief Allocates USM on one of a fixed set of device queues and remembers its device.
@@ -73,7 +73,7 @@ namespace SushiRuntime
                  * @brief Allocates USM of the requested kind on the requested device, recorded.
                  * @param request Alignment 0 asks for none.
                  * @return The allocation, or null when SYCL could not satisfy it.
-                 * @throws Core::SushiException With Errc::invalid_access, the index and the device
+                 * @throws SushiException With Errc::invalid_access, the index and the device
                  *         count, when request.device_index names no device.
                  */
                 [[nodiscard]] void* allocate(const USMRequest& request);
@@ -91,7 +91,7 @@ namespace SushiRuntime
                  * @brief Records memory allocated elsewhere as belonging to a device.
                  * @param address Stays the caller's to free; release() will not free it.
                  * @param bytes Length of the mapping, or nothing when it is unknown.
-                 * @throws Core::SushiException As allocate(), when device_index names no device.
+                 * @throws SushiException As allocate(), when device_index names no device.
                  */
                 void adopt(void* address, std::size_t device_index,
                            std::optional<std::size_t> bytes);
@@ -136,7 +136,7 @@ namespace SushiRuntime
             private:
                 /**
                  * @brief Returns the queue of a device.
-                 * @throws Core::SushiException With Errc::invalid_access when the index names none.
+                 * @throws SushiException With Errc::invalid_access when the index names none.
                  */
                 [[nodiscard]] const sycl::queue& queue_at(std::size_t device_index) const;
 

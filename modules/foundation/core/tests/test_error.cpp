@@ -32,9 +32,9 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/error.hpp>
 
-using SushiRuntime::Core::Errc;
-using SushiRuntime::Core::Error;
-using SushiRuntime::Core::SushiException;
+using SushiRuntime::Errc;
+using SushiRuntime::Error;
+using SushiRuntime::SushiException;
 
 namespace
 {

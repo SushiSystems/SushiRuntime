@@ -35,7 +35,7 @@
 
 namespace SushiRuntime
 {
-    namespace Memory
+    namespace Internal::Memory
     {
         /**
          * @brief Releases an address through the allocator that allocated it.

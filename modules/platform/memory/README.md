@@ -2,7 +2,7 @@
 
 Allocation ownership, the USM registry and epoch-based reclamation.
 
-Everything is in `SushiRuntime::Memory`.
+Everything is in `SushiRuntime::Internal::Memory`.
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
@@ -166,7 +166,7 @@ outlived the allocator, and live_count() is how a teardown check finds it.
 
 ### allocate: the two failures
 
-A device index that names no device is a caller's mistake and throws Core::SushiException with
+A device index that names no device is a caller's mistake and throws SushiException with
 Errc::invalid_access; the message carries the index and the device count. An allocation SYCL
 cannot satisfy returns null and records nothing, because running out of device memory is a
 condition a caller can handle.

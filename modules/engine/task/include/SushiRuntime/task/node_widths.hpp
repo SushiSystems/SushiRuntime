@@ -33,15 +33,15 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         struct Node;
 
         /** @brief Pairs the range a dispatch launched over with the count that did work. */
         struct NodeWidths
         {
-            std::uint32_t launched = Observability::WIDTH_UNKNOWN; /**< Elements the dispatch launched over. */
-            std::uint32_t live     = Observability::WIDTH_UNKNOWN; /**< Elements that did work. */
+            std::uint32_t launched = Internal::Observability::WIDTH_UNKNOWN; /**< Elements the dispatch launched over. */
+            std::uint32_t live     = Internal::Observability::WIDTH_UNKNOWN; /**< Elements that did work. */
         };
 
         /**

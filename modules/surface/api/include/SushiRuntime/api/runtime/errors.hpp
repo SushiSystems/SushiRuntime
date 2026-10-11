@@ -33,9 +33,5 @@
 
 namespace SushiRuntime
 {
-    using Core::Errc;
-    using Core::Error;
-    using Core::Result;
-    using Core::SushiException;
 
 } // namespace SushiRuntime

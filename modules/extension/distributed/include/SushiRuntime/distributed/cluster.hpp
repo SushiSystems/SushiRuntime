@@ -47,8 +47,8 @@
 
 namespace SushiRuntime
 {
-    namespace API { class Runtime; }
-    namespace Execution { class RuntimeContext; }
+    class Runtime;
+    namespace Internal::Execution { class RuntimeContext; }
 
     namespace Distributed
     {
@@ -122,20 +122,20 @@ namespace SushiRuntime
                  * @brief Builds a master, installs it as the runtime's offload coordinator and
                  *        starts it and the transport.
                  * @pre @p transport was never started.
-                 * @throws Core::SushiException When a run is in flight on @p runtime, @p transport
+                 * @throws SushiException When a run is in flight on @p runtime, @p transport
                  *         is null, an option is refused or the transport does not start; a
                  *         cluster attached before stays installed and keeps running.
                  */
-                [[nodiscard]] static Cluster attach(API::Runtime& runtime,
+                [[nodiscard]] static Cluster attach(Runtime& runtime,
                                                     std::shared_ptr<ITransport> transport,
                                                     ClusterOptions options = ClusterOptions());
 
                 /**
                  * @brief Builds a master on a bare context; the Runtime overload forwards here.
                  * @param transport A master-side transport that was never started.
-                 * @throws Core::SushiException As the Runtime overload.
+                 * @throws SushiException As the Runtime overload.
                  */
-                [[nodiscard]] static Cluster attach(Execution::RuntimeContext& context,
+                [[nodiscard]] static Cluster attach(Internal::Execution::RuntimeContext& context,
                                                     std::shared_ptr<ITransport> transport,
                                                     ClusterOptions options = ClusterOptions());
 
@@ -173,7 +173,7 @@ namespace SushiRuntime
                  *
                  * Workers registered earlier keep the value their WELCOME carried.
                  * @param timeout At least K_MINIMUM_TIMEOUT.
-                 * @throws Core::SushiException With invalid_state for a shorter value.
+                 * @throws SushiException With invalid_state for a shorter value.
                  */
                 Cluster& liveness_timeout(std::chrono::milliseconds timeout);
 
@@ -201,7 +201,7 @@ namespace SushiRuntime
                 [[nodiscard]] std::uint64_t stale_writebacks() const;
 
                 /** @brief Reports whether an alive worker has a kernel for an operation. */
-                [[nodiscard]] bool supports(Graph::OpID op) const;
+                [[nodiscard]] bool supports(Internal::Graph::OpID op) const;
 
                 /** @brief Advances the version of the buffer shared at an address, if any. */
                 void bump_buffer(void* address);

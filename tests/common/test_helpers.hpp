@@ -81,7 +81,7 @@ namespace SushiRuntime
          *
          * Performs a simple increment on the host, requiring no GPU involvement.
          */
-        class AtomicCounterTask : public Scheduler::Task
+        class AtomicCounterTask : public Internal::Scheduler::Task
         {
         public:
             /**
@@ -113,7 +113,7 @@ namespace SushiRuntime
          *
          * Used in scheduler tests to assert that priority ordering is respected.
          */
-        class PriorityTrackingTask : public Scheduler::Task
+        class PriorityTrackingTask : public Internal::Scheduler::Task
         {
         public:
             /**

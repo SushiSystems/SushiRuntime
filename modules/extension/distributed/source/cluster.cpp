@@ -55,7 +55,7 @@ namespace SushiRuntime
         namespace
         {
             /** @brief Reports whether a run is in flight on a context; one atomic load. */
-            [[nodiscard]] bool has_run_in_flight(Execution::RuntimeContext& context)
+            [[nodiscard]] bool has_run_in_flight(Internal::Execution::RuntimeContext& context)
             {
                 return context.get_execution_engine().run_in_progress();
             }
@@ -65,9 +65,9 @@ namespace SushiRuntime
              *        and the scheduler.
              * @pre No run is in flight on @p context.
              */
-            void release_installed(Execution::RuntimeContext& context)
+            void release_installed(Internal::Execution::RuntimeContext& context)
             {
-                if (Graph::OffloadCoordinator* installed = context.offload())
+                if (Internal::Graph::OffloadCoordinator* installed = context.offload())
                     installed->stop();
 
                 // The allocator forgets the coordinator before the context can destroy it.
@@ -80,7 +80,7 @@ namespace SushiRuntime
              *        count as expired.
              * @param call The public call the value came through, for the message.
              * @param option The option's name, for the message.
-             * @throws Core::SushiException When @p value is below K_MINIMUM_TIMEOUT.
+             * @throws SushiException When @p value is below K_MINIMUM_TIMEOUT.
              */
             void check_timeout(const char* call, const char* option,
                                std::chrono::milliseconds value)
@@ -92,7 +92,7 @@ namespace SushiRuntime
 
             /**
              * @brief Refuses options a master cannot be attached with.
-             * @throws Core::SushiException Naming the option and the value that is allowed.
+             * @throws SushiException Naming the option and the value that is allowed.
              */
             void check_options(const ITransport& transport, const ClusterOptions& options)
             {
@@ -141,7 +141,7 @@ namespace SushiRuntime
             DistributedCoordinator coordinator;
 
             /** @brief The context that holds the coordinator; null once it has released it. */
-            Execution::RuntimeContext* context = nullptr;
+            Internal::Execution::RuntimeContext* context = nullptr;
         };
 
         /**
@@ -181,13 +181,13 @@ namespace SushiRuntime
 
         }
 
-        Cluster Cluster::attach(API::Runtime& runtime, std::shared_ptr<ITransport> transport,
+        Cluster Cluster::attach(Runtime& runtime, std::shared_ptr<ITransport> transport,
                                 ClusterOptions options)
         {
             return attach(runtime.unsafe_context(), std::move(transport), std::move(options));
         }
 
-        Cluster Cluster::attach(Execution::RuntimeContext& context,
+        Cluster Cluster::attach(Internal::Execution::RuntimeContext& context,
                                 std::shared_ptr<ITransport> transport, ClusterOptions options)
         {
             // The scheduler of a run in flight reads the coordinator this call would replace.
@@ -207,8 +207,8 @@ namespace SushiRuntime
             if (!started.is_ok())
             {
                 state->coordinator.stop();
-                throw Core::SushiException(Core::Error{
-                    Core::Errc::invalid_state,
+                throw SushiException(Error{
+                    Errc::invalid_state,
                     "Cluster::attach: the master did not start: " + started.message +
                         (context.offload() != nullptr
                              ? "; the cluster attached before stays installed."
@@ -220,7 +220,7 @@ namespace SushiRuntime
             context.memory().set_release_observer(&state->coordinator);
 
             auto attachment = std::make_shared<State::Attachment>(state);
-            context.install_offload(std::shared_ptr<Graph::OffloadCoordinator>(
+            context.install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator>(
                 std::move(attachment), &state->coordinator));
 
             return Cluster(std::move(state));
@@ -229,7 +229,7 @@ namespace SushiRuntime
         void Cluster::detach()
         {
             // A non-null context still holds this state's coordinator.
-            Execution::RuntimeContext* const context = state_->context;
+            Internal::Execution::RuntimeContext* const context = state_->context;
             if (context == nullptr)
                 return;
 
@@ -294,7 +294,7 @@ namespace SushiRuntime
             return state_->coordinator.statistics().stale_writebacks;
         }
 
-        bool Cluster::supports(Graph::OpID op) const
+        bool Cluster::supports(Internal::Graph::OpID op) const
         {
             return state_->coordinator.supports(op);
         }

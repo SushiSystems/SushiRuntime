@@ -42,8 +42,8 @@
 
 namespace SushiRuntime
 {
-    namespace API { class Runtime; }
-    namespace Execution { class RuntimeContext; }
+    class Runtime;
+    namespace Internal::Execution { class RuntimeContext; }
 
     namespace Distributed
     {
@@ -118,7 +118,7 @@ namespace SushiRuntime
                  * @param transport A worker-side transport that was never started; not null.
                  * @param kernels Not null; read from the exec thread.
                  */
-                WorkerAgent(API::Runtime& runtime, std::shared_ptr<ITransport> transport,
+                WorkerAgent(Runtime& runtime, std::shared_ptr<ITransport> transport,
                             sushi_ptr<KernelRegistry> kernels,
                             WorkerAgentOptions options = WorkerAgentOptions());
 
@@ -128,7 +128,7 @@ namespace SushiRuntime
                  * @param transport A worker-side transport that was never started; not null.
                  * @param kernels Not null; read from the exec thread.
                  */
-                WorkerAgent(Execution::RuntimeContext& context,
+                WorkerAgent(Internal::Execution::RuntimeContext& context,
                             std::shared_ptr<ITransport> transport,
                             sushi_ptr<KernelRegistry> kernels,
                             WorkerAgentOptions options = WorkerAgentOptions());

@@ -39,7 +39,7 @@ The source is `modules/platform/device/source/device_queue_set.cpp`.
 2. **The NUMA fallback is resolved and logged at construction.** `get_numa_local_queue()` logs
    nothing on a lookup. Construction logs one WARN that lists the nodes below the highest populated
    one that hold no device, and one INFO that states the rule for every id outside the table.
-3. **A bad device index throws `Core::SushiException` with `Errc::invalid_access`.** The message
+3. **A bad device index throws `SushiException` with `Errc::invalid_access`.** The message
    carries the index and the device count. The set does not log the failure; the caller receives
    the exception.
 4. **A device whose plain queue is in-order has two queues.** See "One slot per flavour" below.
@@ -54,7 +54,7 @@ neither a CPU nor a GPU gets an in-order queue, because an FPGA or a custom acce
 support out-of-order queues. When the set is built with `profiling` true, every plain
 queue carries `enable_profiling`, so a profiled run pays no first-use latency.
 
-A descriptor whose NUMA node is negative or not below `Core::MAX_NUMA_NODES` is placed on node
+A descriptor whose NUMA node is negative or not below `MAX_NUMA_NODES` is placed on node
 0, with a WARN that names the device and the value it reported. `devices()[i].numa_node` holds
 the node the device was placed on. `devices()[i].index` is always `i`, whatever the descriptor
 carried.
@@ -120,7 +120,7 @@ of the first entry in `docs/reference/KNOWN_ISSUES.md`: a kernel that captured U
 device can be submitted to another. The two functions are separate so that a caller who needs a
 stable device, such as an allocator, uses `device_for_numa`.
 
-An empty set has no route to anything. Both functions then throw `Core::SushiException` with
+An empty set has no route to anything. Both functions then throw `SushiException` with
 `Errc::unsupported`.
 
 ### The destructor

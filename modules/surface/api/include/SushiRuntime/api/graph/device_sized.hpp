@@ -33,22 +33,18 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    /**
+     * @brief Describes a launch that runs at capacity and reads its live width on the device.
+     * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+     */
+    struct DeviceSized
     {
-        /**
-         * @brief Describes a launch that runs at capacity and reads its live width on the device.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-         */
-        struct DeviceSized
-        {
-            std::size_t capacity = 0; /**< Work-items launched every step. */
+        std::size_t capacity = 0; /**< Work-items launched every step. */
 
-            /** @brief Work-items at or past this word return at once; null lets all of them run. */
-            const std::uint32_t* live_width = nullptr;
+        /** @brief Work-items at or past this word return at once; null lets all of them run. */
+        const std::uint32_t* live_width = nullptr;
 
-            /** @brief One or two words handed to the kernel after its index, by its arity. */
-            const std::uint32_t* live_words = nullptr;
-        };
-
-    } // namespace API
+        /** @brief One or two words handed to the kernel after its index, by its arity. */
+        const std::uint32_t* live_words = nullptr;
+    };
 } // namespace SushiRuntime

@@ -46,25 +46,22 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        // Test-only friend seam onto Graph::plan_ (Graph has no public accessor).
+        struct RegistrationIndexTestAccess
         {
-            // Test-only friend seam onto Graph::plan_ (Graph has no public accessor).
-            struct RegistrationIndexTestAccess
+            static const SushiRuntime::Internal::Graph::CompiledGraph& plan(const Graph& g) noexcept
             {
-                static const SushiRuntime::Graph::CompiledGraph& plan(const Graph& g) noexcept
-                {
-                    return g.plan_;
-                }
-            };
-        }
+                return g.plan_;
+            }
+        };
     }
 }
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Graph;
+using namespace SushiRuntime::Internal::Execution;
+using namespace SushiRuntime::Internal::Graph;
 
 namespace
 {
@@ -75,7 +72,7 @@ namespace
     }
 
     /** @brief Finds the one compiled node named @p name, failing if missing or duplicated. */
-    const Node& find_named(const Graph::CompiledGraph& plan, const char* name)
+    const Node& find_named(const Internal::Graph::CompiledGraph& plan, const char* name)
     {
         const Node* found = nullptr;
         for (const auto& n : plan.all_nodes)
@@ -96,9 +93,9 @@ namespace
     /** @brief Holds the three buffers the grouped rules pass their values through. */
     struct Stages
     {
-        API::Buffer<std::uint32_t> first;  /**< The rule's input. */
-        API::Buffer<std::uint32_t> second; /**< What the rule's first kernel writes. */
-        API::Buffer<std::uint32_t> third;  /**< The rule's output. */
+        Buffer<std::uint32_t> first;  /**< The rule's input. */
+        Buffer<std::uint32_t> second; /**< What the rule's first kernel writes. */
+        Buffer<std::uint32_t> third;  /**< The rule's output. */
     };
 
     /** @brief Allocates the stage buffers and seeds the first with its indices. */
@@ -119,18 +116,18 @@ namespace
      * @brief Records RULE_NODES kernels in one rule scope, each reading what the last wrote.
      * @param stages Buffers of WIDTH words; must outlive the recorder.
      */
-    void record_grouped_rule(API::Recorder& recorder, const Stages& stages)
+    void record_grouped_rule(Recorder& recorder, const Stages& stages)
     {
         std::uint32_t* a = stages.first.data();
         std::uint32_t* b = stages.second.data();
         std::uint32_t* c = stages.third.data();
 
         auto rule = recorder.rule();
-        recorder.kernel(WIDTH, API::Access(Reads(stages.first), Writes(stages.second)),
+        recorder.kernel(WIDTH, Access(Reads(stages.first), Writes(stages.second)),
                         [a, b](std::size_t i) { b[i] = a[i] + 1u; });
-        recorder.kernel(WIDTH, API::Access(Reads(stages.second), Writes(stages.third)),
+        recorder.kernel(WIDTH, Access(Reads(stages.second), Writes(stages.third)),
                         [b, c](std::size_t i) { c[i] = b[i] * 2u; });
-        recorder.kernel(WIDTH, API::Access(Reads(stages.third), Writes(stages.first)),
+        recorder.kernel(WIDTH, Access(Reads(stages.third), Writes(stages.first)),
                         [c, a](std::size_t i) { a[i] = c[i]; });
     }
 
@@ -139,28 +136,28 @@ namespace
      * @param stages Buffers of WIDTH words; must outlive the recorder.
      * @param count  Live width of the device-sized kernel; its capacity is at most WIDTH.
      */
-    void record_late_bound_rule(API::Recorder& recorder, const Stages& stages,
+    void record_late_bound_rule(Recorder& recorder, const Stages& stages,
                                 const LateCount& count)
     {
         std::uint32_t* live = recorder.scratch<std::uint32_t>(
             1, stages.first.device_index(), stages.first.residency());
-        const Memory::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
+        const Internal::Memory::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
         std::uint32_t* a = stages.first.data();
         std::uint32_t* b = stages.second.data();
         std::uint32_t* c = stages.third.data();
 
         auto rule = recorder.rule();
         recorder.resolve(std::array<LateCount, 1>{count}, stages.first.device_index(),
-                         API::Access(Reads(), Writes(live_region)),
+                         Access(Reads(), Writes(live_region)),
                          [live](const std::array<std::size_t, 1>& value)
                          {
                              live[0] = static_cast<std::uint32_t>(value[0]);
                          });
-        recorder.kernel(API::DeviceSized{count.capacity(), live, nullptr},
-                        API::Access(Reads(stages.first, live_region), Writes(stages.second)),
+        recorder.kernel(DeviceSized{count.capacity(), live, nullptr},
+                        Access(Reads(stages.first, live_region), Writes(stages.second)),
                         [a, b](std::size_t t) { b[t] = a[t] + 1u; });
         recorder.kernel(std::size_t{1},
-                        API::Access(Reads(stages.second, live_region), Writes(stages.third)),
+                        Access(Reads(stages.second, live_region), Writes(stages.third)),
                         [b, c, live](std::size_t) { c[0] = b[0] + live[0]; });
     }
 
@@ -175,7 +172,7 @@ namespace
     };
 
     /** @brief Reads a plan's grouping and fails when two rule nodes carry different indices. */
-    Grouping grouping_of(const Graph::CompiledGraph& plan)
+    Grouping grouping_of(const Internal::Graph::CompiledGraph& plan)
     {
         Grouping g;
         for (const auto& n : plan.all_nodes)
@@ -221,7 +218,7 @@ TEST(Unit_RegistrationIndex, NodeIndexIsRegistrationOrder)
     graph.add_node(noop_work());
     graph.name_last_node("C");
 
-    Graph::CompiledGraph plan = graph.compile();
+    Internal::Graph::CompiledGraph plan = graph.compile();
 
     ASSERT_EQ(plan.all_nodes.size(), 3u);
     // Proves the premise this test depends on: compiled order is reversed.
@@ -263,7 +260,7 @@ TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
     graph.add_node(noop_work());
     graph.name_last_node("after");
 
-    Graph::CompiledGraph plan = graph.compile();
+    Internal::Graph::CompiledGraph plan = graph.compile();
     ASSERT_EQ(plan.all_nodes.size(), 5u);
 
     const std::uint32_t before = find_named(plan, "before").registration_index;
@@ -287,7 +284,7 @@ TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
  */
 TEST(Unit_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
 {
-    using API::detail::RegistrationIndexTestAccess;
+    using detail::RegistrationIndexTestAccess;
 
     auto rt = Runtime::create();
     Stages stages = make_stages(rt);
@@ -311,7 +308,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
 /** @brief Tests that a rule scope's group survives a rebuild onto a fresh TaskGraph. */
 TEST(Unit_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
 {
-    using API::detail::RegistrationIndexTestAccess;
+    using detail::RegistrationIndexTestAccess;
 
     auto rt = Runtime::create();
     Stages stages = make_stages(rt);
@@ -325,7 +322,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
     g.add_untracked(std::size_t{1}, [](std::size_t) {}).name("after");
     g.run();
 
-    const Graph::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
+    const Internal::Graph::CompiledGraph& plan = RegistrationIndexTestAccess::plan(g);
     Grouping grouping = grouping_of(plan);
 
     ASSERT_EQ(grouping.rule_nodes, RULE_NODES);
@@ -346,7 +343,7 @@ TEST(Unit_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
  */
 TEST(Unit_RegistrationIndex, RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneIndex)
 {
-    using API::detail::RegistrationIndexTestAccess;
+    using detail::RegistrationIndexTestAccess;
 
     auto rt = Runtime::create();
     Stages stages = make_stages(rt);

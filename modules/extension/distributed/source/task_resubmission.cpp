@@ -45,7 +45,7 @@ namespace SushiRuntime
              * @brief Passes one node to the sink and reports whether the sink took it.
              * @return False when the sink threw; the caller still holds the node's reference.
              */
-            bool hand_to_sink(Graph::OffloadSink& sink, Graph::Node& node,
+            bool hand_to_sink(Internal::Graph::OffloadSink& sink, Internal::Graph::Node& node,
                               std::uint64_t task_id) noexcept
             {
                 try
@@ -71,7 +71,7 @@ namespace SushiRuntime
 
         std::size_t resubmit_tasks(SushiRuntime::span<PendingTask> tasks,
                                    BufferRegistry& registry, BufferExchange& exchange,
-                                   WorkerDirectory& directory, Graph::OffloadSink& sink) noexcept
+                                   WorkerDirectory& directory, Internal::Graph::OffloadSink& sink) noexcept
         {
             for (PendingTask& task : tasks)
             {
@@ -81,7 +81,7 @@ namespace SushiRuntime
                 exchange.forget_task(task.task_id);
                 directory.release_inflight(task.worker);
 
-                Graph::Node* node = task.node;
+                Internal::Graph::Node* node = task.node;
                 if (node != nullptr && !hand_to_sink(sink, *node, task.task_id))
                     node->release();
             }

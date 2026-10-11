@@ -62,9 +62,9 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
-        using namespace SushiRuntime::Core;
+        using namespace SushiRuntime;
 
         namespace
         {
@@ -89,16 +89,16 @@ namespace SushiRuntime
          * @brief Sizes the worker pool from the requested settings (modules/engine/scheduler/README.md).
          */
         TaskScheduler::TaskScheduler(const WorkerPoolSettings& pool,
-                                     const Topology::TopologyView& topology,
-                                     Device::DeviceQueueSet& devices,
-                                     const Memory::USMAllocator& memory)
+                                     const Internal::Topology::TopologyView& topology,
+                                     Internal::Device::DeviceQueueSet& devices,
+                                     const Internal::Memory::USMAllocator& memory)
             : topology_(topology), devices_(devices), memory_(memory)
         {
             size_t machine_cores = std::thread::hardware_concurrency();
             if (machine_cores == 0) machine_cores = 1;
 
             size_t threads = pool.worker_count != 0 ? pool.worker_count : machine_cores;
-            if (threads > Core::MAX_WORKER_THREADS) threads = Core::MAX_WORKER_THREADS;
+            if (threads > MAX_WORKER_THREADS) threads = MAX_WORKER_THREADS;
             if (threads == 0) threads = 1;
 
             num_workers_ = threads;
@@ -221,7 +221,7 @@ namespace SushiRuntime
         sycl::queue& TaskScheduler::dispatch_queue(std::size_t index)
         {
             return profiling_active_.load(std::memory_order_acquire)
-                       ? devices_.queue(index, Device::QueueFlavour{false, true})
+                       ? devices_.queue(index, Internal::Device::QueueFlavour{false, true})
                        : devices_.queue(index);
         }
 
@@ -240,7 +240,7 @@ namespace SushiRuntime
         /**
          * @brief Wires the plan's event ledger for the round about to be armed.
          */
-        void TaskScheduler::set_profiling_ledger(Observability::ProfilingLedger* ledger) noexcept
+        void TaskScheduler::set_profiling_ledger(Internal::Observability::ProfilingLedger* ledger) noexcept
         {
             active_ledger_.store(ledger, std::memory_order_release);
             event_poller.set_ledger(ledger);
@@ -416,7 +416,7 @@ namespace SushiRuntime
 
             // A pinned worker stays on core first_core_ + id (modules/engine/scheduler/README.md).
             if (pinning_ == PinPolicy::Pin)
-                SushiRuntime::Topology::pin_current_thread_to_core(
+                SushiRuntime::Internal::Topology::pin_current_thread_to_core(
                     static_cast<int>(first_core_) + thread_id);
 
             int spin_count = 0;
@@ -462,7 +462,7 @@ namespace SushiRuntime
                 Task* task = nullptr;
 
                 {
-                    SushiRuntime::Memory::EpochGuard epoch_guard;
+                    SushiRuntime::Internal::Memory::EpochGuard epoch_guard;
 
                     // A poll_events throw fails the run, not the thread (modules/engine/scheduler/README.md).
                     try
@@ -567,7 +567,7 @@ namespace SushiRuntime
             if (outcome_.is_aborting())
             {
                 bool is_sentinel = task->is_graph_node() &&
-                                   static_cast<SushiRuntime::Graph::Node*>(task)->is_sentinel;
+                                   static_cast<SushiRuntime::Internal::Graph::Node*>(task)->is_sentinel;
                 if (!is_sentinel)
                 {
                     events.push(skipped_event(task));
@@ -578,7 +578,7 @@ namespace SushiRuntime
             // A disabled late-bound node runs no kernel (modules/engine/scheduler/README.md).
             if (task->is_graph_node())
             {
-                auto* gnode = static_cast<SushiRuntime::Graph::Node*>(task);
+                auto* gnode = static_cast<SushiRuntime::Internal::Graph::Node*>(task);
                 if (gnode->bindings_ &&
                     !gnode->bindings_->enabled.load(std::memory_order_relaxed))
                 {
@@ -588,7 +588,7 @@ namespace SushiRuntime
             }
 
             // Completions are keyed by worker id, not EBR slot id (modules/engine/scheduler/README.md).
-            if (worker_id >= 0 && static_cast<size_t>(worker_id) < Core::MAX_WORKER_THREADS)
+            if (worker_id >= 0 && static_cast<size_t>(worker_id) < MAX_WORKER_THREADS)
                 worker_completed_tasks[worker_id].value.fetch_add(1, std::memory_order_relaxed);
 
             const auto abort_run = [this, task, &events](const NamedFailure& failure)
@@ -607,11 +607,11 @@ namespace SushiRuntime
             {
                 SR_LOG_DEBUG("Executing task: {}", task->get_name());
                 
-                SushiRuntime::Graph::Node* node = nullptr;
+                SushiRuntime::Internal::Graph::Node* node = nullptr;
 
                 // The downcast uses the is_graph_node() tag, not RTTI (modules/engine/scheduler/README.md).
                 if (task->is_graph_node())
-                    node = static_cast<SushiRuntime::Graph::Node*>(task);
+                    node = static_cast<SushiRuntime::Internal::Graph::Node*>(task);
 
                 // A pure-CPU host task needs no queue and runs inline (see design spec §0).
                 if (node && node->get_execution_mode() == Task::ExecutionMode::HOST &&
@@ -636,9 +636,9 @@ namespace SushiRuntime
                         if (auto* ledger = active_ledger_.load(std::memory_order_acquire))
                         {
                             const std::uint32_t slot = ledger->claim_slot(node->registration_index);
-                            if (slot != Observability::ProfilingLedger::npos)
+                            if (slot != Internal::Observability::ProfilingLedger::npos)
                             {
-                                Observability::NodeEventRecord rec{};
+                                Internal::Observability::NodeEventRecord rec{};
                                 rec.node_index = node->registration_index;
                                 rec.invocation = step;
                                 // A host node submits no dispatch: launched_width and live_width stay WIDTH_UNKNOWN.
@@ -695,7 +695,7 @@ namespace SushiRuntime
                 else
                 {
                     // The first device submission to reach here claims the run's clock pairing.
-                    Observability::ProfilingLedger* pairing_ledger = nullptr;
+                    Internal::Observability::ProfilingLedger* pairing_ledger = nullptr;
                     std::chrono::steady_clock::time_point pairing_t0;
                     if (profiling_active_.load(std::memory_order_acquire))
                     {
@@ -731,10 +731,10 @@ namespace SushiRuntime
                 
                 // An empty event is pushed as ready, never dropped (modules/engine/scheduler/README.md).
                 const bool ready = (e == sycl::event{});
-                const SushiRuntime::Graph::NodeWidths widths =
+                const SushiRuntime::Internal::Graph::NodeWidths widths =
                     (node && profiling_active_.load(std::memory_order_acquire))
-                        ? SushiRuntime::Graph::snapshot_widths(*node)
-                        : SushiRuntime::Graph::NodeWidths{};
+                        ? SushiRuntime::Internal::Graph::snapshot_widths(*node)
+                        : SushiRuntime::Internal::Graph::NodeWidths{};
                 EventPolling::PolledEvent dispatched;
                 dispatched.event = e;
                 dispatched.task = task;
@@ -744,7 +744,7 @@ namespace SushiRuntime
                 dispatched.widths = widths;
                 events.push(dispatched);
             } 
-            catch (const Core::SushiException& cause)
+            catch (const SushiException& cause)
             {
                 abort_run(name_failure(*task, cause));
             }
@@ -784,7 +784,7 @@ namespace SushiRuntime
          */
         void TaskScheduler::reset_worker_times() noexcept
         {
-            for (size_t i = 0; i < Core::MAX_WORKER_THREADS; ++i)
+            for (size_t i = 0; i < MAX_WORKER_THREADS; ++i)
             {
                 worker_time_[i].busy_ns.store(0, std::memory_order_relaxed);
                 worker_time_[i].stealing_ns.store(0, std::memory_order_relaxed);
@@ -883,7 +883,7 @@ namespace SushiRuntime
         /**
          * @brief Submits a batch of root nodes under one injector pass (modules/engine/scheduler/README.md).
          */
-        void TaskScheduler::submit_batch(const std::vector<Graph::Node*>& roots)
+        void TaskScheduler::submit_batch(const std::vector<Internal::Graph::Node*>& roots)
         {
             if (roots.empty()) return;
 
@@ -891,7 +891,7 @@ namespace SushiRuntime
             size_t priority_added = 0;
             {
                 std::lock_guard<std::mutex> lock(pending_mutex);
-                for (Graph::Node* node : roots)
+                for (Internal::Graph::Node* node : roots)
                 {
                     if (!node) continue;
                     Task* task = node; // Node derives from Task
@@ -1001,7 +1001,7 @@ namespace SushiRuntime
          * @brief Installs the offload coordinator in the scheduler and its poller, and binds it.
          * @param offload Not owned; null removes the installed one.
          */
-        void TaskScheduler::set_offload_coordinator(Graph::OffloadCoordinator* offload)
+        void TaskScheduler::set_offload_coordinator(Internal::Graph::OffloadCoordinator* offload)
         {
             // The coordinator holds its sink before a worker can offer it a node.
             if (offload != nullptr)

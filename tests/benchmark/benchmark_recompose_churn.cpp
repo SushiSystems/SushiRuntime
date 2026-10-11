@@ -98,7 +98,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
     for (std::size_t r = 0; r < REGIONS; ++r)
     {
         int* p = bufs[r].data();
-        world.region(r).add(N, API::Reads{}, API::Writes(bufs[r]),
+        world.region(r).add(N, Reads{}, Writes(bufs[r]),
                             [p](std::size_t i) { p[i] += 1; });
     }
 
@@ -140,7 +140,7 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
 
         AllocScope as;
         const auto t0 = clock::now();
-        world.region(r).add(N, API::Reads{}, API::Writes(bufs[r]),
+        world.region(r).add(N, Reads{}, Writes(bufs[r]),
                             [p](std::size_t i) { p[i] += 1; });
         world.run(1);
         const auto t1 = clock::now();

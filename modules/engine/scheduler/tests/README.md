@@ -128,7 +128,7 @@ with each one starting where the last ended.
 
 ### `ConstructorRejectsAReversedRange`
 
-`RangeTask(8, 4, ...)` throws `Core::SushiException`. An empty range, `start == end`, is accepted
+`RangeTask(8, 4, ...)` throws `SushiException`. An empty range, `start == end`, is accepted
 and does not split.
 
 ### `SplitHandsOffDistinctChunksUntilExhausted`

@@ -39,7 +39,7 @@
 
 namespace SushiRuntime
 {
-    namespace Execution
+    namespace Internal::Execution
     {
         namespace
         {
@@ -48,9 +48,9 @@ namespace SushiRuntime
              * @param node A compiled, non-sentinel node.
              * @return False for native host work or an offload candidate.
              */
-            bool node_kind_is_chainable(const Graph::Node& node) noexcept
+            bool node_kind_is_chainable(const Internal::Graph::Node& node) noexcept
             {
-                using Mode = Scheduler::Task::ExecutionMode;
+                using Mode = Internal::Scheduler::Task::ExecutionMode;
                 const bool submits_device = node.get_execution_mode() == Mode::KERNEL ||
                                             node.submits_device_work();
                 if (!submits_device)
@@ -66,11 +66,11 @@ namespace SushiRuntime
              * @param ctx  The context whose registry owns the regions.
              * @return The queue index, or -1 for no region, an unknown region, or two devices.
              */
-            int owning_queue_index(const Graph::Node& node, RuntimeContext& ctx) noexcept
+            int owning_queue_index(const Internal::Graph::Node& node, RuntimeContext& ctx) noexcept
             {
                 int owner = -1;
-                Memory::USMAllocator& memory = ctx.memory();
-                auto visit = [&](const std::vector<Memory::ResourceRegion>& regions)
+                Internal::Memory::USMAllocator& memory = ctx.memory();
+                auto visit = [&](const std::vector<Internal::Memory::ResourceRegion>& regions)
                 {
                     for (const auto& r : regions)
                     {
@@ -97,31 +97,31 @@ namespace SushiRuntime
              * @param graph A plan after capture_base_state().
              * @return The order; shorter than the node count only if the plan has a cycle.
              */
-            std::vector<Graph::Node*> topological_order(const Graph::CompiledGraph& graph)
+            std::vector<Internal::Graph::Node*> topological_order(const Internal::Graph::CompiledGraph& graph)
             {
-                const Graph::Node* sentinel = graph.sentinel.get();
+                const Internal::Graph::Node* sentinel = graph.sentinel.get();
                 const std::size_t count = graph.all_nodes.size();
 
                 std::vector<std::int32_t> remaining(graph.base_in_degree.begin(),
                                                     graph.base_in_degree.end());
                 remaining.resize(count, 0);
 
-                std::deque<Graph::Node*> ready;
+                std::deque<Internal::Graph::Node*> ready;
                 for (std::size_t i = 0; i < count; ++i)
                 {
-                    Graph::Node* node = graph.all_nodes[i].get();
+                    Internal::Graph::Node* node = graph.all_nodes[i].get();
                     if (node && node != sentinel && remaining[i] == 0)
                         ready.push_back(node);
                 }
 
-                std::vector<Graph::Node*> order;
+                std::vector<Internal::Graph::Node*> order;
                 order.reserve(count);
                 while (!ready.empty())
                 {
-                    Graph::Node* node = ready.front();
+                    Internal::Graph::Node* node = ready.front();
                     ready.pop_front();
                     order.push_back(node);
-                    node->for_each_successor([&](Graph::Node* succ)
+                    node->for_each_successor([&](Internal::Graph::Node* succ)
                     {
                         const std::size_t index = succ->plan_index;
                         if (succ == sentinel || index >= count || graph.all_nodes[index].get() != succ)
@@ -139,13 +139,13 @@ namespace SushiRuntime
          */
         ChainPlan classify_chain(const CompiledGraph& graph, RuntimeContext& ctx)
         {
-            const Graph::Node* sentinel = graph.sentinel.get();
+            const Internal::Graph::Node* sentinel = graph.sentinel.get();
             std::size_t node_count = 0;
             int device = -1;
 
             for (const auto& owned : graph.all_nodes)
             {
-                const Graph::Node* node = owned.get();
+                const Internal::Graph::Node* node = owned.get();
                 if (!node || node == sentinel)
                     continue;
                 ++node_count;

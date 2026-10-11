@@ -34,15 +34,15 @@
 
 namespace SushiRuntime
 {
-    namespace Execution
+    namespace Internal::Execution
     {
         class RuntimeContext;
 
-        /** @brief Names Graph::PendingEvent under its former namespace. */
-        using PendingEvent = Graph::PendingEvent;
+        /** @brief Names Internal::Graph::PendingEvent under its former namespace. */
+        using PendingEvent = Internal::Graph::PendingEvent;
 
-        /** @brief Names Graph::ChainPlan under its former namespace. */
-        using ChainPlan = Graph::ChainPlan;
+        /** @brief Names Internal::Graph::ChainPlan under its former namespace. */
+        using ChainPlan = Internal::Graph::ChainPlan;
 
         /**
          * @brief Classifies a compiled plan for the in-order chain.
@@ -51,7 +51,7 @@ namespace SushiRuntime
          * @return The classification; not chainable on any doubt.
          * @see modules/engine/execution/README.md
          */
-        SUSHIRUNTIME_API ChainPlan classify_chain(const Graph::CompiledGraph& graph,
+        SUSHIRUNTIME_API ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph,
                                                   RuntimeContext& ctx);
 
     } // namespace Execution

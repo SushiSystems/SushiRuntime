@@ -35,7 +35,7 @@
 
 namespace SushiRuntime 
 {
-    namespace Memory 
+    namespace Internal::Memory 
     {
         namespace Detail 
         {
@@ -150,14 +150,14 @@ namespace SushiRuntime
         class EpochManager
         {
         private:
-            static constexpr size_t MAX_EPOCH_THREADS = Core::MAX_WORKER_THREADS + 32;
+            static constexpr size_t MAX_EPOCH_THREADS = MAX_WORKER_THREADS + 32;
 
             std::atomic<uint64_t> global_epoch_{1};
 
             /**
              * @brief Holds one thread's epoch on its own cache line, so stores do not false-share.
              */
-            struct alignas(Core::CACHE_LINE_SIZE) ThreadEpochSlot
+            struct alignas(CACHE_LINE_SIZE) ThreadEpochSlot
             {
                 std::atomic<uint64_t> epoch{0};
                 std::atomic<bool> active{false};
@@ -171,7 +171,7 @@ namespace SushiRuntime
             /**
              * @brief Registers the calling thread and returns its slot id.
              * @return Slot index in [0, MAX_EPOCH_THREADS).
-             * @throws Core::SushiException With Errc::unsupported if every slot is held.
+             * @throws SushiException With Errc::unsupported if every slot is held.
              */
             int register_thread()
             {
@@ -190,8 +190,8 @@ namespace SushiRuntime
                         return i;
                     }
                 }
-                throw Core::SushiException(Core::Error{
-                    Core::Errc::unsupported,
+                throw SushiException(Error{
+                    Errc::unsupported,
                     "EpochManager::register_thread: all " + std::to_string(MAX_EPOCH_THREADS) +
                         " epoch slots are held by live threads. A thread frees its slot when it "
                         "exits; lower the number of threads that use the runtime at once."});

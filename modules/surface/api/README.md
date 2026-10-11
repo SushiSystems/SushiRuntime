@@ -45,18 +45,18 @@ LateCounts into live words on the device, and a DeviceSized launch reads its wid
 word. `graph/README.md` gives the contract of each.
 
 ```cpp
-void record_scaled_copy(API::Recorder& recorder, const API::Buffer<float>& in,
-                        const API::Buffer<float>& out, std::size_t count, float factor)
+void record_scaled_copy(Recorder& recorder, const Buffer<float>& in,
+                        const Buffer<float>& out, std::size_t count, float factor)
 {
     float* stage = recorder.scratch<float>(count, in.device_index(), in.residency());
-    const Memory::ResourceRegion staged{stage, 0, count * sizeof(float)};
+    const Internal::Memory::ResourceRegion staged{stage, 0, count * sizeof(float)};
     const float* source = in.data();
     float* target = out.data();
 
     auto rule = recorder.rule();
-    recorder.kernel(count, API::Access(Reads(in), Writes(staged)),
+    recorder.kernel(count, Access(Reads(in), Writes(staged)),
                     [source, stage, factor](std::size_t i) { stage[i] = source[i] * factor; });
-    recorder.kernel(count, API::Access(Reads(staged), Writes(out)),
+    recorder.kernel(count, Access(Reads(staged), Writes(out)),
                     [stage, target](std::size_t i) { target[i] = stage[i]; });
 }
 ```
@@ -72,16 +72,16 @@ closing `using` block. fluent.hpp promotes none. A program that includes
 `SushiRuntime::Reads` and `SushiRuntime::RunReport`.
 
 Two headers under `api/` declare nothing and only promote. `runtime/errors.hpp` promotes
-`Core::Error`, `Core::Errc`, `Core::Result` and `Core::SushiException`; `runtime/logging.hpp`
-promotes `Core::LogLevel`, `Core::set_log_level` and `Core::set_log_sink`.
+`Error`, `Errc`, `Result` and `SushiException`; `runtime/logging.hpp`
+promotes `LogLevel`, `set_log_level` and `set_log_sink`.
 
-The `_op` literal is declared in `SushiRuntime::Graph::Literals`, and `OpID` and `TaskMetadata` in
-`SushiRuntime::Graph`. Both declarations are in `task/task_types.hpp` of the engine's task module,
+The `_op` literal is declared in `SushiRuntime::Internal::Graph::Literals`, and `OpID` and `TaskMetadata` in
+`SushiRuntime::Internal::Graph`. Both declarations are in `task/task_types.hpp` of the engine's task module,
 outside `api/`. That header ends with `using` declarations that promote the three names into
 `SushiRuntime`. `RunReport` is declared in `Observability` by `observability/run_report.hpp`, which
 promotes it into `SushiRuntime` in the same way.
 
-The graph type stays `API::Graph`, because `SushiRuntime::Graph` is the engine's namespace. `when`,
+The graph type stays `Graph`, because `SushiRuntime::Internal::Graph` is the engine's namespace. `when`,
 `sized`, `based_at` and their device forms stay in `API`, so `using namespace SushiRuntime` does not
 bring `when` into scope.
 

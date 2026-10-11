@@ -34,7 +34,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Names @p task for a failure report.
@@ -43,10 +43,10 @@ namespace SushiRuntime
         std::string describe_task(const Task& task)
         {
             if (!task.is_graph_node())
-                return Core::Detail::sr_format("task '{}'", task.get_name());
+                return Detail::sr_format("task '{}'", task.get_name());
 
-            const auto& node = static_cast<const SushiRuntime::Graph::Node&>(task);
-            return Core::Detail::sr_format("node '{}' (registration index {})",
+            const auto& node = static_cast<const SushiRuntime::Internal::Graph::Node&>(task);
+            return Detail::sr_format("node '{}' (registration index {})",
                                            node.get_name(), node.registration_index);
         }
 
@@ -55,13 +55,13 @@ namespace SushiRuntime
          * @param task The task that threw.
          * @param cause The exception it threw.
          */
-        NamedFailure name_failure(const Task& task, const Core::SushiException& cause)
+        NamedFailure name_failure(const Task& task, const SushiException& cause)
         {
             NamedFailure failure;
-            failure.message = Core::Detail::sr_format("{} failed: {}", describe_task(task),
+            failure.message = Detail::sr_format("{} failed: {}", describe_task(task),
                                                       cause.what());
             failure.error = std::make_exception_ptr(
-                Core::SushiException(Core::Error{cause.error().code, failure.message}));
+                SushiException(Error{cause.error().code, failure.message}));
             return failure;
         }
 
@@ -73,7 +73,7 @@ namespace SushiRuntime
         NamedFailure name_failure(const Task& task, const sycl::exception& cause)
         {
             NamedFailure failure;
-            failure.message = Core::Detail::sr_format("{} failed: {}", describe_task(task),
+            failure.message = Detail::sr_format("{} failed: {}", describe_task(task),
                                                       cause.what());
             failure.error = std::make_exception_ptr(
                 sycl::exception(cause.code(), failure.message));
@@ -88,7 +88,7 @@ namespace SushiRuntime
         NamedFailure name_failure(const Task& task, const std::exception& cause)
         {
             NamedFailure failure;
-            failure.message = Core::Detail::sr_format("{} failed: {}", describe_task(task),
+            failure.message = Detail::sr_format("{} failed: {}", describe_task(task),
                                                       cause.what());
             failure.error = std::make_exception_ptr(std::runtime_error(failure.message));
             return failure;
@@ -101,7 +101,7 @@ namespace SushiRuntime
         NamedFailure name_failure(const Task& task)
         {
             NamedFailure failure;
-            failure.message = Core::Detail::sr_format(
+            failure.message = Detail::sr_format(
                 "{} failed with an exception that is not a std::exception",
                 describe_task(task));
             failure.error = std::make_exception_ptr(std::runtime_error(failure.message));

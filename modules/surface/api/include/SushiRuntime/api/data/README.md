@@ -11,7 +11,7 @@ symbol or passage it explains, and that header's file block cites this page.
 
 read_range(), write_range() and region() take an ElementRange, on a Buffer and on a State alike, and
 follow one rule: the window `[offset, offset + count)` must lie inside `[0, size())`. A window that
-does not fit throws `Core::SushiException` with `Errc::invalid_access`, and the message holds the
+does not fit throws `SushiException` with `Errc::invalid_access`, and the message holds the
 call, the offset, the count and the size. Nothing is copied and nothing is clamped, because a
 shortened copy hides the wrong count until the missing elements are read somewhere else. The check
 subtracts and does not add, so an offset and a count whose sum wraps around are rejected too.
@@ -35,7 +35,7 @@ none.
 
 ### Argument types
 
-`DeviceIndex` is a strong typedef over `Core::StrongID`, so a device selector cannot be confused
+`DeviceIndex` is a strong typedef over `StrongID`, so a device selector cannot be confused
 with an element count or an offset at a call site. Its constructor is explicit, and a swapped
 argument is a compile error rather than a silent allocation on the wrong device, so
 `buffer(count, DeviceIndex{1})` reads unambiguously.
@@ -77,7 +77,7 @@ destruction, so it must outlive every graph run that touches it. A Buffer is mov
 
 The two constructors that take a runtime context are private. Runtime::buffer() and
 Runtime::state() reach the allocating one and Interop reaches the adopting one, through friendship,
-so a caller never spells `Execution::RuntimeContext`.
+so a caller never spells `Internal::Execution::RuntimeContext`.
 
 The allocation is pinned to `device_index` and its owner recorded, so buffers used together (a
 State's two fields, for example) share a context and a kernel touching them never makes a
@@ -157,13 +157,13 @@ memory. A handle that owns no allocation has an empty observer.
 Two tasks declaring regions of the same buffer are serialized only when their ranges overlap, so
 disjoint slices (an array's halves, a grid's interior versus its halo) run in parallel. Pass the
 result to Reads(...)/Writes(...) in place of the buffer itself. Offsets are in elements; the buffer
-keeps the whole-buffer default when used bare. region() returns `API::BufferRegion`, the api
+keeps the whole-buffer default when used bare. region() returns `BufferRegion`, the api
 module's name for the byte window of one allocation, and follows the Range calls rule.
 
 ### distributed()
 
 distributed() hands the allocation to the offload coordinator installed on the runtime's context,
-through Graph::OffloadCoordinator::share(). It is opt-in: only a shared buffer can cross to a worker,
+through Internal::Graph::OffloadCoordinator::share(). It is opt-in: only a shared buffer can cross to a worker,
 and the master stays authoritative for it. It does nothing on an empty handle, and nothing when no
 coordinator is installed, so a buffer is shared only if Distributed::Cluster::attach() ran first.
 A handle that owns memory and is device-resident throws `Errc::invalid_access` before the

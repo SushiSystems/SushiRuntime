@@ -35,7 +35,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         /**
          * @brief Bases the record a coordinator keeps on a node in OffloadState::payload.

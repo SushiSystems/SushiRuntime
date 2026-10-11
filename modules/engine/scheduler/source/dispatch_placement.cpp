@@ -39,22 +39,22 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         namespace
         {
             /** @brief Returns the device an address is recorded on, or -1 when it has no record. */
-            int recorded_device_index(const Memory::USMAllocator& memory, void* address)
+            int recorded_device_index(const Internal::Memory::USMAllocator& memory, void* address)
             {
                 const std::optional<std::size_t> device = memory.device_of(address);
                 return device ? static_cast<int>(*device) : -1;
             }
 
             /** @brief Tells whether a region of @p regions is recorded off the device @p anchor. */
-            bool leaves_device(const std::vector<Memory::ResourceRegion>& regions, int anchor,
-                               const Memory::USMAllocator& memory)
+            bool leaves_device(const std::vector<Internal::Memory::ResourceRegion>& regions, int anchor,
+                               const Internal::Memory::USMAllocator& memory)
             {
-                for (const Memory::ResourceRegion& region : regions)
+                for (const Internal::Memory::ResourceRegion& region : regions)
                 {
                     if (!region.base)
                         continue;
@@ -67,7 +67,7 @@ namespace SushiRuntime
             }
         } // namespace
 
-        void place_for_dispatch(Graph::Node& node, const Memory::USMAllocator& memory,
+        void place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
                                 std::size_t device_count)
         {
             void* anchor = nullptr;
@@ -83,16 +83,16 @@ namespace SushiRuntime
 
             // A failure is not cached, so it recurs each run (modules/engine/scheduler/README.md).
             if (spans)
-                throw Core::SushiException(Core::Error{
-                    Core::Errc::invalid_graph,
+                throw SushiException(Error{
+                    Errc::invalid_graph,
                     "its buffers span multiple device contexts; co-locate them on "
                     "one device (cross-device execution is not yet supported)."});
 
-            const std::size_t placement = Graph::placement_of(node, memory);
+            const std::size_t placement = Internal::Graph::placement_of(node, memory);
             if (placement >= device_count)
-                throw Core::SushiException(Core::Error{
-                    Core::Errc::invalid_graph,
-                    Core::Detail::sr_format(
+                throw SushiException(Error{
+                    Errc::invalid_graph,
+                    Detail::sr_format(
                         "it is placed on device {}, but the runtime holds {} device(s); "
                         "pass place_on() an index below {}.",
                         placement, device_count, device_count)});

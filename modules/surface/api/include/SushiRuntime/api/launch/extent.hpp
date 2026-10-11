@@ -35,82 +35,78 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    /**
+     * @brief Describes the iteration shape of a fluent kernel: an N-D box with an origin.
+     * @tparam N Number of dimensions (1, 2, or 3), matching SYCL's range rank.
+     * @see modules/surface/api/include/SushiRuntime/api/launch/README.md
+     */
+    template <int N>
+    struct Extent
     {
+        static_assert(N >= 1 && N <= 3, "Extent supports 1, 2, or 3 dimensions.");
+
+        sycl::range<N> extent;  /**< Work-items per dimension. */
+        sycl::id<N> origin = sycl::id<N>{};  /**< Index of the first work-item. */
+
         /**
-         * @brief Describes the iteration shape of a fluent kernel: an N-D box with an origin.
-         * @tparam N Number of dimensions (1, 2, or 3), matching SYCL's range rank.
-         * @see modules/surface/api/include/SushiRuntime/api/launch/README.md
+         * @brief A 1-D extent from a plain element count (origin 0).
+         * @param n Number of work-items to iterate.
          */
-        template <int N>
-        struct Extent
+        template <int M = N, std::enable_if_t<M == 1, int> = 0>
+        Extent(std::size_t n) : extent(n) {}
+
+        /**
+         * @brief An extent from explicit per-dimension sizes (origin 0).
+         * @param sizes Exactly N work-item counts, one per dimension, in SYCL
+         *              order (slowest-varying first).
+         */
+        template <class... Sizes,
+                  std::enable_if_t<N >= 2 && sizeof...(Sizes) == N &&
+                                   (std::is_convertible_v<Sizes, std::size_t> && ...),
+                                   int> = 0>
+        Extent(Sizes... sizes)
+            : extent(static_cast<std::size_t>(sizes)...) {}
+
+        /**
+         * @brief An extent from a SYCL range, origin 0.
+         * @param r Work-items per dimension.
+         */
+        explicit Extent(sycl::range<N> r) : extent(r) {}
+
+        /**
+         * @brief An extent from a SYCL range and an explicit origin.
+         * @param r Work-items per dimension.
+         * @param o Index of the first work-item, so the kernel iterates a sub-box.
+         */
+        Extent(sycl::range<N> r, sycl::id<N> o) : extent(r), origin(o) {}
+
+        /**
+         * @brief Reports how much work this shape represents.
+         * @return Total work-items, the product of the per-dimension sizes.
+         */
+        [[nodiscard]] std::size_t count() const noexcept { return extent.size(); }
+
+        /**
+         * @brief Rebases the same box at a different origin.
+         * @param first Index of the first work-item in the returned extent.
+         * @return A copy with this extent's sizes and the given origin.
+         */
+        [[nodiscard]] Extent at(sycl::id<N> first) const noexcept
         {
-            static_assert(N >= 1 && N <= 3, "Extent supports 1, 2, or 3 dimensions.");
+            return Extent(extent, first);
+        }
+    };
 
-            sycl::range<N> extent;  /**< Work-items per dimension. */
-            sycl::id<N> origin = sycl::id<N>{};  /**< Index of the first work-item. */
+    // The guide deduces the rank from the argument count: Extent{W, H} is Extent<2>.
+    template <class... Sizes>
+    Extent(Sizes...) -> Extent<static_cast<int>(sizeof...(Sizes))>;
 
-            /**
-             * @brief A 1-D extent from a plain element count (origin 0).
-             * @param n Number of work-items to iterate.
-             */
-            template <int M = N, std::enable_if_t<M == 1, int> = 0>
-            Extent(std::size_t n) : extent(n) {}
+    template <int N>
+    Extent(sycl::range<N>) -> Extent<N>;
 
-            /**
-             * @brief An extent from explicit per-dimension sizes (origin 0).
-             * @param sizes Exactly N work-item counts, one per dimension, in SYCL
-             *              order (slowest-varying first).
-             */
-            template <class... Sizes,
-                      std::enable_if_t<N >= 2 && sizeof...(Sizes) == N &&
-                                       (std::is_convertible_v<Sizes, std::size_t> && ...),
-                                       int> = 0>
-            Extent(Sizes... sizes)
-                : extent(static_cast<std::size_t>(sizes)...) {}
+    template <int N>
+    Extent(sycl::range<N>, sycl::id<N>) -> Extent<N>;
 
-            /**
-             * @brief An extent from a SYCL range, origin 0.
-             * @param r Work-items per dimension.
-             */
-            explicit Extent(sycl::range<N> r) : extent(r) {}
 
-            /**
-             * @brief An extent from a SYCL range and an explicit origin.
-             * @param r Work-items per dimension.
-             * @param o Index of the first work-item, so the kernel iterates a sub-box.
-             */
-            Extent(sycl::range<N> r, sycl::id<N> o) : extent(r), origin(o) {}
-
-            /**
-             * @brief Reports how much work this shape represents.
-             * @return Total work-items, the product of the per-dimension sizes.
-             */
-            [[nodiscard]] std::size_t count() const noexcept { return extent.size(); }
-
-            /**
-             * @brief Rebases the same box at a different origin.
-             * @param first Index of the first work-item in the returned extent.
-             * @return A copy with this extent's sizes and the given origin.
-             */
-            [[nodiscard]] Extent at(sycl::id<N> first) const noexcept
-            {
-                return Extent(extent, first);
-            }
-        };
-
-        // The guide deduces the rank from the argument count: Extent{W, H} is Extent<2>.
-        template <class... Sizes>
-        Extent(Sizes...) -> Extent<static_cast<int>(sizeof...(Sizes))>;
-
-        template <int N>
-        Extent(sycl::range<N>) -> Extent<N>;
-
-        template <int N>
-        Extent(sycl::range<N>, sycl::id<N>) -> Extent<N>;
-
-    } // namespace API
-
-    using API::Extent;
 
 } // namespace SushiRuntime

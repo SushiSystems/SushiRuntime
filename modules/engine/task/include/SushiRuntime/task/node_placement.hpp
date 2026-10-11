@@ -33,12 +33,12 @@
 
 namespace SushiRuntime
 {
-    namespace Memory
+    namespace Internal::Memory
     {
         class USMAllocator;
     }
 
-    namespace Graph
+    namespace Internal::Graph
     {
         struct Node;
 
@@ -53,7 +53,7 @@ namespace SushiRuntime
          *         no device owns that region, the stated placement, else DEFAULT_PLACEMENT.
          */
         SUSHIRUNTIME_API std::size_t placement_of(const Node& node,
-                                                  const Memory::USMAllocator& memory);
+                                                  const Internal::Memory::USMAllocator& memory);
 
     } // namespace Graph
 } // namespace SushiRuntime

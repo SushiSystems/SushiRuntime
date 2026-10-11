@@ -59,7 +59,7 @@ namespace SushiRuntime
          * @return InternalError when the agent does not start, else the code of its end.
          */
         [[nodiscard]] SUSHIRUNTIME_API WorkerExitCode
-        serve_worker(Execution::RuntimeContext& context, std::shared_ptr<ITransport> transport,
+        serve_worker(Internal::Execution::RuntimeContext& context, std::shared_ptr<ITransport> transport,
                      sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options,
                      const StopSignal& stop_signal);
 

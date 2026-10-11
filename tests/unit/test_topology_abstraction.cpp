@@ -37,8 +37,8 @@
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Topology;
+using namespace SushiRuntime::Internal::Execution;
+using namespace SushiRuntime::Internal::Topology;
 
 /**
  * @brief Verifies that a hand-built MatrixDistanceModel yields exact, deterministic distances.

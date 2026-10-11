@@ -46,8 +46,8 @@ namespace SushiRuntime
             /** @brief Throws the exception every refused secret is reported with. */
             [[noreturn]] void refuse(std::string message)
             {
-                throw Core::SushiException(
-                    Core::Error{Core::Errc::invalid_access, std::move(message)});
+                throw SushiException(
+                    Error{Errc::invalid_access, std::move(message)});
             }
 
             /**

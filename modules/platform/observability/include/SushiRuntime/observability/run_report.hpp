@@ -36,7 +36,7 @@
 
 namespace SushiRuntime
 {
-    namespace Observability
+    namespace Internal::Observability
     {
         /**
          * @brief Describes the per-NUMA-node execution and work-stealing metrics.
@@ -215,6 +215,6 @@ namespace SushiRuntime
 
     } // namespace Observability
 
-    using Observability::RunReport;
+    using Internal::Observability::RunReport;
 
 } // namespace SushiRuntime

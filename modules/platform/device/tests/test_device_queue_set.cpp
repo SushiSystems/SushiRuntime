@@ -44,13 +44,13 @@
 
 #include "test_helpers.hpp"
 
-using SushiRuntime::Core::Errc;
-using SushiRuntime::Core::SushiException;
-using SushiRuntime::Device::DeviceDescriptor;
-using SushiRuntime::Device::DeviceInfo;
-using SushiRuntime::Device::DeviceKind;
-using SushiRuntime::Device::DeviceQueueSet;
-using SushiRuntime::Device::QueueFlavour;
+using SushiRuntime::Errc;
+using SushiRuntime::SushiException;
+using SushiRuntime::Internal::Device::DeviceDescriptor;
+using SushiRuntime::Internal::Device::DeviceInfo;
+using SushiRuntime::Internal::Device::DeviceKind;
+using SushiRuntime::Internal::Device::DeviceQueueSet;
+using SushiRuntime::Internal::Device::QueueFlavour;
 
 namespace
 {

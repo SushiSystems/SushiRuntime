@@ -33,7 +33,7 @@
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 
-using namespace SushiRuntime::Topology;
+using namespace SushiRuntime::Internal::Topology;
 
 namespace
 {

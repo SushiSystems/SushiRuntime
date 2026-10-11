@@ -39,19 +39,16 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /** @brief Declares the test-only friend access to Graph::plan_. */
+        struct NodeEventRecordsTestAccess
         {
-            /** @brief Declares the test-only friend access to Graph::plan_. */
-            struct NodeEventRecordsTestAccess
+            static const SushiRuntime::Internal::Graph::CompiledGraph& plan(const Graph& g) noexcept
             {
-                static const SushiRuntime::Graph::CompiledGraph& plan(const Graph& g) noexcept
-                {
-                    return g.plan_;
-                }
-            };
-        }
+                return g.plan_;
+            }
+        };
     }
 }
 
@@ -60,9 +57,9 @@ using namespace SushiRuntime;
 namespace
 {
     // Registration index of the one compiled node named @p name.
-    std::uint32_t registration_index_of(const Graph::CompiledGraph& plan, const char* name)
+    std::uint32_t registration_index_of(const Internal::Graph::CompiledGraph& plan, const char* name)
     {
-        const Graph::Node* found = nullptr;
+        const Internal::Graph::Node* found = nullptr;
         for (const auto& n : plan.all_nodes)
         {
             if (std::string(n->metadata.name) == name)
@@ -87,7 +84,7 @@ TEST(Integration_NodeEventRecords, ProfilingNotRequestedLeavesNodeEventsEmpty)
 
     auto g = rt.graph();
     EXPECT_FALSE(g.is_profiling_requested());
-    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     auto report = g.run();
     EXPECT_TRUE(report.node_events.empty());
@@ -113,9 +110,9 @@ TEST(Integration_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
 
     auto g = rt.graph();
     g.set_profiling(true);
-    g.add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i) { pa[i] = static_cast<int>(i); });
-    g.add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
-    g.add(N, API::Reads{}, API::Writes(c), [pc](std::size_t i) { pc[i] = static_cast<int>(i); });
+    g.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] = static_cast<int>(i); });
+    g.add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
+    g.add(N, Reads{}, Writes(c), [pc](std::size_t i) { pc[i] = static_cast<int>(i); });
 
     auto report = g.run(std::size_t{5});
     ASSERT_EQ(report.node_events.size(), 15u);
@@ -156,13 +153,13 @@ TEST(Integration_NodeEventRecords, NodeIndexIsRegistrationOrder)
     // The strict dependency chain forces the execution order A, B, C; see README.md.
     auto g = rt.graph();
     g.set_profiling(true);
-    g.add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("A");
-    g.add(N, API::Reads(a), API::Writes(b), [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; }).name("B");
-    g.add(N, API::Reads(b), API::Writes(c), [pb, pc](std::size_t i) { pc[i] = pb[i] + 1; }).name("C");
+    g.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("A");
+    g.add(N, Reads(a), Writes(b), [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; }).name("B");
+    g.add(N, Reads(b), Writes(c), [pb, pc](std::size_t i) { pc[i] = pb[i] + 1; }).name("C");
 
     auto report = g.run();
 
-    const auto& plan = API::detail::NodeEventRecordsTestAccess::plan(g);
+    const auto& plan = detail::NodeEventRecordsTestAccess::plan(g);
     const std::uint32_t idx_a = registration_index_of(plan, "A");
     const std::uint32_t idx_b = registration_index_of(plan, "B");
     const std::uint32_t idx_c = registration_index_of(plan, "C");
@@ -199,8 +196,8 @@ TEST(Integration_NodeEventRecords, HostNodeLandsOnEventClock)
     // The host node reads what the kernel writes, so it runs after the kernel; see README.md.
     auto g = rt.graph();
     g.set_profiling(true);
-    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); }).name("kernel");
-    g.add_host(API::Reads(buf), API::Writes{}, [p]()
+    g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); }).name("kernel");
+    g.add_host(Reads(buf), Writes{}, [p]()
     {
         volatile int sink = 0;
         for (std::size_t i = 0; i < N; ++i) sink += p[i];
@@ -210,12 +207,12 @@ TEST(Integration_NodeEventRecords, HostNodeLandsOnEventClock)
     auto report = g.run();
     ASSERT_FALSE(report.node_events.empty());
 
-    const auto& plan = API::detail::NodeEventRecordsTestAccess::plan(g);
+    const auto& plan = detail::NodeEventRecordsTestAccess::plan(g);
     const std::uint32_t idx_kernel = registration_index_of(plan, "kernel");
 
     // Only a host record has submit_ns equal to start_ns; see README.md.
-    const Observability::NodeEventRecord* kernel_record = nullptr;
-    const Observability::NodeEventRecord* host_record = nullptr;
+    const Internal::Observability::NodeEventRecord* kernel_record = nullptr;
+    const Internal::Observability::NodeEventRecord* host_record = nullptr;
     for (const auto& rec : report.node_events)
     {
         if (rec.node_index == idx_kernel) kernel_record = &rec;

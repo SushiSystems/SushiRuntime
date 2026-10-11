@@ -39,16 +39,16 @@
 
 namespace SushiRuntime
 {
-    namespace Memory
+    namespace Internal::Memory
     {
         namespace
         {
             /** @brief Builds the exception for a device index that names no device. */
-            Core::SushiException bad_device_index(std::size_t device_index,
+            SushiException bad_device_index(std::size_t device_index,
                                                   std::size_t device_count)
             {
-                return Core::SushiException(Core::Error{
-                    Core::Errc::invalid_access,
+                return SushiException(Error{
+                    Errc::invalid_access,
                     "USM device index " + std::to_string(device_index) + " is out of range: the "
                         "allocator holds " + std::to_string(device_count) + " device(s)."});
             }

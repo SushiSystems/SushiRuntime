@@ -84,7 +84,7 @@ namespace SushiRuntime
             stop();
         }
 
-        void ClusterMonitor::start(Graph::OffloadSink& sink)
+        void ClusterMonitor::start(Internal::Graph::OffloadSink& sink)
         {
             sink_ = &sink;
             thread_ = std::thread([this] { run(); });

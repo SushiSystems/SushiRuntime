@@ -35,7 +35,7 @@
 
 namespace SushiRuntime
 {
-    namespace Memory
+    namespace Internal::Memory
     {
         /**
          * @brief Remembers which device each USM pointer was allocated on.

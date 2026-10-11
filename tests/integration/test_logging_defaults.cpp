@@ -40,7 +40,7 @@ using namespace SushiRuntime;
 namespace
 {
     /** @brief Holds one record a test sink received: its level and a copy of its line. */
-    using SeenRecord = std::pair<Core::LogLevel, std::string>;
+    using SeenRecord = std::pair<LogLevel, std::string>;
 
     /** @brief Holds the two process streams as captured around one call. */
     struct CapturedStreams
@@ -70,27 +70,27 @@ namespace
         protected:
             void SetUp() override
             {
-                saved_level_ = Core::log_level();
-                Core::set_log_synchronous(true);
-                Core::set_log_sink(nullptr);
+                saved_level_ = log_level();
+                set_log_synchronous(true);
+                set_log_sink(nullptr);
             }
 
             void TearDown() override
             {
-                Core::set_log_sink(nullptr);
-                Core::set_log_level(saved_level_);
+                set_log_sink(nullptr);
+                set_log_level(saved_level_);
             }
 
         private:
             /// @brief The level the process had when the test began.
-            Core::LogLevel saved_level_ = Core::LogLevel::Warn;
+            LogLevel saved_level_ = LogLevel::Warn;
     };
 }
 
 /** @brief Tests that the default sink writes nothing while a Runtime is created at Warn. */
 TEST_F(Integration_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
 {
-    Core::set_log_level(Core::LogLevel::Warn);
+    set_log_level(LogLevel::Warn);
 
     const CapturedStreams captured = capture_streams_around_create();
 
@@ -102,19 +102,19 @@ TEST_F(Integration_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
 TEST_F(Integration_LoggingDefaults, DeviceLineArrivesThroughTheSinkAtInfo)
 {
     std::vector<SeenRecord> records;
-    Core::set_log_sink([&records](Core::LogLevel level, std::string_view line)
+    set_log_sink([&records](LogLevel level, std::string_view line)
     {
         records.emplace_back(level, std::string(line));
     });
-    Core::set_log_level(Core::LogLevel::Info);
+    set_log_level(LogLevel::Info);
 
     const CapturedStreams captured = capture_streams_around_create();
-    Core::set_log_sink(nullptr);
+    set_log_sink(nullptr);
 
     bool saw_device_line = false;
     for (const SeenRecord& record : records)
     {
-        if (record.first == Core::LogLevel::Info &&
+        if (record.first == LogLevel::Info &&
             record.second.find("Device: ") != std::string::npos)
             saw_device_line = true;
     }

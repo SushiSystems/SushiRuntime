@@ -37,8 +37,8 @@
 #include "test_helpers.hpp"
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Topology;
+using namespace SushiRuntime::Internal::Execution;
+using namespace SushiRuntime::Internal::Topology;
 using SushiRuntime::Test::USMShared;
 
 /**

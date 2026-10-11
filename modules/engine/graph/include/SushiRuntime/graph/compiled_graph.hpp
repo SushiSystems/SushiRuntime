@@ -39,7 +39,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         /**
          * @brief Compiled representation of a task graph ready for execution.
@@ -51,15 +51,15 @@ namespace SushiRuntime
         struct SUSHIRUNTIME_API CompiledGraph
         {
             /** @brief Nodes with no pending incoming dependencies (DAG entry points). */
-            std::vector<SushiRuntime::Graph::Node*> roots;
+            std::vector<SushiRuntime::Internal::Graph::Node*> roots;
 
             /** @brief Sentinel node injected at the end of the graph. */
-            sushi_ptr<SushiRuntime::Graph::Node> sentinel;
+            sushi_ptr<SushiRuntime::Internal::Graph::Node> sentinel;
 
             /**
              * @brief Owns every node; the dependencies between nodes are raw pointers into it.
              */
-            std::vector<sushi_ptr<SushiRuntime::Graph::Node>> all_nodes;
+            std::vector<sushi_ptr<SushiRuntime::Internal::Graph::Node>> all_nodes;
 
             /**
              * @brief Snapshots each node's compiled in-degree so the plan can replay.
@@ -94,7 +94,7 @@ namespace SushiRuntime
             bool profiling = false;
 
             /** @brief Per-run node event records and clock pairing, live only while profiling is on. */
-            Observability::ProfilingLedger profiling_ledger;
+            Internal::Observability::ProfilingLedger profiling_ledger;
 
             /**
              * @brief Per-registration-index count of internal nodes sharing it.

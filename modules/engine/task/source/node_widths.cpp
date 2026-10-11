@@ -37,7 +37,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         namespace
         {
@@ -45,9 +45,9 @@ namespace SushiRuntime
             std::uint32_t narrow_width(std::size_t value) noexcept
             {
                 constexpr std::size_t max_u32 =
-                    static_cast<std::size_t>(Observability::WIDTH_UNKNOWN);
+                    static_cast<std::size_t>(Internal::Observability::WIDTH_UNKNOWN);
                 return value <= max_u32 ? static_cast<std::uint32_t>(value)
-                                        : Observability::WIDTH_UNKNOWN;
+                                        : Internal::Observability::WIDTH_UNKNOWN;
             }
         } // namespace
 

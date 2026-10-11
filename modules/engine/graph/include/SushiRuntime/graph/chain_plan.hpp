@@ -36,7 +36,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         struct Node;
 
@@ -47,10 +47,10 @@ namespace SushiRuntime
          */
         struct PendingEvent
         {
-            Graph::Node* node;          /**< Node the event belongs to. */
+            Internal::Graph::Node* node;          /**< Node the event belongs to. */
             std::uint32_t step;         /**< Step index the node was submitted in. */
             sycl::event event;          /**< The submission's event. */
-            Graph::NodeWidths widths{}; /**< Node's widths, snapshotted at submit. */
+            Internal::Graph::NodeWidths widths{}; /**< Node's widths, snapshotted at submit. */
         };
 
         /**
@@ -65,7 +65,7 @@ namespace SushiRuntime
         {
             bool chainable = false;               /**< Whether the chain path may run this plan. */
             std::size_t queue_index = 0;          /**< Device whose in-order queue the chain submits to. */
-            std::vector<Graph::Node*> order;      /**< Every node except the sentinel, in a topological order. */
+            std::vector<Internal::Graph::Node*> order;      /**< Every node except the sentinel, in a topological order. */
 
             /**
              * @brief Profiled submissions awaiting finish(), which clears the list.

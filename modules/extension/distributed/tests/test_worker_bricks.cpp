@@ -430,7 +430,7 @@ namespace
     }
 
     /** @brief Returns a dispatch of one task. */
-    Wire::TaskDispatchMessage dispatch_of(std::uint64_t task_id, Graph::OpID op,
+    Wire::TaskDispatchMessage dispatch_of(std::uint64_t task_id, Internal::Graph::OpID op,
                                           std::vector<BufferHandle> inputs,
                                           std::vector<BufferHandle> outputs)
     {
@@ -535,7 +535,7 @@ namespace
         MasterLinkOptions options;
         options.name = "worker-a";
         options.build_id = "test-build";
-        options.ops = {Graph::OpID(7), Graph::OpID(9)};
+        options.ops = {Internal::Graph::OpID(7), Internal::Graph::OpID(9)};
         options.max_jobs = 16;
         options.cache_budget = 4096;
         options.heartbeat_interval = heartbeat_interval;
@@ -668,11 +668,11 @@ TEST(Unit_DispatchDeduplicatorTest, DuplicateDispatchRunsOnce)
 {
     std::atomic<int> kernel_calls{0};
     Worker worker;
-    const Graph::OpID op(11);
+    const Internal::Graph::OpID op(11);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
-                                                   const Graph::TaskMetadata&)
+                                                   const Internal::Graph::TaskMetadata&)
                                    {
                                        ++kernel_calls;
                                        return sycl::event{};
@@ -711,11 +711,11 @@ TEST(Unit_DispatchExecutorTest, OutputAllocationFailureFailsTheTask)
 {
     std::atomic<int> kernel_calls{0};
     Worker worker;
-    const Graph::OpID op(12);
+    const Internal::Graph::OpID op(12);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
-                                                   const Graph::TaskMetadata&)
+                                                   const Internal::Graph::TaskMetadata&)
                                    {
                                        ++kernel_calls;
                                        return sycl::event{};
@@ -749,12 +749,12 @@ TEST(Unit_DispatchExecutorTest, KernelSeesBufferSizes)
     std::atomic<std::size_t> input_size{0};
     std::atomic<std::size_t> output_size{0};
     Worker worker;
-    const Graph::OpID op(13);
+    const Internal::Graph::OpID op(13);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel(
                 [&input_size, &output_size](sycl::queue&, span<const BufferView> inputs,
                                             span<const BufferView> outputs,
-                                            const Graph::TaskMetadata&)
+                                            const Internal::Graph::TaskMetadata&)
                 {
                     input_size = inputs[0].size_bytes;
                     output_size = outputs[0].size_bytes;
@@ -798,7 +798,7 @@ TEST(Unit_DispatchExecutorTest, KernelSeesBufferSizes)
 TEST(Unit_DispatchExecutorTest, GenericLambdaRegistersAsAKernel)
 {
     Worker worker;
-    const Graph::OpID op(14);
+    const Internal::Graph::OpID op(14);
     worker.kernels->register_kernel(
         op, [](auto& /*queue*/, auto /*inputs*/, auto outputs, const auto& /*metadata*/)
             {
@@ -825,11 +825,11 @@ TEST(Unit_DispatchExecutorTest, KernelThatThrowsFailsTheTaskAndTheWorkerLives)
 {
     std::atomic<int> kernel_calls{0};
     Worker worker;
-    const Graph::OpID op(15);
+    const Internal::Graph::OpID op(15);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
-                                                   const Graph::TaskMetadata&)
+                                                   const Internal::Graph::TaskMetadata&)
                                    {
                                        if (++kernel_calls == 1)
                                            throw std::runtime_error("kernel refused");
@@ -859,12 +859,12 @@ TEST(Unit_DispatchExecutorTest, KernelThatThrowsFailsTheTaskAndTheWorkerLives)
 TEST(Unit_DispatchExecutorTest, OutputStreamEndsWithTheResult)
 {
     Worker worker;
-    const Graph::OpID op(16);
+    const Internal::Graph::OpID op(16);
     const std::vector<std::byte> bytes = counting_bytes(10, 100);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&bytes](sycl::queue&, span<const BufferView>,
                                             span<const BufferView> outputs,
-                                            const Graph::TaskMetadata&)
+                                            const Internal::Graph::TaskMetadata&)
                                    {
                                        std::memcpy(outputs[0].data, bytes.data(), bytes.size());
                                        return sycl::event{};
@@ -921,11 +921,11 @@ TEST(Unit_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
     Worker worker(1024 * 1024, options);
 
     std::atomic<int> kernel_calls{0};
-    const Graph::OpID op(18);
+    const Internal::Graph::OpID op(18);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
-                                                   const Graph::TaskMetadata&)
+                                                   const Internal::Graph::TaskMetadata&)
                                    {
                                        ++kernel_calls;
                                        return sycl::event{};
@@ -1092,10 +1092,10 @@ TEST(Unit_MasterLinkTest, LateChallengeForAForgottenHelloIsIgnored)
 TEST(Unit_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskID)
 {
     Worker worker;
-    const Graph::OpID op(17);
+    const Internal::Graph::OpID op(17);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([](sycl::queue&, span<const BufferView>,
-                                      span<const BufferView>, const Graph::TaskMetadata&)
+                                      span<const BufferView>, const Internal::Graph::TaskMetadata&)
                                    {
                                        return sycl::event{};
                                    }));
@@ -1229,30 +1229,30 @@ namespace
     KernelRegistry::Kernel idle_kernel()
     {
         return [](sycl::queue&, span<const BufferView>, span<const BufferView>,
-                  const Graph::TaskMetadata&) { return sycl::event{}; };
+                  const Internal::Graph::TaskMetadata&) { return sycl::event{}; };
     }
 
     /** @brief Returns the code of the exception a call throws, or ok when it throws none. */
     template <typename Call>
-    Core::Errc refusal_of(Call call)
+    Errc refusal_of(Call call)
     {
         try
         {
             call();
         }
-        catch (const Core::SushiException& error)
+        catch (const SushiException& error)
         {
             return error.error().code;
         }
-        return Core::Errc::ok;
+        return Errc::ok;
     }
 } // namespace
 
 /** @brief Tests that a sealed registry keeps its kernels and refuses a new one. */
 TEST(Unit_KernelRegistryTest, SealedRegistryRefusesRegistration)
 {
-    const Graph::OpID early(21);
-    const Graph::OpID late(22);
+    const Internal::Graph::OpID early(21);
+    const Internal::Graph::OpID late(22);
     const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
     kernels->register_kernel(early, idle_kernel());
     EXPECT_FALSE(kernels->is_sealed());
@@ -1262,9 +1262,9 @@ TEST(Unit_KernelRegistryTest, SealedRegistryRefusesRegistration)
 
     EXPECT_TRUE(kernels->is_sealed());
     EXPECT_EQ(refusal_of([&] { kernels->register_kernel(late, idle_kernel()); }),
-              Core::Errc::invalid_state);
+              Errc::invalid_state);
     EXPECT_EQ(refusal_of([&] { kernels->register_kernel(early, idle_kernel()); }),
-              Core::Errc::invalid_state)
+              Errc::invalid_state)
         << "a sealed registry replaced a kernel";
     EXPECT_TRUE(kernels->has(early));
     EXPECT_FALSE(kernels->has(late));
@@ -1274,15 +1274,15 @@ TEST(Unit_KernelRegistryTest, SealedRegistryRefusesRegistration)
 /** @brief Tests that a kernel that holds no callable is refused and registers nothing. */
 TEST(Unit_KernelRegistryTest, EmptyKernelIsRefused)
 {
-    const Graph::OpID operation(23);
+    const Internal::Graph::OpID operation(23);
     const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
 
     EXPECT_EQ(refusal_of([&] { kernels->register_kernel(operation, KernelRegistry::Kernel()); }),
-              Core::Errc::invalid_access);
+              Errc::invalid_access);
     EXPECT_FALSE(kernels->has(operation)) << "an empty kernel would be sent in PROOF";
 
     kernels->seal();
     EXPECT_EQ(refusal_of([&] { kernels->register_kernel(operation, KernelRegistry::Kernel()); }),
-              Core::Errc::invalid_access)
+              Errc::invalid_access)
         << "an empty kernel is named as the fault before the seal is";
 }

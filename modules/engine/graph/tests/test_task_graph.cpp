@@ -49,15 +49,15 @@
 
 namespace
 {
-    using SushiRuntime::Core::Errc;
-    using SushiRuntime::Memory::ResourceRegion;
-    using SushiRuntime::Core::SushiException;
-    using SushiRuntime::Graph::CompiledGraph;
-    using SushiRuntime::Graph::HostWork;
-    using SushiRuntime::Graph::Node;
-    using SushiRuntime::Graph::TaskGraph;
-    using SushiRuntime::Graph::TaskMetadata;
-    using SushiRuntime::Graph::TaskWork;
+    using SushiRuntime::Errc;
+    using SushiRuntime::Internal::Memory::ResourceRegion;
+    using SushiRuntime::SushiException;
+    using SushiRuntime::Internal::Graph::CompiledGraph;
+    using SushiRuntime::Internal::Graph::HostWork;
+    using SushiRuntime::Internal::Graph::Node;
+    using SushiRuntime::Internal::Graph::TaskGraph;
+    using SushiRuntime::Internal::Graph::TaskMetadata;
+    using SushiRuntime::Internal::Graph::TaskWork;
 
     /** @brief Returns device work that does nothing; no test submits it. */
     TaskWork idle_work()
@@ -140,7 +140,7 @@ TEST(Unit_TaskGraph, EveryAddReturnsTheNodeItAdded)
     EXPECT_EQ(&tracked, graph.last_node_added());
     EXPECT_EQ(tracked.io_writes_.size(), 1u);
 
-    const auto bindings = std::make_shared<SushiRuntime::Graph::LateBindings>();
+    const auto bindings = std::make_shared<SushiRuntime::Internal::Graph::LateBindings>();
     Node& late = graph.add_node(idle_work(), reads, writes, bindings);
     EXPECT_EQ(&late, graph.last_node_added());
     EXPECT_EQ(late.bindings_, bindings);
@@ -228,7 +228,7 @@ TEST(Unit_TaskGraph, EveryAddOverloadRefusesAnUnissuedRegistration)
     metadata.name = "semantic";
 
     TaskGraph graph;
-    const auto bindings = std::make_shared<SushiRuntime::Graph::LateBindings>();
+    const auto bindings = std::make_shared<SushiRuntime::Internal::Graph::LateBindings>();
     const auto live_reads = std::make_shared<std::vector<void*>>(1, &source);
     const auto live_writes = std::make_shared<std::vector<void*>>(1, &target);
 

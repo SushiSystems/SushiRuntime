@@ -34,7 +34,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         /**
          * @brief Hardware topology provider backed by SYCL and hwloc.

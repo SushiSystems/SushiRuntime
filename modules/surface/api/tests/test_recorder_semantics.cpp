@@ -41,13 +41,13 @@
 
 using namespace SushiRuntime;
 
-static_assert(!std::is_move_constructible<API::Region>::value, "a Region must not move");
-static_assert(!std::is_move_assignable<API::Region>::value, "a Region must not move-assign");
-static_assert(!std::is_copy_constructible<API::Region>::value, "a Region must not copy");
-static_assert(std::is_nothrow_move_constructible<API::Graph>::value, "a Graph must move");
-static_assert(std::is_nothrow_move_constructible<API::DynamicGraph>::value,
+static_assert(!std::is_move_constructible<Region>::value, "a Region must not move");
+static_assert(!std::is_move_assignable<Region>::value, "a Region must not move-assign");
+static_assert(!std::is_copy_constructible<Region>::value, "a Region must not copy");
+static_assert(std::is_nothrow_move_constructible<Graph>::value, "a Graph must move");
+static_assert(std::is_nothrow_move_constructible<DynamicGraph>::value,
               "a DynamicGraph must move");
-static_assert(Graph::TaskMetadata::K_MAX_PARAMS == 8,
+static_assert(Internal::Graph::TaskMetadata::K_MAX_PARAMS == 8,
               "AnOffloadRuleTakesAtMostEightParameters spells the limit as eight literals");
 
 namespace
@@ -57,7 +57,7 @@ namespace
     constexpr std::uint64_t CELL = 7;
 
     /** @brief Allocates WIDTH words and zeroes them. */
-    API::Buffer<std::uint32_t> zeroed(Runtime& rt)
+    Buffer<std::uint32_t> zeroed(Runtime& rt)
     {
         auto buffer = rt.buffer<std::uint32_t>(WIDTH);
         for (std::size_t i = 0; i < WIDTH; ++i)
@@ -67,7 +67,7 @@ namespace
 
     /** @brief Adds one rule that adds step to every word of target. */
     template <class Builder>
-    void add_increment(Builder& builder, const API::Buffer<std::uint32_t>& target,
+    void add_increment(Builder& builder, const Buffer<std::uint32_t>& target,
                        std::uint32_t step)
     {
         std::uint32_t* words = target.data();
@@ -79,33 +79,33 @@ namespace
      * @brief Records RULE_NODES kernels in one rule scope, each adding one to target.
      * @param target Holds WIDTH words; must outlive the recorder.
      */
-    void record_three_node_rule(API::Recorder& recorder, const API::Buffer<std::uint32_t>& target)
+    void record_three_node_rule(Recorder& recorder, const Buffer<std::uint32_t>& target)
     {
         std::uint32_t* words = target.data();
         auto rule = recorder.rule();
         for (std::size_t node = 0; node < RULE_NODES; ++node)
-            recorder.kernel(WIDTH, API::Access(Reads(target), Writes(target)),
+            recorder.kernel(WIDTH, Access(Reads(target), Writes(target)),
                             [words](std::size_t i) { words[i] += 1u; });
     }
 
     /** @brief Counts the node timing rows of report that carry name. */
-    std::size_t rows_named(const Observability::RunReport& report, const std::string& name)
+    std::size_t rows_named(const Internal::Observability::RunReport& report, const std::string& name)
     {
         std::size_t rows = 0;
-        for (const Observability::NodeTiming& row : report.node_timings)
+        for (const Internal::Observability::NodeTiming& row : report.node_timings)
             rows += row.name == name ? 1u : 0u;
         return rows;
     }
 
     /** @brief Returns the error of the SushiException call throws, or nothing when none. */
     template <class Call>
-    std::optional<Core::Error> refusal_of(Call&& call)
+    std::optional<Error> refusal_of(Call&& call)
     {
         try
         {
             call();
         }
-        catch (const Core::SushiException& refused)
+        catch (const SushiException& refused)
         {
             return refused.error();
         }
@@ -136,7 +136,7 @@ TEST(Integration_RecorderSemantics, ARecordingThroughAHeldRegionRecomposes)
     auto rt = Runtime::create();
     auto values = zeroed(rt);
     auto world = rt.dynamic_graph();
-    API::Region& cell = world.region(CELL);
+    Region& cell = world.region(CELL);
     add_increment(cell, values, 1u);
     world.run();
     ASSERT_EQ(world.compose_count(), 1u);
@@ -153,7 +153,7 @@ TEST(Integration_RecorderSemantics, ClearingARegionReplacesItsWork)
     auto rt = Runtime::create();
     auto values = zeroed(rt);
     auto world = rt.dynamic_graph();
-    API::Region& cell = world.region(CELL);
+    Region& cell = world.region(CELL);
     add_increment(cell, values, 1u);
     world.run();
 
@@ -198,14 +198,14 @@ TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     EXPECT_EQ(graph.node_count(), RULE_NODES);
     EXPECT_EQ(graph.last_rule(), 0u);
 
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     graph.run(1, report);
 
     // The nodes of a rule share one registration, and the report holds one row per registration.
     ASSERT_EQ(report.node_timings.size(), 1u);
     EXPECT_EQ(rows_named(report, "pipeline"), 1u) << "the rule's row must carry the rule's name";
-    EXPECT_NE(graph.rule_registration(0), API::Graph::NO_REGISTRATION);
-    EXPECT_EQ(graph.rule_registration(1), API::Graph::NO_REGISTRATION)
+    EXPECT_NE(graph.rule_registration(0), Graph::NO_REGISTRATION);
+    EXPECT_EQ(graph.rule_registration(1), Graph::NO_REGISTRATION)
         << "the graph holds one rule, so position 1 names none";
     EXPECT_EQ(values[0], static_cast<std::uint32_t>(RULE_NODES));
 }
@@ -223,17 +223,17 @@ TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
 
     EXPECT_EQ(world.size(), 2u);
     EXPECT_EQ(world.node_count(), 1u + RULE_NODES);
-    EXPECT_EQ(world.rule_registration(CELL + 1, 0), API::DynamicGraph::NO_REGISTRATION);
+    EXPECT_EQ(world.rule_registration(CELL + 1, 0), DynamicGraph::NO_REGISTRATION);
 
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     world.run(1, report);
 
     EXPECT_EQ(rows_named(report, "pipeline"), 1u);
     EXPECT_EQ(world.rule_registration(CELL, 0), 0u);
     EXPECT_EQ(world.rule_registration(CELL + 1, 0), 1u)
         << "the three nodes of the second region's rule share the index after the first";
-    EXPECT_EQ(world.rule_registration(CELL + 1, 1), API::DynamicGraph::NO_REGISTRATION);
-    EXPECT_EQ(world.rule_registration(CELL + 2, 0), API::DynamicGraph::NO_REGISTRATION);
+    EXPECT_EQ(world.rule_registration(CELL + 1, 1), DynamicGraph::NO_REGISTRATION);
+    EXPECT_EQ(world.rule_registration(CELL + 2, 0), DynamicGraph::NO_REGISTRATION);
 }
 
 TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
@@ -252,7 +252,7 @@ TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
     graph.name(std::string("integrate_") + std::to_string(CELL));
     graph.set_profiling(true);
 
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     graph.run(1, report);
 
     ASSERT_EQ(report.node_timings.size(), 2u);
@@ -269,13 +269,13 @@ TEST(Integration_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
     auto graph = rt.graph();
     add_increment(graph, values, 1u);
     graph.set_profiling(true);
-    Observability::RunReport unnamed;
+    Internal::Observability::RunReport unnamed;
     graph.run(1, unnamed);
     ASSERT_EQ(unnamed.node_timings.size(), 1u);
 
     const char* absent = nullptr;
     graph.name("named").name(absent);
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     graph.run(1, report);
 
     ASSERT_EQ(report.node_timings.size(), 1u);
@@ -291,12 +291,12 @@ TEST(Integration_RecorderSemantics, MovedFromGraphIsEmpty)
     graph.run();
     ASSERT_EQ(graph.compile_count(), 1u);
 
-    API::Graph taken = std::move(graph);
+    Graph taken = std::move(graph);
 
     EXPECT_EQ(graph.size(), 0u);
     EXPECT_EQ(graph.node_count(), 0u);
     EXPECT_EQ(graph.compile_count(), 0u);
-    EXPECT_EQ(graph.rule_registration(0), API::Graph::NO_REGISTRATION);
+    EXPECT_EQ(graph.rule_registration(0), Graph::NO_REGISTRATION);
     auto refused = graph.try_run();
     ASSERT_FALSE(refused);
     EXPECT_EQ(refused.error().code, Errc::invalid_graph);
@@ -320,7 +320,7 @@ TEST(Integration_RecorderSemantics, MovedFromDynamicGraphHasNoRegions)
     add_increment(world.region(CELL), values, 1u);
     world.run();
 
-    API::DynamicGraph taken = std::move(world);
+    DynamicGraph taken = std::move(world);
 
     EXPECT_EQ(world.region_count(), 0u);
     EXPECT_EQ(world.size(), 0u);
@@ -367,7 +367,7 @@ TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetected)
 {
     auto rt = Runtime::create();
     auto kept = zeroed(rt);
-    std::optional<API::Buffer<std::uint32_t>> gone(zeroed(rt));
+    std::optional<Buffer<std::uint32_t>> gone(zeroed(rt));
     auto graph = rt.graph();
     add_increment(graph, *gone, 1u);
     for (std::size_t node = 0; node < 4; ++node)
@@ -387,7 +387,7 @@ TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
 {
     auto rt = Runtime::create();
     auto kept = zeroed(rt);
-    std::optional<API::Buffer<std::uint32_t>> gone(zeroed(rt));
+    std::optional<Buffer<std::uint32_t>> gone(zeroed(rt));
     auto world = rt.dynamic_graph();
     add_increment(world.region(CELL), kept, 1u);
     add_increment(world.region(CELL + 1), *gone, 1u);
@@ -411,9 +411,9 @@ TEST(Integration_RecorderSemantics, AMovedFromRecorderNeverRepeatsAGeneration)
     graph.run();
     ASSERT_EQ(values[0], 1u);
 
-    API::Recorder& source = graph.recorder();
+    Recorder& source = graph.recorder();
     std::vector<std::uint64_t> seen{source.generation()};
-    API::Recorder taken = std::move(source);
+    Recorder taken = std::move(source);
     EXPECT_EQ(taken.generation(), seen[0]) << "the work moved keeps the generation it had";
     EXPECT_EQ(std::count(seen.begin(), seen.end(), source.generation()), 0);
     seen.push_back(source.generation());
@@ -440,11 +440,11 @@ TEST(Integration_RecorderSemantics, AClearInsideAnExtensionStartsANewRule)
     auto graph = rt.graph();
     std::size_t first = 0;
     std::size_t second = 0;
-    graph.extend([&](API::Recorder& recorder)
+    graph.extend([&](Recorder& recorder)
     {
-        recorder.host(API::Access(), [&first] { ++first; });
+        recorder.host(Access(), [&first] { ++first; });
         recorder.clear();
-        recorder.host(API::Access(), [&second] { ++second; });
+        recorder.host(Access(), [&second] { ++second; });
     });
 
     EXPECT_EQ(graph.size(), 1u);
@@ -475,7 +475,7 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
                   {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });
     ASSERT_TRUE(task_refusal);
-    EXPECT_EQ(task_refusal->code, Core::Errc::invalid_graph);
+    EXPECT_EQ(task_refusal->code, Errc::invalid_graph);
     EXPECT_NE(task_refusal->message.find("9 parameters"), std::string::npos)
         << task_refusal->message;
     EXPECT_NE(task_refusal->message.find("at most 8"), std::string::npos)
@@ -486,7 +486,7 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
         graph.add("recorder.rule"_op, field, rule, {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });
     ASSERT_TRUE(rule_refusal);
-    EXPECT_EQ(rule_refusal->code, Core::Errc::invalid_graph);
+    EXPECT_EQ(rule_refusal->code, Errc::invalid_graph);
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 
     graph.add("recorder.task"_op, WIDTH, Reads(values), Writes(values), local,
@@ -503,17 +503,17 @@ TEST(Integration_RecorderSemantics, AnEmitterThatAddsNothingLeavesTheRuleBeforeI
     auto graph = rt.graph();
     add_increment(graph, values, 1u);
     graph.name("integrate");
-    graph.add_emitter([](Graph::TaskGraph&) {}).name("optional");
+    graph.add_emitter([](Internal::Graph::TaskGraph&) {}).name("optional");
     graph.set_profiling(true);
 
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     graph.run(1, report);
 
     EXPECT_EQ(graph.size(), 2u);
     EXPECT_EQ(rows_named(report, "integrate"), 1u) << "the first rule must keep its name";
     EXPECT_EQ(rows_named(report, "optional"), 0u);
-    EXPECT_NE(graph.rule_registration(0), API::Graph::NO_REGISTRATION);
-    EXPECT_EQ(graph.rule_registration(1), API::Graph::NO_REGISTRATION)
+    EXPECT_NE(graph.rule_registration(0), Graph::NO_REGISTRATION);
+    EXPECT_EQ(graph.rule_registration(1), Graph::NO_REGISTRATION)
         << "a rule that added no node has no registration";
     EXPECT_EQ(values[0], 1u);
 }

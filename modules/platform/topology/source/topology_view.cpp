@@ -36,13 +36,13 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         /**
          * @brief Reads the core map from the provider once and keeps the distance model.
          * @param provider Queried during construction only; not stored.
          * @param distance_model Shared with the view; must not be null.
-         * @throws Core::SushiException With Errc::invalid_access if distance_model is null.
+         * @throws SushiException With Errc::invalid_access if distance_model is null.
          */
         TopologyView::TopologyView(const ITopologyProvider& provider,
                                    std::shared_ptr<const INUMADistanceModel> distance_model)
@@ -50,8 +50,8 @@ namespace SushiRuntime
               distance_model_(std::move(distance_model))
         {
             if (!distance_model_)
-                throw Core::SushiException(Core::Error{
-                    Core::Errc::invalid_access,
+                throw SushiException(Error{
+                    Errc::invalid_access,
                     "TopologyView: the distance model is null; pass a model such as "
                     "HwlocDistanceModel or MatrixDistanceModel."});
         }

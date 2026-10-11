@@ -44,7 +44,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         namespace
         {
@@ -125,11 +125,11 @@ namespace SushiRuntime
             }
 
             /** @brief Builds the exception for a SYCL enumeration that threw. */
-            Core::SushiException enumeration_error(const HardwareFilterConfig& config,
+            SushiException enumeration_error(const HardwareFilterConfig& config,
                                                    const char* sycl_text)
             {
-                return Core::SushiException(Core::Error{
-                    Core::Errc::unsupported,
+                return SushiException(Error{
+                    Errc::unsupported,
                     std::string("HardwareDiscovery::probe_all_devices: SYCL device enumeration "
                                 "failed: ") + sycl_text + ". Active filter: " + describe(config) +
                         ". Check that the device drivers are installed and that one SYCL runtime "

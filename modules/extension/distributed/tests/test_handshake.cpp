@@ -102,13 +102,13 @@ namespace
 
     /** @brief Returns the error a call throws, or nothing when it returns. */
     template <typename Call>
-    std::optional<Core::Error> error_of(Call&& call)
+    std::optional<Error> error_of(Call&& call)
     {
         try
         {
             std::forward<Call>(call)();
         }
-        catch (const Core::SushiException& exception)
+        catch (const SushiException& exception)
         {
             return exception.error();
         }
@@ -325,11 +325,11 @@ TEST(Unit_SharedSecretTest, FromFileRefusesAShortFile)
 {
     const ScratchFile file("sr_test_shared_secret_short.bin", counting(0x00, 31));
 
-    const std::optional<Core::Error> error =
+    const std::optional<Error> error =
         error_of([&] { (void)SharedSecret::from_file(file.path()); });
 
     ASSERT_TRUE(error.has_value());
-    EXPECT_EQ(error->code, Core::Errc::invalid_access);
+    EXPECT_EQ(error->code, Errc::invalid_access);
     EXPECT_NE(error->message.find("sr_test_shared_secret_short.bin"), std::string::npos);
     EXPECT_NE(error->message.find("31 bytes"), std::string::npos);
 }
@@ -353,11 +353,11 @@ TEST(Unit_SharedSecretTest, FromFileMissingNamesThePath)
     const std::filesystem::path missing =
         std::filesystem::current_path() / "sr_test_shared_secret_missing.bin";
 
-    const std::optional<Core::Error> error =
+    const std::optional<Error> error =
         error_of([&] { (void)SharedSecret::from_file(missing); });
 
     ASSERT_TRUE(error.has_value());
-    EXPECT_EQ(error->code, Core::Errc::invalid_access);
+    EXPECT_EQ(error->code, Errc::invalid_access);
     EXPECT_NE(error->message.find(missing.generic_string()), std::string::npos);
 }
 
@@ -392,10 +392,10 @@ TEST(Unit_SharedSecretTest, FromBytesRefusesAShortSecret)
 {
     const std::vector<std::uint8_t> content = counting(0x00, 31);
 
-    const std::optional<Core::Error> error =
+    const std::optional<Error> error =
         error_of([&] { (void)SharedSecret::from_bytes(bytes_of(content)); });
 
     ASSERT_TRUE(error.has_value());
-    EXPECT_EQ(error->code, Core::Errc::invalid_access);
+    EXPECT_EQ(error->code, Errc::invalid_access);
     EXPECT_NE(error->message.find("31 bytes"), std::string::npos);
 }

@@ -44,7 +44,7 @@ namespace SushiRuntime
             return next_task_id_.fetch_add(1, std::memory_order_relaxed);
         }
 
-        bool PendingTasks::insert(std::uint64_t task_id, Graph::Node& node, PeerID worker,
+        bool PendingTasks::insert(std::uint64_t task_id, Internal::Graph::Node& node, PeerID worker,
                                   SushiRuntime::span<const BufferHandle> outputs,
                                   std::chrono::steady_clock::time_point now)
         {

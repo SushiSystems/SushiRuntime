@@ -33,7 +33,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         /** @brief Work definition for a task node. */
         using TaskWork = std::function<void(sycl::handler&)>;

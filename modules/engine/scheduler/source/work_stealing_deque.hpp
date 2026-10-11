@@ -37,13 +37,13 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Implements a lock-free Chase-Lev work-stealing deque of fixed capacity.
          * @see modules/engine/scheduler/README.md
          */
-        class alignas(SushiRuntime::Core::CACHE_LINE_SIZE) Deque : public Core::RefCounted
+        class alignas(SushiRuntime::CACHE_LINE_SIZE) Deque : public RefCounted
         {
         public:
             /** @brief Fixed ring capacity. 256K is huge for DAG workloads. */
@@ -53,8 +53,8 @@ namespace SushiRuntime
             /** @brief Ring buffer of atomic slots (C++17 replacement for atomic_ref). */
             std::atomic<Task*>* items;
 
-            alignas(SushiRuntime::Core::CACHE_LINE_SIZE) std::atomic<int64_t> top;
-            alignas(SushiRuntime::Core::CACHE_LINE_SIZE) std::atomic<int64_t> bottom;
+            alignas(SushiRuntime::CACHE_LINE_SIZE) std::atomic<int64_t> top;
+            alignas(SushiRuntime::CACHE_LINE_SIZE) std::atomic<int64_t> bottom;
 
             /**
              * @brief Owner-private surplus, used only when the ring is full.

@@ -48,9 +48,9 @@ TEST(Integration_NativeCPU, HostTaskRunsAfterKernel)
     int* bp = b.data();
 
     auto g = rt.graph();
-    g.add(N, API::Reads{}, API::Writes(a),
+    g.add(N, Reads{}, Writes(a),
           [ap](std::size_t i) { ap[i] = static_cast<int>(i) * 2; });
-    g.add_host(API::Reads(a), API::Writes(b),
+    g.add_host(Reads(a), Writes(b),
                [ap, bp]() { for (std::size_t i = 0; i < N; ++i) bp[i] = ap[i] + 1; });
 
     g.run();
@@ -73,9 +73,9 @@ TEST(Integration_NativeCPU, KernelRunsAfterHostTask)
     int* bp = b.data();
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(a),
+    g.add_host(Reads{}, Writes(a),
                [ap]() { for (std::size_t i = 0; i < N; ++i) ap[i] = static_cast<int>(i) + 5; });
-    g.add(N, API::Reads(a), API::Writes(b),
+    g.add(N, Reads(a), Writes(b),
           [ap, bp](std::size_t i) { bp[i] = ap[i] * 10; });
 
     g.run();
@@ -116,7 +116,7 @@ TEST(Integration_NativeCPU, ThrowingHostTaskKeepsRuntimeUsable)
     int* p = buf.data();
 
     auto good = rt.graph();
-    good.add_host(API::Reads{}, API::Writes(buf),
+    good.add_host(Reads{}, Writes(buf),
                   [p]() { for (std::size_t i = 0; i < N; ++i) p[i] = static_cast<int>(i); });
     auto r2 = good.try_run();
     ASSERT_TRUE(r2.has_value()) << "the pool must stay re-armable after a failure.";

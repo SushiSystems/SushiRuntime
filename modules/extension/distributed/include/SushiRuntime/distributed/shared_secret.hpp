@@ -74,7 +74,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Reads a secret from a file, byte for byte.
-                 * @throws Core::SushiException With Errc::invalid_access, naming the file, when
+                 * @throws SushiException With Errc::invalid_access, naming the file, when
                  *         it cannot be read or holds fewer than K_MINIMUM_BYTES or more than
                  *         K_MAXIMUM_BYTES bytes.
                  */
@@ -83,14 +83,14 @@ namespace SushiRuntime
                 /**
                  * @brief Reads a secret from the file an environment variable names.
                  * @return The empty secret when the variable is unset or empty.
-                 * @throws Core::SushiException As from_file(), naming the variable as well.
+                 * @throws SushiException As from_file(), naming the variable as well.
                  */
                 [[nodiscard]] static SharedSecret from_environment(
                     const std::string& variable_name);
 
                 /**
                  * @brief Copies a secret out of memory the caller owns.
-                 * @throws Core::SushiException With Errc::invalid_access when @p bytes holds
+                 * @throws SushiException With Errc::invalid_access when @p bytes holds
                  *         fewer than K_MINIMUM_BYTES or more than K_MAXIMUM_BYTES bytes.
                  */
                 [[nodiscard]] static SharedSecret from_bytes(span<const std::uint8_t> bytes);

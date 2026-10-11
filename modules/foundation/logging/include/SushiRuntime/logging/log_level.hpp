@@ -38,58 +38,55 @@
 
 namespace SushiRuntime
 {
-    namespace Core
+    /**
+     * @brief Orders the severities of a log record; a level admits itself and every lower one.
+     */
+    enum class LogLevel : int
     {
+        Off   = 0, /**< Nothing is logged. */
+        Error = 1, /**< An operation failed. */
+        Warn  = 2, /**< The runtime recovered or fell back. */
+        Info  = 3, /**< A lifecycle event. */
+        Debug = 4  /**< Internal state at a decision point. */
+    };
+
+    #if !SR_ENABLE_LOGGING
+        /** @brief Holds the highest level this translation unit compiles log calls for. */
+        constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Off;
+    #elif defined(NDEBUG)
+        /** @brief Holds the highest level this translation unit compiles log calls for. */
+        constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Info;
+    #else
+        /** @brief Holds the highest level this translation unit compiles log calls for. */
+        constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Debug;
+    #endif
+
+    /**
+     * @brief Sets the level of the whole process; records above it are dropped unformatted.
+     * @see modules/foundation/logging/README.md
+     */
+    SUSHIRUNTIME_API void set_log_level(LogLevel level) noexcept;
+
+    /**
+     * @brief Returns the level of the whole process.
+     * @return LogLevel::Warn, or what SR_LOG_LEVEL names, until set_log_level() is called.
+     */
+    [[nodiscard]] SUSHIRUNTIME_API LogLevel log_level() noexcept;
+
+    /**
+     * @brief Holds what the log macros read; nothing else calls into it.
+     */
+    namespace Detail
+    {
+        /** @brief Marks a level that SR_LOG_LEVEL has not been read for; above every level. */
+        constexpr int K_LOG_LEVEL_UNRESOLVED = 127;
+
+        /** @brief Holds the process level as an int, or K_LOG_LEVEL_UNRESOLVED. */
+        SUSHIRUNTIME_API extern std::atomic<int> active_log_level;
+
         /**
-         * @brief Orders the severities of a log record; a level admits itself and every lower one.
+         * @brief Returns whether a record of @p level is written, reading SR_LOG_LEVEL once.
          */
-        enum class LogLevel : int
-        {
-            Off   = 0, /**< Nothing is logged. */
-            Error = 1, /**< An operation failed. */
-            Warn  = 2, /**< The runtime recovered or fell back. */
-            Info  = 3, /**< A lifecycle event. */
-            Debug = 4  /**< Internal state at a decision point. */
-        };
-
-        #if !SR_ENABLE_LOGGING
-            /** @brief Holds the highest level this translation unit compiles log calls for. */
-            constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Off;
-        #elif defined(NDEBUG)
-            /** @brief Holds the highest level this translation unit compiles log calls for. */
-            constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Info;
-        #else
-            /** @brief Holds the highest level this translation unit compiles log calls for. */
-            constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Debug;
-        #endif
-
-        /**
-         * @brief Sets the level of the whole process; records above it are dropped unformatted.
-         * @see modules/foundation/logging/README.md
-         */
-        SUSHIRUNTIME_API void set_log_level(LogLevel level) noexcept;
-
-        /**
-         * @brief Returns the level of the whole process.
-         * @return LogLevel::Warn, or what SR_LOG_LEVEL names, until set_log_level() is called.
-         */
-        [[nodiscard]] SUSHIRUNTIME_API LogLevel log_level() noexcept;
-
-        /**
-         * @brief Holds what the log macros read; nothing else calls into it.
-         */
-        namespace Detail
-        {
-            /** @brief Marks a level that SR_LOG_LEVEL has not been read for; above every level. */
-            constexpr int K_LOG_LEVEL_UNRESOLVED = 127;
-
-            /** @brief Holds the process level as an int, or K_LOG_LEVEL_UNRESOLVED. */
-            SUSHIRUNTIME_API extern std::atomic<int> active_log_level;
-
-            /**
-             * @brief Returns whether a record of @p level is written, reading SR_LOG_LEVEL once.
-             */
-            [[nodiscard]] SUSHIRUNTIME_API bool is_log_enabled(LogLevel level) noexcept;
-        } // namespace Detail
-    } // namespace Core
+        [[nodiscard]] SUSHIRUNTIME_API bool is_log_enabled(LogLevel level) noexcept;
+    } // namespace Detail
 } // namespace SushiRuntime

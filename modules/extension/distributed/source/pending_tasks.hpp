@@ -44,7 +44,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph { struct Node; }
+    namespace Internal::Graph { struct Node; }
 
     namespace Distributed
     {
@@ -74,7 +74,7 @@ namespace SushiRuntime
             std::uint64_t task_id = 0;
 
             /** @brief Holds the node; never null in a returned task. */
-            Graph::Node* node = nullptr;
+            Internal::Graph::Node* node = nullptr;
 
             /** @brief Holds the worker the task was dispatched to. */
             PeerID worker;
@@ -131,7 +131,7 @@ namespace SushiRuntime
                  * @param outputs Copied; the versions are those the dispatch frame carries.
                  * @return False once close() was called, or when @p task_id is in the table.
                  */
-                [[nodiscard]] bool insert(std::uint64_t task_id, Graph::Node& node, PeerID worker,
+                [[nodiscard]] bool insert(std::uint64_t task_id, Internal::Graph::Node& node, PeerID worker,
                                           SushiRuntime::span<const BufferHandle> outputs,
                                           std::chrono::steady_clock::time_point now);
 
@@ -203,7 +203,7 @@ namespace SushiRuntime
                 struct Entry
                 {
                     /** @brief The node the table owns until a removal returns it. */
-                    Graph::Node* node = nullptr;
+                    Internal::Graph::Node* node = nullptr;
 
                     /** @brief The worker the task was dispatched to. */
                     PeerID worker;

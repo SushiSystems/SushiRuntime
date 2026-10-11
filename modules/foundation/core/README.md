@@ -150,9 +150,9 @@ and `explicit operator bool` report which one is held. `make_error` wraps an err
 ### Accessors
 
 `value()`, `operator*` and `operator->` return the success value. When the result holds an error,
-they throw `Core::SushiException`: the exception carries the stored `Error` when `E` is
-`Core::Error`, and otherwise carries `Errc::invalid_state`. `error()` throws
-`Core::SushiException` with `Errc::invalid_state` when the result holds a value.
+they throw `SushiException`: the exception carries the stored `Error` when `E` is
+`Error`, and otherwise carries `Errc::invalid_state`. `error()` throws
+`SushiException` with `Errc::invalid_state` when the result holds a value.
 
 ## span.hpp
 

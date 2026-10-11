@@ -82,7 +82,7 @@ TEST(Integration_CompletionLatch, SingleStepRunsRepeatedlyWithoutLeak)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     // Each single-step run goes through one reset, arm and wait cycle of the latch; see README.md.
     for (int r = 0; r < 200; ++r)

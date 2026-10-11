@@ -36,12 +36,12 @@ namespace SushiRuntime
 {
     namespace Distributed
     {
-        void KernelRegistry::register_kernel(Graph::OpID id, Kernel kernel)
+        void KernelRegistry::register_kernel(Internal::Graph::OpID id, Kernel kernel)
         {
             if (!kernel)
-                throw Core::SushiException(Core::Error{
-                    Core::Errc::invalid_access,
-                    Core::Detail::sr_format("KernelRegistry::register_kernel: the kernel of "
+                throw SushiException(Error{
+                    Errc::invalid_access,
+                    Detail::sr_format("KernelRegistry::register_kernel: the kernel of "
                                             "operation {} is empty; pass a callable.",
                                             id.value)});
 
@@ -64,23 +64,23 @@ namespace SushiRuntime
             return sealed_.load(std::memory_order_relaxed);
         }
 
-        bool KernelRegistry::has(Graph::OpID id) const
+        bool KernelRegistry::has(Internal::Graph::OpID id) const
         {
             return kernels_.find(id.value) != kernels_.end();
         }
 
-        const KernelRegistry::Kernel* KernelRegistry::find(Graph::OpID id) const
+        const KernelRegistry::Kernel* KernelRegistry::find(Internal::Graph::OpID id) const
         {
             const auto found = kernels_.find(id.value);
             return found == kernels_.end() ? nullptr : &found->second;
         }
 
-        std::vector<Graph::OpID> KernelRegistry::known_ops() const
+        std::vector<Internal::Graph::OpID> KernelRegistry::known_ops() const
         {
-            std::vector<Graph::OpID> ops;
+            std::vector<Internal::Graph::OpID> ops;
             ops.reserve(kernels_.size());
             for (const auto& entry : kernels_)
-                ops.push_back(Graph::OpID(entry.first));
+                ops.push_back(Internal::Graph::OpID(entry.first));
             return ops;
         }
 

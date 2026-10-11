@@ -30,7 +30,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Selects whether workers are bound to specific cores or left to the OS.

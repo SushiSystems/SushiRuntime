@@ -76,7 +76,7 @@
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
-using namespace SushiRuntime::Graph::Literals;
+using namespace SushiRuntime::Internal::Graph::Literals;
 
 namespace
 {
@@ -102,7 +102,7 @@ namespace
     constexpr std::size_t K_MEBIBYTE = 1024 * K_KIBIBYTE;
 
     /** @brief Names the one operation the worker of this file has a kernel for. */
-    constexpr Graph::OpID K_MASK_OPERATION = "tcp_faults.mask"_op;
+    constexpr Internal::Graph::OpID K_MASK_OPERATION = "tcp_faults.mask"_op;
 
     /** @brief Holds the value the kernel and the local fallback combine every byte with. */
     constexpr std::byte K_MASK{0x5a};
@@ -153,10 +153,10 @@ namespace
     {
         public:
             /** @brief Allocates @p size bytes on device 0. */
-            SharedBytes(Memory::USMAllocator& memory, std::size_t size)
+            SharedBytes(Internal::Memory::USMAllocator& memory, std::size_t size)
                 : memory_(memory), size_(size),
                   data_(static_cast<std::byte*>(memory.allocate(
-                      Memory::USMRequest{Memory::USMKind::Shared, size, 0, 0})))
+                      Internal::Memory::USMRequest{Internal::Memory::USMKind::Shared, size, 0, 0})))
             {
 
             }
@@ -186,7 +186,7 @@ namespace
 
         private:
             /** @brief The allocator the bytes came from. */
-            Memory::USMAllocator& memory_;
+            Internal::Memory::USMAllocator& memory_;
 
             /** @brief The number of bytes. */
             std::size_t size_;
@@ -207,7 +207,7 @@ namespace
     {
         public:
             /** @brief Returns the first offered worker, or nothing when none was offered. */
-            std::optional<int> pick_worker(const Graph::Node& /*node*/,
+            std::optional<int> pick_worker(const Internal::Graph::Node& /*node*/,
                                            span<const WorkerStats> workers,
                                            std::uint64_t /*est_bytes*/) override
             {
@@ -228,9 +228,9 @@ namespace
             }
 
             /** @brief Counts the line when it is an ERROR that holds the text. */
-            void record(Core::LogLevel level, std::string_view line)
+            void record(LogLevel level, std::string_view line)
             {
-                if (level != Core::LogLevel::Error || line.find(text_) == std::string_view::npos)
+                if (level != LogLevel::Error || line.find(text_) == std::string_view::npos)
                     return;
                 {
                     const std::lock_guard<std::mutex> lock(mutex_);
@@ -360,10 +360,10 @@ namespace
                 if (!SushiRuntime::Test::has_any_sycl_device())
                     GTEST_SKIP() << "SYCL reports no device.";
 
-                saved_level_ = Core::log_level();
-                Core::set_log_synchronous(true);
-                Core::set_log_level(Core::LogLevel::Warn);
-                master_context_ = std::make_unique<Execution::RuntimeContext>();
+                saved_level_ = log_level();
+                set_log_synchronous(true);
+                set_log_level(LogLevel::Warn);
+                master_context_ = std::make_unique<Internal::Execution::RuntimeContext>();
             }
 
             /** @brief Stops the worker, the master and the proxy, then frees the buffers. */
@@ -380,9 +380,9 @@ namespace
                     run_.wait();
                 buffers_.clear();
 
-                Core::set_log_sink(nullptr);
+                set_log_sink(nullptr);
                 if (saved_level_)
-                    Core::set_log_level(*saved_level_);
+                    set_log_level(*saved_level_);
             }
 
             /** @brief Attaches a master that listens on a free loopback port. */
@@ -417,7 +417,7 @@ namespace
                               const TCPWorkerOptions& transport = quick_reconnect())
             {
                 if (!worker_context_)
-                    worker_context_ = std::make_unique<Execution::RuntimeContext>();
+                    worker_context_ = std::make_unique<Internal::Execution::RuntimeContext>();
 
                 RunCounters* const runs = &runs_;
                 sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
@@ -425,7 +425,7 @@ namespace
                     K_MASK_OPERATION,
                     [runs](sycl::queue& /*queue*/, span<const BufferView> inputs,
                            span<const BufferView> outputs,
-                           const Graph::TaskMetadata& /*metadata*/) -> sycl::event
+                           const Internal::Graph::TaskMetadata& /*metadata*/) -> sycl::event
                     {
                         apply_mask(inputs[0].as<const std::byte>(), outputs[0].as<std::byte>(),
                                    outputs[0].size_bytes);
@@ -479,7 +479,7 @@ namespace
              */
             void launch(const MaskTask& task, std::function<void()> beside = nullptr)
             {
-                Execution::RuntimeContext* const context = master_context_.get();
+                Internal::Execution::RuntimeContext* const context = master_context_.get();
                 RunCounters* const runs = &runs_;
                 run_ = std::async(std::launch::async,
                                   [context, runs, task, beside = std::move(beside)]
@@ -488,11 +488,11 @@ namespace
                     std::byte* const output = task.output->data();
                     const std::size_t count = task.output->size();
 
-                    Graph::TaskMetadata metadata;
+                    Internal::Graph::TaskMetadata metadata;
                     metadata.name = "tcp_faults_mask";
                     metadata.op_id = K_MASK_OPERATION;
 
-                    Graph::TaskGraph graph(context->offload());
+                    Internal::Graph::TaskGraph graph(context->offload());
                     graph.add_task(
                         metadata, {task.input->data()}, {task.output->data()},
                         [runs, input, output, count](
@@ -545,17 +545,17 @@ namespace
             void count_version_errors()
             {
                 ErrorLineCounter* const counter = &version_errors_;
-                Core::set_log_sink([counter](Core::LogLevel level, std::string_view line)
+                set_log_sink([counter](LogLevel level, std::string_view line)
                 {
                     counter->record(level, line);
                 });
             }
 
             /// @brief The master's runtime; declared first, so it is destroyed last.
-            std::unique_ptr<Execution::RuntimeContext> master_context_;
+            std::unique_ptr<Internal::Execution::RuntimeContext> master_context_;
 
             /// @brief The worker's runtime; built by the first start_worker().
-            std::unique_ptr<Execution::RuntimeContext> worker_context_;
+            std::unique_ptr<Internal::Execution::RuntimeContext> worker_context_;
 
             /// @brief Where the mask ran.
             RunCounters runs_;
@@ -564,7 +564,7 @@ namespace
             ErrorLineCounter version_errors_{"protocol v3"};
 
             /// @brief The log level to put back; empty when SetUp() skipped the test.
-            std::optional<Core::LogLevel> saved_level_;
+            std::optional<LogLevel> saved_level_;
 
             /// @brief The buffers of every mask task, released in TearDown().
             std::vector<std::unique_ptr<SharedBytes>> buffers_;
@@ -731,7 +731,7 @@ TEST_F(Integration_DistributedTcpFaultsTest, WrongSecretRejected)
 /** @brief Tests that a peer of another protocol version gets one ERROR line per connection. */
 TEST_F(Integration_DistributedTcpFaultsTest, VersionMismatchLoggedOncePerConnection)
 {
-    if (Core::K_LOG_LEVEL_CEILING < Core::LogLevel::Error)
+    if (K_LOG_LEVEL_CEILING < LogLevel::Error)
         GTEST_SKIP() << "This build compiles no log call.";
 
     constexpr std::size_t K_CONNECTIONS = 2;

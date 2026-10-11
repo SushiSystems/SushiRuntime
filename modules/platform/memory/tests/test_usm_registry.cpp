@@ -36,7 +36,7 @@
 #include <thread>
 #include <vector>
 
-using SushiRuntime::Memory::USMRegistry;
+using SushiRuntime::Internal::Memory::USMRegistry;
 
 namespace
 {

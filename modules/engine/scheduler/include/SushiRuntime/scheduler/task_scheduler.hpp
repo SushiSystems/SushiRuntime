@@ -55,18 +55,18 @@
 namespace SushiRuntime
 {
     /** @brief Declares the graph types this header names only by pointer or reference. */
-    namespace Graph
+    namespace Internal::Graph
     {
         class TaskGraph;
         struct Node;
         class OffloadCoordinator;
     }
 
-    namespace Topology { class TopologyView; }
-    namespace Device { class DeviceQueueSet; }
-    namespace Memory { class USMAllocator; }
+    namespace Internal::Topology { class TopologyView; }
+    namespace Internal::Device { class DeviceQueueSet; }
+    namespace Internal::Memory { class USMAllocator; }
 
-    namespace Scheduler 
+    namespace Internal::Scheduler 
     {
         class Deque;
         class Task;
@@ -93,7 +93,7 @@ namespace SushiRuntime
          */
         class SUSHIRUNTIME_API TaskScheduler final : public ITelemetryProvider,
                                                      public ITaskMigrator,
-                                                     public Graph::OffloadSink
+                                                     public Internal::Graph::OffloadSink
         {
             public:
                 /**
@@ -114,12 +114,12 @@ namespace SushiRuntime
                 size_t num_workers_ = 0;
 
                 /** @brief List of queues for each worker thread. */
-                std::array<sushi_ptr<Deque>, Core::MAX_WORKER_THREADS> worker_queues;
+                std::array<sushi_ptr<Deque>, MAX_WORKER_THREADS> worker_queues;
                 /**
                  * @brief Holds each worker's scratch for the drain_pending_submissions batch.
                  * @see modules/engine/scheduler/README.md
                  */
-                std::array<std::vector<Task*>, Core::MAX_WORKER_THREADS> drain_scratch_;
+                std::array<std::vector<Task*>, MAX_WORKER_THREADS> drain_scratch_;
                 /**
                  * @brief Implements a task FIFO that does not allocate in the steady state.
                  * @see modules/engine/scheduler/README.md
@@ -188,11 +188,11 @@ namespace SushiRuntime
                 /** @brief Poller to track SYCL events. */
                 EventPolling event_poller;
                 /** @brief Core-to-NUMA map and NUMA distances the steal order is built from. */
-                const Topology::TopologyView& topology_;
+                const Internal::Topology::TopologyView& topology_;
                 /** @brief Device queues every dispatch is submitted to. */
-                Device::DeviceQueueSet& devices_;
+                Internal::Device::DeviceQueueSet& devices_;
                 /** @brief Allocator asked which device owns a node's USM. */
-                const Memory::USMAllocator& memory_;
+                const Internal::Memory::USMAllocator& memory_;
                 /**
                  * @brief Offers each offloadable node to the installed coordinator at dispatch.
                  * @see modules/engine/scheduler/README.md
@@ -216,16 +216,16 @@ namespace SushiRuntime
                 std::size_t first_core_ = 0;
 
                 /** @brief Worker threads. */
-                std::array<std::thread, Core::MAX_WORKER_THREADS> workers;
+                std::array<std::thread, MAX_WORKER_THREADS> workers;
                 /**
                  * @brief Holds one worker's completed-task counter on its own cache line.
                  * @see modules/engine/scheduler/README.md
                  */
-                struct alignas(Core::CACHE_LINE_SIZE) WorkerCompletedCounter
+                struct alignas(CACHE_LINE_SIZE) WorkerCompletedCounter
                 {
                     std::atomic<size_t> value{0};
                 };
-                WorkerCompletedCounter worker_completed_tasks[Core::MAX_WORKER_THREADS];
+                WorkerCompletedCounter worker_completed_tasks[MAX_WORKER_THREADS];
 
                 /**
                  * @brief Per-worker accumulated time buckets (nanoseconds).
@@ -235,20 +235,20 @@ namespace SushiRuntime
                  * a worker accumulates only its own bucket and the engine reads them at
                  * a run boundary, with no cross-worker ordering requirement.
                  */
-                struct alignas(Core::CACHE_LINE_SIZE) WorkerTimeBuckets
+                struct alignas(CACHE_LINE_SIZE) WorkerTimeBuckets
                 {
                     std::atomic<std::uint64_t> busy_ns{0};
                     std::atomic<std::uint64_t> stealing_ns{0};
                     std::atomic<std::uint64_t> polling_ns{0};
                     std::atomic<std::uint64_t> idle_ns{0};
                 };
-                WorkerTimeBuckets worker_time_[Core::MAX_WORKER_THREADS];
+                WorkerTimeBuckets worker_time_[MAX_WORKER_THREADS];
 
                 /** @brief Whether the active run accumulates per-worker time buckets. */
                 std::atomic<bool> profiling_active_{false};
 
                 /** @brief The armed round's event ledger, or null when it does not profile. */
-                std::atomic<Observability::ProfilingLedger*> active_ledger_{nullptr};
+                std::atomic<Internal::Observability::ProfilingLedger*> active_ledger_{nullptr};
 
                 /** @brief Counter arm_for_execution() draws the next round's step from. */
                 std::atomic<std::uint32_t> next_dispatch_step_{0};
@@ -316,9 +316,9 @@ namespace SushiRuntime
                  * @param memory Must outlive the scheduler.
                  */
                 TaskScheduler(const WorkerPoolSettings& pool,
-                              const Topology::TopologyView& topology,
-                              Device::DeviceQueueSet& devices,
-                              const Memory::USMAllocator& memory);
+                              const Internal::Topology::TopologyView& topology,
+                              Internal::Device::DeviceQueueSet& devices,
+                              const Internal::Memory::USMAllocator& memory);
                 /** @brief Cleans up the scheduler and worker queues. */
                 ~TaskScheduler();
 
@@ -345,7 +345,7 @@ namespace SushiRuntime
                  * @param ledger The plan's ledger, or null when it does not profile.
                  * @see modules/engine/scheduler/README.md
                  */
-                void set_profiling_ledger(Observability::ProfilingLedger* ledger) noexcept;
+                void set_profiling_ledger(Internal::Observability::ProfilingLedger* ledger) noexcept;
 
                 /** @brief Resets the per-run step counter, to 0. */
                 void reset_dispatch_step() noexcept { next_dispatch_step_.store(0, std::memory_order_release); }
@@ -388,7 +388,7 @@ namespace SushiRuntime
                  * @brief Submits a batch of root nodes in a single injector pass.
                  * @see modules/engine/scheduler/README.md
                  */
-                void submit_batch(const std::vector<SushiRuntime::Graph::Node*>& roots);
+                void submit_batch(const std::vector<SushiRuntime::Internal::Graph::Node*>& roots);
 
                 /**
                  * @brief Blocks until every task counted into the current run has retired: reaped
@@ -487,13 +487,13 @@ namespace SushiRuntime
                  * @param offload Not owned; null removes the installed one.
                  * @see modules/engine/scheduler/README.md
                  */
-                void set_offload_coordinator(Graph::OffloadCoordinator* offload);
+                void set_offload_coordinator(Internal::Graph::OffloadCoordinator* offload);
 
                 /**
                  * @brief Queues a node no worker finished and drops the coordinator's reference.
                  * @param node Accepted by the coordinator's try_offload().
                  */
-                void resubmit(Graph::Node& node) override;
+                void resubmit(Internal::Graph::Node& node) override;
 
                 /**
                  * @brief Releases a remotely finished node's successors, then drops the
@@ -501,7 +501,7 @@ namespace SushiRuntime
                  * @param node Accepted by the coordinator's try_offload().
                  * @see modules/engine/scheduler/README.md
                  */
-                void complete_remote(Graph::Node& node) override;
+                void complete_remote(Internal::Graph::Node& node) override;
         };
 
     } // namespace Scheduler

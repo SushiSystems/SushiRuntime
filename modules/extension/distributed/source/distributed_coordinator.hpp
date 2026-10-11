@@ -49,15 +49,15 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Implements Graph::OffloadCoordinator by wiring the master's bricks together.
+         * @brief Implements Internal::Graph::OffloadCoordinator by wiring the master's bricks together.
          *
          * It builds the directory, the pending table, the exchange, the dispatcher and the
          * monitor, is the transport's only event receiver, and routes each frame through a
          * MessageRouter to a handler that calls bricks in turn. It owns no mutex and holds no
          * `switch` over message types; every lock belongs to a brick.
          */
-        class SUSHIRUNTIME_API DistributedCoordinator final : public Graph::OffloadCoordinator,
-                                                              public Memory::USMReleaseObserver
+        class SUSHIRUNTIME_API DistributedCoordinator final : public Internal::Graph::OffloadCoordinator,
+                                                              public Internal::Memory::USMReleaseObserver
         {
             public:
                 /**
@@ -82,7 +82,7 @@ namespace SushiRuntime
                  * @brief Stores the sink that takes nodes back.
                  * @pre start() has not been called.
                  */
-                void bind(Graph::OffloadSink& sink) override;
+                void bind(Internal::Graph::OffloadSink& sink) override;
 
                 /**
                  * @brief Starts the transport, then the monitor.
@@ -101,13 +101,13 @@ namespace SushiRuntime
                 void stop() noexcept override;
 
                 /** @brief Forwards to OffloadDispatcher::prepare(). */
-                void prepare(span<const sushi_ptr<Graph::Node>> nodes) override;
+                void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes) override;
 
                 /** @brief Forwards to OffloadDispatcher::try_offload(); false once stopped. */
-                [[nodiscard]] bool try_offload(Graph::Node& node) override;
+                [[nodiscard]] bool try_offload(Internal::Graph::Node& node) override;
 
                 /** @brief Forwards to OffloadDispatcher::complete_local(). */
-                void on_local_completion(Graph::Node& node) noexcept override;
+                void on_local_completion(Internal::Graph::Node& node) noexcept override;
 
                 /** @brief Shares an allocation through BufferRegistry::register_buffer(). */
                 void share(void* address, std::size_t bytes) override;
@@ -117,7 +117,7 @@ namespace SushiRuntime
                  *
                  * Reads atomics of the bricks only; takes no lock.
                  */
-                [[nodiscard]] Graph::OffloadStatistics statistics() const noexcept override;
+                [[nodiscard]] Internal::Graph::OffloadStatistics statistics() const noexcept override;
 
                 /**
                  * @brief Unshares a released address and tells each worker to drop the buffer.
@@ -131,7 +131,7 @@ namespace SushiRuntime
                 [[nodiscard]] ClusterStatistics cluster_statistics() const;
 
                 /** @brief Reports whether an alive worker has a kernel for an operation. */
-                [[nodiscard]] bool supports(Graph::OpID op) const;
+                [[nodiscard]] bool supports(Internal::Graph::OpID op) const;
 
                 /** @brief Forwards to WorkerDirectory::wait_for_workers(). */
                 [[nodiscard]] bool wait_for_workers(std::size_t count,

@@ -52,9 +52,9 @@ TEST(Integration_CallableTraits, AMutablePerElementKernelIsRejected)
     int calls = 0;
     auto mutating = [calls](std::size_t) mutable { ++calls; };
 
-    EXPECT_TRUE(API::is_per_element_v<decltype(plain)>);
-    EXPECT_FALSE(API::is_per_element_v<decltype(mutating)>);
-    EXPECT_FALSE(API::is_per_element_v<decltype(mutating)&>);
+    EXPECT_TRUE(is_per_element_v<decltype(plain)>);
+    EXPECT_FALSE(is_per_element_v<decltype(mutating)>);
+    EXPECT_FALSE(is_per_element_v<decltype(mutating)&>);
 }
 
 /** @brief Tests that a range kernel passes without mutable and fails with it. */
@@ -64,9 +64,9 @@ TEST(Integration_CallableTraits, AMutableRangeKernelIsRejected)
     int calls = 0;
     auto mutating = [calls](std::size_t, std::size_t, sycl::handler&) mutable { ++calls; };
 
-    EXPECT_TRUE(API::is_range_kernel_v<decltype(ranging)>);
-    EXPECT_FALSE(API::is_per_element_v<decltype(ranging)>);
-    EXPECT_FALSE(API::is_range_kernel_v<decltype(mutating)>);
+    EXPECT_TRUE(is_range_kernel_v<decltype(ranging)>);
+    EXPECT_FALSE(is_per_element_v<decltype(ranging)>);
+    EXPECT_FALSE(is_range_kernel_v<decltype(mutating)>);
 }
 
 /** @brief Tests that a mutable raw kernel still passes, since raw_node() calls it non-const. */
@@ -74,7 +74,7 @@ TEST(Integration_CallableTraits, AMutableRawKernelIsAccepted)
 {
     auto mutating = [](sycl::handler&) mutable {};
 
-    EXPECT_TRUE(API::is_raw_kernel_v<decltype(mutating)>);
+    EXPECT_TRUE(is_raw_kernel_v<decltype(mutating)>);
 }
 
 /** @brief Tests that a coupled kernel fits only when it takes each State read as const. */
@@ -85,12 +85,12 @@ TEST(Integration_CallableTraits, ACoupledKernelMustTakeItsInputsAsConst)
     auto boxed = [](sycl::id<1>, const Word*, Word*, const Word*) {};
     auto boxed_writing = [](sycl::id<1>, const Word*, Word*, Word*) {};
 
-    EXPECT_TRUE((API::detail::is_launch_kernel_v<std::size_t, decltype(reading), const Word*,
+    EXPECT_TRUE((detail::is_launch_kernel_v<std::size_t, decltype(reading), const Word*,
                                                  Word*, const Word*>));
-    EXPECT_FALSE((API::detail::is_launch_kernel_v<std::size_t, decltype(writing), const Word*,
+    EXPECT_FALSE((detail::is_launch_kernel_v<std::size_t, decltype(writing), const Word*,
                                                   Word*, const Word*>));
-    EXPECT_TRUE((API::detail::is_launch_kernel_v<API::Extent<1>, decltype(boxed), const Word*,
+    EXPECT_TRUE((detail::is_launch_kernel_v<Extent<1>, decltype(boxed), const Word*,
                                                  Word*, const Word*>));
-    EXPECT_FALSE((API::detail::is_launch_kernel_v<API::Extent<1>, decltype(boxed_writing),
+    EXPECT_FALSE((detail::is_launch_kernel_v<Extent<1>, decltype(boxed_writing),
                                                   const Word*, Word*, const Word*>));
 }

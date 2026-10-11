@@ -32,35 +32,31 @@
 
 namespace SushiRuntime
 {
-    namespace Core
+    /** @brief Names the hardware backend a device or kernel targets. */
+    enum class Backend
     {
-        /** @brief Names the hardware backend a device or kernel targets. */
-        enum class Backend
-        {
-            SYCL, /**< SYCL backend (Intel DPC++, AdaptiveCpp, or hipSYCL). */
-            CUDA, /**< Unused. */
-            HOST  /**< CPU host backend, no accelerator. */
-        };
+        SYCL, /**< SYCL backend (Intel DPC++, AdaptiveCpp, or hipSYCL). */
+        CUDA, /**< Unused. */
+        HOST  /**< CPU host backend, no accelerator. */
+    };
 
-        /**
-         * @brief Holds the cache line size in bytes, the alignment of per-worker and per-thread
-         *        state.
-         */
-        inline constexpr size_t CACHE_LINE_SIZE = 64;
+    /**
+     * @brief Holds the cache line size in bytes, the alignment of per-worker and per-thread
+     *        state.
+     */
+    inline constexpr size_t CACHE_LINE_SIZE = 64;
 
-        /** @brief Holds the maximum number of supported devices in NUMA or multi-GPU systems. */
-        inline constexpr size_t MAX_SUPPORTED_XPU = 16;
+    /** @brief Holds the maximum number of supported devices in NUMA or multi-GPU systems. */
+    inline constexpr size_t MAX_SUPPORTED_XPU = 16;
 
-        /** @brief Holds the maximum number of supported NUMA nodes. */
-        inline constexpr size_t MAX_NUMA_NODES = 64;
+    /** @brief Holds the maximum number of supported NUMA nodes. */
+    inline constexpr size_t MAX_NUMA_NODES = 64;
 
-        /** @brief Holds the maximum number of worker threads. */
-        inline constexpr size_t MAX_WORKER_THREADS = 256;
+    /** @brief Holds the maximum number of worker threads. */
+    inline constexpr size_t MAX_WORKER_THREADS = 256;
 
-        /** @brief Holds the default memory alignment for USM (Unified Shared Memory). */
-        inline constexpr size_t DEFAULT_ALIGNMENT = 128;
-
-    } // namespace Core
+    /** @brief Holds the default memory alignment for USM (Unified Shared Memory). */
+    inline constexpr size_t DEFAULT_ALIGNMENT = 128;
 } // namespace SushiRuntime
 
 namespace sr = SushiRuntime;

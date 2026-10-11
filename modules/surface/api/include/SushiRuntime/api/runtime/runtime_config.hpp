@@ -36,37 +36,30 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    /** @brief Names the device classes and features a runtime accepts. */
+    using DeviceFilter = Internal::Topology::HardwareFilterConfig;
+
+    /** @brief Names whether workers bind to cores. */
+    using PinPolicy = Internal::Scheduler::PinPolicy;
+
+    /** @brief Names the worker pool as built: count, first core and pin policy. */
+    using WorkerPool = Internal::Scheduler::WorkerPoolInfo;
+
+    /**
+     * @brief Holds every setting chosen once, when Runtime::create() builds a runtime.
+     * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+     */
+    struct RuntimeConfig
     {
-        /** @brief Names the device classes and features a runtime accepts. */
-        using DeviceFilter = Topology::HardwareFilterConfig;
+        DeviceFilter devices;               /**< Which devices the runtime drives. */
+        std::size_t worker_count = 0;       /**< Worker threads; 0 is one per logical core. */
+        std::size_t first_core = 0;         /**< First core of the range workers pin into. */
+        PinPolicy pinning = PinPolicy::Pin; /**< Whether workers bind to cores at all. */
+        bool profiling = false;             /**< Builds queues that record device timing. */
+        bool rebalancer = false;            /**< Starts the background thermal rebalancer. */
+        bool force_scheduler = false;       /**< Runs every graph on the work-stealing path. */
+    };
 
-        /** @brief Names whether workers bind to cores. */
-        using PinPolicy = Scheduler::PinPolicy;
 
-        /** @brief Names the worker pool as built: count, first core and pin policy. */
-        using WorkerPool = Scheduler::WorkerPoolInfo;
-
-        /**
-         * @brief Holds every setting chosen once, when Runtime::create() builds a runtime.
-         * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
-         */
-        struct RuntimeConfig
-        {
-            DeviceFilter devices;               /**< Which devices the runtime drives. */
-            std::size_t worker_count = 0;       /**< Worker threads; 0 is one per logical core. */
-            std::size_t first_core = 0;         /**< First core of the range workers pin into. */
-            PinPolicy pinning = PinPolicy::Pin; /**< Whether workers bind to cores at all. */
-            bool profiling = false;             /**< Builds queues that record device timing. */
-            bool rebalancer = false;            /**< Starts the background thermal rebalancer. */
-            bool force_scheduler = false;       /**< Runs every graph on the work-stealing path. */
-        };
-
-    } // namespace API
-
-    using API::DeviceFilter;
-    using API::PinPolicy;
-    using API::RuntimeConfig;
-    using API::WorkerPool;
 
 } // namespace SushiRuntime
