@@ -89,7 +89,7 @@ endfunction()
 
 # sushiruntime_add_module(
 #     NAME <module> TIER <tier>
-#     [HEADER_ONLY] [SYCL]
+#     [INTERNAL] [HEADER_ONLY] [SYCL]
 #     [SOURCES <file under source/>...]
 #     [DEPENDS <module>...] [PRIVATE_DEPENDS <module>...]
 #     [EXTERNAL <third-party target>...]
@@ -97,9 +97,11 @@ endfunction()
 #
 # DEPENDS are the modules the public headers include; PRIVATE_DEPENDS the ones only
 # source/ includes. SYCL marks a module whose sources include a SYCL header.
+# INTERNAL marks a module whose headers are for the other modules of the library: its
+# include root reaches them and the tests, and is not installed.
 # HEADER_CHECK_EXCLUDE names a header the header check must not compile alone.
 function(sushiruntime_add_module)
-    cmake_parse_arguments(ARG "HEADER_ONLY;SYCL" "NAME;TIER"
+    cmake_parse_arguments(ARG "INTERNAL;HEADER_ONLY;SYCL" "NAME;TIER"
         "SOURCES;DEPENDS;PRIVATE_DEPENDS;EXTERNAL;HEADER_CHECK_EXCLUDE" ${ARGN})
     if("${ARG_NAME}" STREQUAL "" OR "${ARG_TIER}" STREQUAL "")
         message(FATAL_ERROR "sushiruntime_add_module(): NAME and TIER are required.")
@@ -139,7 +141,11 @@ function(sushiruntime_add_module)
     foreach(dependency IN LISTS ARG_DEPENDS)
         target_link_libraries(${target} INTERFACE "sushiruntime_module_${dependency}")
     endforeach()
+    # The build tree sees every root; only a public module's root is installed.
     set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_INSTALLED_INCLUDE_ROOTS "${include_root}")
+    if(NOT ARG_INTERNAL)
+        set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_PUBLIC_INCLUDE_ROOTS "${include_root}")
+    endif()
 
     if(sources)
         set(objects "${target}_objects")

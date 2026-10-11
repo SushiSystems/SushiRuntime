@@ -5,7 +5,7 @@
 # Commercial use requires a licence from Sushi Systems.
 
 sushiruntime_add_module(
-    NAME logging TIER foundation
+    NAME logging TIER foundation INTERNAL
     SOURCES logger.cpp
     DEPENDS core log)
 

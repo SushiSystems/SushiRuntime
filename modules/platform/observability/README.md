@@ -1,6 +1,8 @@
 # observability
 
-The module holds what a run reports about itself. It is header-only.
+The module holds the instruments a run is measured with: the profiling ledger, the event
+timestamps and the transfer counters. It is header-only.
+The module is internal: its headers are for the other modules of the library and are not installed.
 
 It depends on the C++ standard library, the SYCL headers, `core` and `report`.
 

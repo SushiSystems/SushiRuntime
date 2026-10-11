@@ -1,6 +1,7 @@
 # scheduler
 
 The work-stealing scheduler, its deque, the event poller and the rebalancer.
+The module is internal: its headers are for the other modules of the library and are not installed.
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.

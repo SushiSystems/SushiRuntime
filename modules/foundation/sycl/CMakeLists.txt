@@ -5,5 +5,5 @@
 # Commercial use requires a licence from Sushi Systems.
 
 sushiruntime_add_module(
-    NAME sycl TIER foundation
+    NAME sycl TIER foundation INTERNAL
     HEADER_ONLY SYCL)

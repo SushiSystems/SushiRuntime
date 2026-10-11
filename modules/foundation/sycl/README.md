@@ -3,6 +3,7 @@
 The module holds the differences between SYCL toolchains behind one header,
 `sycl_compat.hpp`, so the rest of the tree is written once for intel-llvm, oneAPI and
 AdaptiveCpp.
+The module is internal: its headers are for the other modules of the library and are not installed.
 
 It depends on the SYCL headers of the toolchain and on no other module of the repository.
 

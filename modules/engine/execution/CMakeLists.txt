@@ -5,7 +5,7 @@
 # Commercial use requires a licence from Sushi Systems.
 
 sushiruntime_add_module(
-    NAME execution TIER engine
+    NAME execution TIER engine INTERNAL
     SYCL
     SOURCES
         chain_plan.cpp

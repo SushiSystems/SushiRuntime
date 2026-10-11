@@ -5,7 +5,7 @@
 # Commercial use requires a licence from Sushi Systems.
 
 sushiruntime_add_module(
-    NAME device TIER platform
+    NAME device TIER platform INTERNAL
     SYCL
     SOURCES device_queue_set.cpp
     DEPENDS core machine
