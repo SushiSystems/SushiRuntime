@@ -2,10 +2,8 @@
 
 Allocation ownership, the USM registry and epoch-based reclamation.
 
-Everything is in `SushiRuntime::Memory`. `ResourceRegion`, `ResourceId`, `Liveness`,
-`LivenessToken`, `LivenessObserver` and `make_liveness` were `Core::` names in v0.3;
-`resource_region.hpp` and `resource_liveness.hpp` keep each `Core::` spelling as a deprecated
-forwarder.
+Everything is in `SushiRuntime::Memory`. `resource_region.hpp` and `resource_liveness.hpp` keep each
+`Core::` spelling as a deprecated forwarder.
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
@@ -98,9 +96,8 @@ queue, and a kernel touching it must run there. SYCL offers no way to ask a poin
 from that is reliable across backends, so the runtime records it at allocation and looks it up
 later.
 
-UsmRegistry is separated from RuntimeContext because it is the one part of it with an invariant of
-its own: a pointer is known from allocation until it is freed, exactly once. That invariant is
-testable without standing up a Runtime, which is not true of anything else RuntimeContext does.
+UsmRegistry has an invariant of its own: a pointer is known from allocation until it is freed,
+exactly once. That invariant is testable without standing up a Runtime.
 
 Every operation takes the same lock. That is not a bottleneck in practice: allocation happens when
 the caller constructs a Buffer or State, which is a setup-time act, and a measured run allocates
@@ -129,10 +126,9 @@ read an owner the first is already acting on. A null pointer resolves to nothing
 
 ### UsmRequest
 
-One struct replaces the eight allocation functions RuntimeContext had, which differed in three
-things: the USM kind, whether an alignment was asked for, and how the device was named. A request
-states the first two and a device index. A caller that starts from a NUMA node resolves it to a
-device index first, so placement by NUMA stays out of the memory module.
+A request states the USM kind, whether an alignment is asked for, and a device index. A caller that
+starts from a NUMA node resolves it to a device index first, so placement by NUMA stays out of the
+memory module.
 
 An alignment of 0 is how a request says it has no alignment to ask for. It selects the plain SYCL
 call (`malloc_host`, `malloc_shared`, `malloc_device`); any other value selects the aligned one
@@ -237,9 +233,8 @@ sub-ranges of the same allocation (an array's two halves, a grid's interior and 
 accesses are ordered if and only if their regions overlap; disjoint sub-ranges of the same buffer
 stay parallel, and distinct allocations never serialize.
 
-A bare pointer converts to the whole-buffer region implicitly, so every caller that still speaks
-base pointers keeps the previous behaviour: a whole region overlaps any region of the same base,
-degenerating the overlap test to base-pointer equality.
+A bare pointer converts to the whole-buffer region implicitly. A whole region overlaps any region of
+the same base, so the overlap test reduces to base-pointer equality.
 
 ### overlaps
 

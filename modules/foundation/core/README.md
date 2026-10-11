@@ -163,6 +163,35 @@ is trivially copyable and has the size of `Rep`. It is not a trivial type, becau
 constructor sets the value to zero. It has `==`, `!=` and `<`, and its `std::hash` forwards to
 `std::hash<Rep>`, so it can key a `std::map` or a `std::unordered_map`.
 
+## version.hpp
+
+### Headers and the loaded library
+
+version.hpp gives the library's version in two forms. The macros hold the version of the headers
+being compiled against. `runtime_version()` reports the version the loaded library was built from.
+The two answers can differ, and a consumer that pins by tag needs both to catch that case. Without
+that check, a stale shared library found first on the loader path fails late, and nothing points
+back at the cause, when it could have failed at startup. `version_matches()` is that check.
+
+`cmake/SushiRuntimeVersionCheck.cmake` compares the literals in version.hpp with the version in
+`project()` when CMake configures the build, and stops the configure on a difference.
+
+### runtime_version
+
+`runtime_version()` is compiled into the library, not into the caller. It answers which binary the
+program runs against, and not which headers the program compiled against.
+
+### version_matches
+
+`version_matches()` is the check a consumer makes once at startup. It returns true when the loaded
+library is compatible with these headers. A mismatch means the headers and the binary came from
+different releases. One source of a mismatch is an older shared library earlier on the loader path.
+Without the check, the failure is a crash or a wrong answer at a later point, and nothing points
+back at the cause.
+
+It compares major and minor only. A patch release is defined not to change layout or behaviour, so
+refusing to run against one would reject a compatible upgrade.
+
 ## Implementation
 
 Sources of the `Core` layer that need a translation unit. The headers are in

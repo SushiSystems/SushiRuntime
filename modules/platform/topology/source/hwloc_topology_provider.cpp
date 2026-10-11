@@ -99,9 +99,6 @@ namespace SushiRuntime
         /**
          * @brief Constructs the HwlocDistanceModel.
          * Loads and caches the NUMA distance matrix once, up front.
-         *
-         * This is the single place that touches the hwloc SLIT table, so the
-         * (expensive) topology load happens exactly once per model instance.
          */
         HwlocDistanceModel::HwlocDistanceModel()
         {

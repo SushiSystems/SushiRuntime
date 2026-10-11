@@ -138,8 +138,6 @@ namespace SushiRuntime
 
         /**
          * @brief Names the execution path that submitted a run's device work.
-         *
-         * A recorded-graph replay layer, when it lands, takes the next value.
          */
         enum class ExecutionLayer : std::uint8_t
         {
@@ -219,35 +217,35 @@ namespace SushiRuntime
 
     namespace Core
     {
-        /** @brief Names Observability::NumaNodeStatistics by its spelling before v0.4.0. */
+        /** @brief Deprecated Core:: name for Observability::NumaNodeStatistics. */
         using NumaNodeStatistics [[deprecated("use Observability::NumaNodeStatistics")]] =
             Observability::NumaNodeStatistics;
 
-        /** @brief Names Observability::DistributedStatistics by its spelling before v0.4.0. */
+        /** @brief Deprecated Core:: name for Observability::DistributedStatistics. */
         using DistributedStatistics [[deprecated("use Observability::DistributedStatistics")]] =
             Observability::DistributedStatistics;
 
-        /** @brief Names Observability::NodeTiming by its spelling before v0.4.0. */
+        /** @brief Deprecated Core:: name for Observability::NodeTiming. */
         using NodeTiming [[deprecated("use Observability::NodeTiming")]] =
             Observability::NodeTiming;
 
-        /** @brief Names Observability::WorkerTiming by its spelling before v0.4.0. */
+        /** @brief Deprecated Core:: name for Observability::WorkerTiming. */
         using WorkerTiming [[deprecated("use Observability::WorkerTiming")]] =
             Observability::WorkerTiming;
 
-        /** @brief Names Observability::NodeEventRecord by its spelling before v0.4.0. */
+        /** @brief Deprecated Core:: name for Observability::NodeEventRecord. */
         using NodeEventRecord [[deprecated("use Observability::NodeEventRecord")]] =
             Observability::NodeEventRecord;
 
-        /** @brief Names Observability::ClockPairing by its spelling before v0.4.0. */
+        /** @brief Deprecated Core:: name for Observability::ClockPairing. */
         using ClockPairing [[deprecated("use Observability::ClockPairing")]] =
             Observability::ClockPairing;
 
-        /** @brief Names Observability::ExecutionLayer by its spelling before v0.4.0. */
+        /** @brief Deprecated Core:: name for Observability::ExecutionLayer. */
         using ExecutionLayer [[deprecated("use Observability::ExecutionLayer")]] =
             Observability::ExecutionLayer;
 
-        /** @brief Names Observability::RunReport by its spelling before v0.4.0. */
+        /** @brief Deprecated Core:: name for Observability::RunReport. */
         using RunReport [[deprecated("use Observability::RunReport")]] = Observability::RunReport;
 
     } // namespace Core

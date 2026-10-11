@@ -138,7 +138,7 @@ namespace SushiRuntime
         } // namespace
 
         /** 
-         * @brief Triggers an expanded hardware probe to find all compute units. 
+         * @brief Discovers the SYCL devices that pass config and returns them as hardware nodes.
          * @param config The filter configuration to use during the probe.
          * @return A vector of discovered hardware nodes.
          */

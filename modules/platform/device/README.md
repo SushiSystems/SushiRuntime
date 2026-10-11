@@ -31,24 +31,19 @@ The source is `modules/platform/device/source/device_queue_set.cpp`.
 | `device/queue_flavour.hpp` | `QueueFlavour` and its comparison |
 | `device/device_queue_set.hpp` | `DeviceQueueSet` |
 
-## Behaviour that differs from RuntimeContext
+## Behaviour of the set
 
-`DeviceQueueSet` replaces the queue members of `Execution::RuntimeContext`. Four things differ.
+`DeviceQueueSet` owns every device queue. Four rules hold.
 
-1. **`wait_all()` waits for every built queue.** `RuntimeContext::wait_all()` waited for the
-   plain queues only, so work submitted to a profiling or chain queue could still be running
-   when it returned.
-2. **The NUMA fallback is resolved and logged at construction.** `get_numa_local_queue()`
-   logged a WARN on every call whose NUMA id had no queue, which the scheduler reaches once per
-   dispatched task. The set now logs one WARN at construction that lists the nodes below the
-   highest populated one that hold no device, and one INFO that states the rule for every id
-   outside the table. A lookup logs nothing.
-3. **A bad device index throws `Core::SushiException` with `Errc::invalid_access`.** The
-   message carries the index and the device count. `RuntimeContext` threw `std::runtime_error`
-   with the text "Queue index out of bounds." and logged an ERROR line first; the set does not
-   log, because the caller receives the failure.
-4. **A device whose plain queue is in-order has two queues, not four.** See "One slot per
-   flavour" below. No CPU or GPU is affected.
+1. **`wait_all()` waits for every built queue**, including profiling and chain queues.
+2. **The NUMA fallback is resolved and logged at construction.** `get_numa_local_queue()` logs
+   nothing on a lookup. Construction logs one WARN that lists the nodes below the highest populated
+   one that hold no device, and one INFO that states the rule for every id outside the table.
+3. **A bad device index throws `Core::SushiException` with `Errc::invalid_access`.** The message
+   carries the index and the device count. The set does not log the failure; the caller receives
+   the exception.
+4. **A device whose plain queue is in-order has two queues.** See "One slot per flavour" below.
+   No CPU or GPU is affected.
 
 ## device_queue_set.hpp
 
@@ -70,22 +65,20 @@ carried.
 use in the plain queue's context. The plain queue sits in the slot of its own flavour, so
 asking for that flavour returns the plain queue itself.
 
-On a CPU or a GPU this reproduces the queues `RuntimeContext` had:
+On a CPU or a GPU the slots hold:
 
-| Old call | New call | Queue |
-| --- | --- | --- |
-| `get_queue(i)` | `queue(i)` | plain |
-| `profiling_queue(i)` | `queue(i, {false, true})` | the plain queue when the set profiles, else a second queue |
-| `chain_queue(i, false)` | `queue(i, {true, false})` | in-order |
-| `chain_queue(i, true)` | `queue(i, {true, true})` | in-order with profiling |
+| Call | Queue |
+| --- | --- |
+| `queue(i)` | plain |
+| `queue(i, {false, true})` | the plain queue when the set profiles, else a second queue |
+| `queue(i, {true, false})` | in-order |
+| `queue(i, {true, true})` | in-order with profiling |
 
-`{false, false}` on a profiling set is a slot `RuntimeContext` had no call for: an out-of-order
-queue without profiling.
+On a profiling set, `queue(i, {false, false})` is an out-of-order queue without profiling.
 
 A device whose plain queue is in-order never gets an out-of-order queue, so `in_order = false`
-resolves to the in-order slot there. On such a device `chain_queue(i, false)` used to build a
-second in-order queue beside the plain one, and `chain_queue(i, true)` a second one beside the
-profiling queue. Each pair is now one queue.
+resolves to the in-order slot there. On such a device, the in-order slot and the plain queue are one
+queue, and the in-order profiling slot and the profiling queue are one queue.
 
 `has_profiling_queue(i)` is true once either profiling slot of device `i` is built. It builds
 nothing.
@@ -116,12 +109,11 @@ device on the node, or device 0 on the fallback route. The answer is the same on
 every thread.
 
 `queue_or_numa_local(device, numa)` returns `queue(*device)` when a device is given. With no
-device it makes the choice `RuntimeContext::get_numa_local_queue(numa)` made: it rotates over
-the route, one step per call, with a cursor that belongs to the calling thread. A node with
+device it rotates over the route, one step per call, with a cursor that belongs to the calling
+thread. A node with
 devices has its own cursor. All fallback routes share one cursor per thread, so a thread that
 alternates between two device-less nodes still advances one step per call. The cursors are
-`thread_local` and therefore shared by every set in the process, as they were shared by every
-context.
+`thread_local` and therefore shared by every set in the process.
 
 The rotation spreads tasks that name no buffer over the devices of a node. It is also the cause
 of the first entry in `docs/reference/KNOWN_ISSUES.md`: a kernel that captured USM of one
@@ -141,5 +133,4 @@ everything that submits work before it destroys the set.
 ### What the set does not log
 
 A failure while a plain queue is built leaves the constructor as the exception SYCL threw. The
-set does not log it. `RuntimeContext` logs "Critical initialization failure" around its whole
-probe, and a second line here would duplicate it.
+set does not log it.

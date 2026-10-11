@@ -4,7 +4,6 @@ The unit of work the scheduler dispatches and the graph node built on it.
 
 `task` exists so that `scheduler` and `graph` both include it and neither includes the other:
 `Graph::Node` derives from `Scheduler::Task`, and the scheduler's poller reads `Node` fields.
-The declarations keep the namespaces they had before the module was split out.
 
 ## Depends on
 

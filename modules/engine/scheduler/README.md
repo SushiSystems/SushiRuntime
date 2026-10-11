@@ -248,20 +248,11 @@ and never allocates again.
 
 ### SubmissionQueue
 
-A std::deque as the injector allocated a fresh block every 64 pushes: with 8-byte elements libstdc++
-fits exactly 64 pointers in its 512-byte block, and an injector that is pushed at the back and
-popped at the front walks forward through the block map forever, buying a new block at every
-boundary and releasing the one behind it. On a frame loop that is a heap allocation every 64 ticks
-on the thread driving the run. It is small and perfectly periodic, and it is enough to break the
-zero-allocation contract run(RunReport&) makes. CI measured it as exactly 1 allocation over 64 ticks
-and 4 over 256.
+A vector with a read cursor backs the injector. It has no block boundaries, so pop_front() advances
+the cursor. When the queue drains, it clears and reuses the same storage. Capacity settles at the
+high-water mark, and the queue allocates nothing after that.
 
-A vector with a read cursor has no block boundaries to cross. The steady state drains fully every
-tick, so pop_front() reaches the end, clears, and reuses the same storage: capacity settles at the
-high-water mark and nothing is allocated again. This is the same trick drain_scratch_ already uses,
-applied to the container instead of to the batch copied out of it.
-
-The interface is the subset of std::deque the injector used, so every call site reads unchanged.
+The interface is the subset of std::deque the injector uses.
 
 ### SubmissionQueue: rewind
 
@@ -293,11 +284,8 @@ reads a member of the scheduler.
 
 ### WorkerCompletedCounter
 
-The previous `alignas(CACHE_LINE_SIZE) atomic<size_t>[]` aligned only the array's start, so eight
-8-byte counters shared one cache line and false-shared under contention. The elements were also
-default-constructed with an indeterminate value in C++17, feeding the thermal strategy garbage
-rates. Wrapping each counter in a cache-line-aligned, zero-initialised struct, as WorkerTimeBuckets
-does, fixes both.
+Each counter sits in a cache-line-aligned, zero-initialised struct, as WorkerTimeBuckets does, so no
+two counters share a cache line.
 
 ### quiescence_
 
@@ -330,12 +318,8 @@ arming a different plan.
 
 ### disarm
 
-disarm() is the counterpart of arm_for_execution(), and the reason a worker costs nothing between
-runs. Without it the armed flag stayed set from the first run until the context was destroyed, so an
-idle pool never reached the wait in the dispatch loop: every worker sat in the steal backoff,
-yielding and sleeping in 100 microsecond increments, sweeping every peer deque thousands of times a
-second for work that was not coming. On a machine the runtime shares with a host's render, audio and
-job threads, such a pool competes with them while it has nothing to do.
+disarm() is the counterpart of arm_for_execution(). It clears the armed flag, so an idle pool waits
+in the dispatch loop.
 
 disarm() is only safe once the run has quiesced. The wait predicate does not look at the per-worker
 deques, so disarming while a worker still holds queued tasks would park its peers and leave it to
@@ -346,7 +330,7 @@ point where quiescence is guaranteed.
 
 Each step re-injects every root through submit(), paying one pending_mutex acquire and one
 condition-variable notify per root. submit_batch() collapses a step's whole root set into one lock
-acquisition, one inflight_ increment and one wake burst, so the injector cost no longer scales with
+acquisition, one inflight_ increment and one wake burst, so the injector cost does not scale with
 root fan-out. It is semantically identical to calling submit() per root: same add_ref, same
 quiescence accounting, same priority split. The single-task submit() remains for the coordinator
 re-injection path, so there is still one injector seam per shape.
@@ -419,7 +403,7 @@ anything.
 
 ### WorkloadCoordinator
 
-WorkloadCoordinator runs a dedicated low-overhead coordinator thread that calls
+WorkloadCoordinator runs a dedicated coordinator thread that calls
 IRebalanceStrategy::evaluate_and_rebalance every 5 ms. The strategy inspects live telemetry through
 ITelemetryProvider and issues task migrations through ITaskMigrator. The strategy can be swapped at
 runtime while the coordinator is running.
@@ -611,27 +595,22 @@ so it is never skipped.
 
 ##### Completion accounting
 
-A completion is counted against the executing worker's id, not the EBR slot id. EBR ids are
-handed out in order of first epoch touch across all threads. A non-worker thread that
-compiles the graph takes slot 0 and shifts every worker, so keying by EBR id credited the
-wrong worker and fed the thermal strategy false per-worker rates. The read side,
-`completed_tasks_for`, already uses the worker id.
+A completion is counted against the executing worker's id, not the EBR slot id. EBR slot ids are
+handed out in order of first epoch touch across all threads, so they do not match worker ids. The
+read side, `completed_tasks_for`, uses the worker id too.
 
 ##### Downcast
 
 The downcast to `Graph::Node` goes through the virtual `is_graph_node()` type tag, not RTTI.
-It runs for every dispatched task, and `dynamic_cast` there was the one RTTI query left on
-the hot path. `EventPolling` uses the same tag, so the two downcast sites share one
-strategy.
+`EventPolling` uses the same tag.
 
 ##### Inline host tasks
 
-A pure-CPU host task needs no queue and runs inline; the comment this page replaces cites
-"design spec §0". Under profiling its timing follows the run's plan flag, not the
-context-wide setting. The dispatch step is captured before the task runs, not read at reap,
-so a later round's step cannot land on the record. The steady-clock times are written raw
-and converted onto the run's event clock at `collect()`. A host node submits no dispatch, so
-its `launched_width` and `live_width` stay `WIDTH_UNKNOWN`.
+A pure-CPU host task needs no queue and runs inline. Under profiling its timing follows the run's
+plan flag, not the context-wide setting. The dispatch step is captured before the task runs, not
+read at reap, so a later round's step cannot land on the record. The steady-clock times are
+written raw and converted onto the run's event clock at `collect()`. A host node submits no
+dispatch, so its `launched_width` and `live_width` stay `WIDTH_UNKNOWN`.
 
 ##### Queue selection
 
@@ -687,8 +666,7 @@ The first device submission to reach the kernel path claims the run's clock pair
 
 An empty event means the host work already ran inline, in a synchronous `execute_host`, and
 there is nothing to wait on. It is routed through the poller flagged ready, so successors
-fire and the task is released like any other, without a fabricated barrier event. The
-earlier barrier relied on host-operation status polling, which AdaptiveCpp does not report.
+fire and the task is released like any other, without a fabricated barrier event.
 
 `push()` never drops: the list spills to the heap past its inline capacity. Dropping an
 event would leave the task's successors untriggered for good and deadlock the run. `ready`

@@ -66,11 +66,8 @@ and resets and re-arms its scheduler for the round, but does not take ownership 
 is what makes replay possible. The caller keeps one CompiledGraph and runs it many times, resetting
 node state between runs. The one-shot rvalue overload delegates to this one.
 
-It returns nothing. It used to return a default-constructed sycl::event that carried no information:
-the run is already finished when execute() returns, so there was never a hardware event to chain on,
-and the documentation said so. Constructing one is not free. On oneAPI's libsycl sycl::event{}
-heap-allocates, which put one allocation per tick on the steady-state loop that run(RunReport&)
-promises will not allocate.
+It returns nothing. The run is already finished when execute() returns, so there is no event
+to chain on.
 
 ### IExecutionEngine::execute(CompiledGraph&&)
 
@@ -396,9 +393,6 @@ unreadable event, so no check per submission is needed.
 
 #### CompletionLatch
 
-`execute()` once allocated a fresh `std::promise`/`std::future` pair, and a capturing
-sentinel closure, on every step of a replayed run. Over a million-step run that was millions
-of heap allocations and a thread hand-off per step, which is jitter on a real-time frame.
 The latch lives once on the engine and is reset, armed and waited on each step without
 allocating: the sentinel publishes the outcome under the mutex and notifies, and the caller
 waits on the predicate.
@@ -502,10 +496,7 @@ It waits on the predecessor events first, so device work is flushed before it re
 this also drives AdaptiveCpp's queue to completion. Each event is copied, because
 AdaptiveCpp's `event::wait()` is non-const and `deps` is const.
 
-The empty event it compares against is built once, outside the loop. `sycl::event{}`
-allocates on oneAPI's libsycl, so constructing it inside the loop cost one allocation per
-predecessor per run. That was the same defect `execute()` had, on a worker thread where the
-steady-state counter could not see it.
+The empty event it compares against is built once, outside the loop.
 
 The sentinel reads the run outcome before it re-arms, because `arm_for_execution()` clears
 `run_failed_` for the next round. A failed run still drains every node to the sentinel, so
@@ -518,10 +509,7 @@ again, so the sentinel's call is not the next round's arming.
 
 #### Order inside submit
 
-The latch is reset, the scheduler armed, and only then are the roots submitted. The reset
-must come before submission so that a waiter cannot observe the previous step's completion.
-The caller's wait returned only after the previous sentinel signalled, that is after that
-step had drained, so the reset races nothing.
+The latch is reset, the scheduler armed, and only then are the roots submitted.
 
 The profiling ledger is wired before arming and is null when the plan does not request
 profiling.
@@ -530,9 +518,7 @@ The dispatch step is advanced in `submit()`, not inside `arm_for_execution()`. T
 also re-arms, to keep the pool spinning through the drain tail, and that call must not
 advance the step counter.
 
-The roots go in through one batched injector pass, where there used to be one `submit()`,
-with its lock and notify, per root. The per-step cost of injecting roots no longer grows
-with fan-out.
+The roots go in through one batched injector pass: one lock acquisition and one wake burst per step.
 
 #### complete: drain, then disarm
 
@@ -544,10 +530,8 @@ that worker and its peers finish the poll bookkeeping for the run's last nodes.
 
 After that the run is over and every task has been reaped, so the pool can go back to sleep.
 This is the only point where that is safe: the idle wait predicate does not look at the
-per-worker deques, and quiescence is what guarantees they are empty. Disarming here is what
-makes an idle runtime free. The sentinel re-arms for a next round that may never come, and
-before this call existed every worker kept spinning through the steal backoff for the rest
-of the context's life.
+per-worker deques, and quiescence is what guarantees they are empty. The sentinel re-arms for a next
+round that may never come.
 
 The submission guard is still held at that point, so no other thread can start a run between
 the disarm and the guard's release, and the next `submit()` arms again before it injects
@@ -575,11 +559,11 @@ pool still has bookkeeping to drain, which `complete()` waits for.
 from it. The ledger's `reserve()` folds in the last run's true demand per row, so growth
 happens outside the poller.
 
-`collect_profiling()` has one capture path, labelled F4 in the comments it replaces:
+`collect_profiling()` has one capture path:
 `node_timings` is aggregated from the same event records the ledger collected, one row per
 `registration_index` that was dispatched, indexed by that index directly and not through a
 hashed lookup. Completion polling is the scheduler's own overhead between kernels, and it is
-reported in `scheduling_overhead_ms` so that a frame can be tuned against it.
+reported in `scheduling_overhead_ms`.
 
 #### Definitions that need the complete Node type
 
@@ -589,8 +573,7 @@ instantiates its destructor, `sushi_ptr<Node>::~sushi_ptr`, and touching `Node::
 does the same kind of thing: both need the complete `Node` type. The header only
 forward-declares `Node` to stay light, and this translation unit is the one that sees it.
 
-`capture_base_state()` also stamps each node's `plan_index`, because it is the one pass that
-already walks every node once after compile.
+`capture_base_state()` also stamps each node's `plan_index`.
 
 ### runtime_context.cpp
 
@@ -676,7 +659,7 @@ adds that "BB-5b's try_create() turns this into a returned Error rather than a t
 runtime starts itself: the selective readback in `Buffer::read_range` and `write_range`, and
 the distributed path. `RunReport` uses them to say how much the host pulled from and pushed
 to the device during a run. Implicit shared-USM page migration by the driver is invisible to
-SYCL and is deliberately not counted. The atomics are relaxed because the values are
+SYCL and is not counted. The atomics are relaxed because the values are
 monotonic counters read at a run boundary, with no ordering dependency on other state.
 
 #### USM ownership
