@@ -7,7 +7,7 @@ The non-template entry points behind the `Interop` facade. The headers are in
 
 ### export_host_memory
 
-`export_host_memory` builds the `UsmAllocationOwner` before it makes the allocation that owner
+`export_host_memory` builds the `USMAllocationOwner` before it makes the allocation that owner
 will free. A throw between the two, for example `bad_alloc` from `make_unique`, then never leaves
 an allocation that nothing records. Zero bytes return an empty `Allocation` and allocate nothing.
 

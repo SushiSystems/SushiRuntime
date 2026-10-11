@@ -269,7 +269,7 @@ namespace
     struct ReceivedFrame
     {
         /** @brief The peer the frame came from. */
-        PeerId peer;
+        PeerID peer;
 
         /** @brief The type the header carried. */
         MessageType type = MessageType::Hello;
@@ -288,7 +288,7 @@ namespace
     {
         public:
             /** @brief Records the peer of a connection that opened. */
-            void on_peer_connected(PeerId peer, const PeerInfo& /*info*/) override
+            void on_peer_connected(PeerID peer, const PeerInfo& /*info*/) override
             {
                 {
                     const std::lock_guard<std::mutex> lock(mutex_);
@@ -298,7 +298,7 @@ namespace
             }
 
             /** @brief Records a copy of a frame. */
-            void on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+            void on_frame(PeerID peer, MessageType type, std::uint8_t flags,
                           span<const std::byte> payload) override
             {
                 {
@@ -310,7 +310,7 @@ namespace
             }
 
             /** @brief Ignores a loss; the test stops both endpoints itself. */
-            void on_peer_lost(PeerId /*peer*/, const PeerLoss& /*loss*/) override
+            void on_peer_lost(PeerID /*peer*/, const PeerLoss& /*loss*/) override
             {
 
             }
@@ -322,7 +322,7 @@ namespace
             }
 
             /** @brief Waits for the first connection and returns its peer, or nothing. */
-            [[nodiscard]] std::optional<PeerId> wait_for_peer()
+            [[nodiscard]] std::optional<PeerID> wait_for_peer()
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 if (!changed_.wait_for(lock, K_EVENT_LIMIT, [&] { return !connected_.empty(); }))
@@ -347,7 +347,7 @@ namespace
             std::condition_variable changed_;
 
             /// @brief The peers that connected, in order.
-            std::vector<PeerId> connected_;
+            std::vector<PeerID> connected_;
 
             /// @brief The frames that arrived, in order.
             std::vector<ReceivedFrame> frames_;
@@ -434,8 +434,8 @@ TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
     ASSERT_TRUE(master->start(master_events).is_ok());
     ASSERT_TRUE(worker->start(worker_events).is_ok());
 
-    const std::optional<PeerId> worker_as_seen = master_events.wait_for_peer();
-    const std::optional<PeerId> master_as_seen = worker_events.wait_for_peer();
+    const std::optional<PeerID> worker_as_seen = master_events.wait_for_peer();
+    const std::optional<PeerID> master_as_seen = worker_events.wait_for_peer();
     ASSERT_TRUE(worker_as_seen.has_value());
     ASSERT_TRUE(master_as_seen.has_value());
     EXPECT_TRUE(worker_as_seen->valid());

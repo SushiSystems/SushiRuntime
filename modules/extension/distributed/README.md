@@ -23,8 +23,8 @@ Headers under `include/SushiRuntime/distributed/`. Everything is in `SushiRuntim
 | `message_type.hpp` | `MessageType`, the type byte of a frame |
 | `buffer_handle.hpp` | `GlobalBufferID`, `BufferHandle` |
 | `buffer_view.hpp` | `BufferView` |
-| `i_transport.hpp` | `ITransport`, `TransportEvents`, `FrameSource`, `OutboundFrame`, `PeerId`, `PeerInfo`, `PeerLoss`, `SendStatus`, `TransportStatus`, `TransportResult`, `TransportExposure`, `TransportStatistics` |
-| `tcp_transport.hpp` | `TcpTransport`, `TcpMasterOptions`, `TcpWorkerOptions` |
+| `i_transport.hpp` | `ITransport`, `TransportEvents`, `FrameSource`, `OutboundFrame`, `PeerID`, `PeerInfo`, `PeerLoss`, `SendStatus`, `TransportStatus`, `TransportResult`, `TransportExposure`, `TransportStatistics` |
+| `tcp_transport.hpp` | `TCPTransport`, `TCPMasterOptions`, `TCPWorkerOptions` |
 | `in_process_transport.hpp` | `InProcessFabric`, `InProcessTransport`, `FaultPolicy`, `FaultedFrame`, `FaultAction` |
 | `i_offload_policy.hpp` | `IOffloadPolicy`, `WorkerStats`, `LeastLoadedOffloadPolicy` |
 | `kernel_registry.hpp` | `KernelRegistry` and its `Kernel` form |
@@ -135,7 +135,7 @@ nothing about what a payload means; the handshake runs above it, so both transpo
 same session code.
 
 **Peers.** A transport numbers its connections from 1 and never reuses a number. A worker that
-reconnects is a new `PeerId` on the master, and each connection to the master is a new `PeerId` on
+reconnects is a new `PeerID` on the master, and each connection to the master is a new `PeerID` on
 the worker. There is no fixed id for the master and no peer count on the interface.
 
 **Start and stop.** `start(events)` is called once. A master binds and listens inside it, so a
@@ -180,18 +180,18 @@ and reconnecting is off.
 ### Exposure
 
 `exposure()` is `Loopback` for an in-process fabric and for a TCP endpoint whose bind address or
-master host is a loopback address, and `Network` otherwise. `TcpMasterOptions::bind` defaults to
+master host is a loopback address, and `Network` otherwise. `TCPMasterOptions::bind` defaults to
 `127.0.0.1`.
 
 ## tcp_transport.hpp
 
-`TcpTransport::make_master(TcpMasterOptions)` and `make_worker(Endpoint, TcpWorkerOptions)` make
+`TCPTransport::make_master(TCPMasterOptions)` and `make_worker(Endpoint, TCPWorkerOptions)` make
 the two ends. Nothing is bound or connected until `start()`.
 
 A master runs one accept thread. It polls `accept` every 100 ms, so `stop()` takes up to that
 long, and it joins finished connections between two accepts. Every open connection counts
 towards `max_peers` (64), whether or not its peer has registered. A connection that arrives at
-the cap gets no `PeerId` and makes no event: the acceptor writes `REJECT(busy)` with a 250 ms
+the cap gets no `PeerID` and makes no event: the acceptor writes `REJECT(busy)` with a 250 ms
 bound, shuts the socket and logs a WARN for the first refusal and every tenth after it. The
 write is best effort, since the socket is shut straight after it.
 
@@ -278,7 +278,7 @@ brick that causes each count. What each field means to a user is in §9 of the g
 
 One `InProcessFabric` joins one master endpoint and any number of worker endpoints, made with
 `InProcessTransport::make_master(fabric)` and `make_worker(fabric)`. The fabric numbers worker
-endpoints from 0 in the order they are made; that index, not a `PeerId`, is what
+endpoints from 0 in the order they are made; that index, not a `PeerID`, is what
 `set_partitioned()` and a `FaultPolicy` name, because it stays the same across reconnects.
 
 A `FaultPolicy` sees every frame as it enters the fabric, control or stream, as a `FaultedFrame`:
@@ -431,7 +431,7 @@ to that peer fails in `send()` and is undone by `try_offload()`.
 `TASK_DISPATCH` frame a worker's queue took. `redispatched` is the monitor's count plus the tasks
 the handlers and `stop()` resubmitted. `stale_writebacks` is the exchange's count of chunks the
 registry refused plus the chunks `expects_output()` refused. `cluster_statistics()` also asks the
-transport for its byte counts, and `TcpTransport::statistics()` takes the peer table's mutex for
+transport for its byte counts, and `TCPTransport::statistics()` takes the peer table's mutex for
 that.
 
 `completed_remote` counts the tasks whose result was `Succeeded` with every output whole. The

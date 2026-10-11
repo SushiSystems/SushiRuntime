@@ -45,7 +45,7 @@ using namespace SushiRuntime::Topology;
  *
  * Creates a synthetic 2-node distance matrix and asserts local distances are 10 while remote distances match the provided configuration.
  */
-TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelObeysAcpiConvention)
+TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelObeysACPIConvention)
 {
     MatrixDistanceModel model{{{10, 21},
                                {21, 10}}};
@@ -127,7 +127,7 @@ TEST(Unit_TopologyAbstractionTest, RemappingProviderSplitsRealDevicesAcrossFakeN
  *
  * Injects a remapping provider and tests that queues obtained for synthetic NUMA IDs can successfully submit host tasks.
  */
-TEST(Unit_TopologyAbstractionTest, RuntimeContextRoutesQueuesViaSyntheticNuma)
+TEST(Unit_TopologyAbstractionTest, RuntimeContextRoutesQueuesViaSyntheticNUMA)
 {
     constexpr int FAKE_NODES = 2;
 
@@ -154,7 +154,7 @@ TEST(Unit_TopologyAbstractionTest, RuntimeContextRoutesQueuesViaSyntheticNuma)
  *
  * Builds a node by hand, leaves its PCI address empty and asserts NUMAMapper puts it on node 0.
  */
-TEST(Unit_TopologyAbstractionTest, GpuWithoutPciAddressTakesFallbackNumaNode)
+TEST(Unit_TopologyAbstractionTest, GPUWithoutPCIAddressTakesFallbackNUMANode)
 {
     HardwareNode gpu;
     gpu.name = "synthetic GPU without a PCI address";

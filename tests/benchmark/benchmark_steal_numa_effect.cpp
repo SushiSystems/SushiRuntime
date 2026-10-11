@@ -145,7 +145,7 @@ namespace
  * Same workload, same cores: report the throughput delta between the flat and
  * the synthetic-NUMA-aware scheduler, plus the aware steal locality.
  */
-TEST(Performance_StealNumaEffectBench, NumaAwareVsBlindThroughput)
+TEST(Performance_StealNumaEffectBench, NUMAAwareVsBlindThroughput)
 {
     RuntimeContext blind_ctx; // real (flat on single-socket) topology
     const int workers = static_cast<int>(make_scheduler(blind_ctx).get_worker_count());

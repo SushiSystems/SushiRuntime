@@ -21,7 +21,7 @@
 
 /**
  * @file tcp_fault_proxy.hpp
- * @brief Declares TcpFaultProxy, a loopback proxy that injects faults between worker and master.
+ * @brief Declares TCPFaultProxy, a loopback proxy that injects faults between worker and master.
  * @author Mustafa Garip
  * @see modules/extension/distributed/tests/README.md
  */
@@ -257,14 +257,14 @@ namespace SushiRuntime
              * open or opened later, until the next set_fault().
              * @see modules/extension/distributed/tests/README.md
              */
-            class TcpFaultProxy final
+            class TCPFaultProxy final
             {
                 public:
                     /**
                      * @brief Listens on a free loopback port and starts accepting.
                      * @param master Where each accepted connection is forwarded to.
                      */
-                    explicit TcpFaultProxy(Endpoint master) : master_(std::move(master))
+                    explicit TCPFaultProxy(Endpoint master) : master_(std::move(master))
                     {
                         started_ = listener_.listen(Endpoint{"127.0.0.1", 0}, K_BACKLOG);
                         if (started_.is_ok())
@@ -272,15 +272,15 @@ namespace SushiRuntime
                     }
 
                     /** @brief Closes every connection and joins every thread. */
-                    ~TcpFaultProxy()
+                    ~TCPFaultProxy()
                     {
                         stop();
                     }
 
-                    TcpFaultProxy(const TcpFaultProxy&) = delete;
-                    TcpFaultProxy& operator=(const TcpFaultProxy&) = delete;
-                    TcpFaultProxy(TcpFaultProxy&&) = delete;
-                    TcpFaultProxy& operator=(TcpFaultProxy&&) = delete;
+                    TCPFaultProxy(const TCPFaultProxy&) = delete;
+                    TCPFaultProxy& operator=(const TCPFaultProxy&) = delete;
+                    TCPFaultProxy(TCPFaultProxy&&) = delete;
+                    TCPFaultProxy& operator=(TCPFaultProxy&&) = delete;
 
                     /** @brief Returns how the listener started; the proxy runs only after Ok. */
                     [[nodiscard]] const SocketResult& started() const noexcept

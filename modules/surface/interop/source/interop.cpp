@@ -82,7 +82,7 @@ namespace SushiRuntime
                 capabilities.host_export = device.has(sycl::aspect::usm_host_allocations);
                 if (device.has(sycl::aspect::ext_intel_device_info_uuid))
                 {
-                    DeviceUuid uuid;
+                    DeviceUUID uuid;
                     uuid.bytes = device.get_info<sycl::ext::intel::info::device::uuid>();
                     capabilities.device_uuid = uuid;
                 }
@@ -115,7 +115,7 @@ namespace SushiRuntime
             }
 
             /// @brief Spells @p uuid as thirty-two lowercase hexadecimal digits.
-            std::string hex(const DeviceUuid& uuid)
+            std::string hex(const DeviceUUID& uuid)
             {
                 static constexpr char K_DIGITS[] = "0123456789abcdef";
                 std::string text;
@@ -234,7 +234,7 @@ namespace SushiRuntime
                                 const ImportProgress& progress) noexcept
             {
                 if (progress.adopted)
-                    run_release_step("UsmAllocator::forget", device_index, [&]
+                    run_release_step("USMAllocator::forget", device_index, [&]
                     {
                         context.memory().forget(progress.address);
                     });
@@ -371,9 +371,9 @@ namespace SushiRuntime
                 const std::size_t rounded = round_up(bytes, alignment);
 
                 // The owner exists before the allocation it will free (modules/surface/interop/README.md).
-                auto owner = std::make_unique<Memory::UsmAllocationOwner>(context->shared_memory());
+                auto owner = std::make_unique<Memory::USMAllocationOwner>(context->shared_memory());
                 void* address = context->memory().allocate(
-                    {Memory::UsmKind::Host, rounded, alignment, device_index});
+                    {Memory::USMKind::Host, rounded, alignment, device_index});
                 if (address == nullptr)
                     throw Core::SushiException(Core::Error{
                         Core::Errc::allocation_failed,

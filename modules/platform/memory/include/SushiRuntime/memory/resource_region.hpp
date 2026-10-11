@@ -39,7 +39,7 @@ namespace SushiRuntime
          *
          * A raw base pointer.
          */
-        using ResourceId = void*;
+        using ResourceID = void*;
 
         /**
          * @brief Describes a half-open byte interval within one tracked allocation.
@@ -50,7 +50,7 @@ namespace SushiRuntime
             /** @brief Sentinel length meaning "to the end of the allocation". */
             static constexpr std::size_t WHOLE = ~std::size_t{0};
 
-            ResourceId  base   = nullptr; /**< Owning allocation; the identity key. */
+            ResourceID  base   = nullptr; /**< Owning allocation; the identity key. */
             std::size_t offset = 0;       /**< Byte offset of the interval start. */
             std::size_t length = WHOLE;   /**< Byte length, or WHOLE for the rest. */
 
@@ -63,7 +63,7 @@ namespace SushiRuntime
              * Implicit: a base pointer converts to the whole-buffer region.
              * @param p Base pointer of the allocation; null yields an empty region.
              */
-            constexpr ResourceRegion(ResourceId p) noexcept : base(p) {}
+            constexpr ResourceRegion(ResourceID p) noexcept : base(p) {}
 
             /**
              * @brief Constructs a sub-region of one allocation.
@@ -71,7 +71,7 @@ namespace SushiRuntime
              * @param off Byte offset of the interval start within @p b.
              * @param len Byte length of the interval; WHOLE means to the end.
              */
-            constexpr ResourceRegion(ResourceId b, std::size_t off, std::size_t len) noexcept
+            constexpr ResourceRegion(ResourceID b, std::size_t off, std::size_t len) noexcept
                 : base(b), offset(off), length(len) {}
 
             /** @brief True if this region keys on a real allocation. */
@@ -116,8 +116,8 @@ namespace SushiRuntime
 
     namespace Core
     {
-        /** @brief Deprecated Core:: name for Memory::ResourceId. */
-        using ResourceId [[deprecated("use Memory::ResourceId")]] = Memory::ResourceId;
+        /** @brief Deprecated Core:: name for Memory::ResourceID. */
+        using ResourceID [[deprecated("use Memory::ResourceID")]] = Memory::ResourceID;
 
         /** @brief Deprecated Core:: name for Memory::ResourceRegion. */
         using ResourceRegion [[deprecated("use Memory::ResourceRegion")]] = Memory::ResourceRegion;

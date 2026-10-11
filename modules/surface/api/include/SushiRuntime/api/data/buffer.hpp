@@ -64,7 +64,7 @@ namespace SushiRuntime
          *
          * Its constructor is explicit, so a bare integer does not pass as a device index.
          */
-        using DeviceIndex = Core::StrongId<struct DeviceIndexTag>;
+        using DeviceIndex = Core::StrongID<struct DeviceIndexTag>;
 
         /**
          * @brief A half-open element range [offset, offset + count) into a handle.
@@ -139,15 +139,15 @@ namespace SushiRuntime
                                              DeviceIndex device_index, Residency residency)
             {
                 const std::size_t device = device_index.value();
-                Memory::UsmAllocator& memory = ctx.memory();
+                Memory::USMAllocator& memory = ctx.memory();
                 switch (residency)
                 {
                     case Residency::Device:
-                        return memory.allocate({Memory::UsmKind::Device, bytes, 0, device});
+                        return memory.allocate({Memory::USMKind::Device, bytes, 0, device});
                     case Residency::Host:
-                        return memory.allocate({Memory::UsmKind::Host, bytes, 0, device});
+                        return memory.allocate({Memory::USMKind::Host, bytes, 0, device});
                     case Residency::Shared:
-                        return memory.allocate({Memory::UsmKind::Shared, bytes, 0, device});
+                        return memory.allocate({Memory::USMKind::Shared, bytes, 0, device});
                 }
                 return nullptr;
             }
@@ -499,7 +499,7 @@ namespace SushiRuntime
                     const std::size_t bytes =
                         detail::checked_byte_count("Buffer allocation", count, sizeof(T));
                     auto owner =
-                        std::make_unique<Memory::UsmAllocationOwner>(ctx_->shared_memory());
+                        std::make_unique<Memory::USMAllocationOwner>(ctx_->shared_memory());
                     void* address =
                         detail::malloc_residency_on(*ctx_, bytes, device_index, residency);
                     // A null address would give the handle a null key, which skips tracking.

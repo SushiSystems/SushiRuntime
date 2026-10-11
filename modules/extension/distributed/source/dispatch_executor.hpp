@@ -115,7 +115,7 @@ namespace SushiRuntime
                  * @param from The connection the dispatch came on; every reply goes to it.
                  * @param chunk_bytes Data bytes per output chunk: MasterLink::chunk_bytes().
                  */
-                [[nodiscard]] EnqueueStatus enqueue(PeerId from, Wire::TaskDispatchMessage dispatch,
+                [[nodiscard]] EnqueueStatus enqueue(PeerID from, Wire::TaskDispatchMessage dispatch,
                                                     std::uint32_t chunk_bytes);
 
                 /** @brief Drops every queued job without a result; the master is gone. */
@@ -189,7 +189,7 @@ namespace SushiRuntime
                 struct Job
                 {
                     /** @brief The connection every reply goes to. */
-                    PeerId from;
+                    PeerID from;
 
                     /** @brief The task. */
                     Wire::TaskDispatchMessage dispatch;
@@ -208,7 +208,7 @@ namespace SushiRuntime
                 void count_failure(Wire::TaskResultStatus status) noexcept;
 
                 /** @brief Sends TASK_RESULT alone with a failure status and lets the task go. */
-                void fail(PeerId from, std::uint64_t task_id, std::uint64_t generation,
+                void fail(PeerID from, std::uint64_t task_id, std::uint64_t generation,
                           Wire::TaskResultStatus status);
 
                 /** @brief Lets a task go after execute() failed, with a result if one fits. */

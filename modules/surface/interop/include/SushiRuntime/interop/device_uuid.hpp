@@ -37,7 +37,7 @@ namespace SushiRuntime
         /**
          * @brief Holds the sixteen-byte UUID both SYCL and Vulkan expose for a device.
          */
-        struct DeviceUuid
+        struct DeviceUUID
         {
             std::array<std::uint8_t, 16> bytes{}; /**< Holds the raw UUID bytes. */
         };
@@ -45,7 +45,7 @@ namespace SushiRuntime
         /**
          * @brief Compares two device UUIDs for equality.
          */
-        inline bool operator==(const DeviceUuid& left, const DeviceUuid& right) noexcept
+        inline bool operator==(const DeviceUUID& left, const DeviceUUID& right) noexcept
         {
             return left.bytes == right.bytes;
         }
@@ -53,7 +53,7 @@ namespace SushiRuntime
         /**
          * @brief Compares two device UUIDs for inequality.
          */
-        inline bool operator!=(const DeviceUuid& left, const DeviceUuid& right) noexcept
+        inline bool operator!=(const DeviceUUID& left, const DeviceUUID& right) noexcept
         {
             return !(left == right);
         }

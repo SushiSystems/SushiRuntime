@@ -1271,7 +1271,7 @@ so a kernel that ran over the wrong elements or received the wrong pointer shows
 `add(count, In(a), Out(b), fn)` hands the kernel the two pointers after a `std::size_t` index. Up
 to v0.3 the capture form took an Extent only.
 
-### `NdRangeOriginShiftsTheIdTheKernelReceives`
+### `NdRangeOriginShiftsTheIDTheKernelReceives`
 
 An NdRange rebased with `at(origin)` and a kernel written as `fn(nd_item, id, pointer)` zeroes
 the elements from the origin on and leaves the rest, so the id the kernel receives carries the

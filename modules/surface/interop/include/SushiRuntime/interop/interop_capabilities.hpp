@@ -52,7 +52,7 @@ namespace SushiRuntime
              */
             bool device_import = false;
             /** @brief Holds the device's UUID, when it has one. */
-            std::optional<DeviceUuid> device_uuid;
+            std::optional<DeviceUUID> device_uuid;
         };
 
     } // namespace Interop

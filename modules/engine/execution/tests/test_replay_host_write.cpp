@@ -45,7 +45,7 @@ namespace
     using SushiRuntime::Graph::CompiledGraph;
     using SushiRuntime::Graph::TaskGraph;
     using SushiRuntime::Memory::ResourceRegion;
-    using SushiRuntime::Memory::UsmKind;
+    using SushiRuntime::Memory::USMKind;
 
     /** @brief Holds how many times each plan is replayed. */
     constexpr std::uint32_t K_REPLAYS = 8;
@@ -55,7 +55,7 @@ namespace
     {
         public:
             /** @brief Allocates the word through @p context, which outlives this object. */
-            Word(RuntimeContext& context, UsmKind kind, std::size_t device)
+            Word(RuntimeContext& context, USMKind kind, std::size_t device)
                 : context_(context),
                   data_(static_cast<std::uint32_t*>(context.memory().allocate(
                       {kind, sizeof(std::uint32_t), 0, device})))
@@ -107,10 +107,10 @@ namespace
     }
 
     /** @brief Replays one increment plan on @p device around a host write of its input. */
-    void replay_around_host_writes(RuntimeContext& context, UsmKind input_kind, std::size_t device)
+    void replay_around_host_writes(RuntimeContext& context, USMKind input_kind, std::size_t device)
     {
         const Word input(context, input_kind, device);
-        const Word output(context, UsmKind::Shared, device);
+        const Word output(context, USMKind::Shared, device);
         ASSERT_NE(input.data(), nullptr);
         ASSERT_NE(output.data(), nullptr);
 
@@ -133,12 +133,12 @@ TEST(Integration_ReplayHostWrite, AReplayReadsASharedWordTheHostWrote)
 {
     RuntimeContext context;
     for (std::size_t device = 0; device < context.devices().count(); ++device)
-        replay_around_host_writes(context, UsmKind::Shared, device);
+        replay_around_host_writes(context, USMKind::Shared, device);
 }
 
 TEST(Integration_ReplayHostWrite, AReplayReadsAHostWordTheHostWrote)
 {
     RuntimeContext context;
     for (std::size_t device = 0; device < context.devices().count(); ++device)
-        replay_around_host_writes(context, UsmKind::Host, device);
+        replay_around_host_writes(context, USMKind::Host, device);
 }

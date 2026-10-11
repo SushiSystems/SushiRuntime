@@ -463,7 +463,7 @@ by leverage.
    reduction, and 32 regions streaming in and out all allocate nothing. Pooling amortises
    high-frequency small allocation and there is none, and the pool's 4 KB ceiling sat below the
    buffers the runtime actually allocates, so routing through it was never viable. Deleted rather
-   than demoted, since demoting hides dead code instead of removing it. `Memory::UsmRegistry` now
+   than demoted, since demoting hides dead code instead of removing it. `Memory::USMRegistry` now
    owns pointer ownership, which is the part that had a real invariant. Design in
    `docs/archive/superpowers/specs/2026-08-18-usm-allocation-seam-design.md`.
 5. **Deterministic device sort.** The engine's contact ordering rule ("sorted by

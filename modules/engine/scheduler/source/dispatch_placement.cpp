@@ -44,7 +44,7 @@ namespace SushiRuntime
         namespace
         {
             /** @brief Returns the device an address is recorded on, or -1 when it has no record. */
-            int recorded_device_index(const Memory::UsmAllocator& memory, void* address)
+            int recorded_device_index(const Memory::USMAllocator& memory, void* address)
             {
                 const std::optional<std::size_t> device = memory.device_of(address);
                 return device ? static_cast<int>(*device) : -1;
@@ -52,7 +52,7 @@ namespace SushiRuntime
 
             /** @brief Tells whether a region of @p regions is recorded off the device @p anchor. */
             bool leaves_device(const std::vector<Memory::ResourceRegion>& regions, int anchor,
-                               const Memory::UsmAllocator& memory)
+                               const Memory::USMAllocator& memory)
             {
                 for (const Memory::ResourceRegion& region : regions)
                 {
@@ -67,7 +67,7 @@ namespace SushiRuntime
             }
         } // namespace
 
-        void place_for_dispatch(Graph::Node& node, const Memory::UsmAllocator& memory,
+        void place_for_dispatch(Graph::Node& node, const Memory::USMAllocator& memory,
                                 std::size_t device_count)
         {
             void* anchor = nullptr;

@@ -47,7 +47,7 @@ namespace SushiRuntime
          * @return TooLong when the message does not encode, else what ITransport::send() said.
          */
         template <typename Message>
-        [[nodiscard]] SendStatus send_message(ITransport& transport, PeerId peer,
+        [[nodiscard]] SendStatus send_message(ITransport& transport, PeerID peer,
                                               const Message& message,
                                               std::vector<std::byte>& scratch)
         {
@@ -66,7 +66,7 @@ namespace SushiRuntime
          * @return TooLong when the message does not encode, else what ITransport::send() said.
          */
         template <typename Message>
-        [[nodiscard]] SendStatus send_message(ITransport& transport, PeerId peer,
+        [[nodiscard]] SendStatus send_message(ITransport& transport, PeerID peer,
                                               const Message& message)
         {
             std::vector<std::byte> payload;

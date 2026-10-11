@@ -12,7 +12,7 @@ CPU work and GPU work dispatched through independent per-device queues must run 
 without a race. These tests assert correctness only. The benchmark suite measures the speedup from
 the overlap (`AsyncOverlapBench`).
 
-### `CpuGpuConcurrentVectorAdd`
+### `CPUGPUConcurrentVectorAdd`
 
 The test submits to the GPU queue and then to the CPU queue without waiting on the GPU. Both submits
 return immediately, and the two devices proceed in parallel.
@@ -83,7 +83,7 @@ With `RuntimeSettings::profiling` on, the plain queue already carries `enable_pr
 a request for the profiling flavour must return that same queue handle and not a second, duplicate
 one.
 
-### `UsmFromThePlainQueueIsUsableOnTheProfilingQueue`
+### `USMFromThePlainQueueIsUsableOnTheProfilingQueue`
 
 A kernel dispatched on the profiling queue correctly dereferences a USM allocation made through the
 context of the plain queue. The shared context is usable, not only reported.
@@ -139,5 +139,5 @@ tests are skipped. `AChainedRunIsInProgressUntilFinishReturnsOrItIsDestroyed` ch
 Both buffers are pinned to one device so that they share a context. The `Reduce` task touches `data`
 and `sum` together, and the co-location guard requires the buffers of a task to live on one device.
 `devices().device_for_numa(numa)` round-robins across the devices of a NUMA node, which would
-scatter the two buffers across contexts on a host with several devices. A `UsmRequest` with device
+scatter the two buffers across contexts on a host with several devices. A `USMRequest` with device
 index 0 fixes the device.

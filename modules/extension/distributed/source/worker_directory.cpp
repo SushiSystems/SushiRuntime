@@ -64,7 +64,7 @@ namespace SushiRuntime
 
         WorkerDirectory::~WorkerDirectory() = default;
 
-        void WorkerDirectory::add_peer(PeerId peer, std::string endpoint,
+        void WorkerDirectory::add_peer(PeerID peer, std::string endpoint,
                                        std::chrono::steady_clock::time_point now)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
@@ -78,7 +78,7 @@ namespace SushiRuntime
             session.last_frame = now;
         }
 
-        RemovedPeer WorkerDirectory::remove_peer(PeerId peer)
+        RemovedPeer WorkerDirectory::remove_peer(PeerID peer)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             RemovedPeer removed;
@@ -96,7 +96,7 @@ namespace SushiRuntime
             return removed;
         }
 
-        bool WorkerDirectory::admits(PeerId peer, MessageType type) const
+        bool WorkerDirectory::admits(PeerID peer, MessageType type) const
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             const auto position = sessions_.find(peer.value);
@@ -112,7 +112,7 @@ namespace SushiRuntime
             return phase == Phase::Registered;
         }
 
-        HelloReply WorkerDirectory::accept_hello(PeerId peer, const Wire::HelloMessage& hello,
+        HelloReply WorkerDirectory::accept_hello(PeerID peer, const Wire::HelloMessage& hello,
                                                  const HandshakeNonce& master_nonce)
         {
             HandshakeNonce worker_nonce{};
@@ -144,7 +144,7 @@ namespace SushiRuntime
             return reply;
         }
 
-        HandshakeStep WorkerDirectory::accept_proof(PeerId peer, const Wire::ProofMessage& proof,
+        HandshakeStep WorkerDirectory::accept_proof(PeerID peer, const Wire::ProofMessage& proof,
                                                     std::chrono::steady_clock::time_point now)
         {
             HandshakeNonce worker_nonce{};
@@ -198,7 +198,7 @@ namespace SushiRuntime
             return HandshakeStep::Accepted;
         }
 
-        void WorkerDirectory::note_frame(PeerId peer, std::chrono::steady_clock::time_point now)
+        void WorkerDirectory::note_frame(PeerID peer, std::chrono::steady_clock::time_point now)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             const auto position = sessions_.find(peer.value);
@@ -206,7 +206,7 @@ namespace SushiRuntime
                 position->second.last_frame = std::max(position->second.last_frame, now);
         }
 
-        void WorkerDirectory::note_pong(PeerId peer, std::uint32_t rtt_micros,
+        void WorkerDirectory::note_pong(PeerID peer, std::uint32_t rtt_micros,
                                         std::uint64_t free_mem)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
@@ -218,7 +218,7 @@ namespace SushiRuntime
             position->second.free_mem = free_mem;
         }
 
-        void WorkerDirectory::note_heartbeat(PeerId peer, std::uint32_t queue_depth,
+        void WorkerDirectory::note_heartbeat(PeerID peer, std::uint32_t queue_depth,
                                              std::uint64_t cache_bytes)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
@@ -230,7 +230,7 @@ namespace SushiRuntime
             position->second.cache_bytes = cache_bytes;
         }
 
-        std::optional<PeerId> WorkerDirectory::pick(const Graph::Node& node,
+        std::optional<PeerID> WorkerDirectory::pick(const Graph::Node& node,
                                                     std::uint64_t estimated_bytes)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
@@ -280,10 +280,10 @@ namespace SushiRuntime
                 return std::nullopt;
 
             ++position->second.inflight;
-            return PeerId{position->first};
+            return PeerID{position->first};
         }
 
-        void WorkerDirectory::release_inflight(PeerId worker) noexcept
+        void WorkerDirectory::release_inflight(PeerID worker) noexcept
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             const auto position = sessions_.find(worker.value);
@@ -293,7 +293,7 @@ namespace SushiRuntime
 
         void WorkerDirectory::take_silent(std::chrono::steady_clock::time_point now,
                                           std::chrono::milliseconds liveness,
-                                          std::vector<PeerId>& out)
+                                          std::vector<PeerID>& out)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             for (auto& [value, session] : sessions_)
@@ -301,14 +301,14 @@ namespace SushiRuntime
                 if (!session.alive || now - session.last_frame <= liveness)
                     continue;
 
-                out.push_back(PeerId{value});
+                out.push_back(PeerID{value});
                 retire(session);
             }
         }
 
         void WorkerDirectory::take_handshake_overdue(std::chrono::steady_clock::time_point now,
                                                      std::chrono::milliseconds limit,
-                                                     std::vector<PeerId>& out)
+                                                     std::vector<PeerID>& out)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             for (auto& [value, session] : sessions_)
@@ -318,18 +318,18 @@ namespace SushiRuntime
                 if (now - session.connected_at <= limit)
                     continue;
 
-                out.push_back(PeerId{value});
+                out.push_back(PeerID{value});
                 session.handshake_overdue_listed = true;
             }
         }
 
-        void WorkerDirectory::list_workers(std::vector<PeerId>& out) const
+        void WorkerDirectory::list_workers(std::vector<PeerID>& out) const
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             for (const auto& [value, session] : sessions_)
             {
                 if (session.alive)
-                    out.push_back(PeerId{value});
+                    out.push_back(PeerID{value});
             }
         }
 
@@ -359,7 +359,7 @@ namespace SushiRuntime
             return !closed_ && reached();
         }
 
-        std::optional<WorkerIdentity> WorkerDirectory::identity(PeerId worker) const
+        std::optional<WorkerIdentity> WorkerDirectory::identity(PeerID worker) const
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             const auto position = sessions_.find(worker.value);

@@ -95,7 +95,7 @@ TEST(Unit_NumaLookup, EveryPuOfATwoNodeMachineMapsToItsOwnNode)
     }
 }
 
-TEST(Unit_NumaLookup, ANumaNodeIsLocalToItself)
+TEST(Unit_NumaLookup, ANUMANodeIsLocalToItself)
 {
     const SyntheticTopology machine("NUMANode:2 Core:2 PU:1");
     ASSERT_NE(machine.get(), nullptr);

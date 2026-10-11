@@ -181,10 +181,10 @@ namespace SushiRuntime
              *        byte interval.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            inline std::map<Memory::ResourceId, BaseAccess> compute_boundary_access(
+            inline std::map<Memory::ResourceID, BaseAccess> compute_boundary_access(
                 const std::vector<sushi_ptr<GraphNode>>& nodes)
             {
-                std::map<Memory::ResourceId, std::unordered_map<GraphNode*, NodeAccess>> per_base;
+                std::map<Memory::ResourceID, std::unordered_map<GraphNode*, NodeAccess>> per_base;
                 for (const auto& np : nodes)
                 {
                     GraphNode* n = np.get();
@@ -194,7 +194,7 @@ namespace SushiRuntime
                         if (w.base) per_base[w.base][n].writes.push_back(w);
                 }
 
-                std::map<Memory::ResourceId, BaseAccess> access;
+                std::map<Memory::ResourceID, BaseAccess> access;
                 const NeighbourAccesses none;
                 for (const auto& base_and_accessors : per_base)
                 {

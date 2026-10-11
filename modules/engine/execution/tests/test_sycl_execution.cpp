@@ -41,7 +41,7 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
-using SushiRuntime::Test::UsmShared;
+using SushiRuntime::Test::USMShared;
 
 /**
  * @brief Tests an end-to-end vector addition.
@@ -57,9 +57,9 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
 
     constexpr size_t VECTOR_SIZE = 1024;
 
-    UsmShared<float> usm_A(q, VECTOR_SIZE);
-    UsmShared<float> usm_B(q, VECTOR_SIZE);
-    UsmShared<float> usm_C(q, VECTOR_SIZE);
+    USMShared<float> usm_A(q, VECTOR_SIZE);
+    USMShared<float> usm_B(q, VECTOR_SIZE);
+    USMShared<float> usm_C(q, VECTOR_SIZE);
 
     ASSERT_TRUE(usm_A);
     ASSERT_TRUE(usm_B);
@@ -128,9 +128,9 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
 
     // Both buffers are pinned to device 0, as a task's buffers live on one device; see README.md.
     float* data = static_cast<float*>(
-        ctx.memory().allocate({Memory::UsmKind::Shared, N * sizeof(float), 0, 0}));
+        ctx.memory().allocate({Memory::USMKind::Shared, N * sizeof(float), 0, 0}));
     double* sum = static_cast<double*>(
-        ctx.memory().allocate({Memory::UsmKind::Shared, sizeof(double), 0, 0}));
+        ctx.memory().allocate({Memory::USMKind::Shared, sizeof(double), 0, 0}));
     ASSERT_NE(data, nullptr);
     ASSERT_NE(sum, nullptr);
 

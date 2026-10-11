@@ -30,7 +30,7 @@ The failure for it, `SushiException` with `Errc::unsupported`, is raised by `Run
 Discovery itself throws `SushiException` with `Errc::unsupported` only when SYCL enumeration
 throws. No test reaches that path, because a test cannot make `sycl::device::get_devices` fail.
 
-### `NoTwoNodesShareAPciAddress`
+### `NoTwoNodesShareAPCIAddress`
 
 The test probes every device without a filter. For each node that has a PCI address, it asserts that
 the domain, bus, device and function of that address have not been returned for an earlier node.
@@ -52,7 +52,7 @@ PU, and destroys the topology on scope exit.
 The test asserts that the machine has two NUMA nodes and four PUs. For each PU, `local_numa_os_index`
 returns the OS index of the node that holds the PU, which is the PU's index divided by two.
 
-### `ANumaNodeIsLocalToItself`
+### `ANUMANodeIsLocalToItself`
 
 For the second NUMA node, `local_numa_os_index` returns that node's own OS index.
 

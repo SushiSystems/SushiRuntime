@@ -21,7 +21,7 @@
 
 /**
  * @file usm_request.hpp
- * @brief Declares UsmKind and UsmRequest, which describe one USM allocation.
+ * @brief Declares USMKind and USMRequest, which describe one USM allocation.
  * @author Mustafa Garip
  * @see modules/platform/memory/README.md
  */
@@ -36,7 +36,7 @@ namespace SushiRuntime
     namespace Memory
     {
         /** @brief Names the three kinds of USM an allocation can be. */
-        enum class UsmKind : std::uint8_t
+        enum class USMKind : std::uint8_t
         {
             Host,   /**< Host memory a device of the context can read; sycl::usm::alloc::host. */
             Shared, /**< Memory that migrates between host and device; sycl::usm::alloc::shared. */
@@ -47,10 +47,10 @@ namespace SushiRuntime
          * @brief Describes one USM allocation: its kind, size, alignment and device.
          * @see modules/platform/memory/README.md
          */
-        struct UsmRequest
+        struct USMRequest
         {
             /** @brief Kind of USM to allocate. */
-            UsmKind kind = UsmKind::Shared;
+            USMKind kind = USMKind::Shared;
 
             /** @brief Length of the allocation in bytes. */
             std::size_t bytes = 0;

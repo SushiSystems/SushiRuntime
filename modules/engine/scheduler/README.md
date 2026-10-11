@@ -223,7 +223,7 @@ throws Core::SushiException for start > end; start == end is an empty range that
 ### TaskScheduler
 
 TaskScheduler is built from a WorkerPoolSettings, a Topology::TopologyView, a Device::DeviceQueueSet
-and a Memory::UsmAllocator, and holds the last three by reference; all three must outlive it. It
+and a Memory::USMAllocator, and holds the last three by reference; all three must outlive it. It
 names no type of the execution module.
 
 TaskScheduler owns a fixed-size pool of worker threads started once (start()) and kept alive across
@@ -426,7 +426,7 @@ point here.
 #### Sizing and placing the pool
 
 The constructor takes a `WorkerPoolSettings`, a `Topology::TopologyView`, a
-`Device::DeviceQueueSet` and a `Memory::UsmAllocator`. It includes no header of `execution`;
+`Device::DeviceQueueSet` and a `Memory::USMAllocator`. It includes no header of `execution`;
 `Execution::worker_pool_settings()` maps a `RuntimeSettings` onto the first argument. The
 settings size and place the worker pool: how
 many workers to run, which core range to bind them into, and whether to bind at all. The
@@ -646,7 +646,7 @@ the allocator and the device count that execute_task() calls for a node it has n
 The first dispatch asks `placement_of()` once, after the co-location check, and caches the
 answer on the node as `cached_queue_index_`. Steady-state replay then routes through
 `DeviceQueueSet::queue(index)`, an indexed read, and calls neither `placement_of()` nor
-`UsmAllocator::owning_device()`. A placement at or past the device count fails the run with
+`USMAllocator::owning_device()`. A placement at or past the device count fails the run with
 `Errc::invalid_graph`, the index and the count; like a co-location failure it is not cached,
 so it recurs on a later run.
 

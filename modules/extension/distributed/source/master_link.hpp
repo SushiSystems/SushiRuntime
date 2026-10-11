@@ -130,40 +130,40 @@ namespace SushiRuntime
                 void stop() noexcept;
 
                 /** @brief Sends HELLO with a fresh nonce, or closes the peer of an ended link. */
-                void on_connected(PeerId peer);
+                void on_connected(PeerID peer);
 
                 /**
                  * @brief Verifies the master's proof and answers with PROOF.
                  * @return Ended, with RejectedAuthentication, when the proof is wrong; the
                  *         peer is then closed.
                  */
-                LinkChange on_challenge(PeerId peer, const Wire::ChallengeMessage& challenge);
+                LinkChange on_challenge(PeerID peer, const Wire::ChallengeMessage& challenge);
 
                 /** @brief Records the worker id, the liveness timeout and the chunk size. */
-                LinkChange on_welcome(PeerId peer, const Wire::WelcomeMessage& welcome);
+                LinkChange on_welcome(PeerID peer, const Wire::WelcomeMessage& welcome);
 
                 /**
                  * @brief Records why the master refused.
                  * @return Ended for Authentication and Version; None for Busy and Malformed,
                  *         after which the next connection tries again.
                  */
-                LinkChange on_reject(PeerId peer, const Wire::RejectMessage& reject);
+                LinkChange on_reject(PeerID peer, const Wire::RejectMessage& reject);
 
                 /** @brief Answers a PING with its token and the free memory probe's value. */
-                void on_ping(PeerId peer, const Wire::PingMessage& ping);
+                void on_ping(PeerID peer, const Wire::PingMessage& ping);
 
                 /** @brief Notes that the master is leaving; the loss follows from the transport. */
-                void on_goodbye(PeerId peer, const Wire::GoodbyeMessage& goodbye);
+                void on_goodbye(PeerID peer, const Wire::GoodbyeMessage& goodbye);
 
                 /** @brief Refreshes the master's liveness; called for every frame. */
-                void note_frame(PeerId peer) noexcept;
+                void note_frame(PeerID peer) noexcept;
 
                 /**
                  * @brief Forgets the connection.
                  * @return Ended, with ProtocolMismatch, after BadMagic or VersionMismatch;
                  *         Disconnected when it was registered; None otherwise.
                  */
-                LinkChange on_lost(PeerId peer, const PeerLoss& loss);
+                LinkChange on_lost(PeerID peer, const PeerLoss& loss);
 
                 /**
                  * @brief Ends the link: MasterUnreachable when it never registered, MasterLost
@@ -181,7 +181,7 @@ namespace SushiRuntime
                 void say_goodbye() noexcept;
 
                 /** @brief Returns the peer the link is registered with, or nothing. */
-                [[nodiscard]] std::optional<PeerId> master() const;
+                [[nodiscard]] std::optional<PeerID> master() const;
 
                 /** @brief Returns the chunk size of the current session; 0 before WELCOME. */
                 [[nodiscard]] std::uint32_t chunk_bytes() const noexcept;
@@ -241,7 +241,7 @@ namespace SushiRuntime
                  *
                  * A nonce source that fails closes the peer, so the transport tries again.
                  */
-                void send_hello(PeerId peer);
+                void send_hello(PeerID peer);
 
                 /** @brief Runs the heartbeat and the two watches until stop(). */
                 void run() noexcept;
@@ -296,7 +296,7 @@ namespace SushiRuntime
                 std::atomic<std::uint64_t> registrations_{0};
 
                 /// @brief The connection the link handshakes or is registered on; 0 for none.
-                PeerId peer_;
+                PeerID peer_;
 
                 /// @brief How far that connection's handshake has come.
                 Phase phase_ = Phase::Idle;

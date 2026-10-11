@@ -21,7 +21,7 @@
 
 /**
  * @file test_strong_id.cpp
- * @brief Tests Core::StrongId: defaults, construction, comparison, hashing and its type traits.
+ * @brief Tests Core::StrongID: defaults, construction, comparison, hashing and its type traits.
  * @see modules/foundation/core/tests/README.md
  * @author Mustafa Garip
  */
@@ -35,62 +35,62 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/strong_id.hpp>
 
-using SushiRuntime::Core::StrongId;
+using SushiRuntime::Core::StrongID;
 
 namespace
 {
     struct DeviceTag {};
-    using DeviceId = StrongId<DeviceTag>;
+    using DeviceID = StrongID<DeviceTag>;
 
-    static_assert(std::is_trivially_copyable_v<DeviceId>,
-                  "StrongId must be trivially copyable.");
-    static_assert(sizeof(DeviceId) == sizeof(std::size_t),
-                  "StrongId must have the size of its representation.");
-    static_assert(!std::is_convertible_v<std::size_t, DeviceId>,
-                  "A raw integer must not convert implicitly to StrongId.");
+    static_assert(std::is_trivially_copyable_v<DeviceID>,
+                  "StrongID must be trivially copyable.");
+    static_assert(sizeof(DeviceID) == sizeof(std::size_t),
+                  "StrongID must have the size of its representation.");
+    static_assert(!std::is_convertible_v<std::size_t, DeviceID>,
+                  "A raw integer must not convert implicitly to StrongID.");
 
     TEST(Unit_StrongId, DefaultIsZero)
     {
-        EXPECT_EQ(DeviceId{}.value(), std::size_t{0});
+        EXPECT_EQ(DeviceID{}.value(), std::size_t{0});
     }
 
     TEST(Unit_StrongId, ExplicitConstructionKeepsValue)
     {
-        const DeviceId id{7};
+        const DeviceID id{7};
         EXPECT_EQ(id.value(), std::size_t{7});
     }
 
     TEST(Unit_StrongId, EqualityComparesValues)
     {
-        EXPECT_TRUE(DeviceId{3} == DeviceId{3});
-        EXPECT_FALSE(DeviceId{3} != DeviceId{3});
-        EXPECT_TRUE(DeviceId{3} != DeviceId{4});
-        EXPECT_FALSE(DeviceId{3} == DeviceId{4});
+        EXPECT_TRUE(DeviceID{3} == DeviceID{3});
+        EXPECT_FALSE(DeviceID{3} != DeviceID{3});
+        EXPECT_TRUE(DeviceID{3} != DeviceID{4});
+        EXPECT_FALSE(DeviceID{3} == DeviceID{4});
     }
 
     TEST(Unit_StrongId, OrderingFollowsValues)
     {
-        EXPECT_TRUE(DeviceId{1} < DeviceId{2});
-        EXPECT_FALSE(DeviceId{2} < DeviceId{2});
-        EXPECT_FALSE(DeviceId{3} < DeviceId{2});
+        EXPECT_TRUE(DeviceID{1} < DeviceID{2});
+        EXPECT_FALSE(DeviceID{2} < DeviceID{2});
+        EXPECT_FALSE(DeviceID{3} < DeviceID{2});
     }
 
     TEST(Unit_StrongId, UsableAsUnorderedMapKey)
     {
-        std::unordered_map<DeviceId, int> names;
-        names[DeviceId{5}] = 50;
-        names[DeviceId{9}] = 90;
+        std::unordered_map<DeviceID, int> names;
+        names[DeviceID{5}] = 50;
+        names[DeviceID{9}] = 90;
         ASSERT_EQ(names.size(), 2u);
-        EXPECT_EQ(names.at(DeviceId{5}), 50);
-        EXPECT_EQ(names.count(DeviceId{0}), 0u);
+        EXPECT_EQ(names.at(DeviceID{5}), 50);
+        EXPECT_EQ(names.count(DeviceID{0}), 0u);
     }
 
     TEST(Unit_StrongId, UsableAsOrderedMapKey)
     {
-        std::map<DeviceId, int> ordered;
-        ordered[DeviceId{9}] = 90;
-        ordered[DeviceId{2}] = 20;
-        ordered[DeviceId{5}] = 50;
+        std::map<DeviceID, int> ordered;
+        ordered[DeviceID{9}] = 90;
+        ordered[DeviceID{2}] = 20;
+        ordered[DeviceID{5}] = 50;
 
         std::vector<std::size_t> keys;
         for (const auto& entry : ordered)
@@ -100,6 +100,6 @@ namespace
 
     TEST(Unit_StrongId, HashForwardsToRepresentation)
     {
-        EXPECT_EQ(std::hash<DeviceId>{}(DeviceId{42}), std::hash<std::size_t>{}(42));
+        EXPECT_EQ(std::hash<DeviceID>{}(DeviceID{42}), std::hash<std::size_t>{}(42));
     }
 }

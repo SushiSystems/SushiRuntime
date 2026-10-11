@@ -35,7 +35,7 @@ the next one by mistake. The count given at construction must be at least 1.
 
 ## test_helpers.hpp
 
-The header holds an order-recording host task, an atomic-counter host task, and `UsmShared`,
+The header holds an order-recording host task, an atomic-counter host task, and `USMShared`,
 an RAII guard for USM memory, so a failing assertion never leaks an allocation.
 
 `has_any_sycl_device` asks SYCL whether it reports a device and constructs nothing of the

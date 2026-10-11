@@ -68,7 +68,7 @@ namespace SushiRuntime
             std::array<std::weak_ptr<InProcessTransport::Impl>, 2> endpoints;
 
             /** @brief The id each side gave the connection. */
-            std::array<PeerId, 2> ids;
+            std::array<PeerID, 2> ids;
 
             /** @brief Counts the frames waiting in each side's inbox. */
             std::array<std::atomic<std::uint32_t>, 2> backlog{};
@@ -134,14 +134,14 @@ namespace SushiRuntime
             struct Connection
             {
                 /** @brief Builds an open end with an empty outbox. */
-                Connection(std::shared_ptr<Link> shared, PeerId peer, std::size_t capacity)
+                Connection(std::shared_ptr<Link> shared, PeerID peer, std::size_t capacity)
                     : link(std::move(shared)), id(peer), outbox(capacity)
                 {
 
                 }
 
                 std::shared_ptr<Link> link; /**< What both ends share. */
-                PeerId id;                  /**< The id this end's endpoint uses. */
+                PeerID id;                  /**< The id this end's endpoint uses. */
                 Outbox outbox;              /**< The frames and streams this end sends. */
             };
 
@@ -154,7 +154,7 @@ namespace SushiRuntime
             };
 
             /** @brief Logs an exception that escaped an event; the peer ends, not the process. */
-            void log_handler_failure(PeerId peer, const std::string& name, const char* event,
+            void log_handler_failure(PeerID peer, const std::string& name, const char* event,
                                      std::size_t length, const char* what)
             {
                 SR_LOG_ERROR("handler of {} ({} bytes) from {} (peer {}) threw '{}'; "
@@ -244,7 +244,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the open connection of a peer, or null. */
-            [[nodiscard]] std::shared_ptr<Connection> find(PeerId peer)
+            [[nodiscard]] std::shared_ptr<Connection> find(PeerID peer)
             {
                 std::lock_guard<std::mutex> lock(mutex);
                 const auto found = table.find(peer.value);
@@ -315,7 +315,7 @@ namespace SushiRuntime
                     std::lock_guard<std::mutex> lock(mutex);
                     if (!is_accepting)
                         return false;
-                    const PeerId peer{next_peer.fetch_add(1)};
+                    const PeerID peer{next_peer.fetch_add(1)};
                     link->ids[index_of(Side::Master)] = peer;
                     link->endpoints[index_of(Side::Master)] = weak_from_this();
                     table.emplace(peer.value,
@@ -439,7 +439,7 @@ namespace SushiRuntime
             void deliver(Inbound& item)
             {
                 const std::size_t self = index_of(side);
-                const PeerId peer = item.link->ids[self];
+                const PeerID peer = item.link->ids[self];
 
                 if (item.kind == InboundKind::Frame)
                 {
@@ -629,7 +629,7 @@ namespace SushiRuntime
                 if (master == nullptr)
                     return false;
 
-                const PeerId peer{next_peer.fetch_add(1)};
+                const PeerID peer{next_peer.fetch_add(1)};
                 const std::shared_ptr<Link> link = std::make_shared<Link>();
                 link->worker_index = worker_index;
                 link->ids[index_of(Side::Worker)] = peer;
@@ -767,7 +767,7 @@ namespace SushiRuntime
             /// @brief What the other ends sent, in the order it arrived.
             std::deque<Inbound> inbox;
 
-            /// @brief The open connections by PeerId::value; send() looks a peer up here.
+            /// @brief The open connections by PeerID::value; send() looks a peer up here.
             std::unordered_map<std::uint32_t, std::shared_ptr<Connection>> table;
 
             /// @brief Set when the inbox or an outbox may hold something.
@@ -974,7 +974,7 @@ namespace SushiRuntime
             }
         }
 
-        SendStatus InProcessTransport::send(PeerId peer, MessageType type,
+        SendStatus InProcessTransport::send(PeerID peer, MessageType type,
                                             SushiRuntime::span<const std::byte> payload)
         {
             if (impl_->phase.load(std::memory_order_acquire) != Impl::Phase::Running)
@@ -988,7 +988,7 @@ namespace SushiRuntime
             return status;
         }
 
-        SendStatus InProcessTransport::send_stream(PeerId peer,
+        SendStatus InProcessTransport::send_stream(PeerID peer,
                                                    std::unique_ptr<FrameSource> source)
         {
             std::shared_ptr<Connection> connection;
@@ -1007,7 +1007,7 @@ namespace SushiRuntime
             return status;
         }
 
-        void InProcessTransport::close_peer(PeerId peer) noexcept
+        void InProcessTransport::close_peer(PeerID peer) noexcept
         {
             const std::shared_ptr<Connection> connection = impl_->find(peer);
             if (connection == nullptr)

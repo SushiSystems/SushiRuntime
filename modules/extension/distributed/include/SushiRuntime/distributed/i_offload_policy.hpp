@@ -45,7 +45,7 @@ namespace SushiRuntime
          */
         struct WorkerStats
         {
-            int           worker_id  = -1;    /**< The worker's id: the value of its PeerId. */
+            int           worker_id  = -1;    /**< The worker's id: the value of its PeerID. */
             bool          alive      = false; /**< Registered and heard from within liveness. */
             std::uint32_t inflight   = 0;     /**< Tasks dispatched to it and not settled. */
             std::uint64_t free_mem   = 0;     /**< Free device memory in bytes, from its PONG. */

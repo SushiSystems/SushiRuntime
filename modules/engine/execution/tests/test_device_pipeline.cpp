@@ -41,7 +41,7 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
-using SushiRuntime::Test::UsmShared;
+using SushiRuntime::Test::USMShared;
 
 namespace
 {
@@ -79,7 +79,7 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
     sycl::queue& q = ctx.devices().queue_or_numa_local(std::nullopt, 0);
 
     constexpr size_t N = 1024;
-    UsmShared<float> A(q, N), B(q, N), C(q, N), D(q, N);
+    USMShared<float> A(q, N), B(q, N), C(q, N), D(q, N);
     ASSERT_TRUE(A);
     ASSERT_TRUE(B);
     ASSERT_TRUE(C);

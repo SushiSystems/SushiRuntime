@@ -64,7 +64,7 @@ namespace SushiRuntime
 
     namespace Topology { class TopologyView; }
     namespace Device { class DeviceQueueSet; }
-    namespace Memory { class UsmAllocator; }
+    namespace Memory { class USMAllocator; }
 
     namespace Scheduler 
     {
@@ -192,7 +192,7 @@ namespace SushiRuntime
                 /** @brief Device queues every dispatch is submitted to. */
                 Device::DeviceQueueSet& devices_;
                 /** @brief Allocator asked which device owns a node's USM. */
-                const Memory::UsmAllocator& memory_;
+                const Memory::USMAllocator& memory_;
                 /**
                  * @brief Offers each offloadable node to the installed coordinator at dispatch.
                  * @see modules/engine/scheduler/README.md
@@ -318,7 +318,7 @@ namespace SushiRuntime
                 TaskScheduler(const WorkerPoolSettings& pool,
                               const Topology::TopologyView& topology,
                               Device::DeviceQueueSet& devices,
-                              const Memory::UsmAllocator& memory);
+                              const Memory::USMAllocator& memory);
                 /** @brief Cleans up the scheduler and worker queues. */
                 ~TaskScheduler();
 

@@ -63,9 +63,9 @@ diagram groups the modules by the layer they form; section 16 has the full map.
         │               EventPolling · WorkloadCoordinator        │  (work stealing)
         ├──────────────────────┬──────────────────────────────────┤
         │  memory/             │  topology/                       │  resources +
-        │  UsmRegistry         │  HardwareDiscovery · NUMAMapper  │  hardware model
+        │  USMRegistry         │  HardwareDiscovery · NUMAMapper  │  hardware model
         │  EpochManager (EBR)  │  ITopologyProvider               │
-        │                      │  INumaDistanceModel · affinity   │
+        │                      │  INUMADistanceModel · affinity   │
         ├──────────────────────┴──────────────────────────────────┤
         │  core/   RefCounted · sushi_ptr · logger · common       │  foundations
         │          Error · Result · RunReport · compat shims      │
@@ -75,7 +75,7 @@ diagram groups the modules by the layer they form; section 16 has the full map.
 ```
 
 The **dependency-inversion seams** are deliberate: `RuntimeContext` accepts an
-injected `ITopologyProvider` and `INumaDistanceModel`; the scheduler exposes
+injected `ITopologyProvider` and `INUMADistanceModel`; the scheduler exposes
 `ITelemetryProvider` / `ITaskMigrator` / `IRebalanceStrategy`; the allocator uses
 `IAllocatorStrategy`; the distributed layer uses `ITransport` and
 `IOffloadPolicy`. Every one of these has a production default and a
@@ -189,7 +189,7 @@ do not need to reach into the lower layers.
   makes the caller-owned overloads above cheap:
   - `is_successful`, `cancelled`, `total_tasks_executed`, `total_duration_ms`,
     `graph_analysis_duration_ms`.
-  - `numa_statistics` — `NumaNodeStatistics` per NUMA node: CPU/GPU task counts,
+  - `numa_statistics` — `NUMANodeStatistics` per NUMA node: CPU/GPU task counts,
     `tasks_stolen_intra_numa`, `tasks_stolen_inter_numa`.
   - `distributed_statistics` — `DistributedStatistics`: offloaded task count,
     `remote_nodes_involved`.
@@ -533,7 +533,7 @@ Three headers form the error layer:
 - **`result.hpp`**: `Result<T, E>` — a C++17 value-based error carrier modelled
   on `std::expected`; `ErrorWrapper<E>`; `make_error()` factory. Used throughout
   the stack so callers can choose between throwing and non-throwing call sites.
-- **`run_report.hpp`**: `RunReport` struct (see §3) plus `NumaNodeStatistics`,
+- **`run_report.hpp`**: `RunReport` struct (see §3) plus `NUMANodeStatistics`,
   `DistributedStatistics`, and the profiling rows `NodeTiming` / `WorkerTiming`.
 
 ### Compatibility shims
@@ -577,7 +577,7 @@ and memory close.
 - **`HwlocDistanceModel`** loads the SLIT matrix from hwloc once at construction
   into a flat array; `get_distance()` is then an O(1) array lookup.
 - **Injection seam.** `RuntimeContext` takes an `ITopologyProvider` (device
-  enumeration) and an `INumaDistanceModel` (distance source). Left null, it uses
+  enumeration) and an `INUMADistanceModel` (distance source). Left null, it uses
   `HwlocTopologyProvider` + `HwlocDistanceModel`. The substitutes —
   `RemappingTopologyProvider` (spreads real devices across N synthetic NUMA nodes,
   core *i* → node *i % N*) and `MatrixDistanceModel` (a hand-built distance
@@ -594,11 +594,11 @@ and memory close.
 Two pieces: who owns each USM pointer, and when a lock-free structure may free a
 node.
 
-### 7.1 `UsmRegistry` — which device owns a pointer
+### 7.1 `USMRegistry` — which device owns a pointer
 
 `RuntimeContext::malloc_shared` / `malloc_device` / `malloc_shared_on` /
 `malloc_device_on` call SYCL directly and record the owning device index in a
-`UsmRegistry` together with the allocation's length; `free_usm` resolves and
+`USMRegistry` together with the allocation's length; `free_usm` resolves and
 erases it in one step and frees against that device's queue. USM is bound to the
 context it was allocated from, so both halves matter: a free against the wrong queue is undefined, and a kernel must run
 where its data lives. `context_index_for_ptr` is the lookup the scheduler's
@@ -811,7 +811,7 @@ Built once at construction (`build_steal_topology`):
 
 - `worker_numa_[i]` = the NUMA node of the core worker *i* is pinned to;
 - `victim_order_[i]` = the other workers, **ordered by ascending NUMA distance**
-  (from the injected `INumaDistanceModel`), so node-local victims come first;
+  (from the injected `INUMADistanceModel`), so node-local victims come first;
 - `local_tier_len_[i]` = how many leading entries are node-local.
 
 `find_task_to_steal` walks `victim_order_` in order, so a thief exhausts cheap
@@ -1032,9 +1032,9 @@ the runtime needs to know:
   - `InProcessTransport` over an `InProcessFabric`, which joins a master and any
     number of workers inside one process and takes a `FaultPolicy`. It is the
     network analogue of `RemappingTopologyProvider`.
-  - `TcpTransport` over the platform's sockets, with a reader thread and a writer
-    thread per connection: `TcpTransport::make_master(TcpMasterOptions)` and
-    `TcpTransport::make_worker(Endpoint, TcpWorkerOptions)`.
+  - `TCPTransport` over the platform's sockets, with a reader thread and a writer
+    thread per connection: `TCPTransport::make_master(TCPMasterOptions)` and
+    `TCPTransport::make_worker(Endpoint, TCPWorkerOptions)`.
 
 - **`KernelRegistry`** maps an `OpID` to a `KernelRegistry::Kernel`, a function
   that receives the task's buffers as `span<const BufferView>` and returns a SYCL
@@ -1273,8 +1273,8 @@ modules/<tier>/<module>/   README.md, CMakeLists.txt, include/SushiRuntime/<modu
                logging     the logger and the SR_LOG macros
                sycl        sycl_compat (toolchain differences)
   platform/    topology    HardwareDiscovery, NUMAMapper, ITopologyProvider,
-                           INumaDistanceModel, TopologyView, affinity
-               memory      UsmAllocator, UsmRegistry, resource regions, EpochManager (EBR)
+                           INUMADistanceModel, TopologyView, affinity
+               memory      USMAllocator, USMRegistry, resource regions, EpochManager (EBR)
                device      DeviceQueueSet, DeviceInfo, QueueFlavour
                observability  RunReport, ProfilingLedger, TransferCounters
   engine/      task        Task, Node, task_types (OpID/TaskMetadata), late bindings,
@@ -1284,7 +1284,7 @@ modules/<tier>/<module>/   README.md, CMakeLists.txt, include/SushiRuntime/<modu
                graph       TaskGraph, CompiledGraph, DependencyTracker
                execution   RuntimeContext, IExecutionEngine/ExecutionEngine,
                            ExecutionMetrics
-  surface/     interop     DeviceUuid, ExternalMemoryDescriptor, InteropCapabilities
+  surface/     interop     DeviceUUID, ExternalMemoryDescriptor, InteropCapabilities
                api         Runtime, Buffer/State, API::Graph, API::DynamicGraph / Region,
                            API::Interop, the umbrella header SushiRuntime.h
   extension/   distributed (optional) Cluster, ITransport and its two transports,

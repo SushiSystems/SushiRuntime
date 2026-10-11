@@ -173,7 +173,7 @@ namespace SushiRuntime
         {
             /** @brief Names the router of one frame: peer, flags, payload. */
             using Router =
-                Wire::MessageRouter<PeerId, std::uint8_t, SushiRuntime::span<const std::byte>>;
+                Wire::MessageRouter<PeerID, std::uint8_t, SushiRuntime::span<const std::byte>>;
 
             /** @brief Describes what retire_peer() found and returned to the scheduler. */
             struct RetiredPeer
@@ -217,11 +217,11 @@ namespace SushiRuntime
              * @tparam Message A wire message: it names its type as K_TYPE and has decode().
              */
             template <typename Message>
-            void handle(void (Impl::*member)(PeerId, std::uint8_t, const Message&))
+            void handle(void (Impl::*member)(PeerID, std::uint8_t, const Message&))
             {
                 router.set_handler(
                     Message::K_TYPE,
-                    [this, member](PeerId peer, std::uint8_t flags,
+                    [this, member](PeerID peer, std::uint8_t flags,
                                    SushiRuntime::span<const std::byte> payload)
                     {
                         Message message;
@@ -242,7 +242,7 @@ namespace SushiRuntime
             }
 
             /** @brief Adds a connection that owes HELLO to the directory. */
-            void on_peer_connected(PeerId peer, const PeerInfo& info) override
+            void on_peer_connected(PeerID peer, const PeerInfo& info) override
             {
                 directory.add_peer(peer, info.endpoint, std::chrono::steady_clock::now());
                 SR_LOG_DEBUG("peer {} connected from {}; it owes HELLO", peer.value,
@@ -250,7 +250,7 @@ namespace SushiRuntime
             }
 
             /** @brief Refreshes the peer's liveness and routes a frame the directory admits. */
-            void on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+            void on_frame(PeerID peer, MessageType type, std::uint8_t flags,
                           SushiRuntime::span<const std::byte> payload) override
             {
                 if (!directory.admits(peer, type))
@@ -264,7 +264,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns a lost worker's tasks to the scheduler and logs the loss once. */
-            void on_peer_lost(PeerId peer, const PeerLoss& loss) override
+            void on_peer_lost(PeerID peer, const PeerLoss& loss) override
             {
                 const RetiredPeer retired = retire_peer(peer);
                 if (!retired.peer.known)
@@ -295,7 +295,7 @@ namespace SushiRuntime
             }
 
             /** @brief Answers HELLO with CHALLENGE, or with WELCOME for a registered worker. */
-            void on_hello(PeerId peer, std::uint8_t /*flags*/, const Wire::HelloMessage& hello)
+            void on_hello(PeerID peer, std::uint8_t /*flags*/, const Wire::HelloMessage& hello)
             {
                 const HandshakeNonce master_nonce = make_nonce();
                 const HelloReply reply = directory.accept_hello(peer, hello, master_nonce);
@@ -321,7 +321,7 @@ namespace SushiRuntime
             }
 
             /** @brief Answers PROOF with WELCOME, or with REJECT and a close. */
-            void on_proof(PeerId peer, std::uint8_t /*flags*/, const Wire::ProofMessage& proof)
+            void on_proof(PeerID peer, std::uint8_t /*flags*/, const Wire::ProofMessage& proof)
             {
                 const std::chrono::steady_clock::time_point now =
                     std::chrono::steady_clock::now();
@@ -346,7 +346,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns a leaving worker's tasks at once and closes its connection. */
-            void on_goodbye(PeerId peer, std::uint8_t /*flags*/,
+            void on_goodbye(PeerID peer, std::uint8_t /*flags*/,
                             const Wire::GoodbyeMessage& goodbye)
             {
                 std::string cause = "said GOODBYE (";
@@ -359,7 +359,7 @@ namespace SushiRuntime
             }
 
             /** @brief Records that a worker confirmed a dispatch. */
-            void on_task_accepted(PeerId peer, std::uint8_t /*flags*/,
+            void on_task_accepted(PeerID peer, std::uint8_t /*flags*/,
                                   const Wire::TaskAcceptedMessage& accepted)
             {
                 pending.acknowledge(accepted.task_id, peer);
@@ -369,7 +369,7 @@ namespace SushiRuntime
              * @brief Settles the task of a result: completed when every output arrived whole,
              *        resubmitted otherwise. A result whose task is not pending changes nothing.
              */
-            void on_task_result(PeerId peer, std::uint8_t /*flags*/,
+            void on_task_result(PeerID peer, std::uint8_t /*flags*/,
                                 const Wire::TaskResultMessage& result)
             {
                 std::optional<PendingTask> task = pending.take(result.task_id, peer);
@@ -402,7 +402,7 @@ namespace SushiRuntime
             }
 
             /** @brief Hands the peer's writer a stream of the requested buffer version. */
-            void on_buffer_request(PeerId peer, std::uint8_t /*flags*/,
+            void on_buffer_request(PeerID peer, std::uint8_t /*flags*/,
                                    const Wire::BufferRequestMessage& request)
             {
                 pending.note_chunk(peer, std::chrono::steady_clock::now());
@@ -416,7 +416,7 @@ namespace SushiRuntime
             }
 
             /** @brief Writes one output chunk in place when both halves of the fence pass. */
-            void on_buffer_chunk(PeerId peer, std::uint8_t flags,
+            void on_buffer_chunk(PeerID peer, std::uint8_t flags,
                                  const Wire::BufferChunkMessage& chunk)
             {
                 if (!pending.expects_output(chunk.task_id, peer, chunk.handle.id,
@@ -434,7 +434,7 @@ namespace SushiRuntime
             }
 
             /** @brief Forgets the progress of an output transfer its worker gave up. */
-            void on_buffer_abort(PeerId peer, std::uint8_t /*flags*/,
+            void on_buffer_abort(PeerID peer, std::uint8_t /*flags*/,
                                  const Wire::BufferAbortMessage& abort)
             {
                 if (pending.expects_output(abort.task_id, peer, abort.id, abort.version))
@@ -442,13 +442,13 @@ namespace SushiRuntime
             }
 
             /** @brief Records the round trip of a PING and the worker's free memory. */
-            void on_pong(PeerId peer, std::uint8_t /*flags*/, const Wire::PongMessage& pong)
+            void on_pong(PeerID peer, std::uint8_t /*flags*/, const Wire::PongMessage& pong)
             {
                 directory.note_pong(peer, ping_round_trip_micros(pong.token), pong.free_mem);
             }
 
             /** @brief Records a worker's load and which tasks it still holds. */
-            void on_heartbeat(PeerId peer, std::uint8_t /*flags*/,
+            void on_heartbeat(PeerID peer, std::uint8_t /*flags*/,
                               const Wire::HeartbeatMessage& heartbeat)
             {
                 directory.note_heartbeat(peer, heartbeat.queue_depth, heartbeat.cache_bytes);
@@ -457,7 +457,7 @@ namespace SushiRuntime
 
             /** @brief Queues one control frame; a refusal is left to the peer's own timeouts. */
             template <typename Message>
-            void send_control(PeerId peer, const Message& message)
+            void send_control(PeerID peer, const Message& message)
             {
                 const SendStatus sent = send_message(*transport, peer, message);
                 if (sent != SendStatus::Queued)
@@ -467,7 +467,7 @@ namespace SushiRuntime
             }
 
             /** @brief Sends a registered worker its WELCOME: its id and the session's timings. */
-            void send_welcome(PeerId peer)
+            void send_welcome(PeerID peer)
             {
                 Wire::WelcomeMessage welcome;
                 welcome.worker_id = peer.value;
@@ -494,7 +494,7 @@ namespace SushiRuntime
              * The directory forgets a peer once, so of two calls for one peer the second finds
              * it unknown and returns nothing.
              */
-            RetiredPeer retire_peer(PeerId peer)
+            RetiredPeer retire_peer(PeerID peer)
             {
                 RetiredPeer retired;
                 retired.peer = directory.remove_peer(peer);
@@ -512,7 +512,7 @@ namespace SushiRuntime
             }
 
             /** @brief Logs one line for a peer retire_peer() forgot. */
-            void log_retired(PeerId peer, const RetiredPeer& retired, const std::string& cause,
+            void log_retired(PeerID peer, const RetiredPeer& retired, const std::string& cause,
                              bool is_logged_elsewhere)
             {
                 if (retired.peer.registered)
@@ -536,7 +536,7 @@ namespace SushiRuntime
              * @brief Closes a peer for a stated cause, returns its tasks and logs one line.
              * @return False when the directory had forgotten the peer, so nothing was logged.
              */
-            bool drop_peer(PeerId peer, const std::string& cause)
+            bool drop_peer(PeerID peer, const std::string& cause)
             {
                 // Sends to the peer fail from here, so a dispatch racing this is undone.
                 transport->close_peer(peer);
@@ -548,14 +548,14 @@ namespace SushiRuntime
             }
 
             /** @brief Closes a peer for a frame that does not decode and counts it once. */
-            void drop_malformed(PeerId peer, const std::string& cause)
+            void drop_malformed(PeerID peer, const std::string& cause)
             {
                 if (drop_peer(peer, cause))
                     closed_malformed.fetch_add(1, std::memory_order_relaxed);
             }
 
             /** @brief Logs the line of a worker that has just registered. */
-            void log_registered(PeerId peer, std::size_t kernel_count)
+            void log_registered(PeerID peer, std::size_t kernel_count)
             {
                 const std::optional<WorkerIdentity> worker = directory.identity(peer);
                 if (!worker.has_value())
@@ -791,9 +791,9 @@ namespace SushiRuntime
                 Wire::BufferReleaseMessage release;
                 release.id = released;
 
-                std::vector<PeerId> workers;
+                std::vector<PeerID> workers;
                 impl.directory.list_workers(workers);
-                for (const PeerId worker : workers)
+                for (const PeerID worker : workers)
                     impl.send_control(worker, release);
             }
             catch (const std::exception& error)

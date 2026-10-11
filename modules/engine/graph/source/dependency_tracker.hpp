@@ -95,7 +95,7 @@ namespace SushiRuntime
                  * @brief Maps an allocation's identity to a shard index with a SplitMix64 hash.
                  * @see modules/engine/graph/README.md
                  */
-                inline size_t get_shard_idx(SushiRuntime::Memory::ResourceId base) const
+                inline size_t get_shard_idx(SushiRuntime::Memory::ResourceID base) const
                 {
                     uint64_t z = reinterpret_cast<uint64_t>(base);
                     z += 0x9e3779b97f4a7c15;

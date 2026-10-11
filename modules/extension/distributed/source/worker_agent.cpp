@@ -142,14 +142,14 @@ namespace SushiRuntime
             }
 
             /** @brief Returns an allocator that keeps cached buffers as recorded shared USM. */
-            CacheAllocator make_cache_allocator(Memory::UsmAllocator& memory)
+            CacheAllocator make_cache_allocator(Memory::USMAllocator& memory)
             {
                 CacheAllocator allocator;
                 allocator.allocate = [&memory](std::size_t size_bytes) -> void*
                 {
                     try
                     {
-                        return memory.allocate(Memory::UsmRequest{Memory::UsmKind::Shared,
+                        return memory.allocate(Memory::USMRequest{Memory::USMKind::Shared,
                                                                   size_bytes, 0, K_DEVICE_INDEX});
                     }
                     catch (const std::exception& error)
@@ -215,14 +215,14 @@ namespace SushiRuntime
                 [[nodiscard]] WorkerStatistics statistics() const noexcept;
 
                 /** @brief Records the connection and opens the handshake on it. */
-                void on_peer_connected(PeerId peer, const PeerInfo& info) override;
+                void on_peer_connected(PeerID peer, const PeerInfo& info) override;
 
                 /** @brief Refreshes the master watch, then routes the frame to its brick. */
-                void on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+                void on_frame(PeerID peer, MessageType type, std::uint8_t flags,
                               Payload payload) override;
 
                 /** @brief Forgets the connection and acts on the link's answer. */
-                void on_peer_lost(PeerId peer, const PeerLoss& loss) override;
+                void on_peer_lost(PeerID peer, const PeerLoss& loss) override;
 
                 /** @brief Ends the link and logs the transport's cause when that ended it. */
                 void on_connect_abandoned(const std::string& cause) override;
@@ -237,14 +237,14 @@ namespace SushiRuntime
                 };
 
                 /** @brief Names the routing table: peer, flag byte and payload per frame. */
-                using Router = Wire::MessageRouter<PeerId, std::uint8_t, Payload>;
+                using Router = Wire::MessageRouter<PeerID, std::uint8_t, Payload>;
 
                 /** @brief Returns what the link tells the master and how it probes this worker. */
                 [[nodiscard]] MasterLinkOptions make_link_options(const KernelRegistry& kernels);
 
                 /**
                  * @brief Routes one message type to a handler that receives it decoded.
-                 * @tparam Handle Callable as `void(PeerId, std::uint8_t flags, Message&)`.
+                 * @tparam Handle Callable as `void(PeerID, std::uint8_t flags, Message&)`.
                  */
                 template <typename Message, typename Handle>
                 void route(Handle handle);
@@ -253,17 +253,17 @@ namespace SushiRuntime
                 void build_routes();
 
                 /** @brief Logs a frame that did not decode and closes its connection. */
-                void refuse_malformed(PeerId peer, MessageType type, std::size_t length,
+                void refuse_malformed(PeerID peer, MessageType type, std::size_t length,
                                       const Wire::DecodeResult& decoded);
 
                 /** @brief Acts on the other bricks as a link change asks. */
                 void apply(LinkChange change);
 
                 /** @brief Queues a dispatch from the registered master unless it was seen. */
-                void accept_dispatch(PeerId peer, Wire::TaskDispatchMessage& dispatch);
+                void accept_dispatch(PeerID peer, Wire::TaskDispatchMessage& dispatch);
 
                 /** @brief Returns the endpoint of a connection for a log line. */
-                [[nodiscard]] std::string endpoint_of(PeerId peer) const;
+                [[nodiscard]] std::string endpoint_of(PeerID peer) const;
 
                 /** @brief Closes the registered connection and waits until its queue drained. */
                 void close_master() noexcept;
@@ -287,7 +287,7 @@ namespace SushiRuntime
                 std::condition_variable connection_changed_;
 
                 /// @brief The connection that is open; 0 for none.
-                PeerId connected_;
+                PeerID connected_;
 
                 /// @brief The master's address and port on that connection.
                 std::string endpoint_;
@@ -356,7 +356,7 @@ namespace SushiRuntime
         {
             router_.set_handler(
                 Message::K_TYPE,
-                [this, handle = std::move(handle)](PeerId peer, std::uint8_t flags,
+                [this, handle = std::move(handle)](PeerID peer, std::uint8_t flags,
                                                    Payload payload)
                 {
                     Message message;
@@ -373,54 +373,54 @@ namespace SushiRuntime
         void WorkerAgent::Impl::build_routes()
         {
             route<Wire::ChallengeMessage>(
-                [this](PeerId peer, std::uint8_t, Wire::ChallengeMessage& challenge)
+                [this](PeerID peer, std::uint8_t, Wire::ChallengeMessage& challenge)
                 {
                     apply(link_.on_challenge(peer, challenge));
                 });
             route<Wire::WelcomeMessage>(
-                [this](PeerId peer, std::uint8_t, Wire::WelcomeMessage& welcome)
+                [this](PeerID peer, std::uint8_t, Wire::WelcomeMessage& welcome)
                 {
                     apply(link_.on_welcome(peer, welcome));
                 });
             route<Wire::RejectMessage>(
-                [this](PeerId peer, std::uint8_t, Wire::RejectMessage& reject)
+                [this](PeerID peer, std::uint8_t, Wire::RejectMessage& reject)
                 {
                     apply(link_.on_reject(peer, reject));
                 });
             route<Wire::GoodbyeMessage>(
-                [this](PeerId peer, std::uint8_t, Wire::GoodbyeMessage& goodbye)
+                [this](PeerID peer, std::uint8_t, Wire::GoodbyeMessage& goodbye)
                 {
                     link_.on_goodbye(peer, goodbye);
                 });
             route<Wire::PingMessage>(
-                [this](PeerId peer, std::uint8_t, Wire::PingMessage& ping)
+                [this](PeerID peer, std::uint8_t, Wire::PingMessage& ping)
                 {
                     link_.on_ping(peer, ping);
                 });
             route<Wire::TaskDispatchMessage>(
-                [this](PeerId peer, std::uint8_t, Wire::TaskDispatchMessage& dispatch)
+                [this](PeerID peer, std::uint8_t, Wire::TaskDispatchMessage& dispatch)
                 {
                     accept_dispatch(peer, dispatch);
                 });
             route<Wire::BufferChunkMessage>(
-                [this](PeerId, std::uint8_t flags, Wire::BufferChunkMessage& chunk)
+                [this](PeerID, std::uint8_t flags, Wire::BufferChunkMessage& chunk)
                 {
                     if (chunk.purpose == Wire::ChunkPurpose::PullReply)
                         cache_.accept_chunk(chunk, (flags & Wire::K_FRAME_FLAG_LAST_CHUNK) != 0);
                 });
             route<Wire::BufferAbortMessage>(
-                [this](PeerId, std::uint8_t, Wire::BufferAbortMessage& abort)
+                [this](PeerID, std::uint8_t, Wire::BufferAbortMessage& abort)
                 {
                     cache_.abort_transfer(abort.id, abort.version);
                 });
             route<Wire::BufferReleaseMessage>(
-                [this](PeerId, std::uint8_t, Wire::BufferReleaseMessage& release)
+                [this](PeerID, std::uint8_t, Wire::BufferReleaseMessage& release)
                 {
                     cache_.release(release.id);
                 });
         }
 
-        void WorkerAgent::Impl::refuse_malformed(PeerId peer, MessageType type,
+        void WorkerAgent::Impl::refuse_malformed(PeerID peer, MessageType type,
                                                  std::size_t length,
                                                  const Wire::DecodeResult& decoded)
         {
@@ -444,11 +444,11 @@ namespace SushiRuntime
                 executor_.discard_queued();
         }
 
-        void WorkerAgent::Impl::accept_dispatch(PeerId peer,
+        void WorkerAgent::Impl::accept_dispatch(PeerID peer,
                                                 Wire::TaskDispatchMessage& dispatch)
         {
             const std::uint64_t task_id = dispatch.task_id;
-            const std::optional<PeerId> master = link_.master();
+            const std::optional<PeerID> master = link_.master();
             if (!master || *master != peer)
             {
                 SR_LOG_DEBUG("task {}: dispatched on peer {}, which is not registered; ignored",
@@ -467,7 +467,7 @@ namespace SushiRuntime
                              task_id, options_.max_jobs);
         }
 
-        std::string WorkerAgent::Impl::endpoint_of(PeerId peer) const
+        std::string WorkerAgent::Impl::endpoint_of(PeerID peer) const
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             if (connected_ == peer && !endpoint_.empty())
@@ -513,7 +513,7 @@ namespace SushiRuntime
         {
             try
             {
-                const std::optional<PeerId> master = link_.master();
+                const std::optional<PeerID> master = link_.master();
                 if (!master)
                     return;
 
@@ -589,7 +589,7 @@ namespace SushiRuntime
             return counters;
         }
 
-        void WorkerAgent::Impl::on_peer_connected(PeerId peer, const PeerInfo& info)
+        void WorkerAgent::Impl::on_peer_connected(PeerID peer, const PeerInfo& info)
         {
             if (phase_.load() == Phase::Stopped)
             {
@@ -607,7 +607,7 @@ namespace SushiRuntime
             link_.on_connected(peer);
         }
 
-        void WorkerAgent::Impl::on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+        void WorkerAgent::Impl::on_frame(PeerID peer, MessageType type, std::uint8_t flags,
                                          Payload payload)
         {
             link_.note_frame(peer);
@@ -616,12 +616,12 @@ namespace SushiRuntime
                              endpoint_of(peer), message_type_name(type));
         }
 
-        void WorkerAgent::Impl::on_peer_lost(PeerId peer, const PeerLoss& loss)
+        void WorkerAgent::Impl::on_peer_lost(PeerID peer, const PeerLoss& loss)
         {
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
                 if (connected_ == peer)
-                    connected_ = PeerId{};
+                    connected_ = PeerID{};
             }
             connection_changed_.notify_all();
 

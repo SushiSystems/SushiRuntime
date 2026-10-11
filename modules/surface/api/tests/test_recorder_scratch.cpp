@@ -160,7 +160,7 @@ TEST(Integration_RecorderScratch, ScratchIsFreedWithTheRecorder)
     auto rt  = Runtime::create();
     auto in  = rt.buffer<std::uint32_t>(COUNT);
     auto out = rt.buffer<std::uint32_t>(COUNT);
-    const Memory::UsmAllocator& memory = rt.unsafe_context().memory();
+    const Memory::USMAllocator& memory = rt.unsafe_context().memory();
     const std::size_t baseline = memory.live_count();
 
     {

@@ -40,7 +40,7 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Graph;
-using SushiRuntime::Test::UsmShared;
+using SushiRuntime::Test::USMShared;
 
 /**
  * @brief Tests concurrent execution of multiple heterogeneous pipelines.
@@ -68,7 +68,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     ASSERT_FALSE(device_queues.empty()) << "No CPU/GPU device queues available.";
 
     // Pin each chain to one device queue so its buffer and kernels share a context.
-    std::vector<UsmShared<float>> buffers;
+    std::vector<USMShared<float>> buffers;
     buffers.reserve(CHAINS);
     for (int c = 0; c < CHAINS; ++c)
     {

@@ -21,7 +21,7 @@
 
 /**
  * @file usm_release_observer.hpp
- * @brief Declares UsmReleaseObserver, which UsmAllocator tells about every release.
+ * @brief Declares USMReleaseObserver, which USMAllocator tells about every release.
  * @author Mustafa Garip
  * @see modules/platform/memory/README.md
  */
@@ -33,10 +33,10 @@ namespace SushiRuntime
     namespace Memory
     {
         /**
-         * @brief Receives the address of every allocation UsmAllocator::release() is given.
+         * @brief Receives the address of every allocation USMAllocator::release() is given.
          * @see modules/platform/memory/README.md
          */
-        class UsmReleaseObserver
+        class USMReleaseObserver
         {
             public:
                 /**
@@ -48,7 +48,7 @@ namespace SushiRuntime
 
             protected:
                 /** @brief Keeps an observer from being destroyed through this interface. */
-                ~UsmReleaseObserver() = default;
+                ~USMReleaseObserver() = default;
         };
 
     } // namespace Memory

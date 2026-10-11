@@ -137,12 +137,12 @@ namespace
     /** @brief Returns a TCP master on a free loopback port and workers that connect to it. */
     TransportPair make_tcp_loopback_pair()
     {
-        auto master = TcpTransport::make_master();
+        auto master = TCPTransport::make_master();
 
         TransportPair pair;
         pair.name = "tcp_loopback";
         pair.master = master;
-        pair.make_worker = [master] { return TcpTransport::make_worker(master->local_endpoint()); };
+        pair.make_worker = [master] { return TCPTransport::make_worker(master->local_endpoint()); };
         return pair;
     }
 
@@ -297,8 +297,8 @@ namespace
             SharedFloats(RuntimeContext& context, std::size_t count)
                 : context_(&context), count_(count)
             {
-                Memory::UsmRequest request;
-                request.kind = Memory::UsmKind::Shared;
+                Memory::USMRequest request;
+                request.kind = Memory::USMKind::Shared;
                 request.bytes = bytes();
                 data_ = static_cast<float*>(context.memory().allocate(request));
                 context.offload()->share(data_, bytes());

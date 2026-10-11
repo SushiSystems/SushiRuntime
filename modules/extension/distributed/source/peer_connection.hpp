@@ -48,7 +48,7 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Holds the settings TcpTransport gives each connection.
+         * @brief Holds the settings TCPTransport gives each connection.
          */
         struct PeerConnectionOptions
         {
@@ -77,10 +77,10 @@ namespace SushiRuntime
                  * @brief Takes a connected socket; no thread runs until start().
                  * @param peer The id the transport's peer table gave the connection.
                  * @param info What on_peer_connected() reports.
-                 * @param events Outlives the connection; in TcpTransport an adapter that also
+                 * @param events Outlives the connection; in TCPTransport an adapter that also
                  *        updates the peer table, so the table learns of the loss first.
                  */
-                PeerConnection(PeerId peer, Socket socket, PeerInfo info,
+                PeerConnection(PeerID peer, Socket socket, PeerInfo info,
                                const PeerConnectionOptions& options, TransportEvents& events);
 
                 /** @brief Calls stop(). */
@@ -125,7 +125,7 @@ namespace SushiRuntime
                 [[nodiscard]] bool is_finished() const noexcept;
 
                 /** @brief Returns the id the connection was built with. */
-                [[nodiscard]] PeerId peer() const noexcept;
+                [[nodiscard]] PeerID peer() const noexcept;
 
                 /** @brief Returns the bytes written to the socket, headers included. */
                 [[nodiscard]] std::uint64_t bytes_sent() const noexcept;
@@ -166,7 +166,7 @@ namespace SushiRuntime
                 [[nodiscard]] bool has_spent_linger() const noexcept;
 
                 /// @brief The id the transport gave the connection.
-                PeerId peer_;
+                PeerID peer_;
 
                 /// @brief The socket both threads use; shutdown() is the only cross-thread call.
                 Socket socket_;

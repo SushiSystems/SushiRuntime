@@ -189,7 +189,7 @@ namespace SushiRuntime
 
             Wire::PingMessage ping;
             ping.token = make_ping_token();
-            for (const PeerId peer : peers_)
+            for (const PeerID peer : peers_)
             {
                 // A PING that is not queued costs one sample; liveness counts every frame.
                 const SendStatus sent = send_message(transport_, peer, ping, payload_);
@@ -206,7 +206,7 @@ namespace SushiRuntime
             Wire::GoodbyeMessage goodbye;
             goodbye.reason = Wire::GoodbyeReason::Liveness;
             goodbye.text = "no frame within the liveness timeout";
-            for (const PeerId peer : peers_)
+            for (const PeerID peer : peers_)
             {
                 // close_peer() gives a queued control frame time to leave, so the worker reads why.
                 const SendStatus sent = send_message(transport_, peer, goodbye, payload_);
@@ -214,7 +214,7 @@ namespace SushiRuntime
                 transport_.close_peer(peer);
             }
 
-            for (const PeerId peer : peers_)
+            for (const PeerID peer : peers_)
                 SR_LOG_WARN("worker {} sent no frame for more than {} ms; its connection is "
                             "closed and its tasks return to the scheduler",
                             peer.value, limit.count());
@@ -225,10 +225,10 @@ namespace SushiRuntime
             peers_.clear();
             directory_.take_handshake_overdue(now, options_.handshake_timeout, peers_);
 
-            for (const PeerId peer : peers_)
+            for (const PeerID peer : peers_)
                 transport_.close_peer(peer);
 
-            for (const PeerId peer : peers_)
+            for (const PeerID peer : peers_)
                 SR_LOG_WARN("peer {} sent no valid handshake in {} ms; closed", peer.value,
                             options_.handshake_timeout.count());
         }

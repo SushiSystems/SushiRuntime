@@ -591,7 +591,7 @@ queues and before the `ExecutionEngine` reads the worker-pool and rebalancer cho
 #### Construction order
 
 `Impl` builds its members in declaration order: the settings, the `Topology::TopologyView`,
-the `Device::DeviceQueueSet`, the `Memory::UsmAllocator` (from the set's plain queues) and the
+the `Device::DeviceQueueSet`, the `Memory::USMAllocator` (from the set's plain queues) and the
 `Observability::TransferCounters`. The topology provider is asked for the core map and the
 hardware nodes during that construction and is not kept.
 
@@ -664,7 +664,7 @@ monotonic counters read at a run boundary, with no ordering dependency on other 
 
 #### USM ownership
 
-`Memory::UsmAllocator` maps a USM pointer to the index of its owning queue. Every
+`Memory::USMAllocator` maps a USM pointer to the index of its owning queue. Every
 `RuntimeContext::malloc_*` forwards to its `allocate()`, so the scheduler can run a task on
 the exact queue and context its data was allocated on. The record is the source of truth;
 pointer introspection stays only as a best-effort fallback.
@@ -687,7 +687,7 @@ owner the first is already acting on. The free goes against the owning queue's c
 which correctness requires; without a record it falls back to queue 0 as a best effort and
 logs a WARN. An address recorded through `adopt_usm()` is forgotten and not freed.
 
-The allocator tells a `Memory::UsmReleaseObserver` about a release before the record is
+The allocator tells a `Memory::USMReleaseObserver` about a release before the record is
 dropped and the memory freed. The context installs none; `Distributed::Cluster::attach()`
 installs its coordinator there, and `~Impl` clears whatever is installed.
 

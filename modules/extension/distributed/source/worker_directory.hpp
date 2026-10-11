@@ -119,7 +119,7 @@ namespace SushiRuntime
         /**
          * @brief Keeps one session per connected peer: handshake state, kernels, liveness, load.
          *
-         * A worker's id is the value of its PeerId. The directory owns one mutex, held only
+         * A worker's id is the value of its PeerID. The directory owns one mutex, held only
          * inside its members; the single call it makes while holding it is
          * IOffloadPolicy::pick_worker(). It calls no other brick, no transport and no sink.
          * alive_count() reads an atomic. Any thread may call any member.
@@ -144,14 +144,14 @@ namespace SushiRuntime
                 WorkerDirectory& operator=(WorkerDirectory&&) = delete;
 
                 /** @brief Adds a peer that owes HELLO; its handshake time starts at @p now. */
-                void add_peer(PeerId peer, std::string endpoint,
+                void add_peer(PeerID peer, std::string endpoint,
                               std::chrono::steady_clock::time_point now);
 
                 /**
                  * @brief Forgets a peer after on_peer_lost(); a worker stops counting as alive
                  *        and its kernels stop counting toward supports().
                  */
-                RemovedPeer remove_peer(PeerId peer);
+                RemovedPeer remove_peer(PeerID peer);
 
                 /**
                  * @brief Returns whether a frame of this type is to be handled for this peer.
@@ -159,7 +159,7 @@ namespace SushiRuntime
                  * HELLO and GOODBYE pass for any known peer, PROOF for a peer that owes it,
                  * every other type only for a registered worker. The rest is dropped unread.
                  */
-                [[nodiscard]] bool admits(PeerId peer, MessageType type) const;
+                [[nodiscard]] bool admits(PeerID peer, MessageType type) const;
 
                 /**
                  * @brief Records a HELLO and computes the master's proof for CHALLENGE.
@@ -169,7 +169,7 @@ namespace SushiRuntime
                  * changes nothing and answers AlreadyRegistered.
                  * @param master_nonce Fresh for this call; the caller sends the same bytes.
                  */
-                [[nodiscard]] HelloReply accept_hello(PeerId peer, const Wire::HelloMessage& hello,
+                [[nodiscard]] HelloReply accept_hello(PeerID peer, const Wire::HelloMessage& hello,
                                                       const HandshakeNonce& master_nonce);
 
                 /**
@@ -179,18 +179,18 @@ namespace SushiRuntime
                  * wait_for_workers() wakes; the caller sends WELCOME with the peer's value.
                  * A closed directory registers nobody and answers OutOfOrder.
                  */
-                [[nodiscard]] HandshakeStep accept_proof(PeerId peer,
+                [[nodiscard]] HandshakeStep accept_proof(PeerID peer,
                                                          const Wire::ProofMessage& proof,
                                                          std::chrono::steady_clock::time_point now);
 
                 /** @brief Refreshes a peer's liveness; called for every frame it sends. */
-                void note_frame(PeerId peer, std::chrono::steady_clock::time_point now);
+                void note_frame(PeerID peer, std::chrono::steady_clock::time_point now);
 
                 /** @brief Records the round trip and the free memory a PONG reports. */
-                void note_pong(PeerId peer, std::uint32_t rtt_micros, std::uint64_t free_mem);
+                void note_pong(PeerID peer, std::uint32_t rtt_micros, std::uint64_t free_mem);
 
                 /** @brief Records the queue depth and the cache size a HEARTBEAT reports. */
-                void note_heartbeat(PeerId peer, std::uint32_t queue_depth,
+                void note_heartbeat(PeerID peer, std::uint32_t queue_depth,
                                     std::uint64_t cache_bytes);
 
                 /**
@@ -201,7 +201,7 @@ namespace SushiRuntime
                  * @return Nothing when the directory is closed, no worker has room or the
                  *         policy keeps the task local.
                  */
-                [[nodiscard]] std::optional<PeerId> pick(const Graph::Node& node,
+                [[nodiscard]] std::optional<PeerID> pick(const Graph::Node& node,
                                                          std::uint64_t estimated_bytes);
 
                 /**
@@ -209,7 +209,7 @@ namespace SushiRuntime
                  *
                  * Called once per PendingTask a removal returned, and for nothing else.
                  */
-                void release_inflight(PeerId worker) noexcept;
+                void release_inflight(PeerID worker) noexcept;
 
                 /**
                  * @brief Lists the workers silent for longer than @p liveness and marks each
@@ -217,7 +217,7 @@ namespace SushiRuntime
                  * @param out Receives the peers, appended; each is listed once.
                  */
                 void take_silent(std::chrono::steady_clock::time_point now,
-                                 std::chrono::milliseconds liveness, std::vector<PeerId>& out);
+                                 std::chrono::milliseconds liveness, std::vector<PeerID>& out);
 
                 /**
                  * @brief Lists the peers that connected more than @p limit ago and are still
@@ -226,10 +226,10 @@ namespace SushiRuntime
                  */
                 void take_handshake_overdue(std::chrono::steady_clock::time_point now,
                                             std::chrono::milliseconds limit,
-                                            std::vector<PeerId>& out);
+                                            std::vector<PeerID>& out);
 
                 /** @brief Appends every alive worker, for a PING or a BUFFER_RELEASE to each. */
-                void list_workers(std::vector<PeerId>& out) const;
+                void list_workers(std::vector<PeerID>& out) const;
 
                 /** @brief Returns whether an alive worker sent this operation in PROOF. */
                 [[nodiscard]] bool supports(Graph::OpID op) const;
@@ -246,7 +246,7 @@ namespace SushiRuntime
                                                     std::chrono::milliseconds timeout);
 
                 /** @brief Returns who a registered worker is, or nothing for any other peer. */
-                [[nodiscard]] std::optional<WorkerIdentity> identity(PeerId worker) const;
+                [[nodiscard]] std::optional<WorkerIdentity> identity(PeerID worker) const;
 
                 /** @brief Appends one snapshot per alive worker. */
                 void snapshot(std::chrono::steady_clock::time_point now,
@@ -348,7 +348,7 @@ namespace SushiRuntime
                 /// @brief Set by close().
                 bool closed_ = false;
 
-                /// @brief The sessions by the value of their PeerId, in rising order.
+                /// @brief The sessions by the value of their PeerID, in rising order.
                 std::map<std::uint32_t, Session> sessions_;
 
                 /// @brief The number of alive workers per operation id value.

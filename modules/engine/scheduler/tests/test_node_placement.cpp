@@ -68,7 +68,7 @@ namespace
     };
 
     /** @brief Reports one NUMA node at the local distance. */
-    class SingleNodeDistance final : public SushiRuntime::Topology::INumaDistanceModel
+    class SingleNodeDistance final : public SushiRuntime::Topology::INUMADistanceModel
     {
         public:
             int distance(int, int) const override
@@ -155,7 +155,7 @@ class Unit_NodePlacement : public ::testing::Test
         /// @brief Two entries on NUMA node 0, each with its own queue on one SYCL device.
         SushiRuntime::Device::DeviceQueueSet devices_;
         /// @brief Allocator over the two entries; a test records ownership with adopt().
-        SushiRuntime::Memory::UsmAllocator memory_;
+        SushiRuntime::Memory::USMAllocator memory_;
         /// @brief The scheduler under test, started and armed.
         SushiRuntime::Scheduler::TaskScheduler scheduler_;
 };

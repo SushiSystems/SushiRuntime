@@ -68,7 +68,7 @@ namespace
     };
 
     /** @brief Reports one NUMA node at the local distance. */
-    class SingleNodeDistance final : public SushiRuntime::Topology::INumaDistanceModel
+    class SingleNodeDistance final : public SushiRuntime::Topology::INUMADistanceModel
     {
         public:
             int distance(int, int) const override
@@ -220,7 +220,7 @@ class Unit_OffloadSeam : public ::testing::Test
         /// @brief The default device's queues; the host nodes of these tests use none.
         SushiRuntime::Device::DeviceQueueSet devices_;
         /// @brief Allocator over the device set; no test allocates.
-        SushiRuntime::Memory::UsmAllocator memory_;
+        SushiRuntime::Memory::USMAllocator memory_;
         /// @brief The scheduler under test, started and armed.
         SushiRuntime::Scheduler::TaskScheduler scheduler_;
 };

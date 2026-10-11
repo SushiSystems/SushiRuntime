@@ -41,7 +41,7 @@
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
-using SushiRuntime::Test::UsmShared;
+using SushiRuntime::Test::USMShared;
 
 namespace
 {
@@ -146,7 +146,7 @@ namespace
  * Auto-balances CPU/GPU work, then measures the wall-clock saving of running the
  * two devices concurrently versus serially.
  */
-TEST(Performance_AsyncOverlapBench, CpuGpuOverlapSpeedup)
+TEST(Performance_AsyncOverlapBench, CPUGPUOverlapSpeedup)
 {
     size_t cpu_idx = 0;
     size_t gpu_idx = 0;
@@ -161,8 +161,8 @@ TEST(Performance_AsyncOverlapBench, CpuGpuOverlapSpeedup)
     constexpr int CPU_ITERS = 2048;
     int gpu_iters = 2048; // calibrated below
 
-    UsmShared<float> g_in(gpu_q, N), g_out(gpu_q, N);
-    UsmShared<float> c_in(cpu_q, N), c_out(cpu_q, N);
+    USMShared<float> g_in(gpu_q, N), g_out(gpu_q, N);
+    USMShared<float> c_in(cpu_q, N), c_out(cpu_q, N);
     ASSERT_TRUE(g_in);
     ASSERT_TRUE(g_out);
     ASSERT_TRUE(c_in);

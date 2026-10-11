@@ -67,7 +67,7 @@ namespace SushiRuntime
             std::uint64_t handle = 0;
             std::uint64_t allocation_bytes = 0; /**< Holds the size of the handle's allocation. */
             std::uint64_t offset = 0;           /**< Holds the region's byte offset in it. */
-            DeviceUuid device;                  /**< Names the device that exported the handle. */
+            DeviceUUID device;                  /**< Names the device that exported the handle. */
         };
 
     } // namespace Interop

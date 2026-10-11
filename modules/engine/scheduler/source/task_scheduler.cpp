@@ -91,7 +91,7 @@ namespace SushiRuntime
         TaskScheduler::TaskScheduler(const WorkerPoolSettings& pool,
                                      const Topology::TopologyView& topology,
                                      Device::DeviceQueueSet& devices,
-                                     const Memory::UsmAllocator& memory)
+                                     const Memory::USMAllocator& memory)
             : topology_(topology), devices_(devices), memory_(memory)
         {
             size_t machine_cores = std::thread::hardware_concurrency();

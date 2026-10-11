@@ -92,7 +92,7 @@ namespace
             DeviceFloats(RuntimeContext& context, std::size_t count)
                 : context_(context),
                   data_(static_cast<float*>(context.memory().allocate(
-                      {SushiRuntime::Memory::UsmKind::Shared, count * sizeof(float), 0, 0})))
+                      {SushiRuntime::Memory::USMKind::Shared, count * sizeof(float), 0, 0})))
             {
 
             }

@@ -114,7 +114,7 @@ TEST(Integration_GraphProfilingSwitch, ChangedRequestRecompilesOnceAndSwitches)
  * @brief Tests that a node without declared Reads or Writes takes the NUMA fallback branch and
  *        still uses a profiling queue.
  */
-TEST(Integration_GraphProfilingSwitch, NumaFallbackBranchUsesProfilingQueue)
+TEST(Integration_GraphProfilingSwitch, NUMAFallbackBranchUsesProfilingQueue)
 {
     constexpr std::size_t N = 256;
 

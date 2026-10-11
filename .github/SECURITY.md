@@ -43,7 +43,7 @@ disclosure. We are happy to coordinate timing with you.
 A few properties are intentional design decisions rather than vulnerabilities —
 please keep them in mind:
 
-- **The distributed layer targets a trusted LAN.** The `TcpTransport` is a
+- **The distributed layer targets a trusted LAN.** The `TCPTransport` is a
   raw-socket layer **without encryption or authentication**, designed for a
   trusted cluster network (see
   [`DISTRIBUTED_GUIDE.md`](../guides/DISTRIBUTED_GUIDE.md) §12).

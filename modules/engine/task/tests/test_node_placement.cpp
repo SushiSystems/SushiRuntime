@@ -65,7 +65,7 @@ class Unit_NodePlacementRule : public ::testing::Test
         }
 
         /// @brief Allocates nothing; a test records ownership with adopt().
-        SushiRuntime::Memory::UsmAllocator memory_;
+        SushiRuntime::Memory::USMAllocator memory_;
 };
 
 TEST(Unit_NodePlacementState, ANodeStatesNoPlacementUntilPlaceOn)

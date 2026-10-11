@@ -254,7 +254,7 @@ namespace SushiRuntime
 
         std::size_t DeviceQueueSet::device_for_numa(int numa_node) const
         {
-            const NumaRoute& route = route_for(numa_node);
+            const NUMARoute& route = route_for(numa_node);
             if (route.devices.empty())
                 throw empty_set_error();
             return route.devices.front();
@@ -308,7 +308,7 @@ namespace SushiRuntime
             return slots_[index * K_FLAVOUR_COUNT + plain_offsets_[index]];
         }
 
-        const DeviceQueueSet::NumaRoute& DeviceQueueSet::route_for(int numa_node) const noexcept
+        const DeviceQueueSet::NUMARoute& DeviceQueueSet::route_for(int numa_node) const noexcept
         {
             if (numa_node < 0 || static_cast<std::size_t>(numa_node) >= numa_routes_.size())
                 return outside_route_;
@@ -317,7 +317,7 @@ namespace SushiRuntime
 
         std::size_t DeviceQueueSet::next_device_for_numa(int numa_node) const
         {
-            const NumaRoute& route = route_for(numa_node);
+            const NUMARoute& route = route_for(numa_node);
             if (route.devices.empty())
                 throw empty_set_error();
 
@@ -343,7 +343,7 @@ namespace SushiRuntime
             numa_routes_.resize(node_count);
             for (const DeviceInfo& info : infos_)
             {
-                NumaRoute& route = numa_routes_[static_cast<std::size_t>(info.numa_node)];
+                NUMARoute& route = numa_routes_[static_cast<std::size_t>(info.numa_node)];
                 route.devices.push_back(info.index);
             }
 

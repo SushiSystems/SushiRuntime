@@ -39,7 +39,7 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
 using namespace SushiRuntime::Topology;
-using SushiRuntime::Test::UsmShared;
+using SushiRuntime::Test::USMShared;
 
 /**
  * @brief Finds any NVIDIA GPU among discovered hardware nodes.
@@ -87,7 +87,7 @@ static bool cuda_device_available()
  *
  * Probes all devices using HardwareDiscovery and asserts that an NVIDIA GPU is found.
  */
-TEST(Unit_NvidiaTopologyTest, NvidiaGpuDiscovered)
+TEST(Unit_NvidiaTopologyTest, NvidiaGPUDiscovered)
 {
     if (!cuda_device_available())
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -110,7 +110,7 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGpuDiscovered)
  *
  * Maps NUMA distances for the discovered nodes and asserts that the NVIDIA GPU has a valid ID, skipping if running in WSL without ACPI passthrough.
  */
-TEST(Unit_NvidiaTopologyTest, NvidiaGpuHasNUMAMapping)
+TEST(Unit_NvidiaTopologyTest, NvidiaGPUHasNUMAMapping)
 {
     if (!cuda_device_available())
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -185,7 +185,7 @@ TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
  *
  * Allocates USM shared memory, submits a parallel_for kernel on the CUDA queue, and verifies the addition results.
  */
-TEST(Unit_NvidiaTopologyTest, NvidiaGpuVectorAdd)
+TEST(Unit_NvidiaTopologyTest, NvidiaGPUVectorAdd)
 {
     if (!cuda_device_available())
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -206,9 +206,9 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGpuVectorAdd)
         GTEST_SKIP() << "No CUDA-backed queue in RuntimeContext.";
 
     constexpr size_t N = 4096;
-    UsmShared<float> usm_A(*cuda_q, N);
-    UsmShared<float> usm_B(*cuda_q, N);
-    UsmShared<float> usm_C(*cuda_q, N);
+    USMShared<float> usm_A(*cuda_q, N);
+    USMShared<float> usm_B(*cuda_q, N);
+    USMShared<float> usm_C(*cuda_q, N);
     ASSERT_TRUE(usm_A);
     ASSERT_TRUE(usm_B);
     ASSERT_TRUE(usm_C);

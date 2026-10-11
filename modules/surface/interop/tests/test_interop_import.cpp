@@ -100,7 +100,7 @@ namespace
     }
 } // namespace
 
-TEST(Unit_InteropImport, HostExportReportsWhetherTheQueueOffersHostUsm)
+TEST(Unit_InteropImport, HostExportReportsWhetherTheQueueOffersHostUSM)
 {
     auto runtime = Runtime::create();
     const std::size_t count = runtime.advanced().device_count();
@@ -131,7 +131,7 @@ TEST(Unit_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
         << refusal.message;
 }
 
-TEST(Unit_InteropImport, ADeviceThatImportsReportsItsUuid)
+TEST(Unit_InteropImport, ADeviceThatImportsReportsItsUUID)
 {
     auto runtime = Runtime::create();
     const std::size_t count = runtime.advanced().device_count();
@@ -251,7 +251,7 @@ TEST(Unit_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
         << offset_outside.message;
 }
 
-TEST(Unit_InteropImport, AnotherDevicesUuidIsRefusedWithBothUuids)
+TEST(Unit_InteropImport, AnotherDevicesUUIDIsRefusedWithBothUUIDs)
 {
     auto runtime = Runtime::create();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);

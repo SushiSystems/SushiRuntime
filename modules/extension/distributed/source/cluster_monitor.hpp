@@ -209,7 +209,7 @@ namespace SushiRuntime
                 std::atomic<std::uint64_t> redispatched_{0};
 
                 /// @brief The peers one step of a pass lists; touched by the monitor thread only.
-                std::vector<PeerId> peers_;
+                std::vector<PeerID> peers_;
 
                 /// @brief The tasks one pass took back; touched by the monitor thread only.
                 std::vector<PendingTask> tasks_;

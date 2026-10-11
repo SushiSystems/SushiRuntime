@@ -33,7 +33,7 @@
 namespace SushiRuntime
 {
     namespace Graph { struct Node; }
-    namespace Memory { class UsmAllocator; }
+    namespace Memory { class USMAllocator; }
 
     namespace Scheduler
     {
@@ -45,7 +45,7 @@ namespace SushiRuntime
          * @throws Core::SushiException with Errc::invalid_graph; nothing is cached then.
          * @see modules/engine/scheduler/README.md
          */
-        void place_for_dispatch(Graph::Node& node, const Memory::UsmAllocator& memory,
+        void place_for_dispatch(Graph::Node& node, const Memory::USMAllocator& memory,
                                 std::size_t device_count);
 
     } // namespace Scheduler

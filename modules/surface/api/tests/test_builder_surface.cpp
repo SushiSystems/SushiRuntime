@@ -144,7 +144,7 @@ TEST(Integration_BuilderSurface, CountLaunchWithCapturesPassesPointers)
 }
 
 /** @brief Tests that an NdRange with an origin hands the shifted id to a two-index kernel. */
-TEST(Integration_BuilderSurface, NdRangeOriginShiftsTheIdTheKernelReceives)
+TEST(Integration_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
 {
     auto rt = Runtime::create();
     auto target = seeded(rt);

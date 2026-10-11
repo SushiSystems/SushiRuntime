@@ -24,7 +24,7 @@ time in four, so the encoder's cut of trailing zero parameters is exercised with
 
 A master endpoint and a worker endpoint each start with a recording `TransportEvents`. The test
 waits on the `on_peer_connected` event of both sides, sends one control frame each way and checks
-that each side sees the frame under the `PeerId` its own `on_peer_connected` named, with the type,
+that each side sees the frame under the `PeerID` its own `on_peer_connected` named, with the type,
 flags 0 and the payload it was sent.
 
 ### Offload policy tests
@@ -81,9 +81,9 @@ to misbehave use `ScriptedWorker`. Every test skips when SYCL reports no device.
 Float buffers hold whole numbers below 2^24, which float addition keeps exact, so `K_TOLERANCE` is
 0 and a comparison is an equality.
 
-### `UsmFloats`, `LocalWorker`, `BackgroundRun`
+### `USMFloats`, `LocalWorker`, `BackgroundRun`
 
-`UsmFloats` owns one shared USM allocation and frees it. `LocalWorker` owns a worker's
+`USMFloats` owns one shared USM allocation and frees it. `LocalWorker` owns a worker's
 `RuntimeContext` and its `WorkerAgent`. `BackgroundRun` calls `execute()` on its own thread; a
 test waits for it at most `K_WAIT` (10 s), so a run that never returns fails that test and the
 suite goes on. A run that did not return is detached, not joined.
@@ -115,12 +115,12 @@ An `ITransport` that carries nothing: `exposure()` and `start()` return what the
 The master's `stale_writebacks` counter has no event to wait on. `eventually` re-reads a condition,
 yielding between reads, until it holds or `K_WAIT` passes. No test sleeps.
 
-### `OffloadVectorAddRoundTrip`, `FanOutAcrossTwoWorkers`, `OffloadOverTcpLoopback`
+### `OffloadVectorAddRoundTrip`, `FanOutAcrossTwoWorkers`, `OffloadOverTCPLoopback`
 
 One task, or two on two workers, goes through the whole chain: `prepare`, dispatch, the buffer
 pull, the kernel on the worker, the output chunks and the completion. The fan-out test asserts the
 total of the two workers' run counters, not a split: which worker gets which task depends on
-timing. The TCP test binds `TcpMasterOptions` defaults (127.0.0.1, port 0) and reads the port from
+timing. The TCP test binds `TCPMasterOptions` defaults (127.0.0.1, port 0) and reads the port from
 `local_endpoint()` after `attach`.
 
 ### `AutoVersionBumpAcrossLocalWriteThenOffloadedRead`
@@ -527,7 +527,7 @@ thread inside `read()`, which the registry does not offer.
 The first id is 1 and the first version is 1. Registering the same address again returns the same id
 and the same version; a second address gets id 2.
 
-### `BumpRaisesTheVersionAndSkipsAGoneId`
+### `BumpRaisesTheVersionAndSkipsAGoneID`
 
 `bump` writes the raised version into each handle and leaves a handle whose id is gone as it was.
 `bump_addresses` raises the version of a shared address and ignores an address that is not shared.
@@ -550,7 +550,7 @@ After `bump`, a write at the version the task was dispatched with is `Stale`, as
 the buffer has not reached, and neither changes a byte. A write at the current version lands at its
 offset only and leaves the version as it was.
 
-### `UnregisterReturnsTheId`
+### `UnregisterReturnsTheID`
 
 `unregister_buffer` returns the id of a shared address and an invalid id for an address that was
 never shared or was already released. Lookups by address and by id then find nothing, and `read`
@@ -863,7 +863,7 @@ The link remembers the nonces of its last four `HELLO`s. After a fifth `HELLO`, 
 proved against the first nonce reports `LinkChange::None`: no `PROOF` leaves and the peer stays
 open, because the proof may answer a `HELLO` the link has forgotten.
 
-### `IdleHeartbeatCarriesTheNextTaskId`
+### `IdleHeartbeatCarriesTheNextTaskID`
 
 After task 41 finished and nothing is held, the heartbeat thread sends `oldest_held_task_id` 42.
 Before the first task the executor reports 0.
@@ -968,10 +968,10 @@ Exit code 2. The fabric has no master endpoint and the worker's connect timeout 
 Exit code 5. The fake master sends `WELCOME` and closes the connection; the worker runs with
 reconnecting off.
 
-### `RunWorkerOverTcpReturnsTheCodeOfItsEnd`
+### `RunWorkerOverTCPReturnsTheCodeOfItsEnd`
 
 The one test of `run_worker(options, kernels)` with a connection. A fake master listens with
-`TcpTransport::make_master()` on a port the OS chooses, welcomes the worker and closes. The worker,
+`TCPTransport::make_master()` on a port the OS chooses, welcomes the worker and closes. The worker,
 on a second thread with reconnecting off, returns 5.
 
 ## test_offload_dispatcher.cpp
@@ -1043,7 +1043,7 @@ every 2 ms. The file includes the private headers `socket.hpp`, `wire_frame.hpp`
 
 ### `tcp_fault_proxy.hpp`
 
-`TcpFaultProxy` listens on a free loopback port and forwards each accepted connection to the
+`TCPFaultProxy` listens on a free loopback port and forwards each accepted connection to the
 master, with one pump thread per direction. `set_fault` gives a direction one of five faults:
 `Pass`, `Stall` (hold every byte and the end of the stream), `Cut` (close every connection and
 refuse new ones), `Throttle` (a number of bytes per second) and `Truncate` (forward a number of

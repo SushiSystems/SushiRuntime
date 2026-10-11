@@ -63,24 +63,24 @@ TEST(Unit_HardwareDiscovery, AFilterThatAdmitsNoClassYieldsNoDeviceAndDoesNotThr
 }
 
 // Holds on any machine; it can fail only where two backends expose one GPU.
-TEST(Unit_HardwareDiscovery, NoTwoNodesShareAPciAddress)
+TEST(Unit_HardwareDiscovery, NoTwoNodesShareAPCIAddress)
 {
-    using PciKey = std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t>;
+    using PCIKey = std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t>;
 
     HardwareDiscovery discovery;
-    std::set<PciKey> seen;
+    std::set<PCIKey> seen;
     for (const HardwareNode& node : discovery.probe_all_devices())
     {
         if (!node.pci_address.has_value())
             continue;
         const PCIDomainAddress& address = *node.pci_address;
-        EXPECT_TRUE(seen.insert(PciKey{address.domain, address.bus, address.device,
+        EXPECT_TRUE(seen.insert(PCIKey{address.domain, address.bus, address.device,
                                        address.function}).second)
             << "device [" << node.name << "] repeats a PCI address already returned";
     }
 }
 
-TEST(Unit_HardwareDiscovery, EveryNodeTheGpuOnlyFilterAdmitsIsAGpu)
+TEST(Unit_HardwareDiscovery, EveryNodeTheGPUOnlyFilterAdmitsIsAGPU)
 {
     HardwareFilterConfig config;
     config.include_cpu = false;

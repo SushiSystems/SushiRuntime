@@ -70,7 +70,7 @@ namespace SushiRuntime
                         return "closed by the master";
                     case PeerLossCause::ClosedLocally:
                         return "closed by this worker";
-                    case PeerLossCause::IoFailed:
+                    case PeerLossCause::IOFailed:
                         return "read or write failed";
                     case PeerLossCause::WriteStalled:
                         return "write stalled";
@@ -121,7 +121,7 @@ namespace SushiRuntime
 
         void MasterLink::forget_connection() noexcept
         {
-            peer_ = PeerId{};
+            peer_ = PeerID{};
             phase_ = Phase::Idle;
             sent_nonce_count_ = 0;
             hello_count_ = 0;
@@ -141,7 +141,7 @@ namespace SushiRuntime
             return true;
         }
 
-        void MasterLink::send_hello(PeerId peer)
+        void MasterLink::send_hello(PeerID peer)
         {
             HandshakeNonce nonce{};
             std::string failure;
@@ -226,7 +226,7 @@ namespace SushiRuntime
             finish(WorkerEnd::Stopped);
         }
 
-        void MasterLink::on_connected(PeerId peer)
+        void MasterLink::on_connected(PeerID peer)
         {
             if (end() != WorkerEnd::Running || leaving_.load(std::memory_order_acquire))
             {
@@ -247,7 +247,7 @@ namespace SushiRuntime
             send_hello(peer);
         }
 
-        LinkChange MasterLink::on_challenge(PeerId peer, const Wire::ChallengeMessage& challenge)
+        LinkChange MasterLink::on_challenge(PeerID peer, const Wire::ChallengeMessage& challenge)
         {
             Nonces nonces{};
             std::size_t nonce_count = 0;
@@ -327,7 +327,7 @@ namespace SushiRuntime
             return LinkChange::None;
         }
 
-        LinkChange MasterLink::on_welcome(PeerId peer, const Wire::WelcomeMessage& welcome)
+        LinkChange MasterLink::on_welcome(PeerID peer, const Wire::WelcomeMessage& welcome)
         {
             bool new_session = false;
             {
@@ -356,7 +356,7 @@ namespace SushiRuntime
             return new_session ? LinkChange::RegisteredNewSession : LinkChange::Registered;
         }
 
-        LinkChange MasterLink::on_reject(PeerId peer, const Wire::RejectMessage& reject)
+        LinkChange MasterLink::on_reject(PeerID peer, const Wire::RejectMessage& reject)
         {
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
@@ -394,7 +394,7 @@ namespace SushiRuntime
             return LinkChange::None;
         }
 
-        void MasterLink::on_ping(PeerId peer, const Wire::PingMessage& ping)
+        void MasterLink::on_ping(PeerID peer, const Wire::PingMessage& ping)
         {
             {
                 // A PONG from a link that is not registered would keep a master waiting on it.
@@ -414,19 +414,19 @@ namespace SushiRuntime
                              static_cast<int>(status));
         }
 
-        void MasterLink::on_goodbye(PeerId peer, const Wire::GoodbyeMessage& goodbye)
+        void MasterLink::on_goodbye(PeerID peer, const Wire::GoodbyeMessage& goodbye)
         {
             SR_LOG_INFO("master (peer {}) is leaving ({}): {}", peer.value,
                         goodbye_reason_name(goodbye.reason), std::string(goodbye.text));
         }
 
-        void MasterLink::note_frame(PeerId peer) noexcept
+        void MasterLink::note_frame(PeerID peer) noexcept
         {
             if (watched_peer_.load(std::memory_order_relaxed) == peer.value)
                 stamp_frame();
         }
 
-        LinkChange MasterLink::on_lost(PeerId peer, const PeerLoss& loss)
+        LinkChange MasterLink::on_lost(PeerID peer, const PeerLoss& loss)
         {
             bool was_registered = false;
             {
@@ -512,7 +512,7 @@ namespace SushiRuntime
             changed_.notify_all();
             try
             {
-                const std::optional<PeerId> peer = master();
+                const std::optional<PeerID> peer = master();
                 if (!peer)
                     return;
 
@@ -537,7 +537,7 @@ namespace SushiRuntime
             }
         }
 
-        std::optional<PeerId> MasterLink::master() const
+        std::optional<PeerID> MasterLink::master() const
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             if (phase_ != Phase::Registered)
@@ -592,7 +592,7 @@ namespace SushiRuntime
             while (!stopping_)
             {
                 const Clock::time_point now = Clock::now();
-                const PeerId peer = peer_;
+                const PeerID peer = peer_;
                 Action action = Action::Wait;
                 std::optional<Clock::time_point> wake;
                 std::chrono::milliseconds silence{0};

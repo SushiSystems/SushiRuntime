@@ -108,14 +108,14 @@ namespace
     /**
      * @brief Owns one shared USM allocation of K_COUNT floats on a queue.
      */
-    class UsmFloats final
+    class USMFloats final
     {
         public:
             /**
              * @brief Allocates the floats and sets each to @p value.
              * @throws std::runtime_error When the device gives no memory.
              */
-            UsmFloats(sycl::queue& queue, float value)
+            USMFloats(sycl::queue& queue, float value)
                 : queue_(queue), data_(sycl::malloc_shared<float>(K_COUNT, queue))
             {
                 if (data_ == nullptr)
@@ -124,15 +124,15 @@ namespace
             }
 
             /** @brief Frees the allocation. */
-            ~UsmFloats()
+            ~USMFloats()
             {
                 sycl::free(data_, queue_);
             }
 
-            UsmFloats(const UsmFloats&) = delete;
-            UsmFloats& operator=(const UsmFloats&) = delete;
-            UsmFloats(UsmFloats&&) = delete;
-            UsmFloats& operator=(UsmFloats&&) = delete;
+            USMFloats(const USMFloats&) = delete;
+            USMFloats& operator=(const USMFloats&) = delete;
+            USMFloats(USMFloats&&) = delete;
+            USMFloats& operator=(USMFloats&&) = delete;
 
             /** @brief Returns the base address. */
             [[nodiscard]] float* data() const noexcept
@@ -149,16 +149,16 @@ namespace
     };
 
     /** @brief Returns an input buffer whose element i holds input_value(i). */
-    std::unique_ptr<UsmFloats> make_input(sycl::queue& queue)
+    std::unique_ptr<USMFloats> make_input(sycl::queue& queue)
     {
-        auto input = std::make_unique<UsmFloats>(queue, 0.0f);
+        auto input = std::make_unique<USMFloats>(queue, 0.0f);
         for (std::size_t index = 0; index < K_COUNT; ++index)
             input->data()[index] = input_value(index);
         return input;
     }
 
     /** @brief Returns the index of the first element that is not twice its input, or K_COUNT. */
-    std::size_t first_wrong_element(const UsmFloats& output)
+    std::size_t first_wrong_element(const USMFloats& output)
     {
         for (std::size_t index = 0; index < K_COUNT; ++index)
             if (std::abs(output.data()[index] - 2.0f * input_value(index)) > K_TOLERANCE)
@@ -197,7 +197,7 @@ namespace
     }
 
     /** @brief Adds an op-tagged task out = in * 2 whose local fallback computes the same. */
-    void add_vec_double(TaskGraph& graph, const UsmFloats& input, const UsmFloats& output)
+    void add_vec_double(TaskGraph& graph, const USMFloats& input, const USMFloats& output)
     {
         TaskMetadata metadata{};
         metadata.name = "double";
@@ -489,10 +489,10 @@ namespace
         std::atomic<int> worker_runs{0};
         RuntimeContext master_context;
         sycl::queue& queue = master_context.devices().queue(0);
-        const std::unique_ptr<UsmFloats> input = make_input(queue);
-        std::vector<std::unique_ptr<UsmFloats>> outputs;
+        const std::unique_ptr<USMFloats> input = make_input(queue);
+        std::vector<std::unique_ptr<USMFloats>> outputs;
         for (std::size_t task = 0; task < K_TASKS; ++task)
-            outputs.push_back(std::make_unique<UsmFloats>(queue, K_UNWRITTEN));
+            outputs.push_back(std::make_unique<USMFloats>(queue, K_UNWRITTEN));
 
         InProcessFabric fabric;
         LocalWorker first(fabric, worker_runs, impatient_worker());
@@ -507,7 +507,7 @@ namespace
         OffloadCoordinator* master = master_context.offload();
         master->share(input->data(), K_COUNT * sizeof(float));
         TaskGraph graph(master);
-        for (const std::unique_ptr<UsmFloats>& output : outputs)
+        for (const std::unique_ptr<USMFloats>& output : outputs)
         {
             master->share(output->data(), K_COUNT * sizeof(float));
             add_vec_double(graph, *input, *output);
@@ -565,8 +565,8 @@ namespace
 
         RuntimeContext master_context;
         sycl::queue& queue = master_context.devices().queue(0);
-        const std::unique_ptr<UsmFloats> input = make_input(queue);
-        UsmFloats output(queue, K_UNWRITTEN);
+        const std::unique_ptr<USMFloats> input = make_input(queue);
+        USMFloats output(queue, K_UNWRITTEN);
 
         InProcessFabric fabric;
         fabric.set_fault_policy(drop_first_of(lost_types, dropped));

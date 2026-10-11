@@ -99,9 +99,9 @@ using namespace SushiRuntime;
 
 auto runtime = Runtime::create();
 
-Distributed::TcpMasterOptions listener;
+Distributed::TCPMasterOptions listener;
 listener.bind = Distributed::Endpoint{"0.0.0.0", 5555};
-auto transport = Distributed::TcpTransport::make_master(listener);
+auto transport = Distributed::TCPTransport::make_master(listener);
 
 Distributed::ClusterOptions options;
 options.secret = Distributed::SharedSecret::from_file("cluster.key");
@@ -129,11 +129,11 @@ may leave, and it marks a task only when a registered worker has the kernel at t
 
 ### Where it listens
 
-`TcpMasterOptions::bind` defaults to `127.0.0.1` and port 0, which takes any free port;
+`TCPMasterOptions::bind` defaults to `127.0.0.1` and port 0, which takes any free port;
 `transport->local_endpoint()` returns the port once `attach` has returned. To accept workers from
 other machines, write the address out: `0.0.0.0`, `::` or the address of one interface.
 
-| `TcpMasterOptions` field | Default | Meaning |
+| `TCPMasterOptions` field | Default | Meaning |
 | --- | --- | --- |
 | `bind` | `127.0.0.1`, port 0 | Address and port to listen on |
 | `backlog` | 16 | Pending connections the OS may queue |
@@ -664,7 +664,7 @@ Find the line you see. The second column says which side shows it.
 | `<address> (peer N) closed before it registered: closed by the peer` | master | Most often a worker with another secret, or with none; read the worker's log (§10). A port probe looks the same |
 | `master (peer N) did not prove the cluster secret` | worker, which exits 3 | The two key files differ. Copy the master's file to the worker again and compare checksums |
 | `<address> (peer N) speaks protocol vX, this master vY` | master | The two programs were built from different commits. Rebuild both from one |
-| `<address> refused: 64 peers are open, the limit` | master | Every slot is taken. Raise `TcpMasterOptions::max_peers`, or find what holds the connections. The worker logs `master (peer N) takes no more workers` and tries again |
+| `<address> refused: 64 peers are open, the limit` | master | Every slot is taken. Raise `TCPMasterOptions::max_peers`, or find what holds the connections. The worker logs `master (peer N) takes no more workers` and tries again |
 | `peer N sent no valid handshake in 5000 ms; closed` | master | Something connected and said nothing the master understands: a probe, or a worker too slow to answer. For the second, raise `handshake_timeout` |
 | `N of M op-tagged nodes will run locally: ...` | master | The counts say why. `no live worker for the op`: no registered worker has that kernel, so check the name on both sides and wait for the worker before the first run. `buffer not shared`: call `distributed()` on every buffer the task touches, after `attach`. `buffer written twice`: the task lists one buffer twice among its writes |
 | `distributed() was called on a runtime with no offload coordinator` | master | Move the `distributed()` call after `Cluster::attach` |

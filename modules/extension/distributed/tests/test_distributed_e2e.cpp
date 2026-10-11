@@ -117,14 +117,14 @@ namespace
     /**
      * @brief Owns one shared USM allocation of floats on a queue.
      */
-    class UsmFloats final
+    class USMFloats final
     {
         public:
             /**
              * @brief Allocates @p count floats and sets each to @p value.
              * @throws std::runtime_error When the device gives no memory.
              */
-            UsmFloats(sycl::queue& queue, std::size_t count, float value)
+            USMFloats(sycl::queue& queue, std::size_t count, float value)
                 : queue_(queue), data_(sycl::malloc_shared<float>(count, queue)), count_(count)
             {
                 if (data_ == nullptr)
@@ -133,15 +133,15 @@ namespace
             }
 
             /** @brief Frees the allocation. */
-            ~UsmFloats()
+            ~USMFloats()
             {
                 sycl::free(data_, queue_);
             }
 
-            UsmFloats(const UsmFloats&) = delete;
-            UsmFloats& operator=(const UsmFloats&) = delete;
-            UsmFloats(UsmFloats&&) = delete;
-            UsmFloats& operator=(UsmFloats&&) = delete;
+            USMFloats(const USMFloats&) = delete;
+            USMFloats& operator=(const USMFloats&) = delete;
+            USMFloats(USMFloats&&) = delete;
+            USMFloats& operator=(USMFloats&&) = delete;
 
             /** @brief Sets element i to @p step times i. */
             void ramp(float step)
@@ -211,7 +211,7 @@ namespace
     }
 
     /** @brief Expects out[i] == a[i] + b[i] for every element. */
-    void expect_sum(const UsmFloats& out, const UsmFloats& a, const UsmFloats& b)
+    void expect_sum(const USMFloats& out, const USMFloats& a, const USMFloats& b)
     {
         const float* left = a.data();
         const float* right = b.data();
@@ -293,7 +293,7 @@ namespace
     }
 
     /** @brief Shares a buffer with the workers of the master installed on @p context. */
-    void share(RuntimeContext& context, const UsmFloats& buffer)
+    void share(RuntimeContext& context, const USMFloats& buffer)
     {
         context.offload()->share(buffer.data(), buffer.size_bytes());
     }
@@ -302,8 +302,8 @@ namespace
      * @brief Adds an op-tagged task out = a + b whose local fallback computes the same sum.
      * @return The node added; valid while the graph or its compiled plan lives.
      */
-    Graph::Node& add_vec_add(TaskGraph& graph, const char* name, const UsmFloats& a,
-                             const UsmFloats& b, const UsmFloats& out)
+    Graph::Node& add_vec_add(TaskGraph& graph, const char* name, const USMFloats& a,
+                             const USMFloats& b, const USMFloats& out)
     {
         TaskMetadata metadata{};
         metadata.name = name;
@@ -591,7 +591,7 @@ namespace
             /** @brief Hands the master a stream of the given frames. */
             [[nodiscard]] SendStatus send_stream(std::vector<OutboundFrame> frames)
             {
-                PeerId master;
+                PeerID master;
                 {
                     const std::lock_guard<std::mutex> lock(mutex_);
                     master = master_;
@@ -601,7 +601,7 @@ namespace
             }
 
             /** @brief Opens the handshake on a new connection. */
-            void on_peer_connected(PeerId peer, const PeerInfo& /*info*/) override
+            void on_peer_connected(PeerID peer, const PeerInfo& /*info*/) override
             {
                 {
                     const std::lock_guard<std::mutex> lock(mutex_);
@@ -616,7 +616,7 @@ namespace
             }
 
             /** @brief Answers CHALLENGE, PING and TASK_DISPATCH until the worker falls silent. */
-            void on_frame(PeerId peer, MessageType type, std::uint8_t /*flags*/,
+            void on_frame(PeerID peer, MessageType type, std::uint8_t /*flags*/,
                           span<const std::byte> payload) override
             {
                 if (is_silent())
@@ -631,7 +631,7 @@ namespace
             }
 
             /** @brief Ignores a loss; the transport does not reconnect. */
-            void on_peer_lost(PeerId /*peer*/, const PeerLoss& /*loss*/) override
+            void on_peer_lost(PeerID /*peer*/, const PeerLoss& /*loss*/) override
             {
 
             }
@@ -660,7 +660,7 @@ namespace
 
             /** @brief Queues one control frame and counts it when the transport refuses. */
             template <typename Message>
-            void send(PeerId peer, const Message& message)
+            void send(PeerID peer, const Message& message)
             {
                 if (send_message(*transport_, peer, message) != SendStatus::Queued)
                     refused_sends_.fetch_add(1, std::memory_order_relaxed);
@@ -679,7 +679,7 @@ namespace
             }
 
             /** @brief Proves the empty secret and names the operation the worker claims. */
-            void answer_challenge(PeerId peer, span<const std::byte> payload)
+            void answer_challenge(PeerID peer, span<const std::byte> payload)
             {
                 Wire::ChallengeMessage challenge;
                 if (!decode(payload, challenge))
@@ -695,7 +695,7 @@ namespace
             }
 
             /** @brief Echoes the token of a PING. */
-            void answer_ping(PeerId peer, span<const std::byte> payload)
+            void answer_ping(PeerID peer, span<const std::byte> payload)
             {
                 Wire::PingMessage ping;
                 if (!decode(payload, ping))
@@ -707,7 +707,7 @@ namespace
             }
 
             /** @brief Records a dispatch, wakes the test and answers as scripted. */
-            void take_dispatch(PeerId peer, span<const std::byte> payload)
+            void take_dispatch(PeerID peer, span<const std::byte> payload)
             {
                 Wire::TaskDispatchMessage dispatch;
                 if (!decode(payload, dispatch))
@@ -756,7 +756,7 @@ namespace
             std::condition_variable changed_;
 
             /// @brief The master's peer id on the open connection.
-            PeerId master_;
+            PeerID master_;
 
             /// @brief Set when a FallSilent worker took its dispatch.
             bool silent_ = false;
@@ -795,21 +795,21 @@ namespace
             }
 
             /** @brief Refuses every frame; the transport has no peer. */
-            [[nodiscard]] SendStatus send(PeerId /*peer*/, MessageType /*type*/,
+            [[nodiscard]] SendStatus send(PeerID /*peer*/, MessageType /*type*/,
                                           span<const std::byte> /*payload*/) override
             {
                 return SendStatus::UnknownPeer;
             }
 
             /** @brief Refuses every stream; the source is destroyed with the argument. */
-            [[nodiscard]] SendStatus send_stream(PeerId /*peer*/,
+            [[nodiscard]] SendStatus send_stream(PeerID /*peer*/,
                                                  std::unique_ptr<FrameSource> /*source*/) override
             {
                 return SendStatus::UnknownPeer;
             }
 
             /** @brief Does nothing; the transport holds no connection. */
-            void close_peer(PeerId /*peer*/) noexcept override
+            void close_peer(PeerID /*peer*/) noexcept override
             {
 
             }
@@ -905,9 +905,9 @@ namespace
 
         RuntimeContext master_context;
         sycl::queue& queue = master_context.devices().queue(0);
-        UsmFloats a(queue, count, 0.0f);
-        UsmFloats b(queue, count, 0.0f);
-        UsmFloats out(queue, count, K_UNWRITTEN);
+        USMFloats a(queue, count, 0.0f);
+        USMFloats b(queue, count, 0.0f);
+        USMFloats out(queue, count, K_UNWRITTEN);
         a.ramp(1.0f);
         b.ramp(2.0f);
 
@@ -959,9 +959,9 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
     std::atomic<int> worker_runs{0};
     RuntimeContext master_context;
     sycl::queue& queue = master_context.devices().queue(0);
-    UsmFloats a(queue, K_COUNT, 0.0f);
-    UsmFloats b(queue, K_COUNT, 0.0f);
-    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    USMFloats a(queue, K_COUNT, 0.0f);
+    USMFloats b(queue, K_COUNT, 0.0f);
+    USMFloats out(queue, K_COUNT, K_UNWRITTEN);
     a.ramp(1.0f);
     b.ramp(2.0f);
 
@@ -999,9 +999,9 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     std::atomic<int> second_runs{0};
     RuntimeContext master_context;
     sycl::queue& queue = master_context.devices().queue(0);
-    UsmFloats in(queue, K_COUNT, 0.0f);
-    UsmFloats first_out(queue, K_COUNT, K_UNWRITTEN);
-    UsmFloats second_out(queue, K_COUNT, K_UNWRITTEN);
+    USMFloats in(queue, K_COUNT, 0.0f);
+    USMFloats first_out(queue, K_COUNT, K_UNWRITTEN);
+    USMFloats second_out(queue, K_COUNT, K_UNWRITTEN);
     in.ramp(1.0f);
 
     InProcessFabric fabric;
@@ -1042,8 +1042,8 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
     std::atomic<int> worker_runs{0};
     RuntimeContext master_context;
     sycl::queue& queue = master_context.devices().queue(0);
-    UsmFloats x(queue, K_COUNT, -7.0f);
-    UsmFloats y(queue, K_COUNT, K_UNWRITTEN);
+    USMFloats x(queue, K_COUNT, -7.0f);
+    USMFloats y(queue, K_COUNT, K_UNWRITTEN);
 
     InProcessFabric fabric;
     LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
@@ -1094,7 +1094,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
 }
 
 /** @brief Tests the vector-add offload over TCP on the loopback address. */
-TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
+TEST(Integration_DistributedE2ETest, OffloadOverTCPLoopback)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -1103,20 +1103,20 @@ TEST(Integration_DistributedE2ETest, OffloadOverTcpLoopback)
     std::atomic<int> worker_runs{0};
     RuntimeContext master_context;
     sycl::queue& queue = master_context.devices().queue(0);
-    UsmFloats a(queue, K_COUNT, 0.0f);
-    UsmFloats b(queue, K_COUNT, 0.0f);
-    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    USMFloats a(queue, K_COUNT, 0.0f);
+    USMFloats b(queue, K_COUNT, 0.0f);
+    USMFloats out(queue, K_COUNT, K_UNWRITTEN);
     a.ramp(1.0f);
     b.ramp(3.0f);
 
     // The default options bind 127.0.0.1 on a port the OS picks, known once attach() returns.
-    const std::shared_ptr<TcpTransport> master_transport =
-        TcpTransport::make_master(TcpMasterOptions());
+    const std::shared_ptr<TCPTransport> master_transport =
+        TCPTransport::make_master(TCPMasterOptions());
     Cluster cluster = Cluster::attach(master_context, master_transport, eager_options());
     const Endpoint listening = master_transport->local_endpoint();
     ASSERT_NE(listening.port, 0);
 
-    LocalWorker worker(TcpTransport::make_worker(listening), vec_add_kernels(worker_runs));
+    LocalWorker worker(TCPTransport::make_worker(listening), vec_add_kernels(worker_runs));
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
@@ -1146,9 +1146,9 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
     constexpr std::size_t K_COUNT = 1024;
     RuntimeContext master_context;
     sycl::queue& queue = master_context.devices().queue(0);
-    UsmFloats a(queue, K_COUNT, 0.0f);
-    UsmFloats b(queue, K_COUNT, 0.0f);
-    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    USMFloats a(queue, K_COUNT, 0.0f);
+    USMFloats b(queue, K_COUNT, 0.0f);
+    USMFloats out(queue, K_COUNT, K_UNWRITTEN);
     a.ramp(1.0f);
     b.ramp(2.0f);
 
@@ -1188,9 +1188,9 @@ TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
     constexpr float K_FRESH = 42.0f;
     RuntimeContext master_context;
     sycl::queue& queue = master_context.devices().queue(0);
-    UsmFloats a(queue, K_COUNT, 1.0f);
-    UsmFloats b(queue, K_COUNT, 2.0f);
-    UsmFloats out(queue, K_COUNT, K_AUTHORITATIVE);
+    USMFloats a(queue, K_COUNT, 1.0f);
+    USMFloats b(queue, K_COUNT, 2.0f);
+    USMFloats out(queue, K_COUNT, K_AUTHORITATIVE);
 
     InProcessFabric fabric;
     ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
@@ -1247,9 +1247,9 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
     std::atomic<int> worker_runs{0};
     RuntimeContext master_context;
     sycl::queue& queue = master_context.devices().queue(0);
-    UsmFloats a(queue, K_COUNT, 0.0f);
-    UsmFloats b(queue, K_COUNT, 0.0f);
-    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    USMFloats a(queue, K_COUNT, 0.0f);
+    USMFloats b(queue, K_COUNT, 0.0f);
+    USMFloats out(queue, K_COUNT, K_UNWRITTEN);
     a.ramp(1.0f);
     b.ramp(2.0f);
 
@@ -1423,9 +1423,9 @@ TEST(Integration_DistributedE2ETest, StopResubmitsPendingNodes)
     constexpr std::size_t K_COUNT = 128;
     RuntimeContext master_context;
     sycl::queue& queue = master_context.devices().queue(0);
-    UsmFloats a(queue, K_COUNT, 0.0f);
-    UsmFloats b(queue, K_COUNT, 0.0f);
-    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    USMFloats a(queue, K_COUNT, 0.0f);
+    USMFloats b(queue, K_COUNT, 0.0f);
+    USMFloats out(queue, K_COUNT, K_UNWRITTEN);
     a.ramp(1.0f);
     b.ramp(2.0f);
 
@@ -1467,9 +1467,9 @@ TEST(Integration_DistributedE2ETest, TryOffloadAfterStopRunsLocally)
     std::atomic<int> worker_runs{0};
     RuntimeContext master_context;
     sycl::queue& queue = master_context.devices().queue(0);
-    UsmFloats a(queue, K_COUNT, 0.0f);
-    UsmFloats b(queue, K_COUNT, 0.0f);
-    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    USMFloats a(queue, K_COUNT, 0.0f);
+    USMFloats b(queue, K_COUNT, 0.0f);
+    USMFloats out(queue, K_COUNT, K_UNWRITTEN);
     a.ramp(1.0f);
     b.ramp(2.0f);
 
@@ -1596,9 +1596,9 @@ TEST(Integration_DistributedE2ETest, AttemptCapDoesNotOutliveTheRun)
     constexpr std::size_t K_RUNS = 2;
     RuntimeContext master_context;
     sycl::queue& queue = master_context.devices().queue(0);
-    UsmFloats a(queue, K_COUNT, 0.0f);
-    UsmFloats b(queue, K_COUNT, 0.0f);
-    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    USMFloats a(queue, K_COUNT, 0.0f);
+    USMFloats b(queue, K_COUNT, 0.0f);
+    USMFloats out(queue, K_COUNT, K_UNWRITTEN);
     a.ramp(1.0f);
     b.ramp(2.0f);
 
@@ -1762,9 +1762,9 @@ TEST(Integration_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
     constexpr std::size_t K_COUNT = 128;
     RuntimeContext master_context;
     sycl::queue& queue = master_context.devices().queue(0);
-    UsmFloats a(queue, K_COUNT, 0.0f);
-    UsmFloats b(queue, K_COUNT, 0.0f);
-    UsmFloats out(queue, K_COUNT, K_UNWRITTEN);
+    USMFloats a(queue, K_COUNT, 0.0f);
+    USMFloats b(queue, K_COUNT, 0.0f);
+    USMFloats out(queue, K_COUNT, K_UNWRITTEN);
     a.ramp(1.0f);
     b.ramp(2.0f);
 

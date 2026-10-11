@@ -80,5 +80,5 @@ check that the runtime degrades without failing on bad input.
 ## test_topology_abstraction.cpp
 
 The file validates the injectable topology abstraction, `ITopologyProvider` and
-`INumaDistanceModel`. It exercises multi-NUMA logic deterministically on single-node hardware, which
+`INUMADistanceModel`. It exercises multi-NUMA logic deterministically on single-node hardware, which
 the real hwloc path cannot do on a machine with one socket.

@@ -21,7 +21,7 @@
 
 /**
  * @file test_usm_allocator.cpp
- * @brief Tests UsmAllocator's allocation kinds, records, release path and release observer.
+ * @brief Tests USMAllocator's allocation kinds, records, release path and release observer.
  * @author Mustafa Garip
  */
 
@@ -52,16 +52,16 @@
 
 #include "test_helpers.hpp"
 
-using SushiRuntime::Memory::UsmAllocator;
-using SushiRuntime::Memory::UsmKind;
-using SushiRuntime::Memory::UsmReleaseObserver;
-using SushiRuntime::Memory::UsmRequest;
+using SushiRuntime::Memory::USMAllocator;
+using SushiRuntime::Memory::USMKind;
+using SushiRuntime::Memory::USMReleaseObserver;
+using SushiRuntime::Memory::USMRequest;
 
 namespace
 {
     /** @brief Holds every kind a request can name, in the order the tests walk them. */
-    constexpr std::array<UsmKind, 3> K_ALL_KINDS = {UsmKind::Host, UsmKind::Shared,
-                                                    UsmKind::Device};
+    constexpr std::array<USMKind, 3> K_ALL_KINDS = {USMKind::Host, USMKind::Shared,
+                                                    USMKind::Device};
 
     /** @brief Holds the length of every allocation the tests make, in bytes. */
     constexpr std::size_t K_BYTES = 256;
@@ -70,31 +70,31 @@ namespace
     constexpr unsigned char K_PATTERN = 0x5A;
 
     /** @brief Returns the name a failure message prints for a kind. */
-    const char* name_of(UsmKind kind)
+    const char* name_of(USMKind kind)
     {
         switch (kind)
         {
-            case UsmKind::Host:   return "Host";
-            case UsmKind::Shared: return "Shared";
-            case UsmKind::Device: return "Device";
+            case USMKind::Host:   return "Host";
+            case USMKind::Shared: return "Shared";
+            case USMKind::Device: return "Device";
         }
         return "unknown";
     }
 
     /** @brief Returns whether a device can allocate USM of a kind. */
-    bool supports(const sycl::device& device, UsmKind kind)
+    bool supports(const sycl::device& device, USMKind kind)
     {
         switch (kind)
         {
-            case UsmKind::Host:   return device.has(sycl::aspect::usm_host_allocations);
-            case UsmKind::Shared: return device.has(sycl::aspect::usm_shared_allocations);
-            case UsmKind::Device: return device.has(sycl::aspect::usm_device_allocations);
+            case USMKind::Host:   return device.has(sycl::aspect::usm_host_allocations);
+            case USMKind::Shared: return device.has(sycl::aspect::usm_shared_allocations);
+            case USMKind::Device: return device.has(sycl::aspect::usm_device_allocations);
         }
         return false;
     }
 
     /** @brief Records every address an allocator reports as released. */
-    class RecordingObserver final : public UsmReleaseObserver
+    class RecordingObserver final : public USMReleaseObserver
     {
         public:
             /** @brief Appends the address; the tests release from one thread. */
@@ -108,7 +108,7 @@ namespace
     };
 
     /** @brief Blocks every on_release() call until the test opens it. */
-    class BlockingObserver final : public UsmReleaseObserver
+    class BlockingObserver final : public USMReleaseObserver
     {
         public:
             /** @brief Reports that the call began, then waits for open(). */
@@ -203,11 +203,11 @@ namespace
 
                 for (const sycl::device& device : sycl::device::get_devices())
                     queues_.emplace_back(device);
-                allocator_ = std::make_unique<UsmAllocator>(queues_);
+                allocator_ = std::make_unique<USMAllocator>(queues_);
             }
 
             /** @brief Returns the first device that can allocate a kind, or nothing. */
-            [[nodiscard]] std::optional<std::size_t> device_supporting(UsmKind kind) const
+            [[nodiscard]] std::optional<std::size_t> device_supporting(USMKind kind) const
             {
                 for (std::size_t index = 0; index < queues_.size(); ++index)
                 {
@@ -218,9 +218,9 @@ namespace
             }
 
             /** @brief Returns the first kind a device can allocate, or nothing. */
-            [[nodiscard]] std::optional<UsmKind> kind_supported_by(std::size_t device_index) const
+            [[nodiscard]] std::optional<USMKind> kind_supported_by(std::size_t device_index) const
             {
-                for (const UsmKind kind : K_ALL_KINDS)
+                for (const USMKind kind : K_ALL_KINDS)
                 {
                     if (supports(queues_[device_index].get_device(), kind))
                         return kind;
@@ -232,14 +232,14 @@ namespace
             std::vector<sycl::queue> queues_;
 
             /** @brief The allocator under test, built over queues_. */
-            std::unique_ptr<UsmAllocator> allocator_;
+            std::unique_ptr<USMAllocator> allocator_;
     };
 } // namespace
 
 TEST_F(Unit_UsmAllocator, EachKindAllocatesIsUsableIsCountedAndIsReleased)
 {
     std::size_t kinds_tested = 0;
-    for (const UsmKind kind : K_ALL_KINDS)
+    for (const USMKind kind : K_ALL_KINDS)
     {
         const std::optional<std::size_t> device = device_supporting(kind);
         if (!device.has_value())
@@ -248,11 +248,11 @@ TEST_F(Unit_UsmAllocator, EachKindAllocatesIsUsableIsCountedAndIsReleased)
         SCOPED_TRACE(name_of(kind));
 
         const std::size_t baseline = allocator_->live_count();
-        void* const address = allocator_->allocate(UsmRequest{kind, K_BYTES, 0, *device});
+        void* const address = allocator_->allocate(USMRequest{kind, K_BYTES, 0, *device});
         ASSERT_NE(address, nullptr);
         EXPECT_EQ(allocator_->live_count(), baseline + 1);
 
-        if (kind == UsmKind::Device)
+        if (kind == USMKind::Device)
         {
             // Device USM has no host address to write through; the device writes it.
             queues_[*device].memset(address, K_PATTERN, K_BYTES).wait_and_throw();
@@ -275,7 +275,7 @@ TEST_F(Unit_UsmAllocator, EachKindAllocatesIsUsableIsCountedAndIsReleased)
 TEST_F(Unit_UsmAllocator, AnAlignedRequestReturnsAnAddressOnTheAlignment)
 {
     std::size_t kinds_tested = 0;
-    for (const UsmKind kind : K_ALL_KINDS)
+    for (const USMKind kind : K_ALL_KINDS)
     {
         const std::optional<std::size_t> device = device_supporting(kind);
         if (!device.has_value())
@@ -290,7 +290,7 @@ TEST_F(Unit_UsmAllocator, AnAlignedRequestReturnsAnAddressOnTheAlignment)
                              + " bytes at alignment " + std::to_string(alignment));
 
                 void* const address =
-                    allocator_->allocate(UsmRequest{kind, bytes, alignment, *device});
+                    allocator_->allocate(USMRequest{kind, bytes, alignment, *device});
                 ASSERT_NE(address, nullptr);
                 EXPECT_EQ(reinterpret_cast<std::uintptr_t>(address) % alignment, 0u);
 
@@ -309,11 +309,11 @@ TEST_F(Unit_UsmAllocator, AnAlignedRequestReturnsAnAddressOnTheAlignment)
 TEST_F(Unit_UsmAllocator, AnAllocationResolvesToItsDeviceAtItsBaseAndInside)
 {
     const std::size_t device = queues_.size() - 1;
-    const std::optional<UsmKind> kind = kind_supported_by(device);
+    const std::optional<USMKind> kind = kind_supported_by(device);
     if (!kind.has_value())
         GTEST_SKIP() << "The last SYCL device supports no USM kind.";
 
-    void* const address = allocator_->allocate(UsmRequest{*kind, K_BYTES, 0, device});
+    void* const address = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, device});
     ASSERT_NE(address, nullptr);
     void* const interior = static_cast<unsigned char*>(address) + K_BYTES / 2;
     void* const past_the_end = static_cast<unsigned char*>(address) + K_BYTES;
@@ -351,9 +351,9 @@ TEST_F(Unit_UsmAllocator, AForeignPointerHasNoDevice)
     EXPECT_FALSE(allocator_->containing_base(nullptr).has_value());
 }
 
-TEST_F(Unit_UsmAllocator, OwningDeviceAsksSyclAboutUsmItHasNoRecordOf)
+TEST_F(Unit_UsmAllocator, OwningDeviceAsksSYCLAboutUSMItHasNoRecordOf)
 {
-    const std::optional<std::size_t> device = device_supporting(UsmKind::Shared);
+    const std::optional<std::size_t> device = device_supporting(USMKind::Shared);
     if (!device.has_value())
         GTEST_SKIP() << "No SYCL device supports shared USM.";
 
@@ -412,11 +412,11 @@ TEST_F(Unit_UsmAllocator, ReleaseOfAnAdoptedAddressDropsTheRecordAndDoesNotFreeI
 
 TEST_F(Unit_UsmAllocator, ASecondReleaseLogsOneErrorWithTheAddressAndFreesNothing)
 {
-    const std::optional<UsmKind> kind = kind_supported_by(0);
+    const std::optional<USMKind> kind = kind_supported_by(0);
     if (!kind.has_value())
         GTEST_SKIP() << "SYCL device 0 supports no USM kind.";
 
-    void* const address = allocator_->allocate(UsmRequest{*kind, K_BYTES, 0, 0});
+    void* const address = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, 0});
     ASSERT_NE(address, nullptr);
     const std::size_t baseline = allocator_->live_count();
 
@@ -433,9 +433,9 @@ TEST_F(Unit_UsmAllocator, ASecondReleaseLogsOneErrorWithTheAddressAndFreesNothin
     EXPECT_NE(capture.lines[0].find("no record"), std::string::npos) << capture.lines[0];
 }
 
-TEST_F(Unit_UsmAllocator, ReleaseOfForeignUsmLeavesItAllocated)
+TEST_F(Unit_UsmAllocator, ReleaseOfForeignUSMLeavesItAllocated)
 {
-    const std::optional<std::size_t> device = device_supporting(UsmKind::Shared);
+    const std::optional<std::size_t> device = device_supporting(USMKind::Shared);
     if (!device.has_value())
         GTEST_SKIP() << "No SYCL device supports shared USM.";
 
@@ -490,7 +490,7 @@ TEST_F(Unit_UsmAllocator, ABadDeviceIndexThrowsInvalidAccessWithTheIndexAndTheCo
     expect_bad_device_index(
         [&]
         {
-            const UsmRequest request{UsmKind::Shared, 64, 0, bad_index};
+            const USMRequest request{USMKind::Shared, 64, 0, bad_index};
             static_cast<void>(allocator_->allocate(request));
         },
         bad_index, count);
@@ -502,15 +502,15 @@ TEST_F(Unit_UsmAllocator, ABadDeviceIndexThrowsInvalidAccessWithTheIndexAndTheCo
 
 TEST_F(Unit_UsmAllocator, TheReleaseObserverHearsEachReleasedAddressExactlyOnce)
 {
-    const std::optional<UsmKind> kind = kind_supported_by(0);
+    const std::optional<USMKind> kind = kind_supported_by(0);
     if (!kind.has_value())
         GTEST_SKIP() << "SYCL device 0 supports no USM kind.";
 
     RecordingObserver observer;
     allocator_->set_release_observer(&observer);
 
-    void* const first = allocator_->allocate(UsmRequest{*kind, K_BYTES, 0, 0});
-    void* const second = allocator_->allocate(UsmRequest{*kind, K_BYTES, 0, 0});
+    void* const first = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, 0});
+    void* const second = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, 0});
     ASSERT_NE(first, nullptr);
     ASSERT_NE(second, nullptr);
     EXPECT_TRUE(observer.released.empty());

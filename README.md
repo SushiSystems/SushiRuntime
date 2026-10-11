@@ -474,12 +474,12 @@ Discovers and describes the machine:
 - `HardwareDiscovery` — enumerates SYCL devices and records name, memory size, compute units, GPU flag, and PCI address for each.
 - `NUMAMapper` — uses hwloc to map each device to its nearest NUMA node and report distances between nodes.
 - `affinity` — pins a thread to a specific CPU core (Windows and POSIX).
-- `ITopologyProvider` / `INumaDistanceModel` — the topology source and the NUMA distance source are injected into `RuntimeContext` behind interfaces. Left null, it uses the production defaults `HwlocTopologyProvider` and `HwlocDistanceModel`.
+- `ITopologyProvider` / `INUMADistanceModel` — the topology source and the NUMA distance source are injected into `RuntimeContext` behind interfaces. Left null, it uses the production defaults `HwlocTopologyProvider` and `HwlocDistanceModel`.
 - `MatrixDistanceModel` / `RemappingTopologyProvider` — test/diagnostic implementations that let multi-NUMA routing and NUMA-aware work stealing be exercised deterministically on single-node hardware: a hand-built distance matrix plus a decorator that spreads the real devices across a synthetic NUMA layout.
 
 ### Memory (`memory/`)
 Allocation tuned for parallel, heterogeneous workloads:
-- `UsmRegistry` — records which device each USM allocation belongs to and how long it is, so a pointer is freed against the queue that owns it, a kernel runs where its data lives, and an interior pointer can be traced back to its allocation. SYCL has no portable way to ask a pointer that, so the answer is recorded at allocation.
+- `USMRegistry` — records which device each USM allocation belongs to and how long it is, so a pointer is freed against the queue that owns it, a kernel runs where its data lives, and an interior pointer can be traced back to its allocation. SYCL has no portable way to ask a pointer that, so the answer is recorded at allocation.
 - `epoch_reclamation` — epoch-based reclamation (EBR) for safely freeing memory that other threads might still be reading, without locks. Retired nodes are pooled per thread to avoid hitting the global allocator on the hot path.
 
 ### Graph (`graph/`)
@@ -506,7 +506,7 @@ Ties hardware and graphs together:
 ### Distributed (`distributed/`, optional — `SR_ENABLE_DISTRIBUTED`)
 An opt-in master-worker layer that offloads individual tasks to remote workers. It is guarded so a standalone build compiles none of it.
 - The key idea: **compiled code can't travel the wire**, so nothing is serialized except references. A task ships its `OpID` (a kernel already compiled into every node) plus `GlobalBufferID`+version handles; each worker resolves those to its own local USM. Closures and pointers never cross the network.
-- `ITransport` abstracts the wire: `InProcessTransport` runs the full multi-node protocol on a single machine (the network analogue of `RemappingTopologyProvider`), and `TcpTransport` is a dependency-free raw-socket transport (POSIX + Winsock) for a real cluster.
+- `ITransport` abstracts the wire: `InProcessTransport` runs the full multi-node protocol on a single machine (the network analogue of `RemappingTopologyProvider`), and `TCPTransport` is a dependency-free raw-socket transport (POSIX + Winsock) for a real cluster.
 - `DistributedCoordinator` (master) decides what to offload via a swappable `IOffloadPolicy`, serves a stateful, pull-based, master-authoritative buffer cache (a write auto-bumps a version, so stale worker caches re-pull), and releases a node's successors when its remote result arrives. `WorkerAgent` (worker) is a thin network shell around a normal local `RuntimeContext`, so the existing NUMA-aware scheduler runs the offloaded work.
 - Integration with the core is minimal and guarded: `TaskGraph::compile()` stamps which nodes are offloadable, and the scheduler's hot path adds a single `[[unlikely]]` branch — non-offloaded tasks pay nothing. An offloadable task whose policy declines falls back to local execution transparently.
 

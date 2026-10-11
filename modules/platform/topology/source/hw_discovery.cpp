@@ -49,11 +49,11 @@ namespace SushiRuntime
         namespace
         {
             /** @brief Loads the machine's hwloc topology and destroys it on scope exit. */
-            class LoadedHwlocTopology final
+            class LoadedHWLOCTopology final
             {
                 public:
                     /** @brief Loads the topology; get() returns null when hwloc refuses. */
-                    LoadedHwlocTopology() noexcept
+                    LoadedHWLOCTopology() noexcept
                     {
                         if (hwloc_topology_init(&topology_) < 0)
                         {
@@ -70,16 +70,16 @@ namespace SushiRuntime
                     }
 
                     /** @brief Destroys the topology, if one was loaded. */
-                    ~LoadedHwlocTopology()
+                    ~LoadedHWLOCTopology()
                     {
                         if (topology_ != nullptr)
                             hwloc_topology_destroy(topology_);
                     }
 
-                    LoadedHwlocTopology(const LoadedHwlocTopology&) = delete;
-                    LoadedHwlocTopology& operator=(const LoadedHwlocTopology&) = delete;
-                    LoadedHwlocTopology(LoadedHwlocTopology&&) = delete;
-                    LoadedHwlocTopology& operator=(LoadedHwlocTopology&&) = delete;
+                    LoadedHWLOCTopology(const LoadedHWLOCTopology&) = delete;
+                    LoadedHWLOCTopology& operator=(const LoadedHWLOCTopology&) = delete;
+                    LoadedHWLOCTopology(LoadedHWLOCTopology&&) = delete;
+                    LoadedHWLOCTopology& operator=(LoadedHWLOCTopology&&) = delete;
 
                     /** @brief Returns the loaded topology, or null when hwloc refused. */
                     [[nodiscard]] hwloc_topology_t get() const noexcept { return topology_; }
@@ -104,12 +104,12 @@ namespace SushiRuntime
             }
 
             /** @brief Names one PCI function by its four address fields, in bus order. */
-            using PciKey = std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t>;
+            using PCIKey = std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t>;
 
             /** @brief Returns the key two devices share when they sit at one PCI address. */
-            PciKey pci_key(const PCIDomainAddress& address) noexcept
+            PCIKey pci_key(const PCIDomainAddress& address) noexcept
             {
-                return PciKey{address.domain, address.bus, address.device, address.function};
+                return PCIKey{address.domain, address.bus, address.device, address.function};
             }
 
             /** @brief Spells a PCI address as "0000:01:00.0". */
@@ -160,7 +160,7 @@ namespace SushiRuntime
          */
         void HardwareDiscovery::discover_sycl_devices(std::vector<HardwareNode>& nodes, const HardwareFilterConfig& config) 
         {
-            const LoadedHwlocTopology loaded_topology;
+            const LoadedHWLOCTopology loaded_topology;
             const hwloc_topology_t topology = loaded_topology.get();
             if (topology == nullptr)
                 SR_LOG_WARN("hwloc could not load the machine topology; CPU devices keep NUMA -1 "
@@ -174,7 +174,7 @@ namespace SushiRuntime
                 std::unordered_set<int> seen_cpu_numa;
 
                 // At most one GPU or accelerator is kept per PCI address (modules/platform/topology/README.md).
-                std::set<PciKey> seen_pci;
+                std::set<PCIKey> seen_pci;
 
                 for (const auto& dev : sycl::device::get_devices(sycl::info::device_type::all))
                 {

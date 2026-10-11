@@ -35,7 +35,7 @@ none.
 
 ### Argument types
 
-`DeviceIndex` is a strong typedef over `Core::StrongId`, so a device selector cannot be confused
+`DeviceIndex` is a strong typedef over `Core::StrongID`, so a device selector cannot be confused
 with an element count or an offset at a call site. Its constructor is explicit, and a swapped
 argument is a compile error rather than a silent allocation on the wrong device, so
 `buffer(count, DeviceIndex{1})` reads unambiguously.
