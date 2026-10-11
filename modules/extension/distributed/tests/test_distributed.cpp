@@ -373,9 +373,8 @@ namespace
     std::optional<int> pick(const std::vector<WorkerLoad>& workers, std::uint64_t bytes)
     {
         LeastLoadedOffloadPolicy policy;
-        const sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
         return policy.pick_worker(
-            *node, span<const WorkerLoad>(workers.data(), workers.size()), bytes);
+            NodeOptions(), span<const WorkerLoad>(workers.data(), workers.size()), bytes);
     }
 } // namespace
 

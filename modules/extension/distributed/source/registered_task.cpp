@@ -39,6 +39,9 @@
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/task_work.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/task/task_types.hpp>
+
+#include "task_description.hpp"
 
 namespace SushiRuntime
 {
@@ -81,7 +84,7 @@ namespace SushiRuntime
                         queue,
                         SushiRuntime::span<const BufferView>(inputs.data(), inputs.size()),
                         SushiRuntime::span<const BufferView>(outputs.data(), outputs.size()),
-                        metadata);
+                        describe_task(metadata));
                 };
 
             return graph.add_task(metadata, regions_of(inputs), regions_of(outputs),

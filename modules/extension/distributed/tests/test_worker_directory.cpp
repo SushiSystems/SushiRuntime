@@ -180,7 +180,7 @@ namespace
     {
         public:
             /** @brief Records the offer, then returns @ref answer or the first worker. */
-            std::optional<int> pick_worker(const Internal::Graph::Node&, span<const WorkerLoad> workers,
+            std::optional<int> pick_worker(const NodeOptions&, span<const WorkerLoad> workers,
                                            std::uint64_t) override
             {
                 ++calls;

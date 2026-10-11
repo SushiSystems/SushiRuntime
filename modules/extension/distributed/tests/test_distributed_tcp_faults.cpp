@@ -208,7 +208,7 @@ namespace
     {
         public:
             /** @brief Returns the first offered worker, or nothing when none was offered. */
-            std::optional<int> pick_worker(const Internal::Graph::Node& /*node*/,
+            std::optional<int> pick_worker(const NodeOptions& /*task*/,
                                            span<const WorkerLoad> workers,
                                            std::uint64_t /*est_bytes*/) override
             {
@@ -427,7 +427,7 @@ namespace
                     K_MASK_OPERATION,
                     [runs](sycl::queue& /*queue*/, span<const BufferView> inputs,
                            span<const BufferView> outputs,
-                           const Internal::Graph::TaskMetadata& /*metadata*/) -> sycl::event
+                           const NodeOptions& /*options*/) -> sycl::event
                     {
                         apply_mask(inputs[0].as<const std::byte>(), outputs[0].as<std::byte>(),
                                    outputs[0].size_bytes);

@@ -40,7 +40,7 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
-#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/cluster_statistics.hpp>
 #include <SushiRuntime/distributed/offload_policy.hpp>

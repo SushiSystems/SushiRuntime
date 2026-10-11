@@ -34,7 +34,7 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
-#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/api/graph/node_options.hpp>
 
 #include "frame_sending.hpp"
 #include "wire_frame.hpp"
@@ -54,19 +54,18 @@ namespace SushiRuntime
                 static_cast<std::uint32_t>(Wire::BufferChunkMessage::K_PREFIX_BYTES);
 
             /**
-             * @brief Returns the metadata a kernel is handed for a dispatch.
-             * @return A value whose name points into @p dispatch, so it is used before the
-             *         dispatch is destroyed.
+             * @brief Returns the options a kernel is handed for a dispatch.
+             * @return A value that borrows the name and the parameters of @p dispatch, so it
+             *         is used before the dispatch is destroyed.
              */
-            Internal::Graph::TaskMetadata metadata_of(
-                const Wire::TaskDispatchMessage& dispatch) noexcept
+            NodeOptions options_of(const Wire::TaskDispatchMessage& dispatch) noexcept
             {
-                Internal::Graph::TaskMetadata metadata;
-                metadata.name = dispatch.name.c_str();
-                metadata.op_id = dispatch.operation;
-                for (std::size_t index = 0; index < dispatch.parameter_count; ++index)
-                    metadata.params[index] = dispatch.parameters[index];
-                return metadata;
+                NodeOptions options;
+                options.name = dispatch.name;
+                options.operation = dispatch.operation;
+                options.parameters = SushiRuntime::span<const std::uint64_t>(
+                    dispatch.parameters.data(), dispatch.parameter_count);
+                return options;
             }
 
             /** @brief Returns a chunk size a frame can carry; 0 takes the default. */
@@ -670,7 +669,7 @@ namespace SushiRuntime
                 sycl::event event = (*kernel)(
                     queue_, SushiRuntime::span<const BufferView>(inputs.data(), inputs.size()),
                     SushiRuntime::span<const BufferView>(outputs.data(), outputs.size()),
-                    metadata_of(dispatch));
+                    options_of(dispatch));
                 event.wait_and_throw();
                 ran = true;
             }

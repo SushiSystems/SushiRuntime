@@ -42,7 +42,18 @@ private codec uses.
 
 `KernelRegistry::register_kernel()` has one form, the one that takes
 `span<const BufferView>`; the pointer form and its `RemoteKernel` alias are removed, so a generic
-lambda registers without a cast.
+lambda registers without a cast. The last parameter of a kernel is a `const NodeOptions&`: the
+name, the operation and the parameters of the task, valid during the call. A worker fills it from
+the dispatch it received, and add_registered_task() from the node's metadata, through
+describe_task() of `source/task_description.hpp`, which sends the parameters up to the last one
+that is not zero. `OffloadPolicy::pick_worker()` is handed the same description of the task it
+places.
+
+The public headers include only headers of `api`, `core` and this module. Three signatures
+still name an engine type, by forward declaration: `Cluster::attach(RuntimeContext&, ...)`,
+`WorkerAgent(RuntimeContext&, ...)` and
+`add_registered_task(TaskGraph&, ..., const TaskMetadata&, ...)`. The tests of this module, the
+offload benchmark and `worker_main.cpp` drive a bare context and a bare `TaskGraph` through them.
 
 A `WorkerAgent` seals the registry in its constructor, before it reads the operations it sends in
 `PROOF` and before the exec thread exists, and `run_worker()` seals it on entry. From then on
@@ -506,7 +517,7 @@ parameter count and at most `K_MAX_DISPATCH_PARAMETERS` parameters, then the inp
 output handles. Both limits are constants of `wire_messages.hpp`, and encode() returns `TooLong`
 for a message that breaks one. The dispatcher fills the message from the node: it cuts the name
 to the limit and sends the parameters up to the last one that is not zero. The worker builds the
-metadata its kernel is handed from the same fields.
+`NodeOptions` its kernel is handed from the same fields.
 
 A frame header carries `K_PROTOCOL_VERSION`, which is 3. check_protocol_version() of
 `wire_frame.hpp` turns a header of another version into `ErrorCode::ProtocolMismatch` with both

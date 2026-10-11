@@ -34,6 +34,8 @@
 
 #include <SushiRuntime/task/node.hpp>
 
+#include "task_description.hpp"
+
 namespace SushiRuntime
 {
     namespace Distributed
@@ -262,7 +264,8 @@ namespace SushiRuntime
                 return std::nullopt;
 
             const std::optional<int> choice = policy_->pick_worker(
-                node, SushiRuntime::span<const WorkerLoad>(candidates_.data(), candidates_.size()),
+                describe_task(node.metadata),
+                SushiRuntime::span<const WorkerLoad>(candidates_.data(), candidates_.size()),
                 estimated_bytes);
             if (!choice.has_value() || *choice < 0)
                 return std::nullopt;

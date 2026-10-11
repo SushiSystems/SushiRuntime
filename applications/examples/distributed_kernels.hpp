@@ -55,7 +55,7 @@ namespace DistributedDemo
     inline sycl::event add_vectors(
         sycl::queue& queue, SushiRuntime::span<const SushiRuntime::Distributed::BufferView> inputs,
         SushiRuntime::span<const SushiRuntime::Distributed::BufferView> outputs,
-        const SushiRuntime::TaskMetadata&)
+        const SushiRuntime::NodeOptions&)
     {
         const float* a = inputs[0].as<const float>();
         const float* b = inputs[1].as<const float>();
