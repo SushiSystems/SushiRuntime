@@ -181,6 +181,18 @@ only where `SR_ENABLE_ASSERTIONS` is 1.
 line names `Runtime::buffer` or `Runtime::state`, the index, the device count and
 `advanced().devices()`.
 
+### `AlignedAllocationStartsOnAMultipleOfTheAlignment`
+
+`buffer()` and `state()` are asked for 37 floats aligned to 128 bytes in each of the three
+residencies. Where the device returns memory, the buffer's address and both fields of the state
+must be multiples of 128. A residency that returns `AllocationFailed` is not checked, and the test
+fails when none could be.
+
+### `AlignmentThatIsNotAPowerOfTwoStops`
+
+An alignment of 48 stops the process in `buffer()` and in `state()`; the line names the call and
+the value.
+
 ## test_device_count.cpp
 
 The file covers `sized_from_device`: a task whose iteration size is a count that a predecessor

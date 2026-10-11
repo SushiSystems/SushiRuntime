@@ -100,32 +100,38 @@ namespace SushiRuntime
 
             /**
              * @brief Allocates a typed buffer of @p count elements on one device.
+             * @param alignment Byte alignment of the address; 0 asks for the device default.
              * @return The buffer, or an AllocationFailed error when the device returns nothing.
-             * @pre device names a device of this runtime, and the byte size of count fits
-             *      std::size_t.
+             * @pre device names a device of this runtime, the byte size of count fits
+             *      std::size_t, and alignment is 0 or a power of two.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             template <typename T>
             [[nodiscard]] Result<Buffer<T>> buffer(std::size_t count,
                                                    DeviceIndex device = DeviceIndex{0},
-                                                   Residency residency = Residency::Shared) const
+                                                   Residency residency = Residency::Shared,
+                                                   std::size_t alignment = 0) const
             {
-                return Buffer<T>::allocate("Runtime::buffer", context_, count, device, residency);
+                return Buffer<T>::allocate("Runtime::buffer", context_, count, device, residency,
+                                           alignment);
             }
 
             /**
              * @brief Allocates a double-buffered field of @p count elements on one device.
+             * @param alignment Byte alignment of both fields; 0 asks for the device default.
              * @return The state, or an AllocationFailed error when the device returns nothing.
-             * @pre device names a device of this runtime, and the byte size of count fits
-             *      std::size_t.
+             * @pre device names a device of this runtime, the byte size of count fits
+             *      std::size_t, and alignment is 0 or a power of two.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             template <typename T>
             [[nodiscard]] Result<State<T>> state(std::size_t count,
                                                  DeviceIndex device = DeviceIndex{0},
-                                                 Residency residency = Residency::Shared) const
+                                                 Residency residency = Residency::Shared,
+                                                 std::size_t alignment = 0) const
             {
-                return State<T>::allocate("Runtime::state", context_, count, device, residency);
+                return State<T>::allocate("Runtime::state", context_, count, device, residency,
+                                          alignment);
             }
 
             /**

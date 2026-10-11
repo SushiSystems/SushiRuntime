@@ -243,14 +243,15 @@ namespace SushiRuntime
              */
             [[nodiscard]] static Result<State> allocate(
                 const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> context,
-                std::size_t count, DeviceIndex device_index, Residency residency)
+                std::size_t count, DeviceIndex device_index, Residency residency,
+                std::size_t alignment)
             {
                 Result<Buffer<T>> current =
-                    Buffer<T>::allocate(call, context, count, device_index, residency);
+                    Buffer<T>::allocate(call, context, count, device_index, residency, alignment);
                 if (!current)
                     return make_error(std::move(current.error()));
-                Result<Buffer<T>> next =
-                    Buffer<T>::allocate(call, std::move(context), count, device_index, residency);
+                Result<Buffer<T>> next = Buffer<T>::allocate(call, std::move(context), count,
+                                                             device_index, residency, alignment);
                 if (!next)
                     return make_error(std::move(next.error()));
 
