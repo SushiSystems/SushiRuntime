@@ -200,7 +200,7 @@ A `release()` on the raw pointer then destroys the object.
 
 ## test_strong_id.cpp
 
-The file covers `Core::StrongId`. Its `static_assert`s state that an id is trivially copyable, has
+The file covers `Core::StrongID`. Its `static_assert`s state that an id is trivially copyable, has
 the size of its representation and does not convert from an integer.
 
 ### `DefaultIsZero`, `ExplicitConstructionKeepsValue`

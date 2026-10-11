@@ -21,7 +21,7 @@
 
 /**
  * @file tcp_transport.hpp
- * @brief Declares TcpTransport, the ITransport that carries frames over TCP.
+ * @brief Declares TCPTransport, the ITransport that carries frames over TCP.
  * @author Mustafa Garip
  * @see modules/extension/distributed/README.md
  */
@@ -43,7 +43,7 @@ namespace SushiRuntime
         /**
          * @brief Holds the settings of a master-side TCP transport.
          */
-        struct TcpMasterOptions
+        struct TCPMasterOptions
         {
             /**
              * @brief Holds the address to listen on; port 0 takes any free port.
@@ -69,7 +69,7 @@ namespace SushiRuntime
         /**
          * @brief Holds the settings of a worker-side TCP transport.
          */
-        struct TcpWorkerOptions
+        struct TCPWorkerOptions
         {
             /** @brief Bounds one connection attempt to one resolved address. */
             std::chrono::milliseconds attempt_timeout{3000};
@@ -101,31 +101,31 @@ namespace SushiRuntime
          * makes that peer's events, and a writer thread.
          * @see modules/extension/distributed/README.md
          */
-        class SUSHIRUNTIME_API TcpTransport final : public ITransport
+        class SUSHIRUNTIME_API TCPTransport final : public ITransport
         {
             public:
                 /**
                  * @brief Creates a master endpoint; nothing is bound until start().
                  * @return Never null.
                  */
-                [[nodiscard]] static std::shared_ptr<TcpTransport> make_master(
-                    TcpMasterOptions options = TcpMasterOptions());
+                [[nodiscard]] static std::shared_ptr<TCPTransport> make_master(
+                    TCPMasterOptions options = TCPMasterOptions());
 
                 /**
                  * @brief Creates a worker endpoint; nothing connects until start().
                  * @param master Host name or address and port; resolved again on every attempt.
                  * @return Never null.
                  */
-                [[nodiscard]] static std::shared_ptr<TcpTransport> make_worker(
-                    Endpoint master, TcpWorkerOptions options = TcpWorkerOptions());
+                [[nodiscard]] static std::shared_ptr<TCPTransport> make_worker(
+                    Endpoint master, TCPWorkerOptions options = TCPWorkerOptions());
 
                 /** @brief Stops the transport and closes its sockets. */
-                ~TcpTransport() override;
+                ~TCPTransport() override;
 
-                TcpTransport(const TcpTransport&) = delete;
-                TcpTransport& operator=(const TcpTransport&) = delete;
-                TcpTransport(TcpTransport&&) = delete;
-                TcpTransport& operator=(TcpTransport&&) = delete;
+                TCPTransport(const TCPTransport&) = delete;
+                TCPTransport& operator=(const TCPTransport&) = delete;
+                TCPTransport(TCPTransport&&) = delete;
+                TCPTransport& operator=(TCPTransport&&) = delete;
 
                 /** @brief Binds and listens, or starts the connector; see ITransport::start(). */
                 [[nodiscard]] TransportResult start(TransportEvents& events) override;
@@ -134,15 +134,15 @@ namespace SushiRuntime
                 void stop() noexcept override;
 
                 /** @brief Queues a control frame on the peer's outbox. */
-                [[nodiscard]] SendStatus send(PeerId peer, MessageType type,
+                [[nodiscard]] SendStatus send(PeerID peer, MessageType type,
                                               SushiRuntime::span<const std::byte> payload) override;
 
                 /** @brief Adds a stream to the peer's outbox. */
-                [[nodiscard]] SendStatus send_stream(PeerId peer,
+                [[nodiscard]] SendStatus send_stream(PeerID peer,
                                                      std::unique_ptr<FrameSource> source) override;
 
                 /** @brief Closes one connection; queued control frames get one second to leave. */
-                void close_peer(PeerId peer) noexcept override;
+                void close_peer(PeerID peer) noexcept override;
 
                 /**
                  * @brief Returns Loopback when the bind address, or the master's host, is a
@@ -163,7 +163,7 @@ namespace SushiRuntime
                 struct Impl;
 
                 /** @brief Wraps the state a factory built. */
-                explicit TcpTransport(std::unique_ptr<Impl> impl) noexcept;
+                explicit TCPTransport(std::unique_ptr<Impl> impl) noexcept;
 
                 /** @brief Holds the role, the options, the peer table and the threads. */
                 std::unique_ptr<Impl> impl_;

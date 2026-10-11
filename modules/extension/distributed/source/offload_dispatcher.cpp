@@ -373,7 +373,7 @@ namespace SushiRuntime
             for (std::size_t index = 0; index < *input_count; ++index)
                 estimated_bytes += scratch.handles[index].size_bytes;
 
-            const std::optional<PeerId> worker = directory_.pick(node, estimated_bytes);
+            const std::optional<PeerID> worker = directory_.pick(node, estimated_bytes);
             if (!worker.has_value())
                 return decline();
 

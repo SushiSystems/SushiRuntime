@@ -64,7 +64,7 @@ using namespace SushiRuntime::Distributed;
 namespace
 {
     /** @brief Names the worker every test registers. */
-    constexpr PeerId K_WORKER{1};
+    constexpr PeerID K_WORKER{1};
 
     /** @brief Names an operation the worker has a kernel for. */
     constexpr Graph::OpID K_KNOWN_OPERATION{501};
@@ -84,7 +84,7 @@ namespace
     /** @brief Holds one frame a test transport was asked to send. */
     struct OfferedFrame
     {
-        PeerId peer;                    /**< The peer the frame was for. */
+        PeerID peer;                    /**< The peer the frame was for. */
         MessageType type;               /**< The type of the frame. */
         std::vector<std::byte> payload; /**< A copy of the payload. */
     };
@@ -108,7 +108,7 @@ namespace
             }
 
             /** @brief Keeps a copy of the frame and returns the status set for the test. */
-            [[nodiscard]] SendStatus send(PeerId peer, MessageType type,
+            [[nodiscard]] SendStatus send(PeerID peer, MessageType type,
                                           span<const std::byte> payload) override
             {
                 OfferedFrame frame{peer, type, std::vector<std::byte>()};
@@ -118,14 +118,14 @@ namespace
             }
 
             /** @brief Refuses every stream; the dispatcher sends none. */
-            [[nodiscard]] SendStatus send_stream(PeerId /*peer*/,
+            [[nodiscard]] SendStatus send_stream(PeerID /*peer*/,
                                                  std::unique_ptr<FrameSource> /*source*/) override
             {
                 return SendStatus::Stopped;
             }
 
             /** @brief Does nothing; the transport holds no connection. */
-            void close_peer(PeerId /*peer*/) noexcept override
+            void close_peer(PeerID /*peer*/) noexcept override
             {
 
             }

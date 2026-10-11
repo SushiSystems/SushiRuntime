@@ -147,9 +147,9 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the settings of the transport a worker process connects with. */
-            [[nodiscard]] TcpWorkerOptions make_transport_options(const WorkerOptions& options)
+            [[nodiscard]] TCPWorkerOptions make_transport_options(const WorkerOptions& options)
             {
-                TcpWorkerOptions transport;
+                TCPWorkerOptions transport;
                 transport.connect_timeout = options.connect_timeout;
                 transport.reconnect = options.reconnect;
                 return transport;
@@ -170,7 +170,7 @@ namespace SushiRuntime
                             secret.empty() ? "off" : "on");
 
                 return serve_worker(context,
-                                    TcpTransport::make_worker(options.master,
+                                    TCPTransport::make_worker(options.master,
                                                               make_transport_options(options)),
                                     std::move(kernels),
                                     make_agent_options(options, std::move(secret)), stop_signal);

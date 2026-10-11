@@ -62,16 +62,16 @@ namespace
     using std::chrono::milliseconds;
 
     /** @brief Names the first peer of a test. */
-    constexpr PeerId K_FIRST{1};
+    constexpr PeerID K_FIRST{1};
 
     /** @brief Names the second peer of a test. */
-    constexpr PeerId K_SECOND{2};
+    constexpr PeerID K_SECOND{2};
 
     /** @brief Names the third peer of a test. */
-    constexpr PeerId K_THIRD{3};
+    constexpr PeerID K_THIRD{3};
 
     /** @brief Names a peer no test adds to the directory. */
-    constexpr PeerId K_STRANGER{9};
+    constexpr PeerID K_STRANGER{9};
 
     /** @brief Holds a wait no test outlasts; a wake that never comes hangs the test. */
     constexpr milliseconds K_UNTIL_WOKEN = std::chrono::hours(24);
@@ -146,7 +146,7 @@ namespace
     }
 
     /** @brief Returns the type bytes of the messages the directory admits from a peer. */
-    std::vector<int> admitted_types(const WorkerDirectory& directory, PeerId peer)
+    std::vector<int> admitted_types(const WorkerDirectory& directory, PeerID peer)
     {
         std::vector<int> admitted;
         for (int type = K_FIRST_MESSAGE_TYPE; type <= K_LAST_MESSAGE_TYPE; ++type)
@@ -167,10 +167,10 @@ namespace
     }
 
     /** @brief Returns the values of the given peer ids. */
-    std::vector<std::uint32_t> values_of(const std::vector<PeerId>& peers)
+    std::vector<std::uint32_t> values_of(const std::vector<PeerID>& peers)
     {
         std::vector<std::uint32_t> values;
-        for (const PeerId peer : peers)
+        for (const PeerID peer : peers)
             values.push_back(peer.value);
         return values;
     }
@@ -234,7 +234,7 @@ namespace
             }
 
             /** @brief Connects a peer and takes it through HELLO and PROOF at time @p now. */
-            HandshakeStep register_worker(PeerId peer, std::vector<Graph::OpID> operations,
+            HandshakeStep register_worker(PeerID peer, std::vector<Graph::OpID> operations,
                                           std::uint32_t max_jobs,
                                           std::chrono::steady_clock::time_point now)
             {
@@ -328,7 +328,7 @@ TEST_F(Unit_WorkerDirectory, HandshakeDeadlineClosesPeer)
     ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(nonce_of(3)), nonce_of(4)).step,
               HandshakeStep::Accepted);
 
-    std::vector<PeerId> overdue;
+    std::vector<PeerID> overdue;
     directory_.take_handshake_overdue(at(milliseconds(5000)), limit, overdue);
     EXPECT_TRUE(overdue.empty()) << "the limit itself is still within the limit";
 
@@ -445,7 +445,7 @@ TEST_F(Unit_WorkerDirectory, SecondHelloRestartsTheHandshake)
 
     directory_.add_peer(K_FIRST, "10.0.0.1:7000", at(milliseconds(0)));
     directory_.add_peer(K_SECOND, "10.0.0.2:7000", at(milliseconds(0)));
-    for (const PeerId peer : {K_FIRST, K_SECOND})
+    for (const PeerID peer : {K_FIRST, K_SECOND})
     {
         const HelloReply first =
             directory_.accept_hello(peer, hello_with(first_worker_nonce), first_master_nonce);
@@ -500,7 +500,7 @@ TEST_F(Unit_WorkerDirectory, SilentWorkerIsTakenOnce)
     EXPECT_TRUE(directory_.supports(K_COMMON_OPERATION));
     EXPECT_FALSE(directory_.supports(K_ABSENT_OPERATION));
 
-    std::vector<PeerId> silent;
+    std::vector<PeerID> silent;
     directory_.take_silent(at(milliseconds(500)), liveness, silent);
     EXPECT_TRUE(silent.empty()) << "the limit itself is still within the limit";
 
@@ -512,13 +512,13 @@ TEST_F(Unit_WorkerDirectory, SilentWorkerIsTakenOnce)
     directory_.take_silent(at(milliseconds(1000)), liveness, silent);
     EXPECT_EQ(silent.size(), 1u) << "a worker already taken is not listed again";
 
-    std::vector<PeerId> workers;
+    std::vector<PeerID> workers;
     directory_.list_workers(workers);
     EXPECT_EQ(values_of(workers), (std::vector<std::uint32_t>{2}));
     EXPECT_FALSE(directory_.supports(K_RARE_OPERATION));
     EXPECT_TRUE(directory_.supports(K_COMMON_OPERATION));
 
-    const std::optional<PeerId> picked = directory_.pick(*node, 1024);
+    const std::optional<PeerID> picked = directory_.pick(*node, 1024);
     ASSERT_TRUE(picked.has_value());
     EXPECT_EQ(picked->value, 2u);
     EXPECT_EQ(policy_->offered_ids(), (std::vector<int>{2}));
@@ -549,7 +549,7 @@ TEST_F(Unit_WorkerDirectory, PickSkipsWorkersAtTheirJobLimit)
     ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 1, at(milliseconds(0))), HandshakeStep::Accepted);
     ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 2, at(milliseconds(0))), HandshakeStep::Accepted);
 
-    std::optional<PeerId> picked = directory_.pick(*node, 1024);
+    std::optional<PeerID> picked = directory_.pick(*node, 1024);
     ASSERT_TRUE(picked.has_value());
     EXPECT_EQ(picked->value, 1u);
     EXPECT_EQ(policy_->offered_ids(), (std::vector<int>{1, 2}));
@@ -610,7 +610,7 @@ TEST_F(Unit_WorkerDirectory, PickOffersOnlyWorkersWithTheKernel)
     rare->metadata.op_id = K_RARE_OPERATION;
     for (int round = 0; round < 4; ++round)
     {
-        const std::optional<PeerId> picked = directory_.pick(*rare, 1024);
+        const std::optional<PeerID> picked = directory_.pick(*rare, 1024);
         ASSERT_TRUE(picked.has_value());
         EXPECT_EQ(picked->value, K_SECOND.value) << "the task went to a worker without its kernel";
     }
@@ -741,7 +741,7 @@ TEST_F(Unit_WorkerDirectory, CloseRetiresEveryWorker)
     EXPECT_FALSE(directory_.wait_for_workers(0, milliseconds(0)))
         << "a closed directory reached a count";
 
-    std::vector<PeerId> listed;
+    std::vector<PeerID> listed;
     directory_.list_workers(listed);
     EXPECT_TRUE(listed.empty());
 

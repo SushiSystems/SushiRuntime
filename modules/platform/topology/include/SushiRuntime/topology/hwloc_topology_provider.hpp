@@ -73,7 +73,7 @@ namespace SushiRuntime
          * count. Falls back to the ACPI convention (10 local, 21 remote) when the firmware
          * exposes no SLIT table.
          */
-        class SUSHIRUNTIME_API HwlocDistanceModel : public INumaDistanceModel
+        class SUSHIRUNTIME_API HwlocDistanceModel : public INUMADistanceModel
         {
             public:
                 /** @brief Default constructor. */

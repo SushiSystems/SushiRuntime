@@ -283,7 +283,7 @@ The file covers the per-graph profiling switch: section B of
 `set_profiling()` is independent across graphs, that the plan recompiles once, and that
 every device-dispatch branch the scheduler can route to a profiling queue does so.
 
-### `NumaFallbackBranchUsesProfilingQueue`
+### `NUMAFallbackBranchUsesProfilingQueue`
 
 A node with no declared `Reads` or `Writes` leaves the scheduler's anchor unset. That forces the
 NUMA-local fallback branch and not the cached-index branch that the other two tests of the file

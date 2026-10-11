@@ -180,7 +180,7 @@ namespace SushiRuntime
          *
          * Each endpoint runs one pump thread, which delivers its inbound frames and makes its
          * events. A worker endpoint connects once it and the master endpoint are both started,
-         * and each connection is a new PeerId on both sides.
+         * and each connection is a new PeerID on both sides.
          * @see modules/extension/distributed/README.md
          */
         class SUSHIRUNTIME_API InProcessTransport final : public ITransport
@@ -218,15 +218,15 @@ namespace SushiRuntime
                 void stop() noexcept override;
 
                 /** @brief Queues a control frame, which the fault policy sees as it leaves. */
-                [[nodiscard]] SendStatus send(PeerId peer, MessageType type,
+                [[nodiscard]] SendStatus send(PeerID peer, MessageType type,
                                               SushiRuntime::span<const std::byte> payload) override;
 
                 /** @brief Adds a stream the pump pulls one frame at a time. */
-                [[nodiscard]] SendStatus send_stream(PeerId peer,
+                [[nodiscard]] SendStatus send_stream(PeerID peer,
                                                      std::unique_ptr<FrameSource> source) override;
 
                 /** @brief Closes one connection; the other end hears ClosedByPeer. */
-                void close_peer(PeerId peer) noexcept override;
+                void close_peer(PeerID peer) noexcept override;
 
                 /** @brief Returns Loopback. */
                 [[nodiscard]] TransportExposure exposure() const noexcept override;

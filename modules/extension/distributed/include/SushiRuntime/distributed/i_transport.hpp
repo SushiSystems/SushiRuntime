@@ -48,19 +48,19 @@ namespace SushiRuntime
          * A transport numbers its connections from 1 and never reuses a number, so a peer
          * that reconnects is a new peer. On a worker the only peer is the master.
          */
-        struct PeerId
+        struct PeerID
         {
             /** @brief Holds the number; 0 names no peer. */
             std::uint32_t value = 0;
 
             /** @brief Returns whether two ids name the same connection. */
-            [[nodiscard]] constexpr bool operator==(const PeerId& other) const noexcept
+            [[nodiscard]] constexpr bool operator==(const PeerID& other) const noexcept
             {
                 return value == other.value;
             }
 
             /** @brief Returns whether two ids name different connections. */
-            [[nodiscard]] constexpr bool operator!=(const PeerId& other) const noexcept
+            [[nodiscard]] constexpr bool operator!=(const PeerID& other) const noexcept
             {
                 return value != other.value;
             }
@@ -134,7 +134,7 @@ namespace SushiRuntime
         {
             ClosedByPeer,    /**< The other end closed the connection. */
             ClosedLocally,   /**< close_peer() was called for it. */
-            IoFailed,        /**< A read or a write failed; the text carries the OS reason. */
+            IOFailed,        /**< A read or a write failed; the text carries the OS reason. */
             WriteStalled,    /**< No byte left for the transport's write idle timeout. */
             BadMagic,        /**< The peer sent bytes that are not a frame. */
             VersionMismatch, /**< The peer's frames carry another protocol version. */
@@ -241,7 +241,7 @@ namespace SushiRuntime
                  * @brief Hears that a connection opened and may be sent to.
                  * @param peer A number this transport has not used before.
                  */
-                virtual void on_peer_connected(PeerId peer, const PeerInfo& info) = 0;
+                virtual void on_peer_connected(PeerID peer, const PeerInfo& info) = 0;
 
                 /**
                  * @brief Receives one whole frame whose header the transport has checked.
@@ -250,7 +250,7 @@ namespace SushiRuntime
                  * with HandlerFailed and keeps running.
                  * @param payload Valid during the call only; copy what must outlive it.
                  */
-                virtual void on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+                virtual void on_frame(PeerID peer, MessageType type, std::uint8_t flags,
                                       SushiRuntime::span<const std::byte> payload) = 0;
 
                 /**
@@ -259,7 +259,7 @@ namespace SushiRuntime
                  * Sends to the peer already return UnknownPeer. The transport does not log the
                  * loss; the receiver does. stop() closes peers without this call.
                  */
-                virtual void on_peer_lost(PeerId peer, const PeerLoss& loss) = 0;
+                virtual void on_peer_lost(PeerID peer, const PeerLoss& loss) = 0;
 
                 /**
                  * @brief Hears that a worker-side transport will not try to connect again.
@@ -317,7 +317,7 @@ namespace SushiRuntime
                  * @param payload At most 1 MiB; the header's flags are 0.
                  */
                 [[nodiscard]] virtual SendStatus send(
-                    PeerId peer, MessageType type, SushiRuntime::span<const std::byte> payload) = 0;
+                    PeerID peer, MessageType type, SushiRuntime::span<const std::byte> payload) = 0;
 
                 /**
                  * @brief Hands a peer's writer a source of bulk frames.
@@ -328,7 +328,7 @@ namespace SushiRuntime
                  * @param source Not null. Its frames arrive in the order next() made them.
                  */
                 [[nodiscard]] virtual SendStatus send_stream(
-                    PeerId peer, std::unique_ptr<FrameSource> source) = 0;
+                    PeerID peer, std::unique_ptr<FrameSource> source) = 0;
 
                 /**
                  * @brief Ends one connection without waiting for it.
@@ -338,7 +338,7 @@ namespace SushiRuntime
                  * on_peer_lost() reports ClosedLocally; a peer that takes no byte may be reported
                  * later, as WriteStalled. An unknown id is ignored.
                  */
-                virtual void close_peer(PeerId peer) noexcept = 0;
+                virtual void close_peer(PeerID peer) noexcept = 0;
 
                 /**
                  * @brief Returns who can reach this transport; valid before start().

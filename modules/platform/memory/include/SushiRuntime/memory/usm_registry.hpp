@@ -21,7 +21,7 @@
 
 /**
  * @file usm_registry.hpp
- * @brief Declares UsmRegistry, which records the device each USM pointer was allocated on.
+ * @brief Declares USMRegistry, which records the device each USM pointer was allocated on.
  * @author Mustafa Garip
  * @see modules/platform/memory/README.md
  */
@@ -41,7 +41,7 @@ namespace SushiRuntime
          * @brief Remembers which device each USM pointer was allocated on.
          * @see modules/platform/memory/README.md
          */
-        class UsmRegistry
+        class USMRegistry
         {
             public:
                 /**

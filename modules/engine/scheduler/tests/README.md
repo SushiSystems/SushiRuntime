@@ -91,7 +91,7 @@ Each node is dispatched four times, so every dispatch after the first takes the 
 
 ### `ARegionOwnerOutranksTheStatedPlacement`
 
-`UsmAllocator::adopt()` records a host address as owned by entry 1 without allocating device
+`USMAllocator::adopt()` records a host address as owned by entry 1 without allocating device
 memory. A node that writes it and states entry 0 still runs on entry 1.
 
 ### `AnUnownedRegionLeavesTheStatedPlacementInForce`

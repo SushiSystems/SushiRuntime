@@ -245,7 +245,7 @@ TEST(Unit_DeviceQueueSet, AProfilingSetBuildsEveryPlainQueueWithProfiling)
     }
 }
 
-TEST(Unit_DeviceQueueSet, DeviceForNumaReturnsTheFirstDeviceOfTheNode)
+TEST(Unit_DeviceQueueSet, DeviceForNUMAReturnsTheFirstDeviceOfTheNode)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -256,7 +256,7 @@ TEST(Unit_DeviceQueueSet, DeviceForNumaReturnsTheFirstDeviceOfTheNode)
     EXPECT_EQ(set.device_for_numa(2), 0u);
 }
 
-TEST(Unit_DeviceQueueSet, DeviceForNumaFallsBackToDeviceZeroWhereNoDeviceSits)
+TEST(Unit_DeviceQueueSet, DeviceForNUMAFallsBackToDeviceZeroWhereNoDeviceSits)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -269,7 +269,7 @@ TEST(Unit_DeviceQueueSet, DeviceForNumaFallsBackToDeviceZeroWhereNoDeviceSits)
     EXPECT_EQ(set.device_for_numa(-5), 0u);
 }
 
-TEST(Unit_DeviceQueueSet, AnInvalidNumaIdInADescriptorBecomesNodeZero)
+TEST(Unit_DeviceQueueSet, AnInvalidNUMAIDInADescriptorBecomesNodeZero)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -282,7 +282,7 @@ TEST(Unit_DeviceQueueSet, AnInvalidNumaIdInADescriptorBecomesNodeZero)
     EXPECT_EQ(set.device_for_numa(0), 1u);
 }
 
-TEST(Unit_DeviceQueueSet, QueueOrNumaLocalReturnsTheNamedDevice)
+TEST(Unit_DeviceQueueSet, QueueOrNUMALocalReturnsTheNamedDevice)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -293,7 +293,7 @@ TEST(Unit_DeviceQueueSet, QueueOrNumaLocalReturnsTheNamedDevice)
     EXPECT_EQ(&set.queue_or_numa_local(0, 2), &set.queue(0));
 }
 
-TEST(Unit_DeviceQueueSet, QueueOrNumaLocalRotatesOverTheDevicesOfTheNode)
+TEST(Unit_DeviceQueueSet, QueueOrNUMALocalRotatesOverTheDevicesOfTheNode)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -347,7 +347,7 @@ TEST(Unit_DeviceQueueSet, ABadIndexThrowsInvalidAccessNamingIndexAndCount)
     EXPECT_EQ(first_past_end, std::optional<Errc>(Errc::invalid_access));
 }
 
-TEST(Unit_DeviceQueueSet, AnEmptySetHoldsNothingAndResolvesNoNumaNode)
+TEST(Unit_DeviceQueueSet, AnEmptySetHoldsNothingAndResolvesNoNUMANode)
 {
     DeviceQueueSet set({}, false);
 

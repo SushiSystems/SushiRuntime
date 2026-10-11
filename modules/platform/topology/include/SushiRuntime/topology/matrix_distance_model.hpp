@@ -41,7 +41,7 @@ namespace SushiRuntime
          * @brief Models NUMA distances from an explicit in-memory matrix, for tests.
          * @see modules/platform/topology/README.md
          */
-        class MatrixDistanceModel : public INumaDistanceModel
+        class MatrixDistanceModel : public INUMADistanceModel
         {
             public:
                 /**

@@ -44,7 +44,7 @@ namespace SushiRuntime
             return next_task_id_.fetch_add(1, std::memory_order_relaxed);
         }
 
-        bool PendingTasks::insert(std::uint64_t task_id, Graph::Node& node, PeerId worker,
+        bool PendingTasks::insert(std::uint64_t task_id, Graph::Node& node, PeerID worker,
                                   SushiRuntime::span<const BufferHandle> outputs,
                                   std::chrono::steady_clock::time_point now)
         {
@@ -65,7 +65,7 @@ namespace SushiRuntime
             return true;
         }
 
-        bool PendingTasks::acknowledge(std::uint64_t task_id, PeerId worker)
+        bool PendingTasks::acknowledge(std::uint64_t task_id, PeerID worker)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             const auto position = tasks_.find(task_id);
@@ -76,7 +76,7 @@ namespace SushiRuntime
             return true;
         }
 
-        void PendingTasks::note_chunk(PeerId worker, std::chrono::steady_clock::time_point now)
+        void PendingTasks::note_chunk(PeerID worker, std::chrono::steady_clock::time_point now)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             const auto notes = workers_.find(worker.value);
@@ -84,7 +84,7 @@ namespace SushiRuntime
                 notes->second.last_chunk = std::max(notes->second.last_chunk, now);
         }
 
-        void PendingTasks::note_heartbeat(PeerId worker, std::uint64_t oldest_held_task_id)
+        void PendingTasks::note_heartbeat(PeerID worker, std::uint64_t oldest_held_task_id)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             for (auto& [task_id, entry] : tasks_)
@@ -99,7 +99,7 @@ namespace SushiRuntime
             }
         }
 
-        bool PendingTasks::expects_output(std::uint64_t task_id, PeerId worker,
+        bool PendingTasks::expects_output(std::uint64_t task_id, PeerID worker,
                                           GlobalBufferID id, std::uint32_t version) const
         {
             const std::lock_guard<std::mutex> lock(mutex_);
@@ -115,7 +115,7 @@ namespace SushiRuntime
                                });
         }
 
-        std::optional<PendingTask> PendingTasks::take(std::uint64_t task_id, PeerId worker)
+        std::optional<PendingTask> PendingTasks::take(std::uint64_t task_id, PeerID worker)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             const auto position = tasks_.find(task_id);
@@ -125,7 +125,7 @@ namespace SushiRuntime
             return detach(position, ReapCause::Deadline);
         }
 
-        void PendingTasks::take_for_worker(PeerId worker, std::vector<PendingTask>& out)
+        void PendingTasks::take_for_worker(PeerID worker, std::vector<PendingTask>& out)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             for (auto position = tasks_.begin(); position != tasks_.end();)
@@ -177,7 +177,7 @@ namespace SushiRuntime
             return size_.load(std::memory_order_relaxed);
         }
 
-        std::size_t PendingTasks::count_for_worker(PeerId worker) const
+        std::size_t PendingTasks::count_for_worker(PeerID worker) const
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             const auto notes = workers_.find(worker.value);

@@ -71,7 +71,7 @@ namespace SushiRuntime
                  */
                 explicit RuntimeContext(const Topology::HardwareFilterConfig& config = {},
                                         std::shared_ptr<Topology::ITopologyProvider> provider = nullptr,
-                                        std::shared_ptr<Topology::INumaDistanceModel> distance_model = nullptr,
+                                        std::shared_ptr<Topology::INUMADistanceModel> distance_model = nullptr,
                                         const RuntimeSettings& settings = {});
 
                 /** @brief Stops the engine, then waits for every device queue. */
@@ -95,13 +95,13 @@ namespace SushiRuntime
                 [[nodiscard]] Device::DeviceQueueSet& devices() noexcept;
 
                 /** @brief Returns the allocator that records and releases this context's USM. */
-                [[nodiscard]] Memory::UsmAllocator& memory() noexcept;
+                [[nodiscard]] Memory::USMAllocator& memory() noexcept;
 
                 /**
                  * @brief Returns the allocator as a shared handle, for an owner that may outlive
                  *        this context.
                  */
-                [[nodiscard]] const std::shared_ptr<Memory::UsmAllocator>& shared_memory() const noexcept;
+                [[nodiscard]] const std::shared_ptr<Memory::USMAllocator>& shared_memory() const noexcept;
 
                 /** @brief Returns the byte counters of explicit host and device transfers. */
                 [[nodiscard]] Observability::TransferCounters& transfers() noexcept;
@@ -226,7 +226,7 @@ namespace SushiRuntime
                 int context_index_for_ptr(void* ptr) noexcept;
 
                 /**
-                 * @brief Forwards to memory().allocate() with UsmKind::Shared on
+                 * @brief Forwards to memory().allocate() with USMKind::Shared on
                  *        devices().device_for_numa(numa_id).
                  * @see modules/engine/execution/README.md
                  */
@@ -234,21 +234,21 @@ namespace SushiRuntime
                 void* malloc_shared(size_t bytes, int numa_id = 0);
 
                 /**
-                 * @brief Forwards to memory().allocate() with UsmKind::Device on
+                 * @brief Forwards to memory().allocate() with USMKind::Device on
                  *        devices().device_for_numa(numa_id).
                  */
                 [[deprecated("use memory().allocate() with devices().device_for_numa()")]]
                 void* malloc_device(size_t bytes, int numa_id = 0);
 
-                /** @brief Forwards to memory().allocate({UsmKind::Shared, bytes, 0, device_index}). */
+                /** @brief Forwards to memory().allocate({USMKind::Shared, bytes, 0, device_index}). */
                 [[deprecated("use memory().allocate()")]]
                 void* malloc_shared_on(size_t bytes, size_t device_index);
 
-                /** @brief Forwards to memory().allocate({UsmKind::Device, bytes, 0, device_index}). */
+                /** @brief Forwards to memory().allocate({USMKind::Device, bytes, 0, device_index}). */
                 [[deprecated("use memory().allocate()")]]
                 void* malloc_device_on(size_t bytes, size_t device_index);
 
-                /** @brief Forwards to memory().allocate({UsmKind::Host, bytes, 0, device_index}). */
+                /** @brief Forwards to memory().allocate({USMKind::Host, bytes, 0, device_index}). */
                 [[deprecated("use memory().allocate()")]]
                 void* malloc_host_on(size_t bytes, size_t device_index);
 
@@ -257,7 +257,7 @@ namespace SushiRuntime
                 void free_usm(void* ptr);
 
                 /**
-                 * @brief Forwards to memory().allocate({UsmKind::Host, bytes, alignment,
+                 * @brief Forwards to memory().allocate({USMKind::Host, bytes, alignment,
                  *        device_index}).
                  */
                 [[deprecated("use memory().allocate()")]]
@@ -265,7 +265,7 @@ namespace SushiRuntime
                                              std::size_t device_index);
 
                 /**
-                 * @brief Forwards to memory().allocate({UsmKind::Shared, bytes, alignment,
+                 * @brief Forwards to memory().allocate({USMKind::Shared, bytes, alignment,
                  *        device_index}).
                  */
                 [[deprecated("use memory().allocate()")]]
@@ -273,7 +273,7 @@ namespace SushiRuntime
                                                std::size_t device_index);
 
                 /**
-                 * @brief Forwards to memory().allocate({UsmKind::Device, bytes, alignment,
+                 * @brief Forwards to memory().allocate({USMKind::Device, bytes, alignment,
                  *        device_index}).
                  */
                 [[deprecated("use memory().allocate()")]]

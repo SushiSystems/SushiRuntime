@@ -117,7 +117,7 @@ namespace SushiRuntime
                  * @pre PendingTasks::expects_output() returned true for this chunk and peer.
                  * @param last_chunk The frame's last-chunk flag.
                  */
-                [[nodiscard]] ChunkStatus apply_output_chunk(PeerId from,
+                [[nodiscard]] ChunkStatus apply_output_chunk(PeerID from,
                                                              const Wire::BufferChunkMessage& chunk,
                                                              bool last_chunk);
 

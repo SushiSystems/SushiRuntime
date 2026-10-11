@@ -21,7 +21,7 @@
 
 /**
  * @file test_usm_registry.cpp
- * @brief Tests UsmRegistry's record, take, owner and containing-allocation lookups.
+ * @brief Tests USMRegistry's record, take, owner and containing-allocation lookups.
  * @see modules/platform/memory/tests/README.md
  * @author Mustafa Garip
  */
@@ -36,7 +36,7 @@
 #include <thread>
 #include <vector>
 
-using SushiRuntime::Memory::UsmRegistry;
+using SushiRuntime::Memory::USMRegistry;
 
 namespace
 {
@@ -57,7 +57,7 @@ namespace
 
 TEST(Unit_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
 {
-    UsmRegistry registry;
+    USMRegistry registry;
     registry.record(fake(1), 3, EXTENT);
 
     const auto owner = registry.owner_of(fake(1));
@@ -67,7 +67,7 @@ TEST(Unit_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
 
 TEST(Unit_UsmRegistry, AnUnrecordedPointerHasNoOwner)
 {
-    UsmRegistry registry;
+    USMRegistry registry;
     registry.record(fake(1), 0, EXTENT);
 
     EXPECT_FALSE(registry.owner_of(fake(2)).has_value());
@@ -76,7 +76,7 @@ TEST(Unit_UsmRegistry, AnUnrecordedPointerHasNoOwner)
 
 TEST(Unit_UsmRegistry, TakeReportsTheOwnerAndForgetsThePointer)
 {
-    UsmRegistry registry;
+    USMRegistry registry;
     registry.record(fake(1), 2, EXTENT);
 
     const auto taken = registry.take(fake(1));
@@ -91,7 +91,7 @@ TEST(Unit_UsmRegistry, TakeReportsTheOwnerAndForgetsThePointer)
 TEST(Unit_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
 {
     // Recording a pointer twice keeps the last writer; see README.md.
-    UsmRegistry registry;
+    USMRegistry registry;
     registry.record(fake(1), 1, EXTENT);
     registry.record(fake(1), 4, EXTENT);
 
@@ -102,7 +102,7 @@ TEST(Unit_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
 
 TEST(Unit_UsmRegistry, SizeCountsLiveEntries)
 {
-    UsmRegistry registry;
+    USMRegistry registry;
     EXPECT_EQ(registry.size(), 0u);
 
     registry.record(fake(1), 0, EXTENT);
@@ -119,7 +119,7 @@ TEST(Unit_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
     constexpr int THREADS = 8;
     constexpr int PER_THREAD = 500;
 
-    UsmRegistry registry;
+    USMRegistry registry;
     std::atomic<int> taken{0};
     std::vector<std::thread> workers;
     workers.reserve(THREADS);
@@ -150,7 +150,7 @@ TEST(Unit_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
 TEST(Unit_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
 {
     // The caller passes an interior address the base-keyed table cannot find; see README.md.
-    UsmRegistry registry;
+    USMRegistry registry;
     registry.record(fake(1), 5, EXTENT);
 
     const auto found = registry.containing_allocation(inside(1, 16));
@@ -166,7 +166,7 @@ TEST(Unit_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
 
 TEST(Unit_UsmRegistry, ContainingAllocationIgnoresAnUnrelatedPointer)
 {
-    UsmRegistry registry;
+    USMRegistry registry;
     registry.record(fake(1), 0, EXTENT);
 
     EXPECT_FALSE(registry.containing_allocation(fake(9)).has_value());
@@ -176,7 +176,7 @@ TEST(Unit_UsmRegistry, ContainingAllocationIgnoresAnUnrelatedPointer)
 TEST(Unit_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
 {
     // An entry without a length resolves only at its base; see README.md.
-    UsmRegistry registry;
+    USMRegistry registry;
     registry.record(fake(1), 7, std::nullopt);
 
     const auto base = registry.containing_allocation(fake(1));
@@ -187,7 +187,7 @@ TEST(Unit_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
 
 TEST(Unit_UsmRegistry, ContainingAllocationForgetsATakenPointer)
 {
-    UsmRegistry registry;
+    USMRegistry registry;
     registry.record(fake(1), 0, EXTENT);
     registry.take(fake(1));
 

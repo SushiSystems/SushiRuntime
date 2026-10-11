@@ -45,7 +45,7 @@ namespace SushiRuntime
          * @throws Core::SushiException With Errc::invalid_access if distance_model is null.
          */
         TopologyView::TopologyView(const ITopologyProvider& provider,
-                                   std::shared_ptr<const INumaDistanceModel> distance_model)
+                                   std::shared_ptr<const INUMADistanceModel> distance_model)
             : core_to_numa_(provider.cpu_core_to_numa()),
               distance_model_(std::move(distance_model))
         {

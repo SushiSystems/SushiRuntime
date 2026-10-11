@@ -145,11 +145,11 @@ namespace SushiRuntime
             Impl(const RuntimeSettings& runtime_settings,
                  const Topology::HardwareFilterConfig& config,
                  Topology::ITopologyProvider& provider,
-                 std::shared_ptr<const Topology::INumaDistanceModel> distance_model)
+                 std::shared_ptr<const Topology::INUMADistanceModel> distance_model)
                 : settings(runtime_settings),
                   topology(provider, std::move(distance_model)),
                   devices(probe_devices(provider, config, settings.profiling)),
-                  memory(std::make_shared<Memory::UsmAllocator>(devices.plain_queues()))
+                  memory(std::make_shared<Memory::USMAllocator>(devices.plain_queues()))
             {
             }
 
@@ -195,7 +195,7 @@ namespace SushiRuntime
              */
             static sushi_ptr<Impl> create(const Topology::HardwareFilterConfig& config,
                                           std::shared_ptr<Topology::ITopologyProvider> provider,
-                                          std::shared_ptr<Topology::INumaDistanceModel> distance_model,
+                                          std::shared_ptr<Topology::INUMADistanceModel> distance_model,
                                           const RuntimeSettings& runtime_settings)
             {
                 SR_LOG_INFO("Initializing compute stack...");
@@ -219,7 +219,7 @@ namespace SushiRuntime
             Device::DeviceQueueSet devices;
 
             /** @brief USM allocator; shared because an allocation's owner may outlive the context. */
-            std::shared_ptr<Memory::UsmAllocator> memory;
+            std::shared_ptr<Memory::USMAllocator> memory;
 
             /** @brief Byte counters of explicit transfers (modules/engine/execution/README.md). */
             Observability::TransferCounters transfers;
@@ -233,7 +233,7 @@ namespace SushiRuntime
 
         RuntimeContext::RuntimeContext(const Topology::HardwareFilterConfig& config,
                                        std::shared_ptr<Topology::ITopologyProvider> provider,
-                                       std::shared_ptr<Topology::INumaDistanceModel> distance_model,
+                                       std::shared_ptr<Topology::INUMADistanceModel> distance_model,
                                        const RuntimeSettings& settings)
             : impl_(Impl::create(config, std::move(provider), std::move(distance_model), settings))
         {
@@ -258,12 +258,12 @@ namespace SushiRuntime
             return impl_->devices;
         }
 
-        Memory::UsmAllocator& RuntimeContext::memory() noexcept
+        Memory::USMAllocator& RuntimeContext::memory() noexcept
         {
             return *impl_->memory;
         }
 
-        const std::shared_ptr<Memory::UsmAllocator>& RuntimeContext::shared_memory() const noexcept
+        const std::shared_ptr<Memory::USMAllocator>& RuntimeContext::shared_memory() const noexcept
         {
             return impl_->memory;
         }
@@ -382,28 +382,28 @@ namespace SushiRuntime
         void* RuntimeContext::malloc_shared(size_t bytes, int numa_id)
         {
             return impl_->memory->allocate(
-                {Memory::UsmKind::Shared, bytes, 0, impl_->devices.device_for_numa(numa_id)});
+                {Memory::USMKind::Shared, bytes, 0, impl_->devices.device_for_numa(numa_id)});
         }
 
         void* RuntimeContext::malloc_device(size_t bytes, int numa_id)
         {
             return impl_->memory->allocate(
-                {Memory::UsmKind::Device, bytes, 0, impl_->devices.device_for_numa(numa_id)});
+                {Memory::USMKind::Device, bytes, 0, impl_->devices.device_for_numa(numa_id)});
         }
 
         void* RuntimeContext::malloc_shared_on(size_t bytes, size_t device_index)
         {
-            return impl_->memory->allocate({Memory::UsmKind::Shared, bytes, 0, device_index});
+            return impl_->memory->allocate({Memory::USMKind::Shared, bytes, 0, device_index});
         }
 
         void* RuntimeContext::malloc_device_on(size_t bytes, size_t device_index)
         {
-            return impl_->memory->allocate({Memory::UsmKind::Device, bytes, 0, device_index});
+            return impl_->memory->allocate({Memory::USMKind::Device, bytes, 0, device_index});
         }
 
         void* RuntimeContext::malloc_host_on(size_t bytes, size_t device_index)
         {
-            return impl_->memory->allocate({Memory::UsmKind::Host, bytes, 0, device_index});
+            return impl_->memory->allocate({Memory::USMKind::Host, bytes, 0, device_index});
         }
 
         void RuntimeContext::free_usm(void* ptr)
@@ -414,21 +414,21 @@ namespace SushiRuntime
         void* RuntimeContext::aligned_malloc_host_on(size_t alignment, size_t bytes,
                                                      size_t device_index)
         {
-            return impl_->memory->allocate({Memory::UsmKind::Host, bytes, alignment, device_index});
+            return impl_->memory->allocate({Memory::USMKind::Host, bytes, alignment, device_index});
         }
 
         void* RuntimeContext::aligned_malloc_shared_on(size_t alignment, size_t bytes,
                                                        size_t device_index)
         {
             return impl_->memory->allocate(
-                {Memory::UsmKind::Shared, bytes, alignment, device_index});
+                {Memory::USMKind::Shared, bytes, alignment, device_index});
         }
 
         void* RuntimeContext::aligned_malloc_device_on(size_t alignment, size_t bytes,
                                                        size_t device_index)
         {
             return impl_->memory->allocate(
-                {Memory::UsmKind::Device, bytes, alignment, device_index});
+                {Memory::USMKind::Device, bytes, alignment, device_index});
         }
 
         void RuntimeContext::adopt_usm(void* address, size_t device_index,

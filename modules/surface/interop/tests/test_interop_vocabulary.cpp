@@ -30,15 +30,15 @@
 #include <SushiRuntime/interop/external_memory.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
 
-using SushiRuntime::Interop::DeviceUuid;
+using SushiRuntime::Interop::DeviceUUID;
 using SushiRuntime::Interop::ExternalHandleKind;
 using SushiRuntime::Interop::ExternalMemoryDescriptor;
 using SushiRuntime::Interop::InteropCapabilities;
 
-TEST(Unit_InteropVocabulary, UuidsCompareByEveryByte)
+TEST(Unit_InteropVocabulary, UUIDsCompareByEveryByte)
 {
-    DeviceUuid left;
-    DeviceUuid right;
+    DeviceUUID left;
+    DeviceUUID right;
     left.bytes.fill(0x11);
     right.bytes.fill(0x11);
 

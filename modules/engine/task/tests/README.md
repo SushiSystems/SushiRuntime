@@ -21,7 +21,7 @@ and leaves the earlier placement in force.
 
 ### `Unit_NodePlacementRule`
 
-The fixture holds a `UsmAllocator` over two queues on the device SYCL selects by default, so device
+The fixture holds a `USMAllocator` over two queues on the device SYCL selects by default, so device
 indices 0 and 1 both exist. No test allocates device memory: `adopt()` records a host address as
 owned by one of the two, and an address with no record stands for a region no device owns.
 

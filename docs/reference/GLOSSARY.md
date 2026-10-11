@@ -15,7 +15,7 @@ The words this repository's documents use. A term defined in code names the head
 | Late-bound value | A size, base or enable flag a plan leaves open and resolves at each run, on the host or from a value a kernel wrote on the device |
 | Residency | Where a `Buffer`'s memory lives: `Shared` (host-addressable USM, the default), `Device` (device USM, host access through `read`/`write_range`) or `Host` (pinned host USM, readable while kernels run) |
 | USM | SYCL unified shared memory: allocations addressed by plain pointers |
-| USM registry | `Memory::UsmRegistry`, the record of which device owns each USM allocation and how long it is |
+| USM registry | `Memory::USMRegistry`, the record of which device owns each USM allocation and how long it is |
 | EBR | Epoch-based reclamation: freeing memory other threads may still read, without locks (`memory/epoch_reclamation.hpp`) |
 | Region | One partition of a `DynamicGraph`, keyed by a `RegionKey`. It compiles on its own and is added or dropped between steps |
 | Chain | The in-order path that runs a chainable plan from the calling thread, without the scheduler. Layer 1 of the graph replay design |
@@ -39,7 +39,7 @@ The words this repository's documents use. A term defined in code names the head
 | Frame | One protocol message on the wire: a 12-byte header and a payload of at most 1 MiB |
 | Transport | What carries frames between a master and its workers: `Distributed::ITransport`, implemented over TCP and over an in-process fabric (`distributed/i_transport.hpp`) |
 | Fabric | `Distributed::InProcessFabric`, which joins a master and workers inside one process for tests |
-| Peer | One connection of a transport, named by a `PeerId` that is never reused. A worker that reconnects is a new peer |
+| Peer | One connection of a transport, named by a `PeerID` that is never reused. A worker that reconnects is a new peer |
 | Shared secret | The key file a master and its workers hold in common, at least 32 bytes (`distributed/shared_secret.hpp`) |
 | Handshake | The four frames (`HELLO`, `CHALLENGE`, `PROOF`, `WELCOME`) by which a master and a worker prove the shared secret to each other and the worker registers |
 | Session | One master process as its workers know it. A worker that registers with a new session empties its buffer cache |

@@ -232,7 +232,7 @@ namespace SushiRuntime
 
             private:
                 using Node = ::SushiRuntime::Graph::Node;
-                using Base = ::SushiRuntime::Memory::ResourceId;  // allocation identity (void*)
+                using Base = ::SushiRuntime::Memory::ResourceID;  // allocation identity (void*)
                 using Pin = detail::Pin;
                 using BaseAccess = detail::BaseAccess;
 

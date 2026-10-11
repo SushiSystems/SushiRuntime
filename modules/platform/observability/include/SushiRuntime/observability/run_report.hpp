@@ -43,7 +43,7 @@ namespace SushiRuntime
          *
          * Tracks tasks executed locally and stolen across nodes for a single NUMA domain.
          */
-        struct NumaNodeStatistics
+        struct NUMANodeStatistics
         {
             int numa_id = -1;                       /**< NUMA node this row describes. Always -1 in v1: one row covers the run. */
 
@@ -165,7 +165,7 @@ namespace SushiRuntime
             double network_latency_wait_ms = 0.0;       /**< Idle time awaiting remote results. Reserved: always 0 in v1. */
 
             // C. NUMA topology breakdown
-            std::vector<NumaNodeStatistics> numa_statistics;      /**< Exactly one entry in v1, with the run's totals; every task counts under device 0's class. */
+            std::vector<NUMANodeStatistics> numa_statistics;      /**< Exactly one entry in v1, with the run's totals; every task counts under device 0's class. */
 
             // D. Distributed breakdown
             DistributedStatistics distributed_statistics;         /**< Offload and network figures; zero with no cluster. */
@@ -217,9 +217,9 @@ namespace SushiRuntime
 
     namespace Core
     {
-        /** @brief Deprecated Core:: name for Observability::NumaNodeStatistics. */
-        using NumaNodeStatistics [[deprecated("use Observability::NumaNodeStatistics")]] =
-            Observability::NumaNodeStatistics;
+        /** @brief Deprecated Core:: name for Observability::NUMANodeStatistics. */
+        using NUMANodeStatistics [[deprecated("use Observability::NUMANodeStatistics")]] =
+            Observability::NUMANodeStatistics;
 
         /** @brief Deprecated Core:: name for Observability::DistributedStatistics. */
         using DistributedStatistics [[deprecated("use Observability::DistributedStatistics")]] =

@@ -341,7 +341,7 @@ namespace SushiRuntime
             thread_ = std::thread(&DispatchExecutor::run, this);
         }
 
-        EnqueueStatus DispatchExecutor::enqueue(PeerId from, Wire::TaskDispatchMessage dispatch,
+        EnqueueStatus DispatchExecutor::enqueue(PeerID from, Wire::TaskDispatchMessage dispatch,
                                                 std::uint32_t chunk_bytes)
         {
             const std::uint64_t task_id = dispatch.task_id;
@@ -518,7 +518,7 @@ namespace SushiRuntime
             }
         }
 
-        void DispatchExecutor::fail(PeerId from, std::uint64_t task_id, std::uint64_t generation,
+        void DispatchExecutor::fail(PeerID from, std::uint64_t task_id, std::uint64_t generation,
                                     Wire::TaskResultStatus status)
         {
             count_failure(status);

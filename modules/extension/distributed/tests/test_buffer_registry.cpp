@@ -80,7 +80,7 @@ TEST(Unit_BufferRegistryTest, RegisteringASharedAddressKeepsItsHandle)
     EXPECT_EQ(other.size_bytes, second.size());
 }
 
-TEST(Unit_BufferRegistryTest, BumpRaisesTheVersionAndSkipsAGoneId)
+TEST(Unit_BufferRegistryTest, BumpRaisesTheVersionAndSkipsAGoneID)
 {
     Bytes buffer = pattern(K_BUFFER_BYTES, 3);
     BufferRegistry registry;
@@ -204,7 +204,7 @@ TEST(Unit_BufferRegistryTest, WriteAtAnOldVersionIsRefused)
     EXPECT_EQ(current->version, handle.version);
 }
 
-TEST(Unit_BufferRegistryTest, UnregisterReturnsTheId)
+TEST(Unit_BufferRegistryTest, UnregisterReturnsTheID)
 {
     Bytes buffer = pattern(K_BUFFER_BYTES, 9);
     Bytes never_shared = pattern(K_BUFFER_BYTES, 10);

@@ -284,9 +284,9 @@ namespace
     {
         auto runtime = Runtime::create();
 
-        Distributed::TcpMasterOptions listener;
+        Distributed::TCPMasterOptions listener;
         listener.bind = options.listen;
-        auto transport = Distributed::TcpTransport::make_master(listener);
+        auto transport = Distributed::TCPTransport::make_master(listener);
 
         Distributed::ClusterOptions cluster_options;
         cluster_options.secret = read_secret(options.secret_file);

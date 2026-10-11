@@ -69,7 +69,7 @@ namespace SushiRuntime
             int owning_queue_index(const Graph::Node& node, RuntimeContext& ctx) noexcept
             {
                 int owner = -1;
-                Memory::UsmAllocator& memory = ctx.memory();
+                Memory::USMAllocator& memory = ctx.memory();
                 auto visit = [&](const std::vector<Memory::ResourceRegion>& regions)
                 {
                     for (const auto& r : regions)

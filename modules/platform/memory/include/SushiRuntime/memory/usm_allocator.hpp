@@ -21,7 +21,7 @@
 
 /**
  * @file usm_allocator.hpp
- * @brief Declares UsmAllocator, which allocates, records and releases USM on a set of devices.
+ * @brief Declares USMAllocator, which allocates, records and releases USM on a set of devices.
  * @author Mustafa Garip
  * @see modules/platform/memory/README.md
  */
@@ -51,7 +51,7 @@ namespace SushiRuntime
          * same address are ordered by the caller.
          * @see modules/platform/memory/README.md
          */
-        class SUSHIRUNTIME_API UsmAllocator final
+        class SUSHIRUNTIME_API USMAllocator final
         {
             public:
                 /**
@@ -59,15 +59,15 @@ namespace SushiRuntime
                  * @param device_queues Copies that share state with the caller's queues. The list
                  *        is fixed for the allocator's lifetime.
                  */
-                explicit UsmAllocator(std::vector<sycl::queue> device_queues);
+                explicit USMAllocator(std::vector<sycl::queue> device_queues);
 
                 /** @brief Leaves live allocations alone; live_count() says how many remain. */
-                ~UsmAllocator() = default;
+                ~USMAllocator() = default;
 
-                UsmAllocator(const UsmAllocator&) = delete;
-                UsmAllocator& operator=(const UsmAllocator&) = delete;
-                UsmAllocator(UsmAllocator&&) = delete;
-                UsmAllocator& operator=(UsmAllocator&&) = delete;
+                USMAllocator(const USMAllocator&) = delete;
+                USMAllocator& operator=(const USMAllocator&) = delete;
+                USMAllocator(USMAllocator&&) = delete;
+                USMAllocator& operator=(USMAllocator&&) = delete;
 
                 /**
                  * @brief Allocates USM of the requested kind on the requested device, recorded.
@@ -76,7 +76,7 @@ namespace SushiRuntime
                  * @throws Core::SushiException With Errc::invalid_access, the index and the device
                  *         count, when request.device_index names no device.
                  */
-                [[nodiscard]] void* allocate(const UsmRequest& request);
+                [[nodiscard]] void* allocate(const USMRequest& request);
 
                 /**
                  * @brief Forgets an address and frees it against the queue of its device.
@@ -131,7 +131,7 @@ namespace SushiRuntime
                  * @pre The caller is not inside on_release() of an observer of this allocator.
                  * @see modules/platform/memory/README.md
                  */
-                void set_release_observer(UsmReleaseObserver* observer) noexcept;
+                void set_release_observer(USMReleaseObserver* observer) noexcept;
 
             private:
                 /**
@@ -150,13 +150,13 @@ namespace SushiRuntime
                 std::vector<sycl::queue> queues_;
 
                 /** @brief Every live address, allocated here or adopted, and its device. */
-                UsmRegistry registry_;
+                USMRegistry registry_;
 
                 /** @brief The adopted subset of registry_: addresses release() must not free. */
-                UsmRegistry adopted_;
+                USMRegistry adopted_;
 
                 /** @brief The observer release() tells, or null. */
-                std::atomic<UsmReleaseObserver*> release_observer_{nullptr};
+                std::atomic<USMReleaseObserver*> release_observer_{nullptr};
 
                 /** @brief Counts the release() calls between their observer load and its return. */
                 std::atomic<std::size_t> observer_calls_in_flight_{0};

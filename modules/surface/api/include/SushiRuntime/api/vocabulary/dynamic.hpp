@@ -55,7 +55,7 @@ namespace SushiRuntime
             };
 
             /** @brief Returns the dependency key of the buffer a slot lies in; null for no slot. */
-            inline Memory::ResourceId slot_buffer_key(const DeviceSlot& slot) noexcept
+            inline Memory::ResourceID slot_buffer_key(const DeviceSlot& slot) noexcept
             {
                 return const_cast<void*>(static_cast<const void*>(slot.words));
             }

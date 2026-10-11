@@ -107,7 +107,7 @@ contains neither the whole allocation nor `[4, 12)`, and `[2, 6)` does not conta
 
 ## test_usm_allocator.cpp
 
-The file covers `UsmAllocator`. The sections below cover its release of an address that it holds no
+The file covers `USMAllocator`. The sections below cover its release of an address that it holds no
 record of, and the removal of its release observer. The first two tests skip when no SYCL device
 supports the USM kind they need.
 
@@ -117,7 +117,7 @@ The test allocates on device 0 and releases the block. That first release logs n
 `live_count` by one. The second release leaves `live_count` unchanged, makes `device_of` return no
 value, and logs exactly one ERROR line that contains the address and the words "no record".
 
-### `ReleaseOfForeignUsmLeavesItAllocated`
+### `ReleaseOfForeignUSMLeavesItAllocated`
 
 The test allocates shared USM with `sycl::malloc_shared` outside the allocator and releases it through
 the allocator. The release logs exactly one ERROR line and leaves `live_count` unchanged. The block keeps

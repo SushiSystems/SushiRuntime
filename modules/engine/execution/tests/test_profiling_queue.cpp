@@ -36,7 +36,7 @@
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
-using SushiRuntime::Test::UsmShared;
+using SushiRuntime::Test::USMShared;
 
 namespace
 {
@@ -109,7 +109,7 @@ TEST(Integration_ProfilingQueue, SettingsProfilingReturnsThePlainQueueItself)
  * @brief Tests that a kernel on the profiling queue dereferences USM allocated through the plain
  *        queue.
  */
-TEST(Integration_ProfilingQueue, UsmFromThePlainQueueIsUsableOnTheProfilingQueue)
+TEST(Integration_ProfilingQueue, USMFromThePlainQueueIsUsableOnTheProfilingQueue)
 {
     constexpr std::size_t N = 256;
 
@@ -117,7 +117,7 @@ TEST(Integration_ProfilingQueue, UsmFromThePlainQueueIsUsableOnTheProfilingQueue
     sycl::queue& plain = ctx.devices().queue(0);
     sycl::queue& profiling = ctx.devices().queue(0, K_PROFILING_FLAVOUR);
 
-    UsmShared<int> usm(plain, N);
+    USMShared<int> usm(plain, N);
     ASSERT_TRUE(usm);
     int* data = usm.get();
     for (std::size_t i = 0; i < N; ++i)

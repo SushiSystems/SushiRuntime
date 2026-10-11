@@ -121,7 +121,7 @@ namespace
     /**
      * @brief Builds a two-node model: 10 on the diagonal, K_REMOTE_COST across.
      */
-    std::shared_ptr<const INumaDistanceModel> make_two_node_model()
+    std::shared_ptr<const INUMADistanceModel> make_two_node_model()
     {
         return std::make_shared<MatrixDistanceModel>(
             std::vector<std::vector<int>>{{10, K_REMOTE_COST},
@@ -196,7 +196,7 @@ TEST(Unit_TopologyView, DistancesMatchMatrixIncludingDiagonal)
 /**
  * @brief Verifies that out-of-range ids get the model's answer: 10 when equal, 21 otherwise.
  */
-TEST(Unit_TopologyView, OutOfRangeIdsGetTheModelsAnswer)
+TEST(Unit_TopologyView, OutOfRangeIDsGetTheModelsAnswer)
 {
     FixedTopologyProvider provider({0, 1});
 

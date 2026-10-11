@@ -68,12 +68,12 @@ namespace
     constexpr std::chrono::seconds K_WAIT{30};
 
     /** @brief Holds the connection every executor test dispatches on. */
-    constexpr PeerId K_MASTER{1};
+    constexpr PeerID K_MASTER{1};
 
     /** @brief Holds one frame a brick handed to the transport. */
     struct SentFrame
     {
-        PeerId peer;                    /**< The connection it was sent to. */
+        PeerID peer;                    /**< The connection it was sent to. */
         MessageType type;               /**< Its type. */
         std::uint8_t flags = 0;         /**< Its flag byte. */
         std::vector<std::byte> payload; /**< Its payload. */
@@ -101,7 +101,7 @@ namespace
                 changed_.notify_all();
             }
 
-            [[nodiscard]] SendStatus send(PeerId peer, MessageType type,
+            [[nodiscard]] SendStatus send(PeerID peer, MessageType type,
                                           span<const std::byte> payload) override
             {
                 {
@@ -113,7 +113,7 @@ namespace
                 return SendStatus::Queued;
             }
 
-            [[nodiscard]] SendStatus send_stream(PeerId peer,
+            [[nodiscard]] SendStatus send_stream(PeerID peer,
                                                  std::unique_ptr<FrameSource> source) override
             {
                 {
@@ -131,7 +131,7 @@ namespace
                 return SendStatus::Queued;
             }
 
-            void close_peer(PeerId peer) noexcept override
+            void close_peer(PeerID peer) noexcept override
             {
                 {
                     const std::lock_guard<std::mutex> lock(mutex_);
@@ -160,7 +160,7 @@ namespace
             /** @brief Pulls every kept stream dry and destroys it, as a writer thread would. */
             void release_streams()
             {
-                std::vector<std::pair<PeerId, std::unique_ptr<FrameSource>>> streams;
+                std::vector<std::pair<PeerID, std::unique_ptr<FrameSource>>> streams;
                 {
                     const std::lock_guard<std::mutex> lock(mutex_);
                     streams.swap(streams_);
@@ -173,7 +173,7 @@ namespace
             /** @brief Destroys every kept stream unpulled, as a closed peer would. */
             void drop_streams()
             {
-                std::vector<std::pair<PeerId, std::unique_ptr<FrameSource>>> streams;
+                std::vector<std::pair<PeerID, std::unique_ptr<FrameSource>>> streams;
                 const std::lock_guard<std::mutex> lock(mutex_);
                 streams.swap(streams_);
             }
@@ -199,7 +199,7 @@ namespace
             }
 
             /** @brief Waits until a peer was closed. */
-            [[nodiscard]] bool wait_for_close(PeerId peer)
+            [[nodiscard]] bool wait_for_close(PeerID peer)
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 return changed_.wait_for(lock, K_WAIT, [this, peer]
@@ -223,7 +223,7 @@ namespace
             }
 
             /** @brief Returns whether a peer was closed. */
-            [[nodiscard]] bool is_closed(PeerId peer) const
+            [[nodiscard]] bool is_closed(PeerID peer) const
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
                 return is_closed_locked(peer);
@@ -258,7 +258,7 @@ namespace
 
         private:
             /** @brief Records every frame of a stream, then destroys the stream. */
-            void pull_dry(PeerId peer, std::unique_ptr<FrameSource> source)
+            void pull_dry(PeerID peer, std::unique_ptr<FrameSource> source)
             {
                 OutboundFrame frame;
                 for (;;)
@@ -287,7 +287,7 @@ namespace
             }
 
             /** @brief Returns whether a peer was closed; mutex held. */
-            [[nodiscard]] bool is_closed_locked(PeerId peer) const
+            [[nodiscard]] bool is_closed_locked(PeerID peer) const
             {
                 return std::find(closed_.begin(), closed_.end(), peer) != closed_.end();
             }
@@ -302,10 +302,10 @@ namespace
             std::vector<SentFrame> frames_;
 
             /// @brief Streams kept unpulled.
-            std::vector<std::pair<PeerId, std::unique_ptr<FrameSource>>> streams_;
+            std::vector<std::pair<PeerID, std::unique_ptr<FrameSource>>> streams_;
 
             /// @brief Peers closed.
-            std::vector<PeerId> closed_;
+            std::vector<PeerID> closed_;
 
             /// @brief Whether send_stream() keeps a stream.
             bool keep_streams_ = false;
@@ -552,7 +552,7 @@ namespace
     }
 
     /** @brief Runs a whole handshake on a new connection and returns what WELCOME changed. */
-    LinkChange register_link(MasterLink& link, PeerId peer,
+    LinkChange register_link(MasterLink& link, PeerID peer,
                              const std::vector<std::uint8_t>& secret, std::uint64_t session_id,
                              std::uint32_t liveness_timeout_ms)
     {
@@ -947,7 +947,7 @@ TEST(Unit_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
     EXPECT_EQ(worker.cache.bytes(), 0u) << "the abandoned pull kept its allocation";
 
     // The exec thread is free again: a task of the next connection runs.
-    ASSERT_EQ(worker.executor.enqueue(PeerId{2}, dispatch_of(1, op, {}, {}), 8),
+    ASSERT_EQ(worker.executor.enqueue(PeerID{2}, dispatch_of(1, op, {}, {}), 8),
               EnqueueStatus::Queued);
     ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 2));
     EXPECT_EQ(worker.result(1).status, Wire::TaskResultStatus::Succeeded);
@@ -961,7 +961,7 @@ TEST(Unit_MasterLinkTest, HandshakeChecksTheMasterBeforeProving)
     const span<const std::uint8_t> key(secret.data(), secret.size());
     MasterLink link(transport, key, link_options(std::chrono::milliseconds(1000)),
                     fixed_nonces());
-    const PeerId peer{1};
+    const PeerID peer{1};
 
     link.on_connected(peer);
     const std::vector<SentFrame> hellos = transport.frames_of(MessageType::Hello);
@@ -1004,7 +1004,7 @@ TEST(Unit_MasterLinkTest, WrongMasterProofEndsTheLink)
     const std::vector<std::uint8_t> secret = secret_of(0x42);
     MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
                     link_options(std::chrono::milliseconds(1000)), fixed_nonces());
-    const PeerId peer{1};
+    const PeerID peer{1};
 
     link.on_connected(peer);
     EXPECT_EQ(link.on_challenge(peer, challenge_of(secret_of(0x43), 7)), LinkChange::Ended);
@@ -1012,7 +1012,7 @@ TEST(Unit_MasterLinkTest, WrongMasterProofEndsTheLink)
     EXPECT_EQ(transport.count(MessageType::Proof), 0u) << "PROOF went to an unproven master";
     EXPECT_TRUE(transport.is_closed(peer));
 
-    const PeerId next{2};
+    const PeerID next{2};
     link.on_connected(next);
     EXPECT_EQ(transport.count(MessageType::Hello), 1u) << "an ended link sent HELLO";
     EXPECT_TRUE(transport.is_closed(next));
@@ -1024,7 +1024,7 @@ TEST(Unit_MasterLinkTest, EndedLinkStopsItsTransport)
     const std::vector<std::uint8_t> secret = secret_of(0x42);
     MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
                     link_options(std::chrono::milliseconds(60000)), fixed_nonces());
-    const PeerId peer{1};
+    const PeerID peer{1};
     link.start();
 
     link.on_connected(peer);
@@ -1044,7 +1044,7 @@ TEST(Unit_MasterLinkTest, PingGetsNoPongBeforeRegistration)
     const std::vector<std::uint8_t> secret = secret_of(0x42);
     MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
                     link_options(std::chrono::milliseconds(1000)), fixed_nonces());
-    const PeerId peer{1};
+    const PeerID peer{1};
     Wire::PingMessage ping;
     ping.token = 99;
 
@@ -1075,7 +1075,7 @@ TEST(Unit_MasterLinkTest, LateChallengeForAForgottenHelloIsIgnored)
     MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
                     link_options(std::chrono::milliseconds(1)),
                     [&drawn] { return nonce_of(++drawn); });
-    const PeerId peer{1};
+    const PeerID peer{1};
     link.start();
 
     // The link remembers four nonces; the fifth HELLO forgets the nonce of the first.
@@ -1089,7 +1089,7 @@ TEST(Unit_MasterLinkTest, LateChallengeForAForgottenHelloIsIgnored)
     EXPECT_FALSE(transport.is_closed(peer));
 }
 
-TEST(Unit_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskId)
+TEST(Unit_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskID)
 {
     Worker worker;
     const Graph::OpID op(17);
@@ -1136,7 +1136,7 @@ TEST(Unit_MasterLinkTest, SilentMasterIsLost)
     const std::vector<std::uint8_t> secret = secret_of(0x42);
     MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
                     link_options(std::chrono::milliseconds(60000)), fixed_nonces());
-    const PeerId peer{1};
+    const PeerID peer{1};
     link.start();
 
     ASSERT_EQ(register_link(link, peer, secret, 7, 40), LinkChange::RegisteredNewSession);
@@ -1170,21 +1170,21 @@ TEST(Unit_MasterLinkTest, NewSessionClearsTheCache)
     PeerLoss loss;
     loss.cause = PeerLossCause::ClosedByPeer;
 
-    LinkChange change = register_link(link, PeerId{1}, secret, 7, 0);
+    LinkChange change = register_link(link, PeerID{1}, secret, 7, 0);
     EXPECT_EQ(change, LinkChange::RegisteredNewSession);
     apply(change);
     store(cache, 1, 32);
     EXPECT_TRUE(seen.mark_seen(5));
 
-    EXPECT_EQ(link.on_lost(PeerId{1}, loss), LinkChange::Disconnected);
-    change = register_link(link, PeerId{2}, secret, 7, 0);
+    EXPECT_EQ(link.on_lost(PeerID{1}, loss), LinkChange::Disconnected);
+    change = register_link(link, PeerID{2}, secret, 7, 0);
     EXPECT_EQ(change, LinkChange::Registered);
     apply(change);
     EXPECT_EQ(cache.bytes(), 32u) << "the cache was cleared for the session it was filled in";
     EXPECT_EQ(seen.size(), 1u);
 
-    EXPECT_EQ(link.on_lost(PeerId{2}, loss), LinkChange::Disconnected);
-    change = register_link(link, PeerId{3}, secret, 8, 0);
+    EXPECT_EQ(link.on_lost(PeerID{2}, loss), LinkChange::Disconnected);
+    change = register_link(link, PeerID{3}, secret, 8, 0);
     EXPECT_EQ(change, LinkChange::RegisteredNewSession);
     apply(change);
     EXPECT_EQ(cache.bytes(), 0u);
@@ -1199,7 +1199,7 @@ TEST(Unit_MasterLinkTest, LossAfterGoodbyeIsTheWorkersOwn)
     const std::vector<std::uint8_t> secret = secret_of(0x42);
     MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
                     link_options(std::chrono::milliseconds(60000)), fixed_nonces());
-    const PeerId peer{1};
+    const PeerID peer{1};
 
     ASSERT_EQ(register_link(link, peer, secret, 7, 0), LinkChange::RegisteredNewSession);
     link.say_goodbye();
@@ -1214,7 +1214,7 @@ TEST(Unit_MasterLinkTest, LossAfterGoodbyeIsTheWorkersOwn)
     EXPECT_EQ(link.on_connect_abandoned(), LinkChange::None);
     EXPECT_EQ(link.end(), WorkerEnd::Running) << "a leaving worker ended as MasterLost";
 
-    const PeerId next{2};
+    const PeerID next{2};
     link.on_connected(next);
     EXPECT_EQ(transport.count(MessageType::Hello), 1u) << "a leaving link sent HELLO";
     EXPECT_TRUE(transport.is_closed(next));

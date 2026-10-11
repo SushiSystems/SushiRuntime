@@ -77,7 +77,7 @@ namespace SushiRuntime
             Graph::Node* node = nullptr;
 
             /** @brief Holds the worker the task was dispatched to. */
-            PeerId worker;
+            PeerID worker;
 
             /** @brief Holds the output handles as dispatched: id, bumped version and size. */
             std::vector<BufferHandle> outputs;
@@ -131,7 +131,7 @@ namespace SushiRuntime
                  * @param outputs Copied; the versions are those the dispatch frame carries.
                  * @return False once close() was called, or when @p task_id is in the table.
                  */
-                [[nodiscard]] bool insert(std::uint64_t task_id, Graph::Node& node, PeerId worker,
+                [[nodiscard]] bool insert(std::uint64_t task_id, Graph::Node& node, PeerID worker,
                                           SushiRuntime::span<const BufferHandle> outputs,
                                           std::chrono::steady_clock::time_point now);
 
@@ -139,10 +139,10 @@ namespace SushiRuntime
                  * @brief Records TASK_ACCEPTED for a task.
                  * @return False when the task is not pending on @p worker; nothing changes.
                  */
-                bool acknowledge(std::uint64_t task_id, PeerId worker);
+                bool acknowledge(std::uint64_t task_id, PeerID worker);
 
                 /** @brief Restarts the deadline of every task on a worker; called per chunk. */
-                void note_chunk(PeerId worker, std::chrono::steady_clock::time_point now);
+                void note_chunk(PeerID worker, std::chrono::steady_clock::time_point now);
 
                 /**
                  * @brief Records a HEARTBEAT: every acknowledged task of the worker with an id
@@ -150,13 +150,13 @@ namespace SushiRuntime
                  *
                  * A task with K_LOST_RESULT_HEARTBEATS misses in a row is overdue as LostResult.
                  */
-                void note_heartbeat(PeerId worker, std::uint64_t oldest_held_task_id);
+                void note_heartbeat(PeerID worker, std::uint64_t oldest_held_task_id);
 
                 /**
                  * @brief Returns whether a task still pending on @p worker was dispatched with
                  *        this output at exactly this version; the first half of the fence.
                  */
-                [[nodiscard]] bool expects_output(std::uint64_t task_id, PeerId worker,
+                [[nodiscard]] bool expects_output(std::uint64_t task_id, PeerID worker,
                                                   GlobalBufferID id, std::uint32_t version) const;
 
                 /**
@@ -165,13 +165,13 @@ namespace SushiRuntime
                  *         result, or a task a reaper already took. The caller then changes no
                  *         count and touches no node.
                  */
-                [[nodiscard]] std::optional<PendingTask> take(std::uint64_t task_id, PeerId worker);
+                [[nodiscard]] std::optional<PendingTask> take(std::uint64_t task_id, PeerID worker);
 
                 /**
                  * @brief Removes every task of a lost worker and forgets what was noted for it.
                  * @param out Receives the tasks, appended.
                  */
-                void take_for_worker(PeerId worker, std::vector<PendingTask>& out);
+                void take_for_worker(PeerID worker, std::vector<PendingTask>& out);
 
                 /**
                  * @brief Removes every task past a limit and sets its cause.
@@ -196,7 +196,7 @@ namespace SushiRuntime
                 [[nodiscard]] std::size_t size() const noexcept;
 
                 /** @brief Returns the number of tasks out on one worker. */
-                [[nodiscard]] std::size_t count_for_worker(PeerId worker) const;
+                [[nodiscard]] std::size_t count_for_worker(PeerID worker) const;
 
             private:
                 /** @brief Holds one task out on a worker. */
@@ -206,7 +206,7 @@ namespace SushiRuntime
                     Graph::Node* node = nullptr;
 
                     /** @brief The worker the task was dispatched to. */
-                    PeerId worker;
+                    PeerID worker;
 
                     /** @brief The output handles as dispatched. */
                     std::vector<BufferHandle> outputs;
@@ -258,7 +258,7 @@ namespace SushiRuntime
                 /// @brief The tasks out on a worker, by id.
                 TaskTable tasks_;
 
-                /// @brief Notes by the value of a PeerId; one per worker with a task here.
+                /// @brief Notes by the value of a PeerID; one per worker with a task here.
                 std::unordered_map<std::uint32_t, WorkerNotes> workers_;
         };
 

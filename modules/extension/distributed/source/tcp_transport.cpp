@@ -105,7 +105,7 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Holds a transport's connections by PeerId and relays their events.
+             * @brief Holds a transport's connections by PeerID and relays their events.
              *
              * One mutex guards the table. It is held for a lookup or an update only, never
              * across an event, a socket call, a join or a call into a connection's outbox.
@@ -134,7 +134,7 @@ namespace SushiRuntime
                      */
                     bool open(Socket socket, PeerInfo info)
                     {
-                        const PeerId peer{next_peer_.fetch_add(1)};
+                        const PeerID peer{next_peer_.fetch_add(1)};
                         std::shared_ptr<PeerConnection> connection =
                             std::make_shared<PeerConnection>(peer, std::move(socket),
                                                              std::move(info), options_, *this);
@@ -152,7 +152,7 @@ namespace SushiRuntime
                     }
 
                     /** @brief Returns the open connection of a peer, or null. */
-                    [[nodiscard]] std::shared_ptr<PeerConnection> find(PeerId peer)
+                    [[nodiscard]] std::shared_ptr<PeerConnection> find(PeerID peer)
                     {
                         std::lock_guard<std::mutex> lock(mutex_);
                         const auto found = peers_.find(peer.value);
@@ -268,20 +268,20 @@ namespace SushiRuntime
                     }
 
                     /** @brief Relays the event. */
-                    void on_peer_connected(PeerId peer, const PeerInfo& info) override
+                    void on_peer_connected(PeerID peer, const PeerInfo& info) override
                     {
                         receiver_->on_peer_connected(peer, info);
                     }
 
                     /** @brief Relays the frame. */
-                    void on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+                    void on_frame(PeerID peer, MessageType type, std::uint8_t flags,
                                   SushiRuntime::span<const std::byte> payload) override
                     {
                         receiver_->on_frame(peer, type, flags, payload);
                     }
 
                     /** @brief Marks the peer closed, so sends return UnknownPeer, then relays. */
-                    void on_peer_lost(PeerId peer, const PeerLoss& loss) override
+                    void on_peer_lost(PeerID peer, const PeerLoss& loss) override
                     {
                         {
                             std::lock_guard<std::mutex> lock(mutex_);
@@ -362,7 +362,7 @@ namespace SushiRuntime
                     /// @brief Wakes the waits on a loss, a reap and shut().
                     std::condition_variable wake_;
 
-                    /// @brief The connections by PeerId::value.
+                    /// @brief The connections by PeerID::value.
                     std::unordered_map<std::uint32_t, Entry> peers_;
 
                     /// @brief Counts the entries whose is_open is set.
@@ -376,7 +376,7 @@ namespace SushiRuntime
             };
 
             /** @brief Builds the settings a master gives each connection. */
-            PeerConnectionOptions connection_options(const TcpMasterOptions& options)
+            PeerConnectionOptions connection_options(const TCPMasterOptions& options)
             {
                 PeerConnectionOptions result;
                 result.control_queue_frames = options.control_queue_frames;
@@ -385,7 +385,7 @@ namespace SushiRuntime
             }
 
             /** @brief Builds the settings a worker gives its connection. */
-            PeerConnectionOptions connection_options(const TcpWorkerOptions& options)
+            PeerConnectionOptions connection_options(const TCPWorkerOptions& options)
             {
                 PeerConnectionOptions result;
                 result.control_queue_frames = options.control_queue_frames;
@@ -426,7 +426,7 @@ namespace SushiRuntime
         /**
          * @brief Holds one endpoint's role, options, listener, peer table and service thread.
          */
-        struct TcpTransport::Impl
+        struct TCPTransport::Impl
         {
             /** @brief Names which side of the session the endpoint is. */
             enum class Role : std::uint8_t
@@ -444,7 +444,7 @@ namespace SushiRuntime
             };
 
             /** @brief Builds a master endpoint. */
-            explicit Impl(const TcpMasterOptions& options)
+            explicit Impl(const TCPMasterOptions& options)
                 : role(Role::Master), master_options(options),
                   exposure(is_loopback_host(options.bind.host) ? TransportExposure::Loopback
                                                                : TransportExposure::Network),
@@ -454,7 +454,7 @@ namespace SushiRuntime
             }
 
             /** @brief Builds a worker endpoint. */
-            Impl(Endpoint master_endpoint, const TcpWorkerOptions& options)
+            Impl(Endpoint master_endpoint, const TCPWorkerOptions& options)
                 : role(Role::Worker), worker_options(options), master(std::move(master_endpoint)),
                   exposure(is_loopback_host(master.host) ? TransportExposure::Loopback
                                                          : TransportExposure::Network),
@@ -638,10 +638,10 @@ namespace SushiRuntime
             Role role;
 
             /// @brief The settings of a master endpoint.
-            TcpMasterOptions master_options;
+            TCPMasterOptions master_options;
 
             /// @brief The settings of a worker endpoint.
-            TcpWorkerOptions worker_options;
+            TCPWorkerOptions worker_options;
 
             /// @brief The master a worker endpoint connects to.
             Endpoint master;
@@ -671,30 +671,30 @@ namespace SushiRuntime
             bool was_started = false;
         };
 
-        TcpTransport::TcpTransport(std::unique_ptr<Impl> impl) noexcept : impl_(std::move(impl))
+        TCPTransport::TCPTransport(std::unique_ptr<Impl> impl) noexcept : impl_(std::move(impl))
         {
 
         }
 
-        std::shared_ptr<TcpTransport> TcpTransport::make_master(TcpMasterOptions options)
+        std::shared_ptr<TCPTransport> TCPTransport::make_master(TCPMasterOptions options)
         {
-            return std::shared_ptr<TcpTransport>(
-                new TcpTransport(std::make_unique<Impl>(options)));
+            return std::shared_ptr<TCPTransport>(
+                new TCPTransport(std::make_unique<Impl>(options)));
         }
 
-        std::shared_ptr<TcpTransport> TcpTransport::make_worker(Endpoint master,
-                                                                TcpWorkerOptions options)
+        std::shared_ptr<TCPTransport> TCPTransport::make_worker(Endpoint master,
+                                                                TCPWorkerOptions options)
         {
-            return std::shared_ptr<TcpTransport>(
-                new TcpTransport(std::make_unique<Impl>(std::move(master), options)));
+            return std::shared_ptr<TCPTransport>(
+                new TCPTransport(std::make_unique<Impl>(std::move(master), options)));
         }
 
-        TcpTransport::~TcpTransport()
+        TCPTransport::~TCPTransport()
         {
             stop();
         }
 
-        TransportResult TcpTransport::start(TransportEvents& events)
+        TransportResult TCPTransport::start(TransportEvents& events)
         {
             Impl& impl = *impl_;
             std::lock_guard<std::mutex> lock(impl.lifecycle);
@@ -741,7 +741,7 @@ namespace SushiRuntime
             return result;
         }
 
-        void TcpTransport::stop() noexcept
+        void TCPTransport::stop() noexcept
         {
             Impl& impl = *impl_;
             std::lock_guard<std::mutex> lock(impl.lifecycle);
@@ -755,7 +755,7 @@ namespace SushiRuntime
             impl.table.stop_all();
         }
 
-        SendStatus TcpTransport::send(PeerId peer, MessageType type,
+        SendStatus TCPTransport::send(PeerID peer, MessageType type,
                                       SushiRuntime::span<const std::byte> payload)
         {
             if (impl_->phase.load(std::memory_order_acquire) != Impl::Phase::Running)
@@ -766,7 +766,7 @@ namespace SushiRuntime
             return connection->send(type, payload);
         }
 
-        SendStatus TcpTransport::send_stream(PeerId peer, std::unique_ptr<FrameSource> source)
+        SendStatus TCPTransport::send_stream(PeerID peer, std::unique_ptr<FrameSource> source)
         {
             if (impl_->phase.load(std::memory_order_acquire) != Impl::Phase::Running)
             {
@@ -782,24 +782,24 @@ namespace SushiRuntime
             return connection->send_stream(std::move(source));
         }
 
-        void TcpTransport::close_peer(PeerId peer) noexcept
+        void TCPTransport::close_peer(PeerID peer) noexcept
         {
             const std::shared_ptr<PeerConnection> connection = impl_->table.find(peer);
             if (connection != nullptr)
                 connection->close();
         }
 
-        TransportExposure TcpTransport::exposure() const noexcept
+        TransportExposure TCPTransport::exposure() const noexcept
         {
             return impl_->exposure;
         }
 
-        TransportStatistics TcpTransport::statistics() const noexcept
+        TransportStatistics TCPTransport::statistics() const noexcept
         {
             return impl_->table.totals();
         }
 
-        Endpoint TcpTransport::local_endpoint() const
+        Endpoint TCPTransport::local_endpoint() const
         {
             return impl_->listener.local_endpoint();
         }

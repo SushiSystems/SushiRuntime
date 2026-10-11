@@ -19,7 +19,7 @@ The eleven public headers under `include/SushiRuntime/core/`:
 | `ref_counted.hpp` | `RefCounted`, the intrusive reference count that `sushi_ptr` manages |
 | `result.hpp` | `Result<T, E>`, which holds a value or an error, and `ErrorWrapper` with `make_error` |
 | `span.hpp` | `span`, a non-owning view of contiguous elements, with conversions to and from `std::span` from C++20 |
-| `strong_id.hpp` | `StrongId`, an integer identifier that is distinct per tag, with a `std::hash` specialisation |
+| `strong_id.hpp` | `StrongID`, an integer identifier that is distinct per tag, with a `std::hash` specialisation |
 | `sushi_ptr.hpp` | `sushi_ptr` and `make_sushi`, the intrusive smart pointer and its factory, with a `std::hash` specialisation |
 | `version.hpp` | The version macros, `Version`, `runtime_version()`, `runtime_version_string()`, `version_matches()` and `require_matching_version()` |
 
@@ -145,20 +145,20 @@ after a header such as \<span> has been included and so varies per translation u
 
 ## strong_id.hpp
 
-### Why StrongId exists
+### Why StrongID exists
 
-StrongId is a strong typedef for integer identifiers. It stores one `Rep` and no other state.
+StrongID is a strong typedef for integer identifiers. It stores one `Rep` and no other state.
 
 A bare std::size_t parameter lets unrelated quantities be passed in each other's place, a device
-index where an element count belongs for example, and the compiler stays silent. StrongId wraps an
+index where an element count belongs for example, and the compiler stays silent. StrongID wraps an
 integer in a distinct type keyed by a tag, so the compiler rejects the mix while the value still
 occupies exactly one integer and the explicit constructor keeps construction intentional.
 
-### StrongId
+### StrongID
 
-Two StrongId instantiations with different tags are unrelated types even when their underlying
+Two StrongID instantiations with different tags are unrelated types even when their underlying
 representation matches, so one cannot be passed where the other is expected. The constructor is
-explicit, so a raw integer never converts implicitly; the value is read through value(). A StrongId
+explicit, so a raw integer never converts implicitly; the value is read through value(). A StrongID
 is trivially copyable and has the size of `Rep`. It is not a trivial type, because its default
 constructor sets the value to zero. It has `==`, `!=` and `<`, and its `std::hash` forwards to
 `std::hash<Rep>`, so it can key a `std::map` or a `std::unordered_map`.

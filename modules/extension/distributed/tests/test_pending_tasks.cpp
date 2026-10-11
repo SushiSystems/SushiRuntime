@@ -53,10 +53,10 @@ namespace
     using std::chrono::milliseconds;
 
     /** @brief Names the worker most tests dispatch to. */
-    constexpr PeerId K_WORKER{1};
+    constexpr PeerID K_WORKER{1};
 
     /** @brief Names a second worker. */
-    constexpr PeerId K_OTHER_WORKER{2};
+    constexpr PeerID K_OTHER_WORKER{2};
 
     /** @brief Holds the acknowledgement limit the reaper tests use, in milliseconds. */
     constexpr milliseconds K_ACKNOWLEDGE_TIMEOUT{5000};
@@ -90,7 +90,7 @@ namespace
     }
 
     /** @brief Inserts a task with no outputs and returns whether the table took it. */
-    bool insert_plain(PendingTasks& table, std::uint64_t task_id, Node& node, PeerId worker,
+    bool insert_plain(PendingTasks& table, std::uint64_t task_id, Node& node, PeerID worker,
                       milliseconds offset = milliseconds(0))
     {
         return table.insert(task_id, node, worker, span<const BufferHandle>(), at(offset));
@@ -125,7 +125,7 @@ namespace
     };
 } // namespace
 
-TEST(Unit_PendingTasks, TaskIdsRiseFromOne)
+TEST(Unit_PendingTasks, TaskIDsRiseFromOne)
 {
     PendingTasks table;
 

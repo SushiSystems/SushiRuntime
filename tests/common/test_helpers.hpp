@@ -153,7 +153,7 @@ namespace SushiRuntime
          * Ensures that the allocated USM memory is automatically freed upon exit.
          */
         template <typename T>
-        class UsmShared
+        class USMShared
         {
         public:
             /**
@@ -161,21 +161,21 @@ namespace SushiRuntime
              * @param q The SYCL queue used for allocation.
              * @param count Number of elements of type T to allocate.
              */
-            UsmShared(sycl::queue& q, size_t count)
+            USMShared(sycl::queue& q, size_t count)
                 : queue_(&q), ptr_(sycl::malloc_shared<T>(count, q)), count_(count) {}
 
-            ~UsmShared() { reset(); }
+            ~USMShared() { reset(); }
 
-            UsmShared(const UsmShared&) = delete;
-            UsmShared& operator=(const UsmShared&) = delete;
+            USMShared(const USMShared&) = delete;
+            USMShared& operator=(const USMShared&) = delete;
 
-            UsmShared(UsmShared&& other) noexcept
+            USMShared(USMShared&& other) noexcept
                 : queue_(other.queue_), ptr_(other.ptr_), count_(other.count_)
             {
                 other.ptr_ = nullptr;
             }
 
-            UsmShared& operator=(UsmShared&& other) noexcept
+            USMShared& operator=(USMShared&& other) noexcept
             {
                 if (this != &other)
                 {

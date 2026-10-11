@@ -197,13 +197,13 @@ namespace
             }
 
             /** @brief Does nothing; the script starts at HELLO. */
-            void on_peer_connected(PeerId, const PeerInfo&) override
+            void on_peer_connected(PeerID, const PeerInfo&) override
             {
 
             }
 
             /** @brief Answers HELLO and PROOF as the script says; notes HEARTBEAT and GOODBYE. */
-            void on_frame(PeerId peer, MessageType type, std::uint8_t,
+            void on_frame(PeerID peer, MessageType type, std::uint8_t,
                           span<const std::byte> payload) override
             {
                 if (type == MessageType::Hello)
@@ -217,7 +217,7 @@ namespace
             }
 
             /** @brief Does nothing; the tests watch the worker's exit code. */
-            void on_peer_lost(PeerId, const PeerLoss&) override
+            void on_peer_lost(PeerID, const PeerLoss&) override
             {
 
             }
@@ -231,7 +231,7 @@ namespace
         private:
             /** @brief Encodes a message and queues it as one control frame. */
             template <typename Message>
-            void send(PeerId peer, const Message& message)
+            void send(PeerID peer, const Message& message)
             {
                 std::vector<std::byte> payload;
                 ASSERT_EQ(message.encode(payload), Wire::CodecStatus::Ok);
@@ -251,7 +251,7 @@ namespace
             }
 
             /** @brief Refuses the worker, or sends CHALLENGE proved with the empty secret. */
-            void answer_hello(PeerId peer, span<const std::byte> payload)
+            void answer_hello(PeerID peer, span<const std::byte> payload)
             {
                 Wire::HelloMessage hello;
                 ASSERT_TRUE(Wire::HelloMessage::decode(payload, hello).ok());
@@ -289,7 +289,7 @@ namespace
             }
 
             /** @brief Welcomes the worker; the closing script then ends the connection. */
-            void answer_proof(PeerId peer)
+            void answer_proof(PeerID peer)
             {
                 Wire::WelcomeMessage welcome;
                 welcome.worker_id = peer.value;
@@ -758,9 +758,9 @@ TEST(Integration_WorkerMainTest, MasterLostWithoutReconnectExitsFive)
 }
 
 /** @brief Tests that run_worker() joins a master over TCP and returns the code of its end. */
-TEST(Integration_WorkerMainTest, RunWorkerOverTcpReturnsTheCodeOfItsEnd)
+TEST(Integration_WorkerMainTest, RunWorkerOverTCPReturnsTheCodeOfItsEnd)
 {
-    const std::shared_ptr<TcpTransport> listener = TcpTransport::make_master();
+    const std::shared_ptr<TCPTransport> listener = TCPTransport::make_master();
     FakeMaster master(MasterScript::RegisterThenClose, listener);
     ASSERT_TRUE(master.started().is_ok()) << master.started().message;
 

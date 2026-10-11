@@ -57,7 +57,7 @@ namespace SushiRuntime
          * `switch` over message types; every lock belongs to a brick.
          */
         class SUSHIRUNTIME_API DistributedCoordinator final : public Graph::OffloadCoordinator,
-                                                              public Memory::UsmReleaseObserver
+                                                              public Memory::USMReleaseObserver
         {
             public:
                 /**

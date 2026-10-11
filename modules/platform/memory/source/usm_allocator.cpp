@@ -21,7 +21,7 @@
 
 /**
  * @file usm_allocator.cpp
- * @brief Defines UsmAllocator: the SYCL call per request, the records and the release path.
+ * @brief Defines USMAllocator: the SYCL call per request, the records and the release path.
  * @author Mustafa Garip
  * @see modules/platform/memory/README.md
  */
@@ -54,31 +54,31 @@ namespace SushiRuntime
             }
 
             /** @brief Makes the unaligned SYCL allocation of a kind; null when SYCL has none. */
-            void* allocate_unaligned(UsmKind kind, std::size_t bytes, const sycl::queue& queue)
+            void* allocate_unaligned(USMKind kind, std::size_t bytes, const sycl::queue& queue)
             {
                 switch (kind)
                 {
-                    case UsmKind::Host:
+                    case USMKind::Host:
                         return sycl::malloc_host(bytes, queue);
-                    case UsmKind::Shared:
+                    case USMKind::Shared:
                         return sycl::malloc_shared(bytes, queue);
-                    case UsmKind::Device:
+                    case USMKind::Device:
                         return sycl::malloc_device(bytes, queue);
                 }
                 return nullptr;
             }
 
             /** @brief Makes the aligned SYCL allocation of a kind; null when SYCL has none. */
-            void* allocate_aligned(UsmKind kind, std::size_t alignment, std::size_t bytes,
+            void* allocate_aligned(USMKind kind, std::size_t alignment, std::size_t bytes,
                                    const sycl::queue& queue)
             {
                 switch (kind)
                 {
-                    case UsmKind::Host:
+                    case USMKind::Host:
                         return sycl::aligned_alloc_host(alignment, bytes, queue);
-                    case UsmKind::Shared:
+                    case USMKind::Shared:
                         return sycl::aligned_alloc_shared(alignment, bytes, queue);
-                    case UsmKind::Device:
+                    case USMKind::Device:
                         return sycl::aligned_alloc_device(alignment, bytes, queue);
                 }
                 return nullptr;
@@ -100,13 +100,13 @@ namespace SushiRuntime
             }
         } // namespace
 
-        UsmAllocator::UsmAllocator(std::vector<sycl::queue> device_queues)
+        USMAllocator::USMAllocator(std::vector<sycl::queue> device_queues)
             : queues_(std::move(device_queues))
         {
 
         }
 
-        void* UsmAllocator::allocate(const UsmRequest& request)
+        void* USMAllocator::allocate(const USMRequest& request)
         {
             const sycl::queue& queue = queue_at(request.device_index);
             void* const address = request.alignment == 0
@@ -121,14 +121,14 @@ namespace SushiRuntime
             return address;
         }
 
-        void UsmAllocator::release(void* address) noexcept
+        void USMAllocator::release(void* address) noexcept
         {
             if (!address)
                 return;
 
             // Counted before the load: zero read after a store means no call holds the old one.
             observer_calls_in_flight_.fetch_add(1, std::memory_order_seq_cst);
-            if (UsmReleaseObserver* const observer =
+            if (USMReleaseObserver* const observer =
                     release_observer_.load(std::memory_order_seq_cst))
                 observer->on_release(address);
             observer_calls_in_flight_.fetch_sub(1, std::memory_order_seq_cst);
@@ -147,7 +147,7 @@ namespace SushiRuntime
             }
         }
 
-        void UsmAllocator::release_recorded(void* address)
+        void USMAllocator::release_recorded(void* address)
         {
             const std::optional<std::size_t> device = registry_.take(address);
             if (adopted_.take(address).has_value())
@@ -170,7 +170,7 @@ namespace SushiRuntime
                          "pointer): nothing was freed.", address);
         }
 
-        void UsmAllocator::adopt(void* address, std::size_t device_index,
+        void USMAllocator::adopt(void* address, std::size_t device_index,
                                  std::optional<std::size_t> bytes)
         {
             static_cast<void>(queue_at(device_index));
@@ -180,13 +180,13 @@ namespace SushiRuntime
             registry_.record(address, device_index, bytes);
         }
 
-        void UsmAllocator::forget(void* address) noexcept
+        void USMAllocator::forget(void* address) noexcept
         {
             registry_.take(address);
             adopted_.take(address);
         }
 
-        std::optional<std::size_t> UsmAllocator::device_of(void* address) const
+        std::optional<std::size_t> USMAllocator::device_of(void* address) const
         {
             const std::optional<std::size_t> device = registry_.owner_of(address);
             if (device.has_value() && *device < queues_.size())
@@ -194,7 +194,7 @@ namespace SushiRuntime
             return std::nullopt;
         }
 
-        std::optional<std::size_t> UsmAllocator::owning_device(void* address) const
+        std::optional<std::size_t> USMAllocator::owning_device(void* address) const
         {
             if (!address)
                 return std::nullopt;
@@ -228,19 +228,19 @@ namespace SushiRuntime
             return best;
         }
 
-        std::optional<void*> UsmAllocator::containing_base(void* address) const
+        std::optional<void*> USMAllocator::containing_base(void* address) const
         {
-            const std::optional<UsmRegistry::Containment> found =
+            const std::optional<USMRegistry::Containment> found =
                 registry_.containing_allocation(address);
             return found.has_value() ? std::optional<void*>(found->base) : std::nullopt;
         }
 
-        std::size_t UsmAllocator::live_count() const
+        std::size_t USMAllocator::live_count() const
         {
             return registry_.size();
         }
 
-        void UsmAllocator::set_release_observer(UsmReleaseObserver* observer) noexcept
+        void USMAllocator::set_release_observer(USMReleaseObserver* observer) noexcept
         {
             release_observer_.store(observer, std::memory_order_seq_cst);
             // Stored before the count is read: a release() counted later loads the new observer.
@@ -248,7 +248,7 @@ namespace SushiRuntime
                 std::this_thread::yield();
         }
 
-        const sycl::queue& UsmAllocator::queue_at(std::size_t device_index) const
+        const sycl::queue& USMAllocator::queue_at(std::size_t device_index) const
         {
             if (device_index >= queues_.size())
                 throw bad_device_index(device_index, queues_.size());

@@ -85,7 +85,7 @@ The view has no mutating member. Any thread may read it without a lock, provided
 is itself safe to read concurrently; both models in this module are, because they only read state
 set in their constructors.
 
-The header forward-declares ITopologyProvider and INumaDistanceModel. A reader of the view therefore
+The header forward-declares ITopologyProvider and INUMADistanceModel. A reader of the view therefore
 does not include `i_topology_provider.hpp`, and through it the device discovery types.
 
 ## Implementation

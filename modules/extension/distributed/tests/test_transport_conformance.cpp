@@ -74,7 +74,7 @@ namespace
     struct Event
     {
         EventKind kind = EventKind::Frame;                  /**< What was called. */
-        PeerId peer;                                        /**< The peer it was called for. */
+        PeerID peer;                                        /**< The peer it was called for. */
         MessageType type = MessageType::Hello;              /**< The type of a frame. */
         std::uint8_t flags = 0;                             /**< The flags of a frame. */
         std::vector<std::byte> payload;                     /**< The payload of a frame. */
@@ -118,7 +118,7 @@ namespace
             }
 
             /** @brief Records the connection. */
-            void on_peer_connected(PeerId peer, const PeerInfo&) override
+            void on_peer_connected(PeerID peer, const PeerInfo&) override
             {
                 Event event;
                 event.kind = EventKind::Connected;
@@ -127,7 +127,7 @@ namespace
             }
 
             /** @brief Records the frame and copies its payload. */
-            void on_frame(PeerId peer, MessageType type, std::uint8_t flags,
+            void on_frame(PeerID peer, MessageType type, std::uint8_t flags,
                           SushiRuntime::span<const std::byte> payload) override
             {
                 Event event;
@@ -140,7 +140,7 @@ namespace
             }
 
             /** @brief Records the loss and its cause. */
-            void on_peer_lost(PeerId peer, const PeerLoss& loss) override
+            void on_peer_lost(PeerID peer, const PeerLoss& loss) override
             {
                 Event event;
                 event.kind = EventKind::Lost;
@@ -199,13 +199,13 @@ namespace
             }
 
             /** @brief Returns the peer of the first recorded connection, or no peer. */
-            [[nodiscard]] PeerId first_peer() const
+            [[nodiscard]] PeerID first_peer() const
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 for (const Event& event : events_)
                     if (event.kind == EventKind::Connected)
                         return event.peer;
-                return PeerId{};
+                return PeerID{};
             }
 
             /** @brief Counts the events of one kind in a list. */
@@ -275,19 +275,19 @@ namespace
     };
 
     /** @brief Builds a TCP master on a free loopback port and a worker that connects to it. */
-    class TcpLoopbackRig final
+    class TCPLoopbackRig final
     {
         public:
             /** @brief Returns the name the typed suite gives this rig. */
             static std::string name()
             {
-                return "TcpLoopback";
+                return "TCPLoopback";
             }
 
             /** @brief Creates the master endpoint on 127.0.0.1, port 0. */
             std::shared_ptr<ITransport> make_master()
             {
-                master_ = TcpTransport::make_master();
+                master_ = TCPTransport::make_master();
                 return master_;
             }
 
@@ -297,15 +297,15 @@ namespace
              */
             std::shared_ptr<ITransport> make_worker(bool reconnect)
             {
-                TcpWorkerOptions options;
+                TCPWorkerOptions options;
                 options.reconnect = reconnect;
                 options.backoff_initial = std::chrono::milliseconds(10);
-                return TcpTransport::make_worker(master_->local_endpoint(), options);
+                return TCPTransport::make_worker(master_->local_endpoint(), options);
             }
 
         private:
             /// @brief The master, kept to read its port.
-            std::shared_ptr<TcpTransport> master_;
+            std::shared_ptr<TCPTransport> master_;
     };
 
     /** @brief Names each instantiation of the typed suite after its rig. */
@@ -438,7 +438,7 @@ namespace
 
 /**
  * @brief Starts a master and a worker of one rig and records the events of both.
- * @tparam Rig InProcessRig or TcpLoopbackRig.
+ * @tparam Rig InProcessRig or TCPLoopbackRig.
  */
 template <typename Rig>
 class Unit_TransportConformanceTest : public ::testing::Test
@@ -491,14 +491,14 @@ class Unit_TransportConformanceTest : public ::testing::Test
         std::shared_ptr<ITransport> worker_;
 
         /// @brief The id the master uses for the worker.
-        PeerId worker_peer_;
+        PeerID worker_peer_;
 
         /// @brief The id the worker uses for the master.
-        PeerId master_peer_;
+        PeerID master_peer_;
 };
 
 /** @brief Lists the rigs the conformance suite runs on. */
-using RigTypes = ::testing::Types<InProcessRig, TcpLoopbackRig>;
+using RigTypes = ::testing::Types<InProcessRig, TCPLoopbackRig>;
 TYPED_TEST_SUITE(Unit_TransportConformanceTest, RigTypes, RigNames);
 
 /**
@@ -699,7 +699,7 @@ TYPED_TEST(Unit_TransportConformanceTest, SendFromCallbackAllowed)
 TYPED_TEST(Unit_TransportConformanceTest, SendAfterStopReturnsStopped)
 {
     this->master_ = this->rig_.make_master();
-    const PeerId nobody{1};
+    const PeerID nobody{1};
     EXPECT_EQ(this->master_->send(nobody, MessageType::Ping, {}), SendStatus::Stopped);
 
     ASSERT_TRUE(this->master_->start(this->master_events_).is_ok());

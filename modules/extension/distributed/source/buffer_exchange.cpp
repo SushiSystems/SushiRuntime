@@ -53,7 +53,7 @@ namespace SushiRuntime
                 {
                     std::uint64_t task_id = 0;    /**< The task the bytes belong to. */
                     GlobalBufferID id;            /**< The buffer the bytes go into. */
-                    PeerId from;                  /**< The connection the chunk arrived on. */
+                    PeerID from;                  /**< The connection the chunk arrived on. */
                     std::uint64_t size_bytes = 0; /**< The whole size the chunk declares. */
                     std::uint64_t offset = 0;     /**< The position of the chunk's first byte. */
                     std::uint64_t end = 0;        /**< The position after the chunk's last byte. */
@@ -150,7 +150,7 @@ namespace SushiRuntime
                 struct Transfer
                 {
                     GlobalBufferID id;             /**< The buffer being written. */
-                    PeerId from;                   /**< The connection that started it. */
+                    PeerID from;                   /**< The connection that started it. */
                     std::uint64_t size_bytes = 0;  /**< The size its first chunk declared. */
                     std::uint64_t next_offset = 0; /**< The only offset accepted besides 0. */
                     bool whole = false;            /**< Whether its latest chunk was the last. */
@@ -366,7 +366,7 @@ namespace SushiRuntime
                                                 transfers_aborted_);
         }
 
-        ChunkStatus BufferExchange::apply_output_chunk(PeerId from,
+        ChunkStatus BufferExchange::apply_output_chunk(PeerID from,
                                                        const Wire::BufferChunkMessage& chunk,
                                                        bool last_chunk)
         {

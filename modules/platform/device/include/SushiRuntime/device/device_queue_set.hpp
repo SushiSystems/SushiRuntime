@@ -137,7 +137,7 @@ namespace SushiRuntime
                 };
 
                 /** @brief Lists the devices a NUMA node's requests are served from. */
-                struct NumaRoute
+                struct NUMARoute
                 {
                     std::vector<std::size_t> devices; /**< Device indices, ascending. */
                     bool is_fallback = false;         /**< True when the node has no device. */
@@ -167,7 +167,7 @@ namespace SushiRuntime
                 [[nodiscard]] const LazyQueue& plain_slot(std::size_t index) const noexcept;
 
                 /** @brief Returns the route of a NUMA node; any id is accepted. */
-                [[nodiscard]] const NumaRoute& route_for(int numa_node) const noexcept;
+                [[nodiscard]] const NUMARoute& route_for(int numa_node) const noexcept;
 
                 /**
                  * @brief Returns the next device of a NUMA node's rotation on this thread.
@@ -192,10 +192,10 @@ namespace SushiRuntime
                 std::vector<LazyQueue> slots_;
 
                 /// @brief Route of each NUMA node from 0 to the highest one that holds a device.
-                std::vector<NumaRoute> numa_routes_;
+                std::vector<NUMARoute> numa_routes_;
 
                 /// @brief Route of every NUMA id outside numa_routes_: all devices.
-                NumaRoute outside_route_;
+                NUMARoute outside_route_;
         };
     } // namespace Device
 } // namespace SushiRuntime

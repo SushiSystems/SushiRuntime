@@ -89,14 +89,14 @@ cannot go back to this pool.
 
 ## usm_registry.hpp
 
-### UsmRegistry
+### USMRegistry
 
 USM is bound to the context it was allocated from: a pointer must be freed against that device's
 queue, and a kernel touching it must run there. SYCL offers no way to ask a pointer where it came
 from that is reliable across backends, so the runtime records it at allocation and looks it up
 later.
 
-UsmRegistry has an invariant of its own: a pointer is known from allocation until it is freed,
+USMRegistry has an invariant of its own: a pointer is known from allocation until it is freed,
 exactly once. That invariant is testable without standing up a Runtime.
 
 Every operation takes the same lock. That is not a bottleneck in practice: allocation happens when
@@ -124,7 +124,7 @@ read an owner the first is already acting on. A null pointer resolves to nothing
 
 ## usm_request.hpp
 
-### UsmRequest
+### USMRequest
 
 A request states the USM kind, whether an alignment is asked for, and a device index. A caller that
 starts from a NUMA node resolves it to a device index first, so placement by NUMA stays out of the
@@ -137,7 +137,7 @@ unchecked, so an alignment SYCL refuses comes back as a null address.
 
 ## usm_release_observer.hpp
 
-### UsmReleaseObserver
+### USMReleaseObserver
 
 The distributed layer keeps a table of buffers keyed by USM address and must drop a buffer's row
 when its memory goes away. The observer lets it hear that without the memory module including a
@@ -150,11 +150,11 @@ The destructor is protected and not virtual because the allocator never owns its
 
 ## usm_allocator.hpp
 
-### UsmAllocator
+### USMAllocator
 
 The allocator copies the queues it is given. A `sycl::queue` is a handle, so the copies name the
 same queues as the caller's, and the memory module needs no header of the module that builds them.
-A device's index is its position in that list, the number UsmRegistry stores.
+A device's index is its position in that list, the number USMRegistry stores.
 
 The queue list never changes after construction and is read without a lock. Each registry
 operation takes that registry's lock, and the observer is one atomic pointer beside a count of
@@ -176,7 +176,7 @@ condition a caller can handle.
 
 An adopted address is forgotten and not freed. It was allocated outside SYCL, a mapping of
 another process's memory for example, and `sycl::free` on it is undefined. The allocator tells
-adopted addresses apart with a second UsmRegistry that holds only them, because UsmRegistry's
+adopted addresses apart with a second USMRegistry that holds only them, because USMRegistry's
 entry has no field for it. allocate() clears that mark for the address it returns: an adopted
 mapping that was unmapped without forget() can leave its address to a later allocation, and the
 stale mark would then leak that allocation.
@@ -186,7 +186,7 @@ allocated here or a second release of the same address, and the allocator cannot
 freeing it would be a double free in the second case and a free against a guessed device in the
 first. An allocator with no device logs a WARN instead.
 
-release() is `noexcept`, because UsmAllocationOwner calls it from a `noexcept` override and
+release() is `noexcept`, because USMAllocationOwner calls it from a `noexcept` override and
 Allocation calls that from a destructor. A `sycl::free` that throws is caught and logged as one
 ERROR; the record is already gone by then, so the address is no longer tracked.
 

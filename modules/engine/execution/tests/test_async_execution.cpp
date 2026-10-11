@@ -35,7 +35,7 @@
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Execution;
-using SushiRuntime::Test::UsmShared;
+using SushiRuntime::Test::USMShared;
 
 namespace
 {
@@ -74,7 +74,7 @@ namespace
  *
  * Submits independent workloads to CPU and GPU queues back-to-back without waiting in between, and verifies both produce correct results.
  */
-TEST(Integration_AsyncExecutionTest, CpuGpuConcurrentVectorAdd)
+TEST(Integration_AsyncExecutionTest, CPUGPUConcurrentVectorAdd)
 {
     size_t cpu_idx = 0;
     size_t gpu_idx = 0;
@@ -90,8 +90,8 @@ TEST(Integration_AsyncExecutionTest, CpuGpuConcurrentVectorAdd)
 
     constexpr size_t N = 1u << 16;
 
-    UsmShared<float> g_a(gpu_q, N), g_b(gpu_q, N), g_c(gpu_q, N);
-    UsmShared<float> c_a(cpu_q, N), c_b(cpu_q, N), c_c(cpu_q, N);
+    USMShared<float> g_a(gpu_q, N), g_b(gpu_q, N), g_c(gpu_q, N);
+    USMShared<float> c_a(cpu_q, N), c_b(cpu_q, N), c_c(cpu_q, N);
     ASSERT_TRUE(g_a);
     ASSERT_TRUE(g_b);
     ASSERT_TRUE(g_c);
@@ -169,7 +169,7 @@ TEST(Integration_AsyncExecutionTest, AsyncDispatchDoesNotBlock)
     sycl::queue& gpu_q = ctx.devices().queue(gpu_idx);
 
     constexpr size_t N = 1u << 20;
-    UsmShared<float> in(gpu_q, N), out(gpu_q, N);
+    USMShared<float> in(gpu_q, N), out(gpu_q, N);
     ASSERT_TRUE(in);
     ASSERT_TRUE(out);
     for (size_t i = 0; i < N; ++i)

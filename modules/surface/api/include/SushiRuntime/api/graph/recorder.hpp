@@ -878,7 +878,7 @@ namespace SushiRuntime
                     if (slot == nullptr)
                         return nullptr;
                     void* address = const_cast<void*>(static_cast<const void*>(slot));
-                    Memory::UsmAllocator& memory = context_->memory();
+                    Memory::USMAllocator& memory = context_->memory();
                     const std::optional<void*> base = memory.containing_base(address);
                     const std::optional<std::size_t> device =
                         memory.device_of(base ? *base : address);

@@ -133,7 +133,7 @@ Open after a repair:
 - QC-73, 74, 95, 115: a zero-size `parallel_for`, `NdRange` tiling, the logger join under
   `FreeLibrary`, and `DeviceQueueSet::wait_all()` stopping at the first queue that throws.
 - QC-137: seven earlier deprecations have no changelog entry.
-- `TcpWorkerOptions::attempt_timeout` and `write_idle_timeout` at zero were not traced.
+- `TCPWorkerOptions::attempt_timeout` and `write_idle_timeout` at zero were not traced.
 - Wording left by the register pass: "before v0.4.0" in `log_level.hpp`,
   `resource_liveness.hpp`, `dispatch_width.hpp`, `event_timestamps.hpp` and
   `profiling_ledger.hpp`; "(F4)" and "(F5)" in `execution_engine.cpp`; the "used to"

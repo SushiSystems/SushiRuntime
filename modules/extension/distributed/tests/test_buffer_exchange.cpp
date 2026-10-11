@@ -56,7 +56,7 @@ namespace
     constexpr std::uint64_t K_TASK_ID = 41;
 
     /** @brief Holds the connection every output chunk in this file arrives on. */
-    constexpr PeerId K_WORKER{3};
+    constexpr PeerID K_WORKER{3};
 
     /** @brief Holds the byte kept after a buffer's last byte to show a write past its end. */
     constexpr std::byte K_GUARD{0xEE};
@@ -440,6 +440,6 @@ TEST(Unit_BufferExchangeTest, ForgottenTaskStartsOver)
     // A chunk that continues a transfer must come from the connection that started it.
     EXPECT_EQ(apply_piece(exchange, handle, payload, 0), ChunkStatus::Applied);
     const Wire::BufferChunkMessage foreign = output_chunk(handle, payload, 1);
-    EXPECT_EQ(exchange.apply_output_chunk(PeerId{K_WORKER.value + 1}, foreign, true),
+    EXPECT_EQ(exchange.apply_output_chunk(PeerID{K_WORKER.value + 1}, foreign, true),
               ChunkStatus::Gap);
 }

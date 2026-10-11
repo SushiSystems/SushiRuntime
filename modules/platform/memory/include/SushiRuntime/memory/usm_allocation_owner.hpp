@@ -21,7 +21,7 @@
 
 /**
  * @file usm_allocation_owner.hpp
- * @brief Declares UsmAllocationOwner, which releases an address through its USM allocator.
+ * @brief Declares USMAllocationOwner, which releases an address through its USM allocator.
  * @author Mustafa Garip
  */
 
@@ -41,21 +41,21 @@ namespace SushiRuntime
          * @brief Releases an address through the allocator that allocated it.
          * @see docs/design/SYCL_VULKAN_INTEROP.md §3.1 in the SushiEngine repository.
          */
-        class UsmAllocationOwner final : public IAllocationOwner
+        class USMAllocationOwner final : public IAllocationOwner
         {
             public:
                 /**
                  * @brief Binds the owner to the allocator that allocated the address.
                  * @param allocator Kept alive by this owner; null makes release() do nothing.
                  */
-                explicit UsmAllocationOwner(std::shared_ptr<UsmAllocator> allocator) noexcept
+                explicit USMAllocationOwner(std::shared_ptr<USMAllocator> allocator) noexcept
                     : allocator_(std::move(allocator))
                 {
                 }
 
                 /**
                  * @brief Releases @p address through the bound allocator.
-                 * @param address The allocation to release; UsmAllocator::release() throws nothing.
+                 * @param address The allocation to release; USMAllocator::release() throws nothing.
                  */
                 void release(void* address) noexcept override
                 {
@@ -65,7 +65,7 @@ namespace SushiRuntime
 
             private:
                 /// @brief Allocator whose release() frees the address.
-                std::shared_ptr<UsmAllocator> allocator_;
+                std::shared_ptr<USMAllocator> allocator_;
         };
 
     } // namespace Memory

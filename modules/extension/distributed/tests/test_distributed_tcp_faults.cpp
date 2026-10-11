@@ -87,7 +87,7 @@ namespace
     using Distributed::Test::FlowDirection;
 
     /** @brief Names the proxy without its namespace. */
-    using Distributed::Test::TcpFaultProxy;
+    using Distributed::Test::TCPFaultProxy;
 
     /** @brief Bounds every wait on a condition, so a broken layer fails a test and hangs none. */
     constexpr std::chrono::seconds K_WAIT{60};
@@ -153,10 +153,10 @@ namespace
     {
         public:
             /** @brief Allocates @p size bytes on device 0. */
-            SharedBytes(Memory::UsmAllocator& memory, std::size_t size)
+            SharedBytes(Memory::USMAllocator& memory, std::size_t size)
                 : memory_(memory), size_(size),
                   data_(static_cast<std::byte*>(memory.allocate(
-                      Memory::UsmRequest{Memory::UsmKind::Shared, size, 0, 0})))
+                      Memory::USMRequest{Memory::USMKind::Shared, size, 0, 0})))
             {
 
             }
@@ -186,7 +186,7 @@ namespace
 
         private:
             /** @brief The allocator the bytes came from. */
-            Memory::UsmAllocator& memory_;
+            Memory::USMAllocator& memory_;
 
             /** @brief The number of bytes. */
             std::size_t size_;
@@ -276,9 +276,9 @@ namespace
     }
 
     /** @brief Returns worker transport options that retry within 50 ms of a loss. */
-    [[nodiscard]] TcpWorkerOptions quick_reconnect()
+    [[nodiscard]] TCPWorkerOptions quick_reconnect()
     {
-        TcpWorkerOptions options;
+        TCPWorkerOptions options;
         options.backoff_initial = std::chrono::milliseconds(10);
         options.backoff_ceiling = std::chrono::milliseconds(50);
         return options;
@@ -387,10 +387,10 @@ namespace
 
             /** @brief Attaches a master that listens on a free loopback port. */
             void start_master(ClusterOptions options = ClusterOptions(),
-                              const TcpMasterOptions& transport = TcpMasterOptions())
+                              const TCPMasterOptions& transport = TCPMasterOptions())
             {
                 options.policy = std::make_shared<FirstWorkerPolicy>();
-                master_transport_ = TcpTransport::make_master(transport);
+                master_transport_ = TCPTransport::make_master(transport);
                 cluster_.emplace(
                     Cluster::attach(*master_context_, master_transport_, std::move(options)));
             }
@@ -404,7 +404,7 @@ namespace
             /** @brief Starts a proxy in front of the master. */
             void start_proxy()
             {
-                proxy_ = std::make_unique<TcpFaultProxy>(master_endpoint());
+                proxy_ = std::make_unique<TCPFaultProxy>(master_endpoint());
                 ASSERT_TRUE(proxy_->started().is_ok()) << describe(proxy_->started());
             }
 
@@ -414,7 +414,7 @@ namespace
              */
             void start_worker(const Endpoint& target,
                               WorkerAgentOptions options = WorkerAgentOptions(),
-                              const TcpWorkerOptions& transport = quick_reconnect())
+                              const TCPWorkerOptions& transport = quick_reconnect())
             {
                 if (!worker_context_)
                     worker_context_ = std::make_unique<Execution::RuntimeContext>();
@@ -435,7 +435,7 @@ namespace
 
                 options.name = "tcp-faults-worker";
                 agent_ = std::make_unique<WorkerAgent>(*worker_context_,
-                                                       TcpTransport::make_worker(target, transport),
+                                                       TCPTransport::make_worker(target, transport),
                                                        kernels, std::move(options));
                 const TransportResult started = agent_->start();
                 ASSERT_TRUE(started.is_ok()) << started.message;
@@ -570,13 +570,13 @@ namespace
             std::vector<std::unique_ptr<SharedBytes>> buffers_;
 
             /// @brief The master's transport, kept to read the bound port.
-            std::shared_ptr<TcpTransport> master_transport_;
+            std::shared_ptr<TCPTransport> master_transport_;
 
             /// @brief The handle of the attached master.
             std::optional<Cluster> cluster_;
 
             /// @brief The proxy between the worker and the master, when a test uses one.
-            std::unique_ptr<TcpFaultProxy> proxy_;
+            std::unique_ptr<TCPFaultProxy> proxy_;
 
             /// @brief The worker.
             std::unique_ptr<WorkerAgent> agent_;
@@ -787,7 +787,7 @@ TEST_F(Integration_DistributedTcpFaultsTest, WorkerCutMidChunkTaskFinishesLocall
     options.chunk_bytes = static_cast<std::uint32_t>(64 * K_KIBIBYTE);
     start_master(std::move(options));
     ASSERT_NO_FATAL_FAILURE(start_proxy());
-    TcpWorkerOptions transport = quick_reconnect();
+    TCPWorkerOptions transport = quick_reconnect();
     transport.reconnect = false;
     ASSERT_NO_FATAL_FAILURE(start_worker(proxy_->endpoint(), WorkerAgentOptions(), transport));
     ASSERT_TRUE(worker_registered());
@@ -852,7 +852,7 @@ TEST_F(Integration_DistributedTcpFaultsTest, LinkStalledMidTransferLostAtLivenes
     ClusterOptions options;
     options.liveness_timeout = K_LIVENESS;
     options.task_deadline = std::chrono::milliseconds(0);
-    TcpMasterOptions master_transport;
+    TCPMasterOptions master_transport;
     master_transport.write_idle_timeout = 10 * K_WAIT;
     start_master(std::move(options), master_transport);
     ASSERT_NO_FATAL_FAILURE(start_proxy());
