@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — task: Breaking change: Removed the using-declaration that named `TaskMetadata` in `SushiRuntime`; the type is `Internal::Graph::TaskMetadata` only (`task_types.hpp`).
 - 2026-10-12 — machine: Breaking change: Renamed `HardwareFilterConfig` to `DeviceFilter` and moved it out of `topology/hw_discovery.hpp` (`machine/device_filter.hpp`).
 - 2026-10-12 — machine: Breaking change: Moved `PinPolicy`, `WorkerPool`, `DeviceDescription` and `DeviceKind` to the new public module `machine`, declared in `SushiRuntime`; `DeviceDescriptor` moved to `device/device_descriptor.hpp`.
 - 2026-10-12 — log: Breaking change: Moved `LogLevel`, `LogSink` and their four calls to the new public module `log`; `K_LOG_LEVEL_CEILING` and the macro gate moved to `logging/log_gate.hpp` (`log/log_level.hpp`, `log/log_sink.hpp`).

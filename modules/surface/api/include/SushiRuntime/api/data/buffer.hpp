@@ -119,16 +119,18 @@ namespace SushiRuntime
                                          std::size_t alignment = 0)
         {
             const std::size_t device = device_index.value();
-            using Kind = Internal::Memory::USMKind;
             Internal::Memory::USMAllocator& memory = context.memory();
             switch (residency)
             {
                 case Residency::Device:
-                    return memory.allocate({Kind::Device, bytes, alignment, device});
+                    return memory.allocate(
+                        {Internal::Memory::USMKind::Device, bytes, alignment, device});
                 case Residency::Host:
-                    return memory.allocate({Kind::Host, bytes, alignment, device});
+                    return memory.allocate(
+                        {Internal::Memory::USMKind::Host, bytes, alignment, device});
                 case Residency::Shared:
-                    return memory.allocate({Kind::Shared, bytes, alignment, device});
+                    return memory.allocate(
+                        {Internal::Memory::USMKind::Shared, bytes, alignment, device});
             }
             return nullptr;
         }
