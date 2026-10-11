@@ -134,7 +134,4 @@ namespace SushiRuntime
         };
 
     } // namespace Graph
-
-    using Internal::Graph::TaskMetadata;
-
 } // namespace SushiRuntime
