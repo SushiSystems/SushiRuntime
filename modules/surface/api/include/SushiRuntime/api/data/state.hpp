@@ -229,33 +229,6 @@ namespace SushiRuntime
                 return current_.region_of("State::region", range);
             }
 
-            /**
-             * @brief Shares both fields with the runtime's offload coordinator; does nothing
-             *        when none is installed or the state is empty.
-             * @return *this.
-             * @pre A state that owns memory is shared or host USM.
-             * @see modules/surface/api/include/SushiRuntime/api/data/README.md
-             */
-            State& distributed() &
-            {
-                current_.share_with_offload("State::distributed()");
-                next_.share_with_offload("State::distributed()");
-                return *this;
-            }
-
-            /**
-             * @brief Shares both fields as distributed() does, then returns the state by value.
-             * @return The state, moved out of this object.
-             * @pre A state that owns memory is shared or host USM.
-             * @see modules/surface/api/include/SushiRuntime/api/data/README.md
-             */
-            [[nodiscard]] State distributed() &&
-            {
-                current_.share_with_offload("State::distributed()");
-                next_.share_with_offload("State::distributed()");
-                return std::move(*this);
-            }
-
         private:
             friend class Runtime;
             friend struct Detail::HandleAccess;

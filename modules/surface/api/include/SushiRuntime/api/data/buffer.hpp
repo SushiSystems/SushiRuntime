@@ -56,7 +56,6 @@
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
-#include <SushiRuntime/task/offload_coordinator.hpp>
 
 namespace SushiRuntime
 {
@@ -111,23 +110,6 @@ namespace SushiRuntime
 
     namespace Detail
     {
-        /**
-         * @brief Logs, the first time it is called, that distributed() found no offload
-         *        coordinator.
-         *
-         * One flag serves every element type, so a program gets the line once.
-         */
-        inline void warn_distributed_without_coordinator()
-        {
-            static std::atomic_flag is_logged = ATOMIC_FLAG_INIT;
-            if (is_logged.test_and_set(std::memory_order_relaxed))
-                return;
-
-            SR_LOG_WARN("distributed() was called on a runtime with no offload coordinator, "
-                        "so the buffer stays local and its tasks run on this machine; call "
-                        "Cluster::attach() before distributed(). Later calls are not logged");
-        }
-
         /**
          * @brief Allocates USM of the given residency on one device queue.
          * @param context          Runtime context that performs and records the allocation.
@@ -408,31 +390,6 @@ namespace SushiRuntime
                 return region_of("Buffer::region", range);
             }
 
-            /**
-             * @brief Shares this buffer with the runtime's offload coordinator; does nothing
-             *        when none is installed or the buffer is empty.
-             * @return *this.
-             * @pre A buffer that owns memory is shared or host USM.
-             * @see modules/surface/api/include/SushiRuntime/api/data/README.md
-             */
-            Buffer& distributed() &
-            {
-                share_with_offload("Buffer::distributed()");
-                return *this;
-            }
-
-            /**
-             * @brief Shares this buffer as distributed() does, then returns it by value.
-             * @return The buffer, moved out of this object.
-             * @pre A buffer that owns memory is shared or host USM.
-             * @see modules/surface/api/include/SushiRuntime/api/data/README.md
-             */
-            [[nodiscard]] Buffer distributed() &&
-            {
-                share_with_offload("Buffer::distributed()");
-                return std::move(*this);
-            }
-
         private:
             friend class Runtime;
             friend class Interop;
@@ -589,38 +546,6 @@ namespace SushiRuntime
                 return BufferRegion{static_cast<void*>(data()),
                                     range.offset * sizeof(T),
                                     range.count * sizeof(T)};
-            }
-
-            /**
-             * @brief Hands the allocation to the installed offload coordinator, or warns.
-             * @param where Names the public call in a message.
-             * @pre A handle that owns memory is host-accessible.
-             */
-            void share_with_offload(const char* where)
-            {
-                if (!context_ || !data())
-                    return;
-                require_shareable(where);
-                if (auto* offload = context_->offload())
-                    offload->share(data(), size_ * sizeof(T));
-                else
-                    Detail::warn_distributed_without_coordinator();
-            }
-
-            /**
-             * @brief Stops the process unless the offload coordinator can read the allocation
-             *        on the host.
-             * @param where Names the public call in the message.
-             */
-            void require_shareable(const char* where) const
-            {
-                SR_VERIFY(is_host_accessible(),
-                          (std::string(where) + ": the handle has " +
-                           residency_name(residency_) +
-                           " residency, and the host cannot address it; allocate the handle "
-                           "with a host-accessible residency, Residency::Shared or "
-                           "Residency::Host.")
-                              .c_str());
             }
 
             /**

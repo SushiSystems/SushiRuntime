@@ -100,7 +100,7 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
     graph.add_task(meta_compute, {A, B}, {C}, compute_work);
 
     auto compiled = graph.compile().value();
-    context.execution_engine().execute(std::move(compiled)).value().value();
+    context.execution_engine().execute(std::move(compiled)).value();
 
     bool passed = true;
     for (size_t i = 0; i < VECTOR_SIZE; ++i)
@@ -172,7 +172,7 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
     });
 
     auto compiled = graph.compile().value();
-    context.execution_engine().execute(std::move(compiled)).value().value();
+    context.execution_engine().execute(std::move(compiled)).value();
 
     // SCALE * sum_{i=0}^{N-1} i = SCALE * (N-1)*N/2.
     double expected = static_cast<double>(SCALE) *

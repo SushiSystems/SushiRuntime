@@ -60,9 +60,8 @@ Cluster::attach() is the way into the layer. It builds a master on a runtime, bi
 runtime's offload sink, starts it and its transport, then installs it as the runtime's
 Internal::Graph::OffloadCoordinator and as the allocator's release observer, and returns a handle to its
 knobs and counters. Until attach() runs, the runtime is a
-single machine: no header of `api` or `execution` names a transport, and Buffer::distributed()
-shares nothing. The first such call in a process logs one WARN that says the buffer stays local
-and that attach() must come first.
+single machine: no header of `api` or `execution` names a transport or a share, and a buffer is
+shared through the handle attach() returns.
 
 One overload takes an Runtime and the other an Internal::Execution::RuntimeContext. The first forwards
 to the second through Runtime::unsafe_context(); the second serves code that drives a bare context.
@@ -123,8 +122,24 @@ counters keep their totals.
 
 Both read the master's buffer registry by USM address. Offload bumps versions itself at dispatch and
 at completion; bump_buffer() is for a write the runtime did not see, and for tests that need a
-stale version. A buffer enters the registry through Internal::Graph::OffloadCoordinator::share(), which
-Buffer::distributed() and State::distributed() call.
+stale version.
+
+### share
+
+A buffer enters the registry through Cluster::share(). It is opt-in: only a shared buffer can
+cross to a worker, and the master stays authoritative for it. share(buffer) registers the
+allocation of a `Buffer` and share(state) both fields of a `State`; the two fields keep their
+handles for the State's lifetime, and the dispatcher follows which one is read at each step from
+the live lists of the rule's node. An empty handle is skipped. A handle that owns memory and is
+device-resident stops the process, because the master reads the allocation on the host, so the
+handle must be Shared or Host. share(address, bytes) registers USM the caller owns.
+
+Each handle form has two overloads to make chaining safe. The lvalue overload returns its
+argument. The rvalue overload moves a temporary into the caller, so the allocation survives the
+chain: `auto a = cluster.share(rt.buffer<float>(n).value());`
+
+share() is a member of the extension and not of `Buffer`, and the engine's
+Internal::Graph::OffloadCoordinator has no share: a runtime without this module names no share.
 
 ## transport.hpp
 
