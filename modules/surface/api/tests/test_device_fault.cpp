@@ -29,6 +29,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -60,16 +61,11 @@ TEST(Integration_DeviceFault, AFieldPastAUint32IsStoredSaturated)
     EXPECT_EQ(record[2], 7u);
     EXPECT_EQ(record[3], UINT32_MAX);
 
-    try
-    {
-        Detail::throw_if_device_fault(record.data());
-        ADD_FAILURE() << "a record that holds a fault did not throw";
-    }
-    catch (const SushiException& fault)
-    {
-        const std::string& message = fault.error().message;
-        EXPECT_NE(message.find("starts at " + std::to_string(UINT32_MAX)), std::string::npos)
-            << message;
-    }
+    const std::optional<Error> fault = Detail::take_device_fault(record.data());
+    ASSERT_TRUE(fault.has_value()) << "a record that holds a fault returned nothing";
+    EXPECT_EQ(fault->code, ErrorCode::InvalidGraph);
+    EXPECT_NE(fault->message.find("starts at " + std::to_string(UINT32_MAX)), std::string::npos)
+        << fault->message;
     EXPECT_EQ(record[0], Detail::K_DEVICE_FAULT_NONE);
+    EXPECT_FALSE(Detail::take_device_fault(record.data()).has_value());
 }

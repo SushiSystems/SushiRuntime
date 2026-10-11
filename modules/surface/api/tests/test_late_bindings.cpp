@@ -311,7 +311,9 @@ TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
           CAPACITY, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = 1; });
 
-    EXPECT_FALSE(g.run().has_value()) << "10 elements from index 10 does not fit 16";
+    const auto failed = g.run();
+    ASSERT_FALSE(failed.has_value()) << "10 elements from index 10 does not fit 16";
+    EXPECT_EQ(failed.error().code, ErrorCode::InvalidGraph);
 
     // A window that does fit runs normally: the rejection wedged nothing.
     base = 6;

@@ -775,10 +775,12 @@ A `LateCount::fixed` count has no live source, so the live count is the count it
 A host count that changes between runs, zero included, must not force a recompile. The capacity
 fixes the plan and only the live value varies.
 
-### `HostCountAboveCapacityFailsTheRun`
+### `HostCountAboveCapacityFailsTheRunWithInvalidGraph`
 
-A host count above the capacity fails the run when the resolver is submitted, as an out-of-window
-`based_at()` does. The fill never runs, so the output keeps its canary.
+A provider that returns 101 for a capacity of 100 makes the run return `InvalidGraph` with both
+numbers in the message, as an out-of-window `based_at()` does. The fill never runs, so the output
+keeps its canary. The provider then returns 100, and the same graph runs and writes 100: a fault
+driven by run-time data fails one run and nothing else.
 
 ### `DeviceSlotResolvesFromHostResidentBuffer`
 
@@ -1445,8 +1447,9 @@ The file covers `Detail::record_device_fault()` for values past a uint32. Two `s
 ### `AFieldPastAUint32IsStoredSaturated`
 
 A record written with a base and a capacity of `UINT32_MAX + 5` holds `UINT32_MAX` in both words
-and the count as given. `throw_if_device_fault()` then names `4294967295` as the start of the
-window and clears the record. The test is skipped where `std::size_t` is 32 bits wide.
+and the count as given. `take_device_fault()` then returns an `InvalidGraph` error that names
+`4294967295` as the start of the window, clears the record, and returns nothing when asked again.
+The test is skipped where `std::size_t` is 32 bits wide.
 
 ## test_state_move.cpp
 

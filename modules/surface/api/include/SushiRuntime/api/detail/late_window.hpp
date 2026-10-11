@@ -31,6 +31,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include <sycl/sycl.hpp>
@@ -58,10 +59,13 @@ namespace SushiRuntime
          *
          * Reads the step-boundary values only, with K_USE_BAKED meaning the rest
          * of capacity; a node with a device count or base never comes here.
-         * @throws SushiException With InvalidGraph for a window that does not fit.
+         * @param fault The node's fault record; a window that does not fit is written there
+         *        as K_DEVICE_FAULT_WINDOW.
+         * @return The range, or nothing for a window that does not fit the capacity.
          */
-        inline LiveRange resolve_live_range(
-            const ::SushiRuntime::Internal::Graph::LateBindings& lb, std::size_t capacity)
+        [[nodiscard]] inline std::optional<LiveRange> resolve_live_range(
+            const ::SushiRuntime::Internal::Graph::LateBindings& lb, std::size_t capacity,
+            std::uint32_t* fault) noexcept
         {
             LiveRange range;
             range.base = lb.base.load(std::memory_order_relaxed);
@@ -74,14 +78,11 @@ namespace SushiRuntime
                     : live;
 
             if (range.base > capacity || range.count > capacity - range.base)
-                throw SushiException(Error{
-                    ErrorCode::InvalidGraph,
-                    "A late-bound task's live window starts at " +
-                    std::to_string(range.base) + " and covers " +
-                    std::to_string(range.count) +
-                    " elements, which does not fit the capacity it was "
-                    "compiled for (" + std::to_string(capacity) +
-                    "); size the task's buffers for the worst case."});
+            {
+                record_device_fault(fault, K_DEVICE_FAULT_WINDOW, range.base, range.count,
+                                    capacity);
+                return std::nullopt;
+            }
             return range;
         }
 
@@ -124,7 +125,9 @@ namespace SushiRuntime
          * A node with no device slot keeps its host-resolved range. One with a
          * slot runs at @p capacity, each work-item past the live count returns,
          * and a window that does not fit is recorded in @p fault for the step to
-         * throw (docs/design/GRAPH_REPLAY.md §D).
+         * return (docs/design/GRAPH_REPLAY.md §D). A host-resolved window that does not
+         * fit is recorded there too, and an empty kernel is submitted in its place.
+         * @pre fault is not null.
          */
         template <class F>
         inline void submit_late_window(sycl::handler& h,
@@ -134,7 +137,8 @@ namespace SushiRuntime
         {
             if (lb.device_count == nullptr && lb.device_base == nullptr)
             {
-                submit_live_range(h, resolve_live_range(lb, capacity), kernel);
+                const std::optional<LiveRange> range = resolve_live_range(lb, capacity, fault);
+                submit_live_range(h, range ? *range : LiveRange{}, kernel);
                 return;
             }
 

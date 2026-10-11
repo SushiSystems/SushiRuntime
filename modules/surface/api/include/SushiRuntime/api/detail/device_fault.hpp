@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include <SushiRuntime/core/error.hpp>
@@ -57,8 +58,9 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Writes one fault record from device code; its node is the record's only writer.
-         * @param record   K_DEVICE_FAULT_WORDS host-USM words; null records nothing.
+         * @brief Writes one fault record, from a kernel or from the host code that dispatches
+         *        the node; its node is the record's only writer.
+         * @param record   K_DEVICE_FAULT_WORDS words the host can read; null records nothing.
          * @param kind     K_DEVICE_FAULT_WINDOW or K_DEVICE_FAULT_LATE_COUNT.
          * @param base     Stored as UINT32_MAX when larger, as count and capacity are.
          */
@@ -87,26 +89,26 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Clears a fault record the device wrote and throws the error it names.
-         * @param record K_DEVICE_FAULT_WORDS host-USM words, read after its step finished.
-         * @throws SushiException With InvalidGraph when the record holds a fault.
+         * @brief Clears a fault record and returns the error it names.
+         * @param record K_DEVICE_FAULT_WORDS words, read after the step that wrote them finished.
+         * @return An InvalidGraph error when the record holds a fault, or nothing.
          */
-        inline void throw_if_device_fault(std::uint32_t* record)
+        [[nodiscard]] inline std::optional<Error> take_device_fault(std::uint32_t* record)
         {
             const std::uint32_t kind = record[0];
             if (kind == K_DEVICE_FAULT_NONE)
-                return;
+                return std::nullopt;
             const std::uint32_t base = record[1];
             const std::uint32_t count = record[2];
             const std::uint32_t capacity = record[3];
             record[0] = K_DEVICE_FAULT_NONE;
             if (kind == K_DEVICE_FAULT_LATE_COUNT)
-                throw SushiException(late_count_overflow(count, capacity));
-            throw SushiException(Error{ErrorCode::InvalidGraph,
+                return late_count_overflow(count, capacity);
+            return Error{ErrorCode::InvalidGraph,
                 "A late-bound task's live window starts at " + std::to_string(base) +
                 " and covers " + std::to_string(count) +
                 " elements, which does not fit the capacity it was compiled for (" +
-                std::to_string(capacity) + "); size the task's buffers for the worst case."});
+                std::to_string(capacity) + "); size the task's buffers for the worst case."};
         }
 
     } // namespace Detail

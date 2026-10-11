@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include <SushiRuntime/api/detail/device_fault.hpp>
@@ -75,12 +76,14 @@ namespace SushiRuntime
         /**
          * @brief Resolves a LateCount's host side and names its device slot without reading it.
          * @param count The count to resolve.
-         * @return The source a resolver kernel reads.
-         * @throws SushiException With InvalidGraph if a host provider returns more
-         *         than the capacity.
+         * @param fault The node's fault record; a host count above the capacity is written
+         *        there as K_DEVICE_FAULT_LATE_COUNT.
+         * @return The source a resolver kernel reads, or nothing for a host count above the
+         *         capacity.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
-        inline LiveCountSource late_count_source(const LateCount& count)
+        [[nodiscard]] inline std::optional<LiveCountSource> late_count_source(
+            const LateCount& count, std::uint32_t* fault)
         {
             LiveCountSource source;
             source.capacity = count.capacity();
@@ -91,8 +94,11 @@ namespace SushiRuntime
             const LateCount::Provider* host = LateCountAccess::host(count);
             source.host_live = (host != nullptr) ? (*host)() : source.capacity;
             if (source.host_live > source.capacity)
-                throw SushiException(
-                    late_count_overflow(source.host_live, source.capacity));
+            {
+                record_device_fault(fault, K_DEVICE_FAULT_LATE_COUNT, 0, source.host_live,
+                                    source.capacity);
+                return std::nullopt;
+            }
             return source;
         }
 

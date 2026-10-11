@@ -50,8 +50,9 @@ namespace SushiRuntime
          * @brief Builds the replay of the single task that resolves K late counts.
          *
          * A host count bakes in at submit; a device count is read in the kernel, zeroed and
-         * faulted past capacity (docs/design/GRAPH_REPLAY.md §D.2).
-         * @param fault The node's fault record; null only when no count has a device slot.
+         * faulted past capacity (docs/design/GRAPH_REPLAY.md §D.2). A host count past its
+         * capacity is written to the fault record, and the fill does not run.
+         * @param fault The node's fault record; the step that follows reads it.
          * @param fill  Device callable run once as fill(live), in the order of counts.
          */
         template <std::size_t K, class Fill>
@@ -69,7 +70,16 @@ namespace SushiRuntime
                 {
                     std::array<LiveCountSource, K> sources;
                     for (std::size_t k = 0; k < K; ++k)
-                        sources[k] = late_count_source(counts[k]);
+                    {
+                        const std::optional<LiveCountSource> source =
+                            late_count_source(counts[k], fault);
+                        if (!source)
+                        {
+                            h.single_task([]() {});
+                            return;
+                        }
+                        sources[k] = *source;
+                    }
                     h.single_task([sources, fault, fill]()
                     {
                         std::array<std::size_t, K> live{};
