@@ -27,6 +27,7 @@
  */
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -145,4 +146,46 @@ TEST(Integration_RuntimeEntry, AMovedRuntimeKeepsItsContext)
     const Runtime second = std::move(first);
 
     EXPECT_EQ(&second.unsafe_context(), context);
+}
+
+/** @brief Tests that a caller waits for device work and copies through the device's queue. */
+TEST(Integration_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
+{
+    constexpr std::size_t K_WORDS = 256;
+
+    const Runtime runtime = Runtime::create();
+    const Buffer<std::uint32_t> values = runtime.buffer<std::uint32_t>(K_WORDS);
+    std::uint32_t* words = values.data();
+
+    sycl::queue& queue = runtime.advanced().queue(values.device_index());
+    queue.parallel_for(sycl::range<1>(K_WORDS), [words](sycl::id<1> i)
+    {
+        words[i] = static_cast<std::uint32_t>(i[0]) + 1u;
+    });
+    runtime.wait();
+
+    std::vector<std::uint32_t> copied(K_WORDS, 0u);
+    queue.memcpy(copied.data(), words, K_WORDS * sizeof(std::uint32_t)).wait();
+
+    for (std::size_t i = 0; i < K_WORDS; ++i)
+        EXPECT_EQ(copied[i], static_cast<std::uint32_t>(i) + 1u) << "word " << i;
+}
+
+/** @brief Tests that the queue of a device the runtime does not have is refused. */
+TEST(Integration_RuntimeEntry, AQueueOfAnUnknownDeviceIsRefused)
+{
+    const Runtime runtime = Runtime::create();
+    const AdvancedControls controls = runtime.advanced();
+
+    Errc refused = Errc::ok;
+    try
+    {
+        static_cast<void>(controls.queue(DeviceIndex{controls.device_count()}));
+    }
+    catch (const SushiException& failure)
+    {
+        refused = failure.error().code;
+    }
+
+    EXPECT_EQ(refused, Errc::invalid_access);
 }
