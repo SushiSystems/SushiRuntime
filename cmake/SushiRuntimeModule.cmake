@@ -50,8 +50,10 @@ endfunction()
 #
 # Compiles every public header of a module first and alone, with the include roots of the
 # module's DEPENDS only. A header that forgot one of its own includes, or that includes a
-# module the public surface did not declare, fails to compile here. The headers are globbed
-# so that the check does not depend on someone listing a new one.
+# module the public surface did not declare, fails to compile here. A module that is not
+# INTERNAL has only modules of its kind under DEPENDS, so a header it installs that includes
+# an internal one fails here too. The headers are globbed so that the check does not depend
+# on someone listing a new one.
 function(sushiruntime_add_header_check)
     cmake_parse_arguments(ARG "" "MODULE;INCLUDE_ROOT" "EXCLUDE" ${ARGN})
 
@@ -98,7 +100,8 @@ endfunction()
 # DEPENDS are the modules the public headers include; PRIVATE_DEPENDS the ones only
 # source/ includes. SYCL marks a module whose sources include a SYCL header.
 # INTERNAL marks a module whose headers are for the other modules of the library: its
-# include root reaches them and the tests, and is not installed.
+# include root reaches them and the tests, and is not installed. A module without the mark
+# is installed, and may name an INTERNAL module under PRIVATE_DEPENDS only.
 # HEADER_CHECK_EXCLUDE names a header the header check must not compile alone.
 function(sushiruntime_add_module)
     cmake_parse_arguments(ARG "INTERNAL;HEADER_ONLY;SYCL" "NAME;TIER"
@@ -134,6 +137,23 @@ function(sushiruntime_add_module)
         sushiruntime_check_module_edge("${ARG_NAME}" "${dependency}")
     endforeach()
 
+    # A dependency is declared before its consumer, so the list is complete for this module.
+    get_property(internal_modules GLOBAL PROPERTY SUSHIRUNTIME_INTERNAL_MODULES)
+    if(ARG_INTERNAL)
+        set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_INTERNAL_MODULES "${ARG_NAME}")
+    else()
+        foreach(dependency IN LISTS ARG_DEPENDS)
+            if(dependency IN_LIST internal_modules)
+                message(FATAL_ERROR
+                    "sushiruntime_add_module(${ARG_NAME}): lists the INTERNAL module "
+                    "'${dependency}' under DEPENDS. ${ARG_NAME} is installed and "
+                    "${dependency} is not, so no header of ${ARG_NAME} may include it. Move "
+                    "it to PRIVATE_DEPENDS, or move the type the header needs to a public "
+                    "module.")
+            endif()
+        endforeach()
+    endif()
+
     set(target "sushiruntime_module_${ARG_NAME}")
     set(include_root "${CMAKE_CURRENT_SOURCE_DIR}/include")
     add_library(${target} INTERFACE)
@@ -142,7 +162,7 @@ function(sushiruntime_add_module)
         target_link_libraries(${target} INTERFACE "sushiruntime_module_${dependency}")
     endforeach()
     # The build tree sees every root; only a public module's root is installed.
-    set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_INSTALLED_INCLUDE_ROOTS "${include_root}")
+    set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_BUILD_INCLUDE_ROOTS "${include_root}")
     if(NOT ARG_INTERNAL)
         set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_PUBLIC_INCLUDE_ROOTS "${include_root}")
     endif()

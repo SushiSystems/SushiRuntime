@@ -24,7 +24,7 @@ function(sushiruntime_compose_library)
     add_library(SushiRuntime::SushiRuntime ALIAS sushiruntime)
 
     get_property(object_targets GLOBAL PROPERTY SUSHIRUNTIME_MODULE_OBJECT_TARGETS)
-    get_property(include_roots  GLOBAL PROPERTY SUSHIRUNTIME_INSTALLED_INCLUDE_ROOTS)
+    get_property(include_roots  GLOBAL PROPERTY SUSHIRUNTIME_BUILD_INCLUDE_ROOTS)
     get_property(externals      GLOBAL PROPERTY SUSHIRUNTIME_MODULE_EXTERNAL_LIBRARIES)
     foreach(objects IN LISTS object_targets)
         target_sources(sushiruntime PRIVATE "$<TARGET_OBJECTS:${objects}>")

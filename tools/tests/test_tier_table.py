@@ -19,6 +19,7 @@ from layering.check_layering import (  # noqa: E402
     K_SAME_TIER_EDGES,
     K_TIER_ORDER,
     rule_declared_dependencies,
+    rule_public_headers,
     rule_same_tier_includes,
 )
 
@@ -51,9 +52,10 @@ class TierTableTest(unittest.TestCase):
     """Checks the checker's copies of the tier table against the CMake file."""
 
     def test_is_registered(self) -> None:
-        """Runs both table-driven rules as part of the checker's rule table."""
+        """Runs the rules that read a build table as part of the checker's rule table."""
         self.assertIs(K_CHECKER.rules["rule_same_tier_includes"], rule_same_tier_includes)
         self.assertIs(K_CHECKER.rules["rule_declared_dependencies"], rule_declared_dependencies)
+        self.assertIs(K_CHECKER.rules["rule_public_headers"], rule_public_headers)
 
     def test_tier_order_matches_the_cmake_table(self) -> None:
         """Holds the tiers of SUSHIRUNTIME_TIER_ORDER in the same order."""
