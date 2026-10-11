@@ -40,7 +40,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph { class OffloadSink; }
+    namespace Internal::Graph { class OffloadSink; }
 
     namespace Distributed
     {
@@ -56,7 +56,7 @@ namespace SushiRuntime
                                                     BufferRegistry& registry,
                                                     BufferExchange& exchange,
                                                     WorkerDirectory& directory,
-                                                    Graph::OffloadSink& sink) noexcept;
+                                                    Internal::Graph::OffloadSink& sink) noexcept;
 
     } // namespace Distributed
 } // namespace SushiRuntime

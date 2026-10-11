@@ -49,14 +49,14 @@ namespace
 TEST(Integration_LaunchReach, ReachSaturatesAtTheLargestSize)
 {
     const sycl::range<1> size(WIDTH);
-    const API::Extent<1> inside{size, sycl::id<1>(16)};
-    const API::Extent<1> wrapping{size, sycl::id<1>(WRAPPING_ORIGIN)};
-    const API::NdRange<1> tiled{size, sycl::range<1>(4), sycl::id<1>(WRAPPING_ORIGIN)};
+    const Extent<1> inside{size, sycl::id<1>(16)};
+    const Extent<1> wrapping{size, sycl::id<1>(WRAPPING_ORIGIN)};
+    const NdRange<1> tiled{size, sycl::range<1>(4), sycl::id<1>(WRAPPING_ORIGIN)};
 
-    EXPECT_EQ(API::detail::launch_reach(inside), 24u);
-    EXPECT_EQ(API::detail::launch_reach(wrapping), SIZE_MAX);
-    EXPECT_EQ(API::detail::launch_reach(tiled), SIZE_MAX);
-    EXPECT_EQ(API::detail::saturated_reach(SIZE_MAX - WIDTH, WIDTH), SIZE_MAX);
+    EXPECT_EQ(detail::launch_reach(inside), 24u);
+    EXPECT_EQ(detail::launch_reach(wrapping), SIZE_MAX);
+    EXPECT_EQ(detail::launch_reach(tiled), SIZE_MAX);
+    EXPECT_EQ(detail::saturated_reach(SIZE_MAX - WIDTH, WIDTH), SIZE_MAX);
 }
 
 /** @brief Tests that an Extent whose end wraps past SIZE_MAX is refused where add() is called. */
@@ -65,16 +65,16 @@ TEST(Integration_LaunchReach, AnExtentWhoseEndWrapsIsRefusedAtAdd)
     auto rt = Runtime::create();
     auto field = rt.state<Word>(WIDTH);
     auto graph = rt.graph();
-    const API::Extent<1> window{sycl::range<1>(WIDTH), sycl::id<1>(WRAPPING_ORIGIN)};
+    const Extent<1> window{sycl::range<1>(WIDTH), sycl::id<1>(WRAPPING_ORIGIN)};
 
     try
     {
         graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
         ADD_FAILURE() << "a launch that ends past SIZE_MAX was recorded";
     }
-    catch (const Core::SushiException& refused)
+    catch (const SushiException& refused)
     {
-        EXPECT_EQ(refused.error().code, Core::Errc::invalid_graph);
+        EXPECT_EQ(refused.error().code, Errc::invalid_graph);
     }
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 }

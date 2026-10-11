@@ -38,40 +38,37 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /**
+         * @brief Holds one recorded node: its replay callable and the rule it belongs to.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        struct NodeSpec
         {
+            /** @brief Stands for "no rule": the value a replay starts from. */
+            static constexpr std::uint32_t K_NO_RULE = static_cast<std::uint32_t>(-1);
+
             /**
-             * @brief Holds one recorded node: its replay callable and the rule it belongs to.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+             * @brief Wraps a callable invoked as emit(TaskGraph&, registration) per replay.
+             * @param f The replay callable; it adds the node and stamps the registration given.
              */
-            struct NodeSpec
+            template <class F,
+                      std::enable_if_t<!std::is_same<std::decay_t<F>, NodeSpec>::value,
+                                       int> = 0>
+            explicit NodeSpec(F&& f) : emit(std::forward<F>(f))
             {
-                /** @brief Stands for "no rule": the value a replay starts from. */
-                static constexpr std::uint32_t K_NO_RULE = static_cast<std::uint32_t>(-1);
+            }
 
-                /**
-                 * @brief Wraps a callable invoked as emit(TaskGraph&, registration) per replay.
-                 * @param f The replay callable; it adds the node and stamps the registration given.
-                 */
-                template <class F,
-                          std::enable_if_t<!std::is_same<std::decay_t<F>, NodeSpec>::value,
-                                           int> = 0>
-                explicit NodeSpec(F&& f) : emit(std::forward<F>(f))
-                {
-                }
+            /** @brief Adds this node to a backing graph; no registration draws a fresh one. */
+            std::function<void(::SushiRuntime::Internal::Graph::TaskGraph&,
+                               std::optional<std::uint32_t>)> emit;
 
-                /** @brief Adds this node to a backing graph; no registration draws a fresh one. */
-                std::function<void(::SushiRuntime::Graph::TaskGraph&,
-                                   std::optional<std::uint32_t>)> emit;
+            /** @brief Position of this node's rule in the recorder's rule order. */
+            std::uint32_t rule = K_NO_RULE;
 
-                /** @brief Position of this node's rule in the recorder's rule order. */
-                std::uint32_t rule = K_NO_RULE;
-
-                /** @brief Whether replay stamps the rule's index; false if emit stamps its own. */
-                bool takes_rule_registration = true;
-            };
-        } // namespace detail
-    } // namespace API
+            /** @brief Whether replay stamps the rule's index; false if emit stamps its own. */
+            bool takes_rule_registration = true;
+        };
+    } // namespace detail
 } // namespace SushiRuntime

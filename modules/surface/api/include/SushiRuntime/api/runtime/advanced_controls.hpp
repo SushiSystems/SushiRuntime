@@ -42,96 +42,92 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    class Runtime;
+
+    /**
+     * @brief Answers read-only questions about a runtime's devices, workers and counters.
+     *
+     * A view shares ownership of the runtime's context, so it answers after the Runtime
+     * it came from is destroyed.
+     *
+     * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+     */
+    class AdvancedControls
     {
-        class Runtime;
+        public:
+            /** @brief Returns how many devices the runtime drives; indices are [0, this). */
+            [[nodiscard]] std::size_t device_count() const
+            {
+                return context_->devices().count();
+            }
 
-        /**
-         * @brief Answers read-only questions about a runtime's devices, workers and counters.
-         *
-         * A view shares ownership of the runtime's context, so it answers after the Runtime
-         * it came from is destroyed.
-         *
-         * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
-         */
-        class AdvancedControls
-        {
-            public:
-                /** @brief Returns how many devices the runtime drives; indices are [0, this). */
-                [[nodiscard]] std::size_t device_count() const
-                {
-                    return context_->devices().count();
-                }
+            /**
+             * @brief Returns the device inventory in SYCL enumeration order.
+             * @return Entry i describes DeviceIndex{i}; valid while a handle of this
+             *         runtime lives.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] const std::vector<Internal::Device::DeviceInfo>& devices() const
+            {
+                return context_->devices().devices();
+            }
 
-                /**
-                 * @brief Returns the device inventory in SYCL enumeration order.
-                 * @return Entry i describes DeviceIndex{i}; valid while a handle of this
-                 *         runtime lives.
-                 * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
-                 */
-                [[nodiscard]] const std::vector<Device::DeviceInfo>& devices() const
-                {
-                    return context_->devices().devices();
-                }
+            /** @brief Returns whether the queues were built to record device timing. */
+            [[nodiscard]] bool is_profiling_enabled() const noexcept
+            {
+                return context_->settings().profiling;
+            }
 
-                /** @brief Returns whether the queues were built to record device timing. */
-                [[nodiscard]] bool is_profiling_enabled() const noexcept
-                {
-                    return context_->settings().profiling;
-                }
+            /** @brief Returns whether the background thermal rebalancer is running. */
+            [[nodiscard]] bool is_rebalancer_enabled() const
+            {
+                return context_->get_execution_engine().rebalancer_enabled();
+            }
 
-                /** @brief Returns whether the background thermal rebalancer is running. */
-                [[nodiscard]] bool is_rebalancer_enabled() const
-                {
-                    return context_->get_execution_engine().rebalancer_enabled();
-                }
+            /**
+             * @brief Returns the worker pool as built, which may differ from the request.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] WorkerPool worker_pool() const
+            {
+                return context_->get_execution_engine().worker_pool();
+            }
 
-                /**
-                 * @brief Returns the worker pool as built, which may differ from the request.
-                 * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
-                 */
-                [[nodiscard]] WorkerPool worker_pool() const
-                {
-                    return context_->get_execution_engine().worker_pool();
-                }
+            /**
+             * @brief Returns the bytes explicit transfers copied host to device since startup.
+             * @return A cumulative count; implicit shared-USM migration is not in it.
+             */
+            [[nodiscard]] std::size_t host_to_device_bytes() const noexcept
+            {
+                return context_->transfers().host_to_device();
+            }
 
-                /**
-                 * @brief Returns the bytes explicit transfers copied host to device since startup.
-                 * @return A cumulative count; implicit shared-USM migration is not in it.
-                 */
-                [[nodiscard]] std::size_t host_to_device_bytes() const noexcept
-                {
-                    return context_->transfers().host_to_device();
-                }
+            /**
+             * @brief Returns the bytes explicit transfers copied device to host since startup.
+             * @return A cumulative count; implicit shared-USM migration is not in it.
+             */
+            [[nodiscard]] std::size_t device_to_host_bytes() const noexcept
+            {
+                return context_->transfers().device_to_host();
+            }
 
-                /**
-                 * @brief Returns the bytes explicit transfers copied device to host since startup.
-                 * @return A cumulative count; implicit shared-USM migration is not in it.
-                 */
-                [[nodiscard]] std::size_t device_to_host_bytes() const noexcept
-                {
-                    return context_->transfers().device_to_host();
-                }
+        private:
+            friend class Runtime;
 
-            private:
-                friend class Runtime;
+            /**
+             * @brief Shares ownership of a runtime's context.
+             * @param context Must not be null.
+             */
+            explicit AdvancedControls(
+                std::shared_ptr<Internal::Execution::RuntimeContext> context) noexcept
+                : context_(std::move(context))
+            {
+            }
 
-                /**
-                 * @brief Shares ownership of a runtime's context.
-                 * @param context Must not be null.
-                 */
-                explicit AdvancedControls(
-                    std::shared_ptr<Execution::RuntimeContext> context) noexcept
-                    : context_(std::move(context))
-                {
-                }
+            /// @brief Context the answers are read from; never null.
+            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
+    };
 
-                /// @brief Context the answers are read from; never null.
-                std::shared_ptr<Execution::RuntimeContext> context_;
-        };
 
-    } // namespace API
-
-    using API::AdvancedControls;
 
 } // namespace SushiRuntime

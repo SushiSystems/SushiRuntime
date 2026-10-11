@@ -39,8 +39,8 @@
 #include "test_helpers.hpp"
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Graph;
+using namespace SushiRuntime::Internal::Execution;
+using namespace SushiRuntime::Internal::Graph;
 using SushiRuntime::Test::USMShared;
 
 /**
@@ -128,9 +128,9 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
 
     // Both buffers are pinned to device 0, as a task's buffers live on one device; see README.md.
     float* data = static_cast<float*>(
-        ctx.memory().allocate({Memory::USMKind::Shared, N * sizeof(float), 0, 0}));
+        ctx.memory().allocate({Internal::Memory::USMKind::Shared, N * sizeof(float), 0, 0}));
     double* sum = static_cast<double*>(
-        ctx.memory().allocate({Memory::USMKind::Shared, sizeof(double), 0, 0}));
+        ctx.memory().allocate({Internal::Memory::USMKind::Shared, sizeof(double), 0, 0}));
     ASSERT_NE(data, nullptr);
     ASSERT_NE(sum, nullptr);
 

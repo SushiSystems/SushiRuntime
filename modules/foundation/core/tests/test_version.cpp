@@ -30,8 +30,8 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/version.hpp>
 
-using SushiRuntime::Core::Errc;
-using SushiRuntime::Core::SushiException;
+using SushiRuntime::Errc;
+using SushiRuntime::SushiException;
 using SushiRuntime::Version;
 
 namespace

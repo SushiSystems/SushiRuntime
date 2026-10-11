@@ -33,7 +33,7 @@
 
 namespace SushiRuntime
 {
-    namespace Observability
+    namespace Internal::Observability
     {
         /**
          * @brief Counts the bytes that explicit transfers copy between host and device.

@@ -40,8 +40,8 @@
 #include <SushiRuntime/task/task.hpp>
 
 using namespace SushiRuntime;
-using SushiRuntime::Scheduler::Task;
-using SushiRuntime::Scheduler::RangeTask;
+using SushiRuntime::Internal::Scheduler::Task;
+using SushiRuntime::Internal::Scheduler::RangeTask;
 
 namespace
 {
@@ -190,7 +190,7 @@ TEST(Unit_RangeTaskTest, SplitPartsCoverTheRangeExactlyOnce)
  */
 TEST(Unit_RangeTaskTest, ConstructorRejectsAReversedRange)
 {
-    EXPECT_THROW(RangeTask(size_t{8}, size_t{4}, noop_kernel()), Core::SushiException);
+    EXPECT_THROW(RangeTask(size_t{8}, size_t{4}, noop_kernel()), SushiException);
 
     RangeTask empty(size_t{8}, size_t{8}, noop_kernel());
     EXPECT_FALSE(empty.is_splittable());

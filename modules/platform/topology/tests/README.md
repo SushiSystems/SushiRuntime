@@ -64,7 +64,7 @@ For the second NUMA node, `local_numa_os_index` returns that node's own OS index
 
 ### `refusal_of`
 
-`refusal_of` runs a constructor call and returns the `Core::Error` of the `SushiException` it
+`refusal_of` runs a constructor call and returns the `Error` of the `SushiException` it
 throws. It records a test failure when the call throws nothing.
 
 ### `NullDistanceModelIsRejected`, `NullInnerProviderIsRejected`

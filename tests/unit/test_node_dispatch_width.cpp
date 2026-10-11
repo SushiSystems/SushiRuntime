@@ -41,8 +41,8 @@
 #include <SushiRuntime/task/node_widths.hpp>
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Graph;
+using namespace SushiRuntime::Internal::Execution;
+using namespace SushiRuntime::Internal::Graph;
 
 static_assert(std::is_same<decltype(Node::baked_width), std::size_t>::value,
               "Node::baked_width must stay std::size_t; Task 3 widens NodeEventRecord "
@@ -58,7 +58,7 @@ namespace
     }
 
     /** @brief Finds the one compiled node named @p name, failing if missing or duplicated. */
-    const Node& find_named(const Graph::CompiledGraph& plan, const char* name)
+    const Node& find_named(const Internal::Graph::CompiledGraph& plan, const char* name)
     {
         const Node* found = nullptr;
         for (const auto& n : plan.all_nodes)
@@ -77,7 +77,7 @@ namespace
 TEST(Unit_NodeDispatchWidth, DefaultConstructedNodeReportsUnknown)
 {
     const Node node;
-    EXPECT_EQ(node.baked_width, std::size_t{Observability::WIDTH_UNKNOWN});
+    EXPECT_EQ(node.baked_width, std::size_t{Internal::Observability::WIDTH_UNKNOWN});
 }
 
 /** @brief Tests that a node added without a stamp reports the unknown width. */
@@ -88,7 +88,7 @@ TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 
     graph.add_node(noop_work());
 
-    EXPECT_EQ(graph.last_node_added()->baked_width, std::size_t{Observability::WIDTH_UNKNOWN});
+    EXPECT_EQ(graph.last_node_added()->baked_width, std::size_t{Internal::Observability::WIDTH_UNKNOWN});
 }
 
 /** @brief Tests that a width set on a node and a name given after it land on that node. */
@@ -116,10 +116,10 @@ TEST(Unit_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
     graph.add_node(noop_work()).baked_width = 4096;
     graph.name_last_node("second");
 
-    Graph::CompiledGraph plan = graph.compile();
+    Internal::Graph::CompiledGraph plan = graph.compile();
     ASSERT_EQ(plan.all_nodes.size(), 2u);
 
-    EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{Observability::WIDTH_UNKNOWN});
+    EXPECT_EQ(find_named(plan, "first").baked_width, std::size_t{Internal::Observability::WIDTH_UNKNOWN});
     EXPECT_EQ(find_named(plan, "second").baked_width, std::size_t{4096});
 }
 
@@ -129,10 +129,10 @@ TEST(Unit_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
 TEST(Unit_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
 {
     RuntimeContext ctx;
-    Graph::TaskGraph graph;
+    Internal::Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}).baked_width = 1024;
 
-    const Graph::NodeWidths widths = Graph::snapshot_widths(*graph.last_node_added());
+    const Internal::Graph::NodeWidths widths = Internal::Graph::snapshot_widths(*graph.last_node_added());
     EXPECT_EQ(widths.launched, 1024u);
     EXPECT_EQ(widths.live, 1024u);
 }
@@ -140,14 +140,14 @@ TEST(Unit_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
 /** @brief Tests that a dynamic node reports its capacity as launched and its live count as live. */
 TEST(Unit_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
 {
-    auto bindings = std::make_shared<Graph::LateBindings>();
+    auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     bindings->count.store(129, std::memory_order_relaxed);
 
     RuntimeContext ctx;
-    Graph::TaskGraph graph;
+    Internal::Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}, {}, {}, bindings).baked_width = 1024;
 
-    const Graph::NodeWidths widths = Graph::snapshot_widths(*graph.last_node_added());
+    const Internal::Graph::NodeWidths widths = Internal::Graph::snapshot_widths(*graph.last_node_added());
     EXPECT_EQ(widths.launched, 1024u);
     EXPECT_EQ(widths.live, 129u);
 }
@@ -155,24 +155,24 @@ TEST(Unit_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
 /** @brief Tests that USE_BAKED falls back to the baked width. */
 TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
 {
-    auto bindings = std::make_shared<Graph::LateBindings>();
-    bindings->count.store(Graph::LateBindings::USE_BAKED, std::memory_order_relaxed);
+    auto bindings = std::make_shared<Internal::Graph::LateBindings>();
+    bindings->count.store(Internal::Graph::LateBindings::USE_BAKED, std::memory_order_relaxed);
 
     RuntimeContext ctx;
-    Graph::TaskGraph graph;
+    Internal::Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}, {}, {}, bindings).baked_width = 1024;
 
-    EXPECT_EQ(Graph::snapshot_widths(*graph.last_node_added()).live, 1024u);
+    EXPECT_EQ(Internal::Graph::snapshot_widths(*graph.last_node_added()).live, 1024u);
 }
 
 /** @brief Tests that a width that does not fit in uint32_t is reported as unknown. */
 TEST(Unit_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
 {
     RuntimeContext ctx;
-    Graph::TaskGraph graph;
+    Internal::Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}).baked_width = std::size_t{0xFFFFFFFFu} + 1;
 
-    const Graph::NodeWidths widths = Graph::snapshot_widths(*graph.last_node_added());
-    EXPECT_EQ(widths.launched, Observability::WIDTH_UNKNOWN);
-    EXPECT_EQ(widths.live, Observability::WIDTH_UNKNOWN);
+    const Internal::Graph::NodeWidths widths = Internal::Graph::snapshot_widths(*graph.last_node_added());
+    EXPECT_EQ(widths.launched, Internal::Observability::WIDTH_UNKNOWN);
+    EXPECT_EQ(widths.live, Internal::Observability::WIDTH_UNKNOWN);
 }

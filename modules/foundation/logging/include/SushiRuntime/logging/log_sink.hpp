@@ -37,21 +37,18 @@
 
 namespace SushiRuntime
 {
-    namespace Core
-    {
-        /**
-         * @brief Receives one record: its level and its line, which carries no line break.
-         *
-         * The line is valid only during the call. A sink does not log and does not call
-         * set_log_sink().
-         */
-        using LogSink = Delegate<void(LogLevel level, std::string_view line), 48>;
+    /**
+     * @brief Receives one record: its level and its line, which carries no line break.
+     *
+     * The line is valid only during the call. A sink does not log and does not call
+     * set_log_sink().
+     */
+    using LogSink = Delegate<void(LogLevel level, std::string_view line), 48>;
 
-        /**
-         * @brief Replaces the sink of the whole process and returns once the old one is idle.
-         * @param sink An empty sink restores the default, which writes every line to stderr.
-         * @see modules/foundation/logging/README.md
-         */
-        SUSHIRUNTIME_API void set_log_sink(LogSink sink);
-    } // namespace Core
+    /**
+     * @brief Replaces the sink of the whole process and returns once the old one is idle.
+     * @param sink An empty sink restores the default, which writes every line to stderr.
+     * @see modules/foundation/logging/README.md
+     */
+    SUSHIRUNTIME_API void set_log_sink(LogSink sink);
 } // namespace SushiRuntime

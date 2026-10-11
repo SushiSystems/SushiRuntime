@@ -35,7 +35,7 @@
 
 namespace SushiRuntime 
 {
-    namespace Graph 
+    namespace Internal::Graph 
     {
         /**
          * @brief Defines the high-level computational domain category for a specific task.
@@ -186,8 +186,8 @@ namespace SushiRuntime
 
     } // namespace Graph
 
-    using Graph::Literals::operator""_op;
-    using Graph::OpID;
-    using Graph::TaskMetadata;
+    using Internal::Graph::Literals::operator""_op;
+    using Internal::Graph::OpID;
+    using Internal::Graph::TaskMetadata;
 
 } // namespace SushiRuntime

@@ -16,28 +16,28 @@ It depends on the C++ standard library and on `core` (`export.hpp`, `error.hpp`,
 | `SR_LOG_INFO`, `SR_LOG_DEBUG` | The same, at the two lower levels |
 | `SR_THROW_IF(condition, ...)` | Logs at error level and throws when the condition holds |
 | `SR_LOGGER_SET_SYNC_MODE(mode)` | Forwards to `set_log_synchronous` |
-| `Core::set_log_synchronous(bool)` | Chooses which thread delivers a record |
-| `Core::log_write(level, line)` | Hands a finished line to the sink, whatever the level |
+| `set_log_synchronous(bool)` | Chooses which thread delivers a record |
+| `log_write(level, line)` | Hands a finished line to the sink, whatever the level |
 
 `log_level.hpp`:
 
 | Name | What it does |
 | --- | --- |
-| `Core::LogLevel` | `Off`, `Error`, `Warn`, `Info`, `Debug` |
-| `Core::set_log_level(level)`, `Core::log_level()` | Set and read the level of the process |
-| `Core::K_LOG_LEVEL_CEILING` | The highest level a translation unit compiles calls for |
+| `LogLevel` | `Off`, `Error`, `Warn`, `Info`, `Debug` |
+| `set_log_level(level)`, `log_level()` | Set and read the level of the process |
+| `K_LOG_LEVEL_CEILING` | The highest level a translation unit compiles calls for |
 
 `log_sink.hpp`:
 
 | Name | What it does |
 | --- | --- |
-| `Core::LogSink` | The callable that receives each record |
-| `Core::set_log_sink(sink)` | Replaces the sink of the process |
+| `LogSink` | The callable that receives each record |
+| `set_log_sink(sink)` | Replaces the sink of the process |
 
-`SR_THROW_IF` throws `Core::SushiException` with `Errc::invalid_state`; the message is the
+`SR_THROW_IF` throws `SushiException` with `Errc::invalid_state`; the message is the
 formatted text and is logged once.
 
-Everything in `Core::Detail` belongs to the macros.
+Everything in `Detail` belongs to the macros.
 
 ## Level
 
@@ -81,7 +81,7 @@ With no sink set, every record goes to stderr, whatever its level, in one `fprin
 flush. Stdout is left to the program. `set_log_sink` with an empty sink (`nullptr` or `{}`) restores
 this default.
 
-A `LogSink` is a `Core::Delegate` with 48 bytes of inline storage, so a capture larger than that
+A `LogSink` is a `Delegate` with 48 bytes of inline storage, so a capture larger than that
 does not compile.
 
 ### Which thread calls the sink

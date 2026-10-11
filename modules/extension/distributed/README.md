@@ -58,13 +58,13 @@ the kernel returned completes: the exec thread holds the cache pins across that 
 
 Cluster::attach() is the way into the layer. It builds a master on a runtime, binds it to the
 runtime's offload sink, starts it and its transport, then installs it as the runtime's
-Graph::OffloadCoordinator and as the allocator's release observer, and returns a handle to its
+Internal::Graph::OffloadCoordinator and as the allocator's release observer, and returns a handle to its
 knobs and counters. Until attach() runs, the runtime is a
 single machine: no header of `api` or `execution` names a transport, and Buffer::distributed()
 shares nothing. The first such call in a process logs one WARN that says the buffer stays local
 and that attach() must come first.
 
-One overload takes an API::Runtime and the other an Execution::RuntimeContext. The first forwards
+One overload takes an Runtime and the other an Internal::Execution::RuntimeContext. The first forwards
 to the second through Runtime::unsafe_context(); the second serves code that drives a bare context.
 
 attach() refuses an empty secret when the transport's exposure() is Network. When the transport
@@ -121,7 +121,7 @@ counters keep their totals.
 
 Both read the master's buffer registry by USM address. Offload bumps versions itself at dispatch and
 at completion; bump_buffer() is for a write the runtime did not see, and for tests that need a
-stale version. A buffer enters the registry through Graph::OffloadCoordinator::share(), which
+stale version. A buffer enters the registry through Internal::Graph::OffloadCoordinator::share(), which
 Buffer::distributed() and State::distributed() call.
 
 ## i_transport.hpp
@@ -433,7 +433,7 @@ transport for its byte counts, and `TCPTransport::statistics()` takes the peer t
 that.
 
 `completed_remote` counts the tasks whose result was `Succeeded` with every output whole. The
-coordinator keeps it, since `Graph::OffloadStatistics` has no field for it.
+coordinator keeps it, since `Internal::Graph::OffloadStatistics` has no field for it.
 `peers_closed_malformed` counts the peers closed for bad magic, a malformed header or a payload
 that does not decode.
 
@@ -536,7 +536,7 @@ it.
 
 `WorkerAgent` builds `WorkerBufferCache`, `DispatchDeduplicator`, `MasterLink` and
 `DispatchExecutor` over one transport and one `RuntimeContext`, and is the transport's only event
-receiver. One constructor takes an `API::Runtime` and forwards to the other through
+receiver. One constructor takes an `Runtime` and forwards to the other through
 `Runtime::unsafe_context()`, as the two `Cluster::attach()` overloads do. Kernels run on the queue
 of device 0 of that context. The cache allocates shared USM on the same device through
 `RuntimeContext::memory()`, so the context's allocator records every cached buffer. A `cache_bytes` of 0 becomes half of the device's `memory_bytes`; a device that

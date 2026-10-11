@@ -54,21 +54,21 @@ namespace
 {
     using SushiRuntime::make_sushi;
     using SushiRuntime::sushi_ptr;
-    using SushiRuntime::Graph::Node;
+    using SushiRuntime::Internal::Graph::Node;
 
     /** @brief Describes a machine with no core map; see README.md. */
-    class SingleNodeTopology final : public SushiRuntime::Topology::ITopologyProvider
+    class SingleNodeTopology final : public SushiRuntime::Internal::Topology::ITopologyProvider
     {
         public:
-            std::vector<SushiRuntime::Topology::HardwareNode>
-            enumerate(const SushiRuntime::Topology::HardwareFilterConfig&) override
+            std::vector<SushiRuntime::Internal::Topology::HardwareNode>
+            enumerate(const SushiRuntime::Internal::Topology::HardwareFilterConfig&) override
             {
                 return {};
             }
     };
 
     /** @brief Reports one NUMA node at the local distance. */
-    class SingleNodeDistance final : public SushiRuntime::Topology::INUMADistanceModel
+    class SingleNodeDistance final : public SushiRuntime::Internal::Topology::INUMADistanceModel
     {
         public:
             int distance(int, int) const override
@@ -83,9 +83,9 @@ namespace
     };
 
     /** @brief Returns an inventory of the one device SYCL selects by default. */
-    std::vector<SushiRuntime::Device::DeviceDescriptor> default_device()
+    std::vector<SushiRuntime::Internal::Device::DeviceDescriptor> default_device()
     {
-        SushiRuntime::Device::DeviceDescriptor descriptor;
+        SushiRuntime::Internal::Device::DeviceDescriptor descriptor;
         descriptor.device = sycl::device{sycl::default_selector_v};
         descriptor.info.name = "default";
         descriptor.info.backend = descriptor.device.get_backend();
@@ -93,10 +93,10 @@ namespace
     }
 
     /** @brief Counts what the scheduler offers and reports, and declines every offer. */
-    class CountingCoordinator final : public SushiRuntime::Graph::OffloadCoordinator
+    class CountingCoordinator final : public SushiRuntime::Internal::Graph::OffloadCoordinator
     {
         public:
-            void bind(SushiRuntime::Graph::OffloadSink&) override
+            void bind(SushiRuntime::Internal::Graph::OffloadSink&) override
             {
 
             }
@@ -122,7 +122,7 @@ namespace
 
             }
 
-            [[nodiscard]] SushiRuntime::Graph::OffloadStatistics
+            [[nodiscard]] SushiRuntime::Internal::Graph::OffloadStatistics
             statistics() const noexcept override
             {
                 return {};
@@ -192,8 +192,8 @@ class Unit_OffloadSeam : public ::testing::Test
             : topology_(SingleNodeTopology(), std::make_shared<SingleNodeDistance>()),
               devices_(default_device(), false),
               memory_(devices_.plain_queues()),
-              scheduler_(SushiRuntime::Scheduler::WorkerPoolSettings{
-                             2, 0, SushiRuntime::Scheduler::PinPolicy::Float},
+              scheduler_(SushiRuntime::Internal::Scheduler::WorkerPoolSettings{
+                             2, 0, SushiRuntime::Internal::Scheduler::PinPolicy::Float},
                          topology_, devices_, memory_)
         {
             scheduler_.set_offload_coordinator(&coordinator_);
@@ -216,13 +216,13 @@ class Unit_OffloadSeam : public ::testing::Test
         /// @brief Declared before the scheduler, which keeps its address until stop().
         CountingCoordinator coordinator_;
         /// @brief One NUMA node and no core map.
-        SushiRuntime::Topology::TopologyView topology_;
+        SushiRuntime::Internal::Topology::TopologyView topology_;
         /// @brief The default device's queues; the host nodes of these tests use none.
-        SushiRuntime::Device::DeviceQueueSet devices_;
+        SushiRuntime::Internal::Device::DeviceQueueSet devices_;
         /// @brief Allocator over the device set; no test allocates.
-        SushiRuntime::Memory::USMAllocator memory_;
+        SushiRuntime::Internal::Memory::USMAllocator memory_;
         /// @brief The scheduler under test, started and armed.
-        SushiRuntime::Scheduler::TaskScheduler scheduler_;
+        SushiRuntime::Internal::Scheduler::TaskScheduler scheduler_;
 };
 
 /**
@@ -275,7 +275,7 @@ TEST_F(Unit_OffloadSeam, SkippedNodeNotReportedAsCompleted)
     EXPECT_EQ(coordinator_.completions(), 1u) << "a node skipped by a cancelled run was reported";
 
     const sushi_ptr<Node> disabled = make_counting_node(runs);
-    disabled->bindings_ = std::make_shared<SushiRuntime::Graph::LateBindings>();
+    disabled->bindings_ = std::make_shared<SushiRuntime::Internal::Graph::LateBindings>();
     disabled->bindings_->enabled.store(false, std::memory_order_relaxed);
     run(*disabled);
     EXPECT_EQ(coordinator_.completions(), 1u) << "a node disabled for the step was reported";

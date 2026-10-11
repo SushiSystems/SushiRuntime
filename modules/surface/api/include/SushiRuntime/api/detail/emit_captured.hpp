@@ -45,57 +45,54 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /**
+         * @brief Gathers the regions and the observers of In, Out and InOut captures.
+         * @return What the captures read and write, in argument order.
+         */
+        template <class... Captures>
+        Access captured_access(const Captures&... captures)
         {
-            /**
-             * @brief Gathers the regions and the observers of In, Out and InOut captures.
-             * @return What the captures read and write, in argument order.
-             */
-            template <class... Captures>
-            Access captured_access(const Captures&... captures)
+            Access access;
+            const auto collect = [&access](const auto& capture)
             {
-                Access access;
-                const auto collect = [&access](const auto& capture)
-                {
-                    using Capture = std::decay_t<decltype(capture)>;
-                    if (Capture::reads)
-                        access.reads.push_back(capture.key);
-                    if (Capture::writes)
-                        access.writes.push_back(capture.key);
-                    if (!capture.life.expired())
-                        access.lives.push_back(capture.life);
-                };
-                (collect(captures), ...);
-                return access;
-            }
+                using Capture = std::decay_t<decltype(capture)>;
+                if (Capture::reads)
+                    access.reads.push_back(capture.key);
+                if (Capture::writes)
+                    access.writes.push_back(capture.key);
+                if (!capture.life.expired())
+                    access.lives.push_back(capture.life);
+            };
+            (collect(captures), ...);
+            return access;
+        }
 
-            /**
-             * @brief Builds the replay of a launch that hands its kernel one pointer per capture.
-             * @tparam Launch   std::size_t, Extent<N> or NdRange<N>.
-             * @tparam Pointers A std::tuple of raw pointers, handed to fn after the index.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            template <class Launch, class Pointers, class F>
-            auto captured_node(std::vector<Memory::ResourceRegion> reads,
-                               std::vector<Memory::ResourceRegion> writes,
-                               Launch launch, Pointers pointers, F&& fn, std::size_t width)
+        /**
+         * @brief Builds the replay of a launch that hands its kernel one pointer per capture.
+         * @tparam Launch   std::size_t, Extent<N> or NdRange<N>.
+         * @tparam Pointers A std::tuple of raw pointers, handed to fn after the index.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <class Launch, class Pointers, class F>
+        auto captured_node(std::vector<Internal::Memory::ResourceRegion> reads,
+                           std::vector<Internal::Memory::ResourceRegion> writes,
+                           Launch launch, Pointers pointers, F&& fn, std::size_t width)
+        {
+            return [fn = std::forward<F>(fn), launch, reads = std::move(reads),
+                    writes = std::move(writes), pointers, width]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                    std::optional<std::uint32_t> registration)
             {
-                return [fn = std::forward<F>(fn), launch, reads = std::move(reads),
-                        writes = std::move(writes), pointers, width]
-                       (::SushiRuntime::Graph::TaskGraph& bg,
-                        std::optional<std::uint32_t> registration)
+                bg.add_node([fn, launch, pointers](sycl::handler& h)
                 {
-                    bg.add_node([fn, launch, pointers](sycl::handler& h)
+                    std::apply([&h, &fn, &launch](auto... pointer)
                     {
-                        std::apply([&h, &fn, &launch](auto... pointer)
-                        {
-                            submit_launch(h, launch, fn, pointer...);
-                        }, pointers);
-                    }, reads, writes, {}, registration).baked_width = width;
-                };
-            }
-        } // namespace detail
-    } // namespace API
+                        submit_launch(h, launch, fn, pointer...);
+                    }, pointers);
+                }, reads, writes, {}, registration).baked_width = width;
+            };
+        }
+    } // namespace detail
 } // namespace SushiRuntime

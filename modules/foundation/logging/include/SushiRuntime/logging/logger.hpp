@@ -43,95 +43,92 @@
 
 namespace SushiRuntime
 {
-    namespace Core
+    /**
+     * @brief Hands one finished line to the sink, whatever the level of the process is.
+     * @param line The text of the record, without a line break.
+     * @see modules/foundation/logging/README.md
+     */
+    SUSHIRUNTIME_API void log_write(LogLevel level, std::string&& line);
+
+    /**
+     * @brief Chooses whether a record reaches the sink before its log call returns.
+     * @param synchronous True first delivers every record still queued, then makes each
+     *        log call run the sink itself; false hands records to the logger's thread.
+     */
+    SUSHIRUNTIME_API void set_log_synchronous(bool synchronous);
+
+    /**
+     * @brief Holds what the macros of this header expand to.
+     */
+    namespace Detail
     {
         /**
-         * @brief Hands one finished line to the sink, whatever the level of the process is.
-         * @param line The text of the record, without a line break.
-         * @see modules/foundation/logging/README.md
+         * @brief Returns @p format with each doubled brace written once.
          */
-        SUSHIRUNTIME_API void log_write(LogLevel level, std::string&& line);
-
-        /**
-         * @brief Chooses whether a record reaches the sink before its log call returns.
-         * @param synchronous True first delivers every record still queued, then makes each
-         *        log call run the sink itself; false hands records to the logger's thread.
-         */
-        SUSHIRUNTIME_API void set_log_synchronous(bool synchronous);
-
-        /**
-         * @brief Holds what the macros of this header expand to.
-         */
-        namespace Detail
+        inline std::string sr_format(std::string_view format)
         {
-            /**
-             * @brief Returns @p format with each doubled brace written once.
-             */
-            inline std::string sr_format(std::string_view format)
+            std::string out;
+            out.reserve(format.size());
+            for (std::size_t i = 0; i < format.size(); ++i)
             {
-                std::string out;
-                out.reserve(format.size());
-                for (std::size_t i = 0; i < format.size(); ++i)
+                const char c = format[i];
+                const bool doubled = (c == '{' || c == '}') && i + 1 < format.size() &&
+                                     format[i + 1] == c;
+                if (doubled)
+                    ++i;
+                out += c;
+            }
+            return out;
+        }
+
+        /**
+         * @brief Returns @p format with each {} replaced by the next argument, in order.
+         * @tparam T A type an output stream can write.
+         */
+        template <typename T, typename... Args>
+        std::string sr_format(std::string_view format, const T& value, const Args&... args)
+        {
+            std::string out;
+            for (std::size_t i = 0; i < format.size(); ++i)
+            {
+                const char c = format[i];
+                const bool has_next = i + 1 < format.size();
+                if ((c == '{' || c == '}') && has_next && format[i + 1] == c)
                 {
-                    const char c = format[i];
-                    const bool doubled = (c == '{' || c == '}') && i + 1 < format.size() &&
-                                         format[i + 1] == c;
-                    if (doubled)
-                        ++i;
                     out += c;
+                    ++i;
+                    continue;
                 }
-                return out;
-            }
-
-            /**
-             * @brief Returns @p format with each {} replaced by the next argument, in order.
-             * @tparam T A type an output stream can write.
-             */
-            template <typename T, typename... Args>
-            std::string sr_format(std::string_view format, const T& value, const Args&... args)
-            {
-                std::string out;
-                for (std::size_t i = 0; i < format.size(); ++i)
+                if (c == '{' && has_next && format[i + 1] == '}')
                 {
-                    const char c = format[i];
-                    const bool has_next = i + 1 < format.size();
-                    if ((c == '{' || c == '}') && has_next && format[i + 1] == c)
-                    {
-                        out += c;
-                        ++i;
-                        continue;
-                    }
-                    if (c == '{' && has_next && format[i + 1] == '}')
-                    {
-                        std::ostringstream os;
-                        os << value;
-                        out += os.str();
-                        out += sr_format(format.substr(i + 2), args...);
-                        return out;
-                    }
-                    out += c;
+                    std::ostringstream os;
+                    os << value;
+                    out += os.str();
+                    out += sr_format(format.substr(i + 2), args...);
+                    return out;
                 }
-                return out;
+                out += c;
             }
+            return out;
+        }
 
-            /**
-             * @brief Prefixes @p message with the time, the level and the call site, then
-             *        writes it.
-             */
-            SUSHIRUNTIME_API void emit_record(LogLevel level, const char* file, int line,
-                                              const char* function, std::string&& message);
+        /**
+         * @brief Prefixes @p message with the time, the level and the call site, then
+         *        writes it.
+         */
+        SUSHIRUNTIME_API void emit_record(LogLevel level, const char* file, int line,
+                                          const char* function, std::string&& message);
 
-            /**
-             * @brief Formats one record and writes it; a log macro calls it past its gate.
-             */
-            template <typename... Args>
-            void log_record(LogLevel level, const char* file, int line, const char* function,
-                            std::string_view format, const Args&... args)
-            {
-                emit_record(level, file, line, function, sr_format(format, args...));
-            }
-        } // namespace Detail
-    } // namespace Core
+        /**
+         * @brief Formats one record and writes it; a log macro calls it past its gate.
+         */
+        template <typename... Args>
+        void log_record(LogLevel level, const char* file, int line, const char* function,
+                        std::string_view format, const Args&... args)
+        {
+            emit_record(level, file, line, function, sr_format(format, args...));
+        }
+    } // namespace Detail
 } // namespace SushiRuntime
 
 /**
@@ -143,77 +140,74 @@ namespace SushiRuntime
 #define SR_LOG_AT(level, ...)                                                                \
     do                                                                                       \
     {                                                                                        \
-        if constexpr (SushiRuntime::Core::K_LOG_LEVEL_CEILING >= (level))                    \
+        if constexpr (SushiRuntime::K_LOG_LEVEL_CEILING >= (level))                    \
         {                                                                                    \
-            if (SushiRuntime::Core::Detail::active_log_level.load(                           \
+            if (SushiRuntime::Detail::active_log_level.load(                           \
                     std::memory_order_relaxed) >= static_cast<int>(level) &&                 \
-                SushiRuntime::Core::Detail::is_log_enabled(level))                           \
+                SushiRuntime::Detail::is_log_enabled(level))                           \
             {                                                                                \
-                SushiRuntime::Core::Detail::log_record((level), __FILE__, __LINE__,          \
+                SushiRuntime::Detail::log_record((level), __FILE__, __LINE__,          \
                                                        __func__, __VA_ARGS__);               \
             }                                                                                \
         }                                                                                    \
     } while (0)
 
 /** @brief Logs a message at error level; each {} takes the next argument. */
-#define SR_LOG_ERROR(...) SR_LOG_AT(SushiRuntime::Core::LogLevel::Error, __VA_ARGS__)
+#define SR_LOG_ERROR(...) SR_LOG_AT(SushiRuntime::LogLevel::Error, __VA_ARGS__)
 
 /** @brief Logs a message at warning level; each {} takes the next argument. */
-#define SR_LOG_WARN(...) SR_LOG_AT(SushiRuntime::Core::LogLevel::Warn, __VA_ARGS__)
+#define SR_LOG_WARN(...) SR_LOG_AT(SushiRuntime::LogLevel::Warn, __VA_ARGS__)
 
 /** @brief Logs a message at info level; each {} takes the next argument. */
-#define SR_LOG_INFO(...) SR_LOG_AT(SushiRuntime::Core::LogLevel::Info, __VA_ARGS__)
+#define SR_LOG_INFO(...) SR_LOG_AT(SushiRuntime::LogLevel::Info, __VA_ARGS__)
 
 /** @brief Logs a message at debug level; each {} takes the next argument. */
-#define SR_LOG_DEBUG(...) SR_LOG_AT(SushiRuntime::Core::LogLevel::Debug, __VA_ARGS__)
+#define SR_LOG_DEBUG(...) SR_LOG_AT(SushiRuntime::LogLevel::Debug, __VA_ARGS__)
 
-/** @brief Forwards to Core::set_log_synchronous(); tests pass true to read records in order. */
-#define SR_LOGGER_SET_SYNC_MODE(mode) SushiRuntime::Core::set_log_synchronous(mode)
+/** @brief Forwards to set_log_synchronous(); tests pass true to read records in order. */
+#define SR_LOGGER_SET_SYNC_MODE(mode) SushiRuntime::set_log_synchronous(mode)
 
 namespace SushiRuntime
 {
-    namespace Core
+    namespace Detail
     {
-        namespace Detail
+        /**
+         * @brief Logs the formatted message at error level, then throws it as invalid_state.
+         * @param file The source file of the call the record names.
+         * @param line The line of that call.
+         * @param function The function that holds that call.
+         * @param format The format string; each {} takes the next value.
+         */
+        template <typename... Args>
+        [[noreturn]] void throw_invalid_state(const char* file, int line, const char* function,
+                                              std::string_view format, const Args&... args)
         {
-            /**
-             * @brief Logs the formatted message at error level, then throws it as invalid_state.
-             * @param file The source file of the call the record names.
-             * @param line The line of that call.
-             * @param function The function that holds that call.
-             * @param format The format string; each {} takes the next value.
-             */
-            template <typename... Args>
-            [[noreturn]] void throw_invalid_state(const char* file, int line, const char* function,
-                                                  std::string_view format, const Args&... args)
+            std::string message = sr_format(format, args...);
+            if constexpr (K_LOG_LEVEL_CEILING >= LogLevel::Error)
             {
-                std::string message = sr_format(format, args...);
-                if constexpr (K_LOG_LEVEL_CEILING >= LogLevel::Error)
+                if (active_log_level.load(std::memory_order_relaxed) >=
+                        static_cast<int>(LogLevel::Error) &&
+                    is_log_enabled(LogLevel::Error))
                 {
-                    if (active_log_level.load(std::memory_order_relaxed) >=
-                            static_cast<int>(LogLevel::Error) &&
-                        is_log_enabled(LogLevel::Error))
-                    {
-                        log_record(LogLevel::Error, file, line, function,
-                                   "Runtime exception: {}", message);
-                    }
+                    log_record(LogLevel::Error, file, line, function,
+                               "Runtime exception: {}", message);
                 }
-                throw SushiException(Error{Errc::invalid_state, std::move(message)});
             }
-        } // namespace Detail
-    } // namespace Core
+            throw SushiException(Error{Errc::invalid_state, std::move(message)});
+        }
+    } // namespace Detail
 } // namespace SushiRuntime
 
 /**
  * @brief Logs the message at error level and throws it when @p condition holds.
  *
- * Throws Core::SushiException with Errc::invalid_state. The arguments after the condition are
+ * Throws SushiException with Errc::invalid_state. The arguments after the condition are
  * a format string and its values, and are evaluated only when the condition holds.
  */
 #define SR_THROW_IF(condition, ...)                                                          \
     do                                                                                       \
     {                                                                                        \
         if (condition)                                                                       \
-            SushiRuntime::Core::Detail::throw_invalid_state(__FILE__, __LINE__, __func__,    \
+            SushiRuntime::Detail::throw_invalid_state(__FILE__, __LINE__, __func__,    \
                                                             __VA_ARGS__);                    \
     } while (0)

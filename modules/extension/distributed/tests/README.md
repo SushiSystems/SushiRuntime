@@ -184,7 +184,7 @@ leave the other.
 ### `AttachStartFailureLeavesNothingInstalled`
 
 `attach` on a `StubTransport` whose `start()` returns `BindFailed` must throw
-`Core::SushiException` carrying the transport's message, call `start()` once and leave `offload()`
+`SushiException` carrying the transport's message, call `start()` once and leave `offload()`
 null. A second `attach` on the same context must then succeed.
 
 ### `AttemptCapDoesNotOutliveTheRun`
@@ -560,7 +560,7 @@ and `write` report `Gone`. The same address registered again gets a new id.
 
 The file tests `PendingTasks` of `modules/extension/distributed/source/pending_tasks.hpp`, the table
 that owns an offloaded node from `insert` until one removal returns it. It needs no hardware, no
-transport and no clock: every time is a fixed point passed in, and a node is a bare `Graph::Node`
+transport and no clock: every time is a fixed point passed in, and a node is a bare `Internal::Graph::Node`
 from `make_sushi` that the table never reads.
 
 ### `InsertAfterCloseRefused`, `DrainReturnsEveryNode`
@@ -1013,7 +1013,7 @@ version of the buffer in `live_writes` and leaves the other alone, which pins fi
 
 One `prepare` over an offloadable node, a node whose operation no worker has, a node with an
 unshared output, an untagged node and a null slot logs one WARN, captured through
-`Core::set_log_sink`. Its text is `2 of 3 op-tagged nodes will run locally: 1 no live worker for
+`set_log_sink`. Its text is `2 of 3 op-tagged nodes will run locally: 1 no live worker for
 the op, 1 buffer not shared, 0 buffer written twice (first: op N)`, where N is the id of the
 operation no worker has. A second `prepare` over the offloadable node alone logs nothing.
 
@@ -1073,7 +1073,7 @@ answers CHALLENGE with a proof of 0x44 bytes, and `handshake_rejected_auth` is 1
 ### `VersionMismatchLoggedOncePerConnection`
 
 Finding DIST-06. Two connections each send two headers of version 3. A sink installed with
-`Core::set_log_sink` counts the ERROR lines that hold `protocol v3`: two after the master is
+`set_log_sink` counts the ERROR lines that hold `protocol v3`: two after the master is
 detached, one for each connection, and `handshake_rejected_version` is 2.
 
 ### `MasterKilledWorkerSurvivesAndReconnects`

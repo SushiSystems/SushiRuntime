@@ -47,24 +47,24 @@ namespace
      * @return An error of code ok when the call throws nothing.
      */
     template <class Call>
-    Core::Error error_of(Call&& call)
+    Error error_of(Call&& call)
     {
         try
         {
             call();
         }
-        catch (const Core::SushiException& exception)
+        catch (const SushiException& exception)
         {
             return exception.error();
         }
-        return Core::Error{};
+        return Error{};
     }
 
     /** @brief Expects an invalid_access error whose message holds the window and the size. */
-    void expect_window_rejected(const Core::Error& error, const char* call,
-                                API::ElementRange range, std::size_t size)
+    void expect_window_rejected(const Error& error, const char* call,
+                                ElementRange range, std::size_t size)
     {
-        EXPECT_EQ(error.code, Core::Errc::invalid_access) << error.message;
+        EXPECT_EQ(error.code, Errc::invalid_access) << error.message;
         EXPECT_NE(error.message.find(call), std::string::npos) << error.message;
         EXPECT_NE(error.message.find("offset " + std::to_string(range.offset)), std::string::npos)
             << error.message;
@@ -80,7 +80,7 @@ namespace
      */
     template <class Handle>
     void expect_every_range_call_rejects(const Handle& handle, const std::string& name,
-                                         API::ElementRange range)
+                                         ElementRange range)
     {
         const std::vector<int> source(K_SIZE, 1);
         expect_window_rejected(
@@ -90,7 +90,7 @@ namespace
             error_of([&]() { handle.write_range(range, source); }),
             (name + "::write_range").c_str(), range, handle.size());
         expect_window_rejected(
-            error_of([&]() { const API::BufferRegion region = handle.region(range); }),
+            error_of([&]() { const BufferRegion region = handle.region(range); }),
             (name + "::region").c_str(), range, handle.size());
     }
 
@@ -98,10 +98,10 @@ namespace
     template <class Handle>
     void expect_empty_window_at_the_end_accepted(const Handle& handle)
     {
-        const API::ElementRange at_end{handle.size(), 0};
+        const ElementRange at_end{handle.size(), 0};
         EXPECT_TRUE(handle.read_range(at_end).empty());
         EXPECT_NO_THROW(handle.write_range(at_end, span<const int>()));
-        const API::BufferRegion region = handle.region(at_end);
+        const BufferRegion region = handle.region(at_end);
         EXPECT_EQ(region.offset, handle.size() * sizeof(int));
         EXPECT_EQ(region.length, 0u);
     }
@@ -162,9 +162,9 @@ TEST(Integration_DataHandles, RejectedWriteCopiesNothing)
         element = 7;
 
     const std::vector<int> source(K_SIZE, 9);
-    const Core::Error error = error_of([&]() { buf.write_range({K_SIZE - 2, 5}, source); });
+    const Error error = error_of([&]() { buf.write_range({K_SIZE - 2, 5}, source); });
 
-    EXPECT_EQ(error.code, Core::Errc::invalid_access);
+    EXPECT_EQ(error.code, Errc::invalid_access);
     for (std::size_t i = 0; i < K_SIZE; ++i)
         ASSERT_EQ(buf[i], 7) << "at i=" << i;
 }
@@ -209,18 +209,18 @@ TEST(Integration_DataHandles, NullOrShortSourceWithACountThrows)
     const auto field = rt.state<int>(K_SIZE);
     const std::vector<int> two(2, 1);
 
-    const Core::Error null_buffer = error_of([&]() { buf.write_range({0, 4}, span<const int>()); });
-    EXPECT_EQ(null_buffer.code, Core::Errc::invalid_access);
+    const Error null_buffer = error_of([&]() { buf.write_range({0, 4}, span<const int>()); });
+    EXPECT_EQ(null_buffer.code, Errc::invalid_access);
     EXPECT_NE(null_buffer.message.find("count 4"), std::string::npos) << null_buffer.message;
 
-    const Core::Error null_state =
+    const Error null_state =
         error_of([&]() { field.write_range({0, 4}, span<const int>()); });
-    EXPECT_EQ(null_state.code, Core::Errc::invalid_access);
+    EXPECT_EQ(null_state.code, Errc::invalid_access);
     EXPECT_NE(null_state.message.find("State::write_range"), std::string::npos)
         << null_state.message;
 
-    const Core::Error short_source = error_of([&]() { buf.write_range({0, 4}, two); });
-    EXPECT_EQ(short_source.code, Core::Errc::invalid_access);
+    const Error short_source = error_of([&]() { buf.write_range({0, 4}, two); });
+    EXPECT_EQ(short_source.code, Errc::invalid_access);
     EXPECT_NE(short_source.message.find("holds 2"), std::string::npos) << short_source.message;
     EXPECT_NE(short_source.message.find("count 4"), std::string::npos) << short_source.message;
 }
@@ -234,13 +234,13 @@ TEST(Integration_DataHandles, OverflowingElementCountThrowsBeforeAllocating)
     // The byte size of this count wraps to 8, which an unchecked allocation would grant.
     const std::size_t count = std::numeric_limits<std::size_t>::max() / sizeof(double) + 2;
 
-    const Core::Error buffer_error = error_of([&]() { auto buf = rt.buffer<double>(count); });
-    EXPECT_EQ(buffer_error.code, Core::Errc::allocation_failed);
+    const Error buffer_error = error_of([&]() { auto buf = rt.buffer<double>(count); });
+    EXPECT_EQ(buffer_error.code, Errc::allocation_failed);
     EXPECT_NE(buffer_error.message.find(std::to_string(count)), std::string::npos)
         << buffer_error.message;
 
-    const Core::Error state_error = error_of([&]() { auto field = rt.state<double>(count); });
-    EXPECT_EQ(state_error.code, Core::Errc::allocation_failed);
+    const Error state_error = error_of([&]() { auto field = rt.state<double>(count); });
+    EXPECT_EQ(state_error.code, Errc::allocation_failed);
     EXPECT_NE(state_error.message.find(std::to_string(count)), std::string::npos)
         << state_error.message;
 }
@@ -261,7 +261,7 @@ TEST(Integration_DataHandles, StateAndBufferAnswerTheSharedQueriesAlike)
     EXPECT_EQ(field.residency(), buf.residency());
     EXPECT_EQ(field.is_host_accessible(), buf.is_host_accessible());
 
-    const API::BufferRegion window = field.region({4, 8});
+    const BufferRegion window = field.region({4, 8});
     EXPECT_EQ(window.base, static_cast<void*>(field.current()));
     EXPECT_EQ(window.offset, 4 * sizeof(int));
     EXPECT_EQ(window.length, 8 * sizeof(int));
@@ -304,15 +304,15 @@ TEST(Integration_DataHandles, DistributedRefusesADeviceResidentBuffer)
     auto rt = Runtime::create();
     auto buf = rt.buffer<float>(8, DeviceIndex{0}, Residency::Device);
 
-    const Core::Error lvalue = error_of([&]() { buf.distributed(); });
-    EXPECT_EQ(lvalue.code, Core::Errc::invalid_access) << lvalue.message;
+    const Error lvalue = error_of([&]() { buf.distributed(); });
+    EXPECT_EQ(lvalue.code, Errc::invalid_access) << lvalue.message;
     EXPECT_NE(lvalue.message.find("Buffer::distributed()"), std::string::npos) << lvalue.message;
     EXPECT_NE(lvalue.message.find("Device residency"), std::string::npos) << lvalue.message;
 
-    const Core::Error rvalue = error_of([&]() {
+    const Error rvalue = error_of([&]() {
         (void)rt.buffer<float>(8, DeviceIndex{0}, Residency::Device).distributed();
     });
-    EXPECT_EQ(rvalue.code, Core::Errc::invalid_access) << rvalue.message;
+    EXPECT_EQ(rvalue.code, Errc::invalid_access) << rvalue.message;
     EXPECT_NE(rvalue.message.find("Buffer::distributed()"), std::string::npos) << rvalue.message;
 }
 
@@ -324,8 +324,8 @@ TEST(Integration_DataHandles, DistributedRefusesADeviceResidentState)
     auto rt = Runtime::create();
     auto field = rt.state<float>(8, DeviceIndex{0}, Residency::Device);
 
-    const Core::Error error = error_of([&]() { field.distributed(); });
-    EXPECT_EQ(error.code, Core::Errc::invalid_access) << error.message;
+    const Error error = error_of([&]() { field.distributed(); });
+    EXPECT_EQ(error.code, Errc::invalid_access) << error.message;
     EXPECT_NE(error.message.find("State::distributed()"), std::string::npos) << error.message;
     EXPECT_EQ(error.message.find("Buffer::"), std::string::npos) << error.message;
 }
@@ -357,12 +357,12 @@ TEST(Integration_DataHandles, HostAccessOnADeviceStateNamesTheState)
     auto rt = Runtime::create();
     const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device);
 
-    const Core::Error indexed = error_of([&]() { (void)field[0]; });
-    EXPECT_EQ(indexed.code, Core::Errc::invalid_access) << indexed.message;
+    const Error indexed = error_of([&]() { (void)field[0]; });
+    EXPECT_EQ(indexed.code, Errc::invalid_access) << indexed.message;
     EXPECT_NE(indexed.message.find("State::operator[]"), std::string::npos) << indexed.message;
 
-    const Core::Error bulk = error_of([&]() { (void)field.host(); });
-    EXPECT_EQ(bulk.code, Core::Errc::invalid_access) << bulk.message;
+    const Error bulk = error_of([&]() { (void)field.host(); });
+    EXPECT_EQ(bulk.code, Errc::invalid_access) << bulk.message;
     EXPECT_NE(bulk.message.find("State::host"), std::string::npos) << bulk.message;
 }
 
@@ -375,9 +375,9 @@ TEST(Integration_DataHandles, DeviceIndexThatNamesNoDeviceIsRefused)
     const std::size_t count = rt.advanced().device_count();
     const DeviceIndex past_the_end{count};
 
-    const Core::Error buffer_error =
+    const Error buffer_error =
         error_of([&]() { auto buf = rt.buffer<float>(8, past_the_end); });
-    EXPECT_EQ(buffer_error.code, Core::Errc::invalid_access) << buffer_error.message;
+    EXPECT_EQ(buffer_error.code, Errc::invalid_access) << buffer_error.message;
     EXPECT_NE(buffer_error.message.find("Runtime::buffer"), std::string::npos)
         << buffer_error.message;
     EXPECT_NE(buffer_error.message.find("device index " + std::to_string(count)),
@@ -387,9 +387,9 @@ TEST(Integration_DataHandles, DeviceIndexThatNamesNoDeviceIsRefused)
     EXPECT_NE(buffer_error.message.find("advanced().devices()"), std::string::npos)
         << buffer_error.message;
 
-    const Core::Error state_error =
+    const Error state_error =
         error_of([&]() { auto field = rt.state<float>(8, past_the_end); });
-    EXPECT_EQ(state_error.code, Core::Errc::invalid_access) << state_error.message;
+    EXPECT_EQ(state_error.code, Errc::invalid_access) << state_error.message;
     EXPECT_NE(state_error.message.find("Runtime::state"), std::string::npos)
         << state_error.message;
 }

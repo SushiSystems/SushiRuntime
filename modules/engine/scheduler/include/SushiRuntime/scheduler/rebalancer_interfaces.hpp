@@ -33,7 +33,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Read-only view of live scheduler state for rebalance decisions.

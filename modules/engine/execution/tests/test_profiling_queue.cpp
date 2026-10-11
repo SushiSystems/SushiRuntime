@@ -35,13 +35,13 @@
 #include "test_helpers.hpp"
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
+using namespace SushiRuntime::Internal::Execution;
 using SushiRuntime::Test::USMShared;
 
 namespace
 {
     /** @brief Names the out-of-order profiling queue of a device. */
-    constexpr Device::QueueFlavour K_PROFILING_FLAVOUR{false, true};
+    constexpr Internal::Device::QueueFlavour K_PROFILING_FLAVOUR{false, true};
 } // namespace
 
 /**

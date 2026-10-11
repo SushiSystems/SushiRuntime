@@ -21,7 +21,7 @@
 
 /**
  * @file test_delegate.cpp
- * @brief Tests Core::Delegate: empty state, invocation, results, moves and destruction.
+ * @brief Tests Delegate: empty state, invocation, results, moves and destruction.
  * @see modules/foundation/core/tests/README.md
  * @author Mustafa Garip
  */
@@ -32,7 +32,7 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/delegate.hpp>
 
-using SushiRuntime::Core::Delegate;
+using SushiRuntime::Delegate;
 
 namespace
 {

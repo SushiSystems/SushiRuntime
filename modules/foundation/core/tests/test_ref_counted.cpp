@@ -43,7 +43,7 @@ namespace
      *
      * Increments an external atomic counter when its destructor is invoked to verify lifecycle management.
      */
-    struct Tracked : public Core::RefCounted
+    struct Tracked : public RefCounted
     {
         std::atomic<int>& destroyed;
         explicit Tracked(std::atomic<int>& d) : destroyed(d) {}
@@ -55,7 +55,7 @@ namespace
      *
      * Used in conjunction with Derived to ensure that destruction through a base pointer deletes the object correctly exactly once.
      */
-    struct Base : public Core::RefCounted
+    struct Base : public RefCounted
     {
         std::atomic<int>& destroyed;
         explicit Base(std::atomic<int>& d) : destroyed(d) {}

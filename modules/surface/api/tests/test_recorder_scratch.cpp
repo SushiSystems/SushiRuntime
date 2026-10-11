@@ -52,24 +52,24 @@ namespace
      * @param in  Holds at least COUNT values; must outlive the recorder.
      * @param out Holds at least COUNT values; must outlive the recorder.
      */
-    void record_staged_rule(API::Recorder& recorder, const API::Buffer<std::uint32_t>& in,
-                            const API::Buffer<std::uint32_t>& out)
+    void record_staged_rule(Recorder& recorder, const Buffer<std::uint32_t>& in,
+                            const Buffer<std::uint32_t>& out)
     {
         std::uint32_t* stage =
             recorder.scratch<std::uint32_t>(COUNT, in.device_index(), in.residency());
-        const Memory::ResourceRegion stage_region{stage, 0, COUNT * sizeof(std::uint32_t)};
+        const Internal::Memory::ResourceRegion stage_region{stage, 0, COUNT * sizeof(std::uint32_t)};
         const std::uint32_t* source = in.data();
         std::uint32_t* target = out.data();
 
         auto rule = recorder.rule();
-        recorder.kernel(COUNT, API::Access(Reads(in), Writes(stage_region)),
+        recorder.kernel(COUNT, Access(Reads(in), Writes(stage_region)),
                         [source, stage](std::size_t i) { stage[i] = source[i] + 1u; });
-        recorder.kernel(COUNT, API::Access(Reads(stage_region), Writes(out)),
+        recorder.kernel(COUNT, Access(Reads(stage_region), Writes(out)),
                         [stage, target](std::size_t i) { target[i] = stage[i] * 2u; });
     }
 
     /** @brief Fills a buffer with a pattern that differs per seed. */
-    void fill(API::Buffer<std::uint32_t>& buffer, std::uint32_t seed)
+    void fill(Buffer<std::uint32_t>& buffer, std::uint32_t seed)
     {
         for (std::size_t i = 0; i < COUNT; ++i)
             buffer[i] = static_cast<std::uint32_t>(i) * 3u + seed;
@@ -160,7 +160,7 @@ TEST(Integration_RecorderScratch, ScratchIsFreedWithTheRecorder)
     auto rt  = Runtime::create();
     auto in  = rt.buffer<std::uint32_t>(COUNT);
     auto out = rt.buffer<std::uint32_t>(COUNT);
-    const Memory::USMAllocator& memory = rt.unsafe_context().memory();
+    const Internal::Memory::USMAllocator& memory = rt.unsafe_context().memory();
     const std::size_t baseline = memory.live_count();
 
     {

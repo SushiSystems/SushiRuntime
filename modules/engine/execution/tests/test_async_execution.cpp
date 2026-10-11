@@ -34,7 +34,7 @@
 #include "test_helpers.hpp"
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
+using namespace SushiRuntime::Internal::Execution;
 using SushiRuntime::Test::USMShared;
 
 namespace

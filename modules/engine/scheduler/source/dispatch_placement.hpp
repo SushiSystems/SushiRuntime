@@ -32,20 +32,20 @@
 
 namespace SushiRuntime
 {
-    namespace Graph { struct Node; }
-    namespace Memory { class USMAllocator; }
+    namespace Internal::Graph { struct Node; }
+    namespace Internal::Memory { class USMAllocator; }
 
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Checks that a node's regions share one device and caches the device it runs on.
          * @param node Its cached queue index and its checked flag are written on success.
          * @param memory Asked which device owns each region of the node.
          * @param device_count Devices the runtime holds; a placement at or past it is refused.
-         * @throws Core::SushiException with Errc::invalid_graph; nothing is cached then.
+         * @throws SushiException with Errc::invalid_graph; nothing is cached then.
          * @see modules/engine/scheduler/README.md
          */
-        void place_for_dispatch(Graph::Node& node, const Memory::USMAllocator& memory,
+        void place_for_dispatch(Internal::Graph::Node& node, const Internal::Memory::USMAllocator& memory,
                                 std::size_t device_count);
 
     } // namespace Scheduler

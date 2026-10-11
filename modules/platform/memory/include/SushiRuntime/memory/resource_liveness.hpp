@@ -32,7 +32,7 @@
 
 namespace SushiRuntime
 {
-    namespace Memory
+    namespace Internal::Memory
     {
         /**
          * @brief An empty object whose lifetime mirrors a data handle's allocation.

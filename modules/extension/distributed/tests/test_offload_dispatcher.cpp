@@ -67,10 +67,10 @@ namespace
     constexpr PeerID K_WORKER{1};
 
     /** @brief Names an operation the worker has a kernel for. */
-    constexpr Graph::OpID K_KNOWN_OPERATION{501};
+    constexpr Internal::Graph::OpID K_KNOWN_OPERATION{501};
 
     /** @brief Names an operation no worker has a kernel for. */
-    constexpr Graph::OpID K_ABSENT_OPERATION{502};
+    constexpr Internal::Graph::OpID K_ABSENT_OPERATION{502};
 
     /** @brief Holds the tasks the worker says it queues at most. */
     constexpr std::uint32_t K_WORKER_MAX_JOBS = 8;
@@ -156,7 +156,7 @@ namespace
     {
         public:
             /** @brief Returns the first offered worker, or nothing when none was offered. */
-            std::optional<int> pick_worker(const Graph::Node& /*node*/,
+            std::optional<int> pick_worker(const Internal::Graph::Node& /*node*/,
                                            span<const WorkerStats> workers,
                                            std::uint64_t /*est_bytes*/) override
             {
@@ -200,9 +200,9 @@ namespace
             /** @brief Registers the worker and shares two of the three buffers. */
             void SetUp() override
             {
-                saved_level_ = Core::log_level();
-                Core::set_log_synchronous(true);
-                Core::set_log_level(Core::LogLevel::Warn);
+                saved_level_ = log_level();
+                set_log_synchronous(true);
+                set_log_level(LogLevel::Warn);
 
                 register_worker();
                 registry_.register_buffer(first_.data(), sizeof(Storage));
@@ -212,8 +212,8 @@ namespace
             /** @brief Puts the default sink and the saved level back. */
             void TearDown() override
             {
-                Core::set_log_sink(nullptr);
-                Core::set_log_level(saved_level_);
+                set_log_sink(nullptr);
+                set_log_level(saved_level_);
             }
 
             /** @brief Takes the worker through HELLO and PROOF under the empty secret. */
@@ -245,9 +245,9 @@ namespace
             }
 
             /** @brief Returns a node that reads @p read and writes @p written under @p op. */
-            static sushi_ptr<Graph::Node> fixed_node(Graph::OpID op, void* read, void* written)
+            static sushi_ptr<Internal::Graph::Node> fixed_node(Internal::Graph::OpID op, void* read, void* written)
             {
-                sushi_ptr<Graph::Node> node = make_sushi<Graph::Node>();
+                sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
                 node->metadata.op_id = op;
                 node->io_reads_.emplace_back(read);
                 node->io_writes_.emplace_back(written);
@@ -255,10 +255,10 @@ namespace
             }
 
             /** @brief Runs prepare() over the given nodes. */
-            void prepare(const std::vector<sushi_ptr<Graph::Node>>& nodes)
+            void prepare(const std::vector<sushi_ptr<Internal::Graph::Node>>& nodes)
             {
                 dispatcher_.prepare(
-                    span<const sushi_ptr<Graph::Node>>(nodes.data(), nodes.size()));
+                    span<const sushi_ptr<Internal::Graph::Node>>(nodes.data(), nodes.size()));
             }
 
             /** @brief Returns the version the registry holds for an address. */
@@ -306,17 +306,17 @@ namespace
             OffloadDispatcher dispatcher_{registry_, directory_, pending_, transport_};
 
             /// @brief The level the process had when the test began.
-            Core::LogLevel saved_level_ = Core::LogLevel::Warn;
+            LogLevel saved_level_ = LogLevel::Warn;
     };
 } // namespace
 
 /** @brief Tests that a node at the attempt cap is declined and offered again next run. */
 TEST_F(Unit_OffloadDispatcherTest, AttemptCapDeclinesWithoutClearingOffloadable)
 {
-    const sushi_ptr<Graph::Node> node =
+    const sushi_ptr<Internal::Graph::Node> node =
         fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
     prepare({node});
-    Graph::OffloadState* state = node->offload_state();
+    Internal::Graph::OffloadState* state = node->offload_state();
     ASSERT_NE(state, nullptr);
     ASSERT_TRUE(state->offloadable);
 
@@ -345,7 +345,7 @@ TEST_F(Unit_OffloadDispatcherTest, AttemptCapDeclinesWithoutClearingOffloadable)
 /** @brief Tests that a send the transport refuses leaves no task, no load and a false. */
 TEST_F(Unit_OffloadDispatcherTest, RefusedSendUndoesThePendingEntry)
 {
-    const sushi_ptr<Graph::Node> node =
+    const sushi_ptr<Internal::Graph::Node> node =
         fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
     prepare({node});
     const std::uint32_t output_version = version_of(second_.data());
@@ -372,7 +372,7 @@ TEST_F(Unit_OffloadDispatcherTest, RefusedSendUndoesThePendingEntry)
 /** @brief Tests that nothing is dispatched once the pending table and the directory closed. */
 TEST_F(Unit_OffloadDispatcherTest, StoppedCoordinatorDeclines)
 {
-    const sushi_ptr<Graph::Node> node =
+    const sushi_ptr<Internal::Graph::Node> node =
         fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
     prepare({node});
 
@@ -395,9 +395,9 @@ TEST_F(Unit_OffloadDispatcherTest, StoppedCoordinatorDeclines)
 /** @brief Tests that a double-buffered node dispatches and settles its live lists. */
 TEST_F(Unit_OffloadDispatcherTest, DynamicNodeResolvesItsLiveLists)
 {
-    const sushi_ptr<Graph::Node> node =
+    const sushi_ptr<Internal::Graph::Node> node =
         fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
-    Graph::OffloadState& state = node->offload();
+    Internal::Graph::OffloadState& state = node->offload();
     state.live_reads = std::make_shared<std::vector<void*>>(1, static_cast<void*>(first_.data()));
     state.live_writes = std::make_shared<std::vector<void*>>(1, static_cast<void*>(second_.data()));
     prepare({node});
@@ -450,22 +450,22 @@ TEST_F(Unit_OffloadDispatcherTest, PrepareWarnsOnceForLocalOnlyOps)
 {
     std::vector<std::string> warnings;
     std::vector<std::string>* const sink_target = &warnings;
-    Core::set_log_sink([sink_target](Core::LogLevel level, std::string_view line)
+    set_log_sink([sink_target](LogLevel level, std::string_view line)
     {
-        if (level == Core::LogLevel::Warn)
+        if (level == LogLevel::Warn)
             sink_target->push_back(std::string(line));
     });
 
-    const sushi_ptr<Graph::Node> offloadable =
+    const sushi_ptr<Internal::Graph::Node> offloadable =
         fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
-    const sushi_ptr<Graph::Node> without_worker =
+    const sushi_ptr<Internal::Graph::Node> without_worker =
         fixed_node(K_ABSENT_OPERATION, first_.data(), second_.data());
-    const sushi_ptr<Graph::Node> without_share =
+    const sushi_ptr<Internal::Graph::Node> without_share =
         fixed_node(K_KNOWN_OPERATION, first_.data(), unshared_.data());
-    const sushi_ptr<Graph::Node> untagged =
-        fixed_node(Graph::OpID(0), first_.data(), unshared_.data());
+    const sushi_ptr<Internal::Graph::Node> untagged =
+        fixed_node(Internal::Graph::OpID(0), first_.data(), unshared_.data());
 
-    prepare({offloadable, without_worker, without_share, untagged, sushi_ptr<Graph::Node>()});
+    prepare({offloadable, without_worker, without_share, untagged, sushi_ptr<Internal::Graph::Node>()});
 
     ASSERT_EQ(warnings.size(), 1u);
     const std::string expected =
@@ -486,10 +486,10 @@ TEST_F(Unit_OffloadDispatcherTest, PrepareWarnsOnceForLocalOnlyOps)
 /** @brief Tests that a node that stays local raises only the shared buffers it writes. */
 TEST_F(Unit_OffloadDispatcherTest, LocalNodeBumpsOnlyItsSharedWrites)
 {
-    const sushi_ptr<Graph::Node> writer =
-        fixed_node(Graph::OpID(0), unshared_.data(), second_.data());
-    const sushi_ptr<Graph::Node> reader =
-        fixed_node(Graph::OpID(0), second_.data(), unshared_.data());
+    const sushi_ptr<Internal::Graph::Node> writer =
+        fixed_node(Internal::Graph::OpID(0), unshared_.data(), second_.data());
+    const sushi_ptr<Internal::Graph::Node> reader =
+        fixed_node(Internal::Graph::OpID(0), second_.data(), unshared_.data());
     prepare({writer, reader});
 
     EXPECT_EQ(reader->offload_state(), nullptr);
@@ -509,26 +509,26 @@ TEST_F(Unit_OffloadDispatcherTest, NodeThatWritesOneBufferTwiceStaysLocal)
 {
     std::vector<std::string> warnings;
     std::vector<std::string>* const sink_target = &warnings;
-    Core::set_log_sink([sink_target](Core::LogLevel level, std::string_view line)
+    set_log_sink([sink_target](LogLevel level, std::string_view line)
     {
-        if (level == Core::LogLevel::Warn)
+        if (level == LogLevel::Warn)
             sink_target->push_back(std::string(line));
     });
 
-    const sushi_ptr<Graph::Node> fixed =
+    const sushi_ptr<Internal::Graph::Node> fixed =
         fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
     fixed->io_writes_.emplace_back(second_.data());
 
-    const sushi_ptr<Graph::Node> dynamic =
+    const sushi_ptr<Internal::Graph::Node> dynamic =
         fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
-    Graph::OffloadState& dynamic_state = dynamic->offload();
+    Internal::Graph::OffloadState& dynamic_state = dynamic->offload();
     dynamic_state.live_reads =
         std::make_shared<std::vector<void*>>(1, static_cast<void*>(first_.data()));
     dynamic_state.live_writes =
         std::make_shared<std::vector<void*>>(2, static_cast<void*>(second_.data()));
 
     // The same buffer as an input and as an output is one write, so this node may leave.
-    const sushi_ptr<Graph::Node> in_place =
+    const sushi_ptr<Internal::Graph::Node> in_place =
         fixed_node(K_KNOWN_OPERATION, second_.data(), second_.data());
 
     prepare({fixed, dynamic, in_place});

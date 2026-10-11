@@ -100,21 +100,21 @@ namespace
                   "Recorder::resolve() takes its counts in a std::array, by copy");
     static_assert(!HasAssignableCapacity<LateCount>::value,
                   "the capacity of a LateCount is set when it is built");
-    static_assert(std::is_same_v<LateCount::Provider, API::Dynamic::CountProvider>,
+    static_assert(std::is_same_v<LateCount::Provider, Dynamic::CountProvider>,
                   "LateCount and Dynamic::sized() take one provider type");
-    static_assert(!HasPublicWhenPredicate<API::Dynamic>::value,
+    static_assert(!HasPublicWhenPredicate<Dynamic>::value,
                   "the controls of a Dynamic are private");
-    static_assert(!HasRawPointerSizeSetter<API::Dynamic>::value,
+    static_assert(!HasRawPointerSizeSetter<Dynamic>::value,
                   "and_sized_from_device(pointer, index) is removed");
-    static_assert(!HasRawPointerSizedFromDevice<API::Dynamic>::value,
+    static_assert(!HasRawPointerSizedFromDevice<Dynamic>::value,
                   "sized_from_device() takes the Buffer, never a bare pointer");
-    static_assert(std::is_nothrow_move_constructible_v<API::Dynamic> &&
-                      !std::is_copy_constructible_v<API::Dynamic>,
+    static_assert(std::is_nothrow_move_constructible_v<Dynamic> &&
+                      !std::is_copy_constructible_v<Dynamic>,
                   "a Dynamic moves and does not copy");
 
     /** @brief Runs a call and returns the error of the SushiException it throws, or code ok. */
     template <class Call>
-    Core::Error error_of(Call&& call)
+    Error error_of(Call&& call)
     {
         try
         {
@@ -124,19 +124,19 @@ namespace
         {
             return e.error();
         }
-        return Core::Error{};
+        return Error{};
     }
 
     /**
      * @brief Records the resolver of one late count; its fill copies the live value to out[0].
      * @param out Receives the live count; must outlive the graph.
      */
-    void record_live_count_copy(API::Recorder& recorder, const LateCount& count,
-                                const API::Buffer<std::uint32_t>& out)
+    void record_live_count_copy(Recorder& recorder, const LateCount& count,
+                                const Buffer<std::uint32_t>& out)
     {
         std::uint32_t* target = out.data();
         recorder.resolve(std::array<LateCount, 1>{count}, out.device_index(),
-                         API::Access(Reads(), Writes(out)),
+                         Access(Reads(), Writes(out)),
                          [target](const std::array<std::size_t, 1>& live)
                          {
                              target[0] = static_cast<std::uint32_t>(live[0]);
@@ -148,7 +148,7 @@ namespace
      * @param marks Holds at least capacity elements, all zero before the call.
      * @return How many elements the task set.
      */
-    std::size_t count_elements_run(Runtime& rt, API::Dynamic window, API::Buffer<int>& marks,
+    std::size_t count_elements_run(Runtime& rt, Dynamic window, Buffer<int>& marks,
                                    std::size_t capacity)
     {
         int* m = marks.data();
@@ -172,10 +172,10 @@ TEST(Integration_LateBoundVocabulary, FromDeviceRejectsAnIndexPastTheSlot)
     auto rt   = Runtime::create();
     auto slot = rt.buffer<std::uint32_t>(3, DeviceIndex{0}, Residency::Host);
 
-    const Core::Error error =
+    const Error error =
         error_of([&] { (void)LateCount::from_device(CAPACITY, slot, slot.size()); });
 
-    EXPECT_EQ(error.code, Core::Errc::invalid_access);
+    EXPECT_EQ(error.code, Errc::invalid_access);
     EXPECT_NE(error.message.find("LateCount::from_device"), std::string::npos) << error.message;
     EXPECT_NE(error.message.find("index 3"), std::string::npos) << error.message;
     EXPECT_NE(error.message.find("3 elements"), std::string::npos) << error.message;
@@ -192,8 +192,8 @@ TEST(Integration_LateBoundVocabulary, FromDeviceRejectsASlotThatIsNotHostResiden
 
     for (const Buffer<std::uint32_t>* rejected : {&resident, &shared})
     {
-        const Core::Error error = error_of([&] { (void)LateCount::from_device(8, *rejected); });
-        EXPECT_EQ(error.code, Core::Errc::invalid_access);
+        const Error error = error_of([&] { (void)LateCount::from_device(8, *rejected); });
+        EXPECT_EQ(error.code, Errc::invalid_access);
         EXPECT_NE(error.message.find("Residency::Host"), std::string::npos) << error.message;
     }
 }
@@ -201,10 +201,10 @@ TEST(Integration_LateBoundVocabulary, FromDeviceRejectsASlotThatIsNotHostResiden
 /** @brief Tests that from_host rejects a provider that holds no callable. */
 TEST(Integration_LateBoundVocabulary, FromHostRejectsAnEmptyProvider)
 {
-    const Core::Error error =
+    const Error error =
         error_of([] { (void)LateCount::from_host(8, LateCount::Provider{}); });
 
-    EXPECT_EQ(error.code, Core::Errc::invalid_access);
+    EXPECT_EQ(error.code, Errc::invalid_access);
     EXPECT_NE(error.message.find("LateCount::from_host"), std::string::npos) << error.message;
 }
 
@@ -220,13 +220,13 @@ TEST(Integration_LateBoundVocabulary, EveryFactoryRejectsACapacityPastAUint32)
     auto rt   = Runtime::create();
     auto slot = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
 
-    EXPECT_EQ(error_of([&] { (void)LateCount::fixed(over); }).code, Core::Errc::invalid_graph);
+    EXPECT_EQ(error_of([&] { (void)LateCount::fixed(over); }).code, Errc::invalid_graph);
     EXPECT_EQ(error_of([&] {
                   (void)LateCount::from_host(over, [] { return std::size_t{0}; });
               }).code,
-              Core::Errc::invalid_graph);
+              Errc::invalid_graph);
     EXPECT_EQ(error_of([&] { (void)LateCount::from_device(over, slot); }).code,
-              Core::Errc::invalid_graph);
+              Errc::invalid_graph);
 
     EXPECT_EQ(LateCount::fixed(limit).capacity(), limit);
 }
@@ -299,7 +299,7 @@ TEST(Integration_LateBoundVocabulary, TheSizeSourceSetLastWins)
     for (std::size_t i = 0; i < CAPACITY; ++i)
         marks[i] = 0;
     EXPECT_EQ(count_elements_run(rt,
-                                 API::sized_from_device(counter).sized([] { return HOST_COUNT; }),
+                                 sized_from_device(counter).sized([] { return HOST_COUNT; }),
                                  marks, CAPACITY),
               HOST_COUNT)
         << "sized() after sized_from_device() must drop the device slot";
@@ -307,7 +307,7 @@ TEST(Integration_LateBoundVocabulary, TheSizeSourceSetLastWins)
     for (std::size_t i = 0; i < CAPACITY; ++i)
         marks[i] = 0;
     EXPECT_EQ(count_elements_run(rt,
-                                 API::sized([] { return HOST_COUNT; }).sized_from_device(counter),
+                                 sized([] { return HOST_COUNT; }).sized_from_device(counter),
                                  marks, CAPACITY),
               std::size_t{DEVICE_COUNT})
         << "sized_from_device() after sized() must drop the host provider";
@@ -325,7 +325,7 @@ TEST(Integration_LateBoundVocabulary, MembersChainOnANamedDynamic)
         buf[i] = 0;
 
     bool enabled = true;
-    API::Dynamic window;
+    Dynamic window;
     window.when([&enabled] { return enabled; })
         .sized([] { return std::size_t{4}; })
         .based_at([] { return std::size_t{10}; });

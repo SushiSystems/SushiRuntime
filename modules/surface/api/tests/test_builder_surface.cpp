@@ -38,9 +38,9 @@
 
 using namespace SushiRuntime;
 
-static_assert(std::is_trivially_copyable<API::Extent<2>>::value,
+static_assert(std::is_trivially_copyable<Extent<2>>::value,
               "an Extent is copied into the replay callable of its node");
-static_assert(std::is_trivially_copyable<API::NdRange<2>>::value,
+static_assert(std::is_trivially_copyable<NdRange<2>>::value,
               "an NdRange is copied into the replay callable of its node");
 
 namespace
@@ -55,8 +55,8 @@ namespace
     constexpr Word SEED = 5;
 
     /** @brief Allocates count words on a device, each holding its index plus SEED. */
-    API::Buffer<Word> seeded(Runtime& rt, std::size_t count = WIDTH,
-                             API::DeviceIndex device = API::DeviceIndex{0})
+    Buffer<Word> seeded(Runtime& rt, std::size_t count = WIDTH,
+                             DeviceIndex device = DeviceIndex{0})
     {
         auto buffer = rt.buffer<Word>(count, device);
         for (std::size_t i = 0; i < count; ++i)
@@ -65,7 +65,7 @@ namespace
     }
 
     /** @brief Allocates a State of count words whose current field holds index plus SEED. */
-    API::State<Word> seeded_state(Runtime& rt, std::size_t count = WIDTH)
+    State<Word> seeded_state(Runtime& rt, std::size_t count = WIDTH)
     {
         auto state = rt.state<Word>(count);
         for (std::size_t i = 0; i < count; ++i)
@@ -75,13 +75,13 @@ namespace
 
     /** @brief Returns the message of the error a builder call throws, or "" when none. */
     template <class Call>
-    std::string refusal_of(Core::Errc expected, Call&& call)
+    std::string refusal_of(Errc expected, Call&& call)
     {
         try
         {
             call();
         }
-        catch (const Core::SushiException& refused)
+        catch (const SushiException& refused)
         {
             EXPECT_EQ(refused.error().code, expected);
             return refused.error().message;
@@ -104,7 +104,7 @@ TEST(Integration_BuilderSurface, CountLaunchWithCapturesPassesPointers)
     auto target = seeded(rt);
 
     auto graph = rt.graph();
-    graph.add(WIDTH, API::In(source), API::Out(target),
+    graph.add(WIDTH, In(source), Out(target),
               [](std::size_t i, const Word* in, Word* out) { out[i] = in[i] * 2u; });
     graph.run();
 
@@ -118,13 +118,13 @@ TEST(Integration_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
     auto rt = Runtime::create();
     auto target = seeded(rt);
 
-    const API::NdRange<1> tiles =
-        API::NdRange<1>(sycl::range<1>(PREFIX), sycl::range<1>(TILE)).at(sycl::id<1>(ORIGIN));
+    const NdRange<1> tiles =
+        NdRange<1>(sycl::range<1>(PREFIX), sycl::range<1>(TILE)).at(sycl::id<1>(ORIGIN));
     EXPECT_EQ(tiles.origin[0], ORIGIN);
     EXPECT_EQ(tiles.count(), PREFIX);
 
     auto graph = rt.graph();
-    graph.add(tiles, API::InOut(target), [](sycl::nd_item<1>, sycl::id<1> index, Word* words)
+    graph.add(tiles, InOut(target), [](sycl::nd_item<1>, sycl::id<1> index, Word* words)
     {
         words[index[0]] = 0u;
     });
@@ -161,8 +161,8 @@ TEST(Integration_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
     auto field = seeded_state(rt);
     auto graph = rt.graph();
 
-    const API::Extent<1> window{sycl::range<1>(WIDTH), sycl::id<1>(ORIGIN)};
-    const std::string refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    const Extent<1> window{sycl::range<1>(WIDTH), sycl::id<1>(ORIGIN)};
+    const std::string refusal = refusal_of(Errc::invalid_graph, [&]
     {
         graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
     });
@@ -183,12 +183,12 @@ TEST(Integration_BuilderSurface, CoupledRulesReadEveryStateNamed)
     auto input = seeded_state(rt);
 
     auto graph = rt.graph();
-    graph.add(API::Coupled(whole, input),
+    graph.add(Coupled(whole, input),
               [](std::size_t i, const Word* current, Word* next, const Word* other)
               {
                   next[i] = current[i] + other[i];
               });
-    graph.add(PREFIX, API::Coupled(prefix, input),
+    graph.add(PREFIX, Coupled(prefix, input),
               [](std::size_t i, const Word* current, Word* next, const Word* other)
               {
                   next[i] = current[i] * other[i];
@@ -213,9 +213,9 @@ TEST(Integration_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd
     auto input = seeded_state(rt, PREFIX);
     auto graph = rt.graph();
 
-    const std::string refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    const std::string refusal = refusal_of(Errc::invalid_graph, [&]
     {
-        graph.add(API::Coupled(output, input),
+        graph.add(Coupled(output, input),
                   [](std::size_t, const Word*, Word*, const Word*) {});
     });
 
@@ -233,8 +233,8 @@ TEST(Integration_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
     std::size_t live = PREFIX;
 
     auto graph = rt.graph();
-    graph.add(API::sized([&live] { return live; }), WIDTH, API::Reads(target),
-              API::Writes(target), [words](std::size_t i) { words[i] = 0u; });
+    graph.add(sized([&live] { return live; }), WIDTH, Reads(target),
+              Writes(target), [words](std::size_t i) { words[i] = 0u; });
     graph.run();
 
     for (std::size_t i = 0; i < WIDTH; ++i)
@@ -245,7 +245,7 @@ TEST(Integration_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
 TEST(Integration_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
 {
     auto rt = Runtime::create();
-    const API::DeviceIndex last{rt.advanced().device_count() - 1};
+    const DeviceIndex last{rt.advanced().device_count() - 1};
     auto by_handle = seeded(rt, WIDTH, last);
     auto by_index = seeded(rt, WIDTH, last);
     Word* handle_words = by_handle.data();
@@ -253,9 +253,9 @@ TEST(Integration_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
 
     // The two kernels are unordered; each is the only writer of its own buffer.
     auto graph = rt.graph();
-    graph.add_untracked(WIDTH, API::On(by_handle),
+    graph.add_untracked(WIDTH, On(by_handle),
                         [handle_words](std::size_t i) { handle_words[i] += 1u; });
-    graph.add_untracked(API::On(last), [index_words](sycl::handler& handler)
+    graph.add_untracked(On(last), [index_words](sycl::handler& handler)
     {
         handler.parallel_for(sycl::range<1>(WIDTH),
                              [index_words](sycl::id<1> i) { index_words[i[0]] += 2u; });
@@ -277,9 +277,9 @@ TEST(Integration_BuilderSurface, PlacementIsCheckedAndItsHandleWatched)
     const std::size_t count = rt.advanced().device_count();
     auto graph = rt.graph();
 
-    const std::string refusal = refusal_of(Core::Errc::invalid_access, [&]
+    const std::string refusal = refusal_of(Errc::invalid_access, [&]
     {
-        graph.add_untracked(WIDTH, API::On(API::DeviceIndex{count}), [](std::size_t) {});
+        graph.add_untracked(WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
     });
     EXPECT_NE(refusal.find("DeviceIndex{" + std::to_string(count) + "}"), std::string::npos)
         << refusal;
@@ -289,11 +289,11 @@ TEST(Integration_BuilderSurface, PlacementIsCheckedAndItsHandleWatched)
     {
         auto freed = seeded(rt);
         Word* words = freed.data();
-        graph.add_untracked(WIDTH, API::On(freed), [words](std::size_t i) { words[i] = 0u; });
+        graph.add_untracked(WIDTH, On(freed), [words](std::size_t i) { words[i] = 0u; });
     }
     const auto result = graph.try_run();
     ASSERT_FALSE(result);
-    EXPECT_EQ(result.error().code, Core::Errc::dangling_resource);
+    EXPECT_EQ(result.error().code, Errc::dangling_resource);
 }
 
 /** @brief Tests that extend() runs its callable once and counts what it records as one rule. */
@@ -305,11 +305,11 @@ TEST(Integration_BuilderSurface, ExtendRecordsOneNamedRule)
     std::size_t calls = 0;
 
     auto graph = rt.graph();
-    graph.extend([&](API::Recorder& recorder)
+    graph.extend([&](Recorder& recorder)
     {
         ++calls;
         for (std::size_t node = 0; node < 2; ++node)
-            recorder.kernel(WIDTH, API::Access(API::Reads(target), API::Writes(target)),
+            recorder.kernel(WIDTH, Access(Reads(target), Writes(target)),
                             [words](std::size_t i) { words[i] += 1u; });
     }).name("twice");
 
@@ -333,53 +333,53 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
     auto target = seeded(rt);
     const std::size_t count = rt.advanced().device_count();
     auto graph = rt.graph();
-    const API::Extent<1> window{sycl::range<1>(WIDTH), sycl::id<1>(ORIGIN)};
+    const Extent<1> window{sycl::range<1>(WIDTH), sycl::id<1>(ORIGIN)};
 
-    const std::string state_refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    const std::string state_refusal = refusal_of(Errc::invalid_graph, [&]
     {
         graph.add(window, field, [](sycl::id<1>, const Word*, Word*) {});
     });
     EXPECT_TRUE(begins_with(state_refusal, "add(launch, state, fn), rule 0: ")) << state_refusal;
 
-    const std::string coupled_refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    const std::string coupled_refusal = refusal_of(Errc::invalid_graph, [&]
     {
-        graph.add(API::Coupled(output, input),
+        graph.add(Coupled(output, input),
                   [](std::size_t, const Word*, Word*, const Word*) {});
     });
     EXPECT_TRUE(begins_with(coupled_refusal, "add(Coupled(out, in0, ...), fn), rule 0: "))
         << coupled_refusal;
 
-    const std::string launch_coupled_refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    const std::string launch_coupled_refusal = refusal_of(Errc::invalid_graph, [&]
     {
-        graph.add(window, API::Coupled(output, input),
+        graph.add(window, Coupled(output, input),
                   [](sycl::id<1>, const Word*, Word*, const Word*) {});
     });
     EXPECT_TRUE(begins_with(launch_coupled_refusal,
                             "add(launch, Coupled(out, in0, ...), fn), rule 0: "))
         << launch_coupled_refusal;
 
-    const std::string untracked_refusal = refusal_of(Core::Errc::invalid_access, [&]
+    const std::string untracked_refusal = refusal_of(Errc::invalid_access, [&]
     {
-        graph.add_untracked(WIDTH, API::On(API::DeviceIndex{count}), [](std::size_t) {});
+        graph.add_untracked(WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
     });
     EXPECT_TRUE(begins_with(untracked_refusal, "add_untracked(launch, On(...), fn): "))
         << untracked_refusal;
 
-    const std::string raw_refusal = refusal_of(Core::Errc::invalid_access, [&]
+    const std::string raw_refusal = refusal_of(Errc::invalid_access, [&]
     {
-        graph.add_untracked(API::On(API::DeviceIndex{count}), [](sycl::handler&) {});
+        graph.add_untracked(On(DeviceIndex{count}), [](sycl::handler&) {});
     });
     EXPECT_TRUE(begins_with(raw_refusal, "add_untracked(On(...), fn): ")) << raw_refusal;
 
-    const std::string offload_refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    const std::string offload_refusal = refusal_of(Errc::invalid_graph, [&]
     {
-        graph.add("builder.check"_op, WIDTH, API::Reads(target), API::Writes(target),
+        graph.add("builder.check"_op, WIDTH, Reads(target), Writes(target),
                   [](std::size_t) {}, {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });
     EXPECT_TRUE(begins_with(offload_refusal, "add(OpID, n, reads, writes, local, params): "))
         << offload_refusal;
 
-    const std::string offload_rule_refusal = refusal_of(Core::Errc::invalid_graph, [&]
+    const std::string offload_rule_refusal = refusal_of(Errc::invalid_graph, [&]
     {
         graph.add("builder.check"_op, field, [](std::size_t, const Word*, Word*) {},
                   {1, 2, 3, 4, 5, 6, 7, 8, 9});

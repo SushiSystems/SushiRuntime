@@ -55,7 +55,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph { struct Node; }
+    namespace Internal::Graph { struct Node; }
 
     namespace Distributed
     {
@@ -201,7 +201,7 @@ namespace SushiRuntime
                  * @return Nothing when the directory is closed, no worker has room or the
                  *         policy keeps the task local.
                  */
-                [[nodiscard]] std::optional<PeerID> pick(const Graph::Node& node,
+                [[nodiscard]] std::optional<PeerID> pick(const Internal::Graph::Node& node,
                                                          std::uint64_t estimated_bytes);
 
                 /**
@@ -232,7 +232,7 @@ namespace SushiRuntime
                 void list_workers(std::vector<PeerID>& out) const;
 
                 /** @brief Returns whether an alive worker sent this operation in PROOF. */
-                [[nodiscard]] bool supports(Graph::OpID op) const;
+                [[nodiscard]] bool supports(Internal::Graph::OpID op) const;
 
                 /** @brief Returns the number of alive workers; reads an atomic. */
                 [[nodiscard]] std::size_t alive_count() const noexcept;
@@ -297,7 +297,7 @@ namespace SushiRuntime
                     HandshakeNonce master_nonce{};
 
                     /** @brief The operations from PROOF. */
-                    std::vector<Graph::OpID> operations;
+                    std::vector<Internal::Graph::OpID> operations;
 
                     /** @brief The task limit from PROOF. */
                     std::uint32_t max_jobs = 0;

@@ -48,7 +48,7 @@
 
 namespace SushiRuntime
 {
-    namespace Execution
+    namespace Internal::Execution
     {
         /**
          * @brief Holds a reusable completion gate for a graph run (modules/engine/execution/README.md).
@@ -156,14 +156,14 @@ namespace SushiRuntime
         /**
          * @brief Owns the scheduler, completion gate and rebalancer (modules/engine/execution/README.md).
          */
-        struct ExecutionEngine::Impl : public Core::RefCounted
+        struct ExecutionEngine::Impl : public RefCounted
         {
             /** @brief Persistent scheduler that survives multiple graph executions. */
-            SushiRuntime::Scheduler::TaskScheduler scheduler;
+            SushiRuntime::Internal::Scheduler::TaskScheduler scheduler;
 
             /** @brief Reusable per-step completion gate (replaces promise/future). */
             CompletionLatch completion;
-            std::unique_ptr<SushiRuntime::Scheduler::WorkloadCoordinator> rebalancer;
+            std::unique_ptr<SushiRuntime::Internal::Scheduler::WorkloadCoordinator> rebalancer;
 
             /** @brief Whether the background rebalancer should be running. */
             std::atomic<bool> rebalancer_on{false};
@@ -192,10 +192,10 @@ namespace SushiRuntime
                 scheduler.start();
 
                 // The coordinator always exists and is off by default (modules/engine/execution/README.md).
-                rebalancer = std::make_unique<SushiRuntime::Scheduler::WorkloadCoordinator>(
+                rebalancer = std::make_unique<SushiRuntime::Internal::Scheduler::WorkloadCoordinator>(
                     scheduler,
                     scheduler,
-                    std::make_unique<SushiRuntime::Scheduler::ThermalProxyStrategy>()
+                    std::make_unique<SushiRuntime::Internal::Scheduler::ThermalProxyStrategy>()
                 );
 
                 if (ctx.settings().rebalancer)
@@ -317,7 +317,7 @@ namespace SushiRuntime
          */
         WorkerPoolInfo ExecutionEngine::worker_pool() const
         {
-            Scheduler::WorkerPoolInfo info;
+            Internal::Scheduler::WorkerPoolInfo info;
             info.count      = impl_->scheduler.get_worker_count();
             info.first_core = impl_->scheduler.first_core();
             info.pinning    = impl_->scheduler.pinning();
@@ -345,7 +345,7 @@ namespace SushiRuntime
          * @brief Reads the accumulators into a report's profiling breakdown.
          */
         void ExecutionEngine::collect_profiling(CompiledGraph& graph,
-                                                Observability::RunReport& report) const
+                                                Internal::Observability::RunReport& report) const
         {
             // One capture path (F4): node_timings below is aggregated from these same records.
             graph.profiling_ledger.collect(report);
@@ -387,7 +387,7 @@ namespace SushiRuntime
             {
                 if (agg[idx].invocations == 0) continue;
 
-                Observability::NodeTiming t;
+                Internal::Observability::NodeTiming t;
                 for (auto& n : graph.all_nodes)
                     if (!n->is_sentinel && n->registration_index == idx) { t.plan_index = n->plan_index; t.name = n->metadata.name; break; }
                 t.invocations = static_cast<std::size_t>(agg[idx].invocations);
@@ -401,7 +401,7 @@ namespace SushiRuntime
             for (std::size_t i = 0; i < workers; ++i)
             {
                 const auto s = impl_->scheduler.get_worker_times(static_cast<int>(i));
-                Observability::WorkerTiming w;
+                Internal::Observability::WorkerTiming w;
                 w.worker_id   = static_cast<int>(i);
                 w.busy_ms     = s.busy_ns / 1.0e6;
                 w.stealing_ms = s.stealing_ns / 1.0e6;
@@ -434,12 +434,12 @@ namespace SushiRuntime
         }
 
         /** @brief Forwards to the scheduler's set_offload_coordinator(). */
-        void ExecutionEngine::install_offload(Graph::OffloadCoordinator* offload)
+        void ExecutionEngine::install_offload(Internal::Graph::OffloadCoordinator* offload)
         {
             impl_->scheduler.set_offload_coordinator(offload);
         }
 
-        Graph::OffloadSink& ExecutionEngine::offload_sink() noexcept
+        Internal::Graph::OffloadSink& ExecutionEngine::offload_sink() noexcept
         {
             return impl_->scheduler;
         }
@@ -480,7 +480,7 @@ namespace SushiRuntime
             {
                 graph.sentinel->metadata.name = "graph_completion_sentinel";
                 graph.sentinel->is_sentinel   = true;
-                graph.sentinel->mode          = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
+                graph.sentinel->mode          = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::HOST;
 
                 auto* latch     = &impl_->completion;
                 auto* sched_ptr = &impl_->scheduler;
@@ -592,7 +592,7 @@ namespace SushiRuntime
          */
         void IExecutionEngine::execute(CompiledGraph&& graph)
         {
-            Graph::CompiledGraph local = std::move(graph);
+            Internal::Graph::CompiledGraph local = std::move(graph);
             execute(local);
         }
 

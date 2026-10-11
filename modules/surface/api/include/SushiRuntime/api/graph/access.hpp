@@ -37,43 +37,39 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    /**
+     * @brief Names the regions a node reads and writes, and watches the handles behind them.
+     * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+     */
+    struct Access
     {
+        /** @brief Names no region: the node is ordered against nothing. */
+        Access() = default;
+
         /**
-         * @brief Names the regions a node reads and writes, and watches the handles behind them.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @brief Takes the regions and the liveness observers of the handles named.
+         * @param read_set  Handles the node reads.
+         * @param write_set Handles the node writes.
          */
-        struct Access
+        Access(const Reads& read_set, const Writes& write_set)
+            : reads(read_set.keys), writes(write_set.keys), lives(read_set.lives)
         {
-            /** @brief Names no region: the node is ordered against nothing. */
-            Access() = default;
+            lives.insert(lives.end(), write_set.lives.begin(), write_set.lives.end());
+        }
 
-            /**
-             * @brief Takes the regions and the liveness observers of the handles named.
-             * @param read_set  Handles the node reads.
-             * @param write_set Handles the node writes.
-             */
-            Access(const Reads& read_set, const Writes& write_set)
-                : reads(read_set.keys), writes(write_set.keys), lives(read_set.lives)
-            {
-                lives.insert(lives.end(), write_set.lives.begin(), write_set.lives.end());
-            }
+        /**
+         * @brief Takes bare regions; no allocation is watched.
+         * @param read_regions  Regions the node reads; the caller keeps them alive.
+         * @param write_regions Regions the node writes; the caller keeps them alive.
+         */
+        Access(std::vector<Internal::Memory::ResourceRegion> read_regions,
+               std::vector<Internal::Memory::ResourceRegion> write_regions)
+            : reads(std::move(read_regions)), writes(std::move(write_regions))
+        {
+        }
 
-            /**
-             * @brief Takes bare regions; no allocation is watched.
-             * @param read_regions  Regions the node reads; the caller keeps them alive.
-             * @param write_regions Regions the node writes; the caller keeps them alive.
-             */
-            Access(std::vector<Memory::ResourceRegion> read_regions,
-                   std::vector<Memory::ResourceRegion> write_regions)
-                : reads(std::move(read_regions)), writes(std::move(write_regions))
-            {
-            }
-
-            std::vector<Memory::ResourceRegion> reads;    /**< Read regions, in the order given. */
-            std::vector<Memory::ResourceRegion> writes;   /**< Write regions, in the order given. */
-            std::vector<Memory::LivenessObserver> lives;  /**< Observers a run checks first. */
-        };
-
-    } // namespace API
+        std::vector<Internal::Memory::ResourceRegion> reads;    /**< Read regions, in the order given. */
+        std::vector<Internal::Memory::ResourceRegion> writes;   /**< Write regions, in the order given. */
+        std::vector<Internal::Memory::LivenessObserver> lives;  /**< Observers a run checks first. */
+    };
 } // namespace SushiRuntime

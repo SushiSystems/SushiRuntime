@@ -34,9 +34,9 @@
 #include <utility>
 #include <vector>
 
-using SushiRuntime::Observability::NodeEventRecord;
-using SushiRuntime::Observability::ProfilingLedger;
-using SushiRuntime::Observability::RunReport;
+using SushiRuntime::Internal::Observability::NodeEventRecord;
+using SushiRuntime::Internal::Observability::ProfilingLedger;
+using SushiRuntime::Internal::Observability::RunReport;
 
 namespace
 {

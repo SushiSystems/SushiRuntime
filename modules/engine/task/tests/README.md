@@ -8,7 +8,7 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_node_placement.cpp
 
-The file covers the placement a node states and the rule `Graph::placement_of()` applies to it:
+The file covers the placement a node states and the rule `Internal::Graph::placement_of()` applies to it:
 the owner of the first write region, else of the first read region, else the stated placement, else
 device 0. `modules/engine/scheduler/README.md` states the rule under "Queue selection", and the
 scheduler's own `test_node_placement.cpp` checks the queue a dispatch receives.
@@ -27,7 +27,7 @@ owned by one of the two, and an address with no record stands for a region no de
 
 ## test_small_event_vector.cpp
 
-The file covers `Graph::SmallEventVector`, the event dependencies a node holds: copy, move,
+The file covers `Internal::Graph::SmallEventVector`, the event dependencies a node holds: copy, move,
 assignment from another vector or from a `std::vector`, and `clear()`. The events are
 default-constructed. Each one has its own state, so `==` tells two of them apart and a copy of
 one compares equal to it; the tests rely on that.
@@ -41,8 +41,8 @@ content unchanged.
 
 ## test_task_types.cpp
 
-The file covers the operation hash of `Graph::OpID` and the parameter slots of
-`Graph::TaskMetadata`. The hash checks are `static_assert`s, so a wrong value stops the test
+The file covers the operation hash of `Internal::Graph::OpID` and the parameter slots of
+`Internal::Graph::TaskMetadata`. The hash checks are `static_assert`s, so a wrong value stops the test
 program from compiling; they cover two names the repository uses, one name with a byte above 127,
 and the unsigned-byte rule the hash applies.
 

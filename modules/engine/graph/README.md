@@ -95,7 +95,7 @@ whose fixed handles the coordinator keeps in the payload of the node's OffloadSt
 
 ### OffloadState
 
-A node that a coordinator may run elsewhere carries a Graph::OffloadState behind one pointer;
+A node that a coordinator may run elsewhere carries a Internal::Graph::OffloadState behind one pointer;
 `modules/engine/task/README.md` describes it. The type and sizeof(Node) do not depend on a build flag, and a node that never offloads never allocates one.
 
 ### Node
@@ -141,7 +141,7 @@ the contract this guard enforces.
 A node that names no region gives the scheduler nothing to route by, so place_on() lets its builder
 state the device, and a node that states none runs on device 0. A node that names a region a device
 owns runs on that owner whatever it states. `modules/engine/scheduler/README.md`, under "Queue
-selection", holds the rule, and `Graph::placement_of()` applies it.
+selection", holds the rule, and `Internal::Graph::placement_of()` applies it.
 
 placement_ is a 16-bit field with NO_PLACEMENT for "none stated". It sits in the padding between
 locality_checked_ and cached_queue_index_, so sizeof(Node) does not grow. place_on() throws
@@ -151,7 +151,7 @@ runtime is checked at the node's first dispatch, where the device count is known
 ### cached_queue_index_
 
 cached_queue_index_ is the node's placement, resolved once on its first dispatch, alongside
-locality_checked_, by `Graph::placement_of()`. Later steps route straight to
+locality_checked_, by `Internal::Graph::placement_of()`. Later steps route straight to
 `DeviceQueueSet::queue(index)`, an indexed read. It is -1 only until that first dispatch. The index
 is stable across replay: the device set never changes and the node's anchor buffer and stated
 placement are fixed, so it cannot go stale. A node is dispatched serially, so a plain int needs no
@@ -261,7 +261,7 @@ times; each call returns a distinct value.
 
 An add_\* call accepts only an index this graph issued: one reserve_registration() returned, or one
 an earlier node drew. Indices are issued densely from zero, so the test is "below the count issued
-so far". Any other index throws `Core::SushiException` with `Errc::invalid_graph`, and the message
+so far". Any other index throws `SushiException` with `Errc::invalid_graph`, and the message
 names the call, the index and the count. CompiledGraph::capture_profiling_state() sizes two vectors
 to the largest index plus one, so an index nobody issued could ask for 2^32 elements or collide with
 one the graph issues later. NO_REGISTRATION, the value that stands for "no node carries an index
@@ -306,7 +306,7 @@ and transfers node ownership to the returned CompiledGraph. It does not submit a
 compile() is not thread-safe with respect to add_node() and add_task(). All nodes must be inserted
 before it is called.
 
-A graph with no root, or with a cycle behind a root, throws `Core::SushiException` with
+A graph with no root, or with a cycle behind a root, throws `SushiException` with
 `Errc::invalid_graph`. The message gives the node counts and names one node that cannot run, by its
 label and registration index.
 
@@ -411,7 +411,7 @@ all; everything else is a deliberate, supported configuration.
 #### Distributed offload
 
 The graph decides nothing about offload and names no context. Its constructor takes a
-`Graph::OffloadCoordinator*`, null by default, and `compile()` hands `all_nodes` to that
+`Internal::Graph::OffloadCoordinator*`, null by default, and `compile()` hands `all_nodes` to that
 coordinator's `prepare()` after the tracker is reset and before the graph is returned;
 `modules/extension/distributed/README.md` says which nodes the distributed coordinator marks. With a null
 coordinator no node gets an offload state from `compile()`, so the scheduler's offload

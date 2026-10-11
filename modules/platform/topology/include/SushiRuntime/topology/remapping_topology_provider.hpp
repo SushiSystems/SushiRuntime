@@ -33,7 +33,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         /**
          * @brief Decorator that overlays a synthetic NUMA layout on real devices.

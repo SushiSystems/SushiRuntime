@@ -40,7 +40,7 @@ run scans, and the test asserts that at least one of the producer's objects is d
 
 ### `K_EPOCH_SLOTS`
 
-`EpochManager` holds `Core::MAX_WORKER_THREADS + 32` thread slots, 288 of them. The constant
+`EpochManager` holds `MAX_WORKER_THREADS + 32` thread slots, 288 of them. The constant
 repeats that sum because the manager keeps its own private.
 
 ### `ThreadPark`

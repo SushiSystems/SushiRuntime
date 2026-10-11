@@ -42,14 +42,14 @@ namespace
 {
 #if defined(_WIN32)
     /// @brief The handle kind this platform imports.
-    constexpr Interop::ExternalHandleKind K_NATIVE_KIND = Interop::ExternalHandleKind::OpaqueWin32;
+    constexpr ExternalHandleKind K_NATIVE_KIND = ExternalHandleKind::OpaqueWin32;
     /// @brief The handle kind this platform cannot import.
-    constexpr Interop::ExternalHandleKind K_FOREIGN_KIND = Interop::ExternalHandleKind::OpaqueFd;
+    constexpr ExternalHandleKind K_FOREIGN_KIND = ExternalHandleKind::OpaqueFd;
 #else
     /// @brief The handle kind this platform imports.
-    constexpr Interop::ExternalHandleKind K_NATIVE_KIND = Interop::ExternalHandleKind::OpaqueFd;
+    constexpr ExternalHandleKind K_NATIVE_KIND = ExternalHandleKind::OpaqueFd;
     /// @brief The handle kind this platform cannot import.
-    constexpr Interop::ExternalHandleKind K_FOREIGN_KIND = Interop::ExternalHandleKind::OpaqueWin32;
+    constexpr ExternalHandleKind K_FOREIGN_KIND = ExternalHandleKind::OpaqueWin32;
 #endif
 
     /// @brief Size the test descriptors state for the exported allocation.
@@ -69,9 +69,9 @@ namespace
     }
 
     /** @brief Builds a descriptor that device @p index would accept, were its handle real. */
-    Interop::ExternalMemoryDescriptor acceptable_descriptor(Runtime& runtime, std::size_t index)
+    ExternalMemoryDescriptor acceptable_descriptor(Runtime& runtime, std::size_t index)
     {
-        Interop::ExternalMemoryDescriptor descriptor{};
+        ExternalMemoryDescriptor descriptor{};
         descriptor.kind = K_NATIVE_KIND;
         descriptor.handle = K_PLACEHOLDER_HANDLE;
         descriptor.allocation_bytes = K_ALLOCATION_BYTES;
@@ -83,7 +83,7 @@ namespace
     }
 
     /** @brief Imports @p count floats and returns the refusal, failing when there is none. */
-    Core::Error refusal_of(Runtime& runtime, const Interop::ExternalMemoryDescriptor& descriptor,
+    Error refusal_of(Runtime& runtime, const ExternalMemoryDescriptor& descriptor,
                            std::size_t count, std::size_t index)
     {
         try
@@ -96,7 +96,7 @@ namespace
         {
             return refusal.error();
         }
-        return Core::Error{};
+        return Error{};
     }
 } // namespace
 
@@ -121,7 +121,7 @@ TEST(Unit_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
     if (!index)
         GTEST_SKIP() << "every device imports external memory";
 
-    const Core::Error refusal =
+    const Error refusal =
         refusal_of(runtime, acceptable_descriptor(runtime, *index), 4, *index);
 
     EXPECT_EQ(refusal.code, Errc::unsupported);
@@ -138,7 +138,7 @@ TEST(Unit_InteropImport, ADeviceThatImportsReportsItsUUID)
 
     for (std::size_t index = 0; index < count; ++index)
     {
-        const Interop::InteropCapabilities capabilities =
+        const InteropCapabilities capabilities =
             runtime.interop().capabilities(DeviceIndex{index});
         if (capabilities.device_import)
             EXPECT_TRUE(capabilities.device_uuid.has_value()) << "device " << index;
@@ -152,8 +152,8 @@ TEST(Unit_InteropImport, ADefaultDescriptorIsRefusedForItsUnstatedKind)
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
 
-    const Interop::ExternalMemoryDescriptor descriptor;
-    const Core::Error refusal = refusal_of(runtime, descriptor, 4, *index);
+    const ExternalMemoryDescriptor descriptor;
+    const Error refusal = refusal_of(runtime, descriptor, 4, *index);
 
     EXPECT_EQ(refusal.code, Errc::invalid_access);
     EXPECT_NE(refusal.message.find("descriptor.kind is Unspecified"), std::string::npos)
@@ -170,9 +170,9 @@ TEST(Unit_InteropImport, ANullWin32HandleIsRefusedByName)
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
 
-    Interop::ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
+    ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
     descriptor.handle = 0;
-    const Core::Error refusal = refusal_of(runtime, descriptor, 4, *index);
+    const Error refusal = refusal_of(runtime, descriptor, 4, *index);
 
     EXPECT_EQ(refusal.code, Errc::invalid_access);
     EXPECT_NE(refusal.message.find("descriptor.handle is null"), std::string::npos)
@@ -186,9 +186,9 @@ TEST(Unit_InteropImport, AFileDescriptorAboveIntIsRefusedWithItsValue)
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
 
-    Interop::ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
+    ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
     descriptor.handle = static_cast<std::uint64_t>(std::numeric_limits<int>::max()) + 1;
-    const Core::Error refusal = refusal_of(runtime, descriptor, 4, *index);
+    const Error refusal = refusal_of(runtime, descriptor, 4, *index);
 
     EXPECT_EQ(refusal.code, Errc::invalid_access);
     EXPECT_NE(refusal.message.find("descriptor.handle is " + std::to_string(descriptor.handle)),
@@ -218,9 +218,9 @@ TEST(Unit_InteropImport, AHandleKindOfAnotherPlatformIsRefusedByName)
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
 
-    Interop::ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
+    ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
     descriptor.kind = K_FOREIGN_KIND;
-    const Core::Error refusal = refusal_of(runtime, descriptor, 4, *index);
+    const Error refusal = refusal_of(runtime, descriptor, 4, *index);
 
     EXPECT_EQ(refusal.code, Errc::invalid_access);
     EXPECT_NE(refusal.message.find("descriptor.kind is"), std::string::npos) << refusal.message;
@@ -233,9 +233,9 @@ TEST(Unit_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
 
-    Interop::ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
+    ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
     descriptor.offset = 60;
-    const Core::Error past_the_end = refusal_of(runtime, descriptor, 4, *index);
+    const Error past_the_end = refusal_of(runtime, descriptor, 4, *index);
 
     EXPECT_EQ(past_the_end.code, Errc::invalid_access);
     EXPECT_NE(past_the_end.message.find("16 bytes at offset 60"), std::string::npos)
@@ -245,7 +245,7 @@ TEST(Unit_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
 
     // An offset beyond the allocation must not wrap the subtraction; see README.md.
     descriptor.offset = K_ALLOCATION_BYTES + 1;
-    const Core::Error offset_outside = refusal_of(runtime, descriptor, 0, *index);
+    const Error offset_outside = refusal_of(runtime, descriptor, 0, *index);
     EXPECT_EQ(offset_outside.code, Errc::invalid_access);
     EXPECT_NE(offset_outside.message.find("offset 65"), std::string::npos)
         << offset_outside.message;
@@ -260,9 +260,9 @@ TEST(Unit_InteropImport, AnotherDevicesUUIDIsRefusedWithBothUUIDs)
     if (!runtime.interop().capabilities(DeviceIndex{*index}).device_uuid)
         GTEST_SKIP() << "the importing device reports no UUID";
 
-    Interop::ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
+    ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
     descriptor.device.bytes[15] = static_cast<std::uint8_t>(descriptor.device.bytes[15] ^ 0xFFu);
-    const Core::Error refusal = refusal_of(runtime, descriptor, 4, *index);
+    const Error refusal = refusal_of(runtime, descriptor, 4, *index);
 
     EXPECT_EQ(refusal.code, Errc::invalid_access);
     EXPECT_NE(refusal.message.find("descriptor.device is"), std::string::npos) << refusal.message;

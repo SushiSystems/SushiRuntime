@@ -34,7 +34,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Detects a throttled worker and asks the migrator to take tasks off its queue.

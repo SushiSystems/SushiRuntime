@@ -110,9 +110,9 @@ namespace
      * @brief Runs the given number of ticks after a warm-up and returns the allocations the calling
      *        thread made.
      */
-    std::size_t allocations_for_reuse_ticks(API::Graph& g, std::size_t ticks)
+    std::size_t allocations_for_reuse_ticks(Graph& g, std::size_t ticks)
     {
-        Observability::RunReport report;
+        Internal::Observability::RunReport report;
         for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
             g.run(report);
 
@@ -126,7 +126,7 @@ namespace
     }
 
     // The same, through the value-returning run() — one fresh RunReport per tick.
-    std::size_t allocations_for_value_ticks(API::Graph& g, std::size_t ticks)
+    std::size_t allocations_for_value_ticks(Graph& g, std::size_t ticks)
     {
         for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
             g.run();
@@ -135,7 +135,7 @@ namespace
         g_counting_this_thread = true;
         for (std::size_t i = 0; i < ticks; ++i)
         {
-            const Observability::RunReport report = g.run();
+            const Internal::Observability::RunReport report = g.run();
             (void)report;
         }
         g_counting_this_thread = false;
@@ -201,7 +201,7 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
 
     float* p = buf.data();
     auto g = rt.graph();
-    g.add(N, API::Reads{}, API::Writes(buf), kernel(p));
+    g.add(N, Reads{}, Writes(buf), kernel(p));
 
     const std::size_t reuse_short = allocations_for_reuse_ticks(g, TICKS);
     const std::size_t reuse_long  = allocations_for_reuse_ticks(g, TICKS * 4);
@@ -209,7 +209,7 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
 
     // The baseline queue is the in-order queue the chain itself submits to; see README.md.
     sycl::queue& baseline_queue =
-        rt.unsafe_context().devices().queue(0, Device::QueueFlavour{true, false});
+        rt.unsafe_context().devices().queue(0, Internal::Device::QueueFlavour{true, false});
     const std::size_t baseline_short = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS);
     const std::size_t baseline_long  = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS * 4);
 
@@ -239,7 +239,7 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
         << baseline_short << " -> " << baseline_long << ")";
 
     // Claim 3: the scheduler submits from a worker, which this counter cannot see; see README.md.
-    API::RuntimeConfig forced;
+    RuntimeConfig forced;
     forced.force_scheduler = true;
     auto scheduled_rt  = Runtime::create(forced);
     auto scheduled_buf = scheduled_rt.buffer<float>(N);
@@ -247,7 +247,7 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
         scheduled_buf[i] = 0.0f;
 
     auto sg = scheduled_rt.graph();
-    sg.add(N, API::Reads{}, API::Writes(scheduled_buf), kernel(scheduled_buf.data()));
+    sg.add(N, Reads{}, Writes(scheduled_buf), kernel(scheduled_buf.data()));
 
     const std::size_t scheduler_short = allocations_for_reuse_ticks(sg, TICKS);
     const std::size_t scheduler_long  = allocations_for_reuse_ticks(sg, TICKS * 4);
@@ -273,10 +273,10 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
 
     float* p = buf.data();
     auto g = rt.graph();
-    g.add(N, API::Reads{}, API::Writes(buf),
+    g.add(N, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<float>(i) * 0.25f; });
 
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
     {
         auto step = g.run_async();
@@ -318,14 +318,14 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
 
     auto g = rt.graph();
     g.set_profiling(true);
-    g.add(N, API::Reads{}, API::Writes(buf), kernel(p));
+    g.add(N, Reads{}, Writes(buf), kernel(p));
 
     const std::size_t reuse_short = allocations_for_reuse_ticks(g, TICKS);
     const std::size_t reuse_long  = allocations_for_reuse_ticks(g, TICKS * 4);
 
     // The baseline uses the profiling flavour of the chain's in-order queue; see README.md.
     sycl::queue& baseline_queue =
-        rt.unsafe_context().devices().queue(0, Device::QueueFlavour{true, true});
+        rt.unsafe_context().devices().queue(0, Internal::Device::QueueFlavour{true, true});
     const std::size_t baseline_short = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS);
     const std::size_t baseline_long  = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS * 4);
 
@@ -345,14 +345,14 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
         << ") exceeds bare SYCL's growth submitting the same kernel on the same queue ("
         << baseline_short << " -> " << baseline_long << ")";
 
-    API::RuntimeConfig forced;
+    RuntimeConfig forced;
     forced.force_scheduler = true;
     auto scheduled_rt  = Runtime::create(forced);
     auto scheduled_buf = scheduled_rt.buffer<int>(N);
 
     auto sg = scheduled_rt.graph();
     sg.set_profiling(true);
-    sg.add(N, API::Reads{}, API::Writes(scheduled_buf), kernel(scheduled_buf.data()));
+    sg.add(N, Reads{}, Writes(scheduled_buf), kernel(scheduled_buf.data()));
 
     const std::size_t scheduler_short = allocations_for_reuse_ticks(sg, TICKS);
     const std::size_t scheduler_long  = allocations_for_reuse_ticks(sg, TICKS * 4);

@@ -40,8 +40,8 @@
 #include <SushiRuntime/topology/numa_mapper.hpp>
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Topology;
+using namespace SushiRuntime::Internal::Execution;
+using namespace SushiRuntime::Internal::Topology;
 
 namespace
 {
@@ -49,10 +49,10 @@ namespace
     constexpr std::size_t K_ALIGNED_KIND_COUNT = 3;
 
     /** @brief Lists the USM kinds the aligned allocation tests cover: shared, device, host. */
-    const std::array<Memory::USMKind, K_ALIGNED_KIND_COUNT> K_ALIGNED_KINDS = {
-        Memory::USMKind::Shared,
-        Memory::USMKind::Device,
-        Memory::USMKind::Host,
+    const std::array<Internal::Memory::USMKind, K_ALIGNED_KIND_COUNT> K_ALIGNED_KINDS = {
+        Internal::Memory::USMKind::Shared,
+        Internal::Memory::USMKind::Device,
+        Internal::Memory::USMKind::Host,
     };
 } // namespace
 
@@ -142,7 +142,7 @@ TEST(Unit_TopologyTest, InvalidNUMAFallsBackToAUsableNode)
 
     void* ptr = nullptr;
     EXPECT_NO_THROW({
-        ptr = ctx.memory().allocate({Memory::USMKind::Shared, 128, 0,
+        ptr = ctx.memory().allocate({Internal::Memory::USMKind::Shared, 128, 0,
                                      ctx.devices().device_for_numa(INVALID_NUMA_ID)});
     }) << "Allocation on a negative NUMA ID threw instead of falling back.";
 
@@ -162,9 +162,9 @@ TEST(Unit_TopologyTest, LiveUSMCountFollowsAllocateFreeAndForget)
     const std::size_t baseline = ctx.memory().live_count();
 
     void* shared = ctx.memory().allocate(
-        {Memory::USMKind::Shared, 128, 0, ctx.devices().device_for_numa(0)});
+        {Internal::Memory::USMKind::Shared, 128, 0, ctx.devices().device_for_numa(0)});
     void* device = ctx.memory().allocate(
-        {Memory::USMKind::Device, 128, 0, ctx.devices().device_for_numa(0)});
+        {Internal::Memory::USMKind::Device, 128, 0, ctx.devices().device_for_numa(0)});
     ASSERT_NE(shared, nullptr);
     ASSERT_NE(device, nullptr);
     EXPECT_EQ(ctx.memory().live_count(), baseline + 2);
@@ -187,7 +187,7 @@ TEST(Unit_TopologyTest, AlignedAllocationsStartOnTheAlignment)
 {
     RuntimeContext ctx;
 
-    for (const Memory::USMKind kind : K_ALIGNED_KINDS)
+    for (const Internal::Memory::USMKind kind : K_ALIGNED_KINDS)
     {
         for (const std::size_t alignment : {std::size_t{64}, std::size_t{128}})
         {
@@ -228,8 +228,8 @@ TEST(Unit_TopologyTest, AnAlignedAllocationOnAMissingDeviceThrows)
     RuntimeContext ctx;
     const std::size_t missing_device = ctx.devices().count();
 
-    EXPECT_THROW((void)ctx.memory().allocate({Memory::USMKind::Shared, 64, 128, missing_device}),
+    EXPECT_THROW((void)ctx.memory().allocate({Internal::Memory::USMKind::Shared, 64, 128, missing_device}),
                  std::runtime_error);
-    EXPECT_THROW((void)ctx.memory().allocate({Memory::USMKind::Device, 64, 128, missing_device}),
+    EXPECT_THROW((void)ctx.memory().allocate({Internal::Memory::USMKind::Device, 64, 128, missing_device}),
                  std::runtime_error);
 }

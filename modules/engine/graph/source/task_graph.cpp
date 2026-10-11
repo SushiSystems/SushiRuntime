@@ -42,9 +42,9 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
-        using namespace SushiRuntime::Core;
+        using namespace SushiRuntime;
 
         /**
          * @brief Lock-free linked list entry for owning sushi_ptr objects.
@@ -69,7 +69,7 @@ namespace SushiRuntime
             /** @brief Names @p node for an error message: its label and registration index. */
             std::string describe_node(const Node& node)
             {
-                return Core::Detail::sr_format("node '{}' (registration index {})",
+                return Detail::sr_format("node '{}' (registration index {})",
                                                node.get_name(), node.registration_index);
             }
         } // namespace
@@ -77,7 +77,7 @@ namespace SushiRuntime
         /**
          * @brief Private implementation of the TaskGraph utilizing O(1) Lock-Free architecture.
          */
-        struct TaskGraph::Impl : public Core::RefCounted
+        struct TaskGraph::Impl : public RefCounted
         {
             /** @brief Lock-free stack holding all nodes to manage their lifetime securely. */
             std::atomic<NodeEntry*> all_nodes{nullptr};
@@ -146,7 +146,7 @@ namespace SushiRuntime
             /**
              * @brief Refuses a registration index this graph did not issue.
              * @param call The public call checked, as its message names it.
-             * @throws Core::SushiException With Errc::invalid_graph for an index at or above
+             * @throws SushiException With Errc::invalid_graph for an index at or above
              *         the count of indices issued.
              * @see modules/engine/graph/README.md
              */
@@ -161,13 +161,13 @@ namespace SushiRuntime
                 if (*registration < issued)
                     return;
 
-                const std::string message = Core::Detail::sr_format(
+                const std::string message = Detail::sr_format(
                     "TaskGraph::{}(): registration index {} was not issued by this graph, which "
                     "has issued {} so far. Pass an index reserve_registration() returned on this "
                     "graph, or none to draw a fresh one.",
                     call, *registration, issued);
                 SR_LOG_ERROR("{}", message);
-                throw Core::SushiException(Core::Error{Core::Errc::invalid_graph, message});
+                throw SushiException(Error{Errc::invalid_graph, message});
             }
 
             /**
@@ -265,8 +265,8 @@ namespace SushiRuntime
          * @return The node added.
          */
         Node& TaskGraph::add_node(TaskWork work,
-                                  const std::vector<Memory::ResourceRegion>& read_access,
-                                  const std::vector<Memory::ResourceRegion>& write_access,
+                                  const std::vector<Internal::Memory::ResourceRegion>& read_access,
+                                  const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                   const std::vector<sycl::event>& dependencies,
                                   std::optional<std::uint32_t> registration)
         {
@@ -281,8 +281,8 @@ namespace SushiRuntime
          * @return The node added.
          */
         Node& TaskGraph::add_node(TaskWork work,
-                                  const std::vector<Memory::ResourceRegion>& read_access,
-                                  const std::vector<Memory::ResourceRegion>& write_access,
+                                  const std::vector<Internal::Memory::ResourceRegion>& read_access,
+                                  const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                   std::shared_ptr<LateBindings> bindings,
                                   const std::vector<sycl::event>& dependencies,
                                   std::optional<std::uint32_t> registration)
@@ -318,8 +318,8 @@ namespace SushiRuntime
          * @return The node added.
          */
         Node& TaskGraph::add_task(const TaskMetadata& meta,
-                                  const std::vector<Memory::ResourceRegion>& read_access,
-                                  const std::vector<Memory::ResourceRegion>& write_access,
+                                  const std::vector<Internal::Memory::ResourceRegion>& read_access,
+                                  const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                   TaskWork device_work,
                                   HostWork fallback_work,
                                   const std::vector<sycl::event>& dependencies,
@@ -339,11 +339,11 @@ namespace SushiRuntime
             // KERNEL needs device work and a type other than CUSTOM_HOST (modules/engine/graph/README.md).
             if (has_device_work && meta.task_type != TaskType::CUSTOM_HOST)
             {
-                node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::KERNEL;
+                node->mode = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::KERNEL;
             }
             else
             {
-                node->mode = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
+                node->mode = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::HOST;
             }
 
             // A task with no executable work is the only defect (modules/engine/graph/README.md).
@@ -381,8 +381,8 @@ namespace SushiRuntime
          * @return The node added.
          */
         Node& TaskGraph::add_task(const TaskMetadata& meta,
-                                  const std::vector<Memory::ResourceRegion>& read_access,
-                                  const std::vector<Memory::ResourceRegion>& write_access,
+                                  const std::vector<Internal::Memory::ResourceRegion>& read_access,
+                                  const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                   HostWork fallback_work,
                                   const std::vector<sycl::event>& dependencies,
                                   std::optional<std::uint32_t> registration)
@@ -415,7 +415,7 @@ namespace SushiRuntime
             node->metadata  = meta;
             node->host_work = std::move(fallback_work);
             node->sycl_deps = dependencies;
-            node->mode      = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
+            node->mode      = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::HOST;
 
             // The snapshot orders dependencies and routes the queue (modules/engine/graph/README.md).
             const std::vector<void*> reads  = live_reads  ? *live_reads  : std::vector<void*>{};
@@ -475,8 +475,8 @@ namespace SushiRuntime
          * @param work Callable run once on a worker thread; submits no SYCL work.
          * @return The node added.
          */
-        Node& TaskGraph::add_native(const std::vector<Memory::ResourceRegion>& read_access,
-                                    const std::vector<Memory::ResourceRegion>& write_access,
+        Node& TaskGraph::add_native(const std::vector<Internal::Memory::ResourceRegion>& read_access,
+                                    const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                     std::function<void()> work,
                                     const std::vector<sycl::event>& dependencies,
                                     std::optional<std::uint32_t> registration)
@@ -486,7 +486,7 @@ namespace SushiRuntime
             auto node = make_sushi<Node>();
             node->native_work          = std::move(work);
             node->submits_device_work_ = false;
-            node->mode                 = SushiRuntime::Scheduler::Task::ExecutionMode::HOST;
+            node->mode                 = SushiRuntime::Internal::Scheduler::Task::ExecutionMode::HOST;
             node->sycl_deps            = dependencies;
 
             for (const auto& r : read_access)
@@ -508,7 +508,7 @@ namespace SushiRuntime
         /**
          * @brief Compiles the graph from the candidates tagged at insertion (modules/engine/graph/README.md).
          * @return The compiled graph ready to run; empty when no node was added.
-         * @throws Core::SushiException With Errc::invalid_graph for no root or a cycle.
+         * @throws SushiException With Errc::invalid_graph for no root or a cycle.
          */
         CompiledGraph TaskGraph::compile()
         {
@@ -564,7 +564,7 @@ namespace SushiRuntime
             {
                 // all_nodes is not empty here, and with no root every node waits on another.
                 const Node& waiting = *graph.all_nodes.front();
-                const std::string message = Core::Detail::sr_format(
+                const std::string message = Detail::sr_format(
                     "TaskGraph::compile(): none of the {} nodes is a root, so no node can start; "
                     "{} waits on {} unfinished dependencies. Remove the dependency cycle.",
                     graph.all_nodes.size(), describe_node(waiting),
@@ -572,7 +572,7 @@ namespace SushiRuntime
                 SR_LOG_ERROR("{}", message);
                 // The tracker is drained before the throw (modules/engine/graph/README.md).
                 impl_->tracker.reset();
-                throw Core::SushiException(Core::Error{Core::Errc::invalid_graph, message});
+                throw SushiException(Error{Errc::invalid_graph, message});
             }
 
             // A root set does not rule out a disjoint cycle (modules/engine/graph/README.md).
@@ -620,7 +620,7 @@ namespace SushiRuntime
                     const auto undrained = std::find_if(
                         graph.all_nodes.begin(), graph.all_nodes.end(),
                         [&](const sushi_ptr<Node>& n) { return shadow_indeg[n.get()] > 0; });
-                    const std::string message = Core::Detail::sr_format(
+                    const std::string message = Detail::sr_format(
                         "TaskGraph::compile(): {} of {} nodes sit in or behind a dependency cycle "
                         "and would never run, for example {}. Remove the cycle.",
                         graph.all_nodes.size() - drained, graph.all_nodes.size(),
@@ -628,7 +628,7 @@ namespace SushiRuntime
                                                            : std::string("an unidentified node"));
                     SR_LOG_ERROR("{}", message);
                     impl_->tracker.reset(); // same UAF-avoidance as the no-roots path
-                    throw Core::SushiException(Core::Error{Core::Errc::invalid_graph, message});
+                    throw SushiException(Error{Errc::invalid_graph, message});
                 }
             }
 

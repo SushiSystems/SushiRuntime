@@ -31,8 +31,8 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/scheduler/event_polling.hpp>
 
-using SushiRuntime::Scheduler::EventPolling;
-using SushiRuntime::Scheduler::Task;
+using SushiRuntime::Internal::Scheduler::EventPolling;
+using SushiRuntime::Internal::Scheduler::Task;
 
 namespace
 {

@@ -80,8 +80,8 @@ namespace SushiRuntime
                 failure = error.what();
             }
 
-            throw Core::SushiException(Core::Error{
-                Core::Errc::unsupported,
+            throw SushiException(Error{
+                Errc::unsupported,
                 "cannot draw a handshake nonce from std::random_device: " + failure});
         }
 

@@ -33,7 +33,7 @@
 #include <thread>
 #include <vector>
 
-using SushiRuntime::Observability::TransferCounters;
+using SushiRuntime::Internal::Observability::TransferCounters;
 
 namespace
 {

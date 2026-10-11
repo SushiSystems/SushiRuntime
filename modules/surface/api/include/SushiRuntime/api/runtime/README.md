@@ -8,7 +8,7 @@ symbol or passage it explains, and that header's file block cites this page.
 ## Lifetime
 
 One rule covers every handle. `Runtime`, `Graph`, `DynamicGraph`, `Buffer`, `State`, `Interop` and
-`AdvancedControls` each hold a `shared_ptr` to the same `Execution::RuntimeContext`, and the context
+`AdvancedControls` each hold a `shared_ptr` to the same `Internal::Execution::RuntimeContext`, and the context
 is destroyed when the last of them is. A `Runtime` may therefore be destroyed before the graphs,
 buffers and views it handed out; they keep working, and the worker threads and device queues stop
 when the last handle goes.
@@ -28,7 +28,7 @@ thread, an audio callback and asset I/O, so every default is chosen for a tenant
 owner.
 
 The struct belongs to the api module. The layers below keep their own types,
-`Topology::HardwareFilterConfig` and `Execution::RuntimeSettings`, and may not depend on this one;
+`Internal::Topology::HardwareFilterConfig` and `Internal::Execution::RuntimeSettings`, and may not depend on this one;
 `Runtime::settings_of()` is the single place that maps one to the other. A field added to
 `RuntimeSettings` reaches the public surface only when it is added here and in that function.
 `modules/engine/execution/README.md` documents what each setting does to the engine.
@@ -121,7 +121,7 @@ takes the Runtime and installs its master on this context, so no header here nam
 
 errors.hpp declares nothing. It includes `core/error.hpp` and `core/result.hpp` and promotes
 `Error`, `Errc`, `Result` and `SushiException` into `SushiRuntime`, so a program that handles a
-failed `try_run()` spells them without `Core::`. The foundation modules sit below the public surface
+failed `try_run()` spells them without ``. The foundation modules sit below the public surface
 and promote nothing themselves.
 
 ## logging.hpp

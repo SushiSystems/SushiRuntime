@@ -37,7 +37,7 @@
 #include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
-using namespace SushiRuntime::Execution;
+using namespace SushiRuntime::Internal::Execution;
 
 namespace
 {
@@ -76,12 +76,12 @@ namespace
 TEST(Performance_ProfilingQueueBench, ProfilingQueueDeltaOverPlainQueue)
 {
     RuntimeContext ctx;
-    SushiRuntime::Device::DeviceQueueSet& devices = ctx.devices();
+    SushiRuntime::Internal::Device::DeviceQueueSet& devices = ctx.devices();
     ASSERT_GT(devices.count(), 0u) << "no device to benchmark on";
 
     sycl::queue& plain = devices.queue(0);
     sycl::queue& profiling =
-        devices.queue(0, SushiRuntime::Device::QueueFlavour{false, true});
+        devices.queue(0, SushiRuntime::Internal::Device::QueueFlavour{false, true});
     ASSERT_EQ(profiling.get_context(), plain.get_context())
         << "the two queues must share a context for the comparison to be fair";
 

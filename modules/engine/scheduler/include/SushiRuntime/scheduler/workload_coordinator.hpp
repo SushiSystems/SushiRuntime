@@ -36,7 +36,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Drives an IRebalanceStrategy from a background thread on a 5 ms heartbeat.

@@ -36,7 +36,7 @@
 
 namespace SushiRuntime
 {
-    namespace Execution
+    namespace Internal::Execution
     {
         class RuntimeContext;
 
@@ -110,20 +110,20 @@ namespace SushiRuntime
                  * @param node The node to submit.
                  * @return The submission's event, or an empty event when host work submitted nothing.
                  */
-                sycl::event submit_node(Graph::Node& node);
+                sycl::event submit_node(Internal::Graph::Node& node);
 
                 /**
                  * @brief Submits one node's device work without keeping an event for it.
                  * @param node The node to submit.
                  */
-                void submit_node_discarding(Graph::Node& node);
+                void submit_node_discarding(Internal::Graph::Node& node);
 
                 /**
                  * @brief Submits one node and keeps its event for the ledger.
                  * @param node The node to submit.
                  * @param step Zero-based step index within the run.
                  */
-                void submit_profiled(Graph::Node& node, std::uint32_t step);
+                void submit_profiled(Internal::Graph::Node& node, std::uint32_t step);
 
                 /** @brief Writes every kept event's timestamps into the plan's ledger. */
                 void record_events();

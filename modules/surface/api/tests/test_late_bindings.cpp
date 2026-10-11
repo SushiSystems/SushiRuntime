@@ -47,8 +47,8 @@ TEST(Integration_LateBindings, DynamicSizePerElement)
 
     std::size_t live = 0;
     auto g = rt.graph();
-    g.add(API::sized([&] { return live; }),
-          CAP, API::Reads{}, API::Writes(buf),
+    g.add(sized([&] { return live; }),
+          CAP, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] += 1; });
 
     for (std::size_t k = 1; k <= CAP; ++k)
@@ -77,8 +77,8 @@ TEST(Integration_LateBindings, EnableTogglePerElement)
 
     bool on = true;
     auto g = rt.graph();
-    g.add(API::when([&] { return on; }),
-          N, API::Reads{}, API::Writes(buf),
+    g.add(when([&] { return on; }),
+          N, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] += 1; });
 
     std::size_t enabled_steps = 0;
@@ -111,10 +111,10 @@ TEST(Integration_LateBindings, DisabledNodeStillReleasesSuccessors)
     bool on = false;
     auto g = rt.graph();
     // Downstream reads the gate buffer upstream writes, so it is ordered after; see README.md.
-    g.add(API::when([&] { return on; }),
-          N, API::Reads{}, API::Writes(gate),
+    g.add(when([&] { return on; }),
+          N, Reads{}, Writes(gate),
           [gp](std::size_t i) { gp[i] += 1; });
-    g.add(N, API::Reads(gate), API::Writes(sink),
+    g.add(N, Reads(gate), Writes(sink),
           [sp](std::size_t i) { sp[i] += 1; });
 
     for (std::size_t k = 0; k < STEPS; ++k)
@@ -142,7 +142,7 @@ TEST(Integration_LateBindings, DynamicSizeState)
 
     std::size_t live = 0;
     auto g = rt.graph();
-    g.add(API::sized([&] { return live; }), field,
+    g.add(sized([&] { return live; }), field,
           [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     // Grow the active prefix 2,4,6,8; the first two cells are active every step.
@@ -173,8 +173,8 @@ TEST(Integration_LateBindings, ComposedWhenAndSized)
     bool on = true;
     std::size_t live = CAP;
     auto g = rt.graph();
-    g.add(API::when([&] { return on; }).sized([&] { return live; }),
-          CAP, API::Reads{}, API::Writes(buf),
+    g.add(when([&] { return on; }).sized([&] { return live; }),
+          CAP, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] += 1; });
 
     int expected0 = 0;               // increments seen by element 0
@@ -204,9 +204,9 @@ TEST(Integration_LateBindings, BaseOffsetIteratesASlice)
     std::size_t count = 0;
 
     auto g = rt.graph();
-    g.add(API::based_at([&base] { return base; })
+    g.add(based_at([&base] { return base; })
               .sized([&count] { return count; }),
-          CAPACITY, API::Reads{}, API::Writes(buf),
+          CAPACITY, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<int>(i) + 1000; });
 
     const std::size_t starts[] = { 0, 8, 40, 63 };
@@ -249,8 +249,8 @@ TEST(Integration_LateBindings, BaseWithoutASizeRunsToTheEnd)
     for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = 0;
 
     auto g = rt.graph();
-    g.add(API::based_at([] { return BASE; }),
-          CAPACITY, API::Reads{}, API::Writes(buf),
+    g.add(based_at([] { return BASE; }),
+          CAPACITY, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = 1; });
     g.run();
 
@@ -277,10 +277,10 @@ TEST(Integration_LateBindings, BaseAndSizeBothFromTheDevice)
     for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = -1;
 
     auto g = rt.graph();
-    g.add(std::size_t{1}, API::Reads{}, API::Writes(slice),
+    g.add(std::size_t{1}, Reads{}, Writes(slice),
           [s](std::size_t) { s[0] = 30u; s[1] = 25u; });
-    g.add(API::based_at_device(slice, 0).sized_from_device(slice, 1),
-          CAPACITY, API::Reads{}, API::Writes(buf),
+    g.add(based_at_device(slice, 0).sized_from_device(slice, 1),
+          CAPACITY, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<int>(i); });
     g.run();
 
@@ -306,8 +306,8 @@ TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
     std::size_t base = 10;
 
     auto g = rt.graph();
-    g.add(API::based_at([&base] { return base; }).sized([] { return std::size_t{10}; }),
-          CAPACITY, API::Reads{}, API::Writes(buf),
+    g.add(based_at([&base] { return base; }).sized([] { return std::size_t{10}; }),
+          CAPACITY, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = 1; });
 
     EXPECT_THROW(g.run(), SushiException) << "10 elements from index 10 does not fit 16";
@@ -325,10 +325,10 @@ TEST(Integration_LateBindings, BasedAtDeviceRejectsAnUnreadableSlot)
     auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared);
     auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host);
 
-    EXPECT_THROW((void)API::based_at_device(resident), SushiException);
-    EXPECT_THROW((void)API::based_at_device(shared), SushiException);
-    EXPECT_THROW((void)API::based_at_device(host, 7), SushiException);
-    EXPECT_NO_THROW((void)API::based_at_device(host, 1));
+    EXPECT_THROW((void)based_at_device(resident), SushiException);
+    EXPECT_THROW((void)based_at_device(shared), SushiException);
+    EXPECT_THROW((void)based_at_device(host, 7), SushiException);
+    EXPECT_NO_THROW((void)based_at_device(host, 1));
 }
 
 /** @brief Tests that the member sized_from_device rejects a Shared slot where it is called. */
@@ -337,7 +337,7 @@ TEST(Integration_LateBindings, SharedSlotIsRejectedByTheMemberSetter)
     auto rt     = Runtime::create();
     auto shared = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Shared);
 
-    API::Dynamic dyn;
+    Dynamic dyn;
     try
     {
         dyn.sized_from_device(shared, 1);
@@ -345,6 +345,6 @@ TEST(Integration_LateBindings, SharedSlotIsRejectedByTheMemberSetter)
     }
     catch (const SushiException& e)
     {
-        EXPECT_EQ(e.error().code, Core::Errc::invalid_access);
+        EXPECT_EQ(e.error().code, Errc::invalid_access);
     }
 }

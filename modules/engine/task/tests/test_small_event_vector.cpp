@@ -35,7 +35,7 @@
 
 namespace
 {
-    using SushiRuntime::Graph::SmallEventVector;
+    using SushiRuntime::Internal::Graph::SmallEventVector;
 
     /**
      * @brief Returns @p count default-constructed events, each one a distinct event.

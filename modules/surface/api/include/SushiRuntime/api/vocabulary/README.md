@@ -86,7 +86,7 @@ when(pred).sized(count). Each provider is called once per step, in StepMachinery
 on the thread that called run() or run_async(), before the plan replays. The compiled topology is
 reused across steps and the graph compiles exactly once.
 
-The providers are stored in allocation-free Core::Delegate slots, so a Dynamic is move-only (a
+The providers are stored in allocation-free Delegate slots, so a Dynamic is move-only (a
 stored provider has one owner). A caller builds one from a when()/sized() temporary and passes it
 straight to add(), or moves a named Dynamic into the call with std::move.
 
@@ -118,7 +118,7 @@ The member that sets one source clears the other, so the source set last decides
 checked_device_slot() is the one check a device slot passes, for sized_from_device(),
 based_at_device() and LateCount::from_device() alike: the buffer is Residency::Host and the index
 is inside it. It returns a DeviceSlot: the buffer's first word and the index, which is what
-Graph::LateBindings stores, and the buffer's liveness observer. The members take the Buffer and
+Internal::Graph::LateBindings stores, and the buffer's liveness observer. The members take the Buffer and
 never a bare pointer, because a pointer carries neither a residency nor a size to check.
 
 The observer reaches the recorder with the read region of the slot, so a graph that recorded
@@ -196,7 +196,7 @@ submitted; which thread that is depends on the layer that runs the plan.
 
 ### LateCount::Provider
 
-Provider is Dynamic::CountProvider, a Core::Delegate with 48 bytes of inline storage. A callable is
+Provider is Dynamic::CountProvider, a Delegate with 48 bytes of inline storage. A callable is
 stored without a heap allocation and a capture larger than 48 bytes fails to compile.
 
 A Delegate is move-only, and a LateCount must copy: Recorder::resolve() takes its counts in a

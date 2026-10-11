@@ -34,31 +34,16 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    /**
+     * @brief Holds a host-exported buffer alongside the address another API imports.
+     * @tparam T Element type of the exported buffer.
+     * @see modules/surface/api/include/SushiRuntime/api/interop/README.md
+     */
+    template <typename T>
+    struct HostExport
     {
-        /**
-         * @brief Holds a host-exported buffer alongside the address another API imports.
-         * @tparam T Element type of the exported buffer.
-         * @see modules/surface/api/include/SushiRuntime/api/interop/README.md
-         */
-        template <typename T>
-        struct HostExport
-        {
-            Buffer<T> buffer;        /**< Owns the exported allocation. */
-            void* address = nullptr; /**< Holds the exported region's base address. */
-            std::size_t bytes = 0;   /**< Holds the exported region's rounded byte size. */
-        };
-
-    } // namespace API
-
-    namespace Interop
-    {
-        /**
-         * @brief Names API::HostExport under the Interop namespace for callers that spell it so.
-         * @see modules/surface/api/include/SushiRuntime/api/interop/README.md
-         */
-        template <typename T>
-        using HostExport = API::HostExport<T>;
-
-    } // namespace Interop
+        Buffer<T> buffer;        /**< Owns the exported allocation. */
+        void* address = nullptr; /**< Holds the exported region's base address. */
+        std::size_t bytes = 0;   /**< Holds the exported region's rounded byte size. */
+    };
 } // namespace SushiRuntime

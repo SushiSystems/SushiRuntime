@@ -54,7 +54,7 @@ namespace SushiRuntime
          * is only read, by any thread.
          * @pre Every kernel is registered before the registry is given to either.
          */
-        class SUSHIRUNTIME_API KernelRegistry : public Core::RefCounted
+        class SUSHIRUNTIME_API KernelRegistry : public RefCounted
         {
             public:
                 /**
@@ -67,15 +67,15 @@ namespace SushiRuntime
                 using Kernel = std::function<sycl::event(
                     sycl::queue& queue, SushiRuntime::span<const BufferView> inputs,
                     SushiRuntime::span<const BufferView> outputs,
-                    const Graph::TaskMetadata& metadata)>;
+                    const Internal::Graph::TaskMetadata& metadata)>;
 
                 /**
                  * @brief Sets the kernel of an operation, replacing the one set before.
                  * @param kernel Holds a callable; an empty one is refused.
-                 * @throws Core::SushiException With invalid_access for an empty kernel, with
+                 * @throws SushiException With invalid_access for an empty kernel, with
                  *         invalid_state once the registry is sealed.
                  */
-                void register_kernel(Graph::OpID id, Kernel kernel);
+                void register_kernel(Internal::Graph::OpID id, Kernel kernel);
 
                 /** @brief Closes the registry to register_kernel(); a second call does nothing. */
                 void seal() noexcept;
@@ -84,16 +84,16 @@ namespace SushiRuntime
                 [[nodiscard]] bool is_sealed() const noexcept;
 
                 /** @brief Returns whether an operation has a kernel. */
-                [[nodiscard]] bool has(Graph::OpID id) const;
+                [[nodiscard]] bool has(Internal::Graph::OpID id) const;
 
                 /**
                  * @brief Returns the kernel of an operation.
                  * @return Null when the operation has none; valid while the registry lives.
                  */
-                [[nodiscard]] const Kernel* find(Graph::OpID id) const;
+                [[nodiscard]] const Kernel* find(Internal::Graph::OpID id) const;
 
                 /** @brief Returns the id of every operation that has a kernel, in no set order. */
-                [[nodiscard]] std::vector<Graph::OpID> known_ops() const;
+                [[nodiscard]] std::vector<Internal::Graph::OpID> known_ops() const;
 
             private:
                 /** @brief Holds the kernels by the value of their operation id. */

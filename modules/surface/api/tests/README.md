@@ -120,7 +120,7 @@ the file needs no cluster and no more devices than that file.
 
 ### `error_of`, `expect_window_rejected`, `expect_every_range_call_rejects`
 
-`error_of` runs a call and returns the `Core::Error` of the `SushiException` it throws, or an error
+`error_of` runs a call and returns the `Error` of the `SushiException` it throws, or an error
 of code `ok`. `expect_window_rejected` checks one such error for `invalid_access` and for a message
 that holds the call, `offset <n>`, `count <n>` and `size <n>`. `expect_every_range_call_rejects`
 applies it to `read_range`, `write_range` and `region` of one handle, which is how the Buffer test
@@ -199,7 +199,7 @@ message names `Runtime::buffer` or `Runtime::state`, the index, the device count
 
 ## test_device_count.cpp
 
-The file covers `API::sized_from_device`: a task whose iteration size is a count that a predecessor
+The file covers `sized_from_device`: a task whose iteration size is a count that a predecessor
 kernel produced within the same step.
 
 A collision pipeline has this shape. The broadphase writes a pair count, the narrowphase iterates
@@ -717,7 +717,7 @@ copying. A field made public again, or a raw-pointer overload added back, fails 
 
 ### `error_of`, `record_live_count_copy`, `count_elements_run`
 
-`error_of` runs a call and returns the `Core::Error` of the `SushiException` it throws.
+`error_of` runs a call and returns the `Error` of the `SushiException` it throws.
 `record_live_count_copy` records a resolver whose fill copies the live count into a buffer the test
 reads back. `count_elements_run` adds one late-bound task that sets `marks[i]` to one, runs it once
 and returns how many elements were set.
@@ -963,7 +963,7 @@ is refused with `dangling_resource`, on a `Graph` and on a `DynamicGraph`.
 
 ### `refusal_of`
 
-`refusal_of` runs a call and returns the `Core::Error` of the `SushiException` it throws, or
+`refusal_of` runs a call and returns the `Error` of the `SushiException` it throws, or
 nothing when it throws none.
 
 ### `AMovedFromRecorderNeverRepeatsAGeneration`
@@ -1064,7 +1064,7 @@ expose the same ones, which `Errc` each kind of failure carries, and what a repo
 `RunEntries<G>` is the list of run entries as `static_assert`s: the eight throwing forms, their
 eight `try_` twins, `run_async()`, `try_run_async()`, `cancel()`, `set_profiling()` and
 `is_profiling_requested()`, each with its return type, and `noexcept` where the contract has it.
-The template is instantiated for `API::Graph` and for `API::DynamicGraph`, so an entry missing from
+The template is instantiated for `Graph` and for `DynamicGraph`, so an entry missing from
 either, or declared differently, fails the compile.
 
 ### `expect_kernel_failed_everywhere`, `code_thrown_by`

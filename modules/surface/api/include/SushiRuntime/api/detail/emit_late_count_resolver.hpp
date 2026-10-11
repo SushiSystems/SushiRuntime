@@ -44,44 +44,41 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /**
+         * @brief Builds the replay of the single task that resolves K late counts.
+         *
+         * A host count bakes in at submit; a device count is read in the kernel, zeroed and
+         * faulted past capacity (docs/design/GRAPH_REPLAY.md §D.2).
+         * @param fault The node's fault record; null only when no count has a device slot.
+         * @param fill  Device callable run once as fill(live), in the order of counts.
+         */
+        template <std::size_t K, class Fill>
+        auto late_count_resolver_node(const std::array<LateCount, K>& counts,
+                                      std::uint32_t* fault, Fill fill,
+                                      std::vector<Internal::Memory::ResourceRegion> reads,
+                                      std::vector<Internal::Memory::ResourceRegion> writes,
+                                      std::size_t width)
         {
-            /**
-             * @brief Builds the replay of the single task that resolves K late counts.
-             *
-             * A host count bakes in at submit; a device count is read in the kernel, zeroed and
-             * faulted past capacity (docs/design/GRAPH_REPLAY.md §D.2).
-             * @param fault The node's fault record; null only when no count has a device slot.
-             * @param fill  Device callable run once as fill(live), in the order of counts.
-             */
-            template <std::size_t K, class Fill>
-            auto late_count_resolver_node(const std::array<LateCount, K>& counts,
-                                          std::uint32_t* fault, Fill fill,
-                                          std::vector<Memory::ResourceRegion> reads,
-                                          std::vector<Memory::ResourceRegion> writes,
-                                          std::size_t width)
+            return [counts, fault, fill, reads = std::move(reads), writes = std::move(writes),
+                    width](::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                           std::optional<std::uint32_t> registration)
             {
-                return [counts, fault, fill, reads = std::move(reads), writes = std::move(writes),
-                        width](::SushiRuntime::Graph::TaskGraph& bg,
-                               std::optional<std::uint32_t> registration)
+                bg.add_node([counts, fault, fill](sycl::handler& h)
                 {
-                    bg.add_node([counts, fault, fill](sycl::handler& h)
+                    std::array<LiveCountSource, K> sources;
+                    for (std::size_t k = 0; k < K; ++k)
+                        sources[k] = late_count_source(counts[k]);
+                    h.single_task([sources, fault, fill]()
                     {
-                        std::array<LiveCountSource, K> sources;
+                        std::array<std::size_t, K> live{};
                         for (std::size_t k = 0; k < K; ++k)
-                            sources[k] = late_count_source(counts[k]);
-                        h.single_task([sources, fault, fill]()
-                        {
-                            std::array<std::size_t, K> live{};
-                            for (std::size_t k = 0; k < K; ++k)
-                                live[k] = read_live_count(sources[k], fault);
-                            fill(live);
-                        });
-                    }, reads, writes, {}, registration).baked_width = width;
-                };
-            }
-        } // namespace detail
-    } // namespace API
+                            live[k] = read_live_count(sources[k], fault);
+                        fill(live);
+                    });
+                }, reads, writes, {}, registration).baked_width = width;
+            };
+        }
+    } // namespace detail
 } // namespace SushiRuntime

@@ -30,10 +30,10 @@
 #include <SushiRuntime/interop/external_memory.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
 
-using SushiRuntime::Interop::DeviceUUID;
-using SushiRuntime::Interop::ExternalHandleKind;
-using SushiRuntime::Interop::ExternalMemoryDescriptor;
-using SushiRuntime::Interop::InteropCapabilities;
+using SushiRuntime::DeviceUUID;
+using SushiRuntime::ExternalHandleKind;
+using SushiRuntime::ExternalMemoryDescriptor;
+using SushiRuntime::InteropCapabilities;
 
 TEST(Unit_InteropVocabulary, UUIDsCompareByEveryByte)
 {

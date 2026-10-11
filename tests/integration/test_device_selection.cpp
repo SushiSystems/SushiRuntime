@@ -50,11 +50,11 @@ namespace
 /** @brief Tests that every device the require_fp64 filter admits reports fp64. */
 TEST(Integration_DeviceSelection, RequireFp64AdmitsOnlyFp64Devices)
 {
-    Topology::HardwareFilterConfig config;
+    Internal::Topology::HardwareFilterConfig config;
     config.require_fp64 = true;
 
-    Topology::HardwareDiscovery discovery;
-    const std::vector<Topology::HardwareNode> nodes = discovery.probe_all_devices(config);
+    Internal::Topology::HardwareDiscovery discovery;
+    const std::vector<Internal::Topology::HardwareNode> nodes = discovery.probe_all_devices(config);
 
     for (const auto& node : nodes)
         EXPECT_TRUE(node.sycl_dev.has(sycl::aspect::fp64))
@@ -96,7 +96,7 @@ TEST(Integration_DeviceSelection, AnEmptyFilterFailsWithUnsupported)
     }
     catch (const SushiException& e)
     {
-        EXPECT_EQ(e.error().code, Core::Errc::unsupported);
+        EXPECT_EQ(e.error().code, Errc::unsupported);
         // The message names the filter; see README.md.
         const std::string message = e.what();
         EXPECT_NE(message.find("cpu=no"), std::string::npos) << message;

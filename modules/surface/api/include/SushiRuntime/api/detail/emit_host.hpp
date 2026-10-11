@@ -39,23 +39,20 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /** @brief Builds the replay of a nullary host task ordered by the regions it names. */
+        template <class F>
+        auto host_node(std::vector<Internal::Memory::ResourceRegion> reads,
+                       std::vector<Internal::Memory::ResourceRegion> writes, F&& fn, std::size_t width)
         {
-            /** @brief Builds the replay of a nullary host task ordered by the regions it names. */
-            template <class F>
-            auto host_node(std::vector<Memory::ResourceRegion> reads,
-                           std::vector<Memory::ResourceRegion> writes, F&& fn, std::size_t width)
+            return [fn = std::forward<F>(fn), reads = std::move(reads),
+                    writes = std::move(writes), width]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                    std::optional<std::uint32_t> registration)
             {
-                return [fn = std::forward<F>(fn), reads = std::move(reads),
-                        writes = std::move(writes), width]
-                       (::SushiRuntime::Graph::TaskGraph& bg,
-                        std::optional<std::uint32_t> registration)
-                {
-                    bg.add_native(reads, writes, fn, {}, registration).baked_width = width;
-                };
-            }
-        } // namespace detail
-    } // namespace API
+                bg.add_native(reads, writes, fn, {}, registration).baked_width = width;
+            };
+        }
+    } // namespace detail
 } // namespace SushiRuntime

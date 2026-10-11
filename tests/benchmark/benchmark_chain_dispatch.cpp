@@ -50,7 +50,7 @@ namespace
     {
         RunStatistics wall_ns_per_node_step;     /**< Timed by this test around Graph::run(). */
         RunStatistics reported_ns_per_node_step; /**< Derived from RunReport::total_duration_ms. */
-        Observability::ExecutionLayer layer;              /**< Layer the plan ran on. */
+        Internal::Observability::ExecutionLayer layer;              /**< Layer the plan ran on. */
     };
 
     /**
@@ -60,7 +60,7 @@ namespace
      */
     ChainMeasurement measure_chain(std::size_t length, std::size_t steps, bool force_scheduler)
     {
-        API::RuntimeConfig config;
+        RuntimeConfig config;
         config.force_scheduler = force_scheduler;
         auto rt = Runtime::create(config);
         rt.set_rebalancer_enabled(false);
@@ -77,12 +77,12 @@ namespace
             const int* in = bufs[i].data();
             int* out      = bufs[i + 1].data();
             // Trivial work: the cost under measurement is dispatch, not compute.
-            g.add(std::size_t{1}, API::Reads(bufs[i]), API::Writes(bufs[i + 1]),
+            g.add(std::size_t{1}, Reads(bufs[i]), Writes(bufs[i + 1]),
                   [in, out](std::size_t) { out[0] = in[0] + 1; });
         }
 
         // The first run compiles the plan; every timed run below is a replay.
-        Observability::ExecutionLayer layer = g.run(std::size_t{1}).layer;
+        Internal::Observability::ExecutionLayer layer = g.run(std::size_t{1}).layer;
 
         const double node_steps = double(steps) * double(length);
         std::vector<double> reported_samples;
@@ -140,7 +140,7 @@ TEST(Performance_ChainDispatch, PerNodeCostVsChainLength)
         for (const bool force_scheduler : { true, false })
         {
             const ChainMeasurement m = measure_chain(c.length, c.steps, force_scheduler);
-            const bool on_chain = m.layer == Observability::ExecutionLayer::Chain;
+            const bool on_chain = m.layer == Internal::Observability::ExecutionLayer::Chain;
             const double ms_per_step =
                 m.wall_ns_per_node_step.median * double(c.length) / 1e6;
             std::printf("  %8zu | %9s | %12.5f | %14.1f | %14.1f\n",

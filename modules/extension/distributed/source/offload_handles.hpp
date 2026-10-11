@@ -42,12 +42,12 @@ namespace SushiRuntime
         /**
          * @brief Holds the handles of the shared buffers a fixed-buffer node touches.
          *
-         * OffloadDispatcher::prepare() stores one in Graph::OffloadState::payload. On an
+         * OffloadDispatcher::prepare() stores one in Internal::Graph::OffloadState::payload. On an
          * offloadable node it lists every buffer read, then every buffer written. On a node
          * that stays local it lists only the shared buffers the node writes, so a local
          * completion can raise their versions. A double-buffered node has none.
          */
-        struct OffloadHandles final : public Graph::OffloadPayload
+        struct OffloadHandles final : public Internal::Graph::OffloadPayload
         {
             /** @brief Returns the handles of the buffers read, in io_reads_ order. */
             [[nodiscard]] SushiRuntime::span<const BufferHandle> inputs() const noexcept

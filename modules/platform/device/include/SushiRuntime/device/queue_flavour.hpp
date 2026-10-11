@@ -30,7 +30,7 @@
 
 namespace SushiRuntime
 {
-    namespace Device
+    namespace Internal::Device
     {
         /**
          * @brief Names the properties of one queue of a device.

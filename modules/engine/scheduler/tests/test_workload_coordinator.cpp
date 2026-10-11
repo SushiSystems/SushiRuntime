@@ -34,7 +34,7 @@
 #include <SushiRuntime/scheduler/workload_coordinator.hpp>
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 
-using namespace SushiRuntime::Scheduler;
+using namespace SushiRuntime::Internal::Scheduler;
 
 namespace
 {

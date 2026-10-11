@@ -36,13 +36,13 @@
 
 namespace SushiRuntime
 {
-    namespace Execution
+    namespace Internal::Execution
     {
-        /** @brief Names Scheduler::PinPolicy in the Execution namespace. */
-        using PinPolicy = Scheduler::PinPolicy;
+        /** @brief Names Internal::Scheduler::PinPolicy in the Execution namespace. */
+        using PinPolicy = Internal::Scheduler::PinPolicy;
 
-        /** @brief Names Scheduler::WorkerPoolInfo in the Execution namespace. */
-        using WorkerPoolInfo = Scheduler::WorkerPoolInfo;
+        /** @brief Names Internal::Scheduler::WorkerPoolInfo in the Execution namespace. */
+        using WorkerPoolInfo = Internal::Scheduler::WorkerPoolInfo;
 
         /**
          * @brief Holds the runtime-wide settings chosen once, when the runtime is created.
@@ -91,10 +91,10 @@ namespace SushiRuntime
         };
 
         /** @brief Returns the worker pool a RuntimeSettings asks the scheduler for. */
-        [[nodiscard]] inline Scheduler::WorkerPoolSettings
+        [[nodiscard]] inline Internal::Scheduler::WorkerPoolSettings
         worker_pool_settings(const RuntimeSettings& settings) noexcept
         {
-            Scheduler::WorkerPoolSettings pool;
+            Internal::Scheduler::WorkerPoolSettings pool;
             pool.worker_count = settings.worker_count;
             pool.first_core = settings.first_core;
             pool.pinning = settings.pinning;

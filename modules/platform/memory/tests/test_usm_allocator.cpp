@@ -52,10 +52,10 @@
 
 #include "test_helpers.hpp"
 
-using SushiRuntime::Memory::USMAllocator;
-using SushiRuntime::Memory::USMKind;
-using SushiRuntime::Memory::USMReleaseObserver;
-using SushiRuntime::Memory::USMRequest;
+using SushiRuntime::Internal::Memory::USMAllocator;
+using SushiRuntime::Internal::Memory::USMKind;
+using SushiRuntime::Internal::Memory::USMReleaseObserver;
+using SushiRuntime::Internal::Memory::USMRequest;
 
 namespace
 {
@@ -151,14 +151,14 @@ namespace
     {
         public:
             /** @brief Makes the logger synchronous and routes its records here. */
-            ErrorLineCapture() : saved_level_(SushiRuntime::Core::log_level())
+            ErrorLineCapture() : saved_level_(SushiRuntime::log_level())
             {
-                SushiRuntime::Core::set_log_synchronous(true);
-                SushiRuntime::Core::set_log_level(SushiRuntime::Core::LogLevel::Warn);
-                SushiRuntime::Core::set_log_sink(
-                    [this](SushiRuntime::Core::LogLevel level, std::string_view line)
+                SushiRuntime::set_log_synchronous(true);
+                SushiRuntime::set_log_level(SushiRuntime::LogLevel::Warn);
+                SushiRuntime::set_log_sink(
+                    [this](SushiRuntime::LogLevel level, std::string_view line)
                     {
-                        if (level == SushiRuntime::Core::LogLevel::Error)
+                        if (level == SushiRuntime::LogLevel::Error)
                             lines.emplace_back(line);
                     });
             }
@@ -166,8 +166,8 @@ namespace
             /** @brief Restores the default sink and the level the process had. */
             ~ErrorLineCapture()
             {
-                SushiRuntime::Core::set_log_sink(nullptr);
-                SushiRuntime::Core::set_log_level(saved_level_);
+                SushiRuntime::set_log_sink(nullptr);
+                SushiRuntime::set_log_level(saved_level_);
             }
 
             ErrorLineCapture(const ErrorLineCapture&) = delete;
@@ -180,7 +180,7 @@ namespace
 
         private:
             /// @brief The level the process had before the capture.
-            SushiRuntime::Core::LogLevel saved_level_;
+            SushiRuntime::LogLevel saved_level_;
     };
 
     /** @brief Returns an address as the logger prints it. */
@@ -470,9 +470,9 @@ void expect_bad_device_index(Call&& call, std::size_t bad_index, std::size_t cou
         call();
         ADD_FAILURE() << "the call did not throw";
     }
-    catch (const SushiRuntime::Core::SushiException& exception)
+    catch (const SushiRuntime::SushiException& exception)
     {
-        EXPECT_EQ(exception.error().code, SushiRuntime::Core::Errc::invalid_access);
+        EXPECT_EQ(exception.error().code, SushiRuntime::Errc::invalid_access);
         const std::string message = exception.what();
         EXPECT_NE(message.find(std::to_string(bad_index)), std::string::npos) << message;
         EXPECT_NE(message.find(std::to_string(count) + " device"), std::string::npos) << message;

@@ -39,7 +39,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         /**
          * @brief Implementation of the NUMA mapper.

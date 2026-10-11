@@ -47,106 +47,103 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /**
+         * @brief Refuses more parameters than the metadata of an offloadable task holds.
+         * @param call  Names the call the user wrote in the message.
+         * @param given How many parameters the call passed.
+         * @throws SushiException With invalid_graph for more than
+         *         TaskMetadata::K_MAX_PARAMS.
+         */
+        inline void require_offload_parameters(const char* call, std::size_t given)
         {
-            /**
-             * @brief Refuses more parameters than the metadata of an offloadable task holds.
-             * @param call  Names the call the user wrote in the message.
-             * @param given How many parameters the call passed.
-             * @throws Core::SushiException With invalid_graph for more than
-             *         TaskMetadata::K_MAX_PARAMS.
-             */
-            inline void require_offload_parameters(const char* call, std::size_t given)
-            {
-                const std::size_t limit = ::SushiRuntime::Graph::TaskMetadata::K_MAX_PARAMS;
-                if (given <= limit)
-                    return;
-                throw Core::SushiException(Core::Error{
-                    Core::Errc::invalid_graph,
-                    std::string(call) + ": " + std::to_string(given) +
-                        " parameters were given and an offloadable task carries at most " +
-                        std::to_string(limit) + "; pass at most that many."});
-            }
+            const std::size_t limit = ::SushiRuntime::Internal::Graph::TaskMetadata::K_MAX_PARAMS;
+            if (given <= limit)
+                return;
+            throw SushiException(Error{
+                Errc::invalid_graph,
+                std::string(call) + ": " + std::to_string(given) +
+                    " parameters were given and an offloadable task carries at most " +
+                    std::to_string(limit) + "; pass at most that many."});
+        }
 
-            /**
-             * @brief Fills the metadata of an offloadable task: name, kernel and parameters.
-             * @param name Persistent label; stored, not copied.
-             * @pre params passed require_offload_parameters().
-             */
-            inline ::SushiRuntime::Graph::TaskMetadata offload_metadata(
-                const char* name, ::SushiRuntime::Graph::OpID op,
-                const std::vector<std::uint64_t>& params)
-            {
-                ::SushiRuntime::Graph::TaskMetadata meta{};
-                meta.name = name;
-                meta.op_id = op;
-                for (std::size_t i = 0; i < params.size(); ++i)
-                    meta.set_param<std::uint64_t>(static_cast<int>(i), params[i]);
-                return meta;
-            }
+        /**
+         * @brief Fills the metadata of an offloadable task: name, kernel and parameters.
+         * @param name Persistent label; stored, not copied.
+         * @pre params passed require_offload_parameters().
+         */
+        inline ::SushiRuntime::Internal::Graph::TaskMetadata offload_metadata(
+            const char* name, ::SushiRuntime::Internal::Graph::OpID op,
+            const std::vector<std::uint64_t>& params)
+        {
+            ::SushiRuntime::Internal::Graph::TaskMetadata meta{};
+            meta.name = name;
+            meta.op_id = op;
+            for (std::size_t i = 0; i < params.size(); ++i)
+                meta.set_param<std::uint64_t>(static_cast<int>(i), params[i]);
+            return meta;
+        }
 
-            /** @brief Builds the replay of an offloadable per-element task. */
-            template <class F>
-            auto offload_node(::SushiRuntime::Graph::OpID op, std::size_t n,
-                              std::vector<Memory::ResourceRegion> reads,
-                              std::vector<Memory::ResourceRegion> writes,
-                              F&& local, std::vector<std::uint64_t> params)
+        /** @brief Builds the replay of an offloadable per-element task. */
+        template <class F>
+        auto offload_node(::SushiRuntime::Internal::Graph::OpID op, std::size_t n,
+                          std::vector<Internal::Memory::ResourceRegion> reads,
+                          std::vector<Internal::Memory::ResourceRegion> writes,
+                          F&& local, std::vector<std::uint64_t> params)
+        {
+            return [fn = std::forward<F>(local), n, op, reads = std::move(reads),
+                    writes = std::move(writes), params = std::move(params)]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                    std::optional<std::uint32_t> registration)
             {
-                return [fn = std::forward<F>(local), n, op, reads = std::move(reads),
-                        writes = std::move(writes), params = std::move(params)]
-                       (::SushiRuntime::Graph::TaskGraph& bg,
-                        std::optional<std::uint32_t> registration)
-                {
-                    bg.add_task(offload_metadata("fluent_offload", op, params), reads, writes,
-                        [fn, n](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
+                bg.add_task(offload_metadata("fluent_offload", op, params), reads, writes,
+                    [fn, n](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
+                    {
+                        return q.submit([&](sycl::handler& h)
                         {
-                            return q.submit([&](sycl::handler& h)
-                            {
-                                submit_launch(h, n, fn);
-                            });
-                        }, {}, registration).baked_width = n;
-                };
-            }
+                            submit_launch(h, n, fn);
+                        });
+                    }, {}, registration).baked_width = n;
+            };
+        }
 
-            /**
-             * @brief Builds the replay of an offloadable State rule with a local fallback.
-             * @param view        The State's own view, read at every replay and every submit.
-             * @param size        Elements in each field of the State.
-             * @param live_reads  One-element list re-pointed at the current field per step.
-             * @param live_writes One-element list re-pointed at the next field per step.
-             */
-            template <typename T, class F>
-            auto offload_state_node(::SushiRuntime::Graph::OpID op,
-                                    std::shared_ptr<StateView<T>> view, std::size_t size,
-                                    std::shared_ptr<std::vector<void*>> live_reads,
-                                    std::shared_ptr<std::vector<void*>> live_writes,
-                                    F&& local, std::vector<std::uint64_t> params)
+        /**
+         * @brief Builds the replay of an offloadable State rule with a local fallback.
+         * @param view        The State's own view, read at every replay and every submit.
+         * @param size        Elements in each field of the State.
+         * @param live_reads  One-element list re-pointed at the current field per step.
+         * @param live_writes One-element list re-pointed at the next field per step.
+         */
+        template <typename T, class F>
+        auto offload_state_node(::SushiRuntime::Internal::Graph::OpID op,
+                                std::shared_ptr<StateView<T>> view, std::size_t size,
+                                std::shared_ptr<std::vector<void*>> live_reads,
+                                std::shared_ptr<std::vector<void*>> live_writes,
+                                F&& local, std::vector<std::uint64_t> params)
+        {
+            return [fn = std::forward<F>(local), view, size, op, params = std::move(params),
+                    live_reads, live_writes]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                    std::optional<std::uint32_t> registration)
             {
-                return [fn = std::forward<F>(local), view, size, op, params = std::move(params),
-                        live_reads, live_writes]
-                       (::SushiRuntime::Graph::TaskGraph& bg,
-                        std::optional<std::uint32_t> registration)
-                {
-                    // The lists name the State's fields as they stand when the node is added.
-                    (*live_reads)[0] = view->current;
-                    (*live_writes)[0] = view->next;
-                    bg.add_offload_dynamic(offload_metadata("fluent_offload_state", op, params),
-                        live_reads, live_writes,
-                        [fn, view, size](sycl::queue& q,
-                                         const std::vector<sycl::event>&) -> sycl::event
+                // The lists name the State's fields as they stand when the node is added.
+                (*live_reads)[0] = view->current;
+                (*live_writes)[0] = view->next;
+                bg.add_offload_dynamic(offload_metadata("fluent_offload_state", op, params),
+                    live_reads, live_writes,
+                    [fn, view, size](sycl::queue& q,
+                                     const std::vector<sycl::event>&) -> sycl::event
+                    {
+                        // Read at each submit so the fallback follows the swap.
+                        const T* current = view->current;
+                        T* next = view->next;
+                        return q.submit([&](sycl::handler& h)
                         {
-                            // Read at each submit so the fallback follows the swap.
-                            const T* current = view->current;
-                            T* next = view->next;
-                            return q.submit([&](sycl::handler& h)
-                            {
-                                submit_launch(h, size, fn, current, next);
-                            });
-                        }, {}, registration).baked_width = size;
-                };
-            }
-        } // namespace detail
-    } // namespace API
+                            submit_launch(h, size, fn, current, next);
+                        });
+                    }, {}, registration).baked_width = size;
+            };
+        }
+    } // namespace detail
 } // namespace SushiRuntime

@@ -30,7 +30,7 @@
 
 namespace SushiRuntime
 {
-    namespace Memory
+    namespace Internal::Memory
     {
         /**
          * @brief Receives the address of every allocation USMAllocator::release() is given.

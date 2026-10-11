@@ -34,7 +34,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         /**
          * @brief Holds per-step execution controls re-read at dispatch.

@@ -34,13 +34,13 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Queues a node no worker finished and drops the coordinator's reference.
          * @param node Accepted by the coordinator's try_offload().
          */
-        void TaskScheduler::resubmit(Graph::Node& node)
+        void TaskScheduler::resubmit(Internal::Graph::Node& node)
         {
             // submit() takes its own reference before the coordinator's is dropped.
             submit(&node);
@@ -52,10 +52,10 @@ namespace SushiRuntime
          *        reference.
          * @param node Accepted by the coordinator's try_offload().
          */
-        void TaskScheduler::complete_remote(Graph::Node& node)
+        void TaskScheduler::complete_remote(Internal::Graph::Node& node)
         {
             // Ready successors go through submit() on this coordinator thread.
-            node.for_each_successor([this](Graph::Node* successor)
+            node.for_each_successor([this](Internal::Graph::Node* successor)
             {
                 if (successor->in_degree.fetch_sub(1, std::memory_order_acq_rel) == 1)
                     submit(successor);

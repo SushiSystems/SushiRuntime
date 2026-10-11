@@ -41,165 +41,161 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    /**
+     * @brief Keeps the plan compiled from one recorder and tells when it must be rebuilt.
+     *
+     * A move leaves the source with no plan and a compile count of zero.
+     * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+     */
+    class PlanCache
     {
-        /**
-         * @brief Keeps the plan compiled from one recorder and tells when it must be rebuilt.
-         *
-         * A move leaves the source with no plan and a compile count of zero.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-         */
-        class PlanCache
-        {
-            public:
-                /**
-                 * @brief Returns how many times the plan has been built.
-                 * @return The count since this cache was created or last moved from.
-                 */
-                [[nodiscard]] std::size_t compile_count() const noexcept { return compiles_; }
+        public:
+            /**
+             * @brief Returns how many times the plan has been built.
+             * @return The count since this cache was created or last moved from.
+             */
+            [[nodiscard]] std::size_t compile_count() const noexcept { return compiles_; }
 
-            protected:
-                /**
-                 * @brief Starts with no plan built.
-                 * @param profiling Whether the first plan requests per-node device timing.
-                 */
-                explicit PlanCache(bool profiling) noexcept : profiling_requested_(profiling)
-                {
-                }
+        protected:
+            /**
+             * @brief Starts with no plan built.
+             * @param profiling Whether the first plan requests per-node device timing.
+             */
+            explicit PlanCache(bool profiling) noexcept : profiling_requested_(profiling)
+            {
+            }
 
-                /**
-                 * @brief Takes over another cache's plan.
-                 * @param other Left with no plan, stale, and a compile count of zero.
-                 */
-                PlanCache(PlanCache&& other) noexcept
-                    : profiling_requested_(other.profiling_requested_)
-                {
+            /**
+             * @brief Takes over another cache's plan.
+             * @param other Left with no plan, stale, and a compile count of zero.
+             */
+            PlanCache(PlanCache&& other) noexcept
+                : profiling_requested_(other.profiling_requested_)
+            {
+                take(other);
+            }
+
+            /**
+             * @brief Replaces this cache's plan with another's.
+             * @param other Left with no plan, stale, and a compile count of zero.
+             */
+            PlanCache& operator=(PlanCache&& other) noexcept
+            {
+                if (this != &other)
                     take(other);
-                }
+                return *this;
+            }
 
-                /**
-                 * @brief Replaces this cache's plan with another's.
-                 * @param other Left with no plan, stale, and a compile count of zero.
-                 */
-                PlanCache& operator=(PlanCache&& other) noexcept
+            PlanCache(const PlanCache&) = delete;
+            PlanCache& operator=(const PlanCache&) = delete;
+            ~PlanCache() = default;
+
+            /**
+             * @brief Requests or withdraws per-node device timing.
+             *
+             * A value that differs from the stored one marks the plan stale; the same value
+             * changes nothing.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            void set_profiling(bool requested) noexcept
+            {
+                if (requested == profiling_requested_)
+                    return;
+                profiling_requested_ = requested;
+                dirty_ = true;
+            }
+
+            /**
+             * @brief Returns whether the next plan requests per-node device timing.
+             * @return The last value given to set_profiling(), or the value the cache was
+             *         constructed with.
+             */
+            [[nodiscard]] bool is_profiling_requested() const noexcept
+            {
+                return profiling_requested_;
+            }
+
+            /** @brief Returns whether the plan is missing or older than what recorder holds. */
+            [[nodiscard]] bool stale(const Recorder& recorder) const noexcept
+            {
+                return dirty_ || built_generation_ != recorder.generation();
+            }
+
+            /**
+             * @brief Replays the recorder onto a fresh backing graph and keeps the plan.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            void build(const Recorder& recorder, Internal::Execution::RuntimeContext& context)
+            {
+                ::SushiRuntime::Internal::Graph::TaskGraph bg(context.offload());
+                registrations_.assign(recorder.rule_count(),
+                                      ::SushiRuntime::Internal::Graph::TaskGraph::NO_REGISTRATION);
+                recorder.replay(bg, [this, &bg](std::size_t rule, std::size_t)
                 {
-                    if (this != &other)
-                        take(other);
-                    return *this;
-                }
+                    const ::SushiRuntime::Internal::Graph::Node* added = bg.last_node_added();
+                    if (added)
+                        registrations_[rule] = added->registration_index;
+                });
+                plan_ = bg.compile();
+                plan_.profiling = profiling_requested_;
+                plan_.capture_base_state();
+                plan_.chain = Internal::Execution::classify_chain(plan_, context);
+                dirty_ = false;
+                built_generation_ = recorder.generation();
+                ++compiles_;
+            }
 
-                PlanCache(const PlanCache&) = delete;
-                PlanCache& operator=(const PlanCache&) = delete;
-                ~PlanCache() = default;
+            /**
+             * @brief Restores the cached plan's per-run state so it can run again.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            void rearm() noexcept
+            {
+                plan_.rearm();
+            }
 
-                /**
-                 * @brief Requests or withdraws per-node device timing.
-                 *
-                 * A value that differs from the stored one marks the plan stale; the same value
-                 * changes nothing.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                void set_profiling(bool requested) noexcept
-                {
-                    if (requested == profiling_requested_)
-                        return;
-                    profiling_requested_ = requested;
-                    dirty_ = true;
-                }
+            /**
+             * @brief Returns the registration index a rule took at the last build.
+             * @param rule Position in recording order, one per rule.
+             * @return The index, or TaskGraph::NO_REGISTRATION for a rule no build has seen.
+             */
+            [[nodiscard]] std::uint32_t registration_of(std::size_t rule) const noexcept
+            {
+                return rule < registrations_.size()
+                    ? registrations_[rule] : ::SushiRuntime::Internal::Graph::TaskGraph::NO_REGISTRATION;
+            }
 
-                /**
-                 * @brief Returns whether the next plan requests per-node device timing.
-                 * @return The last value given to set_profiling(), or the value the cache was
-                 *         constructed with.
-                 */
-                [[nodiscard]] bool is_profiling_requested() const noexcept
-                {
-                    return profiling_requested_;
-                }
+            /** @brief The compiled plan, valid while stale() is false; test seams read it. */
+            ::SushiRuntime::Internal::Graph::CompiledGraph plan_;
 
-                /** @brief Returns whether the plan is missing or older than what recorder holds. */
-                [[nodiscard]] bool stale(const Recorder& recorder) const noexcept
-                {
-                    return dirty_ || built_generation_ != recorder.generation();
-                }
+        private:
+            /**
+             * @brief Moves other's plan and counters here and leaves other with none.
+             * @param other Cache to empty; its profiling request is copied, not cleared.
+             */
+            void take(PlanCache& other) noexcept
+            {
+                plan_ = std::exchange(other.plan_, {});
+                registrations_ = std::exchange(other.registrations_, {});
+                built_generation_ = std::exchange(other.built_generation_, 0);
+                compiles_ = std::exchange(other.compiles_, 0);
+                dirty_ = std::exchange(other.dirty_, true);
+                profiling_requested_ = other.profiling_requested_;
+            }
 
-                /**
-                 * @brief Replays the recorder onto a fresh backing graph and keeps the plan.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                void build(const Recorder& recorder, Execution::RuntimeContext& context)
-                {
-                    ::SushiRuntime::Graph::TaskGraph bg(context.offload());
-                    registrations_.assign(recorder.rule_count(),
-                                          ::SushiRuntime::Graph::TaskGraph::NO_REGISTRATION);
-                    recorder.replay(bg, [this, &bg](std::size_t rule, std::size_t)
-                    {
-                        const ::SushiRuntime::Graph::Node* added = bg.last_node_added();
-                        if (added)
-                            registrations_[rule] = added->registration_index;
-                    });
-                    plan_ = bg.compile();
-                    plan_.profiling = profiling_requested_;
-                    plan_.capture_base_state();
-                    plan_.chain = Execution::classify_chain(plan_, context);
-                    dirty_ = false;
-                    built_generation_ = recorder.generation();
-                    ++compiles_;
-                }
+            /** @brief Registration index of each rule, as the last build stamped it. */
+            std::vector<std::uint32_t> registrations_;
 
-                /**
-                 * @brief Restores the cached plan's per-run state so it can run again.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                void rearm() noexcept
-                {
-                    plan_.rearm();
-                }
+            /** @brief Recorder generation the plan was built at. */
+            std::uint64_t built_generation_ = 0;
 
-                /**
-                 * @brief Returns the registration index a rule took at the last build.
-                 * @param rule Position in recording order, one per rule.
-                 * @return The index, or TaskGraph::NO_REGISTRATION for a rule no build has seen.
-                 */
-                [[nodiscard]] std::uint32_t registration_of(std::size_t rule) const noexcept
-                {
-                    return rule < registrations_.size()
-                        ? registrations_[rule] : ::SushiRuntime::Graph::TaskGraph::NO_REGISTRATION;
-                }
+            /** @brief Counts how many times the backing graph has been compiled. */
+            std::size_t compiles_ = 0;
 
-                /** @brief The compiled plan, valid while stale() is false; test seams read it. */
-                ::SushiRuntime::Graph::CompiledGraph plan_;
+            /** @brief Set until the first build, and by a change of the profiling request. */
+            bool dirty_ = true;
 
-            private:
-                /**
-                 * @brief Moves other's plan and counters here and leaves other with none.
-                 * @param other Cache to empty; its profiling request is copied, not cleared.
-                 */
-                void take(PlanCache& other) noexcept
-                {
-                    plan_ = std::exchange(other.plan_, {});
-                    registrations_ = std::exchange(other.registrations_, {});
-                    built_generation_ = std::exchange(other.built_generation_, 0);
-                    compiles_ = std::exchange(other.compiles_, 0);
-                    dirty_ = std::exchange(other.dirty_, true);
-                    profiling_requested_ = other.profiling_requested_;
-                }
-
-                /** @brief Registration index of each rule, as the last build stamped it. */
-                std::vector<std::uint32_t> registrations_;
-
-                /** @brief Recorder generation the plan was built at. */
-                std::uint64_t built_generation_ = 0;
-
-                /** @brief Counts how many times the backing graph has been compiled. */
-                std::size_t compiles_ = 0;
-
-                /** @brief Set until the first build, and by a change of the profiling request. */
-                bool dirty_ = true;
-
-                /** @brief Starts as RuntimeSettings::profiling; stamped into the plan at build. */
-                bool profiling_requested_ = false;
-        };
-
-    } // namespace API
+            /** @brief Starts as RuntimeSettings::profiling; stamped into the plan at build. */
+            bool profiling_requested_ = false;
+    };
 } // namespace SushiRuntime

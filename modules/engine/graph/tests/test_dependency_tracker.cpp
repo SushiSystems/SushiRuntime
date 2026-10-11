@@ -31,7 +31,7 @@
 #include "dependency_tracker.hpp"
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Graph;
+using namespace SushiRuntime::Internal::Graph;
 
 namespace
 {
@@ -173,7 +173,7 @@ TEST(Unit_DependencyTrackerTest, NoSelfDependency)
     tracker.reset();
 }
 
-using SushiRuntime::Memory::ResourceRegion;
+using SushiRuntime::Internal::Memory::ResourceRegion;
 
 /**
  * @brief Tests that writes to disjoint sub-regions of one allocation stay parallel.

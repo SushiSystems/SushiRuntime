@@ -37,48 +37,45 @@
 
 namespace SushiRuntime
 {
-    namespace Execution
+    namespace Internal::Execution
     {
         class RuntimeContext;
     }
 
-    namespace Interop
+    namespace Detail
     {
-        namespace Detail
-        {
-            /**
-             * @brief Reports what one device offers a memory pairing.
-             * @param context      The context whose queue is inspected.
-             * @param device_index The device queue to inspect.
-             * @return The queried capabilities.
-             */
-            [[nodiscard]] SUSHIRUNTIME_API InteropCapabilities query_capabilities(
-                Execution::RuntimeContext& context, std::size_t device_index);
+        /**
+         * @brief Reports what one device offers a memory pairing.
+         * @param context      The context whose queue is inspected.
+         * @param device_index The device queue to inspect.
+         * @return The queried capabilities.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API InteropCapabilities query_capabilities(
+            Internal::Execution::RuntimeContext& context, std::size_t device_index);
 
-            /**
-             * @brief Allocates host memory another API can import.
-             * @return An allocation aligned and rounded to alignment, or an empty one that
-             *         allocates nothing when @p bytes is zero.
-             * @throws Core::SushiException With allocation_failed on a non-power-of-two
-             *        alignment, a size that overflows when rounded, or a failed allocation.
-             */
-            [[nodiscard]] SUSHIRUNTIME_API Memory::Allocation export_host_memory(
-                const std::shared_ptr<Execution::RuntimeContext>& context, std::size_t bytes,
-                std::size_t device_index, std::size_t alignment);
+        /**
+         * @brief Allocates host memory another API can import.
+         * @return An allocation aligned and rounded to alignment, or an empty one that
+         *         allocates nothing when @p bytes is zero.
+         * @throws SushiException With allocation_failed on a non-power-of-two
+         *        alignment, a size that overflows when rounded, or a failed allocation.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API Internal::Memory::Allocation export_host_memory(
+            const std::shared_ptr<Internal::Execution::RuntimeContext>& context, std::size_t bytes,
+            std::size_t device_index, std::size_t alignment);
 
-            /**
-             * @brief Imports device memory another API exported.
-             * @param descriptor Names the exported handle; the caller keeps ownership of it.
-             * @return The mapped region, or an empty allocation that imports nothing when
-             *         @p bytes is zero and @p descriptor passes every check.
-             * @throws Core::SushiException With unsupported when the device cannot import, or
-             *        invalid_access when @p descriptor is refused (see the module README).
-             */
-            [[nodiscard]] SUSHIRUNTIME_API Memory::Allocation import_device_memory(
-                const std::shared_ptr<Execution::RuntimeContext>& context,
-                const ExternalMemoryDescriptor& descriptor, std::size_t bytes,
-                std::size_t device_index);
+        /**
+         * @brief Imports device memory another API exported.
+         * @param descriptor Names the exported handle; the caller keeps ownership of it.
+         * @return The mapped region, or an empty allocation that imports nothing when
+         *         @p bytes is zero and @p descriptor passes every check.
+         * @throws SushiException With unsupported when the device cannot import, or
+         *        invalid_access when @p descriptor is refused (see the module README).
+         */
+        [[nodiscard]] SUSHIRUNTIME_API Internal::Memory::Allocation import_device_memory(
+            const std::shared_ptr<Internal::Execution::RuntimeContext>& context,
+            const ExternalMemoryDescriptor& descriptor, std::size_t bytes,
+            std::size_t device_index);
 
-        } // namespace Detail
-    } // namespace Interop
+    } // namespace Detail
 } // namespace SushiRuntime

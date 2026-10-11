@@ -31,16 +31,13 @@
 
 namespace SushiRuntime
 {
-    namespace Interop
+    namespace Detail
     {
-        namespace Detail
-        {
 #if defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
-            inline constexpr bool BINDLESS_IMAGES_AVAILABLE = true;
+        inline constexpr bool BINDLESS_IMAGES_AVAILABLE = true;
 #else
-            inline constexpr bool BINDLESS_IMAGES_AVAILABLE = false;
+        inline constexpr bool BINDLESS_IMAGES_AVAILABLE = false;
 #endif
 
-        } // namespace Detail
-    } // namespace Interop
+    } // namespace Detail
 } // namespace SushiRuntime

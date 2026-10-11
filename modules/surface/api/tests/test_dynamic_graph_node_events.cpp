@@ -40,9 +40,9 @@ using namespace SushiRuntime;
 namespace
 {
     /** @brief Returns the registration index of the one compiled node with the given name. */
-    std::uint32_t registration_index_of(const Graph::CompiledGraph& plan, const char* name)
+    std::uint32_t registration_index_of(const Internal::Graph::CompiledGraph& plan, const char* name)
     {
-        const Graph::Node* found = Testing::find_plan_node(plan, name);
+        const Internal::Graph::Node* found = Testing::find_plan_node(plan, name);
         return found ? found->registration_index : 0u;
     }
 } // namespace
@@ -59,7 +59,7 @@ TEST(Integration_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
 
     auto world = rt.dynamic_graph();
     EXPECT_FALSE(world.is_profiling_requested());
-    world.region(0).add(N, API::Reads{}, API::Writes(buf),
+    world.region(0).add(N, Reads{}, Writes(buf),
                         [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     auto report = world.run();
@@ -80,16 +80,16 @@ TEST(Integration_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRe
 
     auto world = rt.dynamic_graph();
     world.set_profiling(true);
-    world.region(0).add(N, API::Reads{}, API::Writes(a),
+    world.region(0).add(N, Reads{}, Writes(a),
                         [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("A");
-    world.region(1).add(N, API::Reads{}, API::Writes(b),
+    world.region(1).add(N, Reads{}, Writes(b),
                         [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("B");
 
     auto report = world.run();
     ASSERT_FALSE(report.node_events.empty())
         << "a requested DynamicGraph must record device dispatches, not just stamp the flag";
 
-    const auto& plan = API::detail::DynamicGraphNodeEventsTestAccess::plan(world);
+    const auto& plan = detail::DynamicGraphNodeEventsTestAccess::plan(world);
     const std::uint32_t idx_a = registration_index_of(plan, "A");
     const std::uint32_t idx_b = registration_index_of(plan, "B");
 
@@ -116,16 +116,16 @@ TEST(Integration_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrde
     world.set_profiling(true);
 
     // Region 5 is keyed above region 2, so its two calls land after region 2's one; see README.md.
-    world.region(5).add(N, API::Reads{}, API::Writes(a),
+    world.region(5).add(N, Reads{}, Writes(a),
                         [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("R5_first");
-    world.region(5).add(N, API::Reads{}, API::Writes(b),
+    world.region(5).add(N, Reads{}, Writes(b),
                         [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("R5_second");
-    world.region(2).add(N, API::Reads{}, API::Writes(c),
+    world.region(2).add(N, Reads{}, Writes(c),
                         [pc](std::size_t i) { pc[i] = static_cast<int>(i); }).name("R2_only");
 
     world.run();
 
-    const auto& plan = API::detail::DynamicGraphNodeEventsTestAccess::plan(world);
+    const auto& plan = detail::DynamicGraphNodeEventsTestAccess::plan(world);
     const std::uint32_t idx_r2 = registration_index_of(plan, "R2_only");
     const std::uint32_t idx_r5_first = registration_index_of(plan, "R5_first");
     const std::uint32_t idx_r5_second = registration_index_of(plan, "R5_second");
@@ -150,18 +150,18 @@ TEST(Integration_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
     auto world = rt.dynamic_graph();
     world.set_profiling(true);
 
-    world.region(0).add(N, API::Reads{}, API::Writes(a),
+    world.region(0).add(N, Reads{}, Writes(a),
                         [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("kept");
-    world.region(1).add(N, API::Reads{}, API::Writes(b),
+    world.region(1).add(N, Reads{}, Writes(b),
                         [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("dropped_v1");
     world.run();
 
     world.drop(1);
-    world.region(1).add(N, API::Reads{}, API::Writes(b),
+    world.region(1).add(N, Reads{}, Writes(b),
                         [pb](std::size_t i) { pb[i] = static_cast<int>(i) * 2; }).name("dropped_v2");
     world.run();
 
-    const auto& plan = API::detail::DynamicGraphNodeEventsTestAccess::plan(world);
+    const auto& plan = detail::DynamicGraphNodeEventsTestAccess::plan(world);
     const std::uint32_t idx_kept = registration_index_of(plan, "kept");
     const std::uint32_t idx_v2 = registration_index_of(plan, "dropped_v2");
 
@@ -181,7 +181,7 @@ TEST(Integration_DynamicGraphNodeEvents, RequestToggleRecompilesOnce)
     int* p = buf.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(N, API::Reads{}, API::Writes(buf),
+    world.region(0).add(N, Reads{}, Writes(buf),
                         [p](std::size_t i) { p[i] += 1; });
 
     world.run();

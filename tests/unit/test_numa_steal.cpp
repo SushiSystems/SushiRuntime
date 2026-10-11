@@ -37,10 +37,10 @@
 #include "scheduler_fixture.hpp"
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Scheduler;
+using namespace SushiRuntime::Internal::Execution;
+using namespace SushiRuntime::Internal::Scheduler;
 using SushiRuntime::Test::make_scheduler;
-using namespace SushiRuntime::Topology;
+using namespace SushiRuntime::Internal::Topology;
 
 namespace
 {
@@ -62,7 +62,7 @@ namespace
             matrix[i][i] = 10;
         auto distance = std::make_shared<MatrixDistanceModel>(std::move(matrix));
 
-        return std::make_shared<RuntimeContext>(Topology::HardwareFilterConfig{}, provider, distance);
+        return std::make_shared<RuntimeContext>(Internal::Topology::HardwareFilterConfig{}, provider, distance);
     }
 }
 

@@ -42,7 +42,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph { struct Node; }
+    namespace Internal::Graph { struct Node; }
 
     namespace Distributed
     {
@@ -86,7 +86,7 @@ namespace SushiRuntime
                  * fixed-buffer node gets its handles as an OffloadHandles payload. Logs one
                  * WARN per call that leaves op-tagged nodes local, with the count per reason.
                  */
-                void prepare(SushiRuntime::span<const sushi_ptr<Graph::Node>> nodes);
+                void prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes);
 
                 /**
                  * @brief Dispatches a ready node; the body of OffloadCoordinator::try_offload().
@@ -96,7 +96,7 @@ namespace SushiRuntime
                  * @return False when the pool must run the node; true also when the send failed
                  *         and take() found that a reaper holds the node.
                  */
-                [[nodiscard]] bool try_offload(Graph::Node& node);
+                [[nodiscard]] bool try_offload(Internal::Graph::Node& node);
 
                 /**
                  * @brief Bumps the buffers a locally finished node wrote and clears its attempt
@@ -105,13 +105,13 @@ namespace SushiRuntime
                  * A node with live lists bumps the addresses in live_writes, not its baked
                  * list. A node without an OffloadState costs one null check.
                  */
-                void complete_local(Graph::Node& node) noexcept;
+                void complete_local(Internal::Graph::Node& node) noexcept;
 
                 /**
                  * @brief Clears the attempt count of a node a worker finished.
                  * @pre The caller owns the node: PendingTasks::take() returned it.
                  */
-                void complete_remote(Graph::Node& node) noexcept;
+                void complete_remote(Internal::Graph::Node& node) noexcept;
 
                 /** @brief Returns the counters; reads atomics and takes no lock. */
                 [[nodiscard]] OffloadDispatcherStatistics statistics() const noexcept;

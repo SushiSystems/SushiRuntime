@@ -35,121 +35,118 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    template <typename T>
+    class Buffer;
+
+    template <typename T>
+    class State;
+
+    namespace detail
     {
         template <typename T>
-        class Buffer;
+        struct StateView;
 
-        template <typename T>
-        class State;
-
-        namespace detail
+        /**
+         * @brief Reads and steps the tracking state of a Buffer or a State for the graph
+         *        layer.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        struct HandleAccess
         {
-            template <typename T>
-            struct StateView;
+            /**
+             * @brief Constructs a Buffer or a State through one of its private constructors.
+             * @tparam Handle Buffer<T> or State<T>.
+             * @pre A null context is passed only for a handle on which no range call is made.
+             */
+            template <typename Handle, typename... Arguments>
+            static Handle construct(Arguments&&... arguments)
+            {
+                return Handle(std::forward<Arguments>(arguments)...);
+            }
 
             /**
-             * @brief Reads and steps the tracking state of a Buffer or a State for the graph
-             *        layer.
+             * @brief Returns the address the dependency tracker keys a Buffer on.
+             * @return The allocation's base address, or nullptr for an empty handle.
+             */
+            template <typename T>
+            static void* key(const Buffer<T>& buffer) noexcept
+            {
+                return static_cast<void*>(buffer.data());
+            }
+
+            /** @brief Returns the key of the field a task reading the State depends on. */
+            template <typename T>
+            static void* read_key(const State<T>& state) noexcept
+            {
+                return key(state.current_);
+            }
+
+            /** @brief Returns the key of the field a task writing the State depends on. */
+            template <typename T>
+            static void* write_key(const State<T>& state) noexcept
+            {
+                return key(state.next_);
+            }
+
+            /**
+             * @brief Returns an observer that expires when the Buffer is destroyed or assigned
+             *        over by move assignment.
+             * @return An empty observer for a handle that owns no allocation.
+             */
+            template <typename T>
+            static Internal::Memory::LivenessObserver liveness(const Buffer<T>& buffer) noexcept
+            {
+                return buffer.liveness_;
+            }
+
+            /** @brief Returns the observer of the State's current field. */
+            template <typename T>
+            static Internal::Memory::LivenessObserver liveness(const State<T>& state) noexcept
+            {
+                return liveness(state.current_);
+            }
+
+            /**
+             * @brief Returns the view a State shares with the graphs that record it.
+             * @return The State's own view, or a new empty one for a State that owns no memory.
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
-            struct HandleAccess
+            template <typename T>
+            static std::shared_ptr<StateView<T>> view(const State<T>& state)
             {
-                /**
-                 * @brief Constructs a Buffer or a State through one of its private constructors.
-                 * @tparam Handle Buffer<T> or State<T>.
-                 * @pre A null context is passed only for a handle on which no range call is made.
-                 */
-                template <typename Handle, typename... Arguments>
-                static Handle construct(Arguments&&... arguments)
-                {
-                    return Handle(std::forward<Arguments>(arguments)...);
-                }
+                if (state.view_)
+                    return state.view_;
+                return std::make_shared<StateView<T>>();
+            }
 
-                /**
-                 * @brief Returns the address the dependency tracker keys a Buffer on.
-                 * @return The allocation's base address, or nullptr for an empty handle.
-                 */
-                template <typename T>
-                static void* key(const Buffer<T>& buffer) noexcept
-                {
-                    return static_cast<void*>(buffer.data());
-                }
+            /**
+             * @brief Swaps the State's two fields, so the one just written becomes current,
+             *        and writes the swap into its view.
+             */
+            template <typename T>
+            static void advance(State<T>& state) noexcept
+            {
+                using std::swap;
+                swap(state.current_, state.next_);
+                if (state.view_)
+                    state.publish_view();
+            }
 
-                /** @brief Returns the key of the field a task reading the State depends on. */
-                template <typename T>
-                static void* read_key(const State<T>& state) noexcept
-                {
-                    return key(state.current_);
-                }
+            /** @brief Advances the State that owns a view; does nothing once it is gone. */
+            template <typename T>
+            static void advance(StateView<T>& view) noexcept
+            {
+                if (view.owner != nullptr)
+                    advance(*view.owner);
+            }
 
-                /** @brief Returns the key of the field a task writing the State depends on. */
-                template <typename T>
-                static void* write_key(const State<T>& state) noexcept
-                {
-                    return key(state.next_);
-                }
-
-                /**
-                 * @brief Returns an observer that expires when the Buffer is destroyed or assigned
-                 *        over by move assignment.
-                 * @return An empty observer for a handle that owns no allocation.
-                 */
-                template <typename T>
-                static Memory::LivenessObserver liveness(const Buffer<T>& buffer) noexcept
-                {
-                    return buffer.liveness_;
-                }
-
-                /** @brief Returns the observer of the State's current field. */
-                template <typename T>
-                static Memory::LivenessObserver liveness(const State<T>& state) noexcept
-                {
-                    return liveness(state.current_);
-                }
-
-                /**
-                 * @brief Returns the view a State shares with the graphs that record it.
-                 * @return The State's own view, or a new empty one for a State that owns no memory.
-                 * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-                 */
-                template <typename T>
-                static std::shared_ptr<StateView<T>> view(const State<T>& state)
-                {
-                    if (state.view_)
-                        return state.view_;
-                    return std::make_shared<StateView<T>>();
-                }
-
-                /**
-                 * @brief Swaps the State's two fields, so the one just written becomes current,
-                 *        and writes the swap into its view.
-                 */
-                template <typename T>
-                static void advance(State<T>& state) noexcept
-                {
-                    using std::swap;
-                    swap(state.current_, state.next_);
-                    if (state.view_)
-                        state.publish_view();
-                }
-
-                /** @brief Advances the State that owns a view; does nothing once it is gone. */
-                template <typename T>
-                static void advance(StateView<T>& view) noexcept
-                {
-                    if (view.owner != nullptr)
-                        advance(*view.owner);
-                }
-
-                /** @brief Rewrites a view from the State that owns it; does nothing once gone. */
-                template <typename T>
-                static void resync(StateView<T>& view) noexcept
-                {
-                    if (view.owner != nullptr)
-                        view.owner->publish_view();
-                }
-            };
-        } // namespace detail
-    } // namespace API
+            /** @brief Rewrites a view from the State that owns it; does nothing once gone. */
+            template <typename T>
+            static void resync(StateView<T>& view) noexcept
+            {
+                if (view.owner != nullptr)
+                    view.owner->publish_view();
+            }
+        };
+    } // namespace detail
 } // namespace SushiRuntime

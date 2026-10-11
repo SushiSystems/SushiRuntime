@@ -42,7 +42,7 @@ namespace
      *
      * Holds a reference to an external counter, incremented when the object is destroyed.
      */
-    struct Probe : public Core::RefCounted
+    struct Probe : public RefCounted
     {
         explicit Probe(int& destroyed_count) : destroyed(destroyed_count) {}
         ~Probe() override { ++destroyed; }

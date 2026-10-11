@@ -32,31 +32,27 @@
 
 namespace SushiRuntime
 {
-    namespace Interop
+    /**
+     * @brief Holds the sixteen-byte UUID both SYCL and Vulkan expose for a device.
+     */
+    struct DeviceUUID
     {
-        /**
-         * @brief Holds the sixteen-byte UUID both SYCL and Vulkan expose for a device.
-         */
-        struct DeviceUUID
-        {
-            std::array<std::uint8_t, 16> bytes{}; /**< Holds the raw UUID bytes. */
-        };
+        std::array<std::uint8_t, 16> bytes{}; /**< Holds the raw UUID bytes. */
+    };
 
-        /**
-         * @brief Compares two device UUIDs for equality.
-         */
-        inline bool operator==(const DeviceUUID& left, const DeviceUUID& right) noexcept
-        {
-            return left.bytes == right.bytes;
-        }
+    /**
+     * @brief Compares two device UUIDs for equality.
+     */
+    inline bool operator==(const DeviceUUID& left, const DeviceUUID& right) noexcept
+    {
+        return left.bytes == right.bytes;
+    }
 
-        /**
-         * @brief Compares two device UUIDs for inequality.
-         */
-        inline bool operator!=(const DeviceUUID& left, const DeviceUUID& right) noexcept
-        {
-            return !(left == right);
-        }
-
-    } // namespace Interop
+    /**
+     * @brief Compares two device UUIDs for inequality.
+     */
+    inline bool operator!=(const DeviceUUID& left, const DeviceUUID& right) noexcept
+    {
+        return !(left == right);
+    }
 } // namespace SushiRuntime

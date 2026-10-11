@@ -34,12 +34,12 @@
 #include <memory>
 #include <utility>
 
-using SushiRuntime::API::Buffer;
-using SushiRuntime::API::DeviceIndex;
-using SushiRuntime::API::Residency;
-using SushiRuntime::API::detail::HandleAccess;
-using SushiRuntime::Memory::Allocation;
-using SushiRuntime::Memory::IAllocationOwner;
+using SushiRuntime::Buffer;
+using SushiRuntime::DeviceIndex;
+using SushiRuntime::Residency;
+using SushiRuntime::detail::HandleAccess;
+using SushiRuntime::Internal::Memory::Allocation;
+using SushiRuntime::Internal::Memory::IAllocationOwner;
 
 namespace
 {
@@ -163,7 +163,7 @@ TEST(Unit_Buffer, AdoptingATooSmallAllocationThrowsAndStillReleasesOnce)
                 nullptr, counted_allocation(7, 4, releases, last), 4,
                 DeviceIndex{0}, Residency::Shared);
         },
-        SushiRuntime::Core::SushiException);
+        SushiRuntime::SushiException);
     EXPECT_EQ(releases, 1);
     EXPECT_EQ(last, fake(7));
 }
@@ -179,6 +179,6 @@ TEST(Unit_Buffer, AdoptingACountThatOverflowsItsByteSizeThrows)
                 nullptr, counted_allocation(8, 4, releases, last), huge,
                 DeviceIndex{0}, Residency::Shared);
         },
-        SushiRuntime::Core::SushiException);
+        SushiRuntime::SushiException);
     EXPECT_EQ(releases, 1);
 }

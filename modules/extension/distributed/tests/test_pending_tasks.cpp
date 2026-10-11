@@ -49,7 +49,7 @@ using namespace SushiRuntime::Distributed;
 
 namespace
 {
-    using Graph::Node;
+    using Internal::Graph::Node;
     using std::chrono::milliseconds;
 
     /** @brief Names the worker most tests dispatch to. */

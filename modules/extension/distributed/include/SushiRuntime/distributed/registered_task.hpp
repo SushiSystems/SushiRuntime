@@ -36,7 +36,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         struct Node;
         class TaskGraph;
@@ -50,11 +50,11 @@ namespace SushiRuntime
          * A worker with the same operation may run it instead once a Cluster is attached and
          * every buffer is shared. The kernel is copied into the node, which the graph owns.
          * @param inputs The buffers read, in the kernel's order; the memory outlives the run.
-         * @throws Core::SushiException When @p kernels has no kernel for the operation.
+         * @throws SushiException When @p kernels has no kernel for the operation.
          */
-        SUSHIRUNTIME_API Graph::Node& add_registered_task(
-            Graph::TaskGraph& graph, const KernelRegistry& kernels,
-            const Graph::TaskMetadata& metadata, SushiRuntime::span<const BufferView> inputs,
+        SUSHIRUNTIME_API Internal::Graph::Node& add_registered_task(
+            Internal::Graph::TaskGraph& graph, const KernelRegistry& kernels,
+            const Internal::Graph::TaskMetadata& metadata, SushiRuntime::span<const BufferView> inputs,
             SushiRuntime::span<const BufferView> outputs);
 
     } // namespace Distributed

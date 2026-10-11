@@ -78,9 +78,9 @@
 #include "wire_messages.hpp"
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Graph;
-using namespace SushiRuntime::Graph::Literals;
+using namespace SushiRuntime::Internal::Execution;
+using namespace SushiRuntime::Internal::Graph;
+using namespace SushiRuntime::Internal::Graph::Literals;
 using namespace SushiRuntime::Distributed;
 
 namespace
@@ -302,7 +302,7 @@ namespace
      * @brief Adds an op-tagged task out = a + b whose local fallback computes the same sum.
      * @return The node added; valid while the graph or its compiled plan lives.
      */
-    Graph::Node& add_vec_add(TaskGraph& graph, const char* name, const USMFloats& a,
+    Internal::Graph::Node& add_vec_add(TaskGraph& graph, const char* name, const USMFloats& a,
                              const USMFloats& b, const USMFloats& out)
     {
         TaskMetadata metadata{};
@@ -533,7 +533,7 @@ namespace
     {
         public:
             /** @brief Builds a worker that claims a kernel for @p operation. */
-            ScriptedWorker(InProcessFabric& fabric, Graph::OpID operation, DispatchAnswer answer)
+            ScriptedWorker(InProcessFabric& fabric, Internal::Graph::OpID operation, DispatchAnswer answer)
                 : transport_(InProcessTransport::make_worker(fabric, single_connection())),
                   operation_(operation), answer_(answer)
             {
@@ -741,7 +741,7 @@ namespace
             std::shared_ptr<InProcessTransport> transport_;
 
             /// @brief The operation the worker says it has a kernel for.
-            Graph::OpID operation_;
+            Internal::Graph::OpID operation_;
 
             /// @brief What the worker does with a dispatch.
             DispatchAnswer answer_;
@@ -1061,7 +1061,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
     TaskMetadata fill_metadata{};
     fill_metadata.name = "local_fill";
     float* values = x.data();
-    Graph::Node& writer = graph.add_task(
+    Internal::Graph::Node& writer = graph.add_task(
         fill_metadata, {}, {values},
         [values](sycl::queue& local_queue, const std::vector<sycl::event>&) -> sycl::event
         {
@@ -1485,7 +1485,7 @@ TEST(Integration_DistributedE2ETest, TryOffloadAfterStopRunsLocally)
     share(master_context, out);
 
     TaskGraph graph(master_context.offload());
-    Graph::Node& node = add_vec_add(graph, "after_stop", a, b, out);
+    Internal::Graph::Node& node = add_vec_add(graph, "after_stop", a, b, out);
     CompiledGraph compiled = graph.compile();
     const OffloadState* state = node.offload_state();
     ASSERT_NE(state, nullptr);
@@ -1571,7 +1571,7 @@ TEST(Integration_DistributedE2ETest, AttachStartFailureLeavesNothingInstalled)
         const Cluster cluster = Cluster::attach(master_context, transport);
         ADD_FAILURE() << "attach() returned although the transport did not start";
     }
-    catch (const Core::SushiException& error)
+    catch (const SushiException& error)
     {
         message = error.what();
     }
@@ -1650,7 +1650,7 @@ TEST(Integration_DistributedE2ETest, RefusesEmptySecretOnNetworkExposure)
         std::make_shared<StubTransport>(TransportExposure::Network, TransportResult());
 
     EXPECT_THROW(static_cast<void>(Cluster::attach(master_context, exposed)),
-                 Core::SushiException);
+                 SushiException);
     EXPECT_EQ(exposed->start_calls(), 0) << "the transport was started before the refusal";
     EXPECT_EQ(master_context.offload(), nullptr);
 
@@ -1702,7 +1702,7 @@ TEST(Integration_DistributedE2ETest, AttachOnAStartedTransportLeavesTheFirstMast
     const OffloadCoordinator* const installed = first_context.offload();
 
     EXPECT_THROW(static_cast<void>(Cluster::attach(second_context, transport)),
-                 Core::SushiException);
+                 SushiException);
     EXPECT_EQ(second_context.offload(), nullptr);
     EXPECT_EQ(first_context.offload(), installed);
 
@@ -1788,17 +1788,17 @@ TEST(Integration_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
 
     const auto second_transport =
         std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult());
-    Core::Errc refusal = Core::Errc::ok;
+    Errc refusal = Errc::ok;
     try
     {
         static_cast<void>(Cluster::attach(master_context, second_transport));
     }
-    catch (const Core::SushiException& error)
+    catch (const SushiException& error)
     {
         refusal = error.error().code;
     }
 
-    EXPECT_EQ(refusal, Core::Errc::invalid_state);
+    EXPECT_EQ(refusal, Errc::invalid_state);
     EXPECT_EQ(second_transport->start_calls(), 0) << "the refusal came after a transport start";
     EXPECT_EQ(master_context.offload(), installed);
     EXPECT_EQ(cluster.alive_workers(), 1u) << "the refused attach stopped the installed master";
@@ -1859,7 +1859,7 @@ TEST(Integration_DistributedE2ETest, RefusesATimeoutBelowOneMillisecond)
         {
             static_cast<void>(Cluster::attach(master_context, transport, std::move(options)));
         }
-        catch (const Core::SushiException& error)
+        catch (const SushiException& error)
         {
             message = error.what();
         }
@@ -1891,7 +1891,7 @@ TEST(Integration_DistributedE2ETest, RefusesATimeoutBelowOneMillisecond)
         std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult()),
         std::move(without_deadline));
 
-    EXPECT_THROW(cluster.liveness_timeout(std::chrono::milliseconds(0)), Core::SushiException);
+    EXPECT_THROW(cluster.liveness_timeout(std::chrono::milliseconds(0)), SushiException);
     EXPECT_NO_THROW(cluster.liveness_timeout(K_MINIMUM_TIMEOUT));
     EXPECT_NO_THROW(cluster.task_deadline(std::chrono::milliseconds(0)));
     cluster.detach();
@@ -1912,6 +1912,6 @@ TEST(Integration_DistributedE2ETest, WorkerAgentSealsItsRegistry)
 
     EXPECT_TRUE(kernels->is_sealed()) << "the agent read its operations from an open registry";
     EXPECT_THROW(kernels->register_kernel(K_STATE_STEP, vec_add_kernel(worker_runs)),
-                 Core::SushiException);
+                 SushiException);
     EXPECT_FALSE(kernels->has(K_STATE_STEP));
 }

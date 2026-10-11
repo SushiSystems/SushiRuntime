@@ -40,12 +40,12 @@
 
 namespace
 {
-    using SushiRuntime::Execution::IExecutionEngine;
-    using SushiRuntime::Execution::RuntimeContext;
-    using SushiRuntime::Graph::CompiledGraph;
-    using SushiRuntime::Graph::TaskGraph;
-    using SushiRuntime::Memory::ResourceRegion;
-    using SushiRuntime::Memory::USMKind;
+    using SushiRuntime::Internal::Execution::IExecutionEngine;
+    using SushiRuntime::Internal::Execution::RuntimeContext;
+    using SushiRuntime::Internal::Graph::CompiledGraph;
+    using SushiRuntime::Internal::Graph::TaskGraph;
+    using SushiRuntime::Internal::Memory::ResourceRegion;
+    using SushiRuntime::Internal::Memory::USMKind;
 
     /** @brief Holds how many times each plan is replayed. */
     constexpr std::uint32_t K_REPLAYS = 8;

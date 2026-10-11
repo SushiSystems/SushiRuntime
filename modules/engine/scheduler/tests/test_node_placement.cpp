@@ -51,24 +51,24 @@ namespace
 {
     using SushiRuntime::make_sushi;
     using SushiRuntime::sushi_ptr;
-    using SushiRuntime::Graph::Node;
+    using SushiRuntime::Internal::Graph::Node;
 
     /** @brief Stands for "handed a queue of no entry", and for a node whose work did not run. */
     constexpr std::size_t K_NO_DEVICE = static_cast<std::size_t>(-1);
 
     /** @brief Describes a machine with no core map; see README.md. */
-    class SingleNodeTopology final : public SushiRuntime::Topology::ITopologyProvider
+    class SingleNodeTopology final : public SushiRuntime::Internal::Topology::ITopologyProvider
     {
         public:
-            std::vector<SushiRuntime::Topology::HardwareNode>
-            enumerate(const SushiRuntime::Topology::HardwareFilterConfig&) override
+            std::vector<SushiRuntime::Internal::Topology::HardwareNode>
+            enumerate(const SushiRuntime::Internal::Topology::HardwareFilterConfig&) override
             {
                 return {};
             }
     };
 
     /** @brief Reports one NUMA node at the local distance. */
-    class SingleNodeDistance final : public SushiRuntime::Topology::INUMADistanceModel
+    class SingleNodeDistance final : public SushiRuntime::Internal::Topology::INUMADistanceModel
     {
         public:
             int distance(int, int) const override
@@ -83,9 +83,9 @@ namespace
     };
 
     /** @brief Returns two entries over the device SYCL selects by default; see README.md. */
-    std::vector<SushiRuntime::Device::DeviceDescriptor> two_entries_over_the_default_device()
+    std::vector<SushiRuntime::Internal::Device::DeviceDescriptor> two_entries_over_the_default_device()
     {
-        SushiRuntime::Device::DeviceDescriptor descriptor;
+        SushiRuntime::Internal::Device::DeviceDescriptor descriptor;
         descriptor.device = sycl::device{sycl::default_selector_v};
         descriptor.info.name = "default";
         descriptor.info.backend = descriptor.device.get_backend();
@@ -118,8 +118,8 @@ class Unit_NodePlacement : public ::testing::Test
             : topology_(SingleNodeTopology(), std::make_shared<SingleNodeDistance>()),
               devices_(two_entries_over_the_default_device(), false),
               memory_(devices_.plain_queues()),
-              scheduler_(SushiRuntime::Scheduler::WorkerPoolSettings{
-                             2, 0, SushiRuntime::Scheduler::PinPolicy::Float},
+              scheduler_(SushiRuntime::Internal::Scheduler::WorkerPoolSettings{
+                             2, 0, SushiRuntime::Internal::Scheduler::PinPolicy::Float},
                          topology_, devices_, memory_)
         {
             scheduler_.start();
@@ -151,13 +151,13 @@ class Unit_NodePlacement : public ::testing::Test
         }
 
         /// @brief One NUMA node and no core map.
-        SushiRuntime::Topology::TopologyView topology_;
+        SushiRuntime::Internal::Topology::TopologyView topology_;
         /// @brief Two entries on NUMA node 0, each with its own queue on one SYCL device.
-        SushiRuntime::Device::DeviceQueueSet devices_;
+        SushiRuntime::Internal::Device::DeviceQueueSet devices_;
         /// @brief Allocator over the two entries; a test records ownership with adopt().
-        SushiRuntime::Memory::USMAllocator memory_;
+        SushiRuntime::Internal::Memory::USMAllocator memory_;
         /// @brief The scheduler under test, started and armed.
-        SushiRuntime::Scheduler::TaskScheduler scheduler_;
+        SushiRuntime::Internal::Scheduler::TaskScheduler scheduler_;
 };
 
 /**
@@ -255,13 +255,13 @@ TEST_F(Unit_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
     const std::exception_ptr error = scheduler_.run_error();
     ASSERT_TRUE(error != nullptr);
 
-    std::optional<SushiRuntime::Core::Errc> code;
+    std::optional<SushiRuntime::Errc> code;
     std::string message;
     try
     {
         std::rethrow_exception(error);
     }
-    catch (const SushiRuntime::Core::SushiException& failure)
+    catch (const SushiRuntime::SushiException& failure)
     {
         code = failure.error().code;
         message = failure.what();
@@ -272,7 +272,7 @@ TEST_F(Unit_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
     }
 
     ASSERT_TRUE(code.has_value()) << "the run failed with another exception type: " << message;
-    EXPECT_EQ(*code, SushiRuntime::Core::Errc::invalid_graph);
+    EXPECT_EQ(*code, SushiRuntime::Errc::invalid_graph);
     EXPECT_NE(message.find("node 'misplaced'"), std::string::npos) << message;
     EXPECT_NE(message.find("device 2"), std::string::npos) << message;
     EXPECT_NE(message.find("2 device(s)"), std::string::npos) << message;

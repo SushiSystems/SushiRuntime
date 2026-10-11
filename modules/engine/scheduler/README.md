@@ -214,14 +214,14 @@ steal-friendly units.
 A range splits when the upper half, the one the owner keeps, holds at least 1024 elements, which a
 range of 2047 or more does. is_splittable() and split() both ask the private can_split(), so a true
 is_splittable() is followed by a chunk unless a concurrent split wins the exchange. The constructor
-throws Core::SushiException for start > end; start == end is an empty range that runs nothing.
+throws SushiException for start > end; start == end is an empty range that runs nothing.
 
 ## task_scheduler.hpp
 
 ### TaskScheduler
 
-TaskScheduler is built from a WorkerPoolSettings, a Topology::TopologyView, a Device::DeviceQueueSet
-and a Memory::USMAllocator, and holds the last three by reference; all three must outlive it. It
+TaskScheduler is built from a WorkerPoolSettings, a Internal::Topology::TopologyView, a Internal::Device::DeviceQueueSet
+and a Internal::Memory::USMAllocator, and holds the last three by reference; all three must outlive it. It
 names no type of the execution module.
 
 TaskScheduler owns a fixed-size pool of worker threads started once (start()) and kept alive across
@@ -423,9 +423,9 @@ point here.
 
 #### Sizing and placing the pool
 
-The constructor takes a `WorkerPoolSettings`, a `Topology::TopologyView`, a
-`Device::DeviceQueueSet` and a `Memory::USMAllocator`. It includes no header of `execution`;
-`Execution::worker_pool_settings()` maps a `RuntimeSettings` onto the first argument. The
+The constructor takes a `WorkerPoolSettings`, a `Internal::Topology::TopologyView`, a
+`Internal::Device::DeviceQueueSet` and a `Internal::Memory::USMAllocator`. It includes no header of `execution`;
+`Internal::Execution::worker_pool_settings()` maps a `RuntimeSettings` onto the first argument. The
 settings size and place the worker pool: how
 many workers to run, which core range to bind them into, and whether to bind at all. The
 defaults reproduce the sole-tenant behaviour, one worker per logical core with worker i on
@@ -599,7 +599,7 @@ read side, `completed_tasks_for`, uses the worker id too.
 
 ##### Downcast
 
-The downcast to `Graph::Node` goes through the virtual `is_graph_node()` type tag, not RTTI.
+The downcast to `Internal::Graph::Node` goes through the virtual `is_graph_node()` type tag, not RTTI.
 `EventPolling` uses the same tag.
 
 ##### Inline host tasks
@@ -616,13 +616,13 @@ Both the KERNEL and the HOST path must run on the queue whose context owns the n
 HOST task is as dangerous as a KERNEL one: its `host_work` commonly submits a device kernel
 on exactly the queue it is handed, so a sibling device's queue picked round-robin causes a
 cross-context illegal access, for example CPU-allocated USM dispatched onto a CUDA queue.
-A graph node therefore has one placement, and `Graph::placement_of()` in the task module is
+A graph node therefore has one placement, and `Internal::Graph::placement_of()` in the task module is
 the one function that names it, from the first of these that applies:
 
 1. The node names a region a device owns: the owner of its first write region, else of its
    first read region.
 2. The node states a placement with `Node::place_on()`: that device.
-3. Otherwise device 0, `Graph::DEFAULT_PLACEMENT`, the device a default buffer is allocated
+3. Otherwise device 0, `Internal::Graph::DEFAULT_PLACEMENT`, the device a default buffer is allocated
    on.
 
 A kernel that captured USM the runtime cannot see names no region, so rule 2 or 3 decides
@@ -702,8 +702,8 @@ independent and there are `num_workers_` threads, so one `notify_all` replaces a
 
 #### Offload coordinator
 
-`TaskScheduler` implements `Graph::OffloadSink` and knows the coordinator only as a
-`Graph::OffloadCoordinator`; `modules/engine/task/README.md` describes the seam.
+`TaskScheduler` implements `Internal::Graph::OffloadSink` and knows the coordinator only as a
+`Internal::Graph::OffloadCoordinator`; `modules/engine/task/README.md` describes the seam.
 `set_offload_coordinator()` calls `bind(*this)` on a non-null coordinator, then stores the
 pointer in the scheduler and in the poller. A null pointer removes the coordinator from both.
 

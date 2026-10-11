@@ -63,7 +63,7 @@ importing API; address equals buffer.data(). Moving buffer out of the struct kee
 because the allocation moves with it. address dangles once the Buffer that owns the allocation is
 destroyed, so that Buffer must outlive every import the other API made from it.
 
-### Interop::HostExport
+### HostExport
 
-SushiEngine spells the type Interop::HostExport, and so does the return type of export_host. The
-alias makes that spelling name API::HostExport, so there is one type under two names.
+SushiEngine spells the type HostExport, and so does the return type of export_host. The
+alias makes that spelling name HostExport, so there is one type under two names.

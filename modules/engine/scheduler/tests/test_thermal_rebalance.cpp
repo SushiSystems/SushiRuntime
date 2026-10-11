@@ -32,7 +32,7 @@
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <SushiRuntime/scheduler/thermal_proxy_strategy.hpp>
 
-using namespace SushiRuntime::Scheduler;
+using namespace SushiRuntime::Internal::Scheduler;
 
 namespace
 {

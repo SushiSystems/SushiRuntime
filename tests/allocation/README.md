@@ -110,7 +110,7 @@ single vector allocation cannot be missed.
 ### `ReuseTicksDoNotAllocatePerTick`
 
 The baseline uses the device, the context and the in-order queue that the chain submits to
-(the in-order flavour of `Execution::RuntimeContext::devices()`). It therefore measures what SYCL's
+(the in-order flavour of `Internal::Execution::RuntimeContext::devices()`). It therefore measures what SYCL's
 own submission of the identical kernel costs on the calling thread, with none of the chain's
 bookkeeping around it.
 

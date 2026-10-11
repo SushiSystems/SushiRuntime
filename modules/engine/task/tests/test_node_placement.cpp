@@ -42,10 +42,10 @@ namespace
 {
     using SushiRuntime::make_sushi;
     using SushiRuntime::sushi_ptr;
-    using SushiRuntime::Core::Errc;
-    using SushiRuntime::Core::SushiException;
-    using SushiRuntime::Graph::Node;
-    using SushiRuntime::Graph::placement_of;
+    using SushiRuntime::Errc;
+    using SushiRuntime::SushiException;
+    using SushiRuntime::Internal::Graph::Node;
+    using SushiRuntime::Internal::Graph::placement_of;
 
     /** @brief Returns two queues on the device SYCL selects by default; see README.md. */
     std::vector<sycl::queue> two_queues_on_the_default_device()
@@ -65,7 +65,7 @@ class Unit_NodePlacementRule : public ::testing::Test
         }
 
         /// @brief Allocates nothing; a test records ownership with adopt().
-        SushiRuntime::Memory::USMAllocator memory_;
+        SushiRuntime::Internal::Memory::USMAllocator memory_;
 };
 
 TEST(Unit_NodePlacementState, ANodeStatesNoPlacementUntilPlaceOn)
@@ -107,8 +107,8 @@ TEST(Unit_NodePlacementState, PlaceOnRejectsAnIndexItCannotHold)
 TEST_F(Unit_NodePlacementRule, ANodeWithNoRegionRunsOnItsStatedDeviceElseOnTheDefault)
 {
     const sushi_ptr<Node> node = make_sushi<Node>();
-    EXPECT_EQ(placement_of(*node, memory_), SushiRuntime::Graph::DEFAULT_PLACEMENT);
-    EXPECT_EQ(SushiRuntime::Graph::DEFAULT_PLACEMENT, 0u);
+    EXPECT_EQ(placement_of(*node, memory_), SushiRuntime::Internal::Graph::DEFAULT_PLACEMENT);
+    EXPECT_EQ(SushiRuntime::Internal::Graph::DEFAULT_PLACEMENT, 0u);
 
     node->place_on(1);
     EXPECT_EQ(placement_of(*node, memory_), 1u);

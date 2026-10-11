@@ -33,7 +33,7 @@
 
 namespace SushiRuntime
 {
-    namespace Memory
+    namespace Internal::Memory
     {
         /**
          * @brief Releases an address that an Allocation owned.

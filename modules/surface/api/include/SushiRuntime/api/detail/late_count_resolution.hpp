@@ -40,82 +40,78 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /**
+         * @brief Appends the read and the observer of a device count's slot.
+         * @param reads Gains the region of the slot's buffer when the count has a slot.
+         * @param lives Gains the observer of that buffer when it watches an allocation.
+         * @return True when the count is read from a device slot.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        inline bool gather_device_read(const LateCount& count,
+                                       std::vector<Internal::Memory::ResourceRegion>& reads,
+                                       std::vector<Internal::Memory::LivenessObserver>& lives)
         {
-            /**
-             * @brief Appends the read and the observer of a device count's slot.
-             * @param reads Gains the region of the slot's buffer when the count has a slot.
-             * @param lives Gains the observer of that buffer when it watches an allocation.
-             * @return True when the count is read from a device slot.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            inline bool gather_device_read(const LateCount& count,
-                                           std::vector<Memory::ResourceRegion>& reads,
-                                           std::vector<Memory::LivenessObserver>& lives)
-            {
-                if (LateCountAccess::slot(count) == nullptr)
-                    return false;
-                reads.push_back(LateCountAccess::slot_region(count));
-                const Memory::LivenessObserver& life = LateCountAccess::slot_life(count);
-                if (!life.expired())
-                    lives.push_back(life);
-                return true;
-            }
+            if (LateCountAccess::slot(count) == nullptr)
+                return false;
+            reads.push_back(LateCountAccess::slot_region(count));
+            const Internal::Memory::LivenessObserver& life = LateCountAccess::slot_life(count);
+            if (!life.expired())
+                lives.push_back(life);
+            return true;
+        }
 
-            /**
-             * @brief Names where one LateCount's live value comes from, in a form a kernel carries.
-             */
-            struct LiveCountSource
-            {
-                const std::uint32_t* slot = nullptr; /**< Device-written word, or null. */
-                std::size_t host_live = 0;           /**< The live count when @c slot is null. */
-                std::size_t capacity = 0;            /**< Bound a device value must not exceed. */
-            };
+        /**
+         * @brief Names where one LateCount's live value comes from, in a form a kernel carries.
+         */
+        struct LiveCountSource
+        {
+            const std::uint32_t* slot = nullptr; /**< Device-written word, or null. */
+            std::size_t host_live = 0;           /**< The live count when @c slot is null. */
+            std::size_t capacity = 0;            /**< Bound a device value must not exceed. */
+        };
 
-            /**
-             * @brief Resolves a LateCount's host side and names its device slot without reading it.
-             * @param count The count to resolve.
-             * @return The source a resolver kernel reads.
-             * @throws Core::SushiException With invalid_graph if a host provider returns more
-             *         than the capacity.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            inline LiveCountSource late_count_source(const LateCount& count)
-            {
-                LiveCountSource source;
-                source.capacity = count.capacity();
-                source.slot = LateCountAccess::slot(count);
-                if (source.slot != nullptr)
-                    return source;
-
-                const LateCount::Provider* host = LateCountAccess::host(count);
-                source.host_live = (host != nullptr) ? (*host)() : source.capacity;
-                if (source.host_live > source.capacity)
-                    throw Core::SushiException(
-                        late_count_overflow(source.host_live, source.capacity));
+        /**
+         * @brief Resolves a LateCount's host side and names its device slot without reading it.
+         * @param count The count to resolve.
+         * @return The source a resolver kernel reads.
+         * @throws SushiException With invalid_graph if a host provider returns more
+         *         than the capacity.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        inline LiveCountSource late_count_source(const LateCount& count)
+        {
+            LiveCountSource source;
+            source.capacity = count.capacity();
+            source.slot = LateCountAccess::slot(count);
+            if (source.slot != nullptr)
                 return source;
-            }
 
-            /**
-             * @brief Reads a live count on the device; one over capacity faults and yields zero.
-             * @param source Where the count lives, from late_count_source().
-             * @param fault  The resolver's fault record; null only when @p source has no slot.
-             * @return The live count, never above @p source.capacity.
-             */
-            inline std::size_t read_live_count(const LiveCountSource& source,
-                                               std::uint32_t* fault) noexcept
-            {
-                if (source.slot == nullptr)
-                    return source.host_live;
-                const std::size_t live = static_cast<std::size_t>(*source.slot);
-                if (live <= source.capacity)
-                    return live;
-                record_device_fault(fault, DEVICE_FAULT_LATE_COUNT, 0, live, source.capacity);
-                return 0;
-            }
-        } // namespace detail
+            const LateCount::Provider* host = LateCountAccess::host(count);
+            source.host_live = (host != nullptr) ? (*host)() : source.capacity;
+            if (source.host_live > source.capacity)
+                throw SushiException(
+                    late_count_overflow(source.host_live, source.capacity));
+            return source;
+        }
 
-    } // namespace API
+        /**
+         * @brief Reads a live count on the device; one over capacity faults and yields zero.
+         * @param source Where the count lives, from late_count_source().
+         * @param fault  The resolver's fault record; null only when @p source has no slot.
+         * @return The live count, never above @p source.capacity.
+         */
+        inline std::size_t read_live_count(const LiveCountSource& source,
+                                           std::uint32_t* fault) noexcept
+        {
+            if (source.slot == nullptr)
+                return source.host_live;
+            const std::size_t live = static_cast<std::size_t>(*source.slot);
+            if (live <= source.capacity)
+                return live;
+            record_device_fault(fault, DEVICE_FAULT_LATE_COUNT, 0, live, source.capacity);
+            return 0;
+        }
+    } // namespace detail
 } // namespace SushiRuntime

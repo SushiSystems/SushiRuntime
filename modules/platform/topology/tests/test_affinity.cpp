@@ -41,7 +41,7 @@
     #include <sched.h>
 #endif
 
-using namespace SushiRuntime::Topology;
+using namespace SushiRuntime::Internal::Topology;
 
 namespace
 {

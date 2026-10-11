@@ -177,7 +177,7 @@ namespace SushiRuntime::Distributed::Wire
         std::array<std::byte, K_PROOF_BYTES> worker_proof{};
 
         /** @brief Holds the operations the worker has a kernel for. */
-        std::vector<Graph::OpID> ops;
+        std::vector<Internal::Graph::OpID> ops;
 
         /** @brief Holds the number of tasks the worker queues at most. */
         std::uint32_t max_jobs = 0;
@@ -286,7 +286,7 @@ namespace SushiRuntime::Distributed::Wire
         std::uint64_t task_id = 0;
 
         /** @brief Holds the metadata; op_id selects the kernel and name stays off the wire. */
-        Graph::TaskMetadata metadata;
+        Internal::Graph::TaskMetadata metadata;
 
         /** @brief Holds the buffers the kernel reads. */
         std::vector<BufferHandle> inputs;

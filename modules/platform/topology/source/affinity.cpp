@@ -44,7 +44,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         namespace
         {

@@ -82,7 +82,7 @@ TEST(Integration_InteropHostExport, ImportOnAQueueWithoutTheExtensionThrowsUnsup
     auto interop = runtime.interop();
     if (interop.capabilities(DeviceIndex{0}).device_import)
         GTEST_SKIP() << "device 0 imports external memory; this case covers the refusal only";
-    Interop::ExternalMemoryDescriptor descriptor;
+    ExternalMemoryDescriptor descriptor;
     try
     {
         static_cast<void>(interop.import_device<float>(descriptor, 4, DeviceIndex{0}));

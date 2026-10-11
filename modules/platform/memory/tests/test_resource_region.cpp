@@ -31,7 +31,7 @@
 
 #include <SushiRuntime/memory/resource_region.hpp>
 
-using SushiRuntime::Memory::ResourceRegion;
+using SushiRuntime::Internal::Memory::ResourceRegion;
 
 namespace
 {

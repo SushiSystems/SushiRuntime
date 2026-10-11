@@ -33,7 +33,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         /**
          * @brief Maps memory access distances between hardware units.

@@ -67,16 +67,16 @@ namespace
      * work-item adds the partials left to right into total[0].
      * @param input Holds N values; must outlive the recorder.
      */
-    void record_tiled_total(API::Recorder& recorder, const API::Buffer<float>& input,
-                            const API::Buffer<float>& total)
+    void record_tiled_total(Recorder& recorder, const Buffer<float>& input,
+                            const Buffer<float>& total)
     {
         float* partials = recorder.scratch<float>(TILES, input.device_index(), input.residency());
-        const Memory::ResourceRegion partial_region{partials, 0, TILES * sizeof(float)};
+        const Internal::Memory::ResourceRegion partial_region{partials, 0, TILES * sizeof(float)};
         const float* in = input.data();
         float* out = total.data();
 
         auto rule = recorder.rule();
-        recorder.kernel(TILES, API::Access(Reads(input), Writes(partial_region)),
+        recorder.kernel(TILES, Access(Reads(input), Writes(partial_region)),
                         [in, partials](std::size_t t)
                         {
                             const std::size_t begin = t * TILE;
@@ -86,7 +86,7 @@ namespace
                                 sum = sum + in[i];
                             partials[t] = sum;
                         });
-        recorder.kernel(std::size_t{1}, API::Access(Reads(partial_region), Writes(total)),
+        recorder.kernel(std::size_t{1}, Access(Reads(partial_region), Writes(total)),
                         [partials, out](std::size_t)
                         {
                             float sum = partials[0];
@@ -112,7 +112,7 @@ namespace
      */
     Outcome run_workload(std::size_t worker_count, bool rebalancer = false)
     {
-        API::RuntimeConfig config;
+        RuntimeConfig config;
         config.worker_count = worker_count;
         config.rebalancer   = rebalancer;
 
@@ -270,7 +270,7 @@ TEST(Integration_Determinism, TheRebalancerDoesNotChangeTheBytes)
 /** @brief Tests that the first and the last step of a multi-step run produce the same bytes. */
 TEST(Integration_Determinism, ReplayDoesNotDriftAcrossSteps)
 {
-    API::RuntimeConfig config;
+    RuntimeConfig config;
     config.rebalancer = false;
     auto rt = Runtime::create(config);
 

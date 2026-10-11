@@ -133,7 +133,7 @@ namespace SushiRuntime
 
             /**
              * @brief Returns the transport after checking it is there.
-             * @throws Core::SushiException When @p transport is null.
+             * @throws SushiException When @p transport is null.
              */
             std::shared_ptr<ITransport> require_transport(std::shared_ptr<ITransport> transport)
             {
@@ -233,7 +233,7 @@ namespace SushiRuntime
                         }
 
                         drop_malformed(
-                            peer, Core::Detail::sr_format(
+                            peer, Detail::sr_format(
                                       "sent a malformed {} frame ({} bytes): decoding stopped "
                                       "at offset {} with status {}",
                                       message_type_name(Message::K_TYPE), payload.size(),
@@ -258,7 +258,7 @@ namespace SushiRuntime
 
                 directory.note_frame(peer, std::chrono::steady_clock::now());
                 if (router.route(type, peer, flags, payload) == Wire::RouteStatus::Unhandled)
-                    drop_peer(peer, Core::Detail::sr_format(
+                    drop_peer(peer, Detail::sr_format(
                                         "sent {}, which a master does not take",
                                         message_type_name(type)));
             }
@@ -596,7 +596,7 @@ namespace SushiRuntime
             std::uint64_t session_id;
 
             /// @brief Takes nodes back; set by bind() before any thread starts.
-            Graph::OffloadSink* sink = nullptr;
+            Internal::Graph::OffloadSink* sink = nullptr;
 
             /// @brief Set by the first start().
             std::atomic<bool> started{false};
@@ -642,7 +642,7 @@ namespace SushiRuntime
             stop();
         }
 
-        void DistributedCoordinator::bind(Graph::OffloadSink& sink)
+        void DistributedCoordinator::bind(Internal::Graph::OffloadSink& sink)
         {
             impl_->sink = &sink;
         }
@@ -743,17 +743,17 @@ namespace SushiRuntime
                         returned);
         }
 
-        void DistributedCoordinator::prepare(span<const sushi_ptr<Graph::Node>> nodes)
+        void DistributedCoordinator::prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes)
         {
             impl_->dispatcher.prepare(nodes);
         }
 
-        bool DistributedCoordinator::try_offload(Graph::Node& node)
+        bool DistributedCoordinator::try_offload(Internal::Graph::Node& node)
         {
             return impl_->dispatcher.try_offload(node);
         }
 
-        void DistributedCoordinator::on_local_completion(Graph::Node& node) noexcept
+        void DistributedCoordinator::on_local_completion(Internal::Graph::Node& node) noexcept
         {
             impl_->dispatcher.complete_local(node);
         }
@@ -763,12 +763,12 @@ namespace SushiRuntime
             impl_->registry.register_buffer(address, bytes);
         }
 
-        Graph::OffloadStatistics DistributedCoordinator::statistics() const noexcept
+        Internal::Graph::OffloadStatistics DistributedCoordinator::statistics() const noexcept
         {
             const Impl& impl = *impl_;
             const OffloadDispatcherStatistics dispatched = impl.dispatcher.statistics();
 
-            Graph::OffloadStatistics snapshot;
+            Internal::Graph::OffloadStatistics snapshot;
             snapshot.offloaded = dispatched.offloaded;
             snapshot.declined = dispatched.declined;
             snapshot.redispatched = impl.monitor.statistics().redispatched +
@@ -848,7 +848,7 @@ namespace SushiRuntime
             return snapshot;
         }
 
-        bool DistributedCoordinator::supports(Graph::OpID op) const
+        bool DistributedCoordinator::supports(Internal::Graph::OpID op) const
         {
             return impl_->directory.supports(op);
         }

@@ -82,7 +82,7 @@ namespace SushiRuntime
             /** @brief Refuses a constructor argument the caller must not pass. */
             [[noreturn]] void refuse(const char* message)
             {
-                throw Core::SushiException(Core::Error{Core::Errc::invalid_access, message});
+                throw SushiException(Error{Errc::invalid_access, message});
             }
 
             /** @brief Returns the transport, or refuses a null one. */
@@ -122,13 +122,13 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the cache budget: the one asked for, or half the device's memory. */
-            std::uint64_t resolve_cache_budget(Execution::RuntimeContext& context,
+            std::uint64_t resolve_cache_budget(Internal::Execution::RuntimeContext& context,
                                                std::uint64_t requested)
             {
                 if (requested != 0)
                     return requested;
 
-                const std::vector<Device::DeviceInfo>& devices = context.devices().devices();
+                const std::vector<Internal::Device::DeviceInfo>& devices = context.devices().devices();
                 const std::uint64_t half = devices.size() > K_DEVICE_INDEX
                                                ? devices[K_DEVICE_INDEX].memory_bytes / 2
                                                : 0;
@@ -142,14 +142,14 @@ namespace SushiRuntime
             }
 
             /** @brief Returns an allocator that keeps cached buffers as recorded shared USM. */
-            CacheAllocator make_cache_allocator(Memory::USMAllocator& memory)
+            CacheAllocator make_cache_allocator(Internal::Memory::USMAllocator& memory)
             {
                 CacheAllocator allocator;
                 allocator.allocate = [&memory](std::size_t size_bytes) -> void*
                 {
                     try
                     {
-                        return memory.allocate(Memory::USMRequest{Memory::USMKind::Shared,
+                        return memory.allocate(Internal::Memory::USMRequest{Internal::Memory::USMKind::Shared,
                                                                   size_bytes, 0, K_DEVICE_INDEX});
                     }
                     catch (const std::exception& error)
@@ -199,7 +199,7 @@ namespace SushiRuntime
         {
             public:
                 /** @brief Builds the bricks and the routing table; no thread runs yet. */
-                Impl(Execution::RuntimeContext& context, std::shared_ptr<ITransport> transport,
+                Impl(Internal::Execution::RuntimeContext& context, std::shared_ptr<ITransport> transport,
                      sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options);
 
                 /** @brief Starts the exec thread, the heartbeat thread and the transport. */
@@ -272,7 +272,7 @@ namespace SushiRuntime
                 void log_statistics() const noexcept;
 
                 /// @brief Supplies the queue kernels run on and the cache's memory.
-                Execution::RuntimeContext& context_;
+                Internal::Execution::RuntimeContext& context_;
 
                 /// @brief Carries every frame; the agent is its only receiver.
                 std::shared_ptr<ITransport> transport_;
@@ -311,7 +311,7 @@ namespace SushiRuntime
                 Router router_;
         };
 
-        WorkerAgent::Impl::Impl(Execution::RuntimeContext& context,
+        WorkerAgent::Impl::Impl(Internal::Execution::RuntimeContext& context,
                                 std::shared_ptr<ITransport> transport,
                                 sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
             : context_(context), transport_(require_transport(std::move(transport))),
@@ -640,7 +640,7 @@ namespace SushiRuntime
             apply(change);
         }
 
-        WorkerAgent::WorkerAgent(API::Runtime& runtime, std::shared_ptr<ITransport> transport,
+        WorkerAgent::WorkerAgent(Runtime& runtime, std::shared_ptr<ITransport> transport,
                                  sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
             : WorkerAgent(runtime.unsafe_context(), std::move(transport), std::move(kernels),
                           std::move(options))
@@ -648,7 +648,7 @@ namespace SushiRuntime
 
         }
 
-        WorkerAgent::WorkerAgent(Execution::RuntimeContext& context,
+        WorkerAgent::WorkerAgent(Internal::Execution::RuntimeContext& context,
                                  std::shared_ptr<ITransport> transport,
                                  sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
             : impl_(std::make_unique<Impl>(context, std::move(transport), std::move(kernels),

@@ -38,9 +38,9 @@
 
 using namespace SushiRuntime;
 
-static_assert(API::detail::saturated_fault_word(7) == 7u,
+static_assert(detail::saturated_fault_word(7) == 7u,
               "a value that fits a fault word is stored as it is");
-static_assert(API::detail::saturated_fault_word(std::size_t{UINT32_MAX} + 1u) == UINT32_MAX,
+static_assert(detail::saturated_fault_word(std::size_t{UINT32_MAX} + 1u) == UINT32_MAX,
               "a value past a fault word is stored as the largest word");
 
 /** @brief Tests that each field of a record saturates and the message shows the saturated value. */
@@ -50,26 +50,26 @@ TEST(Integration_DeviceFault, AFieldPastAUint32IsStoredSaturated)
         GTEST_SKIP() << "std::size_t holds no value past a uint32 on this platform";
 
     const std::size_t over = std::size_t{UINT32_MAX} + 5u;
-    std::array<std::uint32_t, API::detail::DEVICE_FAULT_WORDS> record{};
+    std::array<std::uint32_t, detail::DEVICE_FAULT_WORDS> record{};
 
-    API::detail::record_device_fault(record.data(), API::detail::DEVICE_FAULT_WINDOW, over, 7,
+    detail::record_device_fault(record.data(), detail::DEVICE_FAULT_WINDOW, over, 7,
                                      over);
 
-    EXPECT_EQ(record[0], API::detail::DEVICE_FAULT_WINDOW);
+    EXPECT_EQ(record[0], detail::DEVICE_FAULT_WINDOW);
     EXPECT_EQ(record[1], UINT32_MAX);
     EXPECT_EQ(record[2], 7u);
     EXPECT_EQ(record[3], UINT32_MAX);
 
     try
     {
-        API::detail::throw_if_device_fault(record.data());
+        detail::throw_if_device_fault(record.data());
         ADD_FAILURE() << "a record that holds a fault did not throw";
     }
-    catch (const Core::SushiException& fault)
+    catch (const SushiException& fault)
     {
         const std::string& message = fault.error().message;
         EXPECT_NE(message.find("starts at " + std::to_string(UINT32_MAX)), std::string::npos)
             << message;
     }
-    EXPECT_EQ(record[0], API::detail::DEVICE_FAULT_NONE);
+    EXPECT_EQ(record[0], detail::DEVICE_FAULT_NONE);
 }

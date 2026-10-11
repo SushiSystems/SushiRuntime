@@ -35,53 +35,49 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    /**
+     * @brief States the device a kernel that names no region runs on.
+     * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
+     */
+    struct On
     {
+        DeviceIndex device;          /**< Device the kernel runs on. */
+        Internal::Memory::LivenessObserver life; /**< Observer of the handle named, or empty. */
+
         /**
-         * @brief States the device a kernel that names no region runs on.
-         * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
+         * @brief Places the kernel on a device by index.
+         * @param index Position in the runtime's device list.
          */
-        struct On
+        explicit On(DeviceIndex index) noexcept : device(index)
         {
-            DeviceIndex device;          /**< Device the kernel runs on. */
-            Memory::LivenessObserver life; /**< Observer of the handle named, or empty. */
 
-            /**
-             * @brief Places the kernel on a device by index.
-             * @param index Position in the runtime's device list.
-             */
-            explicit On(DeviceIndex index) noexcept : device(index)
-            {
+        }
 
-            }
+        /**
+         * @brief Places the kernel on the device that owns a buffer, and watches the buffer.
+         * @param buffer Handle whose device is taken. Alive when the graph runs;
+         *          free to move after add().
+         */
+        template <typename T>
+        explicit On(const Buffer<T>& buffer) noexcept
+            : device(buffer.device_index()), life(detail::HandleAccess::liveness(buffer))
+        {
 
-            /**
-             * @brief Places the kernel on the device that owns a buffer, and watches the buffer.
-             * @param buffer Handle whose device is taken. Alive when the graph runs;
-             *          free to move after add().
-             */
-            template <typename T>
-            explicit On(const Buffer<T>& buffer) noexcept
-                : device(buffer.device_index()), life(detail::HandleAccess::liveness(buffer))
-            {
+        }
 
-            }
+        /**
+         * @brief Places the kernel on the device that owns a State, and watches the State.
+         * @param state Handle whose device is taken. Alive when the graph runs;
+         *          free to move after add().
+         */
+        template <typename T>
+        explicit On(const State<T>& state) noexcept
+            : device(state.device_index()), life(detail::HandleAccess::liveness(state))
+        {
 
-            /**
-             * @brief Places the kernel on the device that owns a State, and watches the State.
-             * @param state Handle whose device is taken. Alive when the graph runs;
-             *          free to move after add().
-             */
-            template <typename T>
-            explicit On(const State<T>& state) noexcept
-                : device(state.device_index()), life(detail::HandleAccess::liveness(state))
-            {
+        }
+    };
 
-            }
-        };
 
-    } // namespace API
-
-    using API::On;
 
 } // namespace SushiRuntime

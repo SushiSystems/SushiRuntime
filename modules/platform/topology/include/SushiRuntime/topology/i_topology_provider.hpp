@@ -34,7 +34,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         /**
          * @brief Declares the interface over hardware discovery and NUMA mapping.

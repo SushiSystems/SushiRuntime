@@ -34,7 +34,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /**
          * @brief Reports the worker pool as built, which may differ from the request.

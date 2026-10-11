@@ -40,7 +40,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 
-using namespace SushiRuntime::Memory;
+using namespace SushiRuntime::Internal::Memory;
 
 namespace
 {
@@ -177,7 +177,7 @@ TEST(Unit_EpochReclamationTest, ConcurrentRetireNoCrash)
 namespace
 {
     /// @brief Number of thread slots EpochManager holds; see README.md.
-    constexpr std::size_t K_EPOCH_SLOTS = SushiRuntime::Core::MAX_WORKER_THREADS + 32;
+    constexpr std::size_t K_EPOCH_SLOTS = SushiRuntime::MAX_WORKER_THREADS + 32;
 
     /** @brief Parks threads after they report, until the test lets them exit. */
     class ThreadPark
@@ -239,11 +239,11 @@ TEST(Unit_EpochReclamationTest, AThreadPastTheSlotLimitIsRefusedWithTheLimit)
             {
                 EpochGuard guard;
             }
-            catch (const SushiRuntime::Core::SushiException& refusal)
+            catch (const SushiRuntime::SushiException& refusal)
             {
                 const std::string message = refusal.what();
                 const bool as_specified =
-                    refusal.error().code == SushiRuntime::Core::Errc::unsupported &&
+                    refusal.error().code == SushiRuntime::Errc::unsupported &&
                     message.find(std::to_string(K_EPOCH_SLOTS) + " epoch slots") !=
                         std::string::npos;
                 (as_specified ? refused : refused_otherwise).fetch_add(1);

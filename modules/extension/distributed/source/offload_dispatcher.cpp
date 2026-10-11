@@ -165,14 +165,14 @@ namespace SushiRuntime
 
             /** @brief Decides a double-buffered node, whose handles are resolved per dispatch. */
             Placement place_dynamic(const BufferRegistry& registry,
-                                    const WorkerDirectory& directory, const Graph::Node& node,
-                                    Graph::OffloadState& state)
+                                    const WorkerDirectory& directory, const Internal::Graph::Node& node,
+                                    Internal::Graph::OffloadState& state)
             {
                 state.offloadable = false;
                 state.payload.reset();
                 state.attempts.store(0, std::memory_order_relaxed);
 
-                const Graph::OpID operation = node.metadata.op_id;
+                const Internal::Graph::OpID operation = node.metadata.op_id;
                 if (operation.value == 0)
                     return Placement::Untagged;
                 if (!directory.supports(operation))
@@ -194,9 +194,9 @@ namespace SushiRuntime
              * node that writes none keeps no payload, and gets no OffloadState for it.
              */
             Placement place_fixed(const BufferRegistry& registry, const WorkerDirectory& directory,
-                                  Graph::Node& node)
+                                  Internal::Graph::Node& node)
             {
-                const Graph::OpID operation = node.metadata.op_id;
+                const Internal::Graph::OpID operation = node.metadata.op_id;
                 const bool is_tagged = operation.value != 0;
                 const bool is_supported = is_tagged && directory.supports(operation);
 
@@ -205,7 +205,7 @@ namespace SushiRuntime
                 if (is_supported)
                 {
                     baked->handles.reserve(node.io_reads_.size() + node.io_writes_.size());
-                    for (const Memory::ResourceRegion& region : node.io_reads_)
+                    for (const Internal::Memory::ResourceRegion& region : node.io_reads_)
                     {
                         const std::optional<BufferHandle> handle = registry.lookup(region.base);
                         if (!handle.has_value())
@@ -221,7 +221,7 @@ namespace SushiRuntime
                     baked->handles.clear();
                 baked->input_count = baked->handles.size();
 
-                for (const Memory::ResourceRegion& region : node.io_writes_)
+                for (const Internal::Memory::ResourceRegion& region : node.io_writes_)
                 {
                     const std::optional<BufferHandle> handle = registry.lookup(region.base);
                     if (handle.has_value())
@@ -247,12 +247,12 @@ namespace SushiRuntime
 
                 if (is_offloadable || !baked->handles.empty())
                 {
-                    Graph::OffloadState& state = node.offload();
+                    Internal::Graph::OffloadState& state = node.offload();
                     state.payload = std::move(baked);
                     state.offloadable = is_offloadable;
                     state.attempts.store(0, std::memory_order_relaxed);
                 }
-                else if (Graph::OffloadState* state = node.offload_state())
+                else if (Internal::Graph::OffloadState* state = node.offload_state())
                 {
                     state->offloadable = false;
                     state->payload.reset();
@@ -277,7 +277,7 @@ namespace SushiRuntime
              *         is not shared any more.
              */
             std::optional<std::size_t> snapshot_handles(const BufferRegistry& registry,
-                                                        const Graph::OffloadState& state,
+                                                        const Internal::Graph::OffloadState& state,
                                                         DispatchScratch& scratch)
             {
                 if (state.live_reads || state.live_writes)
@@ -320,16 +320,16 @@ namespace SushiRuntime
 
         }
 
-        void OffloadDispatcher::prepare(SushiRuntime::span<const sushi_ptr<Graph::Node>> nodes)
+        void OffloadDispatcher::prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes)
         {
             LocalOnlyCount local;
-            for (const sushi_ptr<Graph::Node>& slot : nodes)
+            for (const sushi_ptr<Internal::Graph::Node>& slot : nodes)
             {
-                Graph::Node* node = slot.get();
+                Internal::Graph::Node* node = slot.get();
                 if (node == nullptr)
                     continue;
 
-                Graph::OffloadState* state = node->offload_state();
+                Internal::Graph::OffloadState* state = node->offload_state();
                 const bool is_dynamic =
                     state != nullptr && (state->live_reads || state->live_writes);
                 const Placement placement =
@@ -349,9 +349,9 @@ namespace SushiRuntime
                             local.written_twice, local.first_op);
         }
 
-        bool OffloadDispatcher::try_offload(Graph::Node& node)
+        bool OffloadDispatcher::try_offload(Internal::Graph::Node& node)
         {
-            Graph::OffloadState* state = node.offload_state();
+            Internal::Graph::OffloadState* state = node.offload_state();
             if (state == nullptr)
                 return decline();
 
@@ -431,9 +431,9 @@ namespace SushiRuntime
             return decline();
         }
 
-        void OffloadDispatcher::complete_local(Graph::Node& node) noexcept
+        void OffloadDispatcher::complete_local(Internal::Graph::Node& node) noexcept
         {
-            Graph::OffloadState* state = node.offload_state();
+            Internal::Graph::OffloadState* state = node.offload_state();
             if (state == nullptr)
                 return;
 
@@ -455,9 +455,9 @@ namespace SushiRuntime
                 registry_.bump(written);
         }
 
-        void OffloadDispatcher::complete_remote(Graph::Node& node) noexcept
+        void OffloadDispatcher::complete_remote(Internal::Graph::Node& node) noexcept
         {
-            if (Graph::OffloadState* state = node.offload_state())
+            if (Internal::Graph::OffloadState* state = node.offload_state())
                 state->attempts.store(0, std::memory_order_relaxed);
         }
 

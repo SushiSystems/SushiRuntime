@@ -33,7 +33,7 @@
 
 namespace SushiRuntime 
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         /**
          * @brief Resets the dependency tracker state.
@@ -50,7 +50,7 @@ namespace SushiRuntime
                 while (curr) 
                 {
                     AccessNode* prev = curr->prev;
-                    SushiRuntime::Memory::EpochManager::instance().retire(curr);
+                    SushiRuntime::Internal::Memory::EpochManager::instance().retire(curr);
                     curr = prev;
                 }
             }
@@ -62,9 +62,9 @@ namespace SushiRuntime
          * @param region The byte interval being accessed (whole buffer by default).
          * @param is_write True if the access is a write, false if it is a read.
          */
-        void DependencyTracker::resolve(Node* node, const SushiRuntime::Memory::ResourceRegion& region, bool is_write)
+        void DependencyTracker::resolve(Node* node, const SushiRuntime::Internal::Memory::ResourceRegion& region, bool is_write)
         {
-            SushiRuntime::Memory::EpochGuard guard;
+            SushiRuntime::Internal::Memory::EpochGuard guard;
 
             size_t idx = get_shard_idx(region.base);
             auto& state = registry[idx];

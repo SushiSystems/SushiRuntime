@@ -61,31 +61,31 @@ namespace
      * the salt into marks[t]; a word at or past the width keeps what it held.
      * @param marks Holds at least width.capacity() words; must outlive the graph.
      */
-    void record_marking_rule(API::Recorder& recorder, const API::Buffer<std::uint32_t>& marks,
+    void record_marking_rule(Recorder& recorder, const Buffer<std::uint32_t>& marks,
                              const LateCount& width, const LateCount& salt)
     {
         std::uint32_t* live =
             recorder.scratch<std::uint32_t>(2, marks.device_index(), marks.residency());
-        const Memory::ResourceRegion live_region{live, 0, 2 * sizeof(std::uint32_t)};
+        const Internal::Memory::ResourceRegion live_region{live, 0, 2 * sizeof(std::uint32_t)};
         std::uint32_t* words = marks.data();
 
         auto rule = recorder.rule();
         recorder.resolve(std::array<LateCount, 2>{width, salt}, marks.device_index(),
-                         API::Access(Reads(), Writes(live_region)),
+                         Access(Reads(), Writes(live_region)),
                          [live](const std::array<std::size_t, 2>& values)
                          {
                              live[0] = static_cast<std::uint32_t>(values[0]);
                              live[1] = static_cast<std::uint32_t>(values[1]);
                          },
-                         API::NodeOptions{std::size_t{1}});
-        recorder.kernel(API::DeviceSized{width.capacity(), live, live},
-                        API::Access(Reads(marks, live_region), Writes(marks)),
+                         NodeOptions{std::size_t{1}});
+        recorder.kernel(DeviceSized{width.capacity(), live, live},
+                        Access(Reads(marks, live_region), Writes(marks)),
                         [words](std::size_t t, std::size_t live_width, std::size_t live_salt)
                         {
                             words[t] = (words[t] ^ static_cast<std::uint32_t>(t + live_width)) *
                                        MIX + static_cast<std::uint32_t>(live_salt);
                         },
-                        API::NodeOptions{width.capacity()});
+                        NodeOptions{width.capacity()});
     }
 
     /** @brief Returns a LateCount whose live value is its capacity. */
@@ -95,7 +95,7 @@ namespace
     }
 
     /** @brief Returns a LateCount the kernels read from counter[0] on the device. */
-    LateCount device_count(const API::Buffer<std::uint32_t>& counter, std::size_t capacity)
+    LateCount device_count(const Buffer<std::uint32_t>& counter, std::size_t capacity)
     {
         return LateCount::from_device(capacity, counter);
     }
@@ -105,7 +105,7 @@ namespace
     {
         std::vector<std::uint32_t> digests;                           /**< One word per step. */
         /** @brief Layer the run took. */
-        Observability::ExecutionLayer layer = Observability::ExecutionLayer::Scheduler;
+        Internal::Observability::ExecutionLayer layer = Internal::Observability::ExecutionLayer::Scheduler;
     };
 
     /**
@@ -123,14 +123,14 @@ namespace
     /** @brief Hosts the step counter, the live count and the digest history of one graph. */
     struct Harness
     {
-        API::Buffer<std::uint32_t> counter;  /**< Residency::Host live count the producer writes. */
-        API::Buffer<std::uint32_t> step;     /**< Steps the producer has run. */
-        API::Buffer<std::uint32_t> schedule; /**< Live count per step, cycled. */
-        API::Buffer<std::uint32_t> history;  /**< One digest per step. */
+        Buffer<std::uint32_t> counter;  /**< Residency::Host live count the producer writes. */
+        Buffer<std::uint32_t> step;     /**< Steps the producer has run. */
+        Buffer<std::uint32_t> schedule; /**< Live count per step, cycled. */
+        Buffer<std::uint32_t> history;  /**< One digest per step. */
 
         /** @brief Allocates the shared buffers for a schedule over capacity. */
         Harness(Runtime& rt, std::size_t capacity)
-            : counter(rt.buffer<std::uint32_t>(1, API::DeviceIndex{0}, API::Residency::Host)),
+            : counter(rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host)),
               step(rt.buffer<std::uint32_t>(1)),
               schedule(rt.buffer<std::uint32_t>(schedule_for(capacity).size())),
               history(rt.buffer<std::uint32_t>(STEPS))
@@ -145,7 +145,7 @@ namespace
         }
 
         /** @brief Adds the kernel that advances the step and writes this step's live count. */
-        void add_producer(API::Graph& g)
+        void add_producer(Graph& g)
         {
             std::uint32_t* c = counter.data();
             std::uint32_t* st = step.data();
@@ -161,7 +161,7 @@ namespace
         }
 
         /** @brief Adds the kernel that folds the given words of source into this step's digest. */
-        void add_digest(API::Graph& g, const API::Buffer<std::uint32_t>& source, std::size_t words)
+        void add_digest(Graph& g, const Buffer<std::uint32_t>& source, std::size_t words)
         {
             const std::uint32_t* src = source.data();
             const std::uint32_t* st = step.data();
@@ -177,7 +177,7 @@ namespace
         }
 
         /** @brief Runs the graph for STEPS steps and copies the digests out. */
-        Recording record(API::Graph& g)
+        Recording record(Graph& g)
         {
             Recording r;
             const auto report = g.run(STEPS);
@@ -204,9 +204,9 @@ namespace
         const Recording chained = workload(chained_rt);
         const Recording scheduled = workload(scheduled_rt);
 
-        EXPECT_EQ(chained.layer, Observability::ExecutionLayer::Chain)
+        EXPECT_EQ(chained.layer, Internal::Observability::ExecutionLayer::Chain)
             << "a plan of device-sized launches and kernels must take the chain";
-        EXPECT_EQ(scheduled.layer, Observability::ExecutionLayer::Scheduler);
+        EXPECT_EQ(scheduled.layer, Internal::Observability::ExecutionLayer::Scheduler);
         ASSERT_EQ(chained.digests.size(), scheduled.digests.size());
         EXPECT_EQ(std::memcmp(chained.digests.data(), scheduled.digests.data(),
                               chained.digests.size() * sizeof(std::uint32_t)), 0);
@@ -268,24 +268,24 @@ TEST(Integration_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksT
     const LateCount count = LateCount::from_host(CAPACITY, []() { return LIVE; });
 
     auto g = rt.graph();
-    API::Recorder& recorder = g.recorder();
+    Recorder& recorder = g.recorder();
     std::uint32_t* word =
         recorder.scratch<std::uint32_t>(1, plain.device_index(), plain.residency());
-    const Memory::ResourceRegion word_region{word, 0, sizeof(std::uint32_t)};
+    const Internal::Memory::ResourceRegion word_region{word, 0, sizeof(std::uint32_t)};
     std::uint32_t* p = plain.data();
     std::uint32_t* w = worded.data();
 
     recorder.resolve(std::array<LateCount, 1>{count}, plain.device_index(),
-                     API::Access(Reads(), Writes(word_region)),
+                     Access(Reads(), Writes(word_region)),
                      [word](const std::array<std::size_t, 1>& live)
                      {
                          word[0] = static_cast<std::uint32_t>(live[0]);
                      });
-    recorder.kernel(API::DeviceSized{CAPACITY, nullptr, nullptr},
-                    API::Access(Reads(), Writes(plain)),
+    recorder.kernel(DeviceSized{CAPACITY, nullptr, nullptr},
+                    Access(Reads(), Writes(plain)),
                     [p](std::size_t t) { p[t] = static_cast<std::uint32_t>(t); });
-    recorder.kernel(API::DeviceSized{CAPACITY, nullptr, word},
-                    API::Access(Reads(word_region), Writes(worded)),
+    recorder.kernel(DeviceSized{CAPACITY, nullptr, word},
+                    Access(Reads(word_region), Writes(worded)),
                     [w](std::size_t t, std::size_t live)
                     {
                         w[t] = static_cast<std::uint32_t>(t + live);
@@ -311,8 +311,8 @@ TEST(Integration_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothingAndReleasesItsS
     std::uint32_t* d = done.data();
 
     auto g = rt.graph();
-    g.recorder().kernel(API::DeviceSized{0, nullptr, nullptr},
-                        API::Access(Reads(), Writes(target)),
+    g.recorder().kernel(DeviceSized{0, nullptr, nullptr},
+                        Access(Reads(), Writes(target)),
                         [t](std::size_t item) { t[item] = 0u; });
     g.add(std::size_t{1}, Reads(target), Writes(done), [t, d](std::size_t) { d[0] = t[0]; });
 
@@ -365,7 +365,7 @@ TEST(Integration_DeviceSizedLaunch, SizedFromDeviceChainMatchesSchedulerAsTheCou
 
         auto g = rt.graph();
         hx.add_producer(g);
-        g.add(API::sized_from_device(hx.counter), CAPACITY, Reads{}, Writes(acc),
+        g.add(sized_from_device(hx.counter), CAPACITY, Reads{}, Writes(acc),
               [a](std::size_t i) { a[i] = a[i] * 2654435761u + 12345u; });
         hx.add_digest(g, acc, CAPACITY);
         return hx.record(g);
@@ -378,7 +378,7 @@ TEST(Integration_DeviceSizedLaunch, DeviceCountOverCapacityFailsAChainedRun)
     constexpr std::size_t CAPACITY = 100;
 
     auto rt = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1, API::DeviceIndex{0}, API::Residency::Host);
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
     auto marks = rt.buffer<std::uint32_t>(CAPACITY);
     for (std::size_t i = 0; i < CAPACITY; ++i)
         marks[i] = 0;
@@ -396,5 +396,5 @@ TEST(Integration_DeviceSizedLaunch, DeviceCountOverCapacityFailsAChainedRun)
     record_marking_rule(valid.recorder(), marks, device_count(counter, CAPACITY), fixed_count(1));
     const auto report = valid.run(2);
     EXPECT_TRUE(report.is_successful);
-    EXPECT_EQ(report.layer, Observability::ExecutionLayer::Chain);
+    EXPECT_EQ(report.layer, Internal::Observability::ExecutionLayer::Chain);
 }

@@ -42,13 +42,13 @@ namespace
      * @brief Zeroes the buffer and records the one task every test here runs, which writes i+1 to
      *        element i.
      */
-    void record_write(API::Graph& g, API::Buffer<int>& buf)
+    void record_write(Graph& g, Buffer<int>& buf)
     {
         for (std::size_t i = 0; i < N; ++i)
             buf[i] = 0;
 
         int* p = buf.data();
-        g.add(N, API::Reads{}, API::Writes(buf),
+        g.add(N, Reads{}, Writes(buf),
               [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
     }
 }
@@ -61,9 +61,9 @@ TEST(Integration_RunReportReuse, ReuseReportsWhatTheValueFormReports)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    const Observability::RunReport allocated = g.run(std::size_t{3});
+    const Internal::Observability::RunReport allocated = g.run(std::size_t{3});
 
-    Observability::RunReport reused;
+    Internal::Observability::RunReport reused;
     g.run(std::size_t{3}, reused);
 
     EXPECT_TRUE(reused.is_successful);
@@ -84,7 +84,7 @@ TEST(Integration_RunReportReuse, SteadyStateRunsDoNotReallocateTheReport)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     g.run(report);
 
     ASSERT_FALSE(report.numa_statistics.empty());
@@ -111,7 +111,7 @@ TEST(Integration_RunReportReuse, EachRunOverwritesTheLastOne)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     g.run(std::size_t{5}, report);
     const std::size_t five_steps = report.total_tasks_executed;
     ASSERT_GT(five_steps, 0u);
@@ -130,7 +130,7 @@ TEST(Integration_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     g.run(report);
     ASSERT_TRUE(report.is_successful);
     ASSERT_GT(report.total_tasks_executed, 0u);
@@ -140,7 +140,7 @@ TEST(Integration_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
     auto rejected = empty.try_run(report);
 
     EXPECT_FALSE(rejected);
-    EXPECT_EQ(rejected.error().code, Core::Errc::invalid_graph);
+    EXPECT_EQ(rejected.error().code, Errc::invalid_graph);
     EXPECT_FALSE(report.is_successful);
     EXPECT_EQ(report.total_tasks_executed, 0u);
     EXPECT_TRUE(report.numa_statistics.empty());
@@ -154,7 +154,7 @@ TEST(Integration_RunReportReuse, TryRunReturnsTheCallersReport)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     auto result = g.try_run(report);
 
     ASSERT_TRUE(result);
@@ -170,7 +170,7 @@ TEST(Integration_RunReportReuse, AsyncWaitFillsTheCallersReport)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     for (int tick = 0; tick < 4; ++tick)
     {
         auto step = g.run_async();
@@ -195,10 +195,10 @@ TEST(Integration_RunReportReuse, DynamicGraphRunsIntoACallersReport)
     int* pa = a.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(N, API::Reads{}, API::Writes(a),
+    world.region(0).add(N, Reads{}, Writes(a),
                         [pa](std::size_t i) { pa[i] += 1; });
 
-    Observability::RunReport report;
+    Internal::Observability::RunReport report;
     world.run(report);
     ASSERT_FALSE(report.numa_statistics.empty());
     const void* rows_after_first = report.numa_statistics.data();

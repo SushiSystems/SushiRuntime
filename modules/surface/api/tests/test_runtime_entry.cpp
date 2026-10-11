@@ -69,12 +69,12 @@ TEST(Integration_RuntimeEntry, DevicesListsEveryDeviceInOrder)
 {
     const Runtime rt = Runtime::create();
     const AdvancedControls view = rt.advanced();
-    const std::vector<Device::DeviceInfo>& devices = view.devices();
+    const std::vector<Internal::Device::DeviceInfo>& devices = view.devices();
 
     ASSERT_EQ(devices.size(), view.device_count());
     ASSERT_FALSE(devices.empty());
 
-    Execution::RuntimeContext& context = rt.unsafe_context();
+    Internal::Execution::RuntimeContext& context = rt.unsafe_context();
     for (std::size_t index = 0; index < devices.size(); ++index)
     {
         const std::string reported = context.devices().queue(index).get_device()
@@ -124,7 +124,7 @@ TEST(Integration_RuntimeEntry, EveryFieldReachesTheRuntime)
 
     const Runtime rt = Runtime::create(config);
     const AdvancedControls view = rt.advanced();
-    const Execution::RuntimeSettings& settings = rt.unsafe_context().settings();
+    const Internal::Execution::RuntimeSettings& settings = rt.unsafe_context().settings();
 
     EXPECT_EQ(view.worker_pool().count, 1u);
     EXPECT_EQ(view.worker_pool().pinning, PinPolicy::Float);
@@ -140,7 +140,7 @@ TEST(Integration_RuntimeEntry, EveryFieldReachesTheRuntime)
 TEST(Integration_RuntimeEntry, AMovedRuntimeKeepsItsContext)
 {
     Runtime first = Runtime::create();
-    Execution::RuntimeContext* const context = &first.unsafe_context();
+    Internal::Execution::RuntimeContext* const context = &first.unsafe_context();
 
     const Runtime second = std::move(first);
 

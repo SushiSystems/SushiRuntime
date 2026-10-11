@@ -428,7 +428,7 @@ TEST(Unit_WireFormat, GoldenBytes_Proof)
 {
     ProofMessage message;
     message.worker_proof = counting_from(0x60);
-    message.ops = { Graph::OpID(0x11223344u), Graph::OpID(0xAABBCCDDu) };
+    message.ops = { Internal::Graph::OpID(0x11223344u), Internal::Graph::OpID(0xAABBCCDDu) };
     message.max_jobs = 1024;
     message.cache_budget = 0x0000000100000000ull;
 
@@ -492,8 +492,8 @@ TEST(Unit_WireFormat, GoldenBytes_TaskDispatch)
 {
     TaskDispatchMessage message;
     message.task_id = 42;
-    message.metadata.op_id = Graph::OpID(0xCAFEF00Du);
-    message.metadata.task_type = Graph::TaskType::MATH_OP;
+    message.metadata.op_id = Internal::Graph::OpID(0xCAFEF00Du);
+    message.metadata.task_type = Internal::Graph::TaskType::MATH_OP;
     message.metadata.priority = 7;
     message.metadata.numa_affinity = -1;
     message.metadata.params[0] = 0x4004000000000000ull;
@@ -506,7 +506,7 @@ TEST(Unit_WireFormat, GoldenBytes_TaskDispatch)
     const TaskDispatchMessage decoded = expect_golden(message, golden);
     EXPECT_EQ(decoded.task_id, 42u);
     EXPECT_EQ(decoded.metadata.op_id.value, 0xCAFEF00Du);
-    EXPECT_EQ(decoded.metadata.task_type, Graph::TaskType::MATH_OP);
+    EXPECT_EQ(decoded.metadata.task_type, Internal::Graph::TaskType::MATH_OP);
     EXPECT_EQ(decoded.metadata.priority, 7);
     EXPECT_EQ(decoded.metadata.numa_affinity, -1);
     EXPECT_EQ(decoded.metadata.params[0], 0x4004000000000000ull);

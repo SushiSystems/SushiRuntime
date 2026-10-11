@@ -32,7 +32,7 @@
 
 #include "numa_lookup.hpp"
 
-using namespace SushiRuntime::Topology;
+using namespace SushiRuntime::Internal::Topology;
 
 namespace
 {

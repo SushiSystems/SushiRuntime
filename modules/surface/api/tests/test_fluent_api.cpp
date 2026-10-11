@@ -403,7 +403,7 @@ TEST(Integration_FluentAPI, GraphSizeTracksAdds)
 TEST(Integration_FluentAPI, ContextAccessorIsConsistent)
 {
     auto rt = Runtime::create();
-    Execution::RuntimeContext& ctx = rt.unsafe_context();
+    Internal::Execution::RuntimeContext& ctx = rt.unsafe_context();
 
     // At least a CPU device is always present.
     EXPECT_GE(ctx.devices().count(), 1u);

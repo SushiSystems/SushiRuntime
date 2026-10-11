@@ -54,14 +54,14 @@ namespace
 
     /** @brief Expects the handle of a step its graph already ended to own nothing. */
     template <class G>
-    void expect_step_ended_by_its_graph(API::RunHandle<G>& step)
+    void expect_step_ended_by_its_graph(RunHandle<G>& step)
     {
         EXPECT_FALSE(step.pending()) << "the graph ended the step, so the handle owns none";
         EXPECT_TRUE(step.ready());
 
         const auto late = step.try_wait();
         ASSERT_FALSE(late.has_value());
-        EXPECT_EQ(late.error().code, Core::Errc::invalid_state);
+        EXPECT_EQ(late.error().code, Errc::invalid_state);
     }
 
     /** @brief Expects a run entry's Result to carry invalid_state. */
@@ -69,7 +69,7 @@ namespace
     void expect_refused_as_invalid_state(const Outcome& outcome)
     {
         ASSERT_FALSE(outcome.has_value());
-        EXPECT_EQ(outcome.error().code, Core::Errc::invalid_state);
+        EXPECT_EQ(outcome.error().code, Errc::invalid_state);
     }
 }
 
@@ -87,7 +87,7 @@ TEST(Integration_AsyncStep, SubmitReturnsBeforeTheStepFinishes)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(buf), [&released, &saw_release, p]()
+    g.add_host(Reads{}, Writes(buf), [&released, &saw_release, p]()
     {
         saw_release.store(wait_for_gate(released), std::memory_order_release);
         p[0] = 42;
@@ -98,7 +98,7 @@ TEST(Integration_AsyncStep, SubmitReturnsBeforeTheStepFinishes)
     // The caller is still running: this is the work a frame would overlap.
     released.store(true, std::memory_order_release);
 
-    const Observability::RunReport report = step.wait();
+    const Internal::Observability::RunReport report = step.wait();
 
     EXPECT_TRUE(saw_release.load())
         << "the step's task never observed the flag, so run_async() blocked";
@@ -170,7 +170,7 @@ TEST(Integration_AsyncStep, DestroyingAnUnwaitedHandleStillFinishesTheStep)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] += 1; });
+    g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] += 1; });
 
     {
         auto discarded = g.run_async();
@@ -194,7 +194,7 @@ TEST(Integration_AsyncStep, WaitingTwiceThrows)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add(std::size_t{4}, API::Reads{}, API::Writes(buf),
+    g.add(std::size_t{4}, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     auto step = g.run_async();
@@ -215,7 +215,7 @@ TEST(Integration_AsyncStep, ASecondRunIsRejectedWhileAStepIsInFlight)
     std::atomic<bool> released{false};
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(buf), [&released, p]()
+    g.add_host(Reads{}, Writes(buf), [&released, p]()
     {
         wait_for_gate(released);
         p[0] = 7;
@@ -245,7 +245,7 @@ TEST(Integration_AsyncStep, TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable)
 
     {
         auto bad = rt.graph();
-        bad.add_host(API::Reads{}, API::Writes(buf),
+        bad.add_host(Reads{}, Writes(buf),
                      []() { throw std::runtime_error("boom"); });
         auto step = bad.run_async();
         EXPECT_THROW(step.wait(), std::runtime_error);
@@ -257,7 +257,7 @@ TEST(Integration_AsyncStep, TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable)
     }
 
     auto good = rt.graph();
-    good.add(std::size_t{4}, API::Reads{}, API::Writes(buf),
+    good.add(std::size_t{4}, Reads{}, Writes(buf),
              [p](std::size_t i) { p[i] = 3; });
     good.run_async().wait();
     for (std::size_t i = 0; i < 4; ++i)
@@ -271,7 +271,7 @@ TEST(Integration_AsyncStep, TryWaitReportsFailureAsAValue)
     auto buf = rt.buffer<int>(4);
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(buf),
+    g.add_host(Reads{}, Writes(buf),
                []() { throw std::runtime_error("boom"); });
 
     auto step = g.run_async();
@@ -290,7 +290,7 @@ TEST(Integration_AsyncStep, ReadyTracksTheStep)
     std::atomic<bool> released{false};
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(buf), [&released, p]()
+    g.add_host(Reads{}, Writes(buf), [&released, p]()
     {
         wait_for_gate(released);
         p[0] = 1;
@@ -323,8 +323,8 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
     int* pb = b.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(N, API::Reads{}, API::Writes(a), [pa](std::size_t i) { pa[i] += 1; });
-    world.region(1).add(N, API::Reads{}, API::Writes(b), [pb](std::size_t i) { pb[i] += 2; });
+    world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
+    world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 2; });
 
     world.run_async().wait();
     for (std::size_t i = 0; i < N; ++i)
@@ -337,7 +337,7 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
     auto c = rt.buffer<int>(N);
     for (std::size_t i = 0; i < N; ++i) c[i] = 0;
     int* pc = c.data();
-    world.region(2).add(N, API::Reads{}, API::Writes(c), [pc](std::size_t i) { pc[i] += 5; });
+    world.region(2).add(N, Reads{}, Writes(c), [pc](std::size_t i) { pc[i] += 5; });
 
     world.run_async().wait();
     for (std::size_t i = 0; i < N; ++i)
@@ -359,13 +359,13 @@ TEST(Integration_AsyncStep, AnotherGraphIsRefusedWhileAStepIsPending)
     std::atomic<bool> released{false};
 
     auto g1 = rt.graph();
-    g1.add_host(API::Reads{}, API::Writes(first), [&released, pf]()
+    g1.add_host(Reads{}, Writes(first), [&released, pf]()
     {
         wait_for_gate(released);
         pf[0] = 7;
     });
     auto g2 = rt.graph();
-    g2.add_host(API::Reads{}, API::Writes(other), [po]() { po[0] += 1; });
+    g2.add_host(Reads{}, Writes(other), [po]() { po[0] += 1; });
 
     auto step = g1.run_async();
 
@@ -376,14 +376,14 @@ TEST(Integration_AsyncStep, AnotherGraphIsRefusedWhileAStepIsPending)
     }
     catch (const SushiException& refusal)
     {
-        EXPECT_EQ(refusal.error().code, Core::Errc::invalid_state);
+        EXPECT_EQ(refusal.error().code, Errc::invalid_state);
     }
     ASSERT_NO_FATAL_FAILURE(expect_refused_as_invalid_state(g2.try_run()));
     ASSERT_NO_FATAL_FAILURE(expect_refused_as_invalid_state(g2.try_run_async()));
     EXPECT_EQ(other[0], 0) << "a refused run ran its task";
 
     released.store(true, std::memory_order_release);
-    const Observability::RunReport report = step.wait();
+    const Internal::Observability::RunReport report = step.wait();
     EXPECT_TRUE(report.is_successful);
     EXPECT_EQ(first[0], 7);
 
@@ -403,13 +403,13 @@ TEST(Integration_AsyncStep, CancelReachesOnlyTheGraphItIsCalledOn)
     std::atomic<bool> released{false};
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(buf), [&released, p]()
+    g.add_host(Reads{}, Writes(buf), [&released, p]()
     {
         wait_for_gate(released);
         p[0] = 1;
     });
     auto idle = rt.graph();
-    idle.add_host(API::Reads{}, API::Writes(idle_buf), [pi]() { pi[0] = 1; });
+    idle.add_host(Reads{}, Writes(idle_buf), [pi]() { pi[0] = 1; });
 
     auto spared = g.run_async();
     idle.cancel();
@@ -435,11 +435,11 @@ TEST(Integration_AsyncStep, AGraphDestroyedWithAPendingStepEndsTheStep)
     int* p = buf.data();
 
     std::atomic<bool> released{false};
-    API::RunHandle<API::Graph> step;
+    RunHandle<Graph> step;
 
     {
         auto g = rt.graph();
-        g.add_host(API::Reads{}, API::Writes(buf), [&released, p]()
+        g.add_host(Reads{}, Writes(buf), [&released, p]()
         {
             wait_for_gate(released);
             p[0] = 9;
@@ -453,7 +453,7 @@ TEST(Integration_AsyncStep, AGraphDestroyedWithAPendingStepEndsTheStep)
     ASSERT_NO_FATAL_FAILURE(expect_step_ended_by_its_graph(step));
 
     auto next = rt.graph();
-    next.add_host(API::Reads{}, API::Writes(buf), [p]() { p[0] += 1; });
+    next.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
     EXPECT_TRUE(next.try_run().has_value()) << "the destroyed graph left the runtime busy";
     EXPECT_EQ(buf[0], 10);
 }
@@ -467,11 +467,11 @@ TEST(Integration_AsyncStep, ADynamicGraphDestroyedWithAPendingStepEndsTheStep)
     int* p = buf.data();
 
     std::atomic<bool> released{false};
-    API::RunHandle<API::DynamicGraph> step;
+    RunHandle<DynamicGraph> step;
 
     {
         auto world = rt.dynamic_graph();
-        world.region(0).add_host(API::Reads{}, API::Writes(buf), [&released, p]()
+        world.region(0).add_host(Reads{}, Writes(buf), [&released, p]()
         {
             wait_for_gate(released);
             p[0] = 9;
@@ -499,12 +499,12 @@ TEST(Integration_AsyncStep, ARegionDroppedWhileAStepIsPendingFinishesTheStep)
     std::atomic<bool> released{false};
 
     auto world = rt.dynamic_graph();
-    world.region(0).add_host(API::Reads{}, API::Writes(kept), [&released, pk]()
+    world.region(0).add_host(Reads{}, Writes(kept), [&released, pk]()
     {
         wait_for_gate(released);
         pk[0] += 1;
     });
-    world.region(1).add_host(API::Reads{}, API::Writes(gone), [&released, pg]()
+    world.region(1).add_host(Reads{}, Writes(gone), [&released, pg]()
     {
         wait_for_gate(released);
         pg[0] += 1;
@@ -522,7 +522,7 @@ TEST(Integration_AsyncStep, ARegionDroppedWhileAStepIsPendingFinishesTheStep)
     EXPECT_EQ(kept[0], 1);
     EXPECT_EQ(gone[0], 1) << "the dropped region's task did not finish its write";
 
-    const Observability::RunReport next = world.run();
+    const Internal::Observability::RunReport next = world.run();
     EXPECT_TRUE(next.is_successful);
     EXPECT_EQ(kept[0], 2);
     EXPECT_EQ(gone[0], 1) << "the dropped region ran again";
@@ -543,7 +543,7 @@ TEST(Integration_AsyncStep, ARegionDroppedAndRecordedAgainWhileAStepIsPendingRun
     std::atomic<bool> released{false};
 
     auto world = rt.dynamic_graph();
-    world.region(7).add_host(API::Reads{}, API::Writes(old), [&released, po]()
+    world.region(7).add_host(Reads{}, Writes(old), [&released, po]()
     {
         wait_for_gate(released);
         po[0] += 1;
@@ -551,7 +551,7 @@ TEST(Integration_AsyncStep, ARegionDroppedAndRecordedAgainWhileAStepIsPendingRun
 
     auto step = world.run_async();
     world.drop(7);
-    world.region(7).add_host(API::Reads{}, API::Writes(fresh), [pf]() { pf[0] += 1; });
+    world.region(7).add_host(Reads{}, Writes(fresh), [pf]() { pf[0] += 1; });
 
     released.store(true, std::memory_order_release);
     EXPECT_TRUE(step.try_wait().has_value());

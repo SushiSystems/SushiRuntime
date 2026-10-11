@@ -53,7 +53,7 @@ TEST(Integration_DeviceResident, BufferRoundTrip)
 
     int* p = buf.data();
     auto g = rt.graph();
-    g.add(N, API::Reads(buf), API::Writes(buf), [p](std::size_t i) { p[i] *= 2; });
+    g.add(N, Reads(buf), Writes(buf), [p](std::size_t i) { p[i] *= 2; });
     g.run();
 
     const std::vector<int> out = buf.read_range({0, N});
@@ -154,8 +154,8 @@ TEST(Integration_DeviceResident, HostAccessOnDeviceThrows)
     auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device);
     ASSERT_FALSE(buf.is_host_accessible());
 
-    EXPECT_THROW((void)buf[0], Core::SushiException);
-    EXPECT_THROW((void)buf.host(), Core::SushiException);
+    EXPECT_THROW((void)buf[0], SushiException);
+    EXPECT_THROW((void)buf.host(), SushiException);
 }
 
 /**
@@ -177,7 +177,7 @@ TEST(Integration_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
 
     int* p = buf.data();
     auto g = rt.graph();
-    g.add(N, API::Reads(buf), API::Writes(buf), [p](std::size_t i) { p[i] += 1000; });
+    g.add(N, Reads(buf), Writes(buf), [p](std::size_t i) { p[i] += 1000; });
     g.run();
 
     for (std::size_t i = 0; i < N; ++i)

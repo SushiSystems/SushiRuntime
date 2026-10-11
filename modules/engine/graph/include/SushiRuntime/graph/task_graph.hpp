@@ -44,7 +44,7 @@
 
 namespace SushiRuntime 
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         struct Node;
         class OffloadCoordinator;
@@ -81,7 +81,7 @@ namespace SushiRuntime
                  * @brief Adds a device task whose work receives a sycl::handler.
                  * @param registration Index to stamp on this node; none draws a fresh one.
                  * @pre registration, when given, is an index reserve_registration() returned here.
-                 * @throws Core::SushiException With Errc::invalid_graph for any other index.
+                 * @throws SushiException With Errc::invalid_graph for any other index.
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
@@ -95,8 +95,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_node(TaskWork work,
-                               const std::vector<Memory::ResourceRegion>& read_access,
-                               const std::vector<Memory::ResourceRegion>& write_access,
+                               const std::vector<Internal::Memory::ResourceRegion>& read_access,
+                               const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                const std::vector<sycl::event>& dependencies = {},
                                std::optional<std::uint32_t> registration = std::nullopt);
 
@@ -108,8 +108,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_node(TaskWork work,
-                               const std::vector<Memory::ResourceRegion>& read_access,
-                               const std::vector<Memory::ResourceRegion>& write_access,
+                               const std::vector<Internal::Memory::ResourceRegion>& read_access,
+                               const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                std::shared_ptr<LateBindings> bindings,
                                const std::vector<sycl::event>& dependencies = {},
                                std::optional<std::uint32_t> registration = std::nullopt);
@@ -142,8 +142,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_task(const TaskMetadata& meta,
-                               const std::vector<Memory::ResourceRegion>& read_access,
-                               const std::vector<Memory::ResourceRegion>& write_access,
+                               const std::vector<Internal::Memory::ResourceRegion>& read_access,
+                               const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                TaskWork device_work,
                                HostWork fallback_work,
                                const std::vector<sycl::event>& dependencies = {},
@@ -156,8 +156,8 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 Node& add_task(const TaskMetadata& meta,
-                               const std::vector<Memory::ResourceRegion>& read_access,
-                               const std::vector<Memory::ResourceRegion>& write_access,
+                               const std::vector<Internal::Memory::ResourceRegion>& read_access,
+                               const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                HostWork fallback_work,
                                const std::vector<sycl::event>& dependencies = {},
                                std::optional<std::uint32_t> registration = std::nullopt);
@@ -184,8 +184,8 @@ namespace SushiRuntime
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                Node& add_native(const std::vector<Memory::ResourceRegion>& read_access,
-                                 const std::vector<Memory::ResourceRegion>& write_access,
+                Node& add_native(const std::vector<Internal::Memory::ResourceRegion>& read_access,
+                                 const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                  std::function<void()> work,
                                  const std::vector<sycl::event>& dependencies = {},
                                  std::optional<std::uint32_t> registration = std::nullopt);
@@ -194,7 +194,7 @@ namespace SushiRuntime
                  * @brief Resolves data dependencies and produces a CompiledGraph ready to execute.
                  * @pre Every node is inserted first; not thread-safe against add_node() or
                  *        add_task().
-                 * @throws Core::SushiException With Errc::invalid_graph, naming one node that
+                 * @throws SushiException With Errc::invalid_graph, naming one node that
                  *         cannot run, when the graph has no root or holds a cycle.
                  * @see modules/engine/graph/README.md
                  */
@@ -205,7 +205,7 @@ namespace SushiRuntime
                  * @return The region's nodes, in insertion order; empty if none.
                  * @see modules/engine/graph/README.md
                  */
-                std::vector<sushi_ptr<SushiRuntime::Graph::Node>> take_nodes();
+                std::vector<sushi_ptr<SushiRuntime::Internal::Graph::Node>> take_nodes();
 
             private:
                 struct Impl;

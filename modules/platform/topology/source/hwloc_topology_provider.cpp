@@ -38,7 +38,7 @@
 
 namespace SushiRuntime
 {
-    namespace Topology
+    namespace Internal::Topology
     {
         /** 
          * @brief Default provider: real SYCL discovery + hwloc NUMA mapping. 

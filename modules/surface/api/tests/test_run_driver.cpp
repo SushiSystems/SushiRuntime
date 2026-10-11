@@ -58,14 +58,14 @@ namespace
 
     /**
      * @brief Lists the run entries a graph type must expose, with their types and noexcept.
-     * @tparam G API::Graph or API::DynamicGraph; instantiating the list checks it.
+     * @tparam G Graph or DynamicGraph; instantiating the list checks it.
      */
     template <class G>
     struct RunEntries
     {
-        using Report = Observability::RunReport;
-        using Owned = Core::Result<Report, Core::Error>;
-        using Lent = Core::Result<Report*, Core::Error>;
+        using Report = Internal::Observability::RunReport;
+        using Owned = Result<Report, Error>;
+        using Lent = Result<Report*, Error>;
         using Budget = std::chrono::milliseconds;
         using Stop = bool (*)();
 
@@ -107,9 +107,9 @@ namespace
                       noexcept(g().try_run_until(Stop{}, r())),
                       "every try_ entry is noexcept");
 
-        static_assert(std::is_same_v<decltype(g().run_async()), API::RunHandle<G>>, "run_async");
+        static_assert(std::is_same_v<decltype(g().run_async()), RunHandle<G>>, "run_async");
         static_assert(std::is_same_v<decltype(g().try_run_async()),
-                                     Core::Result<API::RunHandle<G>, Core::Error>>,
+                                     Result<RunHandle<G>, Error>>,
                       "try_run_async");
         static_assert(noexcept(g().try_run_async()), "try_run_async is noexcept");
         static_assert(std::is_void_v<decltype(g().cancel())> && noexcept(g().cancel()),
@@ -122,8 +122,8 @@ namespace
                       "is_profiling_requested");
     };
 
-    template struct RunEntries<API::Graph>;
-    template struct RunEntries<API::DynamicGraph>;
+    template struct RunEntries<Graph>;
+    template struct RunEntries<DynamicGraph>;
 
     /** @brief Blocks until the flag is set or the deadline passes and returns which happened. */
     bool wait_for_gate(const std::atomic<bool>& released)
@@ -143,17 +143,17 @@ namespace
 
     /** @brief Returns the code of the SushiException call throws, or ok when it returns. */
     template <class Call>
-    Core::Errc code_thrown_by(Call&& call)
+    Errc code_thrown_by(Call&& call)
     {
         try
         {
             call();
         }
-        catch (const Core::SushiException& e)
+        catch (const SushiException& e)
         {
             return e.error().code;
         }
-        return Core::Errc::ok;
+        return Errc::ok;
     }
 
     /** @brief Expects kernel_failed from every way of running a graph whose task throws. */
@@ -162,32 +162,32 @@ namespace
     {
         const auto run = graph.try_run();
         ASSERT_FALSE(run.has_value());
-        EXPECT_EQ(run.error().code, Core::Errc::kernel_failed);
+        EXPECT_EQ(run.error().code, Errc::kernel_failed);
         EXPECT_NE(run.error().message.find(K_TASK_FAILURE), std::string::npos);
 
-        Observability::RunReport report;
+        Internal::Observability::RunReport report;
         const auto reused = graph.try_run(report);
         ASSERT_FALSE(reused.has_value());
-        EXPECT_EQ(reused.error().code, Core::Errc::kernel_failed);
+        EXPECT_EQ(reused.error().code, Errc::kernel_failed);
         EXPECT_FALSE(report.is_successful);
 
         auto step = graph.try_run_async();
         ASSERT_TRUE(step.has_value()) << step.error().message;
         const auto waited = step->try_wait();
         ASSERT_FALSE(waited.has_value());
-        EXPECT_EQ(waited.error().code, Core::Errc::kernel_failed);
+        EXPECT_EQ(waited.error().code, Errc::kernel_failed);
         EXPECT_NE(waited.error().message.find(K_TASK_FAILURE), std::string::npos);
 
-        EXPECT_EQ(code_thrown_by([&graph]() { graph.run(); }), Core::Errc::kernel_failed);
+        EXPECT_EQ(code_thrown_by([&graph]() { graph.run(); }), Errc::kernel_failed);
         EXPECT_EQ(code_thrown_by([&graph]() { graph.run_async().wait(); }),
-                  Core::Errc::kernel_failed);
+                  Errc::kernel_failed);
     }
 
     /** @brief Calls each try_ entry once and expects success; twelve steps run in all. */
     template <class G>
     void expect_every_try_entry_runs(G& graph)
     {
-        Observability::RunReport report;
+        Internal::Observability::RunReport report;
         int calls = 0;
         const auto after_two_steps = [&calls]() { return ++calls > 2; };
 
@@ -205,7 +205,7 @@ namespace
     }
 
     /** @brief Offloads nothing and reports a count the test moves. */
-    class CountingCoordinator final : public Graph::OffloadCoordinator
+    class CountingCoordinator final : public Internal::Graph::OffloadCoordinator
     {
         public:
             /** @brief Adds to the count statistics() reports as offloaded. */
@@ -214,22 +214,22 @@ namespace
                 offloaded_.fetch_add(dispatches, std::memory_order_relaxed);
             }
 
-            void bind(Graph::OffloadSink&) override
+            void bind(Internal::Graph::OffloadSink&) override
             {
 
             }
 
-            void prepare(span<const sushi_ptr<Graph::Node>>) override
+            void prepare(span<const sushi_ptr<Internal::Graph::Node>>) override
             {
 
             }
 
-            [[nodiscard]] bool try_offload(Graph::Node&) override
+            [[nodiscard]] bool try_offload(Internal::Graph::Node&) override
             {
                 return false;
             }
 
-            void on_local_completion(Graph::Node&) noexcept override
+            void on_local_completion(Internal::Graph::Node&) noexcept override
             {
 
             }
@@ -239,9 +239,9 @@ namespace
 
             }
 
-            [[nodiscard]] Graph::OffloadStatistics statistics() const noexcept override
+            [[nodiscard]] Internal::Graph::OffloadStatistics statistics() const noexcept override
             {
-                Graph::OffloadStatistics now;
+                Internal::Graph::OffloadStatistics now;
                 now.offloaded = offloaded_.load(std::memory_order_relaxed);
                 now.alive_workers = 1;
                 return now;
@@ -271,7 +271,7 @@ namespace
         /** @brief Records the step on @p rt; a kernel writes @p count before the sized launch. */
         CountedStep(Runtime& rt, std::uint32_t count)
             : field(rt.state<int>(N)),
-              counter(rt.buffer<std::uint32_t>(1, API::DeviceIndex{0}, API::Residency::Host)),
+              counter(rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host)),
               marks(rt.buffer<std::uint32_t>(K_COUNT_CAPACITY)),
               graph(rt.graph())
         {
@@ -282,16 +282,16 @@ namespace
 
             graph.add(field,
                       [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
-            graph.add(std::size_t{1}, API::Reads{}, API::Writes(counter),
+            graph.add(std::size_t{1}, Reads{}, Writes(counter),
                       [c, count](std::size_t) { c[0] = count; });
-            graph.add(API::sized_from_device(counter), K_COUNT_CAPACITY, API::Reads{},
-                      API::Writes(marks), [m](std::size_t i) { m[i] = 1u; });
+            graph.add(sized_from_device(counter), K_COUNT_CAPACITY, Reads{},
+                      Writes(marks), [m](std::size_t i) { m[i] = 1u; });
         }
 
-        API::State<int> field;              /**< Incremented once per step. */
-        API::Buffer<std::uint32_t> counter; /**< The device count of the sized launch. */
-        API::Buffer<std::uint32_t> marks;   /**< Written by the sized launch. */
-        API::Graph graph;                   /**< The recorded step. */
+        State<int> field;              /**< Incremented once per step. */
+        Buffer<std::uint32_t> counter; /**< The device count of the sized launch. */
+        Buffer<std::uint32_t> marks;   /**< Written by the sized launch. */
+        Graph graph;                   /**< The recorded step. */
     };
 
     /** @brief Returns whether a counted step with a count inside its capacity takes the chain. */
@@ -299,7 +299,7 @@ namespace
     {
         CountedStep clean(rt, 1u);
         const auto report = clean.graph.try_run();
-        return report.has_value() && report->layer == Observability::ExecutionLayer::Chain;
+        return report.has_value() && report->layer == Internal::Observability::ExecutionLayer::Chain;
     }
 
     /**
@@ -317,8 +317,8 @@ namespace
         std::atomic<int> steps{0};
 
         auto g = rt.graph();
-        API::Graph* const self = &g;
-        g.add_host(API::Reads{}, API::Writes(buf), [&steps, self]()
+        Graph* const self = &g;
+        g.add_host(Reads{}, Writes(buf), [&steps, self]()
         {
             const int step = steps.fetch_add(1, std::memory_order_relaxed) + 1;
             if (step == STEPS_BEFORE_CANCEL)
@@ -343,7 +343,7 @@ TEST(Integration_RunDriver, GraphReportsAThrowingHostTaskAsKernelFailed)
     auto buf = rt.buffer<int>(N);
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(buf), fail_the_task);
+    g.add_host(Reads{}, Writes(buf), fail_the_task);
 
     expect_kernel_failed_everywhere(g);
 }
@@ -355,7 +355,7 @@ TEST(Integration_RunDriver, DynamicGraphReportsAThrowingHostTaskAsKernelFailed)
     auto buf = rt.buffer<int>(N);
 
     auto world = rt.dynamic_graph();
-    world.region(0).add_host(API::Reads{}, API::Writes(buf), fail_the_task);
+    world.region(0).add_host(Reads{}, Writes(buf), fail_the_task);
 
     expect_kernel_failed_everywhere(world);
 }
@@ -368,17 +368,17 @@ TEST(Integration_RunDriver, AThrowingBuildIsCompileFailed)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(buf), [p]() { p[0] = 1; });
-    g.add_emitter([](Graph::TaskGraph&) { throw std::runtime_error(K_BUILD_FAILURE); });
+    g.add_host(Reads{}, Writes(buf), [p]() { p[0] = 1; });
+    g.add_emitter([](Internal::Graph::TaskGraph&) { throw std::runtime_error(K_BUILD_FAILURE); });
 
     const auto run = g.try_run();
     ASSERT_FALSE(run.has_value());
-    EXPECT_EQ(run.error().code, Core::Errc::compile_failed);
+    EXPECT_EQ(run.error().code, Errc::compile_failed);
     EXPECT_NE(run.error().message.find(K_BUILD_FAILURE), std::string::npos);
 
     const auto step = g.try_run_async();
     ASSERT_FALSE(step.has_value());
-    EXPECT_EQ(step.error().code, Core::Errc::compile_failed);
+    EXPECT_EQ(step.error().code, Errc::compile_failed);
 }
 
 /** @brief Tests that both graph types run through every try_ entry. */
@@ -395,12 +395,12 @@ TEST(Integration_RunDriver, EveryTryEntryRunsOnBothGraphs)
     int* pd = dynamic_count.data();
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(static_count), [ps]() { ps[0] += 1; });
+    g.add_host(Reads{}, Writes(static_count), [ps]() { ps[0] += 1; });
     expect_every_try_entry_runs(g);
     EXPECT_EQ(static_count[0], STEPS_OF_ALL_ENTRIES);
 
     auto world = rt.dynamic_graph();
-    world.region(0).add_host(API::Reads{}, API::Writes(dynamic_count), [pd]() { pd[0] += 1; });
+    world.region(0).add_host(Reads{}, Writes(dynamic_count), [pd]() { pd[0] += 1; });
     expect_every_try_entry_runs(world);
     EXPECT_EQ(dynamic_count[0], STEPS_OF_ALL_ENTRIES);
 }
@@ -414,7 +414,7 @@ TEST(Integration_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
     std::atomic<bool> released{false};
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(buf), [&released, p]()
+    g.add_host(Reads{}, Writes(buf), [&released, p]()
     {
         wait_for_gate(released);
         p[0] = 7;
@@ -424,11 +424,11 @@ TEST(Integration_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 
     const auto refused = g.try_run();
     ASSERT_FALSE(refused.has_value());
-    EXPECT_EQ(refused.error().code, Core::Errc::invalid_state);
+    EXPECT_EQ(refused.error().code, Errc::invalid_state);
 
     const auto second = g.try_run_async();
     ASSERT_FALSE(second.has_value());
-    EXPECT_EQ(second.error().code, Core::Errc::invalid_state);
+    EXPECT_EQ(second.error().code, Errc::invalid_state);
 
     released.store(true, std::memory_order_release);
     EXPECT_TRUE(step.try_wait().has_value());
@@ -436,7 +436,7 @@ TEST(Integration_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 
     const auto twice = step.try_wait();
     ASSERT_FALSE(twice.has_value());
-    EXPECT_EQ(twice.error().code, Core::Errc::invalid_state);
+    EXPECT_EQ(twice.error().code, Errc::invalid_state);
 }
 
 /** @brief Tests that set_profiling() chains and is read back on both graph types. */
@@ -463,7 +463,7 @@ TEST(Integration_RunDriver, SettingTheSameProfilingValueRebuildsNothing)
     int* p = buf.data();
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(buf), [p]() { p[0] += 1; });
+    g.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
     g.set_profiling(true).run();
     EXPECT_EQ(g.compile_count(), 1u);
     g.set_profiling(true).run();
@@ -472,7 +472,7 @@ TEST(Integration_RunDriver, SettingTheSameProfilingValueRebuildsNothing)
     EXPECT_EQ(g.compile_count(), 2u) << "a changed request must rebuild the plan";
 
     auto world = rt.dynamic_graph();
-    world.region(0).add_host(API::Reads{}, API::Writes(buf), [p]() { p[0] += 1; });
+    world.region(0).add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
     world.set_profiling(true).run();
     EXPECT_EQ(world.compose_count(), 1u);
     world.set_profiling(true).run();
@@ -490,7 +490,7 @@ TEST(Integration_RunDriver, AProfilingToggleOnADynamicGraphComposesOnceAndTimesI
     int* p = buf.data();
 
     auto world = rt.dynamic_graph();
-    world.region(0).add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] += 1; });
+    world.region(0).add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] += 1; });
 
     EXPECT_TRUE(world.run().node_timings.empty()) << "a graph that requested nothing was timed";
     EXPECT_EQ(world.compose_count(), 1u);
@@ -520,7 +520,7 @@ TEST(Integration_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
     std::atomic<bool> released{false};
 
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(buf), [&released, p]()
+    g.add_host(Reads{}, Writes(buf), [&released, p]()
     {
         wait_for_gate(released);
         p[0] += 7;
@@ -529,14 +529,14 @@ TEST(Integration_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
     auto step = g.run_async();
     released.store(true, std::memory_order_release);
 
-    API::Graph moved = std::move(g);
+    Graph moved = std::move(g);
     EXPECT_EQ(buf[0], 7) << "the move waits for the pending step";
     EXPECT_FALSE(step.pending()) << "the move ended the step the handle was given";
     EXPECT_TRUE(step.ready());
 
     const auto late = step.try_wait();
     ASSERT_FALSE(late.has_value());
-    EXPECT_EQ(late.error().code, Core::Errc::invalid_state);
+    EXPECT_EQ(late.error().code, Errc::invalid_state);
 
     EXPECT_TRUE(moved.try_run().has_value()) << "the destination must run";
     EXPECT_EQ(buf[0], 14);
@@ -558,16 +558,16 @@ TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
 
     CountingCoordinator* counter = coordinator.get();
     auto g = rt.graph();
-    g.add_host(API::Reads{}, API::Writes(buf), [counter]() { counter->accept(PER_STEP); });
+    g.add_host(Reads{}, Writes(buf), [counter]() { counter->accept(PER_STEP); });
 
-    const Observability::RunReport first = g.run();
+    const Internal::Observability::RunReport first = g.run();
     EXPECT_EQ(first.distributed_statistics.tasks_offloaded_to_network, PER_STEP);
     EXPECT_EQ(first.distributed_statistics.remote_nodes_involved, 1u);
 
-    const Observability::RunReport second = g.run(std::size_t{2});
+    const Internal::Observability::RunReport second = g.run(std::size_t{2});
     EXPECT_EQ(second.distributed_statistics.tasks_offloaded_to_network, 2 * PER_STEP);
 
-    const Observability::RunReport third = g.run_async().wait();
+    const Internal::Observability::RunReport third = g.run_async().wait();
     EXPECT_EQ(third.distributed_statistics.tasks_offloaded_to_network, PER_STEP);
 }
 

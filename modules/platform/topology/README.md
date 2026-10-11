@@ -68,7 +68,7 @@ MatrixDistanceModel model{{{10, 21},
 A TopologyView holds two things: the core-to-NUMA map, copied from the provider in the constructor,
 and a shared pointer to the distance model. It does not keep the provider, so the map is the one the
 provider reported at construction and later changes in the provider do not reach it. The constructor
-throws `Core::SushiException` with `Errc::invalid_access` for a null distance model.
+throws `SushiException` with `Errc::invalid_access` for a null distance model.
 
 RuntimeContext builds the view from the provider and the distance model it was given, or from the
 hwloc defaults. The scheduler reads it once, when it builds the steal victim order of each worker:

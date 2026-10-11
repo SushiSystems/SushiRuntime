@@ -58,7 +58,7 @@ the vector without a sleep or a lock: all three records are there, in the order 
 
 ### `ThrowIfThrowsSushiExceptionWithInvalidState`
 
-`SR_THROW_IF` throws `Core::SushiException` with `Errc::invalid_state`, `what()` is the formatted
+`SR_THROW_IF` throws `SushiException` with `Errc::invalid_state`, `what()` is the formatted
 message, and the message is logged once at `Error`. A handler for `std::runtime_error` still
 catches it. On a false condition the format arguments are not evaluated.
 

@@ -35,7 +35,7 @@
 
 namespace SushiRuntime
 {
-    namespace Device
+    namespace Internal::Device
     {
         /**
          * @brief Names the class of a compute device.

@@ -21,7 +21,7 @@
 
 /**
  * @file test_strong_id.cpp
- * @brief Tests Core::StrongID: defaults, construction, comparison, hashing and its type traits.
+ * @brief Tests StrongID: defaults, construction, comparison, hashing and its type traits.
  * @see modules/foundation/core/tests/README.md
  * @author Mustafa Garip
  */
@@ -35,7 +35,7 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/strong_id.hpp>
 
-using SushiRuntime::Core::StrongID;
+using SushiRuntime::StrongID;
 
 namespace
 {

@@ -36,7 +36,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph { struct Node; }
+    namespace Internal::Graph { struct Node; }
 
     namespace Distributed
     {
@@ -73,7 +73,7 @@ namespace SushiRuntime
                  * @return The worker_id of one entry of @p workers, or nothing to run locally.
                  */
                 virtual std::optional<int> pick_worker(
-                    const Graph::Node& node, SushiRuntime::span<const WorkerStats> workers,
+                    const Internal::Graph::Node& node, SushiRuntime::span<const WorkerStats> workers,
                     std::uint64_t est_bytes) = 0;
         };
 
@@ -97,7 +97,7 @@ namespace SushiRuntime
                 }
 
                 /** @brief Picks the live worker with the lowest estimate, or none. */
-                std::optional<int> pick_worker(const Graph::Node& node,
+                std::optional<int> pick_worker(const Internal::Graph::Node& node,
                                                SushiRuntime::span<const WorkerStats> workers,
                                                std::uint64_t est_bytes) override;
 

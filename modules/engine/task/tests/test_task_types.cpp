@@ -33,9 +33,9 @@
 
 namespace
 {
-    using SushiRuntime::Graph::OpID;
-    using SushiRuntime::Graph::TaskMetadata;
-    using SushiRuntime::Graph::Literals::operator""_op;
+    using SushiRuntime::Internal::Graph::OpID;
+    using SushiRuntime::Internal::Graph::TaskMetadata;
+    using SushiRuntime::Internal::Graph::Literals::operator""_op;
 
     /**
      * @brief Computes FNV-1a over the bytes of @p text, each byte read as unsigned.

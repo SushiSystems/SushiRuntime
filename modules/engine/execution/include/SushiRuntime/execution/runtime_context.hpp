@@ -45,9 +45,9 @@
 
 namespace SushiRuntime
 {
-    namespace Graph { class OffloadCoordinator; class OffloadSink; }
+    namespace Internal::Graph { class OffloadCoordinator; class OffloadSink; }
 
-    namespace Execution
+    namespace Internal::Execution
     {
         /**
          * @brief Builds the topology view, the device queues and the USM allocator, and owns
@@ -63,12 +63,12 @@ namespace SushiRuntime
                  * @brief Creates a runtime context and scans for hardware matching config.
                  * @param provider Topology source; null selects the hwloc default.
                  * @param distance_model NUMA distance model; null selects the hwloc default.
-                 * @throws Core::SushiException With Errc::unsupported when no device passes config.
+                 * @throws SushiException With Errc::unsupported when no device passes config.
                  * @see modules/engine/execution/README.md
                  */
-                explicit RuntimeContext(const Topology::HardwareFilterConfig& config = {},
-                                        std::shared_ptr<Topology::ITopologyProvider> provider = nullptr,
-                                        std::shared_ptr<Topology::INUMADistanceModel> distance_model = nullptr,
+                explicit RuntimeContext(const Internal::Topology::HardwareFilterConfig& config = {},
+                                        std::shared_ptr<Internal::Topology::ITopologyProvider> provider = nullptr,
+                                        std::shared_ptr<Internal::Topology::INUMADistanceModel> distance_model = nullptr,
                                         const RuntimeSettings& settings = {});
 
                 /** @brief Stops the engine, then waits for every device queue. */
@@ -86,22 +86,22 @@ namespace SushiRuntime
                 const RuntimeSettings& settings() const noexcept;
 
                 /** @brief Returns the core-to-NUMA map and the NUMA distances. */
-                [[nodiscard]] const Topology::TopologyView& topology() const noexcept;
+                [[nodiscard]] const Internal::Topology::TopologyView& topology() const noexcept;
 
                 /** @brief Returns the device inventory and every SYCL queue built on it. */
-                [[nodiscard]] Device::DeviceQueueSet& devices() noexcept;
+                [[nodiscard]] Internal::Device::DeviceQueueSet& devices() noexcept;
 
                 /** @brief Returns the allocator that records and releases this context's USM. */
-                [[nodiscard]] Memory::USMAllocator& memory() noexcept;
+                [[nodiscard]] Internal::Memory::USMAllocator& memory() noexcept;
 
                 /**
                  * @brief Returns the allocator as a shared handle, for an owner that may outlive
                  *        this context.
                  */
-                [[nodiscard]] const std::shared_ptr<Memory::USMAllocator>& shared_memory() const noexcept;
+                [[nodiscard]] const std::shared_ptr<Internal::Memory::USMAllocator>& shared_memory() const noexcept;
 
                 /** @brief Returns the byte counters of explicit host and device transfers. */
-                [[nodiscard]] Observability::TransferCounters& transfers() noexcept;
+                [[nodiscard]] Internal::Observability::TransferCounters& transfers() noexcept;
 
                 /**
                  * @brief Returns the execution engine owned by this context.
@@ -130,10 +130,10 @@ namespace SushiRuntime
                  *        when another is installed and, in its destructor, after the engine.
                  * @see modules/engine/execution/README.md
                  */
-                void install_offload(std::shared_ptr<Graph::OffloadCoordinator> offload);
+                void install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator> offload);
 
                 /** @brief Returns the installed offload coordinator, or nullptr for none. */
-                [[nodiscard]] Graph::OffloadCoordinator* offload() const noexcept;
+                [[nodiscard]] Internal::Graph::OffloadCoordinator* offload() const noexcept;
 
                 /**
                  * @brief Returns the sink an offload coordinator hands its nodes back to.
@@ -141,7 +141,7 @@ namespace SushiRuntime
                  * A coordinator may be bound to it and started before install_offload(), so a
                  * start that fails leaves the installed one in place.
                  */
-                [[nodiscard]] Graph::OffloadSink& offload_sink();
+                [[nodiscard]] Internal::Graph::OffloadSink& offload_sink();
 
             private:
                 struct Impl;

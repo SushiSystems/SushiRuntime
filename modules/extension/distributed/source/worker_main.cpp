@@ -67,16 +67,16 @@ namespace SushiRuntime
                 std::string_view name;
 
                 /** @brief The level it selects. */
-                Core::LogLevel level;
+                LogLevel level;
             };
 
             /** @brief Lists the names `--log-level` takes. */
             constexpr std::array<LogLevelName, 5> K_LOG_LEVEL_NAMES = {{
-                {"off", Core::LogLevel::Off},
-                {"error", Core::LogLevel::Error},
-                {"warn", Core::LogLevel::Warn},
-                {"info", Core::LogLevel::Info},
-                {"debug", Core::LogLevel::Debug},
+                {"off", LogLevel::Off},
+                {"error", LogLevel::Error},
+                {"warn", LogLevel::Warn},
+                {"info", LogLevel::Info},
+                {"debug", LogLevel::Debug},
             }};
 
             /** @brief Returns the process's exit value for a code. */
@@ -92,7 +92,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the level a name selects, or nothing for an unknown name. */
-            [[nodiscard]] std::optional<Core::LogLevel> find_log_level(std::string_view name)
+            [[nodiscard]] std::optional<LogLevel> find_log_level(std::string_view name)
             {
                 for (const LogLevelName& entry : K_LOG_LEVEL_NAMES)
                 {
@@ -163,7 +163,7 @@ namespace SushiRuntime
                                                sushi_ptr<KernelRegistry> kernels)
             {
                 const StopSignal stop_signal;
-                Execution::RuntimeContext context;
+                Internal::Execution::RuntimeContext context;
 
                 SR_LOG_INFO("worker joining master {}, protocol v{}, authentication {}",
                             options.master.to_string(), Wire::K_PROTOCOL_VERSION,
@@ -231,14 +231,14 @@ namespace SushiRuntime
 
                 if (!options.log_level.empty())
                 {
-                    const std::optional<Core::LogLevel> level = find_log_level(options.log_level);
+                    const std::optional<LogLevel> level = find_log_level(options.log_level);
                     if (!level)
                     {
                         report("log level '" + options.log_level +
                                "' is not one of off, error, warn, info, debug");
                         return exit_value(WorkerExitCode::BadArguments);
                     }
-                    Core::set_log_level(*level);
+                    set_log_level(*level);
                 }
 
                 SharedSecret secret;

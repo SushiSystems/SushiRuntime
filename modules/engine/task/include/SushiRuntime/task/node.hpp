@@ -54,7 +54,7 @@
 
 namespace SushiRuntime
 {
-    namespace Graph
+    namespace Internal::Graph
     {
         struct Node;
 
@@ -74,7 +74,7 @@ namespace SushiRuntime
          * @brief Represents one node in the compiled task DAG.
          * @see modules/engine/graph/README.md
          */
-        struct Node : public SushiRuntime::Scheduler::Task
+        struct Node : public SushiRuntime::Internal::Scheduler::Task
         {
             /** @brief The semantic metadata defining this task. */
             TaskMetadata metadata;
@@ -131,8 +131,8 @@ namespace SushiRuntime
              * @brief Hold the USM read and write regions this node touches.
              * @see modules/engine/graph/README.md
              */
-            std::vector<SushiRuntime::Memory::ResourceRegion> io_reads_;
-            std::vector<SushiRuntime::Memory::ResourceRegion> io_writes_;
+            std::vector<SushiRuntime::Internal::Memory::ResourceRegion> io_reads_;
+            std::vector<SushiRuntime::Internal::Memory::ResourceRegion> io_writes_;
 
             /**
              * @brief Tells whether the node's data has been checked for co-location.
@@ -171,8 +171,8 @@ namespace SushiRuntime
              */
             std::size_t plan_index = 0;
 
-            /** @brief Elements this node launches over, or Observability::WIDTH_UNKNOWN. */
-            std::size_t baked_width = Observability::WIDTH_UNKNOWN;
+            /** @brief Elements this node launches over, or Internal::Observability::WIDTH_UNKNOWN. */
+            std::size_t baked_width = Internal::Observability::WIDTH_UNKNOWN;
 
             /**
              * @brief Identifies the public add() call that registered this node; zero until
@@ -194,15 +194,15 @@ namespace SushiRuntime
              * @brief States the device a node that names no owned region runs on.
              * @param device Index into the runtime's device set; must be below NO_PLACEMENT.
              * @pre The node has not been dispatched yet.
-             * @throws Core::SushiException With Errc::invalid_graph and the index, when
+             * @throws SushiException With Errc::invalid_graph and the index, when
              *         @p device is NO_PLACEMENT or above.
              * @see modules/engine/graph/README.md
              */
             void place_on(std::size_t device)
             {
                 if (device >= NO_PLACEMENT)
-                    throw Core::SushiException(Core::Error{
-                        Core::Errc::invalid_graph,
+                    throw SushiException(Error{
+                        Errc::invalid_graph,
                         "Node::place_on(" + std::to_string(device) + "): a device index must be "
                             "below " + std::to_string(NO_PLACEMENT) + "; pass the index of a "
                             "device of the runtime."});
@@ -298,7 +298,7 @@ namespace SushiRuntime
              * @param sink Collects each successor this completion made runnable.
              * @see modules/engine/graph/README.md
              */
-            void on_complete(SushiRuntime::Scheduler::ReadySink& sink) override
+            void on_complete(SushiRuntime::Internal::Scheduler::ReadySink& sink) override
             {
                 for_each_successor([&sink](Node* succ)
                 {
@@ -356,7 +356,7 @@ namespace SushiRuntime
             }
 
             /** @brief Optionally splits the task into smaller subtasks for better load balancing. */
-            std::optional<sushi_ptr<SushiRuntime::Scheduler::Task>> split() override { return std::nullopt; }
+            std::optional<sushi_ptr<SushiRuntime::Internal::Scheduler::Task>> split() override { return std::nullopt; }
 
             /** @brief Returns true if the task can be split. */
             bool is_splittable() const override { return false; }

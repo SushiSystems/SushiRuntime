@@ -34,17 +34,13 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    /**
+     * @brief Holds what a caller may state about a node beyond its launch and its access.
+     * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+     */
+    struct NodeOptions
     {
-        /**
-         * @brief Holds what a caller may state about a node beyond its launch and its access.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-         */
-        struct NodeOptions
-        {
-            /** @brief Launch width stamped into the node's event records. */
-            std::size_t width = Observability::WIDTH_UNKNOWN;
-        };
-
-    } // namespace API
+        /** @brief Launch width stamped into the node's event records. */
+        std::size_t width = Internal::Observability::WIDTH_UNKNOWN;
+    };
 } // namespace SushiRuntime

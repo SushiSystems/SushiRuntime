@@ -47,10 +47,10 @@ namespace SushiRuntime
         namespace
         {
             /** @brief Returns the whole-buffer region of each view, in the views' order. */
-            std::vector<Memory::ResourceRegion> regions_of(
+            std::vector<Internal::Memory::ResourceRegion> regions_of(
                 SushiRuntime::span<const BufferView> views)
             {
-                std::vector<Memory::ResourceRegion> regions;
+                std::vector<Internal::Memory::ResourceRegion> regions;
                 regions.reserve(views.size());
                 for (const BufferView& view : views)
                     regions.emplace_back(view.data);
@@ -58,21 +58,21 @@ namespace SushiRuntime
             }
         } // namespace
 
-        Graph::Node& add_registered_task(Graph::TaskGraph& graph, const KernelRegistry& kernels,
-                                         const Graph::TaskMetadata& metadata,
+        Internal::Graph::Node& add_registered_task(Internal::Graph::TaskGraph& graph, const KernelRegistry& kernels,
+                                         const Internal::Graph::TaskMetadata& metadata,
                                          SushiRuntime::span<const BufferView> inputs,
                                          SushiRuntime::span<const BufferView> outputs)
         {
             const KernelRegistry::Kernel* kernel = kernels.find(metadata.op_id);
             if (kernel == nullptr)
-                throw Core::SushiException(Core::Error{
-                    Core::Errc::invalid_graph,
+                throw SushiException(Error{
+                    Errc::invalid_graph,
                     "add_registered_task: no kernel is registered for operation " +
                         std::to_string(metadata.op_id.value) + " (task '" +
                         (metadata.name != nullptr ? metadata.name : "unnamed_task") +
                         "'); call KernelRegistry::register_kernel() for it first."});
 
-            Graph::HostWork local_work =
+            Internal::Graph::HostWork local_work =
                 [kernel = *kernel, metadata,
                  inputs = std::vector<BufferView>(inputs.begin(), inputs.end()),
                  outputs = std::vector<BufferView>(outputs.begin(), outputs.end())](

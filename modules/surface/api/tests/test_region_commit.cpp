@@ -47,9 +47,9 @@ namespace
     constexpr const char* K_BUILD_FAILURE = "the emitter refused to build";
 
     /** @brief Returns the plan of a graph that requested profiling. */
-    const Graph::CompiledGraph& plan_of(const DynamicGraph& world)
+    const Internal::Graph::CompiledGraph& plan_of(const DynamicGraph& world)
     {
-        return API::detail::DynamicGraphNodeEventsTestAccess::plan(world);
+        return detail::DynamicGraphNodeEventsTestAccess::plan(world);
     }
 
     /** @brief Copies K_ELEMENTS elements from one buffer to another. */
@@ -62,8 +62,8 @@ namespace
     /** @brief Expects the cross-region edge from the node named "a" to the node named "c". */
     void expect_producer_orders_consumer(const DynamicGraph& world)
     {
-        const Graph::Node* a = Testing::find_plan_node(plan_of(world), "a");
-        const Graph::Node* c = Testing::find_plan_node(plan_of(world), "c");
+        const Internal::Graph::Node* a = Testing::find_plan_node(plan_of(world), "a");
+        const Internal::Graph::Node* c = Testing::find_plan_node(plan_of(world), "c");
         ASSERT_NE(a, nullptr);
         ASSERT_NE(c, nullptr);
         EXPECT_TRUE(Testing::has_boundary_edge(*a, *c));
@@ -95,13 +95,13 @@ TEST(Integration_RegionCommit, AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegion
 
     auto world = rt.dynamic_graph();
     world.set_profiling(true);
-    world.region(0).add_host(API::Reads{}, API::Writes(shared),
+    world.region(0).add_host(Reads{}, Writes(shared),
                              [ps]() { for (std::size_t i = 0; i < K_ELEMENTS; ++i) ps[i] += 1; })
                    .name("a");
-    world.region(1).add_host(API::Reads(shared), API::Writes(out_b),
+    world.region(1).add_host(Reads(shared), Writes(out_b),
                              [ps, pb]() { copy_elements(ps, pb); })
                    .name("b");
-    world.region(2).add_host(API::Reads(shared), API::Writes(out_c),
+    world.region(2).add_host(Reads(shared), Writes(out_c),
                              [ps, pc]() { copy_elements(ps, pc); })
                    .name("c");
     world.run();
@@ -110,17 +110,17 @@ TEST(Integration_RegionCommit, AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegion
 
     const auto refuses = std::make_shared<bool>(true);
     world.drop(1);
-    world.region(3).add_emitter([refuses, pd](Graph::TaskGraph& backing)
+    world.region(3).add_emitter([refuses, pd](Internal::Graph::TaskGraph& backing)
     {
         if (*refuses)
             throw std::runtime_error(K_BUILD_FAILURE);
-        backing.add_native({}, {Memory::ResourceRegion(pd)},
+        backing.add_native({}, {Internal::Memory::ResourceRegion(pd)},
                            [pd]() { for (std::size_t i = 0; i < K_ELEMENTS; ++i) pd[i] = 5; });
     });
 
     const auto failed = world.try_run();
     ASSERT_FALSE(failed.has_value());
-    EXPECT_EQ(failed.error().code, Core::Errc::compile_failed);
+    EXPECT_EQ(failed.error().code, Errc::compile_failed);
     EXPECT_EQ(world.compose_count(), composed) << "a commit that threw composed nothing";
     expect_producer_orders_consumer(world);
 

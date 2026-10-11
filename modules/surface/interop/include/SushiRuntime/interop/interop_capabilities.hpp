@@ -33,27 +33,23 @@
 
 namespace SushiRuntime
 {
-    namespace Interop
+    /**
+     * @brief Reports what one device can offer a memory pairing.
+     *
+     * See docs/design/SYCL_VULKAN_INTEROP.md §3.2 in the SushiEngine repository.
+     */
+    struct InteropCapabilities
     {
+        /** @brief Reports whether the device's queue offers host USM. */
+        bool host_export = false;
         /**
-         * @brief Reports what one device can offer a memory pairing.
+         * @brief Reports whether import_device can import on the device.
          *
-         * See docs/design/SYCL_VULKAN_INTEROP.md §3.2 in the SushiEngine repository.
+         * True only when the toolchain has the bindless-images extension, the device is a
+         * GPU, it reports the external-memory-import aspect and device_uuid holds a value.
          */
-        struct InteropCapabilities
-        {
-            /** @brief Reports whether the device's queue offers host USM. */
-            bool host_export = false;
-            /**
-             * @brief Reports whether import_device can import on the device.
-             *
-             * True only when the toolchain has the bindless-images extension, the device is a
-             * GPU, it reports the external-memory-import aspect and device_uuid holds a value.
-             */
-            bool device_import = false;
-            /** @brief Holds the device's UUID, when it has one. */
-            std::optional<DeviceUUID> device_uuid;
-        };
-
-    } // namespace Interop
+        bool device_import = false;
+        /** @brief Holds the device's UUID, when it has one. */
+        std::optional<DeviceUUID> device_uuid;
+    };
 } // namespace SushiRuntime

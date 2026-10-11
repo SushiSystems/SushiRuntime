@@ -36,7 +36,7 @@
 
 namespace SushiRuntime
 {
-    namespace Scheduler
+    namespace Internal::Scheduler
     {
         /** @brief Pairs a failure's one-line description with the exception that carries it. */
         struct NamedFailure
@@ -52,7 +52,7 @@ namespace SushiRuntime
         [[nodiscard]] std::string describe_task(const Task& task);
 
         /** @brief Builds the failure of @p task from a SushiException, keeping its code. */
-        [[nodiscard]] NamedFailure name_failure(const Task& task, const Core::SushiException& cause);
+        [[nodiscard]] NamedFailure name_failure(const Task& task, const SushiException& cause);
 
         /** @brief Builds the failure of @p task from a sycl::exception, keeping its code. */
         [[nodiscard]] NamedFailure name_failure(const Task& task, const sycl::exception& cause);

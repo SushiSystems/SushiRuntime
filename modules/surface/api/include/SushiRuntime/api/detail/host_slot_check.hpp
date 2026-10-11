@@ -42,73 +42,70 @@
 
 namespace SushiRuntime
 {
-    namespace API
+    namespace detail
     {
-        namespace detail
+        /**
+         * @brief Reports which kind of USM an address is, in its owning context.
+         * @param address The address to classify; resolved through the registry.
+         * @return The SYCL allocation kind, or unknown when nothing resolves it.
+         */
+        inline sycl::usm::alloc usm_kind_of(Internal::Execution::RuntimeContext& context,
+                                            void* address)
         {
-            /**
-             * @brief Reports which kind of USM an address is, in its owning context.
-             * @param address The address to classify; resolved through the registry.
-             * @return The SYCL allocation kind, or unknown when nothing resolves it.
-             */
-            inline sycl::usm::alloc usm_kind_of(Execution::RuntimeContext& context,
-                                                void* address)
+            try
             {
-                try
-                {
-                    return sycl::get_pointer_type(
-                        address, owning_queue(context, address).get_context());
-                }
-                catch (const sycl::exception&)
-                {
-                    return sycl::usm::alloc::unknown;
-                }
+                return sycl::get_pointer_type(
+                    address, owning_queue(context, address).get_context());
             }
+            catch (const sycl::exception&)
+            {
+                return sycl::usm::alloc::unknown;
+            }
+        }
 
-            /**
-             * @brief Throws unless slot is null or lands in host USM.
-             * @throws Core::SushiException With invalid_access for a slot that is
-             *        not host USM and for one this context never allocated.
-             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-             */
-            inline void require_host_slot(Execution::RuntimeContext& context,
-                                          const std::uint32_t* slot, const char* what)
-            {
-                if (slot == nullptr)
-                    return;
-                void* address = const_cast<void*>(static_cast<const void*>(slot));
-                if (usm_kind_of(context, address) == sycl::usm::alloc::host)
-                    return;
-                const std::optional<void*> base = context.memory().containing_base(address);
-                if (!base)
-                    throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
-                        std::string(what) + ": this runtime never allocated the slot, so "
-                        "its residency is unknowable; pass a Residency::Host buffer this "
-                        "runtime allocated, with the element's index."});
-                if (usm_kind_of(context, *base) == sycl::usm::alloc::host)
-                    return;
-                throw Core::SushiException(Core::Error{Core::Errc::invalid_access,
-                    std::string(what) + ": the slot lies inside an allocation that is not "
-                    "Residency::Host, and the host reads it while kernels may run; pass a "
-                    "Residency::Host buffer, with the element's index."});
-            }
+        /**
+         * @brief Throws unless slot is null or lands in host USM.
+         * @throws SushiException With invalid_access for a slot that is
+         *        not host USM and for one this context never allocated.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        inline void require_host_slot(Internal::Execution::RuntimeContext& context,
+                                      const std::uint32_t* slot, const char* what)
+        {
+            if (slot == nullptr)
+                return;
+            void* address = const_cast<void*>(static_cast<const void*>(slot));
+            if (usm_kind_of(context, address) == sycl::usm::alloc::host)
+                return;
+            const std::optional<void*> base = context.memory().containing_base(address);
+            if (!base)
+                throw SushiException(Error{Errc::invalid_access,
+                    std::string(what) + ": this runtime never allocated the slot, so "
+                    "its residency is unknowable; pass a Residency::Host buffer this "
+                    "runtime allocated, with the element's index."});
+            if (usm_kind_of(context, *base) == sycl::usm::alloc::host)
+                return;
+            throw SushiException(Error{Errc::invalid_access,
+                std::string(what) + ": the slot lies inside an allocation that is not "
+                "Residency::Host, and the host reads it while kernels may run; pass a "
+                "Residency::Host buffer, with the element's index."});
+        }
 
-            /**
-             * @brief Rejects a Dynamic whose device count or base slot is not host USM.
-             *
-             * Resolves each slot's owning queue through the context's registry and
-             * requires sycl::usm::alloc::host there (docs/architecture/ARCHITECTURE.md,
-             * "Late-bound device values"). A recorder runs it before it records the node.
-             * @throws Core::SushiException With invalid_access for a non-host slot.
-             */
-            inline void require_host_device_slots(Execution::RuntimeContext& context,
-                                                  const Dynamic& dyn)
-            {
-                require_host_slot(context, DynamicAccess::count_slot(dyn).words,
-                                  "sized_from_device");
-                require_host_slot(context, DynamicAccess::base_slot(dyn).words,
-                                  "based_at_device");
-            }
-        } // namespace detail
-    } // namespace API
+        /**
+         * @brief Rejects a Dynamic whose device count or base slot is not host USM.
+         *
+         * Resolves each slot's owning queue through the context's registry and
+         * requires sycl::usm::alloc::host there (docs/architecture/ARCHITECTURE.md,
+         * "Late-bound device values"). A recorder runs it before it records the node.
+         * @throws SushiException With invalid_access for a non-host slot.
+         */
+        inline void require_host_device_slots(Internal::Execution::RuntimeContext& context,
+                                              const Dynamic& dyn)
+        {
+            require_host_slot(context, DynamicAccess::count_slot(dyn).words,
+                              "sized_from_device");
+            require_host_slot(context, DynamicAccess::base_slot(dyn).words,
+                              "based_at_device");
+        }
+    } // namespace detail
 } // namespace SushiRuntime

@@ -77,21 +77,21 @@ namespace
     constexpr milliseconds K_UNTIL_WOKEN = std::chrono::hours(24);
 
     /** @brief Names an operation only the first worker of a test runs. */
-    constexpr Graph::OpID K_RARE_OPERATION{101};
+    constexpr Internal::Graph::OpID K_RARE_OPERATION{101};
 
     /** @brief Names an operation every worker of a test runs. */
-    constexpr Graph::OpID K_COMMON_OPERATION{202};
+    constexpr Internal::Graph::OpID K_COMMON_OPERATION{202};
 
     /** @brief Builds a node tagged with the operation every worker of these tests holds. */
-    sushi_ptr<Graph::Node> common_node()
+    sushi_ptr<Internal::Graph::Node> common_node()
     {
-        sushi_ptr<Graph::Node> node = make_sushi<Graph::Node>();
+        sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
         node->metadata.op_id = K_COMMON_OPERATION;
         return node;
     }
 
     /** @brief Names an operation no worker of a test runs. */
-    constexpr Graph::OpID K_ABSENT_OPERATION{303};
+    constexpr Internal::Graph::OpID K_ABSENT_OPERATION{303};
 
     /** @brief Returns a fixed time point @p offset after the tests' zero. */
     std::chrono::steady_clock::time_point at(milliseconds offset)
@@ -135,7 +135,7 @@ namespace
     Wire::ProofMessage proof_with(span<const std::uint8_t> secret,
                                   const HandshakeNonce& worker_nonce,
                                   const HandshakeNonce& master_nonce,
-                                  std::vector<Graph::OpID> operations, std::uint32_t max_jobs)
+                                  std::vector<Internal::Graph::OpID> operations, std::uint32_t max_jobs)
     {
         Wire::ProofMessage proof;
         proof.worker_proof = to_wire(
@@ -180,7 +180,7 @@ namespace
     {
         public:
             /** @brief Records the offer, then returns @ref answer or the first worker. */
-            std::optional<int> pick_worker(const Graph::Node&, span<const WorkerStats> workers,
+            std::optional<int> pick_worker(const Internal::Graph::Node&, span<const WorkerStats> workers,
                                            std::uint64_t) override
             {
                 ++calls;
@@ -234,7 +234,7 @@ namespace
             }
 
             /** @brief Connects a peer and takes it through HELLO and PROOF at time @p now. */
-            HandshakeStep register_worker(PeerID peer, std::vector<Graph::OpID> operations,
+            HandshakeStep register_worker(PeerID peer, std::vector<Internal::Graph::OpID> operations,
                                           std::uint32_t max_jobs,
                                           std::chrono::steady_clock::time_point now)
             {
@@ -487,7 +487,7 @@ TEST_F(Unit_WorkerDirectory, SecondHelloRestartsTheHandshake)
 
 TEST_F(Unit_WorkerDirectory, SilentWorkerIsTakenOnce)
 {
-    const sushi_ptr<Graph::Node> node = common_node();
+    const sushi_ptr<Internal::Graph::Node> node = common_node();
     const milliseconds liveness(500);
 
     ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION, K_COMMON_OPERATION}, 4,
@@ -541,7 +541,7 @@ TEST_F(Unit_WorkerDirectory, SilentWorkerIsTakenOnce)
 
 TEST_F(Unit_WorkerDirectory, PickSkipsWorkersAtTheirJobLimit)
 {
-    const sushi_ptr<Graph::Node> node = common_node();
+    const sushi_ptr<Internal::Graph::Node> node = common_node();
 
     EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
     EXPECT_EQ(policy_->calls, 0) << "the policy is not asked when no worker has room";
@@ -606,7 +606,7 @@ TEST_F(Unit_WorkerDirectory, PickOffersOnlyWorkersWithTheKernel)
     ASSERT_EQ(register_worker(K_SECOND, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
               HandshakeStep::Accepted);
 
-    const sushi_ptr<Graph::Node> rare = make_sushi<Graph::Node>();
+    const sushi_ptr<Internal::Graph::Node> rare = make_sushi<Internal::Graph::Node>();
     rare->metadata.op_id = K_RARE_OPERATION;
     for (int round = 0; round < 4; ++round)
     {
@@ -618,14 +618,14 @@ TEST_F(Unit_WorkerDirectory, PickOffersOnlyWorkersWithTheKernel)
     // The only worker with the kernel is full; the other one is not a fallback.
     EXPECT_FALSE(directory_.pick(*rare, 1024).has_value());
 
-    const sushi_ptr<Graph::Node> untagged = make_sushi<Graph::Node>();
+    const sushi_ptr<Internal::Graph::Node> untagged = make_sushi<Internal::Graph::Node>();
     EXPECT_FALSE(directory_.pick(*untagged, 1024).has_value())
         << "a node with no operation was offered to a worker";
 }
 
 TEST_F(Unit_WorkerDirectory, SnapshotReportsWhatTheWorkerSent)
 {
-    const sushi_ptr<Graph::Node> node = common_node();
+    const sushi_ptr<Internal::Graph::Node> node = common_node();
 
     directory_.add_peer(K_FIRST, "10.0.0.1:7000", at(milliseconds(0)));
     ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(100))),
@@ -697,7 +697,7 @@ TEST_F(Unit_WorkerDirectory, HelloFromARegisteredWorkerRegistersNothingTwice)
 {
     ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
               HandshakeStep::Accepted);
-    const sushi_ptr<Graph::Node> rare = make_sushi<Graph::Node>();
+    const sushi_ptr<Internal::Graph::Node> rare = make_sushi<Internal::Graph::Node>();
     rare->metadata.op_id = K_RARE_OPERATION;
     ASSERT_TRUE(directory_.pick(*rare, 0).has_value());
 

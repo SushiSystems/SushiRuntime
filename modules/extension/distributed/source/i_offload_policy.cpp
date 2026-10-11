@@ -43,7 +43,7 @@ namespace SushiRuntime
         }
 
         /** @brief Returns the alive worker of the lowest cost, or nothing to keep the task local. */
-        std::optional<int> LeastLoadedOffloadPolicy::pick_worker(const Graph::Node& /*node*/,
+        std::optional<int> LeastLoadedOffloadPolicy::pick_worker(const Internal::Graph::Node& /*node*/,
                                                                  SushiRuntime::span<const WorkerStats> workers,
                                                                  uint64_t est_bytes)
         {

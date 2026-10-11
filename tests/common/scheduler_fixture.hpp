@@ -41,10 +41,10 @@ namespace SushiRuntime
          * @param context Must outlive the returned scheduler.
          * @return The scheduler, constructed in the caller's storage; no thread is started.
          */
-        [[nodiscard]] inline Scheduler::TaskScheduler
-        make_scheduler(Execution::RuntimeContext& context)
+        [[nodiscard]] inline Internal::Scheduler::TaskScheduler
+        make_scheduler(Internal::Execution::RuntimeContext& context)
         {
-            return Scheduler::TaskScheduler(Execution::worker_pool_settings(context.settings()),
+            return Internal::Scheduler::TaskScheduler(Internal::Execution::worker_pool_settings(context.settings()),
                                             context.topology(), context.devices(),
                                             context.memory());
         }

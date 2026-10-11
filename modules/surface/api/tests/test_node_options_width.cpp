@@ -40,7 +40,7 @@ using namespace SushiRuntime;
 namespace
 {
     /** @brief Checks that the report holds one event per expected width, in recording order. */
-    void expect_widths(const Observability::RunReport& report,
+    void expect_widths(const Internal::Observability::RunReport& report,
                        const std::vector<std::uint32_t>& expected)
     {
         ASSERT_EQ(report.node_events.size(), expected.size());
@@ -71,12 +71,12 @@ TEST(Integration_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
     auto g = rt.graph();
     g.set_profiling(true);
     {
-        API::Recorder& recorder = g.recorder();
+        Recorder& recorder = g.recorder();
         auto rule = recorder.rule();
-        recorder.kernel(WIDE, API::Access(Reads(values), Writes(copies)),
-                        [v, c](std::size_t i) { c[i] = v[i]; }, API::NodeOptions{WIDE});
-        recorder.kernel(std::size_t{1}, API::Access(Reads(copies), Writes(first)),
-                        [c, f](std::size_t) { f[0] = c[0]; }, API::NodeOptions{std::size_t{1}});
+        recorder.kernel(WIDE, Access(Reads(values), Writes(copies)),
+                        [v, c](std::size_t i) { c[i] = v[i]; }, NodeOptions{WIDE});
+        recorder.kernel(std::size_t{1}, Access(Reads(copies), Writes(first)),
+                        [c, f](std::size_t) { f[0] = c[0]; }, NodeOptions{std::size_t{1}});
     }
 
     const auto report = g.run();
@@ -101,22 +101,22 @@ TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWi
     auto g = rt.graph();
     g.set_profiling(true);
     {
-        API::Recorder& recorder = g.recorder();
+        Recorder& recorder = g.recorder();
         std::uint32_t* live =
             recorder.scratch<std::uint32_t>(1, out.device_index(), out.residency());
-        const Memory::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
+        const Internal::Memory::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
 
         auto rule = recorder.rule();
         recorder.resolve(std::array<LateCount, 1>{count}, out.device_index(),
-                         API::Access(Reads(), Writes(live_region)),
+                         Access(Reads(), Writes(live_region)),
                          [live](const std::array<std::size_t, 1>& value)
                          {
                              live[0] = static_cast<std::uint32_t>(value[0]);
                          },
-                         API::NodeOptions{std::size_t{1}});
-        recorder.kernel(API::DeviceSized{CAPACITY, live, nullptr},
-                        API::Access(Reads(live_region), Writes(out)),
-                        [o](std::size_t t) { o[t] = 1u; }, API::NodeOptions{CAPACITY});
+                         NodeOptions{std::size_t{1}});
+        recorder.kernel(DeviceSized{CAPACITY, live, nullptr},
+                        Access(Reads(live_region), Writes(out)),
+                        [o](std::size_t t) { o[t] = 1u; }, NodeOptions{CAPACITY});
     }
 
     const auto report = g.run();
