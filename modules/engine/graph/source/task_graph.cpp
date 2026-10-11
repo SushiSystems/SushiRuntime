@@ -232,11 +232,6 @@ namespace SushiRuntime
             SR_LOG_DEBUG("Lock-Free O(1) TaskGraph initialized.");
         }
 
-        /** @brief Creates an empty task graph with no offload coordinator. */
-        TaskGraph::TaskGraph(Execution::RuntimeContext&) : TaskGraph(nullptr)
-        {
-        }
-
         /**
          * @brief Destroys the TaskGraph.
          */
@@ -457,28 +452,6 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Stamps the element count on the node most recently added.
-         *
-         * Mirrors name_last_node(): all_nodes is a LIFO stack, so its head is the
-         * last node pushed, and a call with no node yet added is a no-op.
-         */
-        void TaskGraph::width_last_node(std::size_t width) noexcept
-        {
-            NodeEntry* head = impl_->all_nodes.load(std::memory_order_relaxed);
-            if (head && head->node)
-                head->node->baked_width = width;
-        }
-
-        /**
-         * @brief Returns the element count stamped on the last node added.
-         */
-        std::size_t TaskGraph::last_node_width() const noexcept
-        {
-            NodeEntry* head = impl_->all_nodes.load(std::memory_order_relaxed);
-            return head && head->node ? head->node->baked_width : Observability::WIDTH_UNKNOWN;
-        }
-
-        /**
          * @brief Returns the node most recently added, for a caller reading its state.
          */
         const Node* TaskGraph::last_node_added() const noexcept
@@ -495,15 +468,6 @@ namespace SushiRuntime
         std::uint32_t TaskGraph::reserve_registration() noexcept
         {
             return impl_->registration_counter_.fetch_add(1, std::memory_order_relaxed);
-        }
-
-        /**
-         * @brief Returns the registration index stamped on the last node added.
-         */
-        std::uint32_t TaskGraph::last_registration_index() const noexcept
-        {
-            NodeEntry* head = impl_->all_nodes.load(std::memory_order_relaxed);
-            return head && head->node ? head->node->registration_index : NO_REGISTRATION;
         }
 
         /**

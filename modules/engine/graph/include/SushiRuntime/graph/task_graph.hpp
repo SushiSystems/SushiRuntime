@@ -28,7 +28,6 @@
 
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -45,11 +44,6 @@
 
 namespace SushiRuntime 
 {
-    namespace Execution 
-    { 
-        class RuntimeContext; 
-    }
-
     namespace Graph
     {
         struct Node;
@@ -75,14 +69,6 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 explicit TaskGraph(OffloadCoordinator* offload = nullptr);
-
-                /**
-                 * @brief Creates an empty task graph with no offload coordinator.
-                 * @param context Not read; a graph that offloads takes context.offload() instead.
-                 */
-                [[deprecated("TaskGraph takes no context; use TaskGraph()")]]
-                explicit TaskGraph(SushiRuntime::Execution::RuntimeContext& context);
-
 
                 /** @brief Destroys the graph and cleans up task states. */
                 ~TaskGraph();
@@ -137,22 +123,6 @@ namespace SushiRuntime
                 void name_last_node(const char* name) noexcept;
 
                 /**
-                 * @brief Stamps the element count on the node most recently added.
-                 * @param width Elements the node's dispatch launches over.
-                 * @pre Compilation is single-threaded, so "most recently added" names
-                 *      one node; a parallel compiler must stamp width at the add call.
-                 */
-                [[deprecated("set baked_width on the Node& an add call returns")]]
-                void width_last_node(std::size_t width) noexcept;
-
-                /**
-                 * @brief Returns the element count stamped on the last node added.
-                 * @return The width, or Observability::WIDTH_UNKNOWN while the graph holds no node.
-                 */
-                [[deprecated("read last_node_added()->baked_width")]]
-                std::size_t last_node_width() const noexcept;
-
-                /**
                  * @brief Returns the node most recently added, for a caller reading its state.
                  * @return The node, or nullptr while the graph holds no node.
                  */
@@ -164,17 +134,6 @@ namespace SushiRuntime
                  * @see modules/engine/graph/README.md
                  */
                 std::uint32_t reserve_registration() noexcept;
-
-                /**
-                 * @brief Returns the registration index stamped on the last node added.
-                 *
-                 * Reads the same node name_last_node() names, so a builder that
-                 * replays one recorded rule can ask which index that rule took.
-                 *
-                 * @return The index, or @ref NO_REGISTRATION while the graph holds no node.
-                 */
-                [[deprecated("read last_node_added()->registration_index")]]
-                std::uint32_t last_registration_index() const noexcept;
 
                 /**
                  * @brief Adds a semantic task with explicit device work and a host fallback.

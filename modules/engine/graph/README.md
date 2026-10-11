@@ -264,8 +264,8 @@ an earlier node drew. Indices are issued densely from zero, so the test is "belo
 so far". Any other index throws `Core::SushiException` with `Errc::invalid_graph`, and the message
 names the call, the index and the count. CompiledGraph::capture_profiling_state() sizes two vectors
 to the largest index plus one, so an index nobody issued could ask for 2^32 elements or collide with
-one the graph issues later. NO_REGISTRATION, which last_registration_index() returns for an empty
-graph, is the first case. An issued index may be passed any number of times.
+one the graph issues later. NO_REGISTRATION, the value that stands for "no node carries an index
+yet", is the first case. An issued index may be passed any number of times.
 
 ### add_task(meta, read_access, write_access, device_work, fallback_work, ...)
 
@@ -415,8 +415,7 @@ The graph decides nothing about offload and names no context. Its constructor ta
 coordinator's `prepare()` after the tracker is reset and before the graph is returned;
 `modules/extension/distributed/README.md` says which nodes the distributed coordinator marks. With a null
 coordinator no node gets an offload state from `compile()`, so the scheduler's offload
-branch does nothing for it. The constructor that takes a `RuntimeContext` ignores it and
-builds a graph with no coordinator.
+branch does nothing for it.
 
 The graph holds the coordinator's raw address from construction until `compile()` has called
 `prepare()`. Whoever installed the coordinator keeps it installed and alive for that span:
@@ -440,8 +439,8 @@ double-buffer swap without recompiling.
 
 `all_nodes` is a LIFO stack, so its head is the last node pushed. `name_last_node()` is
 called during graph description on the thread that just added the node, which is why a
-relaxed load is enough: there is no other writer to order against. `width_last_node()`
-mirrors it. A caller that kept the reference its add call returned needs neither.
+relaxed load is enough: there is no other writer to order against. A caller that kept the
+reference its add call returned needs neither accessor; it sets `baked_width` on that reference.
 
 #### compile
 
