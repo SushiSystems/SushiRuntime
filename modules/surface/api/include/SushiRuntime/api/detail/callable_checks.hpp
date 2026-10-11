@@ -192,6 +192,17 @@ namespace SushiRuntime
             return accepted;
         }
 
+        /** @brief Checks a hook a graph calls before each step. */
+        template <class F>
+        constexpr bool accepts_step_hook() noexcept
+        {
+            constexpr bool accepted = std::is_invocable_v<std::decay_t<F>&, std::size_t>;
+            static_assert(accepted,
+                "before_each_step(fn) takes a hook invoked as fn(std::size_t finished_steps) "
+                "on the thread that runs the graph, before each step.");
+            return accepted;
+        }
+
         /** @brief Checks an emitter, which adds its own nodes to the engine's graph. */
         template <class F>
         constexpr bool accepts_emitter() noexcept

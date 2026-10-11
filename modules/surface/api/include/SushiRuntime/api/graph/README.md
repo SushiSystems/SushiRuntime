@@ -19,7 +19,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `node_options.hpp` | NodeOptions: the width, the name, the operation and the parameters of a node |
 | `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_task(), add_host(), add_emitter(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
-| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), their try_ forms, cancel(), set_profiling() and the step loop |
+| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), their try_ forms, before_each_step(), cancel(), set_profiling() and the step loop |
 | `boundary_access.hpp` | Pin, BaseAccess and compute_boundary_access() |
 | `region_composer.hpp` | RegionComposer: the cached sub-graph of each region and the stitched plan |
 
@@ -37,8 +37,9 @@ questions the driver asks.
 ### Graph: moves
 
 A Graph moves and does not copy. The source of a move is an empty graph on the same runtime:
-size(), node_count() and compile_count() are zero, a run is refused with `invalid_graph`, and add()
-records onto it again. The plan moves with the rules, so the destination does not recompile.
+size(), node_count() and compile_count() are zero, it has no step hook, a run is refused with
+`invalid_graph`, and add() records onto it again. The plan moves with the rules, so the destination
+does not recompile.
 
 A graph must not be moved while a step started with run_async() is pending: the RunHandle holds the
 address of the graph that started the step. A debug build asserts on such a move. A release build
@@ -695,6 +696,34 @@ run_async() follows the same pre-step order as the synchronous driver: point the
 their buffers, clear a previous run's cancellation, zero the profiling accumulators, then refresh
 the late-bound controls. A different order would make an asynchronous step mean something subtly
 different from a synchronous one.
+
+### before_each_step
+
+before_each_step(hook) adds a hook the graph calls before each step it replays, on the thread
+that called the run entry: `hook(std::size_t finished_steps)`. It is how a caller feeds a
+compiled plan between two replays, by writing a host word a kernel reads or a value a `sized()`
+provider returns, and it replaces a list of callbacks a library would keep beside the graph.
+Hooks run in the order they were added, before the runtime refreshes the late-bound controls of
+the step, so a provider reads what a hook set.
+
+`finished_steps` counts the steps the run entry in progress replayed before this one. It is 0 for
+the first step of every run(), run_for() and run_until() call and for a run_async() step, and 7
+for the last step of run(8). A caller that counts across runs keeps the count in its hook.
+
+A hook records nothing and changes no plan: the graph compiles once however many hooks it has and
+however often they run. A hook must not record on the graph or start a run. An exception a hook
+throws ends the run as `kernel_failed` before that step is submitted, and the States have
+advanced once per step before it.
+
+A hook may write memory the kernels of the next step read, so a graph that has a hook ends each
+step before it calls the hooks of the next. On the chain layer this turns the single wait of
+run(steps) into one wait per step, the pace run_for() and run_until() already have; a failed step
+then shows at once and not at the end of the run. A graph with no hook pays one emptiness test
+per run.
+
+Hooks belong to the graph and stay for its life. Recorder::clear() leaves them, and a move takes
+them to the destination and leaves the source with none. Detail::BeforeStepHooks stores them; its
+section of `api/detail/README.md` says how.
 
 ### cancel
 

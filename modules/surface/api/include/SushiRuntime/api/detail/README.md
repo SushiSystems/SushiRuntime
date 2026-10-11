@@ -140,6 +140,21 @@ every live region's hooks without copying them (the hooks are move-only). The re
 must outlive every run driven through this one. It is the region's own, owned for the region's
 lifetime.
 
+## before_step_hooks.hpp
+
+### BeforeStepHooks
+
+BeforeStepHooks owns the hooks a caller gave a graph through before_each_step() and runs them in
+the order they were added. It is apart from StepMachinery on purpose: StepMachinery belongs to
+the recorded work and is rebuilt by Recorder::clear(), and a DynamicGraph aggregates one per
+region, while these hooks belong to the graph and are the caller's.
+
+A hook is stored in a Delegate of 64 bytes, with no allocation for the callable. add() holds a
+callable that is larger, over-aligned or whose move may throw through a `std::unique_ptr`
+inside the Delegate, so every callable is accepted and only the ones that do not fit pay an
+allocation, once, when they are added. The list is a vector, so the first hook allocates the
+list.
+
 ## emit_dynamic.hpp
 
 ### adopt_device_bindings
@@ -182,6 +197,7 @@ points at the caller's add() line.
 | accepts_raw_kernel | add(reads, writes, fn), add_untracked(fn), add_untracked(On, fn) |
 | accepts_task | add_task(reads, writes, fn) |
 | accepts_host_task, accepts_emitter, accepts_extension | add_host, add_emitter, extend |
+| accepts_step_hook | before_each_step(fn) |
 
 Each function returns what it asserted. The overload records inside `if constexpr` on that
 value, so after a failed assertion the recording call is not instantiated and the caller reads
