@@ -112,7 +112,7 @@ namespace
         TaskDispatchMessage message;
         message.task_id = random();
         message.metadata.name = "never_on_the_wire";
-        message.metadata.op_id = Internal::Graph::OpID(static_cast<std::uint32_t>(random()));
+        message.metadata.op_id = OperationID(static_cast<std::uint32_t>(random()));
         message.metadata.task_type = static_cast<Internal::Graph::TaskType>(
             first_type + random() % (last_type - first_type + 1));
         message.metadata.priority = static_cast<std::int32_t>(random());
@@ -185,7 +185,7 @@ namespace
         hello.node_name = "worker-a";
 
         ProofMessage proof;
-        proof.ops = {Internal::Graph::OpID(7), Internal::Graph::OpID(8), Internal::Graph::OpID(9)};
+        proof.ops = {OperationID(7), OperationID(8), OperationID(9)};
         proof.max_jobs = 16;
         proof.cache_budget = 1u << 20;
 

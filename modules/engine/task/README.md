@@ -25,7 +25,7 @@ and what a coordinator needs beyond the seam's fields it stores behind
 | --- | --- |
 | `task.hpp` | `Internal::Scheduler::Task` |
 | `ready_sink.hpp` | `Internal::Scheduler::ReadySink` |
-| `task_types.hpp` | `Internal::Graph::TaskType`, `Internal::Graph::OpID`, `Internal::Graph::Literals::operator""_op`, `Internal::Graph::TaskMetadata` |
+| `task_types.hpp` | `Internal::Graph::TaskType`, `Internal::Graph::TaskMetadata` |
 | `task_work.hpp` | `Internal::Graph::TaskWork`, `Internal::Graph::HostWork` |
 | `late_bindings.hpp` | `Internal::Graph::LateBindings` |
 | `small_event_vector.hpp` | `Internal::Graph::SmallEventVector` |

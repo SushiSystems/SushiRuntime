@@ -461,6 +461,15 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Returns the node most recently added, for a caller stamping it.
+         */
+        Node* TaskGraph::last_node_added() noexcept
+        {
+            NodeEntry* head = impl_->all_nodes.load(std::memory_order_relaxed);
+            return head && head->node ? head->node.get() : nullptr;
+        }
+
+        /**
          * @brief Draws a fresh registration index from this graph's counter.
          *
          * See Impl::registration_counter_; every call returns a distinct value.

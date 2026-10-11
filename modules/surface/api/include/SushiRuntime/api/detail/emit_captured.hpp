@@ -40,6 +40,7 @@
 
 #include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/api/graph/access.hpp>
+#include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
@@ -47,6 +48,28 @@ namespace SushiRuntime
 {
     namespace Detail
     {
+        /** @brief Tells whether the last type of a pack is NodeOptions. */
+        template <class... Ts>
+        struct EndsInNodeOptions : std::false_type
+        {
+        };
+
+        /** @brief Compares the one type left of a pack with NodeOptions. */
+        template <class T>
+        struct EndsInNodeOptions<T> : std::is_same<std::decay_t<T>, NodeOptions>
+        {
+        };
+
+        /** @brief Drops the first type of a pack that holds more than one. */
+        template <class T, class U, class... Ts>
+        struct EndsInNodeOptions<T, U, Ts...> : EndsInNodeOptions<U, Ts...>
+        {
+        };
+
+        /** @brief Tells whether the last type of a pack is NodeOptions. */
+        template <class... Ts>
+        inline constexpr bool ends_in_node_options_v = EndsInNodeOptions<Ts...>::value;
+
         /**
          * @brief Gathers the regions and the observers of In, Out and InOut captures.
          * @return What the captures read and write, in argument order.

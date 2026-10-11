@@ -21,7 +21,7 @@
 
 /**
  * @file test_node_options_width.cpp
- * @brief Tests that the width a node states through NodeOptions reaches its event records.
+ * @brief Tests that what a node states through NodeOptions reaches the report of a run.
  * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
@@ -29,6 +29,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -74,9 +75,11 @@ TEST(Integration_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
         Recorder& recorder = g.recorder();
         auto rule = recorder.rule();
         recorder.kernel(WIDE, Access(Reads(values), Writes(copies)),
-                        [v, c](std::size_t i) { c[i] = v[i]; }, NodeOptions{WIDE});
+                        [v, c](std::size_t i) { c[i] = v[i]; },
+                        NodeOptions{WIDE, {}, {}, {}});
         recorder.kernel(std::size_t{1}, Access(Reads(copies), Writes(first)),
-                        [c, f](std::size_t) { f[0] = c[0]; }, NodeOptions{std::size_t{1}});
+                        [c, f](std::size_t) { f[0] = c[0]; },
+                        NodeOptions{std::size_t{1}, {}, {}, {}});
     }
 
     const auto report = g.run();
@@ -113,10 +116,11 @@ TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWi
                          {
                              live[0] = static_cast<std::uint32_t>(value[0]);
                          },
-                         NodeOptions{std::size_t{1}});
+                         NodeOptions{std::size_t{1}, {}, {}, {}});
         recorder.kernel(DeviceSized{CAPACITY, live, nullptr},
                         Access(Reads(live_region), Writes(out)),
-                        [o](std::size_t t) { o[t] = 1u; }, NodeOptions{CAPACITY});
+                        [o](std::size_t t) { o[t] = 1u; },
+                        NodeOptions{CAPACITY, {}, {}, {}});
     }
 
     const auto report = g.run();
@@ -125,4 +129,92 @@ TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWi
     for (std::size_t t = 0; t < CAPACITY; ++t)
         EXPECT_EQ(out[t], 1u) << "item " << t;
     EXPECT_EQ(out[CAPACITY], 0u);
+}
+
+/** @brief Tests that a profiled run reports the name and the operation a node stated. */
+TEST(Integration_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
+{
+    constexpr std::size_t WIDE = 64;
+
+    auto rt     = Runtime::create();
+    auto values = rt.buffer<std::uint32_t>(WIDE);
+    for (std::size_t i = 0; i < WIDE; ++i)
+        values[i] = static_cast<std::uint32_t>(i);
+    std::uint32_t* v = values.data();
+
+    auto g = rt.graph();
+    g.set_profiling(true);
+    {
+        // The label and the parameters end with this scope, before the graph runs.
+        const std::string label = "scale by three";
+        const std::array<std::uint64_t, 2> parameters{3u, WIDE};
+        g.recorder().kernel(WIDE, Access(Reads(values), Writes(values)),
+                            [v](std::size_t i) { v[i] *= 3u; },
+                            NodeOptions{WIDE, label, "options.scale"_op, parameters});
+    }
+
+    const auto report = g.run();
+
+    ASSERT_EQ(report.node_timings.size(), 1u);
+    EXPECT_EQ(report.node_timings[0].name, "scale by three");
+    EXPECT_EQ(report.node_timings[0].operation, "options.scale"_op.value);
+    expect_widths(report, {static_cast<std::uint32_t>(WIDE)});
+    EXPECT_EQ(values[WIDE - 1], static_cast<std::uint32_t>(WIDE - 1) * 3u);
+}
+
+/** @brief Tests that a node's own name is reported in place of the name of its rule. */
+TEST(Integration_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
+{
+    constexpr std::size_t WIDE = 32;
+
+    auto rt     = Runtime::create();
+    auto first  = rt.buffer<std::uint32_t>(WIDE);
+    auto second = rt.buffer<std::uint32_t>(WIDE);
+    std::uint32_t* a = first.data();
+    std::uint32_t* b = second.data();
+
+    NodeOptions named;
+    named.name = "own name";
+
+    auto g = rt.graph();
+    g.set_profiling(true);
+    g.add(WIDE, Reads(), Writes(first), [a](std::size_t i) { a[i] = 1u; }, named)
+        .name("rule name");
+    g.add(WIDE, Reads(first), Writes(second), [a, b](std::size_t i) { b[i] = a[i]; })
+        .name("rule name");
+
+    const auto report = g.run();
+
+    ASSERT_EQ(report.node_timings.size(), 2u);
+    EXPECT_EQ(report.node_timings[0].name, "own name");
+    EXPECT_EQ(report.node_timings[0].operation, 0u);
+    EXPECT_EQ(report.node_timings[1].name, "rule name");
+}
+
+/** @brief Tests that more parameters than a node carries are refused and record nothing. */
+TEST(Integration_NodeOptionsWidth, MoreParametersThanANodeCarriesAreRefused)
+{
+    constexpr std::size_t WIDE = 8;
+
+    auto rt     = Runtime::create();
+    auto values = rt.buffer<std::uint32_t>(WIDE);
+    std::uint32_t* v = values.data();
+
+    const std::array<std::uint64_t, 9> parameters{1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u};
+    NodeOptions options;
+    options.parameters = parameters;
+
+    auto g = rt.graph();
+    Errc refused = Errc::ok;
+    try
+    {
+        g.add(WIDE, Reads(), Writes(values), [v](std::size_t i) { v[i] = 0u; }, options);
+    }
+    catch (const SushiException& e)
+    {
+        refused = e.error().code;
+    }
+
+    EXPECT_EQ(refused, Errc::invalid_graph);
+    EXPECT_EQ(g.size(), 0u);
 }

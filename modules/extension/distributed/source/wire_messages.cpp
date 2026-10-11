@@ -154,7 +154,7 @@ namespace SushiRuntime::Distributed::Wire
         FieldWriter writer(out);
         writer.put_bytes({worker_proof.data(), worker_proof.size()});
         writer.put_count(ops.size());
-        for (const Internal::Graph::OpID& op : ops)
+        for (const OperationID& op : ops)
             writer.put_u32(op.value);
         writer.put_u32(max_jobs);
         writer.put_u64(cache_budget);
@@ -171,7 +171,7 @@ namespace SushiRuntime::Distributed::Wire
         out.ops.clear();
         out.ops.reserve(count);
         for (std::uint32_t index = 0; index < count; ++index)
-            out.ops.push_back(Internal::Graph::OpID(reader.read_u32()));
+            out.ops.push_back(OperationID(reader.read_u32()));
 
         out.max_jobs = reader.read_u32();
         out.cache_budget = reader.read_u64();
@@ -252,7 +252,7 @@ namespace SushiRuntime::Distributed::Wire
         FieldReader reader(payload);
         out.metadata = Internal::Graph::TaskMetadata{};
         out.task_id = reader.read_u64();
-        out.metadata.op_id = Internal::Graph::OpID(reader.read_u32());
+        out.metadata.op_id = OperationID(reader.read_u32());
         read_metadata(reader, out.metadata);
         read_handles(reader, out.inputs);
         read_handles(reader, out.outputs);

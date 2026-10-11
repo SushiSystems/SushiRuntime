@@ -220,8 +220,9 @@ Detail::DynamicAccess does for a Dynamic.
 
 ## The _op literal
 
-`task/task_types.hpp` of the task module declares `OpID`, `TaskMetadata` and the `_op` literal and
-promotes all three into `SushiRuntime`. After `using namespace SushiRuntime;` or
-`using SushiRuntime::operator""_op;` a program writes `"vec.add"_op` for the OpID of a registered
-kernel. The distributed headers include it, so a worker program that never includes the fluent
-API has the literal too.
+`core/operation_id.hpp` of the core module declares `OperationID` in `SushiRuntime` and the `_op`
+literal in `SushiRuntime::Literals`, an inline namespace. After `using namespace SushiRuntime;`,
+`using namespace SushiRuntime::Literals;` or `using SushiRuntime::operator""_op;` a program writes
+`"vec.add"_op` for the OperationID of an operation, which `NodeOptions::operation` takes. The
+distributed headers include it, so a worker program that never includes the fluent API has the
+literal too.

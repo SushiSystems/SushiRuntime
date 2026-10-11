@@ -37,7 +37,7 @@ private codec uses.
 
 `distributed.hpp` includes every header of the table except `in_process_transport.hpp` and
 `message_type.hpp`. The `_op` literal is no header of this module: it comes with
-`task/task_types.hpp`, which promotes it into `SushiRuntime`. A worker program includes
+`core/operation_id.hpp`, which declares it in `SushiRuntime::Literals`. A worker program includes
 `distributed.hpp` alone; a master includes it beside `SushiRuntime/sushiruntime.hpp`.
 
 `KernelRegistry::register_kernel()` has one form, the one that takes

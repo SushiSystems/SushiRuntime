@@ -848,7 +848,7 @@ namespace SushiRuntime
             return snapshot;
         }
 
-        bool DistributedCoordinator::supports(Internal::Graph::OpID op) const
+        bool DistributedCoordinator::supports(OperationID op) const
         {
             return impl_->directory.supports(op);
         }

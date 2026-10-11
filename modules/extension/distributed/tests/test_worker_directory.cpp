@@ -77,10 +77,10 @@ namespace
     constexpr milliseconds K_UNTIL_WOKEN = std::chrono::hours(24);
 
     /** @brief Names an operation only the first worker of a test runs. */
-    constexpr Internal::Graph::OpID K_RARE_OPERATION{101};
+    constexpr OperationID K_RARE_OPERATION{101};
 
     /** @brief Names an operation every worker of a test runs. */
-    constexpr Internal::Graph::OpID K_COMMON_OPERATION{202};
+    constexpr OperationID K_COMMON_OPERATION{202};
 
     /** @brief Builds a node tagged with the operation every worker of these tests holds. */
     sushi_ptr<Internal::Graph::Node> common_node()
@@ -91,7 +91,7 @@ namespace
     }
 
     /** @brief Names an operation no worker of a test runs. */
-    constexpr Internal::Graph::OpID K_ABSENT_OPERATION{303};
+    constexpr OperationID K_ABSENT_OPERATION{303};
 
     /** @brief Returns a fixed time point @p offset after the tests' zero. */
     std::chrono::steady_clock::time_point at(milliseconds offset)
@@ -135,7 +135,7 @@ namespace
     Wire::ProofMessage proof_with(span<const std::uint8_t> secret,
                                   const HandshakeNonce& worker_nonce,
                                   const HandshakeNonce& master_nonce,
-                                  std::vector<Internal::Graph::OpID> operations, std::uint32_t max_jobs)
+                                  std::vector<OperationID> operations, std::uint32_t max_jobs)
     {
         Wire::ProofMessage proof;
         proof.worker_proof = to_wire(
@@ -234,7 +234,7 @@ namespace
             }
 
             /** @brief Connects a peer and takes it through HELLO and PROOF at time @p now. */
-            HandshakeStep register_worker(PeerID peer, std::vector<Internal::Graph::OpID> operations,
+            HandshakeStep register_worker(PeerID peer, std::vector<OperationID> operations,
                                           std::uint32_t max_jobs,
                                           std::chrono::steady_clock::time_point now)
             {

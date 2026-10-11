@@ -201,7 +201,7 @@ namespace SushiRuntime
                 [[nodiscard]] std::uint64_t stale_writebacks() const;
 
                 /** @brief Reports whether an alive worker has a kernel for an operation. */
-                [[nodiscard]] bool supports(Internal::Graph::OpID op) const;
+                [[nodiscard]] bool supports(OperationID op) const;
 
                 /** @brief Advances the version of the buffer shared at an address, if any. */
                 void bump_buffer(void* address);

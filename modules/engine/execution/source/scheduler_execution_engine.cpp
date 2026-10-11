@@ -389,7 +389,14 @@ namespace SushiRuntime
 
                 Internal::Observability::NodeTiming t;
                 for (auto& n : graph.all_nodes)
-                    if (!n->is_sentinel && n->registration_index == idx) { t.plan_index = n->plan_index; t.name = n->metadata.name; break; }
+                {
+                    if (n->is_sentinel || n->registration_index != idx)
+                        continue;
+                    t.plan_index = n->plan_index;
+                    t.name = n->metadata.name;
+                    t.operation = n->metadata.op_id.value;
+                    break;
+                }
                 t.invocations = static_cast<std::size_t>(agg[idx].invocations);
                 t.device_ms   = agg[idx].device_ns / 1.0e6;
                 t.host_ms     = agg[idx].host_ns / 1.0e6;

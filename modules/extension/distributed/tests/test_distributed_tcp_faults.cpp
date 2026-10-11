@@ -76,7 +76,7 @@
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
-using namespace SushiRuntime::Internal::Graph::Literals;
+using namespace SushiRuntime::Literals;
 
 namespace
 {
@@ -102,7 +102,7 @@ namespace
     constexpr std::size_t K_MEBIBYTE = 1024 * K_KIBIBYTE;
 
     /** @brief Names the one operation the worker of this file has a kernel for. */
-    constexpr Internal::Graph::OpID K_MASK_OPERATION = "tcp_faults.mask"_op;
+    constexpr OperationID K_MASK_OPERATION = "tcp_faults.mask"_op;
 
     /** @brief Holds the value the kernel and the local fallback combine every byte with. */
     constexpr std::byte K_MASK{0x5a};

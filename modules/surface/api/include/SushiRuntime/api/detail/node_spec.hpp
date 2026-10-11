@@ -34,6 +34,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <SushiRuntime/api/detail/node_stamp.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 
 namespace SushiRuntime
@@ -63,6 +64,9 @@ namespace SushiRuntime
             /** @brief Adds this node to a backing graph; no registration draws a fresh one. */
             std::function<void(::SushiRuntime::Internal::Graph::TaskGraph&,
                                std::optional<std::uint32_t>)> emit;
+
+            /** @brief What the caller stated about this node; replay writes it on the node. */
+            NodeStamp stamp;
 
             /** @brief Position of this node's rule in the recorder's rule order. */
             std::uint32_t rule = K_NO_RULE;

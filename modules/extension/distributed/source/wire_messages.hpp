@@ -177,7 +177,7 @@ namespace SushiRuntime::Distributed::Wire
         std::array<std::byte, K_PROOF_BYTES> worker_proof{};
 
         /** @brief Holds the operations the worker has a kernel for. */
-        std::vector<Internal::Graph::OpID> ops;
+        std::vector<OperationID> ops;
 
         /** @brief Holds the number of tasks the worker queues at most. */
         std::uint32_t max_jobs = 0;

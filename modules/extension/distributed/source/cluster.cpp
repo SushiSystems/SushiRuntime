@@ -294,7 +294,7 @@ namespace SushiRuntime
             return state_->coordinator.statistics().stale_writebacks;
         }
 
-        bool Cluster::supports(Internal::Graph::OpID op) const
+        bool Cluster::supports(OperationID op) const
         {
             return state_->coordinator.supports(op);
         }

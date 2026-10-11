@@ -75,11 +75,12 @@ Two headers under `api/` declare nothing and only promote. `runtime/errors.hpp` 
 `Error`, `Errc`, `Result` and `SushiException`; `runtime/logging.hpp`
 promotes `LogLevel`, `set_log_level` and `set_log_sink`.
 
-The `_op` literal is declared in `SushiRuntime::Internal::Graph::Literals`, and `OpID` and `TaskMetadata` in
-`SushiRuntime::Internal::Graph`. Both declarations are in `task/task_types.hpp` of the engine's task module,
-outside `api/`. That header ends with `using` declarations that promote the three names into
-`SushiRuntime`. `RunReport` is declared in `Observability` by `observability/run_report.hpp`, which
-promotes it into `SushiRuntime` in the same way.
+`OperationID` is declared in `SushiRuntime` and the `_op` literal in `SushiRuntime::Literals`, an
+inline namespace, by `core/operation_id.hpp` of the core module, outside `api/`.
+`graph/node_options.hpp` includes it. `TaskMetadata` is declared in
+`SushiRuntime::Internal::Graph` by `task/task_types.hpp`. `RunReport` is declared in
+`Observability` by `observability/run_report.hpp`, which promotes it into `SushiRuntime` with a
+`using` declaration.
 
 The graph type stays `Graph`, because `SushiRuntime::Internal::Graph` is the engine's namespace. `when`,
 `sized`, `based_at` and their device forms stay in `API`, so `using namespace SushiRuntime` does not

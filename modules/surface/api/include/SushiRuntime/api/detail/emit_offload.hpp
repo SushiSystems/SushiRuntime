@@ -74,7 +74,7 @@ namespace SushiRuntime
          * @pre params passed require_offload_parameters().
          */
         inline ::SushiRuntime::Internal::Graph::TaskMetadata offload_metadata(
-            const char* name, ::SushiRuntime::Internal::Graph::OpID op,
+            const char* name, ::SushiRuntime::OperationID op,
             const std::vector<std::uint64_t>& params)
         {
             ::SushiRuntime::Internal::Graph::TaskMetadata meta{};
@@ -87,7 +87,7 @@ namespace SushiRuntime
 
         /** @brief Builds the replay of an offloadable per-element task. */
         template <class F>
-        auto offload_node(::SushiRuntime::Internal::Graph::OpID op, std::size_t n,
+        auto offload_node(::SushiRuntime::OperationID op, std::size_t n,
                           std::vector<Internal::Memory::ResourceRegion> reads,
                           std::vector<Internal::Memory::ResourceRegion> writes,
                           F&& local, std::vector<std::uint64_t> params)
@@ -116,7 +116,7 @@ namespace SushiRuntime
          * @param live_writes One-element list re-pointed at the next field per step.
          */
         template <typename T, class F>
-        auto offload_state_node(::SushiRuntime::Internal::Graph::OpID op,
+        auto offload_state_node(::SushiRuntime::OperationID op,
                                 std::shared_ptr<StateView<T>> view, std::size_t size,
                                 std::shared_ptr<std::vector<void*>> live_reads,
                                 std::shared_ptr<std::vector<void*>> live_writes,

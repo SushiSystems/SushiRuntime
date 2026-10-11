@@ -66,7 +66,7 @@ namespace SushiRuntime
             std::string build_id;
 
             /** @brief Holds the operations sent in PROOF: KernelRegistry::known_ops(). */
-            std::vector<Internal::Graph::OpID> ops;
+            std::vector<OperationID> ops;
 
             /** @brief Holds the job queue's bound, sent in PROOF. */
             std::uint32_t max_jobs = 1024;

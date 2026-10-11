@@ -77,7 +77,7 @@ namespace
                              live[0] = static_cast<std::uint32_t>(values[0]);
                              live[1] = static_cast<std::uint32_t>(values[1]);
                          },
-                         NodeOptions{std::size_t{1}});
+                         NodeOptions{std::size_t{1}, {}, {}, {}});
         recorder.kernel(DeviceSized{width.capacity(), live, live},
                         Access(Reads(marks, live_region), Writes(marks)),
                         [words](std::size_t t, std::size_t live_width, std::size_t live_salt)
@@ -85,7 +85,7 @@ namespace
                             words[t] = (words[t] ^ static_cast<std::uint32_t>(t + live_width)) *
                                        K_MIX + static_cast<std::uint32_t>(live_salt);
                         },
-                        NodeOptions{width.capacity()});
+                        NodeOptions{width.capacity(), {}, {}, {}});
     }
 
     /** @brief Returns a LateCount whose live value is its capacity. */
