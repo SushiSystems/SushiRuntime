@@ -28,11 +28,14 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <cstdio>
+#include <optional>
 #include <thread>
 #include <hwloc.h>
 #include <hwloc/distances.h>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
+#include "numa_lookup.hpp"
 
 namespace SushiRuntime
 {
@@ -65,11 +68,8 @@ namespace SushiRuntime
 
             for (auto& node : nodes)
             {
-                /**
-                 * @brief for gpu/xpu devices, we find the closest numa node using the pci location.
-                 * for cpu devices, we usually assign the default numa node.
-                 */
-                if (node.is_gpu)
+                // A device with a PCI address, or a GPU without one, is placed by the bus.
+                if (node.pci_address.has_value() || node.is_gpu)
                 {
                     // A device without a PCI address has nothing to look up on the bus.
                     if (!node.pci_address.has_value())
@@ -98,12 +98,12 @@ namespace SushiRuntime
 
                     if (pci_device) 
                     {
-                        /** @brief Find the NUMA node that is an ancestor of the PCI device. */
-                        hwloc_obj_t ancestor = hwloc_get_ancestor_obj_by_type(topology, HWLOC_OBJ_NUMANODE, pci_device);
+                        const std::optional<unsigned> local_node =
+                            local_numa_os_index(topology, pci_device);
                         
-                        if (ancestor) 
+                        if (local_node.has_value()) 
                         {
-                            node.numa_node_id = ancestor->os_index;
+                            node.numa_node_id = static_cast<int>(*local_node);
                             char pci_str[24];
                             std::snprintf(pci_str, sizeof(pci_str), "%02x:%02x.%x",
                                           static_cast<unsigned>(pci_address.bus),
@@ -114,16 +114,15 @@ namespace SushiRuntime
                         } 
                         else
                         {
-                            /** @brief fallback to node 0 if no direct numa ancestor is found. */
                             node.numa_node_id = 0;
                             if (numa_node_count > 1)
                             {
-                                SR_LOG_WARN("No direct NUMA ancestor for [{}]; placed on NUMA node 0 of {}, which may not be its nearest.",
+                                SR_LOG_WARN("hwloc reports no local NUMA node for [{}]; placed on NUMA node 0 of {}, which may not be its nearest.",
                                             node.name, numa_node_count);
                             }
                             else
                             {
-                                SR_LOG_INFO("No direct NUMA ancestor for [{}]; placed on NUMA node 0, the only node.",
+                                SR_LOG_INFO("hwloc reports no local NUMA node for [{}]; placed on NUMA node 0, the only node.",
                                             node.name);
                             }
                         }

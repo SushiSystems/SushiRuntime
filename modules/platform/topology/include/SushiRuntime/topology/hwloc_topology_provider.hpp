@@ -68,9 +68,10 @@ namespace SushiRuntime
         /**
          * @brief NUMA distance model backed by hwloc SLIT and SRAT tables.
          *
-         * The topology and its distance matrix are loaded once at construction and cached,
-         * making distance lookups an O(1) operation. Falls back to the ACPI convention
-         * (10 local, 21 remote) when the firmware exposes no SLIT table.
+         * The topology and its distance matrix are loaded once at construction and cached.
+         * A lookup of two different ids is two std::map searches, O(log n) in the node
+         * count. Falls back to the ACPI convention (10 local, 21 remote) when the firmware
+         * exposes no SLIT table.
          */
         class SUSHIRUNTIME_API HwlocDistanceModel : public INumaDistanceModel
         {

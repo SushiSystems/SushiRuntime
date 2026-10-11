@@ -8,9 +8,12 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_affinity.cpp
 
-Thread-to-core pinning is best-effort: on failure it logs a warning and does not throw. The tests
-assert that no call throws. They pin from a worker thread, so the affinity of the test runner is
-left untouched.
+A pin request does not throw. The tests pin from a fresh worker thread, so the affinity of the test
+runner is left untouched. Three tests read the thread's affinity from the OS before and after the
+request. A request for core -1, or for core 100000, leaves that affinity unchanged. A request for
+core 0 leaves core 0 as the only core of the thread; the test is skipped when the affinity before the
+request does not list core 0. Three further tests pin to core 0 or to core 100000 and assert that no
+call throws. `PinIsRepeatable` makes 16 requests for core 0 on one thread.
 
 ## test_hw_discovery.cpp
 
@@ -26,6 +29,36 @@ The failure for it, `SushiException` with `Errc::unsupported`, is raised by `Run
 
 Discovery itself throws `SushiException` with `Errc::unsupported` only when SYCL enumeration
 throws. No test reaches that path, because a test cannot make `sycl::device::get_devices` fail.
+
+### `NoTwoNodesShareAPciAddress`
+
+The test probes every device without a filter. For each node that has a PCI address, it asserts that
+the domain, bus, device and function of that address have not been returned for an earlier node.
+Nodes without a PCI address are skipped.
+
+## test_numa_lookup.cpp
+
+The file covers `local_numa_os_index`, which returns the OS index of the NUMA node that a hwloc object
+belongs to. Each test loads a synthetic machine described as two NUMA nodes, each with two cores of one
+PU, and destroys the topology on scope exit.
+
+### `SyntheticTopology`
+
+`SyntheticTopology` loads a hwloc synthetic description and destroys the topology in its destructor.
+`get()` returns null when hwloc refuses the description. Copy and move are deleted.
+
+### `EveryPuOfATwoNodeMachineMapsToItsOwnNode`
+
+The test asserts that the machine has two NUMA nodes and four PUs. For each PU, `local_numa_os_index`
+returns the OS index of the node that holds the PU, which is the PU's index divided by two.
+
+### `ANumaNodeIsLocalToItself`
+
+For the second NUMA node, `local_numa_os_index` returns that node's own OS index.
+
+### `ANullObjectHasNoNode`
+
+`local_numa_os_index` returns no value for a null object.
 
 ## test_topology_view.cpp
 

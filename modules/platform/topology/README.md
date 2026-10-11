@@ -9,9 +9,15 @@ symbol or passage it explains, and that header's file block cites this page.
 
 ### pin_current_thread_to_core
 
-pin_current_thread_to_core() uses the OS affinity API (SetThreadAffinityMask on Windows,
+pin_current_thread_to_core() uses the OS affinity API (SetThreadGroupAffinity on Windows,
 pthread_setaffinity_np on POSIX) to bind the thread so the scheduler never migrates it to a
-different core.
+different core. The body is in `source/affinity.cpp`, so the header pulls in no OS header.
+
+The core id counts logical cores from 0. On Windows it runs through the processor groups in
+order, so a core above 63 can be named. An id below 0, or at or above the number of logical cores
+the OS reports (`GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)` on Windows; the smaller of
+`CPU_SETSIZE` and `sysconf(_SC_NPROCESSORS_CONF)` on POSIX), logs one warning and leaves the
+thread's affinity as it was. So does an id the OS refuses.
 
 ## hw_discovery.hpp
 
@@ -70,8 +76,10 @@ hwloc defaults. The scheduler reads it once, when it builds the steal victim ord
 other workers by distance from that node.
 
 `numa_distance()` forwards both ids to the model without checking them, so an id the model does not
-know gets the model's own answer. MatrixDistanceModel and HwlocDistanceModel both answer 10 when the
-two ids are equal and 21 otherwise.
+know gets the model's own answer. HwlocDistanceModel answers 10 for two equal ids, whatever its
+matrix holds, and 21 for two different ids when either is missing from its matrix.
+MatrixDistanceModel answers 10 for equal ids and 21 otherwise only when an id is outside the
+matrix; for ids inside it, equal ones included, it returns the matrix entry.
 
 The view has no mutating member. Any thread may read it without a lock, provided the distance model
 is itself safe to read concurrently; both models in this module are, because they only read state
@@ -95,6 +103,14 @@ both through the OpenCL backend and as the native "OpenMP host device", which al
 bogus `global_mem_size`. Discovery keeps at most one CPU per NUMA node, so the scheduler
 does not build duplicate queues for one processor. The second CPU seen on a NUMA node is
 logged and dropped, and its logical id is given back.
+
+#### One GPU or accelerator per PCI address
+
+A GPU that two backends expose is enumerated twice, and every entry of the device list gets its
+own queues, so the second entry would give one physical device two queue sets. Discovery keeps
+the first GPU or accelerator enumerated at a resolved PCI address; a later one at the same
+address is logged and dropped, and its logical id is given back. A device with no resolved PCI
+address is never dropped, because nothing tells it apart from a second physical device.
 
 #### fp64 is checked at discovery
 
@@ -133,9 +149,19 @@ the local node and 21 for one remote hop.
 hwloc 2.x does not include PCI and I/O devices by default.
 `HWLOC_TYPE_FILTER_KEEP_ALL` is required for `hwloc_get_pcidev_by_busid()` to find the GPU.
 
-A GPU takes the NUMA node that is an ancestor of its PCI device, and node 0 when hwloc knows
-no such ancestor or does not know the PCI device. A CPU device takes the NUMA node covering
-the process's CPU binding.
+A GPU or accelerator with a PCI address takes the NUMA node local to its PCI device, and node 0
+when hwloc reports no such node or does not know the PCI device. A GPU without a PCI address
+takes node 0. Every other device takes the NUMA node covering the process's CPU binding.
+
+### numa_lookup.cpp
+
+In hwloc 2 a NUMA node is a memory child, not a link in an object's parent chain, so
+`hwloc_get_ancestor_obj_by_type(..., HWLOC_OBJ_NUMANODE, ...)` finds none. `local_numa_os_index()`
+walks up from the object to the first one with a non-empty `nodeset` and returns the OS index of
+the lowest node in it. A PU or core has its own nodeset; a PCI device has none and takes its
+first non-I/O ancestor's. The three lookups of this module (`hw_discovery.cpp`,
+`hwloc_topology_provider.cpp`, `numa_mapper.cpp`) go through it, and each keeps its own fallback
+for an empty answer.
 
 ### remapping_topology_provider.cpp
 

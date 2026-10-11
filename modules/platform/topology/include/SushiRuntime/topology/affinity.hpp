@@ -21,64 +21,24 @@
 
 /**
  * @file affinity.hpp
- * @brief Defines pin_current_thread_to_core.
+ * @brief Declares pin_current_thread_to_core.
  * @author Mustafa Garip
  * @see modules/platform/topology/README.md
  */
 
 #pragma once
 
-#include <thread>
-#include <system_error>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/core/export.hpp>
 
-#ifdef _WIN32
-    #ifndef NOMINMAX
-    #define NOMINMAX
-    #endif
-    #include <windows.h>
-#else
-    #include <pthread.h>
-#endif
-
-namespace SushiRuntime 
+namespace SushiRuntime
 {
-    namespace Topology 
+    namespace Topology
     {
         /**
          * @brief Pins the calling thread to a specific logical CPU core.
          * @param core_id Logical core index, 0-based; an out-of-range value is logged and ignored.
          * @see modules/platform/topology/README.md
          */
-        inline void pin_current_thread_to_core(int core_id)
-        {
-            #ifdef _WIN32
-                HANDLE thread = GetCurrentThread();
-                DWORD_PTR mask = (1ULL << core_id); 
-                
-                if (SetThreadAffinityMask(thread, mask) == 0)
-                {
-                    SR_LOG_WARN("Failed to set thread affinity for core {} on Windows. Error: {}", core_id, GetLastError());
-                }
-                else
-                {
-                    SR_LOG_DEBUG("Thread successfully pinned to core {}", core_id);
-                }
-            #else
-                cpu_set_t cpuset;
-                CPU_ZERO(&cpuset);
-                CPU_SET(core_id, &cpuset);
-
-                pthread_t current_thread = pthread_self();    
-                if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset) != 0) 
-                {
-                    SR_LOG_WARN("Failed to set thread affinity for core {} on POSIX system.", core_id);
-                } 
-                else 
-                {
-                    SR_LOG_DEBUG("Thread successfully pinned to core {}", core_id);
-                }
-            #endif
-        }
-    }
-}
+        SUSHIRUNTIME_API void pin_current_thread_to_core(int core_id);
+    } // namespace Topology
+} // namespace SushiRuntime

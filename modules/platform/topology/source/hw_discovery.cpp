@@ -28,14 +28,19 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <cstdint>
 #include <cstdio>
 #include <hwloc.h>
+#include <optional>
 #include <regex>
+#include <set>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
+#include "numa_lookup.hpp"
 
 namespace SushiRuntime
 {
@@ -98,6 +103,27 @@ namespace SushiRuntime
                 return text;
             }
 
+            /** @brief Names one PCI function by its four address fields, in bus order. */
+            using PciKey = std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t>;
+
+            /** @brief Returns the key two devices share when they sit at one PCI address. */
+            PciKey pci_key(const PCIDomainAddress& address) noexcept
+            {
+                return PciKey{address.domain, address.bus, address.device, address.function};
+            }
+
+            /** @brief Spells a PCI address as "0000:01:00.0". */
+            std::string describe(const PCIDomainAddress& address)
+            {
+                char text[40];
+                std::snprintf(text, sizeof(text), "%04x:%02x:%02x.%x",
+                              static_cast<unsigned>(address.domain),
+                              static_cast<unsigned>(address.bus),
+                              static_cast<unsigned>(address.device),
+                              static_cast<unsigned>(address.function));
+                return text;
+            }
+
             /** @brief Builds the exception for a SYCL enumeration that threw. */
             Core::SushiException enumeration_error(const HardwareFilterConfig& config,
                                                    const char* sycl_text)
@@ -147,6 +173,9 @@ namespace SushiRuntime
                 // At most one CPU is kept per NUMA node (modules/platform/topology/README.md).
                 std::unordered_set<int> seen_cpu_numa;
 
+                // At most one GPU or accelerator is kept per PCI address (modules/platform/topology/README.md).
+                std::set<PciKey> seen_pci;
+
                 for (const auto& dev : sycl::device::get_devices(sycl::info::device_type::all))
                 {
                     if (dev.is_cpu() && !config.include_cpu) continue;
@@ -174,13 +203,13 @@ namespace SushiRuntime
 
                     if (dev.is_cpu())
                     {
-                        // Use HWLOC to find NUMA node for CPU
-                        hwloc_obj_t pu = topology != nullptr
-                            ? hwloc_get_obj_by_type(topology, HWLOC_OBJ_PU, 0)
-                            : nullptr;
-                        if (pu) {
-                            hwloc_obj_t numa = hwloc_get_ancestor_obj_by_type(topology, HWLOC_OBJ_NUMANODE, pu);
-                            if (numa) node.numa_node_id = numa->os_index;
+                        // The CPU device takes the node of the first PU; -1 stays when hwloc names none.
+                        if (topology != nullptr)
+                        {
+                            const std::optional<unsigned> local_node = local_numa_os_index(
+                                topology, hwloc_get_obj_by_type(topology, HWLOC_OBJ_PU, 0));
+                            if (local_node.has_value())
+                                node.numa_node_id = static_cast<int>(*local_node);
                         }
 
                         // A second CPU on one NUMA node is dropped (modules/platform/topology/README.md).
@@ -269,14 +298,7 @@ namespace SushiRuntime
                                     address.device = static_cast<std::uint32_t>(std::stoul(match[3].str(), nullptr, 16));
                                     address.function = static_cast<std::uint32_t>(std::stoul(match[4].str(), nullptr, 16));
                                     node.pci_address = address;
-
-                                    char pci_str[24];
-                                    std::snprintf(pci_str, sizeof(pci_str), "%04x:%02x:%02x.%x",
-                                                  static_cast<unsigned>(address.domain),
-                                                  static_cast<unsigned>(address.bus),
-                                                  static_cast<unsigned>(address.device),
-                                                  static_cast<unsigned>(address.function));
-                                    SR_LOG_DEBUG("Device {} PCI: {}", node.name, pci_str);
+                                    SR_LOG_DEBUG("Device {} PCI: {}", node.name, describe(address));
                                 }
                             }
                         }
@@ -285,6 +307,16 @@ namespace SushiRuntime
                             SR_LOG_WARN("Could not retrieve PCI address for {}, NUMA mapping may be degraded.", node.name);
                             node.pci_address.reset();
                         }
+                    }
+
+                    // A second device at one PCI address is dropped (modules/platform/topology/README.md).
+                    if (node.pci_address.has_value() &&
+                        !seen_pci.insert(pci_key(*node.pci_address)).second)
+                    {
+                        SR_LOG_INFO("Skipping duplicate device [{}] at PCI {} (already mapped).",
+                                    node.name, describe(*node.pci_address));
+                        --logical_id_counter;
+                        continue;
                     }
 
                     nodes.push_back(node);

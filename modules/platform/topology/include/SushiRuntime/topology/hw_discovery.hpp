@@ -89,9 +89,9 @@ namespace SushiRuntime
         /**
          * @brief Enumerates available SYCL compute devices and maps each to its NUMA node.
          *
-         * Used once at RuntimeContext construction to build the device list. Duplicate
-         * SYCL devices (same platform/device reported by multiple backends) are
-         * deduplicated before the list is returned.
+         * Used once at RuntimeContext construction to build the device list. At most one
+         * CPU is kept per NUMA node, and at most one GPU or accelerator per resolved PCI
+         * address, the first enumerated; a device with no PCI address is always kept.
          */
         class SUSHIRUNTIME_API HardwareDiscovery
         {
@@ -101,7 +101,7 @@ namespace SushiRuntime
                 /**
                  * @brief Scans all SYCL platforms and returns matching hardware nodes.
                  * @param config Device-class filter; defaults to including all classes.
-                 * @return Deduplicated list of found devices with logical IDs and NUMA assignments.
+                 * @return The devices kept, with logical IDs and NUMA assignments.
                  */
                 std::vector<HardwareNode> probe_all_devices(const HardwareFilterConfig& config = {});
 
