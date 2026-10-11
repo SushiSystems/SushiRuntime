@@ -12,4 +12,7 @@ sushiruntime_add_module(
 
 sushiruntime_add_module_tests(
     MODULE task
-    SOURCES test_node_placement.cpp)
+    SOURCES
+        test_node_placement.cpp
+        test_small_event_vector.cpp
+        test_task_types.cpp)

@@ -220,11 +220,14 @@ namespace SushiRuntime
 
             /**
              * @brief Registers target as a successor of this node.
+             * @pre Only one thread calls add_successor() on this node at a time.
+             * @throws std::bad_alloc When a spillover entry cannot be allocated. The count has
+             *         already advanced, and target is not linked.
              * @see modules/engine/graph/README.md
              */
-            void add_successor(Node* target) noexcept
+            void add_successor(Node* target)
             {
-                // Single writer per node: the slot is written before the count is published.
+                // The slot is written before the count is published.
                 int32_t idx = inline_successor_count.load(std::memory_order_relaxed);
                 if (idx < MAX_INLINE_SUCCESSORS)
                 {
