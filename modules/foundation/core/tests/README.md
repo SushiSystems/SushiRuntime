@@ -6,6 +6,23 @@ The tests of the `core` module, built into one program, `sr_core_tests`, which
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 
+## test_assert.cpp
+
+The file covers `SR_ASSERT`, `SR_VERIFY`, `SR_FATAL` and `set_assertion_handler()`. It defines
+`SR_ENABLE_ASSERTIONS` as 1 before the include, so `SR_ASSERT` is checked in a release build of
+the tests too.
+
+### Death tests
+
+Each of the three death tests runs its macro in a child process and matches the line the default
+handler writes against the message or the condition's text, followed by `test_assert.cpp:` and
+the line of the macro.
+
+### `AReplacedHandlerIsCalledBeforeTheProcessStops`
+
+The handler is installed inside the child process, so the parent keeps the default. The handler
+returns, and the child still dies.
+
 ## test_delegate.cpp
 
 The file covers `Core::Delegate`: the empty state, invocation and return values, argument
