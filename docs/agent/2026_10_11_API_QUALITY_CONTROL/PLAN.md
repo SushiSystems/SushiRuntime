@@ -190,6 +190,99 @@ Stage 6 is where a kernel body meets a type-erased call. The erasure happens onc
 node, at record time. The per-element path stays a template inside the SYCL command group, so the
 device code does not change. Task 6.7 is the proof, not this paragraph.
 
+#### Task 6.1: the headers the surface reaches
+
+Measured on 2026-10-12 at `6d920a8`. The umbrella reaches 118 of the 155 headers under
+`modules/*/*/include`; 48 of them are outside `api/` and `core/`. "Public" means a consumer names
+the symbol or a public signature carries it. "Internal" means a header of `api/` includes it for
+an implementation; task 6.3 or 6.4 cuts that include.
+
+Public modules after task 6.2: `core`, `report`, `region`, `log`, `machine`, `interop`, `api`.
+`log` and `machine` are not in the list the owner approved, and each is open to a veto:
+
+- `log` holds the level and the sink. `core` is vocabulary every module shares and carries no
+  process-wide switch. `logging` cannot stay public, because its macros and `log_write` share its
+  include root and a root is installed whole.
+- `machine` holds what a runtime is asked to run on and what it reports back: the device filter,
+  the device description, the pin policy and the worker pool. They are defined today in
+  `topology`, `device` and `scheduler`, three internal modules, and none of the four is a report
+  of a run or a region of memory.
+- `interop` keeps the descriptors. Its three functions that take the engine's context move to a
+  new internal module, `interop_engine`, in the same tier.
+
+| Header | Symbols a consumer sees | Verdict | Target |
+| --- | --- | --- | --- |
+| `device/device_description.hpp` | `DeviceDescription`, `DeviceKind` | Public | `machine/device_description.hpp`, `machine/device_kind.hpp`; `DeviceDescriptor` stays in `device/device_descriptor.hpp` |
+| `device/device_queue_set.hpp` | None | Internal | |
+| `device/queue_flavour.hpp` | None | Internal | |
+| `execution/chain_plan.hpp` | None | Internal | |
+| `execution/chain_run.hpp` | None | Internal | |
+| `execution/execution_engine.hpp` | None | Internal | |
+| `execution/runtime_context.hpp` | None; `Runtime::unsafe_context()` returns it until task 6.4 | Internal | |
+| `execution/runtime_settings.hpp` | None | Internal | |
+| `execution/scheduler_execution_engine.hpp` | None | Internal | |
+| `graph/chain_plan.hpp` | None | Internal | |
+| `graph/compiled_graph.hpp` | None | Internal | |
+| `graph/task_graph.hpp` | None | Internal | |
+| `interop/device_uuid.hpp` | `DeviceUUID` | Public | Stays in `interop` |
+| `interop/external_memory.hpp` | `ExternalMemoryDescriptor`, `ExternalHandleKind` | Public | Stays in `interop` |
+| `interop/interop_capabilities.hpp` | `InteropCapabilities` | Public | Stays in `interop` |
+| `interop/interop.hpp` | None; three `Detail` functions that take `RuntimeContext` | Internal | `interop_engine/interop_engine.hpp` |
+| `logging/log_level.hpp` | `LogLevel`, `set_log_level`, `log_level` | Public | `log/log_level.hpp`; `K_LOG_LEVEL_CEILING` and the gate the macros read stay in `logging/log_gate.hpp` |
+| `logging/log_sink.hpp` | `LogSink`, `set_log_sink`, `set_log_synchronous` | Public | `log/log_sink.hpp` |
+| `logging/logger.hpp` | None; `log_write` and the `SR_LOG_*` macros | Internal | |
+| `memory/allocation.hpp` | None; `Buffer` holds an `Allocation` | Internal | |
+| `memory/resource_liveness.hpp` | None by name; `Reads`, `Writes`, `Placement` and the capture structs hold a `LivenessObserver` member | Internal, not settled | See below |
+| `memory/resource_region.hpp` | `BufferRegion` (was `ResourceRegion`), `ResourceID` | Public | `region/buffer_region.hpp` |
+| `memory/usm_allocation_owner.hpp` | None | Internal | |
+| `memory/usm_allocator.hpp` | None | Internal | |
+| `memory/usm_registry.hpp` | None | Internal | |
+| `memory/usm_release_observer.hpp` | None | Internal | |
+| `memory/usm_request.hpp` | None | Internal | |
+| `observability/dispatch_width.hpp` | `K_WIDTH_UNKNOWN` | Public | `report/dispatch_width.hpp` |
+| `observability/profiling_ledger.hpp` | None | Internal | |
+| `observability/run_report.hpp` | `RunReport`, `NodeTiming`, `WorkerTiming`, `NodeEventRecord`, `ClockPairing`, `ExecutionLayer`, `NUMANodeStatistics`, `DistributedStatistics` | Public | `report/run_report.hpp` |
+| `observability/transfer_counters.hpp` | None; `AdvancedControls` returns the two byte counts as `std::size_t` | Internal | |
+| `scheduler/pin_policy.hpp` | `PinPolicy` | Public | `machine/pin_policy.hpp` |
+| `scheduler/worker_pool.hpp` | `WorkerPool` | Public | `machine/worker_pool.hpp` |
+| `scheduler/worker_pool_settings.hpp` | None | Internal | |
+| `task/late_bindings.hpp` | None | Internal | |
+| `task/node.hpp` | None | Internal | |
+| `task/node_profiling.hpp` | None | Internal | |
+| `task/node_widths.hpp` | None | Internal | |
+| `task/offload_state.hpp` | None | Internal | |
+| `task/ready_sink.hpp` | None | Internal | |
+| `task/region_link.hpp` | None | Internal | |
+| `task/small_event_vector.hpp` | None | Internal | |
+| `task/task.hpp` | None | Internal | |
+| `task/task_types.hpp` | None; the using-declaration that made `TaskMetadata` a public name goes | Internal | |
+| `task/task_work.hpp` | None | Internal | |
+| `topology/hw_discovery.hpp` | `DeviceFilter` (was `HardwareFilterConfig`) | Split | `machine/device_filter.hpp`; `HardwareDiscovery`, `HardwareNode` and `PCIDomainAddress` stay |
+| `topology/topology_provider.hpp` | None | Internal | |
+| `topology/topology_view.hpp` | None | Internal | |
+
+Not settled: `Liveness`, `LivenessToken` and `LivenessObserver`. No consumer names them, but
+five public structs of `api/vocabulary` hold a `LivenessObserver` by value, so their layout needs
+the type. Task 6.4 chooses between a forward declaration of `Liveness` in `api`, which a
+`std::weak_ptr` member accepts, and a move of the three names to `region`. Task 6.2 leaves the
+header in `memory`.
+
+Headers under an `include/` root that no surface header reaches, the extension aside. Each is
+internal:
+
+| Module | Headers |
+| --- | --- |
+| `core` | `bit.hpp` |
+| `memory` | `epoch_reclamation.hpp` |
+| `observability` | `event_timestamps.hpp` |
+| `scheduler` | `event_polling.hpp`, `offload_gate.hpp`, `quiescence_latch.hpp`, `range_task.hpp`, `rebalancer_interfaces.hpp`, `run_outcome.hpp`, `task_scheduler.hpp`, `thermal_proxy_strategy.hpp`, `workload_coordinator.hpp` |
+| `sycl` | `sycl_compat.hpp` |
+| `task` | `node_placement.hpp`, `offload_coordinator.hpp`, `offload_sink.hpp` |
+| `topology` | `affinity.hpp`, `hwloc_topology_provider.hpp`, `matrix_distance_model.hpp`, `numa_mapper.hpp`, `remapping_topology_provider.hpp` |
+
+`core/bit.hpp` is the one of these that sits in a public module, so it is installed with `core`
+although only the engine includes it. It stays there until the owner names an internal home.
+
 ### Stage 7: SushiBLAS
 
 | Task | Work | Acceptance criterion |
