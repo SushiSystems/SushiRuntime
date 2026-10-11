@@ -38,6 +38,7 @@
 
 #include "test_helpers.hpp"
 #include "scheduler_fixture.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime::Internal::Execution;
 using namespace SushiRuntime::Internal::Scheduler;
@@ -87,7 +88,8 @@ namespace
  */
 TEST(Performance_StealLocalityBench, StealStaysNodeLocal)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
 
     const int nodes = distinct_numa_nodes(ctx.topology().core_to_numa());
     if (nodes < 2)

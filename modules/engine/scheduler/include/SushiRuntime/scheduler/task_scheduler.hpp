@@ -398,7 +398,7 @@ namespace SushiRuntime
                 void wait_quiescent();
 
                 /**
-                 * @brief Reports whether a task threw during the current run.
+                 * @brief Reports whether a task failed during the current run.
                  *
                  * Read by the completion sentinel to deliver the error to the caller
                  * instead of success. Cleared each round by arm_for_execution().
@@ -407,12 +407,12 @@ namespace SushiRuntime
                 bool run_failed() const { return outcome_.has_failed(); }
 
                 /**
-                 * @brief Returns the first exception captured during the current run.
+                 * @brief Returns the first failure recorded during the current run.
                  *
                  * The value is visible once run_failed() reads true.
-                 * @return The captured exception, or null if the run did not fail.
+                 * @return The failure; its code is Ok if the run did not fail.
                  */
-                std::exception_ptr run_error() { return outcome_.error(); }
+                [[nodiscard]] Error run_error() const { return outcome_.error(); }
 
                 /**
                  * @brief Requests cancellation of the active run. Thread-safe.

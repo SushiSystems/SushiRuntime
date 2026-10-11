@@ -21,14 +21,13 @@
 
 /**
  * @file error.hpp
- * @brief Declares ErrorCode, Error and SushiException, the runtime's failure types.
+ * @brief Declares ErrorCode and Error, the runtime's failure types.
  * @author Mustafa Garip
  */
 
 #pragma once
 
 #include <cstdint>
-#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -123,38 +122,5 @@ namespace SushiRuntime
             }
         }
     } // namespace Detail
-
-    /**
-     * @brief Exception form of Error, thrown by the throwing entry points.
-     *
-     * Wraps an Error object and exposes its message through the std::runtime_error interface.
-     */
-    class SR_TYPE_API SushiException : public std::runtime_error
-    {
-        public:
-            /**
-             * @brief Wraps an Error as a throwable exception.
-             * 
-             * Initializes the standard exception with the error message.
-             *
-             * @param failure The structured failure detail to carry.
-             */
-            explicit SushiException(Error failure)
-                : std::runtime_error(failure.message), error_(std::move(failure))
-            {
-            }
-
-            /** 
-             * @brief Retrieves the structured error behind this exception. 
-             * 
-             * Exposes the underlying Error object for programmatic inspection.
-             *
-             * @return A constant reference to the underlying structured error.
-             */
-            [[nodiscard]] const Error& error() const noexcept { return error_; }
-
-        private:
-            Error error_; /**< The structured failure detail. */
-    };
 
 } // namespace SushiRuntime

@@ -33,6 +33,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -53,7 +54,7 @@ namespace SushiRuntime
          * @brief Builds the topology view, the device queues and the USM allocator, and owns
          *        the execution engine that runs on them.
          *
-         * Constructed once per process and shared (via shared_ptr) between the fluent
+         * Created once per process and shared (via shared_ptr) between the fluent
          * API layer and all graphs it produces. Implemented with Pimpl.
          */
         class SUSHIRUNTIME_API RuntimeContext
@@ -63,13 +64,17 @@ namespace SushiRuntime
                  * @brief Creates a runtime context and scans for hardware matching config.
                  * @param provider Topology source; null selects the hwloc default.
                  * @param distance_model NUMA distance model; null selects the hwloc default.
-                 * @throws SushiException With ErrorCode::Unsupported when no device passes config.
+                 * @return The context, or why there is none: Unsupported when no device passes
+                 *         config or the devices cannot be listed, DeviceLost when a device queue
+                 *         cannot be built, AllocationFailed when the host refuses memory or a
+                 *         thread.
                  * @see modules/engine/execution/README.md
                  */
-                explicit RuntimeContext(const Internal::Topology::HardwareFilterConfig& config = {},
-                                        std::shared_ptr<Internal::Topology::TopologyProvider> provider = nullptr,
-                                        std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model = nullptr,
-                                        const RuntimeSettings& settings = {});
+                [[nodiscard]] static Result<std::shared_ptr<RuntimeContext>>
+                create(const Internal::Topology::HardwareFilterConfig& config = {},
+                       std::shared_ptr<Internal::Topology::TopologyProvider> provider = nullptr,
+                       std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model = nullptr,
+                       const RuntimeSettings& settings = {});
 
                 /** @brief Stops the engine, then waits for every device queue. */
                 ~RuntimeContext();
@@ -145,6 +150,10 @@ namespace SushiRuntime
 
             private:
                 struct Impl;
+
+                /** @brief Takes the parts create() built; the engine is attached after it. */
+                explicit RuntimeContext(sushi_ptr<Impl> impl) noexcept;
+
                 /** @brief Pimpl handle for internal implementation details. */
                 sushi_ptr<Impl> impl_;
         };

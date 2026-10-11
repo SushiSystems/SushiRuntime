@@ -8,8 +8,8 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_logger.cpp
 
-The file covers the process-wide logger: the level gate, the sink, the two delivery modes and
-`SR_THROW_IF`. The logger's state lives in the shared library, so every test changes state that the
+The file covers the process-wide logger: the level gate, the sink and the two delivery modes.
+The logger's state lives in the shared library, so every test changes state that the
 next test would inherit.
 
 ### `Unit_LoggerTest`
@@ -56,19 +56,3 @@ In asynchronous mode the sink runs on the logger's thread, so each record carrie
 than the test's. `set_log_synchronous(true)` waits for the queue, which is what lets the test read
 the vector without a sleep or a lock: all three records are there, in the order they were logged.
 
-### `ThrowIfThrowsSushiExceptionWithInvalidState`
-
-`SR_THROW_IF` throws `SushiException` with `ErrorCode::InvalidState`, `what()` is the formatted
-message, and the message is logged once at `Error`. A handler for `std::runtime_error` still
-catches it. On a false condition the format arguments are not evaluated.
-
-### `ThrowIfMemberHolder`
-
-`ThrowIfMemberHolder` has a member function that calls `SR_THROW_IF` with its member `msg_` as the
-format argument. `msg_` is "inner".
-
-### `ThrowIfFormatsACallerMemberNamedMsg`
-
-The test calls the member function through `SR_THROW_IF`. It asserts that the thrown `SushiException`
-carries `ErrorCode::InvalidState` with the text "value: inner", and that the logger writes one record
-that contains the same text.

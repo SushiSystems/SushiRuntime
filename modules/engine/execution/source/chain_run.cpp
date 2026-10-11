@@ -44,6 +44,29 @@ namespace SushiRuntime
         namespace
         {
             /**
+             * @brief Runs work and returns what it throws as a KernelFailed error.
+             * @return Nothing when work returned.
+             */
+            template <typename Work>
+            [[nodiscard]] Result<void> kernel_failure_of(Work&& work)
+            {
+                try
+                {
+                    work();
+                    return {};
+                }
+                catch (const std::exception& cause)
+                {
+                    return make_error(Error{ErrorCode::KernelFailed, cause.what()});
+                }
+                catch (...)
+                {
+                    return make_error(Error{ErrorCode::KernelFailed,
+                        "A chained step threw an object that is not a std::exception."});
+                }
+            }
+
+            /**
              * @brief Converts a steady-clock time point to nanoseconds since its epoch.
              * @param t The time point.
              * @return Nanoseconds since the steady clock's epoch.
@@ -116,35 +139,40 @@ namespace SushiRuntime
         /**
          * @brief Submits one step's enabled nodes in compiled order without waiting.
          */
-        void ChainRun::submit_step(std::uint32_t step)
+        Result<void> ChainRun::submit_step(std::uint32_t step)
         {
-            for (Internal::Graph::Node* node : graph_.chain.order)
+            return kernel_failure_of([this, step]()
             {
-                // The step machinery wrote enabled on this thread before this step.
-                if (node->bindings_ && !node->bindings_->enabled.load(std::memory_order_relaxed))
-                    continue;
+                for (Internal::Graph::Node* node : graph_.chain.order)
+                {
+                    // The step machinery wrote enabled on this thread before this step.
+                    if (node->bindings_ &&
+                        !node->bindings_->enabled.load(std::memory_order_relaxed))
+                        continue;
 
-                if (profiling_)
-                    submit_profiled(*node, step);
-                else
-                    submit_node_discarding(*node);
-            }
+                    if (profiling_)
+                        submit_profiled(*node, step);
+                    else
+                        submit_node_discarding(*node);
+                }
+            });
         }
 
         /**
-         * @brief Blocks until every submitted step has finished and rethrows a device error.
+         * @brief Blocks until every submitted step has finished.
          */
-        void ChainRun::wait()
+        Result<void> ChainRun::wait()
         {
-            queue_.wait_and_throw();
+            // The asynchronous handler rethrows here, where the wait is.
+            return kernel_failure_of([this]() { queue_.wait_and_throw(); });
         }
 
         /**
          * @brief Waits once for the whole run, then writes its event records into the ledger.
          */
-        void ChainRun::finish()
+        Result<void> ChainRun::finish()
         {
-            /** @brief Releases the run mark when finish() returns or throws. */
+            /** @brief Releases the run mark when finish() returns. */
             struct MarkRelease
             {
                 RunMark& mark; /**< The mark to release. */
@@ -156,10 +184,13 @@ namespace SushiRuntime
                 }
             } mark_release{run_mark_};
 
-            wait();
+            Result<void> waited = wait();
+            if (!waited)
+                return waited;
             finished_ = true;
             if (profiling_)
                 record_events();
+            return {};
         }
 
         /**

@@ -124,41 +124,45 @@ namespace SushiRuntime
                 return text;
             }
 
-            /** @brief Builds the exception for a SYCL enumeration that threw. */
-            SushiException enumeration_error(const HardwareFilterConfig& config,
-                                                   const char* sycl_text)
+            /** @brief Builds the error of a SYCL enumeration that threw. */
+            Error enumeration_error(const HardwareFilterConfig& config, const char* sycl_text)
             {
-                return SushiException(Error{
+                return Error{
                     ErrorCode::Unsupported,
                     std::string("HardwareDiscovery::probe_all_devices: SYCL device enumeration "
                                 "failed: ") + sycl_text + ". Active filter: " + describe(config) +
                         ". Check that the device drivers are installed and that one SYCL runtime "
-                        "is on the loader path; a second one beside it breaks enumeration."});
+                        "is on the loader path; a second one beside it breaks enumeration."};
             }
         } // namespace
 
-        /** 
+        /**
          * @brief Discovers the SYCL devices that pass config and returns them as hardware nodes.
          * @param config The filter configuration to use during the probe.
-         * @return A vector of discovered hardware nodes.
+         * @return The discovered hardware nodes, or Unsupported when SYCL could not list them.
          */
-        std::vector<HardwareNode> HardwareDiscovery::probe_all_devices(const HardwareFilterConfig& config) 
+        Result<std::vector<HardwareNode>>
+        HardwareDiscovery::probe_all_devices(const HardwareFilterConfig& config)
         {
             SR_LOG_DEBUG("Starting expanded hardware probe...");
             std::vector<HardwareNode> discovered_nodes;
 
-            discover_sycl_devices(discovered_nodes, config);
+            Result<void> discovered = discover_sycl_devices(discovered_nodes, config);
+            if (!discovered)
+                return make_error(std::move(discovered.error()));
 
             SR_LOG_INFO("Expanded probe complete. {} nodes found.", discovered_nodes.size());
             return discovered_nodes;
         }
 
-        /** 
-         * @brief Scans all SYCL devices and extracts their physical and capability details. 
+        /**
+         * @brief Scans all SYCL devices and extracts their physical and capability details.
          * @param nodes The vector to populate with discovered devices.
          * @param config The filter configuration specifying which device types to include.
+         * @return Nothing, or Unsupported when SYCL could not list its devices.
          */
-        void HardwareDiscovery::discover_sycl_devices(std::vector<HardwareNode>& nodes, const HardwareFilterConfig& config) 
+        Result<void> HardwareDiscovery::discover_sycl_devices(std::vector<HardwareNode>& nodes,
+                                                              const HardwareFilterConfig& config)
         {
             const LoadedHWLOCTopology loaded_topology;
             const hwloc_topology_t topology = loaded_topology.get();
@@ -166,7 +170,7 @@ namespace SushiRuntime
                 SR_LOG_WARN("hwloc could not load the machine topology; CPU devices keep NUMA -1 "
                             "and a GPU's PCI address comes from SYCL alone.");
 
-            try 
+            try
             {
                 size_t logical_id_counter = 0;
 
@@ -195,8 +199,8 @@ namespace SushiRuntime
                     node.sycl_dev = dev;
                     node.name = dev.get_info<sycl::info::device::name>();
                     node.is_gpu = dev.is_gpu();
-                    node.numa_node_id = -1; 
-                    
+                    node.numa_node_id = -1;
+
                     /** @brief Retrieve capacity and memory info. */
                     node.global_mem_size = dev.get_info<sycl::info::device::global_mem_size>();
                     node.max_compute_units = dev.get_info<sycl::info::device::max_compute_units>();
@@ -322,11 +326,12 @@ namespace SushiRuntime
                     nodes.push_back(node);
                 }
             }
-            catch (const sycl::exception& e) 
+            catch (const sycl::exception& e)
             {
-                throw enumeration_error(config, e.what());
+                return make_error(enumeration_error(config, e.what()));
             }
+            return {};
         }
-        
+
     } // namespace Topology
 } // namespace SushiRuntime

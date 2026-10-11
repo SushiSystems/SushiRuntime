@@ -44,6 +44,7 @@
 
 #include "test_helpers.hpp"
 #include "scheduler_fixture.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -92,8 +93,7 @@ namespace
         for (int i = 0; i < nodes; ++i)
             matrix[i][i] = 10;
         auto distance = std::make_shared<MatrixDistanceModel>(std::move(matrix));
-        return std::make_shared<RuntimeContext>(
-            Internal::Topology::HardwareFilterConfig{}, provider, distance);
+        return SushiRuntime::Test::make_context({}, provider, distance);
     }
 
     /**
@@ -147,7 +147,8 @@ namespace
  */
 TEST(Performance_StealNumaEffectBench, NUMAAwareVsBlindThroughput)
 {
-    RuntimeContext blind_ctx; // real (flat on single-socket) topology
+    const auto blind_ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& blind_ctx = *blind_ctx_owner;
     const int workers = static_cast<int>(make_scheduler(blind_ctx).worker_count());
     if (workers < 2)
         GTEST_SKIP() << "Need >= 2 worker threads to exercise stealing.";

@@ -118,10 +118,10 @@ The run's one host task asks the engine and stores the answer, which must be tru
 The answer is true between `submit()` and `complete()` and false after. The task cannot finish
 before the first check, because it waits on the gate.
 
-### `ARunWhoseTaskThrowsLeavesNoRunInProgress`
+### `ARunWhoseTaskThrowsReturnsKernelFailedAndLeavesNoRunInProgress`
 
 A task that throws ends a blocking run and an asynchronous one; `execute()` and `complete()`
-rethrow, and the answer is false after each.
+return `KernelFailed`, with the task's text in the message, and the answer is false after each.
 
 ### `compile_chain_candidate` and the chained tests
 

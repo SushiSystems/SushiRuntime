@@ -33,6 +33,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 #include "test_helpers.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -50,7 +51,8 @@ namespace
  */
 TEST(Integration_ProfilingQueue, ProfilingQueueAddsThePropertyAndSharesTheContext)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
 
     sycl::queue& plain = context.devices().queue(0);
     EXPECT_FALSE(plain.has_property<sycl::property::queue::enable_profiling>())
@@ -65,7 +67,8 @@ TEST(Integration_ProfilingQueue, ProfilingQueueAddsThePropertyAndSharesTheContex
 /** @brief Tests that no profiling queue exists before the first request. */
 TEST(Integration_ProfilingQueue, NoProfilingQueueExistsBeforeTheFirstRequest)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
 
     for (std::size_t i = 0; i < context.devices().count(); ++i)
         EXPECT_FALSE(context.devices().has_profiling_queue(i))
@@ -84,7 +87,8 @@ TEST(Integration_ProfilingQueue, SettingsProfilingBuildsEveryDeviceEagerly)
 {
     RuntimeSettings settings;
     settings.profiling = true;
-    RuntimeContext context({}, nullptr, nullptr, settings);
+    const auto context_owner = SushiRuntime::Test::make_context({}, nullptr, nullptr, settings);
+    RuntimeContext& context = *context_owner;
 
     for (std::size_t i = 0; i < context.devices().count(); ++i)
         EXPECT_TRUE(context.devices().has_profiling_queue(i))
@@ -99,7 +103,8 @@ TEST(Integration_ProfilingQueue, SettingsProfilingReturnsThePlainQueueItself)
 {
     RuntimeSettings settings;
     settings.profiling = true;
-    RuntimeContext context({}, nullptr, nullptr, settings);
+    const auto context_owner = SushiRuntime::Test::make_context({}, nullptr, nullptr, settings);
+    RuntimeContext& context = *context_owner;
 
     EXPECT_TRUE(context.devices().queue(0) == context.devices().queue(0, K_PROFILING_FLAVOUR))
         << "the profiling flavour must alias the already-profiling plain queue, not duplicate it";
@@ -113,7 +118,8 @@ TEST(Integration_ProfilingQueue, USMFromThePlainQueueIsUsableOnTheProfilingQueue
 {
     constexpr std::size_t N = 256;
 
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     sycl::queue& plain = context.devices().queue(0);
     sycl::queue& profiling = context.devices().queue(0, K_PROFILING_FLAVOUR);
 

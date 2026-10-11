@@ -37,6 +37,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/observability/run_report.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
@@ -97,15 +98,18 @@ namespace SushiRuntime
              * @brief Runs a compiled graph in place and blocks until completion.
              * @param graph The graph to run. Before it runs again, CompiledGraph::rearm() restores
              *        its nodes' per-run state from what capture_base_state() recorded.
+             * @return Nothing, or why the run did not start or what its first failed task
+             *         reported.
              * @see modules/engine/execution/README.md
              */
-            virtual void execute(CompiledGraph& graph) = 0;
+            [[nodiscard]] virtual Result<void> execute(CompiledGraph& graph) = 0;
 
             /**
              * @brief Runs a temporary compiled graph once and discards it.
+             * @return What execute() returns for the graph.
              * @see modules/engine/execution/README.md
              */
-            void execute(CompiledGraph&& graph);
+            [[nodiscard]] Result<void> execute(CompiledGraph&& graph);
 
             /**
              * @brief Returns whether this engine can start a run without blocking.
@@ -116,13 +120,13 @@ namespace SushiRuntime
 
             /**
              * @brief Starts a run and returns immediately, without waiting.
-             * @pre supports_asynchronous_run() is true. Exactly one complete() follows, and
-             *      the plan stays alive until it returns.
-             * @throws SushiException If the engine is shut down, the graph has no roots, or
-             *        a run is already in progress.
+             * @pre supports_asynchronous_run() is true. Exactly one complete() follows a
+             *      submit() that returned a value, and the plan stays alive until it returns.
+             * @return Nothing, or InvalidState when the engine is shut down or a run is already
+             *         in progress, and InvalidGraph when the graph has no roots.
              * @see modules/engine/execution/README.md
              */
-            virtual void submit(CompiledGraph& /*graph*/)
+            [[nodiscard]] virtual Result<void> submit(CompiledGraph& /*graph*/)
             {
                 SR_FATAL("ExecutionEngine::submit(): this engine does not support asynchronous "
                          "runs; ask supports_asynchronous_run() first");
@@ -130,11 +134,11 @@ namespace SushiRuntime
 
             /**
              * @brief Blocks until the run started by submit() has finished.
-             * @pre supports_asynchronous_run() is true and submit() was called.
-             * @throws The first exception a task threw during the run.
+             * @pre supports_asynchronous_run() is true and submit() returned a value.
+             * @return Nothing, or the first failure of the run.
              * @see modules/engine/execution/README.md
              */
-            virtual void complete()
+            [[nodiscard]] virtual Result<void> complete()
             {
                 SR_FATAL("ExecutionEngine::complete(): this engine does not support "
                          "asynchronous runs; ask supports_asynchronous_run() first");
@@ -218,7 +222,7 @@ namespace SushiRuntime
              *
              * Default returns false, so engines that keep no such record and test doubles
              * need not implement it. Any thread may call it.
-             * @return True from the start of a run until its completing call returns or throws.
+             * @return True from the start of a run until its completing call returns.
              * @see modules/engine/execution/README.md
              */
             [[nodiscard]] virtual bool run_in_progress() const noexcept { return false; }

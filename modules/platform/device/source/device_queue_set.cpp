@@ -111,13 +111,9 @@ namespace SushiRuntime
                 return numa_cursors[static_cast<std::size_t>(numa_node)]++;
             }
 
-            /** @brief Builds the exception an operation on an empty set throws. */
-            SushiException empty_set_error()
-            {
-                return SushiException(Error{
-                    ErrorCode::Unsupported,
-                    "The device set holds no device, so no NUMA node resolves to one."});
-            }
+            /** @brief Names the broken precondition of a NUMA lookup on an empty set. */
+            constexpr const char* K_EMPTY_SET_MESSAGE =
+                "The device set holds no device, so no NUMA node resolves to one.";
         } // namespace
 
         template <typename Visitor>
@@ -256,8 +252,7 @@ namespace SushiRuntime
         std::size_t DeviceQueueSet::device_for_numa(int numa_node) const
         {
             const NUMARoute& route = route_for(numa_node);
-            if (route.devices.empty())
-                throw empty_set_error();
+            SR_VERIFY(!route.devices.empty(), K_EMPTY_SET_MESSAGE);
             return route.devices.front();
         }
 
@@ -278,13 +273,24 @@ namespace SushiRuntime
 
         Result<void> DeviceQueueSet::wait_all()
         {
+            return first_failure_of([](sycl::queue& built) { built.wait_and_throw(); });
+        }
+
+        Result<void> DeviceQueueSet::raise_asynchronous_errors()
+        {
+            return first_failure_of([](sycl::queue& built) { built.throw_asynchronous(); });
+        }
+
+        template <typename Visit>
+        Result<void> DeviceQueueSet::first_failure_of(Visit&& visit)
+        {
             Error first;
-            for_each_built_queue([&first](const DeviceDescription&, sycl::queue& built)
+            for_each_built_queue([&first, &visit](const DeviceDescription&, sycl::queue& built)
             {
-                // The asynchronous handler rethrows here, where the wait is.
+                // The asynchronous handler rethrows here, inside the visit.
                 try
                 {
-                    built.wait_and_throw();
+                    visit(built);
                 }
                 catch (const std::exception& failure)
                 {
@@ -338,8 +344,7 @@ namespace SushiRuntime
         std::size_t DeviceQueueSet::next_device_for_numa(int numa_node) const
         {
             const NUMARoute& route = route_for(numa_node);
-            if (route.devices.empty())
-                throw empty_set_error();
+            SR_VERIFY(!route.devices.empty(), K_EMPTY_SET_MESSAGE);
 
             const std::size_t position = next_rotation(route.is_fallback, numa_node);
             return route.devices[position % route.devices.size()];

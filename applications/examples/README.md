@@ -140,8 +140,8 @@ elements read back are 16, 8 and 0: counted in both runs, in the second only, an
 
 Both runs use `run()`, which returns the report or an `Error`. The program then runs an empty
 graph on purpose, checks that the refusal carries `ErrorCode::InvalidGraph` and prints the remedy its
-`switch` over `ErrorCode` picks for that code. An exception can still come from `Runtime::create()` and
-from the range calls, and `main` catches `SushiException` for those.
+`switch` over `ErrorCode` picks for that code. `Runtime::create()` and the range calls return a
+`Result` too; the program reads them with `value()`, which stops the process on an error.
 
 ## distributed_demo.cpp
 

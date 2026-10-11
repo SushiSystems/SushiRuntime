@@ -43,6 +43,7 @@
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include "test_context.hpp"
 
 namespace SushiRuntime
 {
@@ -209,7 +210,8 @@ namespace
  */
 TEST(Unit_RegistrationIndex, NodeIndexIsRegistrationOrder)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskGraph graph;
 
     graph.add_node(noop_work());
@@ -241,7 +243,8 @@ TEST(Unit_RegistrationIndex, NodeIndexIsRegistrationOrder)
  */
 TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskGraph graph;
 
     // Its own index: not part of the group below.

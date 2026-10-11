@@ -37,6 +37,7 @@
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include "test_context.hpp"
 
 namespace
 {
@@ -122,7 +123,7 @@ namespace
             *input.data() = value;
             if (value != 0)
                 plan.rearm();
-            engine.execute(plan);
+            engine.execute(plan).value().value();
             EXPECT_EQ(*output.data(), value + 1u)
                 << "device " << device << ", replay " << value;
         }
@@ -131,14 +132,16 @@ namespace
 
 TEST(Integration_ReplayHostWrite, AReplayReadsASharedWordTheHostWrote)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     for (std::size_t device = 0; device < context.devices().count(); ++device)
         replay_around_host_writes(context, USMKind::Shared, device);
 }
 
 TEST(Integration_ReplayHostWrite, AReplayReadsAHostWordTheHostWrote)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     for (std::size_t device = 0; device < context.devices().count(); ++device)
         replay_around_host_writes(context, USMKind::Host, device);
 }

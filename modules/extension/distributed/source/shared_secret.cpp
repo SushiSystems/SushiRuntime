@@ -33,6 +33,7 @@
 #include <utility>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 
 #include "environment.hpp"
 #include "hmac_sha256.hpp"
@@ -43,47 +44,52 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Throws the exception every refused secret is reported with. */
-            [[noreturn]] void refuse(std::string message)
+            /** @brief Returns the error every refused secret is reported with. */
+            ErrorWrapper<Error> refusal(std::string message)
             {
-                throw SushiException(
-                    Error{ErrorCode::InvalidAccess, std::move(message)});
+                return make_error(Error{ErrorCode::InvalidAccess, std::move(message)});
             }
 
             /**
              * @brief Refuses a secret whose length is outside the allowed range.
              * @param origin Names where the bytes came from, for the message.
+             * @return Nothing, or InvalidAccess naming the length and the limit.
              */
-            void require_length(std::uintmax_t size, const std::string& origin)
+            Result<void> check_length(std::uintmax_t size, const std::string& origin)
             {
                 if (size < SharedSecret::K_MINIMUM_BYTES)
-                    refuse(origin + " holds " + std::to_string(size)
-                           + " bytes; a cluster secret needs at least "
-                           + std::to_string(SharedSecret::K_MINIMUM_BYTES));
+                    return refusal(origin + " holds " + std::to_string(size)
+                                   + " bytes; a cluster secret needs at least "
+                                   + std::to_string(SharedSecret::K_MINIMUM_BYTES));
 
                 if (size > SharedSecret::K_MAXIMUM_BYTES)
-                    refuse(origin + " holds " + std::to_string(size)
-                           + " bytes; a cluster secret holds at most "
-                           + std::to_string(SharedSecret::K_MAXIMUM_BYTES));
+                    return refusal(origin + " holds " + std::to_string(size)
+                                   + " bytes; a cluster secret holds at most "
+                                   + std::to_string(SharedSecret::K_MAXIMUM_BYTES));
+                return {};
             }
 
             /**
              * @brief Returns the whole content of a secret file.
              * @param origin Names the file, and whatever pointed at it, for the messages.
+             * @return The bytes, or InvalidAccess when the file cannot be read or its length
+             *         is refused.
              */
-            std::vector<std::uint8_t> read_secret_file(const std::filesystem::path& path,
-                                                       const std::string& origin)
+            Result<std::vector<std::uint8_t>> read_secret_file(const std::filesystem::path& path,
+                                                               const std::string& origin)
             {
                 std::ifstream stream(path, std::ios::binary | std::ios::ate);
                 if (!stream)
-                    refuse("cannot open " + origin);
+                    return refusal("cannot open " + origin);
 
                 const std::streamoff end = stream.tellg();
                 if (end < 0)
-                    refuse("cannot measure " + origin);
+                    return refusal("cannot measure " + origin);
 
                 const std::uintmax_t size = static_cast<std::uintmax_t>(end);
-                require_length(size, origin);
+                Result<void> length = check_length(size, origin);
+                if (!length)
+                    return make_error(std::move(length.error()));
 
                 std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
                 stream.seekg(0);
@@ -92,7 +98,8 @@ namespace SushiRuntime
                 if (static_cast<std::uintmax_t>(stream.gcount()) != size)
                 {
                     wipe_bytes(bytes.data(), bytes.size());
-                    refuse("cannot read all " + std::to_string(size) + " bytes of " + origin);
+                    return refusal("cannot read all " + std::to_string(size) + " bytes of " +
+                                   origin);
                 }
 
                 return bytes;
@@ -130,25 +137,33 @@ namespace SushiRuntime
             return *this;
         }
 
-        SharedSecret SharedSecret::from_file(const std::filesystem::path& path)
+        Result<SharedSecret> SharedSecret::from_file(const std::filesystem::path& path)
         {
-            return SharedSecret(read_secret_file(path, describe_file(path)));
+            Result<std::vector<std::uint8_t>> bytes = read_secret_file(path, describe_file(path));
+            if (!bytes)
+                return make_error(std::move(bytes.error()));
+            return SharedSecret(std::move(*bytes));
         }
 
-        SharedSecret SharedSecret::from_environment(const std::string& variable_name)
+        Result<SharedSecret> SharedSecret::from_environment(const std::string& variable_name)
         {
             const std::optional<std::string> value = read_environment(variable_name.c_str());
             if (!value || value->empty())
                 return SharedSecret();
 
             const std::filesystem::path path(*value);
-            return SharedSecret(read_secret_file(
-                path, describe_file(path) + " (named by " + variable_name + ")"));
+            Result<std::vector<std::uint8_t>> bytes = read_secret_file(
+                path, describe_file(path) + " (named by " + variable_name + ")");
+            if (!bytes)
+                return make_error(std::move(bytes.error()));
+            return SharedSecret(std::move(*bytes));
         }
 
-        SharedSecret SharedSecret::from_bytes(span<const std::uint8_t> bytes)
+        Result<SharedSecret> SharedSecret::from_bytes(span<const std::uint8_t> bytes)
         {
-            require_length(bytes.size(), "the cluster secret passed in memory");
+            Result<void> length = check_length(bytes.size(), "the cluster secret passed in memory");
+            if (!length)
+                return make_error(std::move(length.error()));
             return SharedSecret(std::vector<std::uint8_t>(bytes.begin(), bytes.end()));
         }
 

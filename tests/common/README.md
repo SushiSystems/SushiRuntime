@@ -25,6 +25,13 @@ without the execution engine writes `TaskScheduler scheduler = make_scheduler(ct
 scheduler is not movable; the function returns it by guaranteed elision, so it is built in the
 caller's variable. The context must outlive it, and no worker thread starts until `start()`.
 
+## test_context.hpp
+
+`make_context(...)` takes the arguments of `RuntimeContext::create()` and returns the
+`std::shared_ptr<RuntimeContext>` it built. `RuntimeContext` has no public constructor, so a test
+writes `const auto ctx_owner = Test::make_context(); RuntimeContext& ctx = *ctx_owner;`. When no
+context can be built, `value()` stops the process with the error's text.
+
 ## test_barrier.hpp
 
 `std::barrier` is C++20 and the project compiles as C++17, so tests use `Barrier`, a minimal

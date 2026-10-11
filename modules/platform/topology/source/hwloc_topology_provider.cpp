@@ -43,15 +43,18 @@ namespace SushiRuntime
         /** 
          * @brief Default provider: real SYCL discovery + hwloc NUMA mapping. 
          * @param config The filter configuration for device enumeration.
-         * @return A vector of enumerated hardware nodes.
+         * @return The enumerated hardware nodes, or Unsupported when SYCL could not list them.
          */
-        std::vector<HardwareNode> HwlocTopologyProvider::enumerate(const HardwareFilterConfig& config)
+        Result<std::vector<HardwareNode>>
+        HwlocTopologyProvider::enumerate(const HardwareFilterConfig& config)
         {
             HardwareDiscovery discovery;
-            std::vector<HardwareNode> nodes = discovery.probe_all_devices(config);
+            Result<std::vector<HardwareNode>> nodes = discovery.probe_all_devices(config);
+            if (!nodes)
+                return nodes;
 
             NUMAMapper mapper;
-            mapper.map_distances(nodes);
+            mapper.map_distances(*nodes);
 
             return nodes;
         }

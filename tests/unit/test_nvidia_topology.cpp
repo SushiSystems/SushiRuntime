@@ -35,6 +35,7 @@
 #include <SushiRuntime/topology/numa_mapper.hpp>
 
 #include "test_helpers.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -97,7 +98,7 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGPUDiscovered)
     config.include_cpu = true;
     config.include_gpu = true;
 
-    auto nodes = discovery.probe_all_devices(config);
+    auto nodes = discovery.probe_all_devices(config).value();
     const HardwareNode* nvidia = find_nvidia_node(nodes);
 
     ASSERT_NE(nvidia, nullptr) << "NVIDIA GPU not found in discovered hardware nodes.";
@@ -119,7 +120,7 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGPUHasNUMAMapping)
     HardwareFilterConfig config;
     config.include_gpu = true;
 
-    auto nodes = discovery.probe_all_devices(config);
+    auto nodes = discovery.probe_all_devices(config).value();
     const HardwareNode* nvidia = find_nvidia_node(nodes);
     ASSERT_NE(nvidia, nullptr);
 
@@ -151,7 +152,8 @@ TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
     if (!cuda_device_available())
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
 
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
 
     // Queues are exposed by index in the same order as the SYCL device list.
     auto all_devs = sycl::device::get_devices(sycl::info::device_type::all);
@@ -190,7 +192,8 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGPUVectorAdd)
     if (!cuda_device_available())
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
 
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     sycl::queue* cuda_q = nullptr;
     auto all_devs = sycl::device::get_devices(sycl::info::device_type::all);
     for (size_t i = 0; i < all_devs.size(); ++i)

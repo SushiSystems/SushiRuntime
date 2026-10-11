@@ -36,6 +36,7 @@
 
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/device/device_description.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -78,8 +79,8 @@ namespace SushiRuntime
                 return descriptor;
             }
 
-            /** @brief Builds the exception for a filter that no SYCL device passed. */
-            SushiException no_device_error(const Internal::Topology::HardwareFilterConfig& config)
+            /** @brief Builds the error of a filter that no SYCL device passed. */
+            Error no_device_error(const Internal::Topology::HardwareFilterConfig& config)
             {
                 std::string detail = "No SYCL device satisfied the hardware filter. Active filter: ";
                 detail += "cpu=";
@@ -93,38 +94,40 @@ namespace SushiRuntime
                 detail += ". Either the machine exposes no SYCL device (no GPU driver and no "
                           "OpenCL CPU runtime installed) or every device it exposes was excluded.";
 
-                return SushiException(Error{ErrorCode::Unsupported, std::move(detail)});
+                return Error{ErrorCode::Unsupported, std::move(detail)};
             }
 
             /**
-             * @brief Discovers the devices that pass a filter and builds their queues.
+             * @brief Discovers the devices that pass a filter and describes them.
              * @param provider Asked once for the hardware nodes.
-             * @throws SushiException With ErrorCode::Unsupported when no device passes.
+             * @return The descriptors, or Unsupported when the devices cannot be listed or none
+             *         passes.
              * @see modules/engine/execution/README.md
              */
-            Internal::Device::DeviceQueueSet probe_devices(Internal::Topology::TopologyProvider& provider,
-                                                 const Internal::Topology::HardwareFilterConfig& config,
-                                                 bool profiling)
+            Result<std::vector<Internal::Device::DeviceDescriptor>>
+            probe_devices(Internal::Topology::TopologyProvider& provider,
+                          const Internal::Topology::HardwareFilterConfig& config)
             {
-                try
-                {
-                    const std::vector<Internal::Topology::HardwareNode> nodes = provider.enumerate(config);
-                    if (nodes.empty())
-                        throw no_device_error(config);
+                Result<std::vector<Internal::Topology::HardwareNode>> nodes =
+                    provider.enumerate(config);
+                if (!nodes)
+                    return make_error(std::move(nodes.error()));
+                if (nodes->empty())
+                    return make_error(no_device_error(config));
 
-                    std::vector<Internal::Device::DeviceDescriptor> descriptors;
-                    descriptors.reserve(nodes.size());
-                    for (const Internal::Topology::HardwareNode& node : nodes)
-                        descriptors.push_back(describe_device(node));
+                std::vector<Internal::Device::DeviceDescriptor> descriptors;
+                descriptors.reserve(nodes->size());
+                for (const Internal::Topology::HardwareNode& node : *nodes)
+                    descriptors.push_back(describe_device(node));
+                return descriptors;
+            }
 
-                    return Internal::Device::DeviceQueueSet(std::move(descriptors), profiling);
-                }
-                catch (const std::exception& error)
-                {
-                    // The device set leaves a failed queue build unlogged; this is its one line.
-                    SR_LOG_ERROR("Critical initialization failure: {}", error.what());
-                    throw;
-                }
+            /** @brief Logs why no context could be built and returns the reason as an error. */
+            ErrorWrapper<Error> initialization_failure(ErrorCode code, const char* text)
+            {
+                // The device set leaves a failed queue build unlogged; this is its one line.
+                SR_LOG_ERROR("Critical initialization failure: {}", text);
+                return make_error(Error{code, text});
             }
         } // namespace
 
@@ -138,14 +141,15 @@ namespace SushiRuntime
              * @brief Builds every part but the engine, which needs the finished context.
              * @param provider Queried during construction only; not stored.
              * @param distance_model Must not be null.
+             * @param descriptors The devices the context runs on; not empty.
              */
             Impl(const RuntimeSettings& runtime_settings,
-                 const Internal::Topology::HardwareFilterConfig& config,
                  Internal::Topology::TopologyProvider& provider,
-                 std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model)
+                 std::shared_ptr<const Internal::Topology::NUMADistanceModel> distance_model,
+                 std::vector<Internal::Device::DeviceDescriptor> descriptors)
                 : settings(runtime_settings),
                   topology(provider, std::move(distance_model)),
-                  devices(probe_devices(provider, config, settings.profiling)),
+                  devices(std::move(descriptors), settings.profiling),
                   memory(std::make_shared<Internal::Memory::USMAllocator>(devices.plain_queues()))
             {
             }
@@ -185,27 +189,6 @@ namespace SushiRuntime
             Impl(const Impl&) = delete;
             Impl& operator=(const Impl&) = delete;
 
-            /**
-             * @brief Resolves the default provider and distance model, then builds an Impl.
-             * @param provider Null selects HwlocTopologyProvider.
-             * @param distance_model Null selects HwlocDistanceModel.
-             */
-            static sushi_ptr<Impl> create(const Internal::Topology::HardwareFilterConfig& config,
-                                          std::shared_ptr<Internal::Topology::TopologyProvider> provider,
-                                          std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model,
-                                          const RuntimeSettings& runtime_settings)
-            {
-                SR_LOG_INFO("Initializing compute stack...");
-
-                if (!provider)
-                    provider = std::make_shared<Internal::Topology::HwlocTopologyProvider>();
-                if (!distance_model)
-                    distance_model = std::make_shared<Internal::Topology::HwlocDistanceModel>();
-
-                return make_sushi<Impl>(runtime_settings, config, *provider,
-                                        std::move(distance_model));
-            }
-
             /** @brief Runtime settings, fixed at construction (modules/engine/execution/README.md). */
             RuntimeSettings settings;
 
@@ -224,18 +207,58 @@ namespace SushiRuntime
             /** @brief Installed offload coordinator, co-owned; null when there is none. */
             std::shared_ptr<Internal::Graph::OffloadCoordinator> offload;
 
-            /** @brief Execution engine; built last, by RuntimeContext's constructor. */
+            /** @brief Execution engine; built last, by RuntimeContext::create(). */
             std::unique_ptr<SchedulerExecutionEngine> engine;
         };
 
-        RuntimeContext::RuntimeContext(const Internal::Topology::HardwareFilterConfig& config,
-                                       std::shared_ptr<Internal::Topology::TopologyProvider> provider,
-                                       std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model,
-                                       const RuntimeSettings& settings)
-            : impl_(Impl::create(config, std::move(provider), std::move(distance_model), settings))
+        Result<std::shared_ptr<RuntimeContext>>
+        RuntimeContext::create(const Internal::Topology::HardwareFilterConfig& config,
+                               std::shared_ptr<Internal::Topology::TopologyProvider> provider,
+                               std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model,
+                               const RuntimeSettings& settings)
         {
-            // The engine reads this context while it is built, so impl_ is complete first.
-            impl_->engine = std::make_unique<SchedulerExecutionEngine>(*this);
+            SR_LOG_INFO("Initializing compute stack...");
+
+            // SYCL and the standard library throw from the constructors below; each is named here.
+            try
+            {
+                if (!provider)
+                    provider = std::make_shared<Internal::Topology::HwlocTopologyProvider>();
+                if (!distance_model)
+                    distance_model = std::make_shared<Internal::Topology::HwlocDistanceModel>();
+
+                Result<std::vector<Internal::Device::DeviceDescriptor>> descriptors =
+                    probe_devices(*provider, config);
+                if (!descriptors)
+                    return initialization_failure(descriptors.error().code,
+                                                  descriptors.error().message.c_str());
+
+                std::shared_ptr<RuntimeContext> context(new RuntimeContext(make_sushi<Impl>(
+                    settings, *provider, std::move(distance_model), std::move(*descriptors))));
+
+                // The engine reads the context while it is built, so impl_ is complete first.
+                context->impl_->engine = std::make_unique<SchedulerExecutionEngine>(*context);
+                return context;
+            }
+            catch (const sycl::exception& failure)
+            {
+                return initialization_failure(ErrorCode::DeviceLost, failure.what());
+            }
+            catch (const std::exception& failure)
+            {
+                return initialization_failure(ErrorCode::AllocationFailed, failure.what());
+            }
+            catch (...)
+            {
+                return initialization_failure(
+                    ErrorCode::AllocationFailed,
+                    "An object that does not derive from std::exception was thrown.");
+            }
+        }
+
+        RuntimeContext::RuntimeContext(sushi_ptr<Impl> impl) noexcept : impl_(std::move(impl))
+        {
+
         }
 
         RuntimeContext::~RuntimeContext() = default;

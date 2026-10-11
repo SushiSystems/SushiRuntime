@@ -149,7 +149,7 @@ takes the Runtime and installs its master on this context, so no header here nam
 ### Promoted error names
 
 errors.hpp declares nothing. It includes `core/error.hpp` and `core/result.hpp` and promotes
-`Error`, `ErrorCode`, `Result` and `SushiException` into `SushiRuntime`, so a program that handles a
+`Error`, `ErrorCode` and `Result` into `SushiRuntime`, so a program that handles a
 failed `create()` or `run()` spells them without a module name. The foundation modules sit
 below the public surface and promote nothing themselves.
 

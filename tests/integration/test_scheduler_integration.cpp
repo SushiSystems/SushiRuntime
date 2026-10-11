@@ -37,6 +37,7 @@
 
 #include "test_helpers.hpp"
 #include "scheduler_fixture.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime::Internal::Execution;
 using namespace SushiRuntime::Internal::Scheduler;
@@ -74,7 +75,8 @@ namespace
  */
 TEST(Integration_SchedulerIntegration, ExecutesExactlySubmitted)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskScheduler scheduler = make_scheduler(ctx);
 
     std::atomic<size_t> executed{0};
@@ -100,7 +102,8 @@ TEST(Integration_SchedulerIntegration, ExecutesExactlySubmitted)
  */
 TEST(Integration_SchedulerIntegration, PriorityBypass)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskScheduler scheduler = make_scheduler(ctx);
 
     std::vector<int> order;
@@ -155,7 +158,8 @@ TEST(Integration_SchedulerIntegration, PriorityBypass)
  */
 TEST(Integration_SchedulerIntegration, CleanLifecycleRound)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     TaskScheduler scheduler = make_scheduler(ctx);
 
     std::atomic<size_t> executed{0};

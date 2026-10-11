@@ -47,18 +47,13 @@ destination returns the pointee.
 
 ## test_error.cpp
 
-The file covers `ErrorCode`, its `to_string` and `SushiException`.
+The file covers `ErrorCode` and its `to_string`.
 
 ### `EveryEnumeratorKeepsItsNumber`
 
 `ErrorCode` is stored as a `std::uint8_t` and crosses the library boundary inside `Error`. A consumer
 built against an older header compares the numbers it compiled in, so a new enumerator goes at the
 end and the test pins each number, `InvalidState` at 9.
-
-### `AHandlerForRuntimeErrorCatchesSushiException`
-
-Code written before the library threw one type catches `std::runtime_error`. The test catches
-through that base, checks `what()`, and recovers the `ErrorCode` with a `dynamic_cast`.
 
 ## test_ref_counted.cpp
 

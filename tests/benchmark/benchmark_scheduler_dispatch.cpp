@@ -42,6 +42,7 @@
 
 #include "measurement.hpp"
 #include "scheduler_fixture.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime::Internal::Execution;
 using namespace SushiRuntime::Internal::Scheduler;
@@ -139,7 +140,8 @@ namespace
  */
 TEST(Performance_SchedulerDispatchBench, DispatchOverheadVsInlineBaseline)
 {
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     std::atomic<std::size_t> counter{0};
 
     const RunStatistics baseline = SushiRuntime::Test::measure(

@@ -452,9 +452,10 @@ returns nothing.
 ### translate_exceptions
 
 translate_exceptions() is the one catch ladder of the surface. It runs a callable and returns an
-`Error` whose code is `Ok` when the callable returned. A `SushiException` keeps its code, a
-`sycl::exception` takes the code the caller names for a device failure, and every other
-exception takes the fallback. The ladder is written out in the function that owns the `try`, with
+`Error` whose code is `Ok` when the callable returned. A `sycl::exception` takes the code the
+caller names for a device failure, and every other exception takes the fallback. The library
+throws nothing itself, so what the ladder catches comes from SYCL, the standard library or the
+caller's own callable. The ladder is written out in the function that owns the `try`, with
 no rethrow, because a rethrow from a helper called inside a catch block crashes the process on
 the Windows intel-llvm toolchain. Each `Error` is built by `Detail::error_without_throwing()` of
 `core/error.hpp`, which returns the code with an empty message when the text cannot be allocated.

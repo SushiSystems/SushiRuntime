@@ -45,7 +45,6 @@
 #include "test_helpers.hpp"
 
 using SushiRuntime::ErrorCode;
-using SushiRuntime::SushiException;
 using SushiRuntime::Internal::Device::DeviceDescriptor;
 using SushiRuntime::Internal::Device::DeviceDescription;
 using SushiRuntime::Internal::Device::DeviceKind;
@@ -98,22 +97,6 @@ namespace
         return descriptors;
     }
 
-    /** @brief Returns the error code a call throws, or nothing when it does not throw. */
-    template <typename Call>
-    std::optional<ErrorCode> thrown_code(Call&& call, std::string* message = nullptr)
-    {
-        try
-        {
-            call();
-        }
-        catch (const SushiException& error)
-        {
-            if (message)
-                *message = error.what();
-            return error.error().code;
-        }
-        return std::nullopt;
-    }
 } // namespace
 
 TEST(Unit_DeviceQueueSet, CountAndInventoryFollowTheDescriptors)
@@ -352,12 +335,16 @@ TEST(Unit_DeviceQueueSet, AnEmptySetHoldsNothingAndResolvesNoNUMANode)
     EXPECT_TRUE(set.plain_queues().empty());
     EXPECT_FALSE(set.has_profiling_queue(0));
     EXPECT_TRUE(set.wait_all().has_value());
+    EXPECT_TRUE(set.raise_asynchronous_errors().has_value());
+}
 
-    const auto lookup = thrown_code([&set] { (void)set.device_for_numa(0); });
-    const auto routed = thrown_code([&set] { (void)set.queue_or_numa_local(std::nullopt, 0); });
+TEST(Unit_DeviceQueueSetDeathTest, ANUMALookupOnAnEmptySetStops)
+{
+    DeviceQueueSet set({}, false);
+    const char* const pattern = "The device set holds no device";
 
-    EXPECT_EQ(lookup, std::optional<ErrorCode>(ErrorCode::Unsupported));
-    EXPECT_EQ(routed, std::optional<ErrorCode>(ErrorCode::Unsupported));
+    EXPECT_DEATH(static_cast<void>(set.device_for_numa(0)), pattern);
+    EXPECT_DEATH(static_cast<void>(set.queue_or_numa_local(std::nullopt, 0)), pattern);
 }
 
 TEST(Unit_DeviceQueueSet, WaitAllReturnsAfterAKernelOnALazilyBuiltQueueFinished)

@@ -39,6 +39,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/logging/logger.hpp>
@@ -79,25 +80,25 @@ namespace SushiRuntime
             /** @brief Names the payload of a frame as a handler receives it. */
             using Payload = SushiRuntime::span<const std::byte>;
 
-            /** @brief Refuses a constructor argument the caller must not pass. */
-            [[noreturn]] void refuse(const char* message)
-            {
-                throw SushiException(Error{ErrorCode::InvalidAccess, message});
-            }
-
-            /** @brief Returns the transport, or refuses a null one. */
+            /**
+             * @brief Returns the transport after checking it is there.
+             * @pre transport is not null.
+             */
             std::shared_ptr<Transport> require_transport(std::shared_ptr<Transport> transport)
             {
-                if (!transport)
-                    refuse("WorkerAgent needs a transport; a null one was passed");
+                SR_VERIFY(transport != nullptr,
+                          "WorkerAgent needs a transport; a null one was passed");
                 return transport;
             }
 
-            /** @brief Returns the registry, or refuses a null one. */
+            /**
+             * @brief Returns the registry after checking it is there.
+             * @pre kernels is not null.
+             */
             sushi_ptr<KernelRegistry> require_kernels(sushi_ptr<KernelRegistry> kernels)
             {
-                if (!kernels)
-                    refuse("WorkerAgent needs a kernel registry; a null one was passed");
+                SR_VERIFY(static_cast<bool>(kernels),
+                          "WorkerAgent needs a kernel registry; a null one was passed");
                 return kernels;
             }
 

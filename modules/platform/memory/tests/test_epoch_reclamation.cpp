@@ -219,47 +219,41 @@ namespace
     };
 }
 
-/**
- * @brief Tests that a thread arriving when every slot is held gets SushiException, unsupported.
- */
-TEST(Unit_EpochReclamationTest, AThreadPastTheSlotLimitIsRefusedWithTheLimit)
+namespace
 {
-    constexpr std::size_t THREADS = K_EPOCH_SLOTS + 1;
-    ThreadPark park;
-    std::atomic<std::size_t> refused{0};
-    std::atomic<std::size_t> refused_otherwise{0};
-
-    std::vector<std::thread> threads;
-    threads.reserve(THREADS);
-    for (std::size_t i = 0; i < THREADS; ++i)
+    /** @brief Parks one thread more than there are slots, each holding a guard's slot. */
+    void hold_one_slot_too_many()
     {
-        threads.emplace_back([&]
+        constexpr std::size_t THREADS = K_EPOCH_SLOTS + 1;
+        ThreadPark park;
+
+        std::vector<std::thread> threads;
+        threads.reserve(THREADS);
+        for (std::size_t i = 0; i < THREADS; ++i)
         {
-            try
+            threads.emplace_back([&park]
             {
-                EpochGuard guard;
-            }
-            catch (const SushiRuntime::SushiException& refusal)
-            {
-                const std::string message = refusal.what();
-                const bool as_specified =
-                    refusal.error().code == SushiRuntime::ErrorCode::Unsupported &&
-                    message.find(std::to_string(K_EPOCH_SLOTS) + " epoch slots") !=
-                        std::string::npos;
-                (as_specified ? refused : refused_otherwise).fetch_add(1);
-            }
-            // A registered thread keeps its slot until it exits; see README.md.
-            park.report_and_wait();
-        });
+                {
+                    EpochGuard guard;
+                }
+                // A registered thread keeps its slot until it exits; see README.md.
+                park.report_and_wait();
+            });
+        }
+
+        park.wait_for_reports(THREADS);
+        park.release();
+        for (std::thread& thread : threads)
+            thread.join();
     }
+} // namespace
 
-    park.wait_for_reports(THREADS);
-    EXPECT_GE(refused.load(), 1u);
-    EXPECT_EQ(refused_otherwise.load(), 0u);
-
-    park.release();
-    for (std::thread& thread : threads)
-        thread.join();
+/**
+ * @brief Tests that a thread arriving when every slot is held stops the process, naming the limit.
+ */
+TEST(Unit_EpochReclamationDeathTest, AThreadPastTheSlotLimitStopsNamingTheLimit)
+{
+    EXPECT_DEATH(hold_one_slot_too_many(), std::to_string(K_EPOCH_SLOTS) + " epoch slots");
 
     std::thread late([] { EXPECT_NO_THROW({ EpochGuard guard; }); });
     late.join();

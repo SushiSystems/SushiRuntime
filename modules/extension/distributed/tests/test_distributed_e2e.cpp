@@ -76,6 +76,7 @@
 #include "offload_dispatcher.hpp"
 #include "wire_frame.hpp"
 #include "wire_messages.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -343,7 +344,7 @@ namespace
                 finished_ = done->get_future();
                 thread_ = std::thread([&context, &graph, done]
                 {
-                    context.execution_engine().execute(graph);
+                    context.execution_engine().execute(graph).value();
                     done->set_value();
                 });
             }
@@ -418,7 +419,11 @@ namespace
 
         private:
             /// @brief The worker's own runtime; declared first, destroyed last.
-            RuntimeContext context_;
+            const std::shared_ptr<RuntimeContext> context_owner_ =
+                SushiRuntime::Test::make_context();
+
+            /// @brief The context context_owner_ holds.
+            RuntimeContext& context_ = *context_owner_;
 
             /// @brief The agent under test.
             WorkerAgent agent_;
@@ -857,7 +862,7 @@ namespace
         LocalWorker worker(InProcessTransport::make_worker(fabric), state_step_kernels(runs));
 
         Cluster cluster =
-            Cluster::attach(runtime, InProcessTransport::make_master(fabric), eager_options());
+            Cluster::attach(runtime, InProcessTransport::make_master(fabric), eager_options()).value();
         EXPECT_TRUE(worker.start());
         if (!cluster.wait_for_workers(1, K_WAIT))
             throw std::runtime_error("the worker did not register with the cluster");
@@ -903,7 +908,8 @@ namespace
         std::atomic<int> local_runs{0};
         std::atomic<int> worker_runs{0};
 
-        RuntimeContext master_context;
+        const auto master_context_owner = SushiRuntime::Test::make_context();
+        RuntimeContext& master_context = *master_context_owner;
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, count, 0.0f);
         USMFloats b(queue, count, 0.0f);
@@ -918,7 +924,7 @@ namespace
         {
             worker.emplace(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
             cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                      eager_options());
+                                      eager_options()).value();
             EXPECT_TRUE(worker->start());
             EXPECT_TRUE(cluster->wait_for_workers(1, K_WAIT));
             share(master_context, a);
@@ -936,7 +942,7 @@ namespace
         TaskGraph graph(master_context.offload());
         add_registered_task(graph, *kernels, metadata, span<const BufferView>(inputs, 2),
                             span<const BufferView>(outputs, 1));
-        master_context.execution_engine().execute(graph.compile().value());
+        master_context.execution_engine().execute(graph.compile().value()).value();
 
         RegisteredSum sum;
         sum.values.assign(out.data(), out.data() + out.count());
@@ -957,7 +963,8 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
 
     constexpr std::size_t K_COUNT = 1024;
     std::atomic<int> worker_runs{0};
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -968,7 +975,7 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
     InProcessFabric fabric;
     LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
     Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                      eager_options());
+                                      eager_options()).value();
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
     EXPECT_TRUE(cluster.supports(K_VEC_ADD));
@@ -979,7 +986,7 @@ TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "vec_add", a, b, out);
-    master_context.execution_engine().execute(graph.compile().value());
+    master_context.execution_engine().execute(graph.compile().value()).value();
 
     EXPECT_EQ(worker_runs.load(), 1) << "the task ran on the local fallback, not on the worker";
     EXPECT_EQ(cluster.offloaded(), 1u);
@@ -997,7 +1004,8 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     constexpr std::size_t K_COUNT = 256;
     std::atomic<int> first_runs{0};
     std::atomic<int> second_runs{0};
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats in(queue, K_COUNT, 0.0f);
     USMFloats first_out(queue, K_COUNT, K_UNWRITTEN);
@@ -1008,7 +1016,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     LocalWorker first(InProcessTransport::make_worker(fabric), vec_add_kernels(first_runs));
     LocalWorker second(InProcessTransport::make_worker(fabric), vec_add_kernels(second_runs));
     Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                      eager_options());
+                                      eager_options()).value();
     ASSERT_TRUE(first.start());
     ASSERT_TRUE(second.start());
     ASSERT_TRUE(cluster.wait_for_workers(2, K_WAIT));
@@ -1021,7 +1029,7 @@ TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "fan_out_first", in, in, first_out);
     add_vec_add(graph, "fan_out_second", in, in, second_out);
-    master_context.execution_engine().execute(graph.compile().value());
+    master_context.execution_engine().execute(graph.compile().value()).value();
 
     EXPECT_EQ(cluster.offloaded(), 2u);
     EXPECT_EQ(first_runs.load() + second_runs.load(), 2);
@@ -1040,7 +1048,8 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
 
     constexpr std::size_t K_COUNT = 512;
     std::atomic<int> worker_runs{0};
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats x(queue, K_COUNT, -7.0f);
     USMFloats y(queue, K_COUNT, K_UNWRITTEN);
@@ -1048,7 +1057,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
     InProcessFabric fabric;
     LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
     Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                      eager_options());
+                                      eager_options()).value();
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
@@ -1081,7 +1090,7 @@ TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloade
     ASSERT_NE(writer_state, nullptr) << "a local node that writes a shared buffer keeps a state";
     EXPECT_FALSE(writer_state->offloadable);
 
-    master_context.execution_engine().execute(compiled);
+    master_context.execution_engine().execute(compiled).value();
 
     const std::optional<BufferHandle> after = cluster.buffer_handle(x.data());
     ASSERT_TRUE(after.has_value());
@@ -1101,7 +1110,8 @@ TEST(Integration_DistributedE2ETest, OffloadOverTCPLoopback)
 
     constexpr std::size_t K_COUNT = 1024;
     std::atomic<int> worker_runs{0};
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1112,7 +1122,7 @@ TEST(Integration_DistributedE2ETest, OffloadOverTCPLoopback)
     // The default options bind 127.0.0.1 on a port the OS picks, known once attach() returns.
     const std::shared_ptr<TCPTransport> master_transport =
         TCPTransport::make_master(TCPMasterOptions());
-    Cluster cluster = Cluster::attach(master_context, master_transport, eager_options());
+    Cluster cluster = Cluster::attach(master_context, master_transport, eager_options()).value();
     const Endpoint listening = master_transport->local_endpoint();
     ASSERT_NE(listening.port, 0);
 
@@ -1126,7 +1136,7 @@ TEST(Integration_DistributedE2ETest, OffloadOverTCPLoopback)
 
     TaskGraph graph(master_context.offload());
     add_vec_add(graph, "vec_add_tcp", a, b, out);
-    master_context.execution_engine().execute(graph.compile().value());
+    master_context.execution_engine().execute(graph.compile().value()).value();
 
     EXPECT_EQ(worker_runs.load(), 1);
     expect_sum(out, a, b);
@@ -1144,7 +1154,8 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
         GTEST_SKIP() << "SYCL reports no device.";
 
     constexpr std::size_t K_COUNT = 1024;
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1157,7 +1168,7 @@ TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
     ClusterOptions options = eager_options();
     options.liveness_timeout = std::chrono::milliseconds(300);
     Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                      std::move(options));
+                                      std::move(options)).value();
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
@@ -1186,7 +1197,8 @@ TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
     constexpr float K_AUTHORITATIVE = 7.0f;
     constexpr float K_POISON = 999.0f;
     constexpr float K_FRESH = 42.0f;
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 1.0f);
     USMFloats b(queue, K_COUNT, 2.0f);
@@ -1195,7 +1207,7 @@ TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
     InProcessFabric fabric;
     ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
     Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                      eager_options());
+                                      eager_options()).value();
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
@@ -1245,7 +1257,8 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
 
     constexpr std::size_t K_COUNT = 64;
     std::atomic<int> worker_runs{0};
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1266,7 +1279,7 @@ TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHang
     LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs),
                        std::move(worker_options));
     Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                      eager_options());
+                                      eager_options()).value();
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
@@ -1300,7 +1313,7 @@ TEST(Integration_DistributedE2ETest, FluentClusterOffload)
     Runtime runtime = Runtime::create().value();
     LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
     Cluster cluster =
-        Cluster::attach(runtime, InProcessTransport::make_master(fabric), eager_options());
+        Cluster::attach(runtime, InProcessTransport::make_master(fabric), eager_options()).value();
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
@@ -1363,12 +1376,13 @@ TEST(Integration_DistributedE2ETest, ClusterDetachAndDisplacement)
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     EXPECT_EQ(master_context.offload(), nullptr);
 
     const auto attach_master = [&master_context](InProcessFabric& fabric)
     {
-        return Cluster::attach(master_context, InProcessTransport::make_master(fabric));
+        return Cluster::attach(master_context, InProcessTransport::make_master(fabric)).value();
     };
 
     InProcessFabric first_fabric;
@@ -1403,8 +1417,8 @@ TEST(Integration_DistributedE2ETest, ClusterHandleOutlivesRuntime)
         GTEST_SKIP() << "SYCL reports no device.";
 
     InProcessFabric fabric;
-    auto master_context = std::make_unique<RuntimeContext>();
-    Cluster cluster = Cluster::attach(*master_context, InProcessTransport::make_master(fabric));
+    auto master_context = SushiRuntime::Test::make_context();
+    Cluster cluster = Cluster::attach(*master_context, InProcessTransport::make_master(fabric)).value();
     const Cluster copy = cluster;
 
     master_context.reset();
@@ -1421,7 +1435,8 @@ TEST(Integration_DistributedE2ETest, StopResubmitsPendingNodes)
         GTEST_SKIP() << "SYCL reports no device.";
 
     constexpr std::size_t K_COUNT = 128;
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1432,7 +1447,7 @@ TEST(Integration_DistributedE2ETest, StopResubmitsPendingNodes)
     InProcessFabric fabric;
     ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
     Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                      eager_options());
+                                      eager_options()).value();
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
@@ -1465,7 +1480,8 @@ TEST(Integration_DistributedE2ETest, TryOffloadAfterStopRunsLocally)
 
     constexpr std::size_t K_COUNT = 128;
     std::atomic<int> worker_runs{0};
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1476,7 +1492,7 @@ TEST(Integration_DistributedE2ETest, TryOffloadAfterStopRunsLocally)
     InProcessFabric fabric;
     LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
     Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                      eager_options());
+                                      eager_options()).value();
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
@@ -1514,7 +1530,7 @@ TEST(Integration_DistributedE2ETest, DynamicStateBumpsTheLiveBufferAfterSwap)
     constexpr std::size_t K_STEPS = 2;
     InProcessFabric fabric;
     Runtime runtime = Runtime::create().value();
-    Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric));
+    Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
 
     auto field = runtime.state<int>(K_COUNT).value().distributed();
     for (std::size_t index = 0; index < K_COUNT; ++index)
@@ -1561,27 +1577,22 @@ TEST(Integration_DistributedE2ETest, AttachStartFailureLeavesNothingInstalled)
         GTEST_SKIP() << "SYCL reports no device.";
 
     const std::string refusal = "cannot listen on 127.0.0.1:9: the stub refuses";
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     const auto transport = std::make_shared<StubTransport>(
         TransportExposure::Loopback, TransportResult{TransportStatus::BindFailed, refusal});
 
-    std::string message;
-    try
-    {
-        const Cluster cluster = Cluster::attach(master_context, transport);
-        ADD_FAILURE() << "attach() returned although the transport did not start";
-    }
-    catch (const SushiException& error)
-    {
-        message = error.what();
-    }
+    const Result<Cluster> attached = Cluster::attach(master_context, transport);
+    ASSERT_FALSE(attached.has_value())
+        << "attach() returned a cluster although the transport did not start";
+    const std::string message = attached.error().message;
 
-    EXPECT_NE(message.find(refusal), std::string::npos) << "the exception says: " << message;
+    EXPECT_NE(message.find(refusal), std::string::npos) << "the error says: " << message;
     EXPECT_EQ(transport->start_calls(), 1);
     EXPECT_EQ(master_context.offload(), nullptr);
 
     InProcessFabric fabric;
-    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric));
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric)).value();
     EXPECT_NE(master_context.offload(), nullptr) << "the context takes no master after a failure";
     cluster.detach();
 }
@@ -1594,7 +1605,8 @@ TEST(Integration_DistributedE2ETest, AttemptCapDoesNotOutliveTheRun)
 
     constexpr std::size_t K_COUNT = 128;
     constexpr std::size_t K_RUNS = 2;
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1605,7 +1617,7 @@ TEST(Integration_DistributedE2ETest, AttemptCapDoesNotOutliveTheRun)
     InProcessFabric fabric;
     ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Fail);
     Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                      eager_options());
+                                      eager_options()).value();
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
@@ -1645,19 +1657,20 @@ TEST(Integration_DistributedE2ETest, RefusesEmptySecretOnNetworkExposure)
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     const auto exposed =
         std::make_shared<StubTransport>(TransportExposure::Network, TransportResult());
 
-    EXPECT_THROW(static_cast<void>(Cluster::attach(master_context, exposed)),
-                 SushiException);
+    EXPECT_FALSE(Cluster::attach(master_context, exposed).has_value());
     EXPECT_EQ(exposed->start_calls(), 0) << "the transport was started before the refusal";
     EXPECT_EQ(master_context.offload(), nullptr);
 
     const std::vector<std::uint8_t> key(SharedSecret::K_MINIMUM_BYTES, 0x42);
     ClusterOptions options;
-    options.secret = SharedSecret::from_bytes(span<const std::uint8_t>(key.data(), key.size()));
-    Cluster cluster = Cluster::attach(master_context, exposed, std::move(options));
+    options.secret =
+        SharedSecret::from_bytes(span<const std::uint8_t>(key.data(), key.size())).value();
+    Cluster cluster = Cluster::attach(master_context, exposed, std::move(options)).value();
     EXPECT_EQ(exposed->start_calls(), 1);
     EXPECT_NE(master_context.offload(), nullptr);
     cluster.detach();
@@ -1694,15 +1707,16 @@ TEST(Integration_DistributedE2ETest, AttachOnAStartedTransportLeavesTheFirstMast
         GTEST_SKIP() << "SYCL reports no device.";
 
     std::atomic<int> worker_runs{0};
-    RuntimeContext first_context;
-    RuntimeContext second_context;
+    const auto first_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& first_context = *first_context_owner;
+    const auto second_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& second_context = *second_context_owner;
     InProcessFabric fabric;
     const std::shared_ptr<InProcessTransport> transport = InProcessTransport::make_master(fabric);
-    Cluster first = Cluster::attach(first_context, transport);
+    Cluster first = Cluster::attach(first_context, transport).value();
     const OffloadCoordinator* const installed = first_context.offload();
 
-    EXPECT_THROW(static_cast<void>(Cluster::attach(second_context, transport)),
-                 SushiException);
+    EXPECT_FALSE(Cluster::attach(second_context, transport).has_value());
     EXPECT_EQ(second_context.offload(), nullptr);
     EXPECT_EQ(first_context.offload(), installed);
 
@@ -1723,11 +1737,12 @@ TEST(Integration_DistributedE2ETest, DetachedClusterReportsNoWorkers)
         GTEST_SKIP() << "SYCL reports no device.";
 
     std::atomic<int> worker_runs{0};
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     InProcessFabric fabric;
     LocalWorker first(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
     LocalWorker second(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
-    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric));
+    Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric)).value();
     ASSERT_TRUE(first.start());
     ASSERT_TRUE(second.start());
     ASSERT_TRUE(cluster.wait_for_workers(2, K_WAIT));
@@ -1760,7 +1775,8 @@ TEST(Integration_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
         GTEST_SKIP() << "SYCL reports no device.";
 
     constexpr std::size_t K_COUNT = 128;
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     sycl::queue& queue = master_context.devices().queue(0);
     USMFloats a(queue, K_COUNT, 0.0f);
     USMFloats b(queue, K_COUNT, 0.0f);
@@ -1771,7 +1787,7 @@ TEST(Integration_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
     InProcessFabric fabric;
     ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
     Cluster cluster = Cluster::attach(master_context, InProcessTransport::make_master(fabric),
-                                      eager_options());
+                                      eager_options()).value();
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
     const OffloadCoordinator* const installed = master_context.offload();
@@ -1788,17 +1804,9 @@ TEST(Integration_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
 
     const auto second_transport =
         std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult());
-    ErrorCode refusal = ErrorCode::Ok;
-    try
-    {
-        static_cast<void>(Cluster::attach(master_context, second_transport));
-    }
-    catch (const SushiException& error)
-    {
-        refusal = error.error().code;
-    }
-
-    EXPECT_EQ(refusal, ErrorCode::InvalidState);
+    const Result<Cluster> second = Cluster::attach(master_context, second_transport);
+    ASSERT_FALSE(second.has_value());
+    EXPECT_EQ(second.error().code, ErrorCode::InvalidState);
     EXPECT_EQ(second_transport->start_calls(), 0) << "the refusal came after a transport start";
     EXPECT_EQ(master_context.offload(), installed);
     EXPECT_EQ(cluster.alive_workers(), 1u) << "the refused attach stopped the installed master";
@@ -1824,9 +1832,10 @@ TEST(Integration_DistributedE2ETest, MovedFromHandleStillNamesTheMaster)
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     InProcessFabric fabric;
-    Cluster source = Cluster::attach(master_context, InProcessTransport::make_master(fabric));
+    Cluster source = Cluster::attach(master_context, InProcessTransport::make_master(fabric)).value();
     Cluster moved = std::move(source);
     Cluster assigned = moved;
     assigned = std::move(moved);
@@ -1849,22 +1858,16 @@ TEST(Integration_DistributedE2ETest, RefusesATimeoutBelowOneMillisecond)
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
-    RuntimeContext master_context;
+    const auto master_context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& master_context = *master_context_owner;
     const auto refusal_of = [&master_context](ClusterOptions options)
     {
         const auto transport =
             std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult());
-        std::string message;
-        try
-        {
-            static_cast<void>(Cluster::attach(master_context, transport, std::move(options)));
-        }
-        catch (const SushiException& error)
-        {
-            message = error.what();
-        }
+        const Result<Cluster> attached =
+            Cluster::attach(master_context, transport, std::move(options));
         EXPECT_EQ(transport->start_calls(), 0) << "the transport was started before the refusal";
-        return message;
+        return attached.has_value() ? std::string() : attached.error().message;
     };
 
     ClusterOptions without_liveness;
@@ -1872,14 +1875,14 @@ TEST(Integration_DistributedE2ETest, RefusesATimeoutBelowOneMillisecond)
     const std::string liveness_refusal = refusal_of(std::move(without_liveness));
     EXPECT_NE(liveness_refusal.find("ClusterOptions::liveness_timeout is 0 ms"),
               std::string::npos)
-        << "the exception says: " << liveness_refusal;
+        << "the error says: " << liveness_refusal;
 
     ClusterOptions without_handshake;
     without_handshake.handshake_timeout = std::chrono::milliseconds(0);
     const std::string handshake_refusal = refusal_of(std::move(without_handshake));
     EXPECT_NE(handshake_refusal.find("ClusterOptions::handshake_timeout is 0 ms"),
               std::string::npos)
-        << "the exception says: " << handshake_refusal;
+        << "the error says: " << handshake_refusal;
     EXPECT_EQ(master_context.offload(), nullptr);
 
     ClusterOptions without_deadline;
@@ -1889,16 +1892,18 @@ TEST(Integration_DistributedE2ETest, RefusesATimeoutBelowOneMillisecond)
     Cluster cluster = Cluster::attach(
         master_context,
         std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult()),
-        std::move(without_deadline));
+        std::move(without_deadline)).value();
 
-    EXPECT_THROW(cluster.liveness_timeout(std::chrono::milliseconds(0)), SushiException);
-    EXPECT_NO_THROW(cluster.liveness_timeout(K_MINIMUM_TIMEOUT));
-    EXPECT_NO_THROW(cluster.task_deadline(std::chrono::milliseconds(0)));
+    const Result<void> refused = cluster.liveness_timeout(std::chrono::milliseconds(0));
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(refused.error().code, ErrorCode::InvalidState);
+    EXPECT_TRUE(cluster.liveness_timeout(K_MINIMUM_TIMEOUT).has_value());
+    cluster.task_deadline(std::chrono::milliseconds(0));
     cluster.detach();
 }
 
 /** @brief Tests that a worker agent seals the registry it is built with, before start(). */
-TEST(Integration_DistributedE2ETest, WorkerAgentSealsItsRegistry)
+TEST(Integration_DistributedE2EDeathTest, WorkerAgentSealsItsRegistry)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -1911,7 +1916,7 @@ TEST(Integration_DistributedE2ETest, WorkerAgentSealsItsRegistry)
     LocalWorker worker(InProcessTransport::make_worker(fabric), kernels);
 
     EXPECT_TRUE(kernels->is_sealed()) << "the agent read its operations from an open registry";
-    EXPECT_THROW(kernels->register_kernel(K_STATE_STEP, vec_add_kernel(worker_runs)),
-                 SushiException);
     EXPECT_FALSE(kernels->has(K_STATE_STEP));
+    EXPECT_DEATH(kernels->register_kernel(K_STATE_STEP, vec_add_kernel(worker_runs)),
+                 "the registry is sealed");
 }

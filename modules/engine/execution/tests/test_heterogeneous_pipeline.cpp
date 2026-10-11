@@ -36,6 +36,7 @@
 #include <SushiRuntime/task/node.hpp>
 
 #include "test_helpers.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -49,7 +50,8 @@ using SushiRuntime::Test::USMShared;
  */
 TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 {
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     TaskGraph graph;
 
     constexpr int    CHAINS = 16;
@@ -161,7 +163,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     }
 
     auto compiled = graph.compile().value();
-    context.execution_engine().execute(std::move(compiled));
+    context.execution_engine().execute(std::move(compiled)).value();
     context.devices().wait_all().value();
 
     for (int c = 0; c < CHAINS; ++c)

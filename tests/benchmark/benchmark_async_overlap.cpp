@@ -38,6 +38,7 @@
 #include <string>
 
 #include "test_helpers.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -153,7 +154,8 @@ TEST(Performance_AsyncOverlapBench, CPUGPUOverlapSpeedup)
     if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))
         GTEST_SKIP() << "Need both a CPU and a GPU SYCL device for overlap benchmark.";
 
-    RuntimeContext ctx;
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& ctx = *ctx_owner;
     sycl::queue& gpu_q = ctx.devices().queue(gpu_idx);
     sycl::queue& cpu_q = ctx.devices().queue(cpu_idx);
 

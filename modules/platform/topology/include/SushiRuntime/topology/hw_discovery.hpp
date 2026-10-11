@@ -34,6 +34,9 @@
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/core/result.hpp>
 
 namespace SushiRuntime
 {
@@ -101,13 +104,19 @@ namespace SushiRuntime
                 /**
                  * @brief Scans all SYCL platforms and returns matching hardware nodes.
                  * @param config Device-class filter; defaults to including all classes.
-                 * @return The devices kept, with logical IDs and NUMA assignments.
+                 * @return The devices kept, with logical IDs and NUMA assignments, or
+                 *         Unsupported when SYCL could not list its devices.
                  */
-                std::vector<HardwareNode> probe_all_devices(const HardwareFilterConfig& config = {});
+                [[nodiscard]] Result<std::vector<HardwareNode>>
+                probe_all_devices(const HardwareFilterConfig& config = {});
 
             private:
-                /** @brief Scans SYCL platforms to find devices. */
-                void discover_sycl_devices(std::vector<HardwareNode>& nodes, const HardwareFilterConfig& config);
+                /**
+                 * @brief Scans SYCL platforms to find devices.
+                 * @return Nothing, or Unsupported when SYCL could not list its devices.
+                 */
+                [[nodiscard]] Result<void> discover_sycl_devices(std::vector<HardwareNode>& nodes,
+                                                                 const HardwareFilterConfig& config);
         };
 
     } // namespace Topology

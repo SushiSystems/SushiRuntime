@@ -203,9 +203,9 @@ namespace
 
     /**
      * @brief Reads the cluster's key, or returns the empty secret when no file was named.
-     * @throws SushiException When the file cannot be read or holds fewer than 32 bytes.
+     * @return The secret, or why the file cannot be read or holds fewer than 32 bytes.
      */
-    Distributed::SharedSecret read_secret(const std::filesystem::path& file)
+    Result<Distributed::SharedSecret> read_secret(const std::filesystem::path& file)
     {
         if (file.empty())
             return Distributed::SharedSecret();
@@ -277,8 +277,8 @@ namespace
 
     /**
      * @brief Attaches a master, waits for a worker, runs the vector add and reports.
-     * @return 0 when the sum is right, 1 otherwise.
-     * @throws SushiException When the secret cannot be read or the master does not start.
+     * @return 0 when the sum is right; 1 otherwise, and when the secret cannot be read or
+     *         the master does not start.
      */
     int run_demo(const DemoOptions& options)
     {
@@ -288,10 +288,26 @@ namespace
         listener.bind = options.listen;
         auto transport = Distributed::TCPTransport::make_master(listener);
 
+        auto secret = read_secret(options.secret_file);
+        if (!secret)
+        {
+            std::fprintf(stderr, "distributed_demo: %s
+", secret.error().message.c_str());
+            return 1;
+        }
+
         Distributed::ClusterOptions cluster_options;
-        cluster_options.secret = read_secret(options.secret_file);
+        cluster_options.secret = std::move(*secret);
         const bool is_authenticated = !cluster_options.secret.empty();
-        auto cluster = Distributed::Cluster::attach(runtime, transport, std::move(cluster_options));
+        auto attached =
+            Distributed::Cluster::attach(runtime, transport, std::move(cluster_options));
+        if (!attached)
+        {
+            std::fprintf(stderr, "distributed_demo: %s
+", attached.error().message.c_str());
+            return 1;
+        }
+        Distributed::Cluster& cluster = *attached;
 
         std::printf("distributed_demo: listening on %s, authentication %s\n",
                     transport->local_endpoint().to_string().c_str(),

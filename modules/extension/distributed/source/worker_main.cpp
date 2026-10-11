@@ -113,16 +113,14 @@ namespace SushiRuntime
                 if (path.empty())
                     return true;
 
-                try
+                Result<SharedSecret> loaded = SharedSecret::from_file(path);
+                if (!loaded)
                 {
-                    secret = SharedSecret::from_file(path);
-                    return true;
-                }
-                catch (const std::exception& error)
-                {
-                    problem = error.what();
+                    problem = std::move(loaded.error().message);
                     return false;
                 }
+                secret = std::move(*loaded);
+                return true;
             }
 
             /** @brief Returns the name a worker takes when its options give none. */
@@ -163,7 +161,16 @@ namespace SushiRuntime
                                                sushi_ptr<KernelRegistry> kernels)
             {
                 const StopSignal stop_signal;
-                Internal::Execution::RuntimeContext context;
+                const Result<std::shared_ptr<Internal::Execution::RuntimeContext>> created =
+                    Internal::Execution::RuntimeContext::create();
+                if (!created)
+                {
+                    SR_LOG_ERROR("worker has no runtime: {}; exiting with code {}",
+                                 created.error().message,
+                                 exit_value(WorkerExitCode::InternalError));
+                    return WorkerExitCode::InternalError;
+                }
+                Internal::Execution::RuntimeContext& context = **created;
 
                 SR_LOG_INFO("worker joining master {}, protocol v{}, authentication {}",
                             options.master.to_string(), Wire::K_PROTOCOL_VERSION,

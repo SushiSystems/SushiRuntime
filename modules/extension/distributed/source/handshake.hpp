@@ -34,6 +34,7 @@
 #include <functional>
 
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/span.hpp>
 
 #include "sha256.hpp"
@@ -59,15 +60,17 @@ namespace SushiRuntime
             Worker, /**< The worker, whose proof travels in PROOF. */
         };
 
-        /** @brief Produces one nonce per call; a session takes one so a test can fix it. */
-        using NonceSource = std::function<HandshakeNonce()>;
+        /**
+         * @brief Produces one nonce per call, or why it has none; a session takes one so a
+         *        test can fix it.
+         */
+        using NonceSource = std::function<Result<HandshakeNonce>()>;
 
         /**
          * @brief Returns a nonce drawn from std::random_device.
-         * @throws SushiException With ErrorCode::Unsupported when the platform has no
-         *         random source.
+         * @return The nonce, or Unsupported when the platform has no random source.
          */
-        [[nodiscard]] SUSHIRUNTIME_API HandshakeNonce make_nonce();
+        [[nodiscard]] SUSHIRUNTIME_API Result<HandshakeNonce> make_nonce();
 
         /**
          * @brief Returns HMAC(secret, label of @p prover || worker_nonce || master_nonce).

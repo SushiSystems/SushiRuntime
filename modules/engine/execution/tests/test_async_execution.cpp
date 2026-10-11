@@ -32,6 +32,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 #include "test_helpers.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -81,7 +82,8 @@ TEST(Integration_AsyncExecutionTest, CPUGPUConcurrentVectorAdd)
     if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))
         GTEST_SKIP() << "Need both a CPU and a GPU SYCL device for concurrency test.";
 
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     sycl::queue& gpu_q = context.devices().queue(gpu_idx);
     sycl::queue& cpu_q = context.devices().queue(cpu_idx);
 
@@ -165,7 +167,8 @@ TEST(Integration_AsyncExecutionTest, AsyncDispatchDoesNotBlock)
     if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))
         GTEST_SKIP() << "Need a GPU SYCL device for async dispatch test.";
 
-    RuntimeContext context;
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
     sycl::queue& gpu_q = context.devices().queue(gpu_idx);
 
     constexpr size_t N = 1u << 20;

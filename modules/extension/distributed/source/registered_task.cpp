@@ -34,7 +34,7 @@
 
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/task_work.hpp>
@@ -64,13 +64,12 @@ namespace SushiRuntime
                                          SushiRuntime::span<const BufferView> outputs)
         {
             const KernelRegistry::Kernel* kernel = kernels.find(metadata.op_id);
-            if (kernel == nullptr)
-                throw SushiException(Error{
-                    ErrorCode::InvalidGraph,
-                    "add_registered_task: no kernel is registered for operation " +
-                        std::to_string(metadata.op_id.value) + " (task '" +
-                        (metadata.name != nullptr ? metadata.name : "unnamed_task") +
-                        "'); call KernelRegistry::register_kernel() for it first."});
+            SR_VERIFY(kernel != nullptr,
+                      ("add_registered_task: no kernel is registered for operation " +
+                       std::to_string(metadata.op_id.value) + " (task '" +
+                       (metadata.name != nullptr ? metadata.name : "unnamed_task") +
+                       "'); call KernelRegistry::register_kernel() for it first.")
+                          .c_str());
 
             Internal::Graph::HostWork local_work =
                 [kernel = *kernel, metadata,

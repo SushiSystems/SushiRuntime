@@ -59,6 +59,7 @@
 
 #include "measurement.hpp"
 #include "test_helpers.hpp"
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
@@ -182,7 +183,11 @@ namespace
 
         private:
             /// @brief The runtime whose device 0 runs the kernels and holds the cache.
-            RuntimeContext context_;
+            const std::shared_ptr<RuntimeContext> context_owner_ =
+                SushiRuntime::Test::make_context();
+
+            /// @brief The context context_owner_ holds.
+            RuntimeContext& context_ = *context_owner_;
 
             /// @brief The agent; declared after the runtime it uses.
             WorkerAgent agent_;
@@ -197,11 +202,11 @@ namespace
         public:
             /**
              * @brief Attaches a master on the pair's master end, then starts the workers.
-             * @throws SushiException When the master does not start.
+             * @pre The master starts; the process stops, naming the error, when it does not.
              */
             OffloadRig(const TransportPair& transports, std::size_t worker_count)
                 : kernels_(make_kernels()),
-                  cluster_(Cluster::attach(master_, transports.master, master_options(kernels_)))
+                  cluster_(Cluster::attach(master_, transports.master, master_options(kernels_)).value())
             {
                 workers_.reserve(worker_count);
                 for (std::size_t index = 0; index < worker_count; ++index)
@@ -274,7 +279,11 @@ namespace
             }
 
             /// @brief The master's runtime; declared first, so it is destroyed last.
-            RuntimeContext master_;
+            const std::shared_ptr<RuntimeContext> master_owner_ =
+                SushiRuntime::Test::make_context();
+
+            /// @brief The context master_owner_ holds.
+            RuntimeContext& master_ = *master_owner_;
 
             /// @brief The kernels of the master and of every worker.
             sushi_ptr<KernelRegistry> kernels_;
@@ -474,7 +483,7 @@ namespace
             Internal::Graph::CompiledGraph compiled = batch.compile().value();
 
             const auto begin = std::chrono::steady_clock::now();
-            rig.master().execution_engine().execute(compiled);
+            rig.master().execution_engine().execute(compiled).value().value();
             const auto end = std::chrono::steady_clock::now();
 
             measurement.is_correct = measurement.is_correct && batch.holds_results(base);

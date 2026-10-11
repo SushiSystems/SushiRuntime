@@ -78,8 +78,7 @@ namespace SushiRuntime
             /**
              * @brief Returns the queue the runtime submits a device's work on.
              * @return A reference valid while a handle of this runtime lives.
-             * @throws SushiException With ErrorCode::InvalidAccess for a device the runtime
-             *         does not have.
+             * @pre device names a device of this runtime.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             [[nodiscard]] sycl::queue& queue(DeviceIndex device) const

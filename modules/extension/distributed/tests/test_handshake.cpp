@@ -100,19 +100,12 @@ namespace
         return nonce;
     }
 
-    /** @brief Returns the error a call throws, or nothing when it returns. */
-    template <typename Call>
-    std::optional<Error> error_of(Call&& call)
+    /** @brief Returns the error of a refused secret, or nothing when one was built. */
+    std::optional<Error> error_of(const Result<SharedSecret>& secret)
     {
-        try
-        {
-            std::forward<Call>(call)();
-        }
-        catch (const SushiException& exception)
-        {
-            return exception.error();
-        }
-        return std::nullopt;
+        if (secret.has_value())
+            return std::nullopt;
+        return secret.error();
     }
 
     /** @brief Writes a file in the working directory and removes it when destroyed. */
@@ -313,8 +306,8 @@ TEST(Unit_HandshakeTest, FreshNonceDefeatsReplay)
 /** @brief Tests that the platform's nonce source does not hand out one nonce twice. */
 TEST(Unit_HandshakeTest, PlatformNonceSourceDoesNotRepeat)
 {
-    const HandshakeNonce first = make_nonce();
-    const HandshakeNonce second = make_nonce();
+    const HandshakeNonce first = make_nonce().value();
+    const HandshakeNonce second = make_nonce().value();
 
     EXPECT_NE(first.bytes, second.bytes);
     EXPECT_NE(first.bytes, nonce_of(0x00).bytes);
@@ -326,7 +319,7 @@ TEST(Unit_SharedSecretTest, FromFileRefusesAShortFile)
     const ScratchFile file("sr_test_shared_secret_short.bin", counting(0x00, 31));
 
     const std::optional<Error> error =
-        error_of([&] { (void)SharedSecret::from_file(file.path()); });
+        error_of(SharedSecret::from_file(file.path()));
 
     ASSERT_TRUE(error.has_value());
     EXPECT_EQ(error->code, ErrorCode::InvalidAccess);
@@ -340,7 +333,7 @@ TEST(Unit_SharedSecretTest, FromFileAcceptsThirtyTwoBytes)
     const std::vector<std::uint8_t> content = counting(0xe0, 32);
     const ScratchFile file("sr_test_shared_secret_exact.bin", content);
 
-    const SharedSecret secret = SharedSecret::from_file(file.path());
+    const SharedSecret secret = SharedSecret::from_file(file.path()).value();
 
     EXPECT_FALSE(secret.empty());
     ASSERT_EQ(secret.size(), content.size());
@@ -354,7 +347,7 @@ TEST(Unit_SharedSecretTest, FromFileMissingNamesThePath)
         std::filesystem::current_path() / "sr_test_shared_secret_missing.bin";
 
     const std::optional<Error> error =
-        error_of([&] { (void)SharedSecret::from_file(missing); });
+        error_of(SharedSecret::from_file(missing));
 
     ASSERT_TRUE(error.has_value());
     EXPECT_EQ(error->code, ErrorCode::InvalidAccess);
@@ -365,7 +358,7 @@ TEST(Unit_SharedSecretTest, FromFileMissingNamesThePath)
 TEST(Unit_SharedSecretTest, FromEnvironmentUnsetIsEmpty)
 {
     const SharedSecret secret =
-        SharedSecret::from_environment("SR_TEST_SHARED_SECRET_VARIABLE_NOBODY_SETS");
+        SharedSecret::from_environment("SR_TEST_SHARED_SECRET_VARIABLE_NOBODY_SETS").value();
 
     EXPECT_TRUE(secret.empty());
     EXPECT_EQ(secret.size(), 0u);
@@ -375,7 +368,7 @@ TEST(Unit_SharedSecretTest, FromEnvironmentUnsetIsEmpty)
 TEST(Unit_SharedSecretTest, MoveEmptiesTheSourceAndCloneKeepsIt)
 {
     const std::vector<std::uint8_t> content = counting(0x40, 48);
-    SharedSecret original = SharedSecret::from_bytes(bytes_of(content));
+    SharedSecret original = SharedSecret::from_bytes(bytes_of(content)).value();
 
     const SharedSecret copy = original.clone();
     EXPECT_EQ(original.size(), content.size());
@@ -393,7 +386,7 @@ TEST(Unit_SharedSecretTest, FromBytesRefusesAShortSecret)
     const std::vector<std::uint8_t> content = counting(0x00, 31);
 
     const std::optional<Error> error =
-        error_of([&] { (void)SharedSecret::from_bytes(bytes_of(content)); });
+        error_of(SharedSecret::from_bytes(bytes_of(content)));
 
     ASSERT_TRUE(error.has_value());
     EXPECT_EQ(error->code, ErrorCode::InvalidAccess);

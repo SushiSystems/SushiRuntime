@@ -35,6 +35,7 @@
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
+#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -88,7 +89,8 @@ TEST(Unit_TopologyAbstractionTest, InjectedDistanceModelDrivesRuntimeContext)
         std::vector<std::vector<int>>{{10, 21},
                                       {21, 10}});
 
-    RuntimeContext ctx({}, provider, distance);
+    const auto ctx_owner = SushiRuntime::Test::make_context({}, provider, distance);
+    RuntimeContext& ctx = *ctx_owner;
 
     EXPECT_EQ(ctx.topology().numa_distance(0, 0), 10);
     EXPECT_EQ(ctx.topology().numa_distance(0, 1), 21);
@@ -111,7 +113,7 @@ TEST(Unit_TopologyAbstractionTest, RemappingProviderSplitsRealDevicesAcrossFakeN
     config.include_cpu = true;
     config.include_gpu = true;
 
-    auto nodes = remapper.enumerate(config);
+    auto nodes = remapper.enumerate(config).value();
     ASSERT_FALSE(nodes.empty()) << "No devices discovered to remap.";
 
     for (const auto& n : nodes)
@@ -137,7 +139,8 @@ TEST(Unit_TopologyAbstractionTest, RuntimeContextRoutesQueuesViaSyntheticNUMA)
         std::vector<std::vector<int>>{{10, 21},
                                       {21, 10}});
 
-    RuntimeContext ctx({}, provider, distance);
+    const auto ctx_owner = SushiRuntime::Test::make_context({}, provider, distance);
+    RuntimeContext& ctx = *ctx_owner;
 
     for (int numa = 0; numa < FAKE_NODES; ++numa)
     {

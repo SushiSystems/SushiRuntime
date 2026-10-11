@@ -14,7 +14,6 @@ It depends on the C++ standard library and on `core` (`export.hpp`, `error.hpp`,
 | --- | --- |
 | `SR_LOG_ERROR`, `SR_LOG_WARN` | Log one record; each `{}` takes the next argument |
 | `SR_LOG_INFO`, `SR_LOG_DEBUG` | The same, at the two lower levels |
-| `SR_THROW_IF(condition, ...)` | Logs at error level and throws when the condition holds |
 | `SR_LOGGER_SET_SYNC_MODE(mode)` | Forwards to `set_log_synchronous` |
 | `set_log_synchronous(bool)` | Chooses which thread delivers a record |
 | `log_write(level, line)` | Hands a finished line to the sink, whatever the level |
@@ -33,9 +32,6 @@ It depends on the C++ standard library and on `core` (`export.hpp`, `error.hpp`,
 | --- | --- |
 | `LogSink` | The callable that receives each record |
 | `set_log_sink(sink)` | Replaces the sink of the process |
-
-`SR_THROW_IF` throws `SushiException` with `ErrorCode::InvalidState`; the message is the
-formatted text and is logged once.
 
 Everything in `Detail` belongs to the macros.
 

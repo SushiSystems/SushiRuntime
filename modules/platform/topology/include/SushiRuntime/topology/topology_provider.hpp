@@ -30,6 +30,7 @@
 
 #include <vector>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 
 namespace SushiRuntime
@@ -48,9 +49,11 @@ namespace SushiRuntime
                 /**
                  * @brief Discovers compute devices and assigns their NUMA ids.
                  * @param config Filter controlling which device classes are returned.
-                 * @return Hardware nodes with numa_node_id resolved (>= 0) or -1 if unknown.
+                 * @return Hardware nodes with numa_node_id resolved (>= 0) or -1 if unknown, or
+                 *         Unsupported when the devices could not be listed.
                  */
-                virtual std::vector<HardwareNode> enumerate(const HardwareFilterConfig& config = {}) = 0;
+                [[nodiscard]] virtual Result<std::vector<HardwareNode>>
+                enumerate(const HardwareFilterConfig& config = {}) = 0;
 
                 /**
                  * @brief Maps each logical CPU (OS cpu index) to its NUMA node; empty by default.

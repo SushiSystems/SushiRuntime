@@ -60,10 +60,10 @@ namespace
     class SingleNodeTopology final : public SushiRuntime::Internal::Topology::TopologyProvider
     {
         public:
-            std::vector<SushiRuntime::Internal::Topology::HardwareNode>
+            SushiRuntime::Result<std::vector<SushiRuntime::Internal::Topology::HardwareNode>>
             enumerate(const SushiRuntime::Internal::Topology::HardwareFilterConfig&) override
             {
-                return {};
+                return std::vector<SushiRuntime::Internal::Topology::HardwareNode>{};
             }
     };
 

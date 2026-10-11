@@ -467,7 +467,7 @@ namespace SushiRuntime
                     // A failed poll fails the run, not the thread (scheduler/README.md).
                     try
                     {
-                        std::exception_ptr polled;
+                        Error polled;
                         if (prof)
                         {
                             const auto p0 = sclock::now();
@@ -476,16 +476,23 @@ namespace SushiRuntime
                         }
                         else
                             polled = event_poller.poll_events(active_events, *my_queue);
-                        if (polled)
+                        if (polled.code != ErrorCode::Ok)
                         {
                             SR_LOG_ERROR("An event of the current run failed; aborting the run.");
-                            outcome_.record(polled);
+                            outcome_.record(std::move(polled));
                         }
+                    }
+                    catch (const std::exception& cause)
+                    {
+                        SR_LOG_ERROR("poll_events threw; aborting the current run.");
+                        outcome_.record(Error{ErrorCode::KernelFailed, cause.what()});
                     }
                     catch (...)
                     {
                         SR_LOG_ERROR("poll_events threw; aborting the current run.");
-                        outcome_.record(std::current_exception());
+                        outcome_.record(Error{ErrorCode::KernelFailed,
+                                              "poll_events threw an object that is not a "
+                                              "std::exception."});
                     }
 
                     // Only a priority submission takes the global mutex (modules/engine/scheduler/README.md).
@@ -597,13 +604,13 @@ namespace SushiRuntime
             if (worker_id >= 0 && static_cast<size_t>(worker_id) < K_MAX_WORKER_THREADS)
                 worker_completed_tasks[worker_id].value.fetch_add(1, std::memory_order_relaxed);
 
-            const auto abort_run = [this, task, &events](const NamedFailure& failure)
+            const auto abort_run = [this, task, &events](Error failure)
             {
                 SR_LOG_ERROR("{}; the run is aborted and its remaining tasks are skipped.",
                              failure.message);
 
                 // Only this run fails; the pool stays re-armable (modules/engine/scheduler/README.md).
-                outcome_.record(failure.error);
+                outcome_.record(std::move(failure));
 
                 // The failed task is pushed as ready so successors fire (modules/engine/scheduler/README.md).
                 events.push(skipped_event(task));
@@ -758,14 +765,6 @@ namespace SushiRuntime
                 dispatched.widths = widths;
                 events.push(dispatched);
             } 
-            catch (const SushiException& cause)
-            {
-                abort_run(name_failure(*task, cause));
-            }
-            catch (const sycl::exception& cause)
-            {
-                abort_run(name_failure(*task, cause));
-            }
             catch (const std::exception& cause)
             {
                 abort_run(name_failure(*task, cause));

@@ -54,7 +54,8 @@ namespace SushiRuntime
                  * @param config The hardware filter configuration defining inclusion or exclusion rules.
                  * @return The list of discovered hardware nodes ready for scheduling.
                  */
-                std::vector<HardwareNode> enumerate(const HardwareFilterConfig& config = {}) override;
+                [[nodiscard]] Result<std::vector<HardwareNode>>
+                enumerate(const HardwareFilterConfig& config = {}) override;
 
                 /**
                  * @brief Maps CPU cores to their corresponding NUMA nodes.

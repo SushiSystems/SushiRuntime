@@ -69,7 +69,8 @@ namespace
     /**
      * @brief Runs the demo on a runtime built from one RuntimeConfig.
      * @return 0 when both runs succeed and the readback holds the expected counts.
-     * @throws SushiException When the runtime cannot be built or a range call is refused.
+     * @pre The runtime can be built and no range call is refused; value() stops the process
+     *      otherwise.
      */
     int run_demo()
     {

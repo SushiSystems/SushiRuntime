@@ -21,7 +21,7 @@
 
 /**
  * @file test_logger.cpp
- * @brief Tests the log level gate, the sink, both delivery modes and SR_THROW_IF.
+ * @brief Tests the log level gate, the sink and both delivery modes.
  * @see modules/foundation/logging/tests/README.md
  * @author Mustafa Garip
  */
@@ -85,19 +85,6 @@ namespace
             LogLevel saved_level_ = LogLevel::Warn;
     };
 
-    /** @brief Calls SR_THROW_IF from a member function, with a member named msg_ as argument. */
-    class ThrowIfMemberHolder
-    {
-        public:
-            /** @brief Throws through SR_THROW_IF, formatting the member msg_. */
-            void fail() const
-            {
-                SR_THROW_IF(true, "value: {}", msg_);
-            }
-
-            /// @brief The text the macro must format; the caller's msg_, not a new local.
-            std::string msg_ = "inner";
-    };
 }
 
 /** @brief Tests that a call above the process level leaves its arguments unevaluated. */
@@ -196,7 +183,7 @@ TEST_F(Unit_LoggerTest, ThrowingSinkLeavesTheRecordOnStderr)
 {
     set_log_sink([](LogLevel, std::string_view)
     {
-        throw SushiException(Error{ErrorCode::InvalidState, "sink failure"});
+        throw std::runtime_error("sink failure");
     });
 
     testing::internal::CaptureStderr();
@@ -228,53 +215,4 @@ TEST_F(Unit_LoggerTest, AsynchronousRecordsArriveBeforeSynchronousModeReturns)
     }
 }
 
-/** @brief Tests that SR_THROW_IF throws InvalidState, logs once and is silent on false. */
-TEST_F(Unit_LoggerTest, ThrowIfThrowsSushiExceptionWithInvalidState)
-{
-    SeenRecords records;
-    set_log_sink(collect_into(&records));
 
-    try
-    {
-        SR_THROW_IF(true, "Expected failure {}", 404);
-        FAIL() << "SR_THROW_IF did not throw on a true condition";
-    }
-    catch (const SushiException& error)
-    {
-        EXPECT_EQ(error.error().code, ErrorCode::InvalidState);
-        EXPECT_STREQ(error.what(), "Expected failure 404");
-    }
-
-    ASSERT_EQ(records.size(), 1u);
-    EXPECT_EQ(records[0].level, LogLevel::Error);
-    EXPECT_NE(records[0].line.find("Expected failure 404"), std::string::npos);
-
-    EXPECT_THROW({ SR_THROW_IF(true, "Caught through the base"); }, std::runtime_error);
-
-    int evaluations = 0;
-    EXPECT_NO_THROW({ SR_THROW_IF(false, "Should not fail {}", ++evaluations); });
-    EXPECT_EQ(evaluations, 0);
-    EXPECT_EQ(records.size(), 2u);
-}
-
-/** @brief Tests that SR_THROW_IF formats a member named msg_ from the calling member function. */
-TEST_F(Unit_LoggerTest, ThrowIfFormatsACallerMemberNamedMsg)
-{
-    SeenRecords records;
-    set_log_sink(collect_into(&records));
-    ThrowIfMemberHolder holder;
-
-    try
-    {
-        holder.fail();
-        FAIL() << "SR_THROW_IF did not throw on a true condition";
-    }
-    catch (const SushiException& error)
-    {
-        EXPECT_EQ(error.error().code, ErrorCode::InvalidState);
-        EXPECT_STREQ(error.what(), "value: inner");
-    }
-
-    ASSERT_EQ(records.size(), 1u);
-    EXPECT_NE(records[0].line.find("value: inner"), std::string::npos) << records[0].line;
-}

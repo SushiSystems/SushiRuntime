@@ -65,10 +65,11 @@ namespace SushiRuntime
                  * @param registry Outlives the coordinator; Cluster::State owns both.
                  * @param transport A master-side transport that was never started; not null.
                  * @param options Moved in; the secret stays here for the directory to read.
+                 * @param session_id Names this master to its workers; drawn at random.
                  */
                 DistributedCoordinator(BufferRegistry& registry,
                                        std::shared_ptr<Transport> transport,
-                                       ClusterOptions options);
+                                       ClusterOptions options, std::uint64_t session_id);
 
                 /** @brief Calls stop(), then destroys the bricks. */
                 ~DistributedCoordinator() override;
