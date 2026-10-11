@@ -215,41 +215,6 @@ namespace SushiRuntime
 
     } // namespace Observability
 
-    namespace Core
-    {
-        /** @brief Deprecated Core:: name for Observability::NUMANodeStatistics. */
-        using NUMANodeStatistics [[deprecated("use Observability::NUMANodeStatistics")]] =
-            Observability::NUMANodeStatistics;
-
-        /** @brief Deprecated Core:: name for Observability::DistributedStatistics. */
-        using DistributedStatistics [[deprecated("use Observability::DistributedStatistics")]] =
-            Observability::DistributedStatistics;
-
-        /** @brief Deprecated Core:: name for Observability::NodeTiming. */
-        using NodeTiming [[deprecated("use Observability::NodeTiming")]] =
-            Observability::NodeTiming;
-
-        /** @brief Deprecated Core:: name for Observability::WorkerTiming. */
-        using WorkerTiming [[deprecated("use Observability::WorkerTiming")]] =
-            Observability::WorkerTiming;
-
-        /** @brief Deprecated Core:: name for Observability::NodeEventRecord. */
-        using NodeEventRecord [[deprecated("use Observability::NodeEventRecord")]] =
-            Observability::NodeEventRecord;
-
-        /** @brief Deprecated Core:: name for Observability::ClockPairing. */
-        using ClockPairing [[deprecated("use Observability::ClockPairing")]] =
-            Observability::ClockPairing;
-
-        /** @brief Deprecated Core:: name for Observability::ExecutionLayer. */
-        using ExecutionLayer [[deprecated("use Observability::ExecutionLayer")]] =
-            Observability::ExecutionLayer;
-
-        /** @brief Deprecated Core:: name for Observability::RunReport. */
-        using RunReport [[deprecated("use Observability::RunReport")]] = Observability::RunReport;
-
-    } // namespace Core
-
     using Observability::RunReport;
 
 } // namespace SushiRuntime

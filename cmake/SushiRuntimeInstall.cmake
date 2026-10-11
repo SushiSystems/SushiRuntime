@@ -30,7 +30,7 @@ function(sushiruntime_install_package)
         RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
         INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
-    foreach(include_root IN LISTS include_roots SR_FORWARDING_INCLUDE_ROOT)
+    foreach(include_root IN LISTS include_roots)
         install(DIRECTORY "${include_root}/"
             DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
             FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")

@@ -15,8 +15,8 @@ repository.
 | `dispatch_width.hpp` | `WIDTH_UNKNOWN`, the marker of a dispatch with no element count |
 | `transfer_counters.hpp` | `TransferCounters`, the byte counters of explicit host and device transfers |
 
-Everything is in `SushiRuntime::Observability`. Each of the first four headers keeps its `Core::`
-spelling as a deprecated forwarder. `run_report.hpp` also promotes `RunReport` into `SushiRuntime`.
+Everything is in `SushiRuntime::Observability`. `run_report.hpp` also promotes `RunReport` into
+`SushiRuntime`.
 
 ## event_timestamps.hpp
 

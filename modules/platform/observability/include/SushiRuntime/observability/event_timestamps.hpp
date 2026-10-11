@@ -81,20 +81,4 @@ namespace SushiRuntime
         }
 
     } // namespace Observability
-
-    namespace Core
-    {
-        /** @brief Names Observability::EventTimestamps by its spelling before v0.4.0. */
-        using EventTimestamps [[deprecated("use Observability::EventTimestamps")]] =
-            Observability::EventTimestamps;
-
-        /** @brief Forwards to Observability::read_event_timestamps(). */
-        [[deprecated("use Observability::read_event_timestamps")]]
-        inline bool read_event_timestamps(const sycl::event& event,
-                                          Observability::EventTimestamps& out) noexcept
-        {
-            return Observability::read_event_timestamps(event, out);
-        }
-
-    } // namespace Core
 } // namespace SushiRuntime

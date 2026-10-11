@@ -59,25 +59,4 @@ namespace SushiRuntime
         }
 
     } // namespace Memory
-
-    namespace Core
-    {
-        /** @brief Names Memory::Liveness by its spelling before v0.4.0. */
-        using Liveness [[deprecated("use Memory::Liveness")]] = Memory::Liveness;
-
-        /** @brief Names Memory::LivenessToken by its spelling before v0.4.0. */
-        using LivenessToken [[deprecated("use Memory::LivenessToken")]] = Memory::LivenessToken;
-
-        /** @brief Names Memory::LivenessObserver by its spelling before v0.4.0. */
-        using LivenessObserver [[deprecated("use Memory::LivenessObserver")]] =
-            Memory::LivenessObserver;
-
-        /** @brief Forwards to Memory::make_liveness(). */
-        [[deprecated("use Memory::make_liveness")]]
-        inline Memory::LivenessToken make_liveness()
-        {
-            return Memory::make_liveness();
-        }
-
-    } // namespace Core
 } // namespace SushiRuntime
