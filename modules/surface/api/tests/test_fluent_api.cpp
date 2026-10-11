@@ -31,7 +31,7 @@
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 
 using namespace SushiRuntime;
 

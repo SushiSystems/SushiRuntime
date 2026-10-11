@@ -29,7 +29,7 @@
 #include <cstddef>
 #include <cstdio>
 
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 
 int main()
 {

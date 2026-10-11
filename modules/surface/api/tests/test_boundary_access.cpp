@@ -31,7 +31,7 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/graph/boundary_access.hpp>
 
 #include "dynamic_graph_plan_access.hpp"

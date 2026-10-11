@@ -30,7 +30,7 @@
 #include <cstdio>
 #include <vector>
 
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 
 using namespace SushiRuntime;
 

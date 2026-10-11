@@ -33,7 +33,7 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/device_fault.hpp>
 
 using namespace SushiRuntime;

@@ -1286,7 +1286,7 @@ modules/<tier>/<module>/   README.md, CMakeLists.txt, include/SushiRuntime/<modu
                            ExecutionMetrics
   surface/     interop     DeviceUUID, ExternalMemoryDescriptor, InteropCapabilities
                api         Runtime, Buffer/State, API::Graph, API::DynamicGraph / Region,
-                           API::Interop, the umbrella header SushiRuntime.h
+                           API::Interop, the umbrella header sushiruntime.hpp
   extension/   distributed (optional) Cluster, ITransport and its two transports,
                            KernelRegistry, IOffloadPolicy, WorkerAgent, run_worker;
                            privately the wire codec, the handshake and the bricks

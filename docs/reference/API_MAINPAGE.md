@@ -29,7 +29,7 @@ The runtime follows a **describe → compile once → replay** pipeline:
    caller keeps working while the step is in flight.
 
 ```cpp
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 using namespace SushiRuntime;
 
 auto rt    = Runtime::create();

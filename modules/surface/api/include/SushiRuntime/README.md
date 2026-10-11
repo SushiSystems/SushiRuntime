@@ -4,7 +4,7 @@ This folder holds the umbrella header and the `api/` folder.
 
 | Entry | What it holds |
 | --- | --- |
-| `SushiRuntime.h` | The umbrella. It includes `core/version.hpp` and `api/fluent.hpp`, and nothing else. |
+| `sushiruntime.hpp` | The umbrella. It includes `core/version.hpp` and `api/fluent.hpp`, and nothing else. |
 | `api/` | The fluent v1 API, one folder per concern. |
 
 The sub-folders of `api/`, each with its own page:

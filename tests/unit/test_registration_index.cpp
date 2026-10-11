@@ -37,7 +37,7 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>

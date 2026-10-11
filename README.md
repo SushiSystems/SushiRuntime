@@ -253,7 +253,7 @@ graph. The runtime tracks the reads and writes, places the work, and — for
 stepped workloads — compiles the graph once and replays it.
 
 ```cpp
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 
 using namespace SushiRuntime;
 

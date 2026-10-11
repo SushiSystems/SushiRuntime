@@ -31,7 +31,7 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/emit_launch.hpp>
 
 using namespace SushiRuntime;

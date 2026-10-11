@@ -35,7 +35,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 
 #include "test_helpers.hpp"
 #include "scheduler_fixture.hpp"

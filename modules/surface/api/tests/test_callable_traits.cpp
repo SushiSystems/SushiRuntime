@@ -31,7 +31,7 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/SushiRuntime.h>
+#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/callable_checks.hpp>
 #include <SushiRuntime/api/detail/callable_traits.hpp>
 
