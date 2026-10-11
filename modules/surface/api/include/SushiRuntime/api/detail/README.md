@@ -433,8 +433,7 @@ inline array of K_MAX_NODE_PARAMETERS words, so recording a node allocates nothi
 
 apply() writes the stamp on the node an emitter added, once per replay, and writes only what was
 stated. An emitter therefore needs no parameter for a name, an operation or a parameter list, and
-a shape added later gets all three with no code of its own. The offload emitters fill the
-operation and the parameters themselves, from the arguments of their verbs.
+a shape added later gets all three with no code of its own.
 
 ### parameters_refusal
 

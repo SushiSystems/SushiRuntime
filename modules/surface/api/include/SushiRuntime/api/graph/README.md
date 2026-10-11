@@ -1172,8 +1172,8 @@ A Region built without a log belongs to no graph and lists nothing.
 
 ### Shared surface
 
-Region and Graph take every add() overload (per-element, N-D, State, capture, tracked, dynamic,
-offload), the untracked, task and host forms and name() from BuilderSurface, so a region
+Region and Graph take every verb (add, add_rule, add_coupled, add_dynamic, add_untracked,
+add_task, add_host, extend) and name() from BuilderSurface, so a region
 records work exactly as a static graph does. A call on a region returns the Region. Both expose
 recorder(), so a function written over a Recorder records onto either.
 
