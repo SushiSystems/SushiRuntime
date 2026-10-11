@@ -319,6 +319,21 @@ ran during add_\*), then caches it and stitches only the cross-region boundary o
 that did not change is never rebuilt. The returned nodes keep their intra edges and carry their
 in_degree as the region's own pass left it.
 
+## compiled_graph.hpp
+
+### rearm: memory the host writes between executions
+
+Between two executions of one compiled plan the caller may write a Shared or Host USM
+allocation that no node of the plan declares as written. Every node of the next execution
+observes the bytes written. The caller writes only while no execution of the plan is in flight.
+
+A plan fixes the addresses its kernels receive, not the bytes behind them, so the rule holds on
+the scheduler path and on the in-order chain. It binds a recorded command graph as well, layer 2
+of [`GRAPH_REPLAY.md`](../../../docs/design/GRAPH_REPLAY.md), which is not built: a recording
+that captured the bytes would break it. A Device allocation is outside the rule, since the host
+cannot address it. The write is not a node and the rule adds no ordering; the caller orders it by
+writing between executions.
+
 ## Implementation
 
 The task graph and the dependency tracker that orders its nodes. The headers are in
