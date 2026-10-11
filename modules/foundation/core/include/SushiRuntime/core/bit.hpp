@@ -40,13 +40,13 @@ namespace SushiRuntime
     {
         /**
          * @brief Counts the set bits in a 64-bit unsigned integer.
-         * 
-         * Uses compiler intrinsics to efficiently calculate the population count.
+         *
+         * Uses __popcnt64 on MSVC and __builtin_popcountll on other compilers.
          *
          * @param x The 64-bit unsigned integer to inspect.
          * @return The total number of bits set to 1, ranging from 0 to 64.
          */
-        inline int popcount_u64(std::uint64_t x) noexcept
+        [[nodiscard]] inline int popcount_u64(std::uint64_t x) noexcept
         {
             #if defined(_MSC_VER) && !defined(__clang__)
                 return static_cast<int>(__popcnt64(x));
@@ -57,13 +57,13 @@ namespace SushiRuntime
 
         /**
          * @brief Counts the trailing zero bits in a 64-bit unsigned integer.
-         * 
-         * Uses compiler intrinsics to efficiently locate the least significant set bit.
+         *
+         * Uses _BitScanForward64 on MSVC and __builtin_ctzll on other compilers.
          *
          * @param x The 64-bit unsigned integer to inspect.
          * @return The number of trailing 0 bits, or 64 if the value is zero.
          */
-        inline int countr_zero_u64(std::uint64_t x) noexcept
+        [[nodiscard]] inline int countr_zero_u64(std::uint64_t x) noexcept
         {
             if (x == 0)
                 return 64;

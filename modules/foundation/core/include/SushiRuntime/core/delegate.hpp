@@ -59,8 +59,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Erases f into inline storage without allocating.
-                 * @tparam F The callable type; must be invocable as R(Args...) and fit the inline
-                 *        storage.
+                 * @tparam F The callable type; must be invocable as R(Args...), fit the inline
+                 *        storage and have a noexcept move constructor.
                  * @see modules/foundation/core/README.md
                  */
                 template <class F,
@@ -77,6 +77,10 @@ namespace SushiRuntime
                                   "alignment.");
                     static_assert(std::is_move_constructible_v<DF>,
                                   "Delegate: callable must be move-constructible.");
+                    static_assert(std::is_nothrow_move_constructible_v<DF>,
+                                  "Delegate: callable must be nothrow-move-constructible; do not "
+                                  "capture const values or types whose move constructor can "
+                                  "throw.");
                     ::new (static_cast<void*>(&storage_)) DF(std::forward<F>(f));
                     vtable_ = vtable_for<DF>();
                 }
@@ -144,17 +148,32 @@ namespace SushiRuntime
                  */
                 struct VTable
                 {
-                    R (*invoke)(Storage*, Args...);
-                    void (*move)(Storage* dst, Storage* src) noexcept;
-                    void (*destroy)(Storage*) noexcept;
+                    R (*invoke)(Storage*, Args...);      /**< Calls the stored callable. */
+                    void (*move)(Storage* dst, Storage* src) noexcept; /**< Relocates it. */
+                    void (*destroy)(Storage*) noexcept;  /**< Destroys it in place. */
                 };
 
+                /**
+                 * @brief Calls the callable stored at s; returns its result unless R is void.
+                 * @tparam F The callable type stored at s.
+                 */
                 template <class F>
                 static R invoke_impl(Storage* s, Args... args)
                 {
-                    return (*reinterpret_cast<F*>(s))(std::forward<Args>(args)...);
+                    if constexpr (std::is_void_v<R>)
+                    {
+                        (*reinterpret_cast<F*>(s))(std::forward<Args>(args)...);
+                    }
+                    else
+                    {
+                        return (*reinterpret_cast<F*>(s))(std::forward<Args>(args)...);
+                    }
                 }
 
+                /**
+                 * @brief Move-constructs the callable at src into dst, then destroys the source.
+                 * @tparam F The callable type stored at src.
+                 */
                 template <class F>
                 static void move_impl(Storage* dst, Storage* src) noexcept
                 {
@@ -162,6 +181,10 @@ namespace SushiRuntime
                     reinterpret_cast<F*>(src)->~F();
                 }
 
+                /**
+                 * @brief Destroys the callable stored at s in place.
+                 * @tparam F The callable type stored at s.
+                 */
                 template <class F>
                 static void destroy_impl(Storage* s) noexcept
                 {
@@ -180,6 +203,7 @@ namespace SushiRuntime
                     return &vt;
                 }
 
+                /** @brief Destroys the held callable, if any, and leaves the Delegate empty. */
                 void reset() noexcept
                 {
                     if (vtable_)
@@ -189,7 +213,9 @@ namespace SushiRuntime
                     }
                 }
 
-                Storage storage_;
+                Storage storage_; /**< Inline buffer for the erased callable. */
+
+                /** @brief Operations of the held callable; null when the Delegate is empty. */
                 const VTable* vtable_ = nullptr;
         };
 

@@ -21,12 +21,13 @@
 
 /**
  * @file test_delegate.cpp
- * @brief Tests Core::Delegate: empty state, invocation, argument forwarding, moves and destruction.
+ * @brief Tests Core::Delegate: empty state, invocation, results, moves and destruction.
  * @see modules/foundation/core/tests/README.md
  * @author Mustafa Garip
  */
 
 #include <memory>
+#include <type_traits>
 #include <utility>
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/delegate.hpp>
@@ -68,6 +69,19 @@ namespace
     {
         int sink = 0;
         Delegate<void(int)> d = [&sink](int v) { sink = v; };
+        d(99);
+        EXPECT_EQ(sink, 99);
+    }
+
+    TEST(Unit_Delegate, VoidSignatureDiscardsResultOfValueCallable)
+    {
+        int sink = 0;
+        Delegate<void(int)> d = [&sink](int v)
+        {
+            sink = v;
+            return v;
+        };
+        ASSERT_TRUE(static_cast<bool>(d));
         d(99);
         EXPECT_EQ(sink, 99);
     }
@@ -114,5 +128,21 @@ namespace
         Delegate<int()> moved = std::move(d);
         EXPECT_EQ(moved(), 123);
         EXPECT_FALSE(static_cast<bool>(d));
+    }
+
+    TEST(Unit_Delegate, HoldsNothrowMovableMoveOnlyTarget)
+    {
+        auto owned = std::make_unique<int>(321);
+        auto target = [p = std::move(owned)] { return *p; };
+        static_assert(std::is_nothrow_move_constructible_v<decltype(target)>,
+                      "The target of this test must have a noexcept move constructor.");
+        static_assert(!std::is_copy_constructible_v<decltype(target)>,
+                      "The target of this test must be move-only.");
+
+        Delegate<int()> d = std::move(target);
+        Delegate<int()> moved = std::move(d);
+        EXPECT_FALSE(static_cast<bool>(d));
+        ASSERT_TRUE(static_cast<bool>(moved));
+        EXPECT_EQ(moved(), 321);
     }
 }
