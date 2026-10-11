@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-11 — task: Fixed `SmallEventVector` keeping live events past its count after an assignment or a move, and added `clear()` (`small_event_vector.hpp`).
+- 2026-10-11 — task: Changed `OpID::hash_str` to read bytes as unsigned; the id of a name with a byte above 127 changes (`task_types.hpp`).
 - 2026-10-11 — scheduler: Fixed a run never quiescing when an event's status query throws; removed the `using namespace` of `Core` from `event_polling.hpp`, which leaked into every includer (`event_polling.hpp`).
 - 2026-10-11 — scheduler: Changed `RangeTask` to throw for a range whose start is past its end (`range_task.hpp`).
 - 2026-10-11 — interop: Added `ExternalHandleKind::Unspecified` as the default kind, which `import_device` refuses; the `Interop` constructor became private and its methods nodiscard (`external_memory.hpp`, `interop.hpp`).

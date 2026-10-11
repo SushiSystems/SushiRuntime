@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
@@ -51,9 +52,7 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Uniquely identifies a discrete computational operation using a strongly typed hash wrapper.
-         *
-         * Generates deterministic 32-bit identifiers via FNV-1a hashing to provide an open, string-based registration system without rigid enums.
+         * @brief Identifies a computational operation by the 32-bit FNV-1a hash of its name.
          */
         struct OpID 
         {
@@ -79,9 +78,10 @@ namespace SushiRuntime
             static constexpr uint32_t hash_str(const char* str, std::size_t length) 
             {
                 uint32_t hash = 2166136261u;
-                for (std::size_t i = 0; i < length; ++i) 
+                for (std::size_t i = 0; i < length; ++i)
                 {
-                    hash ^= static_cast<uint32_t>(str[i]);
+                    // char is signed on some platforms; each byte is read as unsigned.
+                    hash ^= static_cast<uint32_t>(static_cast<unsigned char>(str[i]));
                     hash *= 16777619u;
                 }
                 return hash;
@@ -107,7 +107,7 @@ namespace SushiRuntime
         /**
          * @brief Bundles fundamental metadata describing a task payload.
          *
-         * Aggregates identifiers, hints, and inline scalar arguments into a completely allocation-free layout.
+         * Aggregates identifiers, hints and inline scalar arguments, with no heap allocation.
          */
         struct TaskMetadata 
         {
@@ -146,17 +146,17 @@ namespace SushiRuntime
             /**
              * @brief Injects a primitive scalar value into the inline metadata buffer.
              *
-             * Converts and copies trivially-copyable types into the specific designated internal 64-bit slot.
-             *
              * @param index The zero-based array index identifying the storage slot.
              * @param value The primitive data payload to save.
+             * @pre 0 <= index < K_MAX_PARAMS; a release build ignores an index outside it.
              */
             template<typename T>
-            void set_param(int index, T value) 
+            void set_param(int index, T value)
             {
                 static_assert(std::is_trivially_copyable_v<T>, "Parameter must be trivially copyable.");
                 static_assert(sizeof(T) <= sizeof(uint64_t), "Parameter must fit in 64 bits.");
-                if (index >= 0 && index < static_cast<int>(K_MAX_PARAMS)) 
+                assert(index >= 0 && index < static_cast<int>(K_MAX_PARAMS));
+                if (index >= 0 && index < static_cast<int>(K_MAX_PARAMS))
                 {
                     std::memcpy(&params[index], &value, sizeof(T));
                 }
@@ -165,18 +165,18 @@ namespace SushiRuntime
             /**
              * @brief Extracts a primitive scalar value from the internal metadata buffer.
              *
-             * Reinterprets the underlying raw bytes of a designated storage slot back into the specified type.
-             *
              * @param index The zero-based array index identifying the storage slot.
-             * @return The correctly typed reconstructed primitive value.
+             * @return The value read from the slot as T.
+             * @pre 0 <= index < K_MAX_PARAMS; a release build returns T{} for an index outside it.
              */
             template<typename T>
-            T get_param(int index) const 
+            T get_param(int index) const
             {
                 static_assert(std::is_trivially_copyable_v<T>, "Parameter must be trivially copyable.");
                 static_assert(sizeof(T) <= sizeof(uint64_t), "Parameter must fit in 64 bits.");
+                assert(index >= 0 && index < static_cast<int>(K_MAX_PARAMS));
                 T value{};
-                if (index >= 0 && index < static_cast<int>(K_MAX_PARAMS)) 
+                if (index >= 0 && index < static_cast<int>(K_MAX_PARAMS))
                 {
                     std::memcpy(&value, &params[index], sizeof(T));
                 }

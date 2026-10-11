@@ -27,7 +27,9 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
+#include <utility>
 #include <vector>
 #include <sycl/sycl.hpp>
 
@@ -36,11 +38,10 @@ namespace SushiRuntime
     namespace Graph
     {
         /**
-         * @brief Inline-optimised storage for a node's SYCL event dependencies.
+         * @brief Stores a node's SYCL event dependencies, inline up to STATIC_CAP events.
          *
-         * Holds up to STATIC_CAP events without a heap allocation; additional
-         * events spill into a dynamic_data vector. Avoids per-node vector
-         * allocation in the common case (≤ 8 deps).
+         * Events past STATIC_CAP go to dynamic_data in order. Every inline slot at or past
+         * static_count holds a default-constructed event.
          */
         struct SmallEventVector
         {
@@ -50,24 +51,91 @@ namespace SushiRuntime
             sycl::event static_data[STATIC_CAP];   /**< Inline event storage. */
             std::vector<sycl::event> dynamic_data; /**< Overflow storage when count > STATIC_CAP. */
 
+            /** @brief Constructs an empty vector. */
+            SmallEventVector() = default;
+
+            /**
+             * @brief Copies every event, inline and overflow, from @p other.
+             * @param other Source vector.
+             */
+            SmallEventVector(const SmallEventVector& other) = default;
+
+            /**
+             * @brief Moves the events of @p other into this vector.
+             * @param other Source vector; left with size() equal to zero.
+             */
+            SmallEventVector(SmallEventVector&& other)
+                : SmallEventVector(other, std::make_index_sequence<STATIC_CAP>{})
+            {
+                other.clear();
+            }
+
+            /** @brief Releases every stored event. */
+            ~SmallEventVector() = default;
+
+            /**
+             * @brief Replaces the stored events with a copy of those in @p other.
+             * @param other Source vector; may be this vector.
+             * @return *this.
+             */
+            inline SmallEventVector& operator=(const SmallEventVector& other)
+            {
+                if (this == &other)
+                    return *this;
+
+                for (size_t i = 0; i < other.static_count; ++i)
+                    static_data[i] = other.static_data[i];
+                set_inline_count(other.static_count);
+                dynamic_data = other.dynamic_data;
+                return *this;
+            }
+
+            /**
+             * @brief Moves the events of @p other into this vector.
+             * @param other Source vector; left with size() equal to zero.
+             * @return *this.
+             */
+            inline SmallEventVector& operator=(SmallEventVector&& other)
+            {
+                if (this == &other)
+                    return *this;
+
+                for (size_t i = 0; i < other.static_count; ++i)
+                    static_data[i] = std::move(other.static_data[i]);
+                set_inline_count(other.static_count);
+                dynamic_data = std::move(other.dynamic_data);
+                other.clear();
+                return *this;
+            }
+
             /**
              * @brief Replaces the stored events with those from @p vec.
-             * @param vec Source event list.
+             * @param vec Source event list; may be this vector's own dynamic_data.
              * @return *this.
              */
             inline SmallEventVector& operator=(const std::vector<sycl::event>& vec)
             {
-                static_count = 0;
-                dynamic_data.clear();
+                const size_t inline_count = std::min(vec.size(), STATIC_CAP);
 
-                for (const auto& e : vec) 
-                {
-                    if (static_count < STATIC_CAP) 
-                        static_data[static_count++] = e;
-                    else 
-                        dynamic_data.push_back(e);
-                }
+                for (size_t i = 0; i < inline_count; ++i)
+                    static_data[i] = vec[i];
+                set_inline_count(inline_count);
+
+                // A list that is this vector's dynamic_data is erased from the front, not cleared.
+                if (&vec == &dynamic_data)
+                    dynamic_data.erase(dynamic_data.begin(),
+                                       dynamic_data.begin() + static_cast<std::ptrdiff_t>(inline_count));
+                else
+                    dynamic_data.assign(vec.begin() + static_cast<std::ptrdiff_t>(inline_count),
+                                        vec.end());
                 return *this;
+            }
+
+            /** @brief Removes every event, inline and overflow. */
+            inline void clear()
+            {
+                set_inline_count(0);
+                dynamic_data.clear();
             }
 
             /**
@@ -121,6 +189,32 @@ namespace SushiRuntime
 
             /** @brief Iterator past the last stored event. */
             inline const_iterator end() const { return {this, static_count + dynamic_data.size()}; }
+
+            private:
+                /**
+                 * @brief Builds a vector that takes the inline slots and overflow of @p source.
+                 * @param source Vector whose slots are moved from; the caller empties it.
+                 */
+                template <std::size_t... Index>
+                SmallEventVector(SmallEventVector& source, std::index_sequence<Index...>)
+                    : static_count(source.static_count)
+                    , static_data{std::move(source.static_data[Index])...}
+                    , dynamic_data(std::move(source.dynamic_data))
+                {
+
+                }
+
+                /**
+                 * @brief Sets the inline count, resetting the slots that held events past it.
+                 * @param count Number of inline slots holding events after the call; the caller has
+                 *        already written them.
+                 */
+                inline void set_inline_count(size_t count)
+                {
+                    for (size_t i = count; i < static_count; ++i)
+                        static_data[i] = sycl::event{};
+                    static_count = count;
+                }
         };
 
     } // namespace Graph
