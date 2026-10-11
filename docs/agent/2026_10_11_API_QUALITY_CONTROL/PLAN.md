@@ -1,179 +1,260 @@
-# API quality control: repair plan
+# API refinement: plan
 
-**Status:** Proposed on 2026-10-11; no task started. The findings are in `REPORT.md` of this
-folder, by id (QC-nn).
+**Status:** Proposed on 2026-10-11; no task started. It waits for the owner's word, which comes
+when the SushiAI work in the sibling checkout is committed.
 
-## Rules of the repair
+`SPEC.md` of this folder holds the decisions and the measurements. `REPORT.md` holds the first
+pass, whose repair plan stood in this file until this rewrite; its open items are in
+`docs/design/REMAINING_WORK.md`.
 
-- A worker writes only the files its task lists, plus this folder. It adds no source file and
-  edits no `CMakeLists.txt` or `cmake/` file: the build files belong to another session. A fix
-  that needs a new `.cpp` is listed under "Not repaired" for that reason.
-- No build and no test run by a worker. Each task ends with `clang -fsyntax-only` through
-  `build/compile_commands.json` on the files it touched; the orchestrator builds and tests at
-  the end of each wave.
-- The orchestrator writes `docs/reference/CHANGELOG.md`, `docs/design/` and
-  `REMAINING_WORK.md`. QC-137 lists the seven changelog lines owed today.
-- A task that changes a public spelling keeps the old one as a `[[deprecated]]` forwarder of
-  one call, per `api-stability`. No task below keeps a second implementation.
-- "Approval" marks a task, or one fix in it, that the orchestrator must approve before it is
-  dispatched: a change to a public interface's shape beyond a local fix, to data ownership,
-  to a module boundary, or a removal of something public.
+## Rules
 
-## Waves
+- Inline: one session, no worker writes source. Read-only studies may be dispatched.
+- One task, one acceptance criterion, one build: `sr build --distributed --jobs 4`, then
+  `sr test --distributed`. A consumer step uses `sb`, `sa` or `se` with four threads.
+- One build runs at a time on the machine.
+- One commit per task, staged by path, with its tests, its README, its changelog line.
+- Every removal and every rename is breaking and carries `!`. No alias and no forwarder is left
+  behind: the release is `v0.4.0` and nothing below `v1.0.0` owes a deprecation window.
+- A step that turns out to need a decision listed under "Decisions that stay with the owner"
+  stops there.
 
-Hierarchy first: foundation and platform, then engine, then the api detail layer, then the
-recorder, then the drivers and builders that call it, then the extension and the examples.
-Inside a wave the file sets are disjoint.
+## The surface after the plan
 
-### Wave 1: foundation, platform, interop module
+```cpp
+#include <SushiRuntime/sushiruntime.hpp>
 
-| Task | Findings | Files | Acceptance criterion |
-| --- | --- | --- | --- |
-| T01 span | QC-25, 26, part of 100 | `modules/foundation/core/include/SushiRuntime/core/span.hpp` | `SushiRuntime::span` is one class under C++17 and C++20, converts from `std::span` under C++20, and rejects an rvalue container of non-const elements |
-| T02 result | QC-27 | `core/result.hpp` | Each of the eight accessors does what its Doxygen says, with one stated contract for the wrong alternative |
-| T03 pointers | QC-28, 44 (`RefCounted`), 98, 105, part of 100 | `core/sushi_ptr.hpp`, `core/ref_counted.hpp` | `sushi_ptr(T*)` is `explicit noexcept`; `ref_count` is private `std::int32_t`; raw-pointer comparison builds no temporary |
-| T04 core rest | QC-96, 97, 101, 102, 104, 106, part of 100 | `core/delegate.hpp`, `core/strong_id.hpp`, `core/bit.hpp`, `core/version.hpp`, `core/common.hpp`, `modules/foundation/core/README.md` | A `void` delegate accepts a value-returning callable; a throwing-move callable is refused at compile time; the README has the entry-point table |
-| T05 logging | QC-24, 99 | `modules/foundation/logging/source/logger.cpp`, `logging/logger.hpp` | A log call after `shut_down()` never blocks on `sink_mutex_` |
-| T06 topology | QC-02, 29, 33, 107, 115 (topology part) | `topology/affinity.hpp`, `topology/hw_discovery.hpp`, `modules/platform/topology/source/hwloc_topology_provider.cpp`, `numa_mapper.cpp`, `hw_discovery.cpp`, `modules/platform/topology/README.md` | An out-of-range core id is logged and ignored; the three NUMA lookups go through one helper that does not depend on ancestor links |
-| T07 memory | QC-30, 31, 34, 44 (`UsmRegistry`), 108, 110, 112, 117 (allocator part) | `modules/platform/memory/source/usm_allocator.cpp`, `memory/usm_allocator.hpp`, `memory/usm_registry.hpp`, `memory/epoch_reclamation.hpp`, `memory/resource_region.hpp`, `memory/usm_allocation_owner.hpp` | A second `release()` of one address frees nothing; `set_release_observer(nullptr)` returns only when no `on_release` is running |
-| T08 observability | QC-32, 111, 135, 115 (ledger part) | `observability/run_report.hpp`, `observability/profiling_ledger.hpp`, `observability/event_timestamps.hpp` | Every `RunReport` field comment states what `fill_run_report` writes; a moved-from ledger is empty |
-| T09 interop | QC-39, 40, 41, 42, 127, 128, 129, 130, 131, 132, 133 | `modules/surface/interop/include/SushiRuntime/interop/*.hpp`, `modules/surface/interop/source/interop.cpp`, `modules/surface/interop/README.md`, `modules/surface/api/include/SushiRuntime/api/interop/interop.hpp`, `api/interop/README.md` | A default descriptor is refused with `invalid_access`; `device_import` is true only where `import_device` can succeed; `Interop` is built by `Runtime` only |
+auto runtime = SushiRuntime::Runtime::create();
+if (!runtime)
+    return report(runtime.error());
 
-Wave 1 closes with one build and the full test run by the orchestrator. T03 is expected to
-break call sites in the tree; see "Approval".
+auto heat = runtime->state<float>(N);
+if (!heat)
+    return report(heat.error());
 
-### Wave 2: engine
+auto simulation = runtime->graph();
+simulation.add_rule(*heat, [](std::size_t i, const float* current, float* next) { /* ... */ });
 
-| Task | Findings | Files | Acceptance criterion |
-| --- | --- | --- | --- |
-| T10 scheduler | QC-18, 19, 20, 86, 87, 88 (scheduler part), 92 | `scheduler/event_polling.hpp`, `scheduler/task_scheduler.hpp`, `scheduler/quiescence_latch.hpp`, `scheduler/range_task.hpp`, `scheduler/thermal_proxy_strategy.hpp`, `modules/engine/scheduler/source/task_scheduler.cpp` | An event that throws in `poll_events` is reaped once and the run ends with its error |
-| T11 task | QC-44 (`Task`), 89, 90, 91 | `task/small_event_vector.hpp`, `task/node.hpp`, `task/task_types.hpp`, `task/task.hpp` | Assignment and move of `SmallEventVector` leave no live event past the count |
-| T12 graph, execution | QC-83, 84, 88 (graph part) | `modules/engine/graph/source/task_graph.cpp`, `graph/task_graph.hpp`, `execution/runtime_context.hpp` | A registration index not drawn from `reserve_registration()` throws `invalid_graph` |
+const auto report = simulation.run(STEPS);
+if (!report)
+    return report_failure(report.error());
+```
 
-T10 carries two performance fixes (QC-19, QC-20). The orchestrator records the per-node
-round-trip figure before and after; a fix that does not move it is reverted, per
-`performance`. Wave 2 closes with one build.
+| Part | Shape |
+| --- | --- |
+| Header | `<SushiRuntime/sushiruntime.hpp>`; single headers stay at `<SushiRuntime/api/<area>/<name>.hpp>` |
+| Namespace | Every public name is in `SushiRuntime::`, once. The extension is `SushiRuntime::Distributed::` |
+| Internal code | `SushiRuntime::Internal::<Module>::` for the engine, `SushiRuntime::Detail::` inside the surface; neither is installed |
+| Failure | `Result<T>` carrying `Error{ErrorCode, message}`. A broken precondition stops the process through `SR_ASSERT` |
+| Recording | A verb returns the builder. The builder keeps the first refusal; the next run returns it, and `refusal()` reads it earlier |
 
-### Wave 3: api data, vocabulary and detail
+### Verbs of a builder
 
-| Task | Findings | Files | Acceptance criterion |
-| --- | --- | --- | --- |
-| T13 data | QC-03, 04, 46, 47, 48, 49, 50, 53 (field only), 54, 55 | `api/data/buffer.hpp`, `api/data/state.hpp`, `api/data/README.md`, `api/detail/handle_access.hpp`, `api/runtime/runtime.hpp` | `distributed()` on a device-resident handle throws `invalid_access`; `Buffer<std::string>` does not compile |
-| T14 vocabulary, detail | QC-14, 15 (slot type and emitter), 17 (new emitter forms), 75, 76, 77, 78, 79, 80, 81, 82 | `api/vocabulary/dynamic.hpp`, `late_count.hpp`, `dependencies.hpp`, `api/launch/extent.hpp`, `nd_range.hpp`, `api/detail/callable_checks.hpp`, `callable_traits.hpp`, `emit_state.hpp`, `emit_dynamic.hpp`, `emit_offload.hpp`, `emit_launch.hpp`, `device_fault.hpp`, the vocabulary, launch and detail READMEs | A coupled kernel declared with a mutable input pointer does not compile; each state emitter has a form that takes no `State<T>*` |
-
-T13 renames `StateView::cur` to `current`; the eight detail readers are in T14's and T15's
-files, so T13 keeps `cur` as a deprecated reference member for one wave and T16 removes it.
-T14 adds the pointer-free emitter forms beside the old ones; T15 switches the recorder, and
-T16 deletes the old forms. Wave 3 closes with one build.
-
-### Wave 4: recorder
-
-| Task | Findings | Files | Acceptance criterion |
-| --- | --- | --- | --- |
-| T15 recorder | QC-09, 10, 15 (lives), 16, 17 (switch), 65, 66, 69 | `api/graph/recorder.hpp` | No recording member stores a `State<T>*`; `clear()` inside `extend()` leaves a recorder that records and replays in bounds |
-
-One build.
-
-### Wave 5: drivers and builders
-
-| Task | Findings | Files | Acceptance criterion |
-| --- | --- | --- | --- |
-| T16 detail cleanup | removal of the forms T13 and T14 kept | `api/detail/emit_state.hpp`, `emit_dynamic.hpp`, `emit_offload.hpp`, `api/data/state.hpp` | No `State<T>*` emitter form and no `StateView::cur` remain |
-| T17 step driver | QC-11, 13 (driver member), 70, 71, 72, 134 | `api/graph/step_driver.hpp`, `api/graph/run_handle.hpp` | A failed chained run leaves the last step's States unadvanced; the driver has one member that ends a pending step |
-| T18 composer | QC-01, 06, 08, 60 | `api/graph/boundary_access.hpp`, `api/graph/region_composer.hpp` | The partial-overlap case of QC-01 yields the `w -> q` edge; a throw from `build_region` leaves every earlier edge in place |
-| T19 builder surface | QC-45, 59 | `api/graph/builder_surface.hpp` | Each deprecated `vector<void*>` overload is one forwarding call |
-
-One build.
-
-### Wave 6: graphs, extension, examples
-
-| Task | Findings | Files | Acceptance criterion |
-| --- | --- | --- | --- |
-| T20 graphs | QC-05, 07, 13 (destructors), 58, 61, 62, 64 | `api/graph/graph.hpp`, `dynamic_graph.hpp`, `region.hpp`, `plan_cache.hpp`, `backing_graph.hpp`, `api/graph/README.md` | A graph destroyed with a pending step ends the step first; `drop()` with a step pending is refused |
-| T21 distributed | QC-35, 36, 37, 38, 119, 120, 123, 124, 125 | `distributed/cluster.hpp`, `kernel_registry.hpp`, `buffer_view.hpp`, `in_process_transport.hpp`, `tcp_transport.hpp`, `modules/extension/distributed/source/cluster.cpp`, `distributed_coordinator.cpp`, `worker_agent.cpp`, `worker_directory.cpp`, `kernel_registry.cpp`, `i_offload_policy.cpp`, `modules/extension/distributed/README.md` | A failed second `attach` leaves the first cluster's transport running; a detached handle reports no worker |
-| T22 examples | QC-43, 138 | the nine programs under `applications/examples/`, `applications/examples/README.md` | Every `main` prints `SushiException::what()` and returns 1 |
-| T23 api READMEs | QC-51, 52 | `modules/surface/api/README.md`, `modules/surface/api/include/SushiRuntime/README.md` | Every link in the two folder tables resolves |
-
-One build, then the full run.
-
-## Tasks that break a public spelling
-
-| Task | Change | Forwarder |
+| Verb | Records | Replaces |
 | --- | --- | --- |
-| T03 | `sushi_ptr(T*)` becomes `explicit` | None possible: an implicit conversion cannot be deprecated. Call sites are fixed in the same wave; the changelog entry names the break |
-| T09 | `ExternalHandleKind` gains `Unspecified` first | None needed at source level; values shift, so SushiEngine rebuilds |
-| T09 | `Interop` constructor becomes private | None; `Runtime::interop()` is the replacement |
-| T14 | coupled kernels must take `const A*` inputs | None possible: the old form is the defect |
-| T13 | `StateView::cur` becomes `current` | Deprecated reference member until T16; the type is `detail` |
-| T19 | `add(OpID, n, vector<void*>, vector<void*>, ...)` becomes deprecated | It is the forwarder |
-| T21 | `KernelRegistry::register_kernel` throws once sealed | None; registering after start was a data race |
-| T21 | `handshake_timeout` and `liveness_timeout` of 0 are refused | None; 0 closed every peer |
+| `add(launch, reads, writes, kernel)`, `add(launch, captures..., kernel)` | A tracked kernel | The same two forms |
+| `add_rule(state, kernel)`, `add_rule(launch, state, kernel)` | A rule over one `State` | `add(State&, ...)` |
+| `add_coupled(Coupled(...), kernel)` and its launch form | A rule over several states | `add(Coupled, ...)` |
+| `add_dynamic(Dynamic, capacity, reads, writes, kernel)`, `add_dynamic(Dynamic, state, kernel)` | A late-bound window | `add(Dynamic, ...)` |
+| `add_task(reads, writes, task)` | A body `(sycl::queue&, events) -> sycl::event` | New; what SushiBLAS records |
+| `add_host(reads, writes, task)` | Host work | Unchanged |
+| `add_untracked(...)` | A kernel with no declared access | Unchanged |
+| `extend(extension)` | What an extension records through `Recorder&` | `extend`, and `add_emitter`, which handed out the engine's graph |
 
-## Approval needed from the orchestrator
+An offload is not a verb. A node option names the operation, and the distributed extension reads
+it when the plan is built.
 
-1. T01, QC-25: `SushiRuntime::span` stops being `std::span` under C++20. It changes the type
-   in every exported signature for a C++20 consumer.
-2. T02, QC-27: which contract `Result` keeps for the wrong alternative: throw
-   `SushiException`, or a `@pre` with `std::get_if`. Recommended: throw `SushiException`
-   when `E` is `Core::Error`, since SPEC 2.5 says the library throws one type.
-3. T03, QC-28: `explicit sushi_ptr(T*)`. The worker needs every implicit conversion in the
-   tree listed first; that list is a `haiku` exploration before the wave, and its files
-   extend T03's set or become their own task.
-4. T03, T07, T11, QC-44: removing `SUSHIRUNTIME_API` from `RefCounted`, `UsmRegistry` and
-   `Task`. `Task` is polymorphic; dropping the macro moves its vtable into each consumer.
-5. T07, QC-30: `release()` of an unrecorded address stops freeing. A caller that hands the
-   allocator foreign USM leaks it from then on.
-6. T09, QC-39: the new enumerator; SushiEngine must be rebuilt against it.
-7. T14, QC-14: const inputs for coupled kernels; SushiBLAS and SushiEngine kernels with
-   mutable input pointers stop compiling.
-8. T17, QC-12: not in the plan as written. The fix needs `IExecutionEngine::run_in_progress()`,
-   a new virtual on an engine interface. If approved it joins T12 (interface) and T17 (caller).
-9. T21, QC-37 and QC-38: `KernelRegistry::seal()` is a new public member; refusing zero
-   timeouts changes what a valid `ClusterOptions` is.
-10. T18, QC-08: either the renumbering becomes incremental (a data-layout change inside
-    `RegionState`) or the two documents are corrected to O(total nodes). Recommended: the
-    incremental form, since the README's claim is the feature.
+```cpp
+struct NodeOptions
+{
+    std::size_t width = K_WIDTH_UNKNOWN;
+    std::string_view name;
+    OperationID operation;
+    span<const std::uint64_t> parameters;
+};
+```
 
-## Not repaired, and why
+`Recorder` carries the same verbs under the names `kernel`, `state_rule`, `coupled_rule`,
+`dynamic_kernel`, `task`, `host`, `untracked_kernel`, and each returns the position of the rule
+it recorded.
 
-- QC-21, QC-22, QC-23 (`IExecutionEngine`, `Node`, `TaskScheduler`): each is a split of a
-  public type across module files, with new headers and build edges. They belong in
-  `docs/design/REMAINING_WORK.md` as their own pieces of work.
-- QC-02, the part beyond the range check (processor groups, moving `affinity.hpp`'s body to a
-  source file), and QC-109 (`EpochManager` out of the header): both need a new `.cpp`, which
-  needs a build file this plan may not touch.
-- QC-56 (`DeviceIndex` and three more types out of `buffer.hpp`): a new public header; a
-  module-boundary choice.
-- QC-57 (change listener on `Recorder`), QC-10's structural form (a recording-only type for
-  `extend()`), QC-67 (`untracked_kernel` argument order), QC-68 (`scratch()` returning a
-  span): each reshapes the recorder that SPEC section 3 fixed and SushiBLAS is about to build
-  on. One ruling should cover the four.
-- QC-63 (`dynamic_graph.hpp` including `runtime.hpp`): removing it breaks every unit that
-  relies on it, for no behaviour gained.
-- QC-73 (zero-size `parallel_for`): no backend failure is known; a guard costs a branch per
-  submit. Repair when a backend shows it.
-- QC-74 (NdRange tiling check): SYCL reports it at dispatch already; a record-time check is
-  an improvement, not a defect fix. Backlog.
-- QC-85 (`Node::profiling`): deleting a public field; needs a search of the repositories
-  above first.
-- QC-93, QC-116, QC-136 (naming across modules), QC-103 (`sycl::detail` entry point), QC-113,
-  QC-114, QC-122: renames and reshaped interfaces, each costing a deprecation cycle in three
-  repositories. The constant spelling needs a ruling first: this phase's own new names are
-  split between `K_UPPER_SNAKE` and bare `UPPER_SNAKE`.
-- QC-95 (logger join under `FreeLibrary`): unverified; needs a run on a host that unloads
-  the library.
-- QC-121 (outbox allocation per control frame), QC-117 (ledger cursors): costs with no
-  measurement; `performance` asks for the number first.
-- QC-126 (handle-kind table): there are two kinds and one per platform; the table earns its
-  place with the third.
-- QC-94, QC-118 and the register rows not folded into a task above: comment and README
-  wording in files no repair task opens. One mechanical `haiku` pass after the last wave,
-  once the code under the comments has stopped moving.
-- QC-137: the changelog lines are the orchestrator's.
+## Names
 
-## Models
+| Today | After |
+| --- | --- |
+| `API::X` and `SushiRuntime::X` | `SushiRuntime::X` |
+| `Core::`, `Graph::`, `Execution::`, `Task`, `Scheduler::`, `Memory::`, `Device::`, `Topology::`, `Observability::`, `Logging` | `Internal::<Module>::`; the public class `Graph` and the namespace `Graph` no longer share a name |
+| `Errc`, `Errc::invalid_graph` | `ErrorCode`, `ErrorCode::InvalidGraph` |
+| `SushiException` | Removed |
+| `OpID` | `OperationID`; the literal stays `"axpy"_op` |
+| `TaskMetadata`, `TaskType` | Internal; `NodeOptions` is the public form |
+| `TaskType::MATH_OP`, `ExecutionMode::KERNEL`, `Backend::SYCL` | PascalCase enumerators |
+| `IExecutionEngine`, `ITransport`, `IOffloadPolicy`, `ITelemetryProvider`, `ITaskMigrator`, `IRebalanceStrategy`, `IAllocationOwner`, `ITopologyProvider`, `INUMADistanceModel` | The name without `I`; where the one implementation already holds that name, the implementation takes a describing word (`ExecutionEngine` becomes `SchedulerExecutionEngine`) |
+| `i_transport.hpp`, `i_offload_policy.hpp`, `i_topology_provider.hpp` | The file named after its type |
+| 17 `get_` methods (`get_execution_engine`, `get_worker_count`, `get_name`, `get_param` ...) | The name without the prefix |
+| `namespace detail` (66 lines, all in the surface) | `Detail` |
+| 39 constants without `K_` (`NO_REGISTRATION`, `WIDTH_UNKNOWN`, `DEFAULT_ALIGNMENT`, `WHOLE`, `MAX_WORKER_THREADS` ...) | `K_` prefix; type traits such as `is_launch_v` keep their standard form |
+| `WorkerStats`, `DeviceInfo`, `PeerInfo`, `WorkerPoolInfo` | `WorkerLoad`, `DeviceDescription`, `PeerDescription`, `WorkerPool` |
+| `ctx`, `bg`, `fn`, `meta`, `q`, `deps`, `err` as parameter and member names | The whole word |
+| `Runtime::rebalancer(bool)` beside `set_rebalancer_enabled(bool)` | `set_rebalancer_enabled` |
+| `SushiRuntime.h`, and the 15 forwarding headers of `cmake/SushiRuntimeMovedHeaders.cmake` | `sushiruntime.hpp`; the forwarders are deleted |
 
-Per `model-routing`: T04, T08, T22, T23 and the closing register pass are spec-complete and
-go to `haiku` at `medium`. T01, T02, T03, T05, T09, T11, T12, T13, T16, T19 go to `haiku` at
-`high`. T06, T07, T10, T14, T15, T17, T18, T20, T21 need judgment across files and go to
-`opus` at `low`. No task needs `opus` at `high`. A failed task climbs one rung.
+## Stages
+
+### Stage 0: ground
+
+| Task | Work | Acceptance criterion |
+| --- | --- | --- |
+| 0.1 | Branch `feature/api_refinement` in the four repositories. Record the baseline: test counts, the public header count, the umbrella's include closure, the build time of `quickstart.cpp` | The four numbers are in `REPORT.md` under "Refinement baseline" |
+| 0.2 | `SR_ASSERT`, `SR_VERIFY` and `SR_FATAL` in `core/assert.hpp`, with a handler a test can replace | A death test proves each macro stops the process and names the file and the line |
+| 0.3 | A trial of the compiled boundary on a branch that is thrown away: the tracked kernel alone is recorded through a type-erased description, and the per-node round trip is measured against the baseline | The figure is in `REPORT.md`; above 2 % the owner decides between the boundary and three tiers before task 1.1 starts |
+
+### Stage 1: remove what is deprecated
+
+| Task | Work | Acceptance criterion |
+| --- | --- | --- |
+| 1.1 | The 31 forwarders of `runtime_context.hpp` and the four of `task_graph.hpp` and `rebalancer_interfaces.hpp`; their callers move to `devices()`, `memory()`, `topology()`, `transfers()` | `git grep '\[\[deprecated' -- modules/engine` is empty |
+| 1.2 | The 24 `Core::` aliases of `memory/` and `observability/`, the `LogLevel` spellings, `LogType`, `ACTIVE_LOG_LEVEL`, the forwarding headers and `SushiRuntimeMovedHeaders.cmake` | The same search over `modules/foundation` and `modules/platform` is empty; no forwarding header is generated |
+| 1.3 | The 36 deprecated members of the surface and the two `Cluster::attach` overloads; the four test files drop their deprecated cases and their pragmas | The search over the whole tree is empty; `git grep -i 'pragma.*deprecated'` is empty |
+
+### Stage 2: one set of names
+
+Each task is one scripted rename over the tree, in the manner of the acronym pass, followed by a
+read of the diff.
+
+| Task | Work | Acceptance criterion |
+| --- | --- | --- |
+| 2.1 | Engine, platform and foundation namespaces move under `Internal::` | No namespace of the library other than `SushiRuntime`, `Internal`, `Detail`, `Distributed` and `Literals` is declared at `SushiRuntime` scope |
+| 2.2 | `API::` is dissolved into `SushiRuntime::`; the 30 second-name `using` lines go | `git grep -w 'API::'` finds only the export macro |
+| 2.3 | `I` prefix, `get_` prefix, `detail` to `Detail`, `K_` constants, PascalCase enumerators, the abbreviated type names, the file names that follow | A checker run of `tools/naming` (added by this task) reports nothing on `modules/` |
+| 2.4 | Parameter and member names written out; `Runtime::rebalancer` removed | The same checker reports none of the listed short names in a public header |
+| 2.5 | `sushiruntime.hpp` replaces `SushiRuntime.h` | The out-of-tree consumer under `tests/package` builds against the new header |
+
+`ErrorCode` and `OperationID` are renamed in stage 3 and stage 4, with the types they belong to.
+
+### Stage 3: what a library author needs
+
+| Task | Work | Acceptance criterion |
+| --- | --- | --- |
+| 3.1 | `OperationID` and `_op` become public vocabulary of the surface; `NodeOptions` gains `name`, `operation`, `parameters`; every `Recorder` verb takes it | A node recorded with a name and an operation reports both in its `RunReport` record |
+| 3.2 | `Recorder::task` and `add_task` | A task that submits two command groups and returns the second event is ordered by its access against a kernel before and a kernel after it |
+| 3.3 | Every `Recorder` verb and every builder verb yields the rule it recorded; `last_rule()` stays | The value a verb returns equals `rule_registration()`'s argument for that node after a run |
+| 3.4 | `before_each_step(hook)` on a builder, run on the calling thread with the count of finished steps | A hook writes a host word a kernel reads, over eight replays, with one compile |
+| 3.5 | `Runtime::wait()` and `AdvancedControls::queue(device)` | A caller waits for device work and submits a host copy without naming `RuntimeContext` |
+| 3.6 | `Recorder::record` accepts a node description built without the engine's graph; `emitter` and `add_emitter` are removed and their callers use `extend` | No public signature of `recorder.hpp` or `builder_surface.hpp` names `TaskGraph` |
+
+### Stage 4: `Result` only
+
+| Task | Work | Acceptance criterion |
+| --- | --- | --- |
+| 4.1 | `ErrorCode` with PascalCase enumerators; `Result<void>`; `Result::value()` on a failure and `error()` on a value assert | The unit test of `result.hpp` covers the eight accessors with no `EXPECT_THROW` |
+| 4.2 | The 27 precondition sites become `SR_ASSERT`; the two mislabelled codes (`buffer.hpp:197`, `interop.cpp:356`) with them | Each site has a death test or shares one with its helper |
+| 4.3 | The builder keeps the first refusal: the five helpers and their 15 call sites in `recorder.hpp`, the two cycle checks of `TaskGraph::compile`, the cross-device check of `place_for_dispatch` | A refused `add` leaves the builder usable, and the next `run` returns the refusal with the rule's position |
+| 4.4 | `Runtime::create`, `buffer`, `state`, `read_range`, `write_range`, `Recorder::scratch`, `Interop::export_host`, `import_device`, `capabilities` return `Result`; SYCL exceptions inside them are translated | No function of these headers lets a `sycl::exception` out; a test injects an allocation failure into each |
+| 4.5 | The eleven run and wait pairs collapse: `run`, `run_for`, `run_until`, `run_async`, `wait` return `Result`; `unwrap` goes | `git grep -w 'try_run\|try_wait\|try_run_async'` is empty |
+| 4.6 | The four data-driven faults (`device_fault.hpp:106`, `:107`, `late_count_resolution.hpp:96`, `late_window.hpp:79`) return `Result` from the run | A provider that returns a count above capacity fails the run with `InvalidGraph` and the process continues |
+| 4.7 | `SushiException` and `SR_THROW_IF` are removed; the engine reports through `Error`; the three leaks found by the study are closed (`event_polling.hpp:348`, the observer call in `USMAllocator::release`, `wait_all` without translation) | `git grep -nE '\bthrow\b' -- modules ':!modules/**/tests/**'` is empty outside the translation of third-party exceptions |
+
+Whether an error delivered only through the SYCL asynchronous handler reaches the caller of
+`run()` on the scheduler path is not verified. Task 4.7 starts with a test that settles it.
+
+### Stage 5: one verb per kind of node
+
+| Task | Work | Acceptance criterion |
+| --- | --- | --- |
+| 5.1 | `add_rule`, `add_coupled`, `add_dynamic` on `BuilderSurface`; `add` keeps the tracked kernel | A wrong argument to `add` names at most three candidates in the compiler's message, shown by a compile-fail test |
+| 5.2 | The offload overloads and `Recorder::offload`, `offload_rule` are removed; the extension reads `NodeOptions::operation` | `git grep -i offload -- modules/surface` finds only `NodeOptions` and the report field |
+| 5.3 | `Buffer::distributed()` and `State::distributed()` move to `Cluster::share(buffer)`; `OffloadCoordinator::share` and `statistics` go | With `SR_ENABLE_DISTRIBUTED` off, no symbol of the library names an offload beyond the gate's five calls |
+| 5.4 | `TaskDispatchMessage` owns its fields; `K_PROTOCOL_VERSION` is 3 | A version 2 peer is refused with `ProtocolMismatch` |
+| 5.5 | The extension's public headers name no engine type: `add_registered_task`, the `RuntimeContext` overloads and `pick_worker(const Node&)` are reshaped | The 16 headers include only surface headers |
+
+### Stage 6: the compiled boundary
+
+| Task | Work | Acceptance criterion |
+| --- | --- | --- |
+| 6.1 | Sort every header the surface reaches into public or internal, and name the public module each value type moves to | A table in this file; the owner approves the module list |
+| 6.2 | The public value types move: the run report, the region, the device and worker descriptions, the pin policy, the log level and sink, the interop descriptors | Each has one header in a public module and no engine include |
+| 6.3 | `Recorder`, `PlanCache`, `RegionComposer` and the non-template half of `StepDriver` move to `modules/surface/api/source/`; a node description crosses the boundary with its kernel type erased once, at record time | `recorder.hpp`, `graph.hpp`, `dynamic_graph.hpp` and `step_driver.hpp` include no internal header |
+| 6.4 | `Buffer`, `State`, `Runtime`, `AdvancedControls` and `Interop` reach the context through an opaque handle | The umbrella's include closure holds public headers only |
+| 6.5 | The module function gains an `INTERNAL` mark; internal include roots are not installed; the export macro stays on public types only | An installed tree holds no internal header, and `tests/package` builds and runs against it |
+| 6.6 | One header-alone compile check per public header | The check target builds |
+| 6.7 | Measure the per-node round trip and the build time of `quickstart.cpp` against the baseline | Both figures are in `REPORT.md`; a regression of the round trip above 2 % stops the stage |
+
+Stage 6 is where a kernel body meets a type-erased call. The erasure happens once per recorded
+node, at record time. The per-element path stays a template inside the SYCL command group, so the
+device code does not change. Task 6.7 is the proof, not this paragraph.
+
+### Stage 7: SushiBLAS
+
+| Task | Work | Acceptance criterion |
+| --- | --- | --- |
+| 7.1 | `Engine` is built on `Runtime&` and owns a `SushiRuntime::Graph`; `TaskRecorder` records through `Recorder::task`; `execute` and `discard_recorded` use `run` and `clear` | No file of SushiBLAS includes a header outside the surface |
+| 7.2 | `TaskMetadata` becomes `NodeOptions` in the 71 operation files; the 148 `using namespace` lines of the literal name the public namespace | `git grep -w 'TaskMetadata\|TaskType'` is empty |
+| 7.3 | `storage.hpp` allocates through the surface; the graph primitives return the builder's refusal in place of `SushiException` | The 2206 tests pass |
+| 7.4 | The repository's own sweep: 19 `get_` names, `LogType`, `Cfg` | The naming checker reports nothing |
+
+### Stage 8: SushiAI
+
+| Task | Work | Acceptance criterion |
+| --- | --- | --- |
+| 8.1 | `CompiledStep` owns a `SushiRuntime::Graph` and replays it with `run`; the replay preludes become `before_each_step` hooks; `seam.cpp` maps `ErrorCode` and loses the exception ladder for SushiRuntime | `seam.hpp` and `compiled_step.hpp` include no header outside the surface |
+| 8.2 | `trainer.cpp` reads profiling from `RunReport` | No file names `IExecutionEngine` or `CompiledGraph` |
+| 8.3 | The repository's own sweep: 12 `get_` names | The naming checker reports nothing; the test suite passes |
+
+### Stage 9: SushiEngine
+
+| Task | Work | Acceptance criterion |
+| --- | --- | --- |
+| 9.1 | The BLAS seam of `engine/foundation/blas`, owed from the earlier session, is built and committed | `se build` and the unit tests pass on both backends |
+| 9.2 | The ten files that include SushiRuntime move to the new names, verbs and `Result` | No `API::` spelling is left |
+| 9.3 | The acronym rename owed from the earlier session | The acronym script lists nothing |
+
+The engine's own sweep is not in this plan: 106 `I`-prefixed types, 2 121 constants without `K_`,
+three enums with lower-case enumerators and 20 files with `namespace detail`. It is larger than
+the three steps above together and gets a work folder of its own in SushiEngine.
+
+### Stage 10: close
+
+| Task | Work | Acceptance criterion |
+| --- | --- | --- |
+| 10.1 | Manual pages, module READMEs, `docs/guides/INTEGRATION.md`, `DISTRIBUTED_GUIDE.md`, the examples | `check_docs_layout.py` and `check_source_comments.py` report nothing new |
+| 10.2 | `REMAINING_WORK.md`: the fourteen reshapes become internal debt or are closed; `cpp-code-style` in SushiSkills gains the builder-refusal rule | The design map and the backlog name no removed symbol |
+| 10.3 | The `v0.4.0` proposal, with the entries that drive it | The owner has the proposal; no tag is made without approval |
+
+## Order and what waits on what
+
+The stages run in this order: 0 to 5, then 7, 8 and 9, then 6, then 10.
+
+Stages 1 to 5 run inside SushiRuntime. Stage 4 precedes stage 5 because the offload verbs are the
+last users of the throwing helpers. Stages 7, 8 and 9 follow in tier order. After them no
+consumer names the lower layer, so stage 6 hides it without breaking their source, and their
+three test suites check the boundary.
+
+From task 1.1 until stage 8 closes, SushiBLAS and SushiAI do not build against this checkout.
+
+## Decisions that stay with the owner
+
+| Decision | Where it bites |
+| --- | --- |
+| The list of public modules. Proposed: `core`, `api`, the interop descriptors, and two new ones, `report` for the run report types and `region` for `ResourceRegion`; the engine fills both, so neither can live in `api` | Task 6.1 |
+| The engine's own sweep, and when | After stage 9 |
+| Every push and the `v0.4.0` tag | Stage 10 |
+
+## Decided by the owner on 2026-10-11
+
+- `sushi_ptr`, `RefCounted` and `make_sushi` stay public, in `core`.
+- A consumer is pinned to a tag of SushiRuntime after `v0.4.0`; the sibling checkout stays the
+  source until then.
+- `Result::value()` on a failure stops the process, and that is the short form an example uses.
+
+## Names chosen here, open to a veto
+
+`OperationID`, `add_rule`, `add_coupled`, `add_dynamic`, `add_task`,
+`before_each_step`, `Internal::`, `SchedulerExecutionEngine`, `WorkerLoad`, `DeviceDescription`,
+`PeerDescription`.
+
+## Size
+
+49 tasks, each with one build and one test run. A SushiRuntime build and test run took about ten
+minutes in the acronym pass, and a SushiBLAS one about forty. The plan has not been estimated
+beyond that, and stage 6 is the one whose size is least known.
