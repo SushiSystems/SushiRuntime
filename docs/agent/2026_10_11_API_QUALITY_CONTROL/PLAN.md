@@ -1,7 +1,7 @@
 # API refinement: plan
 
-**Status:** Proposed on 2026-10-11; no task started. It waits for the owner's word, which comes
-when the SushiAI work in the sibling checkout is committed.
+**Status:** Started on 2026-10-11 on the owner's word. Stage 0 is done; `REPORT.md` holds the
+baseline under "Refinement baseline".
 
 `SPEC.md` of this folder holds the decisions and the measurements. `REPORT.md` holds the first
 pass, whose repair plan stood in this file until this rewrite; its open items are in
@@ -9,7 +9,8 @@ pass, whose repair plan stood in this file until this rewrite; its open items ar
 
 ## Rules
 
-- Inline: one session, no worker writes source. Read-only studies may be dispatched.
+- Inline: one session owns every build, every diff read and every commit. On 2026-10-11 the owner
+  allowed mechanical source edits to be dispatched to `haiku` at `high`, one worker at a time.
 - One task, one acceptance criterion, one build: `sr build --distributed --jobs 4`, then
   `sr test --distributed`. A consumer step uses `sb`, `sa` or `se` with four threads.
 - One build runs at a time on the machine.
