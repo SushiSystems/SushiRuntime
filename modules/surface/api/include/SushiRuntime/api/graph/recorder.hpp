@@ -81,7 +81,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
@@ -523,7 +523,7 @@ namespace SushiRuntime
                 auto view = steps_.view_for(state);
                 auto bindings = std::make_shared<::SushiRuntime::Internal::Graph::LateBindings>();
 
-                std::vector<Internal::Memory::ResourceRegion> slot_reads;
+                std::vector<BufferRegion> slot_reads;
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 Detail::adopt_device_bindings(*bindings, window, slot_reads, lives);
                 Result<std::uint32_t*> fault = fault_record_for(window);

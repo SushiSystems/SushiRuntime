@@ -39,7 +39,7 @@
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
@@ -132,8 +132,8 @@ namespace SushiRuntime
              * @brief Hold the USM read and write regions this node touches.
              * @see modules/engine/graph/README.md
              */
-            std::vector<SushiRuntime::Internal::Memory::ResourceRegion> io_reads_;
-            std::vector<SushiRuntime::Internal::Memory::ResourceRegion> io_writes_;
+            std::vector<SushiRuntime::BufferRegion> io_reads_;
+            std::vector<SushiRuntime::BufferRegion> io_writes_;
 
             /**
              * @brief Tells whether the node's data has been checked for co-location.

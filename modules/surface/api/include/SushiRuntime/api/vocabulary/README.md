@@ -59,13 +59,13 @@ Writes and is added with add().
 read_key_of() and write_key_of() pull the read or write dependency region out of either data handle.
 A Buffer maps to its whole-buffer region; a State exposes its current buffer as the read region and
 its next buffer as the write region. These free functions let the Reads/Writes wrappers accept
-handles uniformly. An explicit ResourceRegion, such as buf.region({off, len}), passes through, so a
+handles uniformly. An explicit BufferRegion, such as buf.region({off, len}), passes through, so a
 caller can name a sub-range to read or write.
 
 ### liveness_of
 
 liveness_of() returns the liveness observer of a tracked handle. A Buffer or State yields its token
-observer; a bare ResourceRegion (a raw sub-range the caller manages) yields an empty observer, so
+observer; a bare BufferRegion (a raw sub-range the caller manages) yields an empty observer, so
 only typed handles are watched.
 
 ### gather_life

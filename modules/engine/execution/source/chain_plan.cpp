@@ -74,7 +74,7 @@ namespace SushiRuntime
             {
                 int owner = -1;
                 Internal::Memory::USMAllocator& memory = context.memory();
-                auto visit = [&](const std::vector<Internal::Memory::ResourceRegion>& regions)
+                auto visit = [&](const std::vector<BufferRegion>& regions)
                 {
                     for (const auto& r : regions)
                     {

@@ -38,7 +38,7 @@
 
 #include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -51,8 +51,8 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Launch, class F>
-        auto launch_node(std::vector<Internal::Memory::ResourceRegion> reads,
-                         std::vector<Internal::Memory::ResourceRegion> writes,
+        auto launch_node(std::vector<BufferRegion> reads,
+                         std::vector<BufferRegion> writes,
                          Launch launch, F&& kernel, std::size_t width)
         {
             return [kernel = std::forward<F>(kernel), launch, reads = std::move(reads),
@@ -69,8 +69,8 @@ namespace SushiRuntime
 
         /** @brief Builds the replay of a launch that drives the handler over [0, n) itself. */
         template <class F>
-        auto range_node(std::vector<Internal::Memory::ResourceRegion> reads,
-                        std::vector<Internal::Memory::ResourceRegion> writes,
+        auto range_node(std::vector<BufferRegion> reads,
+                        std::vector<BufferRegion> writes,
                         std::size_t n, F&& kernel, std::size_t width)
         {
             return [kernel = std::forward<F>(kernel), n, reads = std::move(reads),
@@ -87,8 +87,8 @@ namespace SushiRuntime
 
         /** @brief Builds the replay of a raw command group. */
         template <class F>
-        auto raw_node(std::vector<Internal::Memory::ResourceRegion> reads,
-                      std::vector<Internal::Memory::ResourceRegion> writes, F&& kernel,
+        auto raw_node(std::vector<BufferRegion> reads,
+                      std::vector<BufferRegion> writes, F&& kernel,
                       std::size_t width)
         {
             return [kernel = std::forward<F>(kernel), reads = std::move(reads),

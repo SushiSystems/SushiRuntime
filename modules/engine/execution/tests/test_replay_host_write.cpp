@@ -31,7 +31,7 @@
 #include <vector>
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
@@ -45,7 +45,7 @@ namespace
     using SushiRuntime::Internal::Execution::RuntimeContext;
     using SushiRuntime::Internal::Graph::CompiledGraph;
     using SushiRuntime::Internal::Graph::TaskGraph;
-    using SushiRuntime::Internal::Memory::ResourceRegion;
+    using SushiRuntime::BufferRegion;
     using SushiRuntime::Internal::Memory::USMKind;
 
     /** @brief Holds how many times each plan is replayed. */
@@ -90,8 +90,8 @@ namespace
     /** @brief Compiles a plan of one kernel that writes @p output as @p input plus one. */
     CompiledGraph compile_increment(std::uint32_t* input, std::uint32_t* output)
     {
-        const std::vector<ResourceRegion> reads{ResourceRegion(input)};
-        const std::vector<ResourceRegion> writes{ResourceRegion(output)};
+        const std::vector<BufferRegion> reads{BufferRegion(input)};
+        const std::vector<BufferRegion> writes{BufferRegion(output)};
 
         TaskGraph graph;
         graph.add_node([input, output](sycl::handler& handler)

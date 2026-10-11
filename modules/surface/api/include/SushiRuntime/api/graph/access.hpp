@@ -33,7 +33,7 @@
 
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -62,14 +62,14 @@ namespace SushiRuntime
          * @param read_regions  Regions the node reads; the caller keeps them alive.
          * @param write_regions Regions the node writes; the caller keeps them alive.
          */
-        Access(std::vector<Internal::Memory::ResourceRegion> read_regions,
-               std::vector<Internal::Memory::ResourceRegion> write_regions)
+        Access(std::vector<BufferRegion> read_regions,
+               std::vector<BufferRegion> write_regions)
             : reads(std::move(read_regions)), writes(std::move(write_regions))
         {
         }
 
-        std::vector<Internal::Memory::ResourceRegion> reads;    /**< Read regions, in the order given. */
-        std::vector<Internal::Memory::ResourceRegion> writes;   /**< Write regions, in the order given. */
+        std::vector<BufferRegion> reads;    /**< Read regions, in the order given. */
+        std::vector<BufferRegion> writes;   /**< Write regions, in the order given. */
         std::vector<Internal::Memory::LivenessObserver> lives;  /**< Observers a run checks first. */
     };
 } // namespace SushiRuntime

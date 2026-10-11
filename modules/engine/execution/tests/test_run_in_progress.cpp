@@ -33,7 +33,7 @@
 #include <vector>
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/task_types.hpp>
@@ -124,9 +124,9 @@ namespace
     /** @brief Compiles and classifies a plan of one kernel that fills @p data with ones. */
     CompiledGraph compile_chain_candidate(RuntimeContext& context, float* data, std::size_t count)
     {
-        const std::vector<SushiRuntime::Internal::Memory::ResourceRegion> none;
-        const std::vector<SushiRuntime::Internal::Memory::ResourceRegion> writes{
-            SushiRuntime::Internal::Memory::ResourceRegion(data)};
+        const std::vector<SushiRuntime::BufferRegion> none;
+        const std::vector<SushiRuntime::BufferRegion> writes{
+            SushiRuntime::BufferRegion(data)};
 
         TaskGraph graph;
         graph.add_node([data, count](sycl::handler& handler)

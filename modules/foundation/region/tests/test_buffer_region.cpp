@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_resource_region.cpp                                               */
+/* test_buffer_region.cpp                                                 */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,8 +20,8 @@
 /**************************************************************************/
 
 /**
- * @file test_resource_region.cpp
- * @brief Tests ResourceRegion's overlap and containment queries, default regions included.
+ * @file test_buffer_region.cpp
+ * @brief Tests BufferRegion's overlap and containment queries, default regions included.
  * @author Mustafa Garip
  */
 
@@ -29,9 +29,9 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
-using SushiRuntime::Internal::Memory::ResourceRegion;
+using SushiRuntime::BufferRegion;
 
 namespace
 {
@@ -42,25 +42,25 @@ namespace
     int second_allocation = 0;
 }
 
-TEST(Unit_ResourceRegion, ADefaultRegionOverlapsNothing)
+TEST(Unit_BufferRegion, ADefaultRegionOverlapsNothing)
 {
-    const ResourceRegion empty;
-    const ResourceRegion other_empty;
-    const ResourceRegion whole(&first_allocation);
+    const BufferRegion empty;
+    const BufferRegion other_empty;
+    const BufferRegion whole(&first_allocation);
 
     EXPECT_FALSE(empty.valid());
     EXPECT_FALSE(empty.overlaps(other_empty));
     EXPECT_FALSE(empty.overlaps(empty));
     EXPECT_FALSE(empty.overlaps(whole));
     EXPECT_FALSE(whole.overlaps(empty));
-    EXPECT_FALSE(ResourceRegion(nullptr, 0, 8).overlaps(ResourceRegion(nullptr, 4, 8)));
+    EXPECT_FALSE(BufferRegion(nullptr, 0, 8).overlaps(BufferRegion(nullptr, 4, 8)));
 }
 
-TEST(Unit_ResourceRegion, ADefaultRegionContainsNothingAndIsContainedByNothing)
+TEST(Unit_BufferRegion, ADefaultRegionContainsNothingAndIsContainedByNothing)
 {
-    const ResourceRegion empty;
-    const ResourceRegion other_empty;
-    const ResourceRegion whole(&first_allocation);
+    const BufferRegion empty;
+    const BufferRegion other_empty;
+    const BufferRegion whole(&first_allocation);
 
     EXPECT_FALSE(empty.contains(other_empty));
     EXPECT_FALSE(empty.contains(empty));
@@ -68,13 +68,13 @@ TEST(Unit_ResourceRegion, ADefaultRegionContainsNothingAndIsContainedByNothing)
     EXPECT_FALSE(whole.contains(empty));
 }
 
-TEST(Unit_ResourceRegion, RegionsOfOneAllocationOverlapWhenTheirIntervalsIntersect)
+TEST(Unit_BufferRegion, RegionsOfOneAllocationOverlapWhenTheirIntervalsIntersect)
 {
-    const ResourceRegion whole(&first_allocation);
-    const ResourceRegion low(&first_allocation, 0, 8);
-    const ResourceRegion high(&first_allocation, 8, 8);
-    const ResourceRegion middle(&first_allocation, 4, 8);
-    const ResourceRegion tail(&first_allocation, 12, ResourceRegion::K_WHOLE);
+    const BufferRegion whole(&first_allocation);
+    const BufferRegion low(&first_allocation, 0, 8);
+    const BufferRegion high(&first_allocation, 8, 8);
+    const BufferRegion middle(&first_allocation, 4, 8);
+    const BufferRegion tail(&first_allocation, 12, BufferRegion::K_WHOLE);
 
     EXPECT_TRUE(whole.overlaps(whole));
     EXPECT_TRUE(whole.overlaps(low));
@@ -90,21 +90,21 @@ TEST(Unit_ResourceRegion, RegionsOfOneAllocationOverlapWhenTheirIntervalsInterse
     EXPECT_FALSE(tail.overlaps(low));
 }
 
-TEST(Unit_ResourceRegion, RegionsOfDifferentAllocationsNeverOverlap)
+TEST(Unit_BufferRegion, RegionsOfDifferentAllocationsNeverOverlap)
 {
-    const ResourceRegion first(&first_allocation);
-    const ResourceRegion second(&second_allocation);
+    const BufferRegion first(&first_allocation);
+    const BufferRegion second(&second_allocation);
 
     EXPECT_FALSE(first.overlaps(second));
     EXPECT_FALSE(first.contains(second));
 }
 
-TEST(Unit_ResourceRegion, ARegionContainsWhatLiesEntirelyInside)
+TEST(Unit_BufferRegion, ARegionContainsWhatLiesEntirelyInside)
 {
-    const ResourceRegion whole(&first_allocation);
-    const ResourceRegion low(&first_allocation, 0, 8);
-    const ResourceRegion inner(&first_allocation, 2, 4);
-    const ResourceRegion middle(&first_allocation, 4, 8);
+    const BufferRegion whole(&first_allocation);
+    const BufferRegion low(&first_allocation, 0, 8);
+    const BufferRegion inner(&first_allocation, 2, 4);
+    const BufferRegion middle(&first_allocation, 4, 8);
 
     EXPECT_TRUE(whole.contains(whole));
     EXPECT_TRUE(whole.contains(low));

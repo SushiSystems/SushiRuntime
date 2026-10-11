@@ -250,8 +250,8 @@ namespace SushiRuntime
          * @return The node added.
          */
         Node& TaskGraph::add_node(TaskWork work,
-                                  const std::vector<Internal::Memory::ResourceRegion>& read_access,
-                                  const std::vector<Internal::Memory::ResourceRegion>& write_access,
+                                  const std::vector<BufferRegion>& read_access,
+                                  const std::vector<BufferRegion>& write_access,
                                   const std::vector<sycl::event>& dependencies,
                                   std::optional<std::uint32_t> registration)
         {
@@ -266,8 +266,8 @@ namespace SushiRuntime
          * @return The node added.
          */
         Node& TaskGraph::add_node(TaskWork work,
-                                  const std::vector<Internal::Memory::ResourceRegion>& read_access,
-                                  const std::vector<Internal::Memory::ResourceRegion>& write_access,
+                                  const std::vector<BufferRegion>& read_access,
+                                  const std::vector<BufferRegion>& write_access,
                                   std::shared_ptr<LateBindings> bindings,
                                   const std::vector<sycl::event>& dependencies,
                                   std::optional<std::uint32_t> registration)
@@ -303,8 +303,8 @@ namespace SushiRuntime
          * @return The node added.
          */
         Node& TaskGraph::add_task(const TaskMetadata& metadata,
-                                  const std::vector<Internal::Memory::ResourceRegion>& read_access,
-                                  const std::vector<Internal::Memory::ResourceRegion>& write_access,
+                                  const std::vector<BufferRegion>& read_access,
+                                  const std::vector<BufferRegion>& write_access,
                                   TaskWork device_work,
                                   HostWork fallback_work,
                                   const std::vector<sycl::event>& dependencies,
@@ -370,8 +370,8 @@ namespace SushiRuntime
          * @return The node added.
          */
         Node& TaskGraph::add_task(const TaskMetadata& metadata,
-                                  const std::vector<Internal::Memory::ResourceRegion>& read_access,
-                                  const std::vector<Internal::Memory::ResourceRegion>& write_access,
+                                  const std::vector<BufferRegion>& read_access,
+                                  const std::vector<BufferRegion>& write_access,
                                   HostWork fallback_work,
                                   const std::vector<sycl::event>& dependencies,
                                   std::optional<std::uint32_t> registration)
@@ -431,8 +431,8 @@ namespace SushiRuntime
          * @param work Callable run once on a worker thread; submits no SYCL work.
          * @return The node added.
          */
-        Node& TaskGraph::add_native(const std::vector<Internal::Memory::ResourceRegion>& read_access,
-                                    const std::vector<Internal::Memory::ResourceRegion>& write_access,
+        Node& TaskGraph::add_native(const std::vector<BufferRegion>& read_access,
+                                    const std::vector<BufferRegion>& write_access,
                                     std::function<void()> work,
                                     const std::vector<sycl::event>& dependencies,
                                     std::optional<std::uint32_t> registration)

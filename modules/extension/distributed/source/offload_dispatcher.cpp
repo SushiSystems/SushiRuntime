@@ -37,7 +37,7 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
@@ -230,7 +230,7 @@ namespace SushiRuntime
                 if (is_supported)
                 {
                     baked->handles.reserve(node.io_reads_.size() + node.io_writes_.size());
-                    for (const Internal::Memory::ResourceRegion& region : node.io_reads_)
+                    for (const BufferRegion& region : node.io_reads_)
                     {
                         const std::optional<BufferHandle> handle = registry.lookup(region.base);
                         if (!handle.has_value())
@@ -246,7 +246,7 @@ namespace SushiRuntime
                     baked->handles.clear();
                 baked->input_count = baked->handles.size();
 
-                for (const Internal::Memory::ResourceRegion& region : node.io_writes_)
+                for (const BufferRegion& region : node.io_writes_)
                 {
                     const std::optional<BufferHandle> handle = registry.lookup(region.base);
                     if (handle.has_value())

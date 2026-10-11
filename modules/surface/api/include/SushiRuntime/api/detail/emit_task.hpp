@@ -35,7 +35,7 @@
 #include <vector>
 
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
 
@@ -51,8 +51,8 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class F>
-        auto task_node(std::vector<Internal::Memory::ResourceRegion> reads,
-                       std::vector<Internal::Memory::ResourceRegion> writes, F&& kernel,
+        auto task_node(std::vector<BufferRegion> reads,
+                       std::vector<BufferRegion> writes, F&& kernel,
                        std::size_t width)
         {
             return [kernel = std::forward<F>(kernel), reads = std::move(reads),

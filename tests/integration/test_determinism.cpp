@@ -72,7 +72,7 @@ namespace
     {
         float* partials =
             recorder.scratch<float>(TILES, input.device_index(), input.residency()).value();
-        const Internal::Memory::ResourceRegion partial_region{partials, 0, TILES * sizeof(float)};
+        const BufferRegion partial_region{partials, 0, TILES * sizeof(float)};
         const float* in = input.data();
         float* out = total.data();
 

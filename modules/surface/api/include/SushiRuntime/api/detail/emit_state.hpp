@@ -42,7 +42,7 @@
 #include <SushiRuntime/api/detail/callable_traits.hpp>
 #include <SushiRuntime/api/detail/emit_launch.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -66,8 +66,8 @@ namespace SushiRuntime
                 const T* current = view->current;
                 T* next = view->next;
                 submit_launch(h, launch, kernel, current, next);
-            }, { Internal::Memory::ResourceRegion(static_cast<void*>(view->current)) },
-            { Internal::Memory::ResourceRegion(static_cast<void*>(view->next)) }, {},
+            }, { BufferRegion(static_cast<void*>(view->current)) },
+            { BufferRegion(static_cast<void*>(view->next)) }, {},
             registration).baked_width = launch_count(launch);
         }
 
@@ -101,9 +101,9 @@ namespace SushiRuntime
                               const Views& views, const Launch& launch, const F& kernel)
         {
             using Seq = std::make_index_sequence<std::tuple_size<Views>::value>;
-            std::vector<Internal::Memory::ResourceRegion> reads = read_keys_of_views(views, Seq{});
+            std::vector<BufferRegion> reads = read_keys_of_views(views, Seq{});
             reads.insert(reads.begin(),
-                         Internal::Memory::ResourceRegion(static_cast<void*>(out_view->current)));
+                         BufferRegion(static_cast<void*>(out_view->current)));
             backing_graph.add_node([kernel, out_view, views, launch](sycl::handler& h)
             {
                 const T* current = out_view->current;
@@ -113,7 +113,7 @@ namespace SushiRuntime
                 {
                     submit_launch(h, launch, kernel, current, next, input...);
                 }, views_current(views, Seq{}));
-            }, reads, { Internal::Memory::ResourceRegion(static_cast<void*>(out_view->next)) }, {},
+            }, reads, { BufferRegion(static_cast<void*>(out_view->next)) }, {},
             registration).baked_width = launch_count(launch);
         }
 

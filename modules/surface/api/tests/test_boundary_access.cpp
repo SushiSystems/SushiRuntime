@@ -40,8 +40,8 @@ using namespace SushiRuntime;
 
 namespace
 {
-    using Interval = Internal::Memory::ResourceRegion;
-    using Intervals = std::vector<Internal::Memory::ResourceRegion>;
+    using Interval = BufferRegion;
+    using Intervals = std::vector<BufferRegion>;
 
     /** @brief Number of bytes of the allocation the pin tests slice. */
     constexpr std::size_t K_BYTES = 20;

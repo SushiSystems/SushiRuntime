@@ -39,7 +39,7 @@
 #include <SushiRuntime/core/delegate.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -54,7 +54,7 @@ namespace SushiRuntime
         };
 
         /** @brief Returns the dependency key of the buffer a slot lies in; null for no slot. */
-        inline Internal::Memory::ResourceID slot_buffer_key(const DeviceSlot& slot) noexcept
+        inline ResourceID slot_buffer_key(const DeviceSlot& slot) noexcept
         {
             return const_cast<void*>(static_cast<const void*>(slot.words));
         }

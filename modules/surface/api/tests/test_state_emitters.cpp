@@ -188,7 +188,7 @@ TEST(Integration_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWind
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     bindings->count.store(K_PREFIX);
     auto emit = Detail::dynamic_state_node(
-        view_of(field), field.size(), bindings, nullptr, std::vector<Internal::Memory::ResourceRegion>{},
+        view_of(field), field.size(), bindings, nullptr, std::vector<BufferRegion>{},
         [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
     run_once(rt, emit);

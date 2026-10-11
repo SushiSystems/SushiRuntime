@@ -42,7 +42,7 @@
 #include <SushiRuntime/api/graph/access.hpp>
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -99,8 +99,8 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Launch, class Pointers, class F>
-        auto captured_node(std::vector<Internal::Memory::ResourceRegion> reads,
-                           std::vector<Internal::Memory::ResourceRegion> writes,
+        auto captured_node(std::vector<BufferRegion> reads,
+                           std::vector<BufferRegion> writes,
                            Launch launch, Pointers pointers, F&& kernel, std::size_t width)
         {
             return [kernel = std::forward<F>(kernel), launch, reads = std::move(reads),

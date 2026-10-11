@@ -62,7 +62,7 @@ namespace SushiRuntime
          * @param region The byte interval being accessed (whole buffer by default).
          * @param is_write True if the access is a write, false if it is a read.
          */
-        void DependencyTracker::resolve(Node* node, const SushiRuntime::Internal::Memory::ResourceRegion& region, bool is_write)
+        void DependencyTracker::resolve(Node* node, const SushiRuntime::BufferRegion& region, bool is_write)
         {
             SushiRuntime::Internal::Memory::EpochGuard guard;
 

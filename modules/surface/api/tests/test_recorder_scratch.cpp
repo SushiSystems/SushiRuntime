@@ -58,7 +58,7 @@ namespace
     {
         std::uint32_t* stage =
             recorder.scratch<std::uint32_t>(K_COUNT, in.device_index(), in.residency()).value();
-        const Internal::Memory::ResourceRegion stage_region{stage, 0, K_COUNT * sizeof(std::uint32_t)};
+        const BufferRegion stage_region{stage, 0, K_COUNT * sizeof(std::uint32_t)};
         const std::uint32_t* source = in.data();
         std::uint32_t* target = out.data();
 

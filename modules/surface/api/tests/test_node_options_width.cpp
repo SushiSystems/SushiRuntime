@@ -107,7 +107,7 @@ TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWi
         Recorder& recorder = g.recorder();
         std::uint32_t* live =
             recorder.scratch<std::uint32_t>(1, out.device_index(), out.residency()).value();
-        const Internal::Memory::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
+        const BufferRegion live_region{live, 0, sizeof(std::uint32_t)};
 
         auto rule = recorder.rule();
         recorder.resolve(std::array<LateCount, 1>{count}, out.device_index(),

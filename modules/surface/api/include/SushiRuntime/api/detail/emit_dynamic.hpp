@@ -42,7 +42,7 @@
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 
 namespace SushiRuntime
@@ -57,10 +57,10 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         inline void register_device_slot(const DeviceSlot& slot,
-                                         std::vector<Internal::Memory::ResourceRegion>& reads,
+                                         std::vector<BufferRegion>& reads,
                                          std::vector<Internal::Memory::LivenessObserver>& lives)
         {
-            reads.push_back(Internal::Memory::ResourceRegion{
+            reads.push_back(BufferRegion{
                 slot_buffer_key(slot),
                 slot.index * sizeof(std::uint32_t),
                 sizeof(std::uint32_t)});
@@ -77,7 +77,7 @@ namespace SushiRuntime
          */
         inline void adopt_device_bindings(::SushiRuntime::Internal::Graph::LateBindings& lb,
                                           const Dynamic& dyn,
-                                          std::vector<Internal::Memory::ResourceRegion>& reads,
+                                          std::vector<BufferRegion>& reads,
                                           std::vector<Internal::Memory::LivenessObserver>& lives)
         {
             const DeviceSlot& count = DynamicAccess::count_slot(dyn);
@@ -106,8 +106,8 @@ namespace SushiRuntime
         template <class F>
         auto dynamic_node(std::shared_ptr<::SushiRuntime::Internal::Graph::LateBindings> lb,
                           std::uint32_t* fault,
-                          std::vector<Internal::Memory::ResourceRegion> reads,
-                          std::vector<Internal::Memory::ResourceRegion> writes,
+                          std::vector<BufferRegion> reads,
+                          std::vector<BufferRegion> writes,
                           std::size_t capacity, F&& kernel, std::size_t width)
         {
             return [kernel = std::forward<F>(kernel), capacity, lb, fault, reads = std::move(reads),
@@ -133,7 +133,7 @@ namespace SushiRuntime
         auto dynamic_state_node(std::shared_ptr<StateView<T>> view, std::size_t capacity,
                                 std::shared_ptr<::SushiRuntime::Internal::Graph::LateBindings> lb,
                                 std::uint32_t* fault,
-                                std::vector<Internal::Memory::ResourceRegion> slot_reads,
+                                std::vector<BufferRegion> slot_reads,
                                 F&& kernel)
         {
             return [kernel = std::forward<F>(kernel), view, capacity, lb, fault,
@@ -141,8 +141,8 @@ namespace SushiRuntime
                    (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
-                std::vector<Internal::Memory::ResourceRegion> reads{
-                    Internal::Memory::ResourceRegion(static_cast<void*>(view->current)) };
+                std::vector<BufferRegion> reads{
+                    BufferRegion(static_cast<void*>(view->current)) };
                 reads.insert(reads.end(), slot_reads.begin(), slot_reads.end());
                 backing_graph.add_node([kernel, view, lb, capacity, fault](sycl::handler& h)
                 {
@@ -153,7 +153,7 @@ namespace SushiRuntime
                                        {
                                            kernel(i, current, next);
                                        });
-                }, reads, { Internal::Memory::ResourceRegion(static_cast<void*>(view->next)) }, lb, {},
+                }, reads, { BufferRegion(static_cast<void*>(view->next)) }, lb, {},
                 registration).baked_width = capacity;
             };
         }

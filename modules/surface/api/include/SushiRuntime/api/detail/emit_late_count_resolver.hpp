@@ -40,7 +40,7 @@
 #include <SushiRuntime/api/detail/late_count_resolution.hpp>
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -58,8 +58,8 @@ namespace SushiRuntime
         template <std::size_t K, class Fill>
         auto late_count_resolver_node(const std::array<LateCount, K>& counts,
                                       std::uint32_t* fault, Fill fill,
-                                      std::vector<Internal::Memory::ResourceRegion> reads,
-                                      std::vector<Internal::Memory::ResourceRegion> writes,
+                                      std::vector<BufferRegion> reads,
+                                      std::vector<BufferRegion> writes,
                                       std::size_t width)
         {
             return [counts, fault, fill, reads = std::move(reads), writes = std::move(writes),

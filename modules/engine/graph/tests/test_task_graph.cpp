@@ -38,7 +38,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
@@ -50,7 +50,7 @@
 namespace
 {
     using SushiRuntime::ErrorCode;
-    using SushiRuntime::Internal::Memory::ResourceRegion;
+    using SushiRuntime::BufferRegion;
     using SushiRuntime::Error;
     using SushiRuntime::Internal::Graph::CompiledGraph;
     using SushiRuntime::Internal::Graph::HostWork;
@@ -98,8 +98,8 @@ TEST(Unit_TaskGraph, EveryAddReturnsTheNodeItAdded)
 {
     int source = 0;
     int target = 0;
-    const std::vector<ResourceRegion> reads{ResourceRegion(&source)};
-    const std::vector<ResourceRegion> writes{ResourceRegion(&target)};
+    const std::vector<BufferRegion> reads{BufferRegion(&source)};
+    const std::vector<BufferRegion> writes{BufferRegion(&target)};
     TaskMetadata metadata;
     metadata.name = "semantic";
 
@@ -187,8 +187,8 @@ TEST(Unit_TaskGraphDeathTest, EveryAddOverloadStopsOnAnUnissuedRegistration)
 {
     int source = 0;
     int target = 0;
-    const std::vector<ResourceRegion> reads{ResourceRegion(&source)};
-    const std::vector<ResourceRegion> writes{ResourceRegion(&target)};
+    const std::vector<BufferRegion> reads{BufferRegion(&source)};
+    const std::vector<BufferRegion> writes{BufferRegion(&target)};
     const std::vector<sycl::event> none;
     const std::optional<std::uint32_t> unissued(7);
     TaskMetadata metadata;

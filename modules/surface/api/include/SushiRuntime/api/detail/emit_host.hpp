@@ -35,7 +35,7 @@
 #include <vector>
 
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {
@@ -43,8 +43,8 @@ namespace SushiRuntime
     {
         /** @brief Builds the replay of a nullary host task ordered by the regions it names. */
         template <class F>
-        auto host_node(std::vector<Internal::Memory::ResourceRegion> reads,
-                       std::vector<Internal::Memory::ResourceRegion> writes, F&& kernel,
+        auto host_node(std::vector<BufferRegion> reads,
+                       std::vector<BufferRegion> writes, F&& kernel,
                        std::size_t width)
         {
             return [kernel = std::forward<F>(kernel), reads = std::move(reads),
