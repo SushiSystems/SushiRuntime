@@ -70,11 +70,6 @@ namespace
 
             }
 
-            void share(void*, std::size_t) override
-            {
-
-            }
-
             [[nodiscard]] SushiRuntime::Internal::Graph::OffloadStatistics
             statistics() const noexcept override
             {

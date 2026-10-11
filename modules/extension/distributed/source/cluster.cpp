@@ -339,6 +339,24 @@ namespace SushiRuntime
             return state_->coordinator.supports(op);
         }
 
+        void Cluster::share(void* address, std::size_t bytes)
+        {
+            state_->coordinator.share(address, bytes);
+        }
+
+        void Cluster::share_handle(const char* call, void* address, std::size_t bytes,
+                                   Residency residency, bool is_host_accessible)
+        {
+            if (address == nullptr)
+                return;
+            SR_VERIFY(is_host_accessible,
+                      (std::string(call) + ": the handle has " + residency_name(residency) +
+                       " residency, and the host cannot address it; allocate the handle with a "
+                       "host-accessible residency, Residency::Shared or Residency::Host.")
+                          .c_str());
+            share(address, bytes);
+        }
+
         void Cluster::bump_buffer(void* address)
         {
             void* const addresses[] = {address};

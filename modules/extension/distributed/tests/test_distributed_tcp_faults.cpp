@@ -513,7 +513,7 @@ namespace
                     if (beside)
                         graph.add_native({}, {}, beside);
 
-                    context->execution_engine().execute(graph.compile().value()).value().value();
+                    context->execution_engine().execute(graph.compile().value()).value();
                 });
             }
 
@@ -593,7 +593,7 @@ namespace
                 buffers_.push_back(
                     std::make_unique<SharedBytes>(master_context_->memory(), size));
                 SharedBytes& buffer = *buffers_.back();
-                master_context_->offload()->share(buffer.data(), buffer.size());
+                cluster_->share(buffer.data(), buffer.size());
                 return buffer;
             }
     };

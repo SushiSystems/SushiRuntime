@@ -38,6 +38,8 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/cluster_statistics.hpp>
@@ -206,6 +208,75 @@ namespace SushiRuntime
                 /** @brief Reports whether an alive worker has a kernel for an operation. */
                 [[nodiscard]] bool supports(OperationID op) const;
 
+                /**
+                 * @brief Makes a buffer known to the workers, so that a node that names an
+                 *        operation and touches it may run on one; does nothing for an empty
+                 *        buffer.
+                 * @return buffer.
+                 * @pre A buffer that owns memory is shared or host USM, and is shared before
+                 *      the graph that touches it first runs.
+                 * @see modules/extension/distributed/README.md
+                 */
+                template <typename T>
+                Buffer<T>& share(Buffer<T>& buffer)
+                {
+                    share_handle("Cluster::share(buffer)", buffer.data(),
+                                 buffer.size() * sizeof(T), buffer.residency(),
+                                 buffer.is_host_accessible());
+                    return buffer;
+                }
+
+                /**
+                 * @brief Shares a buffer as share(Buffer&) does, then returns it by value.
+                 * @return The buffer, moved out of the argument.
+                 * @pre A buffer that owns memory is shared or host USM.
+                 */
+                template <typename T>
+                [[nodiscard]] Buffer<T> share(Buffer<T>&& buffer)
+                {
+                    share(buffer);
+                    return std::move(buffer);
+                }
+
+                /**
+                 * @brief Makes both fields of a state known to the workers; does nothing for
+                 *        an empty state.
+                 * @return state.
+                 * @pre A state that owns memory is shared or host USM, and is shared before
+                 *      the graph that touches it first runs.
+                 * @see modules/extension/distributed/README.md
+                 */
+                template <typename T>
+                State<T>& share(State<T>& state)
+                {
+                    const std::size_t bytes = state.size() * sizeof(T);
+                    share_handle("Cluster::share(state)", state.current(), bytes,
+                                 state.residency(), state.is_host_accessible());
+                    share_handle("Cluster::share(state)", state.next(), bytes,
+                                 state.residency(), state.is_host_accessible());
+                    return state;
+                }
+
+                /**
+                 * @brief Shares a state as share(State&) does, then returns it by value.
+                 * @return The state, moved out of the argument.
+                 * @pre A state that owns memory is shared or host USM.
+                 */
+                template <typename T>
+                [[nodiscard]] State<T> share(State<T>&& state)
+                {
+                    share(state);
+                    return std::move(state);
+                }
+
+                /**
+                 * @brief Makes a USM allocation known to the workers; an address shared again
+                 *        stays one allocation to them.
+                 * @param address Base of a live allocation of at least @p bytes that the host
+                 *        can address.
+                 */
+                void share(void* address, std::size_t bytes);
+
                 /** @brief Advances the version of the buffer shared at an address, if any. */
                 void bump_buffer(void* address);
 
@@ -217,6 +288,14 @@ namespace SushiRuntime
 
             private:
                 struct State;
+
+                /**
+                 * @brief Shares the allocation of a handle after checking the host can
+                 *        address it; does nothing for a null address.
+                 * @param call Names the public call in the message of a failed check.
+                 */
+                void share_handle(const char* call, void* address, std::size_t bytes,
+                                  Residency residency, bool is_host_accessible);
 
                 /** @brief Wraps the state attach() built. */
                 explicit Cluster(std::shared_ptr<State> state) noexcept;

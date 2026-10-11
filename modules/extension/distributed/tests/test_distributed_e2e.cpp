@@ -71,6 +71,7 @@
 
 #include "test_helpers.hpp"
 
+#include "distributed_coordinator.hpp"
 #include "frame_sending.hpp"
 #include "handshake.hpp"
 #include "offload_dispatcher.hpp"
@@ -293,10 +294,14 @@ namespace
         return options;
     }
 
-    /** @brief Shares a buffer with the workers of the master installed on @p context. */
+    /**
+     * @brief Shares a buffer with the workers of the master installed on @p context.
+     * @pre Cluster::attach() installed the coordinator of @p context.
+     */
     void share(RuntimeContext& context, const USMFloats& buffer)
     {
-        context.offload()->share(buffer.data(), buffer.size_bytes());
+        static_cast<DistributedCoordinator*>(context.offload())
+            ->share(buffer.data(), buffer.size_bytes());
     }
 
     /**
@@ -867,7 +872,7 @@ namespace
         if (!cluster.wait_for_workers(1, K_WAIT))
             throw std::runtime_error("the worker did not register with the cluster");
 
-        auto field = runtime.state<int>(count).value().distributed();
+        auto field = cluster.share(runtime.state<int>(count).value());
         for (std::size_t index = 0; index < count; ++index)
         {
             field.current()[index] = static_cast<int>(index);
@@ -1322,9 +1327,9 @@ TEST(Integration_DistributedE2ETest, FluentClusterOffload)
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
-    auto a = runtime.buffer<float>(K_COUNT).value().distributed();
-    auto b = runtime.buffer<float>(K_COUNT).value().distributed();
-    auto out = runtime.buffer<float>(K_COUNT).value().distributed();
+    auto a = cluster.share(runtime.buffer<float>(K_COUNT).value());
+    auto b = cluster.share(runtime.buffer<float>(K_COUNT).value());
+    auto out = cluster.share(runtime.buffer<float>(K_COUNT).value());
     for (std::size_t index = 0; index < K_COUNT; ++index)
     {
         a[index] = static_cast<float>(index);
@@ -1542,7 +1547,7 @@ TEST(Integration_DistributedE2ETest, DynamicStateBumpsTheLiveBufferAfterSwap)
     Runtime runtime = Runtime::create().value();
     Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
 
-    auto field = runtime.state<int>(K_COUNT).value().distributed();
+    auto field = cluster.share(runtime.state<int>(K_COUNT).value());
     for (std::size_t index = 0; index < K_COUNT; ++index)
     {
         field.current()[index] = static_cast<int>(index);
@@ -1914,6 +1919,56 @@ TEST(Integration_DistributedE2ETest, RefusesATimeoutBelowOneMillisecond)
     EXPECT_EQ(refused.error().code, ErrorCode::InvalidState);
     EXPECT_TRUE(cluster.liveness_timeout(K_MINIMUM_TIMEOUT).has_value());
     cluster.task_deadline(std::chrono::milliseconds(0));
+    cluster.detach();
+}
+
+/** @brief Tests that Cluster::share stops on a device-resident Buffer and on such a State. */
+TEST(Integration_DistributedE2EDeathTest, ShareStopsOnADeviceResidentHandle)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    InProcessFabric fabric;
+    Runtime runtime = Runtime::create().value();
+    Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
+    auto buffer = runtime.buffer<float>(8, DeviceIndex{0}, Residency::Device).value();
+    auto field = runtime.state<float>(8, DeviceIndex{0}, Residency::Device).value();
+
+    EXPECT_DEATH(static_cast<void>(cluster.share(buffer)),
+                 "Cluster::share.buffer.*the handle has Device residency");
+    EXPECT_DEATH(static_cast<void>(cluster.share(std::move(buffer))),
+                 "Cluster::share.buffer.*the handle has Device residency");
+    EXPECT_DEATH(static_cast<void>(cluster.share(field)),
+                 "Cluster::share.state.*the handle has Device residency");
+    cluster.detach();
+}
+
+/** @brief Tests that Cluster::share registers a host-addressable handle and skips an empty one. */
+TEST(Integration_DistributedE2ETest, ShareRegistersAHostAccessibleHandle)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    InProcessFabric fabric;
+    Runtime runtime = Runtime::create().value();
+    Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
+    auto buffer = runtime.buffer<float>(8).value();
+    auto field = runtime.state<float>(8).value();
+    auto moved_from = runtime.buffer<float>(8).value();
+    auto taken = std::move(moved_from);
+    ASSERT_EQ(taken.size(), 8u);
+
+    EXPECT_EQ(&cluster.share(buffer), &buffer);
+    EXPECT_EQ(&cluster.share(field), &field);
+    cluster.share(moved_from);
+    auto pinned = cluster.share(runtime.buffer<float>(8, DeviceIndex{0}, Residency::Host).value());
+
+    EXPECT_TRUE(cluster.buffer_handle(buffer.data()).has_value());
+    EXPECT_TRUE(cluster.buffer_handle(field.current()).has_value());
+    EXPECT_TRUE(cluster.buffer_handle(field.next()).has_value());
+    EXPECT_TRUE(cluster.buffer_handle(pinned.data()).has_value());
+    EXPECT_FALSE(cluster.buffer_handle(taken.data()).has_value())
+        << "a buffer nobody shared has a handle";
     cluster.detach();
 }
 

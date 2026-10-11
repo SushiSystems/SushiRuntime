@@ -207,11 +207,6 @@ namespace
 
             }
 
-            void share(void*, std::size_t) override
-            {
-
-            }
-
             [[nodiscard]] Internal::Graph::OffloadStatistics statistics() const noexcept override
             {
                 Internal::Graph::OffloadStatistics now;

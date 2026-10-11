@@ -168,24 +168,6 @@ result to Reads(...)/Writes(...) in place of the buffer itself. Offsets are in e
 keeps the whole-buffer default when used bare. region() returns `BufferRegion`, the api
 module's name for the byte window of one allocation, and follows the Range calls rule.
 
-### distributed()
-
-distributed() hands the allocation to the offload coordinator installed on the runtime's context,
-through Internal::Graph::OffloadCoordinator::share(). It is opt-in: only a shared buffer can cross to a worker,
-and the master stays authoritative for it. It does nothing on an empty handle, and nothing when no
-coordinator is installed, so a buffer is shared only if Distributed::Cluster::attach() ran first.
-A handle that owns memory and is device-resident stops the process before the coordinator is
-consulted, with or without a cluster attached. The offload path reads the allocation on the host,
-so the handle must be Shared or Host.
-
-Two overloads exist to make chaining safe. The lvalue overload (on a named buffer) returns *this.
-The rvalue overload (on a temporary returned by Runtime::buffer()) moves the buffer into the caller
-so the allocation survives the chain: `auto a = rt.buffer<float>(n).distributed();`
-
-A State\<T> is also distributable (State::distributed()); it shares both of its allocations and
-the offload path resolves the step's read/write handles from the live pointers, so the swap is
-followed without breaking the version-by-pointer coherence model.
-
 ## state.hpp
 
 ### StateView
@@ -224,7 +206,7 @@ current() and next(), and the runtime swaps their roles after each step, an O(1)
 The user writes one step as "read current, write next" and never manages the ping-pong.
 
 A State answers every query a Buffer does: size(), empty(), device_index(), residency(),
-is_host_accessible(), operator[], host(), read_range(), write_range(), region() and distributed().
+is_host_accessible(), operator[], host(), read_range(), write_range() and region().
 Each one acts on the current field. data() is absent because a State has two buffers; current() and
 next() take its place.
 
@@ -248,15 +230,6 @@ observer.
 
 region() names a window of the current field. Which field is current changes at every step, so a
 region taken before a run names the other field after an odd number of steps.
-
-### distributed()
-
-State::distributed() is opt-in and mirrors Buffer::distributed(). It exposes each of the State's two
-allocations to the cluster so a stepped graph can offload its update rule. The two allocations keep
-stable handles for the State's lifetime; only which one is read and which is written rotates each
-step, and the offload path follows that from the live pointers. It does nothing on an empty State
-or when no offload coordinator is installed. A device-resident State stops the process, as
-Buffer::distributed() does, and the message names `State::distributed()`.
 
 ### State::read_range
 

@@ -111,7 +111,7 @@ namespace SushiRuntime
                 void on_local_completion(Internal::Graph::Node& node) noexcept override;
 
                 /** @brief Shares an allocation through BufferRegistry::register_buffer(). */
-                void share(void* address, std::size_t bytes) override;
+                void share(void* address, std::size_t bytes);
 
                 /**
                  * @brief Returns the four seam counters and the alive worker count.

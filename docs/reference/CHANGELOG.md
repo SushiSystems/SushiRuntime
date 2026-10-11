@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — distributed: Breaking change: Moved `Buffer::distributed()` and `State::distributed()` to `Cluster::share`, which also takes a raw address, and removed `share` from `OffloadCoordinator` (`cluster.hpp`, `buffer.hpp`).
 - 2026-10-11 — api: Breaking change: Removed the offload overloads of `add`, `Recorder::offload` and `offload_rule`; a node names its operation in `NodeOptions`, and the chain layer takes a named node no worker can run (`chain_plan.cpp`).
 - 2026-10-11 — api: Breaking change: Moved the State, Coupled and Dynamic forms of `add` to `add_rule`, `add_coupled` and `add_dynamic`; `Recorder::coupled_rule` takes a `Coupled` (`builder_surface.hpp`, `recorder.hpp`).
 - 2026-10-11 — core: Breaking change: Removed `SushiException` and `SR_THROW_IF`; `ExecutionEngine::execute`, `RuntimeContext::create`, `Cluster::attach` and the `SharedSecret` factories return `Result`, and a broken rule stops the process.

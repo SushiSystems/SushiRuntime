@@ -117,11 +117,6 @@ namespace
                 completions_.fetch_add(1, std::memory_order_relaxed);
             }
 
-            void share(void*, std::size_t) override
-            {
-
-            }
-
             [[nodiscard]] SushiRuntime::Internal::Graph::OffloadStatistics
             statistics() const noexcept override
             {

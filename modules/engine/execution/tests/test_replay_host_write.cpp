@@ -123,7 +123,7 @@ namespace
             *input.data() = value;
             if (value != 0)
                 plan.rearm();
-            engine.execute(plan).value().value();
+            engine.execute(plan).value();
             EXPECT_EQ(*output.data(), value + 1u)
                 << "device " << device << ", replay " << value;
         }

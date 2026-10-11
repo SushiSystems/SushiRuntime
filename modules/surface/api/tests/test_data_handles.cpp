@@ -237,43 +237,6 @@ TEST(Integration_DataHandles, TriviallyCopyableStructRoundTrips)
 }
 
 /**
- * @brief Tests that distributed() stops on a device-resident Buffer and on such a State.
- */
-TEST(Integration_DataHandlesDeathTest, DistributedStopsOnADeviceResidentHandle)
-{
-    auto rt = Runtime::create().value();
-    auto buf = rt.buffer<float>(8, DeviceIndex{0}, Residency::Device).value();
-    auto field = rt.state<float>(8, DeviceIndex{0}, Residency::Device).value();
-
-    EXPECT_DEATH(static_cast<void>(buf.distributed()),
-                 "Buffer::distributed.*the handle has Device residency");
-    EXPECT_DEATH(static_cast<void>(std::move(buf).distributed()),
-                 "Buffer::distributed.*the handle has Device residency");
-    EXPECT_DEATH(static_cast<void>(field.distributed()),
-                 "State::distributed.*the handle has Device residency");
-}
-
-/**
- * @brief Tests that distributed() accepts a handle the host can address and a handle that is empty.
- */
-TEST(Integration_DataHandles, DistributedAcceptsAHostAccessibleHandle)
-{
-    auto rt = Runtime::create().value();
-    auto buf = rt.buffer<float>(8).value();
-    auto field = rt.state<float>(8).value();
-    auto moved_from = rt.buffer<float>(8).value();
-    auto taken = std::move(moved_from);
-    EXPECT_EQ(taken.size(), 8u);
-    EXPECT_EQ(moved_from.size(), 0u);
-
-    EXPECT_NO_THROW(buf.distributed());
-    EXPECT_NO_THROW(field.distributed());
-    EXPECT_NO_THROW(moved_from.distributed());
-    EXPECT_NO_THROW(
-        (void)rt.buffer<float>(8, DeviceIndex{0}, Residency::Host).value().distributed());
-}
-
-/**
  * @brief Tests that host() on a device-resident handle stops and names the handle.
  */
 TEST(Integration_DataHandlesDeathTest, HostOnADeviceResidentHandleStops)

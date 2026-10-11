@@ -214,14 +214,14 @@ namespace
 
     /**
      * @brief Adds two vectors of @p count floats and checks every element of the sum.
-     * @pre A master is attached to @p runtime, so distributed() has a coordinator to share with.
+     * @param cluster The master attached to @p runtime; the three buffers are shared with it.
      * @return True when the sum is right, wherever the task ran.
      */
-    bool run_vector_add(Runtime& runtime, std::size_t count)
+    bool run_vector_add(Runtime& runtime, Distributed::Cluster& cluster, std::size_t count)
     {
-        auto a = runtime.buffer<float>(count).value().distributed();
-        auto b = runtime.buffer<float>(count).value().distributed();
-        auto sum = runtime.buffer<float>(count).value().distributed();
+        auto a = cluster.share(runtime.buffer<float>(count).value());
+        auto b = cluster.share(runtime.buffer<float>(count).value());
+        auto sum = cluster.share(runtime.buffer<float>(count).value());
 
         const float* a_data = a.data();
         const float* b_data = b.data();
@@ -321,7 +321,7 @@ namespace
             std::printf("  no worker within %lld s\n",
                         static_cast<long long>(options.worker_wait.count()));
 
-        const bool is_correct = run_vector_add(runtime, options.element_count);
+        const bool is_correct = run_vector_add(runtime, cluster, options.element_count);
 
         std::printf("distributed_demo: N = %zu, result %s\n", options.element_count,
                     is_correct ? "CORRECT" : "WRONG");

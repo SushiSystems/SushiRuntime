@@ -301,16 +301,16 @@ namespace
         public:
             /**
              * @brief Allocates @p count floats on device 0 and shares them with the master.
-             * @pre A cluster is attached to @p context, which outlives the buffer.
+             * @pre @p cluster is attached to @p context, which outlives the buffer.
              */
-            SharedFloats(RuntimeContext& context, std::size_t count)
+            SharedFloats(RuntimeContext& context, Cluster& cluster, std::size_t count)
                 : context_(&context), count_(count)
             {
                 Internal::Memory::USMRequest request;
                 request.kind = Internal::Memory::USMKind::Shared;
                 request.bytes = bytes();
                 data_ = static_cast<float*>(context.memory().allocate(request));
-                context.offload()->share(data_, bytes());
+                cluster.share(data_, bytes());
             }
 
             /** @brief Releases the memory, which also removes it from the master's registry. */
@@ -380,8 +380,8 @@ namespace
                 outputs_.reserve(task_count);
                 for (std::size_t task = 0; task < task_count; ++task)
                 {
-                    inputs_.emplace_back(rig.master(), floats_per_task);
-                    outputs_.emplace_back(rig.master(), floats_per_task);
+                    inputs_.emplace_back(rig.master(), rig.cluster(), floats_per_task);
+                    outputs_.emplace_back(rig.master(), rig.cluster(), floats_per_task);
                 }
             }
 
@@ -480,10 +480,10 @@ namespace
         {
             base += 1.0f;
             batch.refill(base);
-            Internal::Graph::CompiledGraph compiled = batch.compile().value();
+            Internal::Graph::CompiledGraph compiled = batch.compile();
 
             const auto begin = std::chrono::steady_clock::now();
-            rig.master().execution_engine().execute(compiled).value().value();
+            rig.master().execution_engine().execute(compiled).value();
             const auto end = std::chrono::steady_clock::now();
 
             measurement.is_correct = measurement.is_correct && batch.holds_results(base);

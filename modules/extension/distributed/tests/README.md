@@ -243,6 +243,18 @@ return a message that names the option and its value, before `start()` is called
 `task_deadline` of 0 and both timeouts at 1 ms must succeed. `Cluster::liveness_timeout(0 ms)` must
 return `InvalidState`, and 1 ms must succeed.
 
+### `ShareStopsOnADeviceResidentHandle`
+
+`Cluster::share` on a device-resident handle stops the process for both overloads of Buffer and
+for State. The line names `Cluster::share(buffer)` or `Cluster::share(state)`, and the residency.
+
+### `ShareRegistersAHostAccessibleHandle`
+
+`Cluster::share` returns its argument for a named Buffer and a named State, and the moved buffer
+for a temporary. Each shared allocation, both fields of the State among them, then has a handle
+in `buffer_handle()`. A moved-from handle that owns nothing is skipped, and a buffer nobody
+shared has no handle.
+
 ### `WorkerAgentSealsItsRegistry`
 
 Finding QC-37. A registry is open until a `WorkerAgent` is built with it and sealed from then on,

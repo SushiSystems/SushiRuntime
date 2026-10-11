@@ -107,16 +107,6 @@ namespace SushiRuntime
                 virtual void on_local_completion(Node& node) noexcept = 0;
 
                 /**
-                 * @brief Makes an allocation known to the workers.
-                 *
-                 * Called on any user thread, before the graph that touches the allocation is
-                 * compiled. The implementer may lock and allocate; an address shared again
-                 * stays one allocation to the workers.
-                 * @param address Base of a live USM allocation of at least @p bytes.
-                 */
-                virtual void share(void* address, std::size_t bytes) = 0;
-
-                /**
                  * @brief Returns the counters as they stand; any thread may call.
                  * @return A snapshot; the fields are not read at one instant.
                  */

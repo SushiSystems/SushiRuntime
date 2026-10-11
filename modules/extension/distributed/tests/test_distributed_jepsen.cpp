@@ -235,7 +235,7 @@ namespace
                 finished_ = done->get_future();
                 thread_ = std::thread([&context, &graph, done]
                 {
-                    context.execution_engine().execute(graph).value().value();
+                    context.execution_engine().execute(graph).value();
                     done->set_value();
                 });
             }
@@ -511,11 +511,11 @@ namespace
             return "the cluster did not assemble";
 
         OffloadCoordinator* master = master_context.offload();
-        master->share(input->data(), K_COUNT * sizeof(float));
+        cluster.share(input->data(), K_COUNT * sizeof(float));
         TaskGraph graph(master);
         for (const std::unique_ptr<USMFloats>& output : outputs)
         {
-            master->share(output->data(), K_COUNT * sizeof(float));
+            cluster.share(output->data(), K_COUNT * sizeof(float));
             add_vec_double(graph, *input, *output);
         }
         CompiledGraph compiled = graph.compile().value();
@@ -589,8 +589,8 @@ namespace
         }
 
         OffloadCoordinator* master = master_context.offload();
-        master->share(input->data(), K_COUNT * sizeof(float));
-        master->share(output.data(), K_COUNT * sizeof(float));
+        cluster.share(input->data(), K_COUNT * sizeof(float));
+        cluster.share(output.data(), K_COUNT * sizeof(float));
         TaskGraph graph(master);
         add_vec_double(graph, *input, output);
         CompiledGraph compiled = graph.compile().value();

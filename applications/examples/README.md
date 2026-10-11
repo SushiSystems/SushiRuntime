@@ -172,8 +172,7 @@ distributed_demo: N = 1048576, result CORRECT
 | `--elements n` | 1048576 | Length of each vector |
 
 A value follows its flag as the next argument or after `=`. The buffers are shared with
-`Buffer::distributed()` after `attach()`; called before it, `distributed()` shares nothing, logs
-one WARN and the task stays local. The default offload policy also keeps a task local when its
+`Cluster::share()`, which needs the handle `attach()` returned. The default offload policy also keeps a task local when its
 inputs are under 64 KiB, so a run with `--elements` below 8192 reports `declined=1` even with a
 worker connected.
 

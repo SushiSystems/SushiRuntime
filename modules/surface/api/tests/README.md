@@ -169,17 +169,6 @@ A struct of two floats instantiates `Buffer` and `State`, and a window written w
 reads back equal through `read_range`. The negative case, a `T` that is not trivially copyable, is
 a compile error from the `static_assert` in `Buffer`, so no test can run it.
 
-### `DistributedStopsOnADeviceResidentHandle`
-
-`distributed()` on a device-resident handle stops the process for both overloads of Buffer and
-for State. The line names `Buffer::distributed` or `State::distributed`, and the residency. The
-test runs without a cluster, which shows the check does not depend on one.
-
-### `DistributedAcceptsAHostAccessibleHandle`
-
-`distributed()` does not throw on a Shared or Host handle, on a moved-from handle that owns nothing,
-or on a moved-to handle. No coordinator is attached, so the call only logs its warning.
-
 ### `HostOnADeviceResidentHandleStops`, `IndexingADeviceResidentHandleStops`
 
 `host()` on a device-resident Buffer or State stops the process, and the line names
