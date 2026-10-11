@@ -79,8 +79,8 @@ namespace SushiRuntime
                     described.width = width;
                     described.name = name;
                     described.operation = operation;
-                    described.parameters =
-                        SushiRuntime::span<const std::uint64_t>(parameters.data(), parameters.size());
+                    described.parameters = SushiRuntime::span<const std::uint64_t>(
+                        parameters.data(), parameters.size());
                     return kernel(
                         queue,
                         SushiRuntime::span<const BufferView>(inputs.data(), inputs.size()),

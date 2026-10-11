@@ -43,15 +43,12 @@ namespace SushiRuntime
     namespace Distributed
     {
         /**
-         * @brief Records a task that runs the kernel registered for options.operation on this
-         *        machine.
-         *
-         * A worker with the same operation may run it instead once a Cluster is attached and
-         * every buffer is shared. The kernel and the options are copied into the node.
-         * @param recorder What Graph::extend() or Region::extend() hands its extension.
+         * @brief Records a task that runs the kernel registered for options.operation here, or
+         *        on a worker with that operation once a Cluster is attached.
          * @param inputs The buffers read, in the kernel's order; the memory outlives the run.
          * @return The position of the rule recorded, or rule_count() when options are refused.
          * @pre kernels holds a kernel for options.operation.
+         * @see modules/extension/distributed/README.md
          */
         SUSHIRUNTIME_API std::size_t record_registered_task(
             Recorder& recorder, const KernelRegistry& kernels, const NodeOptions& options,
