@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-10-11 — core: Changed `span` to one class in every language mode; C++20 code converts to and from `std::span`, and an rvalue container binds only as a span of const (`span.hpp`).
+- 2026-10-11 — core: Changed the `Result` accessors to throw `SushiException` on the wrong alternative in place of `std::bad_variant_access` (`result.hpp`).
+- 2026-10-11 — core: Made `sushi_ptr(T*)` explicit and the counter of `RefCounted` private; added comparisons with a raw pointer (`sushi_ptr.hpp`, `ref_counted.hpp`).
+- 2026-10-11 — core: Made the value of `StrongId` private and required a `Delegate` callable to have a noexcept move constructor (`strong_id.hpp`, `delegate.hpp`).
 - 2026-10-11 — build: Changed the library to hidden visibility: a symbol without `SUSHIRUNTIME_API` is no longer exported on Windows or Linux; added `SR_API` and `SR_TYPE_API` (`export.hpp`, `SushiRuntimeLibrary.cmake`).
 - 2026-10-11 — cli: Added `sr test --module`, which runs the tests labelled with one module's name (`cli.py`, `project.py`, `SushiRuntimeTests.cmake`).
 - 2026-10-11 — build: Added a header check per module that compiles every public header first and alone with the declared dependencies only (`SushiRuntimeModule.cmake`).

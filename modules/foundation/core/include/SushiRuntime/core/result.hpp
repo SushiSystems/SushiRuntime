@@ -31,6 +31,8 @@
 #include <utility>
 #include <variant>
 
+#include <SushiRuntime/core/error.hpp>
+
 namespace SushiRuntime
 {
     namespace Core
@@ -58,8 +60,6 @@ namespace SushiRuntime
         /**
          * @brief Holds either a successful result of type T or an error payload of type E.
          *
-         * Manages a disjoint union of a success value and an error value, requiring explicit state checking before access.
-         *
          * @tparam T The type of the success value.
          * @tparam E The type of the error value.
          */
@@ -69,7 +69,7 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Constructs a success result holding a value.
-                 * 
+                 *
                  * Initializes the internal variant with the success state.
                  *
                  * @param value The successful result to store.
@@ -81,7 +81,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Constructs an error result from an ErrorWrapper.
-                 * 
+                 *
                  * Initializes the internal variant with the error state.
                  *
                  * @param wrapper The wrapped error instance to store.
@@ -91,101 +91,164 @@ namespace SushiRuntime
                 {
                 }
 
-                /** 
+                /**
                  * @brief Checks if this object holds a success value.
-                 * 
+                 *
                  * Returns the active state of the underlying variant.
                  *
                  * @return True if a success value is present, false if an error is present.
                  */
                 [[nodiscard]] bool has_value() const noexcept { return data_.index() == 0; }
 
-                /** 
+                /**
                  * @brief Checks if this object holds a success value.
-                 * 
+                 *
                  * Provides boolean conversion for if-statement checking.
                  *
                  * @return True if a success value is present, false if an error is present.
                  */
                 explicit operator bool() const noexcept { return has_value(); }
 
-                /** 
-                 * @brief Retrieves the stored success value.
-                 * 
-                 * Extracts the value from the variant without bounds checking.
+                /**
+                 * @brief Returns a reference to the stored success value.
                  *
                  * @return A reference to the underlying success value.
-                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 * @throws Core::SushiException If the result holds an error. The exception
+                 *                              carries the stored Error when E is Core::Error.
                  */
-                [[nodiscard]] T& value() & { return std::get<0>(data_); }
-                /** 
-                 * @brief Retrieves the stored success value.
-                 * 
-                 * Extracts the value from the variant without bounds checking.
+                [[nodiscard]] T& value() &
+                {
+                    if (!has_value())
+                        throw_value_of_error();
+                    return *std::get_if<0>(&data_);
+                }
+
+                /**
+                 * @brief Returns a reference to the stored success value.
                  *
                  * @return A constant reference to the underlying success value.
-                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 * @throws Core::SushiException If the result holds an error. The exception
+                 *                              carries the stored Error when E is Core::Error.
                  */
-                [[nodiscard]] const T& value() const & { return std::get<0>(data_); }
+                [[nodiscard]] const T& value() const &
+                {
+                    if (!has_value())
+                        throw_value_of_error();
+                    return *std::get_if<0>(&data_);
+                }
 
-                /** 
-                 * @brief Retrieves the stored success value.
-                 * 
-                 * Extracts the value from the variant without bounds checking.
+                /**
+                 * @brief Returns a reference to the stored success value.
                  *
                  * @return A reference to the underlying success value.
-                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 * @throws Core::SushiException If the result holds an error. The exception
+                 *                              carries the stored Error when E is Core::Error.
                  */
-                [[nodiscard]] T& operator*() & { return std::get<0>(data_); }
-                /** 
-                 * @brief Retrieves the stored success value.
-                 * 
-                 * Extracts the value from the variant without bounds checking.
+                [[nodiscard]] T& operator*() &
+                {
+                    if (!has_value())
+                        throw_value_of_error();
+                    return *std::get_if<0>(&data_);
+                }
+
+                /**
+                 * @brief Returns a reference to the stored success value.
                  *
                  * @return A constant reference to the underlying success value.
-                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 * @throws Core::SushiException If the result holds an error. The exception
+                 *                              carries the stored Error when E is Core::Error.
                  */
-                [[nodiscard]] const T& operator*() const & { return std::get<0>(data_); }
+                [[nodiscard]] const T& operator*() const &
+                {
+                    if (!has_value())
+                        throw_value_of_error();
+                    return *std::get_if<0>(&data_);
+                }
 
-                /** 
-                 * @brief Accesses a member of the stored success value.
-                 * 
-                 * Evaluates the underlying value pointer.
+                /**
+                 * @brief Returns a pointer to the stored success value.
                  *
                  * @return A pointer to the underlying success value.
-                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 * @throws Core::SushiException If the result holds an error. The exception
+                 *                              carries the stored Error when E is Core::Error.
                  */
-                [[nodiscard]] T* operator->() { return &std::get<0>(data_); }
-                /** 
-                 * @brief Accesses a member of the stored success value.
-                 * 
-                 * Evaluates the underlying value pointer.
+                [[nodiscard]] T* operator->()
+                {
+                    if (!has_value())
+                        throw_value_of_error();
+                    return std::get_if<0>(&data_);
+                }
+
+                /**
+                 * @brief Returns a pointer to the stored success value.
                  *
                  * @return A constant pointer to the underlying success value.
-                 * @warning Accessing the value when an error is stored yields undefined behavior.
+                 * @throws Core::SushiException If the result holds an error. The exception
+                 *                              carries the stored Error when E is Core::Error.
                  */
-                [[nodiscard]] const T* operator->() const { return &std::get<0>(data_); }
+                [[nodiscard]] const T* operator->() const
+                {
+                    if (!has_value())
+                        throw_value_of_error();
+                    return std::get_if<0>(&data_);
+                }
 
-                /** 
-                 * @brief Retrieves the stored error payload.
-                 * 
-                 * Extracts the error from the variant without bounds checking.
+                /**
+                 * @brief Returns a reference to the stored error payload.
                  *
                  * @return A reference to the underlying error value.
-                 * @warning Accessing the error when a success value is stored yields undefined behavior.
+                 * @throws Core::SushiException If the result holds a value.
                  */
-                [[nodiscard]] E& error() & { return std::get<1>(data_); }
-                /** 
-                 * @brief Retrieves the stored error payload.
-                 * 
-                 * Extracts the error from the variant without bounds checking.
+                [[nodiscard]] E& error() &
+                {
+                    if (has_value())
+                        throw_error_of_value();
+                    return *std::get_if<1>(&data_);
+                }
+
+                /**
+                 * @brief Returns a reference to the stored error payload.
                  *
                  * @return A constant reference to the underlying error value.
-                 * @warning Accessing the error when a success value is stored yields undefined behavior.
+                 * @throws Core::SushiException If the result holds a value.
                  */
-                [[nodiscard]] const E& error() const & { return std::get<1>(data_); }
+                [[nodiscard]] const E& error() const &
+                {
+                    if (has_value())
+                        throw_error_of_value();
+                    return *std::get_if<1>(&data_);
+                }
 
             private:
+                /**
+                 * @brief Throws the exception for a value read on a result that holds an error.
+                 *
+                 * @throws Core::SushiException Always; carries the stored Error when E is Core::Error.
+                 */
+                [[noreturn]] void throw_value_of_error() const
+                {
+                    if constexpr (std::is_same_v<E, Error>)
+                    {
+                        throw SushiException(*std::get_if<1>(&data_));
+                    }
+                    else
+                    {
+                        throw SushiException(Error{
+                            Errc::invalid_state, "Result::value(): the result holds an error."});
+                    }
+                }
+
+                /**
+                 * @brief Throws the exception for an error read on a result that holds a value.
+                 *
+                 * @throws Core::SushiException Always.
+                 */
+                [[noreturn]] void throw_error_of_value() const
+                {
+                    throw SushiException(Error{
+                        Errc::invalid_state, "Result::error(): the result holds a value."});
+                }
+
                 std::variant<T, E> data_; /**< Success value at index 0, error at index 1. */
         };
 

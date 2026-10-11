@@ -30,6 +30,7 @@
 #include <cstddef>
 #include <utility>
 #include <functional>
+#include <type_traits>
 #include <SushiRuntime/core/ref_counted.hpp>
 
 namespace SushiRuntime 
@@ -59,13 +60,13 @@ namespace SushiRuntime
             sushi_ptr() noexcept : ptr(nullptr) { }
 
             /**
-             * @brief Constructs a smart pointer taking ownership of a raw pointer.
+             * @brief Constructs a smart pointer that shares ownership of a raw pointer.
              * 
              * Increments the target object's reference count if the pointer is not null.
              * 
-             * @param p The raw pointer to manage.
+             * @pre p is null or points to an object that has not been deleted.
              */
-            sushi_ptr(T* p) : ptr(p) { if (ptr) ptr->add_ref(); }
+            explicit sushi_ptr(T* p) noexcept : ptr(p) { if (ptr) ptr->add_ref(); }
                 
             /**
              * @brief Constructs a copy of another smart pointer.
@@ -207,7 +208,7 @@ namespace SushiRuntime
              * 
              * @return The raw pointer.
              */
-            T* get() const noexcept         { return ptr; }
+            [[nodiscard]] T* get() const noexcept { return ptr; }
 
             /**
              * @brief Detaches the underlying pointer from this smart pointer.
@@ -216,7 +217,7 @@ namespace SushiRuntime
              * 
              * @return The underlying raw pointer this object managed.
              */
-            T* leak() noexcept
+            [[nodiscard]] T* leak() noexcept
             {
                 T* p = ptr;
                 ptr = nullptr;
@@ -232,10 +233,89 @@ namespace SushiRuntime
              */
             explicit operator bool() const noexcept { return ptr != nullptr; }
 
-            bool operator==(std::nullptr_t) const noexcept { return ptr == nullptr; }
-            bool operator!=(std::nullptr_t) const noexcept { return ptr != nullptr; }
-            bool operator==(const sushi_ptr& other) const noexcept { return ptr == other.ptr; }
-            bool operator!=(const sushi_ptr& other) const noexcept { return ptr != other.ptr; }
+            /** @brief Tests whether the managed pointer is null. */
+            [[nodiscard]] bool operator==(std::nullptr_t) const noexcept
+            {
+                return ptr == nullptr;
+            }
+
+            /** @brief Tests whether the managed pointer is not null. */
+            [[nodiscard]] bool operator!=(std::nullptr_t) const noexcept
+            {
+                return ptr != nullptr;
+            }
+
+            /**
+             * @brief Tests whether the managed pointer is the given raw pointer.
+             * @tparam U A pointee type whose pointer converts to a pointer to T.
+             */
+            template <typename U, typename = std::enable_if_t<std::is_convertible_v<U*, const T*>>>
+            [[nodiscard]] bool operator==(const U* p) const noexcept
+            {
+                return ptr == p;
+            }
+
+            /**
+             * @brief Tests whether the managed pointer is not the given raw pointer.
+             * @tparam U A pointee type whose pointer converts to a pointer to T.
+             */
+            template <typename U, typename = std::enable_if_t<std::is_convertible_v<U*, const T*>>>
+            [[nodiscard]] bool operator!=(const U* p) const noexcept
+            {
+                return ptr != p;
+            }
+
+            /**
+             * @brief Tests whether the given raw pointer is the managed pointer.
+             * @tparam U A pointee type whose pointer converts to a pointer to T.
+             */
+            template <typename U, typename = std::enable_if_t<std::is_convertible_v<U*, const T*>>>
+            [[nodiscard]] friend bool operator==(const U* p, const sushi_ptr& sp) noexcept
+            {
+                return sp.get() == p;
+            }
+
+            /**
+             * @brief Tests whether the given raw pointer is not the managed pointer.
+             * @tparam U A pointee type whose pointer converts to a pointer to T.
+             */
+            template <typename U, typename = std::enable_if_t<std::is_convertible_v<U*, const T*>>>
+            [[nodiscard]] friend bool operator!=(const U* p, const sushi_ptr& sp) noexcept
+            {
+                return sp.get() != p;
+            }
+
+            /** @brief Tests whether two smart pointers manage the same object. */
+            [[nodiscard]] bool operator==(const sushi_ptr& other) const noexcept
+            {
+                return ptr == other.ptr;
+            }
+
+            /** @brief Tests whether two smart pointers manage different objects. */
+            [[nodiscard]] bool operator!=(const sushi_ptr& other) const noexcept
+            {
+                return ptr != other.ptr;
+            }
+
+            /**
+             * @brief Tests whether two smart pointers of related types manage the same object.
+             * @tparam U The type of the other smart pointer's managed object.
+             */
+            template <typename U>
+            [[nodiscard]] bool operator==(const sushi_ptr<U>& other) const noexcept
+            {
+                return ptr == other.get();
+            }
+
+            /**
+             * @brief Tests whether two smart pointers of related types manage different objects.
+             * @tparam U The type of the other smart pointer's managed object.
+             */
+            template <typename U>
+            [[nodiscard]] bool operator!=(const sushi_ptr<U>& other) const noexcept
+            {
+                return ptr != other.get();
+            }
     };
 
     /** @brief Exchanges the managed objects of two smart pointers. */
@@ -247,7 +327,7 @@ namespace SushiRuntime
 
     /** @brief Allocates and constructs a reference-counted object managed by a sushi_ptr. */
     template <typename T, typename... Args>
-    sushi_ptr<T> make_sushi(Args&&... args) 
+    [[nodiscard]] sushi_ptr<T> make_sushi(Args&&... args) 
     {
         return sushi_ptr<T>(new T(std::forward<Args>(args)...));
     }

@@ -29,6 +29,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 
 namespace SushiRuntime
 {
@@ -41,28 +42,60 @@ namespace SushiRuntime
          * @see modules/foundation/core/README.md
          */
         template <class Tag, class Rep = std::size_t>
-        struct StrongId
+        class StrongId
         {
-            Rep raw;  /**< The wrapped integer value. */
+            public:
+                /** @brief Constructs the zero identifier. */
+                constexpr StrongId() noexcept : raw_(Rep{}) {}
 
-            /** @brief Constructs the zero identifier. */
-            constexpr StrongId() noexcept : raw(Rep{}) {}
+                /** @brief Wraps @p v as an identifier of this domain. */
+                explicit constexpr StrongId(Rep v) noexcept : raw_(v) {}
 
-            /** @brief Wraps @p v as an identifier of this domain. */
-            explicit constexpr StrongId(Rep v) noexcept : raw(v) {}
+                /**
+                 * @brief Returns the wrapped integer value.
+                 * @return The integer this identifier wraps.
+                 */
+                [[nodiscard]] constexpr Rep value() const noexcept { return raw_; }
 
-            /** @brief Returns the wrapped integer value. */
-            constexpr Rep value() const noexcept { return raw; }
+                /** @brief True when both identifiers wrap the same integer. */
+                [[nodiscard]] friend constexpr bool operator==(StrongId a, StrongId b) noexcept
+                {
+                    return a.raw_ == b.raw_;
+                }
 
-            friend constexpr bool operator==(StrongId a, StrongId b) noexcept
-            {
-                return a.raw == b.raw;
-            }
-            friend constexpr bool operator!=(StrongId a, StrongId b) noexcept
-            {
-                return a.raw != b.raw;
-            }
+                /** @brief True when the identifiers wrap different integers. */
+                [[nodiscard]] friend constexpr bool operator!=(StrongId a, StrongId b) noexcept
+                {
+                    return a.raw_ != b.raw_;
+                }
+
+                /** @brief True when the integer of @p a is less than that of @p b. */
+                [[nodiscard]] friend constexpr bool operator<(StrongId a, StrongId b) noexcept
+                {
+                    return a.raw_ < b.raw_;
+                }
+
+            private:
+                Rep raw_; /**< The wrapped integer value. */
         };
 
     } // namespace Core
 } // namespace SushiRuntime
+
+namespace std
+{
+    /**
+     * @brief Hashes a StrongId by the integer it wraps.
+     * @tparam Tag The phantom domain tag of the identifier.
+     * @tparam Rep The underlying integer representation.
+     */
+    template <class Tag, class Rep>
+    struct hash<SushiRuntime::Core::StrongId<Tag, Rep>>
+    {
+        /** @brief Returns the hash of the integer that @p id wraps. */
+        [[nodiscard]] std::size_t operator()(SushiRuntime::Core::StrongId<Tag, Rep> id) const
+        {
+            return std::hash<Rep>{}(id.value());
+        }
+    };
+} // namespace std

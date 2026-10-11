@@ -33,26 +33,26 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
 
-/** @brief Major version of the headers being compiled against. */
+/** @brief Expands to the major version of the headers being compiled against. */
 #define SUSHIRUNTIME_VERSION_MAJOR 0
-/** @brief Minor version of the headers being compiled against. */
+/** @brief Expands to the minor version of the headers being compiled against. */
 #define SUSHIRUNTIME_VERSION_MINOR 3
-/** @brief Patch version of the headers being compiled against. */
+/** @brief Expands to the patch version of the headers being compiled against. */
 #define SUSHIRUNTIME_VERSION_PATCH 0
 
-/** @brief Dotted version of the headers being compiled against, as a literal. */
+/** @brief Expands to the dotted version of the headers being compiled against, as a literal. */
 #define SUSHIRUNTIME_VERSION_STRING "0.3.0"
 
 /**
- * @brief The header version as one comparable integer.
- *
- * Encoded so ordinary integer comparison orders releases:
- * `#if SUSHIRUNTIME_VERSION >= SUSHIRUNTIME_VERSION_ENCODE(0, 2, 0)`.
+ * @brief Encodes a major, minor and patch version as one integer.
+ * @pre minor and patch are each below 100.
  */
 #define SUSHIRUNTIME_VERSION_ENCODE(major, minor, patch) \
     ((major) * 10000 + (minor) * 100 + (patch))
 
-/** @brief The header version, encoded by SUSHIRUNTIME_VERSION_ENCODE. */
+/**
+ * @brief Expands to the header version as one integer, encoded by SUSHIRUNTIME_VERSION_ENCODE.
+ */
 #define SUSHIRUNTIME_VERSION                                     \
     SUSHIRUNTIME_VERSION_ENCODE(SUSHIRUNTIME_VERSION_MAJOR,      \
                                 SUSHIRUNTIME_VERSION_MINOR,      \
@@ -61,7 +61,7 @@
 namespace SushiRuntime
 {
     /**
-     * @brief A library version, split into its three components.
+     * @brief Holds a library version, split into its three components.
      */
     struct Version
     {

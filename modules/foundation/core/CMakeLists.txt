@@ -14,4 +14,8 @@ sushiruntime_add_module_tests(
         test_delegate.cpp
         test_error.cpp
         test_ref_counted.cpp
+        test_result.cpp
+        test_span.cpp
+        test_strong_id.cpp
+        test_sushi_ptr.cpp
         test_version.cpp)
