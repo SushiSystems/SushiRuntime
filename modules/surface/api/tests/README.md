@@ -1329,6 +1329,11 @@ the same queue brings the values to a host vector. The test names no type of `In
 memory module has no seam that makes an allocation fail. Both return `AllocationFailed`, the
 buffer's message holds the element count, and a buffer of 16 bytes is granted afterwards.
 
+### `LiveAllocationCountFollowsABuffer`
+
+`advanced().live_allocation_count()` is read before anything is allocated. A buffer raises it by
+one and a state by two more. When both leave their scope the count is back at its first value.
+
 ## test_builder_surface.cpp
 
 The file covers the add() overloads of BuilderSurface that v0.4.0 adds or reorders: launch first,

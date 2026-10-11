@@ -203,3 +203,21 @@ TEST(Integration_RuntimeEntry, ARequestNoDeviceCanSatisfyReturnsAllocationFailed
     const auto small = runtime.buffer<std::uint8_t>(16);
     EXPECT_TRUE(small.has_value()) << "a failed allocation must leave the runtime usable";
 }
+
+/** @brief Tests that the live allocation count rises with a buffer and falls when it is freed. */
+TEST(Integration_RuntimeEntry, LiveAllocationCountFollowsABuffer)
+{
+    auto rt = Runtime::create().value();
+    const AdvancedControls controls = rt.advanced();
+    const std::size_t before = controls.live_allocation_count();
+
+    {
+        const auto buf = rt.buffer<int>(8).value();
+        EXPECT_EQ(controls.live_allocation_count(), before + 1);
+
+        const auto field = rt.state<int>(8).value();
+        EXPECT_EQ(controls.live_allocation_count(), before + 3) << "a State holds two fields";
+    }
+
+    EXPECT_EQ(controls.live_allocation_count(), before);
+}

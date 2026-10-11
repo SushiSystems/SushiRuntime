@@ -45,8 +45,8 @@ lower module, so a value passes to that module without a conversion.
 ### AdvancedControls
 
 `AdvancedControls` is the supported way to reach the few internal facts a caller needs (the device
-list, the queue of a device, profiling and rebalancer state, the worker pool, cumulative transfer
-bytes) without the whole `RuntimeContext`. `Runtime::advanced()` returns it and nothing else can
+list, the queue of a device, profiling and rebalancer state, the worker pool, the number of live
+allocations, cumulative transfer bytes) without the whole `RuntimeContext`. `Runtime::advanced()` returns it and nothing else can
 construct it. It shares ownership of the context like every other handle; see Lifetime. For
 anything beyond this surface, `Runtime::unsafe_context()` returns the internal `RuntimeContext`.
 Code calls it only for an operation that neither the fluent API nor `advanced()` covers.
@@ -60,6 +60,14 @@ outside every graph: no rule is ordered against it, so the caller waits for it, 
 `Runtime::wait()`, before a graph that touches the same memory runs. The reference stays valid
 while any handle of the runtime lives. A device the runtime does not have stops the process, as
 `DeviceQueueSet::require_index()` checks the index with `SR_VERIFY`.
+
+### live_allocation_count
+
+live_allocation_count() is the number of USM allocations the runtime's allocator has handed out
+and not taken back. A Buffer holds one and a State two, and each returns its own when it is
+destroyed, so a test that expects a library to free what it allocated reads the count before and
+after. The count covers the whole runtime: scratch a recorder owns and buffers a worker agent
+caches are in it too.
 
 ### devices
 
