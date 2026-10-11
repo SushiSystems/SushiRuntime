@@ -317,34 +317,30 @@ TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
     EXPECT_NO_THROW(g.run());
 }
 
-/** @brief Tests that based_at_device rejects an unreadable slot at the call site. */
-TEST(Integration_LateBindings, BasedAtDeviceRejectsAnUnreadableSlot)
+/** @brief Tests that based_at_device stops on an unreadable slot at the call site. */
+TEST(Integration_LateBindingsDeathTest, BasedAtDeviceStopsOnAnUnreadableSlot)
 {
     auto rt = Runtime::create();
     auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device);
     auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared);
     auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host);
 
-    EXPECT_THROW((void)based_at_device(resident), SushiException);
-    EXPECT_THROW((void)based_at_device(shared), SushiException);
-    EXPECT_THROW((void)based_at_device(host, 7), SushiException);
-    EXPECT_NO_THROW((void)based_at_device(host, 1));
+    EXPECT_DEATH(static_cast<void>(based_at_device(resident)),
+                 "based_at_device: the buffer is Residency::Device");
+    EXPECT_DEATH(static_cast<void>(based_at_device(shared)),
+                 "based_at_device: the buffer is Residency::Shared");
+    EXPECT_DEATH(static_cast<void>(based_at_device(host, 7)),
+                 "based_at_device: index 7 is out of range");
+    static_cast<void>(based_at_device(host, 1));
 }
 
-/** @brief Tests that the member sized_from_device rejects a Shared slot where it is called. */
-TEST(Integration_LateBindings, SharedSlotIsRejectedByTheMemberSetter)
+/** @brief Tests that the member sized_from_device stops on a Shared slot where it is called. */
+TEST(Integration_LateBindingsDeathTest, TheMemberSetterStopsOnASharedSlot)
 {
     auto rt     = Runtime::create();
     auto shared = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Shared);
 
     Dynamic dyn;
-    try
-    {
-        dyn.sized_from_device(shared, 1);
-        ADD_FAILURE() << "a Shared slot was accepted";
-    }
-    catch (const SushiException& e)
-    {
-        EXPECT_EQ(e.error().code, ErrorCode::InvalidAccess);
-    }
+    EXPECT_DEATH(static_cast<void>(dyn.sized_from_device(shared, 1)),
+                 "sized_from_device: the buffer is Residency::Shared");
 }

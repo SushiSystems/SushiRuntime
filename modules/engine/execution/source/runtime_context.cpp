@@ -34,6 +34,7 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/device/device_description.hpp>
@@ -271,8 +272,8 @@ namespace SushiRuntime
 
         ExecutionEngine& RuntimeContext::execution_engine()
         {
-            SR_THROW_IF(!impl_->engine,
-                        "ExecutionEngine is not initialized: the context is still being built.");
+            SR_VERIFY(impl_->engine != nullptr,
+                      "ExecutionEngine is not initialized: the context is still being built.");
             return *impl_->engine;
         }
 
@@ -283,8 +284,8 @@ namespace SushiRuntime
 
         void RuntimeContext::install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator> offload)
         {
-            SR_THROW_IF(!impl_->engine,
-                        "ExecutionEngine is not initialized: the context is still being built.");
+            SR_VERIFY(impl_->engine != nullptr,
+                      "ExecutionEngine is not initialized: the context is still being built.");
             impl_->engine->install_offload(offload.get());
 
             // The engine holds the new address before the replaced coordinator is released.
@@ -298,8 +299,8 @@ namespace SushiRuntime
 
         Internal::Graph::OffloadSink& RuntimeContext::offload_sink()
         {
-            SR_THROW_IF(!impl_->engine,
-                        "ExecutionEngine is not initialized: the context is still being built.");
+            SR_VERIFY(impl_->engine != nullptr,
+                      "ExecutionEngine is not initialized: the context is still being built.");
             return impl_->engine->offload_sink();
         }
 

@@ -39,9 +39,8 @@ The source is `modules/platform/device/source/device_queue_set.cpp`.
 2. **The NUMA fallback is resolved and logged at construction.** `get_numa_local_queue()` logs
    nothing on a lookup. Construction logs one WARN that lists the nodes below the highest populated
    one that hold no device, and one INFO that states the rule for every id outside the table.
-3. **A bad device index throws `SushiException` with `ErrorCode::InvalidAccess`.** The message
-   carries the index and the device count. The set does not log the failure; the caller receives
-   the exception.
+3. **A bad device index stops the process.** `require_index()` checks it with `SR_VERIFY`, and the
+   message carries the index and the device count.
 4. **A device whose plain queue is in-order has two queues.** See "One slot per flavour" below.
    No CPU or GPU is affected.
 

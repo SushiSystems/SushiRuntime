@@ -40,6 +40,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/observability/dispatch_width.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
@@ -194,18 +195,16 @@ namespace SushiRuntime
              * @brief States the device a node that names no owned region runs on.
              * @param device Index into the runtime's device set; must be below K_NO_PLACEMENT.
              * @pre The node has not been dispatched yet.
-             * @throws SushiException With ErrorCode::InvalidGraph and the index, when
-             *         @p device is K_NO_PLACEMENT or above.
              * @see modules/engine/graph/README.md
              */
             void place_on(std::size_t device)
             {
-                if (device >= K_NO_PLACEMENT)
-                    throw SushiException(Error{
-                        ErrorCode::InvalidGraph,
-                        "Node::place_on(" + std::to_string(device) + "): a device index must be "
-                            "below " + std::to_string(K_NO_PLACEMENT) + "; pass the index of a "
-                            "device of the runtime."});
+                SR_VERIFY(device < K_NO_PLACEMENT,
+                          ("Node::place_on(" + std::to_string(device) +
+                           "): a device index must be below " +
+                           std::to_string(K_NO_PLACEMENT) +
+                           "; pass the index of a device of the runtime.")
+                              .c_str());
 
                 placement_ = static_cast<std::uint16_t>(device);
             }

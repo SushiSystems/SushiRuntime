@@ -320,31 +320,27 @@ TEST(Unit_DeviceQueueSet, QueueOrNUMALocalRotatesOverTheDevicesOfTheNode)
     EXPECT_EQ(off_node, expected_off_node);
 }
 
-TEST(Unit_DeviceQueueSet, ABadIndexThrowsInvalidAccessNamingIndexAndCount)
+TEST(Unit_DeviceQueueSetDeathTest, ABadIndexStopsNamingIndexAndCount)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
 
     DeviceQueueSet set(describe_first_device_on({0, 0}), false);
     static constexpr std::size_t BAD_INDEX = 17;
+    const char* const pattern = "Device index 17 is out of bounds; the set holds 2 device";
 
-    std::string message;
-    const auto plain = thrown_code([&set] { (void)set.queue(BAD_INDEX); }, &message);
-    ASSERT_TRUE(plain.has_value());
-    EXPECT_EQ(*plain, ErrorCode::InvalidAccess);
-    EXPECT_NE(message.find("17"), std::string::npos) << message;
-    EXPECT_NE(message.find("2 device"), std::string::npos) << message;
+    EXPECT_DEATH(static_cast<void>(set.queue(BAD_INDEX)), pattern);
+    EXPECT_DEATH(static_cast<void>(set.queue(BAD_INDEX, QueueFlavour{true, false})), pattern);
+    EXPECT_DEATH(static_cast<void>(set.is_gpu(BAD_INDEX)), pattern);
+    EXPECT_DEATH(static_cast<void>(set.queue_or_numa_local(BAD_INDEX, 0)), pattern);
+    EXPECT_DEATH(static_cast<void>(set.queue(set.count())), "Device index 2 is out of bounds");
+}
 
-    const auto flavoured =
-        thrown_code([&set] { (void)set.queue(BAD_INDEX, QueueFlavour{true, false}); });
-    const auto gpu = thrown_code([&set] { (void)set.is_gpu(BAD_INDEX); });
-    const auto routed = thrown_code([&set] { (void)set.queue_or_numa_local(BAD_INDEX, 0); });
-    const auto first_past_end = thrown_code([&set] { (void)set.queue(set.count()); });
+TEST(Unit_DeviceQueueSetDeathTest, AnIndexIntoAnEmptySetStops)
+{
+    DeviceQueueSet set({}, false);
 
-    EXPECT_EQ(flavoured, std::optional<ErrorCode>(ErrorCode::InvalidAccess));
-    EXPECT_EQ(gpu, std::optional<ErrorCode>(ErrorCode::InvalidAccess));
-    EXPECT_EQ(routed, std::optional<ErrorCode>(ErrorCode::InvalidAccess));
-    EXPECT_EQ(first_past_end, std::optional<ErrorCode>(ErrorCode::InvalidAccess));
+    EXPECT_DEATH(static_cast<void>(set.queue(0)), "the set holds 0 device");
 }
 
 TEST(Unit_DeviceQueueSet, AnEmptySetHoldsNothingAndResolvesNoNUMANode)
@@ -359,11 +355,9 @@ TEST(Unit_DeviceQueueSet, AnEmptySetHoldsNothingAndResolvesNoNUMANode)
 
     const auto lookup = thrown_code([&set] { (void)set.device_for_numa(0); });
     const auto routed = thrown_code([&set] { (void)set.queue_or_numa_local(std::nullopt, 0); });
-    const auto indexed = thrown_code([&set] { (void)set.queue(0); });
 
     EXPECT_EQ(lookup, std::optional<ErrorCode>(ErrorCode::Unsupported));
     EXPECT_EQ(routed, std::optional<ErrorCode>(ErrorCode::Unsupported));
-    EXPECT_EQ(indexed, std::optional<ErrorCode>(ErrorCode::InvalidAccess));
 }
 
 TEST(Unit_DeviceQueueSet, WaitAllReturnsAfterAKernelOnALazilyBuiltQueueFinished)

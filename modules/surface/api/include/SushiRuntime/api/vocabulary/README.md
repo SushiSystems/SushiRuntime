@@ -184,10 +184,11 @@ It has three factories and no public constructor, so a LateCount has exactly one
 | `from_host(capacity, provider)` | what the provider returns | on the host, when the resolver node is submitted, on the thread that dispatches the node |
 | `from_device(capacity, slot, index)` | the word `slot[index]` | in the resolver's kernel, after its producer |
 
-Each factory checks its arguments where it is called. A capacity past the largest uint32 throws
-`InvalidGraph`, because a live count is published as a uint32 word. from_host() throws
-`InvalidAccess` for an empty provider. from_device() runs checked_device_slot(), so a slot outside
-Residency::Host or an index past the buffer throws `InvalidAccess` before any graph sees the count.
+Each factory checks its arguments where it is called, with `SR_VERIFY`, and stops the process on
+one that breaks its rule. The capacity must fit a uint32, because a live count is published as a
+uint32 word. The provider of from_host() must hold a callable. from_device() runs
+checked_device_slot(), which needs a Residency::Host slot and an index inside the buffer, so no
+graph sees a count over a slot the host cannot read.
 
 A from_host() provider and a Dynamic provider are the same type and are called at different
 points. The Dynamic one is called before the step, on the thread that called run() or run_async().

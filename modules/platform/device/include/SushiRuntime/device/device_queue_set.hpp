@@ -76,13 +76,13 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns whether a device is a GPU.
-                 * @throws SushiException With ErrorCode::InvalidAccess on a bad index.
+                 * @pre index names a device of the set.
                  */
                 [[nodiscard]] bool is_gpu(std::size_t index) const;
 
                 /**
                  * @brief Returns the plain queue of a device, built at construction.
-                 * @throws SushiException With ErrorCode::InvalidAccess on a bad index.
+                 * @pre index names a device of the set.
                  */
                 [[nodiscard]] sycl::queue& queue(std::size_t index);
 
@@ -90,7 +90,7 @@ namespace SushiRuntime
                  * @brief Returns a device's queue of one flavour, building it on first use.
                  * @param flavour Properties asked for; a device whose plain queue is in-order
                  *                gets an in-order queue whatever is asked.
-                 * @throws SushiException With ErrorCode::InvalidAccess on a bad index.
+                 * @pre index names a device of the set.
                  * @see modules/platform/device/README.md
                  */
                 [[nodiscard]] sycl::queue& queue(std::size_t index, QueueFlavour flavour);
@@ -112,7 +112,8 @@ namespace SushiRuntime
                  * @brief Returns a device's plain queue, or one rotated over a NUMA node's devices.
                  * @param device The device to use; nothing selects the rotation.
                  * @param fallback_numa NUMA node the rotation runs over when @p device is empty.
-                 * @throws SushiException On a bad index, or when the set is empty.
+                 * @pre device, when given, names a device of the set.
+                 * @throws SushiException When the set is empty.
                  * @see modules/platform/device/README.md
                  */
                 [[nodiscard]] sycl::queue& queue_or_numa_local(std::optional<std::size_t> device,
@@ -147,8 +148,7 @@ namespace SushiRuntime
                 static constexpr std::size_t K_FLAVOUR_COUNT = 4;
 
                 /**
-                 * @brief Throws when an index names no device.
-                 * @throws SushiException With ErrorCode::InvalidAccess.
+                 * @brief Stops the process when an index names no device.
                  */
                 void require_index(std::size_t index) const;
 

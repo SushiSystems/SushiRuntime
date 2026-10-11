@@ -28,8 +28,9 @@ empty when the device does not report one.
 export_host allocates host USM on the given device's queue and returns it as a Shared Buffer. The
 alignment is raised to at least alignof(std::max_align_t) and must be a power of two; the byte size
 is rounded up to a multiple of it, and HostExport::bytes holds the rounded size. A count of zero
-returns an empty Buffer, a null address and zero bytes without allocating. A bad alignment, a size
-that overflows when rounded, or a failed allocation throws SushiException with AllocationFailed.
+returns an empty Buffer, a null address and zero bytes without allocating. An alignment that is not
+a power of two, or a size that overflows when rounded, is a rule the caller broke and stops the
+process through `SR_VERIFY`. A failed allocation throws SushiException with AllocationFailed.
 
 ### import_device
 

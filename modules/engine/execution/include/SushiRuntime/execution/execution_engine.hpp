@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/core/error.hpp>
@@ -115,31 +116,28 @@ namespace SushiRuntime
 
             /**
              * @brief Starts a run and returns immediately, without waiting.
-             * @pre Exactly one complete() follows, and the plan stays alive until it returns.
-             * @throws SushiException If the engine does not support this,
-             *        is shut down, the graph has no roots, or a run is already
-             *        in progress.
+             * @pre supports_asynchronous_run() is true. Exactly one complete() follows, and
+             *      the plan stays alive until it returns.
+             * @throws SushiException If the engine is shut down, the graph has no roots, or
+             *        a run is already in progress.
              * @see modules/engine/execution/README.md
              */
             virtual void submit(CompiledGraph& /*graph*/)
             {
-                throw SushiException(Error{
-                    ErrorCode::Unsupported,
-                    "This execution engine does not support asynchronous runs."});
+                SR_FATAL("ExecutionEngine::submit(): this engine does not support asynchronous "
+                         "runs; ask supports_asynchronous_run() first");
             }
 
             /**
              * @brief Blocks until the run started by submit() has finished.
-             * @pre submit() was called.
-             * @throws SushiException If the engine does not support this.
+             * @pre supports_asynchronous_run() is true and submit() was called.
              * @throws The first exception a task threw during the run.
              * @see modules/engine/execution/README.md
              */
             virtual void complete()
             {
-                throw SushiException(Error{
-                    ErrorCode::Unsupported,
-                    "This execution engine does not support asynchronous runs."});
+                SR_FATAL("ExecutionEngine::complete(): this engine does not support "
+                         "asynchronous runs; ask supports_asynchronous_run() first");
             }
 
             /**

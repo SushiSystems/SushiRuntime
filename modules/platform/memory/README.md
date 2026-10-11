@@ -166,8 +166,8 @@ outlived the allocator, and live_count() is how a teardown check finds it.
 
 ### allocate: the two failures
 
-A device index that names no device is a caller's mistake and throws SushiException with
-ErrorCode::InvalidAccess; the message carries the index and the device count. An allocation SYCL
+A device index that names no device is a caller's mistake and stops the process through
+`SR_VERIFY`; the message carries the index and the device count. An allocation SYCL
 cannot satisfy returns null and records nothing, because running out of device memory is a
 condition a caller can handle.
 

@@ -62,17 +62,11 @@ For the second NUMA node, `local_numa_os_index` returns that node's own OS index
 
 ## test_topology_view.cpp
 
-### `refusal_of`
+### `ANullDistanceModelStops`, `ANullInnerProviderStops`
 
-`refusal_of` runs a constructor call and returns the `Error` of the `SushiException` it
-throws. It records a test failure when the call throws nothing.
+A null model or a null inner provider stops the process, and the line names the argument.
 
-### `NullDistanceModelIsRejected`, `NullInnerProviderIsRejected`
+### `ARaggedDistanceMatrixStopsWithItsRow`
 
-A null model or a null inner provider throws `SushiException` with `ErrorCode::InvalidAccess`, and the
-message names the argument.
-
-### `RaggedDistanceMatrixIsRejectedWithItsRow`
-
-The matrix has three rows and its second row has two entries. The message carries the row index,
+The matrix has three rows and its second row has two entries. The line carries the row index,
 the length of that row and the number of rows.

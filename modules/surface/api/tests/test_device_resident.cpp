@@ -145,8 +145,8 @@ TEST(Integration_DeviceResident, HostSpanIndexesSharedBuffer)
         EXPECT_EQ(out[i], static_cast<int>(i * 2));
 }
 
-/** @brief Tests that host indexing of a device-resident buffer throws. */
-TEST(Integration_DeviceResident, HostAccessOnDeviceThrows)
+/** @brief Tests that host() on a device-resident buffer stops the process. */
+TEST(Integration_DeviceResidentDeathTest, HostOnADeviceBufferStops)
 {
     constexpr std::size_t N = 16;
 
@@ -154,8 +154,7 @@ TEST(Integration_DeviceResident, HostAccessOnDeviceThrows)
     auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device);
     ASSERT_FALSE(buf.is_host_accessible());
 
-    EXPECT_THROW((void)buf[0], SushiException);
-    EXPECT_THROW((void)buf.host(), SushiException);
+    EXPECT_DEATH(static_cast<void>(buf.host()), "Buffer::host: a device-resident buffer");
 }
 
 /**

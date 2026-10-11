@@ -27,6 +27,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <gtest/gtest.h>
 #include <SushiRuntime/sushiruntime.hpp>
@@ -92,4 +93,29 @@ TEST(Integration_InteropHostExport, ImportOnAQueueWithoutTheExtensionThrowsUnsup
     {
         EXPECT_EQ(error.error().code, ErrorCode::Unsupported);
     }
+}
+
+/**
+ * @brief An alignment that is not a power of two stops the process.
+ */
+TEST(Integration_InteropHostExportDeathTest, AnAlignmentThatIsNotAPowerOfTwoStops)
+{
+    auto runtime = Runtime::create();
+
+    EXPECT_DEATH(
+        static_cast<void>(runtime.interop().export_host<float>(16, DeviceIndex{0}, 4097)),
+        "export_host: alignment 4097 is not a power of two");
+}
+
+/**
+ * @brief A byte size that overflows when rounded up to the alignment stops the process.
+ */
+TEST(Integration_InteropHostExportDeathTest, ASizeThatOverflowsWhenRoundedStops)
+{
+    auto runtime = Runtime::create();
+    const std::size_t most = std::numeric_limits<std::size_t>::max();
+
+    EXPECT_DEATH(
+        static_cast<void>(runtime.interop().export_host<std::uint8_t>(most, DeviceIndex{0}, 4096)),
+        "bytes overflow std::size_t when rounded up to the alignment of 4096");
 }

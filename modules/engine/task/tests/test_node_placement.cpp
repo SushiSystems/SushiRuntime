@@ -42,8 +42,6 @@ namespace
 {
     using SushiRuntime::make_sushi;
     using SushiRuntime::sushi_ptr;
-    using SushiRuntime::ErrorCode;
-    using SushiRuntime::SushiException;
     using SushiRuntime::Internal::Graph::Node;
     using SushiRuntime::Internal::Graph::placement_of;
 
@@ -80,27 +78,14 @@ TEST(Unit_NodePlacementState, ANodeStatesNoPlacementUntilPlaceOn)
     EXPECT_EQ(node->stated_placement(), std::optional<std::size_t>(3));
 }
 
-TEST(Unit_NodePlacementState, PlaceOnRejectsAnIndexItCannotHold)
+TEST(Unit_NodePlacementStateDeathTest, PlaceOnStopsOnAnIndexItCannotHold)
 {
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->place_on(1);
 
     const std::size_t too_large = Node::K_NO_PLACEMENT;
-    std::optional<ErrorCode> code;
-    std::string message;
-    try
-    {
-        node->place_on(too_large);
-    }
-    catch (const SushiException& failure)
-    {
-        code = failure.error().code;
-        message = failure.what();
-    }
-
-    ASSERT_TRUE(code.has_value()) << "place_on() accepted " << too_large;
-    EXPECT_EQ(*code, ErrorCode::InvalidGraph);
-    EXPECT_NE(message.find(std::to_string(too_large)), std::string::npos) << message;
+    EXPECT_DEATH(node->place_on(too_large),
+                 "Node::place_on." + std::to_string(too_large) + ".: a device index must be below");
     EXPECT_EQ(node->stated_placement(), std::optional<std::size_t>(1));
 }
 

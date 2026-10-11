@@ -118,29 +118,24 @@ residencies are refused, and which element types are accepted. Most handles are 
 device 0. The device-resident handles allocate on device 0 as `test_device_resident.cpp` does, so
 the file needs no cluster and no more devices than that file.
 
-### `error_of`, `expect_window_rejected`, `expect_every_range_call_rejects`
+### `window_pattern`, `expect_every_range_call_stops`
 
-`error_of` runs a call and returns the `Error` of the `SushiException` it throws, or an error
-of code `Ok`. `expect_window_rejected` checks one such error for `InvalidAccess` and for a message
-that holds the call, `offset <n>`, `count <n>` and `size <n>`. `expect_every_range_call_rejects`
-applies it to `read_range`, `write_range` and `region` of one handle, which is how the Buffer test
-and the State test stay the same test.
+`window_pattern` returns the pattern of the line a range call writes when it stops: the call,
+`offset <n>, count <n>` and `size <n>`. `expect_every_range_call_stops` runs `read_range`,
+`write_range` and `region` of one handle as death tests against it, which is how the Buffer test
+and the State test stay the same test. The tests that stop the process are in the suite
+`Integration_DataHandlesDeathTest`.
 
-### `BufferRejectsAWindowPastTheEnd`, `StateRejectsAWindowPastTheEnd`
+### `BufferStopsOnAWindowPastTheEnd`, `StateStopsOnAWindowPastTheEnd`
 
 A window `{size, 1}` starts one past the end, and `{size - 2, 5}` starts inside and runs over. All
-three range calls throw `InvalidAccess` for both, and the message holds the offset, the count and
-the size.
+three range calls stop the process for both, and the line holds the offset, the count and the
+size.
 
-### `WindowWhoseEndWrapsIsRejected`
+### `WindowWhoseEndWrapsStops`
 
 An offset or a count near the largest `std::size_t` makes `offset + count` wrap to a small number.
-The window is rejected all the same.
-
-### `RejectedWriteCopiesNothing`
-
-A write whose window runs over the end throws and leaves every element as it was, the ones inside
-the handle included.
+The call stops all the same.
 
 ### `EmptyWindowAtTheEndIsAccepted`
 
@@ -153,16 +148,15 @@ at the end.
 The last five elements are written and read back, and the element before the window keeps its
 value.
 
-### `NullOrShortSourceWithACountThrows`
+### `NullOrShortSourceWithACountStops`
 
-`write_range` with a count of four throws `InvalidAccess` for a null source, on a Buffer and on a
+`write_range` with a count of four stops the process for a null source, on a Buffer and on a
 State, and for a source of two elements.
 
-### `OverflowingElementCountThrowsBeforeAllocating`
+### `OverflowingElementCountStopsBeforeAllocating`
 
 The count is chosen so that `count * sizeof(double)` wraps to eight bytes, a size any allocator
-grants. `Runtime::buffer` and `Runtime::state` throw `AllocationFailed` with the count in the
-message.
+grants. `Runtime::buffer` and `Runtime::state` stop the process with the count in the message.
 
 ### `StateAndBufferAnswerTheSharedQueriesAlike`
 
@@ -175,26 +169,27 @@ A struct of two floats instantiates `Buffer` and `State`, and a window written w
 reads back equal through `read_range`. The negative case, a `T` that is not trivially copyable, is
 a compile error from the `static_assert` in `Buffer`, so no test can run it.
 
-### `DistributedRefusesADeviceResidentBuffer`, `DistributedRefusesADeviceResidentState`
+### `DistributedStopsOnADeviceResidentHandle`
 
-`distributed()` on a device-resident handle throws `InvalidAccess` for both overloads of Buffer and
-State. The message names `Buffer::distributed()` or `State::distributed()`, and the residency. The
-tests run without a cluster, which shows the refusal does not depend on one.
+`distributed()` on a device-resident handle stops the process for both overloads of Buffer and
+for State. The line names `Buffer::distributed` or `State::distributed`, and the residency. The
+test runs without a cluster, which shows the check does not depend on one.
 
 ### `DistributedAcceptsAHostAccessibleHandle`
 
 `distributed()` does not throw on a Shared or Host handle, on a moved-from handle that owns nothing,
 or on a moved-to handle. No coordinator is attached, so the call only logs its warning.
 
-### `HostAccessOnADeviceStateNamesTheState`
+### `HostOnADeviceResidentHandleStops`, `IndexingADeviceResidentHandleStops`
 
-`operator[]` and `host()` on a device-resident State throw `InvalidAccess` with `State::operator[]`
-and `State::host` in the message, not `Buffer`.
+`host()` on a device-resident Buffer or State stops the process, and the line names
+`Buffer::host` or `State::host`. `operator[]` is checked with `SR_ASSERT`, so its test is compiled
+only where `SR_ENABLE_ASSERTIONS` is 1.
 
-### `DeviceIndexThatNamesNoDeviceIsRefused`
+### `DeviceIndexThatNamesNoDeviceStops`
 
-`buffer()` and `state()` with a device index equal to the device count throw `InvalidAccess`. The
-message names `Runtime::buffer` or `Runtime::state`, the index, the device count and
+`buffer()` and `state()` with a device index equal to the device count stop the process. The
+line names `Runtime::buffer` or `Runtime::state`, the index, the device count and
 `advanced().devices()`.
 
 ## test_device_count.cpp
@@ -340,10 +335,10 @@ indexing, so existing code is unaffected.
 `host()` is the branch-free bulk access to shared USM: one residency check, then unchecked indexing
 over the whole buffer.
 
-### `HostAccessOnDeviceThrows`
+### `HostOnADeviceBufferStops`
 
-A device-resident buffer is not host-addressable. Host indexing throws a deterministic error in
-every build; it never dereferences into undefined behaviour.
+A device-resident buffer is not host-addressable, and `host()` on one stops the process in every
+build.
 
 ### `HostBufferIsWrittenByAKernelAndReadOnTheHost`
 
@@ -697,52 +692,49 @@ A window that runs off the end of the capacity fails the run and names what it a
 would silently drop the tail of a colour, the kind of failure `sized()` and `based_at()` exist to
 rule out.
 
-### `BasedAtDeviceRejectsAnUnreadableSlot`
+### `BasedAtDeviceStopsOnAnUnreadableSlot`
 
-`based_at_device` rejects a slot it could not read at dispatch, and it does so at the call site, not
-in the middle of a run.
+`based_at_device` stops the process on a slot it could not read at dispatch, and it does so at the
+call site, not in the middle of a run.
 
-### `SharedSlotIsRejectedByTheMemberSetter`
+### `TheMemberSetterStopsOnASharedSlot`
 
-`Dynamic::sized_from_device` on a named Dynamic rejects a slot inside `Shared` memory where it is
-called, with `InvalidAccess`, as the free builder does.
+`Dynamic::sized_from_device` on a named Dynamic stops the process on a slot inside `Shared` memory
+where it is called, as the free builder does.
 
 ## test_late_bound_vocabulary.cpp
 
-The file covers what `LateCount` and `Dynamic` let a caller write and what they reject when they are
-built. Eight `static_assert` lines at the top state the shape: a `LateCount` has no default
+The file covers what `LateCount` and `Dynamic` let a caller write and which arguments stop the
+process when they are built. Eight `static_assert` lines at the top state the shape: a `LateCount` has no default
 constructor and no assignable `capacity`, it copies, and its `Provider` is `Dynamic::CountProvider`;
 a `Dynamic` has no public `when_pred`, no setter that takes a bare pointer, and moves without
 copying. A field made public again, or a raw-pointer overload added back, fails the compile.
 
-### `error_of`, `record_live_count_copy`, `count_elements_run`
+### `record_live_count_copy`, `count_elements_run`
 
-`error_of` runs a call and returns the `Error` of the `SushiException` it throws.
 `record_live_count_copy` records a resolver whose fill copies the live count into a buffer the test
 reads back. `count_elements_run` adds one late-bound task that sets `marks[i]` to one, runs it once
 and returns how many elements were set.
 
-### `FromDeviceRejectsAnIndexPastTheSlot`
+### `FromDeviceStopsOnAnIndexPastTheSlot`
 
-`LateCount::from_device(64, slot, slot.size())` on a slot of three elements throws `InvalidAccess`
-where it is called, and the message holds the call, `index 3` and `3 elements`. The last valid
-index is accepted. Up to v0.3 the index was a public field nobody checked until the first run.
+`LateCount::from_device(64, slot, slot.size())` on a slot of three elements stops the process
+where it is called, and the line holds the call, `index 3` and `3 elements`. The last valid
+index is accepted.
 
-### `FromDeviceRejectsASlotThatIsNotHostResident`
+### `FromDeviceStopsOnASlotThatIsNotHostResident`
 
-A `Device` slot and a `Shared` slot are both refused with `InvalidAccess`, and the message names
-`Residency::Host`.
+A `Device` slot and a `Shared` slot both stop the call, and the line names `Residency::Host`.
 
-### `FromHostRejectsAnEmptyProvider`
+### `FromHostStopsOnAnEmptyProvider`
 
 An empty provider would read as a fixed count, which `fixed()` already spells, so `from_host`
-throws `InvalidAccess`.
+stops the process.
 
-### `EveryFactoryRejectsACapacityPastAUint32`
+### `EveryFactoryStopsOnACapacityPastAUint32`
 
-A capacity one above the largest uint32 throws `InvalidGraph` from all three factories, and the
-largest uint32 itself is accepted. The test is skipped where `std::size_t` is no wider than a
-uint32.
+A capacity one above the largest uint32 stops all three factories, and the largest uint32 itself
+is accepted. The test is skipped where `std::size_t` is no wider than a uint32.
 
 ### `CapacityReportsThePlanSize`
 
@@ -798,10 +790,10 @@ A `Residency::Host` device slot resolves to the value written into it, exactly a
 A device count above the capacity fails the run on a default runtime and on one that forces the
 scheduler. A second graph with a count that fits then runs clean on the same runtime.
 
-### `NonHostDeviceSlotIsRejectedAtConstruction`
+### `ANonHostDeviceSlotStopsAtConstruction`
 
-A device slot that is not `Residency::Host` is rejected by `LateCount::from_device` with
-`InvalidAccess`, before a recorder sees the count.
+A device slot that is not `Residency::Host` stops `LateCount::from_device`, before a recorder sees
+the count.
 
 ### `ResolverSeesTheCountItsPredecessorJustWrote`
 

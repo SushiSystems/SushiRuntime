@@ -42,56 +42,28 @@ namespace
     /** @brief Element count of every handle the range tests allocate. */
     constexpr std::size_t K_SIZE = 37;
 
-    /**
-     * @brief Returns the error a call throws as a SushiException.
-     * @return An error of code ok when the call throws nothing.
-     */
-    template <class Call>
-    Error error_of(Call&& call)
+    /** @brief Returns the pattern of the line a call writes when it stops on a window. */
+    std::string window_pattern(const std::string& call, ElementRange range, std::size_t size)
     {
-        try
-        {
-            call();
-        }
-        catch (const SushiException& exception)
-        {
-            return exception.error();
-        }
-        return Error{};
-    }
-
-    /** @brief Expects an InvalidAccess error whose message holds the window and the size. */
-    void expect_window_rejected(const Error& error, const char* call,
-                                ElementRange range, std::size_t size)
-    {
-        EXPECT_EQ(error.code, ErrorCode::InvalidAccess) << error.message;
-        EXPECT_NE(error.message.find(call), std::string::npos) << error.message;
-        EXPECT_NE(error.message.find("offset " + std::to_string(range.offset)), std::string::npos)
-            << error.message;
-        EXPECT_NE(error.message.find("count " + std::to_string(range.count)), std::string::npos)
-            << error.message;
-        EXPECT_NE(error.message.find("size " + std::to_string(size)), std::string::npos)
-            << error.message;
+        return call + ".*offset " + std::to_string(range.offset) + ", count " +
+               std::to_string(range.count) + ".*size " + std::to_string(size);
     }
 
     /**
-     * @brief Expects read_range, write_range and region of a handle to reject one window.
+     * @brief Expects read_range, write_range and region of a handle to stop on one window.
      * @param name "Buffer" or "State", as the messages spell the handle.
      */
     template <class Handle>
-    void expect_every_range_call_rejects(const Handle& handle, const std::string& name,
-                                         ElementRange range)
+    void expect_every_range_call_stops(const Handle& handle, const std::string& name,
+                                       ElementRange range)
     {
         const std::vector<int> source(K_SIZE, 1);
-        expect_window_rejected(
-            error_of([&]() { const std::vector<int> out = handle.read_range(range); }),
-            (name + "::read_range").c_str(), range, handle.size());
-        expect_window_rejected(
-            error_of([&]() { handle.write_range(range, source); }),
-            (name + "::write_range").c_str(), range, handle.size());
-        expect_window_rejected(
-            error_of([&]() { const BufferRegion region = handle.region(range); }),
-            (name + "::region").c_str(), range, handle.size());
+        EXPECT_DEATH(static_cast<void>(handle.read_range(range)),
+                     window_pattern(name + "::read_range", range, handle.size()));
+        EXPECT_DEATH(static_cast<void>(handle.write_range(range, source)),
+                     window_pattern(name + "::write_range", range, handle.size()));
+        EXPECT_DEATH(static_cast<void>(handle.region(range)),
+                     window_pattern(name + "::region", range, handle.size()));
     }
 
     /** @brief Expects a handle to accept a zero-length window at its end. */
@@ -115,58 +87,40 @@ namespace
 } // namespace
 
 /**
- * @brief Tests that a Buffer rejects a window one past its end from every range call.
+ * @brief Tests that every range call of a Buffer stops on a window one past its end.
  */
-TEST(Integration_DataHandles, BufferRejectsAWindowPastTheEnd)
+TEST(Integration_DataHandlesDeathTest, BufferStopsOnAWindowPastTheEnd)
 {
     auto rt = Runtime::create();
     const auto buf = rt.buffer<int>(K_SIZE);
 
-    expect_every_range_call_rejects(buf, "Buffer", {K_SIZE, 1});
-    expect_every_range_call_rejects(buf, "Buffer", {K_SIZE - 2, 5});
+    expect_every_range_call_stops(buf, "Buffer", {K_SIZE, 1});
+    expect_every_range_call_stops(buf, "Buffer", {K_SIZE - 2, 5});
 }
 
 /**
- * @brief Tests that a State rejects a window one past its end from every range call.
+ * @brief Tests that every range call of a State stops on a window one past its end.
  */
-TEST(Integration_DataHandles, StateRejectsAWindowPastTheEnd)
+TEST(Integration_DataHandlesDeathTest, StateStopsOnAWindowPastTheEnd)
 {
     auto rt = Runtime::create();
     const auto field = rt.state<int>(K_SIZE);
 
-    expect_every_range_call_rejects(field, "State", {K_SIZE, 1});
-    expect_every_range_call_rejects(field, "State", {K_SIZE - 2, 5});
+    expect_every_range_call_stops(field, "State", {K_SIZE, 1});
+    expect_every_range_call_stops(field, "State", {K_SIZE - 2, 5});
 }
 
 /**
- * @brief Tests that a window whose offset plus count wraps around is rejected, not wrapped.
+ * @brief Tests that a window whose offset plus count wraps around stops the call, not wraps.
  */
-TEST(Integration_DataHandles, WindowWhoseEndWrapsIsRejected)
+TEST(Integration_DataHandlesDeathTest, WindowWhoseEndWrapsStops)
 {
     auto rt = Runtime::create();
     const auto buf = rt.buffer<int>(K_SIZE);
 
     const std::size_t most = std::numeric_limits<std::size_t>::max();
-    expect_every_range_call_rejects(buf, "Buffer", {most, 2});
-    expect_every_range_call_rejects(buf, "Buffer", {2, most});
-}
-
-/**
- * @brief Tests that a rejected write leaves the handle's elements as they were.
- */
-TEST(Integration_DataHandles, RejectedWriteCopiesNothing)
-{
-    auto rt = Runtime::create();
-    const auto buf = rt.buffer<int>(K_SIZE);
-    for (int& element : buf.host())
-        element = 7;
-
-    const std::vector<int> source(K_SIZE, 9);
-    const Error error = error_of([&]() { buf.write_range({K_SIZE - 2, 5}, source); });
-
-    EXPECT_EQ(error.code, ErrorCode::InvalidAccess);
-    for (std::size_t i = 0; i < K_SIZE; ++i)
-        ASSERT_EQ(buf[i], 7) << "at i=" << i;
+    expect_every_range_call_stops(buf, "Buffer", {most, 2});
+    expect_every_range_call_stops(buf, "Buffer", {2, most});
 }
 
 /**
@@ -200,49 +154,35 @@ TEST(Integration_DataHandles, FittingWindowRoundTrips)
 }
 
 /**
- * @brief Tests that write_range rejects a null source and a short source for a non-empty window.
+ * @brief Tests that write_range stops on a null source and a short source for a non-empty window.
  */
-TEST(Integration_DataHandles, NullOrShortSourceWithACountThrows)
+TEST(Integration_DataHandlesDeathTest, NullOrShortSourceWithACountStops)
 {
     auto rt = Runtime::create();
     const auto buf = rt.buffer<int>(K_SIZE);
     const auto field = rt.state<int>(K_SIZE);
     const std::vector<int> two(2, 1);
 
-    const Error null_buffer = error_of([&]() { buf.write_range({0, 4}, span<const int>()); });
-    EXPECT_EQ(null_buffer.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(null_buffer.message.find("count 4"), std::string::npos) << null_buffer.message;
-
-    const Error null_state =
-        error_of([&]() { field.write_range({0, 4}, span<const int>()); });
-    EXPECT_EQ(null_state.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(null_state.message.find("State::write_range"), std::string::npos)
-        << null_state.message;
-
-    const Error short_source = error_of([&]() { buf.write_range({0, 4}, two); });
-    EXPECT_EQ(short_source.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(short_source.message.find("holds 2"), std::string::npos) << short_source.message;
-    EXPECT_NE(short_source.message.find("count 4"), std::string::npos) << short_source.message;
+    EXPECT_DEATH(static_cast<void>(buf.write_range({0, 4}, span<const int>())),
+                 "Buffer::write_range: the source is null for a window of count 4");
+    EXPECT_DEATH(static_cast<void>(field.write_range({0, 4}, span<const int>())),
+                 "State::write_range: the source is null");
+    EXPECT_DEATH(static_cast<void>(buf.write_range({0, 4}, two)),
+                 "the source holds 2 elements for a window of count 4");
 }
 
 /**
- * @brief Tests that an element count whose byte size overflows is refused before any allocation.
+ * @brief Tests that an element count whose byte size overflows stops before any allocation.
  */
-TEST(Integration_DataHandles, OverflowingElementCountThrowsBeforeAllocating)
+TEST(Integration_DataHandlesDeathTest, OverflowingElementCountStopsBeforeAllocating)
 {
     auto rt = Runtime::create();
     // The byte size of this count wraps to 8, which an unchecked allocation would grant.
     const std::size_t count = std::numeric_limits<std::size_t>::max() / sizeof(double) + 2;
+    const std::string pattern = "Buffer allocation: " + std::to_string(count) + " elements";
 
-    const Error buffer_error = error_of([&]() { auto buf = rt.buffer<double>(count); });
-    EXPECT_EQ(buffer_error.code, ErrorCode::AllocationFailed);
-    EXPECT_NE(buffer_error.message.find(std::to_string(count)), std::string::npos)
-        << buffer_error.message;
-
-    const Error state_error = error_of([&]() { auto field = rt.state<double>(count); });
-    EXPECT_EQ(state_error.code, ErrorCode::AllocationFailed);
-    EXPECT_NE(state_error.message.find(std::to_string(count)), std::string::npos)
-        << state_error.message;
+    EXPECT_DEATH(static_cast<void>(rt.buffer<double>(count)), pattern);
+    EXPECT_DEATH(static_cast<void>(rt.state<double>(count)), pattern);
 }
 
 /**
@@ -297,37 +237,20 @@ TEST(Integration_DataHandles, TriviallyCopyableStructRoundTrips)
 }
 
 /**
- * @brief Tests that distributed() refuses a device-resident Buffer with no cluster attached.
+ * @brief Tests that distributed() stops on a device-resident Buffer and on such a State.
  */
-TEST(Integration_DataHandles, DistributedRefusesADeviceResidentBuffer)
+TEST(Integration_DataHandlesDeathTest, DistributedStopsOnADeviceResidentHandle)
 {
     auto rt = Runtime::create();
     auto buf = rt.buffer<float>(8, DeviceIndex{0}, Residency::Device);
-
-    const Error lvalue = error_of([&]() { buf.distributed(); });
-    EXPECT_EQ(lvalue.code, ErrorCode::InvalidAccess) << lvalue.message;
-    EXPECT_NE(lvalue.message.find("Buffer::distributed()"), std::string::npos) << lvalue.message;
-    EXPECT_NE(lvalue.message.find("Device residency"), std::string::npos) << lvalue.message;
-
-    const Error rvalue = error_of([&]() {
-        (void)rt.buffer<float>(8, DeviceIndex{0}, Residency::Device).distributed();
-    });
-    EXPECT_EQ(rvalue.code, ErrorCode::InvalidAccess) << rvalue.message;
-    EXPECT_NE(rvalue.message.find("Buffer::distributed()"), std::string::npos) << rvalue.message;
-}
-
-/**
- * @brief Tests that distributed() refuses a device-resident State and names State, not Buffer.
- */
-TEST(Integration_DataHandles, DistributedRefusesADeviceResidentState)
-{
-    auto rt = Runtime::create();
     auto field = rt.state<float>(8, DeviceIndex{0}, Residency::Device);
 
-    const Error error = error_of([&]() { field.distributed(); });
-    EXPECT_EQ(error.code, ErrorCode::InvalidAccess) << error.message;
-    EXPECT_NE(error.message.find("State::distributed()"), std::string::npos) << error.message;
-    EXPECT_EQ(error.message.find("Buffer::"), std::string::npos) << error.message;
+    EXPECT_DEATH(static_cast<void>(buf.distributed()),
+                 "Buffer::distributed.*the handle has Device residency");
+    EXPECT_DEATH(static_cast<void>(std::move(buf).distributed()),
+                 "Buffer::distributed.*the handle has Device residency");
+    EXPECT_DEATH(static_cast<void>(field.distributed()),
+                 "State::distributed.*the handle has Device residency");
 }
 
 /**
@@ -350,46 +273,47 @@ TEST(Integration_DataHandles, DistributedAcceptsAHostAccessibleHandle)
 }
 
 /**
- * @brief Tests that operator[] and host() on a device-resident State name the State in the error.
+ * @brief Tests that host() on a device-resident handle stops and names the handle.
  */
-TEST(Integration_DataHandles, HostAccessOnADeviceStateNamesTheState)
+TEST(Integration_DataHandlesDeathTest, HostOnADeviceResidentHandleStops)
 {
     auto rt = Runtime::create();
+    const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device);
     const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device);
 
-    const Error indexed = error_of([&]() { (void)field[0]; });
-    EXPECT_EQ(indexed.code, ErrorCode::InvalidAccess) << indexed.message;
-    EXPECT_NE(indexed.message.find("State::operator[]"), std::string::npos) << indexed.message;
-
-    const Error bulk = error_of([&]() { (void)field.host(); });
-    EXPECT_EQ(bulk.code, ErrorCode::InvalidAccess) << bulk.message;
-    EXPECT_NE(bulk.message.find("State::host"), std::string::npos) << bulk.message;
+    EXPECT_DEATH(static_cast<void>(buf.host()), "Buffer::host: a device-resident buffer");
+    EXPECT_DEATH(static_cast<void>(field.host()), "State::host: a device-resident buffer");
 }
 
+#if SR_ENABLE_ASSERTIONS
 /**
- * @brief Tests that a device index naming no device is refused by buffer() and state(), by name.
+ * @brief Tests that operator[] on a device-resident handle stops where SR_ASSERT is checked.
  */
-TEST(Integration_DataHandles, DeviceIndexThatNamesNoDeviceIsRefused)
+TEST(Integration_DataHandlesDeathTest, IndexingADeviceResidentHandleStops)
+{
+    auto rt = Runtime::create();
+    const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device);
+    const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device);
+
+    EXPECT_DEATH(static_cast<void>(buf[0]), "Buffer::operator.*a device-resident buffer");
+    EXPECT_DEATH(static_cast<void>(field[0]), "State::operator.*a device-resident state");
+}
+#endif
+
+/**
+ * @brief Tests that buffer() and state() stop on a device index that names no device.
+ */
+TEST(Integration_DataHandlesDeathTest, DeviceIndexThatNamesNoDeviceStops)
 {
     auto rt = Runtime::create();
     const std::size_t count = rt.advanced().device_count();
     const DeviceIndex past_the_end{count};
+    const std::string detail = ": device index " + std::to_string(count) +
+                               " names no device; the runtime drives " +
+                               std::to_string(count) + " devices, and advanced";
 
-    const Error buffer_error =
-        error_of([&]() { auto buf = rt.buffer<float>(8, past_the_end); });
-    EXPECT_EQ(buffer_error.code, ErrorCode::InvalidAccess) << buffer_error.message;
-    EXPECT_NE(buffer_error.message.find("Runtime::buffer"), std::string::npos)
-        << buffer_error.message;
-    EXPECT_NE(buffer_error.message.find("device index " + std::to_string(count)),
-              std::string::npos) << buffer_error.message;
-    EXPECT_NE(buffer_error.message.find("the runtime drives " + std::to_string(count)),
-              std::string::npos) << buffer_error.message;
-    EXPECT_NE(buffer_error.message.find("advanced().devices()"), std::string::npos)
-        << buffer_error.message;
-
-    const Error state_error =
-        error_of([&]() { auto field = rt.state<float>(8, past_the_end); });
-    EXPECT_EQ(state_error.code, ErrorCode::InvalidAccess) << state_error.message;
-    EXPECT_NE(state_error.message.find("Runtime::state"), std::string::npos)
-        << state_error.message;
+    EXPECT_DEATH(static_cast<void>(rt.buffer<float>(8, past_the_end)),
+                 "Runtime::buffer" + detail);
+    EXPECT_DEATH(static_cast<void>(rt.state<float>(8, past_the_end)),
+                 "Runtime::state" + detail);
 }

@@ -33,6 +33,7 @@
 #include <vector>
 #include <unordered_map>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/logging/logger.hpp>
@@ -144,10 +145,9 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Refuses a registration index this graph did not issue.
+             * @brief Stops the process for a registration index this graph did not issue.
              * @param call The public call checked, as its message names it.
-             * @throws SushiException With ErrorCode::InvalidGraph for an index at or above
-             *         the count of indices issued.
+             * @pre registration, when given, is below the count of indices issued.
              * @see modules/engine/graph/README.md
              */
             void require_issued(const char* call,
@@ -158,16 +158,14 @@ namespace SushiRuntime
 
                 // Indices are issued densely from zero, so the counter is the count issued.
                 const std::uint32_t issued = registration_counter_.load(std::memory_order_relaxed);
-                if (*registration < issued)
-                    return;
-
-                const std::string message = Detail::sr_format(
-                    "TaskGraph::{}(): registration index {} was not issued by this graph, which "
-                    "has issued {} so far. Pass an index reserve_registration() returned on this "
-                    "graph, or none to draw a fresh one.",
-                    call, *registration, issued);
-                SR_LOG_ERROR("{}", message);
-                throw SushiException(Error{ErrorCode::InvalidGraph, message});
+                SR_VERIFY(*registration < issued,
+                          Detail::sr_format(
+                              "TaskGraph::{}(): registration index {} was not issued by this "
+                              "graph, which has issued {} so far. Pass an index "
+                              "reserve_registration() returned on this graph, or none to draw a "
+                              "fresh one.",
+                              call, *registration, issued)
+                              .c_str());
             }
 
             /**

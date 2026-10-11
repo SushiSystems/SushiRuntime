@@ -73,8 +73,7 @@ namespace SushiRuntime
                  * @brief Allocates USM of the requested kind on the requested device, recorded.
                  * @param request Alignment 0 asks for none.
                  * @return The allocation, or null when SYCL could not satisfy it.
-                 * @throws SushiException With ErrorCode::InvalidAccess, the index and the device
-                 *         count, when request.device_index names no device.
+                 * @pre request.device_index names a device of the allocator.
                  */
                 [[nodiscard]] void* allocate(const USMRequest& request);
 
@@ -91,7 +90,7 @@ namespace SushiRuntime
                  * @brief Records memory allocated elsewhere as belonging to a device.
                  * @param address Stays the caller's to free; release() will not free it.
                  * @param bytes Length of the mapping, or nothing when it is unknown.
-                 * @throws SushiException As allocate(), when device_index names no device.
+                 * @pre device_index names a device of the allocator.
                  */
                 void adopt(void* address, std::size_t device_index,
                            std::optional<std::size_t> bytes);
@@ -136,7 +135,7 @@ namespace SushiRuntime
             private:
                 /**
                  * @brief Returns the queue of a device.
-                 * @throws SushiException With ErrorCode::InvalidAccess when the index names none.
+                 * @pre device_index names a device of the allocator.
                  */
                 [[nodiscard]] const sycl::queue& queue_at(std::size_t device_index) const;
 

@@ -9,7 +9,7 @@ The unit of work the scheduler dispatches and the graph node built on it.
 
 | Module | Today's path | Used for |
 | --- | --- | --- |
-| `core` | `core/export.hpp`, `core/sushi_ptr.hpp`, `core/ref_counted.hpp`, `core/error.hpp` | Export macro, intrusive pointer, reference count, the error `Node::place_on()` throws |
+| `core` | `core/export.hpp`, `core/sushi_ptr.hpp`, `core/ref_counted.hpp`, `core/assert.hpp` | Export macro, intrusive pointer, reference count, the check `Node::place_on()` makes |
 | `memory` | `memory/resource_region.hpp`, `memory/usm_allocator.hpp` | The USM regions a node reads and writes; which device owns a region |
 | `observability` | `observability/dispatch_width.hpp` | `Internal::Observability::K_WIDTH_UNKNOWN` |
 | `sycl` | `sycl/sycl.hpp` | `sycl::event`, `sycl::handler`, `sycl::queue` |
