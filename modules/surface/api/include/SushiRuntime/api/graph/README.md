@@ -235,9 +235,9 @@ A node that names an operation is one another machine may run. The chain layer d
 such a node, so a graph that holds one runs on the scheduler, and on a runtime with a cluster
 attached the node is a candidate for offload when a worker registered that operation.
 
-NodeOptions is an aggregate. A build that turns `-Wmissing-field-initializers` into an error
-refuses `NodeOptions{width}`; such a caller writes all four fields or assigns the ones it states
-to a default-constructed object.
+NodeOptions is an aggregate, and every field has a default member initializer. `NodeOptions{width}`
+therefore states a width alone, also in a build that turns `-Wmissing-field-initializers` into an
+error; a caller that states a later field alone assigns it to a default-constructed object.
 
 ## builder_surface.hpp
 

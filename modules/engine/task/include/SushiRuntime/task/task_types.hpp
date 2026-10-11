@@ -62,7 +62,7 @@ namespace SushiRuntime
         {
             const char* name = "unnamed_task"; /**< Profiler identifier. */
             TaskType task_type = TaskType::None;
-            OperationID op_id;
+            OperationID op_id = OperationID();
             
             /**
              * @brief Influences task execution order during queue retrieval.
