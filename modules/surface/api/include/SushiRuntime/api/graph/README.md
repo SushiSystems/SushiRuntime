@@ -484,7 +484,8 @@ and holds no code of its own.
 PlanCache holds the plan compiled from one recorder. It is stale until the first build, after a
 change of the profiling request, and whenever the recorder's generation() differs from the one the
 plan was built at. `plan_` is protected because the test seams of the owning Graph read it. It
-keeps one registration index per rule. The source of a move has no plan, is stale, and counts zero
+keeps one registration index per rule. compile_count() is its one public member; the profiling
+pair is protected, so the pair a Graph shows is StepDriver's. The source of a move has no plan, is stale, and counts zero
 compiles.
 
 ### build
@@ -502,14 +503,15 @@ CompiledGraph owns next to the Node definition.
 
 ### set_profiling
 
-set_profiling() marks the plan dirty so the next run recompiles with the new
-`CompiledGraph::profiling` flag stamped in. The setting is independent of every other graph on the
-same runtime.
+set_profiling() stores the request. A value that differs from the stored one marks the plan dirty,
+and the next run recompiles with the new `CompiledGraph::profiling` flag stamped in. The value
+already stored changes nothing, so a frame loop that calls `set_profiling(true)` before every run
+compiles once. The setting is independent of every other graph on the same runtime.
 
 ### compiles_
 
-compiles_ counts the times the backing graph has been compiled. A late-bound graph proves its value
-by holding it at 1 across a multi-step run whose sizes and enable flags change every step.
+compiles_ counts the times the backing graph has been compiled. It stays at 1 across a multi-step
+run of a late-bound graph whose sizes and enable flags change every step.
 
 ## step_driver.hpp
 
@@ -680,7 +682,8 @@ of its own run can still reach the engine after the next run on the runtime has 
 
 set_profiling() asks for per-node device timing on this graph and returns the graph, so it chains
 with the calls around it. It is `noexcept` on both graph types and allocates nothing: the owner
-stores the request, and the next run rebuilds the plan with it. is_profiling_requested() reads the
+stores the request, and a request that changed makes the next run rebuild the plan with it; the
+value already stored rebuilds nothing. is_profiling_requested() reads the
 request back. set_profiling_requested() and profiling_requested() are the deprecated spellings and
 forward to these two.
 
@@ -816,23 +819,49 @@ seen, because it passes through Region::recorder().
 
 ### drop
 
-drop() takes effect on the structure immediately: region() and has_region no longer see the region.
-The boundary it leaves is re-stitched at the next run, so a region is never removed from a DAG that
-is mid-step. Dropping an absent region does nothing.
+drop() takes effect on the structure immediately: region(), has_region() and region_count() no
+longer see the region, and region(key) after it creates a new, empty one. Dropping an absent region
+does nothing.
+
+The Region object is not destroyed by the call. drop() moves it into `retired_`, and the boundary
+it leaves is re-stitched at the next run, so drop() may be called while a step started with
+run_async() is pending. Until that next run the composed plan still holds the region's nodes, and
+those nodes and the pending step read four things the Region owns: the scratch and the fault
+records its kernels captured, the labels its nodes name by `const char*`, and the StepMachinery
+that `steps_` lists by address and that settling the step walks for check_faults() and
+after_step().
+
+rebuild_plan() frees the retired regions after commit() has returned, through
+free_retired_regions(). By then no step is pending, because entry_refusal() refuses a run entry
+while one is, and the plan holds no node of a dropped region. A commit that throws leaves them
+retired until one succeeds. free_retired_regions() first empties the aggregation in `steps_`,
+which still lists the retired regions' hooks; prepare_run() gathers it again from the live regions
+before the first step. A graph that drops regions and never runs keeps every one of them.
+
+Region::clear() frees the same scratch at once, so it keeps its precondition: no step started with
+run_async() on the owning graph is pending.
 
 ### request_profiling
 
-request_profiling() stores the request behind set_profiling(). It stamps `plan_.profiling` at once,
-so the flag reads correctly even with no region to compose, and sets a marker that makes the next
-build mark every live region dirty, so that commit renumbers every node's public registration
-index. The marking waits for the build because it allocates and the setter is `noexcept`. The
-setting is independent of every other graph on the same runtime.
+request_profiling() stores the request behind set_profiling() in the composer, which is its only
+owner: RegionComposer::set_profiling() keeps it and publish_plan() stamps it into the plan at the
+next commit. A value that differs from the stored one also sets a marker that makes the next build
+mark every live region dirty, so that commit renumbers every node's public registration index. The
+marking waits for the build because it allocates and the setter is `noexcept`. The value already
+stored changes nothing and composes nothing. The setting is independent of every other graph on the
+same runtime.
+
+RegionComposer's pair and StepDriver's pair have the same names, so DynamicGraph names StepDriver's
+with two using-declarations, as Graph does.
 
 ### refresh_updaters
 
-refresh_updaters() rebuilds the aggregated per-step updater lists from every live region. It is
-cheap (proportional to the number of stateful tasks, which are iterated every step anyway) and runs
-before every run, so a region added or dropped is reflected before the next run.
+refresh_updaters() clears the aggregated list in `steps_` and appends one pointer per live region,
+whether or not the region has a hook. prepare_run() calls it once per run entry, so a run entry
+costs R appends for R live regions, into storage the list keeps between runs. Each step then walks
+the R pointers three times, for before_step(), check_faults() and after_step(), and each run entry
+once more for resync(); a region with no hook costs a call that iterates empty lists. The cost has
+not been measured.
 
 ### DynamicGraph::steps_
 
@@ -845,6 +874,18 @@ order.
 regions_ holds the live regions (the recorders), ordered by key for deterministic composition.
 unique_ptr keeps Region addresses stable, so the per-step hooks a region owns can be referenced
 by address across a recompose.
+
+### retired_
+
+retired_ holds the regions drop() removed since the last commit, in drop order. A key dropped and
+recorded again before the next run has its new Region in `regions_` and its old one here. The "drop"
+section says what still reads a retired region and when the list is emptied. A move takes the list
+with the regions.
+
+### free_retired_regions
+
+free_retired_regions() empties the aggregation in `steps_` and then destroys the retired regions,
+in that order, so `steps_` never lists a freed StepMachinery.
 
 ### changes_
 
@@ -859,6 +900,11 @@ RegionComposer owns the compiled sub-graph of every region, the cross-region edg
 allocation and the stitched plan. commit() receives the changed and the dropped keys and a callable
 that returns a region's Recorder, so the composer depends on Recorder alone. `plan_` is protected
 because the test seam of the owning DynamicGraph reads it.
+
+The composer owns the profiling request, as PlanCache does for a static graph: a constructor
+argument seeds it, the protected set_profiling() and is_profiling_requested() write and read it,
+and commit() reads it when it publishes the plan. A move copies it to the destination and leaves it
+on the source.
 
 ### add_cross_edge
 
@@ -875,10 +921,9 @@ sentinel; the sentinel must wait for it.
 ### retire_covered
 
 retire_covered() drops from `pins` every interval a later write fully covers, and the pin itself
-once nothing of it is left live. Retiring only fully covered intervals is deliberately conservative:
-a partially overwritten pin stays live, which can only add a cross edge, never drop one. The whole
-boundary layer errs that way, because an extra edge costs parallelism and a missing one is a data
-race.
+once nothing of it is left live. A partially overwritten pin stays live, which can add a cross edge
+and cannot drop one. The whole boundary layer errs that way, because an extra edge costs
+parallelism and a missing one is a data race.
 
 ### rewire_base
 
@@ -926,7 +971,8 @@ sentinel (discard_every_region()), and installs and wires the whole graph from n
 
 The composer finds the live regions of that rebuild among the keys it still holds and the dirty
 keys it is given, so the caller must pass the dirty and dropped keys of the commit that threw.
-DynamicGraph::rebuild_plan() clears its two sets only after commit() returns.
+DynamicGraph::rebuild_plan() clears its two sets and frees the retired regions only after commit()
+returns.
 
 Both the old and the new nodes of a dirty region are alive between the two phases.
 
@@ -1038,7 +1084,8 @@ nodes into one plan and steps them together. DynamicGraph::region() returns one.
 
 A Region is neither copyable nor movable: its graph holds it by address, and so do the per-step
 hooks the graph aggregates. clear() empties it so that its work can be recorded afresh without
-drop() and region().
+drop() and region(). clear() frees the scratch at once and must not be called while a step started
+with run_async() on the owning graph is pending; drop() may be.
 
 ### RegionChangeLog
 

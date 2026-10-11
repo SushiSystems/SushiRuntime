@@ -53,34 +53,10 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Number of times the graph has been compiled.
-                 *
-                 * Exposes the replay guarantee: a graph that only changes late-bound
-                 * size or enablement between steps recompiles zero extra times, so
-                 * this stays at 1 across a whole run after the first build.
-                 * @return The compile count since this Graph was created.
+                 * @brief Returns how many times the plan has been built.
+                 * @return The count since this cache was created or last moved from.
                  */
-                std::size_t compile_count() const noexcept { return compiles_; }
-
-                /**
-                 * @brief Requests or withdraws per-node device timing and marks the plan dirty.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-                 */
-                void set_profiling(bool requested) noexcept
-                {
-                    profiling_requested_ = requested;
-                    dirty_ = true;
-                }
-
-                /**
-                 * @brief Reports whether this graph currently requests profiling.
-                 * @return The last value given to set_profiling(), or the runtime's
-                 *         RuntimeSettings::profiling default.
-                 */
-                [[nodiscard]] bool is_profiling_requested() const noexcept
-                {
-                    return profiling_requested_;
-                }
+                [[nodiscard]] std::size_t compile_count() const noexcept { return compiles_; }
 
             protected:
                 /**
@@ -116,8 +92,33 @@ namespace SushiRuntime
                 PlanCache& operator=(const PlanCache&) = delete;
                 ~PlanCache() = default;
 
+                /**
+                 * @brief Requests or withdraws per-node device timing.
+                 *
+                 * A value that differs from the stored one marks the plan stale; the same value
+                 * changes nothing.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                void set_profiling(bool requested) noexcept
+                {
+                    if (requested == profiling_requested_)
+                        return;
+                    profiling_requested_ = requested;
+                    dirty_ = true;
+                }
+
+                /**
+                 * @brief Returns whether the next plan requests per-node device timing.
+                 * @return The last value given to set_profiling(), or the value the cache was
+                 *         constructed with.
+                 */
+                [[nodiscard]] bool is_profiling_requested() const noexcept
+                {
+                    return profiling_requested_;
+                }
+
                 /** @brief Returns whether the plan is missing or older than what recorder holds. */
-                bool stale(const Recorder& recorder) const noexcept
+                [[nodiscard]] bool stale(const Recorder& recorder) const noexcept
                 {
                     return dirty_ || built_generation_ != recorder.generation();
                 }

@@ -52,9 +52,10 @@ namespace SushiRuntime
     {
         namespace detail
         {
-            // Test-only friend seam onto Graph::plan_ (Graph has no public accessor).
+            /** @brief Grants the registration index tests a friend seam onto Graph::plan_. */
             struct RegistrationIndexTestAccess;
-            // Test-only friend seam onto Graph::plan_, for G1 node-event-record tests.
+
+            /** @brief Grants the node event record tests a friend seam onto Graph::plan_. */
             struct NodeEventRecordsTestAccess;
         }
 
@@ -168,29 +169,32 @@ namespace SushiRuntime
                 /** @brief Returns the context whose engine runs this graph. */
                 Execution::RuntimeContext& run_context() noexcept { return *ctx_; }
 
-                /** @brief Records the profiling request; the next run rebuilds the plan. */
+                /** @brief Records the profiling request; a changed one rebuilds the plan. */
                 void request_profiling(bool requested) noexcept
                 {
                     PlanCache::set_profiling(requested);
                 }
 
                 /** @brief Returns whether the next plan requests per-node device timing. */
-                bool profiling_request() const noexcept
+                [[nodiscard]] bool profiling_request() const noexcept
                 {
                     return PlanCache::is_profiling_requested();
                 }
 
                 /** @brief Returns whether any task has been recorded. */
-                bool has_work() const noexcept { return recorder_.node_count() != 0; }
+                [[nodiscard]] bool has_work() const noexcept
+                {
+                    return recorder_.node_count() != 0;
+                }
 
                 /** @brief Returns whether any recorded handle's allocation has been freed. */
-                bool has_dangling_resource() const noexcept
+                [[nodiscard]] bool has_dangling_resource() const noexcept
                 {
                     return recorder_.has_dangling_resource();
                 }
 
                 /** @brief Returns whether the plan must be built before the next step. */
-                bool plan_is_stale() const noexcept { return stale(recorder_); }
+                [[nodiscard]] bool plan_is_stale() const noexcept { return stale(recorder_); }
 
                 /** @brief Builds the plan from the recorder. */
                 void rebuild_plan() { build(recorder_, *ctx_); }
@@ -204,7 +208,7 @@ namespace SushiRuntime
                 ::SushiRuntime::Graph::CompiledGraph& run_plan() noexcept { return plan_; }
 
                 /** @brief Returns the per-step hooks of the recorded tasks. */
-                const detail::StepMachinery& run_steps() const noexcept
+                [[nodiscard]] const detail::StepMachinery& run_steps() const noexcept
                 {
                     return recorder_.steps();
                 }
@@ -213,7 +217,7 @@ namespace SushiRuntime
                 void rearm_plan() noexcept { rearm(); }
 
                 /** @brief Returns whether the steps run as an in-order chain from this thread. */
-                bool runs_chained() const
+                [[nodiscard]] bool runs_chained() const
                 {
                     return plan_.chain.chainable && !ctx_->settings().force_scheduler;
                 }

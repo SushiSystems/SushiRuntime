@@ -21,7 +21,7 @@
 
 /**
  * @file backing_graph.hpp
- * @brief Keeps BackingGraph, the name the engine's TaskGraph had in this layer before v0.4.0.
+ * @brief Declares BackingGraph, a deprecated alias of the engine's TaskGraph.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
  */
@@ -34,7 +34,7 @@ namespace SushiRuntime
 {
     namespace API
     {
-        /** @brief Names Graph::TaskGraph by its spelling before v0.4.0. */
+        /** @brief Names Graph::TaskGraph under a deprecated alias. */
         using BackingGraph [[deprecated("use SushiRuntime::Graph::TaskGraph")]] =
             ::SushiRuntime::Graph::TaskGraph;
 

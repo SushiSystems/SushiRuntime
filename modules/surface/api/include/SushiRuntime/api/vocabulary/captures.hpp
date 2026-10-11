@@ -53,7 +53,7 @@ namespace SushiRuntime
 
             /**
              * @brief Captures @p b as a read-only kernel argument.
-             * @param b Buffer to read; must outlive every run that uses the task.
+             * @param b Buffer to read. Alive when the graph runs; free to move after add().
              */
             In(const Buffer<T>& b)
                 : ptr(b.data()),
@@ -79,7 +79,7 @@ namespace SushiRuntime
 
             /**
              * @brief Captures @p b as a write-only kernel argument.
-             * @param b Buffer to write; must outlive every run that uses the task.
+             * @param b Buffer to write. Alive when the graph runs; free to move after add().
              */
             Out(Buffer<T>& b)
                 : ptr(b.data()),
@@ -105,8 +105,8 @@ namespace SushiRuntime
 
             /**
              * @brief Captures @p b as a read-and-write kernel argument.
-             * @param b Buffer read and written in place; must outlive every run that
-             *          uses the task.
+             * @param b Buffer read and written in place. Alive when the graph runs;
+             *          free to move after add().
              */
             InOut(Buffer<T>& b)
                 : ptr(b.data()),

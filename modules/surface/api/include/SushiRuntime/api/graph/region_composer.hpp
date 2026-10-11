@@ -75,7 +75,7 @@ namespace SushiRuntime
                 template <class RecorderOf>
                 void commit(const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
                             RecorderOf&& recorder_of,
-                            ::SushiRuntime::Graph::OffloadCoordinator* offload, bool profiling)
+                            ::SushiRuntime::Graph::OffloadCoordinator* offload)
                 {
                     // A composer that was moved from holds no sentinel until it composes again.
                     if (sentinel_ == nullptr)
@@ -113,7 +113,7 @@ namespace SushiRuntime
                         install_region(kv.first, std::move(kv.second), dirty_bases);
                     for (Base b : dirty_bases)
                         rewire_base(b);
-                    publish_plan(profiling);
+                    publish_plan();
 
                     guard.dismiss();
                     recompose_everything_ = false;
@@ -135,13 +135,13 @@ namespace SushiRuntime
                 }
 
                 /** @brief Returns how many times the plan has been composed. */
-                std::size_t compose_count() const noexcept { return compiles_; }
+                [[nodiscard]] std::size_t compose_count() const noexcept { return compiles_; }
 
                 /**
                  * @brief Returns whether a composed plan stands.
                  * @return False before the first commit and after a commit that threw midway.
                  */
-                bool composed() const noexcept { return committed_once_; }
+                [[nodiscard]] bool composed() const noexcept { return committed_once_; }
 
                 /**
                  * @brief Returns whether a region's cached sub-graph matches its recorder.
@@ -169,8 +169,12 @@ namespace SushiRuntime
                 }
 
             protected:
-                /** @brief Starts with no region and a fresh completion sentinel. */
-                RegionComposer() : sentinel_(make_sushi<Node>())
+                /**
+                 * @brief Starts with no region and a fresh completion sentinel.
+                 * @param profiling Whether the first plan requests per-node device timing.
+                 */
+                explicit RegionComposer(bool profiling)
+                    : sentinel_(make_sushi<Node>()), profiling_requested_(profiling)
                 {
                 }
 
@@ -179,6 +183,7 @@ namespace SushiRuntime
                  * @param other Left with no region, no plan and a compose count of zero.
                  */
                 RegionComposer(RegionComposer&& other) noexcept
+                    : profiling_requested_(other.profiling_requested_)
                 {
                     take(other);
                 }
@@ -197,6 +202,30 @@ namespace SushiRuntime
                 RegionComposer(const RegionComposer&) = delete;
                 RegionComposer& operator=(const RegionComposer&) = delete;
                 ~RegionComposer() = default;
+
+                /**
+                 * @brief Requests or withdraws per-node device timing.
+                 *
+                 * The next commit stamps the request into the plan; the same value changes
+                 * nothing.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 */
+                void set_profiling(bool requested) noexcept
+                {
+                    if (requested == profiling_requested_)
+                        return;
+                    profiling_requested_ = requested;
+                }
+
+                /**
+                 * @brief Returns whether the next plan requests per-node device timing.
+                 * @return The last value given to set_profiling(), or the value the composer
+                 *         was constructed with.
+                 */
+                [[nodiscard]] bool is_profiling_requested() const noexcept
+                {
+                    return profiling_requested_;
+                }
 
                 /** @brief The stitched plan; the owning graph and its test seams read it. */
                 ::SushiRuntime::Graph::CompiledGraph plan_;
@@ -271,7 +300,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Moves other's regions, plan and counters here and leaves other with none.
-                 * @param other Composer to empty; commit() gives it a sentinel when it composes.
+                 * @param other Composer to empty; its profiling request is copied, not cleared, and
+                 *        commit() gives it a sentinel when it composes.
                  */
                 void take(RegionComposer& other) noexcept
                 {
@@ -285,6 +315,7 @@ namespace SushiRuntime
                     plan_index_counter_ = std::exchange(other.plan_index_counter_, 0);
                     committed_once_ = std::exchange(other.committed_once_, false);
                     recompose_everything_ = std::exchange(other.recompose_everything_, false);
+                    profiling_requested_ = other.profiling_requested_;
                 }
 
                 /**
@@ -372,11 +403,13 @@ namespace SushiRuntime
 
                 /**
                  * @brief Writes the roots, the sentinel and the registration indices into the plan.
-                 * @param profiling Whether the plan also lists every node for the profiler.
+                 *
+                 * A plan that requests profiling also lists every node for the profiler.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
                  */
-                void publish_plan(bool profiling)
+                void publish_plan()
                 {
+                    const bool profiling = profiling_requested_;
                     plan_.roots.assign(roots_.begin(), roots_.end());
                     plan_.sentinel = sentinel_;
                     plan_.profiling = profiling;
@@ -656,6 +689,9 @@ namespace SushiRuntime
 
                 /** @brief Set by a commit that threw after it changed a region. */
                 bool recompose_everything_ = false;
+
+                /** @brief Starts as RuntimeSettings::profiling; stamped into the plan at commit. */
+                bool profiling_requested_ = false;
         };
 
     } // namespace API
