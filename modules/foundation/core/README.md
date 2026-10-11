@@ -117,7 +117,7 @@ translation units.
 `ErrorCode` is a `std::uint8_t` enumeration with one code per failure class, and `to_string` returns
 the spelling of the enumerator, or "Unknown" for a number outside the enumeration. `Error` pairs an
 `ErrorCode` with a message. `SushiException` derives from `std::runtime_error`, holds an `Error`,
-and returns it from `error()`; `require_matching_version()` throws it.
+and returns it from `error()`.
 
 `Detail::error_without_throwing()` builds an `Error`, or copies one, inside a `try`, and returns
 the code with an empty message when the text cannot be allocated. A function that must not throw

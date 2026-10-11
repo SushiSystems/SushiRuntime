@@ -243,14 +243,17 @@ namespace SushiRuntime
                  * @brief Checks for completed events and triggers successors.
                  *
                  * Reaps an entry whose status query or wait throws as a task that did not
-                 * execute, and rethrows the first such exception once the pass is over.
+                 * execute, and returns the first such exception once the pass is over.
                  * @param active_events List of events currently being monitored.
                  * @param local_queue Current thread's task queue.
+                 * @return The first exception an entry's query or wait threw, or null.
                  */
                 template<typename QueueType>
-                void poll_events(ActiveEventList& active_events, QueueType& local_queue) 
+                [[nodiscard]] std::exception_ptr poll_events(ActiveEventList& active_events,
+                                                             QueueType& local_queue)
                 {
-                    if (active_events.is_empty()) return;
+                    if (active_events.is_empty())
+                        return nullptr;
 
                     // Backoff and stall state are read from the caller's own ActiveEventList.
                     size_t& backoff_counter = active_events.backoff_counter;
@@ -263,7 +266,7 @@ namespace SushiRuntime
                             std::this_thread::yield();
 
                         backoff_counter--;
-                        return;
+                        return nullptr;
                     }
 
                     const bool profiling = profiling_.load(std::memory_order_acquire);
@@ -354,8 +357,7 @@ namespace SushiRuntime
                     }
 
                     // Every failed entry was reaped above, so no later poll meets it again.
-                    if (first_failure)
-                        std::rethrow_exception(first_failure);
+                    return first_failure;
                 }
 
             private:

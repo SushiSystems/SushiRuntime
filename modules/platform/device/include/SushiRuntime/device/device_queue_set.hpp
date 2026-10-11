@@ -35,6 +35,8 @@
 #include <optional>
 #include <vector>
 #include <sycl/sycl.hpp>
+
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/device/device_description.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
@@ -124,9 +126,11 @@ namespace SushiRuntime
 
                 /**
                  * @brief Waits for every built queue of every flavour.
-                 * @throws sycl::exception If a queue reports an asynchronous error.
+                 * @return Nothing, or a KernelFailed error with the text of the first
+                 *         asynchronous error a queue reports; the queues after it are still
+                 *         waited for.
                  */
-                void wait_all();
+                [[nodiscard]] Result<void> wait_all();
 
             private:
                 /** @brief Holds one queue of the table and the guard that builds it once. */

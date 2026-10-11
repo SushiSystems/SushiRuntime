@@ -81,8 +81,17 @@ clamped result, not the request.
 
 `create()` calls `require_matching_version()` before it builds anything. The function is defined in
 the header, so it compares the release the caller compiled against with the release of the shared
-library the loader found, and a mismatch fails with a message naming both instead of failing later
-in an unrelated call.
+library the loader found. A mismatch is a rule of the build that was broken, not a failure of the
+run, so it stops the process through `SR_VERIFY` with a message naming both releases instead of
+failing later in an unrelated call. `version_matches()` is the query for a program that wants to
+decide for itself.
+
+`create()` returns `Result<Runtime>`. Nothing else a runtime needs at construction is a rule of
+the caller, so every other failure comes back as an `Error`: `Unsupported` when no device passes
+`config.devices`, `DeviceLost` when SYCL cannot build a device queue, and `AllocationFailed` when
+the host cannot give the runtime its memory or its threads. A program that cannot go on without a
+runtime writes `Runtime::create().value()`, which stops the process with the error's message on
+standard error.
 
 ### Copy and const
 
@@ -96,15 +105,6 @@ at, and a `const Runtime&` parameter can allocate and build graphs.
 `dynamic_graph()` is the mutable counterpart to `graph()`: work is grouped into regions
 (`region(key)`) that can be added or dropped between steps, so a streaming open world re-stitches
 only the cells that changed instead of recompiling the whole graph.
-
-### create
-
-`create()` returns `Result<Runtime>`. Nothing a runtime needs at construction is a rule of the
-caller, so every failure comes back as an `Error`: `Unsupported` when no device passes
-`config.devices` or the loaded library is of another release than the headers, `DeviceLost` when
-SYCL cannot build a device queue, and `AllocationFailed` when the host cannot give the runtime
-its memory or its threads. A program that cannot go on without a runtime writes
-`Runtime::create().value()`, which stops the process with the error's message on standard error.
 
 ### buffer and state
 

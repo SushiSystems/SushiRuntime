@@ -464,17 +464,23 @@ namespace SushiRuntime
                 {
                     SushiRuntime::Internal::Memory::EpochGuard epoch_guard;
 
-                    // A poll_events throw fails the run, not the thread (modules/engine/scheduler/README.md).
+                    // A failed poll fails the run, not the thread (scheduler/README.md).
                     try
                     {
+                        std::exception_ptr polled;
                         if (prof)
                         {
                             const auto p0 = sclock::now();
-                            event_poller.poll_events(active_events, *my_queue);
+                            polled = event_poller.poll_events(active_events, *my_queue);
                             add_ns(wt.polling_ns, p0, sclock::now());
                         }
                         else
-                            event_poller.poll_events(active_events, *my_queue);
+                            polled = event_poller.poll_events(active_events, *my_queue);
+                        if (polled)
+                        {
+                            SR_LOG_ERROR("An event of the current run failed; aborting the run.");
+                            outcome_.record(polled);
+                        }
                     }
                     catch (...)
                     {

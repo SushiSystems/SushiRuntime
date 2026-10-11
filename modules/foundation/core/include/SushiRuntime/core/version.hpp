@@ -30,7 +30,7 @@
 
 #include <string>
 
-#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/export.hpp>
 
 /** @brief Expands to the major version of the headers being compiled against. */
@@ -103,30 +103,29 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Throws unless two versions agree by major and minor.
+         * @brief Stops the process unless two versions agree by major and minor.
          * @param headers The version the caller's headers declare.
          * @param loaded  The version the loaded library reports.
-         * @throws SushiException With ErrorCode::Unsupported, naming both versions.
+         * @pre headers and loaded have one major and one minor number.
          */
         inline void require_same_release(const Version& headers, const Version& loaded)
         {
-            if (headers.major == loaded.major && headers.minor == loaded.minor)
-                return;
-
             const bool library_is_older =
                 loaded.major < headers.major ||
                 (loaded.major == headers.major && loaded.minor < headers.minor);
-            throw SushiException(Error{
-                ErrorCode::Unsupported,
-                "SushiRuntime headers are " + dotted(headers) + " and the loaded library is " +
-                    dotted(loaded) + "; " + (library_is_older ? "an older" : "a newer") +
-                    " sushiruntime shared library is earlier on the loader path."});
+            SR_VERIFY(headers.major == loaded.major && headers.minor == loaded.minor,
+                      ("SushiRuntime headers are " + dotted(headers) +
+                       " and the loaded library is " + dotted(loaded) + "; " +
+                       (library_is_older ? "an older" : "a newer") +
+                       " sushiruntime shared library is earlier on the loader path.")
+                          .c_str());
         }
     } // namespace Detail
 
     /**
-     * @brief Throws unless the loaded library matches these headers, by major and minor.
-     * @throws SushiException With ErrorCode::Unsupported, naming both versions.
+     * @brief Stops the process unless the loaded library matches these headers, by major and
+     *        minor.
+     * @pre version_matches() is true.
      * @see modules/foundation/core/README.md
      */
     inline void require_matching_version()

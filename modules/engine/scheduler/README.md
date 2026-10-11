@@ -103,7 +103,7 @@ what skipped_event() of task_scheduler.cpp builds for a task whose work threw: r
 not executed. It then takes the four steps above like any other entry. Profiling writes nothing for
 an entry with no event, the offload coordinator is not told, the successors are released and the
 in-flight count drops, so the run reaches its sentinel. Each such entry is logged at error level
-with its task's name. The first exception of the pass is kept and rethrown after the backoff update;
+with its task's name. The first exception of the pass is kept and returned after the backoff update;
 dispatch_loop() records it in the RunOutcome. Left in the list, the entry would be queried again on
 every poll, and an event that throws each time would keep wait_quiescent() from returning.
 

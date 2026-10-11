@@ -351,7 +351,7 @@ TEST(Unit_DeviceQueueSet, AnEmptySetHoldsNothingAndResolvesNoNUMANode)
     EXPECT_TRUE(set.devices().empty());
     EXPECT_TRUE(set.plain_queues().empty());
     EXPECT_FALSE(set.has_profiling_queue(0));
-    EXPECT_NO_THROW(set.wait_all());
+    EXPECT_TRUE(set.wait_all().has_value());
 
     const auto lookup = thrown_code([&set] { (void)set.device_for_numa(0); });
     const auto routed = thrown_code([&set] { (void)set.queue_or_numa_local(std::nullopt, 0); });
@@ -375,7 +375,7 @@ TEST(Unit_DeviceQueueSet, WaitAllReturnsAfterAKernelOnALazilyBuiltQueueFinished)
     *cell = 0;
 
     const sycl::event submitted = lazy.single_task([cell] { *cell = WRITTEN; });
-    set.wait_all();
+    set.wait_all().value();
 
     EXPECT_EQ(submitted.get_info<sycl::info::event::command_execution_status>(),
               sycl::info::event_command_status::complete);

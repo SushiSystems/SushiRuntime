@@ -245,18 +245,18 @@ An id is a key of `std::unordered_map` and of `std::map`, and `std::hash` of an 
 
 The file covers `version_matches()`, `require_matching_version()` and the comparison behind them.
 
-### `mismatch_message`
+### `TheTestProgramMatchesTheLibraryItLoaded`
 
 The test program and the library it loads are built from one tree, so `require_matching_version()`
-cannot be made to throw here. `mismatch_message` calls `Detail::require_same_release`, the function
-it forwards to, with two versions the test chooses, and returns the message of the
-`SushiException` or an empty string.
+returns here. The mismatch cases call `Detail::require_same_release`, the function it forwards to,
+with two versions the test chooses.
 
 ### `APatchDifferenceIsAMatch`
 
 Only the major and the minor are compared. A patch release changes no header a consumer compiled.
 
-### `AnOlderLibraryIsRefusedWithBothVersions`
+### `AnOlderLibraryStopsWithBothVersions`, `ANewerLibraryStopsAndIsCalledNewer`
 
-The whole message is compared, because it is what a person reads when the loader picked up a stale
-`sushiruntime` library: both versions, and which of the two is the older.
+A mismatch stops the process. The line the handler writes is compared, because it is what a person
+reads when the loader picked up a stale `sushiruntime` library: both versions, and which of the
+two is the older.
