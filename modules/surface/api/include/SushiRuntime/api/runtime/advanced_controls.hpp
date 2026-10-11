@@ -36,7 +36,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/data/buffer.hpp>
-#include <SushiRuntime/device/device_description.hpp>
+#include <SushiRuntime/machine/device_description.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -71,7 +71,7 @@ namespace SushiRuntime
              *         runtime lives.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
-            [[nodiscard]] const std::vector<Internal::Device::DeviceDescription>& devices() const
+            [[nodiscard]] const std::vector<DeviceDescription>& devices() const
             {
                 return context_->devices().devices();
             }

@@ -39,15 +39,15 @@
 
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/device/device_description.hpp>
+#include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 
 #include "test_helpers.hpp"
 
 using SushiRuntime::ErrorCode;
 using SushiRuntime::Internal::Device::DeviceDescriptor;
-using SushiRuntime::Internal::Device::DeviceDescription;
-using SushiRuntime::Internal::Device::DeviceKind;
+using SushiRuntime::DeviceDescription;
+using SushiRuntime::DeviceKind;
 using SushiRuntime::Internal::Device::DeviceQueueSet;
 using SushiRuntime::Internal::Device::QueueFlavour;
 

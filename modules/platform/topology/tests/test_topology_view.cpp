@@ -38,6 +38,7 @@
 #include <SushiRuntime/topology/topology_view.hpp>
 
 using namespace SushiRuntime::Internal::Topology;
+using SushiRuntime::DeviceFilter;
 
 namespace
 {
@@ -61,7 +62,7 @@ namespace
              * @brief Returns no devices; the view never asks for them.
              */
             SushiRuntime::Result<std::vector<HardwareNode>>
-            enumerate(const HardwareFilterConfig&) override
+            enumerate(const DeviceFilter&) override
             {
                 return std::vector<HardwareNode>{};
             }

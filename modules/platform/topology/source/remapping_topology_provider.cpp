@@ -59,7 +59,7 @@ namespace SushiRuntime
          * @return The hardware nodes with synthetic NUMA node IDs, or the inner provider's error.
          */
         Result<std::vector<HardwareNode>>
-        RemappingTopologyProvider::enumerate(const HardwareFilterConfig& config)
+        RemappingTopologyProvider::enumerate(const DeviceFilter& config)
         {
             Result<std::vector<HardwareNode>> enumerated = inner_->enumerate(config);
             if (!enumerated)

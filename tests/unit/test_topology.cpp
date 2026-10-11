@@ -66,7 +66,7 @@ namespace
 TEST(Unit_TopologyTest, HardwareDiscoveryProbe)
 {
     HardwareDiscovery discovery;
-    HardwareFilterConfig config;
+    DeviceFilter config;
     config.include_cpu         = true;
     config.include_gpu         = true;
     config.include_accelerator = true;

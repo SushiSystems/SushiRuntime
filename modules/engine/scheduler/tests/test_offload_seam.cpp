@@ -35,7 +35,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/device/device_description.hpp>
+#include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
@@ -46,7 +46,7 @@
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
-#include <SushiRuntime/scheduler/pin_policy.hpp>
+#include <SushiRuntime/machine/pin_policy.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 
@@ -61,7 +61,7 @@ namespace
     {
         public:
             SushiRuntime::Result<std::vector<SushiRuntime::Internal::Topology::HardwareNode>>
-            enumerate(const SushiRuntime::Internal::Topology::HardwareFilterConfig&) override
+            enumerate(const SushiRuntime::DeviceFilter&) override
             {
                 return std::vector<SushiRuntime::Internal::Topology::HardwareNode>{};
             }
@@ -201,7 +201,7 @@ class Unit_OffloadSeam : public ::testing::Test
               devices_(default_device(), false),
               memory_(devices_.plain_queues()),
               scheduler_(SushiRuntime::Internal::Scheduler::WorkerPoolSettings{
-                             2, 0, SushiRuntime::Internal::Scheduler::PinPolicy::Float},
+                             2, 0, SushiRuntime::PinPolicy::Float},
                          topology_, devices_, memory_)
         {
             scheduler_.set_offload_coordinator(&coordinator_);

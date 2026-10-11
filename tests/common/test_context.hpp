@@ -45,7 +45,7 @@ namespace SushiRuntime
          * @pre A context can be built; the process stops, naming the error, when none can.
          */
         [[nodiscard]] inline std::shared_ptr<Internal::Execution::RuntimeContext> make_context(
-            const Internal::Topology::HardwareFilterConfig& config = {},
+            const DeviceFilter& config = {},
             std::shared_ptr<Internal::Topology::TopologyProvider> provider = nullptr,
             std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model = nullptr,
             const Internal::Execution::RuntimeSettings& settings = {})

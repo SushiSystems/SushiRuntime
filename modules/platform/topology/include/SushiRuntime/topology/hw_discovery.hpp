@@ -35,8 +35,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/machine/device_filter.hpp>
 
 namespace SushiRuntime
 {
@@ -74,22 +73,6 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Configuration for filtering the hardware topology discovery.
-         */
-        struct HardwareFilterConfig
-        {
-            bool include_cpu = true;
-            bool include_gpu = true;
-            bool include_accelerator = true;
-
-            /**
-             * @brief Drops devices that cannot execute double-precision arithmetic; off by default.
-             * @see modules/platform/topology/README.md
-             */
-            bool require_fp64 = false;
-        };
-
-        /**
          * @brief Enumerates available SYCL compute devices and maps each to its NUMA node.
          *
          * Used once at RuntimeContext construction to build the device list. At most one
@@ -108,7 +91,7 @@ namespace SushiRuntime
                  *         Unsupported when SYCL could not list its devices.
                  */
                 [[nodiscard]] Result<std::vector<HardwareNode>>
-                probe_all_devices(const HardwareFilterConfig& config = {});
+                probe_all_devices(const DeviceFilter& config = {});
 
             private:
                 /**
@@ -116,7 +99,7 @@ namespace SushiRuntime
                  * @return Nothing, or Unsupported when SYCL could not list its devices.
                  */
                 [[nodiscard]] Result<void> discover_sycl_devices(std::vector<HardwareNode>& nodes,
-                                                                 const HardwareFilterConfig& config);
+                                                                 const DeviceFilter& config);
         };
 
     } // namespace Topology

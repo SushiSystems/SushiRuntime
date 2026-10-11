@@ -12,7 +12,7 @@ sushiruntime_add_module(
         failure_naming.cpp
         offload_return.cpp
         task_scheduler.cpp
-    DEPENDS core logging observability task
+    DEPENDS core logging observability task machine
     PRIVATE_DEPENDS sycl topology memory device region)
 
 sushiruntime_add_module_tests(

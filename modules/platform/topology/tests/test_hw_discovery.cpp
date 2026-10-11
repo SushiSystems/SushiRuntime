@@ -34,13 +34,14 @@
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 
 using namespace SushiRuntime::Internal::Topology;
+using SushiRuntime::DeviceFilter;
 
 namespace
 {
     /** @brief Returns the filter that admits no device class. */
-    HardwareFilterConfig filter_admitting_nothing()
+    DeviceFilter filter_admitting_nothing()
     {
-        HardwareFilterConfig config;
+        DeviceFilter config;
         config.include_cpu = false;
         config.include_gpu = false;
         config.include_accelerator = false;
@@ -84,7 +85,7 @@ TEST(Unit_HardwareDiscovery, NoTwoNodesShareAPCIAddress)
 
 TEST(Unit_HardwareDiscovery, EveryNodeTheGPUOnlyFilterAdmitsIsAGPU)
 {
-    HardwareFilterConfig config;
+    DeviceFilter config;
     config.include_cpu = false;
     config.include_accelerator = false;
 

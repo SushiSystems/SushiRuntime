@@ -30,21 +30,12 @@
 
 #include <cstddef>
 
-#include <SushiRuntime/scheduler/pin_policy.hpp>
-#include <SushiRuntime/scheduler/worker_pool.hpp>
-#include <SushiRuntime/topology/hw_discovery.hpp>
+#include <SushiRuntime/machine/pin_policy.hpp>
+#include <SushiRuntime/machine/worker_pool.hpp>
+#include <SushiRuntime/machine/device_filter.hpp>
 
 namespace SushiRuntime
 {
-    /** @brief Names the device classes and features a runtime accepts. */
-    using DeviceFilter = Internal::Topology::HardwareFilterConfig;
-
-    /** @brief Names whether workers bind to cores. */
-    using PinPolicy = Internal::Scheduler::PinPolicy;
-
-    /** @brief Names the worker pool as built: count, first core and pin policy. */
-    using WorkerPool = Internal::Scheduler::WorkerPool;
-
     /**
      * @brief Holds every setting chosen once, when Runtime::create() builds a runtime.
      * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
@@ -59,7 +50,4 @@ namespace SushiRuntime
         bool rebalancer = false;            /**< Starts the background thermal rebalancer. */
         bool force_scheduler = false;       /**< Runs every graph on the work-stealing path. */
     };
-
-
-
 } // namespace SushiRuntime

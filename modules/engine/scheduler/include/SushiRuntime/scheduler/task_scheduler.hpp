@@ -46,7 +46,7 @@
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <SushiRuntime/scheduler/event_polling.hpp>
 #include <SushiRuntime/scheduler/offload_gate.hpp>
-#include <SushiRuntime/scheduler/pin_policy.hpp>
+#include <SushiRuntime/machine/pin_policy.hpp>
 #include <SushiRuntime/scheduler/quiescence_latch.hpp>
 #include <SushiRuntime/scheduler/run_outcome.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>

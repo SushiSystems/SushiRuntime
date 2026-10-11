@@ -71,7 +71,7 @@ namespace SushiRuntime
                  * @see modules/engine/execution/README.md
                  */
                 [[nodiscard]] static Result<std::shared_ptr<RuntimeContext>>
-                create(const Internal::Topology::HardwareFilterConfig& config = {},
+                create(const DeviceFilter& config = {},
                        std::shared_ptr<Internal::Topology::TopologyProvider> provider = nullptr,
                        std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model = nullptr,
                        const RuntimeSettings& settings = {});

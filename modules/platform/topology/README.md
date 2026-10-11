@@ -19,15 +19,6 @@ the OS reports (`GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)` on Windows; the 
 `CPU_SETSIZE` and `sysconf(_SC_NPROCESSORS_CONF)` on POSIX), logs one warning and leaves the
 thread's affinity as it was. So does an id the OS refuses.
 
-## hw_discovery.hpp
-
-### require_fp64
-
-A kernel using `double` on a device without `sycl::aspect::fp64` fails at launch with a
-driver-shaped error that names neither the device nor the reason. Setting require_fp64 moves the
-failure to discovery, where the offending device is simply not selected and the choice is logged. It
-is off by default: a single-precision workload has no reason to lose a device over it.
-
 ## topology_provider.hpp
 
 ### TopologyProvider

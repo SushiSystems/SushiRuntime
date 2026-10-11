@@ -38,7 +38,7 @@
 
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/device/device_description.hpp>
+#include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 
 namespace SushiRuntime

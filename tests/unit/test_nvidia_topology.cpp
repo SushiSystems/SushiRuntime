@@ -94,7 +94,7 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGPUDiscovered)
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
 
     HardwareDiscovery discovery;
-    HardwareFilterConfig config;
+    DeviceFilter config;
     config.include_cpu = true;
     config.include_gpu = true;
 
@@ -117,7 +117,7 @@ TEST(Unit_NvidiaTopologyTest, NvidiaGPUHasNUMAMapping)
         GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
 
     HardwareDiscovery discovery;
-    HardwareFilterConfig config;
+    DeviceFilter config;
     config.include_gpu = true;
 
     auto nodes = discovery.probe_all_devices(config).value();

@@ -46,7 +46,7 @@ namespace SushiRuntime
          * @return The enumerated hardware nodes, or Unsupported when SYCL could not list them.
          */
         Result<std::vector<HardwareNode>>
-        HwlocTopologyProvider::enumerate(const HardwareFilterConfig& config)
+        HwlocTopologyProvider::enumerate(const DeviceFilter& config)
         {
             HardwareDiscovery discovery;
             Result<std::vector<HardwareNode>> nodes = discovery.probe_all_devices(config);

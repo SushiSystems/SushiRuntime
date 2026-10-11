@@ -30,20 +30,14 @@
 
 #include <cstddef>
 
-#include <SushiRuntime/scheduler/pin_policy.hpp>
-#include <SushiRuntime/scheduler/worker_pool.hpp>
+#include <SushiRuntime/machine/pin_policy.hpp>
+#include <SushiRuntime/machine/worker_pool.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 
 namespace SushiRuntime
 {
     namespace Internal::Execution
     {
-        /** @brief Names Internal::Scheduler::PinPolicy in the Execution namespace. */
-        using PinPolicy = Internal::Scheduler::PinPolicy;
-
-        /** @brief Names Internal::Scheduler::WorkerPool in the Execution namespace. */
-        using WorkerPool = Internal::Scheduler::WorkerPool;
-
         /**
          * @brief Holds the runtime-wide settings chosen once, when the runtime is created.
          * @see modules/engine/execution/README.md

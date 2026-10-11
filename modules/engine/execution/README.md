@@ -218,14 +218,6 @@ the coordinator installed before it keeps working.
 
 ## runtime_settings.hpp
 
-### PinPolicy
-
-Pinning is what lets a host application reserve cores: bound workers cannot drift onto the core the
-render or audio thread is using. Float gives that up in exchange for letting the OS scheduler move a
-worker off a core that a higher-priority thread has taken over. That is the better trade on an
-oversubscribed machine or inside a container whose CPU allowance is enforced by quota and not by
-affinity.
-
 ### RuntimeSettings
 
 RuntimeSettings is separate from the hardware filter: it shapes the runtime itself (threads,
@@ -259,13 +251,6 @@ The rebalancer is off by default. It migrates tasks between workers on a 5 ms he
 trades run-to-run reproducibility and a low jitter floor for throughput on long batch work. A
 simulation frame wants the opposite, and the runtime's primary consumer is a simulation. Throughput
 workloads turn it on explicitly.
-
-### WorkerPool
-
-RuntimeSettings is what the caller asked for; WorkerPool is what the runtime could give. They
-diverge when the requested core range does not fit the machine, or when the count exceeds
-K_MAX_WORKER_THREADS. A host that reserved cores should verify against WorkerPool and not
-against its own request, because a reservation is only worth something if it actually happened.
 
 ## Implementation
 

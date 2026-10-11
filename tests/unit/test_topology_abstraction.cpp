@@ -109,7 +109,7 @@ TEST(Unit_TopologyAbstractionTest, RemappingProviderSplitsRealDevicesAcrossFakeN
     auto real = std::make_shared<HwlocTopologyProvider>();
     RemappingTopologyProvider remapper(real, FAKE_NODES);
 
-    HardwareFilterConfig config;
+    DeviceFilter config;
     config.include_cpu = true;
     config.include_gpu = true;
 
