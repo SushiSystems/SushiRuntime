@@ -34,6 +34,7 @@
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
+#include "numa_lookup.hpp"
 
 namespace SushiRuntime
 {
@@ -87,8 +88,7 @@ namespace SushiRuntime
                 {
                     hwloc_obj_t pu = hwloc_get_obj_by_type(topology, HWLOC_OBJ_PU, i);
                     if (!pu) continue;
-                    hwloc_obj_t numa = hwloc_get_ancestor_obj_by_type(topology, HWLOC_OBJ_NUMANODE, pu);
-                    map[pu->os_index] = numa ? static_cast<int>(numa->os_index) : 0;
+                    map[pu->os_index] = static_cast<int>(local_numa_os_index(topology, pu).value_or(0));
                 }
             }
 

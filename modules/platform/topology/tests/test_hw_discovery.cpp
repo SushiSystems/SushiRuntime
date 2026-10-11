@@ -25,6 +25,9 @@
  * @author Mustafa Garip
  */
 
+#include <cstdint>
+#include <set>
+#include <tuple>
 #include <vector>
 #include <gtest/gtest.h>
 #include <SushiRuntime/topology/hw_discovery.hpp>
@@ -57,6 +60,24 @@ TEST(Unit_HardwareDiscovery, AFilterThatAdmitsNoClassYieldsNoDeviceAndDoesNotThr
     std::vector<HardwareNode> enumerated;
     ASSERT_NO_THROW(enumerated = provider.enumerate(filter_admitting_nothing()));
     EXPECT_TRUE(enumerated.empty());
+}
+
+// Holds on any machine; it can fail only where two backends expose one GPU.
+TEST(Unit_HardwareDiscovery, NoTwoNodesShareAPciAddress)
+{
+    using PciKey = std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t>;
+
+    HardwareDiscovery discovery;
+    std::set<PciKey> seen;
+    for (const HardwareNode& node : discovery.probe_all_devices())
+    {
+        if (!node.pci_address.has_value())
+            continue;
+        const PCIDomainAddress& address = *node.pci_address;
+        EXPECT_TRUE(seen.insert(PciKey{address.domain, address.bus, address.device,
+                                       address.function}).second)
+            << "device [" << node.name << "] repeats a PCI address already returned";
+    }
 }
 
 TEST(Unit_HardwareDiscovery, EveryNodeTheGpuOnlyFilterAdmitsIsAGpu)
