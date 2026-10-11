@@ -42,6 +42,7 @@
 #include <SushiRuntime/api/detail/late_window.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/memory/resource_liveness.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 
@@ -52,40 +53,49 @@ namespace SushiRuntime
         namespace detail
         {
             /**
-             * @brief Registers one four-byte slot as a read of the node that consumes it.
+             * @brief Registers one four-byte slot as a read of the node that consumes it and
+             *        hands over the observer of its buffer.
+             * @param slot  A slot whose words are not null.
+             * @param lives Gains the slot's observer when it watches an allocation.
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
-            inline void register_device_slot(const std::uint32_t* slot, std::size_t index,
-                                             std::vector<Memory::ResourceRegion>& reads)
+            inline void register_device_slot(const DeviceSlot& slot,
+                                             std::vector<Memory::ResourceRegion>& reads,
+                                             std::vector<Memory::LivenessObserver>& lives)
             {
                 reads.push_back(Memory::ResourceRegion{
-                    const_cast<void*>(static_cast<const void*>(slot)),
-                    index * sizeof(std::uint32_t),
+                    slot_buffer_key(slot),
+                    slot.index * sizeof(std::uint32_t),
                     sizeof(std::uint32_t)});
+                if (!slot.life.expired())
+                    lives.push_back(slot.life);
             }
 
             /**
-             * @brief Copies a Dynamic's device count source onto the bindings and registers it
-             *        as a read.
+             * @brief Copies a Dynamic's device count slot and device base slot onto the bindings
+             *        and registers each as a read.
+             * @param reads Gains one four-byte region per slot the Dynamic has.
+             * @param lives Gains the observer of each slot's buffer.
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             inline void adopt_device_bindings(::SushiRuntime::Graph::LateBindings& lb,
                                               const Dynamic& dyn,
-                                              std::vector<Memory::ResourceRegion>& reads)
+                                              std::vector<Memory::ResourceRegion>& reads,
+                                              std::vector<Memory::LivenessObserver>& lives)
             {
-                const DeviceSlot count = DynamicAccess::count_slot(dyn);
+                const DeviceSlot& count = DynamicAccess::count_slot(dyn);
                 if (count.words != nullptr)
                 {
                     lb.device_count = count.words;
                     lb.device_count_index = count.index;
-                    register_device_slot(count.words, count.index, reads);
+                    register_device_slot(count, reads, lives);
                 }
-                const DeviceSlot base = DynamicAccess::base_slot(dyn);
+                const DeviceSlot& base = DynamicAccess::base_slot(dyn);
                 if (base.words != nullptr)
                 {
                     lb.device_base = base.words;
                     lb.device_base_index = base.index;
-                    register_device_slot(base.words, base.index, reads);
+                    register_device_slot(base, reads, lives);
                 }
             }
 
@@ -137,6 +147,39 @@ namespace SushiRuntime
                         submit_late_window(h, *lb, capacity, fault,
                                            [fn, cur, next](std::size_t i) { fn(i, cur, next); });
                     }, reads, { HandleAccess::write_key(*state) }, lb, {},
+                    registration).baked_width = capacity;
+                };
+            }
+
+            /**
+             * @brief Builds the replay of a late-bound State rule that holds no pointer to the
+             *        State.
+             * @param capacity   The State's size, which bounds the live window.
+             * @param slot_reads The regions read besides the State's current field.
+             * @pre view names the fields the State holds whenever the replay runs.
+             * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+             */
+            template <typename T, class F>
+            auto dynamic_state_node(std::shared_ptr<StateView<T>> view, std::size_t capacity,
+                                    std::shared_ptr<::SushiRuntime::Graph::LateBindings> lb,
+                                    std::uint32_t* fault,
+                                    std::vector<Memory::ResourceRegion> slot_reads, F&& fn)
+            {
+                return [fn = std::forward<F>(fn), view, capacity, lb, fault,
+                        slot_reads = std::move(slot_reads)]
+                       (::SushiRuntime::Graph::TaskGraph& bg,
+                        std::optional<std::uint32_t> registration)
+                {
+                    std::vector<Memory::ResourceRegion> reads{
+                        Memory::ResourceRegion(static_cast<void*>(view->cur)) };
+                    reads.insert(reads.end(), slot_reads.begin(), slot_reads.end());
+                    bg.add_node([fn, view, lb, capacity, fault](sycl::handler& h)
+                    {
+                        const T* cur = view->cur;
+                        T* next = view->next;
+                        submit_late_window(h, *lb, capacity, fault,
+                                           [fn, cur, next](std::size_t i) { fn(i, cur, next); });
+                    }, reads, { Memory::ResourceRegion(static_cast<void*>(view->next)) }, lb, {},
                     registration).baked_width = capacity;
                 };
             }

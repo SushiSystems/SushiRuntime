@@ -34,6 +34,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -61,10 +62,7 @@ namespace SushiRuntime
         /**
          * @brief Which device queue an allocation is pinned to.
          *
-         * A strong typedef so a device selector cannot be confused with an element
-         * count or an offset at a call site — buffer(count, DeviceIndex{1}) reads
-         * unambiguously and a swapped argument is a compile error, not a silent
-         * allocation on the wrong device.
+         * Its constructor is explicit, so a bare integer does not pass as a device index.
          */
         using DeviceIndex = Core::StrongId<struct DeviceIndexTag>;
 
@@ -72,9 +70,7 @@ namespace SushiRuntime
          * @brief A half-open element range [offset, offset + count) into a handle.
          *
          * Names a window of a Buffer or State for the transfer and sub-region calls.
-         * Bundling the two counts into one named value keeps a caller from passing
-         * them in the wrong order — the failure a pair of bare std::size_t arguments
-         * invites. Counts are in elements, not bytes.
+         * Counts are in elements, not bytes.
          */
         struct ElementRange
         {
@@ -167,6 +163,27 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Checks that a device index names one of the devices a context drives.
+             * @param call         Names the calling operation in the message.
+             * @param device_index Index to check.
+             * @param device_count Number of devices the context drives.
+             * @throws SushiException With invalid_access when @p device_index is not below
+             *         @p device_count.
+             */
+            inline void require_device(const char* call, DeviceIndex device_index,
+                                       std::size_t device_count)
+            {
+                if (device_index.value() < device_count)
+                    return;
+                throw Core::SushiException(Core::Error{
+                    Core::Errc::invalid_access,
+                    std::string(call) + ": device index " +
+                    std::to_string(device_index.value()) +
+                    " names no device; the runtime drives " + std::to_string(device_count) +
+                    " devices, and advanced().devices() lists them by index."});
+            }
+
+            /**
              * @brief Returns the byte size of count elements.
              * @param call Names the calling operation in the message.
              * @throws SushiException With allocation_failed when the byte size does not fit
@@ -219,13 +236,20 @@ namespace SushiRuntime
         /**
          * @brief Owns a typed block of unified shared memory that the runtime tracks by owning
          *        queue.
-         * @tparam T Element type; must be trivially copyable for device use.
+         * @tparam T Element type; must be trivially copyable, which the class checks at
+         *         compile time.
          * @see modules/surface/api/include/SushiRuntime/api/data/README.md
          */
         template <typename T>
         class Buffer
         {
             public:
+                static_assert(std::is_trivially_copyable<T>::value,
+                              "Buffer<T>, and so State<T>, copies its elements as raw bytes, so T "
+                              "must be trivially copyable: use a struct of plain members, such as "
+                              "struct { float x; float y; }, in place of std::string or "
+                              "std::vector.");
+
                 /** @brief Element type, exposed so generic code can recover it. */
                 using value_type = T;
 
@@ -297,7 +321,7 @@ namespace SushiRuntime
                 [[nodiscard]] std::size_t size() const noexcept { return size_; }
 
                 /**
-                 * @brief Tells whether this handle still owns memory.
+                 * @brief Tells whether this handle owns no memory.
                  * @return True if it owns no allocation, e.g. after being moved from.
                  */
                 [[nodiscard]] bool empty() const noexcept { return allocation_.empty(); }
@@ -327,6 +351,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns element i for host code; valid only for shared or host USM.
+                 * @pre i < size().
                  * @throws SushiException If the buffer is device-resident.
                  * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
@@ -389,19 +414,27 @@ namespace SushiRuntime
                 /**
                  * @brief Shares this buffer with the runtime's offload coordinator; does nothing
                  *        when none is installed or the buffer is empty.
-                 * @return *this from the lvalue overload, the buffer by value from the rvalue
-                 *        overload.
+                 * @return *this.
+                 * @throws SushiException With invalid_access when the buffer owns memory and is
+                 *         device-resident.
                  * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
                 Buffer& distributed() &
                 {
-                    share_with_offload();
+                    share_with_offload("Buffer::distributed()");
                     return *this;
                 }
 
+                /**
+                 * @brief Shares this buffer as distributed() does, then returns it by value.
+                 * @return The buffer, moved out of this object.
+                 * @throws SushiException With invalid_access when the buffer owns memory and is
+                 *         device-resident.
+                 * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+                 */
                 [[nodiscard]] Buffer distributed() &&
                 {
-                    share_with_offload();
+                    share_with_offload("Buffer::distributed()");
                     return std::move(*this);
                 }
 
@@ -447,20 +480,22 @@ namespace SushiRuntime
                 friend struct detail::HandleAccess;
 
                 /**
-                 * @brief Allocates count elements of USM pinned to one device and records the
-                 *        owner.
-                 * @throws SushiException With allocation_failed when the byte size of @p count
-                 *        overflows or the device allocates nothing for a non-zero count.
+                 * @brief Allocates count elements of USM pinned to one device.
+                 * @param call Names the public operation in a thrown message.
+                 * @throws SushiException With invalid_access for an unknown device index, or
+                 *         allocation_failed when the byte size overflows or the device returns
+                 *         nothing.
                  * @see modules/surface/api/include/SushiRuntime/api/data/README.md
                  */
-                Buffer(std::shared_ptr<Execution::RuntimeContext> ctx, std::size_t count,
-                       DeviceIndex device_index, Residency residency)
+                Buffer(const char* call, std::shared_ptr<Execution::RuntimeContext> ctx,
+                       std::size_t count, DeviceIndex device_index, Residency residency)
                     : ctx_(std::move(ctx)),
                       size_(count),
                       device_index_(device_index),
                       residency_(residency),
                       liveness_(Memory::make_liveness())
                 {
+                    detail::require_device(call, device_index, ctx_->devices().count());
                     const std::size_t bytes =
                         detail::checked_byte_count("Buffer allocation", count, sizeof(T));
                     auto owner =
@@ -568,15 +603,37 @@ namespace SushiRuntime
                                         range.count * sizeof(T)};
                 }
 
-                /** @brief Hands the allocation to the installed offload coordinator, or warns. */
-                void share_with_offload()
+                /**
+                 * @brief Hands the allocation to the installed offload coordinator, or warns.
+                 * @param where Names the public call in a thrown message.
+                 * @throws SushiException With invalid_access when the handle owns memory and is
+                 *         not host-accessible.
+                 */
+                void share_with_offload(const char* where)
                 {
                     if (!ctx_ || !data())
                         return;
+                    require_shareable(where);
                     if (auto* offload = ctx_->offload())
                         offload->share(data(), size_ * sizeof(T));
                     else
                         detail::warn_distributed_without_coordinator();
+                }
+
+                /**
+                 * @brief Throws an invalid_access error when the offload coordinator cannot read
+                 *        the allocation on the host.
+                 * @param where Names the public call in the message.
+                 */
+                void require_shareable(const char* where) const
+                {
+                    if (is_host_accessible())
+                        return;
+                    throw Core::SushiException(Core::Error{
+                        Core::Errc::invalid_access,
+                        std::string(where) + ": the handle has " + residency_name(residency_) +
+                        " residency, and the host cannot address it; allocate the handle with a "
+                        "host-accessible residency, Residency::Shared or Residency::Host."});
                 }
 
                 /** @brief Throws an invalid_access error when host indexing is invalid. */

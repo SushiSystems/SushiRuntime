@@ -34,8 +34,11 @@
 #include <utility>
 
 #include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/core/delegate.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/memory/resource_liveness.hpp>
+#include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
 {
@@ -48,7 +51,14 @@ namespace SushiRuntime
             {
                 const std::uint32_t* words = nullptr; /**< First element, or null for no slot. */
                 std::size_t index = 0;                /**< Element that holds the value. */
+                Memory::LivenessObserver life;        /**< Observer of the buffer; empty for none. */
             };
+
+            /** @brief Returns the dependency key of the buffer a slot lies in; null for no slot. */
+            inline Memory::ResourceId slot_buffer_key(const DeviceSlot& slot) noexcept
+            {
+                return const_cast<void*>(static_cast<const void*>(slot.words));
+            }
 
             /**
              * @brief Validates a buffer slot a late-bound control will read at dispatch.
@@ -72,7 +82,7 @@ namespace SushiRuntime
                         std::string(what) + ": index " + std::to_string(index) +
                         " is out of range for a buffer of " + std::to_string(slot.size()) +
                         " elements; pass an index below " + std::to_string(slot.size()) + "."});
-                return DeviceSlot{slot.data(), index};
+                return DeviceSlot{slot.data(), index, HandleAccess::liveness(slot)};
             }
 
             struct DynamicAccess;
@@ -85,7 +95,7 @@ namespace SushiRuntime
         class Dynamic final
         {
             public:
-                /** @brief Inline storage for each provider; a predicate captures little. */
+                /** @brief Bytes of inline storage each provider has. */
                 static constexpr std::size_t PROVIDER_CAPACITY = 48;
 
                 /** @brief Enable predicate polled once per step; false skips the node. */
@@ -99,7 +109,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Sets the enable predicate on a named Dynamic.
-                 * @param pred Polled before each step; false skips the node that step.
+                 * @param pred Called once before each step, on the thread that called run() or
+                 *         run_async(); false skips the node that step.
                  * @return *this, for chaining.
                  */
                 Dynamic& when(WhenProvider pred) &
@@ -110,7 +121,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Sets the enable predicate while chaining inline.
-                 * @param pred Polled before each step; false skips the node that step.
+                 * @param pred Called once before each step, on the thread that called run() or
+                 *         run_async(); false skips the node that step.
                  * @return This Dynamic, moved out by value into the next call.
                  */
                 Dynamic when(WhenProvider pred) &&
@@ -121,7 +133,8 @@ namespace SushiRuntime
                 /**
                  * @brief Sets the live-size provider on a named Dynamic and drops any device
                  *        count.
-                 * @param count Polled before each step; must not exceed the baked capacity.
+                 * @param count Called once before each step, on the thread that called run() or
+                 *         run_async(); must not return more than the baked capacity.
                  * @return *this, for chaining.
                  */
                 Dynamic& sized(CountProvider count) &
@@ -133,7 +146,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Sets the live-size provider while chaining inline.
-                 * @param count Polled before each step; must not exceed the baked capacity.
+                 * @param count Called once before each step, on the thread that called run() or
+                 *         run_async(); must not return more than the baked capacity.
                  * @return This Dynamic, moved out by value into the next call.
                  */
                 Dynamic sized(CountProvider count) &&
@@ -142,9 +156,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Points a named Dynamic at a device-written count and drops any sized()
-                 *        provider.
-                 * @param counter Residency::Host buffer a predecessor writes the count into.
+                 * @brief Points a named Dynamic at a device count and drops any sized() provider.
+                 * @param counter Residency::Host buffer a predecessor writes the count into; a run
+                 *        after its destruction is refused with dangling_resource.
                  * @throws Core::SushiException With invalid_access if @p counter is not
                  *        Residency::Host or @p index is out of range.
                  * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
@@ -159,7 +173,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Points a Dynamic at a device-written count while chaining inline.
-                 * @param counter Residency::Host buffer a predecessor writes the count into.
+                 * @param counter Residency::Host buffer a predecessor writes the count into; a run
+                 *        after its destruction is refused with dangling_resource.
                  * @throws Core::SushiException As the lvalue overload.
                  * @return This Dynamic, moved out by value into the next call.
                  */
@@ -172,7 +187,8 @@ namespace SushiRuntime
                 /**
                  * @brief Sets the first-element provider on a named Dynamic and drops any device
                  *        base.
-                 * @param base Polled before each step; the first element to iterate.
+                 * @param base Called once before each step, on the thread that called run() or
+                 *         run_async(); returns the first element to iterate.
                  * @return *this, for chaining.
                  */
                 Dynamic& based_at(BaseProvider base) &
@@ -184,7 +200,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Sets the first-element provider while chaining inline.
-                 * @param base Polled before each step; the first element to iterate.
+                 * @param base Called once before each step, on the thread that called run() or
+                 *         run_async(); returns the first element to iterate.
                  * @return This Dynamic, moved out by value into the next call.
                  */
                 Dynamic based_at(BaseProvider base) &&
@@ -193,9 +210,9 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Points a named Dynamic at a device-written base and drops any based_at()
-                 *        provider.
-                 * @param slot Residency::Host buffer a predecessor writes the base into.
+                 * @brief Points a named Dynamic at a device base and drops any based_at() provider.
+                 * @param slot Residency::Host buffer a predecessor writes the base into; a run
+                 *        after its destruction is refused with dangling_resource.
                  * @throws Core::SushiException With invalid_access if @p slot is not
                  *        Residency::Host or @p index is out of range.
                  * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
@@ -210,7 +227,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Points a Dynamic at a device-written base while chaining inline.
-                 * @param slot Residency::Host buffer a predecessor writes the base into.
+                 * @param slot Residency::Host buffer a predecessor writes the base into; a run
+                 *        after its destruction is refused with dangling_resource.
                  * @throws Core::SushiException As the lvalue overload.
                  * @return This Dynamic, moved out by value into the next call.
                  */
@@ -302,13 +320,13 @@ namespace SushiRuntime
                 }
 
                 /** @brief Returns the device count slot; its words are null when none was set. */
-                static DeviceSlot count_slot(const Dynamic& dynamic) noexcept
+                static const DeviceSlot& count_slot(const Dynamic& dynamic) noexcept
                 {
                     return dynamic.count_slot_;
                 }
 
                 /** @brief Returns the device base slot; its words are null when none was set. */
-                static DeviceSlot base_slot(const Dynamic& dynamic) noexcept
+                static const DeviceSlot& base_slot(const Dynamic& dynamic) noexcept
                 {
                     return dynamic.base_slot_;
                 }
@@ -317,7 +335,8 @@ namespace SushiRuntime
 
         /**
          * @brief Builds a Dynamic that enables its node only while @p pred is true.
-         * @param pred Polled before each step; false skips the node that step.
+         * @param pred Called once before each step, on the thread that called run() or
+         *         run_async(); false skips the node that step.
          * @return A Dynamic carrying the predicate, ready to pass to add().
          */
         [[nodiscard]] inline Dynamic when(Dynamic::WhenProvider pred)
@@ -327,7 +346,8 @@ namespace SushiRuntime
 
         /**
          * @brief Builds a Dynamic that sets its node's live iteration size per step.
-         * @param count Polled before each step; must not exceed the baked capacity.
+         * @param count Called once before each step, on the thread that called run() or
+         *         run_async(); must not return more than the baked capacity.
          * @return A Dynamic carrying the size provider, ready to pass to add().
          */
         [[nodiscard]] inline Dynamic sized(Dynamic::CountProvider count)
@@ -337,7 +357,8 @@ namespace SushiRuntime
 
         /**
          * @brief Builds a Dynamic whose size comes from a count the device produced.
-         * @param counter Residency::Host buffer a predecessor writes the count into.
+         * @param counter Residency::Host buffer a predecessor writes the count into; a run
+         *        after its destruction is refused with dangling_resource.
          * @throws Core::SushiException With invalid_access if @p counter is not
          *        Residency::Host or @p index is out of range.
          * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
@@ -350,7 +371,8 @@ namespace SushiRuntime
 
         /**
          * @brief Builds a Dynamic whose node starts at a per-step element offset.
-         * @param base Polled before each step; the first element to iterate.
+         * @param base Called once before each step, on the thread that called run() or
+         *         run_async(); returns the first element to iterate.
          * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
          */
         [[nodiscard]] inline Dynamic based_at(Dynamic::BaseProvider base)
@@ -360,7 +382,8 @@ namespace SushiRuntime
 
         /**
          * @brief Builds a Dynamic whose base comes from a slot the device wrote.
-         * @param slot Residency::Host buffer a predecessor writes the base into.
+         * @param slot Residency::Host buffer a predecessor writes the base into; a run after
+         *        its destruction is refused with dangling_resource.
          * @throws Core::SushiException With invalid_access if @p slot is not
          *        Residency::Host or @p index is out of range.
          * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md

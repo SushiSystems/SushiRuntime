@@ -23,6 +23,10 @@ read. add(Coupled(out, in0), fn) hands the kernel the current and next field of 
 current field of each State read, in argument order. Every read sees the previous step's data,
 because a State advances only after all of a step's kernels have run.
 
+Each State read arrives as a `const A*`, and a kernel that declares the parameter `A*` does not
+compile. The node registers those fields as reads, so two rules that read one State run
+unordered; a kernel that could write through the pointer would race with the other.
+
 Up to v0.3 the same rule was written add(out, in0, ..., fn). Two States side by side said nothing
 about which one is written, and the form had no place for a launch. Coupled is one access
 descriptor, like Reads with Writes or a list of captures, so it sits after the launch the way they
@@ -66,7 +70,7 @@ only typed handles are watched.
 
 ### gather_life
 
-gather_life() appends a handle's observer only when it actually watches an allocation. Empty
+gather_life() appends a handle's observer only when it watches an allocation. Empty
 observers (raw regions) never enter the list, so a later expired() test means a once-live handle was
 freed, not "never tracked".
 
@@ -78,8 +82,9 @@ A Dynamic is passed as the leading argument to add() to make a node's iteration 
 participation vary every step without recompiling the graph. when() gates whether the node runs at
 all (a sleeping island, an LOD-disabled system); sized() sets how many elements it iterates, which
 must stay within the capacity its buffers were allocated for. The two compose as
-when(pred).sized(count). Each provider is polled once per step, on the driver thread before the plan
-replays, so the compiled topology is reused across steps and the graph compiles exactly once.
+when(pred).sized(count). Each provider is called once per step, in StepMachinery::before_step(),
+on the thread that called run() or run_async(), before the plan replays. The compiled topology is
+reused across steps and the graph compiles exactly once.
 
 The providers are stored in allocation-free Core::Delegate slots, so a Dynamic is move-only (a
 stored provider has one owner). A caller builds one from a when()/sized() temporary and passes it
@@ -113,9 +118,14 @@ and_sized() after sized_from_device() kept both and the device slot won without 
 
 checked_device_slot() is the one check a device slot passes, for sized_from_device(),
 based_at_device() and LateCount::from_device() alike: the buffer is Residency::Host and the index
-is inside it. It returns a DeviceSlot, the buffer's first word and the index, which is what
-Graph::LateBindings stores. The members take the Buffer and never a bare pointer, because a pointer
-carries neither a residency nor a size to check.
+is inside it. It returns a DeviceSlot: the buffer's first word and the index, which is what
+Graph::LateBindings stores, and the buffer's liveness observer. The members take the Buffer and
+never a bare pointer, because a pointer carries neither a residency nor a size to check.
+
+The observer reaches the recorder with the read region of the slot, so a graph that recorded
+sized_from_device(counter) or based_at_device(slot) refuses to run with `dangling_resource` once
+that buffer is destroyed. slot_buffer_key() returns the dependency key of the slot's buffer and
+holds the one const_cast from the read-only word pointer.
 
 ### and_when, and_sized, and_based_at
 
@@ -125,16 +135,14 @@ a bare pointer and skipped the check above.
 
 ### sized_from_device
 
-sized() answers "how many elements does the host already know we want", polled at the step boundary.
-sized_from_device() answers the question a producer and consumer chain actually asks: how many did
-the device just produce. A broadphase writes its pair count and the narrowphase must iterate exactly
-that many. That number does not exist yet when the step boundary runs, so a host-side provider
-cannot supply it without a mid-step readback or a second run.
+sized() takes a count the host knows at the step boundary. sized_from_device() takes a count a
+kernel of the same step writes. A broadphase writes its pair count and the narrowphase must iterate
+exactly that many. That number does not exist yet when the step boundary runs, so a host-side
+provider cannot supply it without a mid-step readback or a second run.
 
 The count is instead read when the node is dispatched, which is after every predecessor's event has
 completed, so a value a predecessor kernel wrote is visible. The task that consumes the count is
-automatically ordered after whoever writes `counter`, because add() registers `counter` as one of
-its reads. The ordering is structural, not a note the caller must remember.
+ordered after whoever writes `counter`, because add() registers `counter` as one of its reads.
 
 Two constraints are enforced in code. `counter` must be Residency::Host, and sized_from_device()
 checks it. The live count must not exceed the capacity the node was compiled for; dispatch checks
@@ -180,13 +188,18 @@ It has three factories and no public constructor, so a LateCount has exactly one
 | Factory | Live count | Read |
 | --- | --- | --- |
 | `fixed(count)` | `count` | never; it is the capacity |
-| `from_host(capacity, provider)` | what the provider returns | on the host, when the resolver is submitted |
+| `from_host(capacity, provider)` | what the provider returns | on the host, when the resolver node is submitted, on the thread that dispatches the node |
 | `from_device(capacity, slot, index)` | the word `slot[index]` | in the resolver's kernel, after its producer |
 
 Each factory checks its arguments where it is called. A capacity past the largest uint32 throws
 `invalid_graph`, because a live count is published as a uint32 word. from_host() throws
 `invalid_access` for an empty provider. from_device() runs checked_device_slot(), so a slot outside
 Residency::Host or an index past the buffer throws `invalid_access` before any graph sees the count.
+
+A from_host() provider and a Dynamic provider are the same type and are called at different
+points. The Dynamic one is called before the step, on the thread that called run() or run_async().
+The LateCount one is called inside the step, by late_count_source(), when the resolver node is
+submitted; which thread that is depends on the layer that runs the plan.
 
 ### LateCount::Provider
 
@@ -201,10 +214,11 @@ indirect call for a host count, and neither for a fixed or a device count.
 
 ### What from_device keeps
 
-from_device() keeps the address of the word, the dependency key of the buffer and the buffer's
-liveness observer, and no pointer to the Buffer handle. The resolver reads the buffer, so it is
-ordered after the kernel that writes the count, and a graph whose slot buffer was destroyed is
-refused with `dangling_resource` like any other.
+from_device() keeps the DeviceSlot checked_device_slot() returns, the type a Dynamic keeps for
+sized_from_device(): the buffer's first word, the index and the buffer's liveness observer. It
+keeps no pointer to the Buffer handle. The resolver reads the whole buffer, so it is ordered after
+the kernel that writes the count, and a graph whose slot buffer was destroyed is refused with
+`dangling_resource` like any other.
 
 ### LateCountAccess
 

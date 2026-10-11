@@ -29,6 +29,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <type_traits>
 
@@ -124,25 +125,35 @@ namespace SushiRuntime
                 return count;
             }
 
+            /** @brief Returns origin plus size, or SIZE_MAX when the sum does not fit. */
+            constexpr std::size_t saturated_reach(std::size_t origin, std::size_t size) noexcept
+            {
+                return size > SIZE_MAX - origin ? SIZE_MAX : origin + size;
+            }
+
             /**
              * @brief Returns the element bound an Extent's kernel stays under.
-             * @return Origin plus size for rank 1; the work-item count for a higher rank.
+             * @return Origin plus size for rank 1, SIZE_MAX when that sum does not fit; the
+             *         work-item count for a higher rank.
              * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
              */
             template <int N>
             std::size_t launch_reach(const Extent<N>& extent) noexcept
             {
-                return N == 1 ? extent.origin[0] + extent.extent[0] : extent.count();
+                return N == 1 ? saturated_reach(extent.origin[0], extent.extent[0])
+                              : extent.count();
             }
 
             /**
              * @brief Returns the element bound an NdRange's kernel stays under.
-             * @return Origin plus size for rank 1; the work-item count for a higher rank.
+             * @return Origin plus size for rank 1, SIZE_MAX when that sum does not fit; the
+             *         work-item count for a higher rank.
              */
             template <int N>
             std::size_t launch_reach(const NdRange<N>& range) noexcept
             {
-                return N == 1 ? range.origin[0] + range.global[0] : range.count();
+                return N == 1 ? saturated_reach(range.origin[0], range.global[0])
+                              : range.count();
             }
 
             /** @brief Writes a SYCL id or range as "{a, b, c}". */

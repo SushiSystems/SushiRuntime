@@ -96,10 +96,8 @@ namespace SushiRuntime
         /**
          * @brief Names the data a task reads, as a list of dependency keys.
          *
-         * The ergonomic counterpart to a hand-built std::vector<void*>: pass the
-         * Buffers and States a task reads and this collects their read keys, so the
-         * caller never spells a dependency key by hand. Used by the
-         * explicit-tracking and offload add() overloads to order tasks by data.
+         * Collects the read key of each Buffer, BufferRegion or State passed; add() orders
+         * the task after the writers of those keys.
          */
         struct Reads
         {

@@ -87,8 +87,8 @@ namespace SushiRuntime
                 }
 
                 /**
-                 * @brief Returns an observer that expires when the Buffer is destroyed or moved
-                 *        from.
+                 * @brief Returns an observer that expires when the Buffer is destroyed or assigned
+                 *        over by move assignment.
                  * @return An empty observer for a handle that owns no allocation.
                  */
                 template <typename T>

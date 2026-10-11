@@ -52,7 +52,7 @@ namespace SushiRuntime
             sycl::range<N> extent;  /**< Work-items per dimension. */
 
             /**
-             * @brief Holds the origin under its name and under the name it had before.
+             * @brief Holds the origin under two names, origin and the deprecated offset.
              * @see modules/surface/api/include/SushiRuntime/api/launch/README.md
              */
             union

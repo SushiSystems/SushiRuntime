@@ -252,7 +252,7 @@ namespace SushiRuntime
                 {
                     detail::require_host_device_slots(*context_, window);
                     auto bindings = std::make_shared<::SushiRuntime::Graph::LateBindings>();
-                    detail::adopt_device_bindings(*bindings, window, access.reads);
+                    detail::adopt_device_bindings(*bindings, window, access.reads, access.lives);
                     std::uint32_t* fault = fault_record_for(window);
                     const std::size_t width =
                         options.width == Observability::WIDTH_UNKNOWN ? capacity : options.width;
@@ -454,10 +454,10 @@ namespace SushiRuntime
                     auto bindings = std::make_shared<::SushiRuntime::Graph::LateBindings>();
 
                     std::vector<Memory::ResourceRegion> reads{ detail::HandleAccess::read_key(state) };
-                    detail::adopt_device_bindings(*bindings, window, reads);
+                    std::vector<Memory::LivenessObserver> lives;
+                    detail::adopt_device_bindings(*bindings, window, reads, lives);
                     std::uint32_t* fault = fault_record_for(window);
 
-                    std::vector<Memory::LivenessObserver> lives;
                     detail::gather_life(lives, state);
                     record(detail::dynamic_state_node(view, &state, bindings, fault,
                                                       std::move(reads),

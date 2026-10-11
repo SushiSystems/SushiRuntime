@@ -74,7 +74,8 @@ namespace SushiRuntime
                 /**
                  * @brief Builds a count a host provider returns, polled once per step.
                  * @param capacity Plan size; the provider must not return more. Must fit a uint32.
-                 * @param provider Polled when the resolver is submitted; must not be empty.
+                 * @param provider Called once per step when the resolver node is submitted, on the
+                 *        thread that dispatches the node; must not be empty.
                  * @throws Core::SushiException With invalid_access for an empty provider, or
                  *        invalid_graph if @p capacity does not fit.
                  */
@@ -92,7 +93,8 @@ namespace SushiRuntime
                 /**
                  * @brief Builds a count a predecessor kernel writes, read on the device each step.
                  * @param capacity Plan size; the slot must not hold more. Must fit a uint32.
-                 * @param slot     Residency::Host buffer; must outlive the graphs that record it.
+                 * @param slot     Residency::Host buffer; a graph that recorded the count refuses
+                 *        to run with dangling_resource once the buffer is destroyed.
                  * @throws Core::SushiException With invalid_access if @p slot is not host-resident
                  *        or @p index is out of range, or invalid_graph if @p capacity does not fit.
                  */
@@ -101,11 +103,8 @@ namespace SushiRuntime
                                                            std::size_t index = 0)
                 {
                     LateCount count(capacity, "LateCount::from_device");
-                    const detail::DeviceSlot checked =
+                    count.slot_ =
                         detail::checked_device_slot(slot, index, "LateCount::from_device");
-                    count.slot_ = checked.words + checked.index;
-                    count.slot_region_ = Memory::ResourceRegion(detail::HandleAccess::key(slot));
-                    count.slot_life_ = detail::HandleAccess::liveness(slot);
                     return count;
                 }
 
@@ -136,14 +135,8 @@ namespace SushiRuntime
                 /** @brief Host provider shared by every copy; null unless built by from_host(). */
                 std::shared_ptr<const Provider> host_;
 
-                /** @brief Word a kernel reads the count from; set only by from_device(). */
-                const std::uint32_t* slot_ = nullptr;
-
-                /** @brief Region of the buffer that holds slot_, which the resolver reads. */
-                Memory::ResourceRegion slot_region_;
-
-                /** @brief Observer of the buffer that holds slot_; empty when slot_ is null. */
-                Memory::LivenessObserver slot_life_;
+                /** @brief Slot a kernel reads the count from; set only by from_device(). */
+                detail::DeviceSlot slot_;
         };
 
         namespace detail
@@ -163,19 +156,20 @@ namespace SushiRuntime
                 /** @brief Returns the device word, or null when the count has none. */
                 static const std::uint32_t* slot(const LateCount& count) noexcept
                 {
-                    return count.slot_;
+                    const DeviceSlot& slot = count.slot_;
+                    return slot.words == nullptr ? nullptr : slot.words + slot.index;
                 }
 
-                /** @brief Returns the region a resolver of a device count reads. */
-                static const Memory::ResourceRegion& slot_region(const LateCount& count) noexcept
+                /** @brief Returns the whole-buffer region a resolver of a device count reads. */
+                static Memory::ResourceRegion slot_region(const LateCount& count) noexcept
                 {
-                    return count.slot_region_;
+                    return Memory::ResourceRegion(slot_buffer_key(count.slot_));
                 }
 
                 /** @brief Returns the observer of the device slot's buffer. */
                 static const Memory::LivenessObserver& slot_life(const LateCount& count) noexcept
                 {
-                    return count.slot_life_;
+                    return count.slot_.life;
                 }
             };
         } // namespace detail

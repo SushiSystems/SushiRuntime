@@ -23,11 +23,32 @@ its source is null or holds fewer than `count` elements; a longer source is acce
 
 ### Allocation
 
+A device index that names no device of the runtime throws `Errc::invalid_access` before anything is
+allocated. The message names the calling function (`Runtime::buffer` or `Runtime::state`), the
+index, the device count, and `advanced().devices()`, which lists the devices by index.
+
 The byte size of a handle is `count * sizeof(T)`, checked before anything is allocated: a count
 whose byte size does not fit `std::size_t` throws `Errc::allocation_failed` and names the largest
 count that fits. When the device returns no memory, the message states what was asked for (element
 count, element size, bytes, residency and device) and gives no cause, since the allocator reports
 none.
+
+### Argument types
+
+`DeviceIndex` is a strong typedef over `Core::StrongId`, so a device selector cannot be confused
+with an element count or an offset at a call site. Its constructor is explicit, and a swapped
+argument is a compile error rather than a silent allocation on the wrong device, so
+`buffer(count, DeviceIndex{1})` reads unambiguously.
+
+`ElementRange` bundles an offset and a count into one named value. A caller cannot pass them in the
+wrong order, which a pair of bare `std::size_t` arguments invites. Its counts are in elements, not
+bytes.
+
+### Element type
+
+`Buffer<T>` copies its elements with `memcpy` on the device path, so `T` must be trivially copyable.
+The class states this with a `static_assert`, and `State<T>` inherits it through its two buffers. A
+struct of plain members, such as two floats, satisfies it; `std::string` and `std::vector` do not.
 
 ### Residency
 
@@ -47,8 +68,9 @@ queue, so a task touching it is dispatched to the device that holds it. Passing 
 Graph::add() is what lets the runtime register the task's reads and writes automatically, because
 the handle's address is the identity the dependency tracker keys on.
 
-The memory is shared USM, so the host may index it directly (to seed or read back data) and a device
-kernel may capture data() and use it on the device. The handle owns the allocation and frees it on
+The host may index a Shared or Host buffer directly, to seed or read back data. It may not index a
+Device buffer, which goes through read_range() and write_range(). A device kernel may capture data()
+and use it on the device for all three residencies. The handle owns the allocation and frees it on
 destruction, so it must outlive every graph run that touches it. A Buffer is move-only.
 
 ### Buffer(ctx, count, device_index, residency)
@@ -83,6 +105,8 @@ throws on a device-resident buffer instead of dereferencing into undefined behav
 deterministic failure in every build and not only a debug assert. For device residency use
 read_range() and write_range(), or host() for a bulk host view. Kernels capture data() directly and
 never go through this operator, so the residency check costs nothing on the device path.
+State::operator[] and State::host() run the same check under their own names, so the message names
+the State the caller holds.
 
 ### host
 
@@ -115,14 +139,16 @@ dependency tracker keys on, the liveness observer, and the swap of a State's two
 them through `detail::HandleAccess` (api/detail/handle_access.hpp), a friend of both handles.
 
 The key of a Buffer is the allocation's base address, which the tracker treats as the whole-buffer
-region. The observer stays valid while the buffer lives and expires when the buffer is destroyed or
-moved from. That lets a run detect a buffer freed before it ran and fail cleanly instead of
-dispatching against released memory. A handle that owns no allocation has an empty observer.
+region. The observer stays valid while the buffer lives. It expires when the buffer is destroyed,
+or when another buffer is move-assigned over it, because the assignment releases the token. A move
+construction hands the token to the new handle, so the observer stays valid across a move. That lets
+a run detect a buffer freed before it ran and fail cleanly instead of dispatching against released
+memory. A handle that owns no allocation has an empty observer.
 
 The members dependency_key(), liveness(), State::read_key(), State::write_key() and State::advance()
-forward to HandleAccess and stay for the 0.4 releases. liveness() and advance() are marked
-`[[deprecated]]`. The three key members carry no attribute while headers under api/graph and
-api/detail, and one distributed test, still call them.
+forward to HandleAccess and stay for the 0.4 releases. All five carry `[[deprecated]]`. No code in
+this repository calls these members. The headers under api/graph and api/detail call the static
+functions of HandleAccess, which are not deprecated.
 
 ### region
 
@@ -138,6 +164,9 @@ distributed() hands the allocation to the offload coordinator installed on the r
 through Graph::OffloadCoordinator::share(). It is opt-in: only a shared buffer can cross to a worker,
 and the master stays authoritative for it. It does nothing on an empty handle, and nothing when no
 coordinator is installed, so a buffer is shared only if Distributed::Cluster::attach() ran first.
+A handle that owns memory and is device-resident throws `Errc::invalid_access` before the
+coordinator is consulted, with or without a cluster attached. The offload path reads the allocation
+on the host, so the handle must be Shared or Host.
 
 Two overloads exist to make chaining safe. The lvalue overload (on a named buffer) returns *this.
 The rvalue overload (on a temporary returned by Runtime::buffer()) moves the buffer into the caller
@@ -193,7 +222,8 @@ State::distributed() is opt-in and mirrors Buffer::distributed(). It exposes eac
 allocations to the cluster so a stepped graph can offload its update rule. The two allocations keep
 stable handles for the State's lifetime; only which one is read and which is written rotates each
 step, and the offload path follows that from the live pointers. It does nothing on an empty State
-or when no offload coordinator is installed.
+or when no offload coordinator is installed. A device-resident State throws `Errc::invalid_access`,
+as Buffer::distributed() does, and the message names `State::distributed()`.
 
 ### State::read_range
 

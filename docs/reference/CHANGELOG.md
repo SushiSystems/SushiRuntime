@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-10-11 — api: Changed `add(Coupled(...), fn)` to hand each State it reads as `const T*`; a kernel that declared a mutable input pointer no longer compiles (`callable_checks.hpp`).
+- 2026-10-11 — api: Changed `distributed()` to refuse a device-resident `Buffer` or `State`, and an element type that is not trivially copyable (`buffer.hpp`, `state.hpp`).
+- 2026-10-11 — api: Fixed a graph that recorded `sized_from_device` or `based_at_device` reading a freed slot; it refuses with `dangling_resource` (`dynamic.hpp`, `late_count.hpp`).
+- 2026-10-11 — api: Changed a `mutable` per-element or range kernel that captures state to fail a `static_assert`, and an `Extent` whose origin plus size wraps to be refused (`callable_traits.hpp`, `extent.hpp`).
 - 2026-10-11 — execution: Added `IExecutionEngine::run_in_progress()`; an engine compiled against the old interface needs a rebuild (`i_execution_engine.hpp`, `execution_engine.cpp`).
 - 2026-10-11 — graph: Changed the `TaskGraph` add calls to throw `invalid_graph` for a registration index the graph did not issue (`task_graph.cpp`).
 - 2026-10-11 — task: Fixed `SmallEventVector` keeping live events past its count after an assignment or a move, and added `clear()` (`small_event_vector.hpp`).

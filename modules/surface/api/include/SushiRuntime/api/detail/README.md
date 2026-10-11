@@ -11,22 +11,35 @@ symbol or passage it explains, and that header's file block cites this page.
 ### The three callable traits
 
 callable_traits.hpp names three callable shapes as C++17 traits over std::is_invocable_v: a
-per-element kernel, a range kernel and a raw kernel. The Recorder uses the first two to choose
-between its two count launches. add() no longer selects an overload by them: it selects by the
-launch and the access, and callable_checks.hpp rejects a callable of the wrong shape.
+per-element kernel, a range kernel and a raw kernel. They have two users. The Recorder chooses
+between its two count launches, kernel() and untracked_kernel(), by the first two.
+callable_checks.hpp reads all three in accepts_per_element(), accepts_kernel() and
+accepts_raw_kernel(). add() selects its overload by the launch and the access.
+
+is_per_element_v and is_range_kernel_v test a `const std::decay_t<F>&`, as is_launch_kernel_v
+does, because the emitters call those kernels as const objects. A `mutable` lambda is therefore
+false for both and stops at the static_assert of its family. is_raw_kernel_v tests F itself:
+raw_node() stores the command group in a std::function, which calls it as a non-const object, so
+a `mutable` raw kernel runs.
 
 ### views_current
 
-views_current() reads each coupled-input view's current pointer into a plain tuple, host-side at
-submit time. A StateView holds the live current/next pointers for the step, so dereferencing in
-views_current(), and not in the kernel, lets the device lambda capture raw pointers and still follow
-the swap.
+views_current() reads each coupled-input view's current pointer into a plain tuple of `const T*`,
+host-side at submit time. A StateView holds the live current/next pointers for the step, so
+dereferencing in views_current(), and not in the kernel, lets the device lambda capture raw pointers
+and still follow the swap. read_only() makes the conversion to `const T*`, so the kernel of a
+coupled rule cannot write a State its node registered as a read.
 
 ### read_keys_of
 
 read_keys_of() gathers the read keys of a tuple of State pointers, in order. It is called at compile
 time so the dependency tracker labels every coupled input consistently with the canonical
 single-State overload.
+
+### read_keys_of_views
+
+read_keys_of_views() gathers the same keys from a tuple of views: the key of a State's current
+field is the address `view->cur` holds. The emitters that hold no State pointer call it.
 
 ## handle_access.hpp
 
@@ -55,8 +68,8 @@ allocated.
 
 ### Device class attribution
 
-fill_run_report() attributes the tasks to the device class the default queue targets. Per-task
-placement and the reserved steal/byte counters are filled in as the engine exposes them.
+fill_run_report() attributes every task of the run to the device class of device 0, the default
+queue. It does not attribute tasks per device.
 
 It asks the runtime's own inventory for the device class, not SYCL. fill_run_report() runs on every
 tick, including the steady-state loop that run(RunReport&) promises will not allocate, and asking
@@ -64,8 +77,7 @@ SYCL could not keep that promise portably: queue::get_device() returns a device 
 cost of that construction belongs to the SYCL runtime. On oneAPI's libsycl (the Linux CI toolchain)
 it allocated once per call, which is why the steady-state test measured 65 allocations over 64 ticks
 there and 0 on Windows, where the intel/llvm nightly does not allocate. The device class of a queue
-is fixed for the life of the context, so the answer was never worth re-deriving per tick on any
-platform.
+is fixed for the life of the context, so the inventory's answer is the one SYCL would give.
 
 ## step_machinery.hpp
 
@@ -124,16 +136,19 @@ lifetime.
 
 ### adopt_device_bindings
 
-adopt_device_bindings() copies a Dynamic's device count source onto the node's bindings and
-registers that slot as a read. Registering inside adopt_device_bindings(), and not asking the caller
-for it, is what makes "the producer runs first" a property of the graph instead of a documented
-convention: the read region orders this node behind whoever writes the count.
+adopt_device_bindings() copies a Dynamic's device count slot and its device base slot onto the
+node's bindings. For each slot the Dynamic has, it registers the slot as a read and hands the
+caller the liveness observer of the slot's buffer. The read region orders the node behind whoever
+writes the slot, and the caller did not have to name it. The observer goes to Recorder::record()
+with the node's other observers, so a run after the buffer was destroyed is refused with
+`dangling_resource`.
 
 ### register_device_slot
 
 register_device_slot() names one four-byte slot as a read of the node that will consume it. It names
 just the one element, not the whole buffer, so two nodes reading different slots out of one buffer
-stay unordered against each other.
+stay unordered against each other. It appends the slot's observer in the same call, so no caller
+can register the read and leave the buffer unwatched.
 
 ## callable_checks.hpp
 
@@ -205,6 +220,10 @@ field, so the count is the largest bound that never refuses a correct graph. A 2
 origin whose kernel indexes with the unshifted position still passes this check and is the
 caller's to get right.
 
+saturated_reach() computes origin plus size and returns SIZE_MAX when the sum does not fit a
+std::size_t. An origin near SIZE_MAX would otherwise wrap to a small reach and pass the
+comparison; SIZE_MAX is larger than any handle, so the launch is refused.
+
 A launch that names its data with Reads and Writes or with captures is not compared. A region can
 be a window of a buffer and a kernel can stride, so the element count of the handle does not
 bound the index the way a State's does.
@@ -223,6 +242,36 @@ The emitters are generic over the launch: launch_node, untracked_launch_node, ca
 state_launch_node and coupled_launch_node each take a count, an Extent or an NdRange and call
 submit_launch(). state_node and coupled_node are the whole-field forms; they read the State's
 size at each replay and share add_state_node() and add_coupled_node() with the launch forms.
+
+### Launch width
+
+Every emitter that knows how many work-items its node launches stamps that number on
+Node::baked_width, which a profiled run reports as the node's launched width.
+
+| Emitter | Width stamped |
+| --- | --- |
+| launch_node, range_node, raw_node, captured_node, host_node, device_sized_node, late_count_resolver_node | the width NodeOptions states |
+| dynamic_node | the width NodeOptions states, or the capacity |
+| add_state_node, add_coupled_node, untracked_launch_node | launch_count() of the launch |
+| untracked_range_node, offload_node | the count |
+| dynamic_state_node, offload_state_node | the State's size |
+| untracked_raw_node | none |
+
+untracked_raw_node() stamps none: a raw command group submits its own work and takes no launch,
+and add_untracked() has no NodeOptions to state a width through.
+
+### Emitters that hold no State pointer
+
+state_launch_node(view, launch, fn), coupled_launch_node(out_view, views, launch, fn),
+dynamic_state_node(view, capacity, ...) and offload_state_node(op, view, size, ...) are overloads
+that take no `State<T>*`. A State's size does not change after it is allocated, so it is passed by
+value; the whole-field form of a rule is the launch form with the State's size as its count. The
+keys of a State swap at every step, so they are read at each replay, from the view: the read key
+is the address in `view->cur` and the write key the address in `view->next`.
+
+Their precondition is that the view names the State's fields whenever the replay runs.
+StepMachinery::view_for() creates a view with null fields and the step driver calls resync()
+after it builds the plan, so the Recorder still calls the overloads that take the State pointer.
 
 ### untracked_launch_node
 
@@ -274,6 +323,12 @@ the resolver needs a fault record.
 A count over its capacity is found in two places: on the host by late_count_source(), and after the
 step by throw_if_device_fault() reading the record a kernel left. late_count_overflow() builds the
 error for both, so the two paths report one message.
+
+### saturated_fault_word
+
+A fault record holds uint32 words and the base, count and capacity it reports are std::size_t.
+saturated_fault_word() stores a value above UINT32_MAX as UINT32_MAX, so the message never shows
+a value modulo 2^32. It is a constexpr comparison with no call, which a device kernel can run.
 
 ## late_window.hpp
 
