@@ -87,7 +87,7 @@ namespace
 
     /** @brief Runs K_INCREMENT: output[i] = input[i] + 1 over the output's element count. */
     sycl::event increment(sycl::queue& queue, span<const BufferView> inputs,
-                          span<const BufferView> outputs, const Internal::Graph::TaskMetadata&)
+                          span<const BufferView> outputs, const NodeOptions&)
     {
         const float* source = inputs[0].as<const float>();
         float* target = outputs[0].as<float>();

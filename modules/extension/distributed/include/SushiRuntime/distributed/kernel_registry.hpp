@@ -39,7 +39,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/ref_counted.hpp>
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 
 namespace SushiRuntime
@@ -61,13 +61,14 @@ namespace SushiRuntime
                  * @brief Names a kernel: it submits work on @p queue and returns its event.
                  *
                  * The views name the task's buffers in the order the task lists them and are
-                 * valid until the returned event completes. A kernel may throw; the worker
-                 * then reports the task as failed.
+                 * valid until the returned event completes. The options state the task's
+                 * name, operation and parameters and are valid during the call. A kernel may
+                 * throw; the worker then reports the task as failed.
                  */
                 using Kernel = std::function<sycl::event(
                     sycl::queue& queue, SushiRuntime::span<const BufferView> inputs,
                     SushiRuntime::span<const BufferView> outputs,
-                    const Internal::Graph::TaskMetadata& metadata)>;
+                    const NodeOptions& options)>;
 
                 /**
                  * @brief Sets the kernel of an operation, replacing the one set before.

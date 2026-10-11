@@ -225,7 +225,7 @@ namespace
     KernelRegistry::Kernel vec_add_kernel(std::atomic<int>& runs)
     {
         return [&runs](sycl::queue& queue, span<const BufferView> inputs,
-                       span<const BufferView> outputs, const TaskMetadata&) -> sycl::event
+                       span<const BufferView> outputs, const NodeOptions&) -> sycl::event
         {
             const float* left = inputs[0].as<const float>();
             const float* right = inputs[1].as<const float>();
@@ -266,7 +266,7 @@ namespace
         kernels->register_kernel(
             K_STATE_STEP,
             [&runs](sycl::queue& queue, span<const BufferView> inputs,
-                    span<const BufferView> outputs, const TaskMetadata&) -> sycl::event
+                    span<const BufferView> outputs, const NodeOptions&) -> sycl::event
             {
                 const int* current = inputs[0].as<const int>();
                 int* next = outputs[0].as<int>();

@@ -436,7 +436,7 @@ namespace
     {
         Wire::TaskDispatchMessage dispatch;
         dispatch.task_id = task_id;
-        dispatch.metadata.op_id = op;
+        dispatch.operation = op;
         dispatch.inputs = std::move(inputs);
         dispatch.outputs = std::move(outputs);
         return dispatch;
@@ -672,7 +672,7 @@ TEST(Unit_DispatchDeduplicatorTest, DuplicateDispatchRunsOnce)
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
-                                                   const Internal::Graph::TaskMetadata&)
+                                                   const NodeOptions&)
                                    {
                                        ++kernel_calls;
                                        return sycl::event{};
@@ -715,7 +715,7 @@ TEST(Unit_DispatchExecutorTest, OutputAllocationFailureFailsTheTask)
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
-                                                   const Internal::Graph::TaskMetadata&)
+                                                   const NodeOptions&)
                                    {
                                        ++kernel_calls;
                                        return sycl::event{};
@@ -754,7 +754,7 @@ TEST(Unit_DispatchExecutorTest, KernelSeesBufferSizes)
         op, KernelRegistry::Kernel(
                 [&input_size, &output_size](sycl::queue&, span<const BufferView> inputs,
                                             span<const BufferView> outputs,
-                                            const Internal::Graph::TaskMetadata&)
+                                            const NodeOptions&)
                 {
                     input_size = inputs[0].size_bytes;
                     output_size = outputs[0].size_bytes;
@@ -829,7 +829,7 @@ TEST(Unit_DispatchExecutorTest, KernelThatThrowsFailsTheTaskAndTheWorkerLives)
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
-                                                   const Internal::Graph::TaskMetadata&)
+                                                   const NodeOptions&)
                                    {
                                        if (++kernel_calls == 1)
                                            throw std::runtime_error("kernel refused");
@@ -864,7 +864,7 @@ TEST(Unit_DispatchExecutorTest, OutputStreamEndsWithTheResult)
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&bytes](sycl::queue&, span<const BufferView>,
                                             span<const BufferView> outputs,
-                                            const Internal::Graph::TaskMetadata&)
+                                            const NodeOptions&)
                                    {
                                        std::memcpy(outputs[0].data, bytes.data(), bytes.size());
                                        return sycl::event{};
@@ -925,7 +925,7 @@ TEST(Unit_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
-                                                   const Internal::Graph::TaskMetadata&)
+                                                   const NodeOptions&)
                                    {
                                        ++kernel_calls;
                                        return sycl::event{};
@@ -1095,7 +1095,7 @@ TEST(Unit_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskID)
     const OperationID op(17);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([](sycl::queue&, span<const BufferView>,
-                                      span<const BufferView>, const Internal::Graph::TaskMetadata&)
+                                      span<const BufferView>, const NodeOptions&)
                                    {
                                        return sycl::event{};
                                    }));
@@ -1229,7 +1229,7 @@ namespace
     KernelRegistry::Kernel idle_kernel()
     {
         return [](sycl::queue&, span<const BufferView>, span<const BufferView>,
-                  const Internal::Graph::TaskMetadata&) { return sycl::event{}; };
+                  const NodeOptions&) { return sycl::event{}; };
     }
 
 } // namespace

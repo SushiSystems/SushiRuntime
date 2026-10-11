@@ -30,7 +30,6 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 
@@ -39,6 +38,7 @@ namespace SushiRuntime
     namespace Internal::Graph
     {
         struct Node;
+        struct TaskMetadata;
         class TaskGraph;
     } // namespace Graph
 

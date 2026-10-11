@@ -156,7 +156,7 @@ namespace
     {
         public:
             /** @brief Returns the first offered worker, or nothing when none was offered. */
-            std::optional<int> pick_worker(const Internal::Graph::Node& /*node*/,
+            std::optional<int> pick_worker(const NodeOptions& /*task*/,
                                            span<const WorkerLoad> workers,
                                            std::uint64_t /*est_bytes*/) override
             {

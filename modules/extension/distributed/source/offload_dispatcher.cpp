@@ -45,6 +45,7 @@
 #include <SushiRuntime/distributed/message_type.hpp>
 
 #include "offload_handles.hpp"
+#include "task_description.hpp"
 #include "wire_codec.hpp"
 #include "wire_messages.hpp"
 
@@ -120,8 +121,8 @@ namespace SushiRuntime
              *        what a dispatch carries, and its parameters up to the last one that is
              *        not zero.
              */
-            void describe_task(const Internal::Graph::TaskMetadata& metadata,
-                               Wire::TaskDispatchMessage& message)
+            void fill_description(const Internal::Graph::TaskMetadata& metadata,
+                                  Wire::TaskDispatchMessage& message)
             {
                 static_assert(Wire::K_MAX_DISPATCH_PARAMETERS ==
                                   Internal::Graph::TaskMetadata::K_MAX_PARAMS,
@@ -131,9 +132,7 @@ namespace SushiRuntime
                 const std::string_view name = metadata.name != nullptr ? metadata.name : "";
                 message.name.assign(name.substr(0, Wire::K_MAX_DISPATCH_NAME_BYTES));
 
-                std::size_t count = Wire::K_MAX_DISPATCH_PARAMETERS;
-                while (count > 0 && metadata.params[count - 1] == 0)
-                    --count;
+                const std::size_t count = used_parameter_count(metadata);
                 message.parameter_count = static_cast<std::uint8_t>(count);
                 message.parameters.fill(0);
                 for (std::size_t index = 0; index < count; ++index)
@@ -411,7 +410,7 @@ namespace SushiRuntime
             const auto first_output =
                 scratch.handles.begin() + static_cast<std::ptrdiff_t>(*input_count);
             scratch.message.task_id = task_id;
-            describe_task(node.metadata, scratch.message);
+            fill_description(node.metadata, scratch.message);
             scratch.message.inputs.assign(scratch.handles.begin(), first_output);
             scratch.message.outputs.assign(first_output, scratch.handles.end());
 

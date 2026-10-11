@@ -33,10 +33,10 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/api/graph/node_options.hpp>
 
 namespace SushiRuntime
 {
-    namespace Internal::Graph { struct Node; }
 
     namespace Distributed
     {
@@ -67,13 +67,13 @@ namespace SushiRuntime
 
                 /**
                  * @brief Picks a worker for a task.
-                 * @param node The task; read its metadata only.
+                 * @param task The task's name, operation and parameters; valid during the call.
                  * @param workers The registered workers that have room; valid during the call.
                  * @param est_bytes Bytes of the task's inputs, an upper bound on what crosses.
                  * @return The worker_id of one entry of @p workers, or nothing to run locally.
                  */
                 virtual std::optional<int> pick_worker(
-                    const Internal::Graph::Node& node, SushiRuntime::span<const WorkerLoad> workers,
+                    const NodeOptions& task, SushiRuntime::span<const WorkerLoad> workers,
                     std::uint64_t est_bytes) = 0;
         };
 
@@ -97,7 +97,7 @@ namespace SushiRuntime
                 }
 
                 /** @brief Picks the live worker with the lowest estimate, or none. */
-                std::optional<int> pick_worker(const Internal::Graph::Node& node,
+                std::optional<int> pick_worker(const NodeOptions& task,
                                                SushiRuntime::span<const WorkerLoad> workers,
                                                std::uint64_t est_bytes) override;
 

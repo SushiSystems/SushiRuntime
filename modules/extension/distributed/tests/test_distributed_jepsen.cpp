@@ -177,7 +177,7 @@ namespace
         kernels->register_kernel(
             K_VEC_DOUBLE,
             [&runs](sycl::queue& queue, span<const BufferView> inputs,
-                    span<const BufferView> outputs, const TaskMetadata&) -> sycl::event
+                    span<const BufferView> outputs, const NodeOptions&) -> sycl::event
             {
                 const float* in = inputs[0].as<const float>();
                 float* out = outputs[0].as<float>();
