@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — api: Added `Recorder::task` and `add_task`, which record a body that receives the queue and returns the event that ends its work (`recorder.hpp`, `builder_surface.hpp`, `emit_task.hpp`).
 - 2026-10-11 — api: Breaking change: Renamed `OpID` to `OperationID` and gave `NodeOptions` a name, an operation and parameters, which every verb takes (`operation_id.hpp`, `node_options.hpp`).
 - 2026-10-11 — api: Breaking change: Renamed the umbrella header `SushiRuntime.h` to `sushiruntime.hpp`; a consumer includes `<SushiRuntime/sushiruntime.hpp>`.
 - 2026-10-11 — api: Breaking change: Removed the `I` and `get_` prefixes, renamed `detail` to `Detail`, gave 50 constants the `K_` prefix and made every enumerator PascalCase; `ExecutionEngine` is the interface and `SchedulerExecutionEngine` its implementation.

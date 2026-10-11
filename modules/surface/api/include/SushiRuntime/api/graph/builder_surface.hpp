@@ -360,6 +360,23 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Adds a task that submits its own work, ordered by the data it touches.
+             * @param task Callable invoked once per step as
+             *        task(sycl::queue&, const std::vector<sycl::event>&); it waits for nothing
+             *        and returns the event that ends its work.
+             * @param options What the node states beyond its access.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            template <class F>
+            Derived& add_task(const Reads& reads, const Writes& writes, F&& task,
+                              NodeOptions options = {})
+            {
+                if constexpr (Detail::accepts_task<F>())
+                    sink().task(Access(reads, writes), std::forward<F>(task), options);
+                return self();
+            }
+
+            /**
              * @brief Adds an emitter that records its own nodes on the engine's graph.
              * @param emitter Callable invoked as emitter(SushiRuntime::Internal::Graph::TaskGraph&) at
              *        every build of the plan.
@@ -414,8 +431,8 @@ namespace SushiRuntime
 
             /**
              * @brief Returns how many rules have been added.
-             * @return One per add(), add_untracked(), add_host(), add_emitter() or extend()
-             *         call, and one per Recorder::rule() scope that recorded a node.
+             * @return One per add(), add_untracked(), add_task(), add_host(), add_emitter()
+             *         or extend() call, and one per Recorder::rule() scope that recorded a node.
              */
             [[nodiscard]] std::size_t size() const noexcept { return view().rule_count(); }
 

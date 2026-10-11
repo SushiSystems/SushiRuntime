@@ -17,7 +17,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `access.hpp` | Access, what one node reads and writes |
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
 | `node_options.hpp` | NodeOptions: the width, the name, the operation and the parameters of a node |
-| `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_host(), add_emitter(), extend(), name(), size(), node_count() and last_rule() |
+| `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_task(), add_host(), add_emitter(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
 | `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), their try_ forms, cancel(), set_profiling() and the step loop |
 | `boundary_access.hpp` | Pin, BaseAccess and compute_boundary_access() |
@@ -47,13 +47,13 @@ handle then owns nothing.
 
 ### rule_registration
 
-A rule is what one add(), add_untracked(), add_host() or add_emitter() call records, or what one
-Recorder::rule() scope records. size() counts rules, node_count() counts the nodes they lowered to,
-and rule_registration(rule) takes a position below size(); last_rule() is the position of the rule
-just added. RunReport numbers a node event by registration index, and every node of a rule carries
-the rule's index, so rule_registration() maps a record back to the call that recorded it. The
-indices are drawn when the graph compiles, so every rule reports `K_NO_REGISTRATION` until the first
-run, and a recompile may renumber them.
+A rule is what one add(), add_untracked(), add_task(), add_host() or add_emitter() call records, or
+what one Recorder::rule() scope records. size() counts rules, node_count() counts the nodes they
+lowered to, and rule_registration(rule) takes a position below size(); last_rule() is the position
+of the rule just added. RunReport numbers a node event by registration index, and every node of a
+rule carries the rule's index, so rule_registration() maps a record back to the call that recorded
+it. The indices are drawn when the graph compiles, so every rule reports `K_NO_REGISTRATION` until
+the first run, and a recompile may renumber them.
 
 DynamicGraph::rule_registration(key, rule) answers the same for a rule of one region. A commit
 renumbers every region, so the answer is read from the node at the time of the call.
@@ -281,6 +281,7 @@ Late binding exists for `Reads` and `Writes` (with a capacity) and for `State` o
 | has a live size or an on/off switch that changes per step | `add(sized(...), capacity, Reads(a), Writes(b), fn)` or `add(sized(...), state, fn)` |
 | may run on another machine | `add("name"_op, n, Reads(a), Writes(b), local)` or `add("name"_op, state, local)` |
 | drives the sycl::handler itself | `add(Reads(a), Writes(b), fn)` |
+| submits several command groups, or calls a library that takes the queue | `add_task(Reads(a), Writes(b), fn)` |
 | is host C++ and submits no device work | `add_host(Reads(a), Writes(b), fn)` |
 | shares no data with any other rule | `add_untracked(launch, fn)`, with `On(buffer)` when the buffer is not on device 0 |
 | is recorded by a library through the engine's graph | `add_emitter(fn)` |
@@ -422,6 +423,24 @@ names no region, so it states its device: On(buffer) and On(state) name the devi
 and watch the handle, On(DeviceIndex) names a device. Without an On the rule runs on device 0,
 where Runtime::buffer() and Runtime::state() allocate by default. An On that names a device the
 runtime does not have throws `invalid_access` at the call.
+
+### add_task(Reads, Writes, fn)
+
+A raw kernel is one command group: the runtime calls `queue.submit()` and hands `fn` the handler.
+A task body is handed the queue itself, `fn(sycl::queue&, const std::vector<sycl::event>&)`, so
+it may submit any number of command groups, or pass the queue to a library that submits its own.
+It is the form a domain library records an operation with, and what `Recorder::task` records.
+
+The body waits for nothing and returns the event that ends its work; the runtime releases the
+node's successors when that event completes. The queue belongs to the device that owns the
+regions the node names. The body orders its own submissions: on the scheduler the queue is out of
+order, so a second command group that reads what the first wrote calls `depends_on()` with the
+first one's event. The events the body is handed are those its node must run after, and a body
+passes them to the first command group it submits. A node the Recorder records has none, because
+its order comes from its regions.
+
+The node is ordered by Reads and Writes like any other, runs once per step, and is taken by the
+chain layer as a kernel is.
 
 ### add_host(Reads, Writes, fn)
 

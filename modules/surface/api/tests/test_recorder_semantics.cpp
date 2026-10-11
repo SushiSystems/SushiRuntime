@@ -455,6 +455,50 @@ TEST(Integration_RecorderSemantics, AClearInsideAnExtensionStartsANewRule)
     EXPECT_EQ(second, 1u);
 }
 
+/** @brief Tests that a task of two command groups runs after its producer and before its reader. */
+TEST(Integration_RecorderSemantics, ATaskOfTwoCommandGroupsIsOrderedByItsAccess)
+{
+    auto rt = Runtime::create();
+    auto source = zeroed(rt);
+    auto staged = zeroed(rt);
+    auto result = zeroed(rt);
+    auto copied = zeroed(rt);
+    std::uint32_t* s = source.data();
+    std::uint32_t* t = staged.data();
+    std::uint32_t* r = result.data();
+    std::uint32_t* c = copied.data();
+
+    auto graph = rt.graph();
+    graph.add(K_WIDTH, Reads(), Writes(source),
+              [s](std::size_t i) { s[i] = static_cast<std::uint32_t>(i) + 1u; });
+    graph.add_task(Reads(source), Writes(staged, result),
+                   [s, t, r](sycl::queue& queue, const std::vector<sycl::event>& after)
+                   {
+                       const sycl::event doubled = queue.submit([&](sycl::handler& h)
+                       {
+                           h.depends_on(after);
+                           h.parallel_for(sycl::range<1>(K_WIDTH),
+                                          [s, t](sycl::id<1> i) { t[i] = s[i] * 2u; });
+                       });
+                       return queue.submit([&](sycl::handler& h)
+                       {
+                           h.depends_on(doubled);
+                           h.parallel_for(sycl::range<1>(K_WIDTH),
+                                          [t, r](sycl::id<1> i) { r[i] = t[i] + 1u; });
+                       });
+                   });
+    graph.add(K_WIDTH, Reads(result), Writes(copied),
+              [r, c](std::size_t i) { c[i] = r[i] * 3u; });
+
+    EXPECT_EQ(graph.size(), 3u);
+    EXPECT_EQ(graph.node_count(), 3u);
+    graph.run();
+
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
+        EXPECT_EQ(copied[i], ((static_cast<std::uint32_t>(i) + 1u) * 2u + 1u) * 3u)
+            << "element " << i;
+}
+
 /** @brief Tests that an offload rule with nine parameters is refused and one with eight kept. */
 TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
 {
