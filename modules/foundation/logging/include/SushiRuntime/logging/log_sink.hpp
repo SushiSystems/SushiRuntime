@@ -51,4 +51,12 @@ namespace SushiRuntime
      * @see modules/foundation/logging/README.md
      */
     SUSHIRUNTIME_API void set_log_sink(LogSink sink);
+
+    /**
+     * @brief Chooses whether a record reaches the sink before its log call returns.
+     * @param synchronous True first delivers every record still queued, then makes each
+     *        log call run the sink itself; false hands records to the logger's thread.
+     * @see modules/foundation/logging/README.md
+     */
+    SUSHIRUNTIME_API void set_log_synchronous(bool synchronous);
 } // namespace SushiRuntime
