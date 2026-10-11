@@ -36,7 +36,7 @@
 #include <SushiRuntime/api/interop/host_export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/interop/external_memory.hpp>
-#include <SushiRuntime/interop/interop.hpp>
+#include <SushiRuntime/interop_engine/interop_engine.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
 #include <SushiRuntime/memory/allocation.hpp>
 

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* interop.cpp                                                            */
+/* interop_engine.cpp                                                     */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,7 +20,7 @@
 /**************************************************************************/
 
 /**
- * @file interop.cpp
+ * @file interop_engine.cpp
  * @brief Defines the non-template entry points behind the Interop facade.
  * @author Sushi (mustafagarip@sushisystems.io)
  */
@@ -43,7 +43,7 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include "bindless_detection.hpp"
-#include <SushiRuntime/interop/interop.hpp>
+#include <SushiRuntime/interop_engine/interop_engine.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -386,7 +386,7 @@ namespace SushiRuntime
             const std::size_t rounded = round_up(bytes, alignment);
             try
             {
-                // The owner exists before the allocation it will free (modules/surface/interop/README.md).
+                // The owner exists before the allocation it will free (modules/surface/interop_engine/README.md).
                 auto owner = std::make_unique<Internal::Memory::USMAllocationOwner>(
                     context->shared_memory());
                 void* address = context->memory().allocate(

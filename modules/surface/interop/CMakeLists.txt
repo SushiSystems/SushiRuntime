@@ -6,11 +6,8 @@
 
 sushiruntime_add_module(
     NAME interop TIER surface
-    SYCL
-    SOURCES interop.cpp
-    DEPENDS core memory
-    PRIVATE_DEPENDS logging device execution)
+    HEADER_ONLY)
 
 sushiruntime_add_module_tests(
     MODULE interop
-    SOURCES test_interop_import.cpp test_interop_vocabulary.cpp)
+    SOURCES test_interop_vocabulary.cpp)
