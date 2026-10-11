@@ -130,9 +130,12 @@ namespace SushiRuntime
 
             /**
              * @brief Returns the stored value of a Result that is about to be destroyed.
+             *
+             * The value may be dropped: `run().value();` as a statement stops the process on
+             * a failure and keeps nothing.
              * @pre has_value() is true.
              */
-            [[nodiscard]] T&& value() &&
+            T&& value() &&
             {
                 verify_value();
                 return std::move(*std::get_if<0>(&data_));

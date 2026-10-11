@@ -82,7 +82,7 @@ namespace
         }
 
         // The first run compiles the plan; every timed run below is a replay.
-        Internal::Observability::ExecutionLayer layer = g.run(std::size_t{1}).layer;
+        Internal::Observability::ExecutionLayer layer = g.run(std::size_t{1}).value().layer;
 
         const double node_steps = double(steps) * double(length);
         std::vector<double> reported_samples;
@@ -92,7 +92,7 @@ namespace
         measurement.wall_ns_per_node_step = SushiRuntime::Test::measure([&]() -> double
         {
             const auto t0 = std::chrono::steady_clock::now();
-            const auto report = g.run(steps);
+            const auto report = g.run(steps).value();
             const auto t1 = std::chrono::steady_clock::now();
 
             layer = report.layer;

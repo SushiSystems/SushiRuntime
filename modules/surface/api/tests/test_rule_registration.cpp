@@ -126,7 +126,7 @@ TEST(Integration_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
     auto rt = Runtime::create().value();
     Recorded r = record(rt);
     Internal::Observability::RunReport report;
-    r.graph.run(1, report);
+    r.graph.run(1, report).value();
     ASSERT_TRUE(report.is_successful);
 
     std::set<std::uint32_t> plain;
@@ -156,7 +156,7 @@ TEST(Integration_RuleRegistration, EveryNodeEventNamesARecordedRule)
     auto rt = Runtime::create().value();
     Recorded r = record(rt);
     Internal::Observability::RunReport report;
-    r.graph.run(1, report);
+    r.graph.run(1, report).value();
     ASSERT_TRUE(report.is_successful);
     ASSERT_FALSE(report.node_events.empty()) << "profiling was requested, so events must exist";
 
@@ -176,7 +176,7 @@ TEST(Integration_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
     auto rt = Runtime::create().value();
     Recorded r = record(rt);
     Internal::Observability::RunReport report;
-    r.graph.run(STEPS, report);
+    r.graph.run(STEPS, report).value();
     ASSERT_TRUE(report.is_successful);
     ASSERT_EQ(report.node_events.size(), (K_PLAIN_RULES + K_RULE_NODES) * STEPS);
 
@@ -236,7 +236,7 @@ TEST(Integration_RuleRegistration, AVerbReturnsThePositionOfTheRuleItRecorded)
     EXPECT_EQ(idle, copy) << "the nodes of one scope belong to one rule";
     EXPECT_NE(scale, copy);
 
-    const auto report = graph.run();
+    const auto report = graph.run().value();
 
     std::uint32_t scale_index = Graph::K_NO_REGISTRATION;
     std::uint32_t copy_index = Graph::K_NO_REGISTRATION;

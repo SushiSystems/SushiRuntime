@@ -59,7 +59,7 @@ namespace
         EXPECT_FALSE(step.pending()) << "the graph ended the step, so the handle owns none";
         EXPECT_TRUE(step.ready());
 
-        const auto late = step.try_wait();
+        const auto late = step.wait();
         ASSERT_FALSE(late.has_value());
         EXPECT_EQ(late.error().code, ErrorCode::InvalidState);
     }
@@ -93,12 +93,12 @@ TEST(Integration_AsyncStep, SubmitReturnsBeforeTheStepFinishes)
         p[0] = 42;
     });
 
-    auto step = g.run_async();
+    auto step = g.run_async().value();
 
     // The caller is still running: this is the work a frame would overlap.
     released.store(true, std::memory_order_release);
 
-    const Internal::Observability::RunReport report = step.wait();
+    const Internal::Observability::RunReport report = step.wait().value();
 
     EXPECT_TRUE(saw_release.load())
         << "the step's task never observed the flag, so run_async() blocked";
@@ -119,14 +119,14 @@ TEST(Integration_AsyncStep, MatchesTheSynchronousResult)
     for (std::size_t i = 0; i < N; ++i) synchronous.current()[i] = 1;
     auto sg = rt.graph();
     sg.add(synchronous, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] * 2; });
-    sg.run(STEPS);
+    sg.run(STEPS).value();
 
     auto asynchronous = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) asynchronous.current()[i] = 1;
     auto ag = rt.graph();
     ag.add(asynchronous, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] * 2; });
     for (std::size_t s = 0; s < STEPS; ++s)
-        ag.run_async().wait();
+        ag.run_async().value().wait().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(asynchronous.current()[i], synchronous.current()[i]) << "at i=" << i;
@@ -146,11 +146,11 @@ TEST(Integration_AsyncStep, StateAdvancesOnWaitNotOnSubmit)
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     const int* const before_submit = field.current();
-    auto step = g.run_async();
+    auto step = g.run_async().value();
     EXPECT_EQ(field.current(), before_submit)
         << "submitting a step must not advance the State";
 
-    step.wait();
+    step.wait().value();
     EXPECT_NE(field.current(), before_submit) << "wait() must advance the State";
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(field.current()[i], 6) << "at i=" << i;
@@ -173,7 +173,7 @@ TEST(Integration_AsyncStep, DestroyingAnUnwaitedHandleStillFinishesTheStep)
     g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] += 1; });
 
     {
-        auto discarded = g.run_async();
+        auto discarded = g.run_async().value();
         (void)discarded;   // destructor settles the step
     }
 
@@ -181,7 +181,7 @@ TEST(Integration_AsyncStep, DestroyingAnUnwaitedHandleStillFinishesTheStep)
         ASSERT_EQ(buf[i], 1) << "at i=" << i;
 
     // The graph is not wedged: a following run works normally.
-    g.run();
+    g.run().value();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], 2) << "at i=" << i;
 }
@@ -197,9 +197,9 @@ TEST(Integration_AsyncStep, WaitingTwiceThrows)
     g.add(std::size_t{4}, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
-    auto step = g.run_async();
-    step.wait();
-    EXPECT_THROW(step.wait(), SushiException);
+    auto step = g.run_async().value();
+    step.wait().value();
+    EXPECT_FALSE(step.wait().has_value());
 }
 
 /** @brief Tests that a second run is rejected while a step is in flight. */
@@ -221,18 +221,18 @@ TEST(Integration_AsyncStep, ASecondRunIsRejectedWhileAStepIsInFlight)
         p[0] = 7;
     });
 
-    auto step = g.run_async();
+    auto step = g.run_async().value();
 
-    EXPECT_THROW(g.run(), SushiException) << "a synchronous run must be refused";
-    EXPECT_THROW(static_cast<void>(g.run_async()), SushiException) << "a second async step must be refused";
+    EXPECT_FALSE(g.run().has_value()) << "a synchronous run must be refused";
+    EXPECT_FALSE(g.run_async().has_value()) << "a second async step must be refused";
 
     released.store(true, std::memory_order_release);
-    step.wait();
+    step.wait().value();
 
     EXPECT_EQ(buf[0], 7);
 
     // Rejection left nothing broken behind: the graph runs again.
-    g.run();
+    g.run().value();
     EXPECT_EQ(buf[0], 7);
 }
 
@@ -247,24 +247,24 @@ TEST(Integration_AsyncStep, TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable)
         auto bad = rt.graph();
         bad.add_host(Reads{}, Writes(buf),
                      []() { throw std::runtime_error("boom"); });
-        auto step = bad.run_async();
-        EXPECT_THROW(step.wait(), std::runtime_error);
+        auto step = bad.run_async().value();
+        EXPECT_FALSE(step.wait().has_value());
         EXPECT_FALSE(step.pending());
 
         // The graph accepted the failure and is runnable again.
-        auto retry = bad.run_async();
-        EXPECT_THROW(retry.wait(), std::runtime_error);
+        auto retry = bad.run_async().value();
+        EXPECT_FALSE(retry.wait().has_value());
     }
 
     auto good = rt.graph();
     good.add(std::size_t{4}, Reads{}, Writes(buf),
              [p](std::size_t i) { p[i] = 3; });
-    good.run_async().wait();
+    good.run_async().value().wait().value();
     for (std::size_t i = 0; i < 4; ++i)
         ASSERT_EQ(buf[i], 3) << "at i=" << i;
 }
 
-// try_wait() reports the same failure as a value instead of an exception.
+// wait() reports the same failure as a value instead of an exception.
 TEST(Integration_AsyncStep, TryWaitReportsFailureAsAValue)
 {
     auto rt  = Runtime::create().value();
@@ -274,8 +274,8 @@ TEST(Integration_AsyncStep, TryWaitReportsFailureAsAValue)
     g.add_host(Reads{}, Writes(buf),
                []() { throw std::runtime_error("boom"); });
 
-    auto step = g.run_async();
-    auto result = step.try_wait();
+    auto step = g.run_async().value();
+    auto result = step.wait();
     EXPECT_FALSE(static_cast<bool>(result));
     EXPECT_FALSE(step.pending());
 }
@@ -296,11 +296,11 @@ TEST(Integration_AsyncStep, ReadyTracksTheStep)
         p[0] = 1;
     });
 
-    auto step = g.run_async();
+    auto step = g.run_async().value();
     EXPECT_FALSE(step.ready()) << "a step held open must not report ready";
 
     released.store(true, std::memory_order_release);
-    step.wait();
+    step.wait().value();
     EXPECT_TRUE(step.ready()) << "a settled handle owns no step, so it is ready";
 }
 
@@ -326,7 +326,7 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
     world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
     world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 2; });
 
-    world.run_async().wait();
+    world.run_async().value().wait().value();
     for (std::size_t i = 0; i < N; ++i)
     {
         ASSERT_EQ(a[i], 1) << "at i=" << i;
@@ -339,7 +339,7 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
     int* pc = c.data();
     world.region(2).add(N, Reads{}, Writes(c), [pc](std::size_t i) { pc[i] += 5; });
 
-    world.run_async().wait();
+    world.run_async().value().wait().value();
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(c[i], 5) << "at i=" << i;
     EXPECT_EQ(world.compose_count(), 2u) << "one composition per mutation, not per step";
@@ -367,27 +367,19 @@ TEST(Integration_AsyncStep, AnotherGraphIsRefusedWhileAStepIsPending)
     auto g2 = rt.graph();
     g2.add_host(Reads{}, Writes(other), [po]() { po[0] += 1; });
 
-    auto step = g1.run_async();
+    auto step = g1.run_async().value();
 
-    try
-    {
-        g2.run();
-        ADD_FAILURE() << "run() on another graph started while a step was pending";
-    }
-    catch (const SushiException& refusal)
-    {
-        EXPECT_EQ(refusal.error().code, ErrorCode::InvalidState);
-    }
-    ASSERT_NO_FATAL_FAILURE(expect_refused_as_invalid_state(g2.try_run()));
-    ASSERT_NO_FATAL_FAILURE(expect_refused_as_invalid_state(g2.try_run_async()));
+    ASSERT_NO_FATAL_FAILURE(expect_refused_as_invalid_state(g2.run()));
+    ASSERT_NO_FATAL_FAILURE(expect_refused_as_invalid_state(g2.run(std::size_t{2})));
+    ASSERT_NO_FATAL_FAILURE(expect_refused_as_invalid_state(g2.run_async()));
     EXPECT_EQ(other[0], 0) << "a refused run ran its task";
 
     released.store(true, std::memory_order_release);
-    const Internal::Observability::RunReport report = step.wait();
+    const Internal::Observability::RunReport report = step.wait().value();
     EXPECT_TRUE(report.is_successful);
     EXPECT_EQ(first[0], 7);
 
-    EXPECT_TRUE(g2.try_run().has_value()) << "the runtime is free once the step is settled";
+    EXPECT_TRUE(g2.run().has_value()) << "the runtime is free once the step is settled";
     EXPECT_EQ(other[0], 1);
 }
 
@@ -411,19 +403,20 @@ TEST(Integration_AsyncStep, CancelReachesOnlyTheGraphItIsCalledOn)
     auto idle = rt.graph();
     idle.add_host(Reads{}, Writes(idle_buf), [pi]() { pi[0] = 1; });
 
-    auto spared = g.run_async();
+    auto spared = g.run_async().value();
     idle.cancel();
     released.store(true, std::memory_order_release);
-    EXPECT_FALSE(spared.wait().cancelled) << "cancel() on an idle graph stopped another's step";
+    EXPECT_FALSE(spared.wait().value().cancelled)
+        << "cancel() on an idle graph stopped another's step";
 
     released.store(false, std::memory_order_release);
-    auto stopped = g.run_async();
+    auto stopped = g.run_async().value();
     g.cancel();
     released.store(true, std::memory_order_release);
-    EXPECT_TRUE(stopped.wait().cancelled) << "cancel() did not reach its own pending step";
+    EXPECT_TRUE(stopped.wait().value().cancelled) << "cancel() did not reach its own pending step";
 
     g.cancel();
-    EXPECT_FALSE(g.run().cancelled) << "cancel() with no run in flight marked the next run";
+    EXPECT_FALSE(g.run().value().cancelled) << "cancel() with no run in flight marked the next run";
 }
 
 /** @brief Tests that a Graph destroyed with a step pending waits for it and ends it. */
@@ -444,7 +437,7 @@ TEST(Integration_AsyncStep, AGraphDestroyedWithAPendingStepEndsTheStep)
             wait_for_gate(released);
             p[0] = 9;
         });
-        step = g.run_async();
+        step = g.run_async().value();
         EXPECT_TRUE(step.pending());
         released.store(true, std::memory_order_release);
     }
@@ -454,7 +447,7 @@ TEST(Integration_AsyncStep, AGraphDestroyedWithAPendingStepEndsTheStep)
 
     auto next = rt.graph();
     next.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
-    EXPECT_TRUE(next.try_run().has_value()) << "the destroyed graph left the runtime busy";
+    EXPECT_TRUE(next.run().has_value()) << "the destroyed graph left the runtime busy";
     EXPECT_EQ(buf[0], 10);
 }
 
@@ -476,7 +469,7 @@ TEST(Integration_AsyncStep, ADynamicGraphDestroyedWithAPendingStepEndsTheStep)
             wait_for_gate(released);
             p[0] = 9;
         });
-        step = world.run_async();
+        step = world.run_async().value();
         EXPECT_TRUE(step.pending());
         released.store(true, std::memory_order_release);
     }
@@ -510,19 +503,19 @@ TEST(Integration_AsyncStep, ARegionDroppedWhileAStepIsPendingFinishesTheStep)
         pg[0] += 1;
     });
 
-    auto step = world.run_async();
+    auto step = world.run_async().value();
     world.drop(1);
     EXPECT_FALSE(world.has_region(1));
     EXPECT_EQ(world.region_count(), 1u);
 
     released.store(true, std::memory_order_release);
-    const auto settled = step.try_wait();
+    const auto settled = step.wait();
     ASSERT_TRUE(settled.has_value()) << settled.error().message;
     EXPECT_TRUE((*settled).is_successful);
     EXPECT_EQ(kept[0], 1);
     EXPECT_EQ(gone[0], 1) << "the dropped region's task did not finish its write";
 
-    const Internal::Observability::RunReport next = world.run();
+    const Internal::Observability::RunReport next = world.run().value();
     EXPECT_TRUE(next.is_successful);
     EXPECT_EQ(kept[0], 2);
     EXPECT_EQ(gone[0], 1) << "the dropped region ran again";
@@ -549,16 +542,16 @@ TEST(Integration_AsyncStep, ARegionDroppedAndRecordedAgainWhileAStepIsPendingRun
         po[0] += 1;
     });
 
-    auto step = world.run_async();
+    auto step = world.run_async().value();
     world.drop(7);
     world.region(7).add_host(Reads{}, Writes(fresh), [pf]() { pf[0] += 1; });
 
     released.store(true, std::memory_order_release);
-    EXPECT_TRUE(step.try_wait().has_value());
+    EXPECT_TRUE(step.wait().has_value());
     EXPECT_EQ(old[0], 1) << "the pending step ran the recording it was started with";
     EXPECT_EQ(fresh[0], 0) << "a recording made while the step was pending ran in that step";
 
-    EXPECT_TRUE(world.try_run().has_value());
+    EXPECT_TRUE(world.run().has_value());
     EXPECT_EQ(old[0], 1) << "the dropped recording ran again";
     EXPECT_EQ(fresh[0], 1);
 }

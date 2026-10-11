@@ -85,7 +85,7 @@ TEST(Integration_RegionEmitter, ExtensionTasksOrderAgainstANeighbourRegion)
     world.region(11).add(N, Reads(x), Writes(y),
                          [px, py](std::size_t i) { py[i] = px[i] * 2; });
 
-    world.run();
+    world.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(y[i], static_cast<int>(6 * (i + 1))) << "at i=" << i;
@@ -112,7 +112,7 @@ TEST(Integration_RegionEmitter, AnExtensionIsOneRule)
         record_device_task(recorder, "second", Access(Reads(x), Writes(x)), N,
                            [px](std::size_t i) { px[i] += 1; });
     });
-    world.run();
+    world.run().value();
 
     const Region* found = world.find_region(0);
     ASSERT_NE(found, nullptr);
@@ -150,17 +150,17 @@ TEST(Integration_RegionEmitter, AnExtensionRunsOnceWhenItIsCalled)
     EXPECT_EQ(extended, 1) << "extend() calls the extension before it returns";
     world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 1; });
 
-    world.run(3);
+    world.run(3).value();
     EXPECT_EQ(extended, 1) << "a build and a replayed step do not call the extension";
     EXPECT_EQ(world.compose_count(), 1u);
 
     world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 1; });
-    world.run();
+    world.run().value();
     EXPECT_EQ(extended, 1) << "rebuilding a neighbour leaves this region's nodes alone";
 
     world.drop(0);
     world.region(0).extend(extension);
-    world.run();
+    world.run().value();
     EXPECT_EQ(extended, 2) << "a region recorded again is extended again";
 
     for (std::size_t i = 0; i < N; ++i)
@@ -193,7 +193,7 @@ TEST(Integration_RegionEmitter, AStaticGraphTakesAnExtension)
     });
     graph.add(N, Reads(x), Writes(y), [px, py](std::size_t i) { py[i] = px[i] * 10; });
 
-    graph.run(4);
+    graph.run(4).value();
 
     EXPECT_EQ(graph.size(), 2u);
     for (std::size_t i = 0; i < N; ++i)

@@ -874,7 +874,7 @@ namespace
                   [](std::size_t index, const int* current, int* next)
                   { next[index] = current[index] + static_cast<int>(index % 7); },
                   {static_cast<std::uint64_t>(count)});
-        graph.run(steps);
+        graph.run(steps).value();
 
         std::vector<int> result(count);
         for (std::size_t index = 0; index < count; ++index)
@@ -1321,7 +1321,7 @@ TEST(Integration_DistributedE2ETest, FluentClusterOffload)
     graph.add(K_VEC_ADD, K_COUNT, Reads(a, b), Writes(out),
               [left, right, sum](std::size_t index) { sum[index] = left[index] + right[index]; },
               {static_cast<std::uint64_t>(K_COUNT)});
-    graph.run();
+    graph.run().value();
 
     EXPECT_GE(cluster.offloaded(), 1u);
     EXPECT_GE(worker_runs.load(), 1);
@@ -1536,7 +1536,7 @@ TEST(Integration_DistributedE2ETest, DynamicStateBumpsTheLiveBufferAfterSwap)
               [](std::size_t index, const int* current, int* next)
               { next[index] = current[index] + static_cast<int>(index % 7); },
               {static_cast<std::uint64_t>(K_COUNT)});
-    graph.run(K_STEPS);
+    graph.run(K_STEPS).value();
 
     const std::optional<BufferHandle> front_after = cluster.buffer_handle(front);
     const std::optional<BufferHandle> back_after = cluster.buffer_handle(back);

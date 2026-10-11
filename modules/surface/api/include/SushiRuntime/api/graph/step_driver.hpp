@@ -69,106 +69,17 @@ namespace SushiRuntime
         public:
             /**
              * @brief Runs the graph once, blocking until it completes.
-             * @return A RunReport summarising the run.
-             * @throws SushiException With the error try_run() would return.
-             */
-            Internal::Observability::RunReport run() { return unwrap(try_run()); }
-
-            /**
-             * @brief Runs the given number of successive steps and blocks until they finish.
-             * @return A RunReport aggregating the whole run.
-             * @throws SushiException With the error try_run() would return.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-             */
-            Internal::Observability::RunReport run(std::size_t steps) { return unwrap(try_run(steps)); }
-
-            /**
-             * @brief Runs the graph once into a report the caller owns.
-             * @param reuse The report to overwrite; its previous contents are lost.
-             * @throws SushiException With the error try_run() would return.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-             */
-            Internal::Observability::RunReport& run(Internal::Observability::RunReport& reuse)
-            {
-                return unwrap(try_run(reuse));
-            }
-
-            /**
-             * @brief Runs the given number of steps into a report the caller owns.
-             * @param reuse The report to overwrite; its previous contents are lost.
-             * @return A reference to reuse.
-             * @throws SushiException With the error try_run() would return.
-             */
-            Internal::Observability::RunReport& run(std::size_t steps, Internal::Observability::RunReport& reuse)
-            {
-                return unwrap(try_run(steps, reuse));
-            }
-
-            /**
-             * @brief Runs steps until a wall-clock budget elapses.
-             * @param budget Wall-clock limit; at least one step always runs.
-             * @return A RunReport aggregating the steps that ran.
-             * @throws SushiException With the error try_run_for() would return.
-             */
-            template <class Rep, class Period>
-            Internal::Observability::RunReport run_for(std::chrono::duration<Rep, Period> budget)
-            {
-                return unwrap(try_run_for(budget));
-            }
-
-            /**
-             * @brief Runs steps until a wall-clock budget elapses, into a report the caller
-             *        owns.
-             * @param budget Wall-clock limit; at least one step always runs.
-             * @param reuse The report to overwrite; its previous contents are lost.
-             * @throws SushiException With the error try_run_for() would return.
-             */
-            template <class Rep, class Period>
-            Internal::Observability::RunReport& run_for(std::chrono::duration<Rep, Period> budget,
-                                              Internal::Observability::RunReport& reuse)
-            {
-                return unwrap(try_run_for(budget, reuse));
-            }
-
-            /**
-             * @brief Runs steps until done returns true.
-             * @param done Stop test called before each step; the run ends the first time it
-             *        returns true.
-             * @return A RunReport aggregating the steps that ran.
-             * @throws SushiException With the error try_run_until() would return.
-             */
-            template <class Predicate>
-            Internal::Observability::RunReport run_until(Predicate done)
-            {
-                return unwrap(try_run_until(std::move(done)));
-            }
-
-            /**
-             * @brief Runs steps until done returns true, into a report the caller owns.
-             * @param done Stop test called before each step; the run ends the first time it
-             *        returns true.
-             * @param reuse The report to overwrite; its previous contents are lost.
-             * @throws SushiException With the error try_run_until() would return.
-             */
-            template <class Predicate>
-            Internal::Observability::RunReport& run_until(Predicate done, Internal::Observability::RunReport& reuse)
-            {
-                return unwrap(try_run_until(std::move(done), reuse));
-            }
-
-            /**
-             * @brief Runs the graph once and returns the outcome as a value.
              * @return The RunReport, or the Error that ended the run; a failed run of one
              *         step has advanced no State.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            [[nodiscard]] Result<Internal::Observability::RunReport, Error> try_run() noexcept
+            [[nodiscard]] Result<Internal::Observability::RunReport, Error> run() noexcept
             {
-                return try_run(std::size_t{1});
+                return run(std::size_t{1});
             }
 
             /**
-             * @brief Runs the given number of steps and returns the outcome as a value.
+             * @brief Runs the given number of successive steps and blocks until they finish.
              * @return The RunReport, or the Error that ended the run. A failed run has
              *         advanced the States once per step before the failing one; on the chain
              *         a device fault of any step shows at the end, with every step but the
@@ -176,63 +87,62 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             [[nodiscard]] Result<Internal::Observability::RunReport, Error>
-            try_run(std::size_t steps) noexcept
+            run(std::size_t steps) noexcept
             {
                 return drive(for_steps(steps), steps, StepSync::AtEnd);
             }
 
             /**
-             * @brief Runs the graph once into a report the caller owns, without throwing.
+             * @brief Runs the graph once into a report the caller owns.
              * @param reuse The report to overwrite; its previous contents are lost.
              * @return A pointer to reuse, or the Error that ended the run.
              */
             [[nodiscard]] Result<Internal::Observability::RunReport*, Error>
-            try_run(Internal::Observability::RunReport& reuse) noexcept
+            run(Internal::Observability::RunReport& reuse) noexcept
             {
-                return try_run(std::size_t{1}, reuse);
+                return run(std::size_t{1}, reuse);
             }
 
             /**
-             * @brief Runs the given number of steps into a report the caller owns, without
-             *        throwing.
+             * @brief Runs the given number of steps into a report the caller owns.
              * @param reuse The report to overwrite; its previous contents are lost.
              * @return A pointer to reuse, or the Error that ended the run.
              */
             [[nodiscard]] Result<Internal::Observability::RunReport*, Error>
-            try_run(std::size_t steps, Internal::Observability::RunReport& reuse) noexcept
+            run(std::size_t steps, Internal::Observability::RunReport& reuse) noexcept
             {
                 return drive(for_steps(steps), reuse, steps, StepSync::AtEnd);
             }
 
             /**
-             * @brief Runs steps until a wall-clock budget elapses, without throwing.
+             * @brief Runs steps until a wall-clock budget elapses.
              * @param budget Wall-clock limit; at least one step always runs.
              * @return The RunReport, or the Error that ended the run.
              */
             template <class Rep, class Period>
             [[nodiscard]] Result<Internal::Observability::RunReport, Error>
-            try_run_for(std::chrono::duration<Rep, Period> budget) noexcept
+            run_for(std::chrono::duration<Rep, Period> budget) noexcept
             {
                 return drive(within(budget), 1, StepSync::EveryStep);
             }
 
             /**
              * @brief Runs steps until a wall-clock budget elapses, into a report the caller
-             *        owns, without throwing.
+             *        owns.
              * @param budget Wall-clock limit; at least one step always runs.
              * @param reuse The report to overwrite; its previous contents are lost.
              * @return A pointer to reuse, or the Error that ended the run.
              */
             template <class Rep, class Period>
             [[nodiscard]] Result<Internal::Observability::RunReport*, Error>
-            try_run_for(std::chrono::duration<Rep, Period> budget,
+            run_for(std::chrono::duration<Rep, Period> budget,
                         Internal::Observability::RunReport& reuse) noexcept
             {
                 return drive(within(budget), reuse, 1, StepSync::EveryStep);
             }
 
             /**
-             * @brief Runs steps until done returns true, without throwing.
+             * @brief Runs steps until done returns true.
              * @tparam Predicate Move-constructible without throwing.
              * @param done Stop test called before each step; an exception it throws ends the
              *        run as KernelFailed.
@@ -240,14 +150,14 @@ namespace SushiRuntime
              */
             template <class Predicate>
             [[nodiscard]] Result<Internal::Observability::RunReport, Error>
-            try_run_until(Predicate done) noexcept
+            run_until(Predicate done) noexcept
             {
                 require_nothrow_move<Predicate>();
                 return drive(until(std::move(done)), 1, StepSync::EveryStep);
             }
 
             /**
-             * @brief Runs steps until done returns true into the caller's report; never throws.
+             * @brief Runs steps until done returns true, into a report the caller owns.
              * @tparam Predicate Move-constructible without throwing.
              * @param done Stop test called before each step; an exception it throws ends the
              *        run as KernelFailed.
@@ -256,7 +166,7 @@ namespace SushiRuntime
              */
             template <class Predicate>
             [[nodiscard]] Result<Internal::Observability::RunReport*, Error>
-            try_run_until(Predicate done, Internal::Observability::RunReport& reuse) noexcept
+            run_until(Predicate done, Internal::Observability::RunReport& reuse) noexcept
             {
                 require_nothrow_move<Predicate>();
                 return drive(until(std::move(done)), reuse, 1, StepSync::EveryStep);
@@ -264,35 +174,21 @@ namespace SushiRuntime
 
             /**
              * @brief Starts one step on the worker pool and returns without waiting for it.
-             * @throws SushiException With the error try_run_async() would return.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-             */
-            [[nodiscard]] RunHandle<Owner> run_async()
-            {
-                auto started = try_run_async();
-                if (!started)
-                    throw SushiException(std::move(started.error()));
-                return std::move(*started);
-            }
-
-            /**
-             * @brief Starts one step on the worker pool and returns the handle as a value.
              * @return The handle of the step, or the Error that kept it from starting.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            [[nodiscard]] Result<RunHandle<Owner>, Error> try_run_async() noexcept
+            [[nodiscard]] Result<RunHandle<Owner>, Error> run_async() noexcept
             {
                 Error failure = entry_refusal();
                 if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
 
                 Detail::AsyncRunState state;
-                failure = guarded(ErrorCode::CompileFailed, [this]()
-                {
-                    require_asynchronous_engine();
-                });
-                if (failure.code != ErrorCode::Ok)
-                    return make_error(std::move(failure));
+                if (!async_engine().supports_asynchronous_run())
+                    return make_error(Detail::error_without_throwing(
+                        ErrorCode::Unsupported,
+                        "run_async(): the active execution engine cannot start a run without "
+                        "blocking; call run()."));
 
                 failure = build_plan_guarded(state.compile_ms);
                 if (failure.code != ErrorCode::Ok)
@@ -518,27 +414,9 @@ namespace SushiRuntime
             static constexpr void require_nothrow_move() noexcept
             {
                 static_assert(std::is_nothrow_move_constructible<Predicate>::value,
-                              "try_run_until() is noexcept and moves its stop test, so the "
+                              "run_until() is noexcept and moves its stop test, so the "
                               "stop test must be nothrow move constructible; pass a lambda "
                               "that captures by reference.");
-            }
-
-            /** @brief Throws the carried error, or returns the report. */
-            static Internal::Observability::RunReport
-            unwrap(Result<Internal::Observability::RunReport, Error> driven)
-            {
-                if (!driven)
-                    throw SushiException(std::move(driven.error()));
-                return std::move(*driven);
-            }
-
-            /** @brief Throws the carried error, or returns the report the caller owns. */
-            static Internal::Observability::RunReport&
-            unwrap(Result<Internal::Observability::RunReport*, Error> driven)
-            {
-                if (!driven)
-                    throw SushiException(std::move(driven.error()));
-                return **driven;
             }
 
             /**
@@ -574,28 +452,19 @@ namespace SushiRuntime
                                                           Owner::K_NOTHING_TO_RUN);
                 if (async_step_pending())
                     return Detail::error_without_throwing(ErrorCode::InvalidState,
-                        "run(), run_async() and their try_ forms are refused while a step "
-                        "started with run_async() is pending on this graph; call wait() or "
-                        "try_wait() on its RunHandle first.");
+                        "run() and run_async() are refused while a step started with "
+                        "run_async() is pending on this graph; call wait() on its RunHandle "
+                        "first.");
                 if (self.run_context().execution_engine().run_in_progress())
                     return Detail::error_without_throwing(ErrorCode::InvalidState,
-                        "run(), run_async() and their try_ forms are refused while another "
+                        "run() and run_async() are refused while another "
                         "graph's run is in flight on this runtime, and from inside a task of "
                         "a run; settle that run first: let its blocking call return, or call "
-                        "wait() or try_wait() on its RunHandle.");
+                        "wait() on its RunHandle.");
                 if (self.has_dangling_resource())
                     return Detail::error_without_throwing(ErrorCode::DanglingResource,
                                                           Owner::K_DANGLING_RESOURCE);
                 return Error{};
-            }
-
-            /** @brief Throws unsupported when the engine cannot start a run without blocking. */
-            void require_asynchronous_engine()
-            {
-                if (!async_engine().supports_asynchronous_run())
-                    throw SushiException(Error{ErrorCode::Unsupported,
-                        "run_async(): the active execution engine cannot start a run "
-                        "without blocking; call run()."});
             }
 
             /**

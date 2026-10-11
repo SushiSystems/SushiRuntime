@@ -149,7 +149,7 @@ namespace
                   po[i] = pf[i] * pa[0] + ps[i] * pb[0];
               });
 
-        g.run(K_STEPS);
+        g.run(K_STEPS).value();
 
         Outcome outcome;
         outcome.output.resize(N);
@@ -284,11 +284,11 @@ TEST(Integration_Determinism, ReplayDoesNotDriftAcrossSteps)
     auto g = rt.graph();
     record_tiled_total(g.recorder(), in, total);
 
-    g.run();
+    g.run().value();
     const float after_one_step = total[0];
 
     total[0] = 0.0f;
-    g.run(K_STEPS);
+    g.run(K_STEPS).value();
 
     EXPECT_EQ(std::memcmp(&after_one_step, &total[0], sizeof(float)), 0)
         << "a replayed rule drifted: one step gave " << after_one_step

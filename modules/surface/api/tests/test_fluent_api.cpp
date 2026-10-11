@@ -35,7 +35,7 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that try_run() on a non-empty graph returns a successful, populated RunReport. */
+/** @brief Tests that run() on a non-empty graph returns a successful, populated RunReport. */
 TEST(Integration_FluentAPI, TryRunSuccessPath)
 {
     constexpr std::size_t N = 64;
@@ -49,8 +49,8 @@ TEST(Integration_FluentAPI, TryRunSuccessPath)
     auto g = rt.graph();
     g.add(N, Reads(), Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
-    auto result = g.try_run();
-    ASSERT_TRUE(result.has_value()) << "try_run() should succeed on a valid graph.";
+    auto result = g.run();
+    ASSERT_TRUE(result.has_value()) << "run() should succeed on a valid graph.";
     EXPECT_EQ(result->total_tasks_executed, 1u);
     EXPECT_TRUE(result->is_successful);
 
@@ -77,7 +77,7 @@ TEST(Integration_FluentAPI, RunReportFieldsAfterMultiStep)
         extra[i] = 0;
     g.add(extra, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
-    auto report = g.run(STEPS);
+    auto report = g.run(STEPS).value();
 
     EXPECT_EQ(report.total_tasks_executed, 2 * STEPS);
     EXPECT_TRUE(report.is_successful);
@@ -98,7 +98,7 @@ TEST(Integration_FluentAPI, RunForRunsAtLeastOneStep)
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     // Zero budget: documented contract says at least one step always runs.
-    auto report = g.run_for(std::chrono::milliseconds(0));
+    auto report = g.run_for(std::chrono::milliseconds(0)).value();
 
     EXPECT_GE(report.total_tasks_executed, 1u)
         << "run_for(0) must still run at least one step.";
@@ -119,9 +119,9 @@ TEST(Integration_FluentAPI, RunForRunsMultipleStepsWithinBudget)
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
     // The kernel is warmed first, as run_for fixes its deadline before step one; see README.md.
-    g.run();
+    g.run().value();
 
-    auto report = g.run_for(std::chrono::milliseconds(50));
+    auto report = g.run_for(std::chrono::milliseconds(50)).value();
 
     EXPECT_GE(report.total_tasks_executed, 2u)
         << "run_for(50ms) should complete more than one step for a trivial kernel.";
@@ -149,7 +149,7 @@ TEST(Integration_FluentAPI, RawHandlerKernelAdd)
         });
     });
 
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i * 2)) << "at i=" << i;
@@ -176,7 +176,7 @@ TEST(Integration_FluentAPI, RangeKernelAdd)
         });
     });
 
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
@@ -206,7 +206,7 @@ TEST(Integration_FluentAPI, PointerTrackedAddOrdering)
     // Task 2: square in place (RAW on p -> must run after task 1)
     g.add(N, Reads(key), Writes(key), [p](std::size_t i) { p[i] = p[i] * p[i]; });
 
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
@@ -236,7 +236,7 @@ TEST(Integration_FluentAPI, TrackedRangeKernelOrdering)
         });
     });
 
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
@@ -264,7 +264,7 @@ TEST(Integration_FluentAPI, TrackedRawKernelOrdering)
         });
     });
 
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
@@ -295,7 +295,7 @@ TEST(Integration_FluentAPI, TrackedNdRangeOrdering)
         p[i] = p[i] * p[i];
     });
 
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i * i)) << "at i=" << i;
@@ -333,7 +333,7 @@ TEST(Integration_FluentAPI, SubRegionDisjointWritesThenWholeRead)
     g.add(N, Reads(buf), Writes(out),
           [p, o](std::size_t i) { o[i] = p[i]; });
 
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N / 2; ++i)
         ASSERT_EQ(out[i], 1) << "lower half at i=" << i;
@@ -364,7 +364,7 @@ TEST(Integration_FluentAPI, BufferAllocateUseAndReadBack)
     auto g = rt.graph();
     g.add(N, Reads(sp), Writes(dp), [sp, dp](std::size_t i) { dp[i] = sp[i] * 2.0f; });
 
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_FLOAT_EQ(dst[i], static_cast<float>(i) * 2.0f) << "at i=" << i;
@@ -423,7 +423,7 @@ TEST(Integration_FluentAPI, RunZeroStepsIsNoOp)
     auto g = rt.graph();
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
-    auto report = g.run(0);
+    auto report = g.run(0).value();
 
     // No step ran, so field must stay at 42.
     EXPECT_EQ(report.total_tasks_executed, 0u);

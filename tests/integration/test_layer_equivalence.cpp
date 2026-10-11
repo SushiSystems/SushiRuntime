@@ -135,13 +135,13 @@ namespace
     {
         if (how == Drive::Blocking)
         {
-            const Internal::Observability::RunReport report = graph.run(steps);
+            const Internal::Observability::RunReport report = graph.run(steps).value();
             EXPECT_TRUE(report.is_successful);
             shot.layer = report.layer;
             return;
         }
         for (std::size_t s = 0; s < steps; ++s)
-            graph.run_async().wait();
+            graph.run_async().value().wait().value();
     }
 
     /** @brief Owns the data of the tile workload: three chained buffers and one State. */

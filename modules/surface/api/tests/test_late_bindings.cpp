@@ -54,7 +54,7 @@ TEST(Integration_LateBindings, DynamicSizePerElement)
     for (std::size_t k = 1; k <= CAP; ++k)
     {
         live = k;
-        g.run();
+        g.run().value();
     }
 
     EXPECT_EQ(g.compile_count(), 1u) << "size changes must not recompile.";
@@ -86,7 +86,7 @@ TEST(Integration_LateBindings, EnableTogglePerElement)
     {
         on = (k % 2 == 0);          // enabled on even steps only
         if (on) ++enabled_steps;
-        g.run();
+        g.run().value();
     }
 
     EXPECT_EQ(g.compile_count(), 1u) << "enable toggles must not recompile.";
@@ -118,7 +118,7 @@ TEST(Integration_LateBindings, DisabledNodeStillReleasesSuccessors)
           [sp](std::size_t i) { sp[i] += 1; });
 
     for (std::size_t k = 0; k < STEPS; ++k)
-        g.run();                     // upstream stays disabled the whole run
+        g.run().value();                     // upstream stays disabled the whole run
 
     EXPECT_EQ(g.compile_count(), 1u);
     for (std::size_t i = 0; i < N; ++i)
@@ -149,7 +149,7 @@ TEST(Integration_LateBindings, DynamicSizeState)
     for (std::size_t k = 0; k < STEPS; ++k)
     {
         live = 2 * (k + 1);
-        g.run();
+        g.run().value();
     }
 
     EXPECT_EQ(g.compile_count(), 1u) << "state size changes must not recompile.";
@@ -183,7 +183,7 @@ TEST(Integration_LateBindings, ComposedWhenAndSized)
         on   = (k % 3 != 0);         // disabled every third step
         live = (k % 2 == 0) ? CAP : 2;
         if (on && live > 0) ++expected0;   // element 0 is in range whenever live > 0
-        g.run();
+        g.run().value();
     }
 
     EXPECT_EQ(g.compile_count(), 1u);
@@ -218,7 +218,7 @@ TEST(Integration_LateBindings, BaseOffsetIteratesASlice)
         base = starts[round];
         count = lengths[round];
 
-        g.run();
+        g.run().value();
 
         for (std::size_t i = 0; i < CAPACITY; ++i)
         {
@@ -252,7 +252,7 @@ TEST(Integration_LateBindings, BaseWithoutASizeRunsToTheEnd)
     g.add(based_at([] { return BASE; }),
           CAPACITY, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = 1; });
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < BASE; ++i)
         ASSERT_EQ(buf[i], 0) << "at i=" << i;
@@ -283,7 +283,7 @@ TEST(Integration_LateBindings, BaseAndSizeBothFromTheDevice)
     g.add(based_at_device(slice, 0).sized_from_device(slice, 1),
           CAPACITY, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<int>(i); });
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < CAPACITY; ++i)
     {
@@ -311,11 +311,11 @@ TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
           CAPACITY, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = 1; });
 
-    EXPECT_THROW(g.run(), SushiException) << "10 elements from index 10 does not fit 16";
+    EXPECT_FALSE(g.run().has_value()) << "10 elements from index 10 does not fit 16";
 
     // A window that does fit runs normally: the rejection wedged nothing.
     base = 6;
-    EXPECT_NO_THROW(g.run());
+    EXPECT_TRUE(g.run().has_value());
 }
 
 /** @brief Tests that based_at_device stops on an unreadable slot at the call site. */

@@ -57,7 +57,7 @@ TEST(Integration_Observability, ProfilingOffLeavesBreakdownEmpty)
 
     auto g = rt.graph();
     g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
-    auto rep = g.run(4);
+    auto rep = g.run(4).value();
 
     EXPECT_TRUE(rep.node_timings.empty());
     EXPECT_TRUE(rep.worker_timings.empty());
@@ -86,7 +86,7 @@ TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
     });
     g.add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] = static_cast<float>(i); });
 
-    auto rep = g.run(STEPS);
+    auto rep = g.run(STEPS).value();
 
     // Each kernel is one plan node per step, and only the counts are asserted; see README.md.
     ASSERT_EQ(rep.node_timings.size(), 2u);
@@ -114,7 +114,7 @@ TEST(Integration_Observability, NamingTheLastNodeReachesNodeTiming)
     g.add(N, Reads{}, Writes(buf),
           [p](std::size_t i) { p[i] = static_cast<int>(i); }).name("seed");
 
-    auto rep = g.run(STEPS);
+    auto rep = g.run(STEPS).value();
 
     ASSERT_EQ(rep.node_timings.size(), 1u);
     EXPECT_STREQ(rep.node_timings[0].name.c_str(), "seed");
@@ -155,7 +155,7 @@ TEST(Integration_Observability, EveryAddShapeCanBeNamed)
     g.add(sized([] { return N; }), N, Reads(a), Writes(b),
           [pa, pb](std::size_t i) { pb[i] = pa[i]; }).name("dynamic");
 
-    auto rep = g.run();
+    auto rep = g.run().value();
 
     std::vector<std::string> names;
     for (const auto& nt : rep.node_timings)
@@ -177,7 +177,7 @@ TEST(Integration_Observability, UnnamedNodeStillReportsTheDefaultLabel)
 
     auto g = rt.graph();
     g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
-    auto rep = g.run();
+    auto rep = g.run().value();
 
     ASSERT_EQ(rep.node_timings.size(), 1u);
     EXPECT_STREQ(rep.node_timings[0].name.c_str(), "unnamed_task");
@@ -196,7 +196,7 @@ TEST(Integration_Observability, ProfilingOnPopulatesWorkerSplit)
 
     auto g = rt.graph();
     g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
-    auto rep = g.run(16);
+    auto rep = g.run(16).value();
 
     EXPECT_EQ(rep.layer, Internal::Observability::ExecutionLayer::Scheduler);
     ASSERT_FALSE(rep.worker_timings.empty());
@@ -237,7 +237,7 @@ TEST(Integration_Observability, TransferBytesAttributedToTheRunWindow)
     // The bytes a host node pushes during the run land in this run's window; see README.md.
     auto g = rt.graph();
     g.add_host([&buf, &src]() { buf.write_range({0, N}, src).value(); });
-    auto rep = g.run();
+    auto rep = g.run().value();
 
     EXPECT_EQ(rep.host_to_device_bytes, N * sizeof(int));
     EXPECT_EQ(rep.device_to_host_bytes, 0u);

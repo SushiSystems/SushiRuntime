@@ -134,7 +134,8 @@ namespace
         RunProgress progress;
         auto run = std::async(std::launch::async, [&graph, &progress]
         {
-            return graph.run_until([&progress] { return progress.observe_predicate_call(); });
+            return graph.run_until([&progress] { return progress.observe_predicate_call(); })
+                .value();
         });
 
         // Declared after run, so the stop request precedes the join in the future's destructor.
@@ -192,7 +193,7 @@ TEST(Integration_Cancellation, NextRunIsNotCancelledAfterReset)
     EXPECT_TRUE(cancelled_report.cancelled);
 
     // A fresh bounded run must not inherit the previous cancellation.
-    auto report = g.run(3);
+    auto report = g.run(3).value();
     EXPECT_FALSE(report.cancelled);
     EXPECT_EQ(report.total_tasks_executed, 3u);
 }

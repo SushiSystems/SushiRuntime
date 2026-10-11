@@ -105,7 +105,7 @@ namespace
                 if (alive[i] && px[i] > xmax) alive[i] = 0;
             }).name("cull");
 
-        const auto report = world.run(K_STEPS);
+        const auto report = world.run(K_STEPS).value();
 
         // Independent scalar reference: same four systems, same order.
         std::vector<float> rpx(N), rpy(N), rvx(N), rvy(N);
@@ -143,13 +143,5 @@ namespace
 
 int main()
 {
-    try
-    {
-        return run_game_engine();
-    }
-    catch (const SushiException& error)
-    {
-        std::fprintf(stderr, "game_engine: %s\n", error.what());
-        return 1;
-    }
+    return run_game_engine();
 }

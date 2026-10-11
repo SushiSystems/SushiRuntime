@@ -150,7 +150,7 @@ takes the Runtime and installs its master on this context, so no header here nam
 
 errors.hpp declares nothing. It includes `core/error.hpp` and `core/result.hpp` and promotes
 `Error`, `ErrorCode`, `Result` and `SushiException` into `SushiRuntime`, so a program that handles a
-failed `create()` or `try_run()` spells them without a module name. The foundation modules sit
+failed `create()` or `run()` spells them without a module name. The foundation modules sit
 below the public surface and promote nothing themselves.
 
 ## logging.hpp

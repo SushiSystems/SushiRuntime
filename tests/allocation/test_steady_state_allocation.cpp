@@ -114,12 +114,12 @@ namespace
     {
         Internal::Observability::RunReport report;
         for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
-            g.run(report);
+            g.run(report).value();
 
         g_allocation_count.store(0, std::memory_order_relaxed);
         g_counting_this_thread = true;
         for (std::size_t i = 0; i < ticks; ++i)
-            g.run(report);
+            g.run(report).value();
         g_counting_this_thread = false;
 
         return g_allocation_count.load(std::memory_order_relaxed);
@@ -129,13 +129,13 @@ namespace
     std::size_t allocations_for_value_ticks(Graph& g, std::size_t ticks)
     {
         for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
-            g.run();
+            g.run().value();
 
         g_allocation_count.store(0, std::memory_order_relaxed);
         g_counting_this_thread = true;
         for (std::size_t i = 0; i < ticks; ++i)
         {
-            const Internal::Observability::RunReport report = g.run();
+            const Internal::Observability::RunReport report = g.run().value();
             (void)report;
         }
         g_counting_this_thread = false;
@@ -279,8 +279,8 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
     Internal::Observability::RunReport report;
     for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
     {
-        auto step = g.run_async();
-        step.wait(report);
+        auto step = g.run_async().value();
+        step.wait(report).value();
     }
 
     const auto measure = [&](std::size_t ticks)
@@ -289,8 +289,8 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
         g_counting_this_thread = true;
         for (std::size_t i = 0; i < ticks; ++i)
         {
-            auto step = g.run_async();
-            step.wait(report);
+            auto step = g.run_async().value();
+            step.wait(report).value();
         }
         g_counting_this_thread = false;
         return g_allocation_count.load(std::memory_order_relaxed);

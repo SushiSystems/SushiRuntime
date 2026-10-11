@@ -73,7 +73,7 @@ TEST(Integration_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
         for (std::size_t i = 0; i < CAPACITY; ++i)
             marks[i] = -1;
 
-        g.run();
+        g.run().value();
 
         const std::size_t expected = static_cast<std::size_t>(multiplier) * 3u;
         ASSERT_EQ(counter[0], multiplier * 3u);
@@ -113,7 +113,7 @@ TEST(Integration_DeviceCount, CounterIsRegisteredAsAReadAutomatically)
     g.add(sized_from_device(counter), CAPACITY, Reads(), Writes(out),
           [o](std::size_t i) { o[i] = 1; });
 
-    g.run();
+    g.run().value();
 
     int ran = 0;
     for (std::size_t i = 0; i < CAPACITY; ++i)
@@ -157,7 +157,7 @@ TEST(Integration_DeviceCount, ChainedProducerCountsInOneComposition)
           [s2](std::size_t i) { s2[i] = 1; });
 
     for (std::size_t i = 0; i < CAPACITY; ++i) { stage1[i] = 0; stage2[i] = 0; }
-    g.run();
+    g.run().value();
 
     int ran1 = 0, ran2 = 0;
     for (std::size_t i = 0; i < CAPACITY; ++i) { ran1 += stage1[i]; ran2 += stage2[i]; }
@@ -191,15 +191,15 @@ TEST(Integration_DeviceCount, WhenComposesWithDeviceSize)
 
     for (std::size_t i = 0; i < CAPACITY; ++i) o[i] = 0;
 
-    g.run();
+    g.run().value();
     EXPECT_EQ(out[0], 1);
 
     enabled = false;
-    g.run();
+    g.run().value();
     EXPECT_EQ(out[0], 1) << "a disabled step must run no elements";
 
     enabled = true;
-    g.run();
+    g.run().value();
     EXPECT_EQ(out[0], 2);
 }
 
@@ -224,39 +224,30 @@ TEST(Integration_DeviceCount, CountOverCapacityFailsTheRun)
     g.add(sized_from_device(counter), CAPACITY, Reads(), Writes(out),
           [o](std::size_t i) { o[i] = 1; });
 
-    EXPECT_THROW(g.run(), SushiException);
+    EXPECT_FALSE(g.run().has_value());
 
     // The runtime survives it: the pool is re-armable and a clean graph still runs.
     auto clean = rt.graph();
     clean.add(CAPACITY, Reads(), Writes(out), [o](std::size_t i) { o[i] = 7; });
-    clean.run();
+    clean.run().value();
     EXPECT_EQ(out[0], 7);
 }
 
-/** @brief Tests that a counter the host cannot read is rejected where it is written. */
-TEST(Integration_DeviceCount, RejectsACounterThatIsNotHostResident)
+/** @brief Tests that a counter the host cannot read stops the call that names it. */
+TEST(Integration_DeviceCountDeathTest, ACounterThatIsNotHostResidentStops)
 {
     auto rt = Runtime::create().value();
     auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device).value();
     auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared).value();
     auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host).value();
 
-    for (const Buffer<std::uint32_t>* rejected : { &resident, &shared })
-    {
-        try
-        {
-            (void)sized_from_device(*rejected);
-            ADD_FAILURE() << "a non-Host counter was accepted";
-        }
-        catch (const SushiException& e)
-        {
-            EXPECT_EQ(e.error().code, ErrorCode::InvalidAccess);
-            EXPECT_NE(std::string(e.what()).find("Residency::Host"), std::string::npos)
-                << e.what();
-        }
-    }
-    EXPECT_THROW((void)sized_from_device(host, 5), SushiException);
-    EXPECT_NO_THROW((void)sized_from_device(host, 1));
+    EXPECT_DEATH(static_cast<void>(sized_from_device(resident)),
+                 "sized_from_device: the buffer is Residency::Device.*Residency::Host");
+    EXPECT_DEATH(static_cast<void>(sized_from_device(shared)),
+                 "sized_from_device: the buffer is Residency::Shared.*Residency::Host");
+    EXPECT_DEATH(static_cast<void>(sized_from_device(host, 5)),
+                 "sized_from_device: index 5 is out of range");
+    static_cast<void>(sized_from_device(host, 1));
 }
 
 /** @brief Tests that a count is read from the element the index names, not from element zero. */
@@ -279,7 +270,7 @@ TEST(Integration_DeviceCount, ReadsTheCountAtTheGivenIndex)
     ASSERT_NO_THROW(g.add(sized_from_device(plan, SLOT),
                           CAPACITY, Reads(), Writes(out),
                           [o](std::size_t i) { o[i] = static_cast<int>(i); }));
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < 3; ++i)
         ASSERT_EQ(out[i], static_cast<int>(i)) << "element " << i;
@@ -306,35 +297,15 @@ TEST(Integration_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
 }
 
 /** @brief Tests that the member setters check their slot as the free builders do. */
-TEST(Integration_DeviceCount, MemberSettersRefuseASlotThatIsNotHostResident)
+TEST(Integration_DeviceCountDeathTest, MemberSettersStopOnASlotThatIsNotHostResident)
 {
     auto rt       = Runtime::create().value();
     auto resident = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Device).value();
     auto host     = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
 
     Dynamic dyn;
-    try
-    {
-        dyn.sized_from_device(resident, 1);
-        ADD_FAILURE() << "a device-resident slot was accepted";
-    }
-    catch (const SushiException& e)
-    {
-        EXPECT_EQ(e.error().code, ErrorCode::InvalidAccess);
-        const std::string message(e.what());
-        EXPECT_NE(message.find("sized_from_device"), std::string::npos) << message;
-        EXPECT_NE(message.find("Residency::Device"), std::string::npos) << message;
-    }
-    try
-    {
-        dyn.based_at_device(host, 4);
-        ADD_FAILURE() << "an index one past the slot was accepted";
-    }
-    catch (const SushiException& e)
-    {
-        EXPECT_EQ(e.error().code, ErrorCode::InvalidAccess);
-        const std::string message(e.what());
-        EXPECT_NE(message.find("based_at_device"), std::string::npos) << message;
-        EXPECT_NE(message.find("index 4"), std::string::npos) << message;
-    }
+    EXPECT_DEATH(static_cast<void>(dyn.sized_from_device(resident, 1)),
+                 "sized_from_device: the buffer is Residency::Device");
+    EXPECT_DEATH(static_cast<void>(dyn.based_at_device(host, 4)),
+                 "based_at_device: index 4 is out of range");
 }

@@ -100,7 +100,7 @@ TEST(Integration_StateMove, ARuleFollowsAStateMovedAfterAdd)
     add_increment(graph, field);
 
     State<Word> moved = std::move(field);
-    graph.run(K_STEPS);
+    graph.run(K_STEPS).value();
 
     expect_advanced(moved, static_cast<Word>(K_STEPS));
 }
@@ -117,7 +117,7 @@ TEST(Integration_StateMove, ARuleFollowsAStateItsVectorReallocated)
     const auto recorded_at = reinterpret_cast<std::uintptr_t>(&fields[0]);
     while (reinterpret_cast<std::uintptr_t>(&fields[0]) == recorded_at)
         fields.push_back(seeded_state(rt));
-    graph.run(K_STEPS);
+    graph.run(K_STEPS).value();
 
     expect_advanced(fields[0], static_cast<Word>(K_STEPS));
     expect_advanced(fields[1], 0u);
@@ -138,7 +138,7 @@ TEST(Integration_StateMove, ACoupledRuleFollowsItsMovedStates)
 
     State<Word> moved_input = std::move(input);
     State<Word> moved_out = std::move(out);
-    graph.run(std::size_t{2});
+    graph.run(std::size_t{2}).value();
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
     {
@@ -159,7 +159,7 @@ TEST(Integration_StateMove, ADynamicStateRuleFollowsAMovedState)
               [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
     State<Word> moved = std::move(field);
-    graph.run(K_STEPS);
+    graph.run(K_STEPS).value();
 
     EXPECT_EQ(graph.compile_count(), 1u);
     expect_advanced(moved, static_cast<Word>(K_STEPS), K_PREFIX);
@@ -213,11 +213,11 @@ TEST(Integration_StateMove, AStateAssignedOverRefusesTheRun)
     auto field = seeded_state(rt);
     auto graph = rt.graph();
     add_increment(graph, field);
-    ASSERT_TRUE(graph.try_run());
+    ASSERT_TRUE(graph.run());
 
     field = seeded_state(rt);
 
-    const auto refused = graph.try_run();
+    const auto refused = graph.run();
     ASSERT_FALSE(refused);
     EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
 }
@@ -235,7 +235,7 @@ TEST(Integration_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentFi
               [second](std::size_t i) { second[i] = K_MARK; });
     graph.add(sized([&live] { return live; }), field,
               [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
-    graph.run();
+    graph.run().value();
     ASSERT_EQ(field.current(), second);
 
     // The first rule still writes `second`, which is now the field the State rule reads.
@@ -249,7 +249,7 @@ TEST(Integration_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentFi
     EXPECT_EQ(waited_on, 1) << "the State rule must wait on the writer of its current field";
 
     graph.name("rebuilt");
-    graph.run();
+    graph.run().value();
 
     EXPECT_EQ(graph.compile_count(), 2u);
     for (std::size_t i = 0; i < K_WIDTH; ++i)

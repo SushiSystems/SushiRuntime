@@ -105,7 +105,7 @@ TEST(Integration_RegionCommit, AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegion
     world.region(2).add_host(Reads(shared), Writes(out_c),
                              [ps, pc]() { copy_elements(ps, pc); })
                    .name("c");
-    world.run();
+    world.run().value();
     expect_producer_orders_consumer(world);
     const std::size_t composed = world.compose_count();
 
@@ -114,14 +114,14 @@ TEST(Integration_RegionCommit, AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegion
     world.region(3).add_host(Reads{}, Writes(own_d),
                              Testing::RefusingFill(refuses, K_BUILD_FAILURE, pd, K_ELEMENTS, 5));
 
-    const auto failed = world.try_run();
+    const auto failed = world.run();
     ASSERT_FALSE(failed.has_value());
     EXPECT_EQ(failed.error().code, ErrorCode::CompileFailed);
     EXPECT_EQ(world.compose_count(), composed) << "a commit that threw composed nothing";
     expect_producer_orders_consumer(world);
 
     *refuses = false;
-    const auto retried = world.try_run();
+    const auto retried = world.run();
     ASSERT_TRUE(retried.has_value());
     EXPECT_EQ(world.compose_count(), composed + 1);
     expect_producer_orders_consumer(world);

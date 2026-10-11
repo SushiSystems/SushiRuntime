@@ -54,7 +54,7 @@ TEST(Integration_DeviceResident, BufferRoundTrip)
     int* p = buf.data();
     auto g = rt.graph();
     g.add(N, Reads(buf), Writes(buf), [p](std::size_t i) { p[i] *= 2; });
-    g.run();
+    g.run().value();
 
     const std::vector<int> out = buf.read_range({0, N}).value();
     ASSERT_EQ(out.size(), N);
@@ -100,7 +100,7 @@ TEST(Integration_DeviceResident, StateStepsResident)
 
     auto g = rt.graph();
     g.add(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
-    g.run(STEPS);
+    g.run(STEPS).value();
 
     const std::vector<int> out = field.read_range({0, N}).value();
     ASSERT_EQ(out.size(), N);
@@ -177,7 +177,7 @@ TEST(Integration_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
     int* p = buf.data();
     auto g = rt.graph();
     g.add(N, Reads(buf), Writes(buf), [p](std::size_t i) { p[i] += 1000; });
-    g.run();
+    g.run().value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(buf[i], static_cast<int>(i) + 1000) << "at i=" << i;

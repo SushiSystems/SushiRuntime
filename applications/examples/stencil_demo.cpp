@@ -71,7 +71,7 @@ namespace
             next[c] = cur[c] + ALPHA * lap;
         });
 
-        const auto report = g.run(K_STEPS);
+        const auto report = g.run(K_STEPS).value();
 
         // The total heat of a closed diffusion is conserved; report it as a smoke check.
         double total = 0.0;
@@ -86,13 +86,5 @@ namespace
 
 int main()
 {
-    try
-    {
-        return run_stencil();
-    }
-    catch (const SushiException& error)
-    {
-        std::fprintf(stderr, "stencil: %s\n", error.what());
-        return 1;
-    }
+    return run_stencil();
 }

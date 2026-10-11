@@ -124,7 +124,7 @@ namespace SushiRuntime
 
             /**
              * @brief Returns whether this handle still owns a step that must be waited for.
-             * @return True until wait() or try_wait() consumes it, it is moved from, or its
+             * @return True until wait() consumes it, it is moved from, or its
              *         graph ends the step by being moved or destroyed.
              */
             [[nodiscard]] bool pending() const noexcept { return owns_step(); }
@@ -142,54 +142,27 @@ namespace SushiRuntime
             /**
              * @brief Blocks until the step finishes, advances every State and returns the
              *        report.
-             * @throws SushiException With the error try_wait() would return.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-             */
-            Internal::Observability::RunReport wait()
-            {
-                auto waited = try_wait();
-                if (!waited)
-                    throw SushiException(std::move(waited.error()));
-                return std::move(*waited);
-            }
-
-            /**
-             * @brief Blocks until the step finishes and reports into reuse.
-             * @param reuse The report to overwrite; its previous contents are lost.
-             * @throws SushiException With the error try_wait() would return.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-             */
-            Internal::Observability::RunReport& wait(Internal::Observability::RunReport& reuse)
-            {
-                auto waited = try_wait(reuse);
-                if (!waited)
-                    throw SushiException(std::move(waited.error()));
-                return reuse;
-            }
-
-            /**
-             * @brief Blocks until the step finishes and returns the outcome as a value.
              * @return The report, or the Error that ended the step.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             [[nodiscard]] Result<Internal::Observability::RunReport, Error>
-            try_wait() noexcept
+            wait() noexcept
             {
                 Internal::Observability::RunReport report;
-                auto waited = try_wait(report);
+                auto waited = wait(report);
                 if (!waited)
                     return make_error(std::move(waited.error()));
                 return std::move(report);
             }
 
             /**
-             * @brief Blocks until the step finishes and reports into reuse, without throwing.
+             * @brief Blocks until the step finishes and reports into reuse.
              * @param reuse The report to overwrite; its previous contents are lost.
              * @return A pointer to reuse, or the Error that ended the step.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             [[nodiscard]] Result<Internal::Observability::RunReport*, Error>
-            try_wait(Internal::Observability::RunReport& reuse) noexcept
+            wait(Internal::Observability::RunReport& reuse) noexcept
             {
                 // Every return below leaves reuse reset and marked unsuccessful.
                 reuse.reset();
@@ -247,7 +220,7 @@ namespace SushiRuntime
                 if (owner_ == nullptr)
                     return;
                 Internal::Observability::RunReport dropped;
-                static_cast<void>(try_wait(dropped));
+                static_cast<void>(wait(dropped));
             }
 
             /** @brief The graph that started the step; dereferenced only while owns_step(). */

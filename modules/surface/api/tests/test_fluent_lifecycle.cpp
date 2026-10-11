@@ -52,7 +52,7 @@ TEST(Integration_FluentLifecycle, StateReplayIncrement)
         next[i] = cur[i] + 1;
     });
 
-    auto report = sim.run(STEPS);
+    auto report = sim.run(STEPS).value();
     EXPECT_EQ(report.total_tasks_executed, STEPS); // one task replayed STEPS times
 
     bool ok = true;
@@ -81,8 +81,8 @@ TEST(Integration_FluentLifecycle, ReplayAcrossCalls)
         next[i] = cur[i] + 1;
     });
 
-    sim.run(10);
-    sim.run(5);
+    sim.run(10).value();
+    sim.run(5).value();
 
     for (std::size_t i = 0; i < N; ++i)
         ASSERT_EQ(field[i], 15);
@@ -108,7 +108,7 @@ TEST(Integration_FluentLifecycle, RunUntilStopsOnCondition)
         next[i] = cur[i] + 1;
     });
 
-    sim.run_until([&]() { return field[0] >= 20; });
+    sim.run_until([&]() { return field[0] >= 20; }).value();
 
     EXPECT_EQ(field[0], 20);
 }
@@ -138,7 +138,7 @@ TEST(Integration_FluentLifecycle, CoupledFieldsAreJacobi)
         un[i] = uc[i] + vc[i];
     });
 
-    sim.run(STEPS);
+    sim.run(STEPS).value();
 
     constexpr int expected_v = static_cast<int>(STEPS);             // 10
     constexpr int expected_u = static_cast<int>(STEPS * (STEPS - 1) / 2); // 45
@@ -164,12 +164,12 @@ TEST(Integration_FluentLifecycle, MutationRecompiles)
 
     auto sim = rt.graph();
     sim.add(a, [](std::size_t i, const int* c, int* n) { n[i] = c[i] + 1; });
-    sim.run(3); // a == 3
+    sim.run(3).value(); // a == 3
 
     auto b = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) b[i] = 0;
     sim.add(b, [](std::size_t i, const int* c, int* n) { n[i] = c[i] + 2; });
-    sim.run(2); // recompiles; a += 2 -> 5, b == 4
+    sim.run(2).value(); // recompiles; a += 2 -> 5, b == 4
 
     for (std::size_t i = 0; i < N; ++i)
     {
@@ -181,14 +181,14 @@ TEST(Integration_FluentLifecycle, MutationRecompiles)
 /**
  * @brief Tests that an empty graph is reported as invalid.
  *
- * The non-throwing try_run() channel reports an InvalidGraph error without throwing an exception.
+ * The non-throwing run() channel reports an InvalidGraph error without throwing an exception.
  */
 TEST(Integration_FluentLifecycle, EmptyGraphIsInvalid)
 {
     auto rt  = Runtime::create().value();
     auto sim = rt.graph();
 
-    auto r = sim.try_run();
+    auto r = sim.run();
     ASSERT_FALSE(r);
     EXPECT_EQ(r.error().code, ErrorCode::InvalidGraph);
 }
@@ -197,7 +197,7 @@ TEST(Integration_FluentLifecycle, EmptyGraphIsInvalid)
  * @brief A graph that outlives a Buffer it recorded fails cleanly, not with UB.
  *
  * The graph tracks the liveness of every typed handle it touches, so a run after
- * the Buffer was freed returns a DanglingResource error through try_run() instead
+ * the Buffer was freed returns a DanglingResource error through run() instead
  * of dispatching a kernel against released memory.
  */
 TEST(Integration_FluentLifecycle, DanglingResourceIsReported)
@@ -213,7 +213,7 @@ TEST(Integration_FluentLifecycle, DanglingResourceIsReported)
         sim.add(N, Reads(), Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
     }   // buf is destroyed here, before the graph runs
 
-    auto r = sim.try_run();
+    auto r = sim.run();
     ASSERT_FALSE(r);
     EXPECT_EQ(r.error().code, ErrorCode::DanglingResource);
 }

@@ -74,7 +74,7 @@ structural change is committed before the step is submitted.
 ### `expect_refused_as_invalid_state`, `AnotherGraphIsRefusedWhileAStepIsPending`
 
 A runtime has one engine, so one graph's pending step occupies it. While the step of the first graph
-is held open at a gate, `run()`, `try_run()` and `try_run_async()` on a second graph of the same
+is held open at a gate, `run()` and `run_async()` on a second graph of the same
 runtime must each report `InvalidState` and must not run the second graph's task. The first
 graph's handle must then complete with a successful report, and the second graph must run once the
 step is settled. `expect_refused_as_invalid_state` checks one `Result` for that code.
@@ -91,7 +91,7 @@ A handle may outlive its graph. The graph is destroyed in an inner scope while i
 with the gate released just before, and the handle is destroyed at the end of the test. The buffer
 must hold the task's write when the scope closes, which shows that the destructor waited for the
 step before the plan died. `expect_step_ended_by_its_graph` then expects `pending()` false,
-`ready()` true and `InvalidState` from `try_wait()`, none of which may read the dead graph. The
+`ready()` true and `InvalidState` from `wait()`, none of which may read the dead graph. The
 `Graph` test also runs a new graph on the runtime, which a step left behind would refuse.
 
 ### `ARegionDroppedWhileAStepIsPendingFinishesTheStep`
@@ -234,10 +234,10 @@ counter says.
 A count larger than the compiled capacity fails the run with a message that names both numbers.
 Truncating would silently drop work, which is the failure `sized_from_device` exists to remove.
 
-### `RejectsACounterThatIsNotHostResident`
+### `ACounterThatIsNotHostResidentStops`
 
-A counter the host cannot read at every moment of a run is rejected where it is written, not in the
-middle of a run. `Device` memory is never host-addressable, and `Shared` memory is managed memory
+A counter the host cannot read at every moment of a run stops the call that names it, before any
+run starts. `Device` memory is never host-addressable, and `Shared` memory is managed memory
 the host may not touch while a kernel runs on some backends.
 
 ### `ReadsTheCountAtTheGivenIndex`
@@ -250,10 +250,10 @@ read that element: element 5 holds 3, and exactly three elements run.
 `based_at_device` reads its slot exactly as `sized_from_device` does, through the same check, so a
 base slot at a non-zero index is accepted at `add()`.
 
-### `MemberSettersRefuseASlotThatIsNotHostResident`
+### `MemberSettersStopOnASlotThatIsNotHostResident`
 
 The members `Dynamic::sized_from_device` and `Dynamic::based_at_device` take the `Buffer` and check
-it as the free builders do. A device-resident slot and an index one past the buffer are refused
+it as the free builders do. A device-resident slot and an index one past the buffer stop the process
 where the member is called, and each message names the call. Up to v0.3 the members took a bare
 pointer, and the tests here that handed them an interior pointer, a device address and a stack
 address have no call left to make.
@@ -482,7 +482,7 @@ renumbers every live region densely from zero.
 The file covers the parts of the fluent API that `test_fluent_lifecycle.cpp` does not exercise:
 
 - `run_for(duration)`
-- the success path of `try_run()` and the fields of `RunReport`
+- the success path of `run()` and the fields of `RunReport`
 - the `add(kernel)` overload that takes a raw `sycl::handler`
 - the `add(n, kernel)` range kernel overload
 - the pointer-tracked `add(reads, writes, n, kernel)` overload
@@ -494,7 +494,7 @@ The file covers the parts of the fluent API that `test_fluent_lifecycle.cpp` doe
 
 ### `TryRunSuccessPath`
 
-`try_run()` on a non-empty graph must return a successful result with `total_tasks_executed` filled
+`run()` on a non-empty graph must return a successful result with `total_tasks_executed` filled
 in. The test proves that the non-throwing path returns a valid `RunReport` and not a
 default-constructed one.
 
@@ -908,6 +908,7 @@ captured. Asking for the region would not do it: `region(key)` is not a mutation
 The memory module has no seam that makes an allocation fail, so the test asks for half the
 address space in bytes, which no device has. `scratch()` returns `AllocationFailed`, and a request
 of 16 bytes on the same recorder is granted.
+
 ## test_recorder_semantics.cpp
 
 The file covers what the recorder's words mean: a rule against a node, a name, a move, a region
@@ -1060,44 +1061,42 @@ expose the same ones, which `ErrorCode` each kind of failure carries, and what a
 
 ### `RunEntries`
 
-`RunEntries<G>` is the list of run entries as `static_assert`s: the eight throwing forms, their
-eight `try_` twins, `run_async()`, `try_run_async()`, `cancel()`, `set_profiling()` and
+`RunEntries<G>` is the list of run entries as `static_assert`s: the eight forms of `run()`,
+`run_for()` and `run_until()`, then `run_async()`, `cancel()`, `set_profiling()` and
 `is_profiling_requested()`, each with its return type, and `noexcept` where the contract has it.
 The template is instantiated for `Graph` and for `DynamicGraph`, so an entry missing from
 either, or declared differently, fails the compile.
 
-### `expect_kernel_failed_everywhere`, `code_thrown_by`
+### `expect_kernel_failed_everywhere`
 
 `expect_kernel_failed_everywhere` runs a graph whose host task throws `std::runtime_error` through
-`try_run()`, `try_run(report)`, `try_run_async()` with `try_wait()`, `run()` and
-`run_async().wait()`, and expects `ErrorCode::KernelFailed` with the task's text from each.
-`code_thrown_by` returns the code of the `SushiException` a call throws; any other exception type
-leaves the helper and fails the test.
+`run()`, `run(report)` and `run_async()` with `wait()`, and expects `ErrorCode::KernelFailed` with
+the task's text from each.
 
 ### `GraphReportsAThrowingHostTaskAsKernelFailed`, `DynamicGraphReportsAThrowingHostTaskAsKernelFailed`
 
 A host task that throws is a failed step, so both graph types report `KernelFailed` from the
-synchronous and the asynchronous path. `try_run()` used to report `CompileFailed` for it, and
+synchronous and the asynchronous path. `run()` used to report `CompileFailed` for it, and
 `wait()` used to let the task's own exception through.
 
 ### `AThrowingBuildIsCompileFailed`
 
 No code of the caller runs when the plan is built except the copy of each recorded callable into
 its node. The second task is a `Testing::RefusingFill` whose copy throws, so the build throws. It
-must yield `CompileFailed` from `try_run()` and from `try_run_async()`, which shows that the code
+must yield `CompileFailed` from `run()` and from `run_async()`, which shows that the code
 follows the phase and not the exception type.
 
 ### `EveryTryEntryRunsOnBothGraphs`
 
 `expect_every_try_entry_runs` calls the eight `try_` entries once each on a graph whose single host
 task counts its runs. The count must be twelve on a `Graph` and on a `DynamicGraph`: one, two, one
-and two steps from the `try_run` forms, one each from the two `try_run_for` forms with a zero
-budget, and two each from the two `try_run_until` forms.
+and two steps from the `run` forms, one each from the two `run_for` forms with a zero
+budget, and two each from the two `run_until` forms.
 
 ### `ARunWhileAStepIsPendingIsInvalidState`
 
-While a step is held open at a gate, `try_run()` and `try_run_async()` must return `InvalidState`,
-and so must a second `try_wait()` on the handle once the step has been waited for.
+While a step is held open at a gate, `run()` and `run_async()` must return `InvalidState`,
+and so must a second `wait()` on the handle once the step has been waited for.
 
 ### `SetProfilingChainsAndReadsBack`
 
@@ -1122,7 +1121,7 @@ request the composer keeps reaches the plan at the commit after each change and 
 
 Moving a graph while its step is pending breaks a precondition. A debug build asserts, so the test
 is skipped there. In a release build the move must wait for the step, the handle must then report
-`pending()` false and `ready()` true, its `try_wait()` must return `InvalidState`, and the
+`pending()` false and `ready()` true, its `wait()` must return `InvalidState`, and the
 destination must run. The gate is released before the move, so the move returns as soon as the task
 has run.
 
@@ -1144,9 +1143,9 @@ chain, because on the scheduler they would pass without the behaviour they test.
 
 ### `AFailedChainedRunOfOneStepAdvancesNoState`, `AFailedChainedRunOfSeveralStepsAdvancesAllButTheLast`
 
-A chained `try_run()` whose step faults must return an error and leave the `State` on the field it
+A chained `run()` whose step faults must return an error and leave the `State` on the field it
 started on, with the starting value five in it. The chain used to advance before it checked, so the
-`State` showed six. A chained `try_run(3)` whose steps fault must leave seven: the two steps before
+`State` showed six. A chained `run(3)` whose steps fault must leave seven: the two steps before
 the last have advanced, the last has not.
 
 ### `expect_run_for_lasts_until_cancelled`, `ABudgetPastTheClocksRangeRunsUntilCancelled`
@@ -1179,7 +1178,7 @@ allocation, and reads the last of them back when it is called.
 ## test_run_report_reuse.cpp
 
 The file covers the overloads that take a caller-owned `RunReport`: `run(RunReport&)`,
-`try_run(RunReport&)` and `RunHandle::wait(RunReport&)`.
+`run(RunReport&)` and `RunHandle::wait(RunReport&)`.
 
 The tests pin down two properties that pull against each other. The overloads exist so that a frame
 loop keeps one report alive and the per-run vectors stop being reallocated, so the report must not
@@ -1221,8 +1220,8 @@ unsuccessful.
 
 ### `TryRunReturnsTheCallersReport`
 
-The non-throwing form returns the report it was given, so a caller can keep using the result of the
-call without holding both.
+`run(report)` returns a pointer to the report it was given, so a caller can keep using the result
+of the call without holding both.
 
 ### `AsyncWaitFillsTheCallersReport`
 
@@ -1415,7 +1414,7 @@ allocates the one-word `Residency::Host` buffer.
 ### `ADestroyedCountBufferRefusesTheRun`, `ADestroyedBaseBufferRefusesTheRun`
 
 A graph records a rule with `sized_from_device(counter)` or `based_at_device(base)` and runs once.
-The buffer is then destroyed and the next `try_run()` returns `DanglingResource`. The count case
+The buffer is then destroyed and the next `run()` returns `DanglingResource`. The count case
 also checks that the recorder watches two allocations, the target and the counter.
 
 ### `ADestroyedCountBufferRefusesAStateRule`
@@ -1488,7 +1487,7 @@ State yields an empty view and not a null pointer.
 
 ### `AStateAssignedOverRefusesTheRun`
 
-A State with a recorded rule is move-assigned a new State. The next `try_run()` returns
+A State with a recorded rule is move-assigned a new State. The next `run()` returns
 `DanglingResource`.
 
 ### `ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField`

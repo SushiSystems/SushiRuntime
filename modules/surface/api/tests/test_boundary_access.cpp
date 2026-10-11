@@ -186,7 +186,7 @@ TEST(Integration_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfC
                                  sum[0] = read;
                              })
                    .name("q");
-    world.run();
+    world.run().value();
 
     const Internal::Graph::Node* w = Testing::find_plan_node(plan_of(world), "w");
     const Internal::Graph::Node* node = Testing::find_plan_node(plan_of(world), "q");
@@ -227,7 +227,7 @@ TEST(Integration_BoundaryAccess, AReaderItsPredecessorCoversGainsNoEdge)
                                  sum[0] = read;
                              })
                    .name("q");
-    world.run();
+    world.run().value();
 
     const Internal::Graph::Node* w = Testing::find_plan_node(plan_of(world), "w");
     const Internal::Graph::Node* p = Testing::find_plan_node(plan_of(world), "p");
@@ -269,7 +269,7 @@ TEST(Integration_BoundaryAccess, AnEarlierReaderOrdersAWriterBehindAReadingPrede
     world.region(2).add_host(Reads{}, Writes(shared.region({0, 10})),
                              [cells]() { for (std::size_t i = 0; i < 10; ++i) cells[i] = 9; })
                    .name("q");
-    world.run();
+    world.run().value();
 
     const Internal::Graph::Node* r = Testing::find_plan_node(plan_of(world), "r");
     const Internal::Graph::Node* node = Testing::find_plan_node(plan_of(world), "q");

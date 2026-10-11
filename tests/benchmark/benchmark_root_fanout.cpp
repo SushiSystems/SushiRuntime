@@ -77,7 +77,7 @@ namespace
         }
 
         // The first run compiles the plan; every timed run below is a replay.
-        g.run(std::size_t{1});
+        g.run(std::size_t{1}).value();
 
         const double root_steps = double(steps) * double(roots);
         std::vector<double> reported_samples;
@@ -87,7 +87,7 @@ namespace
         measurement.wall_ns_per_root_step = SushiRuntime::Test::measure([&]() -> double
         {
             const auto t0 = std::chrono::steady_clock::now();
-            const auto report = g.run(steps);
+            const auto report = g.run(steps).value();
             const auto t1 = std::chrono::steady_clock::now();
 
             reported_samples.push_back((report.total_duration_ms * 1e6) / root_steps);

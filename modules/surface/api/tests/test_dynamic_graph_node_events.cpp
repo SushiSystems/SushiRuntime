@@ -62,7 +62,7 @@ TEST(Integration_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
     world.region(0).add(N, Reads{}, Writes(buf),
                         [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
-    auto report = world.run();
+    auto report = world.run().value();
     EXPECT_TRUE(report.node_events.empty());
 }
 
@@ -85,7 +85,7 @@ TEST(Integration_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRe
     world.region(1).add(N, Reads{}, Writes(b),
                         [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("B");
 
-    auto report = world.run();
+    auto report = world.run().value();
     ASSERT_FALSE(report.node_events.empty())
         << "a requested DynamicGraph must record device dispatches, not just stamp the flag";
 
@@ -123,7 +123,7 @@ TEST(Integration_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrde
     world.region(2).add(N, Reads{}, Writes(c),
                         [pc](std::size_t i) { pc[i] = static_cast<int>(i); }).name("R2_only");
 
-    world.run();
+    world.run().value();
 
     const auto& plan = Detail::DynamicGraphNodeEventsTestAccess::plan(world);
     const std::uint32_t idx_r2 = registration_index_of(plan, "R2_only");
@@ -154,12 +154,12 @@ TEST(Integration_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
                         [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("kept");
     world.region(1).add(N, Reads{}, Writes(b),
                         [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("dropped_v1");
-    world.run();
+    world.run().value();
 
     world.drop(1);
     world.region(1).add(N, Reads{}, Writes(b),
                         [pb](std::size_t i) { pb[i] = static_cast<int>(i) * 2; }).name("dropped_v2");
-    world.run();
+    world.run().value();
 
     const auto& plan = Detail::DynamicGraphNodeEventsTestAccess::plan(world);
     const std::uint32_t idx_kept = registration_index_of(plan, "kept");
@@ -184,16 +184,16 @@ TEST(Integration_DynamicGraphNodeEvents, RequestToggleRecompilesOnce)
     world.region(0).add(N, Reads{}, Writes(buf),
                         [p](std::size_t i) { p[i] += 1; });
 
-    world.run();
+    world.run().value();
     const std::size_t compiles_before = world.compose_count();
 
     world.set_profiling(true);
-    world.run();
+    world.run().value();
     EXPECT_EQ(world.compose_count(), compiles_before + 1)
         << "the toggle must force exactly one recompose";
 
     const std::size_t compiles_after_toggle = world.compose_count();
-    world.run();
+    world.run().value();
     EXPECT_EQ(world.compose_count(), compiles_after_toggle)
         << "an unmutated run after the toggle must not recompile again";
 }

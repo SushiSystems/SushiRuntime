@@ -13,7 +13,7 @@ Nine programs written against the public API. Eight include `<SushiRuntime/sushi
 | `coupled_fields_demo.cpp` | Two fields evolving together through `Coupled` (Jacobi) |
 | `game_engine_demo.cpp` | An ECS-style frame loop built from the data flow, each system named with `name()` |
 | `streaming_world_demo.cpp` | A `DynamicGraph` whose set of work changes between steps |
-| `operating_path_demo.cpp` | `RuntimeConfig`, `advanced()`, `try_run()` with its error branch, `Dynamic` and a `read_range()` readback |
+| `operating_path_demo.cpp` | `RuntimeConfig`, `advanced()`, `run()` with its error branch, `Dynamic` and a `read_range()` readback |
 | `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
 | `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
 
@@ -138,7 +138,7 @@ One rule increments the first `live_count` elements. The count reaches the rule 
 as many elements as the first and `compile_count()` stays at 1. After two runs of 8 steps the
 elements read back are 16, 8 and 0: counted in both runs, in the second only, and in neither.
 
-Both runs use `try_run()`, which returns the report or an `Error`. The program then runs an empty
+Both runs use `run()`, which returns the report or an `Error`. The program then runs an empty
 graph on purpose, checks that the refusal carries `ErrorCode::InvalidGraph` and prints the remedy its
 `switch` over `ErrorCode` picks for that code. An exception can still come from `Runtime::create()` and
 from the range calls, and `main` catches `SushiException` for those.

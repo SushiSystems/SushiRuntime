@@ -86,7 +86,7 @@ TEST(Integration_NodeEventRecords, ProfilingNotRequestedLeavesNodeEventsEmpty)
     EXPECT_FALSE(g.is_profiling_requested());
     g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
-    auto report = g.run();
+    auto report = g.run().value();
     EXPECT_TRUE(report.node_events.empty());
     EXPECT_EQ(report.clock.event_ns, 0u);
     EXPECT_EQ(report.clock.steady_ns, 0u);
@@ -114,7 +114,7 @@ TEST(Integration_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
     g.add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
     g.add(N, Reads{}, Writes(c), [pc](std::size_t i) { pc[i] = static_cast<int>(i); });
 
-    auto report = g.run(std::size_t{5});
+    auto report = g.run(std::size_t{5}).value();
     ASSERT_EQ(report.node_events.size(), 15u);
 
     std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> invocations_by_node;
@@ -157,7 +157,7 @@ TEST(Integration_NodeEventRecords, NodeIndexIsRegistrationOrder)
     g.add(N, Reads(a), Writes(b), [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; }).name("B");
     g.add(N, Reads(b), Writes(c), [pb, pc](std::size_t i) { pc[i] = pb[i] + 1; }).name("C");
 
-    auto report = g.run();
+    auto report = g.run().value();
 
     const auto& plan = Detail::NodeEventRecordsTestAccess::plan(g);
     const std::uint32_t idx_a = registration_index_of(plan, "A");
@@ -204,7 +204,7 @@ TEST(Integration_NodeEventRecords, HostNodeLandsOnEventClock)
         (void)sink;
     });
 
-    auto report = g.run();
+    auto report = g.run().value();
     ASSERT_FALSE(report.node_events.empty());
 
     const auto& plan = Detail::NodeEventRecordsTestAccess::plan(g);

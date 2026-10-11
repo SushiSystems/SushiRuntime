@@ -21,7 +21,7 @@
 
 /**
  * @file test_run_report_reuse.cpp
- * @brief Tests the caller-owned RunReport overloads of run(), try_run() and RunHandle::wait().
+ * @brief Tests the caller-owned RunReport overloads of run(), run() and RunHandle::wait().
  * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
@@ -61,10 +61,10 @@ TEST(Integration_RunReportReuse, ReuseReportsWhatTheValueFormReports)
     auto g   = rt.graph();
     record_write(g, buf);
 
-    const Internal::Observability::RunReport allocated = g.run(std::size_t{3});
+    const Internal::Observability::RunReport allocated = g.run(std::size_t{3}).value();
 
     Internal::Observability::RunReport reused;
-    g.run(std::size_t{3}, reused);
+    g.run(std::size_t{3}, reused).value();
 
     EXPECT_TRUE(reused.is_successful);
     EXPECT_EQ(reused.total_tasks_executed, allocated.total_tasks_executed);
@@ -85,7 +85,7 @@ TEST(Integration_RunReportReuse, SteadyStateRunsDoNotReallocateTheReport)
     record_write(g, buf);
 
     Internal::Observability::RunReport report;
-    g.run(report);
+    g.run(report).value();
 
     ASSERT_FALSE(report.numa_statistics.empty());
     const void* rows_after_first = report.numa_statistics.data();
@@ -93,7 +93,7 @@ TEST(Integration_RunReportReuse, SteadyStateRunsDoNotReallocateTheReport)
 
     for (int tick = 0; tick < 8; ++tick)
     {
-        g.run(report);
+        g.run(report).value();
         ASSERT_EQ(static_cast<const void*>(report.numa_statistics.data()), rows_after_first)
             << "the per-run rows were reallocated on tick " << tick;
         ASSERT_EQ(report.numa_statistics.capacity(), capacity_after_first);
@@ -112,11 +112,11 @@ TEST(Integration_RunReportReuse, EachRunOverwritesTheLastOne)
     record_write(g, buf);
 
     Internal::Observability::RunReport report;
-    g.run(std::size_t{5}, report);
+    g.run(std::size_t{5}, report).value();
     const std::size_t five_steps = report.total_tasks_executed;
     ASSERT_GT(five_steps, 0u);
 
-    g.run(std::size_t{1}, report);
+    g.run(std::size_t{1}, report).value();
     EXPECT_LT(report.total_tasks_executed, five_steps)
         << "a one-step run reported the five-step run's task count";
     EXPECT_EQ(report.numa_statistics.size(), 1u);
@@ -131,13 +131,13 @@ TEST(Integration_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
     record_write(g, buf);
 
     Internal::Observability::RunReport report;
-    g.run(report);
+    g.run(report).value();
     ASSERT_TRUE(report.is_successful);
     ASSERT_GT(report.total_tasks_executed, 0u);
 
     // An empty graph cannot run; the same report goes in again.
     auto empty = rt.graph();
-    auto rejected = empty.try_run(report);
+    auto rejected = empty.run(report);
 
     EXPECT_FALSE(rejected);
     EXPECT_EQ(rejected.error().code, ErrorCode::InvalidGraph);
@@ -146,7 +146,7 @@ TEST(Integration_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
     EXPECT_TRUE(report.numa_statistics.empty());
 }
 
-/** @brief Tests that try_run(RunReport&) returns the report it was given. */
+/** @brief Tests that run(RunReport&) returns the report it was given. */
 TEST(Integration_RunReportReuse, TryRunReturnsTheCallersReport)
 {
     auto rt  = Runtime::create().value();
@@ -155,7 +155,7 @@ TEST(Integration_RunReportReuse, TryRunReturnsTheCallersReport)
     record_write(g, buf);
 
     Internal::Observability::RunReport report;
-    auto result = g.try_run(report);
+    auto result = g.run(report);
 
     ASSERT_TRUE(result);
     EXPECT_EQ(*result, &report);
@@ -173,8 +173,8 @@ TEST(Integration_RunReportReuse, AsyncWaitFillsTheCallersReport)
     Internal::Observability::RunReport report;
     for (int tick = 0; tick < 4; ++tick)
     {
-        auto step = g.run_async();
-        step.wait(report);
+        auto step = g.run_async().value();
+        step.wait(report).value();
 
         ASSERT_TRUE(report.is_successful) << "on tick " << tick;
         ASSERT_EQ(report.numa_statistics.size(), 1u) << "on tick " << tick;
@@ -199,11 +199,11 @@ TEST(Integration_RunReportReuse, DynamicGraphRunsIntoACallersReport)
                         [pa](std::size_t i) { pa[i] += 1; });
 
     Internal::Observability::RunReport report;
-    world.run(report);
+    world.run(report).value();
     ASSERT_FALSE(report.numa_statistics.empty());
     const void* rows_after_first = report.numa_statistics.data();
 
-    world.run(std::size_t{3}, report);
+    world.run(std::size_t{3}, report).value();
 
     EXPECT_TRUE(report.is_successful);
     EXPECT_EQ(static_cast<const void*>(report.numa_statistics.data()), rows_after_first);

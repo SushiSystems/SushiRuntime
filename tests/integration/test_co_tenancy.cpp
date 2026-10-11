@@ -50,7 +50,7 @@ namespace
         auto g = rt.graph();
         g.add(N, Reads{}, Writes(buf),
               [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
-        g.run();
+        g.run().value();
 
         for (std::size_t i = 0; i < N; ++i)
             ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "at i=" << i;

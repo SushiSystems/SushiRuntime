@@ -52,7 +52,7 @@ TEST(Integration_CrossContextGuard, NodeSpanningTwoContextsFailsCleanly)
           [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; });
 
     // The run fails with an error and the runtime stays usable afterward; see README.md.
-    auto result = g.try_run();
+    auto result = g.run();
     ASSERT_FALSE(result) << "a cross-context node must not run successfully";
     EXPECT_EQ(result.error().code, ErrorCode::InvalidGraph);
 
@@ -61,6 +61,6 @@ TEST(Integration_CrossContextGuard, NodeSpanningTwoContextsFailsCleanly)
     int* pa2 = a.data();
     auto g2 = rt.graph();
     g2.add(N, Reads{}, Writes(a), [pa2](std::size_t i) { pa2[i] *= 2; });
-    auto ok = g2.try_run();
+    auto ok = g2.run();
     EXPECT_TRUE(ok) << "the pool must stay re-armable after the guarded failure";
 }

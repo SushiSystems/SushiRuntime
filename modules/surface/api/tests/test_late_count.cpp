@@ -74,7 +74,7 @@ TEST(Integration_LateCount, FixedResolvesToItsCount)
 
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), count, out);
-    g.run();
+    g.run().value();
 
     EXPECT_EQ(out[0], 42u);
 }
@@ -91,7 +91,7 @@ TEST(Integration_LateCount, HostProviderBelowCapacity)
 
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), count, out);
-    g.run();
+    g.run().value();
 
     EXPECT_EQ(out[0], 700000u);
 }
@@ -109,15 +109,15 @@ TEST(Integration_LateCount, ChangingHostCountKeepsOneCompile)
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), count, out);
 
-    g.run();
+    g.run().value();
     EXPECT_EQ(out[0], 1000u);
 
     live = 700000;
-    g.run();
+    g.run().value();
     EXPECT_EQ(out[0], 700000u);
 
     live = 0;
-    g.run();
+    g.run().value();
     EXPECT_EQ(out[0], 0u);
 
     EXPECT_EQ(g.compile_count(), 1u)
@@ -136,7 +136,7 @@ TEST(Integration_LateCount, HostCountAboveCapacityFailsTheRun)
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), count, out);
 
-    EXPECT_THROW(g.run(), SushiException);
+    EXPECT_FALSE(g.run().has_value());
     EXPECT_EQ(out[0], K_CANARY) << "a rejected count must not reach the fill";
 }
 
@@ -151,7 +151,7 @@ TEST(Integration_LateCount, DeviceSlotResolvesFromHostResidentBuffer)
 
     auto g = rt.graph();
     record_live_count_copy(g.recorder(), device_count(counter, 1000000), out);
-    g.run();
+    g.run().value();
 
     EXPECT_EQ(out[0], 700000u);
 }
@@ -171,13 +171,13 @@ TEST(Integration_LateCount, DeviceCountAboveCapacityFailsTheRunOnBothLayers)
 
         auto g = rt.graph();
         record_live_count_copy(g.recorder(), device_count(counter, 100), out);
-        EXPECT_THROW(g.run(), SushiException) << "force_scheduler = " << force_scheduler;
+        EXPECT_FALSE(g.run().has_value()) << "force_scheduler = " << force_scheduler;
 
         // A later graph with a count inside the capacity runs clean on the same runtime.
         counter[0] = 100;
         auto valid = rt.graph();
         record_live_count_copy(valid.recorder(), device_count(counter, 100), out);
-        const auto report = valid.run();
+        const auto report = valid.run().value();
         EXPECT_TRUE(report.is_successful) << "force_scheduler = " << force_scheduler;
         EXPECT_EQ(out[0], 100u) << "force_scheduler = " << force_scheduler;
     }
@@ -215,11 +215,11 @@ TEST(Integration_LateCount, ResolverSeesTheCountItsPredecessorJustWrote)
     record_live_count_copy(g.recorder(), device_count(counter, CAPACITY), out);
 
     source[0] = 300;
-    g.run();
+    g.run().value();
     EXPECT_EQ(out[0], 300u) << "the resolver must read the count its own step's producer wrote";
 
     source[0] = 700;
-    g.run();
+    g.run().value();
     EXPECT_EQ(out[0], 700u) << "a changed count must take effect the same run, not one run late";
 
     EXPECT_EQ(g.compile_count(), 1u);

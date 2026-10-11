@@ -61,7 +61,7 @@ TEST(Performance_DynamicGraph, ManyRegionsStreamingMutations)
 
     using clock = std::chrono::steady_clock;
     const auto t0 = clock::now();
-    world.run(1);
+    world.run(1).value();
     const auto t1 = clock::now();
     EXPECT_EQ(world.compose_count(), 1u);
 
@@ -72,7 +72,7 @@ TEST(Performance_DynamicGraph, ManyRegionsStreamingMutations)
         int* p = bufs[r].data();
         world.region(r).add(N, Reads{}, Writes(bufs[r]),
                             [p](std::size_t i) { p[i] += 1; });
-        world.run(1);
+        world.run(1).value();
         EXPECT_EQ(world.compose_count(), 2u + m) << "one recompose per mutation at m=" << m;
     }
 
