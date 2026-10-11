@@ -1,8 +1,12 @@
 # API refinement: plan
 
-**Status:** Started on 2026-10-11 on the owner's word. Stages 0 to 3 are committed on
-`feature/api_refinement`; stage 4 is in work. Stage 1 was built and tested (801 tests); nothing
-after it has been built. `REPORT.md` holds the baseline under "Refinement baseline".
+**Status:** Written, not verified, as of 2026-10-12. Stages 0 to 9 and tasks 6.1 to 6.6 are in
+source in the four repositories. Stage 1 was built and tested (801 tests). After it, only the
+library and the examples of SushiRuntime were built once, at the end of stage 5; no test of
+SushiRuntime, and nothing of SushiBLAS, SushiAI or SushiEngine, has been compiled since. The
+builds wait for the owner's word: the machine has 15 GB and stopped two compile jobs for
+memory. Open: the builds and test runs, task 6.7, stage 10. The owner approved the public
+modules `core`, `report`, `region`, `log`, `machine`, `interop`, `api` on 2026-10-12.
 
 `SPEC.md` of this folder holds the decisions and the measurements. `REPORT.md` holds the first
 pass, whose repair plan stood in this file until this rewrite; its open items are in
