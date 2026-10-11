@@ -63,7 +63,7 @@ namespace
     {
         const std::size_t count = runtime.advanced().device_count();
         for (std::size_t index = 0; index < count; ++index)
-            if (runtime.interop().capabilities(DeviceIndex{index}).device_import == imports)
+            if (runtime.interop().capabilities(DeviceIndex{index}).value().device_import == imports)
                 return index;
         return std::nullopt;
     }
@@ -76,7 +76,7 @@ namespace
         descriptor.handle = K_PLACEHOLDER_HANDLE;
         descriptor.allocation_bytes = K_ALLOCATION_BYTES;
         descriptor.offset = 0;
-        const auto uuid = runtime.interop().capabilities(DeviceIndex{index}).device_uuid;
+        const auto uuid = runtime.interop().capabilities(DeviceIndex{index}).value().device_uuid;
         if (uuid)
             descriptor.device = *uuid;
         return descriptor;
@@ -84,31 +84,28 @@ namespace
 
     /** @brief Imports @p count floats and returns the refusal, failing when there is none. */
     Error refusal_of(Runtime& runtime, const ExternalMemoryDescriptor& descriptor,
-                           std::size_t count, std::size_t index)
+                     std::size_t count, std::size_t index)
     {
-        try
+        const auto imported =
+            runtime.interop().import_device<float>(descriptor, count, DeviceIndex{index});
+        if (imported.has_value())
         {
-            static_cast<void>(
-                runtime.interop().import_device<float>(descriptor, count, DeviceIndex{index}));
             ADD_FAILURE() << "import_device accepted the descriptor";
+            return Error{};
         }
-        catch (const SushiException& refusal)
-        {
-            return refusal.error();
-        }
-        return Error{};
+        return imported.error();
     }
 } // namespace
 
 TEST(Unit_InteropImport, HostExportReportsWhetherTheQueueOffersHostUSM)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     const std::size_t count = runtime.advanced().device_count();
 
     for (std::size_t index = 0; index < count; ++index)
     {
         const sycl::device device = runtime.unsafe_context().devices().queue(index).get_device();
-        EXPECT_EQ(runtime.interop().capabilities(DeviceIndex{index}).host_export,
+        EXPECT_EQ(runtime.interop().capabilities(DeviceIndex{index}).value().host_export,
                   device.has(sycl::aspect::usm_host_allocations))
             << "device " << index;
     }
@@ -116,7 +113,7 @@ TEST(Unit_InteropImport, HostExportReportsWhetherTheQueueOffersHostUSM)
 
 TEST(Unit_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, false);
     if (!index)
         GTEST_SKIP() << "every device imports external memory";
@@ -133,13 +130,13 @@ TEST(Unit_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
 
 TEST(Unit_InteropImport, ADeviceThatImportsReportsItsUUID)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     const std::size_t count = runtime.advanced().device_count();
 
     for (std::size_t index = 0; index < count; ++index)
     {
         const InteropCapabilities capabilities =
-            runtime.interop().capabilities(DeviceIndex{index});
+            runtime.interop().capabilities(DeviceIndex{index}).value();
         if (capabilities.device_import)
             EXPECT_TRUE(capabilities.device_uuid.has_value()) << "device " << index;
     }
@@ -147,7 +144,7 @@ TEST(Unit_InteropImport, ADeviceThatImportsReportsItsUUID)
 
 TEST(Unit_InteropImport, ADefaultDescriptorIsRefusedForItsUnstatedKind)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
@@ -165,7 +162,7 @@ TEST(Unit_InteropImport, ADefaultDescriptorIsRefusedForItsUnstatedKind)
 #if defined(_WIN32)
 TEST(Unit_InteropImport, ANullWin32HandleIsRefusedByName)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
@@ -181,7 +178,7 @@ TEST(Unit_InteropImport, ANullWin32HandleIsRefusedByName)
 #else
 TEST(Unit_InteropImport, AFileDescriptorAboveIntIsRefusedWithItsValue)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
@@ -199,13 +196,13 @@ TEST(Unit_InteropImport, AFileDescriptorAboveIntIsRefusedWithItsValue)
 
 TEST(Unit_InteropImport, ZeroElementsImportNothingAndReturnAnEmptyBuffer)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
 
     const Buffer<float> buffer = runtime.interop().import_device<float>(
-        acceptable_descriptor(runtime, *index), 0, DeviceIndex{*index});
+        acceptable_descriptor(runtime, *index), 0, DeviceIndex{*index}).value();
 
     EXPECT_TRUE(buffer.empty());
     EXPECT_EQ(buffer.size(), 0u);
@@ -213,7 +210,7 @@ TEST(Unit_InteropImport, ZeroElementsImportNothingAndReturnAnEmptyBuffer)
 
 TEST(Unit_InteropImport, AHandleKindOfAnotherPlatformIsRefusedByName)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
@@ -228,7 +225,7 @@ TEST(Unit_InteropImport, AHandleKindOfAnotherPlatformIsRefusedByName)
 
 TEST(Unit_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
@@ -253,11 +250,11 @@ TEST(Unit_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
 
 TEST(Unit_InteropImport, AnotherDevicesUUIDIsRefusedWithBothUUIDs)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
     if (!index)
         GTEST_SKIP() << "no device imports external memory";
-    if (!runtime.interop().capabilities(DeviceIndex{*index}).device_uuid)
+    if (!runtime.interop().capabilities(DeviceIndex{*index}).value().device_uuid)
         GTEST_SKIP() << "the importing device reports no UUID";
 
     ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);

@@ -43,7 +43,7 @@ namespace
     {
         constexpr std::size_t N = 512;
 
-        auto buf = rt.buffer<int>(N);
+        auto buf = rt.buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
         int* p = buf.data();
 
@@ -66,7 +66,7 @@ namespace
 /** @brief Tests that the default pool is one worker per logical core, starting at core 0. */
 TEST(Integration_CoTenancy, DefaultsToOneWorkerPerCoreFromCoreZero)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     const auto pool = rt.advanced().worker_pool();
 
     EXPECT_EQ(pool.count, machine_cores());
@@ -89,7 +89,7 @@ TEST(Integration_CoTenancy, ReservesTheCoresTheHostAskedFor)
     config.worker_count = cores - reserved;
     config.first_core   = reserved;
 
-    auto rt = Runtime::create(config);
+    auto rt = Runtime::create(config).value();
     const auto pool = rt.advanced().worker_pool();
 
     EXPECT_EQ(pool.count, cores - reserved);
@@ -104,7 +104,7 @@ TEST(Integration_CoTenancy, ASingleWorkerStillExecutesTheWholeGraph)
     RuntimeConfig config;
     config.worker_count = 1;
 
-    auto rt = Runtime::create(config);
+    auto rt = Runtime::create(config).value();
     EXPECT_EQ(rt.advanced().worker_pool().count, 1u);
 
     expect_runs_correctly(rt);
@@ -117,7 +117,7 @@ TEST(Integration_CoTenancy, FloatPolicyRunsUnpinned)
     config.worker_count = 2;
     config.pinning      = PinPolicy::Float;
 
-    auto rt = Runtime::create(config);
+    auto rt = Runtime::create(config).value();
     const auto pool = rt.advanced().worker_pool();
 
     EXPECT_EQ(pool.count, 2u);
@@ -135,7 +135,7 @@ TEST(Integration_CoTenancy, AnOutOfRangeCoreRangeIsClampedNotIgnored)
     config.worker_count = 4;
     config.first_core   = cores + 8;   // entirely past the last core
 
-    auto rt = Runtime::create(config);
+    auto rt = Runtime::create(config).value();
     const auto pool = rt.advanced().worker_pool();
 
     EXPECT_LE(pool.first_core + pool.count, cores)

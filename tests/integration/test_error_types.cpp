@@ -21,11 +21,10 @@
 
 /**
  * @file test_error_types.cpp
- * @brief Tests the exception type and code a caller of the library catches.
+ * @brief Tests the code a caller of the library reads from a failed factory.
  * @author Mustafa Garip
  */
 
-#include <stdexcept>
 #include <string>
 #include <gtest/gtest.h>
 #include <SushiRuntime/sushiruntime.hpp>
@@ -45,34 +44,13 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that a filter excluding every device throws SushiException with unsupported. */
-TEST(Integration_ErrorTypes, AFilterThatExcludesEveryDeviceThrowsUnsupported)
+/** @brief Tests that a filter excluding every device returns Unsupported and throws nothing. */
+TEST(Integration_ErrorTypes, AFilterThatExcludesEveryDeviceReturnsUnsupported)
 {
-    try
-    {
-        static_cast<void>(Runtime::create(config_admitting_nothing()));
-        FAIL() << "a runtime was built over no device";
-    }
-    catch (const SushiException& refusal)
-    {
-        EXPECT_EQ(refusal.error().code, ErrorCode::Unsupported);
-        EXPECT_EQ(refusal.error().message, refusal.what());
-    }
-}
-
-/** @brief Tests that a handler written for std::runtime_error still receives that failure. */
-TEST(Integration_ErrorTypes, AHandlerForRuntimeErrorReceivesTheSameFailure)
-{
-    try
-    {
-        static_cast<void>(Runtime::create(config_admitting_nothing()));
-        FAIL() << "a runtime was built over no device";
-    }
-    catch (const std::runtime_error& caught)
-    {
-        // The exception crossed the library boundary with its dynamic type; see README.md.
-        const auto* typed = dynamic_cast<const SushiException*>(&caught);
-        ASSERT_NE(typed, nullptr) << caught.what();
-        EXPECT_EQ(typed->error().code, ErrorCode::Unsupported);
-    }
+    EXPECT_NO_THROW({
+        const auto refused = Runtime::create(config_admitting_nothing());
+        ASSERT_FALSE(refused.has_value()) << "a runtime was built over no device";
+        EXPECT_EQ(refused.error().code, ErrorCode::Unsupported);
+        EXPECT_FALSE(refused.error().message.empty());
+    });
 }

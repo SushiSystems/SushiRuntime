@@ -56,8 +56,8 @@ namespace
 /** @brief Tests that the reuse overload reports what the value-returning one reports. */
 TEST(Integration_RunReportReuse, ReuseReportsWhatTheValueFormReports)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     auto g   = rt.graph();
     record_write(g, buf);
 
@@ -79,8 +79,8 @@ TEST(Integration_RunReportReuse, ReuseReportsWhatTheValueFormReports)
 /** @brief Tests that steady-state runs refill the report's vectors in place. */
 TEST(Integration_RunReportReuse, SteadyStateRunsDoNotReallocateTheReport)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     auto g   = rt.graph();
     record_write(g, buf);
 
@@ -106,8 +106,8 @@ TEST(Integration_RunReportReuse, SteadyStateRunsDoNotReallocateTheReport)
 /** @brief Tests that a short run after a long one reports the short run's count. */
 TEST(Integration_RunReportReuse, EachRunOverwritesTheLastOne)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     auto g   = rt.graph();
     record_write(g, buf);
 
@@ -125,8 +125,8 @@ TEST(Integration_RunReportReuse, EachRunOverwritesTheLastOne)
 /** @brief Tests that a rejected run clears the report and marks it unsuccessful. */
 TEST(Integration_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     auto g   = rt.graph();
     record_write(g, buf);
 
@@ -149,8 +149,8 @@ TEST(Integration_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
 /** @brief Tests that try_run(RunReport&) returns the report it was given. */
 TEST(Integration_RunReportReuse, TryRunReturnsTheCallersReport)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     auto g   = rt.graph();
     record_write(g, buf);
 
@@ -165,8 +165,8 @@ TEST(Integration_RunReportReuse, TryRunReturnsTheCallersReport)
 /** @brief Tests that RunHandle::wait(RunReport&) fills the caller's report. */
 TEST(Integration_RunReportReuse, AsyncWaitFillsTheCallersReport)
 {
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     auto g   = rt.graph();
     record_write(g, buf);
 
@@ -187,9 +187,9 @@ TEST(Integration_RunReportReuse, AsyncWaitFillsTheCallersReport)
 // The composed-plan driver shares the fill path, so it gets the same guarantee.
 TEST(Integration_RunReportReuse, DynamicGraphRunsIntoACallersReport)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
 
-    auto a = rt.buffer<int>(N);
+    auto a = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         a[i] = 0;
     int* pa = a.data();

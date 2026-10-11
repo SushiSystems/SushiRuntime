@@ -78,8 +78,8 @@ TEST(Integration_NodeEventRecords, ProfilingNotRequestedLeavesNodeEventsEmpty)
 {
     constexpr std::size_t N = 128;
 
-    auto rt = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto g = rt.graph();
@@ -100,10 +100,10 @@ TEST(Integration_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
 {
     constexpr std::size_t N = 64;
 
-    auto rt = Runtime::create();
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
-    auto c = rt.buffer<int>(N);
+    auto rt = Runtime::create().value();
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
+    auto c = rt.buffer<int>(N).value();
     int* pa = a.data();
     int* pb = b.data();
     int* pc = c.data();
@@ -142,10 +142,10 @@ TEST(Integration_NodeEventRecords, NodeIndexIsRegistrationOrder)
 {
     constexpr std::size_t N = 32;
 
-    auto rt = Runtime::create();
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
-    auto c = rt.buffer<int>(N);
+    auto rt = Runtime::create().value();
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
+    auto c = rt.buffer<int>(N).value();
     int* pa = a.data();
     int* pb = b.data();
     int* pc = c.data();
@@ -189,8 +189,8 @@ TEST(Integration_NodeEventRecords, HostNodeLandsOnEventClock)
 {
     constexpr std::size_t N = 64;
 
-    auto rt = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     // The host node reads what the kernel writes, so it runs after the kernel; see README.md.

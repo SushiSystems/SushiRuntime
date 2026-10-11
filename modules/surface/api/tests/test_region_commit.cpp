@@ -75,13 +75,13 @@ namespace
 /** @brief Tests that a commit whose region build throws keeps the edges of the other regions. */
 TEST(Integration_RegionCommit, AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegions)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
 
-    auto shared = rt.buffer<int>(K_ELEMENTS);
-    auto out_b = rt.buffer<int>(K_ELEMENTS);
-    auto out_c = rt.buffer<int>(K_ELEMENTS);
-    auto own_d = rt.buffer<int>(K_ELEMENTS);
+    auto shared = rt.buffer<int>(K_ELEMENTS).value();
+    auto out_b = rt.buffer<int>(K_ELEMENTS).value();
+    auto out_c = rt.buffer<int>(K_ELEMENTS).value();
+    auto own_d = rt.buffer<int>(K_ELEMENTS).value();
     for (std::size_t i = 0; i < K_ELEMENTS; ++i)
     {
         shared[i] = 0;

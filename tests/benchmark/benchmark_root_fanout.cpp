@@ -58,13 +58,13 @@ namespace
      */
     FanoutMeasurement measure_fanout(std::size_t roots, std::size_t steps)
     {
-        auto rt = Runtime::create();
+        auto rt = Runtime::create().value();
         rt.set_rebalancer_enabled(false);
 
         std::vector<Buffer<int>> bufs;
         bufs.reserve(roots);
         for (std::size_t r = 0; r < roots; ++r)
-            bufs.push_back(rt.buffer<int>(1));
+            bufs.push_back(rt.buffer<int>(1).value());
         for (auto& b : bufs) b[0] = 0;
 
         auto g = rt.graph();

@@ -83,13 +83,13 @@ TEST(Performance_RecomposeChurn, AllocationsAndTimePerCommit)
     constexpr std::size_t REGIONS = 256;  // steady-state world size
     constexpr std::size_t COMMITS = 64;   // dirty commits measured
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);     // deterministic; keep the migrator off the numbers
 
     std::vector<Buffer<int>> bufs;
     bufs.reserve(REGIONS);
     for (std::size_t r = 0; r < REGIONS; ++r)
-        bufs.push_back(rt.buffer<int>(N));
+        bufs.push_back(rt.buffer<int>(N).value());
     for (auto& buf : bufs)
         for (std::size_t i = 0; i < N; ++i)
             buf[i] = 0;

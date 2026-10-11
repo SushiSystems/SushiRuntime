@@ -51,14 +51,14 @@ namespace
     /** @brief Runs the four systems over N entities and checks them against a reference. */
     int run_game_engine()
     {
-        auto rt = Runtime::create();
+        auto rt = Runtime::create().value();
 
         // Component arrays.
-        auto px = rt.buffer<float>(N);
-        auto py = rt.buffer<float>(N);
-        auto vx = rt.buffer<float>(N);
-        auto vy = rt.buffer<float>(N);
-        auto alive = rt.buffer<int>(N);
+        auto px = rt.buffer<float>(N).value();
+        auto py = rt.buffer<float>(N).value();
+        auto vx = rt.buffer<float>(N).value();
+        auto vy = rt.buffer<float>(N).value();
+        auto alive = rt.buffer<int>(N).value();
 
         for (std::size_t i = 0; i < N; ++i)
         {

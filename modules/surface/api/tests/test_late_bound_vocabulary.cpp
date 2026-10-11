@@ -154,8 +154,8 @@ TEST(Integration_LateBoundVocabularyDeathTest, FromDeviceStopsOnAnIndexPastTheSl
 {
     constexpr std::size_t CAPACITY = 64;
 
-    auto rt   = Runtime::create();
-    auto slot = rt.buffer<std::uint32_t>(3, DeviceIndex{0}, Residency::Host);
+    auto rt   = Runtime::create().value();
+    auto slot = rt.buffer<std::uint32_t>(3, DeviceIndex{0}, Residency::Host).value();
 
     EXPECT_DEATH(static_cast<void>(LateCount::from_device(CAPACITY, slot, slot.size())),
                  "LateCount::from_device: index 3 is out of range for a buffer of 3 elements");
@@ -167,9 +167,9 @@ TEST(Integration_LateBoundVocabularyDeathTest, FromDeviceStopsOnAnIndexPastTheSl
 /** @brief Tests that from_device stops on a slot the host cannot read during a run. */
 TEST(Integration_LateBoundVocabularyDeathTest, FromDeviceStopsOnASlotThatIsNotHostResident)
 {
-    auto rt       = Runtime::create();
-    auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device);
-    auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared);
+    auto rt       = Runtime::create().value();
+    auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device).value();
+    auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared).value();
 
     EXPECT_DEATH(static_cast<void>(LateCount::from_device(8, resident)),
                  "allocate it with Residency::Host");
@@ -194,8 +194,8 @@ TEST(Integration_LateBoundVocabularyDeathTest, EveryFactoryStopsOnACapacityPastA
     const std::size_t over = limit + 1;
     const std::string pattern = "capacity " + std::to_string(over) + " exceeds";
 
-    auto rt   = Runtime::create();
-    auto slot = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
+    auto rt   = Runtime::create().value();
+    auto slot = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
 
     EXPECT_DEATH(static_cast<void>(LateCount::fixed(over)), "LateCount::fixed: " + pattern);
     EXPECT_DEATH(
@@ -210,8 +210,8 @@ TEST(Integration_LateBoundVocabularyDeathTest, EveryFactoryStopsOnACapacityPastA
 /** @brief Tests that capacity() reports the plan size each factory was given. */
 TEST(Integration_LateBoundVocabulary, CapacityReportsThePlanSize)
 {
-    auto rt   = Runtime::create();
-    auto slot = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
+    auto rt   = Runtime::create().value();
+    auto slot = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
 
     EXPECT_EQ(LateCount::fixed(42).capacity(), 42u);
     EXPECT_EQ(LateCount::from_host(700, [] { return std::size_t{1}; }).capacity(), 700u);
@@ -221,8 +221,8 @@ TEST(Integration_LateBoundVocabulary, CapacityReportsThePlanSize)
 /** @brief Tests that a recorded copy still polls the provider after the original is destroyed. */
 TEST(Integration_LateBoundVocabulary, ARecordedCopyKeepsTheHostProvider)
 {
-    auto rt  = Runtime::create();
-    auto out = rt.buffer<std::uint32_t>(1);
+    auto rt  = Runtime::create().value();
+    auto out = rt.buffer<std::uint32_t>(1).value();
     out[0] = K_CANARY;
 
     std::size_t live = 11;
@@ -245,9 +245,9 @@ TEST(Integration_LateBoundVocabulary, ARecordedCopyKeepsTheHostProvider)
 /** @brief Tests that from_device reads the word its index names, not the first word. */
 TEST(Integration_LateBoundVocabulary, FromDeviceReadsTheWordAtItsIndex)
 {
-    auto rt   = Runtime::create();
-    auto slot = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host);
-    auto out  = rt.buffer<std::uint32_t>(1);
+    auto rt   = Runtime::create().value();
+    auto slot = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
+    auto out  = rt.buffer<std::uint32_t>(1).value();
     for (std::size_t i = 0; i < 4; ++i)
         slot[i] = 5;
     slot[2] = 77;
@@ -267,9 +267,9 @@ TEST(Integration_LateBoundVocabulary, TheSizeSourceSetLastWins)
     constexpr std::uint32_t DEVICE_COUNT = 3;
     constexpr std::size_t HOST_COUNT = 5;
 
-    auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-    auto marks   = rt.buffer<int>(CAPACITY);
+    auto rt      = Runtime::create().value();
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto marks   = rt.buffer<int>(CAPACITY).value();
     counter[0] = DEVICE_COUNT;
 
     for (std::size_t i = 0; i < CAPACITY; ++i)
@@ -294,8 +294,8 @@ TEST(Integration_LateBoundVocabulary, MembersChainOnANamedDynamic)
 {
     constexpr std::size_t CAPACITY = 32;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(CAPACITY);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(CAPACITY).value();
     int* p = buf.data();
     for (std::size_t i = 0; i < CAPACITY; ++i)
         buf[i] = 0;

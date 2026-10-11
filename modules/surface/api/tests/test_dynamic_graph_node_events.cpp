@@ -52,9 +52,9 @@ TEST(Integration_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
 {
     constexpr std::size_t N = 32;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
-    auto buf = rt.buffer<int>(N);
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto world = rt.dynamic_graph();
@@ -71,10 +71,10 @@ TEST(Integration_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRe
 {
     constexpr std::size_t N = 32;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
     int* pa = a.data();
     int* pb = b.data();
 
@@ -103,11 +103,11 @@ TEST(Integration_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrde
 {
     constexpr std::size_t N = 16;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
-    auto c = rt.buffer<int>(N);
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
+    auto c = rt.buffer<int>(N).value();
     int* pa = a.data();
     int* pb = b.data();
     int* pc = c.data();
@@ -140,10 +140,10 @@ TEST(Integration_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
 {
     constexpr std::size_t N = 16;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
     int* pa = a.data();
     int* pb = b.data();
 
@@ -175,9 +175,9 @@ TEST(Integration_DynamicGraphNodeEvents, RequestToggleRecompilesOnce)
 {
     constexpr std::size_t N = 8;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     rt.set_rebalancer_enabled(false);
-    auto buf = rt.buffer<int>(N);
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto world = rt.dynamic_graph();

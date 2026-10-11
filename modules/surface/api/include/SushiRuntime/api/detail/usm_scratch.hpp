@@ -33,7 +33,9 @@
 #include <string>
 
 #include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 
@@ -44,25 +46,38 @@ namespace SushiRuntime
         /**
          * @brief Allocates USM scratch that returns to its context when the last owner lets go.
          * @param count Elements to allocate; must be non-zero.
-         * @throws SushiException If the allocation fails.
+         * @return The block, or an AllocationFailed error when the device returns nothing.
+         * @pre The byte size of count fits std::size_t.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <typename T>
-        inline std::shared_ptr<T> make_usm_scratch(
+        [[nodiscard]] Result<std::shared_ptr<T>> make_usm_scratch(
             std::shared_ptr<Internal::Execution::RuntimeContext> context,
             std::size_t count, DeviceIndex device_index, Residency residency)
         {
-            const std::size_t bytes = count * sizeof(T);
-            void* raw = malloc_residency_on(*context, bytes, device_index, residency);
-
-            if (raw == nullptr)
-                throw SushiException(Error{
-                    ErrorCode::AllocationFailed,
-                    "Recorder scratch allocation of " + std::to_string(bytes) +
-                    " bytes failed (out of USM memory)."});
-
-            return std::shared_ptr<T>(static_cast<T*>(raw),
-                                      [context](T* p) { context->memory().release(p); });
+            const std::size_t bytes = checked_byte_count("Recorder::scratch", count, sizeof(T));
+            std::shared_ptr<T> owned;
+            Error refused;
+            Error thrown = translate_exceptions(
+                ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&]()
+            {
+                void* raw = malloc_residency_on(*context, bytes, device_index, residency);
+                if (raw == nullptr)
+                {
+                    refused = Error{
+                        ErrorCode::AllocationFailed,
+                        "Recorder::scratch: the device returned no memory for " +
+                        describe_request(count, sizeof(T), device_index, residency) + "."};
+                    return;
+                }
+                owned = std::shared_ptr<T>(static_cast<T*>(raw),
+                                           [context](T* p) { context->memory().release(p); });
+            });
+            if (thrown.code != ErrorCode::Ok)
+                return make_error(std::move(thrown));
+            if (refused.code != ErrorCode::Ok)
+                return make_error(std::move(refused));
+            return std::move(owned);
         }
     } // namespace Detail
 } // namespace SushiRuntime

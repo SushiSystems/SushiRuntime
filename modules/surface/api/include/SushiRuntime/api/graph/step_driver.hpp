@@ -42,6 +42,7 @@
 
 #include <SushiRuntime/api/detail/before_step_hooks.hpp>
 #include <SushiRuntime/api/detail/callable_checks.hpp>
+#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/run_report_builder.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
@@ -551,28 +552,8 @@ namespace SushiRuntime
             template <class Work>
             static Error guarded(ErrorCode fallback, Work&& work) noexcept
             {
-                try
-                {
-                    work();
-                    return Error{};
-                }
-                catch (const SushiException& e)
-                {
-                    return Detail::error_without_throwing(e.error());
-                }
-                catch (const sycl::exception& e)
-                {
-                    return Detail::error_without_throwing(ErrorCode::KernelFailed, e.what());
-                }
-                catch (const std::exception& e)
-                {
-                    return Detail::error_without_throwing(fallback, e.what());
-                }
-                catch (...)
-                {
-                    return Detail::error_without_throwing(fallback,
-                        "An object that does not derive from std::exception was thrown.");
-                }
+                return Detail::translate_exceptions(ErrorCode::KernelFailed, fallback,
+                                                    std::forward<Work>(work));
             }
 
             /**

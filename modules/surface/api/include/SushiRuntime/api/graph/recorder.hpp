@@ -58,6 +58,7 @@
 #include <SushiRuntime/api/detail/emit_task.hpp>
 #include <SushiRuntime/api/detail/emit_tracked.hpp>
 #include <SushiRuntime/api/detail/emit_untracked.hpp>
+#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/detail/host_slot_check.hpp>
 #include <SushiRuntime/api/detail/late_count_resolution.hpp>
@@ -75,6 +76,7 @@
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
 #include <SushiRuntime/api/vocabulary/placement.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
@@ -268,13 +270,15 @@ namespace SushiRuntime
                     return rule_count();
                 auto bindings = std::make_shared<::SushiRuntime::Internal::Graph::LateBindings>();
                 Detail::adopt_device_bindings(*bindings, window, access.reads, access.lives);
-                std::uint32_t* fault = fault_record_for(window);
+                Result<std::uint32_t*> fault = fault_record_for(window);
+                if (!admit(fault))
+                    return rule_count();
                 const std::size_t width =
                     options.width == Internal::Observability::K_WIDTH_UNKNOWN ? capacity : options.width;
 
                 const std::size_t rule = record(
                     Detail::dynamic_node(
-                        bindings, fault, std::move(access.reads), std::move(access.writes),
+                        bindings, *fault, std::move(access.reads), std::move(access.writes),
                         capacity, std::forward<F>(kernel_body), width),
                     access.lives, options);
                 steps_.register_binding_updater(std::move(bindings), std::move(window));
@@ -513,12 +517,14 @@ namespace SushiRuntime
                 std::vector<Internal::Memory::ResourceRegion> slot_reads;
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 Detail::adopt_device_bindings(*bindings, window, slot_reads, lives);
-                std::uint32_t* fault = fault_record_for(window);
+                Result<std::uint32_t*> fault = fault_record_for(window);
+                if (!admit(fault))
+                    return rule_count();
 
                 Detail::gather_life(lives, state);
                 const std::size_t rule = record(
                     Detail::dynamic_state_node(
-                        view, view->size, bindings, fault, std::move(slot_reads),
+                        view, view->size, bindings, *fault, std::move(slot_reads),
                         std::forward<F>(kernel_body)),
                     lives, options);
                 steps_.register_advance(std::move(view));
@@ -693,10 +699,13 @@ namespace SushiRuntime
                 for (const LateCount& count : counts)
                     reads_device =
                         Detail::gather_device_read(count, access.reads, lives) || reads_device;
-                std::uint32_t* fault = reads_device ? fault_record(device) : nullptr;
+                Result<std::uint32_t*> fault =
+                    reads_device ? fault_record(device) : Result<std::uint32_t*>(nullptr);
+                if (!admit(fault))
+                    return rule_count();
 
                 lives.insert(lives.end(), access.lives.begin(), access.lives.end());
-                return record(Detail::late_count_resolver_node(counts, fault, std::move(fill),
+                return record(Detail::late_count_resolver_node(counts, *fault, std::move(fill),
                                                                std::move(access.reads),
                                                                std::move(access.writes),
                                                                options.width),
@@ -706,16 +715,26 @@ namespace SushiRuntime
             /**
              * @brief Allocates USM this recorder owns and frees with itself.
              * @param count Elements to allocate; must be non-zero.
-             * @return The base pointer; build ordering regions from it.
-             * @throws SushiException With AllocationFailed when the device has no room.
+             * @return The base pointer, from which ordering regions are built, or an
+             *         AllocationFailed error when the device has no room.
+             * @pre The byte size of count fits std::size_t.
              */
             template <typename T>
-            [[nodiscard]] T* scratch(std::size_t count, DeviceIndex device, Residency residency)
+            [[nodiscard]] Result<T*> scratch(std::size_t count, DeviceIndex device,
+                                             Residency residency)
             {
-                std::shared_ptr<T> owned =
+                Result<std::shared_ptr<T>> owned =
                     Detail::make_usm_scratch<T>(context_, count, device, residency);
-                scratch_.push_back(std::static_pointer_cast<void>(owned));
-                return owned.get();
+                if (!owned)
+                    return make_error(std::move(owned.error()));
+                Error thrown = Detail::translate_exceptions(
+                    ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [this, &owned]()
+                {
+                    scratch_.push_back(std::static_pointer_cast<void>(*owned));
+                });
+                if (thrown.code != ErrorCode::Ok)
+                    return make_error(std::move(thrown));
+                return owned->get();
             }
 
             /**
@@ -941,6 +960,19 @@ namespace SushiRuntime
                 return false;
             }
 
+            /**
+             * @brief Keeps the error of a step of a recording that failed, as admit() does.
+             * @return True when outcome holds a value, so the recording may go on.
+             */
+            template <typename Value>
+            bool admit(Result<Value>& outcome)
+            {
+                if (outcome)
+                    return true;
+                admit(std::optional<Error>(std::move(outcome.error())));
+                return false;
+            }
+
             /** @brief Keeps the refusal of options a node cannot carry; true when they fit. */
             bool admits(const NodeOptions& options)
             {
@@ -988,31 +1020,34 @@ namespace SushiRuntime
             /**
              * @brief Allocates a zeroed fault record every finished step checks.
              * @param device Device whose context the record's host USM belongs to.
-             * @return K_DEVICE_FAULT_WORDS words this recorder owns.
+             * @return K_DEVICE_FAULT_WORDS words this recorder owns, or the error of scratch().
              */
-            std::uint32_t* fault_record(DeviceIndex device)
+            Result<std::uint32_t*> fault_record(DeviceIndex device)
             {
-                std::uint32_t* words =
+                Result<std::uint32_t*> words =
                     scratch<std::uint32_t>(Detail::K_DEVICE_FAULT_WORDS, device, Residency::Host);
+                if (!words)
+                    return words;
                 for (std::size_t w = 0; w < Detail::K_DEVICE_FAULT_WORDS; ++w)
-                    words[w] = 0;
-                steps_.register_fault_record(words);
+                    (*words)[w] = 0;
+                steps_.register_fault_record(*words);
                 return words;
             }
 
             /**
              * @brief Allocates a fault record for a Dynamic with a device slot.
              * @param window A Dynamic for which host_device_slots_refusal() returned nothing.
-             * @return The record, or null when window has no device slot.
+             * @return The record, null when window has no device slot, or the error of
+             *         scratch().
              */
-            std::uint32_t* fault_record_for(const Dynamic& window)
+            Result<std::uint32_t*> fault_record_for(const Dynamic& window)
             {
                 const std::uint32_t* count_words =
                     Detail::DynamicAccess::count_slot(window).words;
                 const std::uint32_t* slot = (count_words != nullptr)
                     ? count_words : Detail::DynamicAccess::base_slot(window).words;
                 if (slot == nullptr)
-                    return nullptr;
+                    return static_cast<std::uint32_t*>(nullptr);
                 void* address = const_cast<void*>(static_cast<const void*>(slot));
                 Internal::Memory::USMAllocator& memory = context_->memory();
                 const std::optional<void*> base = memory.containing_base(address);

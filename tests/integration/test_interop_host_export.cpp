@@ -39,8 +39,8 @@ using namespace SushiRuntime;
  */
 TEST(Integration_InteropHostExport, AlignsAndRoundsTheRegion)
 {
-    auto runtime = Runtime::create();
-    auto shared = runtime.interop().export_host<std::uint32_t>(1000, DeviceIndex{0}, 4096);
+    auto runtime = Runtime::create().value();
+    auto shared = runtime.interop().export_host<std::uint32_t>(1000, DeviceIndex{0}, 4096).value();
     EXPECT_EQ(reinterpret_cast<std::uintptr_t>(shared.address) % 4096u, 0u);
     EXPECT_EQ(shared.bytes % 4096u, 0u);
     EXPECT_GE(shared.bytes, 1000u * sizeof(std::uint32_t));
@@ -52,8 +52,8 @@ TEST(Integration_InteropHostExport, AlignsAndRoundsTheRegion)
  */
 TEST(Integration_InteropHostExport, TheRegistryRoutesTheExportedAddress)
 {
-    auto runtime = Runtime::create();
-    auto shared = runtime.interop().export_host<float>(16, DeviceIndex{0}, 4096);
+    auto runtime = Runtime::create().value();
+    auto shared = runtime.interop().export_host<float>(16, DeviceIndex{0}, 4096).value();
     EXPECT_EQ(runtime.unsafe_context().memory().device_of(shared.address),
               std::optional<std::size_t>(0));
 }
@@ -63,8 +63,8 @@ TEST(Integration_InteropHostExport, TheRegistryRoutesTheExportedAddress)
  */
 TEST(Integration_InteropHostExport, AKernelWritesWhatTheHostReads)
 {
-    auto runtime = Runtime::create();
-    auto shared = runtime.interop().export_host<std::uint32_t>(257, DeviceIndex{0}, 4096);
+    auto runtime = Runtime::create().value();
+    auto shared = runtime.interop().export_host<std::uint32_t>(257, DeviceIndex{0}, 4096).value();
     std::uint32_t* out = shared.buffer.data();
     runtime.graph()
         .add(257, Reads(), Writes(shared.buffer),
@@ -75,24 +75,18 @@ TEST(Integration_InteropHostExport, AKernelWritesWhatTheHostReads)
 }
 
 /**
- * @brief Importing on a queue without the bindless extension refuses with unsupported.
+ * @brief Importing on a queue without the bindless extension returns Unsupported.
  */
-TEST(Integration_InteropHostExport, ImportOnAQueueWithoutTheExtensionThrowsUnsupported)
+TEST(Integration_InteropHostExport, ImportOnAQueueWithoutTheExtensionReturnsUnsupported)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     auto interop = runtime.interop();
-    if (interop.capabilities(DeviceIndex{0}).device_import)
+    if (interop.capabilities(DeviceIndex{0}).value().device_import)
         GTEST_SKIP() << "device 0 imports external memory; this case covers the refusal only";
     ExternalMemoryDescriptor descriptor;
-    try
-    {
-        static_cast<void>(interop.import_device<float>(descriptor, 4, DeviceIndex{0}));
-        FAIL() << "import_device returned on a device without import";
-    }
-    catch (const SushiException& error)
-    {
-        EXPECT_EQ(error.error().code, ErrorCode::Unsupported);
-    }
+    const auto imported = interop.import_device<float>(descriptor, 4, DeviceIndex{0});
+    ASSERT_FALSE(imported.has_value()) << "import_device returned on a device without import";
+    EXPECT_EQ(imported.error().code, ErrorCode::Unsupported);
 }
 
 /**
@@ -100,7 +94,7 @@ TEST(Integration_InteropHostExport, ImportOnAQueueWithoutTheExtensionThrowsUnsup
  */
 TEST(Integration_InteropHostExportDeathTest, AnAlignmentThatIsNotAPowerOfTwoStops)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
 
     EXPECT_DEATH(
         static_cast<void>(runtime.interop().export_host<float>(16, DeviceIndex{0}, 4097)),
@@ -112,10 +106,27 @@ TEST(Integration_InteropHostExportDeathTest, AnAlignmentThatIsNotAPowerOfTwoStop
  */
 TEST(Integration_InteropHostExportDeathTest, ASizeThatOverflowsWhenRoundedStops)
 {
-    auto runtime = Runtime::create();
+    auto runtime = Runtime::create().value();
     const std::size_t most = std::numeric_limits<std::size_t>::max();
 
     EXPECT_DEATH(
         static_cast<void>(runtime.interop().export_host<std::uint8_t>(most, DeviceIndex{0}, 4096)),
         "bytes overflow std::size_t when rounded up to the alignment of 4096");
+}
+
+/**
+ * @brief An export no device can hold returns AllocationFailed and leaves the runtime usable.
+ */
+TEST(Integration_InteropHostExport, AnExportNoDeviceCanSatisfyReturnsAllocationFailed)
+{
+    auto runtime = Runtime::create().value();
+    // Half the address space in bytes: it rounds without overflow and no device has the room.
+    const std::size_t count = std::numeric_limits<std::size_t>::max() / 2;
+
+    const auto refused = runtime.interop().export_host<std::uint8_t>(count, DeviceIndex{0}, 4096);
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(refused.error().code, ErrorCode::AllocationFailed);
+
+    const auto exported = runtime.interop().export_host<float>(16, DeviceIndex{0}, 4096);
+    EXPECT_TRUE(exported.has_value());
 }

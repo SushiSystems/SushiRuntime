@@ -66,8 +66,8 @@ namespace
 /** @brief Tests that a fixed LateCount resolves to the count it was built with. */
 TEST(Integration_LateCount, FixedResolvesToItsCount)
 {
-    auto rt  = Runtime::create();
-    auto out = rt.buffer<std::uint32_t>(1);
+    auto rt  = Runtime::create().value();
+    auto out = rt.buffer<std::uint32_t>(1).value();
     out[0] = K_CANARY;
 
     const LateCount count = LateCount::fixed(42);
@@ -82,8 +82,8 @@ TEST(Integration_LateCount, FixedResolvesToItsCount)
 /** @brief Tests that a host provider below capacity is the live count. */
 TEST(Integration_LateCount, HostProviderBelowCapacity)
 {
-    auto rt  = Runtime::create();
-    auto out = rt.buffer<std::uint32_t>(1);
+    auto rt  = Runtime::create().value();
+    auto out = rt.buffer<std::uint32_t>(1).value();
     out[0] = K_CANARY;
 
     const LateCount count =
@@ -99,8 +99,8 @@ TEST(Integration_LateCount, HostProviderBelowCapacity)
 /** @brief Tests that a host count that changes between runs keeps one compile. */
 TEST(Integration_LateCount, ChangingHostCountKeepsOneCompile)
 {
-    auto rt  = Runtime::create();
-    auto out = rt.buffer<std::uint32_t>(1);
+    auto rt  = Runtime::create().value();
+    auto out = rt.buffer<std::uint32_t>(1).value();
     out[0] = K_CANARY;
 
     std::size_t live = 1000;
@@ -127,8 +127,8 @@ TEST(Integration_LateCount, ChangingHostCountKeepsOneCompile)
 /** @brief Tests that a host count above its capacity fails the run. */
 TEST(Integration_LateCount, HostCountAboveCapacityFailsTheRun)
 {
-    auto rt  = Runtime::create();
-    auto out = rt.buffer<std::uint32_t>(1);
+    auto rt  = Runtime::create().value();
+    auto out = rt.buffer<std::uint32_t>(1).value();
     out[0] = K_CANARY;
 
     const LateCount count = LateCount::from_host(100, []() { return std::size_t{101}; });
@@ -143,9 +143,9 @@ TEST(Integration_LateCount, HostCountAboveCapacityFailsTheRun)
 /** @brief Tests that a Residency::Host device slot resolves to the value written there. */
 TEST(Integration_LateCount, DeviceSlotResolvesFromHostResidentBuffer)
 {
-    auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-    auto out     = rt.buffer<std::uint32_t>(1);
+    auto rt      = Runtime::create().value();
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto out     = rt.buffer<std::uint32_t>(1).value();
     counter[0] = 700000;
     out[0] = K_CANARY;
 
@@ -163,9 +163,9 @@ TEST(Integration_LateCount, DeviceCountAboveCapacityFailsTheRunOnBothLayers)
     {
         RuntimeConfig config;
         config.force_scheduler = force_scheduler;
-        auto rt      = Runtime::create(config);
-        auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-        auto out     = rt.buffer<std::uint32_t>(1);
+        auto rt      = Runtime::create(config).value();
+        auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+        auto out     = rt.buffer<std::uint32_t>(1).value();
         counter[0] = 101;
         out[0] = K_CANARY;
 
@@ -186,8 +186,8 @@ TEST(Integration_LateCount, DeviceCountAboveCapacityFailsTheRunOnBothLayers)
 /** @brief Tests that a device slot outside Residency::Host stops the call that builds the count. */
 TEST(Integration_LateCountDeathTest, ANonHostDeviceSlotStopsAtConstruction)
 {
-    auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1);
+    auto rt      = Runtime::create().value();
+    auto counter = rt.buffer<std::uint32_t>(1).value();
 
     EXPECT_DEATH(static_cast<void>(LateCount::from_device(16, counter)),
                  "LateCount::from_device: the buffer is Residency::Shared");
@@ -198,10 +198,10 @@ TEST(Integration_LateCount, ResolverSeesTheCountItsPredecessorJustWrote)
 {
     constexpr std::size_t CAPACITY = 1000;
 
-    auto rt      = Runtime::create();
-    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-    auto source  = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
-    auto out     = rt.buffer<std::uint32_t>(1);
+    auto rt      = Runtime::create().value();
+    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto source  = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto out     = rt.buffer<std::uint32_t>(1).value();
     counter[0] = 0;
     out[0] = K_CANARY;
 

@@ -149,10 +149,10 @@ namespace
     {
         /** @brief Allocates the data on @p rt and writes the starting values. */
         explicit Tiles(Runtime& rt)
-            : scale(rt.buffer<Word>(TILE_N)),
-              mix(rt.buffer<Word>(TILE_N)),
-              fold(rt.buffer<Word>(TILE_N)),
-              field(rt.state<Word>(TILE_N))
+            : scale(rt.buffer<Word>(TILE_N).value()),
+              mix(rt.buffer<Word>(TILE_N).value()),
+              fold(rt.buffer<Word>(TILE_N).value()),
+              field(rt.state<Word>(TILE_N).value())
         {
             for (std::size_t i = 0; i < TILE_N; ++i)
             {
@@ -373,10 +373,10 @@ namespace
      */
     Snapshot run_pass_chain(Runtime& rt, PassSite site)
     {
-        auto a = rt.buffer<Word>(HOST_N);
-        auto b = rt.buffer<Word>(HOST_N);
-        auto c = rt.buffer<Word>(HOST_N);
-        auto d = rt.buffer<Word>(HOST_N);
+        auto a = rt.buffer<Word>(HOST_N).value();
+        auto b = rt.buffer<Word>(HOST_N).value();
+        auto c = rt.buffer<Word>(HOST_N).value();
+        auto d = rt.buffer<Word>(HOST_N).value();
         for (std::size_t i = 0; i < HOST_N; ++i)
         {
             a[i] = static_cast<Word>(i) * 7u + 3u;
@@ -484,7 +484,7 @@ namespace
     /** @brief Allocates a grid-sized buffer on a device of @p rt holding the starting words. */
     Buffer<Word> seeded_grid(Runtime& rt, DeviceIndex device = DeviceIndex{0})
     {
-        auto grid = rt.buffer<Word>(GRID_N, device);
+        auto grid = rt.buffer<Word>(GRID_N, device).value();
         for (std::size_t k = 0; k < GRID_N; ++k)
             grid[k] = seed_word(k);
         return grid;
@@ -493,7 +493,7 @@ namespace
     /** @brief Allocates the read-only input grid on a device of @p rt. */
     Buffer<Word> source_grid(Runtime& rt, DeviceIndex device = DeviceIndex{0})
     {
-        auto grid = rt.buffer<Word>(GRID_N, device);
+        auto grid = rt.buffer<Word>(GRID_N, device).value();
         for (std::size_t k = 0; k < GRID_N; ++k)
             grid[k] = source_word(k);
         return grid;
@@ -511,7 +511,7 @@ namespace
         auto by_rebase  = seeded_grid(rt);
         auto by_capture = seeded_grid(rt);
         auto by_tiles   = seeded_grid(rt);
-        auto field      = rt.state<Word>(BOX_N);
+        auto field      = rt.state<Word>(BOX_N).value();
 
         const Image seeded_box = box_of(reference_grid(0));
         for (std::size_t slot = 0; slot < BOX_N; ++slot)
@@ -652,8 +652,8 @@ TEST(Integration_LayerEquivalence, DynamicRegionsMatchOneStaticGraph)
 {
     const Script script{{{true, RUNS}}, true};
 
-    auto chained_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create(scheduler_only());
+    auto chained_rt = Runtime::create().value();
+    auto scheduled_rt = Runtime::create(scheduler_only()).value();
 
     const Snapshot static_chained    = run_static_tiles(chained_rt, script, Drive::Blocking);
     const Snapshot static_scheduled  = run_static_tiles(scheduled_rt, script, Drive::Blocking);
@@ -675,8 +675,8 @@ TEST(Integration_LayerEquivalence, DroppedAndReaddedRegionMatchesStaticGraphs)
 {
     const Script script{{{true, 1}, {false, 1}, {true, 1}}, false};
 
-    auto chained_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create(scheduler_only());
+    auto chained_rt = Runtime::create().value();
+    auto scheduled_rt = Runtime::create(scheduler_only()).value();
 
     const Snapshot static_chained    = run_static_tiles(chained_rt, script, Drive::Blocking);
     const Snapshot static_scheduled  = run_static_tiles(scheduled_rt, script, Drive::Blocking);
@@ -695,8 +695,8 @@ TEST(Integration_LayerEquivalence, DroppedAndReaddedRegionMatchesStaticGraphs)
 /** @brief Tests that host tasks between kernels give the same bytes on both layers. */
 TEST(Integration_LayerEquivalence, HostTasksAmongKernelsMatchAcrossLayers)
 {
-    auto default_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create(scheduler_only());
+    auto default_rt = Runtime::create().value();
+    auto scheduled_rt = Runtime::create(scheduler_only()).value();
 
     const Snapshot host_default   = run_pass_chain(default_rt, PassSite::Host);
     const Snapshot host_scheduled = run_pass_chain(scheduled_rt, PassSite::Host);
@@ -715,8 +715,8 @@ TEST(Integration_LayerEquivalence, AsyncStepsMatchBlockingRun)
 {
     const Script script{{{true, RUNS}}, true};
 
-    auto chained_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create(scheduler_only());
+    auto chained_rt = Runtime::create().value();
+    auto scheduled_rt = Runtime::create(scheduler_only()).value();
 
     const Snapshot blocking_chained   = run_static_tiles(chained_rt, script, Drive::Blocking);
     const Snapshot blocking_scheduled = run_static_tiles(scheduled_rt, script, Drive::Blocking);
@@ -736,7 +736,7 @@ TEST(Integration_LayerEquivalence, AsyncStepsOfADynamicGraphMatchBlockingRun)
 {
     const Script script{{{true, 1}, {false, 1}, {true, 1}}, true};
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
 
     const Snapshot blocking = run_dynamic_tiles(rt, script, Drive::Blocking);
     const Snapshot stepped  = run_dynamic_tiles(rt, script, Drive::Asynchronous);
@@ -747,8 +747,8 @@ TEST(Integration_LayerEquivalence, AsyncStepsOfADynamicGraphMatchBlockingRun)
 /** @brief Tests that every tracked form of an offset 2-D launch matches the host reference. */
 TEST(Integration_LayerEquivalence, OffsetLaunchFormsMatchAcrossLayers)
 {
-    auto chained_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create(scheduler_only());
+    auto chained_rt = Runtime::create().value();
+    auto scheduled_rt = Runtime::create(scheduler_only()).value();
 
     const Snapshot reference = tracked_launch_reference();
     const Snapshot chained   = run_tracked_launches(chained_rt);
@@ -766,8 +766,8 @@ TEST(Integration_LayerEquivalence, OffsetLaunchFormsMatchAcrossLayers)
 /** @brief Tests that the untracked Extent and NdRange launches match the host reference. */
 TEST(Integration_LayerEquivalence, UntrackedOffsetLaunchesMatchAcrossLayers)
 {
-    auto default_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create(scheduler_only());
+    auto default_rt = Runtime::create().value();
+    auto scheduled_rt = Runtime::create(scheduler_only()).value();
 
     const Snapshot reference       = untracked_launch_reference();
     const Snapshot default_layer   = run_untracked_launches(default_rt);
@@ -783,8 +783,8 @@ TEST(Integration_LayerEquivalence, UntrackedOffsetLaunchesMatchAcrossLayers)
 /** @brief Tests that an untracked kernel placed with On() runs on the device it names. */
 TEST(Integration_LayerEquivalence, PlacedUntrackedLaunchesMatchAcrossLayers)
 {
-    auto default_rt = Runtime::create();
-    auto scheduled_rt = Runtime::create(scheduler_only());
+    auto default_rt = Runtime::create().value();
+    auto scheduled_rt = Runtime::create(scheduler_only()).value();
 
     const Snapshot reference       = untracked_launch_reference();
     const Snapshot default_layer   = run_placed_untracked_launches(default_rt);

@@ -62,8 +62,8 @@ TEST(Integration_LaunchReach, ReachSaturatesAtTheLargestSize)
 /** @brief Tests that an Extent whose end wraps past SIZE_MAX is refused where add() is called. */
 TEST(Integration_LaunchReach, AnExtentWhoseEndWrapsIsRefusedAtAdd)
 {
-    auto rt = Runtime::create();
-    auto field = rt.state<Word>(K_WIDTH);
+    auto rt = Runtime::create().value();
+    auto field = rt.state<Word>(K_WIDTH).value();
     auto graph = rt.graph();
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_WRAPPING_ORIGIN)};
 

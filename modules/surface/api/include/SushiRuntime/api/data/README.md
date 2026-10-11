@@ -31,7 +31,8 @@ index, the device count, and `advanced().devices()`, which lists the devices by 
 The byte size of a handle is `count * sizeof(T)`, checked before anything is allocated: a count
 whose byte size does not fit `std::size_t` stops the process, and the message names the largest
 count that fits. Both are rules the caller keeps, checked with `SR_VERIFY`; running out of device
-memory is not one, and it throws `ErrorCode::AllocationFailed`. When the device returns no memory,
+memory is not one, and `Runtime::buffer()` and `Runtime::state()` return it as an
+`ErrorCode::AllocationFailed` error. When the device returns no memory,
 the message states what was asked for (element count, element size, bytes, residency and
 device) and gives no cause, since the allocator reports
 none.
@@ -133,14 +134,17 @@ that case. State::host() names the State in its message.
 read_range() is the selective-readback seam. It copies just [offset, offset+count) through the
 owning queue into a host vector, for telemetry, IO or a debug window, without host-mapping a whole
 device-resident field. It is synchronous: the copy is waited on before it returns. A window that
-does not fit stops the process, as the Range calls section states.
+does not fit stops the process, as the Range calls section states. It returns
+`Result<std::vector<T>>`: a copy the device fails is a `KernelFailed` error, and a host that
+cannot hold the vector is `AllocationFailed`.
 
 ### write_range
 
 write_range() is the counterpart to read_range() and the way to seed a device-resident buffer the
 host cannot index. It is synchronous in the same way and follows the Range calls rule. The source
 is a span, so a vector or an array is passed as it is and the call can compare the source's length
-with the window. write_range() is const: it changes the elements, not the handle.
+with the window. write_range() is const: it changes the elements, not the handle. It returns
+`Result<void>`, with `KernelFailed` for a copy the device fails.
 
 ### Tracking state
 

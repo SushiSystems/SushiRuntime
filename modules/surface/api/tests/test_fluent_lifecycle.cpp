@@ -41,8 +41,8 @@ TEST(Integration_FluentLifecycle, StateReplayIncrement)
     constexpr std::size_t N     = 1024;
     constexpr std::size_t STEPS = 64;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         field[i] = 0;
 
@@ -70,8 +70,8 @@ TEST(Integration_FluentLifecycle, ReplayAcrossCalls)
 {
     constexpr std::size_t N = 256;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         field[i] = 0;
 
@@ -97,8 +97,8 @@ TEST(Integration_FluentLifecycle, RunUntilStopsOnCondition)
 {
     constexpr std::size_t N = 64;
 
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         field[i] = 0;
 
@@ -123,9 +123,9 @@ TEST(Integration_FluentLifecycle, CoupledFieldsAreJacobi)
     constexpr std::size_t N     = 128;
     constexpr std::size_t STEPS = 10;
 
-    auto rt = Runtime::create();
-    auto u  = rt.state<int>(N);
-    auto v  = rt.state<int>(N);
+    auto rt = Runtime::create().value();
+    auto u  = rt.state<int>(N).value();
+    auto v  = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { u[i] = 0; v[i] = 0; }
 
     auto sim = rt.graph();
@@ -158,15 +158,15 @@ TEST(Integration_FluentLifecycle, MutationRecompiles)
 {
     constexpr std::size_t N = 128;
 
-    auto rt = Runtime::create();
-    auto a  = rt.state<int>(N);
+    auto rt = Runtime::create().value();
+    auto a  = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) a[i] = 0;
 
     auto sim = rt.graph();
     sim.add(a, [](std::size_t i, const int* c, int* n) { n[i] = c[i] + 1; });
     sim.run(3); // a == 3
 
-    auto b = rt.state<int>(N);
+    auto b = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) b[i] = 0;
     sim.add(b, [](std::size_t i, const int* c, int* n) { n[i] = c[i] + 2; });
     sim.run(2); // recompiles; a += 2 -> 5, b == 4
@@ -185,7 +185,7 @@ TEST(Integration_FluentLifecycle, MutationRecompiles)
  */
 TEST(Integration_FluentLifecycle, EmptyGraphIsInvalid)
 {
-    auto rt  = Runtime::create();
+    auto rt  = Runtime::create().value();
     auto sim = rt.graph();
 
     auto r = sim.try_run();
@@ -204,11 +204,11 @@ TEST(Integration_FluentLifecycle, DanglingResourceIsReported)
 {
     constexpr std::size_t N = 64;
 
-    auto rt  = Runtime::create();
+    auto rt  = Runtime::create().value();
     auto sim = rt.graph();
 
     {
-        auto buf = rt.buffer<int>(N);
+        auto buf = rt.buffer<int>(N).value();
         int* p = buf.data();
         sim.add(N, Reads(), Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
     }   // buf is destroyed here, before the graph runs

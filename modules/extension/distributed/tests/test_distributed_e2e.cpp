@@ -853,7 +853,7 @@ namespace
     {
         std::atomic<int> runs{0};
         InProcessFabric fabric;
-        Runtime runtime = Runtime::create();
+        Runtime runtime = Runtime::create().value();
         LocalWorker worker(InProcessTransport::make_worker(fabric), state_step_kernels(runs));
 
         Cluster cluster =
@@ -862,7 +862,7 @@ namespace
         if (!cluster.wait_for_workers(1, K_WAIT))
             throw std::runtime_error("the worker did not register with the cluster");
 
-        auto field = runtime.state<int>(count).distributed();
+        auto field = runtime.state<int>(count).value().distributed();
         for (std::size_t index = 0; index < count; ++index)
         {
             field.current()[index] = static_cast<int>(index);
@@ -1297,16 +1297,16 @@ TEST(Integration_DistributedE2ETest, FluentClusterOffload)
     constexpr std::size_t K_COUNT = 1024;
     std::atomic<int> worker_runs{0};
     InProcessFabric fabric;
-    Runtime runtime = Runtime::create();
+    Runtime runtime = Runtime::create().value();
     LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
     Cluster cluster =
         Cluster::attach(runtime, InProcessTransport::make_master(fabric), eager_options());
     ASSERT_TRUE(worker.start());
     ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
 
-    auto a = runtime.buffer<float>(K_COUNT).distributed();
-    auto b = runtime.buffer<float>(K_COUNT).distributed();
-    auto out = runtime.buffer<float>(K_COUNT).distributed();
+    auto a = runtime.buffer<float>(K_COUNT).value().distributed();
+    auto b = runtime.buffer<float>(K_COUNT).value().distributed();
+    auto out = runtime.buffer<float>(K_COUNT).value().distributed();
     for (std::size_t index = 0; index < K_COUNT; ++index)
     {
         a[index] = static_cast<float>(index);
@@ -1513,10 +1513,10 @@ TEST(Integration_DistributedE2ETest, DynamicStateBumpsTheLiveBufferAfterSwap)
     constexpr std::size_t K_COUNT = 64;
     constexpr std::size_t K_STEPS = 2;
     InProcessFabric fabric;
-    Runtime runtime = Runtime::create();
+    Runtime runtime = Runtime::create().value();
     Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric));
 
-    auto field = runtime.state<int>(K_COUNT).distributed();
+    auto field = runtime.state<int>(K_COUNT).value().distributed();
     for (std::size_t index = 0; index < K_COUNT; ++index)
     {
         field.current()[index] = static_cast<int>(index);

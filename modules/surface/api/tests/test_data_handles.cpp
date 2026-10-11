@@ -71,8 +71,8 @@ namespace
     void expect_empty_window_at_the_end_accepted(const Handle& handle)
     {
         const ElementRange at_end{handle.size(), 0};
-        EXPECT_TRUE(handle.read_range(at_end).empty());
-        EXPECT_NO_THROW(handle.write_range(at_end, span<const int>()));
+        EXPECT_TRUE(handle.read_range(at_end).value().empty());
+        EXPECT_NO_THROW(handle.write_range(at_end, span<const int>()).value());
         const BufferRegion region = handle.region(at_end);
         EXPECT_EQ(region.offset, handle.size() * sizeof(int));
         EXPECT_EQ(region.length, 0u);
@@ -91,8 +91,8 @@ namespace
  */
 TEST(Integration_DataHandlesDeathTest, BufferStopsOnAWindowPastTheEnd)
 {
-    auto rt = Runtime::create();
-    const auto buf = rt.buffer<int>(K_SIZE);
+    auto rt = Runtime::create().value();
+    const auto buf = rt.buffer<int>(K_SIZE).value();
 
     expect_every_range_call_stops(buf, "Buffer", {K_SIZE, 1});
     expect_every_range_call_stops(buf, "Buffer", {K_SIZE - 2, 5});
@@ -103,8 +103,8 @@ TEST(Integration_DataHandlesDeathTest, BufferStopsOnAWindowPastTheEnd)
  */
 TEST(Integration_DataHandlesDeathTest, StateStopsOnAWindowPastTheEnd)
 {
-    auto rt = Runtime::create();
-    const auto field = rt.state<int>(K_SIZE);
+    auto rt = Runtime::create().value();
+    const auto field = rt.state<int>(K_SIZE).value();
 
     expect_every_range_call_stops(field, "State", {K_SIZE, 1});
     expect_every_range_call_stops(field, "State", {K_SIZE - 2, 5});
@@ -115,8 +115,8 @@ TEST(Integration_DataHandlesDeathTest, StateStopsOnAWindowPastTheEnd)
  */
 TEST(Integration_DataHandlesDeathTest, WindowWhoseEndWrapsStops)
 {
-    auto rt = Runtime::create();
-    const auto buf = rt.buffer<int>(K_SIZE);
+    auto rt = Runtime::create().value();
+    const auto buf = rt.buffer<int>(K_SIZE).value();
 
     const std::size_t most = std::numeric_limits<std::size_t>::max();
     expect_every_range_call_stops(buf, "Buffer", {most, 2});
@@ -128,9 +128,9 @@ TEST(Integration_DataHandlesDeathTest, WindowWhoseEndWrapsStops)
  */
 TEST(Integration_DataHandles, EmptyWindowAtTheEndIsAccepted)
 {
-    auto rt = Runtime::create();
-    const auto buf = rt.buffer<int>(K_SIZE);
-    const auto field = rt.state<int>(K_SIZE);
+    auto rt = Runtime::create().value();
+    const auto buf = rt.buffer<int>(K_SIZE).value();
+    const auto field = rt.state<int>(K_SIZE).value();
 
     expect_empty_window_at_the_end_accepted(buf);
     expect_empty_window_at_the_end_accepted(field);
@@ -141,15 +141,15 @@ TEST(Integration_DataHandles, EmptyWindowAtTheEndIsAccepted)
  */
 TEST(Integration_DataHandles, FittingWindowRoundTrips)
 {
-    auto rt = Runtime::create();
-    const auto buf = rt.buffer<int>(K_SIZE);
+    auto rt = Runtime::create().value();
+    const auto buf = rt.buffer<int>(K_SIZE).value();
     for (int& element : buf.host())
         element = 0;
 
     const std::vector<int> source{11, 12, 13, 14, 15};
-    buf.write_range({K_SIZE - 5, 5}, source);
+    buf.write_range({K_SIZE - 5, 5}, source).value();
 
-    EXPECT_EQ(buf.read_range({K_SIZE - 5, 5}), source);
+    EXPECT_EQ(buf.read_range({K_SIZE - 5, 5}).value(), source);
     EXPECT_EQ(buf[K_SIZE - 6], 0);
 }
 
@@ -158,9 +158,9 @@ TEST(Integration_DataHandles, FittingWindowRoundTrips)
  */
 TEST(Integration_DataHandlesDeathTest, NullOrShortSourceWithACountStops)
 {
-    auto rt = Runtime::create();
-    const auto buf = rt.buffer<int>(K_SIZE);
-    const auto field = rt.state<int>(K_SIZE);
+    auto rt = Runtime::create().value();
+    const auto buf = rt.buffer<int>(K_SIZE).value();
+    const auto field = rt.state<int>(K_SIZE).value();
     const std::vector<int> two(2, 1);
 
     EXPECT_DEATH(static_cast<void>(buf.write_range({0, 4}, span<const int>())),
@@ -176,7 +176,7 @@ TEST(Integration_DataHandlesDeathTest, NullOrShortSourceWithACountStops)
  */
 TEST(Integration_DataHandlesDeathTest, OverflowingElementCountStopsBeforeAllocating)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     // The byte size of this count wraps to 8, which an unchecked allocation would grant.
     const std::size_t count = std::numeric_limits<std::size_t>::max() / sizeof(double) + 2;
     const std::string pattern = "Buffer allocation: " + std::to_string(count) + " elements";
@@ -190,9 +190,9 @@ TEST(Integration_DataHandlesDeathTest, OverflowingElementCountStopsBeforeAllocat
  */
 TEST(Integration_DataHandles, StateAndBufferAnswerTheSharedQueriesAlike)
 {
-    auto rt = Runtime::create();
-    const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0});
-    const auto field = rt.state<int>(K_SIZE, DeviceIndex{0});
+    auto rt = Runtime::create().value();
+    const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}).value();
+    const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}).value();
 
     EXPECT_EQ(field.device_index(), DeviceIndex{0});
     EXPECT_EQ(field.device_index(), buf.device_index());
@@ -214,17 +214,17 @@ TEST(Integration_DataHandles, TriviallyCopyableStructRoundTrips)
 {
     EXPECT_TRUE(std::is_trivially_copyable<Pair>::value);
 
-    auto rt = Runtime::create();
-    const auto buf = rt.buffer<Pair>(2);
-    const auto field = rt.state<Pair>(2);
+    auto rt = Runtime::create().value();
+    const auto buf = rt.buffer<Pair>(2).value();
+    const auto field = rt.state<Pair>(2).value();
     const std::vector<Pair> source{{1.5f, -2.0f}, {3.25f, 4.0f}};
-    buf.write_range({0, 2}, source);
-    field.write_range({0, 2}, source);
+    buf.write_range({0, 2}, source).value();
+    field.write_range({0, 2}, source).value();
 
     // A round trip copies bits, so the absolute tolerance only bounds the comparison.
     constexpr float K_TOLERANCE = 1e-6f;
-    const std::vector<Pair> from_buffer = buf.read_range({0, 2});
-    const std::vector<Pair> from_state = field.read_range({0, 2});
+    const std::vector<Pair> from_buffer = buf.read_range({0, 2}).value();
+    const std::vector<Pair> from_state = field.read_range({0, 2}).value();
     ASSERT_EQ(from_buffer.size(), source.size());
     ASSERT_EQ(from_state.size(), source.size());
     for (std::size_t i = 0; i < source.size(); ++i)
@@ -241,9 +241,9 @@ TEST(Integration_DataHandles, TriviallyCopyableStructRoundTrips)
  */
 TEST(Integration_DataHandlesDeathTest, DistributedStopsOnADeviceResidentHandle)
 {
-    auto rt = Runtime::create();
-    auto buf = rt.buffer<float>(8, DeviceIndex{0}, Residency::Device);
-    auto field = rt.state<float>(8, DeviceIndex{0}, Residency::Device);
+    auto rt = Runtime::create().value();
+    auto buf = rt.buffer<float>(8, DeviceIndex{0}, Residency::Device).value();
+    auto field = rt.state<float>(8, DeviceIndex{0}, Residency::Device).value();
 
     EXPECT_DEATH(static_cast<void>(buf.distributed()),
                  "Buffer::distributed.*the handle has Device residency");
@@ -258,10 +258,10 @@ TEST(Integration_DataHandlesDeathTest, DistributedStopsOnADeviceResidentHandle)
  */
 TEST(Integration_DataHandles, DistributedAcceptsAHostAccessibleHandle)
 {
-    auto rt = Runtime::create();
-    auto buf = rt.buffer<float>(8);
-    auto field = rt.state<float>(8);
-    auto moved_from = rt.buffer<float>(8);
+    auto rt = Runtime::create().value();
+    auto buf = rt.buffer<float>(8).value();
+    auto field = rt.state<float>(8).value();
+    auto moved_from = rt.buffer<float>(8).value();
     auto taken = std::move(moved_from);
     EXPECT_EQ(taken.size(), 8u);
     EXPECT_EQ(moved_from.size(), 0u);
@@ -269,7 +269,8 @@ TEST(Integration_DataHandles, DistributedAcceptsAHostAccessibleHandle)
     EXPECT_NO_THROW(buf.distributed());
     EXPECT_NO_THROW(field.distributed());
     EXPECT_NO_THROW(moved_from.distributed());
-    EXPECT_NO_THROW((void)rt.buffer<float>(8, DeviceIndex{0}, Residency::Host).distributed());
+    EXPECT_NO_THROW(
+        (void)rt.buffer<float>(8, DeviceIndex{0}, Residency::Host).value().distributed());
 }
 
 /**
@@ -277,9 +278,9 @@ TEST(Integration_DataHandles, DistributedAcceptsAHostAccessibleHandle)
  */
 TEST(Integration_DataHandlesDeathTest, HostOnADeviceResidentHandleStops)
 {
-    auto rt = Runtime::create();
-    const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device);
-    const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device);
+    auto rt = Runtime::create().value();
+    const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
+    const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
 
     EXPECT_DEATH(static_cast<void>(buf.host()), "Buffer::host: a device-resident buffer");
     EXPECT_DEATH(static_cast<void>(field.host()), "State::host: a device-resident buffer");
@@ -291,9 +292,9 @@ TEST(Integration_DataHandlesDeathTest, HostOnADeviceResidentHandleStops)
  */
 TEST(Integration_DataHandlesDeathTest, IndexingADeviceResidentHandleStops)
 {
-    auto rt = Runtime::create();
-    const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device);
-    const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device);
+    auto rt = Runtime::create().value();
+    const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
+    const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
 
     EXPECT_DEATH(static_cast<void>(buf[0]), "Buffer::operator.*a device-resident buffer");
     EXPECT_DEATH(static_cast<void>(field[0]), "State::operator.*a device-resident state");
@@ -305,7 +306,7 @@ TEST(Integration_DataHandlesDeathTest, IndexingADeviceResidentHandleStops)
  */
 TEST(Integration_DataHandlesDeathTest, DeviceIndexThatNamesNoDeviceStops)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     const std::size_t count = rt.advanced().device_count();
     const DeviceIndex past_the_end{count};
     const std::string detail = ": device index " + std::to_string(count) +

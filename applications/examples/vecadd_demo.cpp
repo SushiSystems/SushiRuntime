@@ -39,11 +39,11 @@ namespace
     {
         constexpr std::size_t N = 1u << 20;   // 1,048,576 elements
 
-        auto rt = Runtime::create();
+        auto rt = Runtime::create().value();
 
-        auto a = rt.buffer<float>(N);
-        auto b = rt.buffer<float>(N);
-        auto c = rt.buffer<float>(N);
+        auto a = rt.buffer<float>(N).value();
+        auto b = rt.buffer<float>(N).value();
+        auto c = rt.buffer<float>(N).value();
 
         auto g = rt.graph();
 

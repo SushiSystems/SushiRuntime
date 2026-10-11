@@ -71,13 +71,15 @@ TEST(Integration_DeviceSelection, RequireFp64StillConstructsOnAConformingLane)
 
     if (any_device_has_fp64())
     {
-        auto rt = Runtime::create(config);
+        auto rt = Runtime::create(config).value();
         EXPECT_GE(rt.advanced().device_count(), 1u);
     }
     else
     {
-        // With no conforming device the failure is still the SushiException below; see README.md.
-        EXPECT_THROW(static_cast<void>(Runtime::create(config)), SushiException);
+        // With no conforming device the failure is still the Error below; see README.md.
+        const auto refused = Runtime::create(config);
+        ASSERT_FALSE(refused.has_value());
+        EXPECT_EQ(refused.error().code, ErrorCode::Unsupported);
     }
 }
 
@@ -89,24 +91,19 @@ TEST(Integration_DeviceSelection, AnEmptyFilterFailsWithUnsupported)
     config.devices.include_gpu         = false;
     config.devices.include_accelerator = false;
 
-    try
-    {
-        static_cast<void>(Runtime::create(config));
-        FAIL() << "a filter admitting no device class must not produce a runtime";
-    }
-    catch (const SushiException& e)
-    {
-        EXPECT_EQ(e.error().code, ErrorCode::Unsupported);
-        // The message names the filter; see README.md.
-        const std::string message = e.what();
-        EXPECT_NE(message.find("cpu=no"), std::string::npos) << message;
-        EXPECT_NE(message.find("gpu=no"), std::string::npos) << message;
-    }
+    const auto refused = Runtime::create(config);
+    ASSERT_FALSE(refused.has_value())
+        << "a filter admitting no device class must not produce a runtime";
+    EXPECT_EQ(refused.error().code, ErrorCode::Unsupported);
+    // The message names the filter; see README.md.
+    const std::string& message = refused.error().message;
+    EXPECT_NE(message.find("cpu=no"), std::string::npos) << message;
+    EXPECT_NE(message.find("gpu=no"), std::string::npos) << message;
 }
 
 /** @brief Tests that the default filter still finds this lane's devices. */
 TEST(Integration_DeviceSelection, DefaultFilterIsUnaffected)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     EXPECT_GE(rt.advanced().device_count(), 1u);
 }

@@ -219,9 +219,9 @@ namespace
      */
     bool run_vector_add(Runtime& runtime, std::size_t count)
     {
-        auto a = runtime.buffer<float>(count).distributed();
-        auto b = runtime.buffer<float>(count).distributed();
-        auto sum = runtime.buffer<float>(count).distributed();
+        auto a = runtime.buffer<float>(count).value().distributed();
+        auto b = runtime.buffer<float>(count).value().distributed();
+        auto sum = runtime.buffer<float>(count).value().distributed();
 
         const float* a_data = a.data();
         const float* b_data = b.data();
@@ -282,7 +282,7 @@ namespace
      */
     int run_demo(const DemoOptions& options)
     {
-        auto runtime = Runtime::create();
+        auto runtime = Runtime::create().value();
 
         Distributed::TCPMasterOptions listener;
         listener.bind = options.listen;

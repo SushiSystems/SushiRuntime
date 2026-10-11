@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — api: Breaking change: Made `Runtime::create`, `buffer`, `state`, `wait`, `read_range`, `write_range`, `Recorder::scratch` and the three `Interop` calls return `Result` (`runtime.hpp`, `buffer.hpp`, `interop.hpp`).
 - 2026-10-11 — api: Breaking change: Made a refused recording a kept `Error` that `refusal()` reads and the next run returns, and made `TaskGraph::compile` return `Result` (`recorder.hpp`, `builder_surface.hpp`, `task_graph.hpp`).
 - 2026-10-11 — api: Breaking change: Made 27 broken preconditions stop the process through `SR_VERIFY`, `SR_ASSERT` or `SR_FATAL` instead of throwing (`buffer.hpp`, `late_count.hpp`, `interop.cpp`, `node.hpp`).
 - 2026-10-11 — core: Breaking change: Renamed `Errc` to `ErrorCode` with PascalCase enumerators, added `Result<void>`, and made a misused `Result` accessor stop the process (`error.hpp`, `result.hpp`).

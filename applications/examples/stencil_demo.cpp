@@ -40,8 +40,8 @@ namespace
         constexpr std::size_t W = 64, H = 64, K_STEPS = 200;
         constexpr float ALPHA = 0.2f;   // diffusion factor, stable for a 5-point stencil
 
-        auto rt   = Runtime::create();
-        auto temp = rt.state<float>(W * H);
+        auto rt   = Runtime::create().value();
+        auto temp = rt.state<float>(W * H).value();
 
         // Both buffers are seeded, because the interior-only update never writes the border.
         float* cur0  = temp.current();

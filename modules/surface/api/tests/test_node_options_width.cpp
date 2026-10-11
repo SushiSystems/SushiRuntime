@@ -59,10 +59,10 @@ TEST(Integration_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
     constexpr std::size_t WIDE = 600;
 
     // The buffers are oversized by different amounts to expose a buffer width; see README.md.
-    auto rt     = Runtime::create();
-    auto values = rt.buffer<std::uint32_t>(WIDE + 9);
-    auto copies = rt.buffer<std::uint32_t>(WIDE + 8);
-    auto first  = rt.buffer<std::uint32_t>(1);
+    auto rt     = Runtime::create().value();
+    auto values = rt.buffer<std::uint32_t>(WIDE + 9).value();
+    auto copies = rt.buffer<std::uint32_t>(WIDE + 8).value();
+    auto first  = rt.buffer<std::uint32_t>(1).value();
     for (std::size_t i = 0; i < WIDE; ++i)
         values[i] = static_cast<std::uint32_t>(i) + 1u;
     const std::uint32_t* v = values.data();
@@ -93,8 +93,8 @@ TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWi
 {
     constexpr std::size_t CAPACITY = 128;
 
-    auto rt  = Runtime::create();
-    auto out = rt.buffer<std::uint32_t>(CAPACITY + 8);
+    auto rt  = Runtime::create().value();
+    auto out = rt.buffer<std::uint32_t>(CAPACITY + 8).value();
     for (std::size_t i = 0; i < CAPACITY + 8; ++i)
         out[i] = 0;
     std::uint32_t* o = out.data();
@@ -106,7 +106,7 @@ TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWi
     {
         Recorder& recorder = g.recorder();
         std::uint32_t* live =
-            recorder.scratch<std::uint32_t>(1, out.device_index(), out.residency());
+            recorder.scratch<std::uint32_t>(1, out.device_index(), out.residency()).value();
         const Internal::Memory::ResourceRegion live_region{live, 0, sizeof(std::uint32_t)};
 
         auto rule = recorder.rule();
@@ -136,8 +136,8 @@ TEST(Integration_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
 {
     constexpr std::size_t WIDE = 64;
 
-    auto rt     = Runtime::create();
-    auto values = rt.buffer<std::uint32_t>(WIDE);
+    auto rt     = Runtime::create().value();
+    auto values = rt.buffer<std::uint32_t>(WIDE).value();
     for (std::size_t i = 0; i < WIDE; ++i)
         values[i] = static_cast<std::uint32_t>(i);
     std::uint32_t* v = values.data();
@@ -167,9 +167,9 @@ TEST(Integration_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
 {
     constexpr std::size_t WIDE = 32;
 
-    auto rt     = Runtime::create();
-    auto first  = rt.buffer<std::uint32_t>(WIDE);
-    auto second = rt.buffer<std::uint32_t>(WIDE);
+    auto rt     = Runtime::create().value();
+    auto first  = rt.buffer<std::uint32_t>(WIDE).value();
+    auto second = rt.buffer<std::uint32_t>(WIDE).value();
     std::uint32_t* a = first.data();
     std::uint32_t* b = second.data();
 
@@ -196,8 +196,8 @@ TEST(Integration_NodeOptionsWidth, MoreParametersThanANodeCarriesAreRefused)
 {
     constexpr std::size_t WIDE = 8;
 
-    auto rt     = Runtime::create();
-    auto values = rt.buffer<std::uint32_t>(WIDE);
+    auto rt     = Runtime::create().value();
+    auto values = rt.buffer<std::uint32_t>(WIDE).value();
     std::uint32_t* v = values.data();
 
     const std::array<std::uint64_t, 9> parameters{1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u};

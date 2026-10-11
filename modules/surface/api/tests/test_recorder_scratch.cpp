@@ -29,6 +29,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <limits>
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
@@ -56,7 +57,7 @@ namespace
                             const Buffer<std::uint32_t>& out)
     {
         std::uint32_t* stage =
-            recorder.scratch<std::uint32_t>(K_COUNT, in.device_index(), in.residency());
+            recorder.scratch<std::uint32_t>(K_COUNT, in.device_index(), in.residency()).value();
         const Internal::Memory::ResourceRegion stage_region{stage, 0, K_COUNT * sizeof(std::uint32_t)};
         const std::uint32_t* source = in.data();
         std::uint32_t* target = out.data();
@@ -79,10 +80,10 @@ namespace
 /** @brief Tests that a consumer of a rule's output sees what passed through its scratch. */
 TEST(Integration_RecorderScratch, AConsumerSeesWhatPassedThroughTheScratch)
 {
-    auto rt   = Runtime::create();
-    auto in   = rt.buffer<std::uint32_t>(K_COUNT);
-    auto out  = rt.buffer<std::uint32_t>(K_COUNT);
-    auto copy = rt.buffer<std::uint32_t>(K_COUNT);
+    auto rt   = Runtime::create().value();
+    auto in   = rt.buffer<std::uint32_t>(K_COUNT).value();
+    auto out  = rt.buffer<std::uint32_t>(K_COUNT).value();
+    auto copy = rt.buffer<std::uint32_t>(K_COUNT).value();
     fill(in, 5);
     for (std::size_t i = 0; i < K_COUNT; ++i)
     {
@@ -107,9 +108,9 @@ TEST(Integration_RecorderScratch, AConsumerSeesWhatPassedThroughTheScratch)
 /** @brief Tests that each run of a replayed rule reads its input as it stands, in one compile. */
 TEST(Integration_RecorderScratch, EachRunReadsItsInputAsItStands)
 {
-    auto rt  = Runtime::create();
-    auto in  = rt.buffer<std::uint32_t>(K_COUNT);
-    auto out = rt.buffer<std::uint32_t>(K_COUNT);
+    auto rt  = Runtime::create().value();
+    auto in  = rt.buffer<std::uint32_t>(K_COUNT).value();
+    auto out = rt.buffer<std::uint32_t>(K_COUNT).value();
 
     auto g = rt.graph();
     record_staged_rule(g.recorder(), in, out);
@@ -127,10 +128,10 @@ TEST(Integration_RecorderScratch, EachRunReadsItsInputAsItStands)
 /** @brief Tests that the scratch a kernel captured stays valid after the graph recompiles. */
 TEST(Integration_RecorderScratch, ScratchSurvivesARecompile)
 {
-    auto rt   = Runtime::create();
-    auto in   = rt.buffer<std::uint32_t>(K_COUNT);
-    auto out  = rt.buffer<std::uint32_t>(K_COUNT);
-    auto copy = rt.buffer<std::uint32_t>(K_COUNT);
+    auto rt   = Runtime::create().value();
+    auto in   = rt.buffer<std::uint32_t>(K_COUNT).value();
+    auto out  = rt.buffer<std::uint32_t>(K_COUNT).value();
+    auto copy = rt.buffer<std::uint32_t>(K_COUNT).value();
     fill(in, 1);
     const std::uint32_t* o = out.data();
     std::uint32_t* c = copy.data();
@@ -157,9 +158,9 @@ TEST(Integration_RecorderScratch, ScratchSurvivesARecompile)
 /** @brief Tests that scratch returns to the runtime when the graph that recorded it dies. */
 TEST(Integration_RecorderScratch, ScratchIsFreedWithTheRecorder)
 {
-    auto rt  = Runtime::create();
-    auto in  = rt.buffer<std::uint32_t>(K_COUNT);
-    auto out = rt.buffer<std::uint32_t>(K_COUNT);
+    auto rt  = Runtime::create().value();
+    auto in  = rt.buffer<std::uint32_t>(K_COUNT).value();
+    auto out = rt.buffer<std::uint32_t>(K_COUNT).value();
     const Internal::Memory::USMAllocator& memory = rt.unsafe_context().memory();
     const std::size_t baseline = memory.live_count();
 
@@ -175,10 +176,10 @@ TEST(Integration_RecorderScratch, ScratchIsFreedWithTheRecorder)
 /** @brief Tests that regions record rules with scratch and keep it across a region rebuild. */
 TEST(Integration_RecorderScratch, RegionsRecordRulesWithScratch)
 {
-    auto rt  = Runtime::create();
-    auto in  = rt.buffer<std::uint32_t>(K_COUNT);
-    auto mid = rt.buffer<std::uint32_t>(K_COUNT);
-    auto out = rt.buffer<std::uint32_t>(K_COUNT);
+    auto rt  = Runtime::create().value();
+    auto in  = rt.buffer<std::uint32_t>(K_COUNT).value();
+    auto mid = rt.buffer<std::uint32_t>(K_COUNT).value();
+    auto out = rt.buffer<std::uint32_t>(K_COUNT).value();
 
     auto world = rt.dynamic_graph();
     record_staged_rule(world.region(1).recorder(), in, mid);
@@ -199,4 +200,22 @@ TEST(Integration_RecorderScratch, RegionsRecordRulesWithScratch)
     }
     EXPECT_EQ(world.region(1).node_count(), 2u);
     EXPECT_EQ(world.compose_count(), 2u) << "the rename must have rebuilt region 1 once";
+}
+
+/** @brief Tests that scratch no device can hold comes back as AllocationFailed. */
+TEST(Integration_RecorderScratch, AScratchRequestNoDeviceCanSatisfyReturnsAllocationFailed)
+{
+    auto rt = Runtime::create().value();
+    auto graph = rt.graph();
+    // Half the address space in bytes: the count fits std::size_t and no device has the room.
+    const std::size_t count = std::numeric_limits<std::size_t>::max() / 2;
+
+    const auto refused =
+        graph.recorder().scratch<std::uint8_t>(count, DeviceIndex{0}, Residency::Shared);
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(refused.error().code, ErrorCode::AllocationFailed);
+
+    const auto granted =
+        graph.recorder().scratch<std::uint8_t>(16, DeviceIndex{0}, Residency::Shared);
+    EXPECT_TRUE(granted.has_value());
 }

@@ -44,9 +44,9 @@ int main()
     constexpr std::size_t N     = 1024;
     constexpr std::size_t STEPS = 100;
 
-    SushiRuntime::Runtime runtime = SushiRuntime::Runtime::create();
+    SushiRuntime::Runtime runtime = SushiRuntime::Runtime::create().value();
 
-    SushiRuntime::State<float> heat = runtime.state<float>(N);
+    SushiRuntime::State<float> heat = runtime.state<float>(N).value();
     for (std::size_t i = 0; i < N; ++i)
         heat[i] = (i == N / 2) ? 1.0f : 0.0f;
 

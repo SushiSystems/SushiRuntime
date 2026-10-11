@@ -34,13 +34,13 @@ using namespace SushiRuntime;
 
 TEST(Integration_PerfControls, RebalancerIsOffUnlessRequested)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     EXPECT_FALSE(rt.advanced().is_rebalancer_enabled())
         << "the rebalancer must not run unless RuntimeConfig asked for it";
 
     RuntimeConfig config;
     config.rebalancer = true;
-    auto throughput = Runtime::create(config);
+    auto throughput = Runtime::create(config).value();
     EXPECT_TRUE(throughput.advanced().is_rebalancer_enabled())
         << "RuntimeConfig::rebalancer must start the coordinator";
 }
@@ -49,9 +49,9 @@ TEST(Integration_PerfControls, RebalancerToggleKeepsExecutionCorrect)
 {
     constexpr std::size_t N = 128;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
 
-    auto buf = rt.buffer<int>(N);
+    auto buf = rt.buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
     int* p = buf.data();
 

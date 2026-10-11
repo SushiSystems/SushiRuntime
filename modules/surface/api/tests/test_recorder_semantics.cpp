@@ -59,7 +59,7 @@ namespace
     /** @brief Allocates K_WIDTH words and zeroes them. */
     Buffer<std::uint32_t> zeroed(Runtime& rt)
     {
-        auto buffer = rt.buffer<std::uint32_t>(K_WIDTH);
+        auto buffer = rt.buffer<std::uint32_t>(K_WIDTH).value();
         for (std::size_t i = 0; i < K_WIDTH; ++i)
             buffer[i] = 0;
         return buffer;
@@ -116,7 +116,7 @@ namespace
 
 TEST(Integration_RecorderSemantics, ReadingARegionBetweenRunsDoesNotRecompose)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto values = zeroed(rt);
     auto world = rt.dynamic_graph();
     add_increment(world.region(K_CELL), values, 1u);
@@ -134,7 +134,7 @@ TEST(Integration_RecorderSemantics, ReadingARegionBetweenRunsDoesNotRecompose)
 
 TEST(Integration_RecorderSemantics, ARecordingThroughAHeldRegionRecomposes)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto values = zeroed(rt);
     auto world = rt.dynamic_graph();
     Region& cell = world.region(K_CELL);
@@ -151,7 +151,7 @@ TEST(Integration_RecorderSemantics, ARecordingThroughAHeldRegionRecomposes)
 
 TEST(Integration_RecorderSemantics, ClearingARegionReplacesItsWork)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto values = zeroed(rt);
     auto world = rt.dynamic_graph();
     Region& cell = world.region(K_CELL);
@@ -170,7 +170,7 @@ TEST(Integration_RecorderSemantics, ClearingARegionReplacesItsWork)
 
 TEST(Integration_RecorderSemantics, ADropBetweenRunsRecomposes)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto kept = zeroed(rt);
     auto gone = zeroed(rt);
     auto world = rt.dynamic_graph();
@@ -188,7 +188,7 @@ TEST(Integration_RecorderSemantics, ADropBetweenRunsRecomposes)
 
 TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto values = zeroed(rt);
     auto graph = rt.graph();
     record_three_node_rule(graph.recorder(), values);
@@ -213,7 +213,7 @@ TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
 
 TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto first = zeroed(rt);
     auto second = zeroed(rt);
     auto world = rt.dynamic_graph();
@@ -239,7 +239,7 @@ TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
 
 TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto values = zeroed(rt);
     auto graph = rt.graph();
     add_increment(graph, values, 1u);
@@ -265,7 +265,7 @@ TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
 
 TEST(Integration_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto values = zeroed(rt);
     auto graph = rt.graph();
     add_increment(graph, values, 1u);
@@ -285,7 +285,7 @@ TEST(Integration_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
 
 TEST(Integration_RecorderSemantics, MovedFromGraphIsEmpty)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto values = zeroed(rt);
     auto graph = rt.graph();
     add_increment(graph, values, 1u);
@@ -315,7 +315,7 @@ TEST(Integration_RecorderSemantics, MovedFromGraphIsEmpty)
 
 TEST(Integration_RecorderSemantics, MovedFromDynamicGraphHasNoRegions)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto values = zeroed(rt);
     auto world = rt.dynamic_graph();
     add_increment(world.region(K_CELL), values, 1u);
@@ -347,7 +347,7 @@ TEST(Integration_RecorderSemantics, OneObserverPerAllocation)
 {
     constexpr std::size_t NODES = 16;
 
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto shared = zeroed(rt);
     auto other = zeroed(rt);
     auto graph = rt.graph();
@@ -366,7 +366,7 @@ TEST(Integration_RecorderSemantics, OneObserverPerAllocation)
 
 TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetected)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto kept = zeroed(rt);
     std::optional<Buffer<std::uint32_t>> gone(zeroed(rt));
     auto graph = rt.graph();
@@ -386,7 +386,7 @@ TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetected)
 
 TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto kept = zeroed(rt);
     std::optional<Buffer<std::uint32_t>> gone(zeroed(rt));
     auto world = rt.dynamic_graph();
@@ -405,7 +405,7 @@ TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
 /** @brief Tests that a recorder moved from and recorded on again repeats no generation. */
 TEST(Integration_RecorderSemantics, AMovedFromRecorderNeverRepeatsAGeneration)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto values = zeroed(rt);
     auto graph = rt.graph();
     add_increment(graph, values, 1u);
@@ -437,7 +437,7 @@ TEST(Integration_RecorderSemantics, AMovedFromRecorderNeverRepeatsAGeneration)
 /** @brief Tests that clear() inside an extension leaves a recorder that records one rule. */
 TEST(Integration_RecorderSemantics, AClearInsideAnExtensionStartsANewRule)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto graph = rt.graph();
     std::size_t first = 0;
     std::size_t second = 0;
@@ -459,7 +459,7 @@ TEST(Integration_RecorderSemantics, AClearInsideAnExtensionStartsANewRule)
 /** @brief Tests that a task of two command groups runs after its producer and before its reader. */
 TEST(Integration_RecorderSemantics, ATaskOfTwoCommandGroupsIsOrderedByItsAccess)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto source = zeroed(rt);
     auto staged = zeroed(rt);
     auto result = zeroed(rt);
@@ -503,9 +503,9 @@ TEST(Integration_RecorderSemantics, ATaskOfTwoCommandGroupsIsOrderedByItsAccess)
 /** @brief Tests that an offload rule with nine parameters is refused and one with eight kept. */
 TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto values = zeroed(rt);
-    auto field = rt.state<std::uint32_t>(K_WIDTH);
+    auto field = rt.state<std::uint32_t>(K_WIDTH).value();
     std::uint32_t* words = values.data();
     const auto local = [words](std::size_t i) { words[i] += 1u; };
     const auto rule = [](std::size_t i, const std::uint32_t* current, std::uint32_t* next)
@@ -543,7 +543,7 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
 /** @brief Tests that an extension that records nothing adds no rule and no node. */
 TEST(Integration_RecorderSemantics, AnExtensionThatRecordsNothingAddsNoRule)
 {
-    auto rt = Runtime::create();
+    auto rt = Runtime::create().value();
     auto values = zeroed(rt);
     auto graph = rt.graph();
     add_increment(graph, values, 1u);

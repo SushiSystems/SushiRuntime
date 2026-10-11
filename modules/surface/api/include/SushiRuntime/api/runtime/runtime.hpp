@@ -35,12 +35,14 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
+#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/graph/dynamic_graph.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
@@ -62,15 +64,26 @@ namespace SushiRuntime
         public:
             /**
              * @brief Creates a runtime on the devices and with the settings of one struct.
-             * @throws SushiException With ErrorCode::Unsupported when the loaded library
-             *         is of another release than these headers, or when no device passes
-             *         config.devices.
+             * @return The runtime, or why it has none: Unsupported when no device passes
+             *         config.devices or the loaded library is of another release than these
+             *         headers, DeviceLost when a device queue cannot be built, and
+             *         AllocationFailed when the host cannot give the runtime its memory or
+             *         its threads.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
-            [[nodiscard]] static Runtime create(const RuntimeConfig& config = {})
+            [[nodiscard]] static Result<Runtime> create(const RuntimeConfig& config = {})
             {
-                require_matching_version();
-                return Runtime(std::make_shared<Internal::Execution::RuntimeContext>(
-                    config.devices, nullptr, nullptr, settings_of(config)));
+                std::shared_ptr<Internal::Execution::RuntimeContext> context;
+                Error failed = Detail::translate_exceptions(
+                    ErrorCode::DeviceLost, ErrorCode::AllocationFailed, [&context, &config]()
+                {
+                    require_matching_version();
+                    context = std::make_shared<Internal::Execution::RuntimeContext>(
+                        config.devices, nullptr, nullptr, settings_of(config));
+                });
+                if (failed.code != ErrorCode::Ok)
+                    return make_error(std::move(failed));
+                return Runtime(std::move(context));
             }
 
             Runtime(Runtime&&) noexcept = default;
@@ -90,32 +103,32 @@ namespace SushiRuntime
 
             /**
              * @brief Allocates a typed buffer of @p count elements on one device.
-             * @throws SushiException With ErrorCode::InvalidAccess when @p device names no
-             *         device of this runtime; the message names Runtime::buffer, the index,
-             *         the device count and advanced().devices().
+             * @return The buffer, or an AllocationFailed error when the device returns nothing.
+             * @pre device names a device of this runtime, and the byte size of count fits
+             *      std::size_t.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             template <typename T>
-            [[nodiscard]] Buffer<T> buffer(std::size_t count,
-                                           DeviceIndex device = DeviceIndex{0},
-                                           Residency residency = Residency::Shared) const
+            [[nodiscard]] Result<Buffer<T>> buffer(std::size_t count,
+                                                   DeviceIndex device = DeviceIndex{0},
+                                                   Residency residency = Residency::Shared) const
             {
-                return Buffer<T>("Runtime::buffer", context_, count, device, residency);
+                return Buffer<T>::allocate("Runtime::buffer", context_, count, device, residency);
             }
 
             /**
              * @brief Allocates a double-buffered field of @p count elements on one device.
-             * @throws SushiException With ErrorCode::InvalidAccess when @p device names no
-             *         device of this runtime; the message names Runtime::state, the index,
-             *         the device count and advanced().devices().
+             * @return The state, or an AllocationFailed error when the device returns nothing.
+             * @pre device names a device of this runtime, and the byte size of count fits
+             *      std::size_t.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             template <typename T>
-            [[nodiscard]] State<T> state(std::size_t count,
-                                         DeviceIndex device = DeviceIndex{0},
-                                         Residency residency = Residency::Shared) const
+            [[nodiscard]] Result<State<T>> state(std::size_t count,
+                                                 DeviceIndex device = DeviceIndex{0},
+                                                 Residency residency = Residency::Shared) const
             {
-                return State<T>("Runtime::state", context_, count, device, residency);
+                return State<T>::allocate("Runtime::state", context_, count, device, residency);
             }
 
             /**
@@ -131,20 +144,19 @@ namespace SushiRuntime
 
             /**
              * @brief Blocks until every device queue of this runtime has finished its work.
-             * @throws SushiException With ErrorCode::KernelFailed when a queue reports a
-             *         failed command.
+             * @return Nothing, or a KernelFailed error when a queue reports a failed command.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
-            void wait() const
+            [[nodiscard]] Result<void> wait() const
             {
-                try
+                Error failed = Detail::translate_exceptions(
+                    ErrorCode::KernelFailed, ErrorCode::KernelFailed, [this]()
                 {
                     context_->devices().wait_all();
-                }
-                catch (const sycl::exception& failure)
-                {
-                    throw SushiException(Error{ErrorCode::KernelFailed, failure.what()});
-                }
+                });
+                if (failed.code != ErrorCode::Ok)
+                    return make_error(std::move(failed));
+                return {};
             }
 
             /** @brief Returns the view of this runtime's devices, queues and counters. */

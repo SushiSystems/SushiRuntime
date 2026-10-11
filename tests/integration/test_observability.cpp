@@ -49,10 +49,10 @@ TEST(Integration_Observability, ProfilingOffLeavesBreakdownEmpty)
 {
     constexpr std::size_t N = 256;
 
-    auto rt  = Runtime::create();                 // no profiling
+    auto rt  = Runtime::create().value();                 // no profiling
     EXPECT_FALSE(rt.advanced().is_profiling_enabled());
 
-    auto buf = rt.buffer<int>(N);
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto g = rt.graph();
@@ -68,11 +68,11 @@ TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
     constexpr std::size_t N = 4096;
     constexpr std::size_t STEPS = 8;
 
-    auto rt = Runtime::create(profiling_config());
+    auto rt = Runtime::create(profiling_config()).value();
     ASSERT_TRUE(rt.advanced().is_profiling_enabled());
 
-    auto a = rt.buffer<float>(N);
-    auto b = rt.buffer<float>(N);
+    auto a = rt.buffer<float>(N).value();
+    auto b = rt.buffer<float>(N).value();
     float* pa = a.data();
     float* pb = b.data();
 
@@ -104,10 +104,10 @@ TEST(Integration_Observability, NamingTheLastNodeReachesNodeTiming)
     constexpr std::size_t N = 512;
     constexpr std::size_t STEPS = 4;
 
-    auto rt = Runtime::create(profiling_config());
+    auto rt = Runtime::create(profiling_config()).value();
     ASSERT_TRUE(rt.advanced().is_profiling_enabled());
 
-    auto buf = rt.buffer<int>(N);
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto g = rt.graph();
@@ -125,11 +125,11 @@ TEST(Integration_Observability, EveryAddShapeCanBeNamed)
 {
     constexpr std::size_t N = 256;
 
-    auto rt = Runtime::create(profiling_config());
-    auto a = rt.buffer<float>(N);
-    auto b = rt.buffer<float>(N);
-    auto c = rt.buffer<float>(N);
-    auto s = rt.state<float>(N);
+    auto rt = Runtime::create(profiling_config()).value();
+    auto a = rt.buffer<float>(N).value();
+    auto b = rt.buffer<float>(N).value();
+    auto c = rt.buffer<float>(N).value();
+    auto s = rt.state<float>(N).value();
     float* pa = a.data();
     float* pb = b.data();
 
@@ -171,8 +171,8 @@ TEST(Integration_Observability, UnnamedNodeStillReportsTheDefaultLabel)
 {
     constexpr std::size_t N = 128;
 
-    auto rt = Runtime::create(profiling_config());
-    auto buf = rt.buffer<int>(N);
+    auto rt = Runtime::create(profiling_config()).value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto g = rt.graph();
@@ -190,8 +190,8 @@ TEST(Integration_Observability, ProfilingOnPopulatesWorkerSplit)
     // The worker split describes the scheduler, so keep this plan off the chain.
     RuntimeConfig config = profiling_config();
     config.force_scheduler = true;
-    auto rt = Runtime::create(config);
-    auto buf = rt.buffer<int>(N);
+    auto rt = Runtime::create(config).value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto g = rt.graph();
@@ -213,15 +213,15 @@ TEST(Integration_Observability, ExplicitTransfersAreAccounted)
 {
     constexpr std::size_t N = 512;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
 
     // The context counts the runtime-issued copies directly.
     std::vector<int> src(N, 7);
-    buf.write_range({0, N}, src);
+    buf.write_range({0, N}, src).value();
     EXPECT_EQ(rt.advanced().host_to_device_bytes(), N * sizeof(int));
 
-    auto out = buf.read_range({0, N});
+    auto out = buf.read_range({0, N}).value();
     ASSERT_EQ(out.size(), N);
     EXPECT_EQ(rt.advanced().device_to_host_bytes(), N * sizeof(int));
 }
@@ -230,13 +230,13 @@ TEST(Integration_Observability, TransferBytesAttributedToTheRunWindow)
 {
     constexpr std::size_t N = 128;
 
-    auto rt  = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt  = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     std::vector<int> src(N, 3);
 
     // The bytes a host node pushes during the run land in this run's window; see README.md.
     auto g = rt.graph();
-    g.add_host([&buf, &src]() { buf.write_range({0, N}, src); });
+    g.add_host([&buf, &src]() { buf.write_range({0, N}, src).value(); });
     auto rep = g.run();
 
     EXPECT_EQ(rep.host_to_device_bytes, N * sizeof(int));

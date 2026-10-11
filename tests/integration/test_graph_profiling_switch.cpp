@@ -48,12 +48,12 @@ TEST(Integration_GraphProfilingSwitch, TwoGraphsIndependentSwitch)
 {
     constexpr std::size_t N = 256;
 
-    auto rt = Runtime::create(); // RuntimeSettings::profiling defaults to false
+    auto rt = Runtime::create().value(); // RuntimeSettings::profiling defaults to false
     ASSERT_FALSE(rt.advanced().is_profiling_enabled());
     ASSERT_FALSE(any_profiling_queue_built(rt.unsafe_context()));
 
-    auto a = rt.buffer<int>(N);
-    auto b = rt.buffer<int>(N);
+    auto a = rt.buffer<int>(N).value();
+    auto b = rt.buffer<int>(N).value();
     int* pa = a.data();
     int* pb = b.data();
 
@@ -86,8 +86,8 @@ TEST(Integration_GraphProfilingSwitch, ChangedRequestRecompilesOnceAndSwitches)
 {
     constexpr std::size_t N = 128;
 
-    auto rt = Runtime::create();
-    auto buf = rt.buffer<int>(N);
+    auto rt = Runtime::create().value();
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto g = rt.graph();
@@ -118,8 +118,8 @@ TEST(Integration_GraphProfilingSwitch, NUMAFallbackBranchUsesProfilingQueue)
 {
     constexpr std::size_t N = 256;
 
-    auto rt = Runtime::create(); // RuntimeSettings::profiling defaults to false
-    auto buf = rt.buffer<int>(N);
+    auto rt = Runtime::create().value(); // RuntimeSettings::profiling defaults to false
+    auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
     auto g = rt.graph();

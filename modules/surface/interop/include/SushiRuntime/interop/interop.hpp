@@ -31,6 +31,7 @@
 #include <memory>
 
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/interop/external_memory.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
 #include <SushiRuntime/memory/allocation.hpp>
@@ -48,31 +49,32 @@ namespace SushiRuntime
          * @brief Reports what one device offers a memory pairing.
          * @param context      The context whose queue is inspected.
          * @param device_index The device queue to inspect.
-         * @return The queried capabilities.
+         * @return The capabilities, or a DeviceLost error when the device does not answer.
+         * @pre device_index names a device of the context.
          */
-        [[nodiscard]] SUSHIRUNTIME_API InteropCapabilities query_capabilities(
+        [[nodiscard]] SUSHIRUNTIME_API Result<InteropCapabilities> query_capabilities(
             Internal::Execution::RuntimeContext& context, std::size_t device_index);
 
         /**
          * @brief Allocates host memory another API can import.
-         * @return An allocation aligned and rounded to alignment, or an empty one that
-         *         allocates nothing when @p bytes is zero.
+         * @return An allocation aligned and rounded to alignment, an empty one that
+         *         allocates nothing when @p bytes is zero, or an AllocationFailed error when
+         *         the device returns nothing.
          * @pre alignment is a power of two, and bytes rounded up to it fits std::size_t.
-         * @throws SushiException With AllocationFailed when the device returns nothing.
          */
-        [[nodiscard]] SUSHIRUNTIME_API Internal::Memory::Allocation export_host_memory(
+        [[nodiscard]] SUSHIRUNTIME_API Result<Internal::Memory::Allocation> export_host_memory(
             const std::shared_ptr<Internal::Execution::RuntimeContext>& context, std::size_t bytes,
             std::size_t device_index, std::size_t alignment);
 
         /**
          * @brief Imports device memory another API exported.
          * @param descriptor Names the exported handle; the caller keeps ownership of it.
-         * @return The mapped region, or an empty allocation that imports nothing when
-         *         @p bytes is zero and @p descriptor passes every check.
-         * @throws SushiException With unsupported when the device cannot import, or
-         *        InvalidAccess when @p descriptor is refused (see the module README).
+         * @return The mapped region, an empty allocation that imports nothing when
+         *         @p bytes is zero and @p descriptor passes every check, an Unsupported error
+         *         when the device cannot import, or an InvalidAccess error when @p descriptor
+         *         is refused (see the module README).
          */
-        [[nodiscard]] SUSHIRUNTIME_API Internal::Memory::Allocation import_device_memory(
+        [[nodiscard]] SUSHIRUNTIME_API Result<Internal::Memory::Allocation> import_device_memory(
             const std::shared_ptr<Internal::Execution::RuntimeContext>& context,
             const ExternalMemoryDescriptor& descriptor, std::size_t bytes,
             std::size_t device_index);

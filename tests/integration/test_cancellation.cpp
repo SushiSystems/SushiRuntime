@@ -159,8 +159,8 @@ namespace
 TEST(Integration_Cancellation, CancelStopsRunUntilFromAnotherThread)
 {
     constexpr std::size_t N = 1024;
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) field[i] = 0;
 
     auto g = rt.graph();
@@ -180,8 +180,8 @@ TEST(Integration_Cancellation, CancelStopsRunUntilFromAnotherThread)
 TEST(Integration_Cancellation, NextRunIsNotCancelledAfterReset)
 {
     constexpr std::size_t N = 256;
-    auto rt    = Runtime::create();
-    auto field = rt.state<int>(N);
+    auto rt    = Runtime::create().value();
+    auto field = rt.state<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) field[i] = 0;
 
     auto g = rt.graph();
