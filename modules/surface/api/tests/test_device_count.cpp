@@ -250,7 +250,7 @@ TEST(Integration_DeviceCount, RejectsACounterThatIsNotHostResident)
         }
         catch (const SushiException& e)
         {
-            EXPECT_EQ(e.error().code, Errc::invalid_access);
+            EXPECT_EQ(e.error().code, ErrorCode::InvalidAccess);
             EXPECT_NE(std::string(e.what()).find("Residency::Host"), std::string::npos)
                 << e.what();
         }
@@ -320,7 +320,7 @@ TEST(Integration_DeviceCount, MemberSettersRefuseASlotThatIsNotHostResident)
     }
     catch (const SushiException& e)
     {
-        EXPECT_EQ(e.error().code, Errc::invalid_access);
+        EXPECT_EQ(e.error().code, ErrorCode::InvalidAccess);
         const std::string message(e.what());
         EXPECT_NE(message.find("sized_from_device"), std::string::npos) << message;
         EXPECT_NE(message.find("Residency::Device"), std::string::npos) << message;
@@ -332,7 +332,7 @@ TEST(Integration_DeviceCount, MemberSettersRefuseASlotThatIsNotHostResident)
     }
     catch (const SushiException& e)
     {
-        EXPECT_EQ(e.error().code, Errc::invalid_access);
+        EXPECT_EQ(e.error().code, ErrorCode::InvalidAccess);
         const std::string message(e.what());
         EXPECT_NE(message.find("based_at_device"), std::string::npos) << message;
         EXPECT_NE(message.find("index 4"), std::string::npos) << message;

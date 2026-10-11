@@ -90,6 +90,6 @@ TEST(Integration_InteropHostExport, ImportOnAQueueWithoutTheExtensionThrowsUnsup
     }
     catch (const SushiException& error)
     {
-        EXPECT_EQ(error.error().code, Errc::unsupported);
+        EXPECT_EQ(error.error().code, ErrorCode::Unsupported);
     }
 }

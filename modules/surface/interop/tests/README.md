@@ -30,13 +30,13 @@ can only come from that field.
 
 ### `ADeviceWithoutImportIsRefusedByItsIndex`
 
-The capability is checked before the descriptor. The refusal is `Errc::unsupported` and its
+The capability is checked before the descriptor. The refusal is `ErrorCode::Unsupported` and its
 message carries the device index.
 
 ### `AHandleKindOfAnotherPlatformIsRefusedByName`
 
 Windows imports `OpaqueWin32` handles and every other platform imports `OpaqueFd`. The other kind is
-refused with `Errc::invalid_access`.
+refused with `ErrorCode::InvalidAccess`.
 
 ### `ARegionPastTheAllocationIsRefusedWithItsNumbers`
 
@@ -58,18 +58,18 @@ For every device that imports external memory, the capabilities report a device 
 
 ### `ADefaultDescriptorIsRefusedForItsUnstatedKind`
 
-A default-constructed descriptor is refused with `Errc::invalid_access` on the first device that
+A default-constructed descriptor is refused with `ErrorCode::InvalidAccess` on the first device that
 imports. The message says that `descriptor.kind` is Unspecified and that the exporter must state it.
 
 ### `ANullWin32HandleIsRefusedByName`
 
-Compiled on Windows only. A descriptor whose handle is 0 is refused with `Errc::invalid_access` on the
+Compiled on Windows only. A descriptor whose handle is 0 is refused with `ErrorCode::InvalidAccess` on the
 first device that imports, and the message says that `descriptor.handle` is null.
 
 ### `AFileDescriptorAboveIntIsRefusedWithItsValue`
 
 Compiled on platforms other than Windows only. A handle one above the largest `int` is refused with
-`Errc::invalid_access` on the first device that imports, and the message spells the handle value.
+`ErrorCode::InvalidAccess` on the first device that imports, and the message spells the handle value.
 
 ### `ZeroElementsImportNothingAndReturnAnEmptyBuffer`
 

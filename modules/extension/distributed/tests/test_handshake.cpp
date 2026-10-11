@@ -329,7 +329,7 @@ TEST(Unit_SharedSecretTest, FromFileRefusesAShortFile)
         error_of([&] { (void)SharedSecret::from_file(file.path()); });
 
     ASSERT_TRUE(error.has_value());
-    EXPECT_EQ(error->code, Errc::invalid_access);
+    EXPECT_EQ(error->code, ErrorCode::InvalidAccess);
     EXPECT_NE(error->message.find("sr_test_shared_secret_short.bin"), std::string::npos);
     EXPECT_NE(error->message.find("31 bytes"), std::string::npos);
 }
@@ -357,7 +357,7 @@ TEST(Unit_SharedSecretTest, FromFileMissingNamesThePath)
         error_of([&] { (void)SharedSecret::from_file(missing); });
 
     ASSERT_TRUE(error.has_value());
-    EXPECT_EQ(error->code, Errc::invalid_access);
+    EXPECT_EQ(error->code, ErrorCode::InvalidAccess);
     EXPECT_NE(error->message.find(missing.generic_string()), std::string::npos);
 }
 
@@ -396,6 +396,6 @@ TEST(Unit_SharedSecretTest, FromBytesRefusesAShortSecret)
         error_of([&] { (void)SharedSecret::from_bytes(bytes_of(content)); });
 
     ASSERT_TRUE(error.has_value());
-    EXPECT_EQ(error->code, Errc::invalid_access);
+    EXPECT_EQ(error->code, ErrorCode::InvalidAccess);
     EXPECT_NE(error->message.find("31 bytes"), std::string::npos);
 }

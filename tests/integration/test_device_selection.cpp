@@ -81,7 +81,7 @@ TEST(Integration_DeviceSelection, RequireFp64StillConstructsOnAConformingLane)
     }
 }
 
-/** @brief Tests that a filter that admits nothing fails at construction with Errc::unsupported. */
+/** @brief Tests that a filter that admits nothing fails at construction with Unsupported. */
 TEST(Integration_DeviceSelection, AnEmptyFilterFailsWithUnsupported)
 {
     RuntimeConfig config;
@@ -96,7 +96,7 @@ TEST(Integration_DeviceSelection, AnEmptyFilterFailsWithUnsupported)
     }
     catch (const SushiException& e)
     {
-        EXPECT_EQ(e.error().code, Errc::unsupported);
+        EXPECT_EQ(e.error().code, ErrorCode::Unsupported);
         // The message names the filter; see README.md.
         const std::string message = e.what();
         EXPECT_NE(message.find("cpu=no"), std::string::npos) << message;

@@ -21,7 +21,7 @@
 
 /**
  * @file test_error.cpp
- * @brief Tests the numbering and names of Errc and the shape of SushiException.
+ * @brief Tests the numbering and names of ErrorCode and the shape of SushiException.
  * @author Mustafa Garip
  */
 
@@ -32,14 +32,14 @@
 #include <gtest/gtest.h>
 #include <SushiRuntime/core/error.hpp>
 
-using SushiRuntime::Errc;
+using SushiRuntime::ErrorCode;
 using SushiRuntime::Error;
 using SushiRuntime::SushiException;
 
 namespace
 {
     /** @brief Returns the number an enumerator is stored as. */
-    constexpr std::uint8_t number_of(Errc code) noexcept
+    constexpr std::uint8_t number_of(ErrorCode code) noexcept
     {
         return static_cast<std::uint8_t>(code);
     }
@@ -47,35 +47,35 @@ namespace
     // A consumer compiled against an older header compares these numbers; see README.md.
     TEST(Unit_Error, EveryEnumeratorKeepsItsNumber)
     {
-        EXPECT_EQ(number_of(Errc::ok), 0);
-        EXPECT_EQ(number_of(Errc::invalid_graph), 1);
-        EXPECT_EQ(number_of(Errc::compile_failed), 2);
-        EXPECT_EQ(number_of(Errc::allocation_failed), 3);
-        EXPECT_EQ(number_of(Errc::kernel_failed), 4);
-        EXPECT_EQ(number_of(Errc::device_lost), 5);
-        EXPECT_EQ(number_of(Errc::invalid_access), 6);
-        EXPECT_EQ(number_of(Errc::dangling_resource), 7);
-        EXPECT_EQ(number_of(Errc::unsupported), 8);
-        EXPECT_EQ(number_of(Errc::invalid_state), 9);
+        EXPECT_EQ(number_of(ErrorCode::Ok), 0);
+        EXPECT_EQ(number_of(ErrorCode::InvalidGraph), 1);
+        EXPECT_EQ(number_of(ErrorCode::CompileFailed), 2);
+        EXPECT_EQ(number_of(ErrorCode::AllocationFailed), 3);
+        EXPECT_EQ(number_of(ErrorCode::KernelFailed), 4);
+        EXPECT_EQ(number_of(ErrorCode::DeviceLost), 5);
+        EXPECT_EQ(number_of(ErrorCode::InvalidAccess), 6);
+        EXPECT_EQ(number_of(ErrorCode::DanglingResource), 7);
+        EXPECT_EQ(number_of(ErrorCode::Unsupported), 8);
+        EXPECT_EQ(number_of(ErrorCode::InvalidState), 9);
     }
 
     TEST(Unit_Error, EveryEnumeratorHasItsOwnName)
     {
-        EXPECT_STREQ(to_string(Errc::ok), "ok");
-        EXPECT_STREQ(to_string(Errc::invalid_graph), "invalid_graph");
-        EXPECT_STREQ(to_string(Errc::compile_failed), "compile_failed");
-        EXPECT_STREQ(to_string(Errc::allocation_failed), "allocation_failed");
-        EXPECT_STREQ(to_string(Errc::kernel_failed), "kernel_failed");
-        EXPECT_STREQ(to_string(Errc::device_lost), "device_lost");
-        EXPECT_STREQ(to_string(Errc::invalid_access), "invalid_access");
-        EXPECT_STREQ(to_string(Errc::dangling_resource), "dangling_resource");
-        EXPECT_STREQ(to_string(Errc::unsupported), "unsupported");
-        EXPECT_STREQ(to_string(Errc::invalid_state), "invalid_state");
+        EXPECT_STREQ(to_string(ErrorCode::Ok), "Ok");
+        EXPECT_STREQ(to_string(ErrorCode::InvalidGraph), "InvalidGraph");
+        EXPECT_STREQ(to_string(ErrorCode::CompileFailed), "CompileFailed");
+        EXPECT_STREQ(to_string(ErrorCode::AllocationFailed), "AllocationFailed");
+        EXPECT_STREQ(to_string(ErrorCode::KernelFailed), "KernelFailed");
+        EXPECT_STREQ(to_string(ErrorCode::DeviceLost), "DeviceLost");
+        EXPECT_STREQ(to_string(ErrorCode::InvalidAccess), "InvalidAccess");
+        EXPECT_STREQ(to_string(ErrorCode::DanglingResource), "DanglingResource");
+        EXPECT_STREQ(to_string(ErrorCode::Unsupported), "Unsupported");
+        EXPECT_STREQ(to_string(ErrorCode::InvalidState), "InvalidState");
     }
 
     TEST(Unit_Error, AValueOutsideTheEnumIsNamedUnknown)
     {
-        EXPECT_STREQ(to_string(static_cast<Errc>(250)), "unknown");
+        EXPECT_STREQ(to_string(static_cast<ErrorCode>(250)), "Unknown");
     }
 
     TEST(Unit_Error, AHandlerForRuntimeErrorCatchesSushiException)
@@ -85,7 +85,7 @@ namespace
 
         try
         {
-            throw SushiException(Error{Errc::invalid_state, "the call came too late"});
+            throw SushiException(Error{ErrorCode::InvalidState, "the call came too late"});
         }
         catch (const std::runtime_error& caught)
         {
@@ -93,7 +93,7 @@ namespace
 
             const auto* typed = dynamic_cast<const SushiException*>(&caught);
             ASSERT_NE(typed, nullptr);
-            EXPECT_EQ(typed->error().code, Errc::invalid_state);
+            EXPECT_EQ(typed->error().code, ErrorCode::InvalidState);
             EXPECT_EQ(typed->error().message, "the call came too late");
         }
     }

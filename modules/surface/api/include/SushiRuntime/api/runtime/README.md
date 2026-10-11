@@ -58,7 +58,7 @@ library uses it for the host side of its own work, a `memcpy` between a host arr
 or a wait on one event, with no `RuntimeContext` in its code. Work a caller submits on it is
 outside every graph: no rule is ordered against it, so the caller waits for it, or calls
 `Runtime::wait()`, before a graph that touches the same memory runs. The reference stays valid
-while any handle of the runtime lives. A device the runtime does not have throws `invalid_access`.
+while any handle of the runtime lives. A device the runtime does not have throws `InvalidAccess`.
 
 ### devices
 
@@ -100,7 +100,7 @@ only the cells that changed instead of recompiling the whole graph.
 
 `buffer()` allocates on the device its `DeviceIndex` names, and the buffer frees the memory when it
 is destroyed. An index outside `[0, advanced().device_count())` throws `SushiException` with
-`Errc::invalid_access`, and the message carries the index and the device count.
+`ErrorCode::InvalidAccess`, and the message carries the index and the device count.
 
 ### state
 
@@ -120,7 +120,7 @@ heartbeat. That is worth it for long batch work and wrong for a simulation frame
 any work a caller submitted through `advanced().queue()`. A blocking run has already waited for
 its own steps, so `wait()` is for work outside a graph and for a caller that wants the devices
 quiet before it reads memory. It does not settle a step started with run_async(); the RunHandle
-does. A command that failed on a device arrives as `kernel_failed` with the device's text.
+does. A command that failed on a device arrives as `KernelFailed` with the device's text.
 
 ### unsafe_context
 
@@ -137,7 +137,7 @@ takes the Runtime and installs its master on this context, so no header here nam
 ### Promoted error names
 
 errors.hpp declares nothing. It includes `core/error.hpp` and `core/result.hpp` and promotes
-`Error`, `Errc`, `Result` and `SushiException` into `SushiRuntime`, so a program that handles a
+`Error`, `ErrorCode`, `Result` and `SushiException` into `SushiRuntime`, so a program that handles a
 failed `try_run()` spells them without ``. The foundation modules sit below the public surface
 and promote nothing themselves.
 

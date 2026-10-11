@@ -223,7 +223,7 @@ is the limit of a wait that must fail, so the test does not depend on how long i
 ### `AttachIsRefusedAndDetachDeferredDuringARun`
 
 Finding QC-84. An `Accept` worker holds the only task while `execute()` waits on another thread,
-so a run is in flight. `attach` on that context must throw `invalid_state` before it calls
+so a run is in flight. `attach` on that context must throw `InvalidState` before it calls
 `start()` on the new transport, and the installed coordinator, its worker and its pending task
 must be as they were. `detach()` must then stop the master, which returns the task and ends the
 run with the local result, and leave the coordinator installed. A second `detach()` after the run
@@ -888,9 +888,9 @@ without a `HELLO`. `stop()` then ends the link as `Stopped`.
 ### `SealedRegistryRefusesRegistration`, `EmptyKernelIsRefused`
 
 Finding QC-37. `Unit_KernelRegistryTest` needs no queue: its kernel returns a default event and is
-never called. After `seal()`, called twice, `register_kernel` must throw `invalid_state` for a
+never called. After `seal()`, called twice, `register_kernel` must throw `InvalidState` for a
 new operation and for one already registered, and the registry must hold what it held. A
-default-constructed `Kernel` must throw `invalid_access` on an open registry and on a sealed one,
+default-constructed `Kernel` must throw `InvalidAccess` on an open registry and on a sealed one,
 and must register nothing.
 
 ## test_worker_main.cpp

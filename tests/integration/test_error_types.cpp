@@ -55,7 +55,7 @@ TEST(Integration_ErrorTypes, AFilterThatExcludesEveryDeviceThrowsUnsupported)
     }
     catch (const SushiException& refusal)
     {
-        EXPECT_EQ(refusal.error().code, Errc::unsupported);
+        EXPECT_EQ(refusal.error().code, ErrorCode::Unsupported);
         EXPECT_EQ(refusal.error().message, refusal.what());
     }
 }
@@ -73,6 +73,6 @@ TEST(Integration_ErrorTypes, AHandlerForRuntimeErrorReceivesTheSameFailure)
         // The exception crossed the library boundary with its dynamic type; see README.md.
         const auto* typed = dynamic_cast<const SushiException*>(&caught);
         ASSERT_NE(typed, nullptr) << caught.what();
-        EXPECT_EQ(typed->error().code, Errc::unsupported);
+        EXPECT_EQ(typed->error().code, ErrorCode::Unsupported);
     }
 }

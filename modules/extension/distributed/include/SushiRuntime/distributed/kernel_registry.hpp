@@ -72,8 +72,8 @@ namespace SushiRuntime
                 /**
                  * @brief Sets the kernel of an operation, replacing the one set before.
                  * @param kernel Holds a callable; an empty one is refused.
-                 * @throws SushiException With invalid_access for an empty kernel, with
-                 *         invalid_state once the registry is sealed.
+                 * @throws SushiException With InvalidAccess for an empty kernel, with
+                 *         InvalidState once the registry is sealed.
                  */
                 void register_kernel(OperationID id, Kernel kernel);
 

@@ -255,7 +255,7 @@ TEST_F(Unit_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
     const std::exception_ptr error = scheduler_.run_error();
     ASSERT_TRUE(error != nullptr);
 
-    std::optional<SushiRuntime::Errc> code;
+    std::optional<SushiRuntime::ErrorCode> code;
     std::string message;
     try
     {
@@ -272,7 +272,7 @@ TEST_F(Unit_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
     }
 
     ASSERT_TRUE(code.has_value()) << "the run failed with another exception type: " << message;
-    EXPECT_EQ(*code, SushiRuntime::Errc::invalid_graph);
+    EXPECT_EQ(*code, SushiRuntime::ErrorCode::InvalidGraph);
     EXPECT_NE(message.find("node 'misplaced'"), std::string::npos) << message;
     EXPECT_NE(message.find("device 2"), std::string::npos) << message;
     EXPECT_NE(message.find("2 device(s)"), std::string::npos) << message;

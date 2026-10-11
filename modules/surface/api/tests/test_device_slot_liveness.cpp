@@ -73,7 +73,7 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesTheRun)
     EXPECT_TRUE(graph.recorder().has_dangling_resource());
     auto refused = graph.try_run();
     ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, Errc::dangling_resource);
+    EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
 }
 
 /** @brief Tests that a run is refused once the buffer of based_at_device() is destroyed. */
@@ -93,7 +93,7 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedBaseBufferRefusesTheRun)
 
     auto refused = graph.try_run();
     ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, Errc::dangling_resource);
+    EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
 }
 
 /** @brief Tests that a late-bound State rule watches its count buffer as well as its State. */
@@ -112,5 +112,5 @@ TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesAStateRule)
 
     auto refused = graph.try_run();
     ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, Errc::dangling_resource);
+    EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
 }

@@ -72,7 +72,7 @@ closing `using` block. fluent.hpp promotes none. A program that includes
 `SushiRuntime::Reads` and `SushiRuntime::RunReport`.
 
 Two headers under `api/` declare nothing and only promote. `runtime/errors.hpp` promotes
-`Error`, `Errc`, `Result` and `SushiException`; `runtime/logging.hpp`
+`Error`, `ErrorCode`, `Result` and `SushiException`; `runtime/logging.hpp`
 promotes `LogLevel`, `set_log_level` and `set_log_sink`.
 
 `OperationID` is declared in `SushiRuntime` and the `_op` literal in `SushiRuntime::Literals`, an

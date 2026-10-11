@@ -461,7 +461,7 @@ TEST_F(Unit_UsmAllocator, ReleaseOfForeignUSMLeavesItAllocated)
 
 namespace
 {
-/** @brief Expects a call to throw SushiException with invalid_access, an index and a count. */
+/** @brief Expects a call to throw SushiException with InvalidAccess, an index and a count. */
 template <typename Call>
 void expect_bad_device_index(Call&& call, std::size_t bad_index, std::size_t count)
 {
@@ -472,7 +472,7 @@ void expect_bad_device_index(Call&& call, std::size_t bad_index, std::size_t cou
     }
     catch (const SushiRuntime::SushiException& exception)
     {
-        EXPECT_EQ(exception.error().code, SushiRuntime::Errc::invalid_access);
+        EXPECT_EQ(exception.error().code, SushiRuntime::ErrorCode::InvalidAccess);
         const std::string message = exception.what();
         EXPECT_NE(message.find(std::to_string(bad_index)), std::string::npos) << message;
         EXPECT_NE(message.find(std::to_string(count) + " device"), std::string::npos) << message;

@@ -1788,7 +1788,7 @@ TEST(Integration_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
 
     const auto second_transport =
         std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult());
-    Errc refusal = Errc::ok;
+    ErrorCode refusal = ErrorCode::Ok;
     try
     {
         static_cast<void>(Cluster::attach(master_context, second_transport));
@@ -1798,7 +1798,7 @@ TEST(Integration_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
         refusal = error.error().code;
     }
 
-    EXPECT_EQ(refusal, Errc::invalid_state);
+    EXPECT_EQ(refusal, ErrorCode::InvalidState);
     EXPECT_EQ(second_transport->start_calls(), 0) << "the refusal came after a transport start";
     EXPECT_EQ(master_context.offload(), installed);
     EXPECT_EQ(cluster.alive_workers(), 1u) << "the refused attach stopped the installed master";

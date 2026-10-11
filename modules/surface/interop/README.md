@@ -17,12 +17,12 @@ The checks run in this order, and the first that fails throws:
 
 | Check | Error |
 | --- | --- |
-| `capabilities(device).device_import` is true | `unsupported` |
-| `descriptor.kind` is not `Unspecified` | `invalid_access` |
-| `descriptor.kind` is the platform's kind: `OpaqueWin32` on Windows, `OpaqueFd` elsewhere | `invalid_access` |
-| an `OpaqueWin32` handle is not null; an `OpaqueFd` handle is at most `INT_MAX` | `invalid_access` |
-| `offset + bytes` ends inside `allocation_bytes` | `invalid_access` |
-| `descriptor.device` equals the device's UUID | `invalid_access` |
+| `capabilities(device).device_import` is true | `Unsupported` |
+| `descriptor.kind` is not `Unspecified` | `InvalidAccess` |
+| `descriptor.kind` is the platform's kind: `OpaqueWin32` on Windows, `OpaqueFd` elsewhere | `InvalidAccess` |
+| an `OpaqueWin32` handle is not null; an `OpaqueFd` handle is at most `INT_MAX` | `InvalidAccess` |
+| `offset + bytes` ends inside `allocation_bytes` | `InvalidAccess` |
+| `descriptor.device` equals the device's UUID | `InvalidAccess` |
 
 File descriptor 0 is accepted, because it is a valid descriptor. Zero bytes that pass every check
 return an empty `Allocation`: no import, no mapping, no registry entry.

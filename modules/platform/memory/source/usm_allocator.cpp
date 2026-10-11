@@ -48,7 +48,7 @@ namespace SushiRuntime
                                                   std::size_t device_count)
             {
                 return SushiException(Error{
-                    Errc::invalid_access,
+                    ErrorCode::InvalidAccess,
                     "USM device index " + std::to_string(device_index) + " is out of range: the "
                         "allocator holds " + std::to_string(device_count) + " device(s)."});
             }

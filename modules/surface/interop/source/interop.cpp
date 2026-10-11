@@ -130,12 +130,12 @@ namespace SushiRuntime
         SushiException descriptor_error(std::string detail)
         {
             return SushiException(Error{
-                Errc::invalid_access, "import_device: " + std::move(detail)});
+                ErrorCode::InvalidAccess, "import_device: " + std::move(detail)});
         }
 
         /**
          * @brief Throws unless @p descriptor can describe @p bytes on this platform.
-         * @throws SushiException With invalid_access, naming the field at fault.
+         * @throws SushiException With InvalidAccess, naming the field at fault.
          */
         void require_importable(const ExternalMemoryDescriptor& descriptor, std::size_t bytes)
         {
@@ -176,7 +176,7 @@ namespace SushiRuntime
 
         /**
          * @brief Throws unless device @p device_index is the one @p descriptor names.
-         * @throws SushiException With invalid_access, naming both UUIDs when both exist.
+         * @throws SushiException With InvalidAccess, naming both UUIDs when both exist.
          */
         void require_same_device(const InteropCapabilities& capabilities,
                                  const ExternalMemoryDescriptor& descriptor,
@@ -352,7 +352,7 @@ namespace SushiRuntime
             alignment = std::max(alignment, alignof(std::max_align_t));
             if (!is_power_of_two(alignment))
                 throw SushiException(Error{
-                    Errc::allocation_failed,
+                    ErrorCode::AllocationFailed,
                     "export_host: alignment " + std::to_string(alignment) +
                     " is not a power of two."});
 
@@ -361,7 +361,7 @@ namespace SushiRuntime
 
             if (bytes > std::numeric_limits<std::size_t>::max() - (alignment - 1))
                 throw SushiException(Error{
-                    Errc::allocation_failed,
+                    ErrorCode::AllocationFailed,
                     "export_host: " + std::to_string(bytes) + " bytes overflow " +
                     "std::size_t when rounded up to the alignment of " +
                     std::to_string(alignment) + "."});
@@ -374,7 +374,7 @@ namespace SushiRuntime
                 {Internal::Memory::USMKind::Host, rounded, alignment, device_index});
             if (address == nullptr)
                 throw SushiException(Error{
-                    Errc::allocation_failed,
+                    ErrorCode::AllocationFailed,
                     "export_host: host allocation of " + std::to_string(rounded) +
                     " bytes, aligned to " + std::to_string(alignment) + ", failed on device " +
                     std::to_string(device_index) + "; capabilities(" +
@@ -393,7 +393,7 @@ namespace SushiRuntime
             const InteropCapabilities capabilities = capabilities_for(*context, queue, device_index);
             if (!capabilities.device_import)
                 throw SushiException(Error{
-                    Errc::unsupported,
+                    ErrorCode::Unsupported,
                     "import_device: device " + std::to_string(device_index) +
                     " cannot import external memory; capabilities(" +
                     std::to_string(device_index) + ").device_import is false."});
@@ -439,7 +439,7 @@ namespace SushiRuntime
             (void)bytes;
             (void)device_index;
             throw SushiException(Error{
-                Errc::unsupported,
+                ErrorCode::Unsupported,
                 "import_device: this toolchain has no bindless images extension."});
 #endif
         }

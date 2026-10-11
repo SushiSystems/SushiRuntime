@@ -66,7 +66,7 @@ namespace SushiRuntime
             const KernelRegistry::Kernel* kernel = kernels.find(metadata.op_id);
             if (kernel == nullptr)
                 throw SushiException(Error{
-                    Errc::invalid_graph,
+                    ErrorCode::InvalidGraph,
                     "add_registered_task: no kernel is registered for operation " +
                         std::to_string(metadata.op_id.value) + " (task '" +
                         (metadata.name != nullptr ? metadata.name : "unnamed_task") +

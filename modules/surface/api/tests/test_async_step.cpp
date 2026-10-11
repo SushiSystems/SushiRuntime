@@ -61,15 +61,15 @@ namespace
 
         const auto late = step.try_wait();
         ASSERT_FALSE(late.has_value());
-        EXPECT_EQ(late.error().code, Errc::invalid_state);
+        EXPECT_EQ(late.error().code, ErrorCode::InvalidState);
     }
 
-    /** @brief Expects a run entry's Result to carry invalid_state. */
+    /** @brief Expects a run entry's Result to carry InvalidState. */
     template <class Outcome>
     void expect_refused_as_invalid_state(const Outcome& outcome)
     {
         ASSERT_FALSE(outcome.has_value());
-        EXPECT_EQ(outcome.error().code, Errc::invalid_state);
+        EXPECT_EQ(outcome.error().code, ErrorCode::InvalidState);
     }
 }
 
@@ -376,7 +376,7 @@ TEST(Integration_AsyncStep, AnotherGraphIsRefusedWhileAStepIsPending)
     }
     catch (const SushiException& refusal)
     {
-        EXPECT_EQ(refusal.error().code, Errc::invalid_state);
+        EXPECT_EQ(refusal.error().code, ErrorCode::InvalidState);
     }
     ASSERT_NO_FATAL_FAILURE(expect_refused_as_invalid_state(g2.try_run()));
     ASSERT_NO_FATAL_FAILURE(expect_refused_as_invalid_state(g2.try_run_async()));

@@ -84,14 +84,14 @@ namespace SushiRuntime
             // A failure is not cached, so it recurs each run (modules/engine/scheduler/README.md).
             if (spans)
                 throw SushiException(Error{
-                    Errc::invalid_graph,
+                    ErrorCode::InvalidGraph,
                     "its buffers span multiple device contexts; co-locate them on "
                     "one device (cross-device execution is not yet supported)."});
 
             const std::size_t placement = Internal::Graph::placement_of(node, memory);
             if (placement >= device_count)
                 throw SushiException(Error{
-                    Errc::invalid_graph,
+                    ErrorCode::InvalidGraph,
                     Detail::sr_format(
                         "it is placed on device {}, but the runtime holds {} device(s); "
                         "pass place_on() an index below {}.",

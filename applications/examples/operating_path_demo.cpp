@@ -43,16 +43,16 @@ namespace
     constexpr std::size_t K_STEPS = 8;
 
     /** @brief Returns what a caller does about a failed run, chosen by its code. */
-    const char* remedy_for(Errc code) noexcept
+    const char* remedy_for(ErrorCode code) noexcept
     {
         switch (code)
         {
-            case Errc::invalid_graph:
+            case ErrorCode::InvalidGraph:
                 return "record a rule before running";
-            case Errc::dangling_resource:
+            case ErrorCode::DanglingResource:
                 return "keep every buffer alive as long as the graph that names it";
-            case Errc::kernel_failed:
-            case Errc::device_lost:
+            case ErrorCode::KernelFailed:
+            case ErrorCode::DeviceLost:
                 return "the device failed; stop, or build a new runtime";
             default:
                 return "read the message";
@@ -115,10 +115,10 @@ namespace
             return 1;
         }
 
-        // A graph with no rule is refused, and the caller tells the refusal apart by its Errc.
+        // A graph with no rule is refused, and the caller tells the refusal apart by its ErrorCode.
         auto empty = runtime.graph();
         const auto refused = empty.try_run();
-        if (refused || refused.error().code != Errc::invalid_graph)
+        if (refused || refused.error().code != ErrorCode::InvalidGraph)
         {
             std::fprintf(stderr, "operating_path_demo: an empty graph was not refused\n");
             return 1;

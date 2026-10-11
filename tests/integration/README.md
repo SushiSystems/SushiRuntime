@@ -235,7 +235,7 @@ On a lane with no conforming device the failure must still be a `SushiException`
 ### `AnEmptyFilterFailsWithUnsupported`
 
 A filter that admits nothing fails at construction with a code a caller can branch on. A machine
-with no SYCL device at all has the same shape, which is why the error carries `Errc::unsupported`
+with no SYCL device at all has the same shape, which is why the error carries `ErrorCode::Unsupported`
 and not a bare out-of-bounds message from the first queue lookup.
 
 The message must name the filter, so the reader can tell a machine that has nothing from a filter
@@ -253,7 +253,7 @@ in a module because the refusal it uses is raised by `RuntimeContext` and caught
 
 ### `AFilterThatExcludesEveryDeviceThrowsUnsupported`
 
-A filter that admits no device class gives `SushiException` with `Errc::unsupported`. Topology
+A filter that admits no device class gives `SushiException` with `ErrorCode::Unsupported`. Topology
 returns an empty list for that filter and `RuntimeContext` turns the empty list into the failure;
 `test_device_selection.cpp` checks that the message names the filter.
 

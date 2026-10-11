@@ -191,7 +191,7 @@ namespace SushiRuntime
              * @brief Copies a window of the current field out to a host vector and waits for
              *        it.
              * @param range Element window to read.
-             * @throws SushiException With invalid_access when @p range does not fit size().
+             * @throws SushiException With InvalidAccess when @p range does not fit size().
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             [[nodiscard]] std::vector<T> read_range(ElementRange range) const
@@ -204,7 +204,7 @@ namespace SushiRuntime
              * @param range  Element window to write.
              * @param source Holds at least range.count elements; the first range.count are
              *        copied.
-             * @throws SushiException With invalid_access when @p range does not fit size(), or
+             * @throws SushiException With InvalidAccess when @p range does not fit size(), or
              *        @p source is null or shorter than a non-empty window.
              */
             void write_range(ElementRange range, span<const T> source) const
@@ -216,7 +216,7 @@ namespace SushiRuntime
              * @brief Names a window of the current field so that tasks on disjoint windows
              *        are not serialized.
              * @param range Element window, in elements.
-             * @throws SushiException With invalid_access when @p range does not fit size().
+             * @throws SushiException With InvalidAccess when @p range does not fit size().
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             [[nodiscard]] BufferRegion region(ElementRange range) const
@@ -228,7 +228,7 @@ namespace SushiRuntime
              * @brief Shares both fields with the runtime's offload coordinator; does nothing
              *        when none is installed or the state is empty.
              * @return *this.
-             * @throws SushiException With invalid_access when the state owns memory and is
+             * @throws SushiException With InvalidAccess when the state owns memory and is
              *         device-resident.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
@@ -242,7 +242,7 @@ namespace SushiRuntime
             /**
              * @brief Shares both fields as distributed() does, then returns the state by value.
              * @return The state, moved out of this object.
-             * @throws SushiException With invalid_access when the state owns memory and is
+             * @throws SushiException With InvalidAccess when the state owns memory and is
              *         device-resident.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
@@ -260,7 +260,7 @@ namespace SushiRuntime
             /**
              * @brief Allocates both fields of count elements on one device.
              * @param call Names the public operation in a thrown message.
-             * @throws SushiException With invalid_access or allocation_failed, as Buffer's
+             * @throws SushiException With InvalidAccess or AllocationFailed, as Buffer's
              *         allocating constructor does.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */

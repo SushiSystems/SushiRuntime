@@ -129,7 +129,7 @@ namespace SushiRuntime
                                                    const char* sycl_text)
             {
                 return SushiException(Error{
-                    Errc::unsupported,
+                    ErrorCode::Unsupported,
                     std::string("HardwareDiscovery::probe_all_devices: SYCL device enumeration "
                                 "failed: ") + sycl_text + ". Active filter: " + describe(config) +
                         ". Check that the device drivers are installed and that one SYCL runtime "

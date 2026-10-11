@@ -40,7 +40,7 @@ namespace SushiRuntime
         {
             if (!kernel)
                 throw SushiException(Error{
-                    Errc::invalid_access,
+                    ErrorCode::InvalidAccess,
                     Detail::sr_format("KernelRegistry::register_kernel: the kernel of "
                                             "operation {} is empty; pass a callable.",
                                             id.value)});

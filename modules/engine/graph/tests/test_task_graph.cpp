@@ -49,7 +49,7 @@
 
 namespace
 {
-    using SushiRuntime::Errc;
+    using SushiRuntime::ErrorCode;
     using SushiRuntime::Internal::Memory::ResourceRegion;
     using SushiRuntime::SushiException;
     using SushiRuntime::Internal::Graph::CompiledGraph;
@@ -81,7 +81,7 @@ namespace
     /** @brief Pairs the code and the message of an error the graph threw. */
     struct GraphFailure
     {
-        Errc code = Errc::ok;  /**< The code of the SushiException. */
+        ErrorCode code = ErrorCode::Ok;  /**< The code of the SushiException. */
         std::string message;   /**< Its what(). */
     };
 
@@ -199,7 +199,7 @@ TEST(Unit_TaskGraph, ARegistrationTheGraphNeverIssuedIsRefused)
     const std::optional<GraphFailure> sentinel = add_failure(
         [&graph] { graph.add_node(idle_work(), {}, TaskGraph::K_NO_REGISTRATION); });
     ASSERT_TRUE(sentinel.has_value()) << "add_node() accepted NO_REGISTRATION";
-    EXPECT_EQ(sentinel->code, Errc::invalid_graph);
+    EXPECT_EQ(sentinel->code, ErrorCode::InvalidGraph);
     EXPECT_TRUE(contains(sentinel->message, "TaskGraph::add_node()")) << sentinel->message;
     EXPECT_TRUE(contains(sentinel->message, "registration index 4294967295"))
         << sentinel->message;
@@ -210,7 +210,7 @@ TEST(Unit_TaskGraph, ARegistrationTheGraphNeverIssuedIsRefused)
     const std::optional<GraphFailure> past = add_failure(
         [&graph, reserved] { graph.add_node(idle_work(), {}, reserved + 1); });
     ASSERT_TRUE(past.has_value()) << "add_node() accepted an index one past the last issued";
-    EXPECT_EQ(past->code, Errc::invalid_graph);
+    EXPECT_EQ(past->code, ErrorCode::InvalidGraph);
     EXPECT_TRUE(contains(past->message, "has issued 1 so far")) << past->message;
 
     EXPECT_EQ(graph.last_node_added(), nullptr) << "a refused call added a node";
@@ -251,7 +251,7 @@ TEST(Unit_TaskGraph, EveryAddOverloadRefusesAnUnissuedRegistration)
     for (std::size_t i = 0; i < std::size(refused); ++i)
     {
         ASSERT_TRUE(refused[i].has_value()) << "overload " << i << " accepted the index";
-        EXPECT_EQ(refused[i]->code, Errc::invalid_graph) << "overload " << i;
+        EXPECT_EQ(refused[i]->code, ErrorCode::InvalidGraph) << "overload " << i;
     }
 
     // A refused call left no access behind: the next writer of target is a root.
@@ -308,7 +308,7 @@ TEST(Unit_TaskGraph, CompileWithNoRootThrowsInvalidGraphNamingANode)
     const std::optional<GraphFailure> failure = compile_failure(graph);
 
     ASSERT_TRUE(failure.has_value()) << "compile() accepted a graph with no root";
-    EXPECT_EQ(failure->code, Errc::invalid_graph);
+    EXPECT_EQ(failure->code, ErrorCode::InvalidGraph);
     EXPECT_TRUE(contains(failure->message, "none of the 2 nodes is a root")) << failure->message;
     EXPECT_TRUE(contains(failure->message, "node 'first' (registration index 0)")
                 || contains(failure->message, "node 'second' (registration index 1)"))
@@ -330,7 +330,7 @@ TEST(Unit_TaskGraph, CompileWithACycleBehindARootThrowsInvalidGraphNamingANode)
     const std::optional<GraphFailure> failure = compile_failure(graph);
 
     ASSERT_TRUE(failure.has_value()) << "compile() accepted a graph with a cycle";
-    EXPECT_EQ(failure->code, Errc::invalid_graph);
+    EXPECT_EQ(failure->code, ErrorCode::InvalidGraph);
     EXPECT_TRUE(contains(failure->message, "2 of 3 nodes")) << failure->message;
     EXPECT_TRUE(contains(failure->message, "node 'first' (registration index 1)")
                 || contains(failure->message, "node 'second' (registration index 2)"))

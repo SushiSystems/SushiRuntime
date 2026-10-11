@@ -171,7 +171,7 @@ namespace SushiRuntime
             /**
              * @brief Registers the calling thread and returns its slot id.
              * @return Slot index in [0, K_MAX_EPOCH_THREADS).
-             * @throws SushiException With Errc::unsupported if every slot is held.
+             * @throws SushiException With ErrorCode::Unsupported if every slot is held.
              */
             int register_thread()
             {
@@ -191,7 +191,7 @@ namespace SushiRuntime
                     }
                 }
                 throw SushiException(Error{
-                    Errc::unsupported,
+                    ErrorCode::Unsupported,
                     "EpochManager::register_thread: all " + std::to_string(K_MAX_EPOCH_THREADS) +
                         " epoch slots are held by live threads. A thread frees its slot when it "
                         "exits; lower the number of threads that use the runtime at once."});

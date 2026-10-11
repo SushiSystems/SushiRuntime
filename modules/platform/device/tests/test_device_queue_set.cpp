@@ -44,7 +44,7 @@
 
 #include "test_helpers.hpp"
 
-using SushiRuntime::Errc;
+using SushiRuntime::ErrorCode;
 using SushiRuntime::SushiException;
 using SushiRuntime::Internal::Device::DeviceDescriptor;
 using SushiRuntime::Internal::Device::DeviceDescription;
@@ -100,7 +100,7 @@ namespace
 
     /** @brief Returns the error code a call throws, or nothing when it does not throw. */
     template <typename Call>
-    std::optional<Errc> thrown_code(Call&& call, std::string* message = nullptr)
+    std::optional<ErrorCode> thrown_code(Call&& call, std::string* message = nullptr)
     {
         try
         {
@@ -331,7 +331,7 @@ TEST(Unit_DeviceQueueSet, ABadIndexThrowsInvalidAccessNamingIndexAndCount)
     std::string message;
     const auto plain = thrown_code([&set] { (void)set.queue(BAD_INDEX); }, &message);
     ASSERT_TRUE(plain.has_value());
-    EXPECT_EQ(*plain, Errc::invalid_access);
+    EXPECT_EQ(*plain, ErrorCode::InvalidAccess);
     EXPECT_NE(message.find("17"), std::string::npos) << message;
     EXPECT_NE(message.find("2 device"), std::string::npos) << message;
 
@@ -341,10 +341,10 @@ TEST(Unit_DeviceQueueSet, ABadIndexThrowsInvalidAccessNamingIndexAndCount)
     const auto routed = thrown_code([&set] { (void)set.queue_or_numa_local(BAD_INDEX, 0); });
     const auto first_past_end = thrown_code([&set] { (void)set.queue(set.count()); });
 
-    EXPECT_EQ(flavoured, std::optional<Errc>(Errc::invalid_access));
-    EXPECT_EQ(gpu, std::optional<Errc>(Errc::invalid_access));
-    EXPECT_EQ(routed, std::optional<Errc>(Errc::invalid_access));
-    EXPECT_EQ(first_past_end, std::optional<Errc>(Errc::invalid_access));
+    EXPECT_EQ(flavoured, std::optional<ErrorCode>(ErrorCode::InvalidAccess));
+    EXPECT_EQ(gpu, std::optional<ErrorCode>(ErrorCode::InvalidAccess));
+    EXPECT_EQ(routed, std::optional<ErrorCode>(ErrorCode::InvalidAccess));
+    EXPECT_EQ(first_past_end, std::optional<ErrorCode>(ErrorCode::InvalidAccess));
 }
 
 TEST(Unit_DeviceQueueSet, AnEmptySetHoldsNothingAndResolvesNoNUMANode)
@@ -361,9 +361,9 @@ TEST(Unit_DeviceQueueSet, AnEmptySetHoldsNothingAndResolvesNoNUMANode)
     const auto routed = thrown_code([&set] { (void)set.queue_or_numa_local(std::nullopt, 0); });
     const auto indexed = thrown_code([&set] { (void)set.queue(0); });
 
-    EXPECT_EQ(lookup, std::optional<Errc>(Errc::unsupported));
-    EXPECT_EQ(routed, std::optional<Errc>(Errc::unsupported));
-    EXPECT_EQ(indexed, std::optional<Errc>(Errc::invalid_access));
+    EXPECT_EQ(lookup, std::optional<ErrorCode>(ErrorCode::Unsupported));
+    EXPECT_EQ(routed, std::optional<ErrorCode>(ErrorCode::Unsupported));
+    EXPECT_EQ(indexed, std::optional<ErrorCode>(ErrorCode::InvalidAccess));
 }
 
 TEST(Unit_DeviceQueueSet, WaitAllReturnsAfterAKernelOnALazilyBuiltQueueFinished)

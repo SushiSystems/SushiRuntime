@@ -234,7 +234,7 @@ namespace SushiRuntime
              * @brief Runs steps until done returns true, without throwing.
              * @tparam Predicate Move-constructible without throwing.
              * @param done Stop test called before each step; an exception it throws ends the
-             *        run as kernel_failed.
+             *        run as KernelFailed.
              * @return The RunReport, or the Error that ended the run.
              */
             template <class Predicate>
@@ -249,7 +249,7 @@ namespace SushiRuntime
              * @brief Runs steps until done returns true into the caller's report; never throws.
              * @tparam Predicate Move-constructible without throwing.
              * @param done Stop test called before each step; an exception it throws ends the
-             *        run as kernel_failed.
+             *        run as KernelFailed.
              * @param reuse The report to overwrite; its previous contents are lost.
              * @return A pointer to reuse, or the Error that ended the run.
              */
@@ -282,23 +282,23 @@ namespace SushiRuntime
             [[nodiscard]] Result<RunHandle<Owner>, Error> try_run_async() noexcept
             {
                 Error failure = entry_refusal();
-                if (failure.code != Errc::ok)
+                if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
 
                 Detail::AsyncRunState state;
-                failure = guarded(Errc::compile_failed, [this, &state]()
+                failure = guarded(ErrorCode::CompileFailed, [this, &state]()
                 {
                     require_asynchronous_engine();
                     state.compile_ms = build_plan();
                 });
-                if (failure.code != Errc::ok)
+                if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
 
-                failure = guarded(Errc::kernel_failed, [this, &state]()
+                failure = guarded(ErrorCode::KernelFailed, [this, &state]()
                 {
                     submit_async_step(state);
                 });
-                if (failure.code != Errc::ok)
+                if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
 
                 return RunHandle<Owner>(&owner(), async_record_, state);
@@ -400,7 +400,7 @@ namespace SushiRuntime
                     return;
 
                 close_async_step();
-                const Error dropped = guarded(Errc::kernel_failed, [this]()
+                const Error dropped = guarded(ErrorCode::KernelFailed, [this]()
                 {
                     async_engine().complete();
                     const Detail::StepMachinery& steps = owner().run_steps();
@@ -539,14 +539,14 @@ namespace SushiRuntime
 
             /**
              * @brief Runs work and turns anything it throws into an Error.
-             * @param fallback Code of an exception that carries none: compile_failed while
-             *        the plan is built, kernel_failed once a step may have started.
+             * @param fallback Code of an exception that carries none: CompileFailed while
+             *        the plan is built, KernelFailed once a step may have started.
              * @return An Error whose code is ok when work returned; its message is empty when
              *         the text could not be allocated.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class Work>
-            static Error guarded(Errc fallback, Work&& work) noexcept
+            static Error guarded(ErrorCode fallback, Work&& work) noexcept
             {
                 try
                 {
@@ -559,7 +559,7 @@ namespace SushiRuntime
                 }
                 catch (const sycl::exception& e)
                 {
-                    return Detail::error_without_throwing(Errc::kernel_failed, e.what());
+                    return Detail::error_without_throwing(ErrorCode::KernelFailed, e.what());
                 }
                 catch (const std::exception& e)
                 {
@@ -583,21 +583,21 @@ namespace SushiRuntime
             {
                 Owner& self = owner();
                 if (!self.has_work())
-                    return Detail::error_without_throwing(Errc::invalid_graph,
+                    return Detail::error_without_throwing(ErrorCode::InvalidGraph,
                                                           Owner::K_NOTHING_TO_RUN);
                 if (async_step_pending())
-                    return Detail::error_without_throwing(Errc::invalid_state,
+                    return Detail::error_without_throwing(ErrorCode::InvalidState,
                         "run(), run_async() and their try_ forms are refused while a step "
                         "started with run_async() is pending on this graph; call wait() or "
                         "try_wait() on its RunHandle first.");
                 if (self.run_context().execution_engine().run_in_progress())
-                    return Detail::error_without_throwing(Errc::invalid_state,
+                    return Detail::error_without_throwing(ErrorCode::InvalidState,
                         "run(), run_async() and their try_ forms are refused while another "
                         "graph's run is in flight on this runtime, and from inside a task of "
                         "a run; settle that run first: let its blocking call return, or call "
                         "wait() or try_wait() on its RunHandle.");
                 if (self.has_dangling_resource())
-                    return Detail::error_without_throwing(Errc::dangling_resource,
+                    return Detail::error_without_throwing(ErrorCode::DanglingResource,
                                                           Owner::K_DANGLING_RESOURCE);
                 return Error{};
             }
@@ -606,7 +606,7 @@ namespace SushiRuntime
             void require_asynchronous_engine()
             {
                 if (!async_engine().supports_asynchronous_run())
-                    throw SushiException(Error{Errc::unsupported,
+                    throw SushiException(Error{ErrorCode::Unsupported,
                         "run_async(): the active execution engine cannot start a run "
                         "without blocking; call run()."});
             }
@@ -707,7 +707,7 @@ namespace SushiRuntime
             {
                 // No step is pending from here on, whatever the wait below returns.
                 close_async_step();
-                return guarded(Errc::kernel_failed, [this, &state, &report]()
+                return guarded(ErrorCode::KernelFailed, [this, &state, &report]()
                 {
                     async_engine().complete();
                     finish_async_step(state, report);
@@ -798,22 +798,22 @@ namespace SushiRuntime
                 report.is_successful = false;
 
                 Error failure = entry_refusal();
-                if (failure.code != Errc::ok)
+                if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
 
                 double compile_ms = 0.0;
-                failure = guarded(Errc::compile_failed, [this, &compile_ms]()
+                failure = guarded(ErrorCode::CompileFailed, [this, &compile_ms]()
                 {
                     compile_ms = build_plan();
                 });
-                if (failure.code != Errc::ok)
+                if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
 
-                failure = guarded(Errc::kernel_failed, [&]()
+                failure = guarded(ErrorCode::KernelFailed, [&]()
                 {
                     execute_steps(keep_going, report, compile_ms, expected_invocations, sync);
                 });
-                if (failure.code != Errc::ok)
+                if (failure.code != ErrorCode::Ok)
                     return make_error(std::move(failure));
                 return &report;
             }

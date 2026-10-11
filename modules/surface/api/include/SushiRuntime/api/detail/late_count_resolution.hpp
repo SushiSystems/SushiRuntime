@@ -76,7 +76,7 @@ namespace SushiRuntime
          * @brief Resolves a LateCount's host side and names its device slot without reading it.
          * @param count The count to resolve.
          * @return The source a resolver kernel reads.
-         * @throws SushiException With invalid_graph if a host provider returns more
+         * @throws SushiException With InvalidGraph if a host provider returns more
          *         than the capacity.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */

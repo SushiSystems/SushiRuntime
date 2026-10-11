@@ -299,7 +299,7 @@ TEST(Integration_RecorderSemantics, MovedFromGraphIsEmpty)
     EXPECT_EQ(graph.rule_registration(0), Graph::K_NO_REGISTRATION);
     auto refused = graph.try_run();
     ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, Errc::invalid_graph);
+    EXPECT_EQ(refused.error().code, ErrorCode::InvalidGraph);
 
     EXPECT_EQ(taken.size(), 1u);
     taken.run();
@@ -380,7 +380,7 @@ TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetected)
 
     auto refused = graph.try_run();
     ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, Errc::dangling_resource);
+    EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
 }
 
 TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
@@ -398,7 +398,7 @@ TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
 
     auto refused = world.try_run(std::size_t{1});
     ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, Errc::dangling_resource);
+    EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
 }
 
 /** @brief Tests that a recorder moved from and recorded on again repeats no generation. */
@@ -519,7 +519,7 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
                   {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });
     ASSERT_TRUE(task_refusal);
-    EXPECT_EQ(task_refusal->code, Errc::invalid_graph);
+    EXPECT_EQ(task_refusal->code, ErrorCode::InvalidGraph);
     EXPECT_NE(task_refusal->message.find("9 parameters"), std::string::npos)
         << task_refusal->message;
     EXPECT_NE(task_refusal->message.find("at most 8"), std::string::npos)
@@ -530,7 +530,7 @@ TEST(Integration_RecorderSemantics, AnOffloadRuleTakesAtMostEightParameters)
         graph.add("recorder.rule"_op, field, rule, {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });
     ASSERT_TRUE(rule_refusal);
-    EXPECT_EQ(rule_refusal->code, Errc::invalid_graph);
+    EXPECT_EQ(rule_refusal->code, ErrorCode::InvalidGraph);
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 
     graph.add("recorder.task"_op, K_WIDTH, Reads(values), Writes(values), local,

@@ -92,13 +92,13 @@ namespace SushiRuntime
                 detail += ". Either the machine exposes no SYCL device (no GPU driver and no "
                           "OpenCL CPU runtime installed) or every device it exposes was excluded.";
 
-                return SushiException(Error{Errc::unsupported, std::move(detail)});
+                return SushiException(Error{ErrorCode::Unsupported, std::move(detail)});
             }
 
             /**
              * @brief Discovers the devices that pass a filter and builds their queues.
              * @param provider Asked once for the hardware nodes.
-             * @throws SushiException With Errc::unsupported when no device passes.
+             * @throws SushiException With ErrorCode::Unsupported when no device passes.
              * @see modules/engine/execution/README.md
              */
             Internal::Device::DeviceQueueSet probe_devices(Internal::Topology::TopologyProvider& provider,

@@ -194,7 +194,7 @@ namespace SushiRuntime
              * @brief States the device a node that names no owned region runs on.
              * @param device Index into the runtime's device set; must be below K_NO_PLACEMENT.
              * @pre The node has not been dispatched yet.
-             * @throws SushiException With Errc::invalid_graph and the index, when
+             * @throws SushiException With ErrorCode::InvalidGraph and the index, when
              *         @p device is K_NO_PLACEMENT or above.
              * @see modules/engine/graph/README.md
              */
@@ -202,7 +202,7 @@ namespace SushiRuntime
             {
                 if (device >= K_NO_PLACEMENT)
                     throw SushiException(Error{
-                        Errc::invalid_graph,
+                        ErrorCode::InvalidGraph,
                         "Node::place_on(" + std::to_string(device) + "): a device index must be "
                             "below " + std::to_string(K_NO_PLACEMENT) + "; pass the index of a "
                             "device of the runtime."});

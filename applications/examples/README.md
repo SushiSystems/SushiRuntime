@@ -139,8 +139,8 @@ as many elements as the first and `compile_count()` stays at 1. After two runs o
 elements read back are 16, 8 and 0: counted in both runs, in the second only, and in neither.
 
 Both runs use `try_run()`, which returns the report or an `Error`. The program then runs an empty
-graph on purpose, checks that the refusal carries `Errc::invalid_graph` and prints the remedy its
-`switch` over `Errc` picks for that code. An exception can still come from `Runtime::create()` and
+graph on purpose, checks that the refusal carries `ErrorCode::InvalidGraph` and prints the remedy its
+`switch` over `ErrorCode` picks for that code. An exception can still come from `Runtime::create()` and
 from the range calls, and `main` catches `SushiException` for those.
 
 ## distributed_demo.cpp

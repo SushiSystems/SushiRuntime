@@ -42,7 +42,7 @@ namespace
 {
     using SushiRuntime::make_sushi;
     using SushiRuntime::sushi_ptr;
-    using SushiRuntime::Errc;
+    using SushiRuntime::ErrorCode;
     using SushiRuntime::SushiException;
     using SushiRuntime::Internal::Graph::Node;
     using SushiRuntime::Internal::Graph::placement_of;
@@ -86,7 +86,7 @@ TEST(Unit_NodePlacementState, PlaceOnRejectsAnIndexItCannotHold)
     node->place_on(1);
 
     const std::size_t too_large = Node::K_NO_PLACEMENT;
-    std::optional<Errc> code;
+    std::optional<ErrorCode> code;
     std::string message;
     try
     {
@@ -99,7 +99,7 @@ TEST(Unit_NodePlacementState, PlaceOnRejectsAnIndexItCannotHold)
     }
 
     ASSERT_TRUE(code.has_value()) << "place_on() accepted " << too_large;
-    EXPECT_EQ(*code, Errc::invalid_graph);
+    EXPECT_EQ(*code, ErrorCode::InvalidGraph);
     EXPECT_NE(message.find(std::to_string(too_large)), std::string::npos) << message;
     EXPECT_EQ(node->stated_placement(), std::optional<std::size_t>(1));
 }

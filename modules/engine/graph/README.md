@@ -145,7 +145,7 @@ selection", holds the rule, and `Internal::Graph::placement_of()` applies it.
 
 placement_ is a 16-bit field with K_NO_PLACEMENT for "none stated". It sits in the padding between
 locality_checked_ and cached_queue_index_, so sizeof(Node) does not grow. place_on() throws
-`Errc::invalid_graph` for an index the field cannot hold; whether the index names a device of the
+`ErrorCode::InvalidGraph` for an index the field cannot hold; whether the index names a device of the
 runtime is checked at the node's first dispatch, where the device count is known.
 
 ### cached_queue_index_
@@ -269,7 +269,7 @@ times; each call returns a distinct value.
 
 An add_\* call accepts only an index this graph issued: one reserve_registration() returned, or one
 an earlier node drew. Indices are issued densely from zero, so the test is "below the count issued
-so far". Any other index throws `SushiException` with `Errc::invalid_graph`, and the message
+so far". Any other index throws `SushiException` with `ErrorCode::InvalidGraph`, and the message
 names the call, the index and the count. CompiledGraph::capture_profiling_state() sizes two vectors
 to the largest index plus one, so an index nobody issued could ask for 2^32 elements or collide with
 one the graph issues later. K_NO_REGISTRATION, the value that stands for "no node carries an index
@@ -315,7 +315,7 @@ compile() is not thread-safe with respect to add_node() and add_task(). All node
 before it is called.
 
 A graph with no root, or with a cycle behind a root, throws `SushiException` with
-`Errc::invalid_graph`. The message gives the node counts and names one node that cannot run, by its
+`ErrorCode::InvalidGraph`. The message gives the node counts and names one node that cannot run, by its
 label and registration index.
 
 ### take_nodes

@@ -101,7 +101,7 @@ and on entry 0 when it states none.
 
 ### `APlacementPastTheDeviceSetFailsTheRun`
 
-`place_on(2)` on a two-entry set fails the run with `Errc::invalid_graph`. The message names the
+`place_on(2)` on a two-entry set fails the run with `ErrorCode::InvalidGraph`. The message names the
 node, the index and the device count, and the node's work does not run.
 
 ## test_range_task.cpp

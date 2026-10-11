@@ -29,7 +29,7 @@ export_host allocates host USM on the given device's queue and returns it as a S
 alignment is raised to at least alignof(std::max_align_t) and must be a power of two; the byte size
 is rounded up to a multiple of it, and HostExport::bytes holds the rounded size. A count of zero
 returns an empty Buffer, a null address and zero bytes without allocating. A bad alignment, a size
-that overflows when rounded, or a failed allocation throws SushiException with allocation_failed.
+that overflows when rounded, or a failed allocation throws SushiException with AllocationFailed.
 
 ### import_device
 
@@ -38,7 +38,7 @@ it, the host may not index it. The runtime records the mapped address in its USM
 that touches the Buffer is routed to the importing device like any other.
 
 The call throws SushiException with unsupported when the device cannot import (see capabilities()),
-and with invalid_access when the descriptor's kind is Unspecified (the default) or belongs to
+and with InvalidAccess when the descriptor's kind is Unspecified (the default) or belongs to
 another platform, when an OpaqueWin32 handle is null or an OpaqueFd handle is above INT_MAX, when
 its region ends past allocation_bytes, or when the device's UUID differs from
 ExternalMemoryDescriptor::device. A throw part-way through releases whatever steps had completed.

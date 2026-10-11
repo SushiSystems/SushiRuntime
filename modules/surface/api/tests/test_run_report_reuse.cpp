@@ -140,7 +140,7 @@ TEST(Integration_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
     auto rejected = empty.try_run(report);
 
     EXPECT_FALSE(rejected);
-    EXPECT_EQ(rejected.error().code, Errc::invalid_graph);
+    EXPECT_EQ(rejected.error().code, ErrorCode::InvalidGraph);
     EXPECT_FALSE(report.is_successful);
     EXPECT_EQ(report.total_tasks_executed, 0u);
     EXPECT_TRUE(report.numa_statistics.empty());

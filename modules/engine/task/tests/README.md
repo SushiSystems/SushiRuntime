@@ -16,7 +16,7 @@ scheduler's own `test_node_placement.cpp` checks the queue a dispatch receives.
 ### `Unit_NodePlacementState`
 
 The two tests need no allocator. `place_on()` stores an index and `stated_placement()` returns it;
-an index the 16-bit field cannot hold throws `Errc::invalid_graph` with the index in the message
+an index the 16-bit field cannot hold throws `ErrorCode::InvalidGraph` with the index in the message
 and leaves the earlier placement in force.
 
 ### `Unit_NodePlacementRule`
