@@ -37,8 +37,6 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/task/node.hpp>
 
 using namespace SushiRuntime;
 
@@ -239,16 +237,17 @@ TEST(Integration_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentFi
     ASSERT_EQ(field.current(), second);
 
     // The first rule still writes `second`, which is now the field the State rule reads.
-    Internal::Graph::TaskGraph replayed;
-    std::int32_t waited_on = -1;
-    graph.recorder().replay(replayed, [&](std::size_t rule, std::size_t)
-    {
-        if (rule == 1)
-            waited_on = replayed.last_node_added()->in_degree.load();
-    });
-    EXPECT_EQ(waited_on, 1) << "the State rule must wait on the writer of its current field";
-
     graph.name("rebuilt");
+    const auto plan = graph.plan();
+    ASSERT_TRUE(plan);
+    ASSERT_EQ(plan->nodes.size(), 2u);
+    const PlanNode& state_rule = plan->nodes[1];
+    EXPECT_EQ(state_rule.rule, 1u);
+    EXPECT_EQ(state_rule.predecessor_count, 1u)
+        << "the State rule must wait on the writer of its current field";
+    ASSERT_EQ(state_rule.reads.size(), 1u);
+    EXPECT_EQ(state_rule.reads[0].base, static_cast<void*>(second));
+
     graph.run().value();
 
     EXPECT_EQ(graph.compile_count(), 2u);
