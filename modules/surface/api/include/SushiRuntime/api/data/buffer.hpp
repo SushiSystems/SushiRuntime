@@ -116,22 +116,24 @@ namespace SushiRuntime
          * @param bytes        Allocation size in bytes.
          * @param device_index Device queue that owns the allocation.
          * @param residency    Kind of USM to allocate.
+         * @param alignment    Byte alignment of the address; 0 asks for the device default.
          * @return The USM pointer, or nullptr on failure.
          */
         inline void* malloc_residency_on(Internal::Execution::RuntimeContext& context,
                                          std::size_t bytes,
-                                         DeviceIndex device_index, Residency residency)
+                                         DeviceIndex device_index, Residency residency,
+                                         std::size_t alignment = 0)
         {
             const std::size_t device = device_index.value();
             Internal::Memory::USMAllocator& memory = context.memory();
             switch (residency)
             {
                 case Residency::Device:
-                    return memory.allocate({Internal::Memory::USMKind::Device, bytes, 0, device});
+                    return memory.allocate({Internal::Memory::USMKind::Device, bytes, alignment, device});
                 case Residency::Host:
-                    return memory.allocate({Internal::Memory::USMKind::Host, bytes, 0, device});
+                    return memory.allocate({Internal::Memory::USMKind::Host, bytes, alignment, device});
                 case Residency::Shared:
-                    return memory.allocate({Internal::Memory::USMKind::Shared, bytes, 0, device});
+                    return memory.allocate({Internal::Memory::USMKind::Shared, bytes, alignment, device});
             }
             return nullptr;
         }
@@ -160,6 +162,20 @@ namespace SushiRuntime
                        std::to_string(device_index.value()) +
                        " names no device; the runtime drives " + std::to_string(device_count) +
                        " devices, and advanced().devices() lists them by index.")
+                          .c_str());
+        }
+
+        /**
+         * @brief Stops the process unless an alignment is 0 or a power of two.
+         * @param call Names the calling operation in the message.
+         * @pre alignment is 0 or a power of two.
+         */
+        inline void require_alignment(const char* call, std::size_t alignment)
+        {
+            SR_VERIFY((alignment & (alignment - 1)) == 0,
+                      (std::string(call) + ": alignment " + std::to_string(alignment) +
+                       " is not a power of two; pass 0 for the device default or a power of "
+                       "two in bytes.")
                           .c_str());
         }
 
@@ -400,15 +416,19 @@ namespace SushiRuntime
             /**
              * @brief Allocates count elements of USM pinned to one device.
              * @param call Names the public operation in a message.
+             * @param alignment Byte alignment of the address; 0 asks for the device default.
              * @return The buffer, or an AllocationFailed error when the device returns nothing.
-             * @pre device_index names a device, and the byte size of count fits std::size_t.
+             * @pre device_index names a device, the byte size of count fits std::size_t, and
+             *      alignment is 0 or a power of two.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             [[nodiscard]] static Result<Buffer> allocate(
                 const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> context,
-                std::size_t count, DeviceIndex device_index, Residency residency)
+                std::size_t count, DeviceIndex device_index, Residency residency,
+                std::size_t alignment)
             {
                 Detail::require_device(call, device_index, context->devices().count());
+                Detail::require_alignment(call, alignment);
                 const std::size_t bytes =
                     Detail::checked_byte_count("Buffer allocation", count, sizeof(T));
 
@@ -419,8 +439,8 @@ namespace SushiRuntime
                 {
                     auto owner = std::make_unique<Internal::Memory::USMAllocationOwner>(
                         context->shared_memory());
-                    void* address =
-                        Detail::malloc_residency_on(*context, bytes, device_index, residency);
+                    void* address = Detail::malloc_residency_on(*context, bytes, device_index,
+                                                                residency, alignment);
                     // A null address would give the handle a null key, which skips tracking.
                     if (count > 0 && address == nullptr)
                     {

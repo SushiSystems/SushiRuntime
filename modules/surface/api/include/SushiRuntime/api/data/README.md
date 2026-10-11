@@ -28,6 +28,9 @@ A device index that names no device of the runtime stops the process before anyt
 allocated. The message names the calling function (`Runtime::buffer` or `Runtime::state`), the
 index, the device count, and `advanced().devices()`, which lists the devices by index.
 
+An alignment that is neither 0 nor a power of two stops the process the same way, and the message
+names the calling function and the value.
+
 The byte size of a handle is `count * sizeof(T)`, checked before anything is allocated: a count
 whose byte size does not fit `std::size_t` stops the process, and the message names the largest
 count that fits. Both are rules the caller keeps, checked with `SR_VERIFY`; running out of device

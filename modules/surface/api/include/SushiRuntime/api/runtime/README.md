@@ -114,6 +114,16 @@ a device that returns no memory is an `AllocationFailed` error, and a State whos
 fails releases the first. An index outside `[0, advanced().device_count())` is a rule the caller
 broke and stops the process; `api/data/README.md` has the checks.
 
+Both take an alignment in bytes as their last argument. Zero, the default, asks for the device's
+own alignment. Any other value must be a power of two and reaches `USMRequest::alignment`, so the
+address is a multiple of it; a State aligns both fields. A value that is not a power of two stops
+the process.
+
+```cpp
+auto lanes = runtime.buffer<float>(count, SushiRuntime::DeviceIndex{0},
+                                   SushiRuntime::Residency::Shared, 128);
+```
+
 ### state
 
 `state()` is for data a stepped graph reads as "current" and writes as "next"; the runtime swaps the

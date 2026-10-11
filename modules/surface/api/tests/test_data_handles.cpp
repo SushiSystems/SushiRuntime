@@ -27,6 +27,7 @@
  */
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <type_traits>
@@ -280,4 +281,46 @@ TEST(Integration_DataHandlesDeathTest, DeviceIndexThatNamesNoDeviceStops)
                  "Runtime::buffer" + detail);
     EXPECT_DEATH(static_cast<void>(rt.state<float>(8, past_the_end)),
                  "Runtime::state" + detail);
+}
+
+/**
+ * @brief Tests that an aligned buffer and an aligned state start on a multiple of the alignment,
+ *        for each residency the device offers.
+ */
+TEST(Integration_DataHandles, AlignedAllocationStartsOnAMultipleOfTheAlignment)
+{
+    constexpr std::size_t K_ALIGNMENT = 128;
+    const auto is_aligned = [](const float* address)
+    {
+        return reinterpret_cast<std::uintptr_t>(address) % K_ALIGNMENT == 0u;
+    };
+
+    auto rt = Runtime::create().value();
+    std::size_t residencies_checked = 0;
+    for (const Residency residency : {Residency::Shared, Residency::Host, Residency::Device})
+    {
+        SCOPED_TRACE(residency_name(residency));
+        const auto buf = rt.buffer<float>(K_SIZE, DeviceIndex{0}, residency, K_ALIGNMENT);
+        const auto field = rt.state<float>(K_SIZE, DeviceIndex{0}, residency, K_ALIGNMENT);
+        // A residency the device does not offer returns AllocationFailed and is not checked.
+        if (!buf || !field)
+            continue;
+
+        ++residencies_checked;
+        EXPECT_TRUE(is_aligned(buf->data()));
+        EXPECT_TRUE(is_aligned(field->current()));
+        EXPECT_TRUE(is_aligned(field->next()));
+    }
+    EXPECT_GT(residencies_checked, 0u) << "the device offered no residency to check";
+}
+
+/** @brief Tests that buffer() and state() stop on an alignment that is not a power of two. */
+TEST(Integration_DataHandlesDeathTest, AlignmentThatIsNotAPowerOfTwoStops)
+{
+    auto rt = Runtime::create().value();
+
+    EXPECT_DEATH(static_cast<void>(rt.buffer<float>(K_SIZE, DeviceIndex{0}, Residency::Shared, 48)),
+                 "Runtime::buffer: alignment 48 is not a power of two");
+    EXPECT_DEATH(static_cast<void>(rt.state<float>(K_SIZE, DeviceIndex{0}, Residency::Shared, 48)),
+                 "Runtime::state: alignment 48 is not a power of two");
 }
