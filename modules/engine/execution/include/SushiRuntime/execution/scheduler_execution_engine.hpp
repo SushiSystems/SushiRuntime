@@ -59,9 +59,9 @@ namespace SushiRuntime
         public:
             /**
              * @brief Constructs the engine and starts the persistent worker pool.
-             * @param ctx The owning RuntimeContext. Must outlive this engine.
+             * @param context The owning RuntimeContext. Must outlive this engine.
              */
-            explicit SchedulerExecutionEngine(RuntimeContext& ctx);
+            explicit SchedulerExecutionEngine(RuntimeContext& context);
 
             /**
              * @brief Shuts down the worker pool and waits for all threads to join.

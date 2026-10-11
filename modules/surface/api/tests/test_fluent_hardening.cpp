@@ -34,7 +34,7 @@
 using namespace SushiRuntime;
 
 /**
- * @brief Tests that add_untracked(Extent<2>, fn) iterates the whole box and writes a row-major
+ * @brief Tests that add_untracked(Extent<2>, kernel) iterates the whole box and writes a row-major
  *        index.
  */
 TEST(Integration_FluentHardening, Extent2DPerElementMap)
@@ -62,8 +62,8 @@ TEST(Integration_FluentHardening, Extent2DPerElementMap)
 }
 
 /**
- * @brief Tests that add_untracked(NdRange<2>, fn) runs a tiled kernel that writes its global linear
- *        index.
+ * @brief Tests that add_untracked(NdRange<2>, kernel) runs a tiled kernel that writes its
+ *        global linear index.
  */
 TEST(Integration_FluentHardening, NdRange2DTiledKernel)
 {
@@ -90,7 +90,7 @@ TEST(Integration_FluentHardening, NdRange2DTiledKernel)
         ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
 }
 
-/** @brief Tests that add(State, Extent<2>, fn) leaves S*y in row y after S steps. */
+/** @brief Tests that add(State, Extent<2>, kernel) leaves S*y in row y after S steps. */
 TEST(Integration_FluentHardening, State2DSteppedUpdate)
 {
     constexpr std::size_t W = 4, H = 4, S = 3;
@@ -115,7 +115,10 @@ TEST(Integration_FluentHardening, State2DSteppedUpdate)
                 << "at (" << x << "," << y << ")";
 }
 
-/** @brief Tests that add(out, in0, in1, fn) computes next = cur + a + b from previous-step data. */
+/**
+ * @brief Tests that add(out, in0, in1, kernel) computes next = cur + a + b from previous-step
+ * data.
+ */
 TEST(Integration_FluentHardening, VariadicCoupledThreeInputs)
 {
     constexpr std::size_t N = 32;

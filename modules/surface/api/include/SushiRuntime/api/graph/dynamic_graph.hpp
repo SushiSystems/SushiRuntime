@@ -77,7 +77,7 @@ namespace SushiRuntime
             DynamicGraph(DynamicGraph&& other) noexcept
                 : StepDriver<DynamicGraph>(std::move(other)),
                   RegionComposer(std::move(other)),
-                  ctx_(other.ctx_)
+                  context_(other.context_)
             {
                 take(other);
             }
@@ -93,7 +93,7 @@ namespace SushiRuntime
                 {
                     StepDriver<DynamicGraph>::operator=(std::move(other));
                     RegionComposer::operator=(std::move(other));
-                    ctx_ = other.ctx_;
+                    context_ = other.context_;
                     take(other);
                 }
                 return *this;
@@ -126,7 +126,7 @@ namespace SushiRuntime
                     if (changes_ == nullptr)
                         changes_ = std::make_unique<RegionChangeLog>();
                     it = regions_.emplace(key,
-                        std::make_unique<Region>(ctx_, *changes_, key)).first;
+                        std::make_unique<Region>(context_, *changes_, key)).first;
                     // A region that did not exist is built at the next run.
                     dirty_regions_.insert(key);
                 }
@@ -242,13 +242,13 @@ namespace SushiRuntime
             static constexpr const char* K_DANGLING_RESOURCE =
                 "DynamicGraph region references a Buffer/State freed before the run.";
 
-            explicit DynamicGraph(std::shared_ptr<Internal::Execution::RuntimeContext> ctx)
-                : RegionComposer(ctx->settings().profiling), ctx_(std::move(ctx))
+            explicit DynamicGraph(std::shared_ptr<Internal::Execution::RuntimeContext> context)
+                : RegionComposer(context->settings().profiling), context_(std::move(context))
             {
             }
 
             /** @brief Returns the context whose engine runs this graph. */
-            Internal::Execution::RuntimeContext& run_context() noexcept { return *ctx_; }
+            Internal::Execution::RuntimeContext& run_context() noexcept { return *context_; }
 
             /**
              * @brief Records the profiling request; a changed one rebuilds every region.
@@ -317,7 +317,7 @@ namespace SushiRuntime
                            const auto it = regions_.find(key);
                            return it == regions_.end() ? nullptr : &recorded(*it->second);
                        },
-                       ctx_->offload());
+                       context_->offload());
                 dirty_regions_.clear();
                 dropped_.clear();
                 free_retired_regions();
@@ -411,7 +411,7 @@ namespace SushiRuntime
                 retired_.clear();
             }
 
-            std::shared_ptr<Internal::Execution::RuntimeContext> ctx_;
+            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
 
             /**
              * @brief Holds the live regions by key; unique_ptr keeps each Region's address

@@ -50,17 +50,17 @@ namespace SushiRuntime
 
         /** @brief Enqueues a host-side callable through whichever mechanism the toolchain has. */
         template <class Handler, class Fn>
-        inline void enqueue_host_task(Handler& h, Fn&& fn)
+        inline void enqueue_host_task(Handler& h, Fn&& function)
         {
             if constexpr (has_host_task_v<Handler, Fn>)
             {
-                h.host_task(std::forward<Fn>(fn));
+                h.host_task(std::forward<Fn>(function));
             }
             else
             {
                 // AdaptiveCpp path: the interop_handle argument is unused and accepted generically.
                 h.AdaptiveCpp_enqueue_custom_operation(
-                    [fn = std::forward<Fn>(fn)](auto&&) mutable { fn(); });
+                    [function = std::forward<Fn>(function)](auto&&) mutable { function(); });
             }
         }
 

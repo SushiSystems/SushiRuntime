@@ -50,13 +50,13 @@ namespace
  */
 TEST(Integration_ProfilingQueue, ProfilingQueueAddsThePropertyAndSharesTheContext)
 {
-    RuntimeContext ctx;
+    RuntimeContext context;
 
-    sycl::queue& plain = ctx.devices().queue(0);
+    sycl::queue& plain = context.devices().queue(0);
     EXPECT_FALSE(plain.has_property<sycl::property::queue::enable_profiling>())
         << "the plain queue must be unchanged from today's non-profiling shape";
 
-    sycl::queue& profiling = ctx.devices().queue(0, K_PROFILING_FLAVOUR);
+    sycl::queue& profiling = context.devices().queue(0, K_PROFILING_FLAVOUR);
     EXPECT_TRUE(profiling.has_property<sycl::property::queue::enable_profiling>());
     EXPECT_EQ(profiling.get_context(), plain.get_context())
         << "the two queues must share one context so USM stays legal on either";
@@ -65,17 +65,17 @@ TEST(Integration_ProfilingQueue, ProfilingQueueAddsThePropertyAndSharesTheContex
 /** @brief Tests that no profiling queue exists before the first request. */
 TEST(Integration_ProfilingQueue, NoProfilingQueueExistsBeforeTheFirstRequest)
 {
-    RuntimeContext ctx;
+    RuntimeContext context;
 
-    for (std::size_t i = 0; i < ctx.devices().count(); ++i)
-        EXPECT_FALSE(ctx.devices().has_profiling_queue(i))
+    for (std::size_t i = 0; i < context.devices().count(); ++i)
+        EXPECT_FALSE(context.devices().has_profiling_queue(i))
             << "device " << i << " must not have a profiling queue yet";
 
-    (void)ctx.devices().queue(0, K_PROFILING_FLAVOUR);
+    (void)context.devices().queue(0, K_PROFILING_FLAVOUR);
 
-    EXPECT_TRUE(ctx.devices().has_profiling_queue(0));
-    for (std::size_t i = 1; i < ctx.devices().count(); ++i)
-        EXPECT_FALSE(ctx.devices().has_profiling_queue(i))
+    EXPECT_TRUE(context.devices().has_profiling_queue(0));
+    for (std::size_t i = 1; i < context.devices().count(); ++i)
+        EXPECT_FALSE(context.devices().has_profiling_queue(i))
             << "requesting device 0 must not build device " << i << "'s queue";
 }
 
@@ -84,10 +84,10 @@ TEST(Integration_ProfilingQueue, SettingsProfilingBuildsEveryDeviceEagerly)
 {
     RuntimeSettings settings;
     settings.profiling = true;
-    RuntimeContext ctx({}, nullptr, nullptr, settings);
+    RuntimeContext context({}, nullptr, nullptr, settings);
 
-    for (std::size_t i = 0; i < ctx.devices().count(); ++i)
-        EXPECT_TRUE(ctx.devices().has_profiling_queue(i))
+    for (std::size_t i = 0; i < context.devices().count(); ++i)
+        EXPECT_TRUE(context.devices().has_profiling_queue(i))
             << "device " << i << "'s profiling queue must exist before any request";
 }
 
@@ -99,9 +99,9 @@ TEST(Integration_ProfilingQueue, SettingsProfilingReturnsThePlainQueueItself)
 {
     RuntimeSettings settings;
     settings.profiling = true;
-    RuntimeContext ctx({}, nullptr, nullptr, settings);
+    RuntimeContext context({}, nullptr, nullptr, settings);
 
-    EXPECT_TRUE(ctx.devices().queue(0) == ctx.devices().queue(0, K_PROFILING_FLAVOUR))
+    EXPECT_TRUE(context.devices().queue(0) == context.devices().queue(0, K_PROFILING_FLAVOUR))
         << "the profiling flavour must alias the already-profiling plain queue, not duplicate it";
 }
 
@@ -113,9 +113,9 @@ TEST(Integration_ProfilingQueue, USMFromThePlainQueueIsUsableOnTheProfilingQueue
 {
     constexpr std::size_t N = 256;
 
-    RuntimeContext ctx;
-    sycl::queue& plain = ctx.devices().queue(0);
-    sycl::queue& profiling = ctx.devices().queue(0, K_PROFILING_FLAVOUR);
+    RuntimeContext context;
+    sycl::queue& plain = context.devices().queue(0);
+    sycl::queue& profiling = context.devices().queue(0, K_PROFILING_FLAVOUR);
 
     USMShared<int> usm(plain, N);
     ASSERT_TRUE(usm);

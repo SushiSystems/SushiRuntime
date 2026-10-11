@@ -88,11 +88,15 @@ namespace SushiRuntime
 
             /**
              * @brief Main execution logic for the task (Host Mode).
-             * @param q SYCL queue to submit work to.
-             * @param deps List of event dependencies.
+             * @param queue SYCL queue to submit work to.
+             * @param dependencies List of event dependencies.
              * @return sycl::event The event returned by the library call.
              */
-            virtual sycl::event execute_host(sycl::queue& /*q*/, const std::vector<sycl::event>& /*deps*/) { return {}; }
+            virtual sycl::event execute_host(sycl::queue& /*queue*/,
+                                             const std::vector<sycl::event>& /*dependencies*/)
+            {
+                return {};
+            }
 
             /**
              * @brief Returns whether this task submits SYCL device work and so needs a queue.

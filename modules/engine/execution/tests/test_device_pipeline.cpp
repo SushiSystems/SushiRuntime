@@ -49,14 +49,14 @@ namespace
      * @brief Checks if NUMA node 0 maps to a single device queue.
      *
      * The engine round-robins KERNEL nodes across a node's queues, so with more than one queue the nodes scatter across contexts and shared USM is no longer universally valid.
-     * @param ctx The runtime context to query for NUMA queues.
+     * @param context The runtime context to query for NUMA queues.
      * @return True if NUMA node 0 has exactly one device queue, false otherwise.
      */
-    bool numa0_has_single_queue(RuntimeContext& ctx)
+    bool numa0_has_single_queue(RuntimeContext& context)
     {
-        sycl::queue& first = ctx.devices().queue_or_numa_local(std::nullopt, 0);
+        sycl::queue& first = context.devices().queue_or_numa_local(std::nullopt, 0);
         for (int i = 0; i < 6; ++i)
-            if (&ctx.devices().queue_or_numa_local(std::nullopt, 0) != &first)
+            if (&context.devices().queue_or_numa_local(std::nullopt, 0) != &first)
                 return false;
         return true;
     }
@@ -69,17 +69,17 @@ namespace
  */
 TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
 {
-    RuntimeContext ctx;
+    RuntimeContext context;
 
-    if (!numa0_has_single_queue(ctx))
+    if (!numa0_has_single_queue(context))
         GTEST_SKIP() << "NUMA 0 exposes multiple device queues; the engine would scatter "
                         "KERNEL nodes across USM contexts. Cross-device paths are covered "
                         "by HeterogeneousPipelineTest / AsyncOverlapBench.";
 
-    sycl::queue& q = ctx.devices().queue_or_numa_local(std::nullopt, 0);
+    sycl::queue& queue = context.devices().queue_or_numa_local(std::nullopt, 0);
 
     constexpr size_t N = 1024;
-    USMShared<float> A(q, N), B(q, N), C(q, N), D(q, N);
+    USMShared<float> A(queue, N), B(queue, N), C(queue, N), D(queue, N);
     ASSERT_TRUE(A);
     ASSERT_TRUE(B);
     ASSERT_TRUE(C);
@@ -127,8 +127,8 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
     auto compiled = graph.compile();
     EXPECT_EQ(compiled.roots.size(), 1u) << "Only the init node should be a root of the diamond.";
 
-    ctx.execution_engine().execute(std::move(compiled));
-    ctx.devices().wait_all();
+    context.execution_engine().execute(std::move(compiled));
+    context.devices().wait_all();
 
     bool ok = true;
     for (size_t i = 0; i < N; ++i)

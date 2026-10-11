@@ -80,7 +80,7 @@ TEST(Unit_BoundaryAccess, AReadPastItsPredecessorsWriteKeepsAnEntryPin)
 
     Internal::Graph::TaskGraph graph;
     Internal::Graph::Node& p = graph.add_native({}, {Interval(base, 0, 10)}, [] {});
-    Internal::Graph::Node& q = graph.add_native({Interval(base, 5, 15)}, {}, [] {});
+    Internal::Graph::Node& node = graph.add_native({Interval(base, 5, 15)}, {}, [] {});
     const auto nodes = graph.take_nodes();
 
     const auto access = Detail::compute_boundary_access(nodes);
@@ -88,7 +88,7 @@ TEST(Unit_BoundaryAccess, AReadPastItsPredecessorsWriteKeepsAnEntryPin)
     const auto& entry = access.at(base).entry;
 
     ASSERT_NE(pin_of(entry, p), nullptr);
-    const Detail::Pin* q_pin = pin_of(entry, q);
+    const Detail::Pin* q_pin = pin_of(entry, node);
     ASSERT_NE(q_pin, nullptr) << "bytes [15,20) of q are ordered behind no earlier region";
     EXPECT_TRUE(holds(q_pin->reads, Interval(base, 15, 5)));
     EXPECT_TRUE(q_pin->writes.empty());
@@ -102,14 +102,14 @@ TEST(Unit_BoundaryAccess, AReadInsideItsPredecessorsWriteHasNoEntryPin)
 
     Internal::Graph::TaskGraph graph;
     Internal::Graph::Node& p = graph.add_native({}, {Interval(base, 0, 20)}, [] {});
-    Internal::Graph::Node& q = graph.add_native({Interval(base, 5, 15)}, {}, [] {});
+    Internal::Graph::Node& node = graph.add_native({Interval(base, 5, 15)}, {}, [] {});
     const auto nodes = graph.take_nodes();
 
     const auto access = Detail::compute_boundary_access(nodes);
     const auto& entry = access.at(base).entry;
 
     EXPECT_NE(pin_of(entry, p), nullptr);
-    EXPECT_EQ(pin_of(entry, q), nullptr) << "p carries every byte q reads";
+    EXPECT_EQ(pin_of(entry, node), nullptr) << "p carries every byte q reads";
     EXPECT_EQ(entry.size(), 1u);
 }
 
@@ -121,14 +121,14 @@ TEST(Unit_BoundaryAccess, AWriteBehindAReadingPredecessorKeepsItsWritePin)
 
     Internal::Graph::TaskGraph graph;
     Internal::Graph::Node& p = graph.add_native({Interval(base, 0, 10)}, {}, [] {});
-    Internal::Graph::Node& q = graph.add_native({}, {Interval(base, 0, 10)}, [] {});
+    Internal::Graph::Node& node = graph.add_native({}, {Interval(base, 0, 10)}, [] {});
     const auto nodes = graph.take_nodes();
 
     const auto access = Detail::compute_boundary_access(nodes);
     const auto& entry = access.at(base).entry;
 
     ASSERT_NE(pin_of(entry, p), nullptr);
-    const Detail::Pin* q_pin = pin_of(entry, q);
+    const Detail::Pin* q_pin = pin_of(entry, node);
     ASSERT_NE(q_pin, nullptr) << "a reader does not follow the readers of earlier regions";
     EXPECT_TRUE(holds(q_pin->writes, Interval(base, 0, 10)));
 }
@@ -189,11 +189,11 @@ TEST(Integration_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfC
     world.run();
 
     const Internal::Graph::Node* w = Testing::find_plan_node(plan_of(world), "w");
-    const Internal::Graph::Node* q = Testing::find_plan_node(plan_of(world), "q");
+    const Internal::Graph::Node* node = Testing::find_plan_node(plan_of(world), "q");
     ASSERT_NE(w, nullptr);
-    ASSERT_NE(q, nullptr);
-    EXPECT_TRUE(Testing::has_boundary_edge(*w, *q)) << "q reads [15,20) unordered against w";
-    EXPECT_EQ(Testing::boundary_in_degree(*q), 1);
+    ASSERT_NE(node, nullptr);
+    EXPECT_TRUE(Testing::has_boundary_edge(*w, *node)) << "q reads [15,20) unordered against w";
+    EXPECT_EQ(Testing::boundary_in_degree(*node), 1);
     EXPECT_EQ(total[0], 5 * 1 + 5 * 0 + 5 * 7);
 }
 
@@ -231,13 +231,13 @@ TEST(Integration_BoundaryAccess, AReaderItsPredecessorCoversGainsNoEdge)
 
     const Internal::Graph::Node* w = Testing::find_plan_node(plan_of(world), "w");
     const Internal::Graph::Node* p = Testing::find_plan_node(plan_of(world), "p");
-    const Internal::Graph::Node* q = Testing::find_plan_node(plan_of(world), "q");
+    const Internal::Graph::Node* node = Testing::find_plan_node(plan_of(world), "q");
     ASSERT_NE(w, nullptr);
     ASSERT_NE(p, nullptr);
-    ASSERT_NE(q, nullptr);
+    ASSERT_NE(node, nullptr);
     EXPECT_TRUE(Testing::has_boundary_edge(*w, *p));
-    EXPECT_FALSE(Testing::has_boundary_edge(*w, *q)) << "p already orders q behind w";
-    EXPECT_EQ(Testing::boundary_in_degree(*q), 0);
+    EXPECT_FALSE(Testing::has_boundary_edge(*w, *node)) << "p already orders q behind w";
+    EXPECT_EQ(Testing::boundary_in_degree(*node), 0);
     EXPECT_EQ(total[0], 10 * 1 + 5 * 8);
 }
 
@@ -272,11 +272,11 @@ TEST(Integration_BoundaryAccess, AnEarlierReaderOrdersAWriterBehindAReadingPrede
     world.run();
 
     const Internal::Graph::Node* r = Testing::find_plan_node(plan_of(world), "r");
-    const Internal::Graph::Node* q = Testing::find_plan_node(plan_of(world), "q");
+    const Internal::Graph::Node* node = Testing::find_plan_node(plan_of(world), "q");
     ASSERT_NE(r, nullptr);
-    ASSERT_NE(q, nullptr);
-    EXPECT_TRUE(Testing::has_boundary_edge(*r, *q)) << "q overwrites what r still reads";
-    EXPECT_EQ(Testing::boundary_in_degree(*q), 1);
+    ASSERT_NE(node, nullptr);
+    EXPECT_TRUE(Testing::has_boundary_edge(*r, *node)) << "q overwrites what r still reads";
+    EXPECT_EQ(Testing::boundary_in_degree(*node), 1);
     EXPECT_EQ(early[0], 3);
     EXPECT_EQ(late[0], 3);
 }

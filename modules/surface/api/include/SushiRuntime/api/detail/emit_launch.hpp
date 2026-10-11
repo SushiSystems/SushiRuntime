@@ -210,41 +210,41 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Submits a count launch: fn(i, extra...) for each i in [0, count).
+         * @brief Submits a count launch: kernel(i, extra...) for each i in [0, count).
          * @param extra Values copied into the kernel and passed after the index.
          */
         template <class Fn, class... Extra>
-        void submit_launch(sycl::handler& handler, std::size_t count, const Fn& fn,
+        void submit_launch(sycl::handler& handler, std::size_t count, const Fn& kernel,
                            Extra... extra)
         {
-            handler.parallel_for(sycl::range<1>(count), [fn, extra...](sycl::id<1> index)
+            handler.parallel_for(sycl::range<1>(count), [kernel, extra...](sycl::id<1> index)
             {
-                fn(index[0], extra...);
+                kernel(index[0], extra...);
             });
         }
 
         /**
-         * @brief Submits an Extent launch: fn(id, extra...) with the origin added to id.
+         * @brief Submits an Extent launch: kernel(id, extra...) with the origin added to id.
          * @param extra Values copied into the kernel and passed after the index.
          */
         template <int N, class Fn, class... Extra>
-        void submit_launch(sycl::handler& handler, const Extent<N>& extent, const Fn& fn,
+        void submit_launch(sycl::handler& handler, const Extent<N>& extent, const Fn& kernel,
                            Extra... extra)
         {
             const sycl::id<N> origin = extent.origin;
-            handler.parallel_for(extent.extent, [fn, origin, extra...](sycl::id<N> index)
+            handler.parallel_for(extent.extent, [kernel, origin, extra...](sycl::id<N> index)
             {
-                fn(index + origin, extra...);
+                kernel(index + origin, extra...);
             });
         }
 
         /**
-         * @brief Submits an NdRange launch: fn(item, extra...) or fn(item, id, extra...).
+         * @brief Submits an NdRange launch: kernel(item, extra...) or kernel(item, id, extra...).
          * @param extra Values copied into the kernel and passed after the index.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <int N, class Fn, class... Extra>
-        void submit_launch(sycl::handler& handler, const NdRange<N>& range, const Fn& fn,
+        void submit_launch(sycl::handler& handler, const NdRange<N>& range, const Fn& kernel,
                            Extra... extra)
         {
             if constexpr (std::is_invocable_v<const Fn&, sycl::nd_item<N>, sycl::id<N>,
@@ -252,17 +252,17 @@ namespace SushiRuntime
             {
                 const sycl::id<N> origin = range.origin;
                 handler.parallel_for(range.to_nd_range(),
-                                     [fn, origin, extra...](sycl::nd_item<N> item)
+                                     [kernel, origin, extra...](sycl::nd_item<N> item)
                 {
-                    fn(item, item.get_global_id() + origin, extra...);
+                    kernel(item, item.get_global_id() + origin, extra...);
                 });
             }
             else
             {
                 handler.parallel_for(range.to_nd_range(),
-                                     [fn, extra...](sycl::nd_item<N> item)
+                                     [kernel, extra...](sycl::nd_item<N> item)
                 {
-                    fn(item, extra...);
+                    kernel(item, extra...);
                 });
             }
         }

@@ -90,10 +90,10 @@ namespace SushiRuntime
         public:
             /**
              * @brief Starts an empty region on a runtime context, owned by no graph.
-             * @param ctx Context the region's recorder allocates scratch from.
+             * @param context Context the region's recorder allocates scratch from.
              */
-            explicit Region(std::shared_ptr<Internal::Execution::RuntimeContext> ctx)
-                : recorder_(std::move(ctx))
+            explicit Region(std::shared_ptr<Internal::Execution::RuntimeContext> context)
+                : recorder_(std::move(context))
             {
             }
 
@@ -102,9 +102,10 @@ namespace SushiRuntime
              * @param changes Log of the owning graph; must outlive this region.
              * @param key     Identity the graph knows this region by.
              */
-            Region(std::shared_ptr<Internal::Execution::RuntimeContext> ctx, RegionChangeLog& changes,
+            Region(std::shared_ptr<Internal::Execution::RuntimeContext> context,
+                   RegionChangeLog& changes,
                    std::uint64_t key)
-                : recorder_(std::move(ctx)), changes_(&changes), key_(key)
+                : recorder_(std::move(context)), changes_(&changes), key_(key)
             {
             }
 

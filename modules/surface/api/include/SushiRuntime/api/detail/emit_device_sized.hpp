@@ -49,19 +49,19 @@ namespace SushiRuntime
          * @brief Builds the replay of a node run at capacity that reads its width on device.
          *
          * Work-items at or past *launch.live_width return at once; launch.live_words feeds
-         * fn one or two words by its arity (docs/design/GRAPH_REPLAY.md §D.2).
+         * kernel one or two words by its arity (docs/design/GRAPH_REPLAY.md §D.2).
          * @pre The reads name the regions launch.live_width and launch.live_words lie in.
          */
         template <class F>
         auto device_sized_node(std::vector<Internal::Memory::ResourceRegion> reads,
                                std::vector<Internal::Memory::ResourceRegion> writes,
-                               DeviceSized launch, F fn, std::size_t width)
+                               DeviceSized launch, F kernel, std::size_t width)
         {
-            return [fn, launch, reads = std::move(reads), writes = std::move(writes), width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+            return [kernel, launch, reads = std::move(reads), writes = std::move(writes), width]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
-                bg.add_node([fn, launch](sycl::handler& h)
+                backing_graph.add_node([kernel, launch](sycl::handler& h)
                 {
                     if (launch.capacity == 0)
                     {
@@ -71,21 +71,21 @@ namespace SushiRuntime
                     const std::uint32_t* live_count = launch.live_width;
                     const std::uint32_t* live_scalar = launch.live_words;
                     h.parallel_for(sycl::range<1>(launch.capacity),
-                                   [fn, live_count, live_scalar](sycl::id<1> id)
+                                   [kernel, live_count, live_scalar](sycl::id<1> id)
                     {
                         const std::size_t t = id[0];
                         if (live_count != nullptr && t >= static_cast<std::size_t>(*live_count))
                             return;
                         if constexpr (std::is_invocable_v<const F&, std::size_t,
                                                           std::size_t, std::size_t>)
-                            fn(t, static_cast<std::size_t>(live_scalar[0]),
+                            kernel(t, static_cast<std::size_t>(live_scalar[0]),
                                static_cast<std::size_t>(live_scalar[1]));
                         else if constexpr (std::is_invocable_v<const F&, std::size_t, std::size_t>)
-                            fn(t, static_cast<std::size_t>(live_scalar[0]));
+                            kernel(t, static_cast<std::size_t>(live_scalar[0]));
                         else
                         {
                             (void)live_scalar;
-                            fn(t);
+                            kernel(t);
                         }
                     });
                 }, reads, writes, {}, registration).baked_width = width;

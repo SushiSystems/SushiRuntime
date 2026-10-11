@@ -49,11 +49,11 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Binds the run to the plan's device queue of the right flavour.
-                 * @param ctx   The context that owns the in-order queues and the engine the run
+                 * @param context   The context that owns the in-order queues and the engine the run
                  *              is reported in progress on.
                  * @param graph A plan whose chain.chainable is true; must outlive this object.
                  */
-                ChainRun(RuntimeContext& ctx, CompiledGraph& graph);
+                ChainRun(RuntimeContext& context, CompiledGraph& graph);
 
                 /**
                  * @brief Drains the queue unless finish() already did, swallowing errors, and ends

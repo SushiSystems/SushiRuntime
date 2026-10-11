@@ -45,23 +45,24 @@ namespace SushiRuntime
     {
         /**
          * @brief Builds the replay of a task body ordered by the regions it names.
-         * @param fn Callable invoked as fn(sycl::queue&, const std::vector<sycl::event>&);
+         * @param kernel Callable invoked as kernel(sycl::queue&, const std::vector<sycl::event>&);
          *        it returns the event that ends its work.
          * @param width Launch width stamped on the node.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class F>
         auto task_node(std::vector<Internal::Memory::ResourceRegion> reads,
-                       std::vector<Internal::Memory::ResourceRegion> writes, F&& fn,
+                       std::vector<Internal::Memory::ResourceRegion> writes, F&& kernel,
                        std::size_t width)
         {
-            return [fn = std::forward<F>(fn), reads = std::move(reads),
+            return [kernel = std::forward<F>(kernel), reads = std::move(reads),
                     writes = std::move(writes), width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
-                bg.add_task(::SushiRuntime::Internal::Graph::TaskMetadata{}, reads, writes,
-                            ::SushiRuntime::Internal::Graph::HostWork(fn), {},
+                backing_graph.add_task(::SushiRuntime::Internal::Graph::TaskMetadata{}, reads,
+                                       writes,
+                            ::SushiRuntime::Internal::Graph::HostWork(kernel), {},
                             registration).baked_width = width;
             };
         }

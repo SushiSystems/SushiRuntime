@@ -228,11 +228,11 @@ namespace SushiRuntime
         /**
          * @brief Finds the device index behind an already-selected queue.
          */
-        std::size_t TaskScheduler::queue_device_index(sycl::queue& q) const
+        std::size_t TaskScheduler::queue_device_index(sycl::queue& queue) const
         {
             const std::size_t n = devices_.count();
             for (std::size_t i = 0; i < n; ++i)
-                if (devices_.queue(i) == q)
+                if (devices_.queue(i) == queue)
                     return i;
             return static_cast<std::size_t>(-1);
         }
@@ -662,7 +662,7 @@ namespace SushiRuntime
                     place_for_dispatch(*node, memory_, devices_.count());
 
                 // Every branch resolves an index and funnels through dispatch_queue().
-                sycl::queue& q = [&]() -> sycl::queue&
+                sycl::queue& queue = [&]() -> sycl::queue&
                 {
                     // The first dispatch of a node cached its placement in the block above.
                     if (node)
@@ -683,14 +683,14 @@ namespace SushiRuntime
                 if (task->execution_mode() == Task::ExecutionMode::Host)
                 {
                     // execute_host() needs a vector; this path allocates (modules/engine/scheduler/README.md).
-                    std::vector<sycl::event> deps;
+                    std::vector<sycl::event> dependencies;
                     if (node)
                     {
-                        deps.reserve(node->sycl_deps.size());
+                        dependencies.reserve(node->sycl_deps.size());
                         for (const auto& ev : node->sycl_deps)
-                            deps.push_back(ev);
+                            dependencies.push_back(ev);
                     }
-                    e = task->execute_host(q, deps);
+                    e = task->execute_host(queue, dependencies);
                 }
                 else
                 {
@@ -707,7 +707,7 @@ namespace SushiRuntime
                             }
                     }
 
-                    e = q.submit([&](sycl::handler& h)
+                    e = queue.submit([&](sycl::handler& h)
                     {
                         // depends_on() per event builds no heap vector (modules/engine/scheduler/README.md).
                         if (node)

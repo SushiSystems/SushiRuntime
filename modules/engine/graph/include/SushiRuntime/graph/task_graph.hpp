@@ -148,7 +148,7 @@ namespace SushiRuntime
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                Node& add_task(const TaskMetadata& meta,
+                Node& add_task(const TaskMetadata& metadata,
                                const std::vector<Internal::Memory::ResourceRegion>& read_access,
                                const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                TaskWork device_work,
@@ -162,7 +162,7 @@ namespace SushiRuntime
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                Node& add_task(const TaskMetadata& meta,
+                Node& add_task(const TaskMetadata& metadata,
                                const std::vector<Internal::Memory::ResourceRegion>& read_access,
                                const std::vector<Internal::Memory::ResourceRegion>& write_access,
                                HostWork fallback_work,
@@ -177,7 +177,7 @@ namespace SushiRuntime
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
-                Node& add_offload_dynamic(const TaskMetadata& meta,
+                Node& add_offload_dynamic(const TaskMetadata& metadata,
                                           std::shared_ptr<std::vector<void*>> live_reads,
                                           std::shared_ptr<std::vector<void*>> live_writes,
                                           HostWork fallback_work,

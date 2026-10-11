@@ -578,16 +578,16 @@ namespace SushiRuntime
             [[nodiscard]] RegionState build_region(
                 const Recorder& recorder, ::SushiRuntime::Internal::Graph::OffloadCoordinator* offload)
             {
-                ::SushiRuntime::Internal::Graph::TaskGraph bg(offload);
+                ::SushiRuntime::Internal::Graph::TaskGraph backing_graph(offload);
                 RegionState st;
                 st.generation = recorder.generation();
                 st.rule_nodes.assign(recorder.rule_count(), nullptr);
-                recorder.replay(bg, [&st, &bg](std::size_t rule, std::size_t)
+                recorder.replay(backing_graph, [&st, &backing_graph](std::size_t rule, std::size_t)
                 {
-                    st.rule_nodes[rule] = bg.last_node_added();
+                    st.rule_nodes[rule] = backing_graph.last_node_added();
                 });
 
-                st.nodes = bg.take_nodes();   // intra edges baked; insertion order
+                st.nodes = backing_graph.take_nodes();   // intra edges baked; insertion order
 
                 for (auto& np : st.nodes)
                 {

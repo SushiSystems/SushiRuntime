@@ -63,13 +63,14 @@ namespace SushiRuntime
             /**
              * @brief Resolves the one device queue every region of a node belongs to.
              * @param node A compiled, non-sentinel node.
-             * @param ctx  The context whose registry owns the regions.
+             * @param context  The context whose registry owns the regions.
              * @return The queue index, or -1 for no region, an unknown region, or two devices.
              */
-            int owning_queue_index(const Internal::Graph::Node& node, RuntimeContext& ctx) noexcept
+            int owning_queue_index(const Internal::Graph::Node& node,
+                                   RuntimeContext& context) noexcept
             {
                 int owner = -1;
-                Internal::Memory::USMAllocator& memory = ctx.memory();
+                Internal::Memory::USMAllocator& memory = context.memory();
                 auto visit = [&](const std::vector<Internal::Memory::ResourceRegion>& regions)
                 {
                     for (const auto& r : regions)
@@ -137,7 +138,7 @@ namespace SushiRuntime
         /**
          * @brief Classifies a compiled plan for the in-order chain.
          */
-        ChainPlan classify_chain(const CompiledGraph& graph, RuntimeContext& ctx)
+        ChainPlan classify_chain(const CompiledGraph& graph, RuntimeContext& context)
         {
             const Internal::Graph::Node* sentinel = graph.sentinel.get();
             std::size_t node_count = 0;
@@ -153,7 +154,7 @@ namespace SushiRuntime
                 if (!node_kind_is_chainable(*node))
                     return {};
 
-                const int index = owning_queue_index(*node, ctx);
+                const int index = owning_queue_index(*node, context);
                 if (index < 0 || (device >= 0 && index != device))
                     return {};
                 device = index;

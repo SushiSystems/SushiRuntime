@@ -108,16 +108,16 @@ namespace SushiRuntime
                           std::uint32_t* fault,
                           std::vector<Internal::Memory::ResourceRegion> reads,
                           std::vector<Internal::Memory::ResourceRegion> writes,
-                          std::size_t capacity, F&& fn, std::size_t width)
+                          std::size_t capacity, F&& kernel, std::size_t width)
         {
-            return [fn = std::forward<F>(fn), capacity, lb, fault, reads = std::move(reads),
+            return [kernel = std::forward<F>(kernel), capacity, lb, fault, reads = std::move(reads),
                     writes = std::move(writes), width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
-                bg.add_node([fn, capacity, lb, fault](sycl::handler& h)
+                backing_graph.add_node([kernel, capacity, lb, fault](sycl::handler& h)
                 {
-                    submit_late_window(h, *lb, capacity, fault, fn);
+                    submit_late_window(h, *lb, capacity, fault, kernel);
                 }, reads, writes, lb, {}, registration).baked_width = width;
             };
         }
@@ -133,24 +133,25 @@ namespace SushiRuntime
         auto dynamic_state_node(std::shared_ptr<StateView<T>> view, std::size_t capacity,
                                 std::shared_ptr<::SushiRuntime::Internal::Graph::LateBindings> lb,
                                 std::uint32_t* fault,
-                                std::vector<Internal::Memory::ResourceRegion> slot_reads, F&& fn)
+                                std::vector<Internal::Memory::ResourceRegion> slot_reads,
+                                F&& kernel)
         {
-            return [fn = std::forward<F>(fn), view, capacity, lb, fault,
+            return [kernel = std::forward<F>(kernel), view, capacity, lb, fault,
                     slot_reads = std::move(slot_reads)]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
                 std::vector<Internal::Memory::ResourceRegion> reads{
                     Internal::Memory::ResourceRegion(static_cast<void*>(view->current)) };
                 reads.insert(reads.end(), slot_reads.begin(), slot_reads.end());
-                bg.add_node([fn, view, lb, capacity, fault](sycl::handler& h)
+                backing_graph.add_node([kernel, view, lb, capacity, fault](sycl::handler& h)
                 {
                     const T* current = view->current;
                     T* next = view->next;
                     submit_late_window(h, *lb, capacity, fault,
-                                       [fn, current, next](std::size_t i)
+                                       [kernel, current, next](std::size_t i)
                                        {
-                                           fn(i, current, next);
+                                           kernel(i, current, next);
                                        });
                 }, reads, { Internal::Memory::ResourceRegion(static_cast<void*>(view->next)) }, lb, {},
                 registration).baked_width = capacity;

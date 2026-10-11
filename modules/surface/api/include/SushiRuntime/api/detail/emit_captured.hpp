@@ -95,24 +95,24 @@ namespace SushiRuntime
         /**
          * @brief Builds the replay of a launch that hands its kernel one pointer per capture.
          * @tparam Launch   std::size_t, Extent<N> or NdRange<N>.
-         * @tparam Pointers A std::tuple of raw pointers, handed to fn after the index.
+         * @tparam Pointers A std::tuple of raw pointers, handed to kernel after the index.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Launch, class Pointers, class F>
         auto captured_node(std::vector<Internal::Memory::ResourceRegion> reads,
                            std::vector<Internal::Memory::ResourceRegion> writes,
-                           Launch launch, Pointers pointers, F&& fn, std::size_t width)
+                           Launch launch, Pointers pointers, F&& kernel, std::size_t width)
         {
-            return [fn = std::forward<F>(fn), launch, reads = std::move(reads),
+            return [kernel = std::forward<F>(kernel), launch, reads = std::move(reads),
                     writes = std::move(writes), pointers, width]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
-                bg.add_node([fn, launch, pointers](sycl::handler& h)
+                backing_graph.add_node([kernel, launch, pointers](sycl::handler& h)
                 {
-                    std::apply([&h, &fn, &launch](auto... pointer)
+                    std::apply([&h, &kernel, &launch](auto... pointer)
                     {
-                        submit_launch(h, launch, fn, pointer...);
+                        submit_launch(h, launch, kernel, pointer...);
                     }, pointers);
                 }, reads, writes, {}, registration).baked_width = width;
             };

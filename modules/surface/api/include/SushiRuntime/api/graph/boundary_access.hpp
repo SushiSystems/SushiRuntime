@@ -80,19 +80,19 @@ namespace SushiRuntime
         using NeighbourAccesses = std::vector<const NodeAccess*>;
 
         /**
-         * @brief Calls fn(succ) for each intra successor of a node; commit-time only,
+         * @brief Calls function(succ) for each intra successor of a node; commit-time only,
          *        single threaded.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         template <class Fn>
-        inline void for_each_intra_successor(GraphNode* n, Fn&& fn)
+        inline void for_each_intra_successor(GraphNode* n, Fn&& function)
         {
             const int32_t count = n->inline_successor_count.load(std::memory_order_relaxed);
             const int32_t max_idx = std::min<int32_t>(count, GraphNode::K_MAX_INLINE_SUCCESSORS);
             for (int32_t i = 0; i < max_idx; ++i)
-                if (n->inline_successors[i]) fn(n->inline_successors[i]);
+                if (n->inline_successors[i]) function(n->inline_successors[i]);
             for (auto* s = n->successor_list.load(std::memory_order_relaxed); s; s = s->next)
-                if (s->target) fn(s->target);
+                if (s->target) function(s->target);
         }
 
         /** @brief Returns whether an interval in a intersects an interval in b. */

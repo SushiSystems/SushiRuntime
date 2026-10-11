@@ -164,9 +164,9 @@ picks what it receives after its index:
 
 | Callable | Receives |
 | --- | --- |
-| `fn(t)` | The index |
-| `fn(t, w0)` | The index and `live_words[0]` |
-| `fn(t, w0, w1)` | The index, `live_words[0]` and `live_words[1]` |
+| `kernel(t)` | The index |
+| `kernel(t, w0)` | The index and `live_words[0]` |
+| `kernel(t, w0, w1)` | The index, `live_words[0]` and `live_words[1]` |
 
 The words are read on the device, so the Access must name the regions `live_width` and
 `live_words` lie in; that read is what orders the launch after the node that wrote them.
@@ -276,24 +276,24 @@ access:
 
 Late binding exists for `Reads` and `Writes` (with a capacity) and for `State` only. The capture
 (`In`, `Out`, `InOut`) and `Coupled` forms have no Dynamic overload. For a varying size there, use
-`Reads` and `Writes` with the pointers captured by hand; for one State, `add(Dynamic, state, fn)`.
+`Reads` and `Writes` with the pointers captured by hand; for one State, `add(Dynamic, state, kernel)`.
 
 ### Which add do I call
 
 | The kernel | Call |
 | --- | --- |
-| steps one field from its previous value | `add(state, fn)` |
-| steps one field and reads others | `add(Coupled(out, in0, ...), fn)` |
-| does either over part of the field | the same with a launch first: `add(Extent{...}.at(origin), state, fn)` |
-| reads and writes buffers, and should receive their pointers | `add(launch, In(a), Out(b), fn)` |
-| captures its own pointers | `add(launch, Reads(a), Writes(b), fn)` |
-| has a live size or an on/off switch that changes per step | `add(sized(...), capacity, Reads(a), Writes(b), fn)` or `add(sized(...), state, fn)` |
+| steps one field from its previous value | `add(state, kernel)` |
+| steps one field and reads others | `add(Coupled(out, in0, ...), kernel)` |
+| does either over part of the field | the same with a launch first: `add(Extent{...}.at(origin), state, kernel)` |
+| reads and writes buffers, and should receive their pointers | `add(launch, In(a), Out(b), kernel)` |
+| captures its own pointers | `add(launch, Reads(a), Writes(b), kernel)` |
+| has a live size or an on/off switch that changes per step | `add(sized(...), capacity, Reads(a), Writes(b), kernel)` or `add(sized(...), state, kernel)` |
 | may run on another machine | `add("name"_op, n, Reads(a), Writes(b), local)` or `add("name"_op, state, local)` |
-| drives the sycl::handler itself | `add(Reads(a), Writes(b), fn)` |
-| submits several command groups, or calls a library that takes the queue | `add_task(Reads(a), Writes(b), fn)` |
-| is host C++ and submits no device work | `add_host(Reads(a), Writes(b), fn)` |
-| shares no data with any other rule | `add_untracked(launch, fn)`, with `On(buffer)` when the buffer is not on device 0 |
-| is recorded by a library through the Recorder | `extend(fn)` |
+| drives the sycl::handler itself | `add(Reads(a), Writes(b), kernel)` |
+| submits several command groups, or calls a library that takes the queue | `add_task(Reads(a), Writes(b), kernel)` |
+| is host C++ and submits no device work | `add_host(Reads(a), Writes(b), kernel)` |
+| shares no data with any other rule | `add_untracked(launch, kernel)`, with `On(buffer)` when the buffer is not on device 0 |
+| is recorded by a library through the Recorder | `extend(extension)` |
 
 In/Out/InOut is the form to prefer for buffers: the data is named once, and the pointers the
 kernel receives are the ones the runtime orders by. With Reads and Writes the kernel captures its
@@ -310,17 +310,17 @@ empty the overload set.
 ### add(launch, Reads, Writes, fn)
 
 The kernel captures raw USM pointers, and Reads(...) and Writes(...) tell the dependency tracker
-which Buffers, States or regions those pointers belong to. A count calls `fn(i)`, an Extent calls
-`fn(sycl::id<N>)` with the origin added, and an NdRange calls `fn(sycl::nd_item<N>)` or
-`fn(sycl::nd_item<N>, sycl::id<N>)`.
+which Buffers, States or regions those pointers belong to. A count calls `kernel(i)`, an Extent calls
+`kernel(sycl::id<N>)` with the origin added, and an NdRange calls `kernel(sycl::nd_item<N>)` or
+`kernel(sycl::nd_item<N>, sycl::id<N>)`.
 
-A count also takes a range kernel, `fn(begin, end, sycl::handler&)`, which drives the handler over
+A count also takes a range kernel, `kernel(begin, end, sycl::handler&)`, which drives the handler over
 [0, n) itself. That is the form for a kernel the per-element shape cannot express while its
 regions still order it.
 
 ### add(Reads, Writes, raw_kernel)
 
-`fn(sycl::handler&)` owns the whole command group (its own parallel_for, local accessors, a
+`kernel(sycl::handler&)` owns the whole command group (its own parallel_for, local accessors, a
 memcpy) while the declared regions still order it. It has no launch because the runtime submits
 none. The shaped overloads are the better choice wherever one fits, since they cannot get the
 launch geometry and the declared data out of step.
@@ -328,7 +328,7 @@ launch geometry and the declared data out of step.
 ### add(launch, In/Out/InOut..., fn)
 
 The caller passes the buffers a kernel touches as In(buf), Out(buf) or InOut(buf). The runtime
-registers the reads and writes and hands `fn` the raw element pointers, in argument order, after
+registers the reads and writes and hands `kernel` the raw element pointers, in argument order, after
 the index. Up to v0.3 this form existed for an Extent only, so 1-D code wrote `Extent{n}` to get
 it; a count and an NdRange now take it too.
 
@@ -336,20 +336,20 @@ The first capture is a parameter of its own, which guarantees at least one. The 
 trailing pack so that the compiler can deduce it: it ends in the callable, or in the callable and
 a NodeOptions, and the elements before the callable are further captures. add() splits the pack,
 checks that everything before the callable is a capture, and the call site reads
-`In(a), Out(c), fn` or `In(a), Out(c), fn, options`. The options must be written as a
+`In(a), Out(c), kernel` or `In(a), Out(c), kernel, options`. The options must be written as a
 `NodeOptions` object there, because a braced list cannot be deduced into a pack.
 
 ### add(state, fn)
 
 This is the canonical stepped rule: it reads the State's current field and writes its next field,
 and the dependency tracker keys on those two buffers. The runtime supplies the current and next
-pointers to `fn` at execution time, so under run(n) the same compiled node follows the
+pointers to `kernel` at execution time, so under run(n) the same compiled node follows the
 double-buffer swap with no recompilation. A State takes exactly one update rule per step.
 
 ### add(launch, state, fn)
 
 The launch form runs the same rule over a count, an Extent or an NdRange: a prefix of the field,
-a sub-box for boundary or halo handling, or a tiled launch. `fn` receives the launch's index
+a sub-box for boundary or halo handling, or a tiled launch. `kernel` receives the launch's index
 before the two pointers.
 
 The launch is compared with the State when the rule is added. A launch that reaches past the
@@ -434,8 +434,8 @@ runtime does not have throws `invalid_access` at the call.
 
 ### add_task(Reads, Writes, fn)
 
-A raw kernel is one command group: the runtime calls `queue.submit()` and hands `fn` the handler.
-A task body is handed the queue itself, `fn(sycl::queue&, const std::vector<sycl::event>&)`, so
+A raw kernel is one command group: the runtime calls `queue.submit()` and hands `kernel` the handler.
+A task body is handed the queue itself, `kernel(sycl::queue&, const std::vector<sycl::event>&)`, so
 it may submit any number of command groups, or pass the queue to a library that submits its own.
 It is the form a domain library records an operation with, and what `Recorder::task` records.
 
@@ -454,7 +454,7 @@ chain layer as a kernel is.
 
 add_host(Reads, Writes, fn) is for host C++ that submits no device work: gameplay logic, AI,
 navigation, the CPU half of a broadphase. The caller names the data it touches so the tracker
-orders it against the rest of the graph; the runtime then runs `fn` on a worker thread, with no
+orders it against the rest of the graph; the runtime then runs `kernel` on a worker thread, with no
 SYCL queue submission, and releases its successors through the same path as any kernel. The
 shared USM it reads is visible because the task runs only after its predecessors complete.
 
@@ -1099,8 +1099,8 @@ predecessor writes an interval that contains it. The predecessor then carries th
 the node needs: its containing access is pinned itself, or is covered in turn by one of its own
 predecessors, and the node runs after all of them. A predecessor that only reads does not cover a
 write, because a write must also follow the readers of earlier regions and a reader has no edge
-from them. With `p` writing `b[0,10)` and `q` reading `b[5,20)` in one region, `q` keeps a read pin
-for `[5,20)`, so a writer of `b[15,20)` in an earlier region gains an edge to `q`.
+from them. With `p` writing `b[0,10)` and `node` reading `b[5,20)` in one region, `node` keeps a read pin
+for `[5,20)`, so a writer of `b[15,20)` in an earlier region gains an edge to `node`.
 
 Exit (exit_pin()). A read or a write of the node is dropped when a direct intra successor writes an
 interval that contains it. A later region that overlaps the dropped interval overlaps the

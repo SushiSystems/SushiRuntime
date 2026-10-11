@@ -105,10 +105,10 @@ namespace SushiRuntime
              * 
              * Initializes the standard exception with the error message.
              *
-             * @param err The structured failure detail to carry.
+             * @param failure The structured failure detail to carry.
              */
-            explicit SushiException(Error err)
-                : std::runtime_error(err.message), err_(std::move(err))
+            explicit SushiException(Error failure)
+                : std::runtime_error(failure.message), error_(std::move(failure))
             {
             }
 
@@ -119,10 +119,10 @@ namespace SushiRuntime
              *
              * @return A constant reference to the underlying structured error.
              */
-            [[nodiscard]] const Error& error() const noexcept { return err_; }
+            [[nodiscard]] const Error& error() const noexcept { return error_; }
 
         private:
-            Error err_; /**< The structured failure detail. */
+            Error error_; /**< The structured failure detail. */
     };
 
     // RunReport, the success value of try_run()'s Result, lives in observability/run_report.hpp.

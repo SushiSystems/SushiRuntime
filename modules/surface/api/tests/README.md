@@ -326,7 +326,7 @@ a host readback round-trip correctly without the host ever indexing the allocati
 
 ### `StateStepsResident`
 
-A device-resident `State` steps with the fluent `add(state, fn)` rule and is seeded and read back
+A device-resident `State` steps with the fluent `add(state, kernel)` rule and is seeded and read back
 through its range API. The field stays resident across all steps, and only the windowed readback
 touches the host.
 
@@ -488,9 +488,9 @@ The file covers the parts of the fluent API that `test_fluent_lifecycle.cpp` doe
 
 - `run_for(duration)`
 - the success path of `try_run()` and the fields of `RunReport`
-- the `add(fn)` overload that takes a raw `sycl::handler`
-- the `add(n, fn)` range kernel overload
-- the pointer-tracked `add(reads, writes, n, fn)` overload
+- the `add(kernel)` overload that takes a raw `sycl::handler`
+- the `add(n, kernel)` range kernel overload
+- the pointer-tracked `add(reads, writes, n, kernel)` overload
 - `Reads` and `Writes` over `Buffer::region()`, which track a sub-region
 - a standalone `Buffer<T>` allocation used in a graph
 - `Graph::size()`
@@ -525,17 +525,17 @@ steady state this trivial kernel costs less than a millisecond, so a warmed run 
 
 ### `RawHandlerKernelAdd`
 
-`add_untracked(fn)` takes a function that receives `sycl::handler&` directly, the raw kernel
+`add_untracked(kernel)` takes a function that receives `sycl::handler&` directly, the raw kernel
 overload. The kernel must run and produce the expected values.
 
 ### `RangeKernelAdd`
 
-`add_untracked(n, fn)` takes a function that receives `(begin, end, sycl::handler&)`, the range
+`add_untracked(n, kernel)` takes a function that receives `(begin, end, sycl::handler&)`, the range
 kernel overload. The function must see `begin = 0` and `end = N` and launch its own work.
 
 ### `PointerTrackedAddOrdering`
 
-`add(reads, writes, n, fn)` is the overload with explicit dependency vectors. Two tasks share one
+`add(reads, writes, n, kernel)` is the overload with explicit dependency vectors. Two tasks share one
 buffer: a writer, then a reader that squares the values. The dependency tracker must order them
 correctly without a `State`.
 
@@ -588,47 +588,47 @@ work done.
 
 The file covers the hardened fluent surface:
 
-- `add_untracked(Extent<2>, fn)`, a multidimensional per-element map
-- `add_untracked(NdRange<2>, fn)`, a tiled work-group kernel
-- `add(State, Extent<2>, fn)`, a multidimensional stepped stencil
-- `add(out, in0, in1, fn)`, a variadic coupled update that reads three fields
-- `add(Reads, Writes, n, fn)`, the handle-based dependency wrappers
-- `add(Extent, In/Out, fn)`, buffer arguments captured automatically
-- `add(State, Extent with offset, fn)`, an interior-only (halo) update
+- `add_untracked(Extent<2>, kernel)`, a multidimensional per-element map
+- `add_untracked(NdRange<2>, kernel)`, a tiled work-group kernel
+- `add(State, Extent<2>, kernel)`, a multidimensional stepped stencil
+- `add(out, in0, in1, kernel)`, a variadic coupled update that reads three fields
+- `add(Reads, Writes, n, kernel)`, the handle-based dependency wrappers
+- `add(Extent, In/Out, kernel)`, buffer arguments captured automatically
+- `add(State, Extent with offset, kernel)`, an interior-only (halo) update
 
 ### `Extent2DPerElementMap`
 
-With `add_untracked(Extent<2>, fn)` the kernel sees a `sycl::id<2>` that covers the whole box and
+With `add_untracked(Extent<2>, kernel)` the kernel sees a `sycl::id<2>` that covers the whole box and
 writes a row-major linear index, which proves 2-D iteration and indexing.
 
 ### `NdRange2DTiledKernel`
 
-`add_untracked(NdRange<2>, fn)` runs a tiled kernel in the work-group model. Each item writes its
+`add_untracked(NdRange<2>, kernel)` runs a tiled kernel in the work-group model. Each item writes its
 global linear index, and a correct result proves that `nd_item` indexing works.
 
 ### `State2DSteppedUpdate`
 
-`add(State, Extent<2>, fn)` is a multidimensional stepped update. Each step adds the row index to
+`add(State, Extent<2>, kernel)` is a multidimensional stepped update. Each step adds the row index to
 every cell, so after S steps a cell in row y holds `S*y`.
 
 ### `VariadicCoupledThreeInputs`
 
-`add(out, in0, in1, fn)` is a coupled update that reads three fields, `out` and two others: `next =
+`add(out, in0, in1, kernel)` is a coupled update that reads three fields, `out` and two others: `next =
 cur + a + b`. All reads see data of the previous step (Jacobi).
 
 ### `ReadsWritesWrappersOrdering`
 
-With `add(Reads, Writes, n, fn)` the dependency wrappers must order a writer before a dependent
+With `add(Reads, Writes, n, kernel)` the dependency wrappers must order a writer before a dependent
 reader exactly as the raw `void*` vectors do.
 
 ### `InOutCapturedArguments`
 
-With `add(Extent, In/Out, fn)` the captured buffer arguments give the kernel raw pointers and
+With `add(Extent, In/Out, kernel)` the captured buffer arguments give the kernel raw pointers and
 register the dependency in one step. The kernel computes `dst = src * 2`.
 
 ### `InteriorOnlyHaloUpdate`
 
-With `add(Reads, Writes, Extent-with-offset, fn)` an interior-only update must leave the one-cell
+With `add(Reads, Writes, Extent-with-offset, kernel)` an interior-only update must leave the one-cell
 border, the halo, untouched, which proves sub-range iteration. The test uses an in-place `Buffer` so
 that the border keeps its initial value deterministically.
 
@@ -1287,18 +1287,18 @@ so a kernel that ran over the wrong elements or received the wrong pointer shows
 
 ### `CountLaunchWithCapturesPassesPointers`
 
-`add(count, In(a), Out(b), fn)` hands the kernel the two pointers after a `std::size_t` index. Up
+`add(count, In(a), Out(b), kernel)` hands the kernel the two pointers after a `std::size_t` index. Up
 to v0.3 the capture form took an Extent only.
 
 ### `NdRangeOriginShiftsTheIDTheKernelReceives`
 
-An NdRange rebased with `at(origin)` and a kernel written as `fn(nd_item, id, pointer)` zeroes
+An NdRange rebased with `at(origin)` and a kernel written as `kernel(nd_item, id, pointer)` zeroes
 the elements from the origin on and leaves the rest, so the id the kernel receives carries the
 origin.
 
 ### `StateRuleOverACountUpdatesAPrefix`
 
-`add(count, state, fn)` updates the first `count` elements of the State.
+`add(count, state, kernel)` updates the first `count` elements of the State.
 
 ### `ALaunchPastItsStateIsRefusedAtAdd`
 
@@ -1308,7 +1308,7 @@ recorded.
 
 ### `CoupledRulesReadEveryStateNamed`
 
-`add(Coupled(out, in), fn)` and `add(count, Coupled(out, in), fn)` each hand the kernel the
+`add(Coupled(out, in), kernel)` and `add(count, Coupled(out, in), kernel)` each hand the kernel the
 current field of the State read after the two fields of the State written.
 
 ### `ACoupledInputSmallerThanTheOutputIsRefusedAtAdd`
@@ -1318,11 +1318,11 @@ A coupled rule over the whole field whose input State is shorter than its output
 
 ### `DynamicTakesItsCapacityBeforeItsAccess`
 
-`add(sized(...), capacity, Reads, Writes, fn)` runs over the live count only.
+`add(sized(...), capacity, Reads, Writes, kernel)` runs over the live count only.
 
 ### `UntrackedKernelRunsOnTheDeviceOfTheBufferNamed`
 
-Two buffers on the runtime's last device are written, one by `add_untracked(n, On(buffer), fn)`
+Two buffers on the runtime's last device are written, one by `add_untracked(n, On(buffer), kernel)`
 and one by a raw kernel placed with `On(DeviceIndex)`. On a machine with one device that device
 is 0 and the test proves only that the forms record and run; with two it proves the routing.
 
@@ -1333,7 +1333,7 @@ whose `On(buffer)` handle was destroyed before the run is refused with `dangling
 
 ### `ExtendRecordsOneNamedRule`
 
-`extend(fn)` calls `fn` once with the Recorder; the two kernels it records are one rule, and a
+`extend(extension)` calls `extension` once with the Recorder; the two kernels it records are one rule, and a
 run does not call it again.
 
 ### `RefusalsNameTheCallTheUserWrote`
@@ -1376,12 +1376,12 @@ field with `K_CANARY`, so an element a kernel did not write is recognisable.
 
 ### `ACoupledRuleReadsItsInputsThroughConstPointers`
 
-`add(Coupled(out, left, right), fn)` with a kernel that takes both inputs as `const Word*` writes
+`add(Coupled(out, left, right), kernel)` with a kernel that takes both inputs as `const Word*` writes
 `current + a * b` into `out` and leaves both inputs as they were.
 
 ### `StateCoupledAndUntrackedNodesReportTheirLaunchWidth`
 
-A profiled graph holds `add(state, fn)`, `add(count, Coupled, fn)` and `add_untracked(count, fn)`.
+A profiled graph holds `add(state, kernel)`, `add(count, Coupled, kernel)` and `add_untracked(count, kernel)`.
 Their node events report the State's size and the two counts as `launched_width`. The three nodes
 share no region and may finish in any order, so the widths are compared sorted.
 
@@ -1407,7 +1407,7 @@ also checks that the recorder watches two allocations, the target and the counte
 
 ### `ADestroyedCountBufferRefusesAStateRule`
 
-The same refusal for `add(sized_from_device(counter), state, fn)`, whose observers the recorder
+The same refusal for `add(sized_from_device(counter), state, kernel)`, whose observers the recorder
 gathers in a different member.
 
 ## test_launch_reach.cpp
@@ -1422,7 +1422,7 @@ origin `SIZE_MAX - 3` reach `SIZE_MAX`.
 
 ### `AnExtentWhoseEndWrapsIsRefusedAtAdd`
 
-`add(extent, state, fn)` with that extent over a State of 8 elements throws `invalid_graph` and
+`add(extent, state, kernel)` with that extent over a State of 8 elements throws `invalid_graph` and
 records nothing. A wrapped sum would be 4, which is inside the State.
 
 ## test_device_fault.cpp
@@ -1457,12 +1457,12 @@ address of element 0 changes. Three steps then advance element 0 and leave eleme
 
 ### `ACoupledRuleFollowsItsMovedStates`
 
-`add(Coupled(out, input), fn)` is recorded and both States are moved. Two steps leave three times
+`add(Coupled(out, input), kernel)` is recorded and both States are moved. Two steps leave three times
 the seed in the State written and the seed in the State read.
 
 ### `ADynamicStateRuleFollowsAMovedState`
 
-`add(sized(...), state, fn)` is recorded and the State moved. Three steps advance the live prefix
+`add(sized(...), state, kernel)` is recorded and the State moved. Three steps advance the live prefix
 on one compiled plan.
 
 ### `TheViewFollowsAdvanceMoveAndDestruction`
@@ -1530,18 +1530,18 @@ one region on a `TaskGraph` with `add_native` and read the pins; they start no r
 
 ### `AReadPastItsPredecessorsWriteKeepsAnEntryPin`
 
-`p` writes bytes `[0,10)` and `q` reads `[5,20)`. `q` has an intra edge from `p`, yet `p` covers
-only part of what `q` reads, so `q` keeps an entry pin whose read interval contains `[15,20)`.
+`p` writes bytes `[0,10)` and `node` reads `[5,20)`. `node` has an intra edge from `p`, yet `p` covers
+only part of what `node` reads, so `node` keeps an entry pin whose read interval contains `[15,20)`.
 
 ### `AReadInsideItsPredecessorsWriteHasNoEntryPin`
 
-`p` writes `[0,20)` and `q` reads `[5,20)`. `p` contains everything `q` reads, so the base has one
+`p` writes `[0,20)` and `node` reads `[5,20)`. `p` contains everything `node` reads, so the base has one
 entry pin, that of `p`.
 
 ### `AWriteBehindAReadingPredecessorKeepsItsWritePin`
 
-`p` reads `[0,10)` and `q` writes `[0,10)`. A reader takes no edge from the readers of earlier
-regions, so it cannot stand in for a write: `q` keeps an entry pin with its write interval.
+`p` reads `[0,10)` and `node` writes `[0,10)`. A reader takes no edge from the readers of earlier
+regions, so it cannot stand in for a write: `node` keeps an entry pin with its write interval.
 
 ### `OnlyAContainingSuccessorWriteShadowsAnExit`
 
@@ -1551,19 +1551,19 @@ reverse order the wide write keeps its exit pin, because the narrow one rewrites
 ### `AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers`
 
 Region 1 holds `w`, which writes elements `[15,20)`. Region 2 holds `p`, which writes `[0,10)`, and
-`q`, which reads `[5,20)` and sums it. The plan holds the edge `w -> q`, `q` has a boundary
+`node`, which reads `[5,20)` and sums it. The plan holds the edge `w -> queue`, `node` has a boundary
 in-degree of one, and the sum is 40.
 
 ### `AReaderItsPredecessorCoversGainsNoEdge`
 
-`p` writes the whole buffer here. The plan holds `w -> p` and no edge `w -> q`: `q` has a boundary
+`p` writes the whole buffer here. The plan holds `w -> p` and no edge `w -> queue`: `node` has a boundary
 in-degree of zero and is ordered behind `w` through `p`. The sum is 50.
 
 ### `AnEarlierReaderOrdersAWriterBehindAReadingPredecessor`
 
 Region 1 holds `r`, which reads `[0,10)`. Region 2 holds `p`, which reads the same elements, and
-`q`, which overwrites them. The plan holds the edge `r -> q`, and both readers see the value the
-buffer had before `q` ran.
+`node`, which overwrites them. The plan holds the edge `r -> queue`, and both readers see the value the
+buffer had before `node` ran.
 
 ## test_region_commit.cpp
 

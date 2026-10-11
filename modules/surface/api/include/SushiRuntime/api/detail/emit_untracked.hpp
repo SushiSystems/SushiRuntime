@@ -50,15 +50,15 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Launch, class F>
-        auto untracked_launch_node(Launch launch, std::size_t device, F&& fn)
+        auto untracked_launch_node(Launch launch, std::size_t device, F&& kernel)
         {
-            return [fn = std::forward<F>(fn), launch, device]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+            return [kernel = std::forward<F>(kernel), launch, device]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
-                auto& node = bg.add_node([fn, launch](sycl::handler& h)
+                auto& node = backing_graph.add_node([kernel, launch](sycl::handler& h)
                 {
-                    submit_launch(h, launch, fn);
+                    submit_launch(h, launch, kernel);
                 }, std::vector<sycl::event>{}, registration);
                 node.place_on(device);
                 node.baked_width = launch_count(launch);
@@ -70,15 +70,15 @@ namespace SushiRuntime
          * @param device Index of the device the node is placed on.
          */
         template <class F>
-        auto untracked_range_node(std::size_t n, std::size_t device, F&& fn)
+        auto untracked_range_node(std::size_t n, std::size_t device, F&& kernel)
         {
-            return [fn = std::forward<F>(fn), n, device]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+            return [kernel = std::forward<F>(kernel), n, device]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
-                auto& node = bg.add_node([fn, n](sycl::handler& h)
+                auto& node = backing_graph.add_node([kernel, n](sycl::handler& h)
                 {
-                    fn(std::size_t{0}, n, h);
+                    kernel(std::size_t{0}, n, h);
                 }, std::vector<sycl::event>{}, registration);
                 node.place_on(device);
                 node.baked_width = n;
@@ -90,13 +90,14 @@ namespace SushiRuntime
          * @param device Index of the device the node is placed on.
          */
         template <class F>
-        auto untracked_raw_node(std::size_t device, F&& fn)
+        auto untracked_raw_node(std::size_t device, F&& kernel)
         {
-            return [fn = std::forward<F>(fn), device]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+            return [kernel = std::forward<F>(kernel), device]
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
-                bg.add_node(fn, std::vector<sycl::event>{}, registration).place_on(device);
+                backing_graph.add_node(kernel, std::vector<sycl::event>{},
+                                       registration).place_on(device);
             };
         }
     } // namespace Detail

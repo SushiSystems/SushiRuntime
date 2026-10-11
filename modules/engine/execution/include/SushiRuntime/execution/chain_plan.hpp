@@ -47,12 +47,12 @@ namespace SushiRuntime
         /**
          * @brief Classifies a compiled plan for the in-order chain.
          * @param graph A plan after capture_base_state().
-         * @param ctx The context whose USM registry owns the plan's regions.
+         * @param context The context whose USM registry owns the plan's regions.
          * @return The classification; not chainable on any doubt.
          * @see modules/engine/execution/README.md
          */
         SUSHIRUNTIME_API ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph,
-                                                  RuntimeContext& ctx);
+                                                  RuntimeContext& context);
 
     } // namespace Execution
 } // namespace SushiRuntime

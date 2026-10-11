@@ -81,7 +81,7 @@ so a caller never spells `Internal::Execution::RuntimeContext`.
 
 The allocation is pinned to `device_index` and its owner recorded, so buffers used together (a
 State's two fields, for example) share a context and a kernel touching them never makes a
-cross-context access. `ctx` is the runtime context that owns the allocation, and `residency` is one
+cross-context access. `context` is the runtime context that owns the allocation, and `residency` is one
 of the three kinds the Residency section describes. A Buffer must not be constructed over foreign
 USM.
 
@@ -223,7 +223,7 @@ next() take its place.
 ### State(ctx, count, device_index, residency)
 
 Both fields land on `device_index`, so a step kernel that reads current and writes next stays within
-one context. `ctx` is the runtime context that owns the allocations. The constructor is private and
+one context. `context` is the runtime context that owns the allocations. The constructor is private and
 Runtime::state() is its caller.
 
 ### Tracking state of a State

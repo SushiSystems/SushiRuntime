@@ -77,12 +77,12 @@ namespace SushiRuntime
             const char* name, ::SushiRuntime::OperationID op,
             const std::vector<std::uint64_t>& params)
         {
-            ::SushiRuntime::Internal::Graph::TaskMetadata meta{};
-            meta.name = name;
-            meta.op_id = op;
+            ::SushiRuntime::Internal::Graph::TaskMetadata metadata{};
+            metadata.name = name;
+            metadata.op_id = op;
             for (std::size_t i = 0; i < params.size(); ++i)
-                meta.set_param<std::uint64_t>(static_cast<int>(i), params[i]);
-            return meta;
+                metadata.set_param<std::uint64_t>(static_cast<int>(i), params[i]);
+            return metadata;
         }
 
         /** @brief Builds the replay of an offloadable per-element task. */
@@ -92,17 +92,18 @@ namespace SushiRuntime
                           std::vector<Internal::Memory::ResourceRegion> writes,
                           F&& local, std::vector<std::uint64_t> params)
         {
-            return [fn = std::forward<F>(local), n, op, reads = std::move(reads),
+            return [kernel = std::forward<F>(local), n, op, reads = std::move(reads),
                     writes = std::move(writes), params = std::move(params)]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
-                bg.add_task(offload_metadata("fluent_offload", op, params), reads, writes,
-                    [fn, n](sycl::queue& q, const std::vector<sycl::event>&) -> sycl::event
+                backing_graph.add_task(offload_metadata("fluent_offload", op, params),
+                                       reads, writes,
+                    [kernel, n](sycl::queue& queue, const std::vector<sycl::event>&) -> sycl::event
                     {
-                        return q.submit([&](sycl::handler& h)
+                        return queue.submit([&](sycl::handler& h)
                         {
-                            submit_launch(h, n, fn);
+                            submit_launch(h, n, kernel);
                         });
                     }, {}, registration).baked_width = n;
             };
@@ -122,25 +123,26 @@ namespace SushiRuntime
                                 std::shared_ptr<std::vector<void*>> live_writes,
                                 F&& local, std::vector<std::uint64_t> params)
         {
-            return [fn = std::forward<F>(local), view, size, op, params = std::move(params),
+            return [kernel = std::forward<F>(local), view, size, op, params = std::move(params),
                     live_reads, live_writes]
-                   (::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                   (::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                     std::optional<std::uint32_t> registration)
             {
                 // The lists name the State's fields as they stand when the node is added.
                 (*live_reads)[0] = view->current;
                 (*live_writes)[0] = view->next;
-                bg.add_offload_dynamic(offload_metadata("fluent_offload_state", op, params),
+                backing_graph.add_offload_dynamic(
+                    offload_metadata("fluent_offload_state", op, params),
                     live_reads, live_writes,
-                    [fn, view, size](sycl::queue& q,
+                    [kernel, view, size](sycl::queue& queue,
                                      const std::vector<sycl::event>&) -> sycl::event
                     {
                         // Read at each submit so the fallback follows the swap.
                         const T* current = view->current;
                         T* next = view->next;
-                        return q.submit([&](sycl::handler& h)
+                        return queue.submit([&](sycl::handler& h)
                         {
-                            submit_launch(h, size, fn, current, next);
+                            submit_launch(h, size, kernel, current, next);
                         });
                     }, {}, registration).baked_width = size;
             };

@@ -62,10 +62,10 @@ namespace SushiRuntime
                                       std::size_t width)
         {
             return [counts, fault, fill, reads = std::move(reads), writes = std::move(writes),
-                    width](::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                    width](::SushiRuntime::Internal::Graph::TaskGraph& backing_graph,
                            std::optional<std::uint32_t> registration)
             {
-                bg.add_node([counts, fault, fill](sycl::handler& h)
+                backing_graph.add_node([counts, fault, fill](sycl::handler& h)
                 {
                     std::array<LiveCountSource, K> sources;
                     for (std::size_t k = 0; k < K; ++k)

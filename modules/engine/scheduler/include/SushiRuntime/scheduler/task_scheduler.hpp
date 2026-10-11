@@ -301,11 +301,11 @@ namespace SushiRuntime
 
                 /**
                  * @brief Finds the device index behind an already-selected queue.
-                 * @param q A plain queue of this scheduler's queue set.
+                 * @param queue A plain queue of this scheduler's queue set.
                  * @return Its device index, or SIZE_MAX if none matches.
                  * @see modules/engine/scheduler/README.md
                  */
-                std::size_t queue_device_index(sycl::queue& q) const;
+                std::size_t queue_device_index(sycl::queue& queue) const;
 
             public:
                 /**

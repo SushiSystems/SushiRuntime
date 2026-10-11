@@ -53,19 +53,19 @@ namespace SushiRuntime
         template <class Launch, class F, class... Extra>
         inline constexpr bool is_launch_kernel_v = false;
 
-        /** @brief Tells whether a count can call the kernel as fn(std::size_t, extra...). */
+        /** @brief Tells whether a count can call the kernel as kernel(std::size_t, extra...). */
         template <class F, class... Extra>
         inline constexpr bool is_launch_kernel_v<std::size_t, F, Extra...> =
             std::is_invocable_v<const std::decay_t<F>&, std::size_t, Extra...>;
 
-        /** @brief Tells whether an Extent can call the kernel as fn(sycl::id<N>, extra...). */
+        /** @brief Tells whether an Extent can call the kernel as kernel(sycl::id<N>, extra...). */
         template <int N, class F, class... Extra>
         inline constexpr bool is_launch_kernel_v<Extent<N>, F, Extra...> =
             std::is_invocable_v<const std::decay_t<F>&, sycl::id<N>, Extra...>;
 
         /**
-         * @brief Tells whether an NdRange can call the kernel as fn(item, extra...) or
-         *        fn(item, id, extra...).
+         * @brief Tells whether an NdRange can call the kernel as kernel(item, extra...) or
+         *        kernel(item, id, extra...).
          */
         template <int N, class F, class... Extra>
         inline constexpr bool is_launch_kernel_v<NdRange<N>, F, Extra...> =
@@ -75,7 +75,7 @@ namespace SushiRuntime
 
         /**
          * @brief Checks the kernel of a launch that hands over its index and nothing else.
-         * @return Whether fn fits; a false return follows a failed static_assert.
+         * @return Whether kernel fits; a false return follows a failed static_assert.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Launch, class F>

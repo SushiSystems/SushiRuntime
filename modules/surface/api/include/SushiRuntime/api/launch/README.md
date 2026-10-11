@@ -46,7 +46,7 @@ requirement; the runtime does not pad.
 
 SYCL 2020 deprecates the offset of an nd_range, so to_nd_range() never carries one and the
 nd_item a kernel receives always counts from zero. The origin is applied by the launch instead: a
-kernel written as `fn(sycl::nd_item<N> item, sycl::id<N> index)` receives
+kernel written as `kernel(sycl::nd_item<N> item, sycl::id<N> index)` receives
 `item.get_global_id() + origin` as its second argument. A kernel that takes the nd_item alone gets
 no shifted id and works out its own position, as it did before the origin existed.
 

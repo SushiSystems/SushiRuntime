@@ -49,7 +49,7 @@ using SushiRuntime::Test::USMShared;
  */
 TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 {
-    RuntimeContext ctx;
+    RuntimeContext context;
     TaskGraph graph;
 
     constexpr int    CHAINS = 16;
@@ -57,13 +57,14 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     constexpr float  SCALE  = 3.0f;
     constexpr float  BIAS   = 5.0f;
 
-    // The queues come from ctx's deduplicated set, which get_devices() can exceed; see README.md.
+    // The queues come from context's deduplicated set, which get_devices() can exceed;
+    // see README.md.
     std::vector<sycl::queue*> device_queues;
-    for (size_t i = 0; i < ctx.devices().count(); ++i)
+    for (size_t i = 0; i < context.devices().count(); ++i)
     {
-        sycl::queue& q = ctx.devices().queue(i);
-        if (q.get_device().is_gpu() || q.get_device().is_cpu())
-            device_queues.push_back(&q);
+        sycl::queue& queue = context.devices().queue(i);
+        if (queue.get_device().is_gpu() || queue.get_device().is_cpu())
+            device_queues.push_back(&queue);
     }
     ASSERT_FALSE(device_queues.empty()) << "No CPU/GPU device queues available.";
 
@@ -100,11 +101,12 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 
             TaskMetadata meta_scale{"chain_scale_dev"};
             graph.add_task(meta_scale, {data}, {data},
-                [data, dq](sycl::queue&, const std::vector<sycl::event>& deps) -> sycl::event
+                [data, dq](sycl::queue&,
+                           const std::vector<sycl::event>& dependencies) -> sycl::event
                 {
                     return dq->submit([&](sycl::handler& h)
                     {
-                        h.depends_on(deps);
+                        h.depends_on(dependencies);
                         h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
                         {
                             data[i] = data[i] * SCALE;
@@ -114,11 +116,12 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
 
             TaskMetadata meta_bias{"chain_bias_dev"};
             graph.add_task(meta_bias, {data}, {data},
-                [data, dq](sycl::queue&, const std::vector<sycl::event>& deps) -> sycl::event
+                [data, dq](sycl::queue&,
+                           const std::vector<sycl::event>& dependencies) -> sycl::event
                 {
                     return dq->submit([&](sycl::handler& h)
                     {
-                        h.depends_on(deps);
+                        h.depends_on(dependencies);
                         h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
                         {
                             data[i] = data[i] + BIAS;
@@ -158,8 +161,8 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     }
 
     auto compiled = graph.compile();
-    ctx.execution_engine().execute(std::move(compiled));
-    ctx.devices().wait_all();
+    context.execution_engine().execute(std::move(compiled));
+    context.devices().wait_all();
 
     for (int c = 0; c < CHAINS; ++c)
     {

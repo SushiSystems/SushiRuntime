@@ -380,7 +380,7 @@ sentinel built on a host task would never fire and `execute()` would block forev
 
 It waits on the predecessor events first, so device work is flushed before it reports done;
 this also drives AdaptiveCpp's queue to completion. Each event is copied, because
-AdaptiveCpp's `event::wait()` is non-const and `deps` is const.
+AdaptiveCpp's `event::wait()` is non-const and `dependencies` is const.
 
 The empty event it compares against is built once, outside the loop.
 
@@ -591,5 +591,5 @@ engine's shutdown whatever its installer does with its own reference. Installing
 coordinator, or null, releases the share after the engine holds the new address. The context
 never names a concrete coordinator: `modules/extension/distributed/README.md` describes the one the
 distributed layer installs. A graph offloads only when it was built with the installed
-pointer: `TaskGraph(ctx.offload())`, which the fluent `Graph` and `DynamicGraph` pass
+pointer: `TaskGraph(context.offload())`, which the fluent `Graph` and `DynamicGraph` pass
 themselves.

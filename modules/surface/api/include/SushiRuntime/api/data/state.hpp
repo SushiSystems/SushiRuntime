@@ -264,10 +264,10 @@ namespace SushiRuntime
              *         allocating constructor does.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
-            State(const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> ctx,
+            State(const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> context,
                   std::size_t count, DeviceIndex device_index, Residency residency)
-                : current_(call, ctx, count, device_index, residency),
-                  next_(call, std::move(ctx), count, device_index, residency),
+                : current_(call, context, count, device_index, residency),
+                  next_(call, std::move(context), count, device_index, residency),
                   view_(std::make_shared<Detail::StateView<T>>())
             {
                 publish_view();

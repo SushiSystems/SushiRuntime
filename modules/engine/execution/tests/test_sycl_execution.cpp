@@ -50,16 +50,16 @@ using SushiRuntime::Test::USMShared;
  */
 TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
 {
-    RuntimeContext ctx;
+    RuntimeContext context;
     TaskGraph graph;
 
-    sycl::queue& q = ctx.devices().queue_or_numa_local(std::nullopt, 0);
+    sycl::queue& device_queue = context.devices().queue_or_numa_local(std::nullopt, 0);
 
     constexpr size_t VECTOR_SIZE = 1024;
 
-    USMShared<float> usm_A(q, VECTOR_SIZE);
-    USMShared<float> usm_B(q, VECTOR_SIZE);
-    USMShared<float> usm_C(q, VECTOR_SIZE);
+    USMShared<float> usm_A(device_queue, VECTOR_SIZE);
+    USMShared<float> usm_B(device_queue, VECTOR_SIZE);
+    USMShared<float> usm_C(device_queue, VECTOR_SIZE);
 
     ASSERT_TRUE(usm_A);
     ASSERT_TRUE(usm_B);
@@ -83,11 +83,12 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
     graph.add_task(meta_init, {}, {A, B, C}, init_work);
 
     TaskMetadata meta_compute{"Vector_Add_Kernel"};
-    auto compute_work = [A, B, C](sycl::queue& queue, const std::vector<sycl::event>& deps) -> sycl::event
+    auto compute_work = [A, B, C](sycl::queue& queue,
+                                  const std::vector<sycl::event>& dependencies) -> sycl::event
     {
         return queue.submit([&](sycl::handler& h)
         {
-            h.depends_on(deps);
+            h.depends_on(dependencies);
             h.parallel_for(sycl::range<1>(VECTOR_SIZE), [=](sycl::id<1> idx)
             {
                 C[idx] = A[idx] + B[idx];
@@ -97,7 +98,7 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
     graph.add_task(meta_compute, {A, B}, {C}, compute_work);
 
     auto compiled = graph.compile();
-    ctx.execution_engine().execute(std::move(compiled));
+    context.execution_engine().execute(std::move(compiled));
 
     bool passed = true;
     for (size_t i = 0; i < VECTOR_SIZE; ++i)
@@ -120,7 +121,7 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
  */
 TEST(Integration_SyclExecutionTest, MultiStageChain)
 {
-    RuntimeContext ctx;
+    RuntimeContext context;
     TaskGraph graph;
 
     constexpr size_t N     = 2048;
@@ -128,9 +129,9 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
 
     // Both buffers are pinned to device 0, as a task's buffers live on one device; see README.md.
     float* data = static_cast<float*>(
-        ctx.memory().allocate({Internal::Memory::USMKind::Shared, N * sizeof(float), 0, 0}));
+        context.memory().allocate({Internal::Memory::USMKind::Shared, N * sizeof(float), 0, 0}));
     double* sum = static_cast<double*>(
-        ctx.memory().allocate({Internal::Memory::USMKind::Shared, sizeof(double), 0, 0}));
+        context.memory().allocate({Internal::Memory::USMKind::Shared, sizeof(double), 0, 0}));
     ASSERT_NE(data, nullptr);
     ASSERT_NE(sum, nullptr);
 
@@ -143,11 +144,13 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
     });
 
     TaskMetadata meta_scale{"Scale"};
-    graph.add_task(meta_scale, {data}, {data}, [data](sycl::queue& queue, const std::vector<sycl::event>& deps) -> sycl::event
+    graph.add_task(meta_scale, {data}, {data},
+                   [data](sycl::queue& queue, const std::vector<sycl::event>& dependencies)
+                       -> sycl::event
     {
         return queue.submit([&](sycl::handler& h)
         {
-            h.depends_on(deps);
+            h.depends_on(dependencies);
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> idx)
             {
                 data[idx] = data[idx] * SCALE;
@@ -166,7 +169,7 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
     });
 
     auto compiled = graph.compile();
-    ctx.execution_engine().execute(std::move(compiled));
+    context.execution_engine().execute(std::move(compiled));
 
     // SCALE * sum_{i=0}^{N-1} i = SCALE * (N-1)*N/2.
     double expected = static_cast<double>(SCALE) *
@@ -175,6 +178,6 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
     EXPECT_NEAR(*sum, expected, expected * 1e-6)
         << "Multi-stage pipeline produced an incorrect reduction.";
 
-    ctx.memory().release(data);
-    ctx.memory().release(sum);
+    context.memory().release(data);
+    context.memory().release(sum);
 }

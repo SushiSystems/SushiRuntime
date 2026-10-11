@@ -91,7 +91,7 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class F>
-        inline void submit_live_range(sycl::handler& h, LiveRange range, const F& fn)
+        inline void submit_live_range(sycl::handler& h, LiveRange range, const F& kernel)
         {
             if (range.count == 0)
             {
@@ -101,7 +101,7 @@ namespace SushiRuntime
             // The base offset is applied here, so kernels always receive absolute indices.
             const std::size_t base = range.base;
             h.parallel_for(sycl::range<1>(range.count),
-                           [fn, base](sycl::id<1> i) { fn(base + i[0]); });
+                           [kernel, base](sycl::id<1> i) { kernel(base + i[0]); });
         }
 
         /**
@@ -130,11 +130,11 @@ namespace SushiRuntime
         inline void submit_late_window(sycl::handler& h,
                                        const ::SushiRuntime::Internal::Graph::LateBindings& lb,
                                        std::size_t capacity, std::uint32_t* fault,
-                                       const F& fn)
+                                       const F& kernel)
         {
             if (lb.device_count == nullptr && lb.device_base == nullptr)
             {
-                submit_live_range(h, resolve_live_range(lb, capacity), fn);
+                submit_live_range(h, resolve_live_range(lb, capacity), kernel);
                 return;
             }
 
@@ -152,7 +152,7 @@ namespace SushiRuntime
 
             // One work-item even at capacity zero, so a fault there is still recorded.
             h.parallel_for(sycl::range<1>(capacity == 0 ? 1 : capacity),
-                           [w, fn](sycl::id<1> i)
+                           [w, kernel](sycl::id<1> i)
             {
                 const std::size_t base = (w.base_slot != nullptr)
                     ? static_cast<std::size_t>(*w.base_slot) : w.host_base;
@@ -169,7 +169,7 @@ namespace SushiRuntime
                     return;
                 }
                 if (i[0] < count)
-                    fn(base + i[0]);
+                    kernel(base + i[0]);
             });
         }
     } // namespace Detail
