@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — api: Fixed `TaskMetadata` and `NodeOptions` refusing a partial brace initialiser under `-Wmissing-field-initializers` (`task_types.hpp`, `node_options.hpp`).
 - 2026-10-11 — api: Breaking change: Removed `Recorder::emitter` and `add_emitter` and made `Recorder::replay` private; a library records through `extend` and the recorder's verbs (`recorder.hpp`).
 - 2026-10-11 — api: Added `Runtime::wait()`, which waits for every device queue, and `AdvancedControls::queue(device)`, which returns a device's `sycl::queue` (`runtime.hpp`, `advanced_controls.hpp`).
 - 2026-10-11 — api: Added `before_each_step(hook)` to `Graph` and `DynamicGraph`; a graph that has a hook waits for each chained step before the next (`step_driver.hpp`, `before_step_hooks.hpp`).

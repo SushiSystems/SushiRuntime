@@ -76,10 +76,10 @@ TEST(Integration_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
         auto rule = recorder.rule();
         recorder.kernel(WIDE, Access(Reads(values), Writes(copies)),
                         [v, c](std::size_t i) { c[i] = v[i]; },
-                        NodeOptions{WIDE, {}, {}, {}});
+                        NodeOptions{WIDE});
         recorder.kernel(std::size_t{1}, Access(Reads(copies), Writes(first)),
                         [c, f](std::size_t) { f[0] = c[0]; },
-                        NodeOptions{std::size_t{1}, {}, {}, {}});
+                        NodeOptions{std::size_t{1}});
     }
 
     const auto report = g.run();
@@ -116,11 +116,11 @@ TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWi
                          {
                              live[0] = static_cast<std::uint32_t>(value[0]);
                          },
-                         NodeOptions{std::size_t{1}, {}, {}, {}});
+                         NodeOptions{std::size_t{1}});
         recorder.kernel(DeviceSized{CAPACITY, live, nullptr},
                         Access(Reads(live_region), Writes(out)),
                         [o](std::size_t t) { o[t] = 1u; },
-                        NodeOptions{CAPACITY, {}, {}, {}});
+                        NodeOptions{CAPACITY});
     }
 
     const auto report = g.run();

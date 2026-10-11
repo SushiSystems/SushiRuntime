@@ -48,15 +48,15 @@ namespace SushiRuntime
         std::size_t width = Internal::Observability::K_WIDTH_UNKNOWN;
 
         /** @brief Label the node reports under; copied when the node is recorded. */
-        std::string_view name;
+        std::string_view name = {};
 
         /** @brief Operation the node performs; a default id names none. */
-        OperationID operation;
+        OperationID operation = {};
 
         /**
          * @brief Scalars carried with the node; copied when the node is recorded.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
-        span<const std::uint64_t> parameters;
+        span<const std::uint64_t> parameters = {};
     };
 } // namespace SushiRuntime
