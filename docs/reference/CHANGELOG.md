@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — api: Breaking change: Made 27 broken preconditions stop the process through `SR_VERIFY`, `SR_ASSERT` or `SR_FATAL` instead of throwing (`buffer.hpp`, `late_count.hpp`, `interop.cpp`, `node.hpp`).
 - 2026-10-11 — core: Breaking change: Renamed `Errc` to `ErrorCode` with PascalCase enumerators, added `Result<void>`, and made a misused `Result` accessor stop the process (`error.hpp`, `result.hpp`).
 - 2026-10-11 — api: Wrote out the short parameter and member names `ctx`, `bg`, `fn`, `meta`, `q`, `deps` and `err` across the modules (`recorder.hpp`, `builder_surface.hpp`, `error.hpp`).
 - 2026-10-11 — api: Fixed `TaskMetadata` and `NodeOptions` refusing a partial brace initialiser under `-Wmissing-field-initializers` (`task_types.hpp`, `node_options.hpp`).

@@ -144,9 +144,9 @@ owns runs on that owner whatever it states. `modules/engine/scheduler/README.md`
 selection", holds the rule, and `Internal::Graph::placement_of()` applies it.
 
 placement_ is a 16-bit field with K_NO_PLACEMENT for "none stated". It sits in the padding between
-locality_checked_ and cached_queue_index_, so sizeof(Node) does not grow. place_on() throws
-`ErrorCode::InvalidGraph` for an index the field cannot hold; whether the index names a device of the
-runtime is checked at the node's first dispatch, where the device count is known.
+locality_checked_ and cached_queue_index_, so sizeof(Node) does not grow. place_on() stops the
+process through `SR_VERIFY` for an index the field cannot hold; whether the index names a device of
+the runtime is checked at the node's first dispatch, where the device count is known.
 
 ### cached_queue_index_
 
@@ -269,7 +269,7 @@ times; each call returns a distinct value.
 
 An add_\* call accepts only an index this graph issued: one reserve_registration() returned, or one
 an earlier node drew. Indices are issued densely from zero, so the test is "below the count issued
-so far". Any other index throws `SushiException` with `ErrorCode::InvalidGraph`, and the message
+so far". Any other index stops the process through `SR_VERIFY`, and the message
 names the call, the index and the count. CompiledGraph::capture_profiling_state() sizes two vectors
 to the largest index plus one, so an index nobody issued could ask for 2^32 elements or collide with
 one the graph issues later. K_NO_REGISTRATION, the value that stands for "no node carries an index

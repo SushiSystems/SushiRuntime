@@ -36,6 +36,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
@@ -167,19 +168,20 @@ namespace SushiRuntime
 
             /**
              * @brief Returns element i of the current field for host code.
-             * @pre i < size().
-             * @throws SushiException If the State is device-resident.
+             * @pre i < size(), and the State is shared or host USM.
              */
             T& operator[](std::size_t i) const
             {
-                current_.require_host_accessible("State::operator[]");
+                SR_ASSERT(current_.is_host_accessible(),
+                          "State::operator[]: a device-resident state is not host-addressable; "
+                          "use read_range() and write_range()");
                 return current_.data()[i];
             }
 
             /**
              * @brief Returns a host-addressable span over the current field after one residency
              *        check.
-             * @throws SushiException If the State is device-resident.
+             * @pre The State is shared or host USM.
              */
             [[nodiscard]] span<T> host() const
             {
@@ -191,7 +193,7 @@ namespace SushiRuntime
              * @brief Copies a window of the current field out to a host vector and waits for
              *        it.
              * @param range Element window to read.
-             * @throws SushiException With InvalidAccess when @p range does not fit size().
+             * @pre range fits size().
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             [[nodiscard]] std::vector<T> read_range(ElementRange range) const
@@ -204,8 +206,7 @@ namespace SushiRuntime
              * @param range  Element window to write.
              * @param source Holds at least range.count elements; the first range.count are
              *        copied.
-             * @throws SushiException With InvalidAccess when @p range does not fit size(), or
-             *        @p source is null or shorter than a non-empty window.
+             * @pre range fits size(), and source holds at least range.count elements.
              */
             void write_range(ElementRange range, span<const T> source) const
             {
@@ -216,7 +217,7 @@ namespace SushiRuntime
              * @brief Names a window of the current field so that tasks on disjoint windows
              *        are not serialized.
              * @param range Element window, in elements.
-             * @throws SushiException With InvalidAccess when @p range does not fit size().
+             * @pre range fits size().
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             [[nodiscard]] BufferRegion region(ElementRange range) const
@@ -228,8 +229,7 @@ namespace SushiRuntime
              * @brief Shares both fields with the runtime's offload coordinator; does nothing
              *        when none is installed or the state is empty.
              * @return *this.
-             * @throws SushiException With InvalidAccess when the state owns memory and is
-             *         device-resident.
+             * @pre A state that owns memory is shared or host USM.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             State& distributed() &
@@ -242,8 +242,7 @@ namespace SushiRuntime
             /**
              * @brief Shares both fields as distributed() does, then returns the state by value.
              * @return The state, moved out of this object.
-             * @throws SushiException With InvalidAccess when the state owns memory and is
-             *         device-resident.
+             * @pre A state that owns memory is shared or host USM.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             [[nodiscard]] State distributed() &&
@@ -259,9 +258,9 @@ namespace SushiRuntime
 
             /**
              * @brief Allocates both fields of count elements on one device.
-             * @param call Names the public operation in a thrown message.
-             * @throws SushiException With InvalidAccess or AllocationFailed, as Buffer's
-             *         allocating constructor does.
+             * @param call Names the public operation in a message.
+             * @pre device_index names a device, and the byte size of count fits std::size_t.
+             * @throws SushiException With AllocationFailed when the device returns nothing.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
              */
             State(const char* call, std::shared_ptr<Internal::Execution::RuntimeContext> context,

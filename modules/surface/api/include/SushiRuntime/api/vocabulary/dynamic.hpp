@@ -35,6 +35,7 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/delegate.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
@@ -63,23 +64,22 @@ namespace SushiRuntime
          * @see docs/architecture/ARCHITECTURE.md, "Late-bound device values".
          * @param slot Buffer holding the value; must be Residency::Host.
          * @param what The call the error message names.
-         * @throws SushiException With InvalidAccess if @p slot is not
-         *        Residency::Host or @p index is out of range.
+         * @pre slot is Residency::Host and index is below slot.size().
          */
         inline DeviceSlot checked_device_slot(const Buffer<std::uint32_t>& slot,
                                               std::size_t index, const char* what)
         {
-            if (slot.residency() != Residency::Host)
-                throw SushiException(Error{ErrorCode::InvalidAccess,
-                    std::string(what) + ": the buffer is Residency::" +
-                    residency_name(slot.residency()) +
-                    ", but the value is read on the host while kernels may run; "
-                    "allocate it with Residency::Host."});
-            if (index >= slot.size())
-                throw SushiException(Error{ErrorCode::InvalidAccess,
-                    std::string(what) + ": index " + std::to_string(index) +
-                    " is out of range for a buffer of " + std::to_string(slot.size()) +
-                    " elements; pass an index below " + std::to_string(slot.size()) + "."});
+            SR_VERIFY(slot.residency() == Residency::Host,
+                      (std::string(what) + ": the buffer is Residency::" +
+                       residency_name(slot.residency()) +
+                       ", but the value is read on the host while kernels may run; "
+                       "allocate it with Residency::Host.")
+                          .c_str());
+            SR_VERIFY(index < slot.size(),
+                      (std::string(what) + ": index " + std::to_string(index) +
+                       " is out of range for a buffer of " + std::to_string(slot.size()) +
+                       " elements; pass an index below " + std::to_string(slot.size()) + ".")
+                          .c_str());
             return DeviceSlot{slot.data(), index, HandleAccess::liveness(slot)};
         }
 
@@ -157,8 +157,7 @@ namespace SushiRuntime
              * @brief Points a named Dynamic at a device count and drops any sized() provider.
              * @param counter Residency::Host buffer a predecessor writes the count into; a run
              *        after its destruction is refused with DanglingResource.
-             * @throws SushiException With InvalidAccess if @p counter is not
-             *        Residency::Host or @p index is out of range.
+             * @pre counter is Residency::Host and index is below counter.size().
              * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
              */
             Dynamic& sized_from_device(const Buffer<std::uint32_t>& counter,
@@ -173,7 +172,7 @@ namespace SushiRuntime
              * @brief Points a Dynamic at a device-written count while chaining inline.
              * @param counter Residency::Host buffer a predecessor writes the count into; a run
              *        after its destruction is refused with DanglingResource.
-             * @throws SushiException As the lvalue overload.
+             * @pre As the lvalue overload.
              * @return This Dynamic, moved out by value into the next call.
              */
             Dynamic sized_from_device(const Buffer<std::uint32_t>& counter,
@@ -211,8 +210,7 @@ namespace SushiRuntime
              * @brief Points a named Dynamic at a device base and drops any based_at() provider.
              * @param slot Residency::Host buffer a predecessor writes the base into; a run
              *        after its destruction is refused with DanglingResource.
-             * @throws SushiException With InvalidAccess if @p slot is not
-             *        Residency::Host or @p index is out of range.
+             * @pre slot is Residency::Host and index is below slot.size().
              * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
              */
             Dynamic& based_at_device(const Buffer<std::uint32_t>& slot,
@@ -227,7 +225,7 @@ namespace SushiRuntime
              * @brief Points a Dynamic at a device-written base while chaining inline.
              * @param slot Residency::Host buffer a predecessor writes the base into; a run
              *        after its destruction is refused with DanglingResource.
-             * @throws SushiException As the lvalue overload.
+             * @pre As the lvalue overload.
              * @return This Dynamic, moved out by value into the next call.
              */
             Dynamic based_at_device(const Buffer<std::uint32_t>& slot,
@@ -321,8 +319,7 @@ namespace SushiRuntime
      * @brief Builds a Dynamic whose size comes from a count the device produced.
      * @param counter Residency::Host buffer a predecessor writes the count into; a run
      *        after its destruction is refused with DanglingResource.
-     * @throws SushiException With InvalidAccess if @p counter is not
-     *        Residency::Host or @p index is out of range.
+     * @pre counter is Residency::Host and index is below counter.size().
      * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
      */
     [[nodiscard]] inline Dynamic sized_from_device(const Buffer<std::uint32_t>& counter,
@@ -346,8 +343,7 @@ namespace SushiRuntime
      * @brief Builds a Dynamic whose base comes from a slot the device wrote.
      * @param slot Residency::Host buffer a predecessor writes the base into; a run after
      *        its destruction is refused with DanglingResource.
-     * @throws SushiException With InvalidAccess if @p slot is not
-     *        Residency::Host or @p index is out of range.
+     * @pre slot is Residency::Host and index is below slot.size().
      * @see modules/surface/api/include/SushiRuntime/api/vocabulary/README.md
      */
     [[nodiscard]] inline Dynamic based_at_device(const Buffer<std::uint32_t>& slot,

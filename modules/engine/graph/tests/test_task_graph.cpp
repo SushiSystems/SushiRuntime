@@ -99,21 +99,6 @@ namespace
         return std::nullopt;
     }
 
-    /** @brief Calls @p add and returns the SushiException it throws, or nothing. */
-    template <class Add>
-    std::optional<GraphFailure> add_failure(Add&& add)
-    {
-        try
-        {
-            add();
-        }
-        catch (const SushiException& failure)
-        {
-            return GraphFailure{failure.error().code, failure.what()};
-        }
-        return std::nullopt;
-    }
-
     /** @brief Tells whether @p text holds @p part. */
     bool contains(const std::string& text, const std::string& part)
     {
@@ -191,32 +176,22 @@ TEST(Unit_TaskGraph, AReturnedNodeTakesItsRegistrationAndConfiguration)
     EXPECT_EQ(graph.last_node_added()->stated_placement(), std::optional<std::size_t>(1));
 }
 
-TEST(Unit_TaskGraph, ARegistrationTheGraphNeverIssuedIsRefused)
+TEST(Unit_TaskGraphDeathTest, ARegistrationTheGraphNeverIssuedStops)
 {
     TaskGraph graph;
 
     // An empty graph has issued nothing, and K_NO_REGISTRATION is what it reports as its last.
-    const std::optional<GraphFailure> sentinel = add_failure(
-        [&graph] { graph.add_node(idle_work(), {}, TaskGraph::K_NO_REGISTRATION); });
-    ASSERT_TRUE(sentinel.has_value()) << "add_node() accepted NO_REGISTRATION";
-    EXPECT_EQ(sentinel->code, ErrorCode::InvalidGraph);
-    EXPECT_TRUE(contains(sentinel->message, "TaskGraph::add_node()")) << sentinel->message;
-    EXPECT_TRUE(contains(sentinel->message, "registration index 4294967295"))
-        << sentinel->message;
-    EXPECT_TRUE(contains(sentinel->message, "has issued 0 so far")) << sentinel->message;
-    EXPECT_TRUE(contains(sentinel->message, "reserve_registration()")) << sentinel->message;
+    EXPECT_DEATH(static_cast<void>(graph.add_node(idle_work(), {}, TaskGraph::K_NO_REGISTRATION)),
+                 "TaskGraph::add_node.*registration index 4294967295 was not issued by this "
+                 "graph, which has issued 0 so far.*reserve_registration");
 
     const std::uint32_t reserved = graph.reserve_registration();
-    const std::optional<GraphFailure> past = add_failure(
-        [&graph, reserved] { graph.add_node(idle_work(), {}, reserved + 1); });
-    ASSERT_TRUE(past.has_value()) << "add_node() accepted an index one past the last issued";
-    EXPECT_EQ(past->code, ErrorCode::InvalidGraph);
-    EXPECT_TRUE(contains(past->message, "has issued 1 so far")) << past->message;
-
-    EXPECT_EQ(graph.last_node_added(), nullptr) << "a refused call added a node";
+    EXPECT_DEATH(static_cast<void>(graph.add_node(idle_work(), {}, reserved + 1)),
+                 "has issued 1 so far");
+    EXPECT_EQ(graph.last_node_added(), nullptr);
 }
 
-TEST(Unit_TaskGraph, EveryAddOverloadRefusesAnUnissuedRegistration)
+TEST(Unit_TaskGraphDeathTest, EveryAddOverloadStopsOnAnUnissuedRegistration)
 {
     int source = 0;
     int target = 0;
@@ -231,35 +206,24 @@ TEST(Unit_TaskGraph, EveryAddOverloadRefusesAnUnissuedRegistration)
     const auto bindings = std::make_shared<SushiRuntime::Internal::Graph::LateBindings>();
     const auto live_reads = std::make_shared<std::vector<void*>>(1, &source);
     const auto live_writes = std::make_shared<std::vector<void*>>(1, &target);
+    const char* const pattern = "registration index 7 was not issued by this graph";
 
-    const std::optional<GraphFailure> refused[] = {
-        add_failure([&] { graph.add_node(idle_work(), reads, writes, none, unissued); }),
-        add_failure([&] { graph.add_node(idle_work(), reads, writes, bindings, none, unissued); }),
-        add_failure([&] {
-            graph.add_task(metadata, reads, writes, idle_work(), idle_host_work(), none,
-                           unissued);
-        }),
-        add_failure([&] {
-            graph.add_task(metadata, reads, writes, idle_host_work(), none, unissued);
-        }),
-        add_failure([&] {
-            graph.add_offload_dynamic(metadata, live_reads, live_writes, idle_host_work(), none,
-                                      unissued);
-        }),
-        add_failure([&] { graph.add_native(reads, writes, [] {}, none, unissued); }),
-    };
-    for (std::size_t i = 0; i < std::size(refused); ++i)
-    {
-        ASSERT_TRUE(refused[i].has_value()) << "overload " << i << " accepted the index";
-        EXPECT_EQ(refused[i]->code, ErrorCode::InvalidGraph) << "overload " << i;
-    }
-
-    // A refused call left no access behind: the next writer of target is a root.
-    Node& writer = graph.add_node(idle_work(), reads, writes);
-    EXPECT_EQ(writer.in_degree.load(std::memory_order_relaxed), 0);
-    const CompiledGraph compiled = graph.compile();
-    EXPECT_EQ(compiled.all_nodes.size(), 1u);
-    EXPECT_EQ(compiled.roots.size(), 1u);
+    EXPECT_DEATH(static_cast<void>(graph.add_node(idle_work(), reads, writes, none, unissued)),
+                 pattern);
+    EXPECT_DEATH(static_cast<void>(
+                     graph.add_node(idle_work(), reads, writes, bindings, none, unissued)),
+                 pattern);
+    EXPECT_DEATH(static_cast<void>(graph.add_task(metadata, reads, writes, idle_work(),
+                                                  idle_host_work(), none, unissued)),
+                 pattern);
+    EXPECT_DEATH(static_cast<void>(
+                     graph.add_task(metadata, reads, writes, idle_host_work(), none, unissued)),
+                 pattern);
+    EXPECT_DEATH(static_cast<void>(graph.add_offload_dynamic(
+                     metadata, live_reads, live_writes, idle_host_work(), none, unissued)),
+                 pattern);
+    EXPECT_DEATH(static_cast<void>(graph.add_native(reads, writes, [] {}, none, unissued)),
+                 pattern);
 }
 
 TEST(Unit_TaskGraph, AReservedRegistrationIsAcceptedTwice)

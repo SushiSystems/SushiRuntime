@@ -37,17 +37,16 @@ A node added with a registration carries it, and one added without draws the ind
 `last_node_added()->registration_index` reports. A name, a width and a placement written
 through the reference are what the "last node" accessors then read back.
 
-### `ARegistrationTheGraphNeverIssuedIsRefused`
+### `ARegistrationTheGraphNeverIssuedStops`
 
 `add_node()` on an empty graph is given `K_NO_REGISTRATION`, then, after one `reserve_registration()`,
-the index one past it. Both throw `ErrorCode::InvalidGraph`. The first message must name the call, the
-index, the count issued and `reserve_registration()`. No node was added by either call.
+the index one past it. Both stop the process. The first line must name the call, the index, the
+count issued and `reserve_registration()`.
 
-### `EveryAddOverloadRefusesAnUnissuedRegistration`
+### `EveryAddOverloadStopsOnAnUnissuedRegistration`
 
-Six of the seven add overloads are each given index 7 on a graph that issued none, and each throws
-`ErrorCode::InvalidGraph`; the test above covers the seventh. A node added afterwards over the same regions has an `in_degree` of
-zero and compiles into a plan of one root, so no refused call left an access in the tracker.
+Six of the seven add overloads are each given index 7 on a graph that issued none, and each stops
+the process; the test above covers the seventh.
 
 ### `AReservedRegistrationIsAcceptedTwice`
 

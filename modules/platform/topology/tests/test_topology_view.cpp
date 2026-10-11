@@ -38,30 +38,9 @@
 #include <SushiRuntime/topology/topology_view.hpp>
 
 using namespace SushiRuntime::Internal::Topology;
-using SushiRuntime::ErrorCode;
-using SushiRuntime::Error;
-using SushiRuntime::SushiException;
 
 namespace
 {
-    /**
-     * @brief Runs @p build and returns the Error it throws, failing when it throws none.
-     */
-    template <typename Build>
-    Error refusal_of(Build&& build)
-    {
-        try
-        {
-            build();
-            ADD_FAILURE() << "the constructor accepted its argument";
-        }
-        catch (const SushiException& refusal)
-        {
-            return refusal.error();
-        }
-        return Error{};
-    }
-
     /// @brief Remote cost of the two-node matrix; differs from the model's fallback of 21.
     constexpr int K_REMOTE_COST = 32;
 
@@ -211,43 +190,31 @@ TEST(Unit_TopologyView, OutOfRangeIDsGetTheModelsAnswer)
 }
 
 /**
- * @brief Verifies that the constructor rejects a null distance model.
+ * @brief Verifies that the constructor stops on a null distance model.
  */
-TEST(Unit_TopologyView, NullDistanceModelIsRejected)
+TEST(Unit_TopologyViewDeathTest, ANullDistanceModelStops)
 {
     FixedTopologyProvider provider({0, 1});
 
-    const Error refusal = refusal_of([&] { TopologyView view(provider, nullptr); });
-
-    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(refusal.message.find("distance model is null"), std::string::npos)
-        << refusal.message;
+    EXPECT_DEATH(TopologyView(provider, nullptr), "TopologyView: the distance model is null");
 }
 
 /**
- * @brief Verifies that a remapping over no provider is rejected.
+ * @brief Verifies that a remapping over no provider stops.
  */
-TEST(Unit_TopologyView, NullInnerProviderIsRejected)
+TEST(Unit_TopologyViewDeathTest, ANullInnerProviderStops)
 {
-    const Error refusal = refusal_of([] { RemappingTopologyProvider provider(nullptr, 2); });
-
-    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(refusal.message.find("inner provider is null"), std::string::npos)
-        << refusal.message;
+    EXPECT_DEATH(RemappingTopologyProvider(nullptr, 2),
+                 "RemappingTopologyProvider: the inner provider is null");
 }
 
 /**
- * @brief Verifies that a ragged matrix is rejected with the row and both sizes.
+ * @brief Verifies that a ragged matrix stops with the row and both sizes.
  */
-TEST(Unit_TopologyView, RaggedDistanceMatrixIsRejectedWithItsRow)
+TEST(Unit_TopologyViewDeathTest, ARaggedDistanceMatrixStopsWithItsRow)
 {
-    const Error refusal =
-        refusal_of([] { MatrixDistanceModel model({{10, 21, 21}, {21, 10}, {21, 21, 10}}); });
-
-    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(refusal.message.find("row 1 holds 2 entries"), std::string::npos)
-        << refusal.message;
-    EXPECT_NE(refusal.message.find("has 3 rows"), std::string::npos) << refusal.message;
+    EXPECT_DEATH(MatrixDistanceModel({{10, 21, 21}, {21, 10}, {21, 21, 10}}),
+                 "MatrixDistanceModel: row 1 holds 2 entries and the matrix has 3 rows");
 }
 
 /**

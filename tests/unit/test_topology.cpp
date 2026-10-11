@@ -222,14 +222,16 @@ TEST(Unit_TopologyTest, AlignedAllocationsAreRecordedAndFreed)
     EXPECT_EQ(ctx.memory().live_count(), baseline);
 }
 
-/** @brief Tests that an aligned allocation on a device index past the last one throws. */
-TEST(Unit_TopologyTest, AnAlignedAllocationOnAMissingDeviceThrows)
+/** @brief Tests that an aligned allocation on a device index past the last one stops. */
+TEST(Unit_TopologyDeathTest, AnAlignedAllocationOnAMissingDeviceStops)
 {
     RuntimeContext ctx;
     const std::size_t missing_device = ctx.devices().count();
 
-    EXPECT_THROW((void)ctx.memory().allocate({Internal::Memory::USMKind::Shared, 64, 128, missing_device}),
-                 std::runtime_error);
-    EXPECT_THROW((void)ctx.memory().allocate({Internal::Memory::USMKind::Device, 64, 128, missing_device}),
-                 std::runtime_error);
+    EXPECT_DEATH(static_cast<void>(ctx.memory().allocate(
+                     {Internal::Memory::USMKind::Shared, 64, 128, missing_device})),
+                 "USM device index");
+    EXPECT_DEATH(static_cast<void>(ctx.memory().allocate(
+                     {Internal::Memory::USMKind::Device, 64, 128, missing_device})),
+                 "USM device index");
 }

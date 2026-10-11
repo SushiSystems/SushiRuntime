@@ -186,12 +186,18 @@ TEST(Unit_RangeTaskTest, SplitPartsCoverTheRangeExactlyOnce)
 }
 
 /**
- * @brief A reversed range is refused at construction, and an empty one is accepted.
+ * @brief A reversed range stops the process at construction.
  */
-TEST(Unit_RangeTaskTest, ConstructorRejectsAReversedRange)
+TEST(Unit_RangeTaskDeathTest, AReversedRangeStopsAtConstruction)
 {
-    EXPECT_THROW(RangeTask(size_t{8}, size_t{4}, noop_kernel()), SushiException);
+    EXPECT_DEATH(RangeTask(size_t{8}, size_t{4}, noop_kernel()), "the reversed range .8, 4.");
+}
 
+/**
+ * @brief An empty range is accepted and does not split.
+ */
+TEST(Unit_RangeTaskTest, AnEmptyRangeIsAcceptedAndDoesNotSplit)
+{
     RangeTask empty(size_t{8}, size_t{8}, noop_kernel());
     EXPECT_FALSE(empty.is_splittable());
     EXPECT_FALSE(empty.split().has_value());

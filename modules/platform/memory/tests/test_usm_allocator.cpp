@@ -459,45 +459,21 @@ TEST_F(Unit_UsmAllocator, ReleaseOfForeignUSMLeavesItAllocated)
     sycl::free(bytes, queues_[*device]);
 }
 
-namespace
-{
-/** @brief Expects a call to throw SushiException with InvalidAccess, an index and a count. */
-template <typename Call>
-void expect_bad_device_index(Call&& call, std::size_t bad_index, std::size_t count)
-{
-    try
-    {
-        call();
-        ADD_FAILURE() << "the call did not throw";
-    }
-    catch (const SushiRuntime::SushiException& exception)
-    {
-        EXPECT_EQ(exception.error().code, SushiRuntime::ErrorCode::InvalidAccess);
-        const std::string message = exception.what();
-        EXPECT_NE(message.find(std::to_string(bad_index)), std::string::npos) << message;
-        EXPECT_NE(message.find(std::to_string(count) + " device"), std::string::npos) << message;
-    }
-}
-} // namespace
+/** @brief Names the fixture for the tests that stop the process; see README.md. */
+using Unit_UsmAllocatorDeathTest = Unit_UsmAllocator;
 
-TEST_F(Unit_UsmAllocator, ABadDeviceIndexThrowsInvalidAccessWithTheIndexAndTheCount)
+TEST_F(Unit_UsmAllocatorDeathTest, ABadDeviceIndexStopsWithTheIndexAndTheCount)
 {
     const std::size_t count = queues_.size();
     const std::size_t bad_index = count + 7;
-    const std::size_t baseline = allocator_->live_count();
     int external = 0;
+    const std::string pattern = "USM device index " + std::to_string(bad_index) +
+                                " is out of range: the allocator holds " +
+                                std::to_string(count) + " device";
 
-    expect_bad_device_index(
-        [&]
-        {
-            const USMRequest request{USMKind::Shared, 64, 0, bad_index};
-            static_cast<void>(allocator_->allocate(request));
-        },
-        bad_index, count);
-    expect_bad_device_index(
-        [&] { allocator_->adopt(&external, bad_index, sizeof(external)); }, bad_index, count);
-
-    EXPECT_EQ(allocator_->live_count(), baseline);
+    const USMRequest request{USMKind::Shared, 64, 0, bad_index};
+    EXPECT_DEATH(static_cast<void>(allocator_->allocate(request)), pattern);
+    EXPECT_DEATH(allocator_->adopt(&external, bad_index, sizeof(external)), pattern);
 }
 
 TEST_F(Unit_UsmAllocator, TheReleaseObserverHearsEachReleasedAddressExactlyOnce)

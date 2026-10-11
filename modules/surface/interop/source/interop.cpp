@@ -36,6 +36,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -350,21 +351,19 @@ namespace SushiRuntime
                                               std::size_t alignment)
         {
             alignment = std::max(alignment, alignof(std::max_align_t));
-            if (!is_power_of_two(alignment))
-                throw SushiException(Error{
-                    ErrorCode::AllocationFailed,
-                    "export_host: alignment " + std::to_string(alignment) +
-                    " is not a power of two."});
+            SR_VERIFY(is_power_of_two(alignment),
+                      ("export_host: alignment " + std::to_string(alignment) +
+                       " is not a power of two.")
+                          .c_str());
 
             if (bytes == 0)
                 return Internal::Memory::Allocation();
 
-            if (bytes > std::numeric_limits<std::size_t>::max() - (alignment - 1))
-                throw SushiException(Error{
-                    ErrorCode::AllocationFailed,
-                    "export_host: " + std::to_string(bytes) + " bytes overflow " +
-                    "std::size_t when rounded up to the alignment of " +
-                    std::to_string(alignment) + "."});
+            SR_VERIFY(bytes <= std::numeric_limits<std::size_t>::max() - (alignment - 1),
+                      ("export_host: " + std::to_string(bytes) +
+                       " bytes overflow std::size_t when rounded up to the alignment of " +
+                       std::to_string(alignment) + ".")
+                          .c_str());
 
             const std::size_t rounded = round_up(bytes, alignment);
 

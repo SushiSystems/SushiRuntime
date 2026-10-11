@@ -38,6 +38,7 @@
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/resource_liveness.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
@@ -62,7 +63,6 @@ namespace SushiRuntime
             /**
              * @brief Builds a count that is the same on every step.
              * @param count The live count and the plan size; must fit a uint32.
-             * @throws SushiException With InvalidGraph if @p count does not fit.
              */
             [[nodiscard]] static LateCount fixed(std::size_t count)
             {
@@ -74,16 +74,13 @@ namespace SushiRuntime
              * @param capacity Plan size; the provider must not return more. Must fit a uint32.
              * @param provider Called once per step when the resolver node is submitted, on the
              *        thread that dispatches the node; must not be empty.
-             * @throws SushiException With InvalidAccess for an empty provider, or
-             *        InvalidGraph if @p capacity does not fit.
              */
             [[nodiscard]] static LateCount from_host(std::size_t capacity, Provider provider)
             {
                 LateCount count(capacity, "LateCount::from_host");
-                if (!provider)
-                    throw SushiException(Error{ErrorCode::InvalidAccess,
-                        "LateCount::from_host: the provider is empty; pass a callable that "
-                        "returns the live count, or use LateCount::fixed for a constant."});
+                SR_VERIFY(static_cast<bool>(provider),
+                          "LateCount::from_host: the provider is empty; pass a callable that "
+                          "returns the live count, or use LateCount::fixed for a constant.");
                 count.host_ = std::make_shared<const Provider>(std::move(provider));
                 return count;
             }
@@ -93,8 +90,7 @@ namespace SushiRuntime
              * @param capacity Plan size; the slot must not hold more. Must fit a uint32.
              * @param slot     Residency::Host buffer; a graph that recorded the count refuses
              *        to run with DanglingResource once the buffer is destroyed.
-             * @throws SushiException With InvalidAccess if @p slot is not host-resident
-             *        or @p index is out of range, or InvalidGraph if @p capacity does not fit.
+             * @pre slot is Residency::Host, index is below slot.size(), and capacity fits a uint32.
              */
             [[nodiscard]] static LateCount from_device(std::size_t capacity,
                                                        const Buffer<std::uint32_t>& slot,
@@ -115,16 +111,17 @@ namespace SushiRuntime
             /**
              * @brief Constructs a count with no live source, so its live value is the capacity.
              * @param what The call the error message names.
-             * @throws SushiException With InvalidGraph if @p capacity exceeds a uint32.
+             * @pre capacity fits a uint32.
              */
             LateCount(std::size_t capacity, const char* what) : capacity_(capacity)
             {
                 constexpr std::size_t limit = std::numeric_limits<std::uint32_t>::max();
-                if (capacity > limit)
-                    throw SushiException(Error{ErrorCode::InvalidGraph,
-                        std::string(what) + ": capacity " + std::to_string(capacity) +
-                        " exceeds " + std::to_string(limit) + ", the largest count a uint32 "
-                        "live-count word holds; split the work into counts that fit."});
+                SR_VERIFY(capacity <= limit,
+                          (std::string(what) + ": capacity " + std::to_string(capacity) +
+                           " exceeds " + std::to_string(limit) +
+                           ", the largest count a uint32 live-count word holds; split the work "
+                           "into counts that fit.")
+                              .c_str());
             }
 
             /** @brief Plan size and upper bound of the live count. */

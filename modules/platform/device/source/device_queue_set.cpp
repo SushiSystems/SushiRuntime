@@ -33,6 +33,7 @@
 #include <utility>
 
 #include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 
@@ -285,13 +286,11 @@ namespace SushiRuntime
 
         void DeviceQueueSet::require_index(std::size_t index) const
         {
-            if (index < infos_.size())
-                return;
-
-            throw SushiException(Error{
-                ErrorCode::InvalidAccess,
-                "Device index " + std::to_string(index) + " is out of bounds; the set holds "
-                    + std::to_string(infos_.size()) + " device(s)."});
+            SR_VERIFY(index < infos_.size(),
+                      ("Device index " + std::to_string(index) +
+                       " is out of bounds; the set holds " + std::to_string(infos_.size()) +
+                       " device(s).")
+                          .c_str());
         }
 
         std::size_t DeviceQueueSet::offset_for(std::size_t index,

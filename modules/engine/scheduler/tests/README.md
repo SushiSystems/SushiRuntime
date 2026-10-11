@@ -126,10 +126,10 @@ The range [37, 10044) is split as far as `split()` allows, chunks included. `exe
 given and submits an empty `single_task`. The recorded ranges, sorted, must run from 37 to 10044
 with each one starting where the last ended.
 
-### `ConstructorRejectsAReversedRange`
+### `AReversedRangeStopsAtConstruction`, `AnEmptyRangeIsAcceptedAndDoesNotSplit`
 
-`RangeTask(8, 4, ...)` throws `SushiException`. An empty range, `start == end`, is accepted
-and does not split.
+`RangeTask(8, 4, ...)` stops the process. An empty range, `start == end`, is accepted and does not
+split.
 
 ### `SplitHandsOffDistinctChunksUntilExhausted`
 

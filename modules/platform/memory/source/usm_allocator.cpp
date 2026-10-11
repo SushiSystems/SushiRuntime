@@ -34,6 +34,7 @@
 #include <thread>
 #include <utility>
 
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 
@@ -43,16 +44,6 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Builds the exception for a device index that names no device. */
-            SushiException bad_device_index(std::size_t device_index,
-                                                  std::size_t device_count)
-            {
-                return SushiException(Error{
-                    ErrorCode::InvalidAccess,
-                    "USM device index " + std::to_string(device_index) + " is out of range: the "
-                        "allocator holds " + std::to_string(device_count) + " device(s)."});
-            }
-
             /** @brief Makes the unaligned SYCL allocation of a kind; null when SYCL has none. */
             void* allocate_unaligned(USMKind kind, std::size_t bytes, const sycl::queue& queue)
             {
@@ -250,8 +241,11 @@ namespace SushiRuntime
 
         const sycl::queue& USMAllocator::queue_at(std::size_t device_index) const
         {
-            if (device_index >= queues_.size())
-                throw bad_device_index(device_index, queues_.size());
+            SR_VERIFY(device_index < queues_.size(),
+                      ("USM device index " + std::to_string(device_index) +
+                       " is out of range: the allocator holds " +
+                       std::to_string(queues_.size()) + " device(s).")
+                          .c_str());
             return queues_[device_index];
         }
 

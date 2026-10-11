@@ -57,8 +57,8 @@ namespace SushiRuntime
          * @brief Allocates host memory another API can import.
          * @return An allocation aligned and rounded to alignment, or an empty one that
          *         allocates nothing when @p bytes is zero.
-         * @throws SushiException With AllocationFailed on a non-power-of-two
-         *        alignment, a size that overflows when rounded, or a failed allocation.
+         * @pre alignment is a power of two, and bytes rounded up to it fits std::size_t.
+         * @throws SushiException With AllocationFailed when the device returns nothing.
          */
         [[nodiscard]] SUSHIRUNTIME_API Internal::Memory::Allocation export_host_memory(
             const std::shared_ptr<Internal::Execution::RuntimeContext>& context, std::size_t bytes,

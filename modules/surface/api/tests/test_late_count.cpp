@@ -183,21 +183,14 @@ TEST(Integration_LateCount, DeviceCountAboveCapacityFailsTheRunOnBothLayers)
     }
 }
 
-/** @brief Tests that a device slot outside Residency::Host is rejected when the count is built. */
-TEST(Integration_LateCount, NonHostDeviceSlotIsRejectedAtConstruction)
+/** @brief Tests that a device slot outside Residency::Host stops the call that builds the count. */
+TEST(Integration_LateCountDeathTest, ANonHostDeviceSlotStopsAtConstruction)
 {
     auto rt      = Runtime::create();
     auto counter = rt.buffer<std::uint32_t>(1);
 
-    try
-    {
-        (void)LateCount::from_device(16, counter);
-        ADD_FAILURE() << "a Residency::Shared slot was accepted";
-    }
-    catch (const SushiException& e)
-    {
-        EXPECT_EQ(e.error().code, ErrorCode::InvalidAccess);
-    }
+    EXPECT_DEATH(static_cast<void>(LateCount::from_device(16, counter)),
+                 "LateCount::from_device: the buffer is Residency::Shared");
 }
 
 /** @brief Tests that the resolver sees the count its predecessor wrote in the same run. */

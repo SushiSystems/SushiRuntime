@@ -34,6 +34,7 @@
 #include <optional>
 #include <utility>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/logging/logger.hpp>
@@ -79,16 +80,18 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Creates a new range task over [start, end).
-                 * @pre start <= end; a reversed range throws SushiException.
+                 * @pre start <= end.
                  * @param name Persistent label, stored not copied.
                  */
                 template <typename Func>
                 RangeTask(size_t start, size_t end, Func func, const char* name = "range_task")
                     : start_(start), end_(end), kernel_func_(std::move(func)), name_(name)
                 {
-                    SR_THROW_IF(start > end,
-                                "RangeTask '{}' was given the reversed range [{}, {}).",
-                                name, start, end);
+                    SR_VERIFY(start <= end,
+                              ::SushiRuntime::Detail::sr_format(
+                                  "RangeTask '{}' was given the reversed range [{}, {}).", name,
+                                  start, end)
+                                  .c_str());
                 }
 
                 /** @brief Returns the label given at construction. */

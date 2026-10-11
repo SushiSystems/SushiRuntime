@@ -112,21 +112,6 @@ namespace
                       !std::is_copy_constructible_v<Dynamic>,
                   "a Dynamic moves and does not copy");
 
-    /** @brief Runs a call and returns the error of the SushiException it throws, or code ok. */
-    template <class Call>
-    Error error_of(Call&& call)
-    {
-        try
-        {
-            call();
-        }
-        catch (const SushiException& e)
-        {
-            return e.error();
-        }
-        return Error{};
-    }
-
     /**
      * @brief Records the resolver of one late count; its fill copies the live value to out[0].
      * @param out Receives the live count; must outlive the graph.
@@ -164,69 +149,60 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that from_device rejects an index one past its slot when the count is built. */
-TEST(Integration_LateBoundVocabulary, FromDeviceRejectsAnIndexPastTheSlot)
+/** @brief Tests that from_device stops on an index one past its slot when the count is built. */
+TEST(Integration_LateBoundVocabularyDeathTest, FromDeviceStopsOnAnIndexPastTheSlot)
 {
     constexpr std::size_t CAPACITY = 64;
 
     auto rt   = Runtime::create();
     auto slot = rt.buffer<std::uint32_t>(3, DeviceIndex{0}, Residency::Host);
 
-    const Error error =
-        error_of([&] { (void)LateCount::from_device(CAPACITY, slot, slot.size()); });
+    EXPECT_DEATH(static_cast<void>(LateCount::from_device(CAPACITY, slot, slot.size())),
+                 "LateCount::from_device: index 3 is out of range for a buffer of 3 elements");
 
-    EXPECT_EQ(error.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(error.message.find("LateCount::from_device"), std::string::npos) << error.message;
-    EXPECT_NE(error.message.find("index 3"), std::string::npos) << error.message;
-    EXPECT_NE(error.message.find("3 elements"), std::string::npos) << error.message;
-
-    EXPECT_NO_THROW((void)LateCount::from_device(CAPACITY, slot, slot.size() - 1));
+    const LateCount last = LateCount::from_device(CAPACITY, slot, slot.size() - 1);
+    EXPECT_EQ(last.capacity(), CAPACITY);
 }
 
-/** @brief Tests that from_device rejects a slot the host cannot read during a run. */
-TEST(Integration_LateBoundVocabulary, FromDeviceRejectsASlotThatIsNotHostResident)
+/** @brief Tests that from_device stops on a slot the host cannot read during a run. */
+TEST(Integration_LateBoundVocabularyDeathTest, FromDeviceStopsOnASlotThatIsNotHostResident)
 {
     auto rt       = Runtime::create();
     auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device);
     auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared);
 
-    for (const Buffer<std::uint32_t>* rejected : {&resident, &shared})
-    {
-        const Error error = error_of([&] { (void)LateCount::from_device(8, *rejected); });
-        EXPECT_EQ(error.code, ErrorCode::InvalidAccess);
-        EXPECT_NE(error.message.find("Residency::Host"), std::string::npos) << error.message;
-    }
+    EXPECT_DEATH(static_cast<void>(LateCount::from_device(8, resident)),
+                 "allocate it with Residency::Host");
+    EXPECT_DEATH(static_cast<void>(LateCount::from_device(8, shared)),
+                 "allocate it with Residency::Host");
 }
 
-/** @brief Tests that from_host rejects a provider that holds no callable. */
-TEST(Integration_LateBoundVocabulary, FromHostRejectsAnEmptyProvider)
+/** @brief Tests that from_host stops on a provider that holds no callable. */
+TEST(Integration_LateBoundVocabularyDeathTest, FromHostStopsOnAnEmptyProvider)
 {
-    const Error error =
-        error_of([] { (void)LateCount::from_host(8, LateCount::Provider{}); });
-
-    EXPECT_EQ(error.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(error.message.find("LateCount::from_host"), std::string::npos) << error.message;
+    EXPECT_DEATH(static_cast<void>(LateCount::from_host(8, LateCount::Provider{})),
+                 "LateCount::from_host: the provider is empty");
 }
 
-/** @brief Tests that every factory rejects a capacity a uint32 live-count word cannot hold. */
-TEST(Integration_LateBoundVocabulary, EveryFactoryRejectsACapacityPastAUint32)
+/** @brief Tests that every factory stops on a capacity a uint32 live-count word cannot hold. */
+TEST(Integration_LateBoundVocabularyDeathTest, EveryFactoryStopsOnACapacityPastAUint32)
 {
     if (sizeof(std::size_t) <= sizeof(std::uint32_t))
         GTEST_SKIP() << "std::size_t cannot hold a count past a uint32 on this target";
 
     const std::size_t limit = std::numeric_limits<std::uint32_t>::max();
     const std::size_t over = limit + 1;
+    const std::string pattern = "capacity " + std::to_string(over) + " exceeds";
 
     auto rt   = Runtime::create();
     auto slot = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);
 
-    EXPECT_EQ(error_of([&] { (void)LateCount::fixed(over); }).code, ErrorCode::InvalidGraph);
-    EXPECT_EQ(error_of([&] {
-                  (void)LateCount::from_host(over, [] { return std::size_t{0}; });
-              }).code,
-              ErrorCode::InvalidGraph);
-    EXPECT_EQ(error_of([&] { (void)LateCount::from_device(over, slot); }).code,
-              ErrorCode::InvalidGraph);
+    EXPECT_DEATH(static_cast<void>(LateCount::fixed(over)), "LateCount::fixed: " + pattern);
+    EXPECT_DEATH(
+        static_cast<void>(LateCount::from_host(over, [] { return std::size_t{0}; })),
+        "LateCount::from_host: " + pattern);
+    EXPECT_DEATH(static_cast<void>(LateCount::from_device(over, slot)),
+                 "LateCount::from_device: " + pattern);
 
     EXPECT_EQ(LateCount::fixed(limit).capacity(), limit);
 }

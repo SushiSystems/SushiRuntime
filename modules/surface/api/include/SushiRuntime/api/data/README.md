@@ -11,26 +11,29 @@ symbol or passage it explains, and that header's file block cites this page.
 
 read_range(), write_range() and region() take an ElementRange, on a Buffer and on a State alike, and
 follow one rule: the window `[offset, offset + count)` must lie inside `[0, size())`. A window that
-does not fit throws `SushiException` with `ErrorCode::InvalidAccess`, and the message holds the
-call, the offset, the count and the size. Nothing is copied and nothing is clamped, because a
-shortened copy hides the wrong count until the missing elements are read somewhere else. The check
-subtracts and does not add, so an offset and a count whose sum wraps around are rejected too.
+does not fit is a rule the caller broke, so the call stops the process through `SR_VERIFY`, and the
+line the handler writes holds the call, the offset, the count and the size. Nothing is copied and
+nothing is clamped, because a shortened copy hides the wrong count until the missing elements are
+read somewhere else. The check subtracts and does not add, so an offset and a count whose sum wraps
+around stop the call too.
 
 A zero-length window is accepted at every offset up to and including size(), and it touches neither
-the device nor the source. write_range() with a non-zero count also throws `InvalidAccess` when
-its source is null or holds fewer than `count` elements; a longer source is accepted and its first
+the device nor the source. write_range() with a non-zero count also stops the process when its
+source is null or holds fewer than `count` elements; a longer source is accepted and its first
 `count` elements are copied.
 
 ### Allocation
 
-A device index that names no device of the runtime throws `ErrorCode::InvalidAccess` before anything is
+A device index that names no device of the runtime stops the process before anything is
 allocated. The message names the calling function (`Runtime::buffer` or `Runtime::state`), the
 index, the device count, and `advanced().devices()`, which lists the devices by index.
 
 The byte size of a handle is `count * sizeof(T)`, checked before anything is allocated: a count
-whose byte size does not fit `std::size_t` throws `ErrorCode::AllocationFailed` and names the largest
-count that fits. When the device returns no memory, the message states what was asked for (element
-count, element size, bytes, residency and device) and gives no cause, since the allocator reports
+whose byte size does not fit `std::size_t` stops the process, and the message names the largest
+count that fits. Both are rules the caller keeps, checked with `SR_VERIFY`; running out of device
+memory is not one, and it throws `ErrorCode::AllocationFailed`. When the device returns no memory,
+the message states what was asked for (element count, element size, bytes, residency and
+device) and gives no cause, since the allocator reports
 none.
 
 ### Argument types
@@ -110,26 +113,27 @@ it is running or pending: the step advances the State through the view's `owner`
 ### operator[]
 
 Device-resident memory is not host-addressable, so indexing it on the host is invalid. operator[]
-throws on a device-resident buffer instead of dereferencing into undefined behaviour, which is a
-deterministic failure in every build and not only a debug assert. For device residency use
-read_range() and write_range(), or host() for a bulk host view. Kernels capture data() directly and
-never go through this operator, so the residency check costs nothing on the device path.
-State::operator[] and State::host() run the same check under their own names, so the message names
-the State the caller holds.
+checks the residency with `SR_ASSERT`, because it runs once per element: where
+`SR_ENABLE_ASSERTIONS` is 1 it stops the process on a device-resident buffer, and elsewhere the
+check is compiled out. For device residency use read_range() and write_range(), or host() for a
+bulk host view. Kernels capture data() directly and never go through this operator, so the check
+costs nothing on the device path. State::operator[] runs the same check under its own name, so the
+message names the State the caller holds.
 
 ### host
 
-host() is the branch-free bulk seam for host code. The residency is checked once, inside host(), and
-the returned span indexes with no further checks, so a tight loop can seed or read back without
-paying per-element validation. It is valid only for shared or host USM. A device-resident buffer
-throws, since its memory is not host-addressable; read_range() and write_range() serve that case.
+host() is the branch-free bulk seam for host code. The residency is checked once, inside host(),
+with `SR_VERIFY`, and the returned span indexes with no further checks, so a tight loop can seed or
+read back without paying per-element validation. It is valid only for shared or host USM. On a
+device-resident buffer it stops the process in every build; read_range() and write_range() serve
+that case. State::host() names the State in its message.
 
 ### read_range
 
 read_range() is the selective-readback seam. It copies just [offset, offset+count) through the
 owning queue into a host vector, for telemetry, IO or a debug window, without host-mapping a whole
 device-resident field. It is synchronous: the copy is waited on before it returns. A window that
-does not fit throws, as the Range calls section states.
+does not fit stops the process, as the Range calls section states.
 
 ### write_range
 
@@ -166,9 +170,9 @@ distributed() hands the allocation to the offload coordinator installed on the r
 through Internal::Graph::OffloadCoordinator::share(). It is opt-in: only a shared buffer can cross to a worker,
 and the master stays authoritative for it. It does nothing on an empty handle, and nothing when no
 coordinator is installed, so a buffer is shared only if Distributed::Cluster::attach() ran first.
-A handle that owns memory and is device-resident throws `ErrorCode::InvalidAccess` before the
-coordinator is consulted, with or without a cluster attached. The offload path reads the allocation
-on the host, so the handle must be Shared or Host.
+A handle that owns memory and is device-resident stops the process before the coordinator is
+consulted, with or without a cluster attached. The offload path reads the allocation on the host,
+so the handle must be Shared or Host.
 
 Two overloads exist to make chaining safe. The lvalue overload (on a named buffer) returns *this.
 The rvalue overload (on a temporary returned by Runtime::buffer()) moves the buffer into the caller
@@ -247,8 +251,8 @@ State::distributed() is opt-in and mirrors Buffer::distributed(). It exposes eac
 allocations to the cluster so a stepped graph can offload its update rule. The two allocations keep
 stable handles for the State's lifetime; only which one is read and which is written rotates each
 step, and the offload path follows that from the live pointers. It does nothing on an empty State
-or when no offload coordinator is installed. A device-resident State throws `ErrorCode::InvalidAccess`,
-as Buffer::distributed() does, and the message names `State::distributed()`.
+or when no offload coordinator is installed. A device-resident State stops the process, as
+Buffer::distributed() does, and the message names `State::distributed()`.
 
 ### State::read_range
 

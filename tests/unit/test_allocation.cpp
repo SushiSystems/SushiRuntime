@@ -31,6 +31,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <memory>
 #include <utility>
 
@@ -153,32 +154,29 @@ TEST(Unit_Buffer, DestructionReleasesTheAdoptedAllocationOnce)
     EXPECT_EQ(last, fake(6));
 }
 
-TEST(Unit_Buffer, AdoptingATooSmallAllocationThrowsAndStillReleasesOnce)
+TEST(Unit_BufferDeathTest, AdoptingATooSmallAllocationStops)
 {
     int releases = 0;
     void* last = nullptr;
-    EXPECT_THROW(
+    EXPECT_DEATH(
         {
             auto buffer = HandleAccess::construct<Buffer<std::uint32_t>>(
                 nullptr, counted_allocation(7, 4, releases, last), 4,
                 DeviceIndex{0}, Residency::Shared);
         },
-        SushiRuntime::SushiException);
-    EXPECT_EQ(releases, 1);
-    EXPECT_EQ(last, fake(7));
+        "Buffer adoption: an allocation of 4 bytes cannot hold 4 elements");
 }
 
-TEST(Unit_Buffer, AdoptingACountThatOverflowsItsByteSizeThrows)
+TEST(Unit_BufferDeathTest, AdoptingACountThatOverflowsItsByteSizeStops)
 {
     int releases = 0;
     void* last = nullptr;
     const std::size_t huge = std::numeric_limits<std::size_t>::max() / sizeof(std::uint32_t) + 1;
-    EXPECT_THROW(
+    EXPECT_DEATH(
         {
             auto buffer = HandleAccess::construct<Buffer<std::uint32_t>>(
                 nullptr, counted_allocation(8, 4, releases, last), huge,
                 DeviceIndex{0}, Residency::Shared);
         },
-        SushiRuntime::SushiException);
-    EXPECT_EQ(releases, 1);
+        "Buffer adoption: " + std::to_string(huge) + " elements");
 }
