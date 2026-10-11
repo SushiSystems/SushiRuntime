@@ -33,8 +33,6 @@
 #include <optional>
 #include <unordered_map>
 
-#include <SushiRuntime/core/export.hpp>
-
 namespace SushiRuntime
 {
     namespace Memory
@@ -43,7 +41,7 @@ namespace SushiRuntime
          * @brief Remembers which device each USM pointer was allocated on.
          * @see modules/platform/memory/README.md
          */
-        class SUSHIRUNTIME_API UsmRegistry
+        class UsmRegistry
         {
             public:
                 /**

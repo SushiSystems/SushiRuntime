@@ -56,6 +56,28 @@ the slot and free a node this thread is about to dereference, a classic Dekker-s
 race. A seq_cst fence orders the slot publication before any later load, as production EBRs do
 (folly, crossbeam).
 
+### retire: when a scan runs
+
+retire() runs check_and_reclaim() when the thread's retire_count reaches next_scan_at, which
+starts at RETIRE_THRESHOLD and is set to the count left after each scan plus RETIRE_THRESHOLD. A
+reader that holds a guard for a long time therefore costs one scan per RETIRE_THRESHOLD retires,
+where a fixed threshold would scan on every retire once the list had grown past it.
+
+### check_and_reclaim: deleters that retire
+
+The scan detaches the thread's retire list and zeroes retire_count before it runs any deleter,
+and sets is_reclaiming for its duration. A destructor that calls retire() therefore appends to an
+empty list and does not start a second scan; the scan puts the nodes it kept back in front of
+what the deleters added.
+
+### check_and_reclaim: the seq_cst fence
+
+The scan opens with a `seq_cst` fence, the counterpart of the one in enter(). The retiring thread
+unlinks an object and then reads the slots; a reader publishes its slot and then reads the shared
+structure. With a fence on both sides, either the scan sees the reader's slot or the reader sees
+the unlink. This holds only if the caller unlinked the object before retire(), which is retire()'s
+precondition.
+
 ### unregister_thread
 
 EpochThreadLocalState's destructor calls unregister_thread() when a thread exits. The next
@@ -139,7 +161,8 @@ same queues as the caller's, and the memory module needs no header of the module
 A device's index is its position in that list, the number UsmRegistry stores.
 
 The queue list never changes after construction and is read without a lock. Each registry
-operation takes that registry's lock, and the observer is one atomic pointer. Calls on different
+operation takes that registry's lock, and the observer is one atomic pointer beside a count of
+the calls into it. Calls on different
 addresses can therefore run on any threads at once. Two calls on the same address, a release and a
 lookup for example, are not ordered by the allocator; whoever owns the address orders them.
 
@@ -162,9 +185,26 @@ entry has no field for it. allocate() clears that mark for the address it return
 mapping that was unmapped without forget() can leave its address to a later allocation, and the
 stale mark would then leak that allocation.
 
-An address with no record is freed against device 0 and one WARN names it. It is either USM that
-was never allocated here or a second release of the same address, and the allocator cannot tell
-which. With no device at all there is nothing to free against; the WARN says so.
+An address with no record is not freed, and one ERROR names it. It is either USM that was never
+allocated here or a second release of the same address, and the allocator cannot tell which:
+freeing it would be a double free in the second case and a free against a guessed device in the
+first. An allocator with no device logs a WARN instead.
+
+release() is `noexcept`, because UsmAllocationOwner calls it from a `noexcept` override and
+Allocation calls that from a destructor. A `sycl::free` that throws is caught and logged as one
+ERROR; the record is already gone by then, so the address is no longer tracked.
+
+### set_release_observer
+
+release() counts itself in before it loads the observer and out after on_release() returns.
+set_release_observer() stores the new pointer and then yields until that count is zero, so when
+it returns no call into the previous observer is running and the caller may destroy it. Both
+sides use `seq_cst`: the store-then-read on one side and the increment-then-load on the other
+are the Dekker pattern, and a weaker order lets each side miss the other.
+
+The count covers every release() between those two points, whichever observer it loaded, so a
+removal made while other threads release without pause waits for a gap. An observer that calls
+set_release_observer() from on_release() waits for itself and never returns.
 
 ### owning_device
 
@@ -205,7 +245,8 @@ degenerating the overlap test to base-pointer equality.
 
 overlaps() is the test the tracker uses to decide ordering: same base and intersecting half-open
 intervals. WHOLE is treated as an unbounded upper end, so the comparison never overflows on the
-sentinel.
+sentinel. A region with a null base is not valid() and overlaps nothing, another null-based
+region included; contains() answers false for it the same way.
 
 ### contains
 
