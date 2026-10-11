@@ -919,7 +919,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Blocks until every task submitted for the run has been reaped.
+         * @brief Blocks until every task counted into the run has been reaped or offloaded.
          *
          * @see modules/engine/scheduler/README.md
          */

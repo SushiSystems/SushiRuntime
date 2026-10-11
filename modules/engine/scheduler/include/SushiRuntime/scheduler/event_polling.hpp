@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <exception>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -51,8 +52,6 @@ namespace SushiRuntime
 {
     namespace Scheduler
     {
-        using namespace SushiRuntime::Core;
-
         /**
          * @brief Polls hardware events in a lock-free manner.
          */
@@ -245,8 +244,8 @@ namespace SushiRuntime
                 /**
                  * @brief Checks for completed events and triggers successors.
                  *
-                 * Uses adaptive backoff to reduce CPU and driver load.
-                 *
+                 * Reaps an entry whose status query or wait throws as a task that did not
+                 * execute, and rethrows the first such exception once the pass is over.
                  * @param active_events List of events currently being monitored.
                  * @param local_queue Current thread's task queue.
                  */
@@ -272,43 +271,62 @@ namespace SushiRuntime
                     const bool profiling = profiling_.load(std::memory_order_acquire);
 
                     bool progress = false;
+                    std::exception_ptr first_failure;
                     for (size_t i = 0; i < active_events.size(); )
                     {
-                        bool done = active_events[i].ready;
-                        if (!done)
+                        PolledEvent& entry = active_events[i];
+                        bool done = entry.ready;
+                        try
                         {
-                            auto status = active_events[i].event.get_info<sycl::info::event::command_execution_status>();
-                            done = (status == sycl::info::event_command_status::complete);
-                        }
-                        if (done)
-                        {
-                            // wait() on a complete event makes the runtime flush USM visibility.
-                            if (active_events[i].has_event)
+                            if (!done)
                             {
-                                active_events[i].event.wait();
+                                auto status = entry.event.get_info<sycl::info::event::command_execution_status>();
+                                done = (status == sycl::info::event_command_status::complete);
                             }
 
+                            // wait() on a complete event makes the runtime flush USM visibility.
+                            if (done && entry.has_event)
+                                entry.event.wait();
+                        }
+                        catch (...)
+                        {
+                            SR_LOG_ERROR("Polling the event of task '{}' threw; the task is reaped "
+                                         "as not executed and its successors are released.",
+                                         entry.task ? entry.task->get_name() : "<none>");
+
+                            if (!first_failure)
+                                first_failure = std::current_exception();
+
+                            // The entry becomes what a skipped task is: ready, eventless, not executed.
+                            entry.ready = true;
+                            entry.has_event = false;
+                            entry.executed = false;
+                            done = true;
+                        }
+
+                        if (done)
+                        {
                             // Every node completes here, so profiling adds once per dispatch.
                             if (profiling)
-                                accumulate_profiling(active_events[i]);
+                                accumulate_profiling(entry);
 
                             // Told before successors are released, and only of a task that ran.
-                            if (offload_ != nullptr && active_events[i].executed)
-                                report_local_completion(active_events[i].task);
+                            if (offload_ != nullptr && entry.executed)
+                                report_local_completion(entry.task);
 
-                            trigger_successors(active_events[i].task, local_queue);
+                            trigger_successors(entry.task, local_queue);
 
-                            if (active_events[i].task)
-                                active_events[i].task->release();
+                            if (entry.task)
+                                entry.task->release();
 
                             // Dropped after successors are counted; the count never dips to zero.
                             drop_inflight();
 
-                            active_events.remove_at(i); // O(1): swaps with the last entry
+                            // remove_at() moves the last entry into slot i, so i does not advance.
+                            active_events.remove_at(i);
                             progress = true;
-                            // Do not increment i — the swapped-in last entry now occupies this slot.
-                        } 
-                        else 
+                        }
+                        else
                             ++i;
                     }
 
@@ -336,6 +354,10 @@ namespace SushiRuntime
                             backoff_counter = 0;
                         }
                     }
+
+                    // Every failed entry was reaped above, so no later poll meets it again.
+                    if (first_failure)
+                        std::rethrow_exception(first_failure);
                 }
 
             private:

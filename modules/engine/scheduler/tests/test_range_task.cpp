@@ -21,17 +21,21 @@
 
 /**
  * @file test_range_task.cpp
- * @brief Tests RangeTask::split for its grain threshold and distinct chunks until exhaustion.
+ * @brief Tests RangeTask for its split threshold, the coverage of its parts and its range check.
  * @see modules/engine/scheduler/tests/README.md
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <cstddef>
+#include <iterator>
 #include <optional>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/scheduler/range_task.hpp>
 #include <SushiRuntime/task/task.hpp>
 
@@ -55,16 +59,17 @@ namespace
 }
 
 /**
- * @brief Verifies that a range task is splittable only when strictly larger than its grain size.
+ * @brief Verifies that a range task is splittable only when the half it keeps reaches the grain.
  *
- * Asserts that sizes above the grain (1024) are splittable, while exact grain or smaller sizes are not, and return nullopt when split.
+ * Asserts that a range well above the grain (1024) is splittable, while a range of exactly the
+ * grain or less is not, and returns nullopt when split.
  */
 TEST(Unit_RangeTaskTest, SplittableOnlyAboveGrain)
 {
     RangeTask big(size_t{0}, size_t{4096}, noop_kernel());
     EXPECT_TRUE(big.is_splittable()) << "A range well above the grain must be splittable.";
 
-    // Exactly the grain is NOT splittable: the contract is strictly greater-than.
+    // A range of exactly the grain would keep half a grain, so it does not split.
     RangeTask at_grain(size_t{0}, size_t{1024}, noop_kernel());
     EXPECT_FALSE(at_grain.is_splittable());
 
@@ -107,4 +112,87 @@ TEST(Unit_RangeTaskTest, SplitHandsOffDistinctChunksUntilExhausted)
     EXPECT_FALSE(owner->is_splittable());
     EXPECT_FALSE(owner->split().has_value())
         << "Once below the grain, split() must report nothing to hand off.";
+}
+
+/**
+ * @brief is_splittable() and split() give the same answer on both sides of the threshold.
+ */
+TEST(Unit_RangeTaskTest, IsSplittableAgreesWithSplitAroundTheThreshold)
+{
+    // The offset keeps the answer a function of the size, not of where the range starts.
+    constexpr size_t K_OFFSETS[] = {0, 4096};
+    constexpr size_t K_SIZES[] = {1024, 1025, 2046, 2047, 2048};
+    constexpr bool K_EXPECTED[] = {false, false, false, true, true};
+
+    for (const size_t offset : K_OFFSETS)
+    {
+        for (size_t i = 0; i < std::size(K_SIZES); ++i)
+        {
+            RangeTask task(offset, offset + K_SIZES[i], noop_kernel());
+            const bool splittable = task.is_splittable();
+            const bool split = task.split().has_value();
+
+            EXPECT_EQ(splittable, K_EXPECTED[i]) << "size " << K_SIZES[i] << ", offset " << offset;
+            EXPECT_EQ(splittable, split) << "size " << K_SIZES[i] << ", offset " << offset;
+        }
+    }
+}
+
+/**
+ * @brief The parts a range splits into cover it once, with no gap and no overlap.
+ */
+TEST(Unit_RangeTaskTest, SplitPartsCoverTheRangeExactlyOnce)
+{
+    constexpr size_t K_BEGIN = 37;
+    constexpr size_t K_END = K_BEGIN + 10007;
+
+    std::vector<std::pair<size_t, size_t>> ranges;
+    const auto recording_kernel = [&ranges](size_t start, size_t end, sycl::handler& handler)
+    {
+        ranges.emplace_back(start, end);
+        handler.single_task([] {});
+    };
+
+    // A chunk is split in turn, so every part is taken as far down as split() allows.
+    std::vector<sushi_ptr<Task>> parts;
+    parts.push_back(make_sushi<RangeTask>(K_BEGIN, K_END, recording_kernel));
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        while (parts[i]->is_splittable())
+        {
+            std::optional<sushi_ptr<Task>> chunk = parts[i]->split();
+            ASSERT_TRUE(chunk.has_value()) << "A splittable range must yield a chunk.";
+            parts.push_back(*chunk);
+            ASSERT_LT(parts.size(), 1000u) << "Splitting failed to converge.";
+        }
+    }
+    ASSERT_GT(parts.size(), 1u);
+
+    sycl::queue queue;
+    for (const sushi_ptr<Task>& part : parts)
+        queue.submit([&part](sycl::handler& handler) { part->execute(handler); }).wait();
+
+    ASSERT_EQ(ranges.size(), parts.size()) << "A part executed no range or more than one.";
+    std::sort(ranges.begin(), ranges.end());
+
+    size_t cursor = K_BEGIN;
+    for (const std::pair<size_t, size_t>& range : ranges)
+    {
+        EXPECT_EQ(range.first, cursor) << "A gap or an overlap starts at " << cursor;
+        EXPECT_LT(range.first, range.second);
+        cursor = range.second;
+    }
+    EXPECT_EQ(cursor, K_END);
+}
+
+/**
+ * @brief A reversed range is refused at construction, and an empty one is accepted.
+ */
+TEST(Unit_RangeTaskTest, ConstructorRejectsAReversedRange)
+{
+    EXPECT_THROW(RangeTask(size_t{8}, size_t{4}, noop_kernel()), Core::SushiException);
+
+    RangeTask empty(size_t{8}, size_t{8}, noop_kernel());
+    EXPECT_FALSE(empty.is_splittable());
+    EXPECT_FALSE(empty.split().has_value());
 }
