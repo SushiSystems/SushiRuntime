@@ -67,10 +67,10 @@ namespace
     constexpr PeerID K_WORKER{1};
 
     /** @brief Names an operation the worker has a kernel for. */
-    constexpr Internal::Graph::OpID K_KNOWN_OPERATION{501};
+    constexpr OperationID K_KNOWN_OPERATION{501};
 
     /** @brief Names an operation no worker has a kernel for. */
-    constexpr Internal::Graph::OpID K_ABSENT_OPERATION{502};
+    constexpr OperationID K_ABSENT_OPERATION{502};
 
     /** @brief Holds the tasks the worker says it queues at most. */
     constexpr std::uint32_t K_WORKER_MAX_JOBS = 8;
@@ -245,7 +245,7 @@ namespace
             }
 
             /** @brief Returns a node that reads @p read and writes @p written under @p op. */
-            static sushi_ptr<Internal::Graph::Node> fixed_node(Internal::Graph::OpID op, void* read, void* written)
+            static sushi_ptr<Internal::Graph::Node> fixed_node(OperationID op, void* read, void* written)
             {
                 sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
                 node->metadata.op_id = op;
@@ -463,7 +463,7 @@ TEST_F(Unit_OffloadDispatcherTest, PrepareWarnsOnceForLocalOnlyOps)
     const sushi_ptr<Internal::Graph::Node> without_share =
         fixed_node(K_KNOWN_OPERATION, first_.data(), unshared_.data());
     const sushi_ptr<Internal::Graph::Node> untagged =
-        fixed_node(Internal::Graph::OpID(0), first_.data(), unshared_.data());
+        fixed_node(OperationID(0), first_.data(), unshared_.data());
 
     prepare({offloadable, without_worker, without_share, untagged, sushi_ptr<Internal::Graph::Node>()});
 
@@ -487,9 +487,9 @@ TEST_F(Unit_OffloadDispatcherTest, PrepareWarnsOnceForLocalOnlyOps)
 TEST_F(Unit_OffloadDispatcherTest, LocalNodeBumpsOnlyItsSharedWrites)
 {
     const sushi_ptr<Internal::Graph::Node> writer =
-        fixed_node(Internal::Graph::OpID(0), unshared_.data(), second_.data());
+        fixed_node(OperationID(0), unshared_.data(), second_.data());
     const sushi_ptr<Internal::Graph::Node> reader =
-        fixed_node(Internal::Graph::OpID(0), second_.data(), unshared_.data());
+        fixed_node(OperationID(0), second_.data(), unshared_.data());
     prepare({writer, reader});
 
     EXPECT_EQ(reader->offload_state(), nullptr);

@@ -62,7 +62,7 @@
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
-using namespace SushiRuntime::Internal::Graph::Literals;
+using namespace SushiRuntime::Literals;
 using SushiRuntime::Internal::Execution::RuntimeContext;
 using SushiRuntime::Test::MeasurementLabel;
 using SushiRuntime::Test::RunStatistics;
@@ -70,7 +70,7 @@ using SushiRuntime::Test::RunStatistics;
 namespace
 {
     /** @brief Names the kernel that writes each input element plus one to the output. */
-    constexpr Internal::Graph::OpID K_INCREMENT = "benchmark.increment"_op;
+    constexpr OperationID K_INCREMENT = "benchmark.increment"_op;
 
     /** @brief Bounds every wait on a condition, so a broken cluster fails a test and hangs none. */
     constexpr std::chrono::seconds K_WAIT{60};

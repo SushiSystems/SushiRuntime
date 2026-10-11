@@ -184,7 +184,7 @@ namespace SushiRuntime
                 }
 
                 session.operations = proof.ops;
-                for (const Internal::Graph::OpID operation : session.operations)
+                for (const OperationID operation : session.operations)
                     ++workers_per_operation_[operation.value];
 
                 session.max_jobs = proof.max_jobs;
@@ -237,7 +237,7 @@ namespace SushiRuntime
             if (closed_)
                 return std::nullopt;
 
-            const Internal::Graph::OpID operation = node.metadata.op_id;
+            const OperationID operation = node.metadata.op_id;
             candidates_.clear();
             for (const auto& [value, session] : sessions_)
             {
@@ -333,7 +333,7 @@ namespace SushiRuntime
             }
         }
 
-        bool WorkerDirectory::supports(Internal::Graph::OpID op) const
+        bool WorkerDirectory::supports(OperationID op) const
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             return workers_per_operation_.count(op.value) != 0;
@@ -421,7 +421,7 @@ namespace SushiRuntime
 
             session.alive = false;
             alive_count_.fetch_sub(1, std::memory_order_relaxed);
-            for (const Internal::Graph::OpID operation : session.operations)
+            for (const OperationID operation : session.operations)
             {
                 const auto count = workers_per_operation_.find(operation.value);
                 if (--count->second == 0)

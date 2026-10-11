@@ -448,7 +448,8 @@ happens outside the poller.
 `collect_profiling()` has one capture path:
 `node_timings` is aggregated from the same event records the ledger collected, one row per
 `registration_index` that was dispatched, indexed by that index directly and not through a
-hashed lookup. Completion polling is the scheduler's own overhead between kernels, and it is
+hashed lookup. A row takes its name and its operation from the first node that
+carries the index. Completion polling is the scheduler's own overhead between kernels, and it is
 reported in `scheduling_overhead_ms`.
 
 #### Definitions that need the complete Node type

@@ -172,7 +172,7 @@ namespace SushiRuntime
                 state.payload.reset();
                 state.attempts.store(0, std::memory_order_relaxed);
 
-                const Internal::Graph::OpID operation = node.metadata.op_id;
+                const OperationID operation = node.metadata.op_id;
                 if (operation.value == 0)
                     return Placement::Untagged;
                 if (!directory.supports(operation))
@@ -196,7 +196,7 @@ namespace SushiRuntime
             Placement place_fixed(const BufferRegistry& registry, const WorkerDirectory& directory,
                                   Internal::Graph::Node& node)
             {
-                const Internal::Graph::OpID operation = node.metadata.op_id;
+                const OperationID operation = node.metadata.op_id;
                 const bool is_tagged = operation.value != 0;
                 const bool is_supported = is_tagged && directory.supports(operation);
 

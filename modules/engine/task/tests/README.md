@@ -41,7 +41,7 @@ content unchanged.
 
 ## test_task_types.cpp
 
-The file covers the operation hash of `Internal::Graph::OpID` and the parameter slots of
+The file covers the operation hash of `OperationID` and the parameter slots of
 `Internal::Graph::TaskMetadata`. The hash checks are `static_assert`s, so a wrong value stops the test
 program from compiling; they cover two names the repository uses, one name with a byte above 127,
 and the unsigned-byte rule the hash applies.

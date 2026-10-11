@@ -75,7 +75,7 @@ namespace SushiRuntime
                  * @throws SushiException With invalid_access for an empty kernel, with
                  *         invalid_state once the registry is sealed.
                  */
-                void register_kernel(Internal::Graph::OpID id, Kernel kernel);
+                void register_kernel(OperationID id, Kernel kernel);
 
                 /** @brief Closes the registry to register_kernel(); a second call does nothing. */
                 void seal() noexcept;
@@ -84,16 +84,16 @@ namespace SushiRuntime
                 [[nodiscard]] bool is_sealed() const noexcept;
 
                 /** @brief Returns whether an operation has a kernel. */
-                [[nodiscard]] bool has(Internal::Graph::OpID id) const;
+                [[nodiscard]] bool has(OperationID id) const;
 
                 /**
                  * @brief Returns the kernel of an operation.
                  * @return Null when the operation has none; valid while the registry lives.
                  */
-                [[nodiscard]] const Kernel* find(Internal::Graph::OpID id) const;
+                [[nodiscard]] const Kernel* find(OperationID id) const;
 
                 /** @brief Returns the id of every operation that has a kernel, in no set order. */
-                [[nodiscard]] std::vector<Internal::Graph::OpID> known_ops() const;
+                [[nodiscard]] std::vector<OperationID> known_ops() const;
 
             private:
                 /** @brief Holds the kernels by the value of their operation id. */

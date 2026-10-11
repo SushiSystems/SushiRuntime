@@ -85,6 +85,7 @@ namespace SushiRuntime
         {
             std::size_t plan_index = 0;     /**< Stable index of the node in the compiled plan; the identity. */
             std::string name;               /**< Node label, or the default task id when none was set. */
+            std::uint32_t operation = 0;    /**< OperationID::value the node stated; 0 for none. */
             std::size_t invocations = 0;    /**< Times the node was dispatched across the run. */
             double device_ms = 0.0;         /**< Summed kernel device time (from SYCL event profiling). */
             double host_ms = 0.0;           /**< Summed wall-clock for native/host work run on a worker. */

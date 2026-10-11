@@ -16,7 +16,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `recorder.hpp` | Recorder and Recorder::RuleScope |
 | `access.hpp` | Access, what one node reads and writes |
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
-| `node_options.hpp` | NodeOptions |
+| `node_options.hpp` | NodeOptions: the width, the name, the operation and the parameters of a node |
 | `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_host(), add_emitter(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
 | `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), their try_ forms, cancel(), set_profiling() and the step loop |
@@ -102,8 +102,9 @@ name_last_rule() names the last rule and copies the text, so the caller's string
 The copies live in a node-based set, one per distinct label: a compiled node keeps a `const char*`
 to its name, and an entry of that set never moves when another label is added or the recorder is
 moved. The rule keeps the pointer. replay() stamps it on every node the rule lowers to, which is
-why a name given after the last node of a scope still reaches the first. A rename advances
-generation(), so the next run rebuilds the plan with the new name.
+why a name given after the last node of a scope still reaches the first. A node that stated a
+name through NodeOptions keeps its own. A rename advances generation(), so the next run rebuilds
+the plan with the new name.
 
 ### clear
 
@@ -201,6 +202,34 @@ Setting op_id is what makes compile() consider the node offloadable; otherwise t
 parallel_for runs. offload() and offload_rule() refuse more than `TaskMetadata::K_MAX_PARAMS`
 parameters with `invalid_graph` when the rule is recorded.
 
+## node_options.hpp
+
+### NodeOptions
+
+NodeOptions is what a caller may state about one node beyond its launch and its access. Every
+verb of the Recorder and of a builder takes one as its last argument, and a default one states
+nothing. The two offload forms are the exception: they take the operation first and the parameters
+as a braced list.
+
+| Field | Lands | When it is not stated |
+| --- | --- | --- |
+| `width` | `launched_width` and `live_width` of the node's event records | The shape's own width, listed in `api/detail/README.md` |
+| `name` | `NodeTiming::name` of a profiled run | The name of the node's rule, or "unnamed_task" |
+| `operation` | `NodeTiming::operation`, and the engine's metadata of the node | No operation |
+| `parameters` | The engine's metadata of the node | No parameter |
+
+The recorder copies `name` and `parameters` when the node is recorded, so a temporary string and
+a local array are valid arguments. A node carries eight parameters; a longer list is refused with
+`invalid_graph` and records nothing.
+
+A node that names an operation is one another machine may run. The chain layer does not take
+such a node, so a graph that holds one runs on the scheduler, and on a runtime with a cluster
+attached the node is a candidate for offload when a worker registered that operation.
+
+NodeOptions is an aggregate. A build that turns `-Wmissing-field-initializers` into an error
+refuses `NodeOptions{width}`; such a caller writes all four fields or assigns the ones it states
+to a default-constructed object.
+
 ## builder_surface.hpp
 
 ### BuilderSurface
@@ -217,11 +246,11 @@ Every call reads in one order: modifier, launch, access, callable, options.
 
 | Part | What it is | Spellings |
 | --- | --- | --- |
-| modifier | changes how the rule is run | `Dynamic`, an `OpID` |
+| modifier | changes how the rule is run | `Dynamic`, an `OperationID` |
 | launch | how many work-items, and their index | a count, `Extent<N>`, `NdRange<N>`; the whole field when a State rule gives none |
 | access | the data, and how the kernel gets it | `Reads` and `Writes`, `In`/`Out`/`InOut`, a `State`, `Coupled`, `On` |
 | callable | the kernel | a lambda |
-| options | scalars sent with an offloaded kernel | `{params...}` |
+| options | what the node states about itself | a `NodeOptions`; the two offload forms take `{params...}` |
 
 Up to v0.3 the launch came third after Reads and Writes, second after a State, and first before
 captures. A caller had to remember which, and a new launch shape needed one overload per access.
@@ -295,9 +324,11 @@ the index. Up to v0.3 this form existed for an Extent only, so 1-D code wrote `E
 it; a count and an NdRange now take it too.
 
 The first capture is a parameter of its own, which guarantees at least one. The rest is one
-trailing pack so that the compiler can deduce it: its last element is the callable and the others
-are further captures. add() splits the pack, checks that everything before the callable is a
-capture, and the call site reads `In(a), Out(c), fn` with `fn` last.
+trailing pack so that the compiler can deduce it: it ends in the callable, or in the callable and
+a NodeOptions, and the elements before the callable are further captures. add() splits the pack,
+checks that everything before the callable is a capture, and the call site reads
+`In(a), Out(c), fn` or `In(a), Out(c), fn, options`. The options must be written as a
+`NodeOptions` object there, because a braced list cannot be deduced into a pack.
 
 ### add(state, fn)
 
@@ -353,10 +384,10 @@ The State still advances (swaps current and next) on a step its when() disabled,
 step leaves the un-written next field current. This overload suits size variation; sleeping a
 field across steps belongs to the streaming layer, not to when().
 
-### add(OpID, n, reads, writes, local, params)
+### add(OperationID, n, reads, writes, local, params)
 
 This overload is the fluent counterpart to a distributed dispatch. `op` names a kernel registered
-(by the same OpID) in this binary's KernelRegistry on every node; when the runtime is a master
+(by the same OperationID) in this binary's KernelRegistry on every node; when the runtime is a master
 with a live worker that supports `op`, the scheduler may ship this task over the wire. Otherwise
 (a standalone build, no worker, or the policy declining) `local` runs it on this machine, so the
 same graph is correct with or without a cluster.
@@ -365,7 +396,7 @@ same graph is correct with or without a cluster.
 and the distributed layer resolves them to network buffer handles. `params` are scalar arguments
 carried in TaskMetadata, element counts for example.
 
-### add(OpID, state, local, params)
+### add(OperationID, state, local, params)
 
 This overload is the distributed counterpart of add(state, fn): the State's step may ship to a
 worker or run its local fallback, with the same graph correct either way. Because a State rotates
@@ -446,15 +477,14 @@ added:
 sim.add(n, Reads(a), Writes(b), integrate).name("integrate");
 ```
 
-A trailing name argument would have been shorter, but the capture form ends in a parameter pack
-whose last element is the callable, and a defaulted trailing name cannot be expressed there. One
-spelling that works for every shape, including any added later, beats a trailing argument on most
-of them and an exception for the rest.
+name() names a rule, and `NodeOptions::name` names one node. A rule recorded by one add() call
+has one node, so either spelling names it. An extension records several nodes into one rule, and
+there the two differ: name() gives all of them one label and `NodeOptions::name` tells them apart.
 
-name() copies the label, so a temporary string is a valid argument. Every node of the rule
-reports the name; an emitter is the exception, because the backing graph can name only the last
-node an emitter added. An empty label returns the rule to the default name, and so does a null
-`const char*`.
+name() copies the label, so a temporary string is a valid argument. Every node of the rule that
+stated no name of its own reports the rule's name; an emitter is the exception, because the
+backing graph can name only the last node an emitter added. An empty label returns the rule to the
+default name, and so does a null `const char*`.
 
 ## plan_cache.hpp
 

@@ -430,7 +430,7 @@ namespace
     }
 
     /** @brief Returns a dispatch of one task. */
-    Wire::TaskDispatchMessage dispatch_of(std::uint64_t task_id, Internal::Graph::OpID op,
+    Wire::TaskDispatchMessage dispatch_of(std::uint64_t task_id, OperationID op,
                                           std::vector<BufferHandle> inputs,
                                           std::vector<BufferHandle> outputs)
     {
@@ -535,7 +535,7 @@ namespace
         MasterLinkOptions options;
         options.name = "worker-a";
         options.build_id = "test-build";
-        options.ops = {Internal::Graph::OpID(7), Internal::Graph::OpID(9)};
+        options.ops = {OperationID(7), OperationID(9)};
         options.max_jobs = 16;
         options.cache_budget = 4096;
         options.heartbeat_interval = heartbeat_interval;
@@ -668,7 +668,7 @@ TEST(Unit_DispatchDeduplicatorTest, DuplicateDispatchRunsOnce)
 {
     std::atomic<int> kernel_calls{0};
     Worker worker;
-    const Internal::Graph::OpID op(11);
+    const OperationID op(11);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
@@ -711,7 +711,7 @@ TEST(Unit_DispatchExecutorTest, OutputAllocationFailureFailsTheTask)
 {
     std::atomic<int> kernel_calls{0};
     Worker worker;
-    const Internal::Graph::OpID op(12);
+    const OperationID op(12);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
@@ -749,7 +749,7 @@ TEST(Unit_DispatchExecutorTest, KernelSeesBufferSizes)
     std::atomic<std::size_t> input_size{0};
     std::atomic<std::size_t> output_size{0};
     Worker worker;
-    const Internal::Graph::OpID op(13);
+    const OperationID op(13);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel(
                 [&input_size, &output_size](sycl::queue&, span<const BufferView> inputs,
@@ -798,7 +798,7 @@ TEST(Unit_DispatchExecutorTest, KernelSeesBufferSizes)
 TEST(Unit_DispatchExecutorTest, GenericLambdaRegistersAsAKernel)
 {
     Worker worker;
-    const Internal::Graph::OpID op(14);
+    const OperationID op(14);
     worker.kernels->register_kernel(
         op, [](auto& /*queue*/, auto /*inputs*/, auto outputs, const auto& /*metadata*/)
             {
@@ -825,7 +825,7 @@ TEST(Unit_DispatchExecutorTest, KernelThatThrowsFailsTheTaskAndTheWorkerLives)
 {
     std::atomic<int> kernel_calls{0};
     Worker worker;
-    const Internal::Graph::OpID op(15);
+    const OperationID op(15);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
@@ -859,7 +859,7 @@ TEST(Unit_DispatchExecutorTest, KernelThatThrowsFailsTheTaskAndTheWorkerLives)
 TEST(Unit_DispatchExecutorTest, OutputStreamEndsWithTheResult)
 {
     Worker worker;
-    const Internal::Graph::OpID op(16);
+    const OperationID op(16);
     const std::vector<std::byte> bytes = counting_bytes(10, 100);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&bytes](sycl::queue&, span<const BufferView>,
@@ -921,7 +921,7 @@ TEST(Unit_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
     Worker worker(1024 * 1024, options);
 
     std::atomic<int> kernel_calls{0};
-    const Internal::Graph::OpID op(18);
+    const OperationID op(18);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
                                                    span<const BufferView>,
@@ -1092,7 +1092,7 @@ TEST(Unit_MasterLinkTest, LateChallengeForAForgottenHelloIsIgnored)
 TEST(Unit_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskID)
 {
     Worker worker;
-    const Internal::Graph::OpID op(17);
+    const OperationID op(17);
     worker.kernels->register_kernel(
         op, KernelRegistry::Kernel([](sycl::queue&, span<const BufferView>,
                                       span<const BufferView>, const Internal::Graph::TaskMetadata&)
@@ -1251,8 +1251,8 @@ namespace
 /** @brief Tests that a sealed registry keeps its kernels and refuses a new one. */
 TEST(Unit_KernelRegistryTest, SealedRegistryRefusesRegistration)
 {
-    const Internal::Graph::OpID early(21);
-    const Internal::Graph::OpID late(22);
+    const OperationID early(21);
+    const OperationID late(22);
     const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
     kernels->register_kernel(early, idle_kernel());
     EXPECT_FALSE(kernels->is_sealed());
@@ -1274,7 +1274,7 @@ TEST(Unit_KernelRegistryTest, SealedRegistryRefusesRegistration)
 /** @brief Tests that a kernel that holds no callable is refused and registers nothing. */
 TEST(Unit_KernelRegistryTest, EmptyKernelIsRefused)
 {
-    const Internal::Graph::OpID operation(23);
+    const OperationID operation(23);
     const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
 
     EXPECT_EQ(refusal_of([&] { kernels->register_kernel(operation, KernelRegistry::Kernel()); }),

@@ -36,7 +36,7 @@ namespace SushiRuntime
 {
     namespace Distributed
     {
-        void KernelRegistry::register_kernel(Internal::Graph::OpID id, Kernel kernel)
+        void KernelRegistry::register_kernel(OperationID id, Kernel kernel)
         {
             if (!kernel)
                 throw SushiException(Error{
@@ -64,23 +64,23 @@ namespace SushiRuntime
             return sealed_.load(std::memory_order_relaxed);
         }
 
-        bool KernelRegistry::has(Internal::Graph::OpID id) const
+        bool KernelRegistry::has(OperationID id) const
         {
             return kernels_.find(id.value) != kernels_.end();
         }
 
-        const KernelRegistry::Kernel* KernelRegistry::find(Internal::Graph::OpID id) const
+        const KernelRegistry::Kernel* KernelRegistry::find(OperationID id) const
         {
             const auto found = kernels_.find(id.value);
             return found == kernels_.end() ? nullptr : &found->second;
         }
 
-        std::vector<Internal::Graph::OpID> KernelRegistry::known_ops() const
+        std::vector<OperationID> KernelRegistry::known_ops() const
         {
-            std::vector<Internal::Graph::OpID> ops;
+            std::vector<OperationID> ops;
             ops.reserve(kernels_.size());
             for (const auto& entry : kernels_)
-                ops.push_back(Internal::Graph::OpID(entry.first));
+                ops.push_back(OperationID(entry.first));
             return ops;
         }
 

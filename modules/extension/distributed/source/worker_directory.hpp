@@ -232,7 +232,7 @@ namespace SushiRuntime
                 void list_workers(std::vector<PeerID>& out) const;
 
                 /** @brief Returns whether an alive worker sent this operation in PROOF. */
-                [[nodiscard]] bool supports(Internal::Graph::OpID op) const;
+                [[nodiscard]] bool supports(OperationID op) const;
 
                 /** @brief Returns the number of alive workers; reads an atomic. */
                 [[nodiscard]] std::size_t alive_count() const noexcept;
@@ -297,7 +297,7 @@ namespace SushiRuntime
                     HandshakeNonce master_nonce{};
 
                     /** @brief The operations from PROOF. */
-                    std::vector<Internal::Graph::OpID> operations;
+                    std::vector<OperationID> operations;
 
                     /** @brief The task limit from PROOF. */
                     std::uint32_t max_jobs = 0;

@@ -129,6 +129,13 @@ namespace SushiRuntime
                 const Node* last_node_added() const noexcept;
 
                 /**
+                 * @brief Returns the node most recently added, for a caller stamping it.
+                 * @return The node, or nullptr while the graph holds no node.
+                 * @pre The caller is the thread that added the node, before compile().
+                 */
+                Node* last_node_added() noexcept;
+
+                /**
                  * @brief Draws a fresh registration index from this graph's counter.
                  * @return An index any number of later add calls on this graph may be given.
                  * @see modules/engine/graph/README.md

@@ -21,7 +21,7 @@
 
 /**
  * @file task_types.hpp
- * @brief Declares TaskType, OpID and TaskMetadata.
+ * @brief Declares TaskType, OperationID and TaskMetadata.
  * @author Mustafa Garip
  */
 
@@ -32,6 +32,8 @@
 #include <cstring>
 #include <type_traits>
 #include <cstddef>
+
+#include <SushiRuntime/core/operation_id.hpp>
 
 namespace SushiRuntime 
 {
@@ -52,59 +54,6 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Identifies a computational operation by the 32-bit FNV-1a hash of its name.
-         */
-        struct OpID 
-        {
-            uint32_t value;
-
-            /**
-             * @brief Default constructs an empty, zero-valued operation identifier.
-             *
-             * Creates a placeholder instance representing an uninitialized or null operation.
-             */
-            constexpr OpID() : value(0) {}
-
-            /**
-             * @brief Constructs an operation identifier directly from a raw hash value.
-             *
-             * Encapsulates an explicit integer to form the strongly typed identity.
-             *
-             * @param val The raw 32-bit integer representing the operation hash.
-             */
-            constexpr explicit OpID(uint32_t val) : value(val) {}
-
-            /** @brief Computes a compile-time 32-bit FNV-1a hash of a string. */
-            static constexpr uint32_t hash_str(const char* str, std::size_t length) 
-            {
-                uint32_t hash = 2166136261u;
-                for (std::size_t i = 0; i < length; ++i)
-                {
-                    // char is signed on some platforms; each byte is read as unsigned.
-                    hash ^= static_cast<uint32_t>(static_cast<unsigned char>(str[i]));
-                    hash *= 16777619u;
-                }
-                return hash;
-            }
-
-            constexpr bool operator==(const OpID& other) const  { return value == other.value; }
-            constexpr bool operator!=(const OpID& other) const  { return value != other.value; }
-            constexpr bool operator<(const OpID& other) const   { return value < other.value; }
-        };
-
-        namespace Literals 
-        {
-            /**
-             * @brief Builds a typed operation identifier from a string literal with the FNV-1a
-             *        hash.
-             */
-            constexpr OpID operator""_op(const char* str, std::size_t len) 
-            {
-                return OpID(OpID::hash_str(str, len));
-            }
-        }
-
-        /**
          * @brief Bundles fundamental metadata describing a task payload.
          *
          * Aggregates identifiers, hints and inline scalar arguments, with no heap allocation.
@@ -113,7 +62,7 @@ namespace SushiRuntime
         {
             const char* name = "unnamed_task"; /**< Profiler identifier. */
             TaskType task_type = TaskType::None;
-            OpID op_id = OpID(0);
+            OperationID op_id;
             
             /**
              * @brief Influences task execution order during queue retrieval.
@@ -186,8 +135,6 @@ namespace SushiRuntime
 
     } // namespace Graph
 
-    using Internal::Graph::Literals::operator""_op;
-    using Internal::Graph::OpID;
     using Internal::Graph::TaskMetadata;
 
 } // namespace SushiRuntime

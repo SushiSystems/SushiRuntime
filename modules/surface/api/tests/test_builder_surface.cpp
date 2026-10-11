@@ -376,7 +376,7 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
         graph.add("builder.check"_op, K_WIDTH, Reads(target), Writes(target),
                   [](std::size_t) {}, {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });
-    EXPECT_TRUE(begins_with(offload_refusal, "add(OpID, n, reads, writes, local, params): "))
+    EXPECT_TRUE(begins_with(offload_refusal, "add(OperationID, n, reads, writes, local, params): "))
         << offload_refusal;
 
     const std::string offload_rule_refusal = refusal_of(Errc::invalid_graph, [&]
@@ -384,7 +384,7 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
         graph.add("builder.check"_op, field, [](std::size_t, const Word*, Word*) {},
                   {1, 2, 3, 4, 5, 6, 7, 8, 9});
     });
-    EXPECT_TRUE(begins_with(offload_rule_refusal, "add(OpID, state, local, params): "))
+    EXPECT_TRUE(begins_with(offload_rule_refusal, "add(OperationID, state, local, params): "))
         << offload_rule_refusal;
 
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";

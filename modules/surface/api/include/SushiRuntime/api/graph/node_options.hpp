@@ -29,7 +29,11 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <string_view>
 
+#include <SushiRuntime/core/operation_id.hpp>
+#include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/observability/dispatch_width.hpp>
 
 namespace SushiRuntime
@@ -42,5 +46,17 @@ namespace SushiRuntime
     {
         /** @brief Launch width stamped into the node's event records. */
         std::size_t width = Internal::Observability::K_WIDTH_UNKNOWN;
+
+        /** @brief Label the node reports under; copied when the node is recorded. */
+        std::string_view name;
+
+        /** @brief Operation the node performs; a default id names none. */
+        OperationID operation;
+
+        /**
+         * @brief Scalars carried with the node; copied when the node is recorded.
+         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         */
+        span<const std::uint64_t> parameters;
     };
 } // namespace SushiRuntime

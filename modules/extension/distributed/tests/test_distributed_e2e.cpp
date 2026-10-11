@@ -80,7 +80,7 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
 using namespace SushiRuntime::Internal::Graph;
-using namespace SushiRuntime::Internal::Graph::Literals;
+using namespace SushiRuntime::Literals;
 using namespace SushiRuntime::Distributed;
 
 namespace
@@ -533,7 +533,7 @@ namespace
     {
         public:
             /** @brief Builds a worker that claims a kernel for @p operation. */
-            ScriptedWorker(InProcessFabric& fabric, Internal::Graph::OpID operation, DispatchAnswer answer)
+            ScriptedWorker(InProcessFabric& fabric, OperationID operation, DispatchAnswer answer)
                 : transport_(InProcessTransport::make_worker(fabric, single_connection())),
                   operation_(operation), answer_(answer)
             {
@@ -741,7 +741,7 @@ namespace
             std::shared_ptr<InProcessTransport> transport_;
 
             /// @brief The operation the worker says it has a kernel for.
-            Internal::Graph::OpID operation_;
+            OperationID operation_;
 
             /// @brief What the worker does with a dispatch.
             DispatchAnswer answer_;

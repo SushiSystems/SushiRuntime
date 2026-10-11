@@ -846,9 +846,10 @@ error path and do not latch the worker pool dead.
 
 ## test_node_options_width.cpp
 
-The file covers `NodeOptions::width`: the width a node states when it is recorded is the
-`launched_width` and the `live_width` of its node event records. Each node of a rule reads a region
-the node before it wrote, so `report.node_events` lands in recording order whichever layer ran it.
+The file covers NodeOptions. The width a node states when it is recorded is the `launched_width`
+and the `live_width` of its node event records, and its name and operation are in its row of
+`report.node_timings`. Each node of a rule reads a region the node before it wrote, so
+`report.node_events` lands in recording order whichever layer ran it.
 
 ### `EachNodeOfARuleReportsItsStatedWidth`
 
@@ -859,6 +860,22 @@ so a stamp that read the size of either buffer and not the stated width fails.
 
 A resolver states a width of one and a device-sized kernel states its capacity. The `LateCount` is
 built with `LateCount::fixed`, so the live count is the capacity and every work-item writes.
+
+### `ANodeReportsTheNameAndTheOperationItStated`
+
+One kernel is recorded through `Recorder::kernel` with a width, a name, an operation and two
+parameters. The string and the array the options point at are destroyed before the run, so a
+recorder that kept the caller's pointers reads freed memory. The row of the node holds the name
+and the value of the operation.
+
+### `ANodeNameReplacesTheNameOfItsRule`
+
+Two rules carry the same rule name, and the node of the first states a name of its own. The first
+row reports the node's name and no operation, the second the rule's name.
+
+### `MoreParametersThanANodeCarriesAreRefused`
+
+Nine parameters are refused with `invalid_graph`, and the graph holds no rule afterwards.
 
 ## test_recorder_scratch.cpp
 
@@ -984,7 +1001,7 @@ second node into a rule that no longer existed.
 
 ### `AnOffloadRuleTakesAtMostEightParameters`
 
-`add(OpID, count, Reads, Writes, local, params)` and `add(OpID, state, local, params)` with nine
+`add(OperationID, count, Reads, Writes, local, params)` and `add(OperationID, state, local, params)` with nine
 parameters throw `invalid_graph`; the first message holds `9 parameters` and `at most 8`, and
 neither rule is recorded. Both forms record with eight. A `static_assert` ties the literals to
 `TaskMetadata::K_MAX_PARAMS`. The graph is not run.

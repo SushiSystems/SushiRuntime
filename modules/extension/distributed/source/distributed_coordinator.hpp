@@ -131,7 +131,7 @@ namespace SushiRuntime
                 [[nodiscard]] ClusterStatistics cluster_statistics() const;
 
                 /** @brief Reports whether an alive worker has a kernel for an operation. */
-                [[nodiscard]] bool supports(Internal::Graph::OpID op) const;
+                [[nodiscard]] bool supports(OperationID op) const;
 
                 /** @brief Forwards to WorkerDirectory::wait_for_workers(). */
                 [[nodiscard]] bool wait_for_workers(std::size_t count,

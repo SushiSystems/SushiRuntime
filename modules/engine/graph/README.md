@@ -252,6 +252,14 @@ last element is the callable, so a trailing name is not expressible there.
 name_last_node() is called during graph description, on the thread that just added the node, so it
 needs no synchronisation of its own.
 
+### last_node_added
+
+last_node_added() has a const form for a caller that compares or reads the node, and a non-const
+form for a caller that writes on it what the add_\* overload did not take: the fluent layer's
+Recorder stamps the name, the operation, the parameters and the width a NodeOptions stated. The
+same rule holds as for name_last_node(): the calling thread added the node, and compile() has not
+run.
+
 ### reserve_registration
 
 reserve_registration() lets an add() shape that registers several internal nodes for one public call

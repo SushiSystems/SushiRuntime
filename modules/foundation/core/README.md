@@ -17,6 +17,7 @@ The twelve public headers under `include/SushiRuntime/core/`:
 | `delegate.hpp` | `Delegate`, a move-only callable stored inline, with no heap allocation |
 | `error.hpp` | `Errc`, its `to_string` overload, `Error` and `SushiException` |
 | `export.hpp` | `SUSHIRUNTIME_API`, `SR_API` and `SR_TYPE_API`, the symbol visibility macros |
+| `operation_id.hpp` | `OperationID`, the 32-bit FNV-1a hash of an operation's name, and the `_op` literal in `Literals` |
 | `ref_counted.hpp` | `RefCounted`, the intrusive reference count that `sushi_ptr` manages |
 | `result.hpp` | `Result<T, E>`, which holds a value or an error, and `ErrorWrapper` with `make_error` |
 | `span.hpp` | `span`, a non-owning view of contiguous elements, with conversions to and from `std::span` from C++20 |
@@ -129,6 +130,21 @@ defined and to `__declspec(dllimport)` otherwise. Elsewhere it expands to
 `__attribute__((visibility("default")))`. `SR_API` is a short spelling of `SUSHIRUNTIME_API`.
 `SR_TYPE_API` marks a type defined whole in a header that crosses the library boundary inside an
 exception. It expands to the default visibility attribute outside Windows and to nothing on Windows.
+
+## operation_id.hpp
+
+### OperationID
+
+An OperationID is the 32-bit FNV-1a hash of an operation's name, so a library names its operations
+with strings and no registry hands out numbers. hash() reads each byte as unsigned: `char` is
+signed on some platforms, and a name with a byte above 127 must hash to one value on every
+machine of a cluster. The value 0, `K_NONE`, stands for "no operation", which is what a
+default-constructed id holds and what is_named() tests.
+
+### Literals
+
+`Literals` is an inline namespace, so `"vec.add"_op` is found after `using namespace SushiRuntime;`
+and after `using namespace SushiRuntime::Literals;`, which brings in the literal and nothing else.
 
 ## ref_counted.hpp
 

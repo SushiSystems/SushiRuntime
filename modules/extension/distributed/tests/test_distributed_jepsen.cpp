@@ -67,7 +67,7 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
 using namespace SushiRuntime::Internal::Graph;
-using namespace SushiRuntime::Internal::Graph::Literals;
+using namespace SushiRuntime::Literals;
 using namespace SushiRuntime::Distributed;
 
 namespace

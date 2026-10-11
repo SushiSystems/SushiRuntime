@@ -21,7 +21,7 @@
 
 /**
  * @file test_task_types.cpp
- * @brief Tests the operation hash of OpID and the parameter slots of TaskMetadata.
+ * @brief Tests the operation hash of OperationID and the parameter slots of TaskMetadata.
  * @see modules/engine/task/tests/README.md
  * @author Mustafa Garip
  */
@@ -33,9 +33,9 @@
 
 namespace
 {
-    using SushiRuntime::Internal::Graph::OpID;
+    using SushiRuntime::OperationID;
     using SushiRuntime::Internal::Graph::TaskMetadata;
-    using SushiRuntime::Internal::Graph::Literals::operator""_op;
+    using SushiRuntime::Literals::operator""_op;
 
     /**
      * @brief Computes FNV-1a over the bytes of @p text, each byte read as unsigned.
@@ -56,13 +56,13 @@ namespace
 } // namespace
 
 // Both names are ASCII, so the unsigned byte rule leaves their values unchanged.
-static_assert(OpID::hash_str("vec.add", 7) == 0xE8523F28u);
-static_assert(OpID::hash_str("demo.vector_add", 15) == 0x2F4B283Bu);
-static_assert("vec.add"_op == OpID(0xE8523F28u));
+static_assert(OperationID::hash("vec.add", 7) == 0xE8523F28u);
+static_assert(OperationID::hash("demo.vector_add", 15) == 0x2F4B283Bu);
+static_assert("vec.add"_op == OperationID(0xE8523F28u));
 
 // U+00E9 in UTF-8 is 0xC3 0xA9; each byte is read as unsigned on every platform.
-static_assert(OpID::hash_str("caf\xC3\xA9", 5) == 0xA82B5049u);
-static_assert(OpID::hash_str("caf\xC3\xA9", 5) == reference_fnv1a("caf\xC3\xA9", 5));
+static_assert(OperationID::hash("caf\xC3\xA9", 5) == 0xA82B5049u);
+static_assert(OperationID::hash("caf\xC3\xA9", 5) == reference_fnv1a("caf\xC3\xA9", 5));
 
 TEST(Unit_TaskTypes, AParameterSlotReturnsTheValueStoredInIt)
 {

@@ -175,9 +175,9 @@ points at the caller's add() line.
 | --- | --- |
 | accepts_kernel | add(launch, reads, writes, fn), add_untracked(launch, fn) |
 | accepts_captured_kernel, accepts_captures | add(launch, In/Out/InOut..., fn) |
-| accepts_state_rule | add(state, fn), add(launch, state, fn), add(Dynamic, state, fn), add(OpID, state, fn) |
+| accepts_state_rule | add(state, fn), add(launch, state, fn), add(Dynamic, state, fn), add(OperationID, state, fn) |
 | accepts_coupled_rule | add(Coupled, fn), add(launch, Coupled, fn) |
-| accepts_per_element | add(Dynamic, capacity, reads, writes, fn), add(OpID, n, reads, writes, fn) |
+| accepts_per_element | add(Dynamic, capacity, reads, writes, fn), add(OperationID, n, reads, writes, fn) |
 | accepts_raw_kernel | add(reads, writes, fn), add_untracked(fn), add_untracked(On, fn) |
 | accepts_host_task, accepts_emitter, accepts_extension | add_host, add_emitter, extend |
 
@@ -199,7 +199,7 @@ SYCL kernel is called through a const reference.
 
 is_launch_v tells a launch from every other first argument of add(), which is how the overloads
 that start with a launch are told from those that start with a State, a Coupled, a Dynamic or an
-OpID. Any integer other than bool counts as an element count, so `add(1024, ...)` and
+OperationID. Any integer other than bool counts as an element count, so `add(1024, ...)` and
 `add(buffer.size(), ...)` both compile; launch_of() turns it into the std::size_t the emitters
 record.
 
@@ -253,7 +253,9 @@ State's size as the count.
 ### Launch width
 
 Every emitter that knows how many work-items its node launches stamps that number on
-Node::baked_width, which a profiled run reports as the node's launched width.
+Node::baked_width, which a profiled run reports as the node's launched width. A width stated
+through NodeOptions replaces the one in the table on every shape: NodeStamp::apply() writes it
+after the emitter has run.
 
 | Emitter | Width stamped |
 | --- | --- |
@@ -265,7 +267,7 @@ Node::baked_width, which a profiled run reports as the node's launched width.
 | untracked_raw_node | none |
 
 untracked_raw_node() stamps none: a raw command group submits its own work and takes no launch,
-and add_untracked() has no NodeOptions to state a width through.
+so its width is the one NodeOptions states, or unknown.
 
 ### State emitters
 
@@ -368,9 +370,27 @@ written against absolute indices stays correct whether or not its node happens t
 
 NodeSpecs are the recorded task specifications: each replays one add() onto a fresh backing graph.
 The fluent Graph is the source of truth so it can rebuild and recompile when mutated. A spec is
-recorded as {emitter, rule} and not as a bare callable. The name of a rule lives in the recorder,
-which owns the text and hands it to every node of the rule when the plan is built; that is what
-lets name() attach one after the add() call has already returned.
+recorded as {emitter, stamp, rule} and not as a bare callable. The name of a rule lives in the
+recorder, which owns the text and hands it to every node of the rule when the plan is built; that
+is what lets name() attach one after the add() call has already returned.
+
+## node_stamp.hpp
+
+### NodeStamp
+
+A NodeStamp is the part of a NodeOptions a recorded node keeps. It borrows nothing from the
+caller: the name points into the recorder's label set, and the parameters are copied into an
+inline array of K_MAX_NODE_PARAMETERS words, so recording a node allocates nothing for them.
+
+apply() writes the stamp on the node an emitter added, once per replay, and writes only what was
+stated. An emitter therefore needs no parameter for a name, an operation or a parameter list, and
+a shape added later gets all three with no code of its own. The offload emitters fill the
+operation and the parameters themselves, from the arguments of their verbs.
+
+### require_parameters_fit
+
+require_parameters_fit() throws `invalid_graph` for more parameters than a node carries.
+Recorder::record() calls it before it touches the recorder, so a refused node leaves no trace.
 
 ## usm_scratch.hpp
 
