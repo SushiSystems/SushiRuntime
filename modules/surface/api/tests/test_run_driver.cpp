@@ -455,6 +455,58 @@ TEST(Integration_RunDriver, SetProfilingChainsAndReadsBack)
     EXPECT_FALSE(world.set_profiling(false).is_profiling_requested());
 }
 
+/** @brief Tests that set_profiling() with the value already stored rebuilds no plan. */
+TEST(Integration_RunDriver, SettingTheSameProfilingValueRebuildsNothing)
+{
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N);
+    int* p = buf.data();
+
+    auto g = rt.graph();
+    g.add_host(API::Reads{}, API::Writes(buf), [p]() { p[0] += 1; });
+    g.set_profiling(true).run();
+    EXPECT_EQ(g.compile_count(), 1u);
+    g.set_profiling(true).run();
+    EXPECT_EQ(g.compile_count(), 1u) << "the same request compiled the Graph again";
+    g.set_profiling(false).run();
+    EXPECT_EQ(g.compile_count(), 2u) << "a changed request must rebuild the plan";
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add_host(API::Reads{}, API::Writes(buf), [p]() { p[0] += 1; });
+    world.set_profiling(true).run();
+    EXPECT_EQ(world.compose_count(), 1u);
+    world.set_profiling(true).run();
+    EXPECT_EQ(world.compose_count(), 1u) << "the same request composed the DynamicGraph again";
+    world.set_profiling(false).run();
+    EXPECT_EQ(world.compose_count(), 2u) << "a changed request must compose the plan again";
+}
+
+/** @brief Tests that a profiling toggle on a DynamicGraph composes once and times its nodes. */
+TEST(Integration_RunDriver, AProfilingToggleOnADynamicGraphComposesOnceAndTimesItsNodes)
+{
+    auto rt  = Runtime::create();
+    auto buf = rt.buffer<int>(N);
+    for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
+    int* p = buf.data();
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add(N, API::Reads{}, API::Writes(buf), [p](std::size_t i) { p[i] += 1; });
+
+    EXPECT_TRUE(world.run().node_timings.empty()) << "a graph that requested nothing was timed";
+    EXPECT_EQ(world.compose_count(), 1u);
+
+    world.set_profiling(true);
+    EXPECT_FALSE(world.run().node_timings.empty()) << "the request did not reach the plan";
+    EXPECT_EQ(world.compose_count(), 2u);
+
+    EXPECT_FALSE(world.run().node_timings.empty());
+    EXPECT_EQ(world.compose_count(), 2u) << "a run with the request unchanged composed again";
+
+    world.set_profiling(false);
+    EXPECT_TRUE(world.run().node_timings.empty()) << "the withdrawal did not reach the plan";
+    EXPECT_EQ(world.compose_count(), 3u);
+}
+
 /** @brief Tests that moving a graph with a pending step ends the step and frees both sides. */
 TEST(Integration_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
 {

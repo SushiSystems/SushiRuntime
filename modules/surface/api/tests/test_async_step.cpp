@@ -484,3 +484,81 @@ TEST(Integration_AsyncStep, ADynamicGraphDestroyedWithAPendingStepEndsTheStep)
     EXPECT_EQ(buf[0], 9) << "the graph's destructor returned before the step had run";
     ASSERT_NO_FATAL_FAILURE(expect_step_ended_by_its_graph(step));
 }
+
+/** @brief Tests that a region dropped while a step is pending finishes that step and no later one. */
+TEST(Integration_AsyncStep, ARegionDroppedWhileAStepIsPendingFinishesTheStep)
+{
+    auto rt   = Runtime::create();
+    auto kept = rt.buffer<int>(4);
+    auto gone = rt.buffer<int>(4);
+    kept[0] = 0;
+    gone[0] = 0;
+    int* pk = kept.data();
+    int* pg = gone.data();
+
+    std::atomic<bool> released{false};
+
+    auto world = rt.dynamic_graph();
+    world.region(0).add_host(API::Reads{}, API::Writes(kept), [&released, pk]()
+    {
+        wait_for_gate(released);
+        pk[0] += 1;
+    });
+    world.region(1).add_host(API::Reads{}, API::Writes(gone), [&released, pg]()
+    {
+        wait_for_gate(released);
+        pg[0] += 1;
+    });
+
+    auto step = world.run_async();
+    world.drop(1);
+    EXPECT_FALSE(world.has_region(1));
+    EXPECT_EQ(world.region_count(), 1u);
+
+    released.store(true, std::memory_order_release);
+    const auto settled = step.try_wait();
+    ASSERT_TRUE(settled.has_value()) << settled.error().message;
+    EXPECT_TRUE((*settled).is_successful);
+    EXPECT_EQ(kept[0], 1);
+    EXPECT_EQ(gone[0], 1) << "the dropped region's task did not finish its write";
+
+    const Observability::RunReport next = world.run();
+    EXPECT_TRUE(next.is_successful);
+    EXPECT_EQ(kept[0], 2);
+    EXPECT_EQ(gone[0], 1) << "the dropped region ran again";
+    EXPECT_EQ(world.compose_count(), 2u) << "the drop composes once, at the next run";
+}
+
+/** @brief Tests that a key dropped and recorded again while a step is pending runs its new work. */
+TEST(Integration_AsyncStep, ARegionDroppedAndRecordedAgainWhileAStepIsPendingRunsItsNewWork)
+{
+    auto rt    = Runtime::create();
+    auto old   = rt.buffer<int>(4);
+    auto fresh = rt.buffer<int>(4);
+    old[0] = 0;
+    fresh[0] = 0;
+    int* po = old.data();
+    int* pf = fresh.data();
+
+    std::atomic<bool> released{false};
+
+    auto world = rt.dynamic_graph();
+    world.region(7).add_host(API::Reads{}, API::Writes(old), [&released, po]()
+    {
+        wait_for_gate(released);
+        po[0] += 1;
+    });
+
+    auto step = world.run_async();
+    world.drop(7);
+    world.region(7).add_host(API::Reads{}, API::Writes(fresh), [pf]() { pf[0] += 1; });
+
+    released.store(true, std::memory_order_release);
+    EXPECT_TRUE(step.try_wait().has_value());
+    EXPECT_EQ(old[0], 1) << "the pending step ran the recording it was started with";
+    EXPECT_EQ(fresh[0], 0) << "a recording made while the step was pending ran in that step";
+
+    EXPECT_TRUE(world.try_run().has_value());
+    EXPECT_EQ(old[0], 1) << "the dropped recording ran again";
+    EXPECT_EQ(fresh[0], 1);
+}

@@ -48,7 +48,8 @@ lower module, so a value passes to that module without a conversion.
 list, profiling and rebalancer state, the worker pool, cumulative transfer bytes) without the whole
 `RuntimeContext`. `Runtime::advanced()` returns it and nothing else can construct it. It shares
 ownership of the context like every other handle; see Lifetime. For anything beyond this surface,
-`Runtime::unsafe_context()` is the deliberate escape hatch.
+`Runtime::unsafe_context()` returns the internal `RuntimeContext`. Code calls it only for an
+operation that neither the fluent API nor `advanced()` covers.
 
 ### devices
 

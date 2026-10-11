@@ -57,7 +57,8 @@ namespace SushiRuntime
 
             /**
              * @brief Places the kernel on the device that owns a buffer, and watches the buffer.
-             * @param buffer Handle whose device is taken; it must outlive every run of the graph.
+             * @param buffer Handle whose device is taken. Alive when the graph runs;
+             *          free to move after add().
              */
             template <typename T>
             explicit On(const Buffer<T>& buffer) noexcept
@@ -68,7 +69,8 @@ namespace SushiRuntime
 
             /**
              * @brief Places the kernel on the device that owns a State, and watches the State.
-             * @param state Handle whose device is taken; it must outlive every run of the graph.
+             * @param state Handle whose device is taken. Alive when the graph runs;
+             *          free to move after add().
              */
             template <typename T>
             explicit On(const State<T>& state) noexcept

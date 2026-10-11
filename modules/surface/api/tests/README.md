@@ -94,6 +94,22 @@ step before the plan died. `expect_step_ended_by_its_graph` then expects `pendin
 `ready()` true and `invalid_state` from `try_wait()`, none of which may read the dead graph. The
 `Graph` test also runs a new graph on the runtime, which a step left behind would refuse.
 
+### `ARegionDroppedWhileAStepIsPendingFinishesTheStep`
+
+Two regions each hold one host task that waits at the gate and then adds one to its own buffer. The
+test starts a step, drops region 1 while both tasks wait, releases the gate and settles the handle.
+The step must succeed with both buffers at one: the dropped region's task finished its write, and
+settling walked that region's per-step hooks. `drop()` used to destroy the region at once, so the
+settle read a freed recorder; AddressSanitizer reports that read. A following `run()` must leave
+the dropped region's buffer at one, raise the other to two and bring `compose_count()` to two.
+
+### `ARegionDroppedAndRecordedAgainWhileAStepIsPendingRunsItsNewWork`
+
+Region 7 is dropped while its step waits at the gate, and `region(7)` then records a task on a
+second buffer. The pending step must run the first recording only. The next run must run the second
+recording only, which shows that the map holds the new region while the old one is kept for the
+step.
+
 ## test_data_handles.cpp
 
 The file covers what `Buffer` and `State` promise alike: what a range call does with a window, what
@@ -1094,6 +1110,20 @@ and so must a second `try_wait()` on the handle once the step has been waited fo
 
 `set_profiling()` returns the graph it was called on and `is_profiling_requested()` reads the
 request back, on both graph types.
+
+### `SettingTheSameProfilingValueRebuildsNothing`
+
+`set_profiling(true)` followed by a run, twice, must leave `Graph::compile_count()` and
+`DynamicGraph::compose_count()` at one, and `set_profiling(false)` followed by a run must raise each
+to two. `PlanCache::set_profiling` used to mark the plan dirty on every call, so the `Graph` count
+read two after the second run.
+
+### `AProfilingToggleOnADynamicGraphComposesOnceAndTimesItsNodes`
+
+A `DynamicGraph` with one kernel runs four times: with no request, after `set_profiling(true)`,
+again with nothing changed, and after `set_profiling(false)`. `RunReport::node_timings` must be
+empty, filled, filled and empty, and `compose_count()` must read one, two, two and three, so the
+request the composer keeps reaches the plan at the commit after each change and at no other.
 
 ### `MovingAGraphWithAPendingStepEndsTheStep`
 
