@@ -144,6 +144,33 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Refuses a registration index this graph did not issue.
+             * @param call The public call checked, as its message names it.
+             * @throws Core::SushiException With Errc::invalid_graph for an index at or above
+             *         the count of indices issued.
+             * @see modules/engine/graph/README.md
+             */
+            void require_issued(const char* call,
+                                std::optional<std::uint32_t> registration) const
+            {
+                if (!registration)
+                    return;
+
+                // Indices are issued densely from zero, so the counter is the count issued.
+                const std::uint32_t issued = registration_counter_.load(std::memory_order_relaxed);
+                if (*registration < issued)
+                    return;
+
+                const std::string message = Core::Detail::sr_format(
+                    "TaskGraph::{}(): registration index {} was not issued by this graph, which "
+                    "has issued {} so far. Pass an index reserve_registration() returned on this "
+                    "graph, or none to draw a fresh one.",
+                    call, *registration, issued);
+                SR_LOG_ERROR("{}", message);
+                throw Core::SushiException(Core::Error{Core::Errc::invalid_graph, message});
+            }
+
+            /**
              * @brief Pushes a node onto the lock-free tracking stacks (modules/engine/graph/README.md).
              * @param node The node to insert.
              * @param registration Index to stamp on the node; absent draws a fresh one.
@@ -225,6 +252,8 @@ namespace SushiRuntime
         Node& TaskGraph::add_node(TaskWork work, const std::vector<sycl::event>& dependencies,
                                   std::optional<std::uint32_t> registration)
         {
+            impl_->require_issued("add_node", registration);
+
             auto node = make_sushi<Node>();
             node->work = std::move(work);
             node->sycl_deps = dependencies;
@@ -263,6 +292,8 @@ namespace SushiRuntime
                                   const std::vector<sycl::event>& dependencies,
                                   std::optional<std::uint32_t> registration)
         {
+            impl_->require_issued("add_node", registration);
+
             auto node = make_sushi<Node>();
             node->work = std::move(work);
             node->sycl_deps = dependencies;
@@ -299,6 +330,8 @@ namespace SushiRuntime
                                   const std::vector<sycl::event>& dependencies,
                                   std::optional<std::uint32_t> registration)
         {
+            impl_->require_issued("add_task", registration);
+
             auto node = make_sushi<Node>();
             node->metadata = meta;
             node->work = std::move(device_work);
@@ -381,6 +414,8 @@ namespace SushiRuntime
                                              const std::vector<sycl::event>& dependencies,
                                              std::optional<std::uint32_t> registration)
         {
+            impl_->require_issued("add_offload_dynamic", registration);
+
             auto node = make_sushi<Node>();
             node->metadata  = meta;
             node->host_work = std::move(fallback_work);
@@ -482,6 +517,8 @@ namespace SushiRuntime
                                     const std::vector<sycl::event>& dependencies,
                                     std::optional<std::uint32_t> registration)
         {
+            impl_->require_issued("add_native", registration);
+
             auto node = make_sushi<Node>();
             node->native_work          = std::move(work);
             node->submits_device_work_ = false;

@@ -15,8 +15,8 @@ itself. The observable is `in_degree`, the count of incoming edges that the sche
 
 ## test_task_graph.cpp
 
-The file covers the builder surface of `TaskGraph`: what an add call returns and what `compile()`
-throws for a graph that cannot run. No test submits work, so the device and host callables do
+The file covers the builder surface of `TaskGraph`: what an add call returns, which registration
+index it refuses, and what `compile()` throws for a graph that cannot run. No test submits work, so the device and host callables do
 nothing.
 
 ### `add_edge`
@@ -36,6 +36,23 @@ list, the bindings, the execution mode, the live lists), and no two calls may sh
 A node added with a registration carries it, and one added without draws the index
 `last_registration_index()` reports. A name, a width and a placement written through the reference
 are what the "last node" accessors then read back.
+
+### `ARegistrationTheGraphNeverIssuedIsRefused`
+
+`add_node()` on an empty graph is given `NO_REGISTRATION`, then, after one `reserve_registration()`,
+the index one past it. Both throw `Errc::invalid_graph`. The first message must name the call, the
+index, the count issued and `reserve_registration()`. No node was added by either call.
+
+### `EveryAddOverloadRefusesAnUnissuedRegistration`
+
+Six of the seven add overloads are each given index 7 on a graph that issued none, and each throws
+`Errc::invalid_graph`; the test above covers the seventh. A node added afterwards over the same regions has an `in_degree` of
+zero and compiles into a plan of one root, so no refused call left an access in the tracker.
+
+### `AReservedRegistrationIsAcceptedTwice`
+
+Two nodes take one reserved index. A third draws its own, and a fourth is given the index the third
+drew, which the graph also issued.
 
 ### `TheCompiledPlanOwnsTheReturnedNodes`
 

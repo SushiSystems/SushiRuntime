@@ -56,10 +56,9 @@ namespace SushiRuntime
         class OffloadCoordinator;
 
         /**
-         * @brief Manages and optimizes dependencies between async tasks.
-         * 
-         * TaskGraph collects work (kernels), analyzes data dependencies,
-         * and executes them in the best order on the hardware.
+         * @brief Records task nodes, orders them by the regions they touch and compiles them
+         *        into a CompiledGraph; it runs nothing.
+         * @see modules/engine/graph/README.md
          */
         class SUSHIRUNTIME_API TaskGraph 
         {
@@ -70,7 +69,10 @@ namespace SushiRuntime
                 /**
                  * @brief Creates an empty task graph.
                  * @param offload Given the compiled nodes by compile(); null for a graph that
-                 *        runs only on the local pool. Not owned; outlives the graph.
+                 *        runs only on the local pool. Not owned.
+                 * @pre offload is neither replaced on its context nor released before compile()
+                 *      or take_nodes() has returned, or this graph is destroyed.
+                 * @see modules/engine/graph/README.md
                  */
                 explicit TaskGraph(OffloadCoordinator* offload = nullptr);
 
@@ -91,8 +93,9 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds a device task whose work receives a sycl::handler.
-                 * @param registration Index to stamp on this node; none draws one from
-                 *        reserve_registration().
+                 * @param registration Index to stamp on this node; none draws a fresh one.
+                 * @pre registration, when given, is an index reserve_registration() returned here.
+                 * @throws Core::SushiException With Errc::invalid_graph for any other index.
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
@@ -101,8 +104,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds a device task ordered by the USM regions it touches.
-                 * @param registration Index to stamp on this node; none draws one from
-                 *        reserve_registration().
+                 * @param registration Index to stamp on this node; see the first add_node().
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
@@ -115,8 +117,7 @@ namespace SushiRuntime
                 /**
                  * @brief Adds a device task carrying a late-binding block.
                  * @param bindings Shared per-step controls; null behaves like the plain overload.
-                 * @param registration Index to stamp on this node; none draws one from
-                 *        reserve_registration().
+                 * @param registration Index to stamp on this node; see the first add_node().
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
@@ -159,6 +160,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Draws a fresh registration index from this graph's counter.
+                 * @return An index any number of later add calls on this graph may be given.
                  * @see modules/engine/graph/README.md
                  */
                 std::uint32_t reserve_registration() noexcept;
@@ -176,8 +178,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds a semantic task with explicit device work and a host fallback.
-                 * @param registration Index to stamp on this node; none draws one from
-                 *        reserve_registration().
+                 * @param registration Index to stamp on this node; see the first add_node().
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
@@ -191,8 +192,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds a semantic task with a host-side fallback only.
-                 * @param registration Index to stamp on this node; none draws one from
-                 *        reserve_registration().
+                 * @param registration Index to stamp on this node; see the first add_node().
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
@@ -207,7 +207,7 @@ namespace SushiRuntime
                  * @brief Adds an offloadable task whose buffers rotate every step.
                  * @param live_reads Shared list of the buffers read this step.
                  * @param live_writes Shared list of the buffers written this step.
-                 * @param registration Index to stamp on this node; none draws a fresh one.
+                 * @param registration Index to stamp on this node; see the first add_node().
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */
@@ -221,8 +221,7 @@ namespace SushiRuntime
                 /**
                  * @brief Adds a pure-CPU task run natively, with no SYCL submission.
                  * @param work Callable run once on a worker thread; submits no SYCL work.
-                 * @param registration Index to stamp on this node; none draws one from
-                 *        reserve_registration().
+                 * @param registration Index to stamp on this node; see the first add_node().
                  * @return The node added; the graph owns it, then the plan compile() returns.
                  * @see modules/engine/graph/README.md
                  */

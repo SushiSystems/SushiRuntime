@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-11 — graph: Changed the `TaskGraph` add calls to throw `invalid_graph` for a registration index the graph did not issue (`task_graph.cpp`).
 - 2026-10-11 — task: Fixed `SmallEventVector` keeping live events past its count after an assignment or a move, and added `clear()` (`small_event_vector.hpp`).
 - 2026-10-11 — task: Changed `OpID::hash_str` to read bytes as unsigned; the id of a name with a byte above 127 changes (`task_types.hpp`).
 - 2026-10-11 — scheduler: Fixed a run never quiescing when an event's status query throws; removed the `using namespace` of `Core` from `event_polling.hpp`, which leaked into every includer (`event_polling.hpp`).
