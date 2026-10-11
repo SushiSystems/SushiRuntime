@@ -34,12 +34,10 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/observability/run_report.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_widths.hpp>
-#include "test_context.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
@@ -84,8 +82,6 @@ TEST(Unit_NodeDispatchWidth, DefaultConstructedNodeReportsUnknown)
 /** @brief Tests that a node added without a stamp reports the unknown width. */
 TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 {
-    const auto ctx_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& ctx = *ctx_owner;
     TaskGraph graph;
 
     graph.add_node(noop_work());
@@ -96,8 +92,6 @@ TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 /** @brief Tests that a width set on a node and a name given after it land on that node. */
 TEST(Unit_NodeDispatchWidth, BakedWidthAndNameStampTheNodeTheyAreSetOn)
 {
-    const auto ctx_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& ctx = *ctx_owner;
     TaskGraph graph;
 
     graph.add_node(noop_work()).baked_width = 4096;
@@ -111,8 +105,6 @@ TEST(Unit_NodeDispatchWidth, BakedWidthAndNameStampTheNodeTheyAreSetOn)
 /** @brief Verifies a width set on the second of two nodes leaves the first one unknown. */
 TEST(Unit_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
 {
-    const auto ctx_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& ctx = *ctx_owner;
     TaskGraph graph;
 
     graph.add_node(noop_work());
@@ -132,8 +124,6 @@ TEST(Unit_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
  */
 TEST(Unit_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
 {
-    const auto ctx_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& ctx = *ctx_owner;
     Internal::Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}).baked_width = 1024;
 
@@ -148,8 +138,6 @@ TEST(Unit_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     bindings->count.store(129, std::memory_order_relaxed);
 
-    const auto ctx_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& ctx = *ctx_owner;
     Internal::Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}, {}, {}, bindings).baked_width = 1024;
 
@@ -164,8 +152,6 @@ TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     bindings->count.store(Internal::Graph::LateBindings::K_USE_BAKED, std::memory_order_relaxed);
 
-    const auto ctx_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& ctx = *ctx_owner;
     Internal::Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}, {}, {}, bindings).baked_width = 1024;
 
@@ -175,8 +161,6 @@ TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
 /** @brief Tests that a width that does not fit in uint32_t is reported as unknown. */
 TEST(Unit_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
 {
-    const auto ctx_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& ctx = *ctx_owner;
     Internal::Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}).baked_width = std::size_t{0xFFFFFFFFu} + 1;
 

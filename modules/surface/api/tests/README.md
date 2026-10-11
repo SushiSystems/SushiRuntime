@@ -1533,10 +1533,10 @@ reader and a writer of the same field and not as a reader of the current one.
 
 The graph holds a kernel that writes `K_MARK` into the State's second field, named with
 `Writes(state)`, and then the late-bound rule `next = current + 1`. After one step the second field
-is current. The test replays the recorder onto a `TaskGraph` of its own and reads the in-degree of
-the rule's node, which must be one: the rule waits on the writer of the field it reads. It then
-renames the rule, which rebuilds the plan, runs a second step and expects `K_MARK + 1` everywhere.
-The in-degree is the deterministic check; the values depend on the order only when the scheduler
+is current. The test renames the rule, which makes the plan stale, and reads `graph.plan()`: the
+rule's node must read the second field and have one predecessor, the writer of that field. It then
+runs a second step and expects `K_MARK + 1` everywhere and two compiles in all.
+The predecessor count is the deterministic check; the values depend on the order only when the scheduler
 runs the two unordered nodes the other way round.
 
 ## refusing_fill.hpp
