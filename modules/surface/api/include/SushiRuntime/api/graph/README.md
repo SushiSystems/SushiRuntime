@@ -76,6 +76,12 @@ replay callable and ends in the private record(), which appends the node, attach
 rule or starts a rule for it, takes the observers and advances generation(). A domain library
 records through the public members and needs no friendship.
 
+Every recording member returns the position of the rule its node belongs to, the value
+rule_registration() takes. A library that records several operations keeps the positions and
+reads each operation's node events back after a run, with no count of its own to maintain. The
+nodes recorded inside one rule scope return the same position. The builder verbs return the
+builder, so a chain reads the same value from last_rule().
+
 ### Recorder: moves
 
 The source of a move is an empty recorder on the same context: no node, no rule, no scratch and no

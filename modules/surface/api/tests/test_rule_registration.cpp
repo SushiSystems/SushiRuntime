@@ -190,3 +190,63 @@ TEST(Integration_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
             << "step " << step << ": every node of the rule must report the rule's index";
     EXPECT_EQ(r.graph.compile_count(), 1u);
 }
+
+/** @brief Tests that the position a Recorder verb returns is the one rule_registration() takes. */
+TEST(Integration_RuleRegistration, AVerbReturnsThePositionOfTheRuleItRecorded)
+{
+    constexpr std::uint32_t K_SCALE_MARK = 11;
+    constexpr std::uint32_t K_COPY_MARK = 22;
+
+    auto rt = Runtime::create();
+    auto words = rt.buffer<std::uint32_t>(K_WIDTH);
+    auto copies = rt.buffer<std::uint32_t>(K_WIDTH);
+    std::uint32_t* w = words.data();
+    std::uint32_t* c = copies.data();
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
+        w[i] = static_cast<std::uint32_t>(i);
+
+    // Each node states a width no other node has, so its event is found by that width.
+    NodeOptions scale_options;
+    scale_options.width = K_SCALE_MARK;
+    NodeOptions copy_options;
+    copy_options.width = K_COPY_MARK;
+
+    auto graph = rt.graph();
+    graph.set_profiling(true);
+    Recorder& recorder = graph.recorder();
+
+    const std::size_t scale = recorder.kernel(K_WIDTH, Access(Reads(words), Writes(words)),
+                                              [w](std::size_t i) { w[i] *= 2u; },
+                                              scale_options);
+    EXPECT_EQ(scale, graph.last_rule());
+
+    std::size_t copy = 0;
+    std::size_t idle = 0;
+    {
+        auto rule = recorder.rule();
+        copy = recorder.kernel(K_WIDTH, Access(Reads(words), Writes(copies)),
+                               [w, c](std::size_t i) { c[i] = w[i]; }, copy_options);
+        idle = recorder.host(Access(Reads(copies), Writes()), [] {});
+    }
+    EXPECT_EQ(copy, graph.last_rule());
+    EXPECT_EQ(idle, copy) << "the nodes of one scope belong to one rule";
+    EXPECT_NE(scale, copy);
+
+    const auto report = graph.run();
+
+    std::uint32_t scale_index = Graph::K_NO_REGISTRATION;
+    std::uint32_t copy_index = Graph::K_NO_REGISTRATION;
+    for (const Internal::Observability::NodeEventRecord& event : report.node_events)
+    {
+        if (event.launched_width == K_SCALE_MARK)
+            scale_index = event.node_index;
+        if (event.launched_width == K_COPY_MARK)
+            copy_index = event.node_index;
+    }
+
+    ASSERT_NE(scale_index, Graph::K_NO_REGISTRATION);
+    ASSERT_NE(copy_index, Graph::K_NO_REGISTRATION);
+    EXPECT_EQ(graph.rule_registration(scale), scale_index);
+    EXPECT_EQ(graph.rule_registration(copy), copy_index);
+    EXPECT_EQ(copies[K_WIDTH - 1], static_cast<std::uint32_t>(K_WIDTH - 1) * 2u);
+}

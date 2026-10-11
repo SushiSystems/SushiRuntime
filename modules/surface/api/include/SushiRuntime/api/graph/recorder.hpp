@@ -90,7 +90,8 @@ namespace SushiRuntime
      * @brief Owns the nodes recorded for one graph or region and replays them.
      *
      * A move leaves the source empty on the same context, ready to record again, and
-     * its generation() past every value it had.
+     * its generation() past every value it had. Every recording member returns the
+     * position of its node's rule.
      * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
      */
     class Recorder final
@@ -185,21 +186,21 @@ namespace SushiRuntime
              *        fn(0, count, sycl::handler&) to drive the handler itself.
              */
             template <class F>
-            void kernel(std::size_t count, Access access, F&& fn, NodeOptions options = {})
+            std::size_t kernel(std::size_t count, Access access, F&& fn,
+                               NodeOptions options = {})
             {
-                if constexpr (Detail::accepts_kernel<std::size_t, F>())
-                {
-                    if constexpr (is_range_kernel_v<F>)
-                        record(Detail::range_node(std::move(access.reads),
-                                                  std::move(access.writes), count,
-                                                  std::forward<F>(fn), options.width),
-                               access.lives, options);
-                    else
-                        record(Detail::launch_node(std::move(access.reads),
-                                                   std::move(access.writes), count,
-                                                   std::forward<F>(fn), options.width),
-                               access.lives, options);
-                }
+                if constexpr (!Detail::accepts_kernel<std::size_t, F>())
+                    return rule_count();
+                else if constexpr (is_range_kernel_v<F>)
+                    return record(Detail::range_node(std::move(access.reads),
+                                                     std::move(access.writes), count,
+                                                     std::forward<F>(fn), options.width),
+                                  access.lives, options);
+                else
+                    return record(Detail::launch_node(std::move(access.reads),
+                                                      std::move(access.writes), count,
+                                                      std::forward<F>(fn), options.width),
+                                  access.lives, options);
             }
 
             /**
@@ -207,11 +208,11 @@ namespace SushiRuntime
              * @param fn Callable invoked as fn(sycl::id<N>) with the extent's origin applied.
              */
             template <int N, class F>
-            void kernel(Extent<N> extent, Access access, F&& fn, NodeOptions options = {})
+            std::size_t kernel(Extent<N> extent, Access access, F&& fn, NodeOptions options = {})
             {
-                record(Detail::launch_node(std::move(access.reads), std::move(access.writes),
-                                           extent, std::forward<F>(fn), options.width),
-                       access.lives, options);
+                return record(Detail::launch_node(std::move(access.reads), std::move(access.writes),
+                                                  extent, std::forward<F>(fn), options.width),
+                              access.lives, options);
             }
 
             /**
@@ -220,11 +221,11 @@ namespace SushiRuntime
              *        fn(sycl::nd_item<N>, sycl::id<N>) to get the id with the origin applied.
              */
             template <int N, class F>
-            void kernel(NdRange<N> range, Access access, F&& fn, NodeOptions options = {})
+            std::size_t kernel(NdRange<N> range, Access access, F&& fn, NodeOptions options = {})
             {
-                record(Detail::launch_node(std::move(access.reads), std::move(access.writes),
-                                           range, std::forward<F>(fn), options.width),
-                       access.lives, options);
+                return record(Detail::launch_node(std::move(access.reads), std::move(access.writes),
+                                                  range, std::forward<F>(fn), options.width),
+                              access.lives, options);
             }
 
             /**
@@ -234,12 +235,12 @@ namespace SushiRuntime
              * @pre access names the regions launch.live_width and launch.live_words lie in.
              */
             template <class F>
-            void kernel(DeviceSized launch, Access access, F&& fn, NodeOptions options = {})
+            std::size_t kernel(DeviceSized launch, Access access, F&& fn, NodeOptions options = {})
             {
-                record(Detail::device_sized_node(std::move(access.reads),
-                                                 std::move(access.writes), launch,
-                                                 std::forward<F>(fn), options.width),
-                       access.lives, options);
+                return record(Detail::device_sized_node(std::move(access.reads),
+                                                        std::move(access.writes), launch,
+                                                        std::forward<F>(fn), options.width),
+                              access.lives, options);
             }
 
             /**
@@ -248,8 +249,8 @@ namespace SushiRuntime
              * @throws SushiException With invalid_access for a slot outside host USM.
              */
             template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-            void kernel(Dynamic window, std::size_t capacity, Access access, F&& fn,
-                        NodeOptions options = {})
+            std::size_t kernel(Dynamic window, std::size_t capacity, Access access, F&& fn,
+                               NodeOptions options = {})
             {
                 Detail::require_host_device_slots(*context_, window);
                 auto bindings = std::make_shared<::SushiRuntime::Internal::Graph::LateBindings>();
@@ -258,11 +259,13 @@ namespace SushiRuntime
                 const std::size_t width =
                     options.width == Internal::Observability::K_WIDTH_UNKNOWN ? capacity : options.width;
 
-                record(Detail::dynamic_node(bindings, fault, std::move(access.reads),
-                                            std::move(access.writes), capacity,
-                                            std::forward<F>(fn), width),
-                       access.lives, options);
+                const std::size_t rule = record(
+                    Detail::dynamic_node(
+                        bindings, fault, std::move(access.reads), std::move(access.writes),
+                        capacity, std::forward<F>(fn), width),
+                    access.lives, options);
                 steps_.register_binding_updater(std::move(bindings), std::move(window));
+                return rule;
             }
 
             /**
@@ -270,11 +273,11 @@ namespace SushiRuntime
              * @param fn Callable invoked as fn(sycl::handler&).
              */
             template <class F>
-            void raw_kernel(Access access, F&& fn, NodeOptions options = {})
+            std::size_t raw_kernel(Access access, F&& fn, NodeOptions options = {})
             {
-                record(Detail::raw_node(std::move(access.reads), std::move(access.writes),
-                                        std::forward<F>(fn), options.width),
-                       access.lives, options);
+                return record(Detail::raw_node(std::move(access.reads), std::move(access.writes),
+                                               std::forward<F>(fn), options.width),
+                              access.lives, options);
             }
 
             /**
@@ -283,13 +286,14 @@ namespace SushiRuntime
              * @param pointers A std::tuple of pointers, passed to fn after the index.
              */
             template <class Launch, class Pointers, class F>
-            void captured_kernel(Launch launch, Access access, Pointers pointers, F&& fn,
-                                 NodeOptions options = {})
+            std::size_t captured_kernel(Launch launch, Access access, Pointers pointers, F&& fn,
+                                        NodeOptions options = {})
             {
-                record(Detail::captured_node(std::move(access.reads), std::move(access.writes),
-                                             launch, std::move(pointers), std::forward<F>(fn),
-                                             options.width),
-                       access.lives, options);
+                return record(
+                    Detail::captured_node(
+                        std::move(access.reads), std::move(access.writes), launch,
+                        std::move(pointers), std::forward<F>(fn), options.width),
+                    access.lives, options);
             }
 
             /**
@@ -297,11 +301,11 @@ namespace SushiRuntime
              * @param fn Nullary callable; must not submit SYCL work.
              */
             template <class F>
-            void host(Access access, F&& fn, NodeOptions options = {})
+            std::size_t host(Access access, F&& fn, NodeOptions options = {})
             {
-                record(Detail::host_node(std::move(access.reads), std::move(access.writes),
-                                         std::forward<F>(fn), options.width),
-                       access.lives, options);
+                return record(Detail::host_node(std::move(access.reads), std::move(access.writes),
+                                                std::forward<F>(fn), options.width),
+                              access.lives, options);
             }
 
             /**
@@ -312,11 +316,11 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class F>
-            void task(Access access, F&& body, NodeOptions options = {})
+            std::size_t task(Access access, F&& body, NodeOptions options = {})
             {
-                record(Detail::task_node(std::move(access.reads), std::move(access.writes),
-                                         std::forward<F>(body), options.width),
-                       access.lives, options);
+                return record(Detail::task_node(std::move(access.reads), std::move(access.writes),
+                                                std::forward<F>(body), options.width),
+                              access.lives, options);
             }
 
             /**
@@ -324,16 +328,18 @@ namespace SushiRuntime
              * @param fn Callable invoked as fn(TaskGraph&); it only adds nodes.
              */
             template <class F>
-            void emitter(F&& fn)
+            std::size_t emitter(F&& fn)
             {
                 std::vector<Internal::Memory::LivenessObserver> lives;
-                record([emit = std::forward<F>(fn)]
-                       (::SushiRuntime::Internal::Graph::TaskGraph& bg, std::optional<std::uint32_t>)
-                       {
-                           emit(bg);
-                       }, lives);
+                const std::size_t rule = record(
+                    [emit = std::forward<F>(fn)](::SushiRuntime::Internal::Graph::TaskGraph& bg,
+                                                 std::optional<std::uint32_t>)
+                    {
+                        emit(bg);
+                    }, lives);
                 // An emitter stamps its own nodes, so it takes no registration from a rule.
                 specs_.back().takes_rule_registration = false;
+                return rule;
             }
 
             /**
@@ -345,15 +351,15 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
-            void untracked_kernel(std::size_t count, F&& fn,
-                                  const On& placement = On(DeviceIndex{0}),
-                                  NodeOptions options = {},
-                                  const char* call = K_UNTRACKED_KERNEL)
+            std::size_t untracked_kernel(std::size_t count, F&& fn,
+                                         const On& placement = On(DeviceIndex{0}),
+                                         NodeOptions options = {},
+                                         const char* call = K_UNTRACKED_KERNEL)
             {
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 const std::size_t device = placed_device(call, placement, lives);
-                record(Detail::untracked_launch_node(count, device, std::forward<F>(fn)),
-                       lives, options);
+                return record(Detail::untracked_launch_node(count, device, std::forward<F>(fn)),
+                              lives, options);
             }
 
             /**
@@ -364,15 +370,15 @@ namespace SushiRuntime
              * @throws SushiException With invalid_access for an unknown device.
              */
             template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
-            void untracked_kernel(std::size_t count, F&& fn,
-                                  const On& placement = On(DeviceIndex{0}),
-                                  NodeOptions options = {},
-                                  const char* call = K_UNTRACKED_KERNEL)
+            std::size_t untracked_kernel(std::size_t count, F&& fn,
+                                         const On& placement = On(DeviceIndex{0}),
+                                         NodeOptions options = {},
+                                         const char* call = K_UNTRACKED_KERNEL)
             {
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 const std::size_t device = placed_device(call, placement, lives);
-                record(Detail::untracked_range_node(count, device, std::forward<F>(fn)),
-                       lives, options);
+                return record(Detail::untracked_range_node(count, device, std::forward<F>(fn)),
+                              lives, options);
             }
 
             /**
@@ -383,15 +389,15 @@ namespace SushiRuntime
              * @throws SushiException With invalid_access for an unknown device.
              */
             template <int N, class F>
-            void untracked_kernel(Extent<N> extent, F&& fn,
-                                  const On& placement = On(DeviceIndex{0}),
-                                  NodeOptions options = {},
-                                  const char* call = K_UNTRACKED_KERNEL)
+            std::size_t untracked_kernel(Extent<N> extent, F&& fn,
+                                         const On& placement = On(DeviceIndex{0}),
+                                         NodeOptions options = {},
+                                         const char* call = K_UNTRACKED_KERNEL)
             {
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 const std::size_t device = placed_device(call, placement, lives);
-                record(Detail::untracked_launch_node(extent, device, std::forward<F>(fn)),
-                       lives, options);
+                return record(Detail::untracked_launch_node(extent, device, std::forward<F>(fn)),
+                              lives, options);
             }
 
             /**
@@ -403,15 +409,15 @@ namespace SushiRuntime
              * @throws SushiException With invalid_access for an unknown device.
              */
             template <int N, class F>
-            void untracked_kernel(NdRange<N> range, F&& fn,
-                                  const On& placement = On(DeviceIndex{0}),
-                                  NodeOptions options = {},
-                                  const char* call = K_UNTRACKED_KERNEL)
+            std::size_t untracked_kernel(NdRange<N> range, F&& fn,
+                                         const On& placement = On(DeviceIndex{0}),
+                                         NodeOptions options = {},
+                                         const char* call = K_UNTRACKED_KERNEL)
             {
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 const std::size_t device = placed_device(call, placement, lives);
-                record(Detail::untracked_launch_node(range, device, std::forward<F>(fn)),
-                       lives, options);
+                return record(Detail::untracked_launch_node(range, device, std::forward<F>(fn)),
+                              lives, options);
             }
 
             /**
@@ -422,13 +428,15 @@ namespace SushiRuntime
              * @throws SushiException With invalid_access for an unknown device.
              */
             template <class F>
-            void untracked_raw_kernel(
-                F&& fn, const On& placement = On(DeviceIndex{0}), NodeOptions options = {},
-                const char* call = "Recorder::untracked_raw_kernel(fn, placement)")
+            std::size_t untracked_raw_kernel(
+                       F&& fn, const On& placement = On(DeviceIndex{0}), NodeOptions options = {},
+                       const char* call = "Recorder::untracked_raw_kernel(fn, placement)")
             {
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 const std::size_t device = placed_device(call, placement, lives);
-                record(Detail::untracked_raw_node(device, std::forward<F>(fn)), lives, options);
+                return record(
+                    Detail::untracked_raw_node(device, std::forward<F>(fn)),
+                    lives, options);
             }
 
             /**
@@ -438,14 +446,16 @@ namespace SushiRuntime
              *        size.
              */
             template <typename T, class F>
-            void state_rule(State<T>& state, F&& fn, NodeOptions options = {})
+            std::size_t state_rule(State<T>& state, F&& fn, NodeOptions options = {})
             {
                 auto view = steps_.view_for(state);
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 Detail::gather_life(lives, state);
-                record(Detail::state_launch_node(view, view->size, std::forward<F>(fn)),
-                       lives, options);
+                const std::size_t rule = record(
+                    Detail::state_launch_node(view, view->size, std::forward<F>(fn)),
+                    lives, options);
                 steps_.register_advance(std::move(view));
+                return rule;
             }
 
             /**
@@ -458,18 +468,20 @@ namespace SushiRuntime
              */
             template <typename T, class Launch, class F,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
-            void state_rule(State<T>& state, Launch launch, F&& fn,
-                            NodeOptions options = {},
-                            const char* call = "Recorder::state_rule(state, launch, fn)")
+            std::size_t state_rule(State<T>& state, Launch launch, F&& fn,
+                                   NodeOptions options = {},
+                                   const char* call = "Recorder::state_rule(state, launch, fn)")
             {
                 Detail::require_launch_within(launch, state.size(), call, next_rule(),
                                               "the State");
                 auto view = steps_.view_for(state);
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 Detail::gather_life(lives, state);
-                record(Detail::state_launch_node(view, launch, std::forward<F>(fn)), lives,
-                       options);
+                const std::size_t rule = record(
+                    Detail::state_launch_node(view, launch, std::forward<F>(fn)),
+                    lives, options);
                 steps_.register_advance(std::move(view));
+                return rule;
             }
 
             /**
@@ -479,8 +491,8 @@ namespace SushiRuntime
              * @throws SushiException With invalid_access for a slot outside host USM.
              */
             template <typename T, class F>
-            void state_rule(Dynamic window, State<T>& state, F&& fn,
-                            NodeOptions options = {})
+            std::size_t state_rule(Dynamic window, State<T>& state, F&& fn,
+                                   NodeOptions options = {})
             {
                 Detail::require_host_device_slots(*context_, window);
                 auto view = steps_.view_for(state);
@@ -492,12 +504,14 @@ namespace SushiRuntime
                 std::uint32_t* fault = fault_record_for(window);
 
                 Detail::gather_life(lives, state);
-                record(Detail::dynamic_state_node(view, view->size, bindings, fault,
-                                                  std::move(slot_reads),
-                                                  std::forward<F>(fn)),
-                       lives, options);
+                const std::size_t rule = record(
+                    Detail::dynamic_state_node(
+                        view, view->size, bindings, fault, std::move(slot_reads),
+                        std::forward<F>(fn)),
+                    lives, options);
                 steps_.register_advance(std::move(view));
                 steps_.register_binding_updater(std::move(bindings), std::move(window));
+                return rule;
             }
 
             /**
@@ -509,12 +523,12 @@ namespace SushiRuntime
              * @throws SushiException With invalid_graph for an input smaller than out.
              */
             template <typename T, class F, class... Inputs>
-            void coupled_rule(const char* call, State<T>& out, F&& fn, NodeOptions options,
-                              State<Inputs>&... inputs)
+            std::size_t coupled_rule(const char* call, State<T>& out, F&& fn, NodeOptions options,
+                                     State<Inputs>&... inputs)
             {
                 (Detail::require_launch_within(out.size(), inputs.size(), call, next_rule(),
                                                "a State read"), ...);
-                record_coupled(out.size(), out, std::forward<F>(fn), options, inputs...);
+                return record_coupled(out.size(), out, std::forward<F>(fn), options, inputs...);
             }
 
             /**
@@ -523,11 +537,11 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class F, class... Inputs>
-            void coupled_rule(State<T>& out, F&& fn, NodeOptions options,
-                              State<Inputs>&... inputs)
+            std::size_t coupled_rule(State<T>& out, F&& fn, NodeOptions options,
+                                     State<Inputs>&... inputs)
             {
-                coupled_rule("Recorder::coupled_rule(out, fn, options, inputs...)", out,
-                             std::forward<F>(fn), options, inputs...);
+                return coupled_rule("Recorder::coupled_rule(out, fn, options, inputs...)", out,
+                                    std::forward<F>(fn), options, inputs...);
             }
 
             /**
@@ -536,10 +550,10 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class F, class... Inputs>
-            void coupled_rule(State<T>& out, F&& fn, State<Inputs>&... inputs)
+            std::size_t coupled_rule(State<T>& out, F&& fn, State<Inputs>&... inputs)
             {
-                coupled_rule("Recorder::coupled_rule(out, fn, inputs...)", out,
-                             std::forward<F>(fn), NodeOptions(), inputs...);
+                return coupled_rule("Recorder::coupled_rule(out, fn, inputs...)", out,
+                                    std::forward<F>(fn), NodeOptions(), inputs...);
             }
 
             /**
@@ -552,14 +566,14 @@ namespace SushiRuntime
              */
             template <class Launch, typename T, class F, class... Inputs,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
-            void coupled_rule(const char* call, Launch launch, State<T>& out, F&& fn,
-                              NodeOptions options, State<Inputs>&... inputs)
+            std::size_t coupled_rule(const char* call, Launch launch, State<T>& out, F&& fn,
+                                     NodeOptions options, State<Inputs>&... inputs)
             {
                 Detail::require_launch_within(launch, out.size(), call, next_rule(),
                                               "the State written");
                 (Detail::require_launch_within(launch, inputs.size(), call, next_rule(),
                                                "a State read"), ...);
-                record_coupled(launch, out, std::forward<F>(fn), options, inputs...);
+                return record_coupled(launch, out, std::forward<F>(fn), options, inputs...);
             }
 
             /**
@@ -568,11 +582,11 @@ namespace SushiRuntime
              */
             template <class Launch, typename T, class F, class... Inputs,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
-            void coupled_rule(Launch launch, State<T>& out, F&& fn, NodeOptions options,
-                              State<Inputs>&... inputs)
+            std::size_t coupled_rule(Launch launch, State<T>& out, F&& fn, NodeOptions options,
+                                     State<Inputs>&... inputs)
             {
-                coupled_rule("Recorder::coupled_rule(launch, out, fn, options, inputs...)",
-                             launch, out, std::forward<F>(fn), options, inputs...);
+                return coupled_rule("Recorder::coupled_rule(launch, out, fn, options, inputs...)",
+                                    launch, out, std::forward<F>(fn), options, inputs...);
             }
 
             /**
@@ -581,10 +595,11 @@ namespace SushiRuntime
              */
             template <class Launch, typename T, class F, class... Inputs,
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
-            void coupled_rule(Launch launch, State<T>& out, F&& fn, State<Inputs>&... inputs)
+            std::size_t coupled_rule(Launch launch, State<T>& out, F&& fn,
+                                     State<Inputs>&... inputs)
             {
-                coupled_rule("Recorder::coupled_rule(launch, out, fn, inputs...)", launch, out,
-                             std::forward<F>(fn), NodeOptions(), inputs...);
+                return coupled_rule("Recorder::coupled_rule(launch, out, fn, inputs...)",
+                                    launch, out, std::forward<F>(fn), NodeOptions(), inputs...);
             }
 
             /**
@@ -595,16 +610,16 @@ namespace SushiRuntime
              * @throws SushiException With invalid_graph for too many parameters.
              */
             template <class F>
-            void offload(::SushiRuntime::OperationID op, std::size_t count, Access access,
-                         F&& local, std::vector<std::uint64_t> params,
-                         const char* call =
-                             "Recorder::offload(op, count, access, local, params)")
+            std::size_t offload(::SushiRuntime::OperationID op, std::size_t count, Access access,
+                                F&& local, std::vector<std::uint64_t> params,
+                                const char* call =
+                                    "Recorder::offload(op, count, access, local, params)")
             {
                 Detail::require_offload_parameters(call, params.size());
-                record(Detail::offload_node(op, count, std::move(access.reads),
-                                            std::move(access.writes), std::forward<F>(local),
-                                            std::move(params)),
-                       access.lives);
+                return record(Detail::offload_node(op, count, std::move(access.reads),
+                                                   std::move(access.writes), std::forward<F>(local),
+                                                   std::move(params)),
+                              access.lives);
             }
 
             /**
@@ -615,10 +630,10 @@ namespace SushiRuntime
              * @throws SushiException With invalid_graph for too many parameters.
              */
             template <typename T, class F>
-            void offload_rule(::SushiRuntime::OperationID op, State<T>& state, F&& local,
-                              std::vector<std::uint64_t> params,
-                              const char* call =
-                                  "Recorder::offload_rule(op, state, local, params)")
+            std::size_t offload_rule(::SushiRuntime::OperationID op, State<T>& state, F&& local,
+                                     std::vector<std::uint64_t> params,
+                                     const char* call =
+                                         "Recorder::offload_rule(op, state, local, params)")
             {
                 Detail::require_offload_parameters(call, params.size());
                 auto view = steps_.view_for(state);
@@ -629,10 +644,11 @@ namespace SushiRuntime
 
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 Detail::gather_life(lives, state);
-                record(Detail::offload_state_node(op, view, view->size, live_reads,
-                                                  live_writes, std::forward<F>(local),
-                                                  std::move(params)),
-                       lives);
+                const std::size_t rule = record(
+                    Detail::offload_state_node(
+                        op, view, view->size, live_reads, live_writes, std::forward<F>(local),
+                        std::move(params)),
+                    lives);
                 steps_.register_advance(view);
 
                 // Live IO is re-pointed before each step for the coordinator.
@@ -641,6 +657,7 @@ namespace SushiRuntime
                     (*live_reads)[0]  = view->current;
                     (*live_writes)[0] = view->next;
                 });
+                return rule;
             }
 
             /**
@@ -650,8 +667,8 @@ namespace SushiRuntime
              * @param fill   Device callable run once as fill(live), in the order of counts.
              */
             template <std::size_t K, class Fill>
-            void resolve(const std::array<LateCount, K>& counts, DeviceIndex device,
-                         Access access, Fill fill, NodeOptions options = {})
+            std::size_t resolve(const std::array<LateCount, K>& counts, DeviceIndex device,
+                                Access access, Fill fill, NodeOptions options = {})
             {
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 bool reads_device = false;
@@ -661,11 +678,11 @@ namespace SushiRuntime
                 std::uint32_t* fault = reads_device ? fault_record(device) : nullptr;
 
                 lives.insert(lives.end(), access.lives.begin(), access.lives.end());
-                record(Detail::late_count_resolver_node(counts, fault, std::move(fill),
-                                                        std::move(access.reads),
-                                                        std::move(access.writes),
-                                                        options.width),
-                       lives, options);
+                return record(Detail::late_count_resolver_node(counts, fault, std::move(fill),
+                                                               std::move(access.reads),
+                                                               std::move(access.writes),
+                                                               options.width),
+                              lives, options);
             }
 
             /**
@@ -790,12 +807,13 @@ namespace SushiRuntime
              * @param emit    Replay callable invoked as emit(TaskGraph&, registration).
              * @param lives   Observers of the handles the node names; moved from.
              * @param options What the caller stated; its name and parameters are copied.
-             * @throws SushiException With invalid_graph for too many parameters; nothing
-             *         is recorded then.
+             * @return The position of the rule the node belongs to.
+             * @throws SushiException With invalid_graph for too many parameters.
              */
             template <class Emit>
-            void record(Emit&& emit, std::vector<Internal::Memory::LivenessObserver>& lives,
-                        const NodeOptions& options = {})
+            std::size_t record(Emit&& emit,
+                               std::vector<Internal::Memory::LivenessObserver>& lives,
+                               const NodeOptions& options = {})
             {
                 Detail::require_parameters_fit(options);
                 Detail::NodeSpec spec(std::forward<Emit>(emit));
@@ -809,6 +827,7 @@ namespace SushiRuntime
                 for (Internal::Memory::LivenessObserver& life : lives)
                     watch(std::move(life));
                 ++generation_;
+                return rule_names_.size() - 1;
             }
 
             /** @brief Names the untracked_kernel() family in a message of its own. */
@@ -820,8 +839,8 @@ namespace SushiRuntime
              * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
              */
             template <class Launch, typename T, class F, class... Inputs>
-            void record_coupled(Launch launch, State<T>& out, F&& fn,
-                                const NodeOptions& options, State<Inputs>&... inputs)
+            std::size_t record_coupled(Launch launch, State<T>& out, F&& fn,
+                                       const NodeOptions& options, State<Inputs>&... inputs)
             {
                 std::vector<Internal::Memory::LivenessObserver> lives;
                 Detail::gather_life(lives, out);
@@ -829,10 +848,12 @@ namespace SushiRuntime
 
                 auto out_view = steps_.view_for(out);
                 auto views = std::make_tuple(steps_.view_for(inputs)...);
-                record(Detail::coupled_launch_node(out_view, std::move(views), launch,
-                                                   std::forward<F>(fn)),
-                       lives, options);
+                const std::size_t rule = record(
+                    Detail::coupled_launch_node(
+                        out_view, std::move(views), launch, std::forward<F>(fn)),
+                    lives, options);
                 steps_.register_advance(std::move(out_view));
+                return rule;
             }
 
             /**
