@@ -1,8 +1,9 @@
 # examples
 
-Nine programs written against the public API. Each includes `<SushiRuntime/SushiRuntime.h>` and
-spells every name through `using namespace SushiRuntime;`. Read `quickstart.cpp` first, then the
-focused demos:
+Nine programs written against the public API. Eight include `<SushiRuntime/SushiRuntime.h>`;
+`distributed_worker.cpp` includes only `<SushiRuntime/distributed/distributed.hpp>`, and
+`distributed_demo.cpp` includes both. Each spells every name through
+`using namespace SushiRuntime;`. Read `quickstart.cpp` first, then the focused demos:
 
 | File | Shows |
 | --- | --- |
@@ -15,6 +16,8 @@ focused demos:
 | `operating_path_demo.cpp` | `RuntimeConfig`, `advanced()`, `try_run()` with its error branch, `Dynamic` and a `read_range()` readback |
 | `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
 | `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
+
+When a runtime call fails, every example except `distributed_worker.cpp` prints the library's message to `stderr` and exits with 1; the worker returns the exit code of `run_worker()` instead.
 
 `distributed_kernels.hpp` is the header the last two share; they also include
 `<SushiRuntime/distributed/distributed.hpp>`. The distributed programs are built only when the
