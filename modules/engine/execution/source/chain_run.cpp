@@ -62,11 +62,34 @@ namespace SushiRuntime
             : graph_(graph),
               queue_(ctx.devices().queue(graph.chain.queue_index,
                                          Device::QueueFlavour{true, graph.profiling})),
-              profiling_(graph.profiling)
+              profiling_(graph.profiling),
+              // RuntimeContext builds an ExecutionEngine and no other engine, so the cast holds.
+              run_mark_(static_cast<ExecutionEngine&>(ctx.get_execution_engine()))
         {
             // The plan owns the reserved event buffer (modules/engine/execution/README.md).
             if (profiling_ && graph.chain.pending_events.capacity() < graph.chain.order.size())
                 graph.chain.pending_events.reserve(graph.chain.order.size());
+        }
+
+        /** @brief Marks a chained run in progress on @p engine. */
+        ChainRun::RunMark::RunMark(ExecutionEngine& engine) noexcept : engine_(&engine)
+        {
+            engine_->begin_chained_run();
+        }
+
+        /** @brief Clears the mark unless release() already did. */
+        ChainRun::RunMark::~RunMark()
+        {
+            release();
+        }
+
+        /** @brief Clears the mark; a second call does nothing. */
+        void ChainRun::RunMark::release() noexcept
+        {
+            if (engine_ == nullptr)
+                return;
+            engine_->end_chained_run();
+            engine_ = nullptr;
         }
 
         /**
@@ -121,6 +144,18 @@ namespace SushiRuntime
          */
         void ChainRun::finish()
         {
+            /** @brief Releases the run mark when finish() returns or throws. */
+            struct MarkRelease
+            {
+                RunMark& mark; /**< The mark to release. */
+
+                /** @brief Releases the mark. */
+                ~MarkRelease()
+                {
+                    mark.release();
+                }
+            } mark_release{run_mark_};
+
             wait();
             finished_ = true;
             if (profiling_)

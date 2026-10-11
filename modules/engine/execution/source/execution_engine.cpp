@@ -25,6 +25,7 @@
  * @author Mustafa Garip
  */
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <condition_variable>
@@ -106,6 +107,52 @@ namespace SushiRuntime
             }
         };
 
+        namespace
+        {
+            /** @brief Bit of the run marker a scheduled run holds from submit() to complete(). */
+            constexpr std::uint32_t K_SCHEDULED_RUN = 1u;
+
+            /** @brief Amount one chained run adds to the run marker while it lasts. */
+            constexpr std::uint32_t K_CHAINED_RUN = 2u;
+
+            /**
+             * @brief Clears the scheduled-run bit of a run marker on scope exit, unless disarmed.
+             * @see modules/engine/execution/README.md
+             */
+            class ScheduledRunRelease
+            {
+                public:
+                    /** @brief Binds the guard to @p marker, whose scheduled-run bit is set. */
+                    explicit ScheduledRunRelease(std::atomic<std::uint32_t>& marker) noexcept
+                        : marker_(&marker)
+                    {
+
+                    }
+
+                    /** @brief Clears the bit unless disarm() was called. */
+                    ~ScheduledRunRelease()
+                    {
+                        if (marker_)
+                            marker_->fetch_and(~K_SCHEDULED_RUN, std::memory_order_acq_rel);
+                    }
+
+                    ScheduledRunRelease(const ScheduledRunRelease&) = delete;
+                    ScheduledRunRelease& operator=(const ScheduledRunRelease&) = delete;
+                    ScheduledRunRelease(ScheduledRunRelease&&) = delete;
+                    ScheduledRunRelease& operator=(ScheduledRunRelease&&) = delete;
+
+                    /** @brief Leaves the bit set for the scope that ends the run. */
+                    void disarm() noexcept
+                    {
+                        marker_ = nullptr;
+                    }
+
+                private:
+                    /** @brief The marker to clear; null once disarmed. */
+                    std::atomic<std::uint32_t>* marker_;
+            };
+        } // namespace
+
         /**
          * @brief Owns the scheduler, completion gate and rebalancer (modules/engine/execution/README.md).
          */
@@ -125,13 +172,11 @@ namespace SushiRuntime
             std::atomic<bool> is_shutdown{false};
 
             /**
-             * @brief Serialises graph runs: execute() shares one CompletionLatch,
-             *        sentinel and scheduler-arm state, so two concurrent runs would
-             *        clobber each other (a reset erasing the other's pending
-             *        completion, a sentinel waking the wrong waiter). Detect and
-             *        reject overlap rather than corrupt it.
+             * @brief Counts the runs in progress: K_SCHEDULED_RUN while a scheduled run holds
+             *        the engine, plus K_CHAINED_RUN for each live chained run.
+             * @see modules/engine/execution/README.md
              */
-            std::atomic<bool> run_in_progress{false};
+            std::atomic<std::uint32_t> run_marker{0};
 
             /**
              * @brief Constructs the internal implementation.
@@ -418,17 +463,14 @@ namespace SushiRuntime
             SR_THROW_IF(impl_->is_shutdown.load(std::memory_order_acquire), "Execute called after shutdown.");
             SR_THROW_IF(graph.roots.empty(), "Received a compiled graph with no root nodes.");
 
-            // An overlapping run throws and leaves the owner's flag set (modules/engine/execution/README.md).
-            SR_THROW_IF(impl_->run_in_progress.exchange(true, std::memory_order_acquire),
+            // An overlapping run throws and leaves the owner's bit set (modules/engine/execution/README.md).
+            SR_THROW_IF((impl_->run_marker.fetch_or(K_SCHEDULED_RUN, std::memory_order_acq_rel) &
+                         K_SCHEDULED_RUN) != 0,
                         "ExecutionEngine::submit() is not reentrant: a graph run is "
                         "already in progress on this engine.");
 
-            // The guard releases the flag only on an early exit (modules/engine/execution/README.md).
-            struct SubmitGuard
-            {
-                std::atomic<bool>* flag;
-                ~SubmitGuard() { if (flag) flag->store(false, std::memory_order_release); }
-            } submit_guard{&impl_->run_in_progress};
+            // The guard clears the bit only on an early exit (modules/engine/execution/README.md).
+            ScheduledRunRelease submit_guard(impl_->run_marker);
 
             // DEBUG, not INFO: a run happens once per replayed step (modules/engine/execution/README.md).
             SR_LOG_DEBUG("Executing graph ({} root nodes).", graph.roots.size());
@@ -477,8 +519,8 @@ namespace SushiRuntime
             // One batched injector pass submits every root (modules/engine/execution/README.md).
             impl_->scheduler.submit_batch(graph.roots);
 
-            // Handed off successfully: the run now owns the flag until complete().
-            submit_guard.flag = nullptr;
+            // Handed off successfully: the run now owns the bit until complete().
+            submit_guard.disarm();
         }
 
         /**
@@ -491,11 +533,7 @@ namespace SushiRuntime
          */
         void ExecutionEngine::complete()
         {
-            struct ReleaseGuard
-            {
-                std::atomic<bool>& flag;
-                ~ReleaseGuard() { flag.store(false, std::memory_order_release); }
-            } release_guard{impl_->run_in_progress};
+            const ScheduledRunRelease release_guard(impl_->run_marker);
 
             impl_->completion.wait();
 
@@ -525,6 +563,27 @@ namespace SushiRuntime
         bool ExecutionEngine::run_finished()
         {
             return impl_->completion.poll();
+        }
+
+        /**
+         * @brief Reports whether a scheduled or a chained run is in progress on this engine.
+         */
+        bool ExecutionEngine::run_in_progress() const noexcept
+        {
+            // acq_rel writes, acquire load: whoever reads the marker sees what its writer did before.
+            return impl_->run_marker.load(std::memory_order_acquire) != 0;
+        }
+
+        /** @brief Marks one chained run in progress. */
+        void ExecutionEngine::begin_chained_run() noexcept
+        {
+            impl_->run_marker.fetch_add(K_CHAINED_RUN, std::memory_order_acq_rel);
+        }
+
+        /** @brief Clears the mark one begin_chained_run() set. */
+        void ExecutionEngine::end_chained_run() noexcept
+        {
+            impl_->run_marker.fetch_sub(K_CHAINED_RUN, std::memory_order_acq_rel);
         }
 
         /**

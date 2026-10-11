@@ -23,6 +23,11 @@ edges. finish() is the run's single wait. With profiling on, every submission's 
 NodeEventRecord in the plan's ledger. The destructor drains the queue, so a throwing run never
 leaves work in flight against a plan about to be destroyed.
 
+A ChainRun submits straight to a device queue and never calls the engine's submit(), so it marks
+itself on the engine: IExecutionEngine::run_in_progress() is true from the constructor until
+finish() returns or throws, or until the destructor has drained the queue. The mark is written
+once when the run starts and once when it ends; submit_step() does not touch it.
+
 ## execution_engine.hpp
 
 ### Including graph/node.hpp
@@ -97,6 +102,16 @@ Calling it without a matching submit() is a programming error.
 
 run_finished() lets a caller decide whether waiting would block, which is the difference between
 overlapping more work and stalling. When no run is in flight it is true and carries no meaning.
+
+### run_in_progress
+
+run_in_progress() answers "does this engine hold a run nobody has collected yet". A driver that
+shares the engine with other graphs asks it before it starts a run or touches the engine's
+cancellation state, because a pending marker kept per graph cannot see a run another graph started.
+It is true inside execute(), from submit() until complete() returns or throws, and while a ChainRun
+is alive and unfinished. Between two steps of a multi-step scheduled run, each of which is one
+execute(), it is false. The default is false, so engines that keep no such record and test doubles
+need not implement it.
 
 ### worker_pool
 
@@ -278,6 +293,17 @@ install_offload() gives the scheduler the Graph::OffloadCoordinator that may run
 elsewhere; null removes it. The context shares ownership of the coordinator: it calls stop() on the
 one still installed in shutdown() and again when the context is destroyed, and releases it in the
 destructor, after the engine has shut down.
+A TaskGraph built with a coordinator keeps its raw address and calls it in compile(). The
+caller therefore compiles, empties with take_nodes() or destroys every such graph before it
+replaces or removes that coordinator; the context cannot see those graphs and checks nothing. The
+fluent layer keeps no such graph: PlanCache::build() and RegionComposer::build_region() each build
+a TaskGraph, finish it and drop it inside one call.
+
+install_offload() does not refuse a call made while a run is in flight, although
+run_in_progress() could tell it. Cluster::attach() and Cluster::detach() stop the installed
+coordinator before they call it, so a refusal there would leave a stopped coordinator installed;
+the check belongs before that stop, in the distributed module.
+
 offload() returns the installed pointer, or nullptr. A TaskGraph offloads only when it is
 constructed with that pointer. With no coordinator installed the context is a single machine;
 Distributed::Cluster::attach() is what installs one.
@@ -418,15 +444,39 @@ and recreated. Completion flows through the one `CompletionLatch`.
 
 `execute()` shares one latch, one sentinel and one scheduler-arm state, so two concurrent
 runs would overwrite each other. `submit()` therefore rejects a concurrent run before it
-touches any shared state. If the exchange on `run_in_progress` returns true, another run
-owns the engine, and `submit()` throws without releasing the flag, which that run still
-holds.
+touches any shared state. It sets the `K_SCHEDULED_RUN` bit of `run_marker` with a
+`fetch_or`; if the bit was already set, another run owns the engine, and `submit()` throws
+without clearing the bit, which that run still holds.
 
-The flag is taken in `submit()` and released by `complete()`, not by an RAII guard scoped to
-`submit()`, because the run outlives the function. `SubmitGuard` releases the flag only on
-an early exit, an exception while wiring or submitting, so a throwing submit does not leave
-the engine closed for good. On success the guard is disarmed and ownership passes to
-`complete()`.
+The bit is set in `submit()` and cleared by `complete()`, not by a guard scoped to
+`submit()`, because the run outlives the function. Both functions hold a
+`ScheduledRunRelease`. The one in `submit()` clears the bit only on an early exit, an
+exception while wiring or submitting, so a throwing submit does not leave the engine closed
+for good; on success it is disarmed and ownership passes to `complete()`, whose guard clears
+the bit on every exit.
+
+#### The run marker
+
+`run_marker` is one `std::atomic<std::uint32_t>` and `run_in_progress()` is one load of it,
+compared with zero. Bit 0 is the scheduled run. Every live `ChainRun` adds `K_CHAINED_RUN`,
+which is 2, through `begin_chained_run()` and takes it off through `end_chained_run()`. A
+count is needed because runs nest: a chained run's host node executes on the calling thread
+and can start another graph's run, and a second graph can run chained while the first has an
+asynchronous step pending. With a single flag the inner run's end would clear the outer
+run's mark. The chained count does not block `submit()`, which tests bit 0 alone, so what a
+scheduled run may overlap with is unchanged.
+
+The marker is written when a run starts and when it ends. A scheduled run already paid one
+atomic exchange and one store for the non-reentrancy flag, and the `fetch_or` and
+`fetch_and` replace them one for one. A chained run adds one `fetch_add` and one `fetch_sub`
+per `ChainRun`, whatever its step count. Node dispatch reads and writes nothing here. The
+writes are `acq_rel` and the load is `acquire`, so a thread that sees a run begin or end
+also sees what the writer did before it.
+
+`ChainRun` reaches the two private functions as a friend of `ExecutionEngine` and casts the
+context's engine to that type: `RuntimeContext` builds an `ExecutionEngine` and nothing else.
+`ChainRun::RunMark` holds the mark. It is the last member, so the destructor's drain runs
+before the mark is released, and a constructor that throws after it was taken releases it.
 
 #### The log level of a run
 

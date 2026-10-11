@@ -88,6 +88,42 @@ one.
 A kernel dispatched on the profiling queue correctly dereferences a USM allocation made through the
 context of the plain queue. The shared context is usable, not only reported.
 
+## test_run_in_progress.cpp
+
+The file covers `IExecutionEngine::run_in_progress()`: false on an engine that ran nothing, true
+while a run is in flight, false once the run has been collected, whether it succeeded or threw.
+No test reads a clock. Where a run must still be in flight at the check, its host task waits on a
+`std::promise` the test fulfils afterwards.
+
+### `MinimalEngine`
+
+An engine that implements only the two pure members. `TheInterfaceDefaultReportsNoRun` reads the
+interface's default through it.
+
+### `ABlockingRunIsInProgressUntilExecuteReturns`
+
+The run's one host task asks the engine and stores the answer, which must be true; after
+`execute()` returns the answer is false.
+
+### `AnAsynchronousRunIsInProgressUntilCompleteReturns`
+
+The answer is true between `submit()` and `complete()` and false after. The task cannot finish
+before the first check, because it waits on the gate.
+
+### `ARunWhoseTaskThrowsLeavesNoRunInProgress`
+
+A task that throws ends a blocking run and an asynchronous one; `execute()` and `complete()`
+rethrow, and the answer is false after each.
+
+### `compile_chain_candidate` and the chained tests
+
+`compile_chain_candidate` compiles one kernel over shared USM that the context allocated on device
+0 and classifies the plan. Where `classify_chain()` leaves it on the scheduler the two chained
+tests are skipped. `AChainedRunIsInProgressUntilFinishReturnsOrItIsDestroyed` checks both ends of a
+`ChainRun`: `finish()`, and the destructor of a run that never finished.
+`AScheduledRunInsideAChainedRunLeavesTheChainedRunShowing` runs a scheduled graph and ends a second
+`ChainRun` while the first is alive; the answer stays true until the last one is gone.
+
 ## test_sycl_execution.cpp
 
 ### `MultiStageChain`

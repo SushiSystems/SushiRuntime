@@ -50,6 +50,7 @@ namespace SushiRuntime
     namespace Execution
     {
         class RuntimeContext;
+        class ChainRun;
 
         /** @brief Names Graph::CompiledGraph under its former namespace. */
         using CompiledGraph = Graph::CompiledGraph;
@@ -213,6 +214,16 @@ namespace SushiRuntime
              */
             virtual void collect_profiling(CompiledGraph& /*graph*/,
                                            Observability::RunReport& /*report*/) const {}
+
+            /**
+             * @brief Reports whether a run handed to this engine has not been collected yet.
+             *
+             * Default returns false, so engines that keep no such record and test doubles
+             * need not implement it. Any thread may call it.
+             * @return True from the start of a run until its completing call returns or throws.
+             * @see modules/engine/execution/README.md
+             */
+            [[nodiscard]] virtual bool run_in_progress() const noexcept { return false; }
         };
 
         /**
@@ -321,6 +332,14 @@ namespace SushiRuntime
                                    Observability::RunReport& report) const override;
 
             /**
+             * @brief Reports whether a scheduled or a chained run is in progress on this engine.
+             * @return True inside execute(), between submit() and the end of complete(), and
+             *         while a ChainRun built on this engine's context has not finished.
+             * @see modules/engine/execution/README.md
+             */
+            [[nodiscard]] bool run_in_progress() const noexcept override;
+
+            /**
              * @brief Forwards to the scheduler's set_offload_coordinator().
              * @pre No run is in flight.
              * @param offload Not owned; null removes the installed one.
@@ -331,6 +350,17 @@ namespace SushiRuntime
             [[nodiscard]] Graph::OffloadSink& offload_sink() noexcept;
 
         private:
+            friend class ChainRun;
+
+            /**
+             * @brief Marks one chained run in progress.
+             * @pre Exactly one end_chained_run() follows.
+             */
+            void begin_chained_run() noexcept;
+
+            /** @brief Clears the mark one begin_chained_run() set. */
+            void end_chained_run() noexcept;
+
             struct Impl;
             sushi_ptr<Impl> impl_;
         };
