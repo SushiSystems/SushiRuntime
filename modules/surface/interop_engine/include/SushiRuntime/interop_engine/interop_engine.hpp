@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* interop.hpp                                                            */
+/* interop_engine.hpp                                                     */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,8 +20,9 @@
 /**************************************************************************/
 
 /**
- * @file interop.hpp
+ * @file interop_engine.hpp
  * @brief Declares the non-template entry points behind the Interop facade.
+ * @see modules/surface/interop_engine/README.md
  * @author Sushi (mustafagarip@sushisystems.io)
  */
 

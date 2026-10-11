@@ -1,38 +1,23 @@
 # interop
 
-The non-template entry points behind the `Interop` facade. The headers are in
-`include/SushiRuntime/interop/`.
+The descriptors a consumer exchanges with another graphics or compute API: the UUID of a device,
+an exported memory handle and what a device offers a pairing. The module is header-only and its
+headers are installed.
 
-## interop.cpp
+It depends on the C++ standard library and on no other module of the repository.
 
-### export_host_memory
+## Public entry points
 
-`export_host_memory` builds the `USMAllocationOwner` before it makes the allocation that owner
-will free. A throw between the two, for example `bad_alloc` from `make_unique`, then never leaves
-an allocation that nothing records. Zero bytes return an empty `Allocation` and allocate nothing.
-The function returns `Result<Allocation>`: its `try` covers the owner and the SYCL allocation, and
-both a `sycl::exception` and a null address become an `AllocationFailed` error.
-
-### import_device_memory
-
-The function returns `Result<Allocation>`. The checks run in this order, and the first that fails
-is the error returned; `descriptor_refusal()` and `device_refusal()` hold the checks of the
-descriptor and return `std::optional<Error>`:
-
-| Check | Error |
+| Header | Holds |
 | --- | --- |
-| `capabilities(device).device_import` is true | `Unsupported` |
-| `descriptor.kind` is not `Unspecified` | `InvalidAccess` |
-| `descriptor.kind` is the platform's kind: `OpaqueWin32` on Windows, `OpaqueFd` elsewhere | `InvalidAccess` |
-| an `OpaqueWin32` handle is not null; an `OpaqueFd` handle is at most `INT_MAX` | `InvalidAccess` |
-| `offset + bytes` ends inside `allocation_bytes` | `InvalidAccess` |
-| `descriptor.device` equals the device's UUID | `InvalidAccess` |
+| `device_uuid.hpp` | `DeviceUUID` and its comparisons |
+| `external_memory.hpp` | `ExternalMemoryDescriptor` and `ExternalHandleKind` |
+| `interop_capabilities.hpp` | `InteropCapabilities` |
 
-File descriptor 0 is accepted, because it is a valid descriptor. Zero bytes that pass every check
-return an empty `Allocation`: no import, no mapping, no registry entry.
+Every name is declared in `SushiRuntime`. The `Interop` facade of `api` takes and returns these
+types; `interop_engine` holds the functions that act on them.
 
-`device_import` is true only when the device also reports a UUID, so a device that passes the
-first check can always be matched against `descriptor.device`.
+## external_memory.hpp
 
 ### Who closes descriptor.handle
 
@@ -58,9 +43,6 @@ documentation, when the caller may close the handle (straight after the import, 
 the `Buffer` dies) is open for both kinds, and for `OpaqueFd` so is whether a close after a
 successful import closes a descriptor the driver already owns.
 
-### release_import
+## Tests
 
-Releasing an import is three steps: forget the address, unmap it, release the SYCL import object.
-Each step runs in its own `try`, so a failed unmap still releases. A step that throws is logged
-once at ERROR with its name and the device index, and nothing is rethrown, because the steps run
-from a destructor and from `AllocationOwner::release`, which is `noexcept`.
+`tests/test_interop_vocabulary.cpp` builds `sr_interop_tests`.

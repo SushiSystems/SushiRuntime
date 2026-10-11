@@ -5,9 +5,9 @@ The Buffer-typed side of memory pairing with another API: the Interop facade and
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
 
-The vocabulary the facade speaks (ExternalMemoryDescriptor, InteropCapabilities, DeviceUUID) and the
-exported functions it forwards to are in `include/SushiRuntime/interop/`, which knows nothing about
-Buffer. This folder depends on that one, never the reverse.
+The vocabulary the facade speaks (ExternalMemoryDescriptor, InteropCapabilities, DeviceUUID) is in
+the `interop` module, and the exported functions it forwards to are in `interop_engine`. Neither
+knows Buffer. This folder depends on them, never the reverse.
 
 ## interop.hpp
 
