@@ -196,7 +196,7 @@ points at the caller's add() line.
 | accepts_per_element | add(Dynamic, capacity, reads, writes, fn), add(OperationID, n, reads, writes, fn) |
 | accepts_raw_kernel | add(reads, writes, fn), add_untracked(fn), add_untracked(On, fn) |
 | accepts_task | add_task(reads, writes, fn) |
-| accepts_host_task, accepts_emitter, accepts_extension | add_host, add_emitter, extend |
+| accepts_host_task, accepts_extension | add_host, extend |
 | accepts_step_hook | before_each_step(fn) |
 
 Each function returns what it asserted. The overload records inside `if constexpr` on that

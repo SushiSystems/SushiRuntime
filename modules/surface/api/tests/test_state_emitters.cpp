@@ -40,6 +40,9 @@
 #include <SushiRuntime/api/detail/emit_dynamic.hpp>
 #include <SushiRuntime/api/detail/emit_state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 
 using namespace SushiRuntime;
 
@@ -69,6 +72,16 @@ namespace
     std::shared_ptr<Detail::StateView<Word>> view_of(const State<Word>& state)
     {
         return Detail::HandleAccess::view(state);
+    }
+
+    /** @brief Replays one emit callable onto a backing graph of its own and runs the plan once. */
+    template <class Emit>
+    void run_once(Runtime& rt, const Emit& emit)
+    {
+        Internal::Graph::TaskGraph backing;
+        emit(backing, std::nullopt);
+        Internal::Graph::CompiledGraph plan = backing.compile();
+        rt.unsafe_context().execution_engine().execute(plan);
     }
 } // namespace
 
@@ -141,9 +154,7 @@ TEST(Integration_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
             next[i] = current[i] + 1u;
         });
 
-    auto graph = rt.graph();
-    graph.add_emitter([emit](Internal::Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
-    graph.run();
+    run_once(rt, emit);
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
         ASSERT_EQ(field.next()[i], i < K_PREFIX ? static_cast<Word>(i) + K_SEED + 1u : K_CANARY)
@@ -163,9 +174,7 @@ TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
             next[i] = current[i] + 2u * other[i];
         });
 
-    auto graph = rt.graph();
-    graph.add_emitter([emit](Internal::Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
-    graph.run();
+    run_once(rt, emit);
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
         ASSERT_EQ(out.next()[i], 3u * (static_cast<Word>(i) + K_SEED)) << "at i=" << i;
@@ -182,9 +191,7 @@ TEST(Integration_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWind
         view_of(field), field.size(), bindings, nullptr, std::vector<Internal::Memory::ResourceRegion>{},
         [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
-    auto graph = rt.graph();
-    graph.add_emitter([emit](Internal::Graph::TaskGraph& backing) { emit(backing, std::nullopt); });
-    graph.run();
+    run_once(rt, emit);
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
         ASSERT_EQ(field.next()[i], i < K_PREFIX ? static_cast<Word>(i) + K_SEED + 1u : K_CANARY)

@@ -17,7 +17,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `access.hpp` | Access, what one node reads and writes |
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
 | `node_options.hpp` | NodeOptions: the width, the name, the operation and the parameters of a node |
-| `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_task(), add_host(), add_emitter(), extend(), name(), size(), node_count() and last_rule() |
+| `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_task(), add_host(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
 | `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), their try_ forms, before_each_step(), cancel(), set_profiling() and the step loop |
 | `boundary_access.hpp` | Pin, BaseAccess and compute_boundary_access() |
@@ -48,13 +48,13 @@ handle then owns nothing.
 
 ### rule_registration
 
-A rule is what one add(), add_untracked(), add_task(), add_host() or add_emitter() call records, or
-what one Recorder::rule() scope records. size() counts rules, node_count() counts the nodes they
-lowered to, and rule_registration(rule) takes a position below size(); last_rule() is the position
-of the rule just added. RunReport numbers a node event by registration index, and every node of a
-rule carries the rule's index, so rule_registration() maps a record back to the call that recorded
-it. The indices are drawn when the graph compiles, so every rule reports `K_NO_REGISTRATION` until
-the first run, and a recompile may renumber them.
+A rule is what one add(), add_untracked(), add_task() or add_host() call records, or what one
+extend() call or Recorder::rule() scope records. size() counts rules, node_count() counts the nodes
+they lowered to, and rule_registration(rule) takes a position below size(); last_rule() is the
+position of the rule just added. RunReport numbers a node event by registration index, and every
+node of a rule carries the rule's index, so rule_registration() maps a record back to the call that
+recorded it. The indices are drawn when the graph compiles, so every rule reports
+`K_NO_REGISTRATION` until the first run, and a recompile may renumber them.
 
 DynamicGraph::rule_registration(key, rule) answers the same for a rule of one region. A commit
 renumbers every region, so the answer is read from the node at the time of the call.
@@ -100,8 +100,8 @@ its owner rebuilds once.
 Every node belongs to one rule. rule() opens a scope, and the nodes recorded until it ends form one
 rule; a node recorded outside a scope is a rule of its own. At replay the recorder reserves one
 registration index on the backing graph when the first node of a rule is added and stamps it on all
-of them. The nodes of a rule are contiguous, so replay() needs two locals and no allocation. An
-emitter stamps its own nodes and takes none. A scope that records nothing adds no rule.
+of them. The nodes of a rule are contiguous, so replay() needs two locals and no allocation. A
+scope that records nothing adds no rule.
 
 ### name_last_rule
 
@@ -143,15 +143,17 @@ against released memory. The walk is as long as the number of distinct allocatio
 
 ### replay
 
-replay() adds every recorded node to a backing graph in recording order and stamps each with its
-rule's name. PlanCache::build() and RegionComposer::build_region() both call it, so a static graph
-and a region are replayed by the same code. The visitor overload reports each node, with the
-position of its rule, once it is added; PlanCache uses it to read back the registration index of
-each rule, and the composer to remember a node of each rule.
+replay() adds every recorded node to a backing graph in recording order, names each after its
+rule and writes on it what its NodeOptions stated. PlanCache::build() and
+RegionComposer::build_region() both call it, so a static graph and a region are replayed by the
+same code. The visitor reports each node, with the position of its rule, once it is added;
+PlanCache uses it to read back the registration index of each rule, and the composer to remember
+a node of each rule.
 
-An emitter may add no node. replay() compares the backing graph's last node before and after each
-spec and, when it is the same node, names nothing and does not call the visitor. The rule keeps
-its place in rule_count() and reports `K_NO_REGISTRATION`, and the rule before it keeps its name.
+replay() is private, and PlanCache and RegionComposer are the Recorder's two friends. It is the
+one member of the Recorder whose signature names the engine's TaskGraph, and a caller of the
+surface has no use for it: every recorded node is one the public members recorded, and each adds
+exactly one node to the backing graph.
 
 ### kernel(DeviceSized, ...)
 
@@ -291,7 +293,6 @@ Late binding exists for `Reads` and `Writes` (with a capacity) and for `State` o
 | submits several command groups, or calls a library that takes the queue | `add_task(Reads(a), Writes(b), fn)` |
 | is host C++ and submits no device work | `add_host(Reads(a), Writes(b), fn)` |
 | shares no data with any other rule | `add_untracked(launch, fn)`, with `On(buffer)` when the buffer is not on device 0 |
-| is recorded by a library through the engine's graph | `add_emitter(fn)` |
 | is recorded by a library through the Recorder | `extend(fn)` |
 
 In/Out/InOut is the form to prefer for buffers: the data is named once, and the pointers the
@@ -463,35 +464,15 @@ add_host(fn) is the dependency-free form: with no Reads or Writes the task is bo
 leaf, so it is for self-contained host work (telemetry, a per-step callback) that needs no
 ordering against other tasks.
 
-### add_emitter
-
-add_emitter(emitter) records work the fluent verbs do not shape: `emitter` receives the engine's
-SushiRuntime::Internal::Graph::TaskGraph and adds its own nodes with add_node(), add_task() or add_native().
-It is for a library above the runtime that already records through the lower-level graph and wants
-that work inside a Graph or a Region without restating each task as an add() overload. The runtime
-learns nothing about that library; it calls `emitter` and takes the nodes.
-
-`emitter` is called at every build of the plan, so in a DynamicGraph it runs again each time its
-region is rebuilt and never while the region is left alone. It must therefore be repeatable, and it
-only adds nodes: compiling the graph, taking its nodes or keeping a reference to it breaks the
-build that called it.
-
-An emitter is one rule, so size() counts it once however many nodes it adds. Ordering comes from
-the regions each node declares, exactly as for nodes the fluent verbs emit; the call takes no
-Reads or Writes of its own. The nodes keep the names and registration indices they were recorded
-with, one index per node, so a profile shows each kernel. name() and rule_registration() address
-the last node only.
-
-Device work an emitter records must wait on the dependency events it is handed
-(`h.depends_on(deps)`); a chained plan relies on that for its order.
-
 ### extend
 
 extend(extension) calls `extension(Recorder&)` once, when it is called, and the nodes the
 extension records form one rule. It is how a library that records through the public Recorder
 joins a chain: `graph.add(...).extend([&](Recorder& r) { record_my_nodes(r); }).name("mine")`.
-An emitter is replayed at every build and sees the engine's graph; an extension runs once and
-sees the recorder, so what it records is replayed like any other rule.
+The extension runs once, inside the extend() call, and never when a plan is built: what it
+records is replayed like any other rule. A body that needs the queue is recorded with
+`Recorder::task`. An extension that records nothing adds no rule, so a name() chained onto it
+names the rule before it.
 
 ### name
 
@@ -508,9 +489,8 @@ has one node, so either spelling names it. An extension records several nodes in
 there the two differ: name() gives all of them one label and `NodeOptions::name` tells them apart.
 
 name() copies the label, so a temporary string is a valid argument. Every node of the rule that
-stated no name of its own reports the rule's name; an emitter is the exception, because the
-backing graph can name only the last node an emitter added. An empty label returns the rule to the
-default name, and so does a null `const char*`.
+stated no name of its own reports the rule's name. An empty label returns the rule to the default
+name, and so does a null `const char*`.
 
 ## plan_cache.hpp
 
@@ -1162,7 +1142,7 @@ A Region built without a log belongs to no graph and lists nothing.
 ### Shared surface
 
 Region and Graph take every add() overload (per-element, N-D, State, capture, tracked, dynamic,
-offload), the untracked, emitter and host forms and name() from BuilderSurface, so a region
+offload), the untracked, task and host forms and name() from BuilderSurface, so a region
 records work exactly as a static graph does. A call on a region returns the Region. Both expose
 recorder(), so a function written over a Recorder records onto either.
 

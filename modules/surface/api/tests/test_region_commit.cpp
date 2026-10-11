@@ -35,6 +35,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "dynamic_graph_plan_access.hpp"
+#include "refusing_fill.hpp"
 
 using namespace SushiRuntime;
 
@@ -43,8 +44,8 @@ namespace
     /** @brief Number of elements of every buffer in this file. */
     constexpr std::size_t K_ELEMENTS = 8;
 
-    /** @brief Message of the exception the failing emitter throws. */
-    constexpr const char* K_BUILD_FAILURE = "the emitter refused to build";
+    /** @brief Message of the exception the refused copy of a task throws. */
+    constexpr const char* K_BUILD_FAILURE = "the task refused to build";
 
     /** @brief Returns the plan of a graph that requested profiling. */
     const Internal::Graph::CompiledGraph& plan_of(const DynamicGraph& world)
@@ -110,13 +111,8 @@ TEST(Integration_RegionCommit, AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegion
 
     const auto refuses = std::make_shared<bool>(true);
     world.drop(1);
-    world.region(3).add_emitter([refuses, pd](Internal::Graph::TaskGraph& backing)
-    {
-        if (*refuses)
-            throw std::runtime_error(K_BUILD_FAILURE);
-        backing.add_native({}, {Internal::Memory::ResourceRegion(pd)},
-                           [pd]() { for (std::size_t i = 0; i < K_ELEMENTS; ++i) pd[i] = 5; });
-    });
+    world.region(3).add_host(Reads{}, Writes(own_d),
+                             Testing::RefusingFill(refuses, K_BUILD_FAILURE, pd, K_ELEMENTS, 5));
 
     const auto failed = world.try_run();
     ASSERT_FALSE(failed.has_value());

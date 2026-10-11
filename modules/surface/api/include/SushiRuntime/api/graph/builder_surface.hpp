@@ -48,8 +48,8 @@
 #include <SushiRuntime/api/vocabulary/coupled.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
-#include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/api/vocabulary/placement.hpp>
+#include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/memory/resource_region.hpp>
 
 namespace SushiRuntime
@@ -377,21 +377,6 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Adds an emitter that records its own nodes on the engine's graph.
-             * @param emitter Callable invoked as emitter(SushiRuntime::Internal::Graph::TaskGraph&) at
-             *        every build of the plan.
-             * @pre emitter only adds nodes: it does not compile, drain or keep the graph.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-             */
-            template <class F>
-            Derived& add_emitter(F&& emitter)
-            {
-                if constexpr (Detail::accepts_emitter<F>())
-                    sink().emitter(std::forward<F>(emitter));
-                return self();
-            }
-
-            /**
              * @brief Runs an extension once; the nodes it records form one rule.
              * @param extension Callable invoked as extension(Recorder&).
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
@@ -431,12 +416,12 @@ namespace SushiRuntime
 
             /**
              * @brief Returns how many rules have been added.
-             * @return One per add(), add_untracked(), add_task(), add_host(), add_emitter()
-             *         or extend() call, and one per Recorder::rule() scope that recorded a node.
+             * @return One per add(), add_untracked(), add_task() or add_host() call, and one
+             *         per extend() call or Recorder::rule() scope that recorded a node.
              */
             [[nodiscard]] std::size_t size() const noexcept { return view().rule_count(); }
 
-            /** @brief Returns how many nodes the rules record; an emitter counts as one. */
+            /** @brief Returns how many nodes the rules record. */
             [[nodiscard]] std::size_t node_count() const noexcept
             {
                 return view().node_count();

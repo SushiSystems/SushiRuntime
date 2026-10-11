@@ -86,6 +86,9 @@
 
 namespace SushiRuntime
 {
+    class PlanCache;
+    class RegionComposer;
+
     /**
      * @brief Owns the nodes recorded for one graph or region and replays them.
      *
@@ -321,25 +324,6 @@ namespace SushiRuntime
                 return record(Detail::task_node(std::move(access.reads), std::move(access.writes),
                                                 std::forward<F>(body), options.width),
                               access.lives, options);
-            }
-
-            /**
-             * @brief Records an emitter that adds its own nodes at every replay.
-             * @param fn Callable invoked as fn(TaskGraph&); it only adds nodes.
-             */
-            template <class F>
-            std::size_t emitter(F&& fn)
-            {
-                std::vector<Internal::Memory::LivenessObserver> lives;
-                const std::size_t rule = record(
-                    [emit = std::forward<F>(fn)](::SushiRuntime::Internal::Graph::TaskGraph& bg,
-                                                 std::optional<std::uint32_t>)
-                    {
-                        emit(bg);
-                    }, lives);
-                // An emitter stamps its own nodes, so it takes no registration from a rule.
-                specs_.back().takes_rule_registration = false;
-                return rule;
             }
 
             /**
@@ -758,13 +742,20 @@ namespace SushiRuntime
                 return observers_.size();
             }
 
+            /** @brief Returns the per-step hooks of the recorded nodes. */
+            [[nodiscard]] const Detail::StepMachinery& steps() const noexcept { return steps_; }
+
+        private:
+            // The two plan builders replay the recorded nodes; replay() names the engine's graph.
+            friend class PlanCache;
+            friend class RegionComposer;
+
             /**
              * @brief Adds every recorded node to a backing graph, in recording order.
              *
              * The nodes of one rule share a registration index reserved on target. Each
              * carries what its NodeOptions stated, and the rule's name when it stated none.
-             * @param visit Called as visit(rule, node) once node is added and named; not
-             *        called for an emitter that added nothing.
+             * @param visit Called as visit(rule, node) once node is added and named.
              */
             template <class Visit>
             void replay(::SushiRuntime::Internal::Graph::TaskGraph& target, Visit&& visit) const
@@ -774,34 +765,18 @@ namespace SushiRuntime
                 for (std::size_t node = 0; node < specs_.size(); ++node)
                 {
                     const Detail::NodeSpec& spec = specs_[node];
-                    if (spec.takes_rule_registration && spec.rule != stamped)
+                    if (spec.rule != stamped)
                     {
                         stamped = spec.rule;
                         reserved = target.reserve_registration();
                     }
-                    const ::SushiRuntime::Internal::Graph::Node* before = target.last_node_added();
-                    spec.emit(target, spec.takes_rule_registration
-                                          ? reserved : std::optional<std::uint32_t>());
-                    ::SushiRuntime::Internal::Graph::Node* added = target.last_node_added();
-                    // An emitter may add nothing; the last node is then an earlier rule's.
-                    if (added == before)
-                        continue;
+                    spec.emit(target, reserved);
                     target.name_last_node(rule_names_[spec.rule]);
-                    spec.stamp.apply(*added);
+                    spec.stamp.apply(*target.last_node_added());
                     visit(static_cast<std::size_t>(spec.rule), node);
                 }
             }
 
-            /** @brief Adds every recorded node to a backing graph, in recording order. */
-            void replay(::SushiRuntime::Internal::Graph::TaskGraph& target) const
-            {
-                replay(target, [](std::size_t, std::size_t) {});
-            }
-
-            /** @brief Returns the per-step hooks of the recorded nodes. */
-            [[nodiscard]] const Detail::StepMachinery& steps() const noexcept { return steps_; }
-
-        private:
             /**
              * @brief Appends one node; every recording member ends here.
              * @param emit    Replay callable invoked as emit(TaskGraph&, registration).
