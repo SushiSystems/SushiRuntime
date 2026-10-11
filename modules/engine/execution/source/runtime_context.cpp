@@ -28,10 +28,8 @@
 
 #include <SushiRuntime/execution/runtime_context.hpp>
 
-#include <cstddef>
 #include <exception>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,9 +38,7 @@
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/device/device_info.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
-#include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
@@ -68,7 +64,7 @@ namespace SushiRuntime
                 descriptor.info.memory_bytes = node.global_mem_size;
                 descriptor.info.compute_units = node.max_compute_units;
 
-                // The node's own flag names a GPU, so device_is_gpu() answers as discovery did.
+                // The node's own flag names a GPU, so devices().is_gpu() answers as discovery did.
                 if (node.is_gpu)
                     descriptor.info.kind = Device::DeviceKind::Gpu;
                 else if (node.sycl_dev.is_cpu())
@@ -305,166 +301,6 @@ namespace SushiRuntime
             SR_THROW_IF(!impl_->engine,
                         "ExecutionEngine is not initialized: the context is still being built.");
             return impl_->engine->offload_sink();
-        }
-
-        bool RuntimeContext::profiling_enabled() const noexcept
-        {
-            return impl_->settings.profiling;
-        }
-
-        void RuntimeContext::add_device_to_host_bytes(std::size_t bytes) noexcept
-        {
-            impl_->transfers.add_device_to_host(bytes);
-        }
-
-        void RuntimeContext::add_host_to_device_bytes(std::size_t bytes) noexcept
-        {
-            impl_->transfers.add_host_to_device(bytes);
-        }
-
-        std::size_t RuntimeContext::device_to_host_bytes() const noexcept
-        {
-            return impl_->transfers.device_to_host();
-        }
-
-        std::size_t RuntimeContext::host_to_device_bytes() const noexcept
-        {
-            return impl_->transfers.host_to_device();
-        }
-
-        sycl::queue& RuntimeContext::get_queue(size_t index)
-        {
-            return impl_->devices.queue(index);
-        }
-
-        sycl::queue& RuntimeContext::profiling_queue(size_t index)
-        {
-            return impl_->devices.queue(index, Device::QueueFlavour{false, true});
-        }
-
-        bool RuntimeContext::has_profiling_queue(size_t index) const noexcept
-        {
-            return impl_->devices.has_profiling_queue(index);
-        }
-
-        sycl::queue& RuntimeContext::chain_queue(size_t index, bool profiling)
-        {
-            return impl_->devices.queue(index, Device::QueueFlavour{true, profiling});
-        }
-
-        size_t RuntimeContext::device_count() const
-        {
-            return impl_->devices.count();
-        }
-
-        bool RuntimeContext::device_is_gpu(size_t index) const
-        {
-            return impl_->devices.is_gpu(index);
-        }
-
-        sycl::queue& RuntimeContext::get_numa_local_queue(int numa_id)
-        {
-            return impl_->devices.queue_or_numa_local(std::nullopt, numa_id);
-        }
-
-        sycl::queue& RuntimeContext::get_queue_for_ptr(void* ptr, int fallback_numa)
-        {
-            return impl_->devices.queue_or_numa_local(impl_->memory->owning_device(ptr),
-                                                      fallback_numa);
-        }
-
-        int RuntimeContext::context_index_for_ptr(void* ptr) noexcept
-        {
-            const std::optional<std::size_t> device = impl_->memory->device_of(ptr);
-            return device ? static_cast<int>(*device) : -1;
-        }
-
-        void* RuntimeContext::malloc_shared(size_t bytes, int numa_id)
-        {
-            return impl_->memory->allocate(
-                {Memory::USMKind::Shared, bytes, 0, impl_->devices.device_for_numa(numa_id)});
-        }
-
-        void* RuntimeContext::malloc_device(size_t bytes, int numa_id)
-        {
-            return impl_->memory->allocate(
-                {Memory::USMKind::Device, bytes, 0, impl_->devices.device_for_numa(numa_id)});
-        }
-
-        void* RuntimeContext::malloc_shared_on(size_t bytes, size_t device_index)
-        {
-            return impl_->memory->allocate({Memory::USMKind::Shared, bytes, 0, device_index});
-        }
-
-        void* RuntimeContext::malloc_device_on(size_t bytes, size_t device_index)
-        {
-            return impl_->memory->allocate({Memory::USMKind::Device, bytes, 0, device_index});
-        }
-
-        void* RuntimeContext::malloc_host_on(size_t bytes, size_t device_index)
-        {
-            return impl_->memory->allocate({Memory::USMKind::Host, bytes, 0, device_index});
-        }
-
-        void RuntimeContext::free_usm(void* ptr)
-        {
-            impl_->memory->release(ptr);
-        }
-
-        void* RuntimeContext::aligned_malloc_host_on(size_t alignment, size_t bytes,
-                                                     size_t device_index)
-        {
-            return impl_->memory->allocate({Memory::USMKind::Host, bytes, alignment, device_index});
-        }
-
-        void* RuntimeContext::aligned_malloc_shared_on(size_t alignment, size_t bytes,
-                                                       size_t device_index)
-        {
-            return impl_->memory->allocate(
-                {Memory::USMKind::Shared, bytes, alignment, device_index});
-        }
-
-        void* RuntimeContext::aligned_malloc_device_on(size_t alignment, size_t bytes,
-                                                       size_t device_index)
-        {
-            return impl_->memory->allocate(
-                {Memory::USMKind::Device, bytes, alignment, device_index});
-        }
-
-        void RuntimeContext::adopt_usm(void* address, size_t device_index,
-                                       std::optional<std::size_t> bytes)
-        {
-            impl_->memory->adopt(address, device_index, bytes);
-        }
-
-        std::optional<void*> RuntimeContext::containing_usm_base(void* ptr) const
-        {
-            return impl_->memory->containing_base(ptr);
-        }
-
-        void RuntimeContext::forget_usm(void* address) noexcept
-        {
-            impl_->memory->forget(address);
-        }
-
-        std::size_t RuntimeContext::live_usm_count() const
-        {
-            return impl_->memory->live_count();
-        }
-
-        int RuntimeContext::numa_distance(int numa_a, int numa_b) const
-        {
-            return impl_->topology.numa_distance(numa_a, numa_b);
-        }
-
-        const std::vector<int>& RuntimeContext::cpu_core_to_numa() const
-        {
-            return impl_->topology.core_to_numa();
-        }
-
-        void RuntimeContext::wait_all()
-        {
-            impl_->devices.wait_all();
         }
 
     } // namespace Execution

@@ -30,7 +30,7 @@ once when the run starts and once when it ends; submit_step() does not touch it.
 
 ## execution_engine.hpp
 
-### Including graph/node.hpp
+### Including the Node definition
 
 CompiledGraph holds sushi_ptr\<Graph::Node> members and is exported from the DLL (SUSHIRUNTIME_API).
 On Windows, exporting a class forces its implicit special members to be instantiated at the class
@@ -163,126 +163,12 @@ becomes a HwlocTopologyProvider and a null `distance_model` becomes a HwlocDista
 production defaults. Tests pass RemappingTopologyProvider and MatrixDistanceModel to exercise
 multi-node logic on single-node hardware.
 
-### profiling_enabled
-
-profiling_enabled() is true if device kernel timing is available. It lets the run driver skip all
-profiling collection when the context was created without it, keeping the no-profiling path free of
-timing reads. The value is fixed at construction.
-
 ### settings
 
 The scheduler reads worker count and core placement from settings() at construction, and the
 execution engine reads the rebalancer choice. Routing them through the context and not through each
 constructor's parameter list keeps one source of truth and stops the signatures growing a parameter
 per setting. The settings are fixed at construction.
-
-### add_device_to_host_bytes
-
-The selective-readback path (Buffer::read_range) calls add_device_to_host_bytes() so a run report
-can attribute host-pull traffic. It counts only runtime-issued copies, never the driver's implicit
-USM migration.
-
-### profiling_queue
-
-The profiling queue shares the plain queue's sycl::context (and its in-order property, when the
-device needs one) but carries enable_profiling, so events it submits expose command_submit,
-command_start and command_end. It is built on the first call for that device, under a per-device
-once_flag, unless RuntimeSettings::profiling built it at construction. The plain queue returned by
-get_queue() is unchanged by this call. When RuntimeSettings::profiling is true the plain queue
-already carries enable_profiling, so profiling_queue() returns that same queue instead of a second
-one. The queues live in Device::DeviceQueueSet; `modules/platform/device/README.md` has the
-slot each call maps to.
-
-### has_profiling_queue
-
-has_profiling_queue() is true only after profiling_queue() or chain_queue(index, true) has been
-called for `xpu_index`, or after RuntimeSettings::profiling built the queue eagerly. It exists so a
-caller can observe the lazy-build contract (no profiling queue before the first request) without
-triggering the build itself by calling profiling_queue().
-
-### chain_queue
-
-The chain queue shares the plain queue's sycl::context, so USM allocated through this context is
-valid on it. It is built on the first call for that device and flavour, under a per-device
-once_flag, and owned for the context's lifetime beside the plain and profiling queues. On a device
-whose plain queue is already in-order, a device that is neither a CPU nor a GPU, chain_queue()
-returns the plain queue or the profiling queue itself and builds no second one.
-
-### device_count
-
-device_count() reflects SushiRuntime's own device set after deduplication (one CPU per NUMA node,
-GPUs once each), which can differ from sycl::device::get_devices(). Valid indices are [0, count).
-
-### device_is_gpu
-
-device_is_gpu() answers from the inventory built at construction, not by asking SYCL again.
-The device class of a queue cannot change while the context is alive, so re-deriving it per call is
-redundant work. It is not free work either: `queue::get_device()` returns a device by value, and the
-SYCL runtime, not SushiRuntime, defines what that costs. A caller on a steady-state tick path cannot
-hold a zero-allocation contract across that difference, which is exactly what run_report_builder was
-doing.
-
-### get_queue_for_ptr
-
-USM is pinned to the device and context it was allocated on, so a kernel touching it must run on a
-queue sharing that context; running it elsewhere (CPU USM on a CUDA queue, for example) is an
-illegal cross-context access. get_queue_for_ptr() returns the owning queue of a USM pointer the task
-reads or writes. If `ptr` is null or not found in any queue's context, it falls back to
-get_numa_local_queue(`fallback_numa`), which preserves round-robin for pointer-less tasks.
-
-### context_index_for_ptr
-
-context_index_for_ptr() is the integer counterpart of get_queue_for_ptr(). It lets the scheduler
-tell whether two of a node's pointers live on the same context (equal indices) or straddle a device
-boundary, without comparing queue objects. The index is the one get_queue() and malloc_shared_on()
-use, so the scheduler can re-allocate a staging copy on the owning device.
-
-### malloc_shared
-
-malloc_shared() is the better choice over a bare sycl::malloc_shared when graph tasks will touch the
-data: the runtime remembers which queue (device and context) the allocation belongs to, so the
-scheduler can dispatch the task to that exact queue and never trigger a cross-context illegal
-access. The allocation goes to the lowest-indexed device on `numa_id`, or to device 0 when that
-node has no device, so the same `numa_id` always names the same device.
-
-### malloc_shared_on
-
-Unlike malloc_shared(bytes, numa_id), which resolves a NUMA node to a device,
-malloc_shared_on() allocates on exactly `device_index` and records that owner. It is for buffers
-that must share one context, because a kernel touching USM from two different device contexts is an
-illegal cross-context access. The fluent Buffer and State handles allocate through it so a graph's
-data stays co-located.
-
-### malloc_device_on
-
-malloc_device_on() is the device-resident counterpart of malloc_shared_on(): the allocation stays on
-`device_index` and is never host-addressable, so a field kept resident across frames does not
-migrate to the host on access. The owner is recorded exactly as for shared USM, so the scheduler
-routes kernels to the owning queue and selective host readback copies through it. It is for
-device-resident buffers that must share one context, such as a State's two fields.
-
-### malloc_host_on
-
-Kernels on `device_index` read and write the allocation, and the host reads it at any time. The
-owner is recorded as for malloc_shared_on.
-
-### aligned_malloc_shared_on
-
-aligned_malloc_shared_on() is malloc_shared_on() with a stated alignment: the allocation starts on a
-multiple of `alignment` bytes, the owner is recorded the same way, and free_usm() releases it. It is
-for buffers a consumer reads in vector-width or cache-line steps, such as tensor storage.
-
-### aligned_malloc_device_on
-
-aligned_malloc_device_on() is the device-resident counterpart, as malloc_device_on() is of
-malloc_shared_on(). Whether a backend honours an alignment above its own default for device USM is
-the backend's to answer; the call returns nullptr when it cannot.
-
-### containing_usm_base
-
-containing_usm_base() lets a caller holding an interior pointer name the allocation it belongs to,
-which get_queue_for_ptr() and sycl::get_pointer_type() cannot: both answer on exact base addresses.
-The search is linear in live allocations, so it belongs in graph building, never in dispatch.
 
 ### install_offload and offload
 
@@ -635,13 +521,13 @@ keeps its in-order guarantee.
 
 The queues themselves, their lazy build and the NUMA rotation live in
 `Device::DeviceQueueSet`; `modules/platform/device/README.md` describes them. The context
-keeps no queue of its own. `profiling_queue(i)` asks the set for the flavour
-`{in_order = false, profiling = true}` and `chain_queue(i, profiling)` for
+keeps no queue of its own. `devices().queue(i, {false, true})` asks the set for the flavour
+`{in_order = false, profiling = true}` and `devices().queue(i, {true, profiling})` for
 `{in_order = true, profiling}`.
 
 `describe_device()` turns each `Topology::HardwareNode` into a `Device::DeviceDescriptor`, so
 the device module includes no topology header. A node whose `is_gpu` flag is set becomes
-`DeviceKind::Gpu` whatever SYCL reports, which keeps `device_is_gpu()` answering from the flag
+`DeviceKind::Gpu` whatever SYCL reports, which keeps `devices().is_gpu()` answering from the flag
 discovery recorded. Descriptors are built by walking the node list in order, one per node
 with no skips, so a node and its queue share an index.
 
@@ -664,34 +550,34 @@ monotonic counters read at a run boundary, with no ordering dependency on other 
 
 #### USM ownership
 
-`Memory::USMAllocator` maps a USM pointer to the index of its owning queue. Every
-`RuntimeContext::malloc_*` forwards to its `allocate()`, so the scheduler can run a task on
+`Memory::USMAllocator` maps a USM pointer to the index of its owning queue. Each allocation
+made by `RuntimeContext::memory().allocate()` is recorded, so the scheduler can run a task on
 the exact queue and context its data was allocated on. The record is the source of truth;
 pointer introspection stays only as a best-effort fallback.
 
 Introspection is unreliable for picking an owner. On a single platform, CUDA for example, a
-`malloc_shared` or `malloc_device` pointer is valid in sibling contexts too, but only the
+shared or device USM pointer is valid in sibling contexts too, but only the
 owning context reports it as exactly the kind it created: device USM reports `device` in its
 own context and shared USM reports `shared`. A context that does not own the pointer
 typically reports a different kind. CUDA shared USM was observed showing up as `device` in
-the CPU context. `get_queue_for_ptr()` therefore never trusts the type alone. For USM that
+the CPU context. `memory().owning_device()` therefore never trusts the type alone. For USM that
 was not allocated through this context, such as a test calling bare `sycl::malloc_shared`,
 it prefers a queue that both reports device-or-shared and whose own device equals
 `get_pointer_device()`; that pair identifies the allocating queue, and a `shared` report
 settles it at once. Host USM, a null pointer, or anything that cannot be pinned takes the
 NUMA-local round-robin queue.
 
-`free_usm()` forwards to the allocator's `release()`, which resolves and forgets the owner
+`memory().release()` resolves and forgets the owner
 in one `take()`. Two separate locks would let a second free of the same pointer read an
 owner the first is already acting on. The free goes against the owning queue's context,
 which correctness requires; without a record it falls back to queue 0 as a best effort and
-logs a WARN. An address recorded through `adopt_usm()` is forgotten and not freed.
+logs a WARN. An address recorded through `memory().adopt()` is forgotten and not freed.
 
 The allocator tells a `Memory::USMReleaseObserver` about a release before the record is
 dropped and the memory freed. The context installs none; `Distributed::Cluster::attach()`
 installs its coordinator there, and `~Impl` clears whatever is installed.
 
-`containing_usm_base()` resolves an interior pointer to the base `owner_of()` knows, for
+`memory().containing_base()` resolves an interior pointer to the base `owner_of()` knows, for
 callers validating a pointer a user handed them. It is linear in live allocations, which
 makes it a registration-time query and not a dispatch-time one.
 

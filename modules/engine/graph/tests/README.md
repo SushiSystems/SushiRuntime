@@ -34,8 +34,8 @@ list, the bindings, the execution mode, the live lists), and no two calls may sh
 ### `AReturnedNodeTakesItsRegistrationAndConfiguration`
 
 A node added with a registration carries it, and one added without draws the index
-`last_registration_index()` reports. A name, a width and a placement written through the reference
-are what the "last node" accessors then read back.
+`last_node_added()->registration_index` reports. A name, a width and a placement written
+through the reference are what the "last node" accessors then read back.
 
 ### `ARegistrationTheGraphNeverIssuedIsRefused`
 

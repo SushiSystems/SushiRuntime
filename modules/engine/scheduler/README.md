@@ -157,14 +157,12 @@ shared and needs no synchronisation.
 ### completed_task_count
 
 completed_task_count() returns a running total, not a per-interval rate; callers diff two snapshots
-to compute a rate over an interval. `get_completion_rate()` is its deprecated spelling and forwards
-to it.
+to compute a rate over an interval.
 
 ### migrate_tasks
 
 migrate_tasks(from_worker_id, count) names no destination, because no implementation picks one: the
-tasks go where any worker can take them. The three-argument form is deprecated, ignores
-`to_worker_id` and forwards to this one.
+tasks go where any worker can take them.
 
 ## run_outcome.hpp
 

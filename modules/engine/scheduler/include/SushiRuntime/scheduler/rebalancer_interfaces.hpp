@@ -63,13 +63,6 @@ namespace SushiRuntime
                  * @see modules/engine/scheduler/README.md
                  */
                 virtual size_t completed_task_count(int worker_id) const = 0;
-
-                /** @brief Forwards to completed_task_count(). */
-                [[deprecated("use completed_task_count")]]
-                size_t get_completion_rate(int worker_id) const
-                {
-                    return completed_task_count(worker_id);
-                }
         };
 
         /**
@@ -89,17 +82,6 @@ namespace SushiRuntime
                  * @param count          Maximum number of tasks to move.
                  */
                 virtual void migrate_tasks(int from_worker_id, size_t count) = 0;
-
-                /**
-                 * @brief Forwards to migrate_tasks(from_worker_id, count).
-                 * @param to_worker_id Not read; no implementation chooses the destination.
-                 */
-                [[deprecated("use migrate_tasks(from_worker_id, count)")]]
-                void migrate_tasks(int from_worker_id, int to_worker_id, size_t count)
-                {
-                    static_cast<void>(to_worker_id);
-                    migrate_tasks(from_worker_id, count);
-                }
         };
 
         /**
