@@ -259,6 +259,14 @@ reserve_registration() lets an add() shape that registers several internal nodes
 `registration`, so they report the same Node::registration_index. It is safe to call any number of
 times; each call returns a distinct value.
 
+An add_\* call accepts only an index this graph issued: one reserve_registration() returned, or one
+an earlier node drew. Indices are issued densely from zero, so the test is "below the count issued
+so far". Any other index throws `Core::SushiException` with `Errc::invalid_graph`, and the message
+names the call, the index and the count. CompiledGraph::capture_profiling_state() sizes two vectors
+to the largest index plus one, so an index nobody issued could ask for 2^32 elements or collide with
+one the graph issues later. NO_REGISTRATION, which last_registration_index() returns for an empty
+graph, is the first case. An issued index may be passed any number of times.
+
 ### add_task(meta, read_access, write_access, device_work, fallback_work, ...)
 
 This overload is for kernel-capable tasks that need a real device lambda. The host fallback is still
@@ -353,6 +361,12 @@ leaf candidate stacks, in O(1), so graph construction needs no `std::mutex`. The
 registration index is stamped before the node is published, so every reader sees a formed
 index.
 
+`require_issued()` checks a caller's registration index at the top of each add function, before
+the node exists. `push_node_lock_free()` is too late for it: by then the dependency pass has
+recorded the node's accesses and may have wired edges to it, and a throw would free the node
+under those raw pointers. The check costs one relaxed load and a compare per add call that
+passes an index, at graph build; nothing reads it at dispatch.
+
 `registration_counter_` is atomic for the same reason. `add_node()`, `add_task()`,
 `add_native()` and `add_offload_dynamic()` run on the same lock-free contract as the rest of
 graph construction, so a plain counter would race under concurrent callers. `fetch_add`
@@ -388,6 +402,14 @@ coordinator's `prepare()` after the tracker is reset and before the graph is ret
 coordinator no node gets an offload state from `compile()`, so the scheduler's offload
 branch does nothing for it. The constructor that takes a `RuntimeContext` ignores it and
 builds a graph with no coordinator.
+
+The graph holds the coordinator's raw address from construction until `compile()` has called
+`prepare()`. Whoever installed the coordinator keeps it installed and alive for that span:
+`RuntimeContext::install_offload()` releases the one it replaces, and a graph that still
+pointed at it would call a destroyed object from `compile()`. `take_nodes()` and the
+destructor never call the coordinator. The fluent layer builds a fresh `TaskGraph` inside
+each `PlanCache::build()` and `RegionComposer::build_region()` and finishes it in the same
+call, so it holds no graph across an install.
 
 The add functions keep nothing for offload beyond `io_reads_` and `io_writes_`, which
 `prepare()` reads. `add_offload_dynamic()` is the exception: it stores the two live lists
