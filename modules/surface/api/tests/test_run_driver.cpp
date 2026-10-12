@@ -50,7 +50,7 @@
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
 
 #include "refusing_fill.hpp"
 
@@ -577,7 +577,7 @@ TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
     EXPECT_EQ(without.distributed_statistics.tasks_offloaded_to_network, 0u);
     ASSERT_EQ(local_runs.load(), 1);
 
-    SushiRuntime::Detail::ContextAccess::context(rt).install_offload(
+    SushiRuntime::Internal::ContextAccess::context(rt).install_offload(
         std::make_shared<AcceptingCoordinator>());
 
     // A plan is marked when it is built, so the graph is recorded after the install.

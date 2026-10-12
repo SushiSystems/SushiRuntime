@@ -498,8 +498,8 @@ an installed header changing.
 The library converts in one place per type. `source/plan_access.hpp` defines engine_plan() and
 surface_plan(), and `source/late_controls_access.hpp` defines engine_controls() and
 surface_controls(). Each is a pointer cast between the name and the engine's type, inline and
-private to `source/`, and a shared pointer keeps its control block. `Detail::Context` in
-`runtime/context.hpp` is the third name of the kind.
+private to `source/`, and a shared pointer keeps its control block. `Detail::Context` of the
+`context` module is the third name of the kind, and the `context_access` module converts it.
 
 ## late_window.hpp
 

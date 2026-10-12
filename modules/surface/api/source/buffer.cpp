@@ -39,7 +39,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/allocation.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
@@ -64,7 +64,8 @@ namespace SushiRuntime
             copy_on_owning_queue(const ContextHandle& context, void* base, void* destination,
                                  const void* source, std::size_t bytes) noexcept
             {
-                Internal::Execution::RuntimeContext& runtime = ContextAccess::context(context);
+                Internal::Execution::RuntimeContext& runtime =
+                    Internal::ContextAccess::context(context);
                 Result<void> copied = Internal::SYCL::translate_exceptions(
                     [&runtime, base, destination, source, bytes]()
                 {
@@ -78,7 +79,7 @@ namespace SushiRuntime
 
         std::size_t device_count(const ContextHandle& context)
         {
-            return ContextAccess::context(context).devices().count();
+            return Internal::ContextAccess::context(context).devices().count();
         }
 
         Result<MemoryBlock> allocate_block(const ContextHandle& context, std::size_t count,
@@ -92,7 +93,7 @@ namespace SushiRuntime
                 ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&]()
             {
                 const std::shared_ptr<Internal::Execution::RuntimeContext> shared =
-                    ContextAccess::shared(context);
+                    Internal::ContextAccess::shared(context);
                 auto owner = std::make_unique<Internal::Memory::USMAllocationOwner>(
                     shared->shared_memory());
                 void* address = malloc_residency_on(*shared, bytes, DeviceIndex{device},

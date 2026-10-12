@@ -34,10 +34,10 @@
 #include <optional>
 #include <utility>
 
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/chain_run.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
@@ -179,7 +179,7 @@ namespace SushiRuntime
 
         bool profiling_default(const ContextHandle& context) noexcept
         {
-            return ContextAccess::context(context).settings().profiling;
+            return Internal::ContextAccess::context(context).settings().profiling;
         }
 
         Result<void> run_steps(const StepTarget& target, StepPredicate keep_going,
@@ -197,7 +197,7 @@ namespace SushiRuntime
             // State views point at their current and next buffers before the first step.
             steps.resync();
 
-            RuntimeContext& context = ContextAccess::context(*target.context);
+            RuntimeContext& context = Internal::ContextAccess::context(*target.context);
             ExecutionEngine& engine = context.execution_engine();
             engine.reset_cancellation();
 
@@ -244,7 +244,7 @@ namespace SushiRuntime
 
         Result<void> submit_step(const StepTarget& target, AsyncRunState& state)
         {
-            RuntimeContext& context = ContextAccess::context(*target.context);
+            RuntimeContext& context = Internal::ContextAccess::context(*target.context);
             ExecutionEngine& engine = context.execution_engine();
             CompiledGraph& plan = *engine_plan(target.plan);
             const StepMachinery& steps = *target.steps;
@@ -274,7 +274,7 @@ namespace SushiRuntime
                                  RunReport& report)
         {
             const auto finished = std::chrono::steady_clock::now();
-            RuntimeContext& context = ContextAccess::context(*target.context);
+            RuntimeContext& context = Internal::ContextAccess::context(*target.context);
             ExecutionEngine& engine = context.execution_engine();
             const StepMachinery& steps = *target.steps;
             CompiledGraph& plan = *engine_plan(target.plan);
@@ -303,27 +303,28 @@ namespace SushiRuntime
 
         Result<void> complete_step(const ContextHandle& context)
         {
-            return ContextAccess::context(context).execution_engine().complete();
+            return Internal::ContextAccess::context(context).execution_engine().complete();
         }
 
         bool step_finished(const ContextHandle& context)
         {
-            return ContextAccess::context(context).execution_engine().run_finished();
+            return Internal::ContextAccess::context(context).execution_engine().run_finished();
         }
 
         bool supports_asynchronous_run(const ContextHandle& context)
         {
-            return ContextAccess::context(context).execution_engine().supports_asynchronous_run();
+            return Internal::ContextAccess::context(context)
+                .execution_engine().supports_asynchronous_run();
         }
 
         bool run_in_progress(const ContextHandle& context) noexcept
         {
-            return ContextAccess::context(context).execution_engine().run_in_progress();
+            return Internal::ContextAccess::context(context).execution_engine().run_in_progress();
         }
 
         void cancel_run(const ContextHandle& context) noexcept
         {
-            ContextAccess::context(context).execution_engine().cancel();
+            Internal::ContextAccess::context(context).execution_engine().cancel();
         }
     } // namespace Detail
 } // namespace SushiRuntime

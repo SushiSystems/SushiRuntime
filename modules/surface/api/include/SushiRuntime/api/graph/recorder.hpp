@@ -68,12 +68,12 @@
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/api/launch/extent.hpp>
 #include <SushiRuntime/api/launch/nd_range.hpp>
-#include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/api/vocabulary/coupled.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
 #include <SushiRuntime/api/vocabulary/placement.hpp>
+#include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>

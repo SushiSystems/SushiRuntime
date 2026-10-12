@@ -31,7 +31,7 @@
 #include <optional>
 #include <gtest/gtest.h>
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 
@@ -57,7 +57,8 @@ TEST(Integration_InteropHostExport, TheRegistryRoutesTheExportedAddress)
 {
     auto runtime = Runtime::create().value();
     auto shared = runtime.interop().export_host<float>(16, DeviceIndex{0}, 4096).value();
-    Internal::Memory::USMAllocator& memory = SushiRuntime::Detail::ContextAccess::context(runtime).memory();
+    Internal::Memory::USMAllocator& memory =
+        Internal::ContextAccess::context(runtime).memory();
     EXPECT_EQ(memory.device_of(shared.address), std::optional<std::size_t>(0));
 }
 

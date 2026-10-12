@@ -161,7 +161,9 @@ was compiled with against the library it loaded.
 
 The distributed layer sits above this one and enters through a `Runtime&`:
 `Distributed::Cluster::attach()` takes the Runtime, reaches its context through
-`Detail::ContextAccess` and installs its master there, so no header here names a transport.
+`Internal::ContextAccess` of the `context_access` module and installs its master there, so no
+header here names a transport. Runtime befriends `Detail::ContextHandleAccess` of the `context`
+module for that, which reads the handle and nothing else.
 
 ## errors.hpp
 
@@ -181,16 +183,3 @@ declare `LogLevel`, `set_log_level`, `log_level`, `LogSink`, `set_log_sink` and
 calls; the `SR_LOG_*` macros and `log_write` stay in `logging/logger.hpp`, which the surface does
 not include. A consumer's test calls `set_log_synchronous(true)` before it installs a sink, so
 each record has reached the sink when the call that logged it returns.
-
-## context_handle.hpp
-
-### ContextHandle
-
-A ContextHandle shares ownership of one runtime's context. Every graph, recorder and region
-holds one, so the context lives as long as the last of them. The handle holds the context as a
-`std::shared_ptr<Detail::Context>`, a type `context.hpp` declares and nothing defines, and
-includes no header of the engine: a program that holds a handle can copy it and test it for
-emptiness, and nothing more. The constructor that takes a context is private. The handle has one
-friend, `Detail::ContextAccess`, through which the library's sources wrap a context they built
-and read it back. That is the one place that converts between `Detail::Context` and the
-engine's context.

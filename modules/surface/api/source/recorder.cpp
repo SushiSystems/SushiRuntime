@@ -46,7 +46,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 
@@ -86,7 +86,7 @@ namespace SushiRuntime
             ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&]()
         {
             std::shared_ptr<Internal::Execution::RuntimeContext> context =
-                Detail::ContextAccess::shared(context_);
+                Internal::ContextAccess::shared(context_);
             void* raw = Detail::malloc_residency_on(*context, bytes, device, residency);
             if (raw == nullptr)
             {
@@ -114,7 +114,7 @@ namespace SushiRuntime
     void Recorder::require_device_slots(const Dynamic& window) const
     {
         const std::optional<Error> refusal = Detail::host_device_slots_refusal(
-            Detail::ContextAccess::context(context_), window, next_rule());
+            Internal::ContextAccess::context(context_), window, next_rule());
         SR_VERIFY(!refusal, refusal->message.c_str());
     }
 
@@ -156,7 +156,7 @@ namespace SushiRuntime
             return host_fault_record();
         void* address = const_cast<void*>(static_cast<const void*>(slot));
         Internal::Memory::USMAllocator& memory =
-            Detail::ContextAccess::context(context_).memory();
+            Internal::ContextAccess::context(context_).memory();
         const std::optional<void*> base = memory.containing_base(address);
         const std::optional<std::size_t> device = memory.device_of(base ? *base : address);
         return fault_record(DeviceIndex{device.value_or(0)});

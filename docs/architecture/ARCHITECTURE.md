@@ -48,6 +48,8 @@ A module is public or internal.
 | engine | [execution](../../modules/engine/execution/README.md) | internal | The runtime context, the execution engine, the in-order chain |
 | surface | [interop](../../modules/surface/interop/README.md) | public | The descriptors exchanged with another graphics or compute API |
 | surface | [memory_exchange](../../modules/surface/memory_exchange/README.md) | internal | Host export and device import of memory, behind `Interop` |
+| surface | [context](../../modules/surface/context/README.md) | public | `ContextHandle`, the share of a runtime's context every handle holds |
+| surface | [context_access](../../modules/surface/context_access/README.md) | internal | The way from a `ContextHandle` to the engine's context |
 | surface | [api](../../modules/surface/api/README.md) | public | `Runtime`, `Buffer`, `State`, `Graph`, `DynamicGraph`, `Recorder`, the vocabulary, the umbrella header |
 | extension | [distributed](../../modules/extension/distributed/README.md) | public, optional | The master and worker layer; built when `SR_ENABLE_DISTRIBUTED` is on |
 

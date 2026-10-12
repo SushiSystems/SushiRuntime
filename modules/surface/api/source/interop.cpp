@@ -34,7 +34,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/interop/external_memory.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
@@ -72,14 +72,14 @@ namespace SushiRuntime
     Result<InteropCapabilities> Interop::capabilities(DeviceIndex device) const
     {
         return Internal::MemoryExchange::query_capabilities(
-            Detail::ContextAccess::context(context_), device.value());
+            Internal::ContextAccess::context(context_), device.value());
     }
 
     Result<Detail::MemoryBlock> Interop::export_host_block(std::size_t bytes, DeviceIndex device,
                                                            std::size_t alignment) const
     {
         return owned_block(Internal::MemoryExchange::export_host_memory(
-            Detail::ContextAccess::shared(context_), bytes, device.value(), alignment));
+            Internal::ContextAccess::shared(context_), bytes, device.value(), alignment));
     }
 
     Result<Detail::MemoryBlock>
@@ -87,6 +87,6 @@ namespace SushiRuntime
                                  DeviceIndex device) const
     {
         return owned_block(Internal::MemoryExchange::import_device_memory(
-            Detail::ContextAccess::shared(context_), descriptor, bytes, device.value()));
+            Internal::ContextAccess::shared(context_), descriptor, bytes, device.value()));
     }
 } // namespace SushiRuntime

@@ -40,7 +40,7 @@
 #include <SushiRuntime/api/detail/emit_dynamic.hpp>
 #include <SushiRuntime/api/detail/emit_state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
@@ -86,7 +86,7 @@ namespace
         Internal::Graph::TaskGraph backing;
         Detail::add_described_node(backing, description, std::nullopt);
         Internal::Graph::CompiledGraph plan = backing.compile().value();
-        Detail::ContextAccess::context(rt).execution_engine().execute(plan).value();
+        Internal::ContextAccess::context(rt).execution_engine().execute(plan).value();
     }
 } // namespace
 

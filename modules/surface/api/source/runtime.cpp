@@ -31,10 +31,10 @@
 #include <memory>
 #include <utility>
 
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
@@ -65,18 +65,18 @@ namespace SushiRuntime
                                                         settings_of(config));
         if (!context)
             return make_error(std::move(context.error()));
-        return Detail::ContextAccess::handle(std::move(*context));
+        return Internal::ContextAccess::handle(std::move(*context));
     }
 
     const Runtime& Runtime::set_rebalancer_enabled(bool enabled) const
     {
-        Detail::ContextAccess::context(context_).execution_engine().set_rebalancer_enabled(
+        Internal::ContextAccess::context(context_).execution_engine().set_rebalancer_enabled(
             enabled);
         return *this;
     }
 
     Result<void> Runtime::wait() const
     {
-        return Detail::ContextAccess::context(context_).devices().wait_all();
+        return Internal::ContextAccess::context(context_).devices().wait_all();
     }
 } // namespace SushiRuntime

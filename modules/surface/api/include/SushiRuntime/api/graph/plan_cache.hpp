@@ -37,7 +37,7 @@
 #include <SushiRuntime/api/detail/plan.hpp>
 #include <SushiRuntime/api/graph/plan_view.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
-#include <SushiRuntime/api/runtime/context_handle.hpp>
+#include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 

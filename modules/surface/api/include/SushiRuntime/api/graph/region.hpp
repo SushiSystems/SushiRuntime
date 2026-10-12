@@ -35,7 +35,7 @@
 
 #include <SushiRuntime/api/graph/builder_surface.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
-#include <SushiRuntime/api/runtime/context_handle.hpp>
+#include <SushiRuntime/context/context_handle.hpp>
 
 namespace SushiRuntime
 {

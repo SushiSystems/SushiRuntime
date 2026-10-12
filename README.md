@@ -167,7 +167,8 @@ modules/                One folder per module, grouped by tier, lowest first.
                         logging, sycl (internal)
   platform/             topology, memory, device, observability (internal)
   engine/               task, scheduler, graph, execution (internal)
-  surface/              interop, api (public); memory_exchange (internal)
+  surface/              interop, context, api (public);
+                        memory_exchange, context_access (internal)
   extension/            distributed (public, optional)
 applications/examples/  Nine example programs on the public API
 tests/                  Tests that cross module boundaries, and tests/package/, a consumer

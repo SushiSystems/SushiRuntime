@@ -34,6 +34,8 @@ set(SUSHIRUNTIME_MODULE_TIERS
     execution       engine
     interop         surface
     memory_exchange  surface
+    context         surface
+    context_access  surface
     api             surface
     distributed     extension)
 
@@ -50,8 +52,11 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     execution       scheduler
     execution       graph
     memory_exchange  interop
+    context_access  context
     api             interop
-    api             memory_exchange)
+    api             memory_exchange
+    api             context
+    api             context_access)
 
 # Module, then the option that switches it on. A module not listed is always built.
 set(SUSHIRUNTIME_OPTIONAL_MODULES

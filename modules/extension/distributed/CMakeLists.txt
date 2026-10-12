@@ -52,6 +52,7 @@ sushiruntime_add_module(
         execution
         region
         log
+        context_access
     EXTERNAL "$<$<PLATFORM_ID:Windows>:ws2_32>")
 
 sushiruntime_add_module_tests(

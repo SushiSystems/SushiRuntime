@@ -33,8 +33,8 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
@@ -47,46 +47,46 @@ namespace SushiRuntime
 {
     std::size_t AdvancedControls::device_count() const
     {
-        return Detail::ContextAccess::context(context_).devices().count();
+        return Internal::ContextAccess::context(context_).devices().count();
     }
 
     const std::vector<DeviceDescription>& AdvancedControls::devices() const
     {
-        return Detail::ContextAccess::context(context_).devices().devices();
+        return Internal::ContextAccess::context(context_).devices().devices();
     }
 
     sycl::queue& AdvancedControls::queue(DeviceIndex device) const
     {
-        return Detail::ContextAccess::context(context_).devices().queue(device.value());
+        return Internal::ContextAccess::context(context_).devices().queue(device.value());
     }
 
     bool AdvancedControls::is_profiling_enabled() const noexcept
     {
-        return Detail::ContextAccess::context(context_).settings().profiling;
+        return Internal::ContextAccess::context(context_).settings().profiling;
     }
 
     bool AdvancedControls::is_rebalancer_enabled() const
     {
-        return Detail::ContextAccess::context(context_).execution_engine().rebalancer_enabled();
+        return Internal::ContextAccess::context(context_).execution_engine().rebalancer_enabled();
     }
 
     WorkerPool AdvancedControls::worker_pool() const
     {
-        return Detail::ContextAccess::context(context_).execution_engine().worker_pool();
+        return Internal::ContextAccess::context(context_).execution_engine().worker_pool();
     }
 
     std::size_t AdvancedControls::live_allocation_count() const
     {
-        return Detail::ContextAccess::context(context_).memory().live_count();
+        return Internal::ContextAccess::context(context_).memory().live_count();
     }
 
     std::size_t AdvancedControls::host_to_device_bytes() const noexcept
     {
-        return Detail::ContextAccess::context(context_).transfers().host_to_device();
+        return Internal::ContextAccess::context(context_).transfers().host_to_device();
     }
 
     std::size_t AdvancedControls::device_to_host_bytes() const noexcept
     {
-        return Detail::ContextAccess::context(context_).transfers().device_to_host();
+        return Internal::ContextAccess::context(context_).transfers().device_to_host();
     }
 } // namespace SushiRuntime
