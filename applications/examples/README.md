@@ -21,6 +21,7 @@ for the subject at hand:
 | `stepping_demo.cpp` | `before_each_step`, then one rule through `run(steps)`, `run_until`, `run_async` with its `RunHandle`, and `run_for` |
 | `data_access_demo.cpp` | The three residencies, `write_range()` and `read_range()` tested as results, an aligned buffer, `Runtime::wait()` and `advanced().queue()` |
 | `extension_demo.cpp` | A domain library that records through `extend()` and the `Recorder`: `rule()`, `scratch()`, `kernel()` and `task()` |
+| `host_hooks_demo.cpp` | What a host sets once per process: `version_matches()`, `set_assertion_handler()` and the log sink, installed around a run and restored |
 | `adapter/` | A host program that reaches the library through one file, in its own types and its own status |
 | `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
 | `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
@@ -354,6 +355,38 @@ extension: 2 rules, 3 nodes, the library recorded rule 1
 Once the graph has compiled, `rule_registration()` of that position returns the index the
 rule's node events carry in a profiled `RunReport`; before that it returns
 `K_NO_REGISTRATION`. The check compares every element of the output with i * 3 + 7.
+
+## host_hooks_demo.cpp
+
+The three things a host program sets once, before it creates a runtime. All are state of the
+process and not of one runtime, so the program restores each when it is done.
+
+`version_matches()` compares the release of the headers with the release of the library that
+was loaded. `Runtime::create()` stops the process when they differ, so a host that wants to
+report the mismatch itself asks first.
+
+`set_assertion_handler()` installs the function a broken rule calls before the process stops,
+and returns the one it replaces. The handler here writes the message, the file and the line in
+the host's own format. A handler that returns does not keep the process alive, so the program
+breaks no rule: it installs the handler, runs, puts the old one back and checks that the
+handler it took out was its own.
+
+`set_log_sink()` routes every log record of the library to a callable of the host.
+`set_log_level(LogLevel::Info)` admits the lifecycle lines a runtime writes while it starts and
+stops, and `set_log_synchronous(true)` delivers each record before the call that logged it
+returns, so the sink has seen every line when the runtime is gone. The sink counts lines. An
+empty sink restores the default one, which writes to standard error.
+
+```
+host hooks: headers and library are of one release
+  the sink received the runtime's log lines: yes
+  the assertion handler was the host's until restored: yes
+  values[1023] = 2046  (expected 2046)
+  result: CORRECT
+```
+
+The run between the two installs fills a buffer with twice its index. The check compares its
+last element, that the sink received at least one line, and the handler that was restored.
 
 ## adapter/
 
