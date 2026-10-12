@@ -17,7 +17,10 @@ Nine programs written against the public API. Eight include `<SushiRuntime/sushi
 | `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
 | `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
 
-When a runtime call fails, every example except `distributed_worker.cpp` prints the library's message to `stderr` and exits with 1; the worker returns the exit code of `run_worker()` instead.
+The examples read most results with `value()`, which stops the process with the error's message
+when a call failed. `operating_path_demo.cpp` tests the result of each run and returns 1 with
+the message, and `distributed_demo.cpp` does the same when the secret cannot be read or the
+master does not start. `distributed_worker.cpp` returns the exit code of `run_worker()`.
 
 `distributed_kernels.hpp` is the header the last two share; they also include
 `<SushiRuntime/distributed/distributed.hpp>`. The distributed programs are built only when the
@@ -80,8 +83,7 @@ With `v` starting at 0 and incrementing each step, after STEPS steps `v == STEPS
 
 ## game_engine_demo.cpp
 
-A small game-engine frame loop run end to end on the runtime through the public fluent API. It
-shows the task graph behaving like a game engine.
+A game-engine frame loop of four systems over 4096 entities, run for 600 frames.
 
 Components are component arrays, one `Buffer` per field: `px`, `py`, `vx`, `vy`, `alive`.
 
@@ -123,8 +125,7 @@ view: STEPS for tiles 0, 1, 4 and 5, 2 * STEPS for tiles 2 and 3, and 0 for tile
 ## operating_path_demo.cpp
 
 The calls a program makes once it runs somewhere other than a developer's desk: it chooses its
-settings, asks what was built, handles a failed run without an exception and reads device memory
-back.
+settings, asks what was built, handles a failed run and reads device memory back.
 
 `Runtime::create()` takes one `RuntimeConfig`; here it asks for two workers with
 `PinPolicy::Float`, which leaves the other cores to the host program. `advanced()` returns the
@@ -182,7 +183,7 @@ The worker of the distributed demo. Its `main` builds a `KernelRegistry`, regist
 kernels and returns `Distributed::run_worker(argc, argv, kernels)`. The library does the rest:
 the flags, the secret, the connection with reconnect, the signal handlers and the exit code. The
 flags and exit codes are listed in
-[the distributed guide](../../docs/guides/DISTRIBUTED_GUIDE.md), §5. Stop a worker with Ctrl-C; it
+[the module README](../../modules/extension/distributed/README.md), section "worker_main.hpp". Stop a worker with Ctrl-C; it
 finishes the running kernel, says goodbye to the master and exits 0. `run_worker(argc, argv, ...)`
 refuses a flag it does not know, so a worker program with flags of its own parses them, fills a
 `WorkerOptions` and calls the overload that takes it.
