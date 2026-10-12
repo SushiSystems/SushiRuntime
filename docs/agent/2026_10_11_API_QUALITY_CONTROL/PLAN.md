@@ -1,12 +1,11 @@
 # API refinement: plan
 
-**Status:** Written, not verified, as of 2026-10-12. Stages 0 to 9 and tasks 6.1 to 6.6 are in
-source in the four repositories. Stage 1 was built and tested (801 tests). After it, only the
-library and the examples of SushiRuntime were built once, at the end of stage 5; no test of
-SushiRuntime, and nothing of SushiBLAS, SushiAI or SushiEngine, has been compiled since. The
-builds wait for the owner's word: the machine has 15 GB and stopped two compile jobs for
-memory. Open: the builds and test runs, task 6.7, stage 10. The owner approved the public
-modules `core`, `report`, `region`, `log`, `machine`, `interop`, `api` on 2026-10-12.
+**Status:** Built and verified on 2026-10-12, not released. Stages 0 to 9 are done in
+SushiRuntime and SushiBLAS: 844 and 2207 tests pass, the installed-package tests pass, and task
+6.7 measured no cost of the boundary (`REPORT.md`, "Refinement result"). SushiAI passed 5660
+tests before the last surface work and is its own session's to rebuild; SushiEngine is written,
+not built, and its session's to commit. Open: stage 10 (the version, the repositories made
+public with CI, the owner's trial, the `v0.4.0` proposal) and `docs/design/REMAINING_WORK.md`.
 
 `SPEC.md` of this folder holds the decisions and the measurements. `REPORT.md` holds the first
 pass, whose repair plan stood in this file until this rewrite; its open items are in

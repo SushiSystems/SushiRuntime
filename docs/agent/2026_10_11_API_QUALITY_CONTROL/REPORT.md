@@ -628,3 +628,41 @@ positives in SushiBLAS, whose allow-list still holds the old accessor names.
 `cmake/SushiRuntimeConfig.cmake.in:44`, the root READMEs of SushiRuntime and SushiBLAS, the
 architecture pages of SushiBLAS, and the seam README of SushiEngine on where `value()` is
 called.
+
+## Refinement result
+
+Measured on 2026-10-12 on branch `feature/api_refinement` after the last task, release build with
+the distributed extension, on the machine of the baseline (one RTX 3080 Ti, twelve workers).
+
+| Measure | Baseline | After | Change |
+| --- | --- | --- | --- |
+| Tests | 800: 798 passed, 2 skipped | 844: 842 passed, 2 skipped (the same two) | 44 more tests |
+| Installed-package tests | not run | 2 of 2 passed (`Package.InstallsToAPrefix`, `Package.RunsAConsumerWithNothingButThePrefix`) | |
+| Examples | 9, none checked its result | 16; the 14 not distributed were run, each exits 0 after comparing its result with a host value | |
+| Include closure of the umbrella | 112 headers, 55 outside `api/` | public modules only (`api`, `core`, `context`, `interop`, `log`, `machine`, `region`, `report`) | |
+| Compile of `quickstart.cpp` | 13.8 s | 10.4 s, median of three | 25 % less |
+
+Task 6.7, per-node round trip of `Performance_ChainDispatch`, nanoseconds per node and step,
+median of five:
+
+| Chain length | Chain layer, baseline | Chain layer, after | Change |
+| --- | --- | --- | --- |
+| 1 | 8 677 | 8 745 | +0.8 % |
+| 16 | 8 808 | 8 604 | -2.3 % |
+| 256 | 12 058 | 7 245 | -40 % |
+| 1024 | 13 542 | 7 229 | -47 % |
+
+The one rise, 0.8 %, is inside the run-to-run spread of the baseline (1 % at least) and below the
+2 % limit of the plan, so the compiled boundary added no measurable cost to a replay. The fall at
+256 and 1024 nodes is not explained here: it was not traced to a commit.
+
+The scheduler rows are too noisy to compare. Three runs of the same build gave 60 907, 22 150 and
+20 968 ns at length 256 (the first right after the test suite), against a baseline of 39 121.
+Nothing in them points at a regression.
+
+What the builds found: stages 2 to 5 compiled after two fixes in test files; SushiBLAS after
+none; SushiAI after one. The first test run failed 6 of 839 tests: five were tests that expected
+the behaviour before the break, and one was a regression of task 5.2 (a node that wrote a shared
+buffer on the chain layer under a cluster did not bump the buffer's version), fixed in
+`chain_plan.cpp`. The surface work, the test move and the seven new examples then built and
+passed without a change.
