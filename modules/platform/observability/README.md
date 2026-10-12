@@ -4,7 +4,7 @@ The module holds the instruments a run is measured with: the profiling ledger, t
 timestamps and the transfer counters. It is header-only.
 The module is internal: its headers are for the other modules of the library and are not installed.
 
-It depends on the C++ standard library, the SYCL headers, `core` and `report`.
+It depends on the C++ standard library, the SYCL headers and `report`.
 
 ## Public entry points
 

@@ -89,7 +89,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
         if (on_gpu)
         {
             TaskMetadata meta_init{"chain_init_dev"};
-            graph.add_task(meta_init, {}, {data},
+            graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(data)},
                 [data, c, dq](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
                 {
                     return dq->submit([&](sycl::handler& h)
@@ -102,7 +102,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
                 });
 
             TaskMetadata meta_scale{"chain_scale_dev"};
-            graph.add_task(meta_scale, {data}, {data},
+            graph.add_task(meta_scale, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
                 [data, dq](sycl::queue&,
                            const std::vector<sycl::event>& dependencies) -> sycl::event
                 {
@@ -117,7 +117,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
                 });
 
             TaskMetadata meta_bias{"chain_bias_dev"};
-            graph.add_task(meta_bias, {data}, {data},
+            graph.add_task(meta_bias, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
                 [data, dq](sycl::queue&,
                            const std::vector<sycl::event>& dependencies) -> sycl::event
                 {
@@ -134,7 +134,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
         else
         {
             TaskMetadata meta_init{"chain_init_host"};
-            graph.add_task(meta_init, {}, {data},
+            graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(data)},
                 [data, c](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
                 {
                     for (size_t i = 0; i < N; ++i)
@@ -143,7 +143,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
                 });
 
             TaskMetadata meta_scale{"chain_scale_host"};
-            graph.add_task(meta_scale, {data}, {data},
+            graph.add_task(meta_scale, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
                 [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
                 {
                     for (size_t i = 0; i < N; ++i)
@@ -152,7 +152,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
                 });
 
             TaskMetadata meta_bias{"chain_bias_host"};
-            graph.add_task(meta_bias, {data}, {data},
+            graph.add_task(meta_bias, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
                 [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
                 {
                     for (size_t i = 0; i < N; ++i)

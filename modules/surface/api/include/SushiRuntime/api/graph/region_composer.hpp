@@ -64,9 +64,6 @@ namespace SushiRuntime
 
             /**
              * @brief Rebuilds the changed regions, re-wires them and renumbers every node.
-             *
-             * A build that throws changes nothing; after a later throw the next commit
-             * rebuilds every live region.
              * @param recorder_of Called as recorder_of(key); null when the region is gone.
              * @pre A commit that threw is repeated with the dirty and dropped keys it had.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
@@ -81,7 +78,7 @@ namespace SushiRuntime
              * @pre composed() is true.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            SUSHIRUNTIME_API void rearm();
+            SUSHIRUNTIME_API void rearm() noexcept;
 
             /** @brief Returns how many times the plan has been composed. */
             [[nodiscard]] SUSHIRUNTIME_API std::size_t compose_count() const noexcept;
@@ -104,8 +101,8 @@ namespace SushiRuntime
              * @param rule Position in the region's recording order, one per rule.
              * @return The index, or Detail::K_NO_REGISTRATION before the region is built.
              */
-            [[nodiscard]] SUSHIRUNTIME_API std::uint32_t registration_of(RegionKey key,
-                                                                         std::size_t rule) const;
+            [[nodiscard]] SUSHIRUNTIME_API std::uint32_t
+            registration_of(RegionKey key, std::size_t rule) const noexcept;
 
         protected:
             /**

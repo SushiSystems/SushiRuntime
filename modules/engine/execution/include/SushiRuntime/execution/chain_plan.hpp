@@ -21,7 +21,7 @@
 
 /**
  * @file chain_plan.hpp
- * @brief Declares classify_chain and aliases the chain plan types it fills.
+ * @brief Declares classify_chain, which fills the chain plan of a compiled graph.
  * @author Mustafa Garip
  * @see modules/engine/execution/README.md
  */
@@ -38,12 +38,6 @@ namespace SushiRuntime
     {
         class RuntimeContext;
 
-        /** @brief Names Internal::Graph::PendingEvent under its former namespace. */
-        using PendingEvent = Internal::Graph::PendingEvent;
-
-        /** @brief Names Internal::Graph::ChainPlan under its former namespace. */
-        using ChainPlan = Internal::Graph::ChainPlan;
-
         /**
          * @brief Classifies a compiled plan for the in-order chain.
          * @param graph A plan after capture_base_state().
@@ -51,8 +45,8 @@ namespace SushiRuntime
          * @return The classification; not chainable on any doubt.
          * @see modules/engine/execution/README.md
          */
-        SUSHIRUNTIME_API ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph,
-                                                  RuntimeContext& context);
+        SUSHIRUNTIME_API Internal::Graph::ChainPlan
+        classify_chain(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context);
 
     } // namespace Execution
 } // namespace SushiRuntime

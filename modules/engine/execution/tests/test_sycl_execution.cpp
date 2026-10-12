@@ -82,7 +82,7 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
         }
         return {};
     };
-    graph.add_task(meta_init, {}, {A, B, C}, init_work);
+    graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(A), SushiRuntime::BufferRegion(B), SushiRuntime::BufferRegion(C)}, init_work);
 
     TaskMetadata meta_compute{"Vector_Add_Kernel"};
     auto compute_work = [A, B, C](sycl::queue& queue,
@@ -97,7 +97,7 @@ TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
             });
         });
     };
-    graph.add_task(meta_compute, {A, B}, {C}, compute_work);
+    graph.add_task(meta_compute, {SushiRuntime::BufferRegion(A), SushiRuntime::BufferRegion(B)}, {SushiRuntime::BufferRegion(C)}, compute_work);
 
     auto compiled = graph.compile().value();
     context.execution_engine().execute(std::move(compiled)).value();
@@ -139,7 +139,7 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
     ASSERT_NE(sum, nullptr);
 
     TaskMetadata meta_init{"Init"};
-    graph.add_task(meta_init, {}, {data}, [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+    graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(data)}, [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
     {
         for (size_t i = 0; i < N; ++i)
             data[i] = static_cast<float>(i);
@@ -147,7 +147,7 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
     });
 
     TaskMetadata meta_scale{"Scale"};
-    graph.add_task(meta_scale, {data}, {data},
+    graph.add_task(meta_scale, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
                    [data](sycl::queue& queue, const std::vector<sycl::event>& dependencies)
                        -> sycl::event
     {
@@ -162,7 +162,7 @@ TEST(Integration_SyclExecutionTest, MultiStageChain)
     });
 
     TaskMetadata meta_reduce{"Reduce"};
-    graph.add_task(meta_reduce, {data}, {sum}, [data, sum](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+    graph.add_task(meta_reduce, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(sum)}, [data, sum](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
     {
         double acc = 0.0;
         for (size_t i = 0; i < N; ++i)

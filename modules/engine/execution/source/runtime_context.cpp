@@ -28,8 +28,8 @@
 
 #include <SushiRuntime/execution/runtime_context.hpp>
 
-#include <exception>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -38,6 +38,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -68,9 +69,9 @@ namespace SushiRuntime
 
                 // The node's own flag names a GPU, so devices().is_gpu() answers as discovery did.
                 if (node.is_gpu)
-                    descriptor.info.kind = DeviceKind::Gpu;
+                    descriptor.info.kind = DeviceKind::GPU;
                 else if (node.sycl_dev.is_cpu())
-                    descriptor.info.kind = DeviceKind::Cpu;
+                    descriptor.info.kind = DeviceKind::CPU;
                 else if (node.sycl_dev.is_accelerator())
                     descriptor.info.kind = DeviceKind::Accelerator;
                 else
@@ -123,11 +124,11 @@ namespace SushiRuntime
             }
 
             /** @brief Logs why no context could be built and returns the reason as an error. */
-            ErrorWrapper<Error> initialization_failure(ErrorCode code, const char* text)
+            ErrorWrapper<Error> initialization_failure(Error reason)
             {
                 // The device set leaves a failed queue build unlogged; this is its one line.
-                SR_LOG_ERROR("Critical initialization failure: {}", text);
-                return make_error(Error{code, text});
+                SR_LOG_ERROR("Critical initialization failure: {}", reason.message);
+                return make_error(std::move(reason));
             }
         } // namespace
 
@@ -219,8 +220,12 @@ namespace SushiRuntime
         {
             SR_LOG_INFO("Initializing compute stack...");
 
-            // SYCL and the standard library throw from the constructors below; each is named here.
-            try
+            std::shared_ptr<RuntimeContext> context;
+            std::optional<Error> refused;
+
+            // SYCL and the standard library throw from the constructors inside.
+            Result<void> built = SYCL::translate_exceptions(
+                ErrorCode::DeviceLost, ErrorCode::AllocationFailed, [&]()
             {
                 if (!provider)
                     provider = std::make_shared<Internal::Topology::HwlocTopologyProvider>();
@@ -230,30 +235,22 @@ namespace SushiRuntime
                 Result<std::vector<Internal::Device::DeviceDescriptor>> descriptors =
                     probe_devices(*provider, config);
                 if (!descriptors)
-                    return initialization_failure(descriptors.error().code,
-                                                  descriptors.error().message.c_str());
+                {
+                    refused = std::move(descriptors.error());
+                    return;
+                }
 
-                std::shared_ptr<RuntimeContext> context(new RuntimeContext(make_sushi<Impl>(
+                context = std::shared_ptr<RuntimeContext>(new RuntimeContext(make_sushi<Impl>(
                     settings, *provider, std::move(distance_model), std::move(*descriptors))));
 
                 // The engine reads the context while it is built, so impl_ is complete first.
                 context->impl_->engine = std::make_unique<SchedulerExecutionEngine>(*context);
-                return context;
-            }
-            catch (const sycl::exception& failure)
-            {
-                return initialization_failure(ErrorCode::DeviceLost, failure.what());
-            }
-            catch (const std::exception& failure)
-            {
-                return initialization_failure(ErrorCode::AllocationFailed, failure.what());
-            }
-            catch (...)
-            {
-                return initialization_failure(
-                    ErrorCode::AllocationFailed,
-                    "An object that does not derive from std::exception was thrown.");
-            }
+            });
+            if (!built)
+                return initialization_failure(std::move(built.error()));
+            if (refused)
+                return initialization_failure(std::move(*refused));
+            return context;
         }
 
         RuntimeContext::RuntimeContext(sushi_ptr<Impl> impl) noexcept : impl_(std::move(impl))

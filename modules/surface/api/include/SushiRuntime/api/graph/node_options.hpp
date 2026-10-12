@@ -44,6 +44,9 @@ namespace SushiRuntime
      */
     struct NodeOptions
     {
+        /** @brief How many parameters one node carries. */
+        static constexpr std::size_t K_MAX_PARAMETERS = 8;
+
         /** @brief Launch width stamped into the node's event records. */
         std::size_t width = K_WIDTH_UNKNOWN;
 
@@ -54,7 +57,8 @@ namespace SushiRuntime
         OperationID operation = {};
 
         /**
-         * @brief Scalars carried with the node; copied when the node is recorded.
+         * @brief Scalars carried with the node, at most K_MAX_PARAMETERS; copied when the
+         *        node is recorded.
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         span<const std::uint64_t> parameters = {};

@@ -45,6 +45,14 @@ using namespace SushiRuntime;
 static_assert(!std::is_move_constructible<Region>::value, "a Region must not move");
 static_assert(!std::is_move_assignable<Region>::value, "a Region must not move-assign");
 static_assert(!std::is_copy_constructible<Region>::value, "a Region must not copy");
+static_assert(!std::is_constructible<Region, ContextHandle>::value,
+              "a Region comes only from DynamicGraph::region()");
+static_assert(!std::is_move_constructible<Recorder>::value,
+              "only a Graph or a Region moves a Recorder");
+static_assert(!std::is_move_assignable<Recorder>::value,
+              "a Recorder must not be assigned into another");
+static_assert(!std::is_constructible<Recorder, ContextHandle>::value,
+              "only a Graph or a Region starts a Recorder");
 static_assert(std::is_nothrow_move_constructible<Graph>::value, "a Graph must move");
 static_assert(std::is_nothrow_move_constructible<DynamicGraph>::value,
               "a DynamicGraph must move");
@@ -403,8 +411,8 @@ TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
     EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
 }
 
-/** @brief Tests that a recorder moved from and recorded on again repeats no generation. */
-TEST(Integration_RecorderSemantics, AMovedFromRecorderNeverRepeatsAGeneration)
+/** @brief Tests that the recorder of a graph moved from repeats no generation when recorded on. */
+TEST(Integration_RecorderSemantics, ARecorderWhoseGraphMovedNeverRepeatsAGeneration)
 {
     auto rt = Runtime::create().value();
     auto values = zeroed(rt);
@@ -413,10 +421,11 @@ TEST(Integration_RecorderSemantics, AMovedFromRecorderNeverRepeatsAGeneration)
     graph.run().value();
     ASSERT_EQ(values[0], 1u);
 
-    Recorder& source = graph.recorder();
+    const Recorder& source = graph.recorder();
     std::vector<std::uint64_t> seen{source.generation()};
-    Recorder taken = std::move(source);
-    EXPECT_EQ(taken.generation(), seen[0]) << "the work moved keeps the generation it had";
+    Graph taken = std::move(graph);
+    EXPECT_EQ(taken.recorder().generation(), seen[0])
+        << "the work moved keeps the generation it had";
     EXPECT_EQ(std::count(seen.begin(), seen.end(), source.generation()), 0);
     seen.push_back(source.generation());
 
@@ -428,11 +437,34 @@ TEST(Integration_RecorderSemantics, AMovedFromRecorderNeverRepeatsAGeneration)
 
     auto other = rt.graph();
     add_increment(other, values, 100u);
-    const std::uint64_t before = taken.generation();
+    const std::uint64_t before = taken.recorder().generation();
     ASSERT_LE(other.recorder().generation(), before);
-    taken = std::move(other.recorder());
-    EXPECT_GT(taken.generation(), before) << "a move assignment must not step back";
+    taken = std::move(other);
+    EXPECT_GT(taken.recorder().generation(), before) << "a move assignment must not step back";
     EXPECT_EQ(taken.node_count(), 1u);
+}
+
+/** @brief Tests that Graph::clear() forgets the rules, their registrations and the refusal. */
+TEST(Integration_RecorderSemantics, GraphClearLeavesAGraphThatRecordsAndRunsAgain)
+{
+    auto rt = Runtime::create().value();
+    auto values = zeroed(rt);
+    auto graph = rt.graph();
+    add_increment(graph, values, 1u);
+    graph.run().value();
+    ASSERT_EQ(values[0], 1u);
+    ASSERT_NE(graph.rule_registration(0), Graph::K_NO_REGISTRATION);
+
+    graph.clear();
+    EXPECT_EQ(graph.size(), 0u);
+    EXPECT_EQ(graph.rule_registration(0), Graph::K_NO_REGISTRATION);
+    const auto empty_run = graph.run();
+    ASSERT_FALSE(empty_run);
+    EXPECT_EQ(empty_run.error().code, ErrorCode::InvalidGraph);
+
+    add_increment(graph, values, 10u);
+    graph.run().value();
+    EXPECT_EQ(values[0], 11u) << "the plan of the cleared rule must not run again";
 }
 
 /** @brief Tests that clear() inside an extension leaves a recorder that records one rule. */

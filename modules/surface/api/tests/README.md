@@ -1040,14 +1040,22 @@ the third buffer multiplies by three. Every element of its output is `((i + 1) *
 when the task ran after the first kernel and the last kernel waited for the event the task
 returned.
 
-### `AMovedFromRecorderNeverRepeatsAGeneration`
+### `ARecorderWhoseGraphMovedNeverRepeatsAGeneration`
 
-A graph records one rule and runs, so its plan is built at the recorder's generation. The recorder
-is then moved out of the graph and a second rule is recorded on the graph. The generation of the
-recorder moved from must differ from every value read before, and the next run must execute the
-second rule: a recorder that returned to the generation of the plan would let the old plan run. The
-recorder moved to keeps the generation of the work it took. A move assignment from a recorder with
-a generation no larger than its own must still leave it with a larger one.
+A graph records one rule and runs, so its plan is built at the recorder's generation. The graph is
+then moved into another, which moves its recorder, and a second rule is recorded on the graph
+moved from. The generation of that graph's recorder must differ from every value read before, and
+the next run must execute the second rule alone: a recorder that returned to the generation of the
+plan would let the old plan run. The recorder moved to keeps the generation of the work it took. A
+move assignment from a graph whose recorder has a generation no larger must still leave a larger
+one. Only a Graph or a Region moves a Recorder, which the static_asserts at the top of the file
+hold.
+
+### `GraphClearLeavesAGraphThatRecordsAndRunsAgain`
+
+A graph records one rule, runs and is cleared. It then holds no rule, `rule_registration(0)` is
+`K_NO_REGISTRATION`, and a run returns `InvalidGraph`. A rule recorded after the clear runs
+alone.
 
 ### `AClearInsideAnExtensionStartsANewRule`
 
@@ -1395,10 +1403,15 @@ Two buffers on the runtime's last device are written, one by `add_untracked(n, O
 and one by a raw kernel placed with `On(DeviceIndex)`. On a machine with one device that device
 is 0 and the test proves only that the forms record and run; with two it proves the routing.
 
-### `PlacementIsCheckedAndItsHandleWatched`
+### `PlacementOnADeviceTheRuntimeLacksStops`
 
-`On(DeviceIndex{device_count})` is refused with `InvalidAccess`, naming the index and the count. A
-graph whose `On(buffer)` handle was destroyed before the run is refused with `DanglingResource`.
+`add_untracked` with `On(DeviceIndex{device_count})` stops the process, in the launch form and in
+the raw form. The message names the call the user wrote, the index and the device count. The test
+is in the suite `Integration_BuilderSurfaceDeathTest`.
+
+### `PlacementWatchesTheHandleItNames`
+
+A graph whose `On(buffer)` handle was destroyed before the run is refused with `DanglingResource`.
 
 ### `ExtendRecordsOneNamedRule`
 
@@ -1407,17 +1420,16 @@ run does not call it again.
 
 ### `RefusalsNameTheCallTheUserWrote`
 
-One refused call per family, through the public add(): a State rule past its State, a Coupled
-rule with a short input, a Coupled launch past its State, `add_untracked` with an `On` the runtime
-lacks (both the launch and the raw form), and an offload with nine parameters (both the task and
-the State rule). Each message begins with the spelling of the call the user wrote and `rule 0`,
-and no rule is recorded.
+One refused call per family, through the public add(): a State rule past its State, a State rule
+over a State that owns no memory, a Coupled rule with a short input and a Coupled launch past its
+State. Each message begins with the spelling of the call the user wrote and `rule 0`, and no rule
+is recorded.
 
 ### `ARefusedAddIsKeptAndReturnedByTheNextRun`
 
 Three adds are made, the second with a launch past its State. `refusal()` then holds an
 `InvalidGraph` error whose message begins with `add_rule(launch, state, kernel), rule 1: `, and the graph
-holds the two valid rules. A later refused `add_untracked` does not replace it. Two runs in a row
+holds the two valid rules. A later refused `add_rule` over an empty State does not replace it. Two runs in a row
 return that error and leave the target as it was. After `recorder().clear()` the refusal is gone,
 and a rule added then runs.
 

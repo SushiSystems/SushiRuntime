@@ -8,8 +8,8 @@ sushiruntime_add_module(
     NAME graph TIER engine INTERNAL
     SYCL
     SOURCES compiled_graph.cpp dependency_tracker.cpp task_graph.cpp
-    DEPENDS core memory observability task region
-    PRIVATE_DEPENDS logging)
+    DEPENDS core observability task region
+    PRIVATE_DEPENDS logging memory)
 
 sushiruntime_add_module_tests(
     MODULE graph

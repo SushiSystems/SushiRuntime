@@ -80,9 +80,9 @@ namespace SushiRuntime
             {
                 using Capture = std::decay_t<decltype(capture)>;
                 if (Capture::reads)
-                    access.reads.push_back(capture.key);
+                    access.reads.push_back(BufferRegion(capture.key));
                 if (Capture::writes)
-                    access.writes.push_back(capture.key);
+                    access.writes.push_back(BufferRegion(capture.key));
                 if (!capture.life.expired())
                     access.lives.push_back(capture.life);
             };
@@ -99,13 +99,12 @@ namespace SushiRuntime
         template <class Launch, class Pointers, class F>
         NodeDescription captured_node(std::vector<BufferRegion> reads,
                                       std::vector<BufferRegion> writes,
-                                      Launch launch, Pointers pointers, F&& kernel,
-                                      std::size_t width)
+                                      Launch launch, Pointers pointers, F&& kernel)
         {
             NodeDescription description;
             description.reads = std::move(reads);
             description.writes = std::move(writes);
-            description.width = width;
+            description.width = launch_count(launch);
             description.work = CommandGroupWork(
                 [kernel = std::forward<F>(kernel), launch, pointers](sycl::handler& h)
                 {

@@ -32,7 +32,10 @@
 #include <vector>
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/execution/scheduler_execution_engine.hpp>
+#include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/execution/execution_engine.hpp>
 
 namespace SushiRuntime
 {
@@ -48,16 +51,17 @@ namespace SushiRuntime
         {
             public:
                 /**
-                 * @brief Binds the run to the plan's device queue of the right flavour.
+                 * @brief Binds the run to the plan's device queue of the right flavour and
+                 *        drops the event records a run before it left on the plan.
                  * @param context   The context that owns the in-order queues and the engine the run
                  *              is reported in progress on.
                  * @param graph A plan whose chain.chainable is true; must outlive this object.
                  */
-                ChainRun(RuntimeContext& context, CompiledGraph& graph);
+                ChainRun(RuntimeContext& context, Internal::Graph::CompiledGraph& graph);
 
                 /**
-                 * @brief Drains the queue unless finish() already did, swallowing errors, and ends
-                 *        the run for ExecutionEngine::run_in_progress().
+                 * @brief Drains the queue unless finish() already did, logs the errors it held,
+                 *        and ends the run for ExecutionEngine::run_in_progress().
                  */
                 ~ChainRun();
 
@@ -67,14 +71,14 @@ namespace SushiRuntime
                 /**
                  * @brief Submits one step's enabled nodes in compiled order without waiting.
                  * @param step Zero-based step index within the run, stamped into event records.
-                 * @return Nothing, or a KernelFailed error with what a submission threw; the
-                 *         nodes after it are not submitted.
+                 * @return Nothing, or what a submission threw as an error that names its node;
+                 *         the nodes after it are not submitted.
                  */
                 [[nodiscard]] Result<void> submit_step(std::uint32_t step);
 
                 /**
                  * @brief Blocks until every submitted step has finished.
-                 * @return Nothing, or a KernelFailed error with the first error the queue held.
+                 * @return Nothing, or the first error the queue held.
                  */
                 [[nodiscard]] Result<void> wait();
 
@@ -92,7 +96,7 @@ namespace SushiRuntime
                 {
                     public:
                         /** @brief Marks a chained run in progress on @p engine. */
-                        explicit RunMark(SchedulerExecutionEngine& engine) noexcept;
+                        explicit RunMark(ExecutionEngine& engine) noexcept;
 
                         /** @brief Clears the mark unless release() already did. */
                         ~RunMark();
@@ -107,7 +111,7 @@ namespace SushiRuntime
 
                     private:
                         /** @brief The marked engine; null once released. */
-                        SchedulerExecutionEngine* engine_;
+                        ExecutionEngine* engine_;
                 };
 
                 /**
@@ -133,7 +137,7 @@ namespace SushiRuntime
                 /** @brief Writes every kept event's timestamps into the plan's ledger. */
                 void record_events();
 
-                CompiledGraph& graph_;          /**< The plan this run submits. */
+                Internal::Graph::CompiledGraph& graph_;          /**< The plan this run submits. */
                 sycl::queue& queue_;            /**< In-order queue on the plan's device. */
                 bool profiling_;                /**< Whether the plan requested profiling. */
                 bool pairing_claimed_ = false;  /**< Whether this run already tried the clock pairing. */

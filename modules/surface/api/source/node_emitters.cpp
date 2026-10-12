@@ -37,6 +37,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
 #include <SushiRuntime/task/task_types.hpp>
@@ -51,8 +52,9 @@ namespace SushiRuntime
             using Internal::Graph::Node;
             using Internal::Graph::TaskGraph;
 
-            static_assert(K_MAX_NODE_PARAMETERS == Internal::Graph::TaskMetadata::K_MAX_PARAMS,
-                          "A NodeStamp carries as many parameters as the engine's node.");
+            static_assert(NodeOptions::K_MAX_PARAMETERS ==
+                              Internal::Graph::TaskMetadata::K_MAX_PARAMS,
+                          "NodeOptions carries as many parameters as the engine's node.");
             static_assert(K_NO_REGISTRATION == TaskGraph::K_NO_REGISTRATION,
                           "The surface and the engine name one value for no registration.");
 

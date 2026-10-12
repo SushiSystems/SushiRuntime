@@ -26,7 +26,8 @@ sub-ranges of the same allocation (an array's two halves, a grid's interior and 
 accesses are ordered if and only if their regions overlap; disjoint sub-ranges of the same buffer
 stay parallel, and distinct allocations never serialize.
 
-A bare pointer converts to the whole-buffer region implicitly. A whole region overlaps any region of
+`BufferRegion(pointer)` names the whole buffer at that base. The constructor is explicit, so a
+pointer becomes a region only where the code spells the type. A whole region overlaps any region of
 the same base, so the overlap test reduces to base-pointer equality.
 
 ### overlaps

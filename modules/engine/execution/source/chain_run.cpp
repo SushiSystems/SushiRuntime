@@ -28,8 +28,12 @@
 #include <chrono>
 #include <vector>
 #include <sycl/ext/oneapi/experimental/enqueue_functions.hpp>
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/observability/event_timestamps.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
+#include <SushiRuntime/scheduler/failure_naming.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -43,29 +47,6 @@ namespace SushiRuntime
     {
         namespace
         {
-            /**
-             * @brief Runs work and returns what it throws as a KernelFailed error.
-             * @return Nothing when work returned.
-             */
-            template <typename Work>
-            [[nodiscard]] Result<void> kernel_failure_of(Work&& work)
-            {
-                try
-                {
-                    work();
-                    return {};
-                }
-                catch (const std::exception& cause)
-                {
-                    return make_error(Error{ErrorCode::KernelFailed, cause.what()});
-                }
-                catch (...)
-                {
-                    return make_error(Error{ErrorCode::KernelFailed,
-                        "A chained step threw an object that is not a std::exception."});
-                }
-            }
-
             /**
              * @brief Converts a steady-clock time point to nanoseconds since its epoch.
              * @param t The time point.
@@ -81,21 +62,23 @@ namespace SushiRuntime
         /**
          * @brief Binds the run to the plan's device queue of the right flavour.
          */
-        ChainRun::ChainRun(RuntimeContext& context, CompiledGraph& graph)
+        ChainRun::ChainRun(RuntimeContext& context, Internal::Graph::CompiledGraph& graph)
             : graph_(graph),
               queue_(context.devices().queue(graph.chain.queue_index,
                                          Internal::Device::QueueFlavour{true, graph.profiling})),
               profiling_(graph.profiling),
-              // RuntimeContext builds an SchedulerExecutionEngine and no other engine, so the cast holds.
-              run_mark_(static_cast<SchedulerExecutionEngine&>(context.execution_engine()))
+              run_mark_(context.execution_engine())
         {
+            // An abandoned run leaves its events on the plan; clear() keeps the capacity.
+            graph.chain.pending_events.clear();
+
             // The plan owns the reserved event buffer (modules/engine/execution/README.md).
             if (profiling_ && graph.chain.pending_events.capacity() < graph.chain.order.size())
                 graph.chain.pending_events.reserve(graph.chain.order.size());
         }
 
         /** @brief Marks a chained run in progress on @p engine. */
-        ChainRun::RunMark::RunMark(SchedulerExecutionEngine& engine) noexcept : engine_(&engine)
+        ChainRun::RunMark::RunMark(ExecutionEngine& engine) noexcept : engine_(&engine)
         {
             engine_->begin_chained_run();
         }
@@ -116,24 +99,19 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Drains the queue unless finish() already did, swallowing errors.
+         * @brief Drains the queue unless finish() already did, and logs the errors it held.
          */
         ChainRun::~ChainRun()
         {
             if (finished_)
                 return;
-            try
-            {
-                queue_.wait();
-            }
-            catch (const std::exception& e)
-            {
-                SR_LOG_WARN("Device error while draining an abandoned chain run: {}", e.what());
-            }
-            catch (...)
-            {
-                SR_LOG_WARN("Unknown device error while draining an abandoned chain run.");
-            }
+
+            // wait_and_throw() takes the queue's asynchronous errors, so the next run meets none.
+            const Result<void> drained =
+                SYCL::translate_exceptions([this]() { queue_.wait_and_throw(); });
+            if (!drained)
+                SR_LOG_WARN("Device error while draining an abandoned chain run: {}",
+                            drained.error().message);
         }
 
         /**
@@ -141,21 +119,25 @@ namespace SushiRuntime
          */
         Result<void> ChainRun::submit_step(std::uint32_t step)
         {
-            return kernel_failure_of([this, step]()
+            for (Internal::Graph::Node* node : graph_.chain.order)
             {
-                for (Internal::Graph::Node* node : graph_.chain.order)
-                {
-                    // The step machinery wrote enabled on this thread before this step.
-                    if (node->bindings_ &&
-                        !node->bindings_->enabled.load(std::memory_order_relaxed))
-                        continue;
+                // The step machinery wrote enabled on this thread before this step.
+                if (node->bindings_ &&
+                    !node->bindings_->enabled.load(std::memory_order_relaxed))
+                    continue;
 
+                Result<void> submitted = SYCL::translate_exceptions([this, node, step]()
+                {
                     if (profiling_)
                         submit_profiled(*node, step);
                     else
                         submit_node_discarding(*node);
-                }
-            });
+                });
+                if (!submitted)
+                    return make_error(
+                        Internal::Scheduler::name_failure(*node, submitted.error()));
+            }
+            return {};
         }
 
         /**
@@ -164,7 +146,7 @@ namespace SushiRuntime
         Result<void> ChainRun::wait()
         {
             // The asynchronous handler rethrows here, where the wait is.
-            return kernel_failure_of([this]() { queue_.wait_and_throw(); });
+            return SYCL::translate_exceptions([this]() { queue_.wait_and_throw(); });
         }
 
         /**
@@ -263,7 +245,7 @@ namespace SushiRuntime
             }
 
             graph_.chain.pending_events.push_back(
-                PendingEvent{&node, step, std::move(event), Internal::Graph::snapshot_widths(node)});
+                Internal::Graph::PendingEvent{&node, step, std::move(event), Internal::Graph::snapshot_widths(node)});
         }
 
         /**
@@ -272,7 +254,7 @@ namespace SushiRuntime
         void ChainRun::record_events()
         {
             Internal::Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
-            for (const PendingEvent& pe : graph_.chain.pending_events)
+            for (const Internal::Graph::PendingEvent& pe : graph_.chain.pending_events)
             {
                 Internal::Observability::EventTimestamps times;
                 if (!Internal::Observability::read_event_timestamps(pe.event, times))

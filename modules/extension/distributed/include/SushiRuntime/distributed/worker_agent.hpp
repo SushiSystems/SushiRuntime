@@ -112,8 +112,8 @@ namespace SushiRuntime
             public:
                 /**
                  * @brief Builds an agent on a runtime; nothing runs until start().
-                 * @param runtime Supplies the queue kernels run on and the cache's memory;
-                 *        outlives the agent.
+                 * @param runtime Supplies the queue kernels run on and the cache's memory. The
+                 *        agent shares its context, which therefore outlives the agent.
                  * @param transport A worker-side transport that was never started; not null.
                  * @param kernels Not null; read from the exec thread.
                  */

@@ -83,7 +83,10 @@ namespace
         return descriptor;
     }
 
-    /** @brief Imports @p count floats and returns the refusal, failing when there is none. */
+    /**
+     * @brief Imports @p count floats and returns the refusal.
+     * @return The refusal; with a test failure, an InvalidState error when there is none.
+     */
     Error refusal_of(Runtime& runtime, const ExternalMemoryDescriptor& descriptor,
                      std::size_t count, std::size_t index)
     {
@@ -92,7 +95,7 @@ namespace
         if (imported.has_value())
         {
             ADD_FAILURE() << "import_device accepted the descriptor";
-            return Error{};
+            return Error{ErrorCode::InvalidState, "import_device accepted the descriptor"};
         }
         return imported.error();
     }

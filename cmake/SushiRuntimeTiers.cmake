@@ -43,6 +43,7 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     log             core
     logging         core
     logging         log
+    sycl            core
     scheduler       task
     graph           task
     execution       task

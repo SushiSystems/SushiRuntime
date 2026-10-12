@@ -54,7 +54,7 @@ namespace SushiRuntime
     {
         /** @brief Grants a test a friend seam onto the graph's plan. */
         struct DynamicGraphNodeEventsTestAccess;
-    }
+    } // namespace Detail
 
     /**
      * @brief Composes regions that stream in and out into one plan, rebuilt only where it
@@ -67,8 +67,7 @@ namespace SushiRuntime
     class DynamicGraph : public StepDriver<DynamicGraph>, private RegionComposer
     {
         public:
-            /** @brief Caller-chosen identity of a region (e.g. a packed cell coordinate). */
-            using RegionKey = std::uint64_t;
+            using RegionComposer::RegionKey;
 
             /**
              * @brief Takes over another graph's regions, plan and pending changes.
@@ -126,8 +125,9 @@ namespace SushiRuntime
                 {
                     if (changes_ == nullptr)
                         changes_ = std::make_unique<RegionChangeLog>();
-                    it = regions_.emplace(key,
-                        std::make_unique<Region>(context_, *changes_, key)).first;
+                    // Region's constructor is private, so std::make_unique cannot reach it.
+                    it = regions_.emplace(key, std::unique_ptr<Region>(
+                        new Region(context_, *changes_, key))).first;
                     // A region that did not exist is built at the next run.
                     dirty_regions_.insert(key);
                 }
@@ -344,7 +344,7 @@ namespace SushiRuntime
             {
                 if (!has_roots())
                     return make_error(Error{ErrorCode::InvalidGraph,
-                                            "DynamicGraph has no runnable tasks."});
+                                            "DynamicGraph has no runnable node."});
                 refresh_updaters();
                 return {};
             }
@@ -359,12 +359,12 @@ namespace SushiRuntime
             }
 
             /** @brief Re-arms every node's live in-degree before a step. */
-            void rearm_plan() { rearm(); }
+            void rearm_plan() noexcept { rearm(); }
 
             /** @brief Returns false: a composed plan always runs on the scheduler. */
             [[nodiscard]] bool may_chain() const noexcept { return false; }
 
-            /** @brief Returns whether a structural change or new tasks require a recompose. */
+            /** @brief Returns whether a structural change or a new recording requires a recompose. */
             [[nodiscard]] bool needs_commit() const
             {
                 return !composed() || rebuild_every_region_ || !dirty_regions_.empty() ||
@@ -456,9 +456,6 @@ namespace SushiRuntime
             /** @brief Set by a change of the profiling request, cleared by the next build. */
             bool rebuild_every_region_ = false;
     };
-
-
-
 } // namespace SushiRuntime
 
 // A DynamicGraph comes only from Runtime::dynamic_graph(), so the Runtime comes with it.

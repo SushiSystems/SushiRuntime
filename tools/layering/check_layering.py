@@ -26,6 +26,7 @@ K_SAME_TIER_EDGES: frozenset[tuple[str, str]] = frozenset({
     ("log", "core"),
     ("logging", "core"),
     ("logging", "log"),
+    ("sycl", "core"),
     ("scheduler", "task"),
     ("graph", "task"),
     ("execution", "task"),
@@ -195,6 +196,23 @@ def rule_declared_dependencies(tree: ModuleTree) -> Iterator[Issue]:
                                           f"CMakeLists.txt does not name in {' or '.join(keywords)}")
 
 
+def rule_unused_dependencies(tree: ModuleTree) -> Iterator[Issue]:
+    """Yields an issue for each module a build file names beyond what the module's files include."""
+    for module in tree.modules.values():
+        declared = _declared_dependencies(module)
+        included: dict[bool, set[str]] = {True: set(), False: set()}
+        for path, _number, target in _module_includes(tree, module):
+            included[path.relative_to(module.folder).parts[0] == K_PUBLIC_FOLDER].add(target.name)
+        build_file = module.folder / "CMakeLists.txt"
+        for name in sorted(declared[K_PUBLIC_DEPENDS] - included[True]):
+            reason = (f"only source/ includes it; name it in {K_PRIVATE_DEPENDS}"
+                      if name in included[False] else "no file includes it")
+            yield Issue(build_file, 1, f"{module.name} names {name} in {K_PUBLIC_DEPENDS} and {reason}")
+        for name in sorted(declared[K_PRIVATE_DEPENDS] - included[True] - included[False]):
+            yield Issue(build_file, 1, f"{module.name} names {name} in {K_PRIVATE_DEPENDS} "
+                                       "and no file includes it")
+
+
 def rule_public_headers(tree: ModuleTree) -> Iterator[Issue]:
     """Yields an issue for each include of an internal module in a header a public module installs."""
     internal = {module.name for module in tree.modules.values() if _is_internal(module)}
@@ -217,6 +235,7 @@ K_CHECKER = Checker(
         "rule_private_reach": rule_private_reach,
         "rule_same_tier_includes": rule_same_tier_includes,
         "rule_declared_dependencies": rule_declared_dependencies,
+        "rule_unused_dependencies": rule_unused_dependencies,
         "rule_public_headers": rule_public_headers,
     },
 )

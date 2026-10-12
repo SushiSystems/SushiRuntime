@@ -91,10 +91,9 @@ namespace SushiRuntime
     /**
      * @brief Owns the nodes recorded for one graph or region and replays them.
      *
-     * A move leaves the source empty on the same context, ready to record again, and
-     * its generation() past every value it had. Every recording member returns the
-     * position of its node's rule. A recording it refuses records nothing, is kept for
-     * refusal() when it is the first, and returns rule_count().
+     * Only a Graph or a Region starts one or moves one. Every recording member returns
+     * the position of its node's rule. A recording it refuses records nothing, is kept
+     * for refusal() when it is the first, and returns rule_count().
      * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
      */
     class Recorder final
@@ -135,37 +134,6 @@ namespace SushiRuntime
                     Recorder* recorder_ = nullptr;
             };
 
-            /**
-             * @brief Starts an empty recorder on a runtime.
-             * @param context Runtime the recorder allocates scratch from and keeps alive.
-             */
-            explicit Recorder(ContextHandle context) noexcept
-                : context_(std::move(context))
-            {
-            }
-
-            /**
-             * @brief Takes over another recorder's nodes, rules, scratch, hooks and refusal.
-             * @param other Left empty on the same context; its generation() moves on.
-             * @pre No rule scope is open on other.
-             */
-            Recorder(Recorder&& other) noexcept
-            {
-                take(other);
-            }
-
-            /**
-             * @brief Replaces this recorder's contents with another's.
-             * @param other Left empty on the same context; its generation() moves on.
-             * @pre No rule scope is open on either recorder.
-             */
-            Recorder& operator=(Recorder&& other) noexcept
-            {
-                if (this != &other)
-                    take(other);
-                return *this;
-            }
-
             Recorder(const Recorder&) = delete;
             Recorder& operator=(const Recorder&) = delete;
 
@@ -197,12 +165,12 @@ namespace SushiRuntime
                 else if constexpr (is_range_kernel_v<F>)
                     return record(Detail::range_node(std::move(access.reads),
                                                      std::move(access.writes), count,
-                                                     std::forward<F>(kernel_body), options.width),
+                                                     std::forward<F>(kernel_body)),
                                   access.lives, options);
                 else
                     return record(Detail::launch_node(std::move(access.reads),
                                                       std::move(access.writes), count,
-                                                      std::forward<F>(kernel_body), options.width),
+                                                      std::forward<F>(kernel_body)),
                                   access.lives, options);
             }
 
@@ -216,8 +184,7 @@ namespace SushiRuntime
                                NodeOptions options = {})
             {
                 return record(Detail::launch_node(std::move(access.reads), std::move(access.writes),
-                                                  extent, std::forward<F>(kernel_body),
-                                                  options.width),
+                                                  extent, std::forward<F>(kernel_body)),
                               access.lives, options);
             }
 
@@ -232,8 +199,7 @@ namespace SushiRuntime
                                NodeOptions options = {})
             {
                 return record(Detail::launch_node(std::move(access.reads), std::move(access.writes),
-                                                  range, std::forward<F>(kernel_body),
-                                                  options.width),
+                                                  range, std::forward<F>(kernel_body)),
                               access.lives, options);
             }
 
@@ -262,7 +228,8 @@ namespace SushiRuntime
             std::size_t dynamic_kernel(Dynamic window, std::size_t capacity, Access access,
                                        F&& kernel_body, NodeOptions options = {})
             {
-                if (!admits(options) || !admit(device_slots_refusal(window)))
+                require_device_slots(window);
+                if (!admits(options))
                     return rule_count();
                 auto bindings = Detail::make_late_bindings(window, access.reads, access.lives);
                 Result<std::uint32_t*> fault = fault_record_for(window);
@@ -305,7 +272,7 @@ namespace SushiRuntime
                 return record(
                     Detail::captured_node(
                         std::move(access.reads), std::move(access.writes), launch,
-                        std::move(pointers), std::forward<F>(kernel_body), options.width),
+                        std::move(pointers), std::forward<F>(kernel_body)),
                     access.lives, options);
             }
 
@@ -340,7 +307,8 @@ namespace SushiRuntime
              * @brief Records a per-element launch over [0, count) that names no region.
              * @param kernel_body        Callable invoked as kernel_body(i) for each index.
              * @param placement Device the node runs on; a handle it names is watched.
-             * @param call      Names the call the user wrote in a refusal's message.
+             * @param call      Names the call the user wrote in a message.
+             * @pre placement names a device of this runtime.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
@@ -349,10 +317,8 @@ namespace SushiRuntime
                                          NodeOptions options = {},
                                          const char* call = K_UNTRACKED_KERNEL)
             {
-                if (!admit(placement_refusal(call, placement)))
-                    return rule_count();
                 std::vector<LivenessObserver> lives;
-                const std::size_t device = placed_device(placement, lives);
+                const std::size_t device = placed_device(call, placement, lives);
                 return record(Detail::untracked_launch_node(count, device,
                                                             std::forward<F>(kernel_body)),
                               lives, options);
@@ -362,7 +328,8 @@ namespace SushiRuntime
              * @brief Records a region-less launch that drives the handler itself.
              * @param kernel_body        Callable invoked as kernel_body(0, count, sycl::handler&).
              * @param placement Device the node runs on; a handle it names is watched.
-             * @param call      Names the call the user wrote in a refusal's message.
+             * @param call      Names the call the user wrote in a message.
+             * @pre placement names a device of this runtime.
              */
             template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
             std::size_t untracked_kernel(std::size_t count, F&& kernel_body,
@@ -370,10 +337,8 @@ namespace SushiRuntime
                                          NodeOptions options = {},
                                          const char* call = K_UNTRACKED_KERNEL)
             {
-                if (!admit(placement_refusal(call, placement)))
-                    return rule_count();
                 std::vector<LivenessObserver> lives;
-                const std::size_t device = placed_device(placement, lives);
+                const std::size_t device = placed_device(call, placement, lives);
                 return record(Detail::untracked_range_node(count, device,
                                                            std::forward<F>(kernel_body)),
                               lives, options);
@@ -384,7 +349,8 @@ namespace SushiRuntime
              * @param kernel_body        Callable invoked as kernel_body(sycl::id<N>) with the
              *                           origin applied.
              * @param placement Device the node runs on; a handle it names is watched.
-             * @param call      Names the call the user wrote in a refusal's message.
+             * @param call      Names the call the user wrote in a message.
+             * @pre placement names a device of this runtime.
              */
             template <int N, class F>
             std::size_t untracked_kernel(Extent<N> extent, F&& kernel_body,
@@ -392,10 +358,8 @@ namespace SushiRuntime
                                          NodeOptions options = {},
                                          const char* call = K_UNTRACKED_KERNEL)
             {
-                if (!admit(placement_refusal(call, placement)))
-                    return rule_count();
                 std::vector<LivenessObserver> lives;
-                const std::size_t device = placed_device(placement, lives);
+                const std::size_t device = placed_device(call, placement, lives);
                 return record(Detail::untracked_launch_node(extent, device,
                                                             std::forward<F>(kernel_body)),
                               lives, options);
@@ -403,11 +367,11 @@ namespace SushiRuntime
 
             /**
              * @brief Records a tiled launch over an NdRange that names no region.
-             * @param kernel_body        Callable invoked as kernel_body(sycl::nd_item<N>), or as
-             *                  kernel_body(sycl::nd_item<N>, sycl::id<N>) for the id with the
-             *                  origin.
+             * @param kernel_body Callable invoked as kernel_body(sycl::nd_item<N>), or as
+             *        kernel_body(sycl::nd_item<N>, sycl::id<N>) for the id with the origin.
              * @param placement Device the node runs on; a handle it names is watched.
-             * @param call      Names the call the user wrote in a refusal's message.
+             * @param call      Names the call the user wrote in a message.
+             * @pre placement names a device of this runtime.
              */
             template <int N, class F>
             std::size_t untracked_kernel(NdRange<N> range, F&& kernel_body,
@@ -415,10 +379,8 @@ namespace SushiRuntime
                                          NodeOptions options = {},
                                          const char* call = K_UNTRACKED_KERNEL)
             {
-                if (!admit(placement_refusal(call, placement)))
-                    return rule_count();
                 std::vector<LivenessObserver> lives;
-                const std::size_t device = placed_device(placement, lives);
+                const std::size_t device = placed_device(call, placement, lives);
                 return record(Detail::untracked_launch_node(range, device,
                                                             std::forward<F>(kernel_body)),
                               lives, options);
@@ -428,7 +390,8 @@ namespace SushiRuntime
              * @brief Records a raw command group that names no region.
              * @param kernel_body        Callable invoked as kernel_body(sycl::handler&).
              * @param placement Device the node runs on; a handle it names is watched.
-             * @param call      Names the call the user wrote in a refusal's message.
+             * @param call      Names the call the user wrote in a message.
+             * @pre placement names a device of this runtime.
              */
             template <class F>
             std::size_t untracked_raw_kernel(
@@ -436,10 +399,8 @@ namespace SushiRuntime
                        NodeOptions options = {},
                        const char* call = "Recorder::untracked_raw_kernel(kernel, placement)")
             {
-                if (!admit(placement_refusal(call, placement)))
-                    return rule_count();
                 std::vector<LivenessObserver> lives;
-                const std::size_t device = placed_device(placement, lives);
+                const std::size_t device = placed_device(call, placement, lives);
                 return record(
                     Detail::untracked_raw_node(device, std::forward<F>(kernel_body)),
                     lives, options);
@@ -450,11 +411,13 @@ namespace SushiRuntime
              * @param state The state the rule evolves; alive at every run, free to move.
              * @param kernel_body Callable invoked as kernel_body(i, const T* current, T* next)
              *        over the state's size.
+             * @param call  Names the call the user wrote in a refusal's message.
              */
             template <typename T, class F>
-            std::size_t state_rule(State<T>& state, F&& kernel_body, NodeOptions options = {})
+            std::size_t state_rule(State<T>& state, F&& kernel_body, NodeOptions options = {},
+                                   const char* call = K_STATE_RULE)
             {
-                if (!admits(options))
+                if (!admits(options) || !admit(empty_state_refusal(call, state)))
                     return rule_count();
                 auto view = steps_.view_for(state);
                 std::vector<LivenessObserver> lives;
@@ -480,10 +443,9 @@ namespace SushiRuntime
                       std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
             std::size_t state_rule(State<T>& state, Launch launch, F&& kernel_body,
                                    NodeOptions options = {},
-                                   const char* call =
-                                       "Recorder::state_rule(state, launch, kernel)")
+                                   const char* call = K_LAUNCH_STATE_RULE)
             {
-                if (!admits(options) ||
+                if (!admits(options) || !admit(empty_state_refusal(call, state)) ||
                     !admit(Detail::launch_refusal(launch, state.size(), call, next_rule(),
                                                   "the State")))
                     return rule_count();
@@ -510,7 +472,8 @@ namespace SushiRuntime
             std::size_t dynamic_kernel(Dynamic window, State<T>& state, F&& kernel_body,
                                        NodeOptions options = {})
             {
-                if (!admits(options) || !admit(device_slots_refusal(window)))
+                require_device_slots(window);
+                if (!admits(options) || !admit(empty_state_refusal(K_DYNAMIC_STATE_RULE, state)))
                     return rule_count();
                 auto view = steps_.view_for(state);
 
@@ -534,8 +497,7 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Records a rule that writes one State from several current fields, over
-             *        the whole field.
+             * @brief Records a whole-field rule that writes one State from several current fields.
              * @param states Coupled(out, in0, ...); each State is alive at every run and
              *        free to move.
              * @param kernel_body Callable invoked as kernel_body(i, current, next, in0, ...).
@@ -549,10 +511,11 @@ namespace SushiRuntime
             {
                 return std::apply([&](State<Inputs>&... inputs)
                 {
+                    const bool output_holds = admit(empty_state_refusal(call, states.out));
                     const bool inputs_fit =
                         (admit(Detail::launch_refusal(states.out.size(), inputs.size(), call,
                                                       next_rule(), "a State read")) && ...);
-                    if (!admits(options) || !inputs_fit)
+                    if (!admits(options) || !output_holds || !inputs_fit)
                         return rule_count();
                     return record_coupled(states.out.size(), states.out,
                                           std::forward<F>(kernel_body), options, inputs...);
@@ -574,8 +537,10 @@ namespace SushiRuntime
             {
                 return std::apply([&](State<Inputs>&... inputs)
                 {
-                    const bool output_fits = admit(Detail::launch_refusal(
-                        launch, states.out.size(), call, next_rule(), "the State written"));
+                    const bool output_fits =
+                        admit(empty_state_refusal(call, states.out)) &&
+                        admit(Detail::launch_refusal(launch, states.out.size(), call,
+                                                     next_rule(), "the State written"));
                     const bool inputs_fit =
                         (admit(Detail::launch_refusal(launch, inputs.size(), call, next_rule(),
                                                       "a State read")) && ...);
@@ -704,8 +669,42 @@ namespace SushiRuntime
             [[nodiscard]] const Detail::StepMachinery& steps() const noexcept { return steps_; }
 
         private:
+            // A graph and a region own their recorder; they alone start one and move one.
+            friend class Graph;
+            friend class Region;
             // The plan builders of the library read the recorded nodes through this seam.
             friend struct Detail::RecorderReplay;
+
+            /**
+             * @brief Starts an empty recorder on a runtime.
+             * @param context Runtime the recorder allocates scratch from and keeps alive.
+             */
+            explicit Recorder(ContextHandle context) noexcept
+                : context_(std::move(context))
+            {
+            }
+
+            /**
+             * @brief Takes over another recorder's nodes, rules, scratch, hooks and refusal.
+             * @param other Left empty on the same context; its generation() moves on.
+             * @pre No rule scope is open on other.
+             */
+            Recorder(Recorder&& other) noexcept
+            {
+                take(other);
+            }
+
+            /**
+             * @brief Replaces this recorder's contents with another's.
+             * @param other Left empty on the same context; its generation() moves on.
+             * @pre No rule scope is open on either recorder.
+             */
+            Recorder& operator=(Recorder&& other) noexcept
+            {
+                if (this != &other)
+                    take(other);
+                return *this;
+            }
 
             /**
              * @brief Appends one node; every recording member ends here.
@@ -731,12 +730,22 @@ namespace SushiRuntime
                                                                        Residency residency);
 
             /**
-             * @brief Returns the refusal of a Dynamic whose device count or base slot is not
-             *        host USM this runtime allocated.
-             * @return An InvalidAccess error naming the next rule, or nothing.
+             * @brief Stops the process unless the device count slot and the base slot of a
+             *        Dynamic are null or lie in host USM this runtime allocated.
+             * @pre Each slot window names lies in a Residency::Host buffer of this runtime.
              */
-            [[nodiscard]] SUSHIRUNTIME_API std::optional<Error>
-            device_slots_refusal(const Dynamic& window) const;
+            SUSHIRUNTIME_API void require_device_slots(const Dynamic& window) const;
+
+            /** @brief Names state_rule(state, kernel) in a message of its own. */
+            static constexpr const char* K_STATE_RULE = "Recorder::state_rule(state, kernel)";
+
+            /** @brief Names state_rule(state, launch, kernel) in a message of its own. */
+            static constexpr const char* K_LAUNCH_STATE_RULE =
+                "Recorder::state_rule(state, launch, kernel)";
+
+            /** @brief Names dynamic_kernel(window, state, kernel) in a message of its own. */
+            static constexpr const char* K_DYNAMIC_STATE_RULE =
+                "Recorder::dynamic_kernel(window, state, kernel)";
 
             /** @brief Names coupled_rule(Coupled, kernel) in a message of its own. */
             static constexpr const char* K_COUPLED_RULE =
@@ -783,8 +792,6 @@ namespace SushiRuntime
              *        refresh.
              * @param options What the rule states; a rule that names no operation gets null
              *        lists and registers nothing.
-             * @param out     View of the State written.
-             * @param inputs  Views of the further States read.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <typename T, class... Inputs>
@@ -825,6 +832,24 @@ namespace SushiRuntime
                 return label.empty() ? nullptr : labels_.emplace(label).first->c_str();
             }
 
+            /**
+             * @brief Returns the refusal of a rule over a State that owns no memory.
+             * @param call Names the call the user wrote in the message.
+             * @return An InvalidAccess error naming the rule, or nothing.
+             */
+            template <typename T>
+            [[nodiscard]] std::optional<Error> empty_state_refusal(const char* call,
+                                                                   const State<T>& state) const
+            {
+                if (!state.empty())
+                    return std::nullopt;
+                return Error{ErrorCode::InvalidAccess,
+                             std::string(call) + ", rule " + std::to_string(next_rule()) +
+                                 ": the State written owns no memory, so the rule has no "
+                                 "element to evolve; pass a State that Runtime::state() "
+                                 "returned with a size above zero."};
+            }
+
             /** @brief Returns the position the next recorded node's rule has. */
             std::size_t next_rule() const noexcept
             {
@@ -833,22 +858,16 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Returns the refusal of a placement on a device the runtime does not have.
-             * @param call Names the call the user wrote in the message.
-             * @return An InvalidAccess error naming the rule, or nothing.
-             */
-            [[nodiscard]] SUSHIRUNTIME_API std::optional<Error>
-            placement_refusal(const char* call, const On& placement) const;
-
-            /**
              * @brief Hands over the observer of the handle a placement names.
+             * @param call  Names the call the user wrote in the message.
              * @param lives Gains the placement's observer when it watches an allocation.
              * @return Index of the device the node is placed on.
-             * @pre placement_refusal() returned nothing for placement.
+             * @pre placement names a device of this runtime.
              */
-            std::size_t placed_device(const On& placement,
+            std::size_t placed_device(const char* call, const On& placement,
                                       std::vector<LivenessObserver>& lives) const
             {
+                Detail::require_device(call, placement.device, Detail::device_count(context_));
                 if (!placement.life.expired())
                     lives.push_back(placement.life);
                 return placement.device.value();
@@ -940,7 +959,7 @@ namespace SushiRuntime
 
             /**
              * @brief Allocates a fault record for a late-bound node.
-             * @param window A Dynamic for which host_device_slots_refusal() returned nothing.
+             * @param window A Dynamic that passed require_device_slots().
              * @return The record, in host USM of the slot's device or in host memory when
              *         window has no device slot, or the error of the allocation.
              */

@@ -31,8 +31,8 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
-#include <exception>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -43,7 +43,9 @@
 #include <SushiRuntime/observability/event_timestamps.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/observability/profiling_ledger.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_widths.hpp>
@@ -263,15 +265,15 @@ namespace SushiRuntime
                  * execute, and returns the first such failure once the pass is over.
                  * @param active_events List of events currently being monitored.
                  * @param local_queue Current thread's task queue.
-                 * @return A KernelFailed error with the text of the first query or wait that
-                 *         threw; its code is Ok when none did.
+                 * @return The error of the first query or wait that threw, or nothing when none
+                 *         did.
                  */
                 template<typename QueueType>
-                [[nodiscard]] Error poll_events(ActiveEventList& active_events,
-                                                QueueType& local_queue)
+                [[nodiscard]] std::optional<Error> poll_events(ActiveEventList& active_events,
+                                                               QueueType& local_queue)
                 {
                     if (active_events.is_empty())
-                        return Error{};
+                        return std::nullopt;
 
                     // Backoff and stall state are read from the caller's own ActiveEventList.
                     size_t& backoff_counter = active_events.backoff_counter;
@@ -284,18 +286,18 @@ namespace SushiRuntime
                             std::this_thread::yield();
 
                         backoff_counter--;
-                        return Error{};
+                        return std::nullopt;
                     }
 
                     const bool profiling = profiling_.load(std::memory_order_acquire);
 
                     bool progress = false;
-                    Error first_failure;
+                    std::optional<Error> first_failure;
                     for (size_t i = 0; i < active_events.size(); )
                     {
                         PolledEvent& entry = active_events[i];
                         bool done = entry.ready;
-                        try
+                        Result<void> polled = SYCL::translate_exceptions([&entry, &done]()
                         {
                             if (!done)
                             {
@@ -306,19 +308,11 @@ namespace SushiRuntime
                             // wait() on a complete event makes the runtime flush USM visibility.
                             if (done && entry.has_event)
                                 entry.event.wait();
-                        }
-                        catch (const std::exception& cause)
+                        });
+                        if (!polled)
                         {
-                            if (first_failure.code == ErrorCode::Ok)
-                                first_failure = Error{ErrorCode::KernelFailed, cause.what()};
-                            done = reap_failed(entry);
-                        }
-                        catch (...)
-                        {
-                            if (first_failure.code == ErrorCode::Ok)
-                                first_failure = Error{
-                                    ErrorCode::KernelFailed,
-                                    "An event reported an error that is not a std::exception."};
+                            if (!first_failure)
+                                first_failure = std::move(polled.error());
                             done = reap_failed(entry);
                         }
 
@@ -364,20 +358,11 @@ namespace SushiRuntime
                             auto& oldest = active_events[0];
                             if (oldest.has_event)
                             {
-                                try
+                                Result<void> waited = SYCL::translate_exceptions(
+                                    [&oldest]() { oldest.event.wait(); });
+                                if (!waited)
                                 {
-                                    oldest.event.wait();
-                                }
-                                catch (const std::exception& cause)
-                                {
-                                    first_failure = Error{ErrorCode::KernelFailed, cause.what()};
-                                    reap_failed(oldest);
-                                }
-                                catch (...)
-                                {
-                                    first_failure = Error{
-                                        ErrorCode::KernelFailed,
-                                        "An event reported an error that is not a std::exception."};
+                                    first_failure = std::move(waited.error());
                                     reap_failed(oldest);
                                 }
                             }

@@ -122,6 +122,11 @@ builder, so a chain reads the same value from last_rule().
 
 ### Recorder: moves
 
+Only a Graph and a Region start a Recorder and move one: the constructor from a ContextHandle, the
+move constructor and the move assignment are private, with those two as friends. Graph::recorder()
+and Region::recorder() hand out a reference a consumer records on, and a consumer that could
+assign one recorder into another would replace the nodes under a plan its graph still holds.
+
 The source of a move is an empty recorder on the same context: no node, no rule, no scratch and no
 observer. It keeps the context so that it can record again. No rule scope may be open on either
 side, because a RuleScope holds the recorder's address.
@@ -160,6 +165,11 @@ again, which the owner guarantees by rebuilding whenever generation() changed.
 clear() may be called with a rule scope open, which is how an extension that extend() handed the
 recorder reaches it. The scope stays open, and the next node recorded inside it starts a new rule.
 
+Graph::clear() calls it and PlanCache::discard(), which marks the plan stale and forgets the
+registration of every rule, so rule_registration() answers `K_NO_REGISTRATION` until the next
+build. The plan itself is freed by that build or with the graph. Region::clear() calls it
+through recorder(), which lists the region as written to.
+
 ### refusal
 
 A recording member returns the position of a rule and a builder verb returns the builder, so
@@ -169,11 +179,17 @@ and returns rule_count() from it. refusal() returns the stored error, or null wh
 refused. Its message opens with the call as the caller wrote it and the position the rule would
 have had, such as `add_rule(launch, state, kernel), rule 1: `.
 
-Four checks refuse a recording, each a function that returns `std::optional<Error>`:
-launch_refusal(), parameters_refusal() and
-host_device_slots_refusal() of `api/detail/`, and the recorder's own placement_refusal(). admit()
-keeps what they return. A verb that changes the step machinery beyond its node asks them before
-it changes anything, so a refused State rule registers no advance.
+Three checks refuse a recording, each a function that returns `std::optional<Error>`:
+launch_refusal() and parameters_refusal() of `api/detail/`, and the recorder's own
+empty_state_refusal(), which answers `InvalidAccess` for a rule over a State that owns no
+memory. admit() keeps what they return. A verb that changes the step machinery beyond its node
+asks them before it changes anything, so a refused State rule registers no advance.
+
+A refusal is for what the caller cannot know when it writes the call: the size a handle has at
+run time, how many parameters a domain library passes on. A rule the caller broke stops the
+process instead, as it does in Runtime::buffer(): a placement on a device index the runtime does
+not drive stops in placed_device() through `Detail::require_device()`, and a device slot that
+is not host USM of this runtime stops in require_device_slots().
 
 The refusal stays until clear(), and a later refusal does not replace it. Every run entry of the
 owning graph returns it before anything else is checked and runs nothing; see entry_refusal. A
@@ -296,8 +312,9 @@ nothing.
 | `parameters` | The engine's metadata of the node | No parameter |
 
 The recorder copies `name` and `parameters` when the node is recorded, so a temporary string and
-a local array are valid arguments. A node carries eight parameters; a longer list is refused with
-`InvalidGraph` and records nothing.
+a local array are valid arguments. A node carries `NodeOptions::K_MAX_PARAMETERS` parameters,
+eight; a longer list is refused with `InvalidGraph` and records nothing. A domain library that
+fills the list from its own table asserts against the constant at compile time.
 
 A node that names an operation is one another machine may run, and nothing else changes for
 it. On a runtime with a cluster attached the node is a candidate for offload when a worker
@@ -393,7 +410,7 @@ pointers by hand, and the two lists can get out of step.
 A callable whose signature does not fit fails one `static_assert` in
 `api/detail/callable_checks.hpp`. Its text states the signature the call expects, and it is the
 only error: the overload does not instantiate the recording call after a failed check. The
-overloads are selected by the launch and the access alone, so a mistyped callable can no longer
+overloads are selected by the launch and the access alone, so a mistyped callable does not
 empty the overload set.
 
 ### add(launch, Reads, Writes, kernel)
@@ -499,7 +516,8 @@ The runtime places a rule on the device that owns the first region it writes. An
 names no region, so it states its device: On(buffer) and On(state) name the device of a handle
 and watch the handle, On(DeviceIndex) names a device. Without an On the rule runs on device 0,
 where Runtime::buffer() and Runtime::state() allocate by default. An On that names a device the
-runtime does not have is refused with `InvalidAccess`.
+runtime does not have is a rule the caller broke and stops the process through `SR_VERIFY`, with
+the message Runtime::buffer() gives for the same index.
 
 ### add_task(Reads, Writes, body)
 
@@ -660,13 +678,16 @@ ends at now, so the run is one step.
 ### guarded
 
 guarded() is where an exception of the plan build or of a step becomes an Error. It calls
-Detail::translate_exceptions() of `api/detail/error_translation.hpp` with `KernelFailed` for a
-device failure; `api/detail/README.md` describes the ladder.
+Detail::translate_exceptions() of `core/error_translation.hpp` with the code of its phase and
+returns a `Result<void>`; `modules/foundation/core/README.md` describes the ladder.
 
 | Thrown | While the plan is built | Once a step may have started |
 | --- | --- | --- |
-| `sycl::exception` | `KernelFailed` | `KernelFailed` |
-| Any other exception, such as one a host task throws | `CompileFailed` | `KernelFailed` |
+| `std::bad_alloc` | `AllocationFailed` | `AllocationFailed` |
+| Any other exception, such as a `sycl::exception` or one a host task throws | `CompileFailed` | `KernelFailed` |
+
+The guarded call may also return a failure of its own. first_failure() picks between the two:
+what was thrown, else what was returned.
 
 The engine returns its own failures as `Result<void>` from execute(), submit() and complete(), and
 `ChainRun` from submit_step(), wait() and finish(); the driver forwards those with their codes.
@@ -679,7 +700,9 @@ loop, not one step.
 
 ### entry_refusal
 
-entry_refusal() answers before anything touches the plan. A graph whose recorder refused a
+entry_refusal() answers before anything touches the plan, with a `std::optional<Error>`: the
+refusal, or nothing when a run may start. It reads the engine's run marker once, so a run entry
+costs one atomic load here whatever its step count. A graph whose recorder refused a
 recording returns that refusal first, whatever else is true of it: the refused rule may be the
 only one, and "nothing to run" would hide the reason. A DynamicGraph returns the refusal of the
 region with the lowest key that has one. A graph with nothing recorded is `InvalidGraph`. A graph
@@ -762,7 +785,7 @@ step is submitted, exactly as a synchronous run does.
 
 run_async() returns the handle or the Error that kept the step from starting: the refusals of
 entry_refusal(), `Unsupported` from an engine that cannot start a run without blocking, and a build
-or submission failure mapped by guarded(). run_async() throws that Error.
+or submission failure mapped by guarded().
 
 ### run_async: pre-step order
 
@@ -852,7 +875,7 @@ settle_async_step() is what a handle calls to wait, after the handle has checked
 still the one pending. It clears the record and the count of runs in flight before the blocking
 call, because the step is over however it ends and the graph must be runnable again; one throwing
 kernel must not make the graph refuse every later run. The wait and finish_step() run under
-guarded().
+guarded(), and the call returns a `Result<void>`.
 
 ### finish_step
 

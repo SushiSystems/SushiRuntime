@@ -51,7 +51,13 @@ and size and call nothing.
 
 A window copy is the other call into the library: `Detail::copy_to_host()` and
 `Detail::copy_to_device()` find the queue that owns the allocation, copy, wait and count the
-bytes. The vector a read fills is sized in the header, where the element type is known.
+bytes, and return a `Result<void>`. The vector a read fills is sized in the header, where the
+element type is known.
+
+Buffer::adopt() is the one place a Buffer is built over a block. It runs the constructor inside
+`Detail::translate_exceptions()`, because the constructor allocates the liveness token, and
+returns `AllocationFailed` when that allocation fails. Buffer::allocate() and the two Interop
+calls end there, so no exception leaves any of the three.
 
 ### Argument types
 

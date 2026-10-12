@@ -75,7 +75,6 @@ namespace SushiRuntime
 
         /**
          * @brief Resolves a LateCount's host side and names its device slot without reading it.
-         * @param count The count to resolve.
          * @param fault The node's fault record; a host count above the capacity is written
          *        there as K_DEVICE_FAULT_LATE_COUNT.
          * @return The source a resolver kernel reads, or nothing for a host count above the

@@ -44,7 +44,6 @@ namespace
     // A consumer compiled against an older header compares these numbers; see README.md.
     TEST(Unit_Error, EveryEnumeratorKeepsItsNumber)
     {
-        EXPECT_EQ(number_of(ErrorCode::Ok), 0);
         EXPECT_EQ(number_of(ErrorCode::InvalidGraph), 1);
         EXPECT_EQ(number_of(ErrorCode::CompileFailed), 2);
         EXPECT_EQ(number_of(ErrorCode::AllocationFailed), 3);
@@ -59,7 +58,6 @@ namespace
 
     TEST(Unit_Error, EveryEnumeratorHasItsOwnName)
     {
-        EXPECT_STREQ(to_string(ErrorCode::Ok), "Ok");
         EXPECT_STREQ(to_string(ErrorCode::InvalidGraph), "InvalidGraph");
         EXPECT_STREQ(to_string(ErrorCode::CompileFailed), "CompileFailed");
         EXPECT_STREQ(to_string(ErrorCode::AllocationFailed), "AllocationFailed");

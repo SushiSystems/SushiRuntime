@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* failure_naming.hpp                                                     */
+/* emit_dynamic.cpp                                                       */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,38 +20,46 @@
 /**************************************************************************/
 
 /**
- * @file failure_naming.hpp
- * @brief Declares the functions that name the task behind a failed run.
+ * @file emit_dynamic.cpp
+ * @brief Implements the creation of a late-bound node's controls from a Dynamic.
  * @author Mustafa Garip
+ * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
 
-#pragma once
+#include <SushiRuntime/api/detail/emit_dynamic.hpp>
 
-#include <exception>
-#include <string>
+#include <memory>
+#include <vector>
 
-#include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/sycl/sycl_compat.hpp>
-#include <SushiRuntime/task/task.hpp>
+#include <SushiRuntime/api/vocabulary/dynamic.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
+#include <SushiRuntime/region/liveness.hpp>
+#include <SushiRuntime/task/late_bindings.hpp>
 
 namespace SushiRuntime
 {
-    namespace Internal::Scheduler
+    namespace Detail
     {
-        /**
-         * @brief Names @p task for a failure report.
-         * @return The task's label, with the registration index when it is a graph node.
-         */
-        [[nodiscard]] std::string describe_task(const Task& task);
-
-        /** @brief Builds the failure of @p task from an Error it returned, keeping its code. */
-        [[nodiscard]] Error name_failure(const Task& task, const Error& cause);
-
-        /** @brief Builds the KernelFailed failure of @p task from an exception it let out. */
-        [[nodiscard]] Error name_failure(const Task& task, const std::exception& cause);
-
-        /** @brief Builds the KernelFailed failure of @p task from an object that is not a std::exception. */
-        [[nodiscard]] Error name_failure(const Task& task);
-
-    } // namespace Scheduler
+        std::shared_ptr<Internal::Graph::LateBindings>
+        make_late_bindings(const Dynamic& dyn, std::vector<BufferRegion>& reads,
+                           std::vector<LivenessObserver>& lives)
+        {
+            auto lb = std::make_shared<Internal::Graph::LateBindings>();
+            const DeviceSlot& count = DynamicAccess::count_slot(dyn);
+            if (count.words != nullptr)
+            {
+                lb->device_count = count.words;
+                lb->device_count_index = count.index;
+                register_device_slot(count, reads, lives);
+            }
+            const DeviceSlot& base = DynamicAccess::base_slot(dyn);
+            if (base.words != nullptr)
+            {
+                lb->device_base = base.words;
+                lb->device_base_index = base.index;
+                register_device_slot(base, reads, lives);
+            }
+            return lb;
+        }
+    } // namespace Detail
 } // namespace SushiRuntime

@@ -40,7 +40,9 @@
 #include <string>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/topology/affinity.hpp>
@@ -50,8 +52,8 @@
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
+#include <SushiRuntime/scheduler/failure_naming.hpp>
 #include "dispatch_placement.hpp"
-#include "failure_naming.hpp"
 #include "work_stealing_deque.hpp"
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -465,9 +467,9 @@ namespace SushiRuntime
                     SushiRuntime::Internal::Memory::EpochGuard epoch_guard;
 
                     // A failed poll fails the run, not the thread (scheduler/README.md).
-                    try
+                    std::optional<Error> polled;
+                    Result<void> poll_ran = SYCL::translate_exceptions([&]()
                     {
-                        Error polled;
                         if (prof)
                         {
                             const auto p0 = sclock::now();
@@ -476,23 +478,16 @@ namespace SushiRuntime
                         }
                         else
                             polled = event_poller.poll_events(active_events, *my_queue);
-                        if (polled.code != ErrorCode::Ok)
-                        {
-                            SR_LOG_ERROR("An event of the current run failed; aborting the run.");
-                            outcome_.record(std::move(polled));
-                        }
-                    }
-                    catch (const std::exception& cause)
+                    });
+                    if (!poll_ran)
                     {
                         SR_LOG_ERROR("poll_events threw; aborting the current run.");
-                        outcome_.record(Error{ErrorCode::KernelFailed, cause.what()});
+                        outcome_.record(std::move(poll_ran.error()));
                     }
-                    catch (...)
+                    else if (polled)
                     {
-                        SR_LOG_ERROR("poll_events threw; aborting the current run.");
-                        outcome_.record(Error{ErrorCode::KernelFailed,
-                                              "poll_events threw an object that is not a "
-                                              "std::exception."});
+                        SR_LOG_ERROR("An event of the current run failed; aborting the run.");
+                        outcome_.record(std::move(*polled));
                     }
 
                     // Only a priority submission takes the global mutex (modules/engine/scheduler/README.md).
@@ -616,7 +611,7 @@ namespace SushiRuntime
                 events.push(skipped_event(task));
             };
 
-            try 
+            Result<void> ran = SYCL::translate_exceptions([&]()
             {
                 SR_LOG_DEBUG("Executing task: {}", task->name());
                 
@@ -764,15 +759,9 @@ namespace SushiRuntime
                 dispatched.step = current_dispatch_step_.load(std::memory_order_acquire);
                 dispatched.widths = widths;
                 events.push(dispatched);
-            } 
-            catch (const std::exception& cause)
-            {
-                abort_run(name_failure(*task, cause));
-            }
-            catch (...)
-            {
-                abort_run(name_failure(*task));
-            }
+            });
+            if (!ran)
+                abort_run(name_failure(*task, ran.error()));
         }
 
         /**

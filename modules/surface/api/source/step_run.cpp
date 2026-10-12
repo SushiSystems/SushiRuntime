@@ -81,6 +81,19 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Clears every fault record, so a run starts with none of the run before.
+             * @pre No kernel of the plan is running.
+             */
+            void discard_faults(const StepMachinery& steps)
+            {
+                // take_fault() clears the one record it returns, so the loop ends on none.
+                while (steps.take_fault())
+                {
+
+                }
+            }
+
+            /**
              * @brief Runs the steps on the work-stealing scheduler, waiting after each.
              * @param keep_going Called with the count of completed steps before each step.
              * @return The number of steps run, or the fault a step recorded.
@@ -113,18 +126,17 @@ namespace SushiRuntime
 
             /**
              * @brief Runs the steps as an in-order chain from this thread.
-             * @param wait_every_step False for a fixed step count, true when the stop test
-             *        may read results.
              * @return The number of steps run, or the fault a step recorded.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             Result<std::size_t> run_chained(const StepTarget& target, StepPredicate keep_going,
                                             RuntimeContext& context, ExecutionEngine& engine,
-                                            bool wait_every_step)
+                                            StepSync sync)
             {
                 CompiledGraph& plan = *target.plan;
                 const StepMachinery& steps = *target.steps;
                 Internal::Execution::ChainRun chain(context, plan);
+                const bool wait_every_step = (sync == StepSync::EveryStep);
                 const bool advance_unchecked = !wait_every_step;
                 std::size_t executed = 0;
                 while (keep_going(executed) && !engine.is_cancelled())
@@ -171,12 +183,15 @@ namespace SushiRuntime
 
         Result<void> run_steps(const StepTarget& target, StepPredicate keep_going,
                                RunReport& report, double compile_ms,
-                               std::size_t expected_invocations, bool wait_every_step)
+                               std::size_t expected_invocations, StepSync sync)
         {
             using clock = std::chrono::steady_clock;
 
             CompiledGraph& plan = *target.plan;
             const StepMachinery& steps = *target.steps;
+
+            // A run that failed returned before it read the records of its last step.
+            discard_faults(steps);
 
             // State views point at their current and next buffers before the first step.
             steps.resync();
@@ -197,11 +212,11 @@ namespace SushiRuntime
             const auto t0 = clock::now();
 
             // A hook may write what a kernel reads, so each step ends before the next hook.
-            const bool hooked_wait = target.hooks->empty() ? wait_every_step : true;
+            const StepSync hooked_sync = target.hooks->empty() ? sync : StepSync::EveryStep;
             const bool chained = target.may_chain && plan.chain.chainable &&
                                  !context.settings().force_scheduler;
             const Result<std::size_t> stepped = chained
-                ? run_chained(target, keep_going, context, engine, hooked_wait)
+                ? run_chained(target, keep_going, context, engine, hooked_sync)
                 : run_scheduled(target, keep_going, engine);
             if (!stepped)
                 return make_error(stepped.error());
@@ -232,6 +247,9 @@ namespace SushiRuntime
             ExecutionEngine& engine = context.execution_engine();
             CompiledGraph& plan = *target.plan;
             const StepMachinery& steps = *target.steps;
+
+            // A step that failed returned before it read its records.
+            discard_faults(steps);
 
             steps.resync();
             engine.reset_cancellation();

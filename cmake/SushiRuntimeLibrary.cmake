@@ -8,7 +8,8 @@
 # cmake/SushiRuntimeInstall.cmake installs and exports it.
 
 # Declares the shared library `sushiruntime` (alias SushiRuntime::SushiRuntime) from the
-# object libraries the modules recorded.
+# object libraries the modules recorded, and `sushiruntime_internal_headers`, which adds
+# the include roots of the INTERNAL modules for the programs of this tree that test them.
 function(sushiruntime_compose_library)
     # Before 1.0 a minor release may break the ABI, so the minor number is part of the name
     # a program is linked against.
@@ -24,16 +25,25 @@ function(sushiruntime_compose_library)
     add_library(SushiRuntime::SushiRuntime ALIAS sushiruntime)
 
     get_property(object_targets GLOBAL PROPERTY SUSHIRUNTIME_MODULE_OBJECT_TARGETS)
-    get_property(include_roots  GLOBAL PROPERTY SUSHIRUNTIME_BUILD_INCLUDE_ROOTS)
+    get_property(public_roots   GLOBAL PROPERTY SUSHIRUNTIME_PUBLIC_INCLUDE_ROOTS)
+    get_property(internal_roots GLOBAL PROPERTY SUSHIRUNTIME_INTERNAL_INCLUDE_ROOTS)
     get_property(externals      GLOBAL PROPERTY SUSHIRUNTIME_MODULE_EXTERNAL_LIBRARIES)
     foreach(objects IN LISTS object_targets)
         target_sources(sushiruntime PRIVATE "$<TARGET_OBJECTS:${objects}>")
     endforeach()
-    foreach(include_root IN LISTS include_roots)
+    # A consumer of the build tree sees the roots an installed one does, and no other.
+    foreach(include_root IN LISTS public_roots)
         target_include_directories(sushiruntime PUBLIC "$<BUILD_INTERFACE:${include_root}>")
     endforeach()
     target_include_directories(sushiruntime PUBLIC
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
+
+    # Neither exported nor installed: cmake/SushiRuntimeTests.cmake links it to a test.
+    add_library(sushiruntime_internal_headers INTERFACE)
+    foreach(include_root IN LISTS internal_roots)
+        target_include_directories(sushiruntime_internal_headers INTERFACE "${include_root}")
+    endforeach()
+    target_link_libraries(sushiruntime_internal_headers INTERFACE sushiruntime)
 
     sushiruntime_apply_build_policy(sushiruntime)
 

@@ -58,22 +58,19 @@ namespace SushiRuntime
              * @return The capabilities, or a DeviceLost error when the device does not answer.
              * @pre device names a device of this runtime.
              */
-            [[nodiscard]] SUSHIRUNTIME_API Result<SushiRuntime::InteropCapabilities>
+            [[nodiscard]] SUSHIRUNTIME_API Result<InteropCapabilities>
             capabilities(DeviceIndex device) const;
 
             /**
              * @brief Allocates a host-addressable buffer another API can import.
-             * @tparam T          Element type.
-             * @param count       Number of elements to export.
-             * @param device      The device queue to allocate on.
-             * @param alignment   Byte alignment of the returned region.
+             * @param alignment Byte alignment of the returned region; a power of two.
              * @return The buffer, its address and its rounded byte size, or an AllocationFailed
-             *         error when the device returns nothing.
-             * @pre alignment is a power of two, and the byte size of count rounded up to it
-             *      fits std::size_t.
+             *         error when the device or the host allocator returns nothing.
+             * @pre The byte size of count, rounded up to alignment, fits std::size_t.
+             * @see modules/surface/api/include/SushiRuntime/api/interop/README.md
              */
             template <typename T>
-            [[nodiscard]] Result<SushiRuntime::HostExport<T>>
+            [[nodiscard]] Result<HostExport<T>>
             export_host(std::size_t count, DeviceIndex device, std::size_t alignment) const
             {
                 const std::size_t requested =
@@ -83,26 +80,24 @@ namespace SushiRuntime
                     return make_error(std::move(block.error()));
                 void* address = block->address;
                 const std::size_t bytes = block->bytes;
-                return HostExport<T>{
-                    Buffer<T>(context_, std::move(*block), count, device, Residency::Shared),
-                    address, bytes};
+                Result<Buffer<T>> buffer = Buffer<T>::adopt(context_, std::move(*block), count,
+                                                            device, Residency::Shared);
+                if (!buffer)
+                    return make_error(std::move(buffer.error()));
+                return HostExport<T>{std::move(*buffer), address, bytes};
             }
 
             /**
              * @brief Imports a device buffer another API exported.
-             * @tparam T        Element type.
              * @param descriptor Names the exported handle; the caller keeps ownership of it.
-             * @param count     Number of elements to import.
-             * @param device    The device queue to import on.
-             * @return A device-resident buffer over the region, empty when @p count is 0, or
-             *         why nothing was imported: Unsupported for a device that cannot import,
-             *         InvalidAccess for a descriptor the device refuses.
+             * @return A device-resident buffer over the region, empty when count is 0, or an
+             *         Unsupported, InvalidAccess or AllocationFailed error.
              * @pre The byte size of count fits std::size_t.
-             * @see modules/surface/interop/README.md
+             * @see modules/surface/api/include/SushiRuntime/api/interop/README.md
              */
             template <typename T>
             [[nodiscard]] Result<Buffer<T>>
-            import_device(const SushiRuntime::ExternalMemoryDescriptor& descriptor,
+            import_device(const ExternalMemoryDescriptor& descriptor,
                           std::size_t count, DeviceIndex device) const
             {
                 const std::size_t requested =
@@ -111,7 +106,8 @@ namespace SushiRuntime
                     import_device_block(descriptor, requested, device);
                 if (!block)
                     return make_error(std::move(block.error()));
-                return Buffer<T>(context_, std::move(*block), count, device, Residency::Device);
+                return Buffer<T>::adopt(context_, std::move(*block), count, device,
+                                        Residency::Device);
             }
 
         private:
@@ -138,7 +134,7 @@ namespace SushiRuntime
              * @return The block, or why nothing was imported.
              */
             [[nodiscard]] SUSHIRUNTIME_API Result<Detail::MemoryBlock>
-            import_device_block(const SushiRuntime::ExternalMemoryDescriptor& descriptor,
+            import_device_block(const ExternalMemoryDescriptor& descriptor,
                                 std::size_t bytes, DeviceIndex device) const;
 
             /** @brief The runtime the facade forwards to; never empty. */

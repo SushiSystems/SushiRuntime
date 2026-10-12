@@ -141,7 +141,7 @@ namespace SushiRuntime
         /**
          * @brief Classifies a compiled plan for the in-order chain.
          */
-        ChainPlan classify_chain(const CompiledGraph& graph, RuntimeContext& context)
+        Internal::Graph::ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context)
         {
             const Internal::Graph::Node* sentinel = graph.sentinel.get();
             std::size_t node_count = 0;
@@ -166,7 +166,7 @@ namespace SushiRuntime
             if (node_count == 0)
                 return {};
 
-            ChainPlan plan;
+            Internal::Graph::ChainPlan plan;
             plan.order = topological_order(graph);
             if (plan.order.size() != node_count)
                 return {};

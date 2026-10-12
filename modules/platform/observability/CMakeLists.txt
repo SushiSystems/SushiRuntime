@@ -7,7 +7,7 @@
 sushiruntime_add_module(
     NAME observability TIER platform INTERNAL
     HEADER_ONLY SYCL
-    DEPENDS core report)
+    DEPENDS report)
 
 sushiruntime_add_module_tests(
     MODULE observability

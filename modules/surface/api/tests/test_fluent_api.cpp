@@ -204,10 +204,12 @@ TEST(Integration_FluentAPI, PointerTrackedAddOrdering)
     auto g = rt.graph();
 
     // Task 1: write p[i] = i
-    g.add(N, Reads(), Writes(key), [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.add(N, Reads(), Writes(BufferRegion(key)),
+          [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
     // Task 2: square in place (RAW on p -> must run after task 1)
-    g.add(N, Reads(key), Writes(key), [p](std::size_t i) { p[i] = p[i] * p[i]; });
+    g.add(N, Reads(BufferRegion(key)), Writes(BufferRegion(key)),
+          [p](std::size_t i) { p[i] = p[i] * p[i]; });
 
     g.run().value();
 
@@ -365,7 +367,8 @@ TEST(Integration_FluentAPI, BufferAllocateUseAndReadBack)
     float* dp = dst.data();
 
     auto g = rt.graph();
-    g.add(N, Reads(sp), Writes(dp), [sp, dp](std::size_t i) { dp[i] = sp[i] * 2.0f; });
+    g.add(N, Reads(BufferRegion(sp)), Writes(BufferRegion(dp)),
+          [sp, dp](std::size_t i) { dp[i] = sp[i] * 2.0f; });
 
     g.run().value();
 

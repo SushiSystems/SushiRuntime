@@ -410,9 +410,9 @@ namespace SushiRuntime
                  * @brief Returns the first failure recorded during the current run.
                  *
                  * The value is visible once run_failed() reads true.
-                 * @return The failure; its code is Ok if the run did not fail.
+                 * @return The failure, or nothing when the run did not fail.
                  */
-                [[nodiscard]] Error run_error() const { return outcome_.error(); }
+                [[nodiscard]] std::optional<Error> run_error() const { return outcome_.error(); }
 
                 /**
                  * @brief Requests cancellation of the active run. Thread-safe.

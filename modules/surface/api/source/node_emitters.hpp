@@ -33,6 +33,7 @@
 
 #include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/detail/node_stamp.hpp>
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
 
@@ -46,14 +47,16 @@ namespace SushiRuntime
          * @return The node added; the graph owns it.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
-        Internal::Graph::Node& add_described_node(Internal::Graph::TaskGraph& backing_graph,
-                                                  const NodeDescription& description,
-                                                  std::optional<std::uint32_t> registration);
+        SUSHIRUNTIME_API Internal::Graph::Node&
+        add_described_node(Internal::Graph::TaskGraph& backing_graph,
+                           const NodeDescription& description,
+                           std::optional<std::uint32_t> registration);
 
         /**
          * @brief Writes on a node what the caller stated and leaves the rest as it is.
          * @param node A node of a graph that has not been compiled.
          */
-        void apply_stamp(const NodeStamp& stamp, Internal::Graph::Node& node) noexcept;
+        SUSHIRUNTIME_API void apply_stamp(const NodeStamp& stamp,
+                                          Internal::Graph::Node& node) noexcept;
     } // namespace Detail
 } // namespace SushiRuntime

@@ -74,7 +74,7 @@ namespace
                 void* in  = &bufs[t % M];
                 void* out = &bufs[(t + 1) % M];
                 TaskMetadata meta{"n"};
-                graph.add_task(meta, {in}, {out},
+                graph.add_task(meta, {SushiRuntime::BufferRegion(in)}, {SushiRuntime::BufferRegion(out)},
                     [](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event { return {}; });
             }
 

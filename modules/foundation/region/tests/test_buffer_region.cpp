@@ -26,12 +26,16 @@
  */
 
 #include <cstddef>
+#include <type_traits>
 
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/region/buffer_region.hpp>
 
 using SushiRuntime::BufferRegion;
+
+static_assert(!std::is_convertible<void*, BufferRegion>::value,
+              "a base pointer becomes a region only where the code spells BufferRegion");
 
 namespace
 {

@@ -102,7 +102,8 @@ endfunction()
 # INTERNAL marks a module whose headers are for the other modules of the library: its
 # include root reaches them and the tests, and is not installed. A module without the mark
 # is installed, and may name an INTERNAL module under PRIVATE_DEPENDS only.
-# HEADER_CHECK_EXCLUDE names a header the header check must not compile alone.
+# HEADER_CHECK_EXCLUDE names a header the header check must not compile alone. The check
+# is built for every module that is not INTERNAL, and for the others under SR_BUILD_TESTS.
 function(sushiruntime_add_module)
     cmake_parse_arguments(ARG "INTERNAL;HEADER_ONLY;SYCL" "NAME;TIER"
         "SOURCES;DEPENDS;PRIVATE_DEPENDS;EXTERNAL;HEADER_CHECK_EXCLUDE" ${ARGN})
@@ -161,9 +162,11 @@ function(sushiruntime_add_module)
     foreach(dependency IN LISTS ARG_DEPENDS)
         target_link_libraries(${target} INTERFACE "sushiruntime_module_${dependency}")
     endforeach()
-    # The build tree sees every root; only a public module's root is installed.
-    set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_BUILD_INCLUDE_ROOTS "${include_root}")
-    if(NOT ARG_INTERNAL)
+    # A public root reaches every consumer of the library and is installed; an internal
+    # one reaches the modules that name it and the programs of this tree that test it.
+    if(ARG_INTERNAL)
+        set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_INTERNAL_INCLUDE_ROOTS "${include_root}")
+    else()
         set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_PUBLIC_INCLUDE_ROOTS "${include_root}")
     endif()
 
@@ -194,7 +197,7 @@ function(sushiruntime_add_module)
             SUSHIRUNTIME_MODULE_EXTERNAL_LIBRARIES ${ARG_EXTERNAL})
     endif()
 
-    if(SR_BUILD_TESTS)
+    if(SR_BUILD_TESTS OR NOT ARG_INTERNAL)
         sushiruntime_add_header_check(
             MODULE ${ARG_NAME} INCLUDE_ROOT "${include_root}"
             EXCLUDE ${ARG_HEADER_CHECK_EXCLUDE})

@@ -590,7 +590,9 @@ it.
 `WorkerAgent` builds `WorkerBufferCache`, `DispatchDeduplicator`, `MasterLink` and
 `DispatchExecutor` over one transport and one `RuntimeContext`, and is the transport's only event
 receiver. Its constructor takes a `Runtime` and reaches the context through
-`Detail::ContextAccess`, as `Cluster::attach()` does. Kernels run on the queue
+`Detail::ContextAccess`, as `Cluster::attach()` does. The agent holds the context's
+`shared_ptr`, declared before the bricks, so the queue and the allocator they use are alive
+until the last of them is destroyed, whatever happens to the `Runtime`. Kernels run on the queue
 of device 0 of that context. The cache allocates shared USM on the same device through
 `RuntimeContext::memory()`, so the context's allocator records every cached buffer. A `cache_bytes` of 0 becomes half of the device's `memory_bytes`; a device that
 reports no size gets 1 GiB and one WARN.

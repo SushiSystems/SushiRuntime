@@ -45,23 +45,23 @@ namespace SushiRuntime
         template <typename T>
         inline BufferRegion read_key_of(const Buffer<T>& b) noexcept
         {
-            return HandleAccess::key(b);
+            return BufferRegion(HandleAccess::key(b));
         }
         template <typename T>
         inline BufferRegion read_key_of(const State<T>& s) noexcept
         {
-            return HandleAccess::read_key(s);
+            return BufferRegion(HandleAccess::read_key(s));
         }
         inline BufferRegion read_key_of(const BufferRegion& r) noexcept { return r; }
         template <typename T>
         inline BufferRegion write_key_of(const Buffer<T>& b) noexcept
         {
-            return HandleAccess::key(b);
+            return BufferRegion(HandleAccess::key(b));
         }
         template <typename T>
         inline BufferRegion write_key_of(const State<T>& s) noexcept
         {
-            return HandleAccess::write_key(s);
+            return BufferRegion(HandleAccess::write_key(s));
         }
         inline BufferRegion write_key_of(const BufferRegion& r) noexcept { return r; }
 
@@ -135,7 +135,4 @@ namespace SushiRuntime
             (Detail::gather_life(lives, hs), ...);
         }
     };
-
-
-
 } // namespace SushiRuntime

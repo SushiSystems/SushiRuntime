@@ -17,7 +17,8 @@ valid until the set is destroyed.
 
 ## What it depends on
 
-`core` (`export.hpp`, `error.hpp`, `logger.hpp`, `common.hpp` for `K_MAX_NUMA_NODES`) and SYCL.
+`core` (`export.hpp`, `error.hpp`, `logger.hpp`, `common.hpp` for `K_MAX_NUMA_NODES`), `sycl`
+(`error_translation.hpp`, which every catch of the module goes through) and SYCL.
 It includes no header of `topology`, `execution`, `scheduler`, `graph`, `memory` or `api`. The
 caller turns whatever it discovered into descriptors; the module never asks the machine what
 devices exist.

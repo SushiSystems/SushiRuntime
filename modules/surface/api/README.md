@@ -35,7 +35,7 @@ type of the engine is compiled into the library, from `source/`.
 | `advanced_controls.cpp` | `AdvancedControls`: every answer it reads from the context |
 | `buffer.cpp` | The allocation of a `Buffer` and its window copies |
 | `interop.cpp` | `Interop`: the capabilities, the host export and the device import |
-| `recorder.cpp` | `Recorder::record()`, scratch, the fault records and the refusals that ask the runtime |
+| `recorder.cpp` | `Recorder::record()`, scratch, the fault records and the check of a Dynamic's device slots |
 | `node_emitters.cpp` | One function per `NodeKind` that adds a described node to the engine's graph |
 | `late_window.cpp` | The per-step controls of a late-bound node: creation, update and read |
 | `plan_cache.cpp` | `PlanCache`: the build and the compiled plan of one recorder |
@@ -44,10 +44,9 @@ type of the engine is compiled into the library, from `source/`.
 
 A recording verb is a template. It wraps the caller's kernel once in the `std::function` the
 engine runs and fills a `Detail::NodeDescription` (detail/README.md); `Recorder::record()` stores
-it, and each plan build hands it to the function of its kind. The engine ran a node's work
-through that same `std::function` type before the boundary existed, so a step calls what it
-called then. The per-element path is a template inside the SYCL command group and is compiled
-into the caller, as before.
+it, and each plan build hands it to the function of its kind. The engine runs a node's work
+through that same `std::function` type, so the boundary adds no call to a step. The per-element
+path is a template inside the SYCL command group and is compiled into the caller.
 
 A data handle caches its address and its size, so element access touches the handle alone.
 Buffer, State, Runtime, AdvancedControls and Interop hold a `ContextHandle`
@@ -71,7 +70,7 @@ include that pulls them together.
 | `vocabulary/` | The data-flow DSL (Reads/Writes, In/Out/InOut, Coupled, On, Dynamic) and LateCount |
 | `graph/` | The chainable builders (Graph, Region, DynamicGraph), the Recorder they record onto, and RunHandle, the receipt for a step started asynchronously |
 | `interop/` | The Buffer-typed side of memory pairing with another API: the Interop facade and HostExport |
-| `runtime/` | The Runtime entry point, RuntimeConfig, AdvancedControls, and the error and logging names promoted for it |
+| `runtime/` | The Runtime entry point, RuntimeConfig, AdvancedControls, and the two headers that include the error and logging names |
 | `detail/` | Callable traits, the replay callable of each node shape, the per-step StepMachinery, report building |
 
 ### Adding a node kind from a domain library
@@ -104,30 +103,44 @@ void record_scaled_copy(Recorder& recorder, const Buffer<float>& in,
 A caller writes `record_scaled_copy(graph.recorder(), in, out, n, 2.0f);`, and the same call takes
 `world.region(key).recorder()`.
 
-### Promoted names
+### One namespace
 
-Each leaf header promotes the public names it declares into the SushiRuntime namespace, in a
-closing `using` block. fluent.hpp promotes none. A program that includes
+Every public name is declared in `SushiRuntime`, once, by the header that defines it. No header
+holds a `using` declaration or an alias for another namespace. A program that includes
 `SushiRuntime/sushiruntime.hpp` writes `SushiRuntime::Runtime`, `SushiRuntime::Buffer<T>`,
 `SushiRuntime::Reads` and `SushiRuntime::RunReport`.
 
-Two headers under `api/` declare nothing and only promote. `runtime/errors.hpp` promotes
-`Error`, `ErrorCode` and `Result`; `runtime/logging.hpp`
-promotes `LogLevel`, `set_log_level` and `set_log_sink`.
+Two headers under `api/` declare nothing and include what a run returns and what a program sets:
+`runtime/errors.hpp` includes `core/error.hpp` and `core/result.hpp`, for `Error`, `ErrorCode` and
+`Result`; `runtime/logging.hpp` includes `log/log_level.hpp` and `log/log_sink.hpp`, for
+`LogLevel`, `set_log_level` and `set_log_sink`.
 
 `OperationID` is declared in `SushiRuntime` and the `_op` literal in `SushiRuntime::Literals`, an
-inline namespace, by `core/operation_id.hpp` of the core module, outside `api/`.
-`graph/node_options.hpp` includes it. `TaskMetadata` is declared in
-`SushiRuntime::Internal::Graph` by `task/task_types.hpp`. `RunReport` is declared in
-`SushiRuntime` by `report/run_report.hpp` of the report module.
+inline namespace, by `core/operation_id.hpp` of the core module. `RunReport` is declared by
+`report/run_report.hpp` of the report module, and `BufferRegion` by `region/buffer_region.hpp`.
 
-The graph type stays `Graph`, because `SushiRuntime::Internal::Graph` is the engine's namespace. `when`,
-`sized`, `based_at` and their device forms stay in `API`, so `using namespace SushiRuntime` does not
-bring `when` into scope.
+The free functions `when`, `sized`, `sized_from_device`, `based_at` and `based_at_device` of
+`vocabulary/dynamic.hpp` are declared in `SushiRuntime` like every other name, so
+`using namespace SushiRuntime` brings `when` into scope.
+
+The engine's names are in `SushiRuntime::Internal::<Module>` and its headers are not installed.
+The public class is `Graph`; the engine's graph module is `SushiRuntime::Internal::Graph`.
+
+### Detail
+
+`SushiRuntime::Detail` holds what the installed headers need and a consumer does not write: the
+node descriptions, the step target, the checks behind a static_assert. Its headers are installed
+because the templates of the surface name them.
+
+A `Detail` type that crosses the compiled boundary is part of the binary interface: the library
+and the consumer both read `NodeDescription`, `NodeStamp`, `StepTarget`, `AsyncRunState`,
+`MemoryBlock` and `LateWindow` by their layout. The layout of a `Detail` type changes only with
+the minor version, as a public type's does, and `version_matches()` is what tells a consumer that
+its headers and the loaded library agree.
 
 ## sushiruntime.hpp
 
-`SushiRuntime/sushiruntime.hpp` includes `core/version.hpp` and `api/fluent.hpp`, and nothing else.
-Up to v0.3 it also included seventeen engine headers. A program that used the scheduler, the
-dependency tracker, epoch reclamation, hardware discovery or the logger through it now includes that
-module's header.
+`SushiRuntime/sushiruntime.hpp` includes `api/fluent.hpp` and the core vocabulary a consumer
+writes beside it: `core/assert.hpp`, `core/error.hpp`, `core/operation_id.hpp`,
+`core/ref_counted.hpp`, `core/result.hpp`, `core/span.hpp`, `core/sushi_ptr.hpp` and
+`core/version.hpp`. It includes no header of the engine; those are not installed.

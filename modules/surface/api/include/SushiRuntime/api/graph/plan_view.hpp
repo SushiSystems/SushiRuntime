@@ -32,8 +32,8 @@
 #include <string>
 #include <vector>
 
-#include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
 {

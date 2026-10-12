@@ -31,8 +31,8 @@
 #include <cstddef>
 #include <utility>
 
-#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -58,27 +58,27 @@ namespace SushiRuntime
             if (!allocation)
                 return make_error(std::move(allocation.error()));
             Detail::MemoryBlock block;
-            Error thrown = Detail::translate_exceptions(
-                ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&]()
+            Result<void> owned = Detail::translate_exceptions(
+                ErrorCode::AllocationFailed, [&block, &allocation]()
             {
                 block = Detail::block_of(std::move(*allocation));
             });
-            if (thrown.code != ErrorCode::Ok)
-                return make_error(std::move(thrown));
+            if (!owned)
+                return make_error(std::move(owned.error()));
             return block;
         }
     } // namespace
 
     Result<InteropCapabilities> Interop::capabilities(DeviceIndex device) const
     {
-        return Detail::query_capabilities(Detail::ContextAccess::context(context_),
-                                          device.value());
+        return Internal::MemoryExchange::query_capabilities(
+            Detail::ContextAccess::context(context_), device.value());
     }
 
     Result<Detail::MemoryBlock> Interop::export_host_block(std::size_t bytes, DeviceIndex device,
                                                            std::size_t alignment) const
     {
-        return owned_block(Detail::export_host_memory(
+        return owned_block(Internal::MemoryExchange::export_host_memory(
             Detail::ContextAccess::shared(context_), bytes, device.value(), alignment));
     }
 
@@ -86,7 +86,7 @@ namespace SushiRuntime
     Interop::import_device_block(const ExternalMemoryDescriptor& descriptor, std::size_t bytes,
                                  DeviceIndex device) const
     {
-        return owned_block(Detail::import_device_memory(
+        return owned_block(Internal::MemoryExchange::import_device_memory(
             Detail::ContextAccess::shared(context_), descriptor, bytes, device.value()));
     }
 } // namespace SushiRuntime

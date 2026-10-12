@@ -29,7 +29,6 @@
 #pragma once
 
 #include <atomic>
-#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -43,11 +42,12 @@
 
 #include <SushiRuntime/api/detail/before_step_hooks.hpp>
 #include <SushiRuntime/api/detail/callable_checks.hpp>
-#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/detail/step_run.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/report/run_report.hpp>
 
@@ -85,7 +85,7 @@ namespace SushiRuntime
             [[nodiscard]] Result<RunReport, Error>
             run(std::size_t steps) noexcept
             {
-                return drive(for_steps(steps), steps, StepSync::AtEnd);
+                return drive(for_steps(steps), steps, Detail::StepSync::AtEnd);
             }
 
             /**
@@ -107,7 +107,7 @@ namespace SushiRuntime
             [[nodiscard]] Result<RunReport*, Error>
             run(std::size_t steps, RunReport& reuse) noexcept
             {
-                return drive(for_steps(steps), reuse, steps, StepSync::AtEnd);
+                return drive(for_steps(steps), reuse, steps, Detail::StepSync::AtEnd);
             }
 
             /**
@@ -119,7 +119,7 @@ namespace SushiRuntime
             [[nodiscard]] Result<RunReport, Error>
             run_for(std::chrono::duration<Rep, Period> budget) noexcept
             {
-                return drive(within(budget), 1, StepSync::EveryStep);
+                return drive(within(budget), 1, Detail::StepSync::EveryStep);
             }
 
             /**
@@ -134,7 +134,7 @@ namespace SushiRuntime
             run_for(std::chrono::duration<Rep, Period> budget,
                         RunReport& reuse) noexcept
             {
-                return drive(within(budget), reuse, 1, StepSync::EveryStep);
+                return drive(within(budget), reuse, 1, Detail::StepSync::EveryStep);
             }
 
             /**
@@ -149,7 +149,7 @@ namespace SushiRuntime
             run_until(Predicate done) noexcept
             {
                 require_nothrow_move<Predicate>();
-                return drive(until(std::move(done)), 1, StepSync::EveryStep);
+                return drive(until(std::move(done)), 1, Detail::StepSync::EveryStep);
             }
 
             /**
@@ -165,7 +165,7 @@ namespace SushiRuntime
             run_until(Predicate done, RunReport& reuse) noexcept
             {
                 require_nothrow_move<Predicate>();
-                return drive(until(std::move(done)), reuse, 1, StepSync::EveryStep);
+                return drive(until(std::move(done)), reuse, 1, Detail::StepSync::EveryStep);
             }
 
             /**
@@ -175,9 +175,8 @@ namespace SushiRuntime
              */
             [[nodiscard]] Result<RunHandle<Owner>, Error> run_async() noexcept
             {
-                Error failure = entry_refusal();
-                if (failure.code != ErrorCode::Ok)
-                    return make_error(std::move(failure));
+                if (std::optional<Error> refusal = entry_refusal())
+                    return make_error(std::move(*refusal));
 
                 Detail::AsyncRunState state;
                 if (!Detail::supports_asynchronous_run(owner().run_context()))
@@ -186,21 +185,18 @@ namespace SushiRuntime
                         "run_async(): the active execution engine cannot start a run without "
                         "blocking; call run()."));
 
-                failure = build_plan_guarded(state.compile_ms);
-                if (failure.code != ErrorCode::Ok)
-                    return make_error(std::move(failure));
+                Result<void> built = build_plan_guarded(state.compile_ms);
+                if (!built)
+                    return make_error(std::move(built.error()));
 
-                Error refused;
-                failure = guarded(ErrorCode::KernelFailed, [this, &state, &refused]()
+                Result<void> submitted;
+                Result<void> thrown = guarded(ErrorCode::KernelFailed, [this, &state, &submitted]()
                 {
-                    Result<void> submitted = submit_async_step(state);
-                    if (!submitted)
-                        refused = std::move(submitted.error());
+                    submitted = submit_async_step(state);
                 });
-                if (failure.code != ErrorCode::Ok)
-                    return make_error(std::move(failure));
-                if (refused.code != ErrorCode::Ok)
-                    return make_error(std::move(refused));
+                Result<void> started = first_failure(std::move(thrown), std::move(submitted));
+                if (!started)
+                    return make_error(std::move(started.error()));
 
                 return RunHandle<Owner>(&owner(), async_record_, state);
             }
@@ -241,15 +237,11 @@ namespace SushiRuntime
              */
             [[nodiscard]] Result<void> compile() noexcept
             {
-                Error failure = entry_refusal();
-                if (failure.code != ErrorCode::Ok)
-                    return make_error(std::move(failure));
+                if (std::optional<Error> refusal = entry_refusal())
+                    return make_error(std::move(*refusal));
 
                 double compile_ms = 0.0;
-                failure = build_plan_guarded(compile_ms);
-                if (failure.code != ErrorCode::Ok)
-                    return make_error(std::move(failure));
-                return {};
+                return build_plan_guarded(compile_ms);
             }
 
             /**
@@ -320,7 +312,7 @@ namespace SushiRuntime
                     return;
 
                 close_async_step();
-                const Error dropped = guarded(ErrorCode::KernelFailed, [this]()
+                const Result<void> dropped = guarded(ErrorCode::KernelFailed, [this]()
                 {
                     // A step the engine failed advances no State.
                     if (!Detail::complete_step(owner().run_context()))
@@ -364,13 +356,6 @@ namespace SushiRuntime
                 private:
                     /** @brief The count to restore; null once kept. */
                     std::atomic<std::uint32_t>* count_;
-            };
-
-            /** @brief Says whether a chained run may skip the host wait between steps. */
-            enum class StepSync
-            {
-                AtEnd,     /**< Fixed step count: submit back to back, one wait at the end. */
-                EveryStep  /**< The stop test may read results: wait after every step. */
             };
 
             /** @brief Returns the graph this driver runs. */
@@ -456,28 +441,33 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Runs work and turns anything it throws into an Error.
-             * @param fallback Code of an exception that carries none: CompileFailed while
-             *        the plan is built, KernelFailed once a step may have started.
-             * @return An Error whose code is ok when work returned; its message is empty when
-             *         the text could not be allocated.
+             * @brief Runs work and returns what it throws as an Error.
+             * @param fallback Code of a std::exception: CompileFailed while the plan is
+             *        built, KernelFailed once a step may have started.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             template <class Work>
-            static Error guarded(ErrorCode fallback, Work&& work) noexcept
+            [[nodiscard]] static Result<void> guarded(ErrorCode fallback, Work&& work) noexcept
             {
-                return Detail::translate_exceptions(ErrorCode::KernelFailed, fallback,
-                                                    std::forward<Work>(work));
+                return Detail::translate_exceptions(fallback, std::forward<Work>(work));
             }
 
             /**
-             * @brief Returns why no run may start now, or an Error whose code is ok.
-             *
-             * It reads the engine's run marker once, so a run entry costs one atomic load
-             * here whatever its step count.
+             * @brief Returns the failure of two outcomes of one call, the thrown one first.
+             * @param thrown What guarded() returned for the call.
+             * @param returned What the call itself returned.
+             */
+            [[nodiscard]] static Result<void> first_failure(Result<void> thrown,
+                                                            Result<void> returned) noexcept
+            {
+                return thrown ? std::move(returned) : std::move(thrown);
+            }
+
+            /**
+             * @brief Returns why no run may start now, or nothing when one may.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            Error entry_refusal() noexcept
+            [[nodiscard]] std::optional<Error> entry_refusal() noexcept
             {
                 Owner& self = owner();
                 // A refused recording outlives the check for work: it may be the only rule.
@@ -500,7 +490,7 @@ namespace SushiRuntime
                 if (self.has_dangling_resource())
                     return Detail::error_without_throwing(ErrorCode::DanglingResource,
                                                           Owner::K_DANGLING_RESOURCE);
-                return Error{};
+                return std::nullopt;
             }
 
             /**
@@ -531,20 +521,21 @@ namespace SushiRuntime
             /**
              * @brief Builds the plan and turns what the build throws or returns into an Error.
              * @param compile_ms Receives what build_plan() returned; unchanged on a failure.
-             * @return An Error whose code is ok, or why the graph has no plan to run.
+             * @return Nothing, or why the graph has no plan to run.
              */
-            Error build_plan_guarded(double& compile_ms) noexcept
+            [[nodiscard]] Result<void> build_plan_guarded(double& compile_ms) noexcept
             {
-                Error refused;
-                Error thrown = guarded(ErrorCode::CompileFailed, [this, &compile_ms, &refused]()
+                Result<void> refused;
+                Result<void> thrown =
+                    guarded(ErrorCode::CompileFailed, [this, &compile_ms, &refused]()
                 {
                     Result<double> built = build_plan();
                     if (built)
                         compile_ms = *built;
                     else
-                        refused = std::move(built.error());
+                        refused = make_error(std::move(built.error()));
                 });
-                return thrown.code != ErrorCode::Ok ? thrown : refused;
+                return first_failure(std::move(thrown), std::move(refused));
             }
 
             /**
@@ -597,35 +588,34 @@ namespace SushiRuntime
              * @brief Waits for the pending step and closes it out.
              * @pre state is that of the step pending here; RunHandle::owns_step() tests it.
              * @param report The report to fill; the caller has reset it.
-             * @return An Error whose code is ok, or what ended the step.
+             * @return Nothing, or what ended the step.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            Error settle_async_step(const Detail::AsyncRunState& state,
-                                          RunReport& report) noexcept
+            [[nodiscard]] Result<void> settle_async_step(const Detail::AsyncRunState& state,
+                                                         RunReport& report) noexcept
             {
                 // No step is pending from here on, whatever the wait below returns.
                 close_async_step();
-                Error faulted;
-                Error thrown = guarded(ErrorCode::KernelFailed, [this, &state, &report, &faulted]()
+                Result<void> finished;
+                Result<void> thrown =
+                    guarded(ErrorCode::KernelFailed, [this, &state, &report, &finished]()
                 {
-                    Result<void> finished = Detail::complete_step(owner().run_context());
+                    finished = Detail::complete_step(owner().run_context());
                     if (finished)
                         finished = Detail::finish_step(target(), state, report);
-                    if (!finished)
-                        faulted = std::move(finished.error());
                 });
-                return thrown.code != ErrorCode::Ok ? thrown : faulted;
+                return first_failure(std::move(thrown), std::move(finished));
             }
 
             /**
              * @brief Ends a step still pending when its graph is moved.
-             * @pre No step is pending; a debug build asserts it.
+             * @pre No step is pending; SR_ASSERT checks it.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             void end_step_before_move() noexcept
             {
-                assert(!async_step_pending() &&
-                       "A graph was moved while its run_async() step was pending.");
+                SR_ASSERT(!async_step_pending(),
+                          "A graph was moved while its run_async() step was pending.");
                 end_pending_step();
             }
 
@@ -638,7 +628,7 @@ namespace SushiRuntime
             template <class KeepGoing>
             Result<RunReport, Error>
             drive(KeepGoing keep_going, std::size_t expected_invocations,
-                  StepSync sync) noexcept
+                  Detail::StepSync sync) noexcept
             {
                 RunReport report;
                 auto driven = drive(std::move(keep_going), report, expected_invocations, sync);
@@ -658,33 +648,29 @@ namespace SushiRuntime
             template <class KeepGoing>
             Result<RunReport*, Error>
             drive(KeepGoing keep_going, RunReport& report,
-                  std::size_t expected_invocations, StepSync sync) noexcept
+                  std::size_t expected_invocations, Detail::StepSync sync) noexcept
             {
                 // Every return below leaves report reset and marked unsuccessful.
                 report.reset();
                 report.is_successful = false;
 
-                Error failure = entry_refusal();
-                if (failure.code != ErrorCode::Ok)
-                    return make_error(std::move(failure));
+                if (std::optional<Error> refusal = entry_refusal())
+                    return make_error(std::move(*refusal));
 
                 double compile_ms = 0.0;
-                failure = build_plan_guarded(compile_ms);
-                if (failure.code != ErrorCode::Ok)
-                    return make_error(std::move(failure));
+                Result<void> built = build_plan_guarded(compile_ms);
+                if (!built)
+                    return make_error(std::move(built.error()));
 
-                Error faulted;
-                failure = guarded(ErrorCode::KernelFailed, [&]()
+                Result<void> stepped;
+                Result<void> thrown = guarded(ErrorCode::KernelFailed, [&]()
                 {
-                    Result<void> stepped =
+                    stepped =
                         execute_steps(keep_going, report, compile_ms, expected_invocations, sync);
-                    if (!stepped)
-                        faulted = std::move(stepped.error());
                 });
-                if (failure.code != ErrorCode::Ok)
-                    return make_error(std::move(failure));
-                if (faulted.code != ErrorCode::Ok)
-                    return make_error(std::move(faulted));
+                Result<void> ran = first_failure(std::move(thrown), std::move(stepped));
+                if (!ran)
+                    return make_error(std::move(ran.error()));
                 return &report;
             }
 
@@ -698,13 +684,13 @@ namespace SushiRuntime
             Result<void> execute_steps(KeepGoing& keep_going,
                                        RunReport& report,
                                        double compile_ms, std::size_t expected_invocations,
-                                       StepSync sync)
+                                       Detail::StepSync sync)
             {
                 // The run counts as in flight before its cancellation is reset.
                 const InFlightMark in_flight(runs_in_flight_);
                 return Detail::run_steps(target(), Detail::StepPredicate(keep_going), report,
                                          compile_ms, expected_invocations,
-                                         sync == StepSync::EveryStep);
+                                         sync);
             }
 
             /**

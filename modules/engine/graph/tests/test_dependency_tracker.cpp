@@ -62,8 +62,8 @@ TEST(Unit_DependencyTrackerTest, RawCreatesEdge)
     int buffer = 0;
     void* p = &buffer;
 
-    tracker.resolve(writer.get(), p, true);
-    tracker.resolve(reader.get(), p, false);
+    tracker.resolve(writer.get(), SushiRuntime::BufferRegion(p), true);
+    tracker.resolve(reader.get(), SushiRuntime::BufferRegion(p), false);
 
     EXPECT_EQ(in_degree_of(writer), 0);
     EXPECT_EQ(in_degree_of(reader), 1) << "Reader must depend on the preceding writer (RAW).";
@@ -87,9 +87,9 @@ TEST(Unit_DependencyTrackerTest, WarAndWawChain)
     int buffer = 0;
     void* p = &buffer;
 
-    tracker.resolve(w1.get(), p, true);   // initial write
-    tracker.resolve(rd.get(), p, false);  // RAW on w1
-    tracker.resolve(w2.get(), p, true);   // WAR on rd + WAW on w1
+    tracker.resolve(w1.get(), SushiRuntime::BufferRegion(p), true);   // initial write
+    tracker.resolve(rd.get(), SushiRuntime::BufferRegion(p), false);  // RAW on w1
+    tracker.resolve(w2.get(), SushiRuntime::BufferRegion(p), true);   // WAR on rd + WAW on w1
 
     EXPECT_EQ(in_degree_of(w1), 0);
     EXPECT_EQ(in_degree_of(rd), 1) << "Read must depend on the prior write (RAW).";
@@ -114,9 +114,9 @@ TEST(Unit_DependencyTrackerTest, ReadersDependOnWriterNotEachOther)
     int buffer = 0;
     void* p = &buffer;
 
-    tracker.resolve(writer.get(), p, true);
-    tracker.resolve(r1.get(), p, false);
-    tracker.resolve(r2.get(), p, false);
+    tracker.resolve(writer.get(), SushiRuntime::BufferRegion(p), true);
+    tracker.resolve(r1.get(), SushiRuntime::BufferRegion(p), false);
+    tracker.resolve(r2.get(), SushiRuntime::BufferRegion(p), false);
 
     EXPECT_EQ(in_degree_of(r1), 1);
     EXPECT_EQ(in_degree_of(r2), 1) << "Second reader must depend only on the writer, not on the first reader (RAR is parallel).";
@@ -140,10 +140,10 @@ TEST(Unit_DependencyTrackerTest, SharedBuffersCreateSingleEdge)
     void* pa = &a;
     void* pb = &b;
 
-    tracker.resolve(writer.get(), pa, true);
-    tracker.resolve(writer.get(), pb, true);
-    tracker.resolve(reader.get(), pa, false); // edge writer -> reader
-    tracker.resolve(reader.get(), pb, false); // same edge again -> must dedup
+    tracker.resolve(writer.get(), SushiRuntime::BufferRegion(pa), true);
+    tracker.resolve(writer.get(), SushiRuntime::BufferRegion(pb), true);
+    tracker.resolve(reader.get(), SushiRuntime::BufferRegion(pa), false); // edge writer -> reader
+    tracker.resolve(reader.get(), SushiRuntime::BufferRegion(pb), false); // same edge again -> must dedup
 
     EXPECT_EQ(in_degree_of(reader), 1) << "Two shared buffers between the same pair must add only one edge.";
 
@@ -165,8 +165,8 @@ TEST(Unit_DependencyTrackerTest, NoSelfDependency)
     int buffer = 0;
     void* p = &buffer;
 
-    tracker.resolve(node.get(), p, true);
-    tracker.resolve(node.get(), p, true);
+    tracker.resolve(node.get(), SushiRuntime::BufferRegion(p), true);
+    tracker.resolve(node.get(), SushiRuntime::BufferRegion(p), true);
 
     EXPECT_EQ(in_degree_of(node), 0) << "A node must not depend on its own earlier access.";
 
@@ -231,7 +231,7 @@ TEST(Unit_DependencyTrackerTest, WholeBufferConflictsWithSubRegion)
     auto part  = make_sushi<Node>();
 
     char base[64];
-    tracker.resolve(whole.get(), base, true);                 // whole-buffer write
+    tracker.resolve(whole.get(), SushiRuntime::BufferRegion(base), true);                 // whole-buffer write
     tracker.resolve(part.get(), BufferRegion{base, 16, 8}, true);
 
     EXPECT_EQ(in_degree_of(part), 1)

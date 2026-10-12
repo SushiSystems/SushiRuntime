@@ -55,5 +55,11 @@ namespace SushiRuntime
         {
             return context(runtime.context_);
         }
+
+        const std::shared_ptr<Internal::Execution::RuntimeContext>&
+        ContextAccess::shared(const Runtime& runtime) noexcept
+        {
+            return shared(runtime.context_);
+        }
     } // namespace Detail
 } // namespace SushiRuntime

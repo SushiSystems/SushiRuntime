@@ -18,11 +18,12 @@ sushiruntime_add_module(
         memory
         device
         observability
+        task
         scheduler
         graph
         report
         machine
-    PRIVATE_DEPENDS logging sycl task)
+    PRIVATE_DEPENDS logging sycl)
 
 sushiruntime_add_module_tests(
     MODULE execution

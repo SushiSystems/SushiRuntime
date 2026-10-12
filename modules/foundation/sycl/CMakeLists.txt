@@ -6,4 +6,5 @@
 
 sushiruntime_add_module(
     NAME sycl TIER foundation INTERNAL
-    HEADER_ONLY SYCL)
+    HEADER_ONLY SYCL
+    DEPENDS core)

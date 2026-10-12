@@ -88,6 +88,36 @@ namespace SushiRuntime
     class Region : public BuilderSurface<Region>
     {
         public:
+            Region(const Region&) = delete;
+            Region& operator=(const Region&) = delete;
+            Region(Region&&) = delete;
+            Region& operator=(Region&&) = delete;
+
+            /**
+             * @brief Returns the recorder to record on, and lists this region as written to.
+             * @pre The reference is not kept across a run; call recorder() again to record.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            [[nodiscard]] Recorder& recorder()
+            {
+                if (changes_ != nullptr)
+                    changes_->note(key_, noted_);
+                return recorder_;
+            }
+
+            /** @brief Returns the recorder this region's rules are recorded on, read-only. */
+            [[nodiscard]] const Recorder& recorder() const noexcept { return recorder_; }
+
+            /**
+             * @brief Forgets everything recorded, so the region can be recorded afresh.
+             * @pre No step started with run_async() on the owning graph is pending.
+             */
+            void clear() { recorder().clear(); }
+
+        private:
+            // A region comes only from DynamicGraph::region().
+            friend class DynamicGraph;
+
             /**
              * @brief Starts an empty region on a runtime, owned by no graph.
              * @param context Runtime the region's recorder allocates scratch from.
@@ -107,34 +137,7 @@ namespace SushiRuntime
             {
             }
 
-            Region(const Region&) = delete;
-            Region& operator=(const Region&) = delete;
-            Region(Region&&) = delete;
-            Region& operator=(Region&&) = delete;
-
-            /**
-             * @brief Returns the recorder to record on, and lists this region as written to.
-             * @pre The reference is not kept across a run; call recorder() again to record.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-             */
-            [[nodiscard]] Recorder& recorder()
-            {
-                if (changes_ != nullptr)
-                    changes_->note(key_, noted_);
-                return recorder_;
-            }
-
-            /** @brief Returns the recorder this region's tasks are recorded on, read-only. */
-            [[nodiscard]] const Recorder& recorder() const noexcept { return recorder_; }
-
-            /**
-             * @brief Forgets everything recorded, so the region can be recorded afresh.
-             * @pre No step started with run_async() on the owning graph is pending.
-             */
-            void clear() { recorder().clear(); }
-
-        private:
-            /** @brief Owns the recorded tasks, their scratch and their per-step hooks. */
+            /** @brief Owns the recorded nodes, their scratch and their per-step hooks. */
             Recorder recorder_;
 
             /** @brief Log of the owning graph, or null for a region no graph owns. */
@@ -146,7 +149,4 @@ namespace SushiRuntime
             /** @brief Interval of changes_ this region was last listed in; zero for never. */
             std::uint64_t noted_ = 0;
     };
-
-
-
 } // namespace SushiRuntime

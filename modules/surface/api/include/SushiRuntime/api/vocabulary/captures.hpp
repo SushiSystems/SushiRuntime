@@ -53,7 +53,7 @@ namespace SushiRuntime
          * @brief Captures @p b as a read-only kernel argument.
          * @param b Buffer to read. Alive when the graph runs; free to move after add().
          */
-        In(const Buffer<T>& b)
+        explicit In(const Buffer<T>& b)
             : ptr(b.data()),
               key(Detail::HandleAccess::key(b)),
               life(Detail::HandleAccess::liveness(b))
@@ -79,7 +79,7 @@ namespace SushiRuntime
          * @brief Captures @p b as a write-only kernel argument.
          * @param b Buffer to write. Alive when the graph runs; free to move after add().
          */
-        Out(Buffer<T>& b)
+        explicit Out(Buffer<T>& b)
             : ptr(b.data()),
               key(Detail::HandleAccess::key(b)),
               life(Detail::HandleAccess::liveness(b))
@@ -106,7 +106,7 @@ namespace SushiRuntime
          * @param b Buffer read and written in place. Alive when the graph runs;
          *          free to move after add().
          */
-        InOut(Buffer<T>& b)
+        explicit InOut(Buffer<T>& b)
             : ptr(b.data()),
               key(Detail::HandleAccess::key(b)),
               life(Detail::HandleAccess::liveness(b))
@@ -130,7 +130,4 @@ namespace SushiRuntime
         template <class T>
         inline constexpr bool is_capture_v = is_capture<std::decay_t<T>>::value;
     } // namespace Detail
-
-
-
 } // namespace SushiRuntime

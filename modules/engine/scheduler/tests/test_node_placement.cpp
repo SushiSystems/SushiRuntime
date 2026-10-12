@@ -252,9 +252,10 @@ TEST_F(Unit_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
     EXPECT_EQ(dispatched_device(*node, handed), K_NO_DEVICE);
     ASSERT_TRUE(scheduler_.run_failed());
 
-    const SushiRuntime::Error error = scheduler_.run_error();
-    const std::string& message = error.message;
-    EXPECT_EQ(error.code, SushiRuntime::ErrorCode::InvalidGraph) << message;
+    const std::optional<SushiRuntime::Error> error = scheduler_.run_error();
+    ASSERT_TRUE(error.has_value());
+    const std::string& message = error->message;
+    EXPECT_EQ(error->code, SushiRuntime::ErrorCode::InvalidGraph) << message;
     EXPECT_NE(message.find("node 'misplaced'"), std::string::npos) << message;
     EXPECT_NE(message.find("device 2"), std::string::npos) << message;
     EXPECT_NE(message.find("2 device(s)"), std::string::npos) << message;

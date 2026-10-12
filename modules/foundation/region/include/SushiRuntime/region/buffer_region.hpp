@@ -57,11 +57,9 @@ namespace SushiRuntime
 
         /**
          * @brief Wraps a base pointer as the whole-buffer region.
-         *
-         * Implicit: a base pointer converts to the whole-buffer region.
          * @param p Base pointer of the allocation; null yields an empty region.
          */
-        constexpr BufferRegion(ResourceID p) noexcept : base(p) {}
+        constexpr explicit BufferRegion(ResourceID p) noexcept : base(p) {}
 
         /**
          * @brief Constructs a sub-region of one allocation.

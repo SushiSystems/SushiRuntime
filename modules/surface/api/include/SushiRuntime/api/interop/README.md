@@ -31,7 +31,8 @@ is rounded up to a multiple of it, and HostExport::bytes holds the rounded size.
 returns an empty Buffer, a null address and zero bytes without allocating. An alignment that is not
 a power of two, or a size that overflows when rounded, is a rule the caller broke and stops the
 process through `SR_VERIFY`. A failed allocation comes back as an `AllocationFailed` error in the
-`Result<HostExport<T>>` the call returns.
+`Result<HostExport<T>>` the call returns, whether the device returned no memory or the host could
+not allocate the Buffer's liveness token; the block is released in the second case.
 
 ### import_device
 
@@ -39,7 +40,8 @@ import_device maps memory another API exported and returns it as a Device Buffer
 it, the host may not index it. The runtime records the mapped address in its USM registry, so a task
 that touches the Buffer is routed to the importing device like any other.
 
-The call returns `Result<Buffer<T>>`. The error is `Unsupported` when the device cannot import (see
+The call returns `Result<Buffer<T>>`. The error is `AllocationFailed` when the host cannot
+allocate the Buffer's liveness token, `Unsupported` when the device cannot import (see
 capabilities()), and `InvalidAccess` when the descriptor's kind is Unspecified (the default) or
 belongs to another platform, when an OpaqueWin32 handle is null or an OpaqueFd handle is above
 INT_MAX, when its region ends past allocation_bytes, when the device's UUID differs from

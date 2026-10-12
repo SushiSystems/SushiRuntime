@@ -38,11 +38,13 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/detail/device_fault.hpp>
-#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/node_spec.hpp>
 #include <SushiRuntime/api/detail/node_stamp.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -79,8 +81,8 @@ namespace SushiRuntime
         const std::size_t bytes =
             Detail::checked_byte_count("Recorder::scratch", count, element_size);
         void* block = nullptr;
-        Error refused;
-        Error thrown = Detail::translate_exceptions(
+        std::optional<Error> refused;
+        Result<void> allocated = Internal::SYCL::translate_exceptions(
             ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&]()
         {
             std::shared_ptr<Internal::Execution::RuntimeContext> context =
@@ -102,33 +104,18 @@ namespace SushiRuntime
             scratch_.push_back(std::move(owned));
             block = raw;
         });
-        if (thrown.code != ErrorCode::Ok)
-            return make_error(std::move(thrown));
-        if (refused.code != ErrorCode::Ok)
-            return make_error(std::move(refused));
+        if (!allocated)
+            return make_error(std::move(allocated.error()));
+        if (refused)
+            return make_error(std::move(*refused));
         return block;
     }
 
-    std::optional<Error> Recorder::device_slots_refusal(const Dynamic& window) const
+    void Recorder::require_device_slots(const Dynamic& window) const
     {
-        return Detail::host_device_slots_refusal(Detail::ContextAccess::context(context_),
-                                                 window, next_rule());
-    }
-
-    std::optional<Error> Recorder::placement_refusal(const char* call,
-                                                     const On& placement) const
-    {
-        const std::size_t device = placement.device.value();
-        const std::size_t count = Detail::ContextAccess::context(context_).devices().count();
-        if (device < count)
-            return std::nullopt;
-        return Error{
-            ErrorCode::InvalidAccess,
-            std::string(call) + ", rule " + std::to_string(next_rule()) +
-                ": On(DeviceIndex{" + std::to_string(device) +
-                "}) names no device, the runtime has " + std::to_string(count) +
-                " device(s); name a device below that, or place the kernel "
-                "with On(buffer)."};
+        const std::optional<Error> refusal = Detail::host_device_slots_refusal(
+            Detail::ContextAccess::context(context_), window, next_rule());
+        SR_VERIFY(!refusal, refusal->message.c_str());
     }
 
     Result<std::uint32_t*> Recorder::fault_record(DeviceIndex device)
@@ -146,8 +133,8 @@ namespace SushiRuntime
     Result<std::uint32_t*> Recorder::host_fault_record()
     {
         std::uint32_t* words = nullptr;
-        Error thrown = Detail::translate_exceptions(
-            ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [this, &words]()
+        Result<void> allocated = Detail::translate_exceptions(
+            ErrorCode::AllocationFailed, [this, &words]()
         {
             std::shared_ptr<std::uint32_t[]> owned(
                 new std::uint32_t[Detail::K_DEVICE_FAULT_WORDS]());
@@ -155,8 +142,8 @@ namespace SushiRuntime
             steps_.register_fault_record(owned.get());
             words = owned.get();
         });
-        if (thrown.code != ErrorCode::Ok)
-            return make_error(std::move(thrown));
+        if (!allocated)
+            return make_error(std::move(allocated.error()));
         return words;
     }
 

@@ -41,8 +41,7 @@ namespace SushiRuntime
      */
     enum class ErrorCode : std::uint8_t
     {
-        Ok,               /**< No error. */
-        InvalidGraph,     /**< The graph is empty, cyclic, or otherwise unrunnable. */
+        InvalidGraph = 1, /**< The graph is empty, cyclic, or otherwise unrunnable. */
         CompileFailed,    /**< Dependency analysis or graph compilation failed. */
         AllocationFailed, /**< A USM or host allocation could not be satisfied. */
         KernelFailed,     /**< A kernel faulted on the device (async channel). */
@@ -61,7 +60,6 @@ namespace SushiRuntime
     {
         switch (code)
         {
-            case ErrorCode::Ok:               return "Ok";
             case ErrorCode::InvalidGraph:     return "InvalidGraph";
             case ErrorCode::CompileFailed:    return "CompileFailed";
             case ErrorCode::AllocationFailed: return "AllocationFailed";
@@ -81,8 +79,16 @@ namespace SushiRuntime
      */
     struct Error
     {
-        ErrorCode code = ErrorCode::Ok; /**< The class of the failure. */
-        std::string message;            /**< What failed, in one sentence. */
+        /**
+         * @brief Builds the failure of one class with the sentence that describes it.
+         */
+        Error(ErrorCode failure_code, std::string failure_message) noexcept
+            : code(failure_code), message(std::move(failure_message))
+        {
+        }
+
+        ErrorCode code;      /**< The class of the failure. */
+        std::string message; /**< What failed, in one sentence. */
     };
 
     /**
@@ -104,7 +110,7 @@ namespace SushiRuntime
             }
             catch (...)
             {
-                return Error{code, {}};
+                return Error{code, std::string()};
             }
         }
 
@@ -120,7 +126,7 @@ namespace SushiRuntime
             }
             catch (...)
             {
-                return Error{source.code, {}};
+                return Error{source.code, std::string()};
             }
         }
     } // namespace Detail

@@ -36,8 +36,8 @@ namespace SushiRuntime
      */
     enum class DeviceKind : std::uint8_t
     {
-        Cpu,         /**< A CPU device. */
-        Gpu,         /**< A GPU device. */
+        CPU,         /**< A CPU device. */
+        GPU,         /**< A GPU device. */
         Accelerator, /**< An accelerator such as an FPGA. */
         Other        /**< Any device SYCL reports under none of the classes above. */
     };

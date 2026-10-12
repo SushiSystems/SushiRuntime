@@ -5,7 +5,9 @@
 # Commercial use requires a licence from Sushi Systems.
 
 # One function builds a test program, wherever its sources live: a module's tests/ folder
-# or the root tests/. Every program is linked, placed and registered the same way.
+# or the root tests/. Every program is linked, placed and registered the same way. A test
+# links sushiruntime_internal_headers (cmake/SushiRuntimeLibrary.cmake), so it includes the
+# headers of the INTERNAL modules, which the library's own target does not publish.
 #
 # Labels come from the GoogleTest suite-name prefix: Unit_*, Integration_*, Regression_*,
 # Stress_* and Performance_*. Each group carries one label; `sr test --suite functional`
@@ -68,7 +70,7 @@ function(sushiruntime_add_test_program)
     add_executable(${ARG_NAME} "${SR_TEST_COMMON_DIR}/test_main.cpp" ${ARG_SOURCES})
     sushiruntime_apply_build_policy(${ARG_NAME})
     target_include_directories(${ARG_NAME} PRIVATE "${SR_TEST_COMMON_DIR}")
-    target_link_libraries(${ARG_NAME} PRIVATE GTest::gtest sushiruntime)
+    target_link_libraries(${ARG_NAME} PRIVATE GTest::gtest sushiruntime_internal_headers)
     set_target_properties(${ARG_NAME} PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON

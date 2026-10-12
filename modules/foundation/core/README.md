@@ -7,15 +7,16 @@ It depends on the C++ standard library and on no other module of the repository.
 
 ## Public entry points
 
-The twelve public headers under `include/SushiRuntime/core/`:
+The fourteen public headers under `include/SushiRuntime/core/`:
 
 | Header | What it declares |
 | --- | --- |
 | `assert.hpp` | `SR_ASSERT`, `SR_VERIFY` and `SR_FATAL`, `AssertionFailure`, `AssertionHandler`, `set_assertion_handler()` and `fail_assertion()` |
 | `bit.hpp` | `popcount_u64` and `countr_zero_u64`, two 64-bit bit queries for the C++17 baseline |
-| `common.hpp` | The `Backend` enumeration and the size constants `K_CACHE_LINE_SIZE`, `K_MAX_SUPPORTED_XPU`, `K_MAX_NUMA_NODES`, `K_MAX_WORKER_THREADS` and `K_DEFAULT_ALIGNMENT` |
+| `common.hpp` | The size constants `K_CACHE_LINE_SIZE`, `K_MAX_NUMA_NODES`, `K_MAX_WORKER_THREADS` and `K_DEFAULT_ALIGNMENT` |
 | `delegate.hpp` | `Delegate`, a move-only callable stored inline, with no heap allocation |
 | `error.hpp` | `ErrorCode`, its `to_string` overload and `Error` |
+| `error_translation.hpp` | `Detail::translate_exceptions`, which calls a function and returns what it throws as an `Error` |
 | `export.hpp` | `SUSHIRUNTIME_API`, `SR_API` and `SR_TYPE_API`, the symbol visibility macros |
 | `operation_id.hpp` | `OperationID`, the 32-bit FNV-1a hash of an operation's name, and the `_op` literal in `Literals` |
 | `ref_counted.hpp` | `RefCounted`, the intrusive reference count that `sushi_ptr` manages |
@@ -60,18 +61,16 @@ docs/design/REMAINING_WORK.md lists that under "C++ standard migration".
 
 ## common.hpp
 
-### Backend
-
-`Backend` names the SYCL, CUDA and HOST backends. No code in the repository reads it, so the CUDA
-enumerator is unused.
-
 ### Size constants
 
 `K_CACHE_LINE_SIZE` is the alignment of per-worker and per-thread state in the dependency tracker,
 the task scheduler, its work-stealing deque and epoch reclamation. `K_MAX_WORKER_THREADS` bounds the
 scheduler's worker arrays, and `K_MAX_NUMA_NODES` bounds the per-node cursors in
-`device_queue_set.cpp`. `K_MAX_SUPPORTED_XPU` and `K_DEFAULT_ALIGNMENT` have no reader in the
-repository.
+`device_queue_set.cpp`. `K_DEFAULT_ALIGNMENT` has no reader in this repository; the memory plan of
+SushiAI reads it.
+
+The header declares no alias of the `SushiRuntime` namespace. A consumer that wants `sr::` writes
+`namespace sr = SushiRuntime;` in its own source.
 
 ## delegate.hpp
 
@@ -124,6 +123,19 @@ the code with an empty message when the text cannot be allocated. A function tha
 builds its errors with it.
 
 New enumerators go at the end of `ErrorCode`. `tests/test_error.cpp` pins the number of each one.
+
+## error_translation.hpp
+
+### translate_exceptions
+
+translate_exceptions() is the catch ladder of the library. It calls a function and returns a
+`Result<void>`: nothing when the function returned, `AllocationFailed` for `std::bad_alloc`, and
+for anything else the code the caller names, `KernelFailed` when it names none. The library
+throws nothing itself, so what the ladder catches comes from SYCL, the standard library or the
+caller's own callable. The ladder is written out in the function that owns the `try`, with no
+rethrow, because a rethrow from a helper called inside a catch block crashes the process on the
+Windows intel-llvm toolchain. Each `Error` is built by `Detail::error_without_throwing()` of
+`error.hpp`, which returns the code with an empty message when the text cannot be allocated.
 
 ## export.hpp
 
