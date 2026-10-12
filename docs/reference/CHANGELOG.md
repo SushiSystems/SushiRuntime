@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- 2026-10-12 — api: Breaking change: Made the constructors of Recorder, Region and ContextHandle and the moves of Recorder private, and the region and capture constructors explicit (`recorder.hpp`, `region.hpp`, `buffer_region.hpp`).
+- 2026-10-12 — api: Built every Buffer through one private function, so the two Interop buffer calls return AllocationFailed where an exception left them (`buffer.hpp`, `interop.hpp`, `Buffer::adopt`).
+- 2026-10-12 — api: Breaking change: Stopped the process on a placement or a device slot the runtime does not own, and refused a rule over an empty State with InvalidAccess (`recorder.hpp`, `recorder.cpp`).
+- 2026-10-12 — api: Baked the launch count as the width of a tracked kernel that states none, and appended the reads of a coupled rule (`emit_tracked.hpp`, `emit_captured.hpp`, `emit_state.hpp`).
+- 2026-10-12 — api: Added `Graph::clear()` and `NodeOptions::K_MAX_PARAMETERS`, and included eight core headers from the umbrella (`graph.hpp`, `node_options.hpp`, `sushiruntime.hpp`).
+- 2026-10-12 — machine: Breaking change: Renamed the device kinds Cpu and Gpu to CPU and GPU, and gave PinPolicy, Residency and StepSync an 8-bit underlying type (`device_kind.hpp`, `pin_policy.hpp`, `step_run.hpp`).
+- 2026-10-12 — core: Breaking change: Removed the global `sr` namespace alias, the Backend enumeration and one unused constant (`common.hpp`).
+- 2026-10-12 — core: Breaking change: Removed `ErrorCode::Ok` and the default Error; an Error is built from a code and a message (`error.hpp`).
+- 2026-10-12 — core: Added one translator from a caught exception to an Error, with a SYCL arm, and routed the catch ladders of the engine and the surface through it (`core/error_translation.hpp`, `sycl/error_translation.hpp`).
+- 2026-10-12 — scheduler: Returned an optional Error from the event poll and from the run outcome (`event_polling.hpp`, `run_outcome.hpp`, `task_scheduler.hpp`).
+- 2026-10-12 — execution: Named the failing node in a chained step and cleared an abandoned chain run's events and asynchronous errors (`chain_run.cpp`, `failure_naming.hpp`).
+- 2026-10-12 — execution: Moved the chained-run mark to the engine interface and removed three aliases of graph types (`execution_engine.hpp`, `chain_plan.hpp`, `chain_run.hpp`).
+- 2026-10-12 — api: Fixed a fault record of a failed step being returned by the next run, and a failed rebuild leaving a plan cache in mixed state (`step_run.cpp`, `plan_cache.cpp`).
+- 2026-10-12 — api: Exported two node emitters the tests call, and split a source file by the header it defines (`node_emitters.hpp`, `emit_dynamic.cpp`, `step_machinery.cpp`).
+- 2026-10-12 — memory_exchange: Moved the three entry points to their own internal namespace and closed their catch ladders (`memory_exchange.hpp`, `memory_exchange.cpp`).
+- 2026-10-12 — distributed: Held the context's shared pointer in the worker agent, so an agent outlives the Runtime it was built from (`worker_agent.cpp`, `context_access.hpp`).
+- 2026-10-12 — build: Breaking change: Published only the public include roots on the library target; tests reach the engine through a separate interface target (`SushiRuntimeLibrary.cmake`, `SushiRuntimeTests.cmake`).
+- 2026-10-12 — build: Built the header check for every public module, corrected over-declared module dependencies and added a rule for them (`SushiRuntimeModule.cmake`, `check_layering.py`).
 - 2026-10-12 — memory_exchange: Named the internal module that exports host memory and imports device memory `memory_exchange`; its header is `memory_exchange/memory_exchange.hpp`.
 - 2026-10-12 — layering: Added `rule_public_headers`, which reports an include of an `INTERNAL` module in a header a public module installs (`check_layering.py`, `test_check_layering.py`).
 - 2026-10-12 — cmake: Breaking change: Made `sushiruntime_add_module` refuse an `INTERNAL` module under the `DEPENDS` of a module that is installed (`SushiRuntimeModule.cmake`).
