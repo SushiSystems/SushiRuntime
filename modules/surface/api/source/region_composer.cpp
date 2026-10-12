@@ -48,6 +48,7 @@
 #include <SushiRuntime/task/node.hpp>
 
 #include "boundary_access.hpp"
+#include "plan_access.hpp"
 #include "recorder_replay.hpp"
 
 namespace SushiRuntime
@@ -679,14 +680,14 @@ namespace SushiRuntime
             return state_ != nullptr && !state_->plan_.roots.empty();
         }
 
-        Internal::Graph::CompiledGraph& RegionComposer::compiled_plan() noexcept
+        Plan* RegionComposer::compiled_plan() noexcept
         {
-            return state_->plan_;
+            return surface_plan(&state_->plan_);
         }
 
-        const Internal::Graph::CompiledGraph& RegionComposer::compiled_plan() const noexcept
+        const Plan* RegionComposer::compiled_plan() const noexcept
         {
-            return state_->plan_;
+            return surface_plan(&state_->plan_);
         }
     } // namespace Detail
 } // namespace SushiRuntime

@@ -43,6 +43,7 @@
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
 
+#include "plan_access.hpp"
 #include "recorder_replay.hpp"
 
 namespace SushiRuntime
@@ -155,14 +156,14 @@ namespace SushiRuntime
             return view;
         }
 
-        Internal::Graph::CompiledGraph& PlanCache::compiled_plan() noexcept
+        Plan* PlanCache::compiled_plan() noexcept
         {
-            return state_->plan;
+            return surface_plan(&state_->plan);
         }
 
-        const Internal::Graph::CompiledGraph& PlanCache::compiled_plan() const noexcept
+        const Plan* PlanCache::compiled_plan() const noexcept
         {
-            return state_->plan;
+            return surface_plan(&state_->plan);
         }
 
         void PlanCache::take(PlanCache& other) noexcept

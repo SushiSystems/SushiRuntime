@@ -45,6 +45,7 @@
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/report/run_report.hpp>
 
+#include "plan_access.hpp"
 #include "run_report_builder.hpp"
 
 namespace SushiRuntime
@@ -101,7 +102,7 @@ namespace SushiRuntime
             Result<std::size_t> run_scheduled(const StepTarget& target, StepPredicate keep_going,
                                               ExecutionEngine& engine)
             {
-                CompiledGraph& plan = *target.plan;
+                CompiledGraph& plan = *engine_plan(target.plan);
                 const StepMachinery& steps = *target.steps;
                 std::size_t executed = 0;
                 while (keep_going(executed) && !engine.is_cancelled())
@@ -133,7 +134,7 @@ namespace SushiRuntime
                                             RuntimeContext& context, ExecutionEngine& engine,
                                             StepSync sync)
             {
-                CompiledGraph& plan = *target.plan;
+                CompiledGraph& plan = *engine_plan(target.plan);
                 const StepMachinery& steps = *target.steps;
                 Internal::Execution::ChainRun chain(context, plan);
                 const bool wait_every_step = (sync == StepSync::EveryStep);
@@ -187,7 +188,7 @@ namespace SushiRuntime
         {
             using clock = std::chrono::steady_clock;
 
-            CompiledGraph& plan = *target.plan;
+            CompiledGraph& plan = *engine_plan(target.plan);
             const StepMachinery& steps = *target.steps;
 
             // A run that failed returned before it read the records of its last step.
@@ -245,7 +246,7 @@ namespace SushiRuntime
         {
             RuntimeContext& context = ContextAccess::context(*target.context);
             ExecutionEngine& engine = context.execution_engine();
-            CompiledGraph& plan = *target.plan;
+            CompiledGraph& plan = *engine_plan(target.plan);
             const StepMachinery& steps = *target.steps;
 
             // A step that failed returned before it read its records.
@@ -276,7 +277,7 @@ namespace SushiRuntime
             RuntimeContext& context = ContextAccess::context(*target.context);
             ExecutionEngine& engine = context.execution_engine();
             const StepMachinery& steps = *target.steps;
-            CompiledGraph& plan = *target.plan;
+            CompiledGraph& plan = *engine_plan(target.plan);
 
             if (std::optional<Error> fault = steps.take_fault())
                 return make_error(std::move(*fault));

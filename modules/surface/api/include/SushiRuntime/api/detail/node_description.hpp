@@ -37,16 +37,12 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/detail/late_controls.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
 
 namespace SushiRuntime
 {
-    namespace Internal::Graph
-    {
-        struct LateBindings;
-    } // namespace Internal::Graph
-
     namespace Detail
     {
         /** @brief Stands for "this rule has no registration index yet". */
@@ -123,7 +119,7 @@ namespace SushiRuntime
             std::size_t device = 0;
 
             /** @brief Dynamic and DynamicState: the per-step controls of the node. */
-            std::shared_ptr<Internal::Graph::LateBindings> bindings;
+            std::shared_ptr<LateControls> bindings;
 
             /** @brief State and DynamicState: names the regions at each plan build. */
             StateAccess state_access;

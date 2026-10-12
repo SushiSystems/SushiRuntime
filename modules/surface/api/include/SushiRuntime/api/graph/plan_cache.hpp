@@ -34,6 +34,7 @@
 #include <vector>
 
 #include <SushiRuntime/api/detail/node_description.hpp>
+#include <SushiRuntime/api/detail/plan.hpp>
 #include <SushiRuntime/api/graph/plan_view.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/api/runtime/context_handle.hpp>
@@ -42,11 +43,6 @@
 
 namespace SushiRuntime
 {
-    namespace Internal::Graph
-    {
-        struct CompiledGraph;
-    } // namespace Internal::Graph
-
     namespace Detail
     {
         struct PlanCacheState;
@@ -165,15 +161,13 @@ namespace SushiRuntime
                  * @brief Returns the compiled plan; the owning graph and its test seams read it.
                  * @pre A plan is built.
                  */
-                [[nodiscard]] SUSHIRUNTIME_API Internal::Graph::CompiledGraph&
-                compiled_plan() noexcept;
+                [[nodiscard]] SUSHIRUNTIME_API Plan* compiled_plan() noexcept;
 
                 /**
                  * @brief Returns the compiled plan, read-only.
                  * @pre A plan is built.
                  */
-                [[nodiscard]] SUSHIRUNTIME_API const Internal::Graph::CompiledGraph&
-                compiled_plan() const noexcept;
+                [[nodiscard]] SUSHIRUNTIME_API const Plan* compiled_plan() const noexcept;
 
             private:
                 /**

@@ -588,7 +588,8 @@ PlanCache holds the plan compiled from one recorder. It is stale until the first
 change of the profiling request, and whenever the recorder's generation() differs from the one the
 plan was built at. The plan and the list of its recorded nodes sit behind one pointer to
 `Detail::PlanCacheState`, which `source/plan_cache.cpp` defines; the pointer is null until the
-first build. compiled_plan() is protected because the test seams of the owning Graph read it. It
+first build. compiled_plan() is protected because the test seams of the owning Graph read it; it
+returns a `Detail::Plan*`, which `source/plan_access.hpp` turns into the engine's type. It
 keeps one registration index per rule. compile_count() is its one public member; the profiling
 pair is protected, so the pair a Graph shows is StepDriver's. The source of a move has no plan, is stale, and counts zero
 compiles.

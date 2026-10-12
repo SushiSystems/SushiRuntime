@@ -38,6 +38,7 @@
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/detail/device_fault.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
+#include <SushiRuntime/api/detail/late_controls.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/core/delegate.hpp>
 #include <SushiRuntime/core/error.hpp>
@@ -45,11 +46,6 @@
 
 namespace SushiRuntime
 {
-    namespace Internal::Graph
-    {
-        struct LateBindings;
-    } // namespace Internal::Graph
-
     namespace Detail
     {
         /**
@@ -67,7 +63,7 @@ namespace SushiRuntime
                  */
                 using StepHook = Delegate<void(),
                     sizeof(Dynamic) +
-                    sizeof(std::shared_ptr<Internal::Graph::LateBindings>)>;
+                    sizeof(std::shared_ptr<LateControls>)>;
 
                 /**
                  * @brief Returns the view a State owns and registers its resync on first use.
@@ -104,7 +100,7 @@ namespace SushiRuntime
                  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
                  */
                 SUSHIRUNTIME_API void register_binding_updater(
-                    std::shared_ptr<Internal::Graph::LateBindings> lb, Dynamic dyn);
+                    std::shared_ptr<LateControls> lb, Dynamic dyn);
 
                 /**
                  * @brief Registers a fault record every finished step checks.

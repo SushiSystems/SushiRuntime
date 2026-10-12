@@ -62,12 +62,14 @@ sushiruntime_add_module_tests(
         test_late_count.cpp
         test_logging_names.cpp
         test_native_cpu_path.cpp
+        test_node_event_records.cpp
         test_node_options_width.cpp
         test_plan_view.cpp
         test_recorder_scratch.cpp
         test_recorder_semantics.cpp
         test_region_commit.cpp
         test_region_emitter.cpp
+        test_registration_index.cpp
         test_rule_registration.cpp
         test_run_driver.cpp
         test_run_report_reuse.cpp

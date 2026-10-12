@@ -37,6 +37,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/data/state.hpp>
+#include <SushiRuntime/api/detail/late_controls.hpp>
 #include <SushiRuntime/api/detail/late_window.hpp>
 #include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
@@ -74,7 +75,7 @@ namespace SushiRuntime
          * @param lives Gains the observer of each slot's buffer.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
-        [[nodiscard]] SUSHIRUNTIME_API std::shared_ptr<Internal::Graph::LateBindings>
+        [[nodiscard]] SUSHIRUNTIME_API std::shared_ptr<LateControls>
         make_late_bindings(const Dynamic& dyn, std::vector<BufferRegion>& reads,
                            std::vector<LivenessObserver>& lives);
 
@@ -86,7 +87,7 @@ namespace SushiRuntime
          * a predecessor. See submit_late_window().
          */
         template <class F>
-        NodeDescription dynamic_node(std::shared_ptr<Internal::Graph::LateBindings> lb,
+        NodeDescription dynamic_node(std::shared_ptr<LateControls> lb,
                                      std::uint32_t* fault,
                                      std::vector<BufferRegion> reads,
                                      std::vector<BufferRegion> writes,
@@ -100,7 +101,7 @@ namespace SushiRuntime
             description.work = CommandGroupWork(
                 [kernel = std::forward<F>(kernel), capacity, lb, fault](sycl::handler& h)
                 {
-                    submit_late_window(h, *lb, capacity, fault, kernel);
+                    submit_late_window(h, lb.get(), capacity, fault, kernel);
                 });
             description.bindings = std::move(lb);
             return description;
@@ -116,7 +117,7 @@ namespace SushiRuntime
         template <typename T, class F>
         NodeDescription dynamic_state_node(std::shared_ptr<StateView<T>> view,
                                            std::size_t capacity,
-                                           std::shared_ptr<Internal::Graph::LateBindings> lb,
+                                           std::shared_ptr<LateControls> lb,
                                            std::uint32_t* fault,
                                            std::vector<BufferRegion> slot_reads,
                                            F&& kernel, LiveFields live = {})
@@ -138,7 +139,7 @@ namespace SushiRuntime
                 {
                     const T* current = view->current;
                     T* next = view->next;
-                    submit_late_window(h, *lb, capacity, fault,
+                    submit_late_window(h, lb.get(), capacity, fault,
                                        [kernel, current, next](std::size_t i)
                                        {
                                            kernel(i, current, next);

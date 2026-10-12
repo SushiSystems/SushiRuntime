@@ -65,7 +65,7 @@ namespace SushiRuntime
                                                         settings_of(config));
         if (!context)
             return make_error(std::move(context.error()));
-        return ContextHandle(std::move(*context));
+        return Detail::ContextAccess::handle(std::move(*context));
     }
 
     const Runtime& Runtime::set_rebalancer_enabled(bool enabled) const

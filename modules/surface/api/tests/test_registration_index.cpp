@@ -22,7 +22,7 @@
 /**
  * @file test_registration_index.cpp
  * @brief Tests Node::registration_index and that the nodes of one rule scope share one index.
- * @see tests/unit/README.md
+ * @see modules/surface/api/tests/README.md
  * @author Mustafa Garip
  */
 
@@ -45,6 +45,8 @@
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/task_work.hpp>
 
+#include "plan_access.hpp"
+
 namespace SushiRuntime
 {
     namespace Detail
@@ -54,7 +56,7 @@ namespace SushiRuntime
         {
             static const SushiRuntime::Internal::Graph::CompiledGraph& plan(const Graph& g) noexcept
             {
-                return g.compiled_plan();
+                return *engine_plan(g.compiled_plan());
             }
         };
     }

@@ -60,7 +60,7 @@ tests. It is the one friend of `ContextHandle` and of `Runtime`.
 
 The struct is declared here, in an internal module, so that it is not installed; this header
 names `ContextHandle` and `Runtime` by forward declaration only, and includes nothing of the
-surface. Its three functions are defined in `modules/surface/api/source/context_handle.cpp`,
+surface. Its functions are defined in `modules/surface/api/source/context_handle.cpp`,
 where both types are complete.
 
 ## execution_engine.hpp

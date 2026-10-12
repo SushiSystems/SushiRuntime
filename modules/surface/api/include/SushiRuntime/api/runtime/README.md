@@ -187,8 +187,10 @@ each record has reached the sink when the call that logged it returns.
 ### ContextHandle
 
 A ContextHandle shares ownership of one runtime's context. Every graph, recorder and region
-holds one, so the context lives as long as the last of them. The header forward-declares the
-context and includes no header of the engine: a program that holds a handle can copy it and test
-it for emptiness, and nothing more. The constructor that takes a context is private. The handle
-has two friends: `Runtime`, whose create() builds the context and wraps it, and
-`Detail::ContextAccess`, through which the library's sources read the context back.
+holds one, so the context lives as long as the last of them. The handle holds the context as a
+`std::shared_ptr<Detail::Context>`, a type `context.hpp` declares and nothing defines, and
+includes no header of the engine: a program that holds a handle can copy it and test it for
+emptiness, and nothing more. The constructor that takes a context is private. The handle has one
+friend, `Detail::ContextAccess`, through which the library's sources wrap a context they built
+and read it back. That is the one place that converts between `Detail::Context` and the
+engine's context.

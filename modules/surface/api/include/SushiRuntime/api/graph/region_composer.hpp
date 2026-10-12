@@ -35,16 +35,12 @@
 #include <set>
 
 #include <SushiRuntime/api/detail/node_description.hpp>
+#include <SushiRuntime/api/detail/plan.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/core/export.hpp>
 
 namespace SushiRuntime
 {
-    namespace Internal::Graph
-    {
-        struct CompiledGraph;
-    } // namespace Internal::Graph
-
     namespace Detail
     {
         class RegionComposerState;
@@ -157,15 +153,13 @@ namespace SushiRuntime
                  * @brief Returns the stitched plan; the owning graph and its test seams read it.
                  * @pre commit() has been called since construction or the last move from here.
                  */
-                [[nodiscard]] SUSHIRUNTIME_API Internal::Graph::CompiledGraph&
-                compiled_plan() noexcept;
+                [[nodiscard]] SUSHIRUNTIME_API Plan* compiled_plan() noexcept;
 
                 /**
                  * @brief Returns the stitched plan, read-only.
                  * @pre commit() has been called since construction or the last move from here.
                  */
-                [[nodiscard]] SUSHIRUNTIME_API const Internal::Graph::CompiledGraph&
-                compiled_plan() const noexcept;
+                [[nodiscard]] SUSHIRUNTIME_API const Plan* compiled_plan() const noexcept;
 
             private:
                 /** @brief The regions, the edges between them and the plan; null until a commit. */

@@ -43,6 +43,8 @@
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
 
+#include "late_controls_access.hpp"
+
 namespace SushiRuntime
 {
     namespace Detail
@@ -141,7 +143,8 @@ namespace SushiRuntime
             {
                 Node& node = backing_graph.add_node(std::get<CommandGroupWork>(description.work),
                                                     description.reads, description.writes,
-                                                    description.bindings, {}, registration);
+                                                    engine_controls(description.bindings), {},
+                                                    registration);
                 bake_width(node, description.width);
                 return node;
             }
@@ -154,7 +157,8 @@ namespace SushiRuntime
                 std::vector<BufferRegion> writes;
                 description.state_access(reads, writes);
                 Node& node = backing_graph.add_node(std::get<CommandGroupWork>(description.work),
-                                                    reads, writes, description.bindings, {},
+                                                    reads, writes,
+                                                    engine_controls(description.bindings), {},
                                                     registration);
                 bake_width(node, description.width);
                 attach_live_fields(node, description.live);

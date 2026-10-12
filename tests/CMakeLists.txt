@@ -22,7 +22,6 @@ sushiruntime_add_test_program(
         unit/test_node_dispatch_width.cpp
         unit/test_numa_steal.cpp
         unit/test_nvidia_topology.cpp
-        unit/test_registration_index.cpp
         unit/test_topology.cpp
         unit/test_topology_abstraction.cpp
 
@@ -42,7 +41,6 @@ sushiruntime_add_test_program(
         integration/test_interop_host_export.cpp
         integration/test_layer_equivalence.cpp
         integration/test_logging_defaults.cpp
-        integration/test_node_event_records.cpp
         integration/test_observability.cpp
         integration/test_offload_seam_shutdown.cpp
         integration/test_perf_controls.cpp
