@@ -104,7 +104,7 @@ session id is drawn next, and a platform with no random source returns `Unsuppor
 expired on the monitor's first pass; `task_deadline` is the one timing where 0 means no bound, and
 `Cluster::liveness_timeout()` returns `InvalidState` for a value below 1 ms like attach() does. It then builds the
 new master, binds it to `RuntimeContext::offload_sink()` and calls
-DistributedCoordinator::start(). Only when that returns `Ok` does it stop and remove the
+DistributedCoordinator::start(). Only when that returns `TransportStatus::Ok` does it stop and remove the
 coordinator the runtime held before, set the release observer and install the new coordinator.
 start() starts the transport, then the monitor, and logs
 `distributed master listening on 127.0.0.1:7000, protocol v3, authentication off`. The endpoint is

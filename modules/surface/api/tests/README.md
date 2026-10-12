@@ -255,9 +255,8 @@ base slot at a non-zero index is accepted at `add()`.
 
 The members `Dynamic::sized_from_device` and `Dynamic::based_at_device` take the `Buffer` and check
 it as the free builders do. A device-resident slot and an index one past the buffer stop the process
-where the member is called, and each message names the call. Up to v0.3 the members took a bare
-pointer, and the tests here that handed them an interior pointer, a device address and a stack
-address have no call left to make.
+where the member is called, and each message names the call. The members take no bare pointer,
+so no test hands them an interior pointer, a device address or a stack address.
 
 ## test_device_sized_launch.cpp
 

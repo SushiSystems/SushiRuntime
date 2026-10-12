@@ -349,10 +349,8 @@ Every call reads in one order: modifier, launch, access, callable, options.
 | callable | the kernel | a lambda |
 | options | what the node states about itself | a `NodeOptions` |
 
-Up to v0.3 the launch came third after Reads and Writes, second after a State, and first before
-captures. A caller had to remember which, and a new launch shape needed one overload per access.
-The launch and the access are now two independent descriptors, so each launch works with each
-access:
+The launch and the access are two independent descriptors, so the launch has one position
+whatever the access is, and each launch works with each access:
 
 | Access | count | Extent | NdRange | whole field | Dynamic |
 | --- | --- | --- | --- | --- | --- |
@@ -435,8 +433,7 @@ launch geometry and the declared data out of step.
 
 The caller passes the buffers a kernel touches as In(buf), Out(buf) or InOut(buf). The runtime
 registers the reads and writes and hands `kernel` the raw element pointers, in argument order, after
-the index. Up to v0.3 this form existed for an Extent only, so 1-D code wrote `Extent{n}` to get
-it; a count and an NdRange now take it too.
+the index. A count, an Extent and an NdRange all take this form.
 
 The first capture is a parameter of its own, which guarantees at least one. The rest is one
 trailing pack so that the compiler can deduce it: it ends in the callable, or in the callable and

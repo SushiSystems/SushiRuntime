@@ -186,12 +186,11 @@ can register the read and leave the buffer unwatched.
 
 ### One static_assert per family
 
-Up to v0.3 every add() overload was enabled by the signature of its callable. A callable of the
-wrong signature removed every overload, and the compiler answered "no matching member function"
-with the whole overload set as candidates; the two variadic forms did not constrain the callable
-at all and failed inside a SYCL parallel_for.
+No overload of add() is enabled by the signature of its callable. An overload set constrained
+that way answers a wrong callable with "no matching member function" and every overload as a
+candidate, and an unconstrained variadic form fails inside a SYCL parallel_for.
 
-add() now selects an overload by its launch and its access, and hands the callable to one
+add() selects an overload by its launch and its access, and hands the callable to one
 accepts_*() function of this header. Each holds one static_assert whose text states the signature
 the family expects. A wrong callable produces that sentence as its one error, with a note that
 points at the caller's add() line.
