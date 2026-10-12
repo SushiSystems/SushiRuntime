@@ -58,18 +58,18 @@ sushiruntime_add_module(
 sushiruntime_add_module_tests(
     MODULE distributed
     SOURCES
-        test_buffer_exchange.cpp
-        test_buffer_registry.cpp
-        test_distributed.cpp
-        test_distributed_e2e.cpp
-        test_distributed_jepsen.cpp
-        test_distributed_tcp_faults.cpp
-        test_handshake.cpp
-        test_offload_dispatcher.cpp
-        test_pending_tasks.cpp
-        test_socket.cpp
-        test_transport_conformance.cpp
-        test_wire_format.cpp
-        test_worker_bricks.cpp
-        test_worker_directory.cpp
-        test_worker_main.cpp)
+        buffers/test_buffer_exchange.cpp
+        buffers/test_buffer_registry.cpp
+        coordinator/test_offload_dispatcher.cpp
+        coordinator/test_pending_tasks.cpp
+        coordinator/test_worker_directory.cpp
+        end_to_end/test_distributed_e2e.cpp
+        end_to_end/test_distributed_jepsen.cpp
+        end_to_end/test_distributed_tcp_faults.cpp
+        link/test_handshake.cpp
+        link/test_socket.cpp
+        link/test_transport_conformance.cpp
+        wire/test_distributed.cpp
+        wire/test_wire_format.cpp
+        worker/test_worker_bricks.cpp
+        worker/test_worker_main.cpp)

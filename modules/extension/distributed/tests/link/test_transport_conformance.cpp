@@ -22,7 +22,7 @@
 /**
  * @file test_transport_conformance.cpp
  * @brief Tests the Transport contract on both transports, and Outbox alone.
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/link/README.md
  * @author Mustafa Garip
  */
 

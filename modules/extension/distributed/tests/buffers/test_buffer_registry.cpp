@@ -22,7 +22,7 @@
 /**
  * @file test_buffer_registry.cpp
  * @brief Tests BufferRegistry: ids, versions and the fenced copies in and out of a buffer.
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/buffers/README.md
  * @author Mustafa Garip
  */
 

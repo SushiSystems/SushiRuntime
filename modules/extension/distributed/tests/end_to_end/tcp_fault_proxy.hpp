@@ -23,7 +23,7 @@
  * @file tcp_fault_proxy.hpp
  * @brief Declares TCPFaultProxy, a loopback proxy that injects faults between worker and master.
  * @author Mustafa Garip
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/end_to_end/README.md
  */
 
 #pragma once
@@ -255,7 +255,7 @@ namespace SushiRuntime
              * A worker connects to endpoint(); the proxy opens a connection to the master for
              * it and runs one pump thread per direction. A fault holds for every connection,
              * open or opened later, until the next set_fault().
-             * @see modules/extension/distributed/tests/README.md
+             * @see modules/extension/distributed/tests/end_to_end/README.md
              */
             class TCPFaultProxy final
             {

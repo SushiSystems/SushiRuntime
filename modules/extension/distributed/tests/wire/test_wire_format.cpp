@@ -22,7 +22,7 @@
 /**
  * @file test_wire_format.cpp
  * @brief Tests the version 3 wire format against bytes written out by hand.
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/wire/README.md
  * @author Mustafa Garip
  */
 

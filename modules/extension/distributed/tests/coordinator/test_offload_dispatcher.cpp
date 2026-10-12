@@ -23,7 +23,7 @@
  * @file test_offload_dispatcher.cpp
  * @brief Tests OffloadDispatcher over real bricks, a fake transport and a fake policy.
  * @author Mustafa Garip
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/coordinator/README.md
  */
 
 #include <algorithm>

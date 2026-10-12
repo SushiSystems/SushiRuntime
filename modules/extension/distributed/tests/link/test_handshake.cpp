@@ -22,7 +22,7 @@
 /**
  * @file test_handshake.cpp
  * @brief Tests SHA-256, HMAC-SHA256, the handshake proofs and SharedSecret.
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/link/README.md
  * @author Mustafa Garip
  */
 

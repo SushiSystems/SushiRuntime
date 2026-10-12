@@ -22,7 +22,7 @@
 /**
  * @file test_distributed_e2e.cpp
  * @brief Tests kernel offload from a master to workers, end to end, on a SYCL device.
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/end_to_end/README.md
  * @author Mustafa Garip
  */
 
