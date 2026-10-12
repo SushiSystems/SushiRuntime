@@ -27,9 +27,8 @@ Each State read arrives as a `const A*`, and a kernel that declares the paramete
 compile. The node registers those fields as reads, so two rules that read one State run
 unordered; a kernel that could write through the pointer would race with the other.
 
-Up to v0.3 the same rule was written add(out, in0, ..., kernel). Two States side by side said nothing
-about which one is written, and the form had no place for a launch. Coupled is one access
-descriptor, like Reads with Writes or a list of captures, so it sits after the launch the way they
+Two States side by side in an argument list would say nothing about which one is written and
+would leave no place for a launch. Coupled is one access descriptor, like Reads with Writes or a list of captures, so it sits after the launch the way they
 do: add_coupled(Extent, Coupled(u, v), kernel) runs a coupled rule over a sub-box.
 
 Coupled holds references and no copies. A rule over one State is add_rule(state, kernel), so a Coupled with
@@ -46,8 +45,8 @@ like any other. On(DeviceIndex) names the device outright and watches nothing.
 
 Without an On the kernel runs on DeviceIndex{0}, the default device of Runtime::buffer() and
 Runtime::state(). A default buffer and a default untracked kernel therefore meet on one device.
-Up to v0.3 an untracked kernel went to whichever device a rotation reached, which on a machine
-with two devices could be one that did not own the pointers the kernel had captured.
+The runtime does not rotate untracked kernels over devices: on a machine with two devices a
+rotation would reach one that does not own the pointers the kernel captured.
 
 On orders nothing. A kernel that must run before or after another names its data with Reads and
 Writes and is added with add().
