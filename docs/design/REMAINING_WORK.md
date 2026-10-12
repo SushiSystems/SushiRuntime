@@ -139,6 +139,41 @@ Open after a repair:
   `profiling_ledger.hpp`; "(F4)" and "(F5)" in `execution_engine.cpp`; the "used to"
   sentences in `modules/surface/api/tests/README.md`.
 
+### Left open by the review before the first build (2026-10-12)
+
+The review is in `docs/agent/2026_10_11_API_QUALITY_CONTROL/REPORT.md`. What it found and this
+round did not close:
+
+- **Plumbing in the public namespace.** `PlanCache`, `RegionComposer`, `RegionChangeLog`,
+  `StepDriver`, `BuilderSurface` and the four callable traits are names no consumer writes;
+  they move to `Detail` after the first green build. `v0.4.0` freezes them otherwise.
+- **Three engine type names in installed signatures.** `CompiledGraph`, `LateBindings` and
+  `RuntimeContext` are forward-declared in headers of `api`. An opaque `Detail` handle per type
+  removes the names.
+- **`ContextAccess` is declared in `execution` and defined in `api`.** It moves to an internal
+  surface module once `ContextHandle` sits in a public module below both; that is a module
+  boundary for the owner.
+- **`NodeDescription` is a tagged struct.** A variant of per-kind structs gives each kind its
+  own fields and makes an unhandled kind a compile error.
+- **A recorder that is about to be cleared still copies its work into the plan.** SushiBLAS
+  never replays, so it pays two allocations per task for nothing; it needs a consuming build.
+  `Graph::clear()` marks the plan stale and frees it at the next build only.
+- **`DynamicGraph` walks every region three times per `run()`** (refusal, dangling check, node
+  count); cache them at commit.
+- **Catch ladders outside the engine and the surface** still translate by hand: about fifty in
+  the distributed extension, and those of `logger.cpp`, `usm_allocator.cpp`,
+  `event_timestamps.hpp` and `hw_discovery.cpp`. `Cluster::attach` keeps a reference to a
+  context a `Runtime` owns.
+- **`NodeOptions` has no named setters**, so naming only an operation means spelling the width
+  before it.
+- **`version.hpp` says 0.3.0** until the release commit.
+- **In the consumers:** SushiAI has no `Status` code for a runtime that is busy with another
+  run; SushiEngine keeps `.value()` in four play-time groups (device state reads and writes,
+  neighbour regrowth, the water load, the skin pool), does not test the null entity a failed
+  growth returns in `EntityTable::create`, loses an exception a kernel throws on a pool worker
+  of the native backend, and includes SushiRuntime in five render and terrain files for a span
+  type it does not own.
+
 ## Structural debt
 
 - **`TaskScheduler` still holds two responsibilities beside the worker loop.** The injector
