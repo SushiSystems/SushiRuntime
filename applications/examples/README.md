@@ -18,6 +18,7 @@ for the subject at hand:
 | `operating_path_demo.cpp` | `RuntimeConfig`, `advanced()`, `run()` with its error branch, `Dynamic` and a `read_range()` readback |
 | `errors_demo.cpp` | A `Result` tested and handled, a refused recording read with `refusal()`, `compile()` before any step, and `clear()` |
 | `tasks_demo.cpp` | `add_task`, `add_host` and `add_untracked` beside kernels, nodes named through `NodeOptions`, and the `plan()` they compile to |
+| `stepping_demo.cpp` | `before_each_step`, then one rule through `run(steps)`, `run_until`, `run_async` with its `RunHandle`, and `run_for` |
 | `adapter/` | A host program that reaches the library through one file, in its own types and its own status |
 | `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
 | `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
@@ -238,6 +239,42 @@ tasks: 5 rules, 5 nodes
 
 After the run, element i of `result` is 2 * i + 4 and `checksum` is their sum over 1024
 elements. `compile_count()` is 1: the run used the plan `plan()` built.
+
+## stepping_demo.cpp
+
+One rule driven by each run entry. The rule adds a word, `gain`, to every cell of a `State`.
+A hook added with `before_each_step()` writes that word before each step: 1 plus the steps the
+run in progress has finished. The hook also adds the word to a count on the host, which is
+what the field must hold at the end. The graph compiles once for all four entries.
+
+| Entry | Steps here | Stops when |
+| --- | --- | --- |
+| `run(4)` | 4 | The count is reached |
+| `run_until(done)` | 5 | `done()` returns true; it is called before each step and reads the field |
+| `run_async()` | 1 | The step is on the worker pool; `wait()` on the `RunHandle` ends it |
+| `run_for(budget)` | At least 1 | The wall-clock budget, 2 ms, has elapsed |
+
+`run_async()` returns a `Result` that holds the handle. The program tests it, because an engine
+that cannot start a step without blocking answers `Unsupported`. `pending()` is true until
+`wait()` returns the report, and the `State` advances in `wait()`.
+
+Every entry returns a `RunReport`. The program prints three of its fields:
+`total_tasks_executed`, one per node per step; `is_successful`; and `cancelled`, which
+`cancel()` would set.
+
+```
+stepping: 256 cells; a step adds 1 + the steps its run finished
+  run(4)     tasks = 4, successful = yes, cancelled = no, cell = 10
+  run_until  tasks = 5, successful = yes, cancelled = no, cell = 25
+  run_async  tasks = 1, successful = yes, cancelled = no, cell = 26
+  run_for    <count> steps in a budget of 2 ms (depends on the machine)
+  the field matches the host count: yes (compiles = 1)
+  result: CORRECT
+```
+
+The first three cells are fixed: 1 + 2 + 3 + 4 is 10, five more steps reach the threshold of
+25, and one step adds 1. The step count of `run_for()` differs from machine to machine, so the
+check compares every cell with the host count and not with a constant.
 
 ## adapter/
 
