@@ -67,9 +67,9 @@ namespace SushiRuntime
      * empty on the same runtime and can be built and run again.
      * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
      */
-    class Graph : public BuilderSurface<Graph>,
-                  public StepDriver<Graph>,
-                  private PlanCache
+    class Graph : public Detail::BuilderSurface<Graph>,
+                  public Detail::StepDriver<Graph>,
+                  private Detail::PlanCache
     {
         public:
             /**
@@ -177,7 +177,7 @@ namespace SushiRuntime
         private:
             friend class Runtime;
             // The driver reaches the plan, the hooks and the checks below, and nothing else.
-            friend class StepDriver<Graph>;
+            friend class Detail::StepDriver<Graph>;
             friend struct Detail::RegistrationIndexTestAccess;
             friend struct Detail::NodeEventRecordsTestAccess;
 

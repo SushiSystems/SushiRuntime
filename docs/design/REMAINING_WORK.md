@@ -144,9 +144,6 @@ Open after a repair:
 The review is in `docs/agent/2026_10_11_API_QUALITY_CONTROL/REPORT.md`. What it found and this
 round did not close:
 
-- **Plumbing in the public namespace.** `PlanCache`, `RegionComposer`, `RegionChangeLog`,
-  `StepDriver`, `BuilderSurface` and the four callable traits are names no consumer writes;
-  they move to `Detail` after the first green build. `v0.4.0` freezes them otherwise.
 - **Three engine type names in installed signatures.** `CompiledGraph`, `LateBindings` and
   `RuntimeContext` are forward-declared in headers of `api`. An opaque `Detail` handle per type
   removes the names.

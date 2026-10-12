@@ -68,110 +68,111 @@ namespace SushiRuntime
             /** @brief The nodes of plan in recording order; plan lists them in its own. */
             std::vector<RecordedNode> recorded;
         };
-    } // namespace Detail
 
-    PlanCache::PlanCache(bool profiling) noexcept : profiling_requested_(profiling)
-    {
-    }
-
-    PlanCache::PlanCache(PlanCache&& other) noexcept
-        : profiling_requested_(other.profiling_requested_)
-    {
-        take(other);
-    }
-
-    PlanCache& PlanCache::operator=(PlanCache&& other) noexcept
-    {
-        if (this != &other)
-            take(other);
-        return *this;
-    }
-
-    PlanCache::~PlanCache() = default;
-
-    Result<void> PlanCache::build(const Recorder& recorder, const ContextHandle& context)
-    {
-        using Internal::Graph::TaskGraph;
-
-        Internal::Execution::RuntimeContext& runtime = Detail::ContextAccess::context(context);
-        auto built = std::make_unique<Detail::PlanCacheState>();
-        TaskGraph backing_graph;
-        std::vector<std::uint32_t> registrations(recorder.rule_count(),
-                                                 TaskGraph::K_NO_REGISTRATION);
-        built->recorded.reserve(recorder.node_count());
-        Detail::RecorderReplay::replay(
-            recorder, backing_graph,
-            [&built, &registrations, &backing_graph](std::size_t rule, std::size_t)
-            {
-                const Internal::Graph::Node* added = backing_graph.last_node_added();
-                if (added)
-                {
-                    registrations[rule] = added->registration_index;
-                    built->recorded.push_back(Detail::PlanCacheState::RecordedNode{added, rule});
-                }
-            });
-        // Nothing of this build is kept until it compiled, so a failure leaves the last one whole.
-        Result<Internal::Graph::CompiledGraph> compiled = backing_graph.compile();
-        if (!compiled)
-            return make_error(std::move(compiled.error()));
-        built->plan = std::move(*compiled);
-        runtime.execution_engine().prepare(built->plan);
-        built->plan.profiling = profiling_requested_;
-        built->plan.capture_base_state();
-        built->plan.chain = Internal::Execution::classify_chain(built->plan, runtime);
-        state_ = std::move(built);
-        registrations_ = std::move(registrations);
-        dirty_ = false;
-        built_generation_ = recorder.generation();
-        ++compiles_;
-        return {};
-    }
-
-    void PlanCache::rearm() noexcept
-    {
-        state_->plan.rearm();
-    }
-
-    PlanView PlanCache::describe_plan() const
-    {
-        PlanView view;
-        if (state_ == nullptr)
-            return view;
-        view.nodes.reserve(state_->recorded.size());
-        for (const Detail::PlanCacheState::RecordedNode& recorded : state_->recorded)
+        PlanCache::PlanCache(bool profiling) noexcept : profiling_requested_(profiling)
         {
-            const Internal::Graph::Node& node = *recorded.node;
-            PlanNode described;
-            described.rule = recorded.rule;
-            if (node.metadata.name != nullptr)
-                described.name = node.metadata.name;
-            described.operation = node.metadata.op_id;
-            described.predecessor_count =
-                static_cast<std::size_t>(state_->plan.base_in_degree[node.plan_index]);
-            described.reads = node.io_reads_;
-            described.writes = node.io_writes_;
-            view.nodes.push_back(std::move(described));
         }
-        return view;
-    }
 
-    Internal::Graph::CompiledGraph& PlanCache::compiled_plan() noexcept
-    {
-        return state_->plan;
-    }
+        PlanCache::PlanCache(PlanCache&& other) noexcept
+            : profiling_requested_(other.profiling_requested_)
+        {
+            take(other);
+        }
 
-    const Internal::Graph::CompiledGraph& PlanCache::compiled_plan() const noexcept
-    {
-        return state_->plan;
-    }
+        PlanCache& PlanCache::operator=(PlanCache&& other) noexcept
+        {
+            if (this != &other)
+                take(other);
+            return *this;
+        }
 
-    void PlanCache::take(PlanCache& other) noexcept
-    {
-        state_ = std::move(other.state_);
-        registrations_ = std::exchange(other.registrations_, {});
-        built_generation_ = std::exchange(other.built_generation_, 0);
-        compiles_ = std::exchange(other.compiles_, 0);
-        dirty_ = std::exchange(other.dirty_, true);
-        profiling_requested_ = other.profiling_requested_;
-    }
+        PlanCache::~PlanCache() = default;
+
+        Result<void> PlanCache::build(const Recorder& recorder, const ContextHandle& context)
+        {
+            using Internal::Graph::TaskGraph;
+
+            Internal::Execution::RuntimeContext& runtime = Detail::ContextAccess::context(context);
+            auto built = std::make_unique<Detail::PlanCacheState>();
+            TaskGraph backing_graph;
+            std::vector<std::uint32_t> registrations(recorder.rule_count(),
+                                                     TaskGraph::K_NO_REGISTRATION);
+            built->recorded.reserve(recorder.node_count());
+            Detail::RecorderReplay::replay(
+                recorder, backing_graph,
+                [&built, &registrations, &backing_graph](std::size_t rule, std::size_t)
+                {
+                    const Internal::Graph::Node* added = backing_graph.last_node_added();
+                    if (added)
+                    {
+                        registrations[rule] = added->registration_index;
+                        built->recorded.push_back(
+                            Detail::PlanCacheState::RecordedNode{added, rule});
+                    }
+                });
+            // Nothing of this build is kept until it compiled; a failure leaves the last one whole.
+            Result<Internal::Graph::CompiledGraph> compiled = backing_graph.compile();
+            if (!compiled)
+                return make_error(std::move(compiled.error()));
+            built->plan = std::move(*compiled);
+            runtime.execution_engine().prepare(built->plan);
+            built->plan.profiling = profiling_requested_;
+            built->plan.capture_base_state();
+            built->plan.chain = Internal::Execution::classify_chain(built->plan, runtime);
+            state_ = std::move(built);
+            registrations_ = std::move(registrations);
+            dirty_ = false;
+            built_generation_ = recorder.generation();
+            ++compiles_;
+            return {};
+        }
+
+        void PlanCache::rearm() noexcept
+        {
+            state_->plan.rearm();
+        }
+
+        PlanView PlanCache::describe_plan() const
+        {
+            PlanView view;
+            if (state_ == nullptr)
+                return view;
+            view.nodes.reserve(state_->recorded.size());
+            for (const Detail::PlanCacheState::RecordedNode& recorded : state_->recorded)
+            {
+                const Internal::Graph::Node& node = *recorded.node;
+                PlanNode described;
+                described.rule = recorded.rule;
+                if (node.metadata.name != nullptr)
+                    described.name = node.metadata.name;
+                described.operation = node.metadata.op_id;
+                described.predecessor_count =
+                    static_cast<std::size_t>(state_->plan.base_in_degree[node.plan_index]);
+                described.reads = node.io_reads_;
+                described.writes = node.io_writes_;
+                view.nodes.push_back(std::move(described));
+            }
+            return view;
+        }
+
+        Internal::Graph::CompiledGraph& PlanCache::compiled_plan() noexcept
+        {
+            return state_->plan;
+        }
+
+        const Internal::Graph::CompiledGraph& PlanCache::compiled_plan() const noexcept
+        {
+            return state_->plan;
+        }
+
+        void PlanCache::take(PlanCache& other) noexcept
+        {
+            state_ = std::move(other.state_);
+            registrations_ = std::exchange(other.registrations_, {});
+            built_generation_ = std::exchange(other.built_generation_, 0);
+            compiles_ = std::exchange(other.compiles_, 0);
+            dirty_ = std::exchange(other.dirty_, true);
+            profiling_requested_ = other.profiling_requested_;
+        }
+    } // namespace Detail
 } // namespace SushiRuntime

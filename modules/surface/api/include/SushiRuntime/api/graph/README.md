@@ -23,6 +23,10 @@ symbol or passage it explains, and that header's file block cites this page.
 | `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), compile(), before_each_step(), cancel(), set_profiling() and the step loop |
 | `region_composer.hpp` | RegionComposer: the cached sub-graph of each region and the stitched plan |
 
+BuilderSurface, StepDriver, PlanCache, RegionComposer and RegionChangeLog are declared in
+`SushiRuntime::Detail`: Graph, DynamicGraph and Region derive from them or hold them, and a
+consumer names none of them. DynamicGraph::RegionKey is the public spelling of a region's key.
+
 The description of each node shape is in `detail/emit_*.hpp`.
 
 No header of this folder includes a header of the engine. The members that name an engine type

@@ -40,46 +40,47 @@
 
 namespace SushiRuntime
 {
-    /**
-     * @brief Tells whether a const F is callable as kernel(std::size_t) and is not a range kernel.
-     * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-     */
-    template <class F>
-    inline constexpr bool is_per_element_v =
-        std::is_invocable_v<const std::decay_t<F>&, std::size_t> &&
-        !std::is_invocable_v<const std::decay_t<F>&, std::size_t, std::size_t,
-                             sycl::handler&>;
-
-    /**
-     * @brief Tells whether F is callable as kernel(sycl::handler&), the raw kernel shape.
-     * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-     */
-    template <class F>
-    inline constexpr bool is_raw_kernel_v =
-        std::is_invocable_v<F, sycl::handler&>;
-
-    /**
-     * @brief Tells whether a const F is callable as kernel(std::size_t begin, std::size_t end,
-     *        sycl::handler&), the range kernel shape.
-     * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-     */
-    template <class F>
-    inline constexpr bool is_range_kernel_v =
-        std::is_invocable_v<const std::decay_t<F>&, std::size_t, std::size_t,
-                            sycl::handler&>;
-
-    /**
-     * @brief Tells whether F is callable as kernel(sycl::queue&, const std::vector<sycl::event>&)
-     *        and returns a sycl::event, the task body shape.
-     * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-     */
-    template <class F>
-    inline constexpr bool is_task_body_v =
-        std::is_invocable_r_v<sycl::event, std::decay_t<F>&, sycl::queue&,
-                              const std::vector<sycl::event>&>;
-
     namespace Detail
     {
+        /**
+         * @brief Tells whether a const F is callable as kernel(std::size_t) and is not a
+         *        range kernel.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <class F>
+        inline constexpr bool is_per_element_v =
+            std::is_invocable_v<const std::decay_t<F>&, std::size_t> &&
+            !std::is_invocable_v<const std::decay_t<F>&, std::size_t, std::size_t,
+                                 sycl::handler&>;
+
+        /**
+         * @brief Tells whether F is callable as kernel(sycl::handler&), the raw kernel shape.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <class F>
+        inline constexpr bool is_raw_kernel_v =
+            std::is_invocable_v<F, sycl::handler&>;
+
+        /**
+         * @brief Tells whether a const F is callable as kernel(std::size_t begin, std::size_t end,
+         *        sycl::handler&), the range kernel shape.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <class F>
+        inline constexpr bool is_range_kernel_v =
+            std::is_invocable_v<const std::decay_t<F>&, std::size_t, std::size_t,
+                                sycl::handler&>;
+
+        /**
+         * @brief Tells whether F is callable as kernel(sycl::queue&,
+         *        const std::vector<sycl::event>&) and returns a sycl::event, the task body shape.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <class F>
+        inline constexpr bool is_task_body_v =
+            std::is_invocable_r_v<sycl::event, std::decay_t<F>&, sycl::queue&,
+                                  const std::vector<sycl::event>&>;
+
         /** @brief Returns a field pointer as the read-only pointer a kernel input receives. */
         template <typename T>
         constexpr const T* read_only(T* field) noexcept
