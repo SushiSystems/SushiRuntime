@@ -256,7 +256,7 @@ before `start()`. `register_kernel` must then stop the process, which the death 
 
 No test of this file reads `RunReport`. That `tasks_offloaded_to_network` counts the dispatches
 of one run is pinned by `OffloadedCountIsOfThisRun` in
-`modules/surface/api/tests/test_run_driver.cpp`, with a coordinator that only counts.
+`modules/surface/api/tests/graph/stepping/test_run_driver.cpp`, with a coordinator that only counts.
 
 ## test_socket.cpp
 

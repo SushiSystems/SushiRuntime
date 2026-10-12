@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — tests: Moved the api tests into folders named after the part of the surface they test, each with its own notes (`modules/surface/api/tests`, `refusing_fill.hpp`, `modules/surface/api/CMakeLists.txt`).
 - 2026-10-12 — context: Breaking change: Moved ContextHandle to the new public context module and its access to the internal context_access module, out of execution (`context_handle.hpp`, `context_access.hpp`, `SushiRuntimeTiers.cmake`).
 - 2026-10-12 — api: Breaking change: Replaced CompiledGraph, LateBindings and RuntimeContext in installed signatures with the opaque Detail::Plan, Detail::LateControls and Detail::Context (`plan.hpp`, `late_controls.hpp`, `context.hpp`).
 - 2026-10-12 — tests: Moved the registration index and the node event record tests into the api module, whose private conversion header they include (`test_registration_index.cpp`, `test_node_event_records.cpp`, `plan_access.hpp`).
