@@ -142,93 +142,132 @@ a single module of your project that includes `<SushiRuntime/sushiruntime.hpp>`,
 rest of your code calls through your own types.
 
 The adapter is the SYCL lane of §2, or the part of it that names the library.
+`applications/examples/adapter/` is a complete one, built as `sr_adapter_demo`: a host program
+that needs a field which advances by a rule and can be read back. Every block of this section
+is from its three files, and
+[the examples README](../../applications/examples/README.md) describes the program.
 
 **What it includes.** `<SushiRuntime/sushiruntime.hpp>`, and
 `<SushiRuntime/distributed/distributed.hpp>` when it attaches a cluster. No other header of the
-library is needed, and no header of the engine is installed.
+library is needed, and no header of the engine is installed. In the example one file of three
+includes it.
 
-**What it exposes.** Functions and types of your project: a function that creates the runtime, a
-function that runs a step, your own error type. A header of the adapter that the ordinary lane
-includes names no type of `SushiRuntime`.
-
-**How it turns a `Result` into your error type.** One function maps every `ErrorCode` to a code
-of yours. With no `default` in the `switch`, a compiler that warns on an unhandled enumerator (`-Wswitch`)
-reports a code a new release added.
-SushiAI does this in one file:
+**What it exposes.** Functions and types of your project: a function that creates the backend,
+a function that runs steps, your own status type. The header the ordinary lane includes names
+no type of `SushiRuntime`. It declares the backend and does not define it, so the host holds
+the backend by a handle and cannot look into it:
 
 ```cpp
-        Status status_of_error(const SushiRuntime::Error& error, SeamPhase phase) noexcept
+    /** @brief Stands for the backend; the adapter alone defines it. */
+    struct DiffusionBackend;
+    // ...
+    /** @brief Owns a backend the host cannot look into. */
+    using BackendHandle = std::unique_ptr<DiffusionBackend, BackendDeleter>;
+
+    /** @brief Creates a backend on the devices of this machine. */
+    [[nodiscard]] Status create_backend(BackendHandle& backend);
+    // ...
+    /** @brief Advances the field by a number of steps. */
+    [[nodiscard]] Status advance(DiffusionBackend& backend, std::size_t steps);
+```
+
+Source: `applications/examples/adapter/diffusion_backend.hpp`
+
+The adapter defines that type from the handles of the library:
+
+```cpp
+    struct DiffusionBackend final
+    {
+        // ...
+        SushiRuntime::Runtime runtime;    /**< The runtime every handle below came from. */
+        SushiRuntime::State<float> field; /**< The field; empty until allocate_field(). */
+        SushiRuntime::Graph graph;        /**< Holds the one rule that steps the field. */
+    };
+```
+
+Source: `applications/examples/adapter/sushiruntime_adapter.cpp`
+
+**How it turns a `Result` into your status type.** One function maps every `ErrorCode` to a
+code of yours. With no `default` in the `switch`, a compiler that warns on an unhandled
+enumerator (`-Wswitch`) reports a code a new release added:
+
+```cpp
+        /** @brief Returns the host's status for an error of the library. */
+        Status status_of(const SushiRuntime::Error& error)
         {
             using SushiRuntime::ErrorCode;
-
-            const char* text = error.message.c_str();
             switch (error.code)
             {
                 case ErrorCode::AllocationFailed:
-                    return failure_of(StatusCode::OutOfMemory, text);
-
+                    return Status{StatusCode::OutOfMemory, error.message};
                 case ErrorCode::KernelFailed:
                 case ErrorCode::DeviceLost:
-                    return failure_of(StatusCode::DeviceFailed, text);
-
-                case ErrorCode::Unsupported:
+                    return Status{StatusCode::DeviceFailed, error.message};
+                case ErrorCode::InvalidGraph:
                 case ErrorCode::InvalidAccess:
                 case ErrorCode::InvalidState:
-                    return failure_of(StatusCode::Unsupported, text);
-
-                case ErrorCode::InvalidGraph:
-                    return failure_of(StatusCode::InvalidDescription, text);
-
-                case ErrorCode::ProtocolMismatch:
-                    return failure_of(StatusCode::Incompatible, text);
-
+                    return Status{StatusCode::InvalidRequest, error.message};
+                case ErrorCode::Unsupported:
+                    return Status{StatusCode::Unsupported, error.message};
                 case ErrorCode::CompileFailed:
-                    return failure_of(untyped_code(phase), text);
-
                 case ErrorCode::DanglingResource:
-                    SA_FATAL("SushiRuntime reported {}: {}",
-                             SushiRuntime::to_string(error.code), text);
+                case ErrorCode::ProtocolMismatch:
+                    return Status{StatusCode::BackendFault, error.message};
             }
+            return Status{StatusCode::BackendFault, error.message};
+        }
 
-            return failure_of(untyped_code(phase), text);
+        /** @brief Returns Ok for a result that holds a value, and the mapped error otherwise. */
+        template <typename T>
+        Status status_of(const SushiRuntime::Result<T>& result)
+        {
+            return result ? Status() : status_of(result.error());
         }
 ```
 
-Source: not compiled
+Source: `applications/examples/adapter/sushiruntime_adapter.cpp`
 
-Every call into the library then goes through a function that tests the `Result` and returns
-the mapped error:
+Every call into the library then ends in one of the two, so no `Result` leaves the file:
 
 ```cpp
-        Status run_step(SushiRuntime::Graph& graph, SushiRuntime::RunReport& report) noexcept
-        {
-            return guard(SeamPhase::Execute, [&]()
-            {
-                const SushiRuntime::Result<SushiRuntime::RunReport*> ran = graph.run(report);
-                if (!ran)
-                    return status_of_error(ran.error(), SeamPhase::Execute);
-
-                return Status();
-            });
-        }
+    Status advance(DiffusionBackend& backend, std::size_t steps)
+    {
+        return status_of(backend.graph.run(steps));
+    }
 ```
 
-Source: not compiled
+Source: `applications/examples/adapter/sushiruntime_adapter.cpp`
 
-Both blocks are from `sushiai/modules/core/core/source/seam.cpp`, in the SushiAI repository, which
-this repository does not build.
-`Status`, `StatusCode`, `SeamPhase`, `failure_of`, `untyped_code`, `guard` and `SA_FATAL` are
-SushiAI's own names. `guard` catches what a callee outside SushiRuntime throws; the library
-itself throws nothing.
+The library throws nothing, so the adapter needs no `try`. An adapter that also calls a
+library which throws catches at the same boundary and returns a status of its own.
 
-SushiAI's seam maps errors and still passes `SushiRuntime::Graph` in its signatures, because
-the code that calls it is the SYCL lane. SushiBLAS shows the other half: every operation is
-recorded through one class, `TaskRecorder`, and one class, `RecordedGraph`, owns the graph and
-runs it (`sushiblas/modules/engine/engine`). A change to a recording verb or to a run verb is
-then one edit in each.
+**What it checks itself.** A broken rule stops the process and returns nothing to map. The
+adapter therefore tests what it can before the library sees it: the example asks
+`version_matches()` before `Runtime::create()`, which stops on a library of another release,
+and turns down a field of no cells with its own `InvalidRequest`. What the graph refuses and
+keeps, it reads back with `refusal()` and maps like any other error. A host that must not
+stop on what is left installs its own handler with `set_assertion_handler()` at startup, as
+`applications/examples/host_hooks_demo.cpp` does.
 
-A broken rule stops the process and returns nothing to map. An adapter inside a host that must
-not stop installs its own handler with `set_assertion_handler()` at startup.
+**What the host sees.** Its own header and its own codes:
+
+```cpp
+        // With no field allocated the library refuses the run; the host reads its own code.
+        const Status early = advance(*backend, 1);
+        std::printf("adapter: advance before allocate_field -> %s: %s\n", to_string(early.code),
+                    early.message.c_str());
+        if (early.code != StatusCode::InvalidRequest)
+            return 1;
+```
+
+Source: `applications/examples/adapter/adapter_demo.cpp`
+
+When a release changes a name or a signature, `sushiruntime_adapter.cpp` is the file that
+changes. The example passes no type of the library across the seam. A larger consumer may keep
+a second seam inside its SYCL lane: SushiBLAS records every operation through one class,
+`TaskRecorder`, and one class, `RecordedGraph`, owns the graph and runs it
+(`sushiblas/modules/engine/engine`), so a change to a recording verb or to a run verb is one
+edit in each.
 
 ## 7. Troubleshooting
 
