@@ -274,7 +274,7 @@ single throw and left the pool dead for good.
 
 ### `ThrowingKernelLeavesRuntimeReusable`
 
-The command-group function of the first graph throws, so `execute()` must report the error to the
+The command-group function of the first graph throws, so `run()` must return the error to the
 caller and not hang.
 
 ## test_graph_profiling_switch.cpp
@@ -313,8 +313,8 @@ layer, and the offset launches also with a reference computed on the host.
 
 `NdRange` has no origin, so its kernels add the offset to the global id themselves.
 
-`UntrackedOffsetLaunchesMatchAcrossLayers` skips on a runtime that drives more than one device;
-the reason is in `docs/reference/KNOWN_ISSUES.md`.
+`UntrackedOffsetLaunchesMatchAcrossLayers` places its untracked kernels on the last device of the
+runtime with `On`.
 
 ## test_logging_defaults.cpp
 
@@ -358,7 +358,8 @@ subsections refer to section E of the design.
 
 ### `NodeEventRecordsTestAccess`
 
-`NodeEventRecordsTestAccess` is a friend used only by tests to reach `Graph::plan_`. It mirrors
+`NodeEventRecordsTestAccess` is a friend used only by tests to reach the compiled plan of a
+`Graph`. It mirrors
 `RegistrationIndexTestAccess` in `test_registration_index.cpp`.
 
 ### `RequestedGraphRecordsOnePerDispatch`
@@ -423,16 +424,12 @@ of `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS.md`. Without a name every node re
 "unnamed_task" whichever `add()` produced it, and a profile of a real graph is a list of identical
 labels.
 
-The name is set with `name()` and not with a trailing argument. Two of the `add()` shapes take
-a trailing parameter pack whose last element is the callable, so a defaulted trailing name cannot be
-expressed for them. One spelling that works for every shape is better than a trailing argument on
-most shapes and an exception for the rest.
+The test sets the name with `name()`, which names the rule the verb before it recorded.
 
 ### `EveryAddShapeCanBeNamed`
 
-The test names a node of every launch shape, including the two variadic ones that cannot take a
-trailing argument. A first version of R8 reached only the `Dynamic` overloads, and this test would
-have caught it.
+The test names a node of every launch shape: counted, captured, a State rule, host work and a
+dynamic kernel.
 
 ### `UnnamedNodeStillReportsTheDefaultLabel`
 
@@ -471,9 +468,7 @@ in both states, and the engine reports the flag faithfully.
 
 The default is the assertion that matters. The background thermal rebalancer migrates tasks between
 workers on a 5 ms heartbeat. That changes which worker folds which tile and puts a periodic wakeup
-under every frame, a throughput trade that gains a simulation frame nothing. When the rebalancer was
-on by default, every consumer paid for it, and the primary consumer turned it off at every
-construction.
+under every frame, a throughput trade that gains a simulation frame nothing.
 
 ## test_scheduler_integration.cpp
 

@@ -8,8 +8,8 @@ helper or topic it describes. The source comments state one invariant per line a
 
 ## test_node_dispatch_width.cpp
 
-The width of a node is stamped after the node is added, as its name is. `add_node` returns `void`,
-and the emitters build the node before they know which of several internal widths it took.
+The width of a node is stamped after the node is added, as its name is: the emitters build the
+node before they know which of several internal widths it took.
 
 `Node` is a non-literal type, so `Node{}` cannot be an operand of a `static_assert`; the compiler
 reports "non-literal type 'Node' cannot be used in a constant expression".
@@ -43,7 +43,7 @@ victims on the local node come before remote ones.
 
 ## test_nvidia_topology.cpp
 
-The file validates that an NVIDIA GPU (a GTX 1060, sm_61) is discovered through the CUDA SYCL
+The file validates that an NVIDIA GPU is discovered through the CUDA SYCL
 backend and mapped to a NUMA node by hwloc. The tests skip when there is no CUDA device.
 
 ## test_registration_index.cpp
