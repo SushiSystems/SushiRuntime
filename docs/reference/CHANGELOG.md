@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — docs: Rewrote the manual for the single-header, Result-only interface and added the stability notice and the adapter section (`README.md`, `INTRODUCTION.md`, `ARCHITECTURE.md`, `INTEGRATION.md`).
 - 2026-10-12 — execution: Fixed a node that writes a shared buffer running on the chain under a cluster, where nothing told the coordinator it finished and the buffer's version stayed (`chain_plan.cpp`).
 - 2026-10-12 — tests: Moved the wire format tests to the version 3 offsets of a dispatch, and stated what the allocation counter cannot see on Windows (`test_wire_format.cpp`, `test_steady_state_allocation.cpp`).
 - 2026-10-12 — api: Breaking change: Made the constructors of Recorder, Region and ContextHandle and the moves of Recorder private, and the region and capture constructors explicit (`recorder.hpp`, `region.hpp`, `buffer_region.hpp`).
