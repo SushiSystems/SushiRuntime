@@ -223,10 +223,6 @@ round did not close:
   to 0.7.0 (`cli/pyproject.toml`) have no line in `docs/reference/CHANGELOG.md`.
 - **Unverified manual content.** Whether the C++ samples compile against the current headers,
   and the per-flag descriptions in `docs/guides/CLI_GUIDE.md`, were not checked by the audit.
-- **`check_layering.py` checks nothing here.** `K_TIER_ORDER` is empty. The repository is one
-  module whose areas depend on each other in the order
-  `docs/architecture/ARCHITECTURE.md` §2 lists; whether the checker should hold that order is
-  undecided.
 
 ## Repository hygiene
 
@@ -237,11 +233,9 @@ round did not close:
 - **A release is due.** 49 commits have landed since v0.3.0, three of them marked breaking, and
   the Unreleased section holds 44 entries. Pre-1.0, a breaking change makes the next release
   v0.4.0.
-- **CI.** `.github/workflows/ci.yml` runs on Linux only, calls `cmake` and `ctest` directly,
-  runs none of the checkers, has no release workflow, and its `cli` job installs `sushicore`
-  from a path SushiStack no longer carries.
-- **The umbrella header's name.** `SushiRuntime/sushiruntime.hpp` is the one header with a `.h`
-  suffix and a capitalised name. A rename is a public interface change.
+- **CI.** `.github/workflows/ci.yml` builds and tests on Linux only and calls `cmake` and
+  `ctest` directly. Its checker job runs on Linux and Windows and does not run
+  `check_naming.py` or `check_docs_truth.py`.
 - **Layout steps left after the move.** The library exports every symbol, and no header is
   compiled alone. The order is in `docs/agent/2026_10_09_USABILITY_AUDIT/PLAN.md`.
 - **No `.clang-format` or `.editorconfig`** in the root.
@@ -252,7 +246,7 @@ round did not close:
   because the CLI configures with the source root as working directory
   (`cli/sushiruntime/services/project.py`); `build-asan/`, `.superpowers/`,
   `.scratch_syntax/`; the merged local branch `feature/sushicore_help_screen`; two stash entries
-  from 2026-06-20 on a branch that no longer exists.
+  from 2026-06-20 on a branch that has been deleted.
 - **No way to run `sr` under WSL.** The `venv/` a WSL shell made in the root on 2026-06-14 was
   deleted on 2026-10-11; nothing replaces it yet. The install path for Linux under WSL is open.
 - **`check_source_comments.py` differs from SushiSkills in `_walk`.** The original calls

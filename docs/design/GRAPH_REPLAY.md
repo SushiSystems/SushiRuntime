@@ -2,10 +2,8 @@
 
 **Status:** Open — P0, P1 and P3 are built and not measured; P2 is not started.
 
-The reductions, the prefix scan and the counting sort this document names (`add_reduce`,
-`add_segmented_reduce`, `add_prefix_scan`, `add_counting_sort`) leave the runtime for SushiBLAS
-in v0.4.0; the runtime keeps the `Recorder` interface they are built on. Read every mention
-below as the state before that release.
+The reductions, the prefix scan and the counting sort this document names are SushiBLAS's;
+[the design map](README.md#names-that-left-the-runtime) says how to read them.
 
 Designed 2026-09-19; every decision in §F taken by the owner the same day. Consumer: SushiEngine's matter device solver, whose device arm is launch-bound (§0).
 Evidence: the feasibility spike under sushiengine-30's scratchpad (`graph_spike/`, run 2026-09-19)

@@ -11,6 +11,13 @@ One document per topic. Look the topic up here before writing; extend the docume
 
 The backlog is [`REMAINING_WORK.md`](REMAINING_WORK.md).
 
+## Names that left the runtime
+
+The four design documents name the reductions, the prefix scan and the counting sort
+(`add_reduce`, `add_segmented_reduce`, `add_prefix_scan`, `add_counting_sort`). They leave the
+runtime for SushiBLAS in v0.4.0, and the runtime keeps the `Recorder` interface they are built
+on. Read every mention of them in a design document as the state before that release.
+
 Designs that shipped are in the archive: the USM allocation seam, the G1 node event records and
 the prefix scan and counting sort under `docs/archive/superpowers/specs/`, and the physics
 substrate implementation plan under `docs/archive/slop/`.
