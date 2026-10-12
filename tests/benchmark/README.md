@@ -47,13 +47,13 @@ The benchmark measures the round trip of an offloaded task: dispatch, the worker
 input, the kernel, the output chunks written back into the master's buffer, and the result. It
 is built only with `SR_ENABLE_DISTRIBUTED`. Master and workers run in one process, each worker a
 `WorkerAgent` on a runtime of its own. The kernel writes each input element plus one, and every
-task is added with `add_registered_task`, so the local fallback is the same kernel. The policy
+task is recorded with `record_registered_task`, so the local fallback is the same kernel. The policy
 is `LeastLoadedOffloadPolicy(0)`, which offloads a task whatever its size.
 
 Each case runs once untimed, which pays the first touch of the buffers and the worker's cache
 allocation, then five timed runs, of which the median is reported. Before a run the inputs are
 rewritten and bumped, so a worker pulls them again instead of reading its cache. The timed
-region is `execute()` alone: the refill, the graph build and the check of the outputs stay
+region is the `run()` call alone: the refill, the graph build and the check of the outputs stay
 outside it.
 
 `OffloadRoundTripThroughput` runs 256 independent tasks of 256 floats each on two workers over
@@ -74,8 +74,7 @@ Neither test asserts a speed.
 
 A scale probe for the dynamic region graph: 256 regions stream in, 16 of them mutate between
 steps, and the world keeps running correctly. The test asserts the composition contract at
-scale, one recompose per mutation and not one per region, and reports the streaming cost. The
-first version's wiring pass is global, so the test asserts no recompose speedup. It guards
+scale, one recompose per mutation and not one per region, and reports the streaming cost. It asserts no recompose speedup and guards
 correctness and scale.
 
 The final check rebuilds the expected count per cell. Every region ran the initial step plus
@@ -142,10 +141,9 @@ tests own. A nonzero value that is uniform across a region is enough here.
 ## benchmark_root_fanout.cpp
 
 The gate benchmark for the batched root injector, audit ds-1. Each replayed step re-injects
-every root node. The old path took one `pending_mutex` acquire and one condition-variable
-notify per root, so the injection cost per step grew with root fan-out. `submit_batch`
-collapses a step's whole root set into one lock acquisition, one `inflight_` increment and one
-wake burst.
+every root node. `submit_batch` takes a step's whole root set in one lock acquisition, one
+`inflight_` increment and one wake burst, so the injection cost per step does not grow with
+root fan-out.
 
 The benchmark builds R independent roots, each writing its own buffer, replays a fixed number
 of steps, and sweeps R. It reports milliseconds per step and the amortized cost per root and
@@ -166,7 +164,7 @@ forward progress, not speed.
 A real-hardware benchmark for NUMA-aware hierarchical stealing. It drives the scheduler with a
 large batch of host tasks and reports throughput and the split between local and remote
 steals. Locality exists only across real NUMA nodes, so the test skips on a single-node
-machine or under WSL; `NumaStealTest` holds the logic check.
+machine or under WSL; `Unit_NumaStealTest` holds the logic check.
 
 Locality is asserted only above 1000 steals. Below that the ratio means little, and a
 perfectly balanced drain can legitimately produce few steals.
