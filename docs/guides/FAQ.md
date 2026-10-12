@@ -13,7 +13,7 @@ hazards between tasks, orders only the tasks that conflict, and runs the rest in
 the devices it discovers.
 
 The entry point is the fluent API under `modules/surface/api/include/SushiRuntime/api/`. You allocate data as
-`Buffer<T>` or `State<T>` handles, add work with `Graph::add()`, and call `run()`. The graph
+`Buffer<T>` or `State<T>` handles, record work with the verbs of `Graph`, and call `run()`. The graph
 compiles on its first run and the compiled plan is replayed for every later step. The
 [introduction](../getting_started/INTRODUCTION.md) has complete programs, and
 [the architecture](../architecture/ARCHITECTURE.md) describes the layers underneath.
@@ -23,7 +23,7 @@ compiles on its first run and the compiled plan is replayed for every later step
 The [README](../../README.md) lists the requirements:
 
 - a SYCL 2020 compiler, one of the three toolchains named below
-- CMake 3.20 or newer, and 3.25 or newer for the Intel oneAPI toolchain
+- CMake 3.20 or newer
 - hwloc, for topology discovery
 - GoogleTest, for the test suite
 - a C++17 standard library
@@ -50,14 +50,9 @@ package from this checkout. `sr build` makes a release build by default, and `--
 `--suite` selects `benchmark`, `package`, `all` or one of the finer labels.
 [The CLI guide](CLI_GUIDE.md) lists every command and flag.
 
-## Can I build it without the CLI, or without a local compiler?
+## Can I build it without a local compiler?
 
-Yes to both. The CLI only runs CMake and CTest for you, and the "Building with CMake directly"
-section of the [README](../../README.md) gives the configure line and the presets
-`intel-llvm`, `adaptivecpp` and `oneapi`. `SR_BUILD_TESTS` is `OFF` in a direct CMake build, so
-pass `-DSR_BUILD_TESTS=ON` if you want test binaries.
-
-The repository also carries `.config/docker/Dockerfile`, with an intel/llvm nightly SYCL bundle and the
+Yes. The repository carries `.config/docker/Dockerfile`, with an intel/llvm nightly SYCL bundle and the
 Intel OpenCL CPU runtime. `sr container build` builds the image and `sr container run` starts
 it with the repository mounted. GPU passthrough needs the NVIDIA Container Toolkit on the host.
 
@@ -74,7 +69,7 @@ Three SYCL toolchains, selected with `sr toolchain` or the CMake option `SR_SYCL
 The GPU backend comes from `-DSR_GPU_BACKEND`, which takes `auto`, `cuda`, `rocm`, `intel`,
 `cpu` or `none`. The default `auto` detects the installed GPU toolkit and otherwise builds the
 portable CPU/OpenCL path. `sr build --no-cuda` builds that CPU/OpenCL path
-directly. The build-time options are in §14 of
+directly. The build-time options are in §7 of
 [the architecture](../architecture/ARCHITECTURE.md).
 
 ## How do I use SushiRuntime from my own project?
@@ -92,9 +87,10 @@ not in the library. Every translation unit of yours that touches the graph API m
 be compiled by a SYCL compiler, and the headers and the library must come from the same
 release. `SushiRuntime::version_matches()` checks the second at start-up.
 
-The package uses `SameMinorVersion` compatibility while the project is before 1.0:
-`find_package(SushiRuntime 0.3 REQUIRED)` accepts 0.3.x and rejects 0.4.0. `tests/package/` in
-the repository is a working consumer. [The integration guide](INTEGRATION.md) covers the build
+The package uses `SameMinorVersion` compatibility: a request for one minor version rejects the
+next. Pin the exact tag you build against and reach the library through one adapter module of
+your own; the root [README](../../README.md#stability) states the rule. `tests/package/` in the
+repository is a working consumer. [The integration guide](INTEGRATION.md) covers the build
 split, the flags you inherit and the troubleshooting cases.
 
 ## Are results reproducible from run to run?
@@ -119,10 +115,9 @@ over TCP, without MPI. It is off by default. `sr build --distributed` or
 `-DSR_ENABLE_DISTRIBUTED=ON` turns it on, and with it off none of the distributed code is
 compiled.
 
-Compiled code does not cross the network. A task ships an `OpID` that names a kernel already
-compiled into every worker binary, plus buffer handles that each worker resolves to its own
-memory, so every node runs the same binary. A task the policy declines runs its local fallback
-on the master. A task whose worker dies is sent to a surviving worker, or runs locally when
+Compiled code does not cross the network. A task ships an `OperationID` that names a kernel
+compiled into the worker's program, plus buffer handles that each worker resolves to its own
+memory. A task the policy declines runs its local fallback on the master. A task whose worker dies is sent to a surviving worker, or runs locally when
 none remains. [The distributed guide](DISTRIBUTED_GUIDE.md) has
 the demo, the wire protocol and the failure model.
 
@@ -141,19 +136,20 @@ SushiRuntime does not need a workspace. With only this checkout, install the CLI
 
 ## What does it not do yet?
 
-SushiRuntime is before 1.0. The API is not frozen, a minor version may break a consumer, and
-security fixes go to the latest `main` with no long-term support branch. The limits the manual
-states today:
+SushiRuntime is before 1.0. The interface is not frozen, a minor version may break a consumer,
+and security fixes go to the latest `main` with no long-term support branch. The limits the
+manual states today:
 
-- A kernel runs in one device context. A task whose buffers sit on different devices fails the
-  run with an `invalid_graph` error, and execution across devices is deferred.
-- The distributed layer has no master failover, keeps nothing between runs, and needs the same
-  binary, architecture and endianness on every node.
-- The TCP transport has no encryption and no authentication. It is meant for a trusted LAN.
-- A distributed worker that drops mid-run cannot rejoin.
+- A runtime runs one graph at a time. A run entry during another run returns `InvalidState`.
+- The distributed layer has no master failover, and nothing about a cluster survives the
+  master's process. Master and worker must agree on the byte order and layout of the element
+  types.
+- The distributed layer authenticates master and worker at the handshake and encrypts nothing.
+  It is meant for a trusted LAN.
+- A distributed worker runs one kernel at a time, on its device 0.
 
 [Known issues](../reference/KNOWN_ISSUES.md) lists the recorded defects that are not yet fixed,
-and §12 of [the distributed guide](DISTRIBUTED_GUIDE.md) lists that layer's v1 limits.
+and §12 of [the distributed guide](DISTRIBUTED_GUIDE.md) lists that layer's limits.
 
 ## How is SushiRuntime licensed?
 
