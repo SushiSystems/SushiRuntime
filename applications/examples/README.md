@@ -15,7 +15,7 @@ for the subject at hand:
 | `coupled_fields_demo.cpp` | Two fields evolving together through `Coupled` (Jacobi) |
 | `game_engine_demo.cpp` | An ECS-style frame loop built from the data flow, each system named with `name()` |
 | `streaming_world_demo.cpp` | A `DynamicGraph` whose set of work changes between steps |
-| `operating_path_demo.cpp` | `RuntimeConfig`, `advanced()`, `run()` with its error branch, `Dynamic` and a `read_range()` readback |
+| `operating_path_demo.cpp` | `RuntimeConfig`, `advanced()`, `run()` with its error branch, a launch `sized()` per step and a `read_range()` readback |
 | `errors_demo.cpp` | A `Result` tested and handled, a refused recording read with `refusal()`, `compile()` before any step, and `clear()` |
 | `tasks_demo.cpp` | `add_task`, `add_host` and `add_untracked` beside kernels, nodes named through `NodeOptions`, and the `plan()` they compile to |
 | `stepping_demo.cpp` | `before_each_step`, then one rule through `run(steps)`, `run_until`, `run_async` with its `RunHandle`, and `run_for` |
@@ -56,6 +56,10 @@ the two buffers; the runtime supplies the pointers and tracks the read and the w
 `run(STEPS)` compiles once and replays, and the worker pool, device dispatch and buffer
 swapping need no code from the caller.
 
+The field starts with one unit of heat in the middle cell, and both ends reflect, so the total
+stays 1. The program prints the step count, the duration of the run, which is labelled as
+timing, and the total, and it returns 1 when the total has left 1 by more than 0.001.
+
 ## vecadd_demo.cpp
 
 The "hello, dependencies" example: C = A + B over typed buffers, with the two tasks ordered by
@@ -84,6 +88,11 @@ boundary value in each buffer.
 
 The extent covers the (W-2) x (H-2) interior. The one-cell border stays fixed, and the kernel
 receives the global 2-D index already offset to (1,1).
+
+`advance_on_host()` applies the same stencil to a copy of the plate on the host, and the program
+compares every cell of the `State` with it, within 0.0001. It prints the total heat of both.
+The block starts with 400 units, and the totals end a little below that, because the border
+is held cold and takes the heat that reaches it.
 
 ## coupled_fields_demo.cpp
 
@@ -145,13 +154,14 @@ settings, asks what was built, handles a failed run and reads device memory back
 
 `Runtime::create()` takes one `RuntimeConfig`; here it asks for two workers with
 `PinPolicy::Float`, which leaves the other cores to the host program. `advanced()` returns the
-read-only view, from which the program prints each device by index and the worker count as built.
+read-only view, from which the program prints each device by index and the worker count as
+built. Those lines depend on the machine, and the output says so.
 
 The buffer is allocated with `Residency::Device`, so the host cannot index it. `write_range()`
 seeds it and `read_range()` copies single elements back.
 
 One rule increments the first `live_count` elements. The count reaches the rule through
-`Dynamic().sized(...)`, which the runtime polls before each step, so the second run covers twice
+`sized(...)`, which the runtime polls before each step, so the second run covers twice
 as many elements as the first and `compile_count()` stays at 1. After two runs of 8 steps the
 elements read back are 16, 8 and 0: counted in both runs, in the second only, and in neither.
 

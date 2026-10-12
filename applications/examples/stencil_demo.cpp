@@ -26,7 +26,10 @@
  * @see applications/examples/README.md
  */
 
+#include <cmath>
+#include <cstddef>
 #include <cstdio>
+#include <vector>
 
 #include <SushiRuntime/sushiruntime.hpp>
 
@@ -34,11 +37,46 @@ using namespace SushiRuntime;
 
 namespace
 {
-    /** @brief Runs the 2-D diffusion over the interior and prints its total heat; returns 0. */
+    /** @brief Width, height and steps of the plate. */
+    constexpr std::size_t W = 64, H = 64, K_STEPS = 200;
+
+    /** @brief Diffusion factor; a 5-point stencil is stable below 0.25. */
+    constexpr float ALPHA = 0.2f;
+
+    /** @brief Largest absolute difference accepted between a device cell and a host cell. */
+    constexpr float K_TOLERANCE = 1.0e-4f;
+
+    /** @brief Returns the plate after K_STEPS steps of the stencil, computed on the host. */
+    std::vector<float> advance_on_host(std::vector<float> plate)
+    {
+        std::vector<float> next = plate;
+        for (std::size_t step = 0; step < K_STEPS; ++step)
+        {
+            for (std::size_t y = 1; y + 1 < H; ++y)
+            {
+                for (std::size_t x = 1; x + 1 < W; ++x)
+                {
+                    const std::size_t c = y * W + x;
+                    const float lap = plate[c - 1] + plate[c + 1] + plate[c - W] + plate[c + W]
+                                      - 4.0f * plate[c];
+                    next[c] = plate[c] + ALPHA * lap;
+                }
+            }
+            plate.swap(next);
+        }
+        return plate;
+    }
+
+    /** @brief Runs the 2-D diffusion over the interior and checks it against the host. */
     int run_stencil()
     {
-        constexpr std::size_t W = 64, H = 64, K_STEPS = 200;
-        constexpr float ALPHA = 0.2f;   // diffusion factor, stable for a 5-point stencil
+        // A cold plate with a hot block in the middle; the border stays cold.
+        std::vector<float> initial(W * H, 0.0f);
+        for (std::size_t y = H / 3 + 1; y < 2 * H / 3; ++y)
+        {
+            for (std::size_t x = W / 3 + 1; x < 2 * W / 3; ++x)
+                initial[y * W + x] = 1.0f;
+        }
 
         auto rt   = Runtime::create().value();
         auto temp = rt.state<float>(W * H).value();
@@ -46,15 +84,10 @@ namespace
         // Both buffers are seeded, because the interior-only update never writes the border.
         float* cur0  = temp.current();
         float* next0 = temp.next();
-        for (std::size_t y = 0; y < H; ++y)
+        for (std::size_t i = 0; i < W * H; ++i)
         {
-            for (std::size_t x = 0; x < W; ++x)
-            {
-                const bool hot = (x > W / 3 && x < 2 * W / 3 && y > H / 3 && y < 2 * H / 3);
-                const float v = hot ? 1.0f : 0.0f;
-                cur0[y * W + x]  = v;
-                next0[y * W + x] = v;
-            }
+            cur0[i]  = initial[i];
+            next0[i] = initial[i];
         }
 
         auto g = rt.graph();
@@ -73,14 +106,22 @@ namespace
 
         const auto report = g.run(K_STEPS).value();
 
-        // The total heat of a closed diffusion is conserved; report it as a smoke check.
+        const std::vector<float> expected = advance_on_host(initial);
+        bool is_correct = true;
         double total = 0.0;
+        double expected_total = 0.0;
         for (std::size_t i = 0; i < W * H; ++i)
+        {
+            is_correct = is_correct && std::fabs(temp[i] - expected[i]) <= K_TOLERANCE;
             total += temp[i];
+            expected_total += expected[i];
+        }
 
-        std::printf("stencil: %zux%zu, %zu steps in %.3f ms; total heat = %.3f\n",
-                    W, H, K_STEPS, report.total_duration_ms, total);
-        return 0;
+        std::printf("stencil: %zux%zu, %zu steps in %.3f ms (timing)\n", W, H, K_STEPS,
+                    report.total_duration_ms);
+        std::printf("  total heat = %.1f  (expected %.1f)\n", total, expected_total);
+        std::printf("  result: %s\n", is_correct ? "CORRECT" : "WRONG");
+        return is_correct ? 0 : 1;
     }
 } // namespace
 

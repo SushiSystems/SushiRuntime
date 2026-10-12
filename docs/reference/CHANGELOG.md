@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — examples: Made the quickstart and the stencil return 1 when their result is off the host's, and recorded the late-bound launch with `sized()` (`quickstart.cpp`, `stencil_demo.cpp`, `operating_path_demo.cpp`).
 - 2026-10-12 — examples: Added an example that installs a host's assertion handler and log sink around a run and restores both (`host_hooks_demo.cpp`, `set_assertion_handler`, `set_log_sink`).
 - 2026-10-12 — examples: Added an example of a domain library that records one rule of two nodes through `extend` and the verbs of the `Recorder` (`extension_demo.cpp`, `Recorder::scratch`, `Recorder::task`).
 - 2026-10-12 — examples: Added an example that reads and writes a buffer of each residency, by range calls and by a copy on the device queue (`data_access_demo.cpp`, `Runtime::wait`, `AdvancedControls::queue`).
