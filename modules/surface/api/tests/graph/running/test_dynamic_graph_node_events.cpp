@@ -22,7 +22,7 @@
 /**
  * @file test_dynamic_graph_node_events.cpp
  * @brief Tests DynamicGraph's per-graph profiling switch and its dense registration index.
- * @see modules/surface/api/tests/graph/regions/README.md
+ * @see modules/surface/api/tests/graph/running/README.md
  * @author Mustafa Garip
  */
 

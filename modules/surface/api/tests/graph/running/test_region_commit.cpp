@@ -22,7 +22,7 @@
 /**
  * @file test_region_commit.cpp
  * @brief Tests what a DynamicGraph keeps when the commit of its regions throws.
- * @see modules/surface/api/tests/graph/regions/README.md
+ * @see modules/surface/api/tests/graph/running/README.md
  * @author Mustafa Garip
  */
 
@@ -37,7 +37,7 @@
 #include <SushiRuntime/task/node.hpp>
 
 #include "dynamic_graph_plan_access.hpp"
-#include "../refusing_fill.hpp"
+#include "refusing_fill.hpp"
 
 using namespace SushiRuntime;
 

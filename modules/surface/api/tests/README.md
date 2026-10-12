@@ -13,7 +13,7 @@ the `README.md` of that folder holds its section.
 | --- | --- | --- |
 | `data/` | `Buffer` and `State` | [data/README.md](data/README.md) |
 | `detail/` | The callable traits, the node emitters and the fault record | [detail/README.md](detail/README.md) |
-| `graph/` | `Graph`, `DynamicGraph`, `Region`, `Recorder` and `RunHandle`, in three folders | [graph/README.md](graph/README.md) |
+| `graph/` | `Graph`, `DynamicGraph`, `Region`, `Recorder` and `RunHandle`, in two folders | [graph/README.md](graph/README.md) |
 | `runtime/` | `Runtime` and the logging controls | [runtime/README.md](runtime/README.md) |
 | `vocabulary/` | `Dynamic` and `LateCount` | [vocabulary/README.md](vocabulary/README.md) |
 

@@ -22,7 +22,7 @@
 /**
  * @file refusing_fill.hpp
  * @brief Declares RefusingFill, a host task whose copy fails the build of a plan on demand.
- * @see modules/surface/api/tests/graph/README.md
+ * @see modules/surface/api/tests/graph/running/README.md
  * @author Mustafa Garip
  */
 
@@ -39,7 +39,7 @@ namespace SushiRuntime
     {
         /**
          * @brief Fills a range when it runs, and throws from its copy while a flag is set.
-         * @see modules/surface/api/tests/graph/README.md
+         * @see modules/surface/api/tests/graph/running/README.md
          */
         class RefusingFill final
         {

@@ -1,6 +1,7 @@
 # api tests: graph recording
 
-The tests of what a `Graph` records: the `add()` verbs, `Recorder`, `NodeOptions` and the plan a recording compiles to.
+The tests of what a `Graph` or a `Region` records: the `add()` verbs, `Recorder`, `NodeOptions`
+and the plan a recording compiles to.
 They are part of `sr_api_tests`; [the page of the program](../../README.md) says how to run it.
 
 ## test_device_sized_launch.cpp
@@ -459,3 +460,37 @@ all nodes must be dense from 0 to n-1 in registration order.
 A rule scope groups every node shape the same way. `record_late_bound_rule` records a late-count
 resolver, a device-sized kernel and a plain kernel in one scope, and the three share one index
 while the node after the scope takes the next one.
+
+## test_region_emitter.cpp
+
+The file covers `extend()` as a library above the runtime uses it: the extension receives the
+Recorder and records device tasks with `Recorder::task`.
+
+### `record_device_task`
+
+`record_device_task` records one `Recorder::task` node whose body is a `parallel_for` on the queue
+it is given, named and given its width through NodeOptions. The tasks are device kernels, not host
+tasks, because a host access to a `Residency::Shared` buffer while a kernel runs on the same GPU
+faults on Windows with CUDA; see `docs/reference/KNOWN_ISSUES.md`.
+
+### `ExtensionTasksOrderAgainstANeighbourRegion`
+
+One extension records two tasks on a buffer, a fill and a tripling, and a higher-keyed region reads
+that buffer through an ordinary `add()`. The consumer sees the tripled values, so the two tasks ran
+in their recorded order and the boundary edge ordered the consumer behind them.
+
+### `AnExtensionIsOneRule`
+
+An extension that records two tasks reports a region size of one, a node count of two and a graph
+size of one: `size()` counts an extension once, however many nodes it records.
+
+### `AnExtensionRunsOnceWhenItIsCalled`
+
+The extension counts its own calls. The count is one when `extend()` returns and stays one over
+three replayed steps and over a rebuild of the neighbouring region. Dropping its own region and
+extending it again raises the count to two.
+
+### `AStaticGraphTakesAnExtension`
+
+A static `Graph` records an extension beside an ordinary `add()` that reads the extension's buffer.
+Four steps advance both, so the form is not specific to regions and survives a chained replay.

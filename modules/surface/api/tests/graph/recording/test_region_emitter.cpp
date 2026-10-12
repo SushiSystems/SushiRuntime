@@ -22,7 +22,7 @@
 /**
  * @file test_region_emitter.cpp
  * @brief Tests extend(), through which a library records its tasks on the Recorder.
- * @see modules/surface/api/tests/graph/regions/README.md
+ * @see modules/surface/api/tests/graph/recording/README.md
  * @author Mustafa Garip
  */
 

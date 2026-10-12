@@ -22,7 +22,7 @@
 /**
  * @file test_async_step.cpp
  * @brief Tests Graph::run_async(), DynamicGraph::run_async() and the RunHandle they return.
- * @see modules/surface/api/tests/graph/stepping/README.md
+ * @see modules/surface/api/tests/graph/running/README.md
  * @author Mustafa Garip
  */
 

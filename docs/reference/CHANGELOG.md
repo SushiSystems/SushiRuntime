@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — tests: Merged the region and the stepping tests of the api graph into `graph/running/`, beside the two helper headers they share (`refusing_fill.hpp`, `dynamic_graph_plan_access.hpp`, `test_region_emitter.cpp`).
 - 2026-10-12 — api: Moved the four headers a consumer never includes into `api/graph/plumbing/`, with their notes (`builder_surface.hpp`, `plan_cache.hpp`, `region_composer.hpp`, `step_driver.hpp`).
 - 2026-10-12 — tests: Moved the distributed tests into folders named after their subject, each with its own notes (`modules/extension/distributed/tests`, `tcp_fault_proxy.hpp`, `modules/extension/distributed/CMakeLists.txt`).
 - 2026-10-12 — tests: Moved the api tests into folders named after the part of the surface they test, each with its own notes (`modules/surface/api/tests`, `refusing_fill.hpp`, `modules/surface/api/CMakeLists.txt`).

@@ -22,7 +22,7 @@
 /**
  * @file test_boundary_access.cpp
  * @brief Tests the entry and exit pins of a region and the cross-region edges made from them.
- * @see modules/surface/api/tests/graph/regions/README.md
+ * @see modules/surface/api/tests/graph/running/README.md
  * @author Mustafa Garip
  */
 

@@ -57,17 +57,17 @@ sushiruntime_add_module_tests(
         graph/recording/test_plan_view.cpp
         graph/recording/test_recorder_scratch.cpp
         graph/recording/test_recorder_semantics.cpp
+        graph/recording/test_region_emitter.cpp
         graph/recording/test_registration_index.cpp
         graph/recording/test_rule_registration.cpp
-        graph/regions/test_boundary_access.cpp
-        graph/regions/test_dynamic_graph.cpp
-        graph/regions/test_dynamic_graph_node_events.cpp
-        graph/regions/test_region_commit.cpp
-        graph/regions/test_region_emitter.cpp
-        graph/stepping/test_async_step.cpp
-        graph/stepping/test_node_event_records.cpp
-        graph/stepping/test_run_driver.cpp
-        graph/stepping/test_run_report_reuse.cpp
+        graph/running/test_async_step.cpp
+        graph/running/test_boundary_access.cpp
+        graph/running/test_dynamic_graph.cpp
+        graph/running/test_dynamic_graph_node_events.cpp
+        graph/running/test_node_event_records.cpp
+        graph/running/test_region_commit.cpp
+        graph/running/test_run_driver.cpp
+        graph/running/test_run_report_reuse.cpp
         runtime/test_logging_names.cpp
         runtime/test_runtime_entry.cpp
         test_fluent_api.cpp
