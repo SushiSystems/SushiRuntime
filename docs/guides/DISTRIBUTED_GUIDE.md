@@ -13,12 +13,13 @@ of those kernels and every buffer it touches is shared, the master can send the 
 worker: the worker pulls the input bytes, runs its own copy of the kernel and streams the output
 bytes back into the master's buffers. Your program reads the result where it always did.
 
-Compiled code does not cross the network. A task carries an `OpID`, which is a hash of the
-kernel's name, and buffer handles (an id, a version and a size). The worker must therefore have
+Compiled code does not cross the network. A task carries an `OperationID`, which is a hash of
+the operation's name, its name and parameters, and buffer handles (an id, a version and a size). The worker must therefore have
 been built with a kernel registered under the same name.
 
-Every task keeps a local fallback. A task the master does not send, or takes back, runs on the
-master, so a cluster that is down costs time and not correctness.
+Every task keeps a local fallback: the kernel given to the verb that recorded it. A task the
+master does not send, or takes back, runs on the master, so a cluster that is down costs time
+and the result stays correct.
 
 The layer is off by default. Build it with `sr build --distributed`, which sets the CMake option
 `SR_ENABLE_DISTRIBUTED`; without it nothing under `modules/extension/distributed/` is compiled.
@@ -40,7 +41,7 @@ hold the same key. Each side sends a fresh 32-byte nonce, and each proof is an H
 both nonces under the secret. The worker checks the master's proof before it sends its own. The
 secret never travels.
 
-After the handshake, frames carry no signature and nothing is encrypted. So, said plainly:
+After the handshake, frames carry no signature and nothing is encrypted:
 
 | Someone who | Can | Cannot |
 | --- | --- | --- |
@@ -90,41 +91,50 @@ The demo's own flags are listed in `applications/examples/README.md`.
 ## 4. Start a master
 
 ```cpp
-#include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/shared_secret.hpp>
-#include <SushiRuntime/distributed/tcp_transport.hpp>
+        auto runtime = Runtime::create().value();
 
-using namespace SushiRuntime;
+        Distributed::TCPMasterOptions listener;
+        listener.bind = options.listen;
+        auto transport = Distributed::TCPTransport::make_master(listener);
 
-auto runtime = Runtime::create();
+        auto secret = read_secret(options.secret_file);
+        if (!secret)
+        {
+            std::fprintf(stderr, "distributed_demo: %s\n", secret.error().message.c_str());
+            return 1;
+        }
 
-Distributed::TCPMasterOptions listener;
-listener.bind = Distributed::Endpoint{"0.0.0.0", 5555};
-auto transport = Distributed::TCPTransport::make_master(listener);
-
-Distributed::ClusterOptions options;
-options.secret = Distributed::SharedSecret::from_file("cluster.key");
-auto cluster = Distributed::Cluster::attach(runtime, transport, std::move(options));
-
-if (!cluster.wait_for_workers(1, std::chrono::seconds(30)))
-    std::puts("no worker yet; tasks run here");
+        Distributed::ClusterOptions cluster_options;
+        cluster_options.secret = std::move(*secret);
+        const bool is_authenticated = !cluster_options.secret.empty();
+        auto attached =
+            Distributed::Cluster::attach(runtime, transport, std::move(cluster_options));
+        if (!attached)
+        {
+            std::fprintf(stderr, "distributed_demo: %s\n", attached.error().message.c_str());
+            return 1;
+        }
+        Distributed::Cluster& cluster = *attached;
 ```
+
+Source: `applications/examples/distributed_demo.cpp`, which includes
+`<SushiRuntime/sushiruntime.hpp>` and `<SushiRuntime/distributed/distributed.hpp>`.
+`options.listen` is the `Endpoint` the demo built from `--bind` and `--port`, and `read_secret`
+calls `SharedSecret::from_file` when a file was named.
 
 `Cluster::attach` builds the master, binds the port, starts it and installs it on the runtime.
-It logs one line when it listens:
+It returns a `Result<Cluster>` and logs one line when it listens:
 
 ```
-distributed master listening on 0.0.0.0:5555, protocol v2, authentication on
+distributed master listening on 0.0.0.0:5555, protocol v3, authentication on
 ```
 
 The handle it returns is a view: copies name the same master, and destroying one changes
 nothing. The runtime stops the master when the runtime is destroyed; `cluster.detach()` does it
-sooner. Call `attach` and `detach` only while no run is in flight. Pass a `ClusterOptions` object
-or nothing as the third argument: a bare `{}` is ambiguous while the deprecated four-argument
-overloads exist.
+sooner. `attach` returns `InvalidState` while a run is in flight.
 
-Wait for your workers before the first run. A graph decides at compile time which of its tasks
+Wait for your workers before the first run, with `cluster.wait_for_workers(count, timeout)`. A
+graph decides at compile time which of its tasks
 may leave, and it marks a task only when a registered worker has the kernel at that moment.
 
 ### Where it listens
@@ -144,7 +154,7 @@ other machines, write the address out: `0.0.0.0`, `::` or the address of one int
 ### When a secret is required
 
 `attach` refuses an empty secret on a transport other machines can reach. For TCP that is every
-bind address other than `127.0.0.0/8`, `::1` and `localhost`. The exception says so:
+bind address other than `127.0.0.0/8`, `::1` and `localhost`. The error's message says so:
 
 ```
 Cluster::attach: the transport can be reached from other machines and ClusterOptions::secret is empty; load one with SharedSecret::from_file(), or bind the master to a loopback address.
@@ -169,8 +179,8 @@ $key = New-Object byte[] 32
 [IO.File]::WriteAllBytes("$PWD\cluster.key", $key)
 ```
 
-`SharedSecret::from_file(path)` throws when the file cannot be read or its length is outside
-those bounds, and the message names the file. `SharedSecret::from_environment(name)` reads the
+`SharedSecret::from_file(path)` returns a `Result`: the secret, or `InvalidAccess` when the file
+cannot be read or its length is outside those bounds, with a message that names the file. `SharedSecret::from_environment(name)` reads the
 file a variable names and returns the empty secret when the variable is unset. No call takes the
 secret itself as text, because a process list would show it.
 
@@ -187,13 +197,14 @@ secret itself as text, because a process list would show it.
 | `chunk_bytes` | 262144 | Data bytes per buffer chunk, from 4096 to 1048512 |
 
 `cluster.liveness_timeout(...)` and `cluster.task_deadline(...)` change the two timings on a
-running master. A worker that is already registered keeps the liveness value its `WELCOME`
+running master; `liveness_timeout` returns `InvalidState` for a value below 1 ms. A worker that is already registered keeps the liveness value its `WELCOME`
 carried.
 
-`attach` throws `Core::SushiException` when the transport is null, the secret is missing on a
-reachable transport, `chunk_bytes` is out of range or the master does not start. It starts the
-new master before it touches one that is already attached, so a failed `attach` leaves that one
-installed and working.
+`attach` returns `InvalidState` when a run is in flight, `liveness_timeout` or
+`handshake_timeout` is below 1 ms, the secret is missing on a reachable transport, `chunk_bytes`
+is out of range or the master does not start. A null transport stops the process. `attach`
+starts the new master before it touches one that is already attached, so a failed `attach`
+leaves that one installed and working.
 
 ## 5. Start a worker
 
@@ -201,27 +212,30 @@ A worker is your own program, because the kernels are compiled into it. Its `mai
 them and hands over to `run_worker`:
 
 ```cpp
-#include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/distributed/kernel_registry.hpp>
-#include <SushiRuntime/distributed/worker_main.hpp>
+#include <SushiRuntime/distributed/distributed.hpp>
+
+#include "distributed_kernels.hpp"
 
 using namespace SushiRuntime;
 
 int main(int argc, char** argv)
 {
     auto kernels = make_sushi<Distributed::KernelRegistry>();
-    kernels->register_kernel(K_VECTOR_ADD, add_vectors);
+    DistributedDemo::register_kernels(*kernels);
+
+    // run_worker() reads the flags, serves the master until a signal and returns the exit code.
     return Distributed::run_worker(argc, argv, kernels);
 }
 ```
 
-`K_VECTOR_ADD` and `add_vectors` are the id and the kernel of §6.
+Source: `applications/examples/distributed_worker.cpp`. `register_kernels` is the function of
+§6.
 
 `run_worker` reads the flags, loads the secret, builds a runtime, connects, serves the master
 until a signal and returns the exit code. It logs:
 
 ```
-worker joining master 192.168.1.10:5555, protocol v2, authentication on
+worker joining master 192.168.1.10:5555, protocol v3, authentication on
 connected to master 192.168.1.10:5555 (peer 1)
 registered with master (peer 1) as worker 1: liveness 5000 ms, chunks of 262144 bytes, new session
 ```
@@ -240,7 +254,7 @@ registered with master (peer 1) as worker 1: liveness 5000 ms, chunks of 262144 
 | `--connect-timeout-s n` | `SR_WORKER_CONNECT_TIMEOUT_S` | 60; time allowed to reach the master the first time, 0 waits without a limit |
 | `--no-reconnect` | | reconnecting is on |
 | `--log-level name` | | unchanged; `off`, `error`, `warn`, `info` or `debug` |
-| `--version` | | prints `sushiruntime worker, protocol v2, build <version>` and exits 0 |
+| `--version` | | prints `sushiruntime worker, protocol v3, build <version>` and exits 0 |
 | `--help` | | prints the flags and exits 0 |
 
 A flag beats its environment variable, which beats the default. A variable set to nothing counts
@@ -301,40 +315,59 @@ A kernel is a function the worker calls with the task's buffers. It submits work
 is given and returns the event:
 
 ```cpp
-#include <sycl/sycl.hpp>
-
-#include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/distributed/buffer_view.hpp>
-#include <SushiRuntime/distributed/kernel_registry.hpp>
-#include <SushiRuntime/task/task_types.hpp>
-
-using SushiRuntime::Graph::Literals::operator""_op;
-
-inline constexpr SushiRuntime::Graph::OpID K_VECTOR_ADD = "demo.vector_add"_op;
-
-sycl::event add_vectors(sycl::queue& queue,
-                        SushiRuntime::span<const SushiRuntime::Distributed::BufferView> inputs,
-                        SushiRuntime::span<const SushiRuntime::Distributed::BufferView> outputs,
-                        const SushiRuntime::Graph::TaskMetadata&)
+namespace DistributedDemo
 {
-    const float* a = inputs[0].as<const float>();
-    const float* b = inputs[1].as<const float>();
-    float* sum = outputs[0].as<float>();
-    const std::size_t count = outputs[0].size_bytes / sizeof(float);
-    return queue.parallel_for(sycl::range<1>(count), [a, b, sum](sycl::id<1> id)
+    using SushiRuntime::operator""_op;
+
+    /** @brief Names the operation that adds two float vectors element by element. */
+    inline constexpr auto K_VECTOR_ADD = "demo.vector_add"_op;
+
+    /** @brief Writes the sum of one element of @p a and @p b to the same element of @p sum. */
+    inline void add_element(const float* a, const float* b, float* sum,
+                            std::size_t index) noexcept
     {
-        sum[id[0]] = a[id[0]] + b[id[0]];
-    });
-}
+        sum[index] = a[index] + b[index];
+    }
+
+    /**
+     * @brief Runs K_VECTOR_ADD on the machine that received the task.
+     * @param inputs The two addends, in the order the task lists them.
+     * @param outputs The sum; its size gives the element count.
+     */
+    inline sycl::event add_vectors(
+        sycl::queue& queue, SushiRuntime::span<const SushiRuntime::Distributed::BufferView> inputs,
+        SushiRuntime::span<const SushiRuntime::Distributed::BufferView> outputs,
+        const SushiRuntime::NodeOptions&)
+    {
+        const float* a = inputs[0].as<const float>();
+        const float* b = inputs[1].as<const float>();
+        float* sum = outputs[0].as<float>();
+        const std::size_t count = outputs[0].size_bytes / sizeof(float);
+        return queue.parallel_for(sycl::range<1>(count), [a, b, sum](sycl::id<1> id)
+        {
+            add_element(a, b, sum, id[0]);
+        });
+    }
+
+    /** @brief Registers the kernel of every operation of the demo. */
+    inline void register_kernels(SushiRuntime::Distributed::KernelRegistry& kernels)
+    {
+        kernels.register_kernel(K_VECTOR_ADD, add_vectors);
+    }
+} // namespace DistributedDemo
 ```
+
+Source: `applications/examples/distributed_kernels.hpp`, which includes
+`<SushiRuntime/distributed/distributed.hpp>`.
 
 A `BufferView` is an address and a size in bytes. The views arrive in the order the task lists
 its buffers and stay valid until the returned event completes. `as<T>()` casts the address and
-checks nothing, so take element counts from `size_bytes`. The task's scalar parameters, at most
-eight 64-bit values, arrive in the metadata: `metadata.get_param<std::uint64_t>(0)`.
+checks nothing, so take element counts from `size_bytes`. The last argument is the node's
+`NodeOptions`: its name, its operation and its `parameters`, at most eight 64-bit values.
 
 Register a kernel with `KernelRegistry::register_kernel(id, kernel)` before you hand the
-registry to `run_worker`; from then on the registry is only read. The id is a hash of the name,
+registry to `run_worker`, which seals it; registering on a sealed registry breaks a
+precondition. The id is a hash of the name,
 computed at compile time, so the master and the worker agree when they spell the name the same.
 A name no worker registered leaves the task on the master, and the master says so (§7).
 Workers of one cluster may register different kernels: the master offers a task only to a
@@ -342,56 +375,81 @@ worker that registered its operation.
 Put the ids and the kernels in one header that both programs include, as
 `applications/examples/distributed_kernels.hpp` does.
 
-A kernel may throw. The worker then reports the task as failed and keeps running, and the master
-resubmits the task. A worker runs one kernel at a time, on the queue of its device 0.
+A kernel may throw. The worker catches the exception, reports the task as failed and keeps
+running, and the master resubmits the task. A worker runs one kernel at a time, on the queue of its device 0.
 
 ### Adding the task on the master
 
-The fluent form names the kernel and gives the local fallback as a lambda:
+The node states the operation in its `NodeOptions`, and the kernel given to the verb is the local
+fallback:
 
 ```cpp
-auto a = runtime.buffer<float>(count).distributed();
-auto b = runtime.buffer<float>(count).distributed();
-auto sum = runtime.buffer<float>(count).distributed();
+        auto a = cluster.share(runtime.buffer<float>(count).value());
+        auto b = cluster.share(runtime.buffer<float>(count).value());
+        auto sum = cluster.share(runtime.buffer<float>(count).value());
 
-const float* a_data = a.data();
-const float* b_data = b.data();
-float* sum_data = sum.data();
-
-auto graph = runtime.graph();
-graph.add(K_VECTOR_ADD, count, API::Reads(a, b), API::Writes(sum),
-          [a_data, b_data, sum_data](std::size_t index)
-          {
-              sum_data[index] = a_data[index] + b_data[index];
-          });
-graph.run();
+        const float* a_data = a.data();
+        const float* b_data = b.data();
+        float* sum_data = sum.data();
 ```
 
-The lambda runs when the task stays on the master, so it must compute what the kernel computes.
-The demo keeps the two equal by calling one function from both.
+```cpp
+        // The node names its operation; a worker runs the kernel registered for the same id.
+        NodeOptions vector_add;
+        vector_add.operation = DistributedDemo::K_VECTOR_ADD;
 
-`add_registered_task()` (`registered_task.hpp`) removes the second statement of the work: it
-takes a `KernelRegistry` and uses the registered kernel as the local fallback. It adds to a
-`Graph::TaskGraph`, the engine's graph, which the fluent `API::Graph` does not expose, so a
-fluent program uses the form above.
+        auto graph = runtime.graph();
+        graph.add(count, Reads(a, b), Writes(sum),
+                  [a_data, b_data, sum_data](std::size_t index)
+                  {
+                      DistributedDemo::add_element(a_data, b_data, sum_data, index);
+                  },
+                  vector_add);
+        graph.run().value();
+```
+
+Source: `applications/examples/distributed_demo.cpp`.
+
+The lambda runs when the task stays on the master, so it must compute what the kernel computes.
+The demo keeps the two equal by calling `add_element()` from both.
+
+`record_registered_task()` (`registered_task.hpp`) removes the second statement of the work: it
+takes a `KernelRegistry` and records a task that runs the registered kernel on this machine, or
+on a worker once a cluster is attached. It records through a `Recorder&`, so a graph calls it
+inside `extend()`:
+
+```cpp
+        NodeOptions options;
+        options.name = "registered_sum";
+        options.operation = K_VEC_ADD;
+        const BufferView inputs[] = {a.view(), b.view()};
+        const BufferView outputs[] = {out.view()};
+
+        auto graph = master_runtime.graph();
+        graph.extend([&](Recorder& recorder)
+        {
+            record_registered_task(recorder, *kernels, options,
+                                   span<const BufferView>(inputs, 2),
+                                   span<const BufferView>(outputs, 1));
+        });
+        graph.run().value();
+```
+
+Source: `modules/extension/distributed/tests/test_distributed_e2e.cpp`.
 
 ## 7. Share buffers
 
-A buffer can cross only after you share it. `Buffer::distributed()` shares one buffer and
-`State::distributed()` shares both allocations of a stepped field. Call them after
-`Cluster::attach`:
+A buffer can cross only after you share it. `Cluster::share(buffer)` shares one buffer and
+`Cluster::share(state)` shares both allocations of a stepped field; `share(address, bytes)`
+shares USM you own. `share` is a member of the handle `attach` returned, so a buffer cannot be
+shared before a cluster exists. The handle must be `Residency::Shared` or `Residency::Host`: the
+master reads the allocation on the host, and a device-resident handle stops the process.
 
 ```cpp
-auto cluster = Distributed::Cluster::attach(runtime, transport, std::move(options));
-auto positions = runtime.buffer<float>(count).distributed();
+        auto a = cluster.share(runtime.buffer<float>(count).value());
 ```
 
-Called before `attach`, `distributed()` shares nothing and the buffer's tasks run on the master.
-The first such call in a process logs:
-
-```
-distributed() was called on a runtime with no offload coordinator, so the buffer stays local and its tasks run on this machine; call Cluster::attach() before distributed(). Later calls are not logged
-```
+Source: `applications/examples/distributed_demo.cpp`.
 
 A task may leave only when all of these hold at compile time: it names an operation, a
 registered worker has a kernel for that operation, every buffer it reads or writes is shared,
@@ -413,7 +471,7 @@ running task holds.
 
 ## 8. What the default policy does
 
-At dispatch the master asks an `IOffloadPolicy` which worker gets the task, or none. The default
+At dispatch the master asks an `OffloadPolicy` which worker gets the task, or none. The default
 is `LeastLoadedOffloadPolicy`:
 
 - A task whose inputs total under 64 KiB stays on the master. Only the bytes the task reads
@@ -433,7 +491,7 @@ To send every task whatever its size, pass a policy with a threshold of 0:
 options.policy = std::make_shared<Distributed::LeastLoadedOffloadPolicy>(0);
 ```
 
-To write your own, implement `IOffloadPolicy::pick_worker` and return the `worker_id` of one of
+To write your own, implement `OffloadPolicy::pick_worker` and return the `worker_id` of one of
 the workers you were offered, or nothing to run the task locally. The call runs on a pool thread
 under a lock of the master, so return quickly and call nothing of the `Cluster` from it.
 
@@ -595,13 +653,13 @@ Master and worker must speak the same protocol version; there is no negotiation.
 logs this, counts `handshake_rejected_version` and closes:
 
 ```
-192.168.1.11:50312 (peer 3) speaks protocol v3, this master v2; build both from one commit; closed, 0 tasks returned to the scheduler
+192.168.1.11:50312 (peer 3) speaks protocol v2, this master v3; build both from one commit; closed, 0 tasks returned to the scheduler
 ```
 
 The worker logs this and exits with code 4:
 
 ```
-master (peer 1) speaks protocol v2, this worker v3; build both from one commit; not reconnecting
+master (peer 1) speaks protocol v3, this worker v2; build both from one commit; not reconnecting
 ```
 
 Something that is not a SushiRuntime program at all, such as a port scanner, is closed with
@@ -622,14 +680,10 @@ no kernel for the operation.
 
 ## 11. Protocol versions
 
-| Version | Release | What changed |
-| --- | --- | --- |
-| 1 | up to v0.3.0 | The first protocol: a `[u32 length][u8 type]` frame, nine message types, no authentication, and a buffer sent whole in one frame |
-| 2 | unreleased | A 12-byte header with a magic and the version. Sixteen message types with fixed-width little-endian fields. A mutual HMAC-SHA256 handshake. Buffers cross in chunks. A worker confirms each dispatch, and each side can say why it refuses or leaves |
-
-A version 1 peer and a version 2 peer refuse each other. Build the master and every worker from
-one commit. `--version` on a worker prints the version it speaks. The frame layout and the
-compatibility rule are in
+The wire protocol is version 3. Master and worker must carry the same version: a peer of another
+version is refused, and both sides log the two numbers. Build the master and every worker from
+one commit. `--version` on a worker prints the version it speaks. The frame layout and the table
+of versions are in
 [`modules/extension/distributed/README.md`](../../modules/extension/distributed/README.md),
 section "Protocol versions".
 
@@ -658,16 +712,15 @@ Find the line you see. The second column says which side shows it.
 
 | Line | Shown by | Cause and what to do |
 | --- | --- | --- |
-| `Cluster::attach: the transport can be reached from other machines and ClusterOptions::secret is empty` | master, as an exception | Load a secret with `SharedSecret::from_file()`, or bind to `127.0.0.1` |
-| `Cluster::attach: the master did not start: cannot listen on <address>:<port>: ...` | master, as an exception | Another process holds the port, or the address is not one of this machine's. Choose another port or stop the other process |
+| `Cluster::attach: the transport can be reached from other machines and ClusterOptions::secret is empty` | master, as the message of the error `attach` returns | Load a secret with `SharedSecret::from_file()`, or bind to `127.0.0.1` |
+| `Cluster::attach: the master did not start: cannot listen on <address>:<port>: ...` | master, as the message of the error `attach` returns | Another process holds the port, or the address is not one of this machine's. Choose another port or stop the other process |
 | `cannot reach master <host>:<port> ...; attempt N, next in M ms` | worker | The master is not running yet, the address or port is wrong, or a firewall drops the connection. A master bound to `127.0.0.1` cannot be reached from another machine: bind it to `0.0.0.0` and give it a secret |
 | `<address> (peer N) closed before it registered: closed by the peer` | master | Most often a worker with another secret, or with none; read the worker's log (§10). A port probe looks the same |
 | `master (peer N) did not prove the cluster secret` | worker, which exits 3 | The two key files differ. Copy the master's file to the worker again and compare checksums |
 | `<address> (peer N) speaks protocol vX, this master vY` | master | The two programs were built from different commits. Rebuild both from one |
 | `<address> refused: 64 peers are open, the limit` | master | Every slot is taken. Raise `TCPMasterOptions::max_peers`, or find what holds the connections. The worker logs `master (peer N) takes no more workers` and tries again |
 | `peer N sent no valid handshake in 5000 ms; closed` | master | Something connected and said nothing the master understands: a probe, or a worker too slow to answer. For the second, raise `handshake_timeout` |
-| `N of M op-tagged nodes will run locally: ...` | master | The counts say why. `no live worker for the op`: no registered worker has that kernel, so check the name on both sides and wait for the worker before the first run. `buffer not shared`: call `distributed()` on every buffer the task touches, after `attach`. `buffer written twice`: the task lists one buffer twice among its writes |
-| `distributed() was called on a runtime with no offload coordinator` | master | Move the `distributed()` call after `Cluster::attach` |
+| `N of M op-tagged nodes will run locally: ...` | master | The counts say why. `no live worker for the op`: no registered worker has that kernel, so check the name on both sides and wait for the worker before the first run. `buffer not shared`: pass every buffer the task touches to `cluster.share()`. `buffer written twice`: the task lists one buffer twice among its writes |
 | No line: `declined` rises and `offloaded` stays 0 with a worker connected | master's statistics | The task's inputs total under 64 KiB, which the default policy keeps local (§8) |
 | `worker N sent no frame for more than 5000 ms` | master | The worker hung, or the link dropped packets without closing. If the workers are slow and healthy, raise `liveness_timeout` |
 | `task T taken back from worker N: no result within the task deadline` | master | The kernel runs longer than `task_deadline`. Raise it, or set it to 0 for no bound |
@@ -678,7 +731,7 @@ Find the line you see. The second column says which side shows it.
 
 - [`modules/extension/distributed/README.md`](../../modules/extension/distributed/README.md):
   how the code is built, class by class.
-- [`ARCHITECTURE.md`](../architecture/ARCHITECTURE.md) §12: where the layer sits in the runtime.
+- [`ARCHITECTURE.md`](../architecture/ARCHITECTURE.md) §6: where the layer sits in the runtime.
 - [`CLI_GUIDE.md`](CLI_GUIDE.md): `sr build`, `sr test` and `sr run`.
 - `applications/examples/distributed_demo.cpp`, `applications/examples/distributed_worker.cpp`
   and `applications/examples/distributed_kernels.hpp`: the programs of §3.
