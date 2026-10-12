@@ -37,15 +37,15 @@ using namespace SushiRuntime;
 
 namespace
 {
-    constexpr std::size_t N     = 4096;   // entities
+    constexpr std::size_t N       = 4096;   // entities
     constexpr std::size_t K_STEPS = 600;    // frames
-    constexpr float DT    = 0.01f;        // seconds per frame
-    constexpr float G     = -9.8f;        // gravity (down)
-    constexpr float REST  = 0.5f;         // floor restitution
-    // XMAX lies off every x an entity reaches at integer steps (applications/examples/README.md).
-    constexpr float XMAX  = 30.37f;
+    constexpr float K_TICK   = 0.01f;       // seconds per frame
+    constexpr float G        = -9.8f;       // gravity (down)
+    constexpr float K_BOUNCE = 0.5f;        // floor restitution
+    // K_CULL_X lies off every x an entity reaches at an integer step; see README.md.
+    constexpr float K_CULL_X = 30.37f;
 
-    // Final x is vx * 6, one of {12,24,36,48,60,72}; the first two stay under XMAX.
+    // Final x is vx * 6, one of {12,24,36,48,60,72}; the first two stay under K_CULL_X.
     float vx_of(std::size_t i) { return 2.0f + static_cast<float>(i % 6) * 2.0f; }
 
     /** @brief Runs the four systems over N entities and checks them against a reference. */
@@ -74,7 +74,7 @@ namespace
 
         // gravity: accelerate living entities downward.
         world.add(Extent{N}, InOut(vy), In(alive),
-            [g = G, dt = DT](sycl::id<1> id, float* vy, const int* alive)
+            [g = G, dt = K_TICK](sycl::id<1> id, float* vy, const int* alive)
             {
                 const std::size_t i = id[0];
                 if (alive[i]) vy[i] += g * dt;
@@ -82,8 +82,8 @@ namespace
 
         // integrate: advance position by velocity (reads the velocity gravity just wrote).
         world.add(Extent{N}, In(vx), In(vy), InOut(px), InOut(py), In(alive),
-            [dt = DT](sycl::id<1> id, const float* vx, const float* vy, float* px, float* py,
-                      const int* alive)
+            [dt = K_TICK](sycl::id<1> id, const float* vx, const float* vy, float* px, float* py,
+                          const int* alive)
             {
                 const std::size_t i = id[0];
                 if (alive[i]) { px[i] += vx[i] * dt; py[i] += vy[i] * dt; }
@@ -91,7 +91,7 @@ namespace
 
         // collide: bounce off the floor (reads the position integrate just wrote).
         world.add(Extent{N}, InOut(py), InOut(vy), In(alive),
-            [rest = REST](sycl::id<1> id, float* py, float* vy, const int* alive)
+            [rest = K_BOUNCE](sycl::id<1> id, float* py, float* vy, const int* alive)
             {
                 const std::size_t i = id[0];
                 if (alive[i] && py[i] < 0.0f) { py[i] = 0.0f; vy[i] = -vy[i] * rest; }
@@ -99,7 +99,7 @@ namespace
 
         // cull writes `alive` after the three systems above read it, so a kill lands next frame.
         world.add(Extent{N}, In(px), InOut(alive),
-            [xmax = XMAX](sycl::id<1> id, const float* px, int* alive)
+            [xmax = K_CULL_X](sycl::id<1> id, const float* px, int* alive)
             {
                 const std::size_t i = id[0];
                 if (alive[i] && px[i] > xmax) alive[i] = 0;
@@ -116,10 +116,10 @@ namespace
         for (std::size_t s = 0; s < K_STEPS; ++s)
             for (std::size_t i = 0; i < N; ++i)
             {
-                if (ralive[i]) rvy[i] += G * DT;
-                if (ralive[i]) { rpx[i] += rvx[i] * DT; rpy[i] += rvy[i] * DT; }
-                if (ralive[i] && rpy[i] < 0.0f) { rpy[i] = 0.0f; rvy[i] = -rvy[i] * REST; }
-                if (ralive[i] && rpx[i] > XMAX) ralive[i] = 0;
+                if (ralive[i]) rvy[i] += G * K_TICK;
+                if (ralive[i]) { rpx[i] += rvx[i] * K_TICK; rpy[i] += rvy[i] * K_TICK; }
+                if (ralive[i] && rpy[i] < 0.0f) { rpy[i] = 0.0f; rvy[i] = -rvy[i] * K_BOUNCE; }
+                if (ralive[i] && rpx[i] > K_CULL_X) ralive[i] = 0;
             }
 
         // Verify against the reference.

@@ -41,7 +41,7 @@ namespace
     constexpr std::size_t W = 64, H = 64, K_STEPS = 200;
 
     /** @brief Diffusion factor; a 5-point stencil is stable below 0.25. */
-    constexpr float ALPHA = 0.2f;
+    constexpr float K_ALPHA = 0.2f;
 
     /** @brief Largest absolute difference accepted between a device cell and a host cell. */
     constexpr float K_TOLERANCE = 1.0e-4f;
@@ -59,7 +59,7 @@ namespace
                     const std::size_t c = y * W + x;
                     const float lap = plate[c - 1] + plate[c + 1] + plate[c - W] + plate[c + W]
                                       - 4.0f * plate[c];
-                    next[c] = plate[c] + ALPHA * lap;
+                    next[c] = plate[c] + K_ALPHA * lap;
                 }
             }
             plate.swap(next);
@@ -101,7 +101,7 @@ namespace
             const std::size_t c = y * W + x;
             const float lap = cur[c - 1] + cur[c + 1] + cur[c - W] + cur[c + W]
                               - 4.0f * cur[c];
-            next[c] = cur[c] + ALPHA * lap;
+            next[c] = cur[c] + K_ALPHA * lap;
         });
 
         const auto report = g.run(K_STEPS).value();
