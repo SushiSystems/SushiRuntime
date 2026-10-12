@@ -558,3 +558,73 @@ plan build, where today the kernel is copied per plan build and wrapped then.
 The expected change of the round trip is therefore zero, against a floor of 8 041 ns per node
 and a run-to-run spread no smaller than 1 %. Task 6.7 measures it on the finished boundary; the
 2 % limit stands there.
+
+## Review before the first build
+
+On 2026-10-12, before any build of stages 2 to 9, four reviewers read the four repositories
+without a compiler: the public surface of SushiRuntime, its sources and engine, SushiBLAS, and
+SushiAI with SushiEngine. The checkers were run first: naming reports nothing in SushiRuntime,
+SushiBLAS and SushiAI; layering reports nothing in SushiRuntime and SushiAI and nine false
+positives in SushiBLAS, whose allow-list still holds the old accessor names.
+
+### Will not compile or link
+
+| Repository | Site | Defect |
+| --- | --- | --- |
+| SushiBLAS | `tensor/storage.hpp:44` and six neighbours | `sushi_ptr`, `make_sushi`, `RefCounted` and `K_DEFAULT_ALIGNMENT` come from no included header; the umbrella no longer reaches `core/sushi_ptr.hpp`, `ref_counted.hpp`, `common.hpp` |
+| SushiRuntime | `api/source/node_emitters.hpp:49` | `add_described_node` has no export and `test_state_emitters.cpp:86` calls it, so `sr_api_tests` does not link |
+| SushiEngine | `cli/sushiengine/templates/addon/source/addon_name_behaviors.cpp.in:27` | The addon template names `EntityId`; the acronym pass skipped `.in` files |
+
+### Likely defects
+
+- SushiRuntime: a fault record of a failed step is returned by the next run (`step_run.cpp:102`,
+  `step_driver.hpp:326`); an abandoned chained run leaves its asynchronous errors and pending
+  events for the next run (`chain_run.cpp:127`, `:300`); `PlanCache::build` leaves mixed state
+  after a failed compile (`plan_cache.cpp:114`); an exception can leave `Interop::export_host`
+  and `import_device` (`interop.hpp:86`, `:114`) and three ladders of `memory_exchange.cpp`
+  lack `catch (...)`; `WorkerAgent` keeps a reference to a context a `Runtime` owns.
+- SushiRuntime, invariants a consumer can break: `Graph::recorder()` returns a mutable
+  reference to a move-assignable `Recorder`; the constructors of `Recorder`, `Region` and
+  `ContextHandle` are public; `BufferRegion(ResourceID)` is implicit; `add_rule` on an empty
+  `State` records a rule of size 0.
+- SushiBLAS: recording from two threads on one engine was lock-free and is now a data race,
+  while two documents still promise it; `IO` throws from functions that return `IOStatus`.
+- SushiAI: `status_of_error` stops the process on `CompileFailed`, `InvalidGraph`,
+  `InvalidAccess` and `InvalidState`, three of which a correct program can receive.
+- SushiEngine: about 310 `.value()` calls in engine code, some per tick or per spawn; six of
+  ten callers of `report_of` ignore `is_successful`, the physics solve among them; the audio
+  accelerator can throw on the audio thread; the native backend advertises `Result` and
+  returns no error.
+
+### SOLID and shape
+
+- Three engine type names are public in practice: `CompiledGraph`, `LateBindings` and
+  `RuntimeContext` are forward-declared in installed headers and used in signatures.
+- `PlanCache`, `RegionComposer`, `RegionChangeLog`, `StepDriver`, `BuilderSurface` and four
+  traits are public names no consumer should write.
+- `ErrorCode::Ok` lets an `Error` be no error, and "may have failed" has three shapes below
+  the public verbs: an `Error` with `Ok`, `std::optional<Error>` and `Result<void>`.
+- `ContextAccess` is declared in the engine and names two surface types; the execution module
+  declares functions it does not define.
+- Exception translation has seven shapes; the same kernel failure reads differently on the
+  two layers.
+- The same mistake aborts in one verb and is a kept refusal in another (a device index).
+- `NodeDescription` is a tagged struct: a new kind edits the enum, the struct and the table.
+- The build tree publishes every include root, so a sibling consumer can include an engine
+  header and compile; the fence holds for an installed tree only.
+- SushiEngine has two `Result` types that differ in six members; SushiBLAS reports five kinds
+  of failure through four channels.
+
+### Performance
+
+- SushiBLAS builds each task twice (record, then plan build) for a replay it never uses.
+- `DynamicGraph` walks every region three times per `run()`.
+- No cost was found per element, and none per replayed node beyond one exported call for a
+  late-bound node.
+
+### Documents that say what the code does not
+
+`modules/surface/api/README.md` ("Promoted names"), `version.hpp` (0.3.0),
+`cmake/SushiRuntimeConfig.cmake.in:44`, the root READMEs of SushiRuntime and SushiBLAS, the
+architecture pages of SushiBLAS, and the seam README of SushiEngine on where `value()` is
+called.
