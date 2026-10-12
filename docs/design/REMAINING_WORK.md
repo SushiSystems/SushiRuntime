@@ -225,7 +225,7 @@ round did not close:
   and the per-flag descriptions in `docs/guides/CLI_GUIDE.md`, were not checked by the audit.
 - **`check_layering.py` checks nothing here.** `K_TIER_ORDER` is empty. The repository is one
   module whose areas depend on each other in the order
-  `docs/architecture/ARCHITECTURE.md` §2 draws; whether the checker should hold that order is
+  `docs/architecture/ARCHITECTURE.md` §2 lists; whether the checker should hold that order is
   undecided.
 
 ## Repository hygiene
