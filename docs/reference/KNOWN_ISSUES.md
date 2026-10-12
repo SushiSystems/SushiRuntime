@@ -8,7 +8,7 @@ Defects that are recorded and not yet fixed. The work each one needs is in
 | Issue | Where |
 | --- | --- |
 | A host read of a `Residency::Shared` buffer while a kernel runs on the same GPU faults on Windows with CUDA (0xC0000006). Values read mid-run must live in `Residency::Host` | `modules/surface/api/include/SushiRuntime/api/data/buffer.hpp` |
-| A `Buffer` moved after it was passed to `Graph::add` leaves the graph pointing at the old address, and the liveness guard does not report it | `modules/surface/api/include/SushiRuntime/api/data/buffer.hpp` |
+| A `Buffer` moved after it was passed to a recording verb leaves the graph pointing at the old address, and the liveness guard does not report it | `modules/surface/api/include/SushiRuntime/api/data/buffer.hpp` |
 | A `cancel()` that races the end of its own run can cancel the next run started on the same runtime | `modules/surface/api/include/SushiRuntime/api/graph/step_driver.hpp` |
 | A `DynamicGraph` that drops regions and never runs again keeps them until it is destroyed | `modules/surface/api/include/SushiRuntime/api/graph/dynamic_graph.hpp` |
 | When an event's status query throws, a successor the failed node released can run before the failure is recorded | `modules/engine/scheduler/include/SushiRuntime/scheduler/event_polling.hpp` |
@@ -19,25 +19,23 @@ Defects that are recorded and not yet fixed. The work each one needs is in
 | The distributed master has no flood protection: every open connection counts towards `max_peers`, registered or not, so a host that reaches the port can hold every slot. A separate cap on unregistered peers resolves it; until then the port belongs behind a firewall | `modules/extension/distributed/source/tcp_transport.cpp`, [`DISTRIBUTED_GUIDE.md`](../guides/DISTRIBUTED_GUIDE.md) §12 |
 | `PendingTasks::insert()` allocates a map node and a copy of the output handles for every dispatch. Not measured; a pooled entry resolves it if the benchmark shows it | `modules/extension/distributed/source/pending_tasks.cpp` |
 | With a cluster attached, every USM release calls the master's release observer, which takes the buffer registry's mutex for one lookup, also for memory that was never shared. Not measured; a lock-free test for a shared address resolves it | `modules/extension/distributed/source/distributed_coordinator.cpp`, `modules/extension/distributed/source/buffer_registry.cpp` |
-| An offloadable op recorded on a `DynamicGraph` region runs its local fallback and is never shipped to a worker | `modules/engine/graph/source/task_graph.cpp` |
+| A node that names an operation and is recorded on a `DynamicGraph` region runs on the master and is never offered to a worker | `modules/engine/graph/source/task_graph.cpp` |
 | The distributed layer authenticates master and worker at the handshake and protects nothing after it: frames are not encrypted and carry no signature, so it is for a trusted LAN. Encryption, or a MAC per frame, resolves it | [`DISTRIBUTED_GUIDE.md`](../guides/DISTRIBUTED_GUIDE.md) §2 |
 
 ## Build, CLI and CI
 
 | Issue | Where |
 | --- | --- |
-| `sr docs` builds the API site without the introduction, the integration guide and the CLI guide, because `INPUT` names them by their paths before 2026-10-05 | `Doxyfile` |
-| The CI `cli` job installs `sushicore` from `./.sushistack/sushicore`, a folder SushiStack no longer carries | `.github/workflows/ci.yml` |
 | The CI lint step ends in `\|\| true` and cannot fail | `.github/workflows/ci.yml` |
-| The CLI package declares version 1.0.0 and `Doxyfile` says `v1 (unreleased)`, while the library is 0.3.0 | `cli/pyproject.toml`, `cli/sushiruntime/__init__.py`, `Doxyfile` |
-| Configuring leaves empty `CXX-DetectStdlib-*.h` files in the repository root, because the CLI runs the configure step with the source root as its working directory. `check_source_comments.py . --rule rule_license_block` reports the four on disk today | `cli/sushiruntime/services/project.py` |
+| The CLI package declares version 1.0.0 and `Doxyfile` says `v1 (unreleased)`, while the library is 0.3.0 | `cli/pyproject.toml`, `cli/sushiruntime/__init__.py`, `.config/doxygen/Doxyfile` |
+| Configuring leaves empty `CXX-DetectStdlib-*.h` files in the repository root, because the CLI runs the configure step with the source root as its working directory | `cli/sushiruntime/services/project.py` |
 | `_walk` in this copy of the source comment checker tests `K_SKIPPED_FOLDERS` before `is_file()`; the SushiSkills original still tests them the other way round and stops with `WinError 1920` on `venv/bin/python` | `tools/documentation/check_source_comments.py` |
 
 ## Documentation
 
 | Issue | Where |
 | --- | --- |
-| `check_docs_layout.py` reports five links in the estate audit report that quote a link from the old README | `docs/agent/2026_10_05_ESTATE_AUDIT/REPORT.md` |
-| Three CMake comments and one issue template cite documents by their paths before 2026-10-05 | `cmake/SushiRuntimeInstall.cmake`, `cmake/SushiRuntimeConfig.cmake.in`, `tests/package/CMakeLists.txt`, `.github/ISSUE_TEMPLATE/bug_report.yml` |
+| Two CMake comments cite the integration guide as `docs/INTEGRATION.md`; it is `docs/guides/INTEGRATION.md` | `cmake/SushiRuntimeConfig.cmake.in`, `tests/package/CMakeLists.txt` |
+| Three design documents cite sections of the architecture page by numbers the page does not have: §1, §2, §8.2 and §10 | `docs/design/ENGINE_BACKBONE_REFACTOR.md`, `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS.md`, `docs/design/REMAINING_WORK.md` |
 | The changelog has no entry for the dispatch-width fields added on 2026-09-21 or for the `sushicore` lower bound of 0.7.0 | `docs/reference/CHANGELOG.md` |
 | Documents frozen in the archive cite each other and the manual by the paths they had before they moved | `docs/archive/slop/`, `docs/archive/superpowers/specs/`, `docs/archive/agent/reports/` |

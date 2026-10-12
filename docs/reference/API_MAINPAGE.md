@@ -1,71 +1,64 @@
-# SushiRuntime Fluent API Reference {#mainpage}
+# SushiRuntime API reference {#mainpage}
 
-SushiRuntime is an **orchestration runtime**: it decides *when, where, and in what
-order* work runs across CPUs and GPUs, while your code decides *what* is computed.
-This site is the reference for its one public surface — the **C++ fluent API** in
-`modules/surface/api/include/SushiRuntime/api`. Everything you program against lives in namespace
-`SushiRuntime::API`.
+SushiRuntime decides when, where and in what order work runs on the CPUs and GPUs of one
+machine. Your code decides what is computed. This site is the reference of the headers under
+`modules/surface/api/include/SushiRuntime/api`, which a program includes through
+`<SushiRuntime/sushiruntime.hpp>`. Every public name is in the namespace `SushiRuntime`.
 
-For the architecture beneath this layer (the scheduler, the lock-free graph, the
-memory model) see `docs/architecture/ARCHITECTURE.md`. For a guided tour with full
-programs see `docs/getting_started/INTRODUCTION.md`.
+The modules beneath this surface are described in `docs/architecture/ARCHITECTURE.md`, and
+`docs/getting_started/INTRODUCTION.md` walks through complete programs.
 
-## The model in one minute
+## The model
 
-The runtime follows a **describe → compile once → replay** pipeline:
-
-1. **Allocate data as handles.** `SushiRuntime::API::Buffer` is a typed USM block;
-   `SushiRuntime::API::State` is a double-buffered field for stepped updates.
-   Choose `SushiRuntime::API::Residency::Device` to keep a large field resident on
-   the GPU across steps.
-2. **Describe work** with `SushiRuntime::API::Graph::add()`. Name the data each
-   task reads and writes with `Reads(...)` / `Writes(...)`; the runtime derives the
-   dependency order automatically — no manual edges.
-3. **Run** with `SushiRuntime::API::Graph::run()` / `run(n)` / `run_for()` /
-   `run_until()`. The graph compiles on the first run and the compiled plan is
-   replayed for every step. `try_run()` reports failure as a value instead of
-   throwing, `run(report)` fills a report you own so a steady-state loop allocates
-   nothing, and `run_async()` hands back a `SushiRuntime::API::RunHandle` so the
-   caller keeps working while the step is in flight.
+1. **Allocate data as handles.** `SushiRuntime::Buffer` is a typed USM block.
+   `SushiRuntime::State` is a field with two buffers that the runtime swaps after each step.
+   `SushiRuntime::Residency::Device` keeps a field on its device.
+2. **Record work** on a `SushiRuntime::Graph`. Each verb names the data a kernel reads and
+   writes, and the runtime derives the order from it.
+3. **Run** with `run()`, `run_for()`, `run_until()` or `run_async()`. The graph compiles on the
+   first run and the compiled plan is replayed for every later step. Every run verb returns a
+   `SushiRuntime::Result`.
 
 ```cpp
-#include <SushiRuntime/sushiruntime.hpp>
-using namespace SushiRuntime;
+    SushiRuntime::Runtime runtime = SushiRuntime::Runtime::create().value();
 
-auto rt    = Runtime::create();
-auto field = rt.state<float>(N);                 // double-buffered field
-// ... seed field ...
+    SushiRuntime::State<float> heat = runtime.state<float>(N).value();
+    for (std::size_t i = 0; i < N; ++i)
+        heat[i] = (i == N / 2) ? 1.0f : 0.0f;
 
-auto sim = rt.graph();
-sim.add(field, [](std::size_t i, const float* cur, float* next)
-{
-    next[i] = /* stencil over cur */;            // read current, write next
-});
+    SushiRuntime::Graph graph = runtime.graph();
+    graph.add_rule(heat, [](std::size_t i, const float* cur, float* next)
+    {
+        const float left  = (i == 0)     ? cur[i] : cur[i - 1];
+        const float right = (i == N - 1) ? cur[i] : cur[i + 1];
+        next[i] = cur[i] + 0.25f * (left - 2.0f * cur[i] + right);
+    });
 
-auto report = sim.run(10'000);                   // compile once, replay 10k steps
+    const SushiRuntime::RunReport report = graph.run(STEPS).value();
 ```
+
+The block is from `tests/package/main.cpp`.
 
 ## Where to look
 
-| You want to… | Start at |
-|---|---|
-| Allocate data | `SushiRuntime::API::Buffer`, `SushiRuntime::API::State` |
-| Build and run work | `SushiRuntime::API::Graph`, `SushiRuntime::API::Runtime` |
-| Vary size / enablement per step without recompiling | `SushiRuntime::API::Dynamic`, `when()`, `sized()` |
-| Take the element count from a device counter | `SushiRuntime::API::sized_from_device()` |
-| Start a node at a device-computed offset | `SushiRuntime::API::based_at()`, `based_at_device()` |
-| Run plain CPU work in the graph | `SushiRuntime::API::Graph::add_host()` |
-| Add a node kind of your own (a reduction, a scan) | `SushiRuntime::API::Graph::recorder()`, `SushiRuntime::API::Recorder` |
-| Add work whose reads and writes you do not want tracked | `SushiRuntime::API::Graph::add_untracked()` |
-| Stream work in and out without recompiling the world | `SushiRuntime::API::DynamicGraph`, `Region`, `region()` / `drop()` |
-| Keep a field on the device | `SushiRuntime::API::Residency`, `Buffer::read_range` / `write_range` |
-| Overlap a step with the caller's own work | `SushiRuntime::API::Graph::run_async()`, `SushiRuntime::API::RunHandle` |
-| Give a rule a name so its timings are attributable | `SushiRuntime::API::Graph::name_last()` |
-| Share a machine with another subsystem | `SushiRuntime::API::RuntimeConfig::worker_count`, `first_core`, `pinning` |
-| Tune for real-time / determinism | `SushiRuntime::API::Runtime::set_rebalancer_enabled()` |
-| Profile per-node / per-worker timing | `SushiRuntime::API::RuntimeConfig`, `SushiRuntime::Core::NodeTiming`, `WorkerTiming` |
-| Read run results | `SushiRuntime::Core::RunReport` |
-| Consume the runtime from another project | `docs/guides/INTEGRATION.md` (`find_package(SushiRuntime)`) |
-
-Browse the full list under **Classes** and **Namespaces** in the sidebar; every
-public type and method carries its signature, parameters, and intent.
+| To | Start at |
+| --- | --- |
+| Create a runtime and configure it | `SushiRuntime::Runtime`, `SushiRuntime::RuntimeConfig` |
+| Allocate data | `SushiRuntime::Buffer`, `SushiRuntime::State` |
+| Record a kernel over buffers | `add()` with `SushiRuntime::Reads` and `SushiRuntime::Writes`, or `SushiRuntime::In`, `SushiRuntime::Out`, `SushiRuntime::InOut` |
+| Step one field, or one field that reads others | `add_rule()`, `add_coupled()` with `SushiRuntime::Coupled` |
+| Vary the size, the start or the enablement per step | `add_dynamic()` with `SushiRuntime::Dynamic`, `when()`, `sized()`, `based_at()` |
+| Take a count or a start from a value a kernel wrote | `sized_from_device()`, `based_at_device()`, `SushiRuntime::LateCount` |
+| Run host C++ in the graph | `add_host()`, `add_task()` |
+| Record work the runtime does not order | `add_untracked()`, `SushiRuntime::On` |
+| Record node kinds of your own | `extend()`, `SushiRuntime::Recorder` |
+| State a name, a width, an operation or parameters of a node | `SushiRuntime::NodeOptions`, `name()` |
+| Change the set of work between steps | `SushiRuntime::DynamicGraph`, `SushiRuntime::Region` |
+| Overlap a step with the caller's work | `run_async()`, `SushiRuntime::RunHandle` |
+| Call a function before each step | `before_each_step()` |
+| Build or read the plan without running | `compile()`, `SushiRuntime::Graph::plan()`, `SushiRuntime::PlanView` |
+| Read devices, queues and counters | `SushiRuntime::AdvancedControls` |
+| Exchange memory with another API | `SushiRuntime::Interop` |
+| Read what a run did | `SushiRuntime::RunReport`, `SushiRuntime::NodeTiming`, `SushiRuntime::WorkerTiming` |
+| Handle a failure | `SushiRuntime::Result`, `SushiRuntime::Error`, `SushiRuntime::ErrorCode` |
+| Consume the library from another project | `docs/guides/INTEGRATION.md` |
