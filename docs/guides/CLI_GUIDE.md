@@ -1,266 +1,208 @@
 # The SushiRuntime CLI
 
-SushiRuntime ships with a small command-line tool that drives everything you do
-day to day: building the C++ library, running its tests, launching the example
-programs, and managing the Docker image. It is a thin wrapper around CMake,
-CTest, and Docker that reads your machine-specific toolchain paths from a config
-file so you don't have to retype long compiler flags.
+`sr` builds the library, runs its tests, runs the example programs and manages the development
+container. It runs CMake, CTest and Docker with the toolchain paths it reads from two
+configuration files. Every build and test in this repository goes through it.
 
-This guide explains every command in plain English. If you just want to get the
-project compiling and running for the first time, start with
-[INTRODUCTION.md](../getting_started/INTRODUCTION.md) instead — it walks you through setup and your
-first program.
+For a first build, read [the introduction](../getting_started/INTRODUCTION.md).
 
 ## Installing the CLI
 
-The CLI is a Python package that lives in the `cli/` folder. Install it once and
-it puts two commands on your `PATH`:
-
-- **`sr`** — short name.
-- **`sushiruntime`** — long name.
-
-They are identical; use whichever you prefer. Every example below uses `sr`.
-
-To install:
+The CLI is a Python package in `cli/`. It installs two names for one command: `sr` and
+`sushiruntime`. The examples below use `sr`.
 
 ```bash
 hub install-cli sushiruntime      # always an editable install
 ```
 
-This installs through **pipx**, into an isolated environment, on every platform.
-You can also install the package directly if you'd rather manage it yourself:
+`hub` is the SushiStack CLI and installs through pipx. To install the package yourself:
 
 ```bash
 pipx install ./cli               # or:  pip install ./cli   (inside a venv/conda env)
 ```
 
-To remove it later:
+To remove it:
 
 ```bash
 pipx uninstall sushiruntime-cli
 ```
 
-### How the CLI finds your compiler
+### Where the CLI reads its paths
 
-The CLI reads toolchain paths from two files:
+- `cli/config.toml` is committed and holds the defaults every machine shares.
+- `cli/config.local.toml` is ignored by git and holds one machine's absolute paths: the oneAPI
+  and Visual Studio roots, the vcpkg location, the compiler executables.
 
-- **`cli/config.toml`** — committed, shared defaults (the same for everyone).
-- **`cli/config.local.toml`** — your machine's absolute paths (oneAPI / Visual
-  Studio roots, vcpkg location, compiler executables). This file is gitignored,
-  so your personal paths never get committed.
+`sr setup` writes `config.local.toml`. `hub install` does the same for every checkout of a
+SushiStack workspace. To set paths by hand, copy the commented Windows block of `config.toml`;
+both files use the same `[tool.<platform>]` sections.
 
-`sr setup` writes `config.local.toml` for you. `hub install` does the same for
-every checkout in a SushiStack workspace at once. If you're setting paths by
-hand, copy the commented Windows block from `config.toml` as a starting
-point — it uses the same `[tool.<platform>]` section layout.
-
-If you're ever unsure what the CLI is actually using, run `sr config` to
-see the final resolved values and where each one came from.
+`sr config` prints the resolved values and the source of each.
 
 ## Command overview
 
-Commands are grouped under these subcommands:
+| Command | Does |
+| --- | --- |
+| `sr toolchain` | Chooses the SYCL toolchain: `intel-llvm`, `adaptivecpp` or `oneapi` |
+| `sr build`, `test`, `run`, `clean`, `docs` | Build, test, run and document the C++ project |
+| `sr package` | Installs the built tree to a prefix and archives it with CPack |
+| `sr container` | Builds and runs the development container |
+| `sr config` | Prints the resolved configuration |
+| `sr env` | Prints the environment builds run under |
+| `sr setup` | Installs what this checkout needs to build |
+| `sr doctor` | Reports whether this machine is ready to build |
+| `sr link`, `unlink` | Record this checkout in a SushiStack workspace, or remove it |
 
-| Group        | What it's for                                               |
-|--------------|-------------------------------------------------------------|
-| `sr toolchain` | Choose the SYCL toolchain (intel-llvm / adaptivecpp / oneapi) |
-| `sr build` / `test` / `run` / `clean` / `docs` | Build, test, run, and document the C++ project |
-| `sr package` | Install the built tree to a prefix and archive it with CPack |
-| `sr container` | Build and run the development container                   |
-| `sr config`  | Show the resolved configuration                             |
-| `sr env`     | Show the environment your builds run under                  |
-| `sr setup`   | Install what this checkout needs to build                   |
-| `sr doctor`  | Report whether this machine is ready to build               |
-| `sr link` / `unlink` | Register this checkout in a SushiStack workspace, or remove it |
+Every command takes `--help`. `sr container` with no subcommand prints the help of its group.
 
-Run any command with `--help` to see its options. Running `sr container` with no
-subcommand prints that group's help.
+`sr --version` prints the CLI's distribution name and version. `sr --describe` prints every
+command and its options as JSON, for a tool that drives the CLI.
 
-`sr --version` prints the CLI's distribution name and version. `sr --describe` prints
-every command and its options as JSON, for a tool that drives the CLI.
+`sr doxygen` and `sr docker` are hidden aliases of `sr docs` and `sr container` until
+2027-03-25. Neither `--help` nor `--describe` lists them.
 
-Two commands were renamed: `sr doxygen` is now `sr docs`, and `sr docker` is now
-`sr container`. The old words still run until 2027-03-25 and print one line that names
-the new spelling; set `SR_NO_DEPRECATION_NOTICE=1` to silence it. They are listed in
-neither `--help` nor `--describe`.
+`sr --help` groups the commands under Toolchain, Project, Diagnostics and Container, and each
+command's help ends with examples.
 
-`sr --help` groups the commands under Toolchain, Project, Diagnostics and Container,
-and each command's own help ends with examples. On a colour terminal the root screen
-shows the logo. On a dark terminal add `[cli]` and `background = "dark"` to
-`cli/config.local.toml` to give it a glow; `COLORFGBG` is read when the terminal sets
-it, and Windows Terminal does not.
+## `sr toolchain`
 
-## `sr toolchain` — choose the SYCL toolchain
-
-SushiRuntime builds against one of three SYCL toolchains. `sr toolchain` records
-your choice in `cli/config.local.toml`, and every later `sr build`
-passes it to CMake as `-DSR_SYCL_TOOLCHAIN` and derives the matching compiler.
+`sr toolchain <name>` records the choice in `cli/config.local.toml`. Every later `sr build`
+passes it to CMake as `-DSR_SYCL_TOOLCHAIN` and derives the compiler from it.
 
 ```bash
 sr toolchain                  # list the toolchains and show which one is active
-sr toolchain intel-llvm       # intel/llvm nightly (clang++ -fsycl) — primary (default)
-sr toolchain adaptivecpp      # AdaptiveCpp (acpp) — secondary, vendor-neutral
-sr toolchain oneapi           # Intel oneAPI — icpx/icx-cl, supported, for VTune/Advisor profiling
+sr toolchain intel-llvm       # intel/llvm nightly (clang++ -fsycl), the default
+sr toolchain adaptivecpp      # AdaptiveCpp (acpp)
+sr toolchain oneapi           # Intel oneAPI (icpx, icx-cl)
 ```
 
-After switching, reconfigure with `sr build --clean` so CMake picks up
-the new toolchain. To override per-invocation without persisting, set the
-`SR_SYCL_TOOLCHAIN` environment variable.
+After a switch, run `sr build --clean` so CMake configures with the new toolchain. The
+environment variable `SR_SYCL_TOOLCHAIN` overrides the recorded choice for one command.
 
-## `sr build` / `test` / `run` / `clean` / `docs`
+## `sr build`
 
-This is the group you'll use most.
-
-### `sr build`
-
-Configures (if needed) and builds the library and its test binaries.
+Configures when needed and builds the library and its test programs.
 
 ```bash
 sr build                  # Release build (the default)
 sr build --type debug     # Debug build
-sr build --type asan      # AddressSanitizer — built in a separate build-asan/ tree, CUDA off
-sr build --distributed    # also compile the optional master-worker layer
-sr build --no-cuda        # build the portable CPU/OpenCL path instead of detecting accelerators
-sr build --no-test        # skip compiling the test suite (SR_BUILD_TESTS=OFF)
-sr build --clean          # delete the build tree first, then build from scratch
-sr build --jobs 8         # compile with eight parallel jobs (-j 8)
-sr build --force          # fall back to clang++/clang if the selected toolchain's
-                          # compiler is missing, instead of stopping
+sr build --type asan      # AddressSanitizer, in a separate build-asan/ tree, CUDA off
+sr build --distributed    # also compile the distributed module
+sr build --no-cuda        # build the CPU/OpenCL path instead of detecting accelerators
+sr build --no-test        # skip the test programs (SR_BUILD_TESTS=OFF)
+sr build --clean          # delete the build tree first
+sr build --jobs 8         # compile with eight parallel jobs
+sr build --force          # fall back to clang++/clang when the selected toolchain's
+                          # compiler is missing
 ```
 
-The `--type` (`-t`) option accepts `release`, `debug`, `relwithdebinfo`, or
-`asan`. The `asan` type is special: it builds into an isolated `build-asan/`
-directory with CUDA disabled, so it never collides with your normal `build/`
-tree. Flags can be combined, e.g. `sr build --type debug --clean`.
+`--type` (`-t`) takes `release`, `debug`, `relwithdebinfo` or `asan`. The `asan` type builds
+into `build-asan/` with CUDA off, so it does not touch `build/`.
 
-`--jobs N` (`-j N`) passes `--parallel N` to the compile step. Without it the
-build tool picks the job count, and `CMAKE_BUILD_PARALLEL_LEVEL` applies if set.
+`--jobs N` (`-j N`) passes `--parallel N` to the compile step. Without it the build tool picks
+the job count, and `CMAKE_BUILD_PARALLEL_LEVEL` applies when set.
 
-The ASan tree also excludes the benchmark suite. That suite installs a global
-`operator new`/`delete` replacement to count allocations, which is exactly what
-AddressSanitizer replaces — the two collide as a duplicate-symbol link error on
-Windows — and ASan's redzones and quarantine would make its timings meaningless
-anyway. Run benchmarks from the ordinary `build/` tree.
+The ASan tree leaves the benchmark programs out. They replace the global `operator new` and
+`operator delete` to count allocations, which AddressSanitizer also replaces; on Windows the
+two collide at link time. Run benchmarks from `build/`.
 
-**AddressSanitizer on Windows** needs an intel/llvm bundle that ships
-compiler-rt. Bundles have not always carried it on Windows: if
-`lib/clang/<version>/lib/windows/clang_rt.asan_dynamic-x86_64.lib` is missing
-from your toolchain, the link fails and the fix is a newer bundle, not a newer
-LLVM. Two further details are handled by the CLI and worth knowing about:
+AddressSanitizer on Windows needs an intel/llvm bundle that ships compiler-rt. When
+`lib/clang/<version>/lib/windows/clang_rt.asan_dynamic-x86_64.lib` is missing from the
+toolchain, the link fails and a newer bundle is the fix. The CLI handles three more details
+there:
 
-- `-fsanitize=address` is passed as `-Xarch_host -fsanitize=address`, because
-  `-fsycl` compiles every translation unit for the host *and* for the SPIR-V
-  device, and there is no device AddressSanitizer. Passed unqualified it draws a
-  `-Woption-ignored` that `-Werror` turns into a build failure.
-- MSVC's STL container annotations are disabled (`_DISABLE_STL_ANNOTATION`),
-  because they require `stl_asan.lib`, which ships with the Visual Studio "C++
-  AddressSanitizer" component rather than with the compiler. The cost is
-  container-overflow detection inside the STL containers; heap overflow, stack
-  overflow, use-after-free and double-free are unaffected.
-- `-fsanitize-address-use-after-return=never` is passed, so use-after-return
-  detection is off on Windows. With it on, a `throw` from inside a `catch`
-  handler faults in the MSVC unwinder.
+- It passes `-Xarch_host -fsanitize=address`. `-fsycl` compiles every translation unit for the
+  host and for the SPIR-V device, and no device AddressSanitizer exists; the unqualified flag
+  draws a `-Woption-ignored` that `-Werror` turns into a failure.
+- It defines `_DISABLE_STL_ANNOTATION=1`. MSVC's STL container annotations need `stl_asan.lib`,
+  which ships with a Visual Studio component and not with the compiler. Container-overflow
+  detection inside STL containers is lost; heap overflow, stack overflow, use-after-free and
+  double-free are still detected.
+- It passes `-fsanitize-address-use-after-return=never`, so use-after-return detection is off
+  on Windows. With it on, a `throw` from inside a `catch` handler faults in the MSVC unwinder.
 
-TSan has no Windows support upstream, so `--type debug`'s ThreadSanitizer is a
-Linux-only lane (see `cmake/Sanitizers.cmake`).
+ThreadSanitizer is added to Debug and RelWithDebInfo builds outside Windows; see
+`cmake/Sanitizers.cmake`.
 
-The test suite is compiled by default. Pass `--no-test` to skip it
-(`SR_BUILD_TESTS=OFF`) for a faster, library-only build — useful when you only
-need the runtime to profile or to debug a kernel under `compute-sanitizer`.
+## `sr test`
 
-### `sr test`
-
-Runs the test suite through CTest. Tests are grouped by label, and you pick a
-group with `--suite` (`-s`):
+Runs tests through CTest. `--suite` (`-s`) picks a group by label:
 
 ```bash
 sr test                          # functional suite (the default)
-sr test --suite functional       # unit + regression + integration (fast, run these often)
-sr test --suite benchmark        # stress + performance (heavy)
+sr test --suite functional       # unit + regression + integration
+sr test --suite benchmark        # stress + performance
 sr test --suite all              # every test
 sr test --suite package          # install to a prefix, then build and run a consumer
 ```
 
-The full list of suite values is: `unit`, `regression`, `integration`,
-`functional` (umbrella for those three), `stress`, `performance`, `benchmark`
-(umbrella for the last two), `package`, and `all`.
+The suite values are `unit`, `regression`, `integration`, `functional` (those three), `stress`,
+`performance`, `benchmark` (those two), `package` and `all`.
 
-The `package` suite checks the installed package from the outside. It is two
-CTest tests joined by a fixture: `Package.InstallsToAPrefix` installs the built
-tree into `build/stage`, and `Package.RunsAConsumerWithNothingButThePrefix`
-configures, compiles, and runs `tests/package/` against that prefix with nothing
-else on the path — so a missing export, a leaked private flag, or a header the
-install rule forgot fails here rather than in someone else's project. It is
-slower than the functional suite because it configures and compiles a second
+The `package` suite checks the installed package from outside. It installs the built tree to a
+prefix, then configures, compiles and runs `tests/package/` against that prefix with nothing
+else on the path. A missing export, a leaked private flag or a header the install rule forgot
+fails there. It is slower than the functional suite because it configures and compiles a second
 CMake project.
-
-Useful options:
 
 ```bash
 sr test --suite functional --filter 'Steal.*'   # only tests whose name matches the regex
 sr test --asan                                   # run the build-asan/ tree instead of build/
-sr test --distributed                            # run against a distributed-enabled build
+sr test --distributed                            # run against a build made with --distributed
 sr test --module scheduler                       # the tests of one module, whatever their kind
-sr test --repeat 50                              # re-run each test up to 50x, stop on first failure
+sr test --repeat 50                              # re-run each test up to 50 times, stop on the first failure
 ```
 
-`--filter` (`-f`) is a `ctest -R` regex matched against `Suite.Case` test names.
-`--repeat` (`-r`) is handy for hunting down flaky tests — it uses CTest's
-`--repeat until-fail`.
+`--filter` (`-f`) is a `ctest -R` regex matched against `Suite.Case` names. `--repeat` (`-r`)
+uses CTest's `--repeat until-fail`.
 
-For GoogleTest-level options that CTest doesn't expose (shuffling, break on
-failure), run the binary directly with `sr run` and pass flags after
-`--` (see below).
+For a GoogleTest option CTest does not expose, run the program with `sr run` and pass the
+option after `--`.
 
-### `sr run`
+## `sr run`
 
-Runs a built executable. With no target it runs the default from config
-(`sr_functional_tests`).
+Runs a built executable. With no target it runs the default of the configuration,
+`sr_functional_tests`.
 
 ```bash
 sr run                              # run the default target
-sr run sr_functional_tests          # run a specific binary by name
-sr run --sort                        # interactively pick from the list of executables
+sr run sr_functional_tests          # run a program by name
+sr run --sort                       # pick from the list of executables
 ```
 
-The target name is matched exactly first, then by substring, so you usually only
-need part of the name.
+The name is matched exactly first, then as a substring.
 
-Anything after `--` is forwarded straight to the program. This is how you pass
-GoogleTest flags:
+Everything after `--` goes to the program:
 
 ```bash
-sr run sr_benchmark_tests -- --gtest_filter='AllocatorBench.*'
+sr run sr_benchmark_tests -- --gtest_filter='Performance_GraphCompileBench.*'
 sr run sr_functional_tests -- --gtest_shuffle --gtest_break_on_failure
 ```
 
-For the distributed demo, `--distributed=master|worker` forwards a role to the
-application's `main()`:
+The two programs of the distributed demo take their own flags the same way:
 
 ```bash
-sr run sr_distributed_demo --distributed=worker --master=127.0.0.1:5555
-sr run sr_distributed_demo --distributed=master --port=5555 --workers=1
+sr run sr_distributed_demo
+sr run sr_distributed_worker -- --master 127.0.0.1:5555
 ```
 
-Only `master` and `worker` are accepted. Any other role stops the command with
-exit code 2 before the program starts. Add `--asan` to run binaries from the
-`build-asan/` tree.
+`--distributed ROLE` appends `--distributed=<role>` to the program's arguments, for a program
+that reads its role from that flag. It accepts `master` and `worker`; any other value stops the
+command with exit code 2 before the program starts. `--asan` runs programs from `build-asan/`.
 
-### `sr clean` and `sr docs`
+## `sr clean` and `sr docs`
 
 ```bash
 sr clean       # remove the build/ and build-asan/ trees
-sr docs        # build the fluent API reference into build/docs/api-site/html
+sr docs        # build the API reference into build/docs/api-site/html
 sr docs bundle --release 1.0.0   # pack the manual and the reference for docs.sushisystems.io
 ```
 
-`sr docs` runs Doxygen against `.config/doxygen/Doxyfile` (scoped to the
-public `modules/surface/api/include/SushiRuntime/api` surface). Doxygen is an external tool, not
-vendored: install it (`winget install DimitriVanHeesch.Doxygen` on Windows,
-`apt-get install doxygen graphviz` on Linux, `brew install doxygen graphviz` on
-macOS) or point `doxygen_exe` in `cli/config.local.toml` at an existing binary.
-The command prints the right install line if it cannot find one. It writes the HTML site and,
-beside it in `build/docs/api-site/xml`, the XML the bundle carries.
+`sr docs` runs Doxygen with `.config/doxygen/Doxyfile`. Doxygen is not vendored: install it
+(`winget install DimitriVanHeesch.Doxygen` on Windows, `apt-get install doxygen graphviz` on
+Linux, `brew install doxygen graphviz` on macOS) or set `doxygen_exe` in
+`cli/config.local.toml`. The command prints the install line when it finds no Doxygen. It writes
+the HTML site and, in `build/docs/api-site/xml`, the XML the bundle carries.
 
 `sr docs bundle --release X.Y.Z` runs the same Doxygen build, then packs the pages
 `docs/publish.toml` lists, the files they link to and that XML into
@@ -270,10 +212,9 @@ tag. The command stops with the page and the line when a published page links to
 does not exist. The archive's layout and the keys of `docs/publish.toml` are in
 `docs/reference/DOCS_BUNDLE.md` of the SushiCore repository.
 
-## `sr package` — produce a redistributable package
+## `sr package`
 
-Installs the already-built `build/` tree to a prefix and runs CPack over it to
-produce the archive.
+Installs the built `build/` tree to a prefix and runs CPack over it.
 
 ```bash
 sr package                       # install to build/dist, then archive
@@ -282,64 +223,56 @@ sr package --prefix ../staging --force  # clear a directory sr did not stage
 sr package --no-archive          # install only, skip CPack
 ```
 
-The prefix is emptied before the install, so a file the current build no longer
-produces cannot survive from a previous run into the archive. Because of that,
-`sr package` chooses carefully what it empties:
+The prefix is emptied before the install, so a file the current build does not produce cannot
+stay from an earlier run. `sr package` therefore limits what it empties:
 
-- It never stages into a filesystem root, your home directory, the project root,
-  any directory above the project root, or the `build/` tree itself. `--force`
-  does not change this.
-- A `--prefix` that does not exist yet, or is empty, is used as it is.
-- A `--prefix` that holds files is emptied only when `sr package` staged it
-  before. It knows by the `.sr-stage` file it writes into every stage tree.
-  For any other directory with files in it, pass `--force`.
+- It never stages into a filesystem root, the home directory, the project root, a directory
+  above the project root, or the `build/` tree. `--force` does not change this.
+- A `--prefix` that does not exist, or is empty, is used as it is.
+- A `--prefix` that holds files is emptied only when `sr package` staged it before, which the
+  `.sr-stage` file it writes into every stage tree tells. Any other directory with files needs
+  `--force`.
 - `build/dist`, the default, is always emptied.
 
-A refusal prints one error line and exits with code 1, and nothing is deleted.
-The same happens when the old tree cannot be removed completely.
+A refusal prints one error line and exits with code 1, and nothing is deleted. The same happens
+when the old tree cannot be removed completely.
 
-The build tree must already be configured — run `sr build` first. If the tree
-has no `CPackConfig.cmake`, the archive step is skipped with a warning.
+The build tree must be configured, so run `sr build` first. When the tree has no
+`CPackConfig.cmake`, the archive step is skipped with a warning.
 
-`sr package` produces the artifact; it does not check it. `sr test --suite
-package` is the check.
+`sr package` produces the package and does not check it. `sr test --suite package` checks it.
 
-## `sr container` — the development container
+## `sr container`
 
-`.config/docker/Dockerfile` provides a complete SYCL toolchain (an intel/llvm nightly bundle,
-the `intel-llvm` toolchain) plus the Intel OpenCL CPU runtime, so you can build
-and run — including the CUDA backend — without installing a compiler on your host.
+`.config/docker/Dockerfile` holds an intel/llvm nightly bundle and the Intel OpenCL CPU runtime
+on an `nvidia/cuda` base, so a build, with the CUDA backend, needs no compiler on the host.
 
 ```bash
 sr container build              # build the image (intel-llvm + adaptivecpp toolchains)
-sr container build --no-cache   # rebuild every layer from scratch, ignoring Docker's cache
-sr container build --oneapi     # also install the Intel oneAPI DPC++ compiler (icpx; several GB)
-sr container run                # start the container with the repo mounted
-sr container run --admin        # run with --privileged --cap-add=SYS_ADMIN (needed for profiling)
-sr container run --no-gpu       # omit --gpus all (headless / CI environments)
+sr container build --no-cache   # rebuild every layer, ignoring Docker's cache
+sr container build --oneapi     # also install the Intel oneAPI DPC++ compiler (several GB)
+sr container run                # start the container with the repository mounted
+sr container run --admin        # run with --privileged --cap-add=SYS_ADMIN, for profiling
+sr container run --no-gpu       # omit --gpus all
 ```
 
-By default the image ships the `intel-llvm` (primary) and `adaptivecpp`
-toolchains. The `oneapi` toolchain (`icpx`) is large, so it is opt-in: build
-with `--oneapi`, then inside the container `sr toolchain oneapi && sr build`
-just works — the CLI sources `/opt/intel/oneapi/setvars.sh` for you.
+The `oneapi` toolchain is opt-in because of its size. After `sr container build --oneapi`,
+`sr toolchain oneapi` and `sr build` work inside the container; the CLI sources
+`/opt/intel/oneapi/setvars.sh`.
 
-For GPU passthrough you need the NVIDIA Container Toolkit installed on the host.
+GPU passthrough needs the NVIDIA Container Toolkit on the host.
 
-## `sr config` and `sr env` — diagnostics
-
-When something isn't building the way you expect, these two commands show you
-what the CLI actually decided to do.
+## `sr config` and `sr env`
 
 ```bash
-sr config         # print the resolved config and where each value came from
+sr config         # print the resolved configuration and the source of each value
 
-sr env            # print the environment cmake/ctest/run subprocesses run under
-sr env --all      # show every variable, not just the build-relevant ones (-a for short)
-sr env --asan     # inspect the build-asan/ tree's environment instead
+sr env            # print the environment cmake, ctest and run subprocesses get
+sr env --all      # every variable, not only the build-relevant ones (-a)
+sr env --asan     # the environment of the build-asan/ tree
 ```
 
-## `sr setup`, `sr doctor`, `sr link` and `sr unlink` — provisioning
+## `sr setup`, `sr doctor`, `sr link` and `sr unlink`
 
 These four commands come from `sushicore` and work the same in every module CLI.
 
@@ -357,24 +290,22 @@ sr link --workspace <dir>         # record this checkout in a workspace's module
 sr unlink --workspace <dir>       # remove it
 ```
 
-`sr setup` reads two dependency fragments: the shared base that ships with
-`sushicore`, and this repo's `cli/sushistack.deps.toml`. It installs into
-`~/.sushisystems` (set `SUSHISYSTEMS_HOME` to move it) and writes the paths it
-found to `cli/config.local.toml`. A toolchain already installed in a SushiStack
-workspace's `dependencies/` tree counts as present. `sr` does not read a
-`dependencies/` folder inside this repository.
+`sr setup` reads two dependency fragments: the shared base that ships with `sushicore`, and
+this repository's `cli/sushistack.deps.toml`. It installs into `~/.sushisystems` (set
+`SUSHISYSTEMS_HOME` to move it) and writes the paths it found to `cli/config.local.toml`. A
+toolchain already installed in the `dependencies/` tree of a SushiStack workspace counts as
+present. `sr` does not read a `dependencies/` folder inside this repository.
 
-`sr doctor` exits non-zero when a check fails, and each failed row names the
-command that fixes it.
+`sr doctor` exits non-zero when a check fails, and each failed row names the command that fixes
+it.
 
-`sr link` and `sr unlink` take the workspace from `--workspace`, then
-`SUSHISTACK_HOME`, then the nearest parent directory that holds a `.sushistack`
-marker.
+`sr link` and `sr unlink` take the workspace from `--workspace`, then `SUSHISTACK_HOME`, then
+the nearest parent directory that holds a `.sushistack` marker.
 
-To provision several checkouts at once, use `hub install` from SushiStack.
+`hub install` from SushiStack provisions several checkouts at once.
 
-## Building without the CLI
+## What the CLI passes to CMake
 
-The CLI is a convenience, not a requirement — it only runs CMake and CTest for
-you. If you'd rather drive CMake yourself, see the **Building with CMake
-directly** section of the [README](../../README.md).
+`sr build` configures with the options that
+[the architecture page](../architecture/ARCHITECTURE.md#7-build-time-configuration) lists.
+`sr env` prints the environment those commands run under.
