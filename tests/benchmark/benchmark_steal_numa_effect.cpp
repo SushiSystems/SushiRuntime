@@ -99,7 +99,7 @@ namespace
     /**
      * @brief Benchmark results containing execution time and steal counts.
      */
-    struct Result
+    struct StealMeasurement
     {
         double ms = 1e300;
         size_t local = 0;
@@ -110,9 +110,9 @@ namespace
      * @brief Drains TOTAL counter tasks through the scheduler of @p ctx, best of ROUNDS.
      * @return The fastest round's time and its steal split.
      */
-    Result run_workload(RuntimeContext& ctx)
+    StealMeasurement run_workload(RuntimeContext& ctx)
     {
-        Result best;
+        StealMeasurement best;
         std::atomic<size_t> executed{0};
         for (int r = 0; r < ROUNDS; ++r)
         {
@@ -132,7 +132,7 @@ namespace
             EXPECT_EQ(executed.load(), TOTAL); // consume
 
             if (ms < best.ms)
-                best = Result{ ms, sched.local_steal_count(),
+                best = StealMeasurement{ ms, sched.local_steal_count(),
                                    sched.remote_steal_count() };
         }
         return best;
@@ -155,8 +155,8 @@ TEST(Performance_StealNumaEffectBench, NUMAAwareVsBlindThroughput)
 
     auto aware_ctx = make_synthetic_ctx(2);
 
-    const Result blind = run_workload(blind_ctx);
-    const Result aware = run_workload(*aware_ctx);
+    const StealMeasurement blind = run_workload(blind_ctx);
+    const StealMeasurement aware = run_workload(*aware_ctx);
 
     const double blind_thr = double(TOTAL) / (blind.ms / 1000.0);
     const double aware_thr = double(TOTAL) / (aware.ms / 1000.0);
