@@ -48,7 +48,7 @@ repeats that sum because the manager keeps its own private.
 `ThreadPark` counts the threads that have reported and blocks each one until the test releases
 them. It replaces a sleep: the test waits for a count, not for time.
 
-### `AThreadPastTheSlotLimitIsRefusedWithTheLimit`
+### `AThreadPastTheSlotLimitStopsNamingTheLimit`
 
 A thread takes a slot at its first `EpochGuard` and returns it when the thread exits, not when the
 guard is destroyed. The test starts one thread more than there are slots and parks every one of

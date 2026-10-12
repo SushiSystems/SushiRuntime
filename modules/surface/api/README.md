@@ -100,7 +100,7 @@ void record_scaled_copy(Recorder& recorder, const Buffer<float>& in,
 }
 ```
 
-A caller writes `record_scaled_copy(graph.recorder(), in, out, n, 2.0f);`, and the same call takes
+A caller passes `graph.recorder()` as the first argument, and the same function takes
 `world.region(key).recorder()`.
 
 ### One namespace

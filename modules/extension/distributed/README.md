@@ -41,7 +41,7 @@ private codec uses.
 `distributed.hpp` alone; a master includes it beside `SushiRuntime/sushiruntime.hpp`.
 
 `KernelRegistry::register_kernel()` has one form, the one that takes
-`span<const BufferView>`; the pointer form and its `RemoteKernel` alias are removed, so a generic
+`span<const BufferView>`, so a generic
 lambda registers without a cast. The last parameter of a kernel is a `const NodeOptions&`: the
 name, the operation and the parameters of the task, valid during the call. A worker fills it from
 the dispatch it received. The master fills it from the node's metadata through describe_task()

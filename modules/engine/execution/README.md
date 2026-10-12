@@ -319,7 +319,7 @@ allocating: the sentinel publishes the outcome under the mutex and notifies, and
 waits on the predicate.
 
 A `condition_variable` is the portable primitive that allocates nothing here. C++20's
-`atomic::wait` and `binary_semaphore` are missing from the C++17 baseline. The mutex is
+`atomic::wait` and `std::binary_semaphore` are missing from the C++17 baseline. The mutex is
 uncontended in steady state, so the cost is a futex wait and not a `malloc`. The failure
 that travels with the outcome is published before `done`, under the same lock, so a waiter
 that observes `done` sees a fully written outcome.
@@ -420,7 +420,7 @@ AdaptiveCpp's `event::wait()` is non-const and `dependencies` is const.
 The empty event it compares against is built once, outside the loop.
 
 The sentinel reads the run outcome before it re-arms, because `arm_for_execution()` clears
-`run_failed_` for the next round. A failed run still drains every node to the sentinel, so
+the recorded failure (`RunOutcome::clear_failure()`) for the next round. A failed run still drains every node to the sentinel, so
 reaching it means the run has quiesced either way.
 
 The sentinel's own `arm_for_execution()` keeps the pool armed through the drain tail. Peers

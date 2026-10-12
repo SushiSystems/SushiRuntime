@@ -70,7 +70,7 @@ what the deleters added.
 
 ### check_and_reclaim: the seq_cst fence
 
-The scan opens with a `seq_cst` fence, the counterpart of the one in enter(). The retiring thread
+The scan opens with a `std::memory_order_seq_cst` fence, the counterpart of the one in enter(). The retiring thread
 unlinks an object and then reads the slots; a reader publishes its slot and then reads the shared
 structure. With a fence on both sides, either the scan sees the reader's slot or the reader sees
 the unlink. This holds only if the caller unlinked the object before retire(), which is retire()'s
@@ -188,14 +188,14 @@ first. An allocator with no device logs a WARN instead.
 
 release() is `noexcept`, because USMAllocationOwner calls it from a `noexcept` override and
 Allocation calls that from a destructor. A `sycl::free` that throws is caught and logged as one
-ERROR; the record is already gone by then, so the address is no longer tracked.
+ERROR; the record is already gone by then, so the address is not tracked.
 
 ### set_release_observer
 
 release() counts itself in before it loads the observer and out after on_release() returns.
 set_release_observer() stores the new pointer and then yields until that count is zero, so when
 it returns no call into the previous observer is running and the caller may destroy it. Both
-sides use `seq_cst`: the store-then-read on one side and the increment-then-load on the other
+sides use `std::memory_order_seq_cst`: the store-then-read on one side and the increment-then-load on the other
 are the Dekker pattern, and a weaker order lets each side miss the other.
 
 The count covers every release() between those two points, whichever observer it loaded, so a

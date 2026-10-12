@@ -66,16 +66,6 @@ check_protocol_version() to return `ErrorCode::ProtocolMismatch` naming v2 and v
 type, flag and length checks run. A header that passes must name one of the sixteen types, carry a
 payload length of at most 1 MiB, and carry the last-chunk flag only on `BUFFER_CHUNK`.
 
-### Cases removed with protocol v1
-
-| Old test | Why it is gone |
-| --- | --- |
-| `ProtocolRoundTrip` | `GoldenBytes_TaskDispatch` pins the fixed case; the seeded round trip replaces it |
-| `BufferPushRoundTrip` | `BufferPushMsg` no longer exists; `GoldenBytes_BufferChunk` pins its successor |
-| `BufferRegistryVersioning` | It expected a second `register_buffer` to raise the version, which it no longer does; `test_buffer_registry.cpp` pins the registry |
-| `GetBlobRejectsOverflowingLength`, `GetBlobRejectsOversizedLength`, `BufferPushSurvivesOverflowingBlobLength` | No v2 message carries a length-prefixed blob: chunk data runs to the end of the frame |
-| `BufferPushSurvivesTruncatedStream`, `DeserializeEmptyPayloadIsSafe` | `EveryTruncationFailsCleanly` decodes every prefix of every message, the empty one included |
-
 ## test_distributed_e2e.cpp
 
 The file runs offload end to end on a real SYCL device, with a master and its workers in one
@@ -673,7 +663,7 @@ change nothing.
 ### `SilentWorkerIsTakenOnce`
 
 A worker silent for longer than the liveness limit is listed once and stops counting at that
-moment: the alive count drops, its operations no longer count toward `supports`, and `pick` offers
+moment: the alive count drops, its operations stop counting toward `supports`, and `pick` offers
 only the other worker. The `remove_peer` that follows does not lower the count a second time, and
 a late frame does not bring the worker back.
 

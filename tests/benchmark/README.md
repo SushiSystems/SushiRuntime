@@ -190,7 +190,7 @@ The gate benchmark for the deque-steal fast path, audit steal-1, and the global 
 counter, audit sched-1. It profiles them in the substrate's characteristic shape: many small
 steps, not one long sustained stream. Each step submits a modest batch of independent tasks
 and drains to quiescence. The tail of every step is where workers spin idle, stealing from
-empty peers, and steal-1 removes a `seq_cst` fence from each empty attempt. It is also where
+empty peers, and steal-1 removes a `std::memory_order_seq_cst` fence from each empty attempt. It is also where
 `inflight_` and the shared counters are hammered, which is the contention sched-1 targets.
 
 The benchmark reports drain latency per step and nanoseconds per task. That isolates the fixed
