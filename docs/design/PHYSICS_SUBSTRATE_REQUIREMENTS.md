@@ -229,8 +229,8 @@ This repo already records the gap, in `TODO.md` (now `docs/archive/slop/TODO.md`
 > halves of one buffer are serialized though they need not be (the intra tracker already handles
 > sub-ranges; lifting it to the boundary means carrying the entry/exit pins' byte intervals)."*
 
-The intra-region tracker does handle it (`ARCHITECTURE.md` §8.2: *"Disjoint sub-regions stay
-parallel"*, via `Core::ResourceRegion` and `Buffer::region(ElementRange)` at
+The intra-region tracker does handle it (`docs/architecture/ARCHITECTURE.md`, "Plan": disjoint sub-regions stay
+parallel, via `Core::ResourceRegion` and `Buffer::region(ElementRange)` at
 `api/data/buffer.hpp:349`). It is only the boundary layer that coarsens.
 
 ### Why the physics cares
@@ -254,8 +254,8 @@ would deadlock or serialize measurably if they did not; overlapping ranges still
 
 ## R4 — Asynchronous step
 
-`Graph::run()` blocks until the sentinel fires (`ARCHITECTURE.md` §10: *"injects the roots into the
-scheduler, arms it, and blocks until the sentinel fires"*). `run_for` / `run_until` are multi-step
+`Graph::run()` blocks until the sentinel fires (`modules/engine/execution/README.md`, "execute is submit plus complete": it injects the roots into the
+scheduler, arms it, and blocks until the sentinel fires). `run_for` / `run_until` are multi-step
 drivers, not asynchronous ones, and `run_for` takes a **wall-clock** budget, which a deterministic
 simulation cannot use at all.
 
@@ -309,7 +309,7 @@ Worth stating, because it bounds the ask:
 - **No new engine concepts in the runtime.** L14 holds. Nothing above asks the runtime to know what a
   body, a contact, or a constraint is. R1 is a count, R2 is a combination order, R3 is a byte interval.
 - **No cross-device execution.** The physics targets one device per scene and accepts the co-location
-  guard (`ARCHITECTURE.md` §10). Splitting a simulation across devices is WP-5's problem, not a
+  guard (`modules/engine/scheduler/README.md`). Splitting a simulation across devices is WP-5's problem, not a
   prerequisite.
 - **No cross-architecture determinism.** L3 already ruled it out and the engine's plan agrees.
 - **No change to the blocking execution model** beyond the optional R4.
