@@ -3,25 +3,28 @@
 What SushiRuntime is, its requirements and its build line are in the root
 [`README.md`](../README.md). This page lists every live document under `docs/`.
 
+The public interface is not stable below 1.0.0: pin an exact tag and reach the library through
+one adapter module of your own, as [the stability section](../README.md#stability) says.
+
 ## Getting started
 
 | Document | Holds |
 | --- | --- |
-| [Introduction](getting_started/INTRODUCTION.md) | Setup, a first program and a tour of the fluent API |
+| [Introduction](getting_started/INTRODUCTION.md) | The build, a first program and each part of the public interface |
 
 ## Architecture
 
 | Document | Holds |
 | --- | --- |
-| [Architecture](architecture/ARCHITECTURE.md) | The modules under `modules/`, the execution model, build-time configuration and the directory map |
+| [Architecture](architecture/ARCHITECTURE.md) | The modules and which are public, how a failure travels, the path of a run, the build options |
 
 ## Guides
 
 | Document | Holds |
 | --- | --- |
 | [CLI guide](guides/CLI_GUIDE.md) | Every `sr` command, its flags and the configuration it reads |
-| [Integration](guides/INTEGRATION.md) | Consuming an installed runtime through `find_package(SushiRuntime)` |
-| [Distributed guide](guides/DISTRIBUTED_GUIDE.md) | Building and running the optional master-worker layer, and its v1 limits |
+| [Integration](guides/INTEGRATION.md) | Consuming the installed package, and writing the one adapter module that reaches the library |
+| [Distributed guide](guides/DISTRIBUTED_GUIDE.md) | Building and running the optional master and worker layer, and its limits |
 | [FAQ](guides/FAQ.md) | The questions a newcomer asks, each answered from this manual |
 
 ## Reference
