@@ -26,7 +26,7 @@ The words this repository's documents use. A term defined in code names the head
 | Layer | Which path ran a step, reported in `RunReport::layer` (`ExecutionLayer`) |
 | Registration index | The number a task takes when it is added; the nodes of one `Recorder::rule()` scope share it. `RunReport::node_events` is numbered by it |
 | Node event record | `NodeEventRecord`: the submit, start and end times of one dispatch, collected when a graph requests profiling |
-| Clock pairing | `ClockPairing`: an event-clock reading and a steady-clock reading taken together at a run's first device submission, used to place host and device records on one axis |
+| Clock pairing | `ClockPairing`: an event-clock reading and a steady-clock reading taken together at a run's first device submission; it places host and device records on one axis |
 | Profiling queue | A second queue per device, built on first use with profiling enabled, that a graph requesting profiling dispatches through |
 | Offload | Sending one task to a remote worker through the optional distributed layer |
 | `OperationID` | A 32-bit FNV-1a hash of an operation's name, written with the `_op` literal. It is what crosses the wire in place of code (`core/operation_id.hpp`) |
@@ -51,9 +51,9 @@ The words this repository's documents use. A term defined in code names the head
 | Liveness timeout | The silence after which the master closes a worker, and a worker its master; 5 s by default |
 | Task deadline | The longest a kernel may run on a worker before the master takes the task back; 30 s by default, 0 for no bound |
 | Heartbeat | The frame a worker sends every second with its queue depth, its cache size and the oldest task it still holds |
-| Reap | The master taking back one task whose worker is still registered: past its deadline, never confirmed, or no longer listed in the worker's heartbeats |
+| Reap | The master taking back one task whose worker is still registered: past its deadline, never confirmed, or absent from the worker's heartbeats |
 | Redispatch | A task taken back from a worker and resubmitted to the scheduler, counted in `ClusterStatistics::redispatched` |
-| Stale writeback | An output chunk the master refuses because its task is no longer out or its version is old |
+| Stale writeback | An output chunk the master refuses because its task is not out on a worker or its version is old |
 | Co-tenancy | The runtime sharing a machine with an engine's own threads: `RuntimeConfig` fixes its worker count, first core and pinning |
 | Interop | `Interop`, which `Runtime::interop()` returns: exporting host memory and importing device memory another API allocated |
 

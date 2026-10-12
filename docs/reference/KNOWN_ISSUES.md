@@ -29,12 +29,12 @@ Defects that are recorded and not yet fixed. The work each one needs is in
 | The CI lint step ends in `\|\| true` and cannot fail | `.github/workflows/ci.yml` |
 | The CLI package declares version 1.0.0 and `Doxyfile` says `v1 (unreleased)`, while the library is 0.3.0 | `cli/pyproject.toml`, `cli/sushiruntime/__init__.py`, `.config/doxygen/Doxyfile` |
 | Configuring leaves empty `CXX-DetectStdlib-*.h` files in the repository root, because the CLI runs the configure step with the source root as its working directory | `cli/sushiruntime/services/project.py` |
-| `_walk` in this copy of the source comment checker tests `K_SKIPPED_FOLDERS` before `is_file()`; the SushiSkills original still tests them the other way round and stops with `WinError 1920` on `venv/bin/python` | `tools/documentation/check_source_comments.py` |
+| `_walk` in this copy of the source comment checker tests `K_SKIPPED_FOLDERS` before `is_file()`; the SushiSkills original still tests them the other way round and stops with Windows error 1920 on `venv/bin/python` | `tools/documentation/check_source_comments.py` |
 
 ## Documentation
 
 | Issue | Where |
 | --- | --- |
-| Two CMake comments cite the integration guide as `docs/INTEGRATION.md`; it is `docs/guides/INTEGRATION.md` | `cmake/SushiRuntimeConfig.cmake.in`, `tests/package/CMakeLists.txt` |
+| Two CMake comments cite the integration guide directly under `docs`; it is `docs/guides/INTEGRATION.md` | `cmake/SushiRuntimeConfig.cmake.in`, `tests/package/CMakeLists.txt` |
 | The changelog has no entry for the dispatch-width fields added on 2026-09-21 or for the `sushicore` lower bound of 0.7.0 | `docs/reference/CHANGELOG.md` |
 | Documents frozen in the archive cite each other and the manual by the paths they had before they moved | `docs/archive/slop/`, `docs/archive/superpowers/specs/`, `docs/archive/agent/reports/` |

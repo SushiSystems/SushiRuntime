@@ -17,7 +17,7 @@ translation unit, and your binary offloads it to the device.
     });
 ```
 
-Source: `tests/package/main.cpp`.
+Source: `tests/package/main.cpp`
 
 The library never sees that lambda. Three things follow.
 
@@ -68,7 +68,9 @@ set_target_properties(sushiruntime_package_consumer PROPERTIES
 )
 ```
 
-Source: `tests/package/CMakeLists.txt`. Configure with `CMAKE_PREFIX_PATH` set to the install prefix
+Source: `tests/package/CMakeLists.txt`
+
+Configure with `CMAKE_PREFIX_PATH` set to the install prefix
 and with the same SYCL compiler as `CMAKE_CXX_COMPILER`. `tests/package/` is a complete consumer
 with no access to this source tree, and `sr test --suite package` installs the library and
 builds and runs it.
@@ -122,7 +124,7 @@ You supply:
     }
 ```
 
-Source: `tests/package/main.cpp`.
+Source: `tests/package/main.cpp`
 
 `SUSHIRUNTIME_VERSION_STRING` is the version of the headers you compiled against.
 `runtime_version_string()` is the version the loaded library was built from. They differ when an
@@ -192,6 +194,8 @@ SushiAI does this in one file:
         }
 ```
 
+Source: not compiled
+
 Every call into the library then goes through a function that tests the `Result` and returns
 the mapped error:
 
@@ -209,7 +213,10 @@ the mapped error:
         }
 ```
 
-Source of both blocks: `sushiai/modules/core/core/source/seam.cpp`, in the SushiAI repository.
+Source: not compiled
+
+Both blocks are from `sushiai/modules/core/core/source/seam.cpp`, in the SushiAI repository, which
+this repository does not build.
 `Status`, `StatusCode`, `SeamPhase`, `failure_of`, `untyped_code`, `guard` and `SA_FATAL` are
 SushiAI's own names. `guard` catches what a callee outside SushiRuntime throws; the library
 itself throws nothing.

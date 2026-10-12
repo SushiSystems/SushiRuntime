@@ -81,7 +81,9 @@ int main()
 }
 ```
 
-Source: `applications/examples/quickstart.cpp`. Run it with `sr run sr_quickstart`.
+Source: `applications/examples/quickstart.cpp`
+
+Run it with `sr run sr_quickstart`.
 
 The program has four parts, and every program on the library has the same four.
 
@@ -103,7 +105,9 @@ To build a program of your own inside this checkout, put the source file in
 sushiruntime_add_example(sr_quickstart             quickstart.cpp)
 ```
 
-Source: `applications/examples/CMakeLists.txt`. A program in another repository links the
+Source: `applications/examples/CMakeLists.txt`
+
+A program in another repository links the
 installed package; see [the integration guide](../guides/INTEGRATION.md).
 
 ## 3. Results and errors
@@ -125,6 +129,8 @@ program that cannot continue without the value, which is why the quickstart writ
         }
 ```
 
+Source: `applications/examples/operating_path_demo.cpp`
+
 ```cpp
     /** @brief Returns what a caller does about a failed run, chosen by its code. */
     const char* remedy_for(ErrorCode code) noexcept
@@ -144,7 +150,7 @@ program that cannot continue without the value, which is why the quickstart writ
     }
 ```
 
-Source: `applications/examples/operating_path_demo.cpp`.
+Source: `applications/examples/operating_path_demo.cpp`
 
 The library separates three kinds of failure.
 
@@ -179,12 +185,14 @@ through range calls:
         hits.write_range({0, K_CAPACITY}, zeros).value();
 ```
 
+Source: `applications/examples/operating_path_demo.cpp`
+
 ```cpp
         // read_range() copies one window through the owning queue and maps nothing else.
         const float in_both_runs = hits.read_range({0, 1}).value()[0];
 ```
 
-Source: `applications/examples/operating_path_demo.cpp`.
+Source: `applications/examples/operating_path_demo.cpp`
 
 `DeviceIndex{0}` is the first device SYCL lists, which is a CPU on one machine and a GPU on
 another. `rt.advanced().devices()` describes each index.
@@ -236,7 +244,7 @@ element pointer, in the order they are written.
         g.run().value();
 ```
 
-Source: `applications/examples/vecadd_demo.cpp`.
+Source: `applications/examples/vecadd_demo.cpp`
 
 A kernel that captures its own pointers names the data with `Reads(...)` and `Writes(...)`
 and takes a count as its launch:
@@ -250,7 +258,7 @@ and takes a count as its launch:
         };
 ```
 
-Source: `applications/examples/streaming_world_demo.cpp`.
+Source: `applications/examples/streaming_world_demo.cpp`
 
 The runtime compares byte ranges, so two tasks conflict only where their ranges overlap.
 `buffer.region({offset, count})` names part of a buffer for `Reads` or `Writes`, and tasks over
@@ -276,7 +284,9 @@ receives the global index:
         });
 ```
 
-Source: `applications/examples/stencil_demo.cpp`. The rule never writes the border, so the
+Source: `applications/examples/stencil_demo.cpp`
+
+The rule never writes the border, so the
 program seeds both buffers of the `State` before the run.
 
 ### Several fields: `add_coupled`
@@ -299,7 +309,7 @@ result does not depend on the order in which the rules were added.
         });
 ```
 
-Source: `applications/examples/coupled_fields_demo.cpp`.
+Source: `applications/examples/coupled_fields_demo.cpp`
 
 ### A size that changes per step: `add_dynamic`
 
@@ -317,7 +327,7 @@ and `when()` whether the node runs at all.
             .name("count_hits");
 ```
 
-Source: `applications/examples/operating_path_demo.cpp`.
+Source: `applications/examples/operating_path_demo.cpp`
 
 When a kernel of the same step produces the count, `sized_from_device(counter)` reads it after
 that kernel has finished. The counter is a `Residency::Host` buffer:
@@ -332,7 +342,7 @@ that kernel has finished. The counter is a `Residency::Host` buffer:
                   [m](std::size_t i) { m[i] = static_cast<int>(i); });
 ```
 
-Source: `modules/surface/api/tests/test_device_count.cpp`.
+Source: `modules/surface/api/tests/test_device_count.cpp`
 
 [The vocabulary README](../../modules/surface/api/include/SushiRuntime/api/vocabulary/README.md)
 covers `based_at_device()`, `LateCount` and what happens when a live count exceeds the capacity.
@@ -351,7 +361,7 @@ the tasks it depends on. Use it for host C++ that shares data with kernels.
     });
 ```
 
-Source: `modules/surface/api/tests/test_async_step.cpp`.
+Source: `modules/surface/api/tests/test_async_step.cpp`
 
 `add_task(reads, writes, body)` hands the body the queue and the events it must run after. The
 body submits what it needs and returns the event that ends its work. A library that calls
@@ -378,7 +388,7 @@ name, an operation and up to eight parameters.
             }).name("cull");
 ```
 
-Source: `applications/examples/game_engine_demo.cpp`.
+Source: `applications/examples/game_engine_demo.cpp`
 
 An operation is an `OperationID`, written with the `_op` literal. A node that names one may run
 on another machine when a cluster is attached; see
@@ -408,7 +418,7 @@ step and returns its report; the `State`s advance there.
     const RunReport report = step.wait().value();
 ```
 
-Source: `modules/surface/api/tests/test_async_step.cpp`.
+Source: `modules/surface/api/tests/test_async_step.cpp`
 
 A runtime runs one graph at a time. A run entry called while another run is in flight on the
 same runtime returns `InvalidState`.
@@ -428,7 +438,7 @@ called the run. It is where a program writes a value the next step reads.
     g.run(K_STEPS).value();
 ```
 
-Source: `modules/surface/api/tests/test_run_driver.cpp`.
+Source: `modules/surface/api/tests/test_run_driver.cpp`
 
 `compile()` builds the plan and runs nothing. `Graph::plan()` returns a `PlanView` of the nodes
 in recording order. `cancel()` stops the run in flight of the graph it is called on, from any
@@ -454,7 +464,7 @@ that share a buffer are ordered across the boundary.
         world.run(STEPS).value();
 ```
 
-Source: `applications/examples/streaming_world_demo.cpp`.
+Source: `applications/examples/streaming_world_demo.cpp`
 
 ## 8. Configuring the runtime
 
@@ -474,7 +484,7 @@ Source: `applications/examples/streaming_world_demo.cpp`.
         std::printf("  workers: %zu\n", built.worker_pool().count);
 ```
 
-Source: `applications/examples/operating_path_demo.cpp`.
+Source: `applications/examples/operating_path_demo.cpp`
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -511,7 +521,7 @@ called `set_profiling(true)`.
         total += w.busy_ms + w.stealing_ms + w.polling_ms + w.idle_ms;
 ```
 
-Source: `tests/integration/test_observability.cpp`.
+Source: `tests/integration/test_observability.cpp`
 
 A node without a name reports as `unnamed_task`.
 [The report README](../../modules/foundation/report/README.md) lists the fields.

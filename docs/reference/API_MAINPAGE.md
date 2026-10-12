@@ -37,7 +37,7 @@ The modules beneath this surface are described in `docs/architecture/ARCHITECTUR
     const SushiRuntime::RunReport report = graph.run(STEPS).value();
 ```
 
-The block is from `tests/package/main.cpp`.
+Source: `tests/package/main.cpp`
 
 ## Where to look
 

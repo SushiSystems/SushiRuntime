@@ -95,8 +95,9 @@ and the two commands for two machines.
         Distributed::Cluster& cluster = *attached;
 ```
 
-Source: `applications/examples/distributed_demo.cpp`, which includes
-`<SushiRuntime/sushiruntime.hpp>` and `<SushiRuntime/distributed/distributed.hpp>`.
+Source: `applications/examples/distributed_demo.cpp`
+
+The demo includes `<SushiRuntime/distributed/distributed.hpp>` beside the umbrella header.
 `options.listen` is the `Endpoint` the demo built from `--bind` and `--port`, and `read_secret`
 calls `SharedSecret::from_file` when a file was named.
 
@@ -194,8 +195,9 @@ int main(int argc, char** argv)
 }
 ```
 
-Source: `applications/examples/distributed_worker.cpp`. `register_kernels` is the function of
-§6.
+Source: `applications/examples/distributed_worker.cpp`
+
+`register_kernels` is the function of §6.
 
 `run_worker` reads the flags, loads the secret, builds a runtime, connects, serves the master
 until a signal and returns the exit code.
@@ -232,10 +234,8 @@ its buffer cache, because buffer ids start again in every master process.
 
 ### A worker inside your own process
 
-`WorkerAgent` (`worker_agent.hpp`) is the same worker without `main`: you give it a runtime, a
-worker-side transport, a registry and `WorkerAgentOptions`, then call `start()`,
-`wait_for_end()` and `stop()`. The tests and the benchmark use it to run a master and a worker
-in one process.
+`WorkerAgent` is the same worker without `main`, which the tests use to run a master and a
+worker in one process; the module README describes it under "worker_agent.hpp".
 
 ## 6. Write a kernel
 
@@ -246,6 +246,8 @@ is given and returns the event:
     /** @brief Names the operation that adds two float vectors element by element. */
     inline constexpr auto K_VECTOR_ADD = "demo.vector_add"_op;
 ```
+
+Source: `applications/examples/distributed_kernels.hpp`
 
 ```cpp
     inline sycl::event add_vectors(
@@ -270,8 +272,10 @@ is given and returns the event:
     }
 ```
 
-Source: `applications/examples/distributed_kernels.hpp`, in its namespace `DistributedDemo`.
-`add_element()` of the same header writes one element of the sum.
+Source: `applications/examples/distributed_kernels.hpp`
+
+Both blocks are in the namespace `DistributedDemo`. `add_element()` of the same header writes
+one element of the sum.
 
 A `BufferView` is an address and a size in bytes. The views arrive in the order the task lists
 its buffers and stay valid until the returned event completes. `as<T>()` casts the address and
@@ -306,6 +310,8 @@ fallback:
         float* sum_data = sum.data();
 ```
 
+Source: `applications/examples/distributed_demo.cpp`
+
 ```cpp
         // The node names its operation; a worker runs the kernel registered for the same id.
         NodeOptions vector_add;
@@ -321,7 +327,7 @@ fallback:
         graph.run().value();
 ```
 
-Source: `applications/examples/distributed_demo.cpp`.
+Source: `applications/examples/distributed_demo.cpp`
 
 The lambda runs when the task stays on the master, so it must compute what the kernel computes.
 The demo keeps the two equal by calling `add_element()` from both.
@@ -371,7 +377,7 @@ To send every task whatever its size, pass a policy with a threshold of 0:
         options.policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
 ```
 
-Source: `modules/extension/distributed/tests/test_distributed_e2e.cpp`.
+Source: `modules/extension/distributed/tests/test_distributed_e2e.cpp`
 
 To write your own, implement `OffloadPolicy::pick_worker` and return the `worker_id` of one of
 the workers you were offered, or nothing to run the task locally. The call runs on a pool thread
@@ -388,10 +394,10 @@ are read one by one, not at one instant.
 | Field | Counts |
 | --- | --- |
 | `offloaded` | Dispatches queued to a worker. A task sent twice counts twice |
-| `declined` | Dispatches of an offloadable task that ran on the master instead: the policy picked no worker, no worker had room, the task had used its two attempts, a buffer was no longer shared, or the send was refused |
+| `declined` | Dispatches of an offloadable task that ran on the master instead: the policy picked no worker, no worker had room, the task had used its two attempts, a buffer had been released, or the send was refused |
 | `completed_remote` | Tasks a worker finished with every output byte back on the master |
 | `redispatched` | Tasks taken back from a worker and resubmitted: the worker was lost, it reported a failure, the task was reaped, or the master stopped |
-| `stale_writebacks` | Output chunks the master refused, because their task was no longer out or their version was old |
+| `stale_writebacks` | Output chunks the master refused, because their task was not out on a worker or their version was old |
 | `handshake_rejected_auth` | Peers that sent a proof made with another secret |
 | `handshake_rejected_version` | Peers closed for speaking another protocol version |
 | `peers_lost` | Registered workers that left, for any reason |

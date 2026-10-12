@@ -98,43 +98,34 @@ calls CMake itself; see [Use it from another project](#use-it-from-another-proje
 ## A first program
 
 ```cpp
-#include <cstdio>
+        constexpr std::size_t N     = 1024;
+        constexpr std::size_t STEPS = 10000;
 
-#include <SushiRuntime/sushiruntime.hpp>
+        auto rt = Runtime::create().value();          // discovers hardware, starts the workers
 
-using namespace SushiRuntime;
+        // The runtime keeps two buffers and swaps them; a rule reads one, writes the other.
+        auto heat = rt.state<float>(N).value();
+        for (std::size_t i = 0; i < N; ++i)
+            heat[i] = (i == N / 2) ? 1.0f : 0.0f;   // a single hot cell in the middle
 
-int main()
-{
-    constexpr std::size_t N     = 1024;
-    constexpr std::size_t STEPS = 10000;
+        auto sim = rt.graph();
 
-    auto rt = Runtime::create().value();          // discovers hardware, starts the workers
+        // The kernel receives the index and both buffers; the runtime tracks the access.
+        sim.add_rule(heat, [](std::size_t i, const float* cur, float* next)
+        {
+            const float left  = (i == 0)     ? cur[i] : cur[i - 1];
+            const float right = (i == N - 1) ? cur[i] : cur[i + 1];
+            next[i] = cur[i] + 0.25f * (left - 2.0f * cur[i] + right);
+        });
 
-    // The runtime keeps two buffers and swaps them; a rule reads one, writes the other.
-    auto heat = rt.state<float>(N).value();
-    for (std::size_t i = 0; i < N; ++i)
-        heat[i] = (i == N / 2) ? 1.0f : 0.0f;   // a single hot cell in the middle
-
-    auto sim = rt.graph();
-
-    // The kernel receives the index and both buffers; the runtime tracks the access.
-    sim.add_rule(heat, [](std::size_t i, const float* cur, float* next)
-    {
-        const float left  = (i == 0)     ? cur[i] : cur[i - 1];
-        const float right = (i == N - 1) ? cur[i] : cur[i + 1];
-        next[i] = cur[i] + 0.25f * (left - 2.0f * cur[i] + right);
-    });
-
-    // The graph compiles once and replays STEPS times.
-    const auto report = sim.run(STEPS).value();
-
-    std::printf("%zu steps in %.2f ms\n", STEPS, report.total_duration_ms);
-    return 0;
-}
+        // The graph compiles once and replays STEPS times.
+        const auto report = sim.run(STEPS).value();
 ```
 
-Trimmed from `applications/examples/quickstart.cpp`, which `sr run sr_quickstart` runs.
+Source: `applications/examples/quickstart.cpp`
+
+The program includes `<SushiRuntime/sushiruntime.hpp>` and writes
+`using namespace SushiRuntime;`. `sr run sr_quickstart` runs it.
 
 `Runtime::create()`, `state()` and `run()` return a `Result`. `value()` stops the process when
 the result holds an error; a program that handles the error tests the result first, as
