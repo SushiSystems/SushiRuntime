@@ -129,8 +129,13 @@ The public class is `Graph`; the engine's graph module is `SushiRuntime::Interna
 ### Detail
 
 `SushiRuntime::Detail` holds what the installed headers need and a consumer does not write: the
-node descriptions, the step target, the checks behind a static_assert. Its headers are installed
-because the templates of the surface name them.
+node descriptions, the step target, the callable traits and the checks behind a static_assert.
+Its headers are installed because the templates of the surface name them.
+
+The classes a graph is built from are in `Detail` too: `BuilderSurface`, `StepDriver`,
+`PlanCache`, `RegionComposer` and `RegionChangeLog`, whose headers sit under `api/graph/` beside
+the classes that use them. A consumer calls their members through `Graph`, `DynamicGraph` and
+`Region`, and writes the key of a region as `DynamicGraph::RegionKey`.
 
 A `Detail` type that crosses the compiled boundary is part of the binary interface: the library
 and the consumer both read `NodeDescription`, `NodeStamp`, `StepTarget`, `AsyncRunState`,

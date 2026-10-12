@@ -14,8 +14,9 @@ symbol or passage it explains, and that header's file block cites this page.
 
 ### The callable traits
 
-callable_traits.hpp names four callable shapes as C++17 traits over std::is_invocable_v: a
-per-element kernel, a range kernel, a raw kernel and a task body. The first three have two users.
+callable_traits.hpp names four callable shapes as C++17 traits over std::is_invocable_v, in
+`SushiRuntime::Detail`: a per-element kernel, a range kernel, a raw kernel and a task body. The
+first three have two users.
 The Recorder chooses between a per-element node and a range node by the first two:
 untracked_kernel() by overload, and kernel(count, ...) inside one overload, after accepts_kernel()
 has asserted the callable. callable_checks.hpp reads all three in accepts_per_element(),

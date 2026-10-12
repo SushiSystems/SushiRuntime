@@ -52,9 +52,9 @@ TEST(Integration_CallableTraits, AMutablePerElementKernelIsRejected)
     int calls = 0;
     auto mutating = [calls](std::size_t) mutable { ++calls; };
 
-    EXPECT_TRUE(is_per_element_v<decltype(plain)>);
-    EXPECT_FALSE(is_per_element_v<decltype(mutating)>);
-    EXPECT_FALSE(is_per_element_v<decltype(mutating)&>);
+    EXPECT_TRUE(Detail::is_per_element_v<decltype(plain)>);
+    EXPECT_FALSE(Detail::is_per_element_v<decltype(mutating)>);
+    EXPECT_FALSE(Detail::is_per_element_v<decltype(mutating)&>);
 }
 
 /** @brief Tests that a range kernel passes without mutable and fails with it. */
@@ -64,9 +64,9 @@ TEST(Integration_CallableTraits, AMutableRangeKernelIsRejected)
     int calls = 0;
     auto mutating = [calls](std::size_t, std::size_t, sycl::handler&) mutable { ++calls; };
 
-    EXPECT_TRUE(is_range_kernel_v<decltype(ranging)>);
-    EXPECT_FALSE(is_per_element_v<decltype(ranging)>);
-    EXPECT_FALSE(is_range_kernel_v<decltype(mutating)>);
+    EXPECT_TRUE(Detail::is_range_kernel_v<decltype(ranging)>);
+    EXPECT_FALSE(Detail::is_per_element_v<decltype(ranging)>);
+    EXPECT_FALSE(Detail::is_range_kernel_v<decltype(mutating)>);
 }
 
 /** @brief Tests that a mutable raw kernel still passes, since raw_node() calls it non-const. */
@@ -74,7 +74,7 @@ TEST(Integration_CallableTraits, AMutableRawKernelIsAccepted)
 {
     auto mutating = [](sycl::handler&) mutable {};
 
-    EXPECT_TRUE(is_raw_kernel_v<decltype(mutating)>);
+    EXPECT_TRUE(Detail::is_raw_kernel_v<decltype(mutating)>);
 }
 
 /** @brief Tests that a coupled kernel fits only when it takes each State read as const. */

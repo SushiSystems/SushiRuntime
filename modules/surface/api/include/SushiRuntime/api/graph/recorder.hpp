@@ -162,7 +162,7 @@ namespace SushiRuntime
             {
                 if constexpr (!Detail::accepts_kernel<std::size_t, F>())
                     return rule_count();
-                else if constexpr (is_range_kernel_v<F>)
+                else if constexpr (Detail::is_range_kernel_v<F>)
                     return record(Detail::range_node(std::move(access.reads),
                                                      std::move(access.writes), count,
                                                      std::forward<F>(kernel_body)),
@@ -224,7 +224,7 @@ namespace SushiRuntime
              * @brief Records a per-element launch whose window is bound per step.
              * @param capacity Upper bound the live window must fit; also the default width.
              */
-            template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
+            template <class F, std::enable_if_t<Detail::is_per_element_v<F>, int> = 0>
             std::size_t dynamic_kernel(Dynamic window, std::size_t capacity, Access access,
                                        F&& kernel_body, NodeOptions options = {})
             {
@@ -311,7 +311,7 @@ namespace SushiRuntime
              * @pre placement names a device of this runtime.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
-            template <class F, std::enable_if_t<is_per_element_v<F>, int> = 0>
+            template <class F, std::enable_if_t<Detail::is_per_element_v<F>, int> = 0>
             std::size_t untracked_kernel(std::size_t count, F&& kernel_body,
                                          const On& placement = On(DeviceIndex{0}),
                                          NodeOptions options = {},
@@ -331,7 +331,7 @@ namespace SushiRuntime
              * @param call      Names the call the user wrote in a message.
              * @pre placement names a device of this runtime.
              */
-            template <class F, std::enable_if_t<is_range_kernel_v<F>, int> = 0>
+            template <class F, std::enable_if_t<Detail::is_range_kernel_v<F>, int> = 0>
             std::size_t untracked_kernel(std::size_t count, F&& kernel_body,
                                          const On& placement = On(DeviceIndex{0}),
                                          NodeOptions options = {},

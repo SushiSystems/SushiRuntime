@@ -64,7 +64,8 @@ namespace SushiRuntime
      * same runtime and can be given regions and run again.
      * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
      */
-    class DynamicGraph : public StepDriver<DynamicGraph>, private RegionComposer
+    class DynamicGraph : public Detail::StepDriver<DynamicGraph>,
+                         private Detail::RegionComposer
     {
         public:
             using RegionComposer::RegionKey;
@@ -124,7 +125,7 @@ namespace SushiRuntime
                 if (it == regions_.end())
                 {
                     if (changes_ == nullptr)
-                        changes_ = std::make_unique<RegionChangeLog>();
+                        changes_ = std::make_unique<Detail::RegionChangeLog>();
                     // Region's constructor is private, so std::make_unique cannot reach it.
                     it = regions_.emplace(key, std::unique_ptr<Region>(
                         new Region(context_, *changes_, key))).first;
@@ -231,7 +232,7 @@ namespace SushiRuntime
         private:
             friend class Runtime;
             // The driver reaches the plan, the hooks and the checks below, and nothing else.
-            friend class StepDriver<DynamicGraph>;
+            friend class Detail::StepDriver<DynamicGraph>;
             friend struct Detail::DynamicGraphNodeEventsTestAccess;
 
             /** @brief Error text of a run started with no region. */
@@ -442,7 +443,7 @@ namespace SushiRuntime
             std::vector<std::unique_ptr<Region>> retired_;
 
             /** @brief Lists the regions written to since the last run; regions point at it. */
-            std::unique_ptr<RegionChangeLog> changes_;
+            std::unique_ptr<Detail::RegionChangeLog> changes_;
 
             /** @brief Regions to build or rebuild at the next commit. */
             std::set<RegionKey> dirty_regions_;

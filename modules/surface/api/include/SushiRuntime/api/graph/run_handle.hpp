@@ -77,10 +77,10 @@ namespace SushiRuntime
 
             std::uint32_t pending_serial = K_NO_STEP;  /**< Number of the pending step. */
         };
-    } // namespace Detail
 
-    template <class Owner>
-    class StepDriver;
+        template <class Owner>
+        class StepDriver;
+    } // namespace Detail
 
     /**
      * @brief Owns a step that was started but not yet waited for, and finishes it on
@@ -201,7 +201,7 @@ namespace SushiRuntime
             }
 
         private:
-            friend class StepDriver<Owner>;
+            friend class Detail::StepDriver<Owner>;
 
             RunHandle(Owner* owner, std::shared_ptr<Detail::AsyncStepRecord> record,
                       const Detail::AsyncRunState& state) noexcept

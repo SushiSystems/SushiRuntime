@@ -615,76 +615,78 @@ namespace SushiRuntime
                 /** @brief The request of the commit in progress; stamped into the plan. */
                 bool profiling_requested_ = false;
         };
-    } // namespace Detail
 
-    RegionComposer::RegionComposer(bool profiling) noexcept : profiling_requested_(profiling)
-    {
-    }
-
-    RegionComposer::RegionComposer(RegionComposer&& other) noexcept
-        : state_(std::move(other.state_)), profiling_requested_(other.profiling_requested_)
-    {
-    }
-
-    RegionComposer& RegionComposer::operator=(RegionComposer&& other) noexcept
-    {
-        if (this != &other)
+        RegionComposer::RegionComposer(bool profiling) noexcept : profiling_requested_(profiling)
         {
-            state_ = std::move(other.state_);
-            profiling_requested_ = other.profiling_requested_;
         }
-        return *this;
-    }
 
-    RegionComposer::~RegionComposer() = default;
+        RegionComposer::RegionComposer(RegionComposer&& other) noexcept
+            : state_(std::move(other.state_)), profiling_requested_(other.profiling_requested_)
+        {
+        }
 
-    void RegionComposer::commit(const std::set<RegionKey>& dirty,
-                                const std::set<RegionKey>& dropped,
-                                const std::function<const Recorder*(RegionKey)>& recorder_of)
-    {
-        // A composer that never composed, or was moved from, holds no state yet.
-        if (state_ == nullptr)
-            state_ = std::make_unique<Detail::RegionComposerState>();
-        state_->commit(dirty, dropped, recorder_of, profiling_requested_);
-    }
+        RegionComposer& RegionComposer::operator=(RegionComposer&& other) noexcept
+        {
+            if (this != &other)
+            {
+                state_ = std::move(other.state_);
+                profiling_requested_ = other.profiling_requested_;
+            }
+            return *this;
+        }
 
-    void RegionComposer::rearm() noexcept
-    {
-        state_->rearm();
-    }
+        RegionComposer::~RegionComposer() = default;
 
-    std::size_t RegionComposer::compose_count() const noexcept
-    {
-        return state_ != nullptr ? state_->compose_count() : 0;
-    }
+        void RegionComposer::commit(const std::set<RegionKey>& dirty,
+                                    const std::set<RegionKey>& dropped,
+                                    const std::function<const Recorder*(RegionKey)>& recorder_of)
+        {
+            // A composer that never composed, or was moved from, holds no state yet.
+            if (state_ == nullptr)
+                state_ = std::make_unique<Detail::RegionComposerState>();
+            state_->commit(dirty, dropped, recorder_of, profiling_requested_);
+        }
 
-    bool RegionComposer::composed() const noexcept
-    {
-        return state_ != nullptr && state_->composed();
-    }
+        void RegionComposer::rearm() noexcept
+        {
+            state_->rearm();
+        }
 
-    bool RegionComposer::is_current(RegionKey key, const Recorder& recorder) const
-    {
-        return state_ != nullptr && state_->is_current(key, recorder);
-    }
+        std::size_t RegionComposer::compose_count() const noexcept
+        {
+            return state_ != nullptr ? state_->compose_count() : 0;
+        }
 
-    std::uint32_t RegionComposer::registration_of(RegionKey key, std::size_t rule) const noexcept
-    {
-        return state_ != nullptr ? state_->registration_of(key, rule) : Detail::K_NO_REGISTRATION;
-    }
+        bool RegionComposer::composed() const noexcept
+        {
+            return state_ != nullptr && state_->composed();
+        }
 
-    bool RegionComposer::has_roots() const noexcept
-    {
-        return state_ != nullptr && !state_->plan_.roots.empty();
-    }
+        bool RegionComposer::is_current(RegionKey key, const Recorder& recorder) const
+        {
+            return state_ != nullptr && state_->is_current(key, recorder);
+        }
 
-    Internal::Graph::CompiledGraph& RegionComposer::compiled_plan() noexcept
-    {
-        return state_->plan_;
-    }
+        std::uint32_t RegionComposer::registration_of(RegionKey key,
+                                                      std::size_t rule) const noexcept
+        {
+            return state_ != nullptr ? state_->registration_of(key, rule)
+                                     : Detail::K_NO_REGISTRATION;
+        }
 
-    const Internal::Graph::CompiledGraph& RegionComposer::compiled_plan() const noexcept
-    {
-        return state_->plan_;
-    }
+        bool RegionComposer::has_roots() const noexcept
+        {
+            return state_ != nullptr && !state_->plan_.roots.empty();
+        }
+
+        Internal::Graph::CompiledGraph& RegionComposer::compiled_plan() noexcept
+        {
+            return state_->plan_;
+        }
+
+        const Internal::Graph::CompiledGraph& RegionComposer::compiled_plan() const noexcept
+        {
+            return state_->plan_;
+        }
+    } // namespace Detail
 } // namespace SushiRuntime
