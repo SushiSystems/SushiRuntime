@@ -279,7 +279,7 @@ registered worker only. A peer that has not registered within `handshake_timeout
 is closed by the monitor; a repeated `HELLO` restarts the handshake and not that clock.
 
 SHA-256 and HMAC are written in the module (`sha256.hpp`, `hmac_sha256.hpp`) and pinned by the
-FIPS 180-4 and RFC 4231 vectors in `tests/test_handshake.cpp`. Nonces come from
+FIPS 180-4 and RFC 4231 vectors in `tests/link/test_handshake.cpp`. Nonces come from
 `std::random_device`. Frames after the handshake carry no MAC and are not encrypted.
 
 ## offload_policy.hpp

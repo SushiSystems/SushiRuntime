@@ -22,7 +22,7 @@
 /**
  * @file test_socket.cpp
  * @brief Tests Endpoint parsing and the Socket and Listener seam over loopback.
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/link/README.md
  * @author Mustafa Garip
  */
 

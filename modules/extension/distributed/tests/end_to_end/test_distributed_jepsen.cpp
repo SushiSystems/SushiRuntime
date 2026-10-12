@@ -22,7 +22,7 @@
 /**
  * @file test_distributed_jepsen.cpp
  * @brief Tests that an offload graph under seeded message faults ends equal to a clean run.
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/end_to_end/README.md
  * @author Mustafa Garip
  */
 

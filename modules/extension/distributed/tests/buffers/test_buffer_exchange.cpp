@@ -22,7 +22,7 @@
 /**
  * @file test_buffer_exchange.cpp
  * @brief Tests BufferExchange: chunked pulls, fenced output chunks and aborted streams.
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/buffers/README.md
  * @author Mustafa Garip
  */
 

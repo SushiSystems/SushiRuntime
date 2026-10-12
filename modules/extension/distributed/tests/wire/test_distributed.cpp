@@ -22,7 +22,7 @@
 /**
  * @file test_distributed.cpp
  * @brief Tests codec round trips and fuzz, the in-process transport and the offload policy.
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/wire/README.md
  * @author Mustafa Garip
  */
 

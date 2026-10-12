@@ -22,7 +22,7 @@
 /**
  * @file test_worker_directory.cpp
  * @brief Tests WorkerDirectory: the handshake decisions, the peer gate, liveness and pick().
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/coordinator/README.md
  * @author Mustafa Garip
  */
 

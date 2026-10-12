@@ -22,7 +22,7 @@
 /**
  * @file test_pending_tasks.cpp
  * @brief Tests PendingTasks: ownership of offloaded nodes, the removals and the three reapers.
- * @see modules/extension/distributed/tests/README.md
+ * @see modules/extension/distributed/tests/coordinator/README.md
  * @author Mustafa Garip
  */
 
