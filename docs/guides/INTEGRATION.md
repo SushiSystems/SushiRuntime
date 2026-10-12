@@ -1,231 +1,243 @@
 # Integrating SushiRuntime
 
-How to consume SushiRuntime from another project, and the one fact that decides
-how your build has to be shaped.
+How another project consumes SushiRuntime: what the build must look like, what the package
+gives you, and how to keep the library behind one module of your own.
 
----
+## 1. Kernels compile in your project
 
-## 1. The fact that shapes everything
-
-**The runtime's kernels are header templates. They are instantiated and compiled
-in *your* translation units, not in the library.**
-
-When you write:
+A kernel is a template in an installed header. Your compiler instantiates it, in your
+translation unit, and your binary offloads it to the device.
 
 ```cpp
-graph.add(Reads(src), Writes(dst), N, [ps, pd](std::size_t i) { pd[i] = ps[i] * 2.0f; });
+    graph.add_rule(heat, [](std::size_t i, const float* cur, float* next)
+    {
+        const float left  = (i == 0)     ? cur[i] : cur[i - 1];
+        const float right = (i == N - 1) ? cur[i] : cur[i + 1];
+        next[i] = cur[i] + 0.25f * (left - 2.0f * cur[i] + right);
+    });
 ```
 
-that lambda is a SYCL kernel. It is compiled by *your* compiler, into *your*
-object file, and offloaded to the device from *your* binary. The library never
-saw it. This is what makes single-source kernels work — you write ordinary C++ in
-your own code and it runs on a GPU — and it has three consequences you cannot
-design around:
+Source: `tests/package/main.cpp`.
 
-1. **Every translation unit of yours that touches the SushiRuntime graph API must
-   be compiled by a SYCL compiler**, with SYCL enabled. A conventional C++
-   compiler will not produce device code for your lambda, and the failure is a
-   link error or a runtime "kernel not found", not a clear diagnostic.
-2. **Your floating-point flags are part of the determinism guarantee.** The
-   library cannot promise byte-equal replay for arithmetic it did not compile.
-   This is why the exported target carries the FP contract as a *usage
-   requirement* — see §4.
-3. **Header and binary must come from the same release.** Layout and inline code
-   travel with the headers; the rest is in the library. See §5.
+The library never sees that lambda. Three things follow.
 
-This is not a defect to be fixed. It is the cost of single-source, and it is the
-single most important thing an integrator needs to know.
+1. Every translation unit that records a graph is compiled by a SYCL compiler with SYCL
+   enabled. A conventional compiler produces no device code for the lambda.
+2. Your floating-point flags decide whether a replay is byte-equal. The library cannot promise
+   that for arithmetic it did not compile, so the exported target carries the flags; see §4.
+3. The headers and the shared library come from one release. A `Detail` type that crosses into
+   the library is read by its layout on both sides; see §5.
 
----
+## 2. Two lanes
 
-## 2. The two-lane pattern
+A SYCL compiler is slower than a conventional one, and most of a codebase never touches a
+device. Split the build:
 
-You do not have to compile your whole project with a SYCL compiler, and you
-should not want to: SYCL compilers are slower, and most of a codebase never
-touches a device.
+- **The SYCL lane** holds the code that records graphs and writes kernels. It links
+  `SushiRuntime::SushiRuntime` and compiles under the SYCL toolchain.
+- **The ordinary lane** holds everything else. It includes no header of SushiRuntime and
+  compiles under your usual compiler.
 
-Split your build into two lanes:
-
-- **The SYCL lane** — the subsystems that record graphs and write kernels. These
-  link `SushiRuntime::SushiRuntime` and compile under the SYCL toolchain.
-- **The ordinary lane** — everything else. Rendering, audio, asset loading, tools.
-  These link nothing from SushiRuntime, include none of its headers, and compile
-  under your normal compiler.
-
-The boundary between them is an ordinary C++ interface of your own: the SYCL lane
-exposes plain functions and POD types, and the ordinary lane calls them. Nothing
-of SushiRuntime crosses it.
-
-Keep the SYCL lane as small as it can be. It is where your build time goes.
-
----
+The boundary between the lanes is an interface of your own, in your own types. §6 describes the
+module that implements it.
 
 ## 3. Consuming the package
 
-### From an installed prefix
+Install the built tree to a prefix from this repository. `sr package` installs to `build/dist`
+unless `--prefix` names another directory:
 
 ```bash
-# In the runtime's tree
 sr build
-cmake --install build --prefix /opt/sushiruntime
-
-# In your project
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/opt/sushiruntime
+sr package --no-archive
 ```
+
+Then, in your project:
 
 ```cmake
 find_package(SushiRuntime REQUIRED)
 
-add_library(my_simulation STATIC simulation.cpp)     # a SYCL-lane target
-target_link_libraries(my_simulation PRIVATE SushiRuntime::SushiRuntime)
+add_executable(sushiruntime_package_consumer main.cpp)
+
+target_link_libraries(sushiruntime_package_consumer PRIVATE
+    SushiRuntime::SushiRuntime
+)
+
+set_target_properties(sushiruntime_package_consumer PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+)
 ```
 
-`tests/package/` in this repository is a complete, working example of exactly
-this — two files, no access to the runtime's source tree. It is also where the
-flag-hygiene assertion of §4 lives.
+Source: `tests/package/CMakeLists.txt`. Configure with `CMAKE_PREFIX_PATH` set to the install prefix
+and with the same SYCL compiler as `CMAKE_CXX_COMPILER`. `tests/package/` is a complete consumer
+with no access to this source tree, and `sr test --suite package` installs the library and
+builds and runs it.
 
-### From a sibling checkout
-
-`add_subdirectory(path/to/sushiruntime)` also works and gives you the same
-`SushiRuntime::SushiRuntime` target, so switching between the two later costs no
-edits to your link lines. Prefer the package for anything you intend to pin: a
-checkout is a convention, an installed versioned artifact is not.
+`add_subdirectory(path/to/sushiruntime)` defines the same `SushiRuntime::SushiRuntime` target.
+Under a parent project the examples are not built (`SR_BUILD_EXAMPLES` is off there).
 
 ### Version compatibility
 
-The package is written with `SameMinorVersion` compatibility while the project is
-pre-1.0: against the current 0.3.0 release,
-`find_package(SushiRuntime 0.3 REQUIRED)` accepts 0.3.x and rejects 0.4.0,
-because the API is not frozen and a minor bump may break you. At the
-v1.0.0 freeze this becomes `SameMajorVersion`.
+The package file declares `SameMinorVersion` compatibility: `find_package(SushiRuntime 0.4)`
+accepts 0.4.x and rejects 0.5.0. A MINOR release may break the interface while the version is
+below 1.0.0, so pin the exact tag you build against, such as `v0.4.0`. The root
+[README](../../README.md#stability) states the rule.
 
----
+## 4. What you inherit and what you supply
 
-## 4. What you inherit, and what you must supply
-
-Linking `SushiRuntime::SushiRuntime` gives you:
+Linking `SushiRuntime::SushiRuntime` gives a target:
 
 | Inherited | Why |
-|---|---|
-| Include directories | Obviously. |
-| The library itself | Obviously. |
-| The floating-point contract (`SR_DETERMINISTIC_FP`, `/fp:precise` or `-ffp-contract=off -fno-fast-math`) | Your translation units compile the runtime's kernel templates; byte-equal replay is only true if they compile under the same FP semantics. |
+| --- | --- |
+| The include directories of the public modules | The headers a consumer includes |
+| The shared library | The compiled part of the surface and the engine |
+| The floating-point flags, when the library was built with `SR_DETERMINISTIC_FP` on | `/fp:precise` under an MSVC-style driver, `-ffp-contract=off -fno-fast-math` under a GNU-style one. Your translation units compile the kernel templates, and a replay is byte-equal only when they compile under the same floating-point rules |
 
-You do **not** inherit the runtime's warnings, `-Werror`, sanitizer selection, or
-`-march`. Those are that project's development choices, and a dependency
-silently imposing them on you is a build failure whose cause is invisible from
-your own source tree. `tests/package/CMakeLists.txt` asserts this from the
-consumer side, which is the only side it is observable from.
+A target does not inherit the library's warnings, `-Werror`, sanitizers or `-march`.
+`tests/package/CMakeLists.txt` fails its configure step when one of them appears in the
+exported interface.
 
-You must supply:
+The package sets two variables a consumer can read: `SushiRuntime_DETERMINISTIC_FP` and
+`SushiRuntime_DISTRIBUTED`.
 
-- **A SYCL compiler**, configured. The package will use an existing
-  `IntelSYCL::SYCL_CXX` target if your project already set one up, and otherwise
-  tries `find_package(IntelSYCL)`. If you are on a different SYCL toolchain,
-  configure it yourself before `find_package(SushiRuntime)`.
+You supply:
+
+- **A SYCL compiler.** The package uses the target `IntelSYCL::SYCL_CXX` when your project
+  already defined it and otherwise calls `find_package(IntelSYCL QUIET)`. When neither gives
+  the target, the package defines an empty one, so a project on another SYCL toolchain
+  configures that toolchain itself.
 - **C++17 or later.**
-- **The runtime's shared library on the loader path** at run time, plus whatever
-  your SYCL implementation needs (adapter libraries, an OpenCL CPU runtime for a
-  host lane). See the redistributable notes in `README.md`.
+- **The shared library on the loader path at run time**, with what your SYCL implementation
+  needs beside it.
 
----
-
-## 5. Checking the binary you actually loaded
+## 5. Check the library you loaded
 
 ```cpp
-#include <SushiRuntime/version.hpp>
-
-if (!SushiRuntime::version_matches())
-{
-    // Headers and library came from different releases.
-    std::fprintf(stderr, "SushiRuntime %s expected, %s loaded\n",
-                 SUSHIRUNTIME_VERSION_STRING,
-                 SushiRuntime::runtime_version_string());
-    return 1;
-}
+    // Headers and library must come from one release; see tests/package/README.md.
+    if (!SushiRuntime::version_matches())
+    {
+        std::printf("FAIL: headers are %s, loaded library is %s\n",
+                    SUSHIRUNTIME_VERSION_STRING, SushiRuntime::runtime_version_string());
+        return 1;
+    }
 ```
 
-`SUSHIRUNTIME_VERSION_*` are the version of the **headers you compiled against**;
-`runtime_version()` reports the version the **loaded library was built from**.
-They are different questions, and the interesting case is when they disagree —
-usually an older shared library found first on the loader path. Left unchecked,
-that surfaces as a crash or a wrong answer at an arbitrary later point with
-nothing pointing back at the cause; checked at startup, it is one line of output.
+Source: `tests/package/main.cpp`.
 
-You can also branch at compile time:
+`SUSHIRUNTIME_VERSION_STRING` is the version of the headers you compiled against.
+`runtime_version_string()` is the version the loaded library was built from. They differ when an
+older shared library is earlier on the loader path. `version_matches()` compares the major and
+the minor number.
+
+`Runtime::create()` makes the same comparison and stops the process on a mismatch, with a
+message that names both versions. A program that wants to report the mismatch itself calls
+`version_matches()` first, as above.
+
+## 6. Write one adapter
+
+The interface changes with every MINOR release below 1.0.0. Keep the cost of that in one place:
+a single module of your project that includes `<SushiRuntime/sushiruntime.hpp>`, and that the
+rest of your code calls through your own types.
+
+The adapter is the SYCL lane of §2, or the part of it that names the library.
+
+**What it includes.** `<SushiRuntime/sushiruntime.hpp>`, and
+`<SushiRuntime/distributed/distributed.hpp>` when it attaches a cluster. No other header of the
+library is needed, and no header of the engine is installed.
+
+**What it exposes.** Functions and types of your project: a function that creates the runtime, a
+function that runs a step, your own error type. A header of the adapter that the ordinary lane
+includes names no type of `SushiRuntime`.
+
+**How it turns a `Result` into your error type.** One function maps every `ErrorCode` to a code
+of yours. With no `default` in the `switch`, a compiler that warns on an unhandled enumerator (`-Wswitch`)
+reports a code a new release added.
+SushiAI does this in one file:
 
 ```cpp
-#if SUSHIRUNTIME_VERSION >= SUSHIRUNTIME_VERSION_ENCODE(0, 2, 0)
-    // use something introduced in 0.2.0
-#endif
+        Status status_of_error(const SushiRuntime::Error& error, SeamPhase phase) noexcept
+        {
+            using SushiRuntime::ErrorCode;
+
+            const char* text = error.message.c_str();
+            switch (error.code)
+            {
+                case ErrorCode::AllocationFailed:
+                    return failure_of(StatusCode::OutOfMemory, text);
+
+                case ErrorCode::KernelFailed:
+                case ErrorCode::DeviceLost:
+                    return failure_of(StatusCode::DeviceFailed, text);
+
+                case ErrorCode::Unsupported:
+                case ErrorCode::InvalidAccess:
+                case ErrorCode::InvalidState:
+                    return failure_of(StatusCode::Unsupported, text);
+
+                case ErrorCode::InvalidGraph:
+                    return failure_of(StatusCode::InvalidDescription, text);
+
+                case ErrorCode::ProtocolMismatch:
+                    return failure_of(StatusCode::Incompatible, text);
+
+                case ErrorCode::CompileFailed:
+                    return failure_of(untyped_code(phase), text);
+
+                case ErrorCode::DanglingResource:
+                    SA_FATAL("SushiRuntime reported {}: {}",
+                             SushiRuntime::to_string(error.code), text);
+            }
+
+            return failure_of(untyped_code(phase), text);
+        }
 ```
 
----
-
-## 6. Configuration a co-tenant should set
-
-The defaults assume the runtime is the only thing on the machine. If your process
-has its own threads that matter — a render thread, an audio callback, a job
-system — tell the runtime so:
+Every call into the library then goes through a function that tests the `Result` and returns
+the mapped error:
 
 ```cpp
-API::RuntimeConfig config;
-config.first_core   = 4;                 // cores 0-3 are yours
-config.worker_count = 8;                 // take eight of what is left
-config.pinning      = API::PinPolicy::Pin;
-config.rebalancer   = false;             // the default; leave it off for a frame loop
+        Status run_step(SushiRuntime::Graph& graph, SushiRuntime::RunReport& report) noexcept
+        {
+            return guard(SeamPhase::Execute, [&]()
+            {
+                const SushiRuntime::Result<SushiRuntime::RunReport*> ran = graph.run(report);
+                if (!ran)
+                    return status_of_error(ran.error(), SeamPhase::Execute);
 
-auto runtime = API::Runtime::create(config);
-
-// Verify what you actually got — a request that does not fit is clamped, not obeyed.
-const auto pool = runtime.advanced().worker_pool();
+                return Status();
+            });
+        }
 ```
 
-And in the loop itself, keep one report and hand it back every tick so the tick
-allocates nothing:
+Source of both blocks: `sushiai/modules/core/core/source/seam.cpp`, in the SushiAI repository.
+`Status`, `StatusCode`, `SeamPhase`, `failure_of`, `untyped_code`, `guard` and `SA_FATAL` are
+SushiAI's own names. `guard` catches what a callee outside SushiRuntime throws; the library
+itself throws nothing.
 
-```cpp
-Core::RunReport report;
-while (running)
-    simulation.run(report);
-```
+SushiAI's seam maps errors and still passes `SushiRuntime::Graph` in its signatures, because
+the code that calls it is the SYCL lane. SushiBLAS shows the other half: every operation is
+recorded through one class, `TaskRecorder`, and one class, `RecordedGraph`, owns the graph and
+runs it (`sushiblas/modules/engine/engine`). A change to a recording verb or to a run verb is
+then one edit in each.
 
-A live element count that changes every tick (a grid's per-cell occupancy, a contact
-list) is a `LateCount`: planned once for a capacity and resolved per run, from the host or
-from a slot a predecessor kernel wrote. A launch sized by it is recorded through the
-graph's recorder:
-
-```cpp
-const auto n = API::LateCount::from_host(MAX_CELLS, [&] { return live_cell_count; });
-// SushiBLAS's prefix scan and counting sort take a LateCount this way.
-```
-
-See [`ARCHITECTURE.md`](../architecture/ARCHITECTURE.md) §9.1 for what the pool guarantees and §3 for the run API.
-
-Per-node device timing (`RunReport::node_events`) is opt-in per graph, not
-runtime-wide: call `graph.set_profiling_requested(true)` (or its
-`DynamicGraph` counterpart) only on the graph you actually want to inspect. A
-graph that never asks for it never touches the profiling-enabled queue that
-carries the cost — measured at about 24 microseconds more per submission than
-the plain queue on the RTX 3080 Ti CUDA adapter tested — so leaving other graphs on the
-same runtime unrequested keeps them at their normal dispatch cost.
-
----
+A broken rule stops the process and returns nothing to map. An adapter inside a host that must
+not stop installs its own handler with `set_assertion_handler()` at startup.
 
 ## 7. Troubleshooting
 
-**Link errors on kernel symbols, or "kernel not found" at run time.** A
-translation unit that touches the graph API was compiled without SYCL. See §1.
+**Link errors on kernel symbols, or "kernel not found" at run time.** A translation unit that
+records a graph was compiled without SYCL. See §1.
 
-**Replay is not byte-equal between two builds.** Check that
-`SushiRuntime_DETERMINISTIC_FP` is `ON` in the package you consumed, and that
-your own build does not add fast-math on top. The runtime's
-`Integration_Determinism` suite is the in-tree version of this check.
+**A replay is not byte-equal between two builds.** Check that `SushiRuntime_DETERMINISTIC_FP`
+is `ON` in the package you consumed and that your build adds no fast-math flag. The tests named
+`Integration_Determinism` in `tests/integration/test_determinism.cpp` make the same check
+in this repository.
 
-**`find_package` cannot find `IntelSYCL`.** Configure your SYCL toolchain before
-`find_package(SushiRuntime)`, or point `CMAKE_PREFIX_PATH` at your oneAPI
-installation. The package deliberately does not guess at a toolchain for you.
+**`find_package` does not find `IntelSYCL`.** Configure your SYCL toolchain before
+`find_package(SushiRuntime)`, or add your oneAPI installation to `CMAKE_PREFIX_PATH`.
 
-**A build failure mentioning `-Werror` or `-march`.** That would be a leak of the
-runtime's private flags into the export set — a defect on our side, not yours.
-`tests/package/` asserts against it; please report it.
+**The process stops in `Runtime::create()` with a message naming two versions.** The loader
+found a shared library of another release. See §5.
+
+**A build failure that names `-Werror` or `-march`.** The library's private flags reached the
+exported target, which is a defect in this repository. Report it.
