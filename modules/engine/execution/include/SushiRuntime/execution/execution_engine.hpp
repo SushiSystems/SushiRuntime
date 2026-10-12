@@ -52,10 +52,6 @@ namespace SushiRuntime
     namespace Internal::Execution
     {
         class RuntimeContext;
-        class ChainRun;
-
-        /** @brief Names Internal::Graph::CompiledGraph under its former namespace. */
-        using CompiledGraph = Internal::Graph::CompiledGraph;
 
         /**
          * @brief Cumulative scheduler counters, snapshotted to report a run.
@@ -74,11 +70,12 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Abstract interface for graph execution strategies.
+         * @brief Declares how a compiled graph is run, apart from TaskGraph, which builds it.
          *
-         * Separates "how to run a graph" from TaskGraph (which builds the DAG)
-         * and RuntimeContext (which owns hardware). New strategies (dry-run,
-         * profiling, replay) can be plugged in without touching either class.
+         * ChainRun and the surface reach the engine through this interface alone.
+         * RuntimeContext builds a SchedulerExecutionEngine and installs the offload
+         * coordinator on that class, so another strategy is a change to RuntimeContext.
+         * @see modules/engine/execution/README.md
          */
         class SUSHIRUNTIME_API ExecutionEngine
         {
@@ -103,7 +100,7 @@ namespace SushiRuntime
              * @pre No node of graph has been submitted.
              * @see modules/engine/execution/README.md
              */
-            virtual void prepare(CompiledGraph& /*graph*/) {}
+            virtual void prepare(Internal::Graph::CompiledGraph& /*graph*/) {}
 
             /**
              * @brief Runs a compiled graph in place and blocks until completion.
@@ -113,14 +110,14 @@ namespace SushiRuntime
              *         reported.
              * @see modules/engine/execution/README.md
              */
-            [[nodiscard]] virtual Result<void> execute(CompiledGraph& graph) = 0;
+            [[nodiscard]] virtual Result<void> execute(Internal::Graph::CompiledGraph& graph) = 0;
 
             /**
              * @brief Runs a temporary compiled graph once and discards it.
              * @return What execute() returns for the graph.
              * @see modules/engine/execution/README.md
              */
-            [[nodiscard]] Result<void> execute(CompiledGraph&& graph);
+            [[nodiscard]] Result<void> execute(Internal::Graph::CompiledGraph&& graph);
 
             /**
              * @brief Returns whether this engine can start a run without blocking.
@@ -137,7 +134,7 @@ namespace SushiRuntime
              *         in progress, and InvalidGraph when the graph has no roots.
              * @see modules/engine/execution/README.md
              */
-            [[nodiscard]] virtual Result<void> submit(CompiledGraph& /*graph*/)
+            [[nodiscard]] virtual Result<void> submit(Internal::Graph::CompiledGraph& /*graph*/)
             {
                 SR_FATAL("ExecutionEngine::submit(): this engine does not support asynchronous "
                          "runs; ask supports_asynchronous_run() first");
@@ -216,7 +213,7 @@ namespace SushiRuntime
              *        ledger.
              * @see modules/engine/execution/README.md
              */
-            virtual void reset_profiling(CompiledGraph& /*graph*/,
+            virtual void reset_profiling(Internal::Graph::CompiledGraph& /*graph*/,
                                          std::size_t /*expected_invocations*/ = 1) {}
 
             /**
@@ -225,7 +222,7 @@ namespace SushiRuntime
              * Default no-op. @param graph The compiled plan read for timing.
              * @param report The report whose profiling rows are populated.
              */
-            virtual void collect_profiling(CompiledGraph& /*graph*/,
+            virtual void collect_profiling(Internal::Graph::CompiledGraph& /*graph*/,
                                            RunReport& /*report*/) const {}
 
             /**
@@ -237,6 +234,16 @@ namespace SushiRuntime
              * @see modules/engine/execution/README.md
              */
             [[nodiscard]] virtual bool run_in_progress() const noexcept { return false; }
+
+            /**
+             * @brief Marks one chained run in progress; does nothing by default.
+             * @pre Exactly one end_chained_run() follows.
+             * @see modules/engine/execution/README.md
+             */
+            virtual void begin_chained_run() noexcept {}
+
+            /** @brief Clears the mark one begin_chained_run() set; does nothing by default. */
+            virtual void end_chained_run() noexcept {}
         };
     } // namespace Internal::Execution
 } // namespace SushiRuntime

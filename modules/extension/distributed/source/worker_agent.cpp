@@ -200,8 +200,12 @@ namespace SushiRuntime
         struct WorkerAgent::Impl final : public TransportEvents
         {
             public:
-                /** @brief Builds the bricks and the routing table; no thread runs yet. */
-                Impl(Internal::Execution::RuntimeContext& context, std::shared_ptr<Transport> transport,
+                /**
+                 * @brief Builds the bricks and the routing table; no thread runs yet.
+                 * @param context Not null; shared, so it outlives the bricks built on it.
+                 */
+                Impl(std::shared_ptr<Internal::Execution::RuntimeContext> context,
+                     std::shared_ptr<Transport> transport,
                      sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options);
 
                 /** @brief Starts the exec thread, the heartbeat thread and the transport. */
@@ -273,8 +277,8 @@ namespace SushiRuntime
                 /** @brief Writes the counters as one INFO line. */
                 void log_statistics() const noexcept;
 
-                /// @brief Supplies the queue kernels run on and the cache's memory.
-                Internal::Execution::RuntimeContext& context_;
+                /// @brief Supplies the queue kernels run on and the cache's memory; first, so last gone.
+                std::shared_ptr<Internal::Execution::RuntimeContext> context_;
 
                 /// @brief Carries every frame; the agent is its only receiver.
                 std::shared_ptr<Transport> transport_;
@@ -313,16 +317,17 @@ namespace SushiRuntime
                 Router router_;
         };
 
-        WorkerAgent::Impl::Impl(Internal::Execution::RuntimeContext& context,
+        WorkerAgent::Impl::Impl(std::shared_ptr<Internal::Execution::RuntimeContext> context,
                                 std::shared_ptr<Transport> transport,
                                 sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
-            : context_(context), transport_(require_transport(std::move(transport))),
+            : context_(std::move(context)),
+              transport_(require_transport(std::move(transport))),
               options_(bounded(std::move(options))),
-              cache_(make_cache_allocator(context.memory()),
-                     resolve_cache_budget(context, options_.cache_bytes)),
+              cache_(make_cache_allocator(context_->memory()),
+                     resolve_cache_budget(*context_, options_.cache_bytes)),
               link_(*transport_, options_.secret.bytes(),
                     make_link_options(sealed(*require_kernels(kernels))), make_nonce),
-              executor_(kernels, cache_, *transport_, context.devices().queue(K_DEVICE_INDEX),
+              executor_(kernels, cache_, *transport_, context_->devices().queue(K_DEVICE_INDEX),
                         DispatchExecutorOptions{options_.max_jobs, options_.pull_idle_timeout})
         {
             build_routes();
@@ -348,7 +353,7 @@ namespace SushiRuntime
             };
             link.free_memory_probe = [this]
             {
-                return read_free_memory(context_.devices().queue(K_DEVICE_INDEX));
+                return read_free_memory(context_->devices().queue(K_DEVICE_INDEX));
             };
             return link;
         }
@@ -644,7 +649,7 @@ namespace SushiRuntime
 
         WorkerAgent::WorkerAgent(Runtime& runtime, std::shared_ptr<Transport> transport,
                                  sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
-            : impl_(std::make_unique<Impl>(SushiRuntime::Detail::ContextAccess::context(runtime),
+            : impl_(std::make_unique<Impl>(SushiRuntime::Detail::ContextAccess::shared(runtime),
                                            std::move(transport), std::move(kernels),
                                            std::move(options)))
         {

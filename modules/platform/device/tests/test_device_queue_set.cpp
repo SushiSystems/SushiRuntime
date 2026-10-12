@@ -57,9 +57,9 @@ namespace
     DeviceKind kind_of(const sycl::device& device)
     {
         if (device.is_cpu())
-            return DeviceKind::Cpu;
+            return DeviceKind::CPU;
         if (device.is_gpu())
-            return DeviceKind::Gpu;
+            return DeviceKind::GPU;
         if (device.is_accelerator())
             return DeviceKind::Accelerator;
         return DeviceKind::Other;

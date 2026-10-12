@@ -41,7 +41,6 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
-#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/graph/dynamic_graph.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
@@ -64,10 +63,7 @@ namespace SushiRuntime
         public:
             /**
              * @brief Creates a runtime on the devices and with the settings of one struct.
-             * @return The runtime, or why it has none: Unsupported when no device passes
-             *         config.devices, DeviceLost when a device queue cannot be built, and
-             *         AllocationFailed when the host cannot give the runtime its memory or
-             *         its threads.
+             * @return The runtime, or an Unsupported, DeviceLost or AllocationFailed error.
              * @pre The loaded library is of the release of these headers; version_matches()
              *      tells.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md

@@ -105,13 +105,14 @@ not executed. It then takes the four steps above like any other entry. Profiling
 an entry with no event, the offload coordinator is not told, the successors are released and the
 in-flight count drops, so the run reaches its sentinel. Each such entry is logged at error level
 with its task's name. The first failure of the pass is kept as a `KernelFailed` `Error` and returned
-after the backoff update; dispatch_loop() records it in the RunOutcome. The wait on the oldest
+after the backoff update, as a `std::optional<Error>` that is empty when nothing threw;
+dispatch_loop() records it in the RunOutcome. The wait on the oldest
 event after K_STALL_DRIVE_THRESHOLD idle polls goes the same way: an event whose wait throws
 there is reaped as not executed and its error is returned. Left in the list, the entry would be queried again on
 every poll, and an event that throws each time would keep wait_quiescent() from returning.
 
-The try scope covers the status query and the wait of one entry. A pass in which nothing throws
-runs the same statements as before and adds no allocation, lock or atomic.
+The translated call covers the status query and the wait of one entry. A pass in which nothing
+throws allocates nothing and takes no lock.
 
 A successor released by a failed entry is in the worker's deque before dispatch_loop() records the
 failure, so a thief can dispatch it in that interval.
@@ -167,6 +168,16 @@ to compute a rate over an interval.
 migrate_tasks(from_worker_id, count) names no destination, because no implementation picks one: the
 tasks go where any worker can take them.
 
+## failure_naming.hpp
+
+### name_failure
+
+describe_task() names a task for a failure report: its label, and the registration index when it
+is a graph node. name_failure() puts that name in front of the message of an `Error` and keeps
+the code. The header is in `include/` because both layers that run a node use it: execute_task()
+of this module for a node a worker dispatches, and `ChainRun::submit_step()` of `execution` for a
+node of an in-order chain. The same failing node therefore reads the same from either layer.
+
 ## run_outcome.hpp
 
 ### RunOutcome
@@ -178,7 +189,8 @@ loads.
 
 ### A failure
 
-record() keeps the first `Error` and drops later ones. A failure aborts only the current run.
+record() keeps the first `Error` and drops later ones; error() returns it as a
+`std::optional<Error>`, empty while no task has failed. A failure aborts only the current run.
 Remaining tasks drain without executing so the DAG still reaches the sentinel, and the worker
 pool stays alive and re-armable. It is distinct from shutdown_requested, which permanently tears
 the pool down. arm_for_execution() calls clear_failure() at the start of each round.
@@ -681,9 +693,11 @@ a `sycl::event{}` to compare against.
 
 ##### A throwing task
 
-A task that throws fails only its run. The catch ladder of the dispatch turns what it catches
-into an `Error` on the spot, `KernelFailed` with the task's name in the message, and an `Error` a
-dispatch step returned keeps its code. The first one is recorded in the scheduler's
+A task that throws fails only its run. The dispatch runs inside
+`Internal::SYCL::translate_exceptions()` of `modules/foundation/sycl`, which turns what is
+thrown into an `Error`: `KernelFailed`, or `AllocationFailed` for refused memory. name_failure()
+puts the task's name in the message, and an `Error` a dispatch step returned keeps its code. The
+first one is recorded in the scheduler's
 `RunOutcome`, but `shutdown_requested` is not latched, so the pool survives and can be re-armed for
 the next graph. The failed task is pushed to the poller as ready so its successors still
 fire; with the skip path for an aborting run, the whole DAG drains to the sentinel.

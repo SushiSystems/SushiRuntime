@@ -11,6 +11,7 @@ sushiruntime_add_module(
         advanced_controls.cpp
         buffer.cpp
         context_handle.cpp
+        emit_dynamic.cpp
         interop.cpp
         late_window.cpp
         node_emitters.cpp
@@ -18,6 +19,7 @@ sushiruntime_add_module(
         recorder.cpp
         region_composer.cpp
         runtime.cpp
+        step_machinery.cpp
         step_run.cpp
     DEPENDS
         core
@@ -27,6 +29,7 @@ sushiruntime_add_module(
         machine
         interop
     PRIVATE_DEPENDS
+        sycl
         memory
         device
         observability

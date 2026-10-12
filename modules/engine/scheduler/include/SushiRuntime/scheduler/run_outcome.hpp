@@ -30,6 +30,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 #include <utility>
 
 #include <SushiRuntime/core/error.hpp>
@@ -54,7 +55,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Records the first failure of the run; a later one is dropped.
-                 * @param error What a task or the poller failed with; its code is not Ok.
+                 * @param error What a task or the poller failed with.
                  */
                 void record(Error error)
                 {
@@ -66,8 +67,8 @@ namespace SushiRuntime
                     }
                 }
 
-                /** @brief Returns the recorded failure; its code is Ok when the run did not fail. */
-                [[nodiscard]] Error error() const
+                /** @brief Returns the recorded failure, or nothing when the run did not fail. */
+                [[nodiscard]] std::optional<Error> error() const
                 {
                     std::lock_guard<std::mutex> lock(error_mutex_);
                     return error_;
@@ -84,7 +85,7 @@ namespace SushiRuntime
                 {
                     {
                         std::lock_guard<std::mutex> lock(error_mutex_);
-                        error_ = Error{};
+                        error_.reset();
                     }
                     failed_.store(false, std::memory_order_release);
                 }
@@ -123,8 +124,8 @@ namespace SushiRuntime
                 /// @brief Guards error_ on the failure path.
                 mutable std::mutex error_mutex_;
 
-                /// @brief First failure of the run.
-                Error error_;
+                /// @brief First failure of the run; empty while no task has failed.
+                std::optional<Error> error_;
         };
 
     } // namespace Scheduler

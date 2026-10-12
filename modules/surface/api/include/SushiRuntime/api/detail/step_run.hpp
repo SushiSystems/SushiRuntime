@@ -29,6 +29,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 #include <SushiRuntime/api/detail/before_step_hooks.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
@@ -106,11 +107,16 @@ namespace SushiRuntime
         /** @brief Returns whether a runtime asks every new graph for per-node device timing. */
         [[nodiscard]] SUSHIRUNTIME_API bool profiling_default(const ContextHandle& context) noexcept;
 
+        /** @brief Says whether a chained run may skip the host wait between steps. */
+        enum class StepSync : std::uint8_t
+        {
+            AtEnd,     /**< Fixed step count: submit back to back, one wait at the end. */
+            EveryStep  /**< The stop test may read results: wait after every step. */
+        };
+
         /**
          * @brief Runs steps over a built plan until the stop test ends the run, and fills the
          *        report.
-         * @param wait_every_step False submits a chained run back to back with one wait at
-         *        the end; true waits after every step.
          * @return Nothing, or the fault a step recorded; the report is not filled then.
          * @throws Whatever a step throws.
          */
@@ -119,7 +125,7 @@ namespace SushiRuntime
                                                               RunReport& report,
                                                               double compile_ms,
                                                               std::size_t expected_invocations,
-                                                              bool wait_every_step);
+                                                              StepSync sync);
 
         /**
          * @brief Submits one step to the worker pool without waiting for it.

@@ -55,9 +55,6 @@ namespace SushiRuntime
     /**
      * @brief Gives a type that owns a Recorder one fluent verb per kind of node, each
      *        returning it.
-     *
-     * A verb returns the builder, so a recording the recorder refuses is kept for refusal()
-     * and records nothing.
      * @tparam Derived The builder; it has a public recorder() that returns its Recorder.
      * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
      */
@@ -115,7 +112,7 @@ namespace SushiRuntime
             Derived& add_rule(State<T>& state, F&& kernel, NodeOptions options = {})
             {
                 if constexpr (Detail::accepts_state_rule<std::size_t, T, F>())
-                    sink().state_rule(state, std::forward<F>(kernel), options);
+                    sink().state_rule(state, std::forward<F>(kernel), options, K_ADD_STATE);
                 return self();
             }
 
@@ -403,6 +400,8 @@ namespace SushiRuntime
             ~BuilderSurface() = default;
 
         private:
+            /// @brief Names add_rule(state, kernel) in the messages of its refusals.
+            static constexpr const char* K_ADD_STATE = "add_rule(state, kernel)";
             /// @brief Names add_rule(launch, state, kernel) in the messages of its refusals.
             static constexpr const char* K_ADD_LAUNCH_STATE = "add_rule(launch, state, kernel)";
             /// @brief Names add_coupled(Coupled(out, in0, ...), kernel) in its refusals.

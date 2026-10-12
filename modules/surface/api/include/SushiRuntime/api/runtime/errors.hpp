@@ -21,7 +21,7 @@
 
 /**
  * @file errors.hpp
- * @brief Promotes the error and result types a run returns into SushiRuntime.
+ * @brief Includes Error, ErrorCode and Result, the types a run returns.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
  */
@@ -30,8 +30,3 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
-
-namespace SushiRuntime
-{
-
-} // namespace SushiRuntime

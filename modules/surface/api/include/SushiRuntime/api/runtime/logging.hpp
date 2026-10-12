@@ -21,7 +21,7 @@
 
 /**
  * @file logging.hpp
- * @brief Promotes the process-wide log level and log sink controls into SushiRuntime.
+ * @brief Includes the process-wide log level and the log sink controls.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
  */
@@ -30,8 +30,3 @@
 
 #include <SushiRuntime/log/log_level.hpp>
 #include <SushiRuntime/log/log_sink.hpp>
-
-namespace SushiRuntime
-{
-
-} // namespace SushiRuntime

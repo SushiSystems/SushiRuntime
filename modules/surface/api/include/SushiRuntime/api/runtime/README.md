@@ -165,16 +165,15 @@ The distributed layer sits above this one and enters through a `Runtime&`:
 
 ## errors.hpp
 
-### Promoted error names
+### The error names
 
-errors.hpp declares nothing. It includes `core/error.hpp` and `core/result.hpp` and promotes
-`Error`, `ErrorCode` and `Result` into `SushiRuntime`, so a program that handles a
-failed `create()` or `run()` spells them without a module name. The foundation modules sit
-below the public surface and promote nothing themselves.
+errors.hpp declares nothing. It includes `core/error.hpp` and `core/result.hpp`, which declare
+`Error`, `ErrorCode` and `Result` in `SushiRuntime`, so a program that handles a failed
+`create()` or `run()` includes one header of `api/` for them.
 
 ## logging.hpp
 
-### Promoted logging names
+### The logging names
 
 logging.hpp declares nothing. It includes `log/log_level.hpp` and `log/log_sink.hpp`, which
 declare `LogLevel`, `set_log_level`, `log_level`, `LogSink`, `set_log_sink` and
@@ -190,6 +189,6 @@ each record has reached the sink when the call that logged it returns.
 A ContextHandle shares ownership of one runtime's context. Every graph, recorder and region
 holds one, so the context lives as long as the last of them. The header forward-declares the
 context and includes no header of the engine: a program that holds a handle can copy it and test
-it for emptiness, and nothing more. The library reaches the context through
-`Detail::ContextAccess`, the handle's one friend, which the internal module `execution` declares
-(modules/engine/execution/README.md).
+it for emptiness, and nothing more. The constructor that takes a context is private. The handle
+has two friends: `Runtime`, whose create() builds the context and wraps it, and
+`Detail::ContextAccess`, through which the library's sources read the context back.

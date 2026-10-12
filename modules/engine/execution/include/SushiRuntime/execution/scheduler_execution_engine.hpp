@@ -80,14 +80,14 @@ namespace SushiRuntime
              * @return What submit() refused with, or what complete() returns.
              * @see modules/engine/execution/README.md
              */
-            [[nodiscard]] Result<void> execute(CompiledGraph& graph) override;
+            [[nodiscard]] Result<void> execute(Internal::Graph::CompiledGraph& graph) override;
 
             /**
              * @brief Hands the graph's nodes to the installed offload coordinator, if any.
              * @pre No node of graph has been submitted.
              * @see modules/engine/execution/README.md
              */
-            void prepare(CompiledGraph& graph) override;
+            void prepare(Internal::Graph::CompiledGraph& graph) override;
 
             using ExecutionEngine::execute; // keep the rvalue convenience overload visible
 
@@ -102,7 +102,7 @@ namespace SushiRuntime
              *         in progress, and InvalidGraph when the graph has no roots.
              * @see modules/engine/execution/README.md
              */
-            [[nodiscard]] Result<void> submit(CompiledGraph& graph) override;
+            [[nodiscard]] Result<void> submit(Internal::Graph::CompiledGraph& graph) override;
 
             /**
              * @brief Blocks until the submitted run finishes, then releases the engine.
@@ -152,14 +152,14 @@ namespace SushiRuntime
              * @param expected_invocations Per-node dispatch count this run expects.
              * @see modules/engine/execution/README.md
              */
-            void reset_profiling(CompiledGraph& graph, std::size_t expected_invocations) override;
+            void reset_profiling(Internal::Graph::CompiledGraph& graph, std::size_t expected_invocations) override;
 
             /**
              * @brief Fills a report's profiling breakdown after a profiled run.
              * @param report The report to populate; left untouched for nodes that did not run.
              * @see modules/engine/execution/README.md
              */
-            void collect_profiling(CompiledGraph& graph,
+            void collect_profiling(Internal::Graph::CompiledGraph& graph,
                                    RunReport& report) const override;
 
             /**
@@ -169,6 +169,15 @@ namespace SushiRuntime
              * @see modules/engine/execution/README.md
              */
             [[nodiscard]] bool run_in_progress() const noexcept override;
+
+            /**
+             * @brief Marks one chained run in progress.
+             * @pre Exactly one end_chained_run() follows.
+             */
+            void begin_chained_run() noexcept override;
+
+            /** @brief Clears the mark one begin_chained_run() set. */
+            void end_chained_run() noexcept override;
 
             /**
              * @brief Forwards to the scheduler's set_offload_coordinator().
@@ -181,17 +190,6 @@ namespace SushiRuntime
             [[nodiscard]] Internal::Graph::OffloadSink& offload_sink() noexcept;
 
         private:
-            friend class ChainRun;
-
-            /**
-             * @brief Marks one chained run in progress.
-             * @pre Exactly one end_chained_run() follows.
-             */
-            void begin_chained_run() noexcept;
-
-            /** @brief Clears the mark one begin_chained_run() set. */
-            void end_chained_run() noexcept;
-
             struct Impl;
             sushi_ptr<Impl> impl_;
         };

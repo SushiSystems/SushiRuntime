@@ -28,8 +28,16 @@ enabled node with no scheduler hand-off and no polling; the queue's order stands
 edges. finish() is the run's single wait. With profiling on, every submission's event becomes a
 NodeEventRecord in the plan's ledger. The destructor drains the queue, so a failed run never
 leaves work in flight against a plan about to be destroyed. submit_step(), wait() and finish()
-return `Result<void>`: each runs its SYCL calls inside one catch ladder and returns what was
-thrown as `KernelFailed`.
+return `Result<void>`: each runs its SYCL calls through `Internal::SYCL::translate_exceptions()`
+of `modules/foundation/sycl` and returns what was thrown as `KernelFailed`, or as
+`AllocationFailed` for refused memory. submit_step() translates one node at a time and names the
+node in the error through `Internal::Scheduler::name_failure()`, as the scheduler does for a
+node it dispatches.
+
+The constructor clears the plan's `pending_events`, and the destructor of a run that never
+reached finish() drains the queue with `wait_and_throw()` and logs what it held. A run that
+failed therefore leaves the next run on the same plan neither its event records nor its
+asynchronous errors.
 
 A ChainRun submits straight to a device queue and never calls the engine's submit(), so it marks
 itself on the engine: ExecutionEngine::run_in_progress() is true from the constructor until
@@ -375,9 +383,9 @@ per `ChainRun`, whatever its step count. Node dispatch reads and writes nothing 
 writes are `acq_rel` and the load is `acquire`, so a thread that sees a run begin or end
 also sees what the writer did before it.
 
-`ChainRun` reaches the two private functions as a friend of `SchedulerExecutionEngine` and casts the
-context's engine to that type: `RuntimeContext` builds an `SchedulerExecutionEngine` and nothing else.
-`ChainRun::RunMark` holds the mark. It is the last member, so the destructor's drain runs
+`begin_chained_run()` and `end_chained_run()` are virtual members of `ExecutionEngine` that do
+nothing by default, so `ChainRun` marks whatever engine the context holds and names no engine
+class. `ChainRun::RunMark` holds the mark. It is the last member, so the destructor's drain runs
 before the mark is released, and a constructor that throws after it was taken releases it.
 
 #### The log level of a run
@@ -550,7 +558,7 @@ keeps no queue of its own. `devices().queue(i, {false, true})` asks the set for 
 
 `describe_device()` turns each `Internal::Topology::HardwareNode` into a `Internal::Device::DeviceDescriptor`, so
 the device module includes no topology header. A node whose `is_gpu` flag is set becomes
-`DeviceKind::Gpu` whatever SYCL reports, which keeps `devices().is_gpu()` answering from the flag
+`DeviceKind::GPU` whatever SYCL reports, which keeps `devices().is_gpu()` answering from the flag
 discovery recorded. Descriptors are built by walking the node list in order, one per node
 with no skips, so a node and its queue share an index.
 
@@ -563,9 +571,10 @@ first thing a player on a machine without a GPU would see. `RuntimeContext::crea
 it as `Unsupported`.
 
 `RuntimeContext` has no public constructor. `create()` asks the provider for the devices, builds
-the parts and then the engine, all inside one catch ladder: a `sycl::exception` from a queue
-build is `DeviceLost`, any other exception is `AllocationFailed`, and an empty or failed
-enumeration is `Unsupported`. The private constructor takes the finished parts and cannot fail.
+the parts and then the engine, all inside one call of `Internal::SYCL::translate_exceptions()`:
+a `sycl::exception` from a queue build is `DeviceLost`, any other exception is
+`AllocationFailed`, and an empty or failed enumeration is `Unsupported`. The private constructor
+takes the finished parts and cannot fail.
 
 #### Transfer counters
 

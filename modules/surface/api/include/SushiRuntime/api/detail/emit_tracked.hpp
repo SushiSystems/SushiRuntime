@@ -45,18 +45,17 @@ namespace SushiRuntime
         /**
          * @brief Describes a launch ordered by the regions it names.
          * @tparam Launch std::size_t, Extent<N> or NdRange<N>.
-         * @param width Launch width baked on the node.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class Launch, class F>
         NodeDescription launch_node(std::vector<BufferRegion> reads,
                                     std::vector<BufferRegion> writes,
-                                    Launch launch, F&& kernel, std::size_t width)
+                                    Launch launch, F&& kernel)
         {
             NodeDescription description;
             description.reads = std::move(reads);
             description.writes = std::move(writes);
-            description.width = width;
+            description.width = launch_count(launch);
             description.work = CommandGroupWork(
                 [kernel = std::forward<F>(kernel), launch](sycl::handler& h)
                 {
@@ -69,12 +68,12 @@ namespace SushiRuntime
         template <class F>
         NodeDescription range_node(std::vector<BufferRegion> reads,
                                    std::vector<BufferRegion> writes,
-                                   std::size_t n, F&& kernel, std::size_t width)
+                                   std::size_t n, F&& kernel)
         {
             NodeDescription description;
             description.reads = std::move(reads);
             description.writes = std::move(writes);
-            description.width = width;
+            description.width = n;
             description.work = CommandGroupWork(
                 [kernel = std::forward<F>(kernel), n](sycl::handler& h)
                 {
@@ -83,7 +82,10 @@ namespace SushiRuntime
             return description;
         }
 
-        /** @brief Describes a raw command group. */
+        /**
+         * @brief Describes a raw command group.
+         * @param width Launch width the caller stated, or K_WIDTH_UNKNOWN.
+         */
         template <class F>
         NodeDescription raw_node(std::vector<BufferRegion> reads,
                                  std::vector<BufferRegion> writes, F&& kernel,

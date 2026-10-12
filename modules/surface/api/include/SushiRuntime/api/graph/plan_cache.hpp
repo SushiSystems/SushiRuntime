@@ -117,6 +117,13 @@ namespace SushiRuntime
                 return profiling_requested_;
             }
 
+            /** @brief Marks the plan stale and forgets the registration of every rule. */
+            void discard() noexcept
+            {
+                registrations_.clear();
+                dirty_ = true;
+            }
+
             /** @brief Returns whether the plan is missing or older than what recorder holds. */
             [[nodiscard]] bool stale(const Recorder& recorder) const noexcept
             {

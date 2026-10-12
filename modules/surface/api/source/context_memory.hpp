@@ -34,6 +34,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -43,6 +44,21 @@ namespace SushiRuntime
 {
     namespace Detail
     {
+        /**
+         * @brief Returns the kind of USM that holds memory of a residency.
+         * @pre residency is an enumerator of Residency.
+         */
+        [[nodiscard]] inline Internal::Memory::USMKind usm_kind_for(Residency residency) noexcept
+        {
+            switch (residency)
+            {
+                case Residency::Device: return Internal::Memory::USMKind::Device;
+                case Residency::Host:   return Internal::Memory::USMKind::Host;
+                case Residency::Shared: return Internal::Memory::USMKind::Shared;
+            }
+            SR_FATAL("usm_kind_for(): the value is no enumerator of Residency");
+        }
+
         /**
          * @brief Allocates USM of the given residency on one device queue.
          * @param context   Performs and records the allocation.
@@ -54,21 +70,8 @@ namespace SushiRuntime
                                          DeviceIndex device_index, Residency residency,
                                          std::size_t alignment = 0)
         {
-            const std::size_t device = device_index.value();
-            Internal::Memory::USMAllocator& memory = context.memory();
-            switch (residency)
-            {
-                case Residency::Device:
-                    return memory.allocate(
-                        {Internal::Memory::USMKind::Device, bytes, alignment, device});
-                case Residency::Host:
-                    return memory.allocate(
-                        {Internal::Memory::USMKind::Host, bytes, alignment, device});
-                case Residency::Shared:
-                    return memory.allocate(
-                        {Internal::Memory::USMKind::Shared, bytes, alignment, device});
-            }
-            return nullptr;
+            return context.memory().allocate(
+                {usm_kind_for(residency), bytes, alignment, device_index.value()});
         }
 
         /**

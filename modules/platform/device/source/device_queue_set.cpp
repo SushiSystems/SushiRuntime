@@ -28,14 +28,18 @@
 
 #include <SushiRuntime/device/device_queue_set.hpp>
 
-#include <exception>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 
 namespace SushiRuntime
 {
@@ -179,22 +183,12 @@ namespace SushiRuntime
             for_each_built_queue([]([[maybe_unused]] const DeviceDescription& info, sycl::queue& built)
             {
                 // A late async device error is logged, never thrown (device/README.md).
-                try
-                {
-                    built.wait_and_throw();
-                }
-                catch (const std::exception& error)
-                {
+                const Result<void> drained =
+                    SYCL::translate_exceptions([&built]() { built.wait_and_throw(); });
+                if (!drained)
                     SR_LOG_WARN("Async device error on device {} ({}) during shutdown drain: {}; "
                                 "the queue is released anyway.",
-                                info.index, info.name, error.what());
-                }
-                catch (...)
-                {
-                    SR_LOG_WARN("Unknown async device error on device {} ({}) during shutdown "
-                                "drain; the queue is released anyway.",
-                                info.index, info.name);
-                }
+                                info.index, info.name, drained.error().message);
             });
         }
 
@@ -211,7 +205,7 @@ namespace SushiRuntime
         bool DeviceQueueSet::is_gpu(std::size_t index) const
         {
             require_index(index);
-            return infos_[index].kind == DeviceKind::Gpu;
+            return infos_[index].kind == DeviceKind::GPU;
         }
 
         sycl::queue& DeviceQueueSet::queue(std::size_t index)
@@ -284,30 +278,17 @@ namespace SushiRuntime
         template <typename Visit>
         Result<void> DeviceQueueSet::first_failure_of(Visit&& visit)
         {
-            Error first;
+            std::optional<Error> first;
             for_each_built_queue([&first, &visit](const DeviceDescription&, sycl::queue& built)
             {
                 // The asynchronous handler rethrows here, inside the visit.
-                try
-                {
-                    visit(built);
-                }
-                catch (const std::exception& failure)
-                {
-                    if (first.code == ErrorCode::Ok)
-                        first = Detail::error_without_throwing(ErrorCode::KernelFailed,
-                                                               failure.what());
-                }
-                catch (...)
-                {
-                    if (first.code == ErrorCode::Ok)
-                        first = Detail::error_without_throwing(
-                            ErrorCode::KernelFailed,
-                            "A device queue reported an error that is not a std::exception.");
-                }
+                Result<void> visited =
+                    SYCL::translate_exceptions([&visit, &built]() { visit(built); });
+                if (!visited && !first)
+                    first = std::move(visited.error());
             });
-            if (first.code != ErrorCode::Ok)
-                return make_error(std::move(first));
+            if (first)
+                return make_error(std::move(*first));
             return {};
         }
 

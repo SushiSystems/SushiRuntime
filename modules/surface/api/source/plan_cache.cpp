@@ -110,21 +110,17 @@ namespace SushiRuntime
                     built->recorded.push_back(Detail::PlanCacheState::RecordedNode{added, rule});
                 }
             });
-        // A failed compile leaves the plan of the last build and marks nothing current.
-        registrations_ = std::move(registrations);
+        // Nothing of this build is kept until it compiled, so a failure leaves the last one whole.
         Result<Internal::Graph::CompiledGraph> compiled = backing_graph.compile();
         if (!compiled)
-        {
-            if (state_ != nullptr)
-                state_->recorded.clear();
             return make_error(std::move(compiled.error()));
-        }
         built->plan = std::move(*compiled);
         runtime.execution_engine().prepare(built->plan);
         built->plan.profiling = profiling_requested_;
         built->plan.capture_base_state();
         built->plan.chain = Internal::Execution::classify_chain(built->plan, runtime);
         state_ = std::move(built);
+        registrations_ = std::move(registrations);
         dirty_ = false;
         built_generation_ = recorder.generation();
         ++compiles_;

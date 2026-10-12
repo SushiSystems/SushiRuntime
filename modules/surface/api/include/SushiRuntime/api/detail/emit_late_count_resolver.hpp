@@ -48,12 +48,9 @@ namespace SushiRuntime
     {
         /**
          * @brief Describes the single task that resolves K late counts.
-         *
-         * A host count bakes in at submit; a device count is read in the kernel, zeroed and
-         * faulted past capacity (docs/design/GRAPH_REPLAY.md §D.2). A host count past its
-         * capacity is written to the fault record, and the fill does not run.
          * @param fault The node's fault record; the step that follows reads it.
          * @param fill  Device callable run once as fill(live), in the order of counts.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <std::size_t K, class Fill>
         NodeDescription late_count_resolver_node(const std::array<LateCount, K>& counts,

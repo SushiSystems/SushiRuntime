@@ -30,6 +30,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>

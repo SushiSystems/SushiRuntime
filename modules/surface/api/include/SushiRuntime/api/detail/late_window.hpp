@@ -141,13 +141,10 @@ namespace SushiRuntime
 
         /**
          * @brief Submits a late-bound node, reading a device count or base inside the kernel.
-         *
-         * A node with no device slot keeps its host-resolved range. One with a
-         * slot runs at @p capacity, each work-item past the live count returns,
-         * and a window that does not fit is recorded in @p fault for the step to
-         * return (docs/design/GRAPH_REPLAY.md §D). A host-resolved window that does not
-         * fit is recorded there too, and an empty kernel is submitted in its place.
+         * @param capacity Work-items a node with a device slot launches.
+         * @param fault Receives a window that does not fit, for the step to return.
          * @pre fault is not null.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         template <class F>
         inline void submit_late_window(sycl::handler& h,

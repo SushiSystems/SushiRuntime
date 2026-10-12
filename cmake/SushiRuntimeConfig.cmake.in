@@ -17,22 +17,14 @@
 
 include(CMakeFindDependencyMacro)
 
-# SYCL is the one thing this package cannot provide for you: the runtime's
-# kernels are header templates instantiated in YOUR translation units, so your
-# compiler must be a SYCL compiler and must already be configured as one. If you
-# have set that up yourself (the usual case — the same find_package/toolchain
-# dance this project does in cmake/Sycl.cmake), the target already exists and
-# nothing more is needed.
+# The package does not provide SYCL. The runtime's kernels are header templates a
+# consumer instantiates in its own translation units, so the consumer's compiler is a
+# SYCL compiler it configured itself.
 #
-# IntelSYCL::SYCL_CXX is only a REAL find_package(IntelSYCL) target on the
-# "oneapi" toolchain path (cmake/Sycl.cmake's sushiruntime_sycl_configure()).
-# On the primary intel-llvm and adaptivecpp paths it is an empty marker stub —
-# the actual -fsycl flags are applied directly, not through this target's
-# interface — so requiring find_package(IntelSYCL) to succeed unconditionally
-# is wrong for the common case and was never exercised (BB-4.6 had not been
-# run before this was found). Try it, but fall back to the same harmless stub
-# Sycl.cmake creates rather than failing a consumer's configure over a
-# package that most toolchains here were never going to have.
+# IntelSYCL::SYCL_CXX is a find_package(IntelSYCL) target on the "oneapi" toolchain
+# only. On the intel-llvm and AdaptiveCpp toolchains the -fsycl flags are applied
+# directly, and the target is the empty interface library declared below, as in
+# cmake/Sycl.cmake.
 if(NOT TARGET IntelSYCL::SYCL_CXX)
     find_package(IntelSYCL QUIET)
 endif()
@@ -42,11 +34,10 @@ endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/SushiRuntimeTargets.cmake")
 
-# Whether the distributed master-worker layer is compiled into this build. It
-# changes the layout of Graph::Node, so a consumer that mixes a distributed
-# library with non-distributed headers gets memory corruption, not a link error.
-# The exported target carries the matching define; this variable is here so a
-# consumer can branch on it, and so the mismatch is inspectable.
+# Whether the distributed master-worker layer is compiled into this build, that is,
+# whether <SushiRuntime/distributed/cluster.hpp> has a library behind it. The exported
+# target defines SR_DISTRIBUTED when it is; no header reads the definition, so it
+# changes no type.
 set(SushiRuntime_DISTRIBUTED "@SR_ENABLE_DISTRIBUTED@")
 
 # Whether this build compiled under the reproducible floating-point contract. A

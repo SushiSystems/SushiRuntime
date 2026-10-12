@@ -34,11 +34,12 @@
 #include <vector>
 
 #include <sycl/sycl.hpp>
+
 #include <SushiRuntime/api/data/buffer.hpp>
-#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/core/assert.hpp>
+#include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/span.hpp>
 
@@ -256,13 +257,12 @@ namespace SushiRuntime
                     return make_error(std::move(next.error()));
 
                 std::shared_ptr<Detail::StateView<T>> view;
-                Error thrown = Detail::translate_exceptions(
-                    ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&view]()
+                Result<void> shared = Detail::translate_exceptions([&view]()
                 {
                     view = std::make_shared<Detail::StateView<T>>();
                 });
-                if (thrown.code != ErrorCode::Ok)
-                    return make_error(std::move(thrown));
+                if (!shared)
+                    return make_error(std::move(shared.error()));
                 return State(std::move(*current), std::move(*next), std::move(view));
             }
 

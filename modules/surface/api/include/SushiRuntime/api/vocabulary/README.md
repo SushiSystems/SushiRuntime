@@ -59,8 +59,9 @@ Writes and is added with add().
 read_key_of() and write_key_of() pull the read or write dependency region out of either data handle.
 A Buffer maps to its whole-buffer region; a State exposes its current buffer as the read region and
 its next buffer as the write region. These free functions let the Reads/Writes wrappers accept
-handles uniformly. An explicit BufferRegion, such as buf.region({off, len}), passes through, so a
-caller can name a sub-range to read or write.
+handles uniformly. A BufferRegion, such as buf.region({off, len}), passes through, so a
+caller can name a sub-range to read or write. A bare pointer is not a handle: the caller writes
+`Reads(BufferRegion(pointer))` to name the whole buffer at that base.
 
 ### liveness_of
 

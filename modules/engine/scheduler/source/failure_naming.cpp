@@ -25,7 +25,7 @@
  * @author Mustafa Garip
  */
 
-#include "failure_naming.hpp"
+#include <SushiRuntime/scheduler/failure_naming.hpp>
 
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -34,10 +34,6 @@ namespace SushiRuntime
 {
     namespace Internal::Scheduler
     {
-        /**
-         * @brief Names @p task for a failure report.
-         * @return The task's label, with the registration index when it is a graph node.
-         */
         std::string describe_task(const Task& task)
         {
             if (!task.is_graph_node())
@@ -48,40 +44,11 @@ namespace SushiRuntime
                                            node.name(), node.registration_index);
         }
 
-        /**
-         * @brief Builds the failure of @p task from an Error it returned, keeping its code.
-         * @param task The task that failed.
-         * @param cause The error a step of its dispatch returned.
-         */
         Error name_failure(const Task& task, const Error& cause)
         {
             return Error{cause.code,
                          Detail::sr_format("{} failed: {}", describe_task(task), cause.message)};
         }
 
-        /**
-         * @brief Builds the KernelFailed failure of @p task from an exception it let out.
-         * @param task The task that threw.
-         * @param cause The exception it threw.
-         */
-        Error name_failure(const Task& task, const std::exception& cause)
-        {
-            return Error{ErrorCode::KernelFailed,
-                         Detail::sr_format("{} failed: {}", describe_task(task), cause.what())};
-        }
-
-        /**
-         * @brief Builds the KernelFailed failure of @p task from an object that is not a
-         *        std::exception.
-         * @param task The task that threw.
-         */
-        Error name_failure(const Task& task)
-        {
-            return Error{ErrorCode::KernelFailed,
-                         Detail::sr_format(
-                             "{} failed with an exception that is not a std::exception",
-                             describe_task(task))};
-        }
-
-    } // namespace Scheduler
+    } // namespace Internal::Scheduler
 } // namespace SushiRuntime

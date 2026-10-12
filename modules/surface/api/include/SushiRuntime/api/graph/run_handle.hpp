@@ -194,9 +194,9 @@ namespace SushiRuntime
                         "was pending, which ended the step and dropped its report; wait on "
                         "the handle first."));
 
-                Error failure = owner->settle_async_step(state_, reuse);
-                if (failure.code != ErrorCode::Ok)
-                    return make_error(std::move(failure));
+                Result<void> settled = owner->settle_async_step(state_, reuse);
+                if (!settled)
+                    return make_error(std::move(settled.error()));
                 return &reuse;
             }
 
@@ -239,7 +239,4 @@ namespace SushiRuntime
             /** @brief What run_async() recorded when it submitted the step. */
             Detail::AsyncRunState state_{};
     };
-
-
-
 } // namespace SushiRuntime

@@ -30,13 +30,14 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -51,6 +52,30 @@ namespace SushiRuntime
 {
     namespace Detail
     {
+        namespace
+        {
+            /**
+             * @brief Copies bytes on the queue of the device that owns an allocation.
+             * @param base Start of the allocation that holds the device side of the copy.
+             * @return The context the copy ran on, or a KernelFailed error when the copy
+             *         throws, and an AllocationFailed error when it was refused memory.
+             */
+            [[nodiscard]] Result<Internal::Execution::RuntimeContext*>
+            copy_on_owning_queue(const ContextHandle& context, void* base, void* destination,
+                                 const void* source, std::size_t bytes) noexcept
+            {
+                Internal::Execution::RuntimeContext& runtime = ContextAccess::context(context);
+                Result<void> copied = Internal::SYCL::translate_exceptions(
+                    [&runtime, base, destination, source, bytes]()
+                {
+                    owning_queue(runtime, base).memcpy(destination, source, bytes).wait();
+                });
+                if (!copied)
+                    return make_error(std::move(copied.error()));
+                return &runtime;
+            }
+        } // namespace
+
         std::size_t device_count(const ContextHandle& context)
         {
             return ContextAccess::context(context).devices().count();
@@ -62,8 +87,8 @@ namespace SushiRuntime
         {
             const std::size_t bytes = checked_byte_count("Buffer allocation", count, element_size);
             MemoryBlock block;
-            Error refused;
-            Error thrown = translate_exceptions(
+            std::optional<Error> refused;
+            Result<void> allocated = Internal::SYCL::translate_exceptions(
                 ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&]()
             {
                 const std::shared_ptr<Internal::Execution::RuntimeContext>& shared =
@@ -85,37 +110,33 @@ namespace SushiRuntime
                 block = block_of(
                     Internal::Memory::Allocation(address, bytes, std::move(owner)));
             });
-            if (thrown.code != ErrorCode::Ok)
-                return make_error(std::move(thrown));
-            if (refused.code != ErrorCode::Ok)
-                return make_error(std::move(refused));
+            if (!allocated)
+                return make_error(std::move(allocated.error()));
+            if (refused)
+                return make_error(std::move(*refused));
             return block;
         }
 
-        Error copy_to_host(const ContextHandle& context, void* base, const void* source,
-                           void* destination, std::size_t bytes) noexcept
+        Result<void> copy_to_host(const ContextHandle& context, void* base, const void* source,
+                                  void* destination, std::size_t bytes) noexcept
         {
-            return translate_exceptions(
-                ErrorCode::KernelFailed, ErrorCode::AllocationFailed, [&]()
-            {
-                Internal::Execution::RuntimeContext& runtime = ContextAccess::context(context);
-                sycl::queue& queue = owning_queue(runtime, base);
-                queue.memcpy(destination, source, bytes).wait();
-                runtime.transfers().add_device_to_host(bytes);
-            });
+            Result<Internal::Execution::RuntimeContext*> copied =
+                copy_on_owning_queue(context, base, destination, source, bytes);
+            if (!copied)
+                return make_error(std::move(copied.error()));
+            (*copied)->transfers().add_device_to_host(bytes);
+            return {};
         }
 
-        Error copy_to_device(const ContextHandle& context, void* base, void* destination,
-                             const void* source, std::size_t bytes) noexcept
+        Result<void> copy_to_device(const ContextHandle& context, void* base, void* destination,
+                                    const void* source, std::size_t bytes) noexcept
         {
-            return translate_exceptions(
-                ErrorCode::KernelFailed, ErrorCode::KernelFailed, [&]()
-            {
-                Internal::Execution::RuntimeContext& runtime = ContextAccess::context(context);
-                sycl::queue& queue = owning_queue(runtime, base);
-                queue.memcpy(destination, source, bytes).wait();
-                runtime.transfers().add_host_to_device(bytes);
-            });
+            Result<Internal::Execution::RuntimeContext*> copied =
+                copy_on_owning_queue(context, base, destination, source, bytes);
+            if (!copied)
+                return make_error(std::move(copied.error()));
+            (*copied)->transfers().add_host_to_device(bytes);
+            return {};
         }
     } // namespace Detail
 } // namespace SushiRuntime

@@ -648,7 +648,7 @@ namespace SushiRuntime
         state_->commit(dirty, dropped, recorder_of, profiling_requested_);
     }
 
-    void RegionComposer::rearm()
+    void RegionComposer::rearm() noexcept
     {
         state_->rearm();
     }
@@ -668,7 +668,7 @@ namespace SushiRuntime
         return state_ != nullptr && state_->is_current(key, recorder);
     }
 
-    std::uint32_t RegionComposer::registration_of(RegionKey key, std::size_t rule) const
+    std::uint32_t RegionComposer::registration_of(RegionKey key, std::size_t rule) const noexcept
     {
         return state_ != nullptr ? state_->registration_of(key, rule) : Detail::K_NO_REGISTRATION;
     }

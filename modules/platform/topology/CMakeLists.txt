@@ -15,7 +15,8 @@ sushiruntime_add_module(
         numa_mapper.cpp
         remapping_topology_provider.cpp
         topology_view.cpp
-    DEPENDS core logging machine
+    DEPENDS core machine
+    PRIVATE_DEPENDS logging
     EXTERNAL PkgConfig::HWLOC)
 
 sushiruntime_add_module_tests(

@@ -21,12 +21,19 @@
 
 /**
  * @file sushiruntime.hpp
- * @brief Includes the release version and the fluent API of the SushiRuntime library.
+ * @brief Includes the fluent API and the core vocabulary a consumer of SushiRuntime writes.
  * @author Mustafa Garip
  * @see modules/surface/api/README.md
  */
 
 #pragma once
 
-#include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/api/fluent.hpp>
+#include <SushiRuntime/core/assert.hpp>
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/operation_id.hpp>
+#include <SushiRuntime/core/ref_counted.hpp>
+#include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/core/version.hpp>

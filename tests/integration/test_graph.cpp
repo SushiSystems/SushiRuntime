@@ -64,13 +64,13 @@ TEST(Integration_TaskGraphTest, SequentialUSMDependency)
     constexpr auto delay = std::chrono::milliseconds(5);
 
     TaskMetadata meta1{"Writer1"};
-    graph.add_task(meta1, {}, {usm_ptr}, make_order_recorder(1, execution_order, order_mutex, delay));
+    graph.add_task(meta1, {}, {SushiRuntime::BufferRegion(usm_ptr)}, make_order_recorder(1, execution_order, order_mutex, delay));
 
     TaskMetadata meta2{"Reader1"};
-    graph.add_task(meta2, {usm_ptr}, {}, make_order_recorder(2, execution_order, order_mutex, delay));
+    graph.add_task(meta2, {SushiRuntime::BufferRegion(usm_ptr)}, {}, make_order_recorder(2, execution_order, order_mutex, delay));
 
     TaskMetadata meta3{"Writer2"};
-    graph.add_task(meta3, {}, {usm_ptr}, make_order_recorder(3, execution_order, order_mutex, delay));
+    graph.add_task(meta3, {}, {SushiRuntime::BufferRegion(usm_ptr)}, make_order_recorder(3, execution_order, order_mutex, delay));
 
     auto compiled_graph = graph.compile().value();
     EXPECT_EQ(compiled_graph.roots.size(), 1) << "Graph should only have 1 root due to linear dependency.";
@@ -137,7 +137,7 @@ TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
     std::atomic<bool> fan_out_success{true};
 
     TaskMetadata metaA{"Node_A"};
-    graph.add_task(metaA, {}, {ptr}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+    graph.add_task(metaA, {}, {SushiRuntime::BufferRegion(ptr)}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
     {
         current_phase.store(1, std::memory_order_release);
         return {};
@@ -154,11 +154,11 @@ TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
 
     TaskMetadata metaB{"Node_B"};
     TaskMetadata metaC{"Node_C"};
-    graph.add_task(metaB, {ptr}, {}, reader_task);
-    graph.add_task(metaC, {ptr}, {}, reader_task);
+    graph.add_task(metaB, {SushiRuntime::BufferRegion(ptr)}, {}, reader_task);
+    graph.add_task(metaC, {SushiRuntime::BufferRegion(ptr)}, {}, reader_task);
 
     TaskMetadata metaD{"Node_D"};
-    graph.add_task(metaD, {}, {ptr}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+    graph.add_task(metaD, {}, {SushiRuntime::BufferRegion(ptr)}, [&current_phase](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
     {
         current_phase.store(3, std::memory_order_release);
         return {};

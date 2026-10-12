@@ -44,7 +44,7 @@ namespace SushiRuntime
     namespace Detail
     {
         /** @brief How many parameters one node carries. */
-        inline constexpr std::size_t K_MAX_NODE_PARAMETERS = 8;
+        inline constexpr std::size_t K_MAX_NODE_PARAMETERS = NodeOptions::K_MAX_PARAMETERS;
 
         /**
          * @brief Returns the refusal of more parameters than a node carries.
@@ -95,7 +95,7 @@ namespace SushiRuntime
             OperationID operation;
 
             /** @brief Launch width the caller stated, or K_WIDTH_UNKNOWN. */
-            std::size_t width = ::SushiRuntime::K_WIDTH_UNKNOWN;
+            std::size_t width = K_WIDTH_UNKNOWN;
 
             /** @brief The first parameter_count entries are the caller's parameters. */
             std::array<std::uint64_t, K_MAX_NODE_PARAMETERS> parameters{};

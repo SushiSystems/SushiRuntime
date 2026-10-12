@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* error_translation.hpp                                                  */
+/* step_machinery.cpp                                                     */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,54 +20,43 @@
 /**************************************************************************/
 
 /**
- * @file error_translation.hpp
- * @brief Declares translate_exceptions, which turns what a call throws into an Error.
+ * @file step_machinery.cpp
+ * @brief Implements the member of StepMachinery that reaches a node's late bindings.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
 
-#pragma once
+#include <SushiRuntime/api/detail/step_machinery.hpp>
 
-#include <exception>
+#include <atomic>
+#include <memory>
+#include <utility>
 
-#include <sycl/sycl.hpp>
-
-#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/api/vocabulary/dynamic.hpp>
+#include <SushiRuntime/task/late_bindings.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
-        /**
-         * @brief Runs work and returns what it throws as an Error.
-         * @param device_code Code of a sycl::exception.
-         * @param fallback    Code of any other exception that carries none.
-         * @return An Error whose code is Ok when work returned; its message is empty when
-         *         the text could not be allocated.
-         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
-         */
-        template <class Work>
-        [[nodiscard]] Error translate_exceptions(ErrorCode device_code, ErrorCode fallback,
-                                                 Work&& work) noexcept
+        void StepMachinery::register_binding_updater(
+            std::shared_ptr<Internal::Graph::LateBindings> lb, Dynamic dyn)
         {
-            try
+            if (!DynamicAccess::when(dyn) && !DynamicAccess::count(dyn) &&
+                !DynamicAccess::base(dyn))
+                return;
+            binding_updaters_.push_back([lb = std::move(lb), dyn = std::move(dyn)]()
             {
-                work();
-                return Error{};
-            }
-            catch (const sycl::exception& failure)
-            {
-                return error_without_throwing(device_code, failure.what());
-            }
-            catch (const std::exception& failure)
-            {
-                return error_without_throwing(fallback, failure.what());
-            }
-            catch (...)
-            {
-                return error_without_throwing(
-                    fallback, "An object that does not derive from std::exception was thrown.");
-            }
+                const Dynamic::WhenProvider& when = DynamicAccess::when(dyn);
+                const Dynamic::CountProvider& count = DynamicAccess::count(dyn);
+                const Dynamic::BaseProvider& base = DynamicAccess::base(dyn);
+                if (when)
+                    lb->enabled.store(when(), std::memory_order_relaxed);
+                if (count)
+                    lb->count.store(count(), std::memory_order_relaxed);
+                if (base)
+                    lb->base.store(base(), std::memory_order_relaxed);
+            });
         }
     } // namespace Detail
 } // namespace SushiRuntime

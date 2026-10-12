@@ -33,7 +33,6 @@
 #include <memory>
 #include <utility>
 
-#include <SushiRuntime/api/detail/error_translation.hpp>
 #include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/detail/step_run.hpp>
@@ -45,6 +44,7 @@
 #include <SushiRuntime/api/graph/step_driver.hpp>
 #include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/report/run_report.hpp>
 
@@ -57,7 +57,7 @@ namespace SushiRuntime
 
         /** @brief Grants the node event record tests a friend seam onto the graph's plan. */
         struct NodeEventRecordsTestAccess;
-    }
+    } // namespace Detail
 
     /**
      * @brief A chainable graph of rules built fluently, then run.
@@ -123,6 +123,17 @@ namespace SushiRuntime
             /** @brief Returns the recorder this graph's rules are recorded on, read-only. */
             [[nodiscard]] const Recorder& recorder() const noexcept { return recorder_; }
 
+            /**
+             * @brief Forgets every rule and marks the plan stale, so the graph can be
+             *        recorded afresh.
+             * @pre No step started with run_async() on this graph is pending.
+             */
+            void clear()
+            {
+                recorder_.clear();
+                PlanCache::discard();
+            }
+
             /** @brief Stands for "this rule has no index yet". */
             static constexpr std::uint32_t K_NO_REGISTRATION = Detail::K_NO_REGISTRATION;
 
@@ -152,11 +163,10 @@ namespace SushiRuntime
                     return make_error(std::move(compiled.error()));
 
                 PlanView copied;
-                Error failure = Detail::translate_exceptions(
-                    ErrorCode::CompileFailed, ErrorCode::CompileFailed,
-                    [this, &copied]() { copied = describe_plan(); });
-                if (failure.code != ErrorCode::Ok)
-                    return make_error(std::move(failure));
+                Result<void> described = Detail::translate_exceptions(
+                    ErrorCode::CompileFailed, [this, &copied]() { copied = describe_plan(); });
+                if (!described)
+                    return make_error(std::move(described.error()));
                 return copied;
             }
 
@@ -172,7 +182,7 @@ namespace SushiRuntime
             friend struct Detail::NodeEventRecordsTestAccess;
 
             /** @brief Error text of a run started with nothing recorded. */
-            static constexpr const char* K_NOTHING_TO_RUN = "Graph has no tasks to run.";
+            static constexpr const char* K_NOTHING_TO_RUN = "Graph has no rule to run.";
 
             /** @brief Error text of a run whose recorded handle was freed. */
             static constexpr const char* K_DANGLING_RESOURCE =
@@ -199,7 +209,7 @@ namespace SushiRuntime
                 return PlanCache::is_profiling_requested();
             }
 
-            /** @brief Returns whether any task has been recorded. */
+            /** @brief Returns whether any node has been recorded. */
             [[nodiscard]] bool has_work() const noexcept
             {
                 return recorder_.node_count() != 0;
@@ -229,7 +239,7 @@ namespace SushiRuntime
             /** @brief Returns the plan a step runs. */
             Internal::Graph::CompiledGraph& run_plan() noexcept { return compiled_plan(); }
 
-            /** @brief Returns the per-step hooks of the recorded tasks. */
+            /** @brief Returns the per-step hooks of the recorded nodes. */
             [[nodiscard]] const Detail::StepMachinery& run_steps() const noexcept
             {
                 return recorder_.steps();
@@ -244,7 +254,7 @@ namespace SushiRuntime
             /** @brief The runtime this graph runs on. */
             ContextHandle context_;
 
-            /** @brief Owns the recorded tasks, their scratch and their per-step hooks. */
+            /** @brief Owns the recorded nodes, their scratch and their per-step hooks. */
             Recorder recorder_;
     };
 } // namespace SushiRuntime

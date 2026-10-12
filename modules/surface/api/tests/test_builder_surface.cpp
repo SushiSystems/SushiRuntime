@@ -272,21 +272,27 @@ TEST(Integration_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
     }
 }
 
-/** @brief Tests that On() rejects a device the runtime lacks and watches the handle it names. */
-TEST(Integration_BuilderSurface, PlacementIsCheckedAndItsHandleWatched)
+/** @brief Tests that both add_untracked() forms stop on an On() the runtime has no device for. */
+TEST(Integration_BuilderSurfaceDeathTest, PlacementOnADeviceTheRuntimeLacksStops)
 {
     auto rt = Runtime::create().value();
     const std::size_t count = rt.advanced().device_count();
     auto graph = rt.graph();
+    const std::string detail =
+        ": device index " + std::to_string(count) + " names no device; the runtime drives " +
+        std::to_string(count) + " devices";
 
-    const std::string refusal = refusal_of(graph.recorder(), ErrorCode::InvalidAccess, [&]
-    {
-        graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
-    });
-    EXPECT_NE(refusal.find("DeviceIndex{" + std::to_string(count) + "}"), std::string::npos)
-        << refusal;
-    EXPECT_NE(refusal.find(std::to_string(count) + " device(s)"), std::string::npos) << refusal;
-    EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
+    EXPECT_DEATH(graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {}),
+                 "add_untracked\\(launch, On\\(\\.\\.\\.\\), kernel\\)" + detail);
+    EXPECT_DEATH(graph.add_untracked(On(DeviceIndex{count}), [](sycl::handler&) {}),
+                 "add_untracked\\(On\\(\\.\\.\\.\\), kernel\\)" + detail);
+}
+
+/** @brief Tests that a graph watches the handle an On() names. */
+TEST(Integration_BuilderSurface, PlacementWatchesTheHandleItNames)
+{
+    auto rt = Runtime::create().value();
+    auto graph = rt.graph();
 
     {
         auto freed = seeded(rt);
@@ -332,8 +338,7 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
     auto field = seeded_state(rt);
     auto output = seeded_state(rt);
     auto input = seeded_state(rt, K_PREFIX);
-    auto target = seeded(rt);
-    const std::size_t count = rt.advanced().device_count();
+    State<Word> unallocated;
     auto graph = rt.graph();
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
 
@@ -343,6 +348,12 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
     });
     EXPECT_TRUE(begins_with(state_refusal, "add_rule(launch, state, kernel), rule 0: "))
         << state_refusal;
+
+    const std::string empty_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidAccess, [&]
+    {
+        graph.add_rule(unallocated, [](std::size_t, const Word*, Word*) {});
+    });
+    EXPECT_TRUE(begins_with(empty_refusal, "add_rule(state, kernel), rule 0: ")) << empty_refusal;
 
     const std::string coupled_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
     {
@@ -362,20 +373,6 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
                             "add_coupled(launch, Coupled(out, in0, ...), kernel), rule 0: "))
         << launch_coupled_refusal;
 
-    const std::string untracked_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidAccess, [&]
-    {
-        graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
-    });
-    EXPECT_TRUE(begins_with(untracked_refusal,
-                            "add_untracked(launch, On(...), kernel), rule 0: "))
-        << untracked_refusal;
-
-    const std::string raw_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidAccess, [&]
-    {
-        graph.add_untracked(On(DeviceIndex{count}), [](sycl::handler&) {});
-    });
-    EXPECT_TRUE(begins_with(raw_refusal, "add_untracked(On(...), kernel), rule 0: ")) << raw_refusal;
-
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 }
 
@@ -387,7 +384,7 @@ TEST(Integration_BuilderSurface, ARefusedAddIsKeptAndReturnedByTheNextRun)
     auto target = seeded(rt);
     Word* words = target.data();
     const Word before = words[0];
-    const std::size_t count = rt.advanced().device_count();
+    State<Word> unallocated;
     auto graph = rt.graph();
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
 
@@ -404,7 +401,7 @@ TEST(Integration_BuilderSurface, ARefusedAddIsKeptAndReturnedByTheNextRun)
     EXPECT_EQ(graph.size(), 2u) << "the valid rules are recorded, the refused one is not";
 
     // A later refusal does not replace the first.
-    graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {});
+    graph.add_rule(unallocated, [](std::size_t, const Word*, Word*) {});
     ASSERT_NE(graph.refusal(), nullptr);
     EXPECT_EQ(graph.refusal()->code, ErrorCode::InvalidGraph);
 

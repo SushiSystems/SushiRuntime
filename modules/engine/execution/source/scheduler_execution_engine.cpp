@@ -32,6 +32,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <chrono>
+#include <optional>
 #include <utility>
 #include <vector>
 #include <SushiRuntime/core/error.hpp>
@@ -61,29 +62,24 @@ namespace SushiRuntime
             std::mutex              mutex;          /**< Guards the fields below. */
             std::condition_variable cv;            /**< Signalled when the run quiesces. */
             bool                    done = false;   /**< True once the sentinel reported in. */
-            bool                    failed = false; /**< Whether the finished run failed. */
-            Error                   error;          /**< First failure of the run, when failed. */
+            std::optional<Error>    error;          /**< First failure of the finished run. */
 
             /** @brief Clears the gate for the next step before roots are submitted. */
             void reset()
             {
                 std::lock_guard<std::mutex> lock(mutex);
                 done = false;
-                failed = false;
-                error = Error{};
+                error.reset();
             }
 
             /**
              * @brief Publishes a finished run's outcome and wakes the waiter.
-             * @param run_failed Whether a task failed during the run.
-             * @param failure    The first failure when @p run_failed, else an Error whose code
-             *        is Ok.
+             * @param failure The first failure of the run, or nothing when no task failed.
              */
-            void signal(bool run_failed, Error failure)
+            void signal(std::optional<Error> failure)
             {
                 {
                     std::lock_guard<std::mutex> lock(mutex);
-                    failed = run_failed;
                     error = std::move(failure);
                     done = true;
                 }
@@ -168,7 +164,7 @@ namespace SushiRuntime
             /** @brief The context's device queues, asked for their asynchronous errors. */
             Internal::Device::DeviceQueueSet& devices;
 
-            /** @brief Reusable per-step completion gate (replaces promise/future). */
+            /** @brief Reusable per-step completion gate. */
             CompletionLatch completion;
             std::unique_ptr<SushiRuntime::Internal::Scheduler::WorkloadCoordinator> rebalancer;
 
@@ -335,7 +331,7 @@ namespace SushiRuntime
         /**
          * @brief Zeroes node and per-worker profiling accumulators before a run.
          */
-        void SchedulerExecutionEngine::reset_profiling(CompiledGraph& graph, std::size_t expected_invocations)
+        void SchedulerExecutionEngine::reset_profiling(Internal::Graph::CompiledGraph& graph, std::size_t expected_invocations)
         {
             impl_->scheduler.reset_worker_times();
             // Once per run, before any step's arm_for_execution() draws from it.
@@ -352,7 +348,7 @@ namespace SushiRuntime
         /**
          * @brief Reads the accumulators into a report's profiling breakdown.
          */
-        void SchedulerExecutionEngine::collect_profiling(CompiledGraph& graph,
+        void SchedulerExecutionEngine::collect_profiling(Internal::Graph::CompiledGraph& graph,
                                                 RunReport& report) const
         {
             // One capture path (F4): node_timings below is aggregated from these same records.
@@ -449,7 +445,7 @@ namespace SushiRuntime
             return m;
         }
 
-        void SchedulerExecutionEngine::prepare(CompiledGraph& graph)
+        void SchedulerExecutionEngine::prepare(Internal::Graph::CompiledGraph& graph)
         {
             impl_->scheduler.prepare_offload(graph.all_nodes);
         }
@@ -468,7 +464,7 @@ namespace SushiRuntime
         /**
          * @brief Runs a compiled graph on the persistent worker pool and waits.
          */
-        Result<void> SchedulerExecutionEngine::execute(CompiledGraph& graph)
+        Result<void> SchedulerExecutionEngine::execute(Internal::Graph::CompiledGraph& graph)
         {
             // execute() is submit() then complete(), nothing more (modules/engine/execution/README.md).
             Result<void> submitted = submit(graph);
@@ -481,7 +477,7 @@ namespace SushiRuntime
          * @brief Starts a run on the worker pool without waiting for it (modules/engine/execution/README.md).
          * @pre No other run is in progress on this engine.
          */
-        Result<void> SchedulerExecutionEngine::submit(CompiledGraph& graph)
+        Result<void> SchedulerExecutionEngine::submit(Internal::Graph::CompiledGraph& graph)
         {
             if (impl_->is_shutdown.load(std::memory_order_acquire))
                 return make_error(Error{ErrorCode::InvalidState, "Execute called after shutdown."});
@@ -524,13 +520,12 @@ namespace SushiRuntime
                                 e.wait();
 
                         // The outcome is read before re-arming clears it (modules/engine/execution/README.md).
-                        const bool failed = sched_ptr->run_failed();
-                        Error failure = failed ? sched_ptr->run_error() : Error{};
+                        std::optional<Error> failure = sched_ptr->run_error();
 
                         // The pool stays armed through the drain tail (modules/engine/execution/README.md).
                         sched_ptr->arm_for_execution(profiling);
 
-                        latch->signal(failed, std::move(failure));
+                        latch->signal(std::move(failure));
                         return {};
                     };
             }
@@ -573,10 +568,10 @@ namespace SushiRuntime
             // The queues are drained of their asynchronous errors whether or not a task failed.
             Result<void> raised = impl_->devices.raise_asynchronous_errors();
 
-            if (impl_->completion.failed)
+            if (impl_->completion.error)
             {
                 SR_LOG_ERROR("Graph execution aborted due to a task error.");
-                return make_error(std::move(impl_->completion.error));
+                return make_error(std::move(*impl_->completion.error));
             }
             if (!raised)
             {
@@ -627,7 +622,7 @@ namespace SushiRuntime
          * @brief Executes a compiled graph, taking ownership of it (modules/engine/execution/README.md).
          * @param graph The compiled graph to execute via move semantics.
          */
-        Result<void> ExecutionEngine::execute(CompiledGraph&& graph)
+        Result<void> ExecutionEngine::execute(Internal::Graph::CompiledGraph&& graph)
         {
             Internal::Graph::CompiledGraph local = std::move(graph);
             return execute(local);

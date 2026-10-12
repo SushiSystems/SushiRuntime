@@ -28,13 +28,15 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace SushiRuntime
 {
     /**
      * @brief Selects whether workers are bound to specific cores or left to the OS.
      * @see modules/foundation/machine/README.md
      */
-    enum class PinPolicy
+    enum class PinPolicy : std::uint8_t
     {
         Pin,   /**< Bind worker i to core (first_core + i). */
         Float  /**< Leave placement to the OS scheduler. */

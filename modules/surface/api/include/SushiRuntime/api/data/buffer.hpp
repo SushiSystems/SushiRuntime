@@ -29,6 +29,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -38,17 +39,18 @@
 #include <vector>
 
 #include <sycl/sycl.hpp>
-#include <SushiRuntime/api/detail/error_translation.hpp>
+
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/region/liveness.hpp>
-#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/strong_id.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 
 namespace SushiRuntime
 {
@@ -75,7 +77,7 @@ namespace SushiRuntime
      * @brief Names where a Buffer or State keeps its memory across steps.
      * @see modules/surface/api/include/SushiRuntime/api/data/README.md
      */
-    enum class Residency
+    enum class Residency : std::uint8_t
     {
         Shared,  /**< Host-addressable USM; the default. */
         Device,  /**< Device-resident USM; host access only via read/write_range. */
@@ -130,23 +132,23 @@ namespace SushiRuntime
          * @brief Copies bytes of an allocation to host memory through its owning queue,
          *        waits, and counts them as moved device to host.
          * @param base Base address of the allocation; source lies inside it.
-         * @return An Error whose code is ok, or a KernelFailed error when the device fails.
+         * @return Nothing, or a KernelFailed error when the device fails.
          */
-        [[nodiscard]] SUSHIRUNTIME_API Error copy_to_host(const ContextHandle& context,
-                                                          void* base, const void* source,
-                                                          void* destination,
-                                                          std::size_t bytes) noexcept;
+        [[nodiscard]] SUSHIRUNTIME_API Result<void> copy_to_host(const ContextHandle& context,
+                                                                 void* base, const void* source,
+                                                                 void* destination,
+                                                                 std::size_t bytes) noexcept;
 
         /**
          * @brief Copies host bytes into an allocation through its owning queue, waits, and
          *        counts them as moved host to device.
          * @param base Base address of the allocation; destination lies inside it.
-         * @return An Error whose code is ok, or a KernelFailed error when the device fails.
+         * @return Nothing, or a KernelFailed error when the device fails.
          */
-        [[nodiscard]] SUSHIRUNTIME_API Error copy_to_device(const ContextHandle& context,
-                                                            void* base, void* destination,
-                                                            const void* source,
-                                                            std::size_t bytes) noexcept;
+        [[nodiscard]] SUSHIRUNTIME_API Result<void> copy_to_device(const ContextHandle& context,
+                                                                   void* base, void* destination,
+                                                                   const void* source,
+                                                                   std::size_t bytes) noexcept;
 
         /**
          * @brief Stops the process unless a device index names a device the context drives.
@@ -434,23 +436,34 @@ namespace SushiRuntime
                     context, count, sizeof(T), device_index.value(), residency, alignment);
                 if (!block)
                     return make_error(std::move(block.error()));
-
-                std::optional<Buffer> made;
-                Error thrown = Detail::translate_exceptions(
-                    ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&]()
-                {
-                    made.emplace(
-                        Buffer(context, std::move(*block), count, device_index, residency));
-                });
-                if (thrown.code != ErrorCode::Ok)
-                    return make_error(std::move(thrown));
-                return std::move(*made);
+                return adopt(context, std::move(*block), count, device_index, residency);
             }
 
             /**
              * @brief Wraps memory another component allocated and will release.
              * @param block Holds at least count * sizeof(T) bytes; its owner is let go when
-             *        this buffer is.
+             *        the buffer is, or here on a failure.
+             * @return The buffer, or an AllocationFailed error when its liveness token
+             *         cannot be allocated.
+             * @pre The byte size of count fits std::size_t and block holds at least it.
+             */
+            [[nodiscard]] static Result<Buffer> adopt(
+                const ContextHandle& context, Detail::MemoryBlock block, std::size_t count,
+                DeviceIndex device_index, Residency residency) noexcept
+            {
+                std::optional<Buffer> made;
+                Result<void> built = Detail::translate_exceptions([&]()
+                {
+                    made.emplace(
+                        Buffer(context, std::move(block), count, device_index, residency));
+                });
+                if (!built)
+                    return make_error(std::move(built.error()));
+                return std::move(*made);
+            }
+
+            /**
+             * @brief Takes memory another component allocated; adopt() is its one caller.
              * @pre The byte size of count fits std::size_t and block holds at least it.
              */
             Buffer(ContextHandle context, Detail::MemoryBlock block, std::size_t count,
@@ -483,18 +496,17 @@ namespace SushiRuntime
             {
                 Detail::require_window(call, range, size_);
                 std::vector<T> out;
-                Error failed = Detail::translate_exceptions(
-                    ErrorCode::KernelFailed, ErrorCode::AllocationFailed, [&]()
+                Result<void> copied = Detail::translate_exceptions([&]()
                 {
                     out.resize(range.count);
                 });
                 // A non-zero size_ implies a runtime and a non-null address.
-                if (failed.code == ErrorCode::Ok && range.count != 0)
-                    failed = Detail::copy_to_host(context_, static_cast<void*>(data()),
+                if (copied && range.count != 0)
+                    copied = Detail::copy_to_host(context_, static_cast<void*>(data()),
                                                   data() + range.offset, out.data(),
                                                   range.count * sizeof(T));
-                if (failed.code != ErrorCode::Ok)
-                    return make_error(std::move(failed));
+                if (!copied)
+                    return make_error(std::move(copied.error()));
                 return std::move(out);
             }
 
@@ -520,12 +532,9 @@ namespace SushiRuntime
                            std::to_string(range.count) + "; pass at least that many.")
                               .c_str());
                 // A non-zero size_ implies a runtime and a non-null address.
-                Error failed = Detail::copy_to_device(context_, static_cast<void*>(data()),
-                                                      data() + range.offset, source.data(),
-                                                      range.count * sizeof(T));
-                if (failed.code != ErrorCode::Ok)
-                    return make_error(std::move(failed));
-                return {};
+                return Detail::copy_to_device(context_, static_cast<void*>(data()),
+                                              data() + range.offset, source.data(),
+                                              range.count * sizeof(T));
             }
 
             /**
@@ -574,7 +583,4 @@ namespace SushiRuntime
             Residency residency_ = Residency::Shared;
             LivenessToken liveness_;
     };
-
-
-
 } // namespace SushiRuntime

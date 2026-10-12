@@ -99,8 +99,9 @@ namespace SushiRuntime
             description.state_access = [out_view, views](std::vector<BufferRegion>& reads,
                                                          std::vector<BufferRegion>& writes)
             {
-                reads = read_keys_of_views(views, Seq{});
-                reads.insert(reads.begin(), BufferRegion(static_cast<void*>(out_view->current)));
+                reads.push_back(BufferRegion(static_cast<void*>(out_view->current)));
+                const std::vector<BufferRegion> inputs = read_keys_of_views(views, Seq{});
+                reads.insert(reads.end(), inputs.begin(), inputs.end());
                 writes.push_back(BufferRegion(static_cast<void*>(out_view->next)));
             };
             description.work = CommandGroupWork(

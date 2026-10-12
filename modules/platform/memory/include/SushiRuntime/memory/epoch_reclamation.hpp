@@ -29,6 +29,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <string>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/common.hpp>

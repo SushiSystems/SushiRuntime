@@ -291,15 +291,17 @@ every shape: apply_stamp() writes it after the node is added.
 
 | Builder | Width described |
 | --- | --- |
-| launch_node, range_node, raw_node, captured_node, task_node, host_node, device_sized_node, late_count_resolver_node | the width NodeOptions states |
+| launch_node, captured_node, state_launch_node, coupled_launch_node, untracked_launch_node | launch_count() of the launch |
+| range_node, untracked_range_node | the count |
+| raw_node, task_node, host_node, device_sized_node, late_count_resolver_node | the width NodeOptions states |
 | dynamic_node | the width NodeOptions states, or the capacity |
-| state_launch_node, coupled_launch_node, untracked_launch_node | launch_count() of the launch |
-| untracked_range_node | the count |
 | dynamic_state_node | the State's size |
 | untracked_raw_node | none |
 
 untracked_raw_node() describes none: a raw command group submits its own work and takes no
-launch, so its width is the one NodeOptions states, or unknown.
+launch, so its width is the one NodeOptions states, or unknown. device_sized_node() describes
+only a stated width: its capacity is an upper bound, and a node with no late binding reports
+its baked width as its live width too, which the capacity is not.
 
 ### task_node
 
@@ -332,6 +334,13 @@ placement does not depend on what the engine does with a node that states none.
 captured_access() turns a list of In, Out and InOut captures into the Access the node is ordered
 by. It lives with the captured builder so that the builder surface's capture overload only splits
 its argument pack.
+
+### late_count_resolver_node
+
+late_count_resolver_node() describes the one task that resolves K late counts. A host count is
+baked in when the task is submitted. A device count is read in the kernel, and a value past its
+capacity becomes zero and a fault record (docs/design/GRAPH_REPLAY.md §D.2). A host count past
+its capacity is written to the fault record on the host, and the fill does not run.
 
 ## node_description.hpp
 
@@ -417,12 +426,14 @@ A private header of `source/`.
 
 ### host_slot_refusal
 
-host_slot_refusal() asks the slot's own address first. When that answers anything but host, it
-resolves the address to the allocation containing it and asks again: a caller offsetting into a plan
+The check asks the slot's own address first. When that answers anything but host, it resolves
+the address to the allocation containing it and asks again: a caller offsetting into a plan
 array hands over an interior pointer, which SYCL reports as unknown. It runs while add() builds a
 node, so the containment search never meets a dispatch. A null slot passes. A slot outside host
-USM comes back as an `InvalidAccess` error that names the builder call and the rule;
-host_device_slots_refusal() asks it for the count slot and then for the base slot of a Dynamic.
+USM, or one this runtime never allocated, is a rule the caller broke: the factories of
+`vocabulary/dynamic.hpp` stop on a buffer of another residency, and
+Recorder::require_device_slots() stops on a slot of another runtime, for the count slot and then
+for the base slot of a Dynamic.
 
 ## late_count_resolution.hpp
 
@@ -482,6 +493,10 @@ that submit such a node do not see that type: read_late_window() reads the contr
 submit and returns a LateWindow, the host count and base and the address of each device slot.
 That is one call into the library per late-bound node and step, and nothing per element.
 
+submit_late_window() submits the node from that window. A node with no device slot keeps its
+host-resolved range. One with a slot runs at its capacity, and each work-item past the live
+count returns (docs/design/GRAPH_REPLAY.md §D).
+
 ### LiveRange
 
 A LiveRange is the half-open element window a late-bound node iterates this step: where it starts
@@ -529,17 +544,9 @@ stated here and asserted equal to the engine's `TaskMetadata::K_MAX_PARAMS` at c
 parameters_refusal() returns an `InvalidGraph` error for more parameters than a node carries.
 Recorder::record() asks it before it touches the recorder, so a refused node leaves no trace.
 
-## error_translation.hpp
+## Exception translation
 
-### translate_exceptions
-
-translate_exceptions() is the one catch ladder of the surface. It runs a callable and returns an
-`Error` whose code is `Ok` when the callable returned. A `sycl::exception` takes the code the
-caller names for a device failure, and every other exception takes the fallback. The library
-throws nothing itself, so what the ladder catches comes from SYCL, the standard library or the
-caller's own callable. The ladder is written out in the function that owns the `try`, with
-no rethrow, because a rethrow from a helper called inside a catch block crashes the process on
-the Windows intel-llvm toolchain. Each `Error` is built by `Detail::error_without_throwing()` of
-`core/error.hpp`, which returns the code with an empty message when the text cannot be allocated.
-StepDriver::guarded() calls it with `KernelFailed` for a device failure; the factories and
-read_range() and write_range() call it too.
+The headers of the surface call `Detail::translate_exceptions()` of `core/error_translation.hpp`
+wherever a standard-library or SYCL call may throw: StepDriver::guarded(), Buffer::adopt(),
+State::allocate(), Graph::plan() and the vector a read_range() fills.
+`modules/foundation/core/README.md` describes the ladder.

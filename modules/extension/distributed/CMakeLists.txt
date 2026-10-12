@@ -49,7 +49,6 @@ sushiruntime_add_module(
         memory
         device
         task
-        graph
         execution
         region
         log

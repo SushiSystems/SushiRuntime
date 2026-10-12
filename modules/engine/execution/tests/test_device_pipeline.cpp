@@ -100,7 +100,7 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
         {
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { a[i] = float(i); });
         },
-        {}, {a});
+        {}, {SushiRuntime::BufferRegion(a)});
 
     // doubleA: B[i] = A[i] * 2
     graph.add_node(
@@ -108,7 +108,7 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
         {
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { b[i] = a[i] * 2.0f; });
         },
-        {a}, {b});
+        {SushiRuntime::BufferRegion(a)}, {SushiRuntime::BufferRegion(b)});
 
     // incA: C[i] = A[i] + 1  (parallel sibling of doubleA)
     graph.add_node(
@@ -116,7 +116,7 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
         {
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { c[i] = a[i] + 1.0f; });
         },
-        {a}, {c});
+        {SushiRuntime::BufferRegion(a)}, {SushiRuntime::BufferRegion(c)});
 
     // combine: D[i] = B[i] + C[i]  (fan-in)
     graph.add_node(
@@ -124,7 +124,7 @@ TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
         {
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { d[i] = b[i] + c[i]; });
         },
-        {b, c}, {d});
+        {SushiRuntime::BufferRegion(b), SushiRuntime::BufferRegion(c)}, {SushiRuntime::BufferRegion(d)});
 
     auto compiled = graph.compile().value();
     EXPECT_EQ(compiled.roots.size(), 1u) << "Only the init node should be a root of the diamond.";

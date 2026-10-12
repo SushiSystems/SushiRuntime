@@ -43,6 +43,8 @@ namespace SushiRuntime
         struct ContextAccess;
     } // namespace Detail
 
+    class Runtime;
+
     /**
      * @brief Shares ownership of one runtime's context without naming what it holds.
      *
@@ -56,6 +58,14 @@ namespace SushiRuntime
             /** @brief Holds no context. */
             ContextHandle() noexcept = default;
 
+            /** @brief Returns whether this handle shares a context. */
+            [[nodiscard]] explicit operator bool() const noexcept { return context_ != nullptr; }
+
+        private:
+            // Runtime::create() builds the context; the library's sources read it back.
+            friend class Runtime;
+            friend struct Detail::ContextAccess;
+
             /**
              * @brief Shares a context the library built.
              * @param context The context to share; null makes an empty handle.
@@ -65,12 +75,6 @@ namespace SushiRuntime
                 : context_(std::move(context))
             {
             }
-
-            /** @brief Returns whether this handle shares a context. */
-            [[nodiscard]] explicit operator bool() const noexcept { return context_ != nullptr; }
-
-        private:
-            friend struct Detail::ContextAccess;
 
             /** @brief The shared context; null for an empty handle. */
             std::shared_ptr<Internal::Execution::RuntimeContext> context_;
