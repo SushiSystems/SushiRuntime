@@ -215,7 +215,7 @@ A graph has one verb per kind of node.
 | `extend` | The nodes a library records through the `Recorder` |
 
 Every call reads in one order: modifier, launch, access, callable, options.
-[The graph README](../../modules/surface/api/include/SushiRuntime/api/graph/README.md) has the
+[The plumbing README of the graph](../../modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md) has the
 table of which launch works with which access and the contract of each verb.
 
 ### Buffers: `add` with `In`, `Out` and `InOut`

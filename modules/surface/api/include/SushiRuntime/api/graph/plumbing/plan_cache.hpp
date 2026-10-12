@@ -23,7 +23,7 @@
  * @file plan_cache.hpp
  * @brief Declares PlanCache, the compiled plan of one recorder.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+ * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
  */
 
 #pragma once
@@ -51,7 +51,7 @@ namespace SushiRuntime
          * @brief Keeps the plan compiled from one recorder and tells when it must be rebuilt.
          *
          * A move leaves the source with no plan and a compile count of zero.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
          */
         class PlanCache
         {
@@ -92,7 +92,7 @@ namespace SushiRuntime
                  *
                  * A value that differs from the stored one marks the plan stale; the same value
                  * changes nothing.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void set_profiling(bool requested) noexcept
                 {
@@ -127,7 +127,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Replays the recorder onto a fresh backing graph and keeps the plan.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 [[nodiscard]] SUSHIRUNTIME_API Result<void> build(const Recorder& recorder,
                                                                   const ContextHandle& context);
@@ -135,7 +135,7 @@ namespace SushiRuntime
                 /**
                  * @brief Restores the cached plan's per-run state so it can run again.
                  * @pre A plan is built.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 SUSHIRUNTIME_API void rearm() noexcept;
 
@@ -153,7 +153,7 @@ namespace SushiRuntime
                 /**
                  * @brief Copies what the cached plan orders, one entry per recorded node.
                  * @pre stale() is false for the recorder the plan was built from.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 [[nodiscard]] SUSHIRUNTIME_API PlanView describe_plan() const;
 

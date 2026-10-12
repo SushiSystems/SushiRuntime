@@ -128,7 +128,7 @@ namespace SushiRuntime
             /**
              * @brief Runs the steps as an in-order chain from this thread.
              * @return The number of steps run, or the fault a step recorded.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
              */
             Result<std::size_t> run_chained(const StepTarget& target, StepPredicate keep_going,
                                             RuntimeContext& context, ExecutionEngine& engine,

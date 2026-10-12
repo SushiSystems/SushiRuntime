@@ -23,10 +23,10 @@
  * @file region_composer.cpp
  * @brief Implements RegionComposer, which stitches the sub-graph of every region into one plan.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+ * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
  */
 
-#include <SushiRuntime/api/graph/region_composer.hpp>
+#include <SushiRuntime/api/graph/plumbing/region_composer.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -57,7 +57,7 @@ namespace SushiRuntime
     {
         /**
          * @brief Owns the compiled sub-graph of every region and the plan stitched from them.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
          */
         class RegionComposerState final
         {
@@ -70,7 +70,7 @@ namespace SushiRuntime
                  * @param recorder_of Called as recorder_of(key); null when the region is gone.
                  * @param profiling   Whether the plan requests per-node device timing.
                  * @pre A commit that threw is repeated with the dirty and dropped keys it had.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void commit(const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
                             const std::function<const Recorder*(RegionKey)>& recorder_of,
@@ -121,7 +121,7 @@ namespace SushiRuntime
                 /**
                  * @brief Re-arms the live in-degree of every node and of the sentinel, in
                  *        O(total nodes).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void rearm()
                 {
@@ -210,7 +210,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Marks a composer for a rebuild of every region unless dismissed.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 class RecomposeGuard final
                 {
@@ -243,7 +243,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Makes the next commit rebuild every live region and leaves no plan to run.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void invalidate_plan() noexcept
                 {
@@ -272,7 +272,7 @@ namespace SushiRuntime
                  * @brief Un-wires the allocations of the retired regions and tears those
                  *        regions down.
                  * @param bases Every allocation a retired region touches.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void retire_regions(const std::set<RegionKey>& retired, const std::set<Base>& bases)
                 {
@@ -328,7 +328,7 @@ namespace SushiRuntime
                  * @brief Writes the roots, the sentinel and the registration indices into the plan.
                  *
                  * A plan that requests profiling also lists every node for the profiler.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void publish_plan()
                 {
@@ -373,7 +373,7 @@ namespace SushiRuntime
                 /**
                  * @brief Adds one cross-region edge from->to for base b and updates root and leaf
                  *        bookkeeping.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void add_cross_edge(Node* from, Node* to, Base b)
                 {
@@ -413,7 +413,7 @@ namespace SushiRuntime
                 /**
                  * @brief Drops from pins every interval a later write fully covers, and emptied
                  *        pins with them.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 static void retire_covered(std::vector<BoundaryPin>& pins,
                                            const std::vector<BufferRegion>& covers)
@@ -435,7 +435,7 @@ namespace SushiRuntime
                 /**
                  * @brief Re-derives the cross-region edges of one shared allocation from byte
                  *        intervals.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void rewire_base(Base b)
                 {
@@ -537,7 +537,7 @@ namespace SushiRuntime
                  * @brief Removes a region's nodes from the roots, the sentinel and the bases it
                  *        touched.
                  * @pre The region's cross-region edges are already undone.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void teardown_region(RegionKey k)
                 {

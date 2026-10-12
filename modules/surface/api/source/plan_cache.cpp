@@ -23,10 +23,10 @@
  * @file plan_cache.cpp
  * @brief Implements PlanCache, which builds and keeps the plan of one recorder.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+ * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
  */
 
-#include <SushiRuntime/api/graph/plan_cache.hpp>
+#include <SushiRuntime/api/graph/plumbing/plan_cache.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -52,7 +52,7 @@ namespace SushiRuntime
     {
         /**
          * @brief Holds the compiled plan of a PlanCache and the nodes of it a recorder named.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
          */
         struct PlanCacheState
         {

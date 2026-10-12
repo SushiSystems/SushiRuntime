@@ -9,7 +9,7 @@ Defects that are recorded and not yet fixed. The work each one needs is in
 | --- | --- |
 | A host read of a `Residency::Shared` buffer while a kernel runs on the same GPU faults on Windows with CUDA (0xC0000006). Values read mid-run must live in `Residency::Host` | `modules/surface/api/include/SushiRuntime/api/data/buffer.hpp` |
 | A `Buffer` moved after it was passed to a recording verb leaves the graph pointing at the old address, and the liveness guard does not report it | `modules/surface/api/include/SushiRuntime/api/data/buffer.hpp` |
-| A `cancel()` that races the end of its own run can cancel the next run started on the same runtime | `modules/surface/api/include/SushiRuntime/api/graph/step_driver.hpp` |
+| A `cancel()` that races the end of its own run can cancel the next run started on the same runtime | `modules/surface/api/include/SushiRuntime/api/graph/plumbing/step_driver.hpp` |
 | A `DynamicGraph` that drops regions and never runs again keeps them until it is destroyed | `modules/surface/api/include/SushiRuntime/api/graph/dynamic_graph.hpp` |
 | When an event's status query throws, a successor the failed node released can run before the failure is recorded | `modules/engine/scheduler/include/SushiRuntime/scheduler/event_polling.hpp` |
 | On Linux with the current DPC++ a profiled in-order chain makes 8 allocations per tick on the calling thread and bare SYCL makes 5, so `Integration_SteadyStateAllocation.ProfiledReuseTicksDoNotAllocatePerTick` fails (512 to 2048 against 320 to 1280). Reported from CI on 2026-10-05 and not reproduced since: the run of 2026-10-12 was on Windows, where the test passes | `tests/allocation/test_steady_state_allocation.cpp` |
