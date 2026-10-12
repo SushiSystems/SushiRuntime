@@ -33,7 +33,7 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/api/graph/builder_surface.hpp>
+#include <SushiRuntime/api/graph/plumbing/builder_surface.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
 

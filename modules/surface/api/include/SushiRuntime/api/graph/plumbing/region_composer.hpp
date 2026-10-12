@@ -23,7 +23,7 @@
  * @file region_composer.hpp
  * @brief Declares RegionComposer, which stitches the plan of a DynamicGraph from its regions.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+ * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
  */
 
 #pragma once
@@ -49,7 +49,7 @@ namespace SushiRuntime
          * @brief Owns the compiled sub-graph of every region and stitches them into one plan.
          *
          * A move leaves the source with no region and no plan, ready to compose again.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
          */
         class RegionComposer
         {
@@ -61,7 +61,7 @@ namespace SushiRuntime
                  * @brief Rebuilds the changed regions, re-wires them and renumbers every node.
                  * @param recorder_of Called as recorder_of(key); null when the region is gone.
                  * @pre A commit that threw is repeated with the dirty and dropped keys it had.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 SUSHIRUNTIME_API void commit(
                     const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
@@ -71,7 +71,7 @@ namespace SushiRuntime
                  * @brief Re-arms the live in-degree of every node and of the sentinel, in
                  *        O(total nodes).
                  * @pre composed() is true.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 SUSHIRUNTIME_API void rearm() noexcept;
 
@@ -129,7 +129,7 @@ namespace SushiRuntime
                  *
                  * The next commit stamps the request into the plan; the same value changes
                  * nothing.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void set_profiling(bool requested) noexcept
                 {

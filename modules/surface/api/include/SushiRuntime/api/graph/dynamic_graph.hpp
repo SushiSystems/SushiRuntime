@@ -40,11 +40,11 @@
 #include <SushiRuntime/api/detail/plan.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/detail/step_run.hpp>
+#include <SushiRuntime/api/graph/plumbing/region_composer.hpp>
+#include <SushiRuntime/api/graph/plumbing/step_driver.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/api/graph/region.hpp>
-#include <SushiRuntime/api/graph/region_composer.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
-#include <SushiRuntime/api/graph/step_driver.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -107,7 +107,7 @@ namespace SushiRuntime
             /**
              * @brief Waits for a step started with run_async() and still pending, then frees
              *        the regions and the plan.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
              */
             ~DynamicGraph()
             {

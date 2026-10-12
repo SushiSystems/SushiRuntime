@@ -135,7 +135,7 @@ order of a run; [the scheduler README](../../modules/engine/scheduler/README.md)
 
 After each step every `State` advances: the field the step wrote becomes the field the next
 step reads. A failed run of one step advances nothing;
-[the graph README of the api](../../modules/surface/api/include/SushiRuntime/api/graph/README.md)
+[the plumbing README of the api graph](../../modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md)
 has the rule for a failed run of several steps.
 
 ### What changes between steps without a rebuild
@@ -154,7 +154,7 @@ sub-graph. Edges inside a region are built once; edges between regions that shar
 buffer are kept in a separate layer that the composer maintains. Adding or dropping a region
 rebuilds that region and the boundary edges of the allocations it shares. For a buffer two
 regions share, the region with the lower key is the producer.
-[The graph README of the api](../../modules/surface/api/include/SushiRuntime/api/graph/README.md)
+[The plumbing README of the api graph](../../modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md)
 has the costs of a commit.
 
 ### Memory

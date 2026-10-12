@@ -37,12 +37,12 @@
 #include <SushiRuntime/api/detail/plan.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/detail/step_run.hpp>
-#include <SushiRuntime/api/graph/builder_surface.hpp>
-#include <SushiRuntime/api/graph/plan_cache.hpp>
 #include <SushiRuntime/api/graph/plan_view.hpp>
+#include <SushiRuntime/api/graph/plumbing/builder_surface.hpp>
+#include <SushiRuntime/api/graph/plumbing/plan_cache.hpp>
+#include <SushiRuntime/api/graph/plumbing/step_driver.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
-#include <SushiRuntime/api/graph/step_driver.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
@@ -110,7 +110,7 @@ namespace SushiRuntime
             /**
              * @brief Waits for a step started with run_async() and still pending, then frees
              *        the rules and the plan.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
              */
             ~Graph()
             {

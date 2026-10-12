@@ -23,7 +23,7 @@
  * @file step_driver.hpp
  * @brief Declares StepDriver, the run entries a graph and a dynamic graph share.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+ * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
  */
 
 #pragma once
@@ -59,7 +59,7 @@ namespace SushiRuntime
          * @brief Gives a graph its run entries and drives the step loop over the graph's plan.
          * @tparam Owner The graph; it befriends this driver and supplies the plan, the per-step
          *         hooks and the checks named in the README.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
          */
         template <class Owner>
         class StepDriver
@@ -69,7 +69,7 @@ namespace SushiRuntime
                  * @brief Runs the graph once, blocking until it completes.
                  * @return The RunReport, or the Error that ended the run; a failed run of one
                  *         step has advanced no State.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 [[nodiscard]] Result<RunReport, Error> run() noexcept
                 {
@@ -82,7 +82,7 @@ namespace SushiRuntime
                  *         advanced the States once per step before the failing one; on the chain
                  *         a device fault of any step shows at the end, with every step but the
                  *         last advanced.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 [[nodiscard]] Result<RunReport, Error>
                 run(std::size_t steps) noexcept
@@ -173,7 +173,7 @@ namespace SushiRuntime
                 /**
                  * @brief Starts one step on the worker pool and returns without waiting for it.
                  * @return The handle of the step, or the Error that kept it from starting.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 [[nodiscard]] Result<RunHandle<Owner>, Error> run_async() noexcept
                 {
@@ -209,7 +209,7 @@ namespace SushiRuntime
                  * @param hook Callable invoked as hook(std::size_t finished_steps) with the
                  *        steps the run in progress replayed before this one.
                  * @return The graph, so that calls chain.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class Hook>
                 Owner& before_each_step(Hook&& hook)
@@ -224,7 +224,7 @@ namespace SushiRuntime
                  *
                  * It does nothing when this graph has no run in flight, so it never stops a run
                  * of another graph on the same runtime.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void cancel() noexcept
                 {
@@ -236,7 +236,7 @@ namespace SushiRuntime
                  * @brief Builds the plan if none is current and runs nothing.
                  * @return Nothing, or the Error run() would return before its first step: the
                  *         recorder's refusal, a refused entry, or why the plan could not be built.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 [[nodiscard]] Result<void> compile() noexcept
                 {
@@ -250,7 +250,7 @@ namespace SushiRuntime
                 /**
                  * @brief Requests or withdraws per-node device timing for this graph.
                  * @return The graph, so that calls chain.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 Owner& set_profiling(bool requested) noexcept
                 {
@@ -275,7 +275,7 @@ namespace SushiRuntime
                  * @brief Ends a step still pending on other and takes its step hooks; the
                  *        marker of a step never moves.
                  * @pre No step started with run_async() on other is pending.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 StepDriver(StepDriver&& other) noexcept
                 {
@@ -287,7 +287,7 @@ namespace SushiRuntime
                  * @brief Ends a step still pending on either side and takes other's step
                  *        hooks; the marker of a step never moves.
                  * @pre No step started with run_async() on either graph is pending.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 StepDriver& operator=(StepDriver&& other) noexcept
                 {
@@ -307,7 +307,7 @@ namespace SushiRuntime
                 /**
                  * @brief Waits for a step still pending, advances the States and drops its outcome.
                  * @pre The owner's plan, hooks and context are alive.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void end_pending_step() noexcept
                 {
@@ -447,7 +447,7 @@ namespace SushiRuntime
                  * @brief Runs work and returns what it throws as an Error.
                  * @param fallback Code of a std::exception: CompileFailed while the plan is
                  *        built, KernelFailed once a step may have started.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class Work>
                 [[nodiscard]] static Result<void> guarded(ErrorCode fallback, Work&& work) noexcept
@@ -468,7 +468,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns why no run may start now, or nothing when one may.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 [[nodiscard]] std::optional<Error> entry_refusal() noexcept
                 {
@@ -545,7 +545,7 @@ namespace SushiRuntime
                  * @brief Submits one step to the pool and marks it pending.
                  * @param state Receives what the settling call needs; compile_ms is kept.
                  * @return Nothing, or why the engine did not take the step; none is pending then.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 Result<void> submit_async_step(Detail::AsyncRunState& state)
                 {
@@ -592,7 +592,7 @@ namespace SushiRuntime
                  * @pre state is that of the step pending here; RunHandle::owns_step() tests it.
                  * @param report The report to fill; the caller has reset it.
                  * @return Nothing, or what ended the step.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 [[nodiscard]] Result<void> settle_async_step(const Detail::AsyncRunState& state,
                                                              RunReport& report) noexcept
@@ -613,7 +613,7 @@ namespace SushiRuntime
                 /**
                  * @brief Ends a step still pending when its graph is moved.
                  * @pre No step is pending; SR_ASSERT checks it.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 void end_step_before_move() noexcept
                 {
@@ -646,7 +646,7 @@ namespace SushiRuntime
                  *        continues.
                  * @param report The report to fill; reset before anything else happens.
                  * @return A pointer to report, or the Error that ended the run.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class KeepGoing>
                 Result<RunReport*, Error>
@@ -699,7 +699,7 @@ namespace SushiRuntime
                 /**
                  * @brief Names the pending run_async() step for the handles; null until the
                  *        first run_async().
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 std::shared_ptr<Detail::AsyncStepRecord> async_record_;
 

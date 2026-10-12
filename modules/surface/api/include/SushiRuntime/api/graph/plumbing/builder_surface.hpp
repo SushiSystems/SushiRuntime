@@ -23,7 +23,7 @@
  * @file builder_surface.hpp
  * @brief Declares BuilderSurface, the add() overloads a graph and a region share.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+ * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
  */
 
 #pragma once
@@ -58,7 +58,7 @@ namespace SushiRuntime
          * @brief Gives a type that owns a Recorder one fluent verb per kind of node, each
          *        returning it.
          * @tparam Derived The builder; it has a public recorder() that returns its Recorder.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
          */
         template <class Derived>
         class BuilderSurface
@@ -70,7 +70,7 @@ namespace SushiRuntime
                  * @param kernel Callable invoked as kernel(index); a count also takes
                  *        kernel(begin, end, sycl::handler&).
                  * @param options What the node states beyond its launch and its access.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class Launch, class F,
                           std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
@@ -88,7 +88,7 @@ namespace SushiRuntime
                  * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
                  * @param rest Further In, Out or InOut captures, then the callable
                  *        kernel(index, pointers...), then an optional NodeOptions.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class Launch, class Capture, class... Rest,
                           std::enable_if_t<Detail::is_launch_v<Launch> &&
@@ -108,7 +108,7 @@ namespace SushiRuntime
                  * @param state The state this rule evolves; alive when the graph runs and
                  *        free to move after add_rule().
                  * @param kernel Callable invoked as kernel(i, const T* current, T* next).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <typename T, class F>
                 Derived& add_rule(State<T>& state, F&& kernel, NodeOptions options = {})
@@ -123,7 +123,7 @@ namespace SushiRuntime
                  * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
                  * @param state Alive when the graph runs; free to move after add_rule().
                  * @param kernel Callable invoked as kernel(index, const T* current, T* next).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class Launch, typename T, class F,
                           std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
@@ -141,7 +141,7 @@ namespace SushiRuntime
                  * @param states Coupled(out, in0, ...); every State is alive when the graph
                  *        runs and free to move after add_coupled().
                  * @param kernel Callable invoked as kernel(i, current, next, in0, ...).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <typename Out, typename... Inputs, class F>
                 Derived& add_coupled(Coupled<Out, Inputs...> states, F&& kernel,
@@ -177,7 +177,7 @@ namespace SushiRuntime
                  * @brief Adds a raw kernel ordered by its declared regions.
                  * @param kernel Callable invoked as kernel(sycl::handler&); it submits the whole
                  *        command group.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class F>
                 Derived& add(const Reads& reads, const Writes& writes, F&& kernel,
@@ -193,7 +193,7 @@ namespace SushiRuntime
                  *        late binding exists for these two forms only.
                  * @param capacity Upper bound the live window must fit.
                  * @param kernel Callable invoked as kernel(i) for each live index.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class F>
                 Derived& add_dynamic(Dynamic window, std::size_t capacity, const Reads& reads,
@@ -210,7 +210,7 @@ namespace SushiRuntime
                  *        exists for these two forms only.
                  * @param state The state this rule evolves; its size is the capacity.
                  * @param kernel Callable invoked as kernel(i, const T* current, T* next).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <typename T, class F>
                 Derived& add_dynamic(Dynamic window, State<T>& state, F&& kernel,
@@ -227,7 +227,7 @@ namespace SushiRuntime
                  * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
                  * @param kernel Callable invoked as kernel(index); a count also takes
                  *        kernel(begin, end, sycl::handler&).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class Launch, class F,
                           std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
@@ -244,7 +244,7 @@ namespace SushiRuntime
                  * @brief Adds a kernel that names no region and runs on the device stated.
                  * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
                  * @param placement On(buffer), On(state) or On(DeviceIndex).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class Launch, class F,
                           std::enable_if_t<Detail::is_launch_v<Launch>, int> = 0>
@@ -288,7 +288,7 @@ namespace SushiRuntime
                 /**
                  * @brief Adds a pure-CPU task ordered by the data it touches.
                  * @param body Nullary callable run once per step; must not submit SYCL work.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class F>
                 Derived& add_host(const Reads& reads, const Writes& writes, F&& body,
@@ -302,7 +302,7 @@ namespace SushiRuntime
                 /**
                  * @brief Adds an untracked pure-CPU task that runs every step.
                  * @param body Nullary callable run once per step; must not submit SYCL work.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class F>
                 Derived& add_host(F&& body, NodeOptions options = {})
@@ -318,7 +318,7 @@ namespace SushiRuntime
                  *        body(sycl::queue&, const std::vector<sycl::event>&); it waits for nothing
                  *        and returns the event that ends its work.
                  * @param options What the node states beyond its access.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class F>
                 Derived& add_task(const Reads& reads, const Writes& writes, F&& body,
@@ -332,7 +332,7 @@ namespace SushiRuntime
                 /**
                  * @brief Runs an extension once; the nodes it records form one rule.
                  * @param extension Callable invoked as extension(Recorder&).
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class F>
                 Derived& extend(F&& extension)
@@ -350,7 +350,7 @@ namespace SushiRuntime
                  * @brief Names the rule most recently added; every node of it reports the name.
                  * @param label Copied, so a temporary may be passed; an empty label returns the
                  *        rule to the default name. Ignored when nothing has been added.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 Derived& name(std::string_view label)
                 {
@@ -383,7 +383,7 @@ namespace SushiRuntime
                 /**
                  * @brief Returns the first recording this builder refused since clear().
                  * @return The error the next run returns, or null when nothing was refused.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 [[nodiscard]] const Error* refusal() const noexcept { return view().refusal(); }
 
