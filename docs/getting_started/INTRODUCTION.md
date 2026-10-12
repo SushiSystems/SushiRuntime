@@ -1,963 +1,538 @@
 # Getting started with SushiRuntime
 
-SushiRuntime is a C++17 runtime library for **task-based parallel computing on
-heterogeneous hardware**. You describe your work as a graph of tasks, declare
-which memory each task reads and writes, and the runtime works out a safe order
-and runs the independent parts in parallel across your CPU and GPU using SYCL.
+SushiRuntime runs a graph of tasks on the CPUs and GPUs of one machine through SYCL. You
+allocate typed buffers, record each unit of work with the buffers it reads and writes, and run
+the graph. The runtime orders the work from those declarations: a task that reads what another
+wrote runs after it, and tasks that touch disjoint memory run in parallel.
 
-The big idea: **you never wire up task dependencies by hand.** You just say
-"this task reads buffer A and writes buffer B." The runtime detects the hazards
-between tasks (read-after-write, write-after-read, write-after-write) and
-serializes only what must be serialized — everything else runs concurrently.
+This page builds the library, walks through a first program and then covers each part of the
+public interface once. Every code block is taken from a file the build compiles, named under the
+block. The module READMEs hold the full contract of each call, and each section links to its
+own.
 
-This guide takes you from an empty machine to a working first program, then
-gives you a tour of the core API. Every code sample here uses the real, current
-API and mirrors what the project's own integration tests do.
-
-> For the full command reference, see [CLI_GUIDE.md](../guides/CLI_GUIDE.md). For the
-> architecture and design, see the top-level [README](../../README.md).
-
----
-
-## 1. Quick start
-
-### Install and build in one command
-
-On a fresh machine you can go from nothing to a built project with a single
-script. [SushiStack](https://sushisystems.io) owns dependency provisioning for
-the whole stack: its bootstrap script installs Python/Git, installs the `hub`
-CLI, then runs `hub install` to fetch every toolchain and library the workspace
-needs (SushiRuntime declares its own in `cli/sushistack.deps.toml`).
-
-**Linux (Debian/Ubuntu):**
+## 1. Build
 
 ```bash
-curl -fsSL https://sushisystems.io/install.sh | bash
+hub install-cli sushiruntime
+sr setup
+sr toolchain intel-llvm
+sr build
+sr test
 ```
 
-**Windows (PowerShell):**
+`sr setup` installs what `cli/sushistack.deps.toml` declares: hwloc and a SYCL toolchain. `sr build` makes a release build in `build/`, and `sr test` runs the functional suite.
+The root [README](../../README.md#requirements) lists the requirements and the script that
+installs everything on an empty machine. [The CLI guide](../guides/CLI_GUIDE.md) lists every
+command.
 
-```powershell
-irm https://sushisystems.io/install.ps1 | iex
-```
+## 2. A first program
 
-### Or, if you already have a SYCL toolchain
-
-Install the CLI and build directly:
-
-```bash
-hub install-cli sushiruntime  # puts `sr` and `sushiruntime` on your PATH
-sr toolchain intel-llvm      # pick a SYCL toolchain (the default; or adaptivecpp / oneapi)
-sr build             # Release build (the default)
-sr test              # run the fast functional test suite
-```
-
-You'll need a SYCL 2020 compiler — intel-llvm (`clang++ -fsycl`, primary),
-AdaptiveCpp (`acpp`), or Intel oneAPI DPC++ — plus CMake 3.20+, hwloc, and
-GoogleTest. Pick the toolchain with `sr toolchain`. The CLI reads your toolchain
-paths from `cli/config.local.toml`; `sr setup` generates that file for you, and
-`hub install` does the same for every checkout in a workspace.
-See the [README](../../README.md) for the full requirements list and the CMake
-options if you want to skip the CLI.
-
-Verify everything works:
-
-```bash
-sr test --suite functional
-```
-
-If the functional suite passes, you're ready to write code.
-
----
-
-## 2. The quick path — the fluent API
-
-The `api/` layer is the intended entry point. You allocate data as typed
-handles, describe each unit of work as plain C++ over those handles, and run the
-graph. The runtime tracks the reads and writes, places the work on a device, and
-— for stepped workloads — compiles the graph once and replays it. You never
-touch a `sycl::handler` or wire up a dependency by hand.
-
-Here is a complete program: a 1-D heat-diffusion step run for many timesteps.
+A 1-D heat diffusion over 1024 cells, run for 10000 steps.
 
 ```cpp
 #include <cstdio>
+
 #include <SushiRuntime/sushiruntime.hpp>
 
 using namespace SushiRuntime;
 
-int main()
+namespace
 {
-    auto rt = Runtime::create();
-
-    constexpr std::size_t N = 1024;
-
-    // A time-evolving field. The runtime keeps two buffers and swaps them each
-    // step, so a rule reads the current field and writes the next.
-    auto heat = rt.state<float>(N);
-    for (std::size_t i = 0; i < N; ++i) heat[i] = (i == N / 2) ? 1.0f : 0.0f;
-
-    auto sim = rt.graph();
-
-    // One update rule. fn gets the index plus the current and next buffers;
-    // the runtime supplies the pointers and tracks the read/write for you.
-    sim.add(heat, [N](std::size_t i, const float* cur, float* next)
+    /** @brief Runs the diffusion stencil and prints its total heat; returns 0 on success. */
+    int run_quickstart()
     {
-        const float left  = (i == 0)     ? cur[i] : cur[i - 1];
-        const float right = (i == N - 1) ? cur[i] : cur[i + 1];
-        next[i] = cur[i] + 0.25f * (left - 2.0f * cur[i] + right);
-    });
-
-    // Compile once, replay 100000 steps. The worker pool, NUMA placement,
-    // device dispatch, and buffer swapping are all handled for you.
-    auto report = sim.run(100000);
-
-    std::printf("ran %zu task-steps in %.1f ms\n",
-                report.total_tasks_executed, report.total_duration_ms);
-    // heat.current() now holds the final field.
-    return 0;
-}
-```
-
-`run()` is a single step; `run(n)` replays `n` steps; `run_for(duration)` and
-`run_until(predicate)` bound a run by wall-clock time or a condition. `try_run()`
-and `try_run(n)` are the non-throwing forms, returning `Result<RunReport, Error>`
-instead of throwing `SushiException`. The graph is compiled the first time it
-runs and after any change to it, then replayed without recompiling.
-
-Every one of those has a form that writes into a report you already own —
-`run(report)`, `run(n, report)`, `try_run(report)` — for a loop that runs
-thousands of times and would rather not allocate a report on each one:
-
-```cpp
-Core::RunReport report;
-while (running)
-    sim.run(report);               // refilled in place, no per-tick allocation
-```
-
-The report is cleared before each run, so nothing from the previous tick
-survives into it, but the storage it already holds is kept.
-
-**Overlapping a step with other work.** `run()` blocks for the whole step, which
-is right for a simulation thread with nothing else to do — but a frame usually
-does have something else: extracting the previous step's state for a renderer or
-an audio system, which needs no worker threads at all. `run_async()` starts the
-step and returns an `API::RunHandle` instead:
-
-```cpp
-API::RunHandle<API::Graph> step = sim.run_async();
-extract_previous_frame();          // overlaps with the step
-Core::RunReport report = step.wait();
-```
-
-`wait()` is where the step is finished: every State advances there, so an
-asynchronous step ends in exactly the same place a synchronous one would.
-`wait(report)` settles into a report you own, matching `run(report)`. The
-handle is move-only and waits in its destructor if you drop it, because the
-compiled plan cannot be torn down while workers are still in it — which also
-means a dropped handle drops the outcome, including a task exception. `ready()`
-answers "would waiting return immediately" without blocking, and `try_wait()` is
-the non-throwing form. One step may be in flight at a time; starting another
-while a handle is pending is refused rather than silently interleaved.
-
-For data that does not evolve step to step, use `rt.buffer<T>(n)` instead of
-`rt.state<T>(n)`. Both are owning handles to shared USM; both register their
-reads and writes automatically when passed to `add()`.
-
-**Everything spelled `add()` is ordered by the data it names.** A bare kernel is
-not: a per-element callable is `void(std::size_t)` capturing raw USM pointers, so
-nothing in its type says what it touches and the runtime cannot infer it. Those
-shapes are spelled `add_untracked()` — they record no regions, so the task is
-both a root and a leaf, ordered against nothing:
-
-```cpp
-g.add_untracked(N, [p](std::size_t i) { p[i] = 0; });   // ordered against nothing
-g.add(API::Reads(src), API::Writes(dst), N,             // ordered by src and dst
-      [ps, pd](std::size_t i) { pd[i] = ps[i]; });
-```
-
-`add_untracked` is the right choice for genuinely self-contained work and the
-wrong one the moment another task in the same graph shares data with it. Every
-launch shape has both forms, so reaching for the untracked one is a decision, not
-an oversight.
-
-**Coupled fields** read one another within a step. Every read sees the previous
-step's data (a Jacobi update): each field advances only after the whole step's
-kernels have run, so writing one field never changes what another reads in the
-same step.
-
-```cpp
-auto u = rt.state<float>(N);
-auto v = rt.state<float>(N);
-
-sim.add(v, [](std::size_t i, const float* vc, float* vn) { /* vn[i] = ... */ });
-sim.add(u, v, [](std::size_t i, const float* uc, float* un, const float* vc) {
-    /* un[i] = f(uc, vc) */
-});
-```
-
-**Late-bound tasks** vary their size or whether they run each step, without
-recompiling the graph. Pass `API::when(predicate)` and/or `API::sized(count)` as
-the leading argument to `add()`: `when()` skips the task on steps its predicate
-is false (a sleeping subsystem), and `sized()` iterates only a live prefix of the
-buffers' capacity (a changing number of active elements). The graph still
-compiles once — `g.compile_count()` stays 1 across the whole run.
-
-```cpp
-std::size_t active = 0;     // updated by your code between steps
-bool        enabled = true;
-
-sim.add(API::when([&] { return enabled; }).and_sized([&] { return active; }),
-        API::Reads(in), API::Writes(out), CAPACITY,
-        [p = out.data()](std::size_t i) { /* runs only while enabled, over active */ });
-```
-
-`sized()` is polled on the host before each step, so it can only carry a count
-your code already has. When the count is produced *by a kernel earlier in the same
-step* — a broadphase writing how many collision pairs it found, and a narrowphase
-that must iterate exactly that many — use `API::sized_from_device(counter)`
-instead. The count is read when the task is dispatched, which is after its
-predecessors have completed, so the value is the one this step just wrote:
-
-```cpp
-auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host);   // must be Host
-
-g.add(API::Reads(world), API::Writes(counter), N,
-      [c = counter.data()](std::size_t) { /* ... c[0] = pairs_found; */ });
-
-g.add(API::sized_from_device(counter), API::Reads(), API::Writes(pairs), CAPACITY,
-      [p = pairs.data()](std::size_t i) { /* runs exactly pairs_found times */ });
-```
-
-The counter is registered as a read of the consuming task, so you do not have to
-name it in `Reads(...)` to get the ordering — forgetting it is not possible. Size
-the task's buffers for the worst case: a count above that capacity fails the run
-with a message naming both numbers rather than quietly dropping the surplus.
-
-`sized()` says *how many* elements a task iterates; `API::based_at(provider)`
-says *from where*. Together they name a moving window into one buffer, which is
-what a graph-coloured solver wants — each colour is a contiguous slice whose
-offset shifts whenever the constraint set changes:
-
-```cpp
-g.add(API::based_at([&] { return colour_offset; })
-          .and_sized([&] { return colour_size; }),
-      API::Reads(), API::Writes(constraints), CAPACITY,
-      [c = constraints.data()](std::size_t i) { /* i is the ABSOLUTE index */ });
-```
-
-The runtime applies the offset, so your kernel still receives absolute indices
-and does not need to know a base exists. `API::based_at_device(slot)` takes the
-offset from a slot a kernel wrote, exactly as `sized_from_device` does for the
-count. The window has to fit the capacity — one that runs off the end fails the
-run rather than reading past it.
-
-**Dynamic region graphs** let the *set* of work change between steps, for
-streaming open worlds where cells appear and disappear. `rt.dynamic_graph()`
-returns a graph partitioned into **regions** keyed by an id of your choosing (a
-packed cell coordinate, a chunk id). Record work on a region with the same `add()`
-surface, and drop a region when it streams out — mutations take effect at the next
-step boundary, and only the regions that changed are rebuilt:
-
-```cpp
-auto world = rt.dynamic_graph();
-world.region(cell_id).add(API::Reads(terrain), API::Writes(height), N,
-                          [p = height.data()](std::size_t i) { /* ... */ });
-world.run(steps);            // composes the live regions into one plan, then replays
-
-world.region(new_cell).add(/* ... */);   // streams a cell in
-world.drop(old_cell);                     // streams a cell out
-world.run(steps);            // recomposes once; unchanged cells are not rebuilt
-```
-
-Regions that share a buffer are ordered automatically across the boundary, exactly
-as tasks within one graph are. `world.compile_count()` stays 1 across an unmutated
-run and rises by one per mutation, not per region.
-
-**Domain node kinds.** The runtime orders and runs work; it carries no numeric algorithm.
-A library that needs one (SushiBLAS for reductions with a fixed combination order, a prefix
-scan, a counting sort) records it through `g.recorder()`: `rule()` opens a scope whose
-nodes share one registration index, `kernel(count, access, fn)` records a tracked kernel,
-`resolve(...)` records the node that reads a late-bound count, and `scratch<T>(...)` hands
-back storage that lives as long as the graph. A consumer that reads the rule's output is
-ordered after the whole rule, as after any tracked task.
-
-**Native CPU tasks** run plain host C++ — gameplay logic, AI, navigation — with
-no SYCL submission, ordered into the graph by the data they touch. Use
-`add_host()` and name the data with `Reads(...)`/`Writes(...)`:
-
-```cpp
-sim.add_host(API::Reads(world), API::Writes(decisions),
-             [&] { /* arbitrary C++; runs on a worker thread, no kernel launch */ });
-```
-
-The task is dispatched only after its predecessors complete, so the shared USM it
-reads is already up to date; its successors then run once it returns. Do not
-submit SYCL work from an `add_host` body — use a normal `add()` for that.
-
-**Naming a node** makes its timings readable. Chain `name_last()` onto any
-`add()`; without a name the node reports as `"unnamed_task"`, which is fine until
-a report has forty rows and you need to know which is which:
-
-```cpp
-sim.add_host(API::Reads(world), API::Writes(decisions),
-             [&] { /* ... */ }).name_last("ai_decide");
-```
-
-It is a separate call rather than a last argument because two of the launch
-shapes end in a parameter pack whose last element is the callable, so a trailing
-name would not reach them — one spelling works for every shape instead.
-
-The name is what `RunReport::node_timings[i].name` carries, so it is worth
-setting on anything you intend to profile. It is a `const char*` stored as-is —
-pass a string literal or something that outlives the graph.
-
-**Device-resident data** keeps a large field on the GPU across steps instead of
-in host-addressable shared USM. Pass `Residency::Device`; the host then seeds and
-reads it through `write_range`/`read_range` (it is no longer directly indexable):
-
-```cpp
-auto field = rt.state<float>(N, DeviceIndex{0}, Residency::Device);  // stays on the device
-std::vector<float> seed(N, 0.0f);
-field.write_range({0, N}, seed.data());                  // seed from the host
-sim.run(10000);
-auto window = field.read_range({0, 256});                // pull a window back
-```
-
-**Sharing the machine.** `Runtime::create()` takes an optional `RuntimeConfig`.
-Its defaults reproduce the sole-tenant behaviour — a worker per logical core,
-worker *i* pinned to core *i* — which is right for a batch process and wrong
-inside an application that also has a main thread, a render thread and an audio
-callback. Reserve cores for those by naming the range the runtime may use:
-
-```cpp
-API::RuntimeConfig config;
-config.worker_count = 8;                       // 8 workers, not one per core
-config.first_core   = 4;                       // on cores 4..11; 0..3 stay yours
-config.rebalancer   = false;                   // the default; see below
-config.profiling    = false;                   // the default
-
-auto rt = Runtime::create(config);
-```
-
-Verify it took effect with `rt.advanced().worker_pool()`, which reports the pool
-as built. A range that does not fit the machine is clamped and logged rather than
-obeyed, because the OS affinity calls accept an out-of-range mask and simply do
-not bind — an unclamped request would look like a reservation that never
-happened. `config.pinning = API::PinPolicy::Float` turns binding off entirely,
-which is the better choice inside a container whose CPU allowance is enforced by
-quota rather than by affinity.
-
-`config.rebalancer` is **off by default**. It runs a background thread on a 5 ms
-heartbeat that migrates tasks between workers; that trades run-to-run
-reproducibility and the jitter floor for throughput on long batch work, which is
-a bad trade for a simulation frame and a good one for a batch job. Turn it on
-when you are the batch job.
-
-**Reading a run.** Every run form returns a `Core::RunReport`. Without profiling
-it carries the cheap totals — `total_tasks_executed`, `total_duration_ms` — which
-cost nothing to maintain. `config.profiling = true` is what fills in the rest,
-and it is a *construction-time* switch: the runtime builds its queues with SYCL
-profiling enabled, so it cannot be turned on later and costs nothing when off.
-
-```cpp
-API::RuntimeConfig config;
-config.profiling = true;
-auto rt = Runtime::create(config);
-// ... build and run a graph ...
-for (const auto& node : report.node_timings)
-    std::printf("%-24s %8.3f ms over %zu runs\n",
-                node.name.c_str(), node.device_ms, node.invocations);
-```
-
-`node_timings` is one row per graph node, keyed by the name you gave it — this is
-what `name_last()` is for. `worker_timings` splits each
-worker's time into busy, stealing, polling and idle, which is how you tell a graph
-that is too small to fill the pool from one that is genuinely saturated.
-
-**Determinism is a contract with two sides.** The runtime guarantees that a fixed
-graph topology produces schedule-independent results: the same inputs give the
-same outputs regardless of how the work happened to be distributed across workers.
-That holds only while the floating-point semantics stay put, so the runtime
-compiles with contraction and fast-math off and exports that setting to you
-through the `sushiruntime_deterministic_fp` target. If your own translation units
-build with `-ffast-math` or `/fp:fast`, kernels you write are outside the
-guarantee even though the runtime's scheduling is inside it. See
-[INTEGRATION.md](../guides/INTEGRATION.md) for the exact flags.
-
-The fluent API is enough for most programs. The rest of this guide documents the
-lower-level task-graph API it is built on, for when you need full control over
-task bodies, host/device fallback, or explicit dependency lists.
-
----
-
-## 3. The lower-level mental model
-
-A program written against the lower-level API has four moving parts:
-
-1. **`RuntimeContext`** — the top-level object. When you create it, it discovers
-   your hardware (CPUs, GPUs, NUMA nodes), builds a SYCL queue per device, sets
-   up memory allocators, and starts a pool of worker threads. You make one and
-   keep it for the life of the program.
-
-2. **Memory** — you allocate Unified Shared Memory (USM) that both the CPU and
-   the GPU can see. Allocate it *through the context* so the runtime knows which
-   device owns it.
-
-3. **`TaskGraph`** — you add tasks to it. Each task is a piece of work plus two
-   lists: the pointers it **reads** and the pointers it **writes**. That's how
-   the runtime infers ordering.
-
-4. **Compile and execute** — you call `graph.compile()` to turn your tasks into a
-   runnable DAG, then hand it to the execution engine, which runs it and blocks
-   until everything is done.
-
-The lifecycle is always: **build the whole graph → compile → execute.** Graph
-construction and `compile()` are *not* thread-safe relative to each other, so
-finish adding every task before you compile.
-
----
-
-## 4. Your first program
-
-Here is a complete program: it adds two vectors, `C = A + B`. It uses one host
-task to fill the input arrays and one device kernel to do the addition. The
-runtime sees that the kernel reads `A` and `B` (which the init task wrote) and
-automatically runs the init task first.
-
-```cpp
-#include <vector>
-#include <iostream>
-#include <sycl/sycl.hpp>
-
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/graph/task_types.hpp>
-
-using namespace SushiRuntime;
-using namespace SushiRuntime::Execution;
-using namespace SushiRuntime::Graph;
+        constexpr std::size_t N     = 1024;
+        constexpr std::size_t STEPS = 10000;
+
+        auto rt = Runtime::create().value();          // discovers hardware, starts the workers
+
+        // The runtime keeps two buffers and swaps them; a rule reads one, writes the other.
+        auto heat = rt.state<float>(N).value();
+        for (std::size_t i = 0; i < N; ++i)
+            heat[i] = (i == N / 2) ? 1.0f : 0.0f;   // a single hot cell in the middle
+
+        auto sim = rt.graph();
+
+        // The kernel receives the index and both buffers; the runtime tracks the access.
+        sim.add_rule(heat, [](std::size_t i, const float* cur, float* next)
+        {
+            const float left  = (i == 0)     ? cur[i] : cur[i - 1];
+            const float right = (i == N - 1) ? cur[i] : cur[i + 1];
+            next[i] = cur[i] + 0.25f * (left - 2.0f * cur[i] + right);
+        });
+
+        // The graph compiles once and replays STEPS times.
+        const auto report = sim.run(STEPS).value();
+
+        // Heat is conserved by this closed diffusion; report it as a smoke check.
+        double total = 0.0;
+        for (std::size_t i = 0; i < N; ++i)
+            total += heat[i];
+
+        std::printf("quickstart: %zu steps in %.2f ms; total heat = %.4f (compiles = %zu)\n",
+                    STEPS, report.total_duration_ms, total, sim.compile_count());
+        return 0;
+    }
+} // namespace
 
 int main()
 {
-    // 1. Create the runtime. This discovers hardware and starts the workers.
-    RuntimeContext ctx;
-    TaskGraph graph(ctx);
-
-    constexpr size_t N = 1024;
-
-    // 2. Allocate USM *through the context* so the scheduler knows which
-    //    device/queue owns this memory and dispatches the kernel there.
-    float* A = ctx.malloc_shared<float>(N);
-    float* B = ctx.malloc_shared<float>(N);
-    float* C = ctx.malloc_shared<float>(N);
-
-    // 3. First task: a host task that fills A and B and zeroes C.
-    //    It WRITES A, B, C and reads nothing.
-    TaskMetadata init_meta{"init"};
-    graph.add_task(init_meta, /*reads*/ {}, /*writes*/ {A, B, C},
-        [A, B, C](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
-        {
-            for (size_t i = 0; i < N; ++i)
-            {
-                A[i] = static_cast<float>(i);
-                B[i] = static_cast<float>(i * 2);
-                C[i] = 0.0f;
-            }
-            return {};   // host work returns an empty event
-        });
-
-    // 4. Second task: a SYCL kernel that computes C = A + B.
-    //    It READS A and B, WRITES C. Because it reads what `init` wrote,
-    //    the runtime orders it after `init` — you didn't have to say so.
-    TaskMetadata add_meta{"vector_add"};
-    graph.add_task(add_meta, /*reads*/ {A, B}, /*writes*/ {C},
-        [A, B, C](sycl::queue& q, const std::vector<sycl::event>& deps) -> sycl::event
-        {
-            return q.submit([&](sycl::handler& h)
-            {
-                h.depends_on(deps);
-                h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
-                {
-                    C[i] = A[i] + B[i];
-                });
-            });
-        });
-
-    // 5. Compile the graph and run it. execute() blocks until the graph finishes.
-    auto compiled = graph.compile();
-    ctx.get_execution_engine().execute(std::move(compiled));
-
-    // 6. Results are ready. Check a couple of values.
-    std::cout << "C[1]   = " << C[1]   << "  (expected 3)\n";
-    std::cout << "C[100] = " << C[100] << "  (expected 300)\n";
-
-    // 7. Free what you allocated through the context.
-    ctx.free_usm(A);
-    ctx.free_usm(B);
-    ctx.free_usm(C);
-    return 0;
+    return run_quickstart();
 }
 ```
 
-### Compiling and running it
+Source: `applications/examples/quickstart.cpp`. Run it with `sr run sr_quickstart`.
 
-The project links example programs against the `sushiruntime` library and
-applies the SYCL flags for you. Drop your `.cpp` into `applications/examples/` and add it to
-`applications/examples/CMakeLists.txt`, following the same pattern the project already uses:
+The program has four parts, and every program on the library has the same four.
+
+1. **A runtime.** `Runtime::create()` lists the devices, builds a SYCL queue for each and starts
+   the worker threads. Make one and keep it.
+2. **Data.** `rt.state<float>(N)` allocates a field with two buffers. `rt.buffer<T>(n)` allocates
+   one buffer for data that does not step.
+3. **A graph.** `rt.graph()` returns an empty graph, and each `add` verb records one rule on it.
+4. **A run.** `sim.run(STEPS)` compiles the graph on its first call and replays the compiled
+   plan once per step. `compile_count()` stays at 1 until a rule is added.
+
+One header, `<SushiRuntime/sushiruntime.hpp>`, declares every public name, and every public name
+is in the namespace `SushiRuntime`.
+
+To build a program of your own inside this checkout, put the source file in
+`applications/examples/` and add one line to `applications/examples/CMakeLists.txt`:
 
 ```cmake
-add_executable(my_first_program my_first_program.cpp)
-target_link_libraries(my_first_program PRIVATE sushiruntime)
-set_target_properties(my_first_program PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON)
-add_sycl_to_target(TARGET my_first_program SOURCES my_first_program.cpp)
+sushiruntime_add_example(sr_quickstart             quickstart.cpp)
 ```
 
-Then build and run through the CLI:
+Source: `applications/examples/CMakeLists.txt`. A program in another repository links the
+installed package; see [the integration guide](../guides/INTEGRATION.md).
 
-```bash
-sr build
-sr run my_first_program
-```
+## 3. Results and errors
 
-`sr run` matches the target name exactly first, then by substring, so a
-partial name works too.
+No call of the library throws. A call that can fail for a reason outside the program returns a
+`Result<T>`, which holds either the value or an `Error` with an `ErrorCode` and a message.
 
-### Abstracting the task bodies into functions
-
-The first program writes its task bodies as inline lambdas. That's fine for a
-one-off, but once a task grows — or you want to reuse it, name it, or unit-test
-it on its own — you'll want to pull it out into a proper function. You can,
-because `add_task` doesn't actually require a lambda. It requires a *callable*
-with the right signature, and a lambda is just one kind of callable.
-
-Recall the two type aliases the API is built on (both live in
-`SushiRuntime::Graph`, so they're already in scope with `using namespace
-SushiRuntime::Graph;`):
+`value()` returns the value and stops the process when the result holds an error. That suits a
+program that cannot continue without the value, which is why the quickstart writes
+`Runtime::create().value()`. A program that handles the failure tests the result first:
 
 ```cpp
-// Host / library work — what the 4-argument add_task takes:
-using HostWork = std::function<sycl::event(sycl::queue&, const std::vector<sycl::event>&)>;
-
-// Dedicated device-kernel body — taken by the 5-argument add_task overload:
-using TaskWork = std::function<void(sycl::handler&)>;
-```
-
-`std::function` accepts **anything** that matches its signature: a lambda, a
-plain free function, or a functor (an object with `operator()`). So the question
-"can I use a function instead of a lambda?" has a yes — with one catch worth
-understanding.
-
-**The catch: state.** Our task bodies don't just compute; they need the data
-pointers (`A`, `B`, `C`) and the size (`N`). The inline lambdas got those by
-*capturing* them (`[A, B, C]`). A plain free function captures nothing — it can
-only see its two parameters (`sycl::queue&` and the dependency vector) plus
-globals. So to move a body into a function you have to get that state to it some
-other way. There are three idiomatic patterns, from lightest to most reusable.
-
-#### Pattern 1 — Free function for the logic, thin adapter at the call site
-
-Put the actual computation in an ordinary, testable free function that takes
-whatever it needs as parameters, and keep a one-line lambda that forwards to it.
-The lambda is now trivial; all the real code lives in a normal function.
-
-```cpp
-// Plain function — easy to read, easy to unit-test in isolation.
-void fill_inputs(float* A, float* B, float* C, size_t N)
-{
-    for (size_t i = 0; i < N; ++i)
-    {
-        A[i] = static_cast<float>(i);
-        B[i] = static_cast<float>(i * 2);
-        C[i] = 0.0f;
-    }
-}
-
-// The lambda is just an adapter that supplies the captured state.
-graph.add_task(init_meta, {}, {A, B, C},
-    [A, B, C, N](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
-    {
-        fill_inputs(A, B, C, N);
-        return {};
-    });
-```
-
-#### Pattern 2 — A factory that returns a `HostWork`
-
-This is the pattern SushiRuntime's own test suite uses (see
-`make_order_recorder` in `tests/common/test_helpers.hpp`). Write a function that
-takes the state and *returns* the callable. The capturing is done once, inside
-the factory, and the call site becomes a clean one-liner.
-
-```cpp
-// Returns a ready-to-use task body that closes over the buffers.
-Graph::HostWork make_init(float* A, float* B, float* C, size_t N)
-{
-    return [A, B, C, N](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
-    {
-        for (size_t i = 0; i < N; ++i)
+        // run() returns the report or an Error and throws nothing.
+        const auto first = graph.run(K_STEPS);
+        if (!first)
         {
-            A[i] = static_cast<float>(i);
-            B[i] = static_cast<float>(i * 2);
-            C[i] = 0.0f;
+            print_failure("the first run", first.error());
+            return 1;
         }
-        return {};
-    };
-}
-
-// Call site: no lambda in sight.
-graph.add_task(init_meta, {}, {A, B, C}, make_init(A, B, C, N));
 ```
 
-#### Pattern 3 — A functor (a struct with `operator()`)
+```cpp
+    /** @brief Returns what a caller does about a failed run, chosen by its code. */
+    const char* remedy_for(ErrorCode code) noexcept
+    {
+        switch (code)
+        {
+            case ErrorCode::InvalidGraph:
+                return "record a rule before running";
+            case ErrorCode::DanglingResource:
+                return "keep every buffer alive as long as the graph that names it";
+            case ErrorCode::KernelFailed:
+            case ErrorCode::DeviceLost:
+                return "the device failed; stop, or build a new runtime";
+            default:
+                return "read the message";
+        }
+    }
+```
 
-If a task has real identity — configuration, several parameters, or you want it
-in a header to reuse across programs — make it a small struct. It stores its
-state as members and implements `operator()` with the `HostWork` signature.
+Source: `applications/examples/operating_path_demo.cpp`.
+
+The library separates three kinds of failure.
+
+| Kind | Example | What happens |
+| --- | --- | --- |
+| A cause outside the program | A device returns no memory; a kernel faults | The call returns an `Error` |
+| A recording the graph refuses | A rule over a `State` that holds no memory | The graph keeps the `Error`; `refusal()` reads it and the next run returns it |
+| A rule the caller broke | A device index the runtime does not have; `value()` on an error | The process stops, through `SR_VERIFY`, `SR_ASSERT` or `SR_FATAL` |
+
+A host program that must not stop replaces the handler with `set_assertion_handler()`.
+`SR_ASSERT` is compiled out when `NDEBUG` is defined; the other two are always checked.
+[The core README](../../modules/foundation/core/README.md) has the full contract of `Result`,
+`Error` and the three macros.
+
+## 4. Data: Buffer and State
+
+`Runtime::buffer<T>(count)` returns a `Buffer<T>`, one USM allocation. `Runtime::state<T>(count)`
+returns a `State<T>`, which holds two: the field a step reads (`current()`) and the field it
+writes (`next()`). The runtime swaps the two after each step. Both handles free their memory
+when they are destroyed, and a graph that names a handle must not outlive it: a run after that
+returns `DanglingResource`.
+
+Both calls take a device, a residency and an alignment after the count. The default residency is
+`Residency::Shared`, which the host indexes directly, as `heat[i]` does above.
+`Residency::Device` keeps the memory on the device, and the host then reads and writes it
+through range calls:
 
 ```cpp
-struct VectorAdd
-{
-    float* A;
-    float* B;
-    float* C;
-    size_t N;
+        // A device-resident buffer is not host-addressable, so write_range() seeds it.
+        auto hits = runtime.buffer<float>(K_CAPACITY, DeviceIndex{0}, Residency::Device).value();
+        const std::vector<float> zeros(K_CAPACITY, 0.0f);
+        hits.write_range({0, K_CAPACITY}, zeros).value();
+```
 
-    sycl::event operator()(sycl::queue& q, const std::vector<sycl::event>& deps) const
-    {
-        return q.submit([&](sycl::handler& h)
-        {
-            h.depends_on(deps);
-            // NOTE: the kernel body must capture by value [=]; see below.
-            float* a = A; float* b = B; float* c = C; size_t n = N;
-            h.parallel_for(sycl::range<1>(n), [=](sycl::id<1> i)
+```cpp
+        // read_range() copies one window through the owning queue and maps nothing else.
+        const float in_both_runs = hits.read_range({0, 1}).value()[0];
+```
+
+Source: `applications/examples/operating_path_demo.cpp`.
+
+`DeviceIndex{0}` is the first device SYCL lists, which is a CPU on one machine and a GPU on
+another. `rt.advanced().devices()` describes each index.
+[The data README](../../modules/surface/api/include/SushiRuntime/api/data/README.md) covers the
+range calls, the residencies and what a moved-from handle is.
+
+## 5. Recording work
+
+A graph has one verb per kind of node.
+
+| Verb | Records |
+| --- | --- |
+| `add` | A kernel over buffers it names |
+| `add_rule` | A rule that steps one `State` |
+| `add_coupled` | A rule that steps one `State` and reads others |
+| `add_dynamic` | A kernel whose size, start or enablement is read before each step |
+| `add_host` | Host C++ that submits no device work |
+| `add_task` | A body that receives the `sycl::queue` and returns the event that ends its work |
+| `add_untracked` | A kernel that declares no data and is ordered against nothing |
+| `extend` | The nodes a library records through the `Recorder` |
+
+Every call reads in one order: modifier, launch, access, callable, options.
+[The graph README](../../modules/surface/api/include/SushiRuntime/api/graph/README.md) has the
+table of which launch works with which access and the contract of each verb.
+
+### Buffers: `add` with `In`, `Out` and `InOut`
+
+`In(buffer)`, `Out(buffer)` and `InOut(buffer)` register the access and pass the kernel the
+element pointer, in the order they are written.
+
+```cpp
+        // Out(a) and Out(b) register the writes and pass the kernel the element pointers.
+        g.add(Extent{N}, Out(a), Out(b),
+            [](sycl::id<1> id, float* a, float* b)
             {
+                const std::size_t i = id[0];
+                a[i] = static_cast<float>(i);
+                b[i] = static_cast<float>(2 * i);
+            });
+
+        // Reading A and B, which the fill task wrote, orders this task after it.
+        g.add(Extent{N}, In(a), In(b), Out(c),
+            [](sycl::id<1> id, const float* a, const float* b, float* c)
+            {
+                const std::size_t i = id[0];
                 c[i] = a[i] + b[i];
             });
-        });
-    }
-};
 
-// Pass an instance — it's convertible to HostWork.
-graph.add_task(add_meta, {A, B}, {C}, VectorAdd{A, B, C, N});
+        g.run().value();
 ```
 
-> **The device-kernel subtlety.** The *outer* callable (the lambda, factory
-> result, or functor) runs on a normal CPU thread, so it can capture by
-> reference. But the **inner** kernel lambda passed to `parallel_for` runs on the
-> device, so it must capture everything **by value** (`[=]`) — the runtime copies
-> those values into the kernel. When you move a kernel into a functor, don't let
-> the inner lambda capture `this` or members by reference; copy the members into
-> local variables first (as `a`, `b`, `c`, `n` above) and let the kernel capture
-> those by value. This is a SYCL rule, not a SushiRuntime one, but it's the most
-> common mistake when refactoring a kernel out of `main`.
+Source: `applications/examples/vecadd_demo.cpp`.
 
-#### The first program, refactored
-
-Putting Pattern 2 and Pattern 3 together, the body of `main` becomes a clean
-description of the pipeline — *what* runs, not *how* each step is implemented:
+A kernel that captures its own pointers names the data with `Reads(...)` and `Writes(...)`
+and takes a count as its launch:
 
 ```cpp
-Graph::HostWork make_init(float* A, float* B, float* C, size_t N); // defined above
-struct VectorAdd { /* defined above */ };
-
-int main()
-{
-    RuntimeContext ctx;
-    TaskGraph graph(ctx);
-
-    constexpr size_t N = 1024;
-    float* A = ctx.malloc_shared<float>(N);
-    float* B = ctx.malloc_shared<float>(N);
-    float* C = ctx.malloc_shared<float>(N);
-
-    graph.add_task(TaskMetadata{"init"},       {},     {A, B, C}, make_init(A, B, C, N));
-    graph.add_task(TaskMetadata{"vector_add"}, {A, B}, {C},       VectorAdd{A, B, C, N});
-
-    ctx.get_execution_engine().execute(graph.compile());
-
-    std::cout << "C[1] = " << C[1] << "  C[100] = " << C[100] << '\n';
-
-    ctx.free_usm(A);
-    ctx.free_usm(B);
-    ctx.free_usm(C);
-    return 0;
-}
-```
-
-The same three patterns apply to the 5-argument overload's `TaskWork`
-(`void(sycl::handler&)`) device body — a free function `void my_kernel(sycl::handler&)`
-plugs in directly when it needs no captured state, and a factory or functor
-supplies the state when it does.
-
----
-
-## 5. The core API, in detail
-
-### `RuntimeContext`
-
-```cpp
-RuntimeContext ctx;                           // discover everything, start workers
-```
-
-Constructing it with no arguments uses production defaults (it probes all
-devices via hwloc). You can pass a `Topology::HardwareFilterConfig` to limit
-discovery to certain device classes:
-
-```cpp
-Topology::HardwareFilterConfig cfg;
-cfg.include_gpu = false;                       // CPU-only
-cfg.require_fp64 = true;                       // drop devices without double precision
-RuntimeContext ctx{cfg};
-```
-
-`require_fp64` is worth setting whenever your kernels use `double`. Without it, a
-device lacking `sycl::aspect::fp64` is selected happily and the failure surfaces
-later, inside the driver, with a message that names neither the device nor the
-reason. With it, the device is skipped at discovery and the skip is logged.
-
-If the filter excludes every device the machine has — or the machine genuinely
-exposes no SYCL device, which is the common case on a box with no GPU driver and
-no OpenCL CPU runtime installed — construction throws a `SushiException` carrying
-`Core::Errc::unsupported` and the filter that produced the empty list.
-
-The context is **non-copyable and non-movable** — create one and pass it around
-by reference. It cleans itself up in the correct order on destruction; you can
-also call `ctx.shutdown()` for explicit, ordered teardown, or `ctx.wait_all()`
-to wait for all asynchronous work to finish.
-
-Useful accessors:
-
-```cpp
-sycl::queue& q  = ctx.get_queue(0);            // queue for device index 0
-sycl::queue& nq = ctx.get_numa_local_queue(0); // queue closest to NUMA node 0
-IExecutionEngine& eng = ctx.get_execution_engine();
-```
-
-### Memory
-
-Allocate USM through the context whenever the data will be touched by graph
-tasks. The context remembers which queue (device + context) owns each
-allocation, so the scheduler can dispatch a task to the *exact* queue that owns
-its data — avoiding an illegal cross-context access (for example, running a
-kernel on a CUDA queue against memory that lives on the CPU).
-
-```cpp
-float*  A   = ctx.malloc_shared<float>(N);     // shared USM (CPU + device visible)
-double* sum = ctx.malloc_shared<double>(1);
-void*   raw = ctx.malloc_shared(N * sizeof(float)); // untyped byte form
-
-void*   D   = ctx.malloc_device(N * sizeof(float)); // device-only USM (byte size)
-
-ctx.free_usm(A);                               // always free what you allocated
-```
-
-Both `malloc_shared` and `malloc_device` take an optional NUMA node id
-(`ctx.malloc_shared<float>(N, /*numa_id=*/1)`) that selects the owning queue.
-`free_usm(nullptr)` is safe.
-
-### `TaskGraph` and adding tasks
-
-```cpp
-TaskGraph graph(ctx);
-```
-
-There are two ways to add work. The one you'll use most is `add_task`, which
-takes metadata plus read/write pointer lists so the runtime can track
-dependencies:
-
-```cpp
-// Host / library work (also fine for submitting SYCL kernels, as shown above):
-graph.add_task(meta, reads, writes, work);
-graph.add_task(meta, reads, writes, work, dependencies);   // + manual event deps
-```
-
-Here `work` is a `HostWork` callable with this exact signature:
-
-```cpp
-sycl::event work(sycl::queue& q, const std::vector<sycl::event>& deps);
-```
-
-- For pure CPU work, do your computation and `return {};` (an empty event).
-- To run a SYCL kernel, `return q.submit(...)` and call `h.depends_on(deps)`
-  inside so the kernel waits on its inputs.
-
-There is also an overload that takes a dedicated **device** body (a
-`TaskWork = std::function<void(sycl::handler&)>`) plus a host fallback, for
-tasks that should run as a kernel when a device is selected and fall back to the
-host otherwise:
-
-```cpp
-graph.add_task(meta, reads, writes,
-               device_work,      // void(sycl::handler&)
-               fallback_work);   // sycl::event(sycl::queue&, const std::vector<sycl::event>&)
-```
-
-If you don't need dependency tracking, the lower-level `add_node` lets you submit
-raw work directly, optionally with read/write pointers or manual event
-dependencies:
-
-```cpp
-graph.add_node(work);                              // work is void(sycl::handler&)
-graph.add_node(work, reads, writes);
-graph.add_node(work, reads, writes, dependencies);
-```
-
-### `TaskMetadata`
-
-Every `add_task` takes a `TaskMetadata`. The only field you must set is a name
-(used in profiling); the rest are optional scheduling hints:
-
-```cpp
-TaskMetadata meta{"my_task"};       // name via aggregate init
-meta.priority      = 10;            // higher number = scheduled ahead of others
-meta.numa_affinity = 0;             // prefer NUMA node 0 (-1 = any, the default)
-meta.task_type     = TaskType::MATH_OP;   // optional high-level category
-```
-
-`TaskType` is one of `NONE`, `MATH_OP`, `MEMORY_COPY`, `CUSTOM_HOST`, or
-`CONTROL_FLOW`.
-
-You can also attach up to 8 small scalar parameters (each ≤ 8 bytes) — handy for
-passing sizes or coefficients into a kernel without capturing them:
-
-```cpp
-meta.set_param<uint64_t>(0, N);
-// ...later, inside the work lambda:
-uint64_t n = meta.get_param<uint64_t>(0);
-```
-
-**Named operations (`OpID`).** Instead of rigid enums, tasks can carry a
-compile-time hashed operation id created with the `_op` literal. This is what the
-optional distributed layer uses to identify which kernel to run on a remote
-worker:
-
-```cpp
-using namespace SushiRuntime::Graph::Literals;
-
-TaskMetadata meta{"gemm"};
-meta.op_id = "blas.gemm"_op;        // a stable 32-bit FNV-1a hash, computed at compile time
-```
-
-### How dependencies are inferred
-
-The runtime compares the read/write pointer lists across tasks and serializes
-only the pairs that conflict:
-
-- **Read-after-write (RAW):** task B reads what task A wrote → B waits for A.
-- **Write-after-read (WAR):** task B overwrites what task A read → B waits for A.
-- **Write-after-write (WAW):** two tasks write the same memory → ordered.
-
-Tasks that touch *disjoint* memory have no dependency and run in parallel. So a
-chain of tasks all touching the same pointer runs strictly in order, while ten
-tasks touching ten different buffers all run at once. You can also pass explicit
-`sycl::event` dependencies as the last argument if you need ordering the pointer
-analysis can't see.
-
-The analysis works on **regions**, not whole buffers: two tasks are serialized
-only when their byte ranges actually overlap. Name a sub-range with
-`buffer.region({offset, count})` and pass it to `Reads(...)`/`Writes(...)`, and the
-runtime will run tasks on disjoint slices of one buffer in parallel — an array's
-two halves, or a grid's interior and its halo. A whole buffer (the default when
-you pass a handle) overlaps every slice of itself, so it stays conservative.
-
-### Compile and execute
-
-```cpp
-auto compiled = graph.compile();                       // resolve the DAG (does not run anything)
-ctx.get_execution_engine().execute(std::move(compiled)); // run it; blocks until done
-```
-
-`compile()` links the graph's leaf tasks to an internal completion sentinel,
-finds the root tasks (those with no dependencies), and hands ownership to a
-`CompiledGraph`. It does **not** submit anything to the hardware. `execute()`
-injects the roots into the scheduler and blocks until the whole graph finishes.
-Build the entire graph before calling `compile()` — the two phases are not
-thread-safe relative to each other.
-
----
-
-## 6. A second example: a three-stage pipeline
-
-This shows dependencies doing real work. Three tasks share the same buffer, so
-they're forced into order: initialize → scale (on the device) → reduce on the
-host. Each stage reads what the previous one wrote.
-
-```cpp
-RuntimeContext ctx;
-TaskGraph graph(ctx);
-
-constexpr size_t N     = 2048;
-constexpr float  SCALE = 3.0f;
-
-float*  data = ctx.malloc_shared<float>(N);
-double* sum  = ctx.malloc_shared<double>(1);
-
-// Stage 1: data[i] = i   (host write of `data`)
-graph.add_task(TaskMetadata{"init"}, {}, {data},
-    [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
-    {
-        for (size_t i = 0; i < N; ++i) data[i] = static_cast<float>(i);
-        return {};
-    });
-
-// Stage 2: data[i] *= SCALE   (device kernel: reads AND writes `data`)
-graph.add_task(TaskMetadata{"scale"}, {data}, {data},
-    [data](sycl::queue& q, const std::vector<sycl::event>& deps) -> sycl::event
-    {
-        return q.submit([&](sycl::handler& h)
+        auto activate = [&](std::uint64_t k)
         {
-            h.depends_on(deps);
-            h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
-            {
-                data[i] = data[i] * SCALE;
-            });
-        });
-    });
-
-// Stage 3: sum = reduce(data)   (host read of `data`, write of `sum`)
-graph.add_task(TaskMetadata{"reduce"}, {data}, {sum},
-    [data, sum](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
-    {
-        double acc = 0.0;
-        for (size_t i = 0; i < N; ++i) acc += data[i];
-        *sum = acc;
-        return {};
-    });
-
-auto compiled = graph.compile();
-ctx.get_execution_engine().execute(std::move(compiled));
-
-// *sum == SCALE * (0 + 1 + ... + (N-1)) == SCALE * (N-1)*N/2
-std::cout << "sum = " << *sum << '\n';
-
-ctx.free_usm(data);
-ctx.free_usm(sum);
+            int* p = tile[k].data();
+            world.region(k).add(CELL_N, Reads(), Writes(tile[k]),
+                                [p](std::size_t i) { p[i] += 1; });
+        };
 ```
 
-Notice that the *scale* task lists `data` as both a read and a write — that's how
-you express an in-place update, and it keeps the task correctly ordered between
-*init* and *reduce*.
+Source: `applications/examples/streaming_world_demo.cpp`.
 
----
+The runtime compares byte ranges, so two tasks conflict only where their ranges overlap.
+`buffer.region({offset, count})` names part of a buffer for `Reads` or `Writes`, and tasks over
+disjoint parts of one buffer run in parallel. A whole handle overlaps every part of itself.
 
-## 7. Where to go next
+### One field: `add_rule`
 
-- **[ARCHITECTURE.md](../architecture/ARCHITECTURE.md)** — what is underneath all of this: the
-  layers, the work-stealing scheduler, the dependency tracker, the memory model,
-  and the determinism contract. Read it before changing anything.
-- **[INTEGRATION.md](../guides/INTEGRATION.md)** — consuming the runtime from your own
-  project with `find_package(SushiRuntime)`, and which compiler flags you must
-  match for the determinism guarantee to hold.
-- **[CLI_GUIDE.md](../guides/CLI_GUIDE.md)** — every `sr` command: build types, test
-  suites, running binaries, Docker, and diagnostics.
-- **[README](../../README.md)** — requirements, the full architecture (memory
-  pool, work-stealing scheduler, topology mapping), CMake options, and the
-  optional distributed master-worker layer.
-- **`tests/integration/` and the modules' `tests/` folders** — runnable, real-world usage of every
-  feature in this guide. `test_fluent_lifecycle.cpp` covers the fluent API
-  (handles, stepping, coupling); `test_sycl_execution.cpp` and `test_graph.cpp`
-  are the best starting points for the lower-level API.
-- **`sr docs`** — generate the full API reference from the headers.
+`add_rule(state, kernel)` covers the whole field, as the quickstart does. A launch before the
+state covers part of it. `Extent<N>` is an N-dimensional box with an origin, and the kernel
+receives the global index:
+
+```cpp
+        // The extent covers the (W-2) x (H-2) interior and offsets the kernel's index to (1,1).
+        Extent<2> interior{ sycl::range<2>(W - 2, H - 2), sycl::id<2>(1, 1) };
+        g.add_rule(interior, temp, [](sycl::id<2> idx, const float* cur, float* next)
+        {
+            const std::size_t x = idx[0];
+            const std::size_t y = idx[1];
+            const std::size_t c = y * W + x;
+            const float lap = cur[c - 1] + cur[c + 1] + cur[c - W] + cur[c + W]
+                              - 4.0f * cur[c];
+            next[c] = cur[c] + ALPHA * lap;
+        });
+```
+
+Source: `applications/examples/stencil_demo.cpp`. The rule never writes the border, so the
+program seeds both buffers of the `State` before the run.
+
+### Several fields: `add_coupled`
+
+`Coupled(out, in...)` names the field a rule steps and the fields it reads. Every read sees the
+previous step, because each `State` advances after all the kernels of the step have run. The
+result does not depend on the order in which the rules were added.
+
+```cpp
+        // v_next = v_cur + 1.
+        sim.add_rule(v, [](std::size_t i, const int* vc, int* vn)
+        {
+            vn[i] = vc[i] + 1;
+        });
+
+        // v_cur is the previous step's v, not the v_next of the rule above; see README.md.
+        sim.add_coupled(Coupled(u, v), [](std::size_t i, const int* uc, int* un, const int* vc)
+        {
+            un[i] = uc[i] + vc[i];
+        });
+```
+
+Source: `applications/examples/coupled_fields_demo.cpp`.
+
+### A size that changes per step: `add_dynamic`
+
+A `Dynamic` holds callables the runtime reads before each step, so the launch changes and the
+graph is not recompiled. `sized()` gives the number of elements, `based_at()` the first element
+and `when()` whether the node runs at all.
+
+```cpp
+        // sized() is polled before each step, so the launch width changes with no recompile.
+        std::size_t live_count = K_CAPACITY / 4;
+        float* cells = hits.data();
+        auto graph = runtime.graph();
+        graph.add_dynamic(Dynamic().sized([&live_count] { return live_count; }), K_CAPACITY, Reads(),
+                          Writes(hits), [cells](std::size_t index) { cells[index] += 1.0f; })
+            .name("count_hits");
+```
+
+Source: `applications/examples/operating_path_demo.cpp`.
+
+When a kernel of the same step produces the count, `sized_from_device(counter)` reads it after
+that kernel has finished. The counter is a `Residency::Host` buffer:
+
+```cpp
+    // Producer: derive the count on the device from data the kernel reads.
+    g.add(std::size_t{1}, Reads(wanted), Writes(counter),
+          [c, w](std::size_t) { c[0] = w[0] * 3u; });
+
+    // Consumer: iterate exactly that many elements.
+    g.add_dynamic(sized_from_device(counter), CAPACITY, Reads(), Writes(marks),
+                  [m](std::size_t i) { m[i] = static_cast<int>(i); });
+```
+
+Source: `modules/surface/api/tests/test_device_count.cpp`.
+
+[The vocabulary README](../../modules/surface/api/include/SushiRuntime/api/vocabulary/README.md)
+covers `based_at_device()`, `LateCount` and what happens when a live count exceeds the capacity.
+
+### Host work: `add_host` and `add_task`
+
+`add_host(reads, writes, body)` runs `body` on a worker thread with no SYCL submission, after
+the tasks it depends on. Use it for host C++ that shares data with kernels.
+
+```cpp
+    auto g = rt.graph();
+    g.add_host(Reads{}, Writes(buf), [&released, &saw_release, p]()
+    {
+        saw_release.store(wait_for_gate(released), std::memory_order_release);
+        p[0] = 42;
+    });
+```
+
+Source: `modules/surface/api/tests/test_async_step.cpp`.
+
+`add_task(reads, writes, body)` hands the body the queue and the events it must run after. The
+body submits what it needs and returns the event that ends its work. A library that calls
+another library with a queue records its work this way.
+
+### Work that shares nothing: `add_untracked`
+
+`add_untracked(launch, kernel)` records a kernel with no declared data. The runtime orders it
+against nothing and runs it on device 0 unless `On(...)` names another. It is wrong as soon as
+another rule of the graph touches the same memory.
+
+### Names and options
+
+`name("...")` after a verb names the rule it recorded; the name appears in the timings of a
+profiled run. Every verb also takes a `NodeOptions` as its last argument, which holds a width, a
+name, an operation and up to eight parameters.
+
+```cpp
+        world.add(Extent{N}, In(px), InOut(alive),
+            [xmax = XMAX](sycl::id<1> id, const float* px, int* alive)
+            {
+                const std::size_t i = id[0];
+                if (alive[i] && px[i] > xmax) alive[i] = 0;
+            }).name("cull");
+```
+
+Source: `applications/examples/game_engine_demo.cpp`.
+
+An operation is an `OperationID`, written with the `_op` literal. A node that names one may run
+on another machine when a cluster is attached; see
+[the distributed guide](../guides/DISTRIBUTED_GUIDE.md).
+
+## 6. Running
+
+| Call | Runs |
+| --- | --- |
+| `run()`, `run(steps)` | One step, or a fixed number |
+| `run_for(budget)` | Steps until a wall-clock budget elapses; at least one |
+| `run_until(done)` | Steps until `done()` returns true |
+| `run_async()` | One step, without waiting; returns a `RunHandle` |
+
+Each of the first three has a form that takes a `RunReport&` last and fills it in place, for a
+loop that should not allocate a report per tick. That form returns a pointer to the report.
+
+`run_async()` starts a step on the worker pool and returns. `wait()` on the handle ends the
+step and returns its report; the `State`s advance there.
+
+```cpp
+    auto step = g.run_async().value();
+
+    // The caller is still running: this is the work a frame would overlap.
+    released.store(true, std::memory_order_release);
+
+    const RunReport report = step.wait().value();
+```
+
+Source: `modules/surface/api/tests/test_async_step.cpp`.
+
+A runtime runs one graph at a time. A run entry called while another run is in flight on the
+same runtime returns `InvalidState`.
+
+`before_each_step(hook)` adds a callable the graph calls before each step, on the thread that
+called the run. It is where a program writes a value the next step reads.
+
+```cpp
+    std::vector<std::uint32_t> observed;
+    g.before_each_step([w](std::size_t finished_steps)
+     {
+         w[0] = static_cast<std::uint32_t>(finished_steps);
+         w[1] = K_BASE + static_cast<std::uint32_t>(finished_steps);
+     })
+     .before_each_step([w, &observed](std::size_t) { observed.push_back(w[1]); });
+
+    g.run(K_STEPS).value();
+```
+
+Source: `modules/surface/api/tests/test_run_driver.cpp`.
+
+`compile()` builds the plan and runs nothing. `Graph::plan()` returns a `PlanView` of the nodes
+in recording order. `cancel()` stops the run in flight of the graph it is called on, from any
+thread. `Graph::clear()` removes every rule and keeps the graph.
+
+## 7. A graph whose work changes: DynamicGraph
+
+`rt.dynamic_graph()` returns a graph whose work is grouped into regions, each under a key you
+choose. `region(key)` records with the same verbs as a `Graph`, and `drop(key)` removes a region.
+A change takes effect at the next step, and only the regions that changed are rebuilt. Regions
+that share a buffer are ordered across the boundary.
+
+```cpp
+        // Window 1: tiles {0,1,2,3} in view.
+        for (std::uint64_t k = 0; k < 4; ++k) activate(k);
+        world.run(STEPS).value();
+
+        // Tiles 0 and 1 stream out, 4 and 5 in; tiles 2 and 3 are not rebuilt.
+        world.drop(0);
+        world.drop(1);
+        activate(4);
+        activate(5);
+        world.run(STEPS).value();
+```
+
+Source: `applications/examples/streaming_world_demo.cpp`.
+
+## 8. Configuring the runtime
+
+`Runtime::create()` takes one `RuntimeConfig`.
+
+```cpp
+        // Two floating workers leave the other cores to the program that hosts the runtime.
+        RuntimeConfig config;
+        config.worker_count = 2;
+        config.pinning = PinPolicy::Float;
+        auto runtime = Runtime::create(config).value();
+
+        // advanced() answers what was built: the devices by index and the worker pool.
+        const AdvancedControls built = runtime.advanced();
+        for (const auto& device : built.devices())
+            std::printf("  device %zu: %s\n", device.index, device.name.c_str());
+        std::printf("  workers: %zu\n", built.worker_pool().count);
+```
+
+Source: `applications/examples/operating_path_demo.cpp`.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `devices` | Every device | A `DeviceFilter`: which devices the runtime drives |
+| `worker_count` | 0 | Worker threads; 0 is one per logical core |
+| `first_core` | 0 | First core of the range the workers pin into |
+| `pinning` | `PinPolicy::Pin` | Whether workers bind to cores |
+| `profiling` | `false` | Builds queues that record device timing |
+| `rebalancer` | `false` | Starts the background thermal rebalancer |
+| `force_scheduler` | `false` | Runs every graph on the work-stealing path |
+
+A core range that does not fit the machine is clamped, and `advanced().worker_pool()` reports
+the pool as built. [The runtime README](../../modules/surface/api/include/SushiRuntime/api/runtime/README.md)
+describes each field and the calls of `AdvancedControls`.
+
+Logging is process state: `set_log_level()` and `set_log_sink()` set it, and the environment
+variable `SR_LOG_LEVEL` sets the level at startup.
+
+## 9. Reading a run
+
+A run returns a `RunReport`. `total_tasks_executed`, `total_duration_ms` and `layer` are always
+filled. `node_timings` and `worker_timings` are filled when the runtime was created with
+`config.profiling = true`. `node_events`, one record per dispatch, is filled for a graph that
+called `set_profiling(true)`.
+
+```cpp
+    EXPECT_EQ(rep.layer, ExecutionLayer::Scheduler);
+    ASSERT_FALSE(rep.worker_timings.empty());
+    EXPECT_GE(rep.scheduling_overhead_ms, 0.0);
+
+    // At least some time must be attributed somewhere across the workers.
+    double total = 0.0;
+    for (const auto& w : rep.worker_timings)
+        total += w.busy_ms + w.stealing_ms + w.polling_ms + w.idle_ms;
+```
+
+Source: `tests/integration/test_observability.cpp`.
+
+A node without a name reports as `unnamed_task`.
+[The report README](../../modules/foundation/report/README.md) lists the fields.
+
+## 10. Determinism
+
+A fixed graph gives the same result however its work was spread over the workers. That holds
+for your kernels only while they compile with the floating-point flags the library was built
+with, so the exported target carries those flags to every target that links it.
+[The integration guide](../guides/INTEGRATION.md#4-what-you-inherit-and-what-you-supply) names
+them.
+
+## 11. Where to go next
+
+- [ARCHITECTURE.md](../architecture/ARCHITECTURE.md): the modules, the two execution layers and
+  the build options.
+- [INTEGRATION.md](../guides/INTEGRATION.md): linking the installed package, and writing the one
+  adapter module through which your code reaches the library.
+- [CLI_GUIDE.md](../guides/CLI_GUIDE.md): every `sr` command.
+- [applications/examples/README.md](../../applications/examples/README.md): what each example
+  shows.
+- `modules/surface/api/tests/`: one test file per part of the interface.
+  `test_fluent_lifecycle.cpp` covers handles, stepping and coupling.
+- `sr docs` builds the API reference from the headers.

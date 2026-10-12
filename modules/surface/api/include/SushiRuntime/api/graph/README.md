@@ -767,10 +767,15 @@ previous step's state for a renderer or an audio system, while this one runs, th
 the returned handle:
 
 ```cpp
-auto step = simulation.run_async();
-extract_previous_frame();
-RunReport report = step.wait();
+auto step = g.run_async().value();
+
+// The caller is still running: this is the work a frame would overlap.
+released.store(true, std::memory_order_release);
+
+const RunReport report = step.wait().value();
 ```
+
+The block is from `modules/surface/api/tests/test_async_step.cpp`.
 
 It runs one step only. The multi-step drivers (run(n), run_for, run_until) stay synchronous, because
 their per-step host work has to happen between steps and there is nothing for the caller to overlap
