@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — examples: Added an example that handles a failed allocation and a refused recording, with `refusal()`, `compile()` and `Graph::clear()` (`errors_demo.cpp`).
 - 2026-10-12 — examples: Added an adapter example in which a host program reaches the library through one file and its own status type (`adapter/sushiruntime_adapter.cpp`, `adapter/diffusion_backend.hpp`, `adapter/adapter_demo.cpp`).
 - 2026-10-12 — tests: Merged the region and the stepping tests of the api graph into `graph/running/`, beside the two helper headers they share (`refusing_fill.hpp`, `dynamic_graph_plan_access.hpp`, `test_region_emitter.cpp`).
 - 2026-10-12 — api: Moved the four headers a consumer never includes into `api/graph/plumbing/`, with their notes (`builder_surface.hpp`, `plan_cache.hpp`, `region_composer.hpp`, `step_driver.hpp`).
