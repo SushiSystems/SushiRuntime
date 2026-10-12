@@ -133,8 +133,9 @@ register_binding_updater() wires a Dynamic's providers to a node's bindings: it 
 updater that polls when()/sized() on the driver thread and stores the results into the shared block
 the kernel and scheduler read. It is skipped when the Dynamic carries no providers, because the
 defaults (always enabled, full range) already hold, so an unused tag costs nothing. It is defined
-in `source/late_window.cpp`, because the block is the engine's `LateBindings` and the header only
-forward-declares it.
+in `source/step_machinery.cpp`, because the block is the engine's `LateBindings` and the header
+holds it as a `LateControls`. The updater keeps the engine's pointer, converted once when it is
+registered.
 
 ### reset_updaters
 
@@ -484,14 +485,31 @@ A fault record holds uint32 words and the base, count and capacity it reports ar
 saturated_fault_word() stores a value above UINT32_MAX as UINT32_MAX, so the message never shows
 a value modulo 2^32. It is a constexpr comparison with no call, which a device kernel can run.
 
+## plan.hpp and late_controls.hpp
+
+### Plan and LateControls
+
+`Detail::Plan` and `Detail::LateControls` are the names the installed headers give two types of
+the engine: the compiled plan a step runs and the per-step controls of a late-bound node. Each
+is declared and never defined. A header holds a `Plan*` or a `std::shared_ptr<LateControls>`,
+passes it on and reads nothing through it, so the engine can rename or reshape its type without
+an installed header changing.
+
+The library converts in one place per type. `source/plan_access.hpp` defines engine_plan() and
+surface_plan(), and `source/late_controls_access.hpp` defines engine_controls() and
+surface_controls(). Each is a pointer cast between the name and the engine's type, inline and
+private to `source/`, and a shared pointer keeps its control block. `Detail::Context` in
+`runtime/context.hpp` is the third name of the kind.
+
 ## late_window.hpp
 
 ### LateWindow and read_late_window
 
 The per-step controls of a late-bound node are the engine's `LateBindings`. The header templates
-that submit such a node do not see that type: read_late_window() reads the controls once per
-submit and returns a LateWindow, the host count and base and the address of each device slot.
-That is one call into the library per late-bound node and step, and nothing per element.
+that submit such a node hold them as a `LateControls` pointer and never read through it:
+read_late_window() reads the controls once per submit and returns a LateWindow, the host count
+and base and the address of each device slot. That is one call into the library per late-bound
+node and step, and nothing per element.
 
 submit_late_window() submits the node from that window. A node with no device slot keeps its
 host-resolved range. One with a slot runs at its capacity, and each work-item past the live

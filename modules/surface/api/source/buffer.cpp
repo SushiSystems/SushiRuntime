@@ -91,7 +91,7 @@ namespace SushiRuntime
             Result<void> allocated = Internal::SYCL::translate_exceptions(
                 ErrorCode::AllocationFailed, ErrorCode::AllocationFailed, [&]()
             {
-                const std::shared_ptr<Internal::Execution::RuntimeContext>& shared =
+                const std::shared_ptr<Internal::Execution::RuntimeContext> shared =
                     ContextAccess::shared(context);
                 auto owner = std::make_unique<Internal::Memory::USMAllocationOwner>(
                     shared->shared_memory());

@@ -37,16 +37,12 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/detail/device_fault.hpp>
+#include <SushiRuntime/api/detail/late_controls.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
 
 namespace SushiRuntime
 {
-    namespace Internal::Graph
-    {
-        struct LateBindings;
-    } // namespace Internal::Graph
-
     namespace Detail
     {
         /**
@@ -64,10 +60,11 @@ namespace SushiRuntime
 
         /**
          * @brief Reads a node's per-step controls once, for the submit of one step.
+         * @param controls Not null.
          * @return The host count and base, and the address of each device slot the node has.
          */
         [[nodiscard]] SUSHIRUNTIME_API LateWindow read_late_window(
-            const Internal::Graph::LateBindings& bindings) noexcept;
+            const LateControls* controls) noexcept;
 
         /**
          * @brief Holds the half-open element window a late-bound node iterates this step.
@@ -141,6 +138,7 @@ namespace SushiRuntime
 
         /**
          * @brief Submits a late-bound node, reading a device count or base inside the kernel.
+         * @param controls Not null; read through read_late_window() only.
          * @param capacity Work-items a node with a device slot launches.
          * @param fault Receives a window that does not fit, for the step to return.
          * @pre fault is not null.
@@ -148,11 +146,11 @@ namespace SushiRuntime
          */
         template <class F>
         inline void submit_late_window(sycl::handler& h,
-                                       const Internal::Graph::LateBindings& lb,
+                                       const LateControls* controls,
                                        std::size_t capacity, std::uint32_t* fault,
                                        const F& kernel)
         {
-            const LateWindow window = read_late_window(lb);
+            const LateWindow window = read_late_window(controls);
             if (window.count_slot == nullptr && window.base_slot == nullptr)
             {
                 const std::optional<LiveRange> range =

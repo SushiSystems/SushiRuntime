@@ -31,19 +31,14 @@
 #include <memory>
 #include <utility>
 
+#include <SushiRuntime/api/runtime/context.hpp>
+
 namespace SushiRuntime
 {
-    namespace Internal::Execution
-    {
-        class RuntimeContext;
-    } // namespace Internal::Execution
-
     namespace Detail
     {
         struct ContextAccess;
     } // namespace Detail
-
-    class Runtime;
 
     /**
      * @brief Shares ownership of one runtime's context without naming what it holds.
@@ -62,21 +57,19 @@ namespace SushiRuntime
             [[nodiscard]] explicit operator bool() const noexcept { return context_ != nullptr; }
 
         private:
-            // Runtime::create() builds the context; the library's sources read it back.
-            friend class Runtime;
+            // The library's sources build a handle and read it back through this one seam.
             friend struct Detail::ContextAccess;
 
             /**
              * @brief Shares a context the library built.
              * @param context The context to share; null makes an empty handle.
              */
-            explicit ContextHandle(
-                std::shared_ptr<Internal::Execution::RuntimeContext> context) noexcept
+            explicit ContextHandle(std::shared_ptr<Detail::Context> context) noexcept
                 : context_(std::move(context))
             {
             }
 
             /** @brief The shared context; null for an empty handle. */
-            std::shared_ptr<Internal::Execution::RuntimeContext> context_;
+            std::shared_ptr<Detail::Context> context_;
     };
 } // namespace SushiRuntime

@@ -29,6 +29,7 @@
 #include <SushiRuntime/execution/context_access.hpp>
 
 #include <memory>
+#include <utility>
 
 #include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
@@ -41,13 +42,22 @@ namespace SushiRuntime
         Internal::Execution::RuntimeContext&
         ContextAccess::context(const ContextHandle& handle) noexcept
         {
-            return *handle.context_;
+            return *reinterpret_cast<Internal::Execution::RuntimeContext*>(handle.context_.get());
         }
 
-        const std::shared_ptr<Internal::Execution::RuntimeContext>&
+        std::shared_ptr<Internal::Execution::RuntimeContext>
         ContextAccess::shared(const ContextHandle& handle) noexcept
         {
-            return handle.context_;
+            return std::shared_ptr<Internal::Execution::RuntimeContext>(
+                handle.context_,
+                reinterpret_cast<Internal::Execution::RuntimeContext*>(handle.context_.get()));
+        }
+
+        ContextHandle
+        ContextAccess::handle(std::shared_ptr<Internal::Execution::RuntimeContext> context) noexcept
+        {
+            return ContextHandle(
+                std::shared_ptr<Context>(context, reinterpret_cast<Context*>(context.get())));
         }
 
         Internal::Execution::RuntimeContext&
@@ -56,7 +66,7 @@ namespace SushiRuntime
             return context(runtime.context_);
         }
 
-        const std::shared_ptr<Internal::Execution::RuntimeContext>&
+        std::shared_ptr<Internal::Execution::RuntimeContext>
         ContextAccess::shared(const Runtime& runtime) noexcept
         {
             return shared(runtime.context_);

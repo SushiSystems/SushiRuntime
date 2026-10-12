@@ -37,6 +37,7 @@
 #include <vector>
 
 #include <SushiRuntime/api/detail/node_description.hpp>
+#include <SushiRuntime/api/detail/plan.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/detail/step_run.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
@@ -351,7 +352,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the plan a step runs. */
-            Internal::Graph::CompiledGraph& run_plan() noexcept { return compiled_plan(); }
+            [[nodiscard]] Detail::Plan* run_plan() noexcept { return compiled_plan(); }
 
             /** @brief Returns the per-step hooks aggregated from the live regions. */
             [[nodiscard]] const Detail::StepMachinery& run_steps() const noexcept

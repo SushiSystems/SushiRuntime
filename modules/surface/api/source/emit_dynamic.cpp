@@ -36,11 +36,13 @@
 #include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 
+#include "late_controls_access.hpp"
+
 namespace SushiRuntime
 {
     namespace Detail
     {
-        std::shared_ptr<Internal::Graph::LateBindings>
+        std::shared_ptr<LateControls>
         make_late_bindings(const Dynamic& dyn, std::vector<BufferRegion>& reads,
                            std::vector<LivenessObserver>& lives)
         {
@@ -59,7 +61,7 @@ namespace SushiRuntime
                 lb->device_base_index = base.index;
                 register_device_slot(base, reads, lives);
             }
-            return lb;
+            return surface_controls(lb);
         }
     } // namespace Detail
 } // namespace SushiRuntime

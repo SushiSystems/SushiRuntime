@@ -348,62 +348,6 @@ At `Info` with a sink installed, the sink receives the `Device: ...` line of
 `device_queue_set.cpp` at level `Info`, and both streams stay empty because the sink replaced the
 default.
 
-## test_node_event_records.cpp
-
-The file covers per-dispatch node event records, the clock pairing and steady-state capture. The
-design is section C and items 1, 2, 3, 4 and 6 of section E in
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`, built as task 5 of
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-plan.md`. The item numbers in the
-subsections refer to section E of the design.
-
-### `NodeEventRecordsTestAccess`
-
-`NodeEventRecordsTestAccess` is a friend used only by tests to reach the compiled plan of a
-`Graph`. It mirrors
-`RegistrationIndexTestAccess` in `test_registration_index.cpp`.
-
-### `RequestedGraphRecordsOnePerDispatch`
-
-Item 2: three independent kernel nodes and `run(5)` give fifteen records, invocations 0 to 4 per
-node, and `submit <= start <= end` for every record.
-
-### Steady-state capture
-
-Item 3 is tested in `test_steady_state_allocation.cpp`, which is built into the
-`sr_allocation_tests` executable and so runs in its own process. A replacement `operator new` in
-`test_node_event_records.cpp` would see only the allocations of its own executable and never those
-of the shared library. The section on `test_steady_state_allocation.cpp` in
-`tests/allocation/README.md` explains why that test needs its own binary.
-
-### `NodeIndexIsRegistrationOrder`
-
-Item 4: `node_index` follows the registration order, not the compiled order, which is reversed. The
-test cross-checks it against the plan's own `registration_index`.
-
-A strict dependency chain, in which B reads what A wrote and C reads what B wrote, forces the
-execution order A, B, C. That gives an observation of identity which does not depend on trusting the
-`registration_index` read from the `Node` object. If the registration order of the plan and the
-dispatch order of the run ever disagreed, sorting by earliest submit would catch it, even though
-both would still read as {0, 1, 2} on their own.
-
-### `HostNodeLandsOnEventClock`
-
-Item 6: the converted record of a native host node lands inside the event window of the run, within
-the `uncertainty_ns` of the pairing.
-
-The host node reads what the kernel writes. That chains it strictly behind the kernel's completion;
-the two are not independent roots. The window of the host record therefore sits inside the
-event-clock window of the run, not merely near it.
-
-The converted `submit_ns` and `start_ns` of a host record are identical, because the scheduler
-stamps the same raw steady time into both. Those of a device record rarely are. The test tells the
-two kinds apart by that difference and not by a stored flag, because `NodeEventRecord` stays field
-for field identical to the record the engine fills, as the global constraints of the design require.
-
-The chain guarantees that the host node is dispatched no earlier than the kernel's completion. The
-tolerance covers only the measurement uncertainty of the pairing, not scheduling jitter between
-unrelated roots.
-
 ## test_observability.cpp
 
 The file covers `RunReport` observability, section 5.5 of

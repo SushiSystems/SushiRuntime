@@ -32,6 +32,7 @@
 #include <cstdint>
 
 #include <SushiRuntime/api/detail/before_step_hooks.hpp>
+#include <SushiRuntime/api/detail/plan.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/runtime/context_handle.hpp>
@@ -41,11 +42,6 @@
 
 namespace SushiRuntime
 {
-    namespace Internal::Graph
-    {
-        struct CompiledGraph;
-    } // namespace Internal::Graph
-
     namespace Detail
     {
         /**
@@ -95,7 +91,7 @@ namespace SushiRuntime
         struct StepTarget
         {
             const ContextHandle* context = nullptr;         /**< Runtime the plan runs on. */
-            Internal::Graph::CompiledGraph* plan = nullptr; /**< The built plan. */
+            Plan* plan = nullptr;                           /**< The built plan. */
             const StepMachinery* steps = nullptr;           /**< Per-step hooks of the nodes. */
             const BeforeStepHooks* hooks = nullptr;         /**< The caller's per-step hooks. */
             void* owner = nullptr;                          /**< The graph, handed to rearm. */

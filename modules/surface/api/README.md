@@ -31,6 +31,8 @@ type of the engine is compiled into the library, from `source/`.
 | Source | Holds |
 | --- | --- |
 | `context_handle.cpp` | `Detail::ContextAccess`, the way from a `ContextHandle` to the context |
+| `plan_access.hpp` | The conversion between `Detail::Plan` and the engine's compiled graph |
+| `late_controls_access.hpp` | The conversion between `Detail::LateControls` and the engine's late bindings |
 | `runtime.cpp` | `Runtime`: building the context, the rebalancer switch and the wait |
 | `advanced_controls.cpp` | `AdvancedControls`: every answer it reads from the context |
 | `buffer.cpp` | The allocation of a `Buffer` and its window copies |
@@ -136,6 +138,10 @@ The classes a graph is built from are in `Detail` too: `BuilderSurface`, `StepDr
 `PlanCache`, `RegionComposer` and `RegionChangeLog`, whose headers sit under `api/graph/` beside
 the classes that use them. A consumer calls their members through `Graph`, `DynamicGraph` and
 `Region`, and writes the key of a region as `DynamicGraph::RegionKey`.
+
+No installed header names a type of the engine. `Detail::Plan`, `Detail::LateControls` and
+`Detail::Context` stand for the compiled plan, the per-step controls of a late-bound node and
+the context of a runtime: each is declared, never defined, and held by pointer.
 
 A `Detail` type that crosses the compiled boundary is part of the binary interface: the library
 and the consumer both read `NodeDescription`, `NodeStamp`, `StepTarget`, `AsyncRunState`,

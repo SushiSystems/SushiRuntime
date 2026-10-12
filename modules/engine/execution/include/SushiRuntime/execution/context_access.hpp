@@ -58,10 +58,17 @@ namespace SushiRuntime
             [[nodiscard]] SUSHIRUNTIME_API static Internal::Execution::RuntimeContext&
             context(const ContextHandle& handle) noexcept;
 
-            /** @brief Returns the shared owner of a handle's context; null for an empty one. */
+            /** @brief Returns a share of a handle's context; null for an empty one. */
             [[nodiscard]] SUSHIRUNTIME_API static
-            const std::shared_ptr<Internal::Execution::RuntimeContext>&
+            std::shared_ptr<Internal::Execution::RuntimeContext>
             shared(const ContextHandle& handle) noexcept;
+
+            /**
+             * @brief Returns the handle that shares a context the library built.
+             * @param context The context to share; null makes an empty handle.
+             */
+            [[nodiscard]] SUSHIRUNTIME_API static ContextHandle
+            handle(std::shared_ptr<Internal::Execution::RuntimeContext> context) noexcept;
 
             /**
              * @brief Returns the context a runtime shares with its handles.
@@ -71,11 +78,11 @@ namespace SushiRuntime
             context(const Runtime& runtime) noexcept;
 
             /**
-             * @brief Returns the shared owner of the context a runtime shares with its handles.
+             * @brief Returns a share of the context a runtime shares with its handles.
              * @pre runtime was not moved from.
              */
             [[nodiscard]] SUSHIRUNTIME_API static
-            const std::shared_ptr<Internal::Execution::RuntimeContext>&
+            std::shared_ptr<Internal::Execution::RuntimeContext>
             shared(const Runtime& runtime) noexcept;
         };
     } // namespace Detail

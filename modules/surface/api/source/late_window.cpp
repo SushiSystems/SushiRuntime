@@ -32,12 +32,15 @@
 
 #include <SushiRuntime/task/late_bindings.hpp>
 
+#include "late_controls_access.hpp"
+
 namespace SushiRuntime
 {
     namespace Detail
     {
-        LateWindow read_late_window(const Internal::Graph::LateBindings& bindings) noexcept
+        LateWindow read_late_window(const LateControls* controls) noexcept
         {
+            const Internal::Graph::LateBindings& bindings = *engine_controls(controls);
             LateWindow window;
             window.count = bindings.count.load(std::memory_order_relaxed);
             window.base = bindings.base.load(std::memory_order_relaxed);

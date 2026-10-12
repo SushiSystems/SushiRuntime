@@ -35,17 +35,19 @@
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 
+#include "late_controls_access.hpp"
+
 namespace SushiRuntime
 {
     namespace Detail
     {
         void StepMachinery::register_binding_updater(
-            std::shared_ptr<Internal::Graph::LateBindings> lb, Dynamic dyn)
+            std::shared_ptr<LateControls> controls, Dynamic dyn)
         {
             if (!DynamicAccess::when(dyn) && !DynamicAccess::count(dyn) &&
                 !DynamicAccess::base(dyn))
                 return;
-            binding_updaters_.push_back([lb = std::move(lb), dyn = std::move(dyn)]()
+            binding_updaters_.push_back([lb = engine_controls(controls), dyn = std::move(dyn)]()
             {
                 const Dynamic::WhenProvider& when = DynamicAccess::when(dyn);
                 const Dynamic::CountProvider& count = DynamicAccess::count(dyn);

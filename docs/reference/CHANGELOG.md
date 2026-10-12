@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-12 — api: Breaking change: Replaced CompiledGraph, LateBindings and RuntimeContext in installed signatures with the opaque Detail::Plan, Detail::LateControls and Detail::Context (`plan.hpp`, `late_controls.hpp`, `context.hpp`).
+- 2026-10-12 — tests: Moved the registration index and the node event record tests into the api module, whose private conversion header they include (`test_registration_index.cpp`, `test_node_event_records.cpp`, `plan_access.hpp`).
 - 2026-10-12 — api: Breaking change: Moved PlanCache, RegionComposer, RegionChangeLog, StepDriver, BuilderSurface and the four callable traits into SushiRuntime::Detail (`plan_cache.hpp`, `step_driver.hpp`, `callable_traits.hpp`).
 - 2026-10-12 — docs: Cited the source file of every manual example, added the allow-list of the truth checker and removed the em dashes of the design documents (`docs/.docs_truth_allow`, `INTRODUCTION.md`, `ENGINE_BACKBONE_REFACTOR.md`).
 - 2026-10-12 — docs: Shortened the distributed guide to 594 lines and corrected the test notes and the module notes against the sources (`DISTRIBUTED_GUIDE.md`, `tests/integration/README.md`, `KNOWN_ISSUES.md`).

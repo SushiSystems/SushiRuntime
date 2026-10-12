@@ -1675,3 +1675,85 @@ cleared, the next run succeeds and composes once, the edge `a -> c` is there, an
 
 A second mid-commit failure, an allocation that fails after the first region is un-wired, has no
 test: the composer offers no seam that makes `std::set::insert` throw.
+
+## test_registration_index.cpp
+
+The file covers `Node::registration_index` and the grouping of the nodes of one `Recorder::rule()`
+scope under one index. The design is sections D and F5 of
+`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`.
+
+`record_grouped_rule` records three kernels in one scope, each reading what the one before it
+wrote. `grouping_of` reads a compiled plan back: the index of the nodes named "before" and "after",
+and the one index every other node must share.
+
+### `RuleScopeGroupSurvivesRebuild`
+
+The group of a rule scope must survive a rebuild onto a fresh `TaskGraph`, whose registration
+counter restarts at 0.
+
+The test adds a plain node after the rule, which marks the graph dirty, and then runs twice, so
+that the plan cache replays every recorded node into a second `TaskGraph`. The nodes of the
+rule must still share one index, distinct from the index of every other node, and the indices of
+all nodes must be dense from 0 to n-1 in registration order.
+
+### `RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneIndex`
+
+A rule scope groups every node shape the same way. `record_late_bound_rule` records a late-count
+resolver, a device-sized kernel and a plain kernel in one scope, and the three share one index
+while the node after the scope takes the next one.
+
+## test_node_event_records.cpp
+
+The file covers per-dispatch node event records, the clock pairing and steady-state capture. The
+design is section C and items 1, 2, 3, 4 and 6 of section E in
+`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`, built as task 5 of
+`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-plan.md`. The item numbers in the
+subsections refer to section E of the design.
+
+### `NodeEventRecordsTestAccess`
+
+`NodeEventRecordsTestAccess` is a friend used only by tests to reach the compiled plan of a
+`Graph`. It mirrors
+`RegistrationIndexTestAccess` in `test_registration_index.cpp`.
+
+### `RequestedGraphRecordsOnePerDispatch`
+
+Item 2: three independent kernel nodes and `run(5)` give fifteen records, invocations 0 to 4 per
+node, and `submit <= start <= end` for every record.
+
+### Steady-state capture
+
+Item 3 is tested in `test_steady_state_allocation.cpp`, which is built into the
+`sr_allocation_tests` executable and so runs in its own process. A replacement `operator new` in
+`test_node_event_records.cpp` would see only the allocations of its own executable and never those
+of the shared library. The section on `test_steady_state_allocation.cpp` in
+`tests/allocation/README.md` explains why that test needs its own binary.
+
+### `NodeIndexIsRegistrationOrder`
+
+Item 4: `node_index` follows the registration order, not the compiled order, which is reversed. The
+test cross-checks it against the plan's own `registration_index`.
+
+A strict dependency chain, in which B reads what A wrote and C reads what B wrote, forces the
+execution order A, B, C. That gives an observation of identity which does not depend on trusting the
+`registration_index` read from the `Node` object. If the registration order of the plan and the
+dispatch order of the run ever disagreed, sorting by earliest submit would catch it, even though
+both would still read as {0, 1, 2} on their own.
+
+### `HostNodeLandsOnEventClock`
+
+Item 6: the converted record of a native host node lands inside the event window of the run, within
+the `uncertainty_ns` of the pairing.
+
+The host node reads what the kernel writes. That chains it strictly behind the kernel's completion;
+the two are not independent roots. The window of the host record therefore sits inside the
+event-clock window of the run, not merely near it.
+
+The converted `submit_ns` and `start_ns` of a host record are identical, because the scheduler
+stamps the same raw steady time into both. Those of a device record rarely are. The test tells the
+two kinds apart by that difference and not by a stored flag, because `NodeEventRecord` stays field
+for field identical to the record the engine fills, as the global constraints of the design require.
+
+The chain guarantees that the host node is dispatched no earlier than the kernel's completion. The
+tolerance covers only the measurement uncertainty of the pairing, not scheduling jitter between
+unrelated roots.

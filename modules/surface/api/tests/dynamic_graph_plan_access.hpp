@@ -38,6 +38,8 @@
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
 
+#include "plan_access.hpp"
+
 namespace SushiRuntime
 {
     namespace Detail
@@ -48,7 +50,7 @@ namespace SushiRuntime
             static const SushiRuntime::Internal::Graph::CompiledGraph&
             plan(const DynamicGraph& g) noexcept
             {
-                return g.compiled_plan();
+                return *engine_plan(g.compiled_plan());
             }
         };
     }

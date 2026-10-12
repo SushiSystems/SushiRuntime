@@ -47,6 +47,7 @@
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 
+#include "late_controls_access.hpp"
 #include "node_emitters.hpp"
 
 using namespace SushiRuntime;
@@ -192,7 +193,8 @@ TEST(Integration_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWind
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     bindings->count.store(K_PREFIX);
     const Detail::NodeDescription described = Detail::dynamic_state_node(
-        view_of(field), field.size(), bindings, nullptr, std::vector<BufferRegion>{},
+        view_of(field), field.size(), Detail::surface_controls(bindings), nullptr,
+        std::vector<BufferRegion>{},
         [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
     run_once(rt, described);

@@ -377,7 +377,7 @@ namespace SushiRuntime
                     Owner& self = owner();
                     Detail::StepTarget named;
                     named.context = &self.run_context();
-                    named.plan = &self.run_plan();
+                    named.plan = self.run_plan();
                     named.steps = &self.run_steps();
                     named.hooks = &step_hooks_;
                     named.owner = &self;

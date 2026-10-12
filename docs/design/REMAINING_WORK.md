@@ -144,9 +144,6 @@ Open after a repair:
 The review is in `docs/agent/2026_10_11_API_QUALITY_CONTROL/REPORT.md`. What it found and this
 round did not close:
 
-- **Three engine type names in installed signatures.** `CompiledGraph`, `LateBindings` and
-  `RuntimeContext` are forward-declared in headers of `api`. An opaque `Detail` handle per type
-  removes the names.
 - **`ContextAccess` is declared in `execution` and defined in `api`.** It moves to an internal
   surface module once `ContextHandle` sits in a public module below both; that is a module
   boundary for the owner.
