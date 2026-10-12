@@ -42,7 +42,6 @@
 #include <SushiRuntime/task/task_work.hpp>
 
 using namespace SushiRuntime;
-using namespace SushiRuntime::Internal::Execution;
 using namespace SushiRuntime::Internal::Graph;
 
 static_assert(std::is_same<decltype(Node::baked_width), std::size_t>::value,
