@@ -36,8 +36,10 @@ already costs on the same thread, and the baseline measures that cost directly.
 
 The file asserts three relative claims, the last of them twice:
 
-1. The value-returning `run()` costs at least one more allocation per tick than the reuse form. The
-   extra allocation is the `RunReport`, and it shows that the counter can see the path it measures.
+1. The counter can see the path it measures. Where it sees the library, the value-returning `run()`
+   costs at least one more allocation per tick than the reuse form, and the extra allocation is the
+   `RunReport`. On Windows it does not see the library, and the claim is the narrower one under
+   "What the counter sees on Windows".
 2. The per-tick growth of the reuse form, measured as the count for four times the ticks minus the
    count for one times the ticks, is no more than the per-tick growth of a plain `sycl::queue` that
    submits the identical kernel, in order, on the same device and context from the same thread. What
@@ -48,6 +50,29 @@ The file asserts three relative claims, the last of them twice:
 
 The raw per-tick figures for the chain, the baseline and the forced scheduler are recorded as test
 properties, so every number is visible even where it cannot be asserted.
+
+### What the counter sees on Windows
+
+`K_COUNTER_SEES_THE_LIBRARY` is false on Windows and true elsewhere. A Windows DLL binds its own
+`operator new`, so an allocation made by code compiled into `sushiruntime.dll` never reaches the
+replacement in this file. On Linux the replacement is program-wide and covers the shared library.
+
+The step loop and the report builder are library code: `run_steps()` of
+`modules/surface/api/source/step_run.cpp` calls `fill_run_report()` of `run_report_builder.hpp`,
+whose `numa_statistics.push_back()` is the one allocation a fresh `RunReport` costs per tick. The
+value form and the reuse form therefore count the same on Windows, 128 allocations over 64 ticks
+each on the development machine, and the comparison between them proves nothing there.
+
+What the counter still sees on Windows is the kernel submission. The command-group templates of
+`graph.hpp` are instantiated in the test executable, and the chain calls them on the calling
+thread. The Windows form of claim 1 is that bare SYCL costs at least one counted allocation per
+tick and that the chain's count is no lower than bare SYCL's for the same kernel. A counter that
+did not reach the run path would count nothing for the chain.
+
+On Windows the suite therefore proves that the code the executable instantiates on the run path
+adds no allocation that scales beyond SYCL's own. It does not prove that the library's step loop,
+chain or report builder allocate nothing per tick: an allocation added there passes unseen. Only a
+build whose counter sees the library covers those.
 
 ### Sanitizer detection
 
@@ -117,8 +142,10 @@ bookkeeping around it.
 The test makes the three claims in order:
 
 1. The value form builds a fresh report on every tick, and the reuse form refills one the caller
-   owns. The difference is at least one allocation per tick, and observing it proves that the
-   counter reaches the run path and not only the test's own code.
+   owns. Where the counter sees the library the difference is at least one allocation per tick,
+   and observing it proves that the counter reaches the run path and not only the test's own code.
+   On Windows the test asserts the two comparisons with bare SYCL that "What the counter sees on
+   Windows" describes. The property `counter_sees_the_library` records which form ran.
 2. The per-tick growth of the chain must not exceed the per-tick growth of bare SYCL submitting the
    same kernel on the same queue. Growth beyond that is the runtime's allocation, not SYCL's, and it
    is the only part the chain controls.
