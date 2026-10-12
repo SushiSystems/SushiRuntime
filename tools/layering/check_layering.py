@@ -33,8 +33,11 @@ K_SAME_TIER_EDGES: frozenset[tuple[str, str]] = frozenset({
     ("execution", "scheduler"),
     ("execution", "graph"),
     ("memory_exchange", "interop"),
+    ("context_access", "context"),
     ("api", "interop"),
     ("api", "memory_exchange"),
+    ("api", "context"),
+    ("api", "context_access"),
 })
 K_SOURCE_SUFFIXES = frozenset({".h", ".hpp", ".cpp", ".glsl", ".comp", ".vert", ".frag"})
 K_ANGLE_INCLUDE = re.compile(r'^\s*#\s*include\s*<[^/>]+/([^/>]+)/[^>]+>')

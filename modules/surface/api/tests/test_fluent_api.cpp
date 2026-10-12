@@ -33,7 +33,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 
 using namespace SushiRuntime;
@@ -405,11 +405,11 @@ TEST(Integration_FluentAPI, GraphSizeTracksAdds)
     EXPECT_EQ(g.size(), 2u);
 }
 
-/** @brief Tests that ContextAccess and advanced() reach the same RuntimeContext. */
+/** @brief Tests that the context access and advanced() reach the same RuntimeContext. */
 TEST(Integration_FluentAPI, ContextAccessorIsConsistent)
 {
     auto rt = Runtime::create().value();
-    Internal::Execution::RuntimeContext& context = SushiRuntime::Detail::ContextAccess::context(rt);
+    Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(rt);
 
     // At least a CPU device is always present.
     EXPECT_GE(context.devices().count(), 1u);

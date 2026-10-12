@@ -37,7 +37,7 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
-#include <SushiRuntime/api/runtime/context_handle.hpp>
+#include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* context.hpp                                                            */
+/* test_context_handle.cpp                                                */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,22 +20,35 @@
 /**************************************************************************/
 
 /**
- * @file context.hpp
- * @brief Declares Context, the name the surface gives the context of a runtime.
+ * @file test_context_handle.cpp
+ * @brief Tests what a ContextHandle that shares no context reports.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+ * @see modules/surface/context/tests/README.md
  */
 
-#pragma once
+#include <gtest/gtest.h>
 
-namespace SushiRuntime
+#include <SushiRuntime/context/context_handle.hpp>
+#include <SushiRuntime/context/context_handle_access.hpp>
+
+using SushiRuntime::ContextHandle;
+using SushiRuntime::Detail::ContextHandleAccess;
+
+/** @brief Tests that a default handle shares no context. */
+TEST(Unit_ContextHandle, ADefaultHandleIsEmpty)
 {
-    namespace Detail
-    {
-        /**
-         * @brief Names the context a runtime owns; the surface holds it by pointer only.
-         * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
-         */
-        struct Context;
-    } // namespace Detail
-} // namespace SushiRuntime
+    const ContextHandle handle;
+
+    EXPECT_FALSE(static_cast<bool>(handle));
+    EXPECT_TRUE(ContextHandleAccess::share(handle) == nullptr);
+}
+
+/** @brief Tests that a handle wrapped around no context is empty, and so is its copy. */
+TEST(Unit_ContextHandle, AHandleWrappedAroundNothingIsEmpty)
+{
+    const ContextHandle handle = ContextHandleAccess::wrap(nullptr);
+    const ContextHandle copy = handle;
+
+    EXPECT_FALSE(static_cast<bool>(handle));
+    EXPECT_FALSE(static_cast<bool>(copy));
+}

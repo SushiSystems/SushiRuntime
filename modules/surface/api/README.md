@@ -19,9 +19,9 @@ boundary" says what crosses into it.
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
 
-The module depends on `core`, `report`, `region`, `log`, `machine` and `interop`, the other
-public modules, through its headers. Its sources depend on `memory`, `device`, `observability`,
-`task`, `graph`, `execution` and `memory_exchange`.
+The module depends on `core`, `report`, `region`, `log`, `machine`, `interop` and `context`, the
+other public modules, through its headers. Its sources depend on `sycl`, `memory`, `device`,
+`observability`, `task`, `graph`, `execution`, `memory_exchange` and `context_access`.
 
 ## The compiled boundary
 
@@ -30,7 +30,6 @@ type of the engine is compiled into the library, from `source/`.
 
 | Source | Holds |
 | --- | --- |
-| `context_handle.cpp` | `Detail::ContextAccess`, the way from a `ContextHandle` to the context |
 | `plan_access.hpp` | The conversion between `Detail::Plan` and the engine's compiled graph |
 | `late_controls_access.hpp` | The conversion between `Detail::LateControls` and the engine's late bindings |
 | `runtime.cpp` | `Runtime`: building the context, the rebalancer switch and the wait |
@@ -52,7 +51,8 @@ path is a template inside the SYCL command group and is compiled into the caller
 
 A data handle caches its address and its size, so element access touches the handle alone.
 Buffer, State, Runtime, AdvancedControls and Interop hold a `ContextHandle`
-(runtime/README.md) and name no type of the engine.
+(`modules/surface/context/README.md`) and name no type of the engine. The sources go from a
+handle to the context through `Internal::ContextAccess` of the `context_access` module.
 
 A run entry is a template too, over the graph and over the stop test. It hands the library a
 `Detail::StepTarget` and a `Detail::StepPredicate`, and the loops run in `step_run.cpp`.
@@ -141,7 +141,8 @@ the classes that use them. A consumer calls their members through `Graph`, `Dyna
 
 No installed header names a type of the engine. `Detail::Plan`, `Detail::LateControls` and
 `Detail::Context` stand for the compiled plan, the per-step controls of a late-bound node and
-the context of a runtime: each is declared, never defined, and held by pointer.
+the context of a runtime: each is declared, never defined, and held by pointer. The first two
+are declared here and `Detail::Context` by the `context` module.
 
 A `Detail` type that crosses the compiled boundary is part of the binary interface: the library
 and the consumer both read `NodeDescription`, `NodeStamp`, `StepTarget`, `AsyncRunState`,

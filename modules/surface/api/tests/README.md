@@ -571,7 +571,7 @@ a recompilation.
 
 ### `ContextAccessorIsConsistent`
 
-`Detail::ContextAccess::context()` must return the `RuntimeContext` the fluent `Runtime` wraps,
+`Internal::ContextAccess::context()` must return the `RuntimeContext` the fluent `Runtime` wraps,
 and `advanced()` must read through to it. The test verifies both by comparing device counts.
 
 ### `RunZeroStepsIsNoOp`

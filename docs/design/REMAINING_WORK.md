@@ -144,9 +144,6 @@ Open after a repair:
 The review is in `docs/agent/2026_10_11_API_QUALITY_CONTROL/REPORT.md`. What it found and this
 round did not close:
 
-- **`ContextAccess` is declared in `execution` and defined in `api`.** It moves to an internal
-  surface module once `ContextHandle` sits in a public module below both; that is a module
-  boundary for the owner.
 - **`NodeDescription` is a tagged struct.** A variant of per-kind structs gives each kind its
   own fields and makes an unhandled kind a compile error.
 - **A recorder that is about to be cleared still copies its work into the plan.** SushiBLAS

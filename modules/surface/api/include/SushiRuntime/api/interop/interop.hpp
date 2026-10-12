@@ -34,7 +34,7 @@
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/interop/host_export.hpp>
-#include <SushiRuntime/api/runtime/context_handle.hpp>
+#include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/interop/external_memory.hpp>

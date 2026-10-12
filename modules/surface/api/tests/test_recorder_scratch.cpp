@@ -34,7 +34,7 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
 using namespace SushiRuntime;
@@ -165,7 +165,7 @@ TEST(Integration_RecorderScratch, ScratchIsFreedWithTheRecorder)
     auto in  = rt.buffer<std::uint32_t>(K_COUNT).value();
     auto out = rt.buffer<std::uint32_t>(K_COUNT).value();
     const Internal::Memory::USMAllocator& memory =
-        SushiRuntime::Detail::ContextAccess::context(rt).memory();
+        SushiRuntime::Internal::ContextAccess::context(rt).memory();
     const std::size_t baseline = memory.live_count();
 
     {

@@ -34,9 +34,9 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
@@ -93,7 +93,8 @@ namespace SushiRuntime
         {
             using Internal::Graph::TaskGraph;
 
-            Internal::Execution::RuntimeContext& runtime = Detail::ContextAccess::context(context);
+            Internal::Execution::RuntimeContext& runtime =
+                Internal::ContextAccess::context(context);
             auto built = std::make_unique<Detail::PlanCacheState>();
             TaskGraph backing_graph;
             std::vector<std::uint32_t> registrations(recorder.rule_count(),

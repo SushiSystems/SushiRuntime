@@ -55,7 +55,7 @@
 #include <SushiRuntime/distributed/registered_task.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
 
 #include "measurement.hpp"
 #include "test_helpers.hpp"
@@ -294,7 +294,7 @@ namespace
              * @pre @p cluster is attached to @p runtime, which outlives the buffer.
              */
             SharedFloats(Runtime& runtime, Cluster& cluster, std::size_t count)
-                : memory_(&SushiRuntime::Detail::ContextAccess::context(runtime).memory()),
+                : memory_(&SushiRuntime::Internal::ContextAccess::context(runtime).memory()),
                   count_(count)
             {
                 Internal::Memory::USMRequest request;

@@ -10,7 +10,6 @@ sushiruntime_add_module(
     SOURCES
         advanced_controls.cpp
         buffer.cpp
-        context_handle.cpp
         emit_dynamic.cpp
         interop.cpp
         late_window.cpp
@@ -28,6 +27,7 @@ sushiruntime_add_module(
         log
         machine
         interop
+        context
     PRIVATE_DEPENDS
         sycl
         memory
@@ -36,7 +36,8 @@ sushiruntime_add_module(
         task
         graph
         execution
-        memory_exchange)
+        memory_exchange
+        context_access)
 
 sushiruntime_add_module_tests(
     MODULE api

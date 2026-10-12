@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* context_handle.hpp                                                     */
+/* context_handle_access.hpp                                              */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,10 +20,10 @@
 /**************************************************************************/
 
 /**
- * @file context_handle.hpp
- * @brief Declares ContextHandle, the opaque share of a runtime every handle holds.
+ * @file context_handle_access.hpp
+ * @brief Declares ContextHandleAccess, which builds a ContextHandle and reads one back.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+ * @see modules/surface/context/README.md
  */
 
 #pragma once
@@ -31,45 +31,45 @@
 #include <memory>
 #include <utility>
 
-#include <SushiRuntime/api/runtime/context.hpp>
+#include <SushiRuntime/context/context.hpp>
+#include <SushiRuntime/context/context_handle.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
-        struct ContextAccess;
-    } // namespace Detail
-
-    /**
-     * @brief Shares ownership of one runtime's context without naming what it holds.
-     *
-     * A Runtime and every graph, buffer and view it hands out hold one; the context is
-     * destroyed with the last of them. A copy shares the same context.
-     * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
-     */
-    class ContextHandle final
-    {
-        public:
-            /** @brief Holds no context. */
-            ContextHandle() noexcept = default;
-
-            /** @brief Returns whether this handle shares a context. */
-            [[nodiscard]] explicit operator bool() const noexcept { return context_ != nullptr; }
-
-        private:
-            // The library's sources build a handle and read it back through this one seam.
-            friend struct Detail::ContextAccess;
-
+        /**
+         * @brief Builds a ContextHandle from the opaque context and reads one back, for the
+         *        library's own sources.
+         * @see modules/surface/context/README.md
+         */
+        struct ContextHandleAccess
+        {
             /**
-             * @brief Shares a context the library built.
+             * @brief Returns the handle that shares a context.
              * @param context The context to share; null makes an empty handle.
              */
-            explicit ContextHandle(std::shared_ptr<Detail::Context> context) noexcept
-                : context_(std::move(context))
+            [[nodiscard]] static ContextHandle wrap(std::shared_ptr<Context> context) noexcept
             {
+                return ContextHandle(std::move(context));
             }
 
-            /** @brief The shared context; null for an empty handle. */
-            std::shared_ptr<Detail::Context> context_;
-    };
+            /** @brief Returns the share a handle holds; null for an empty handle. */
+            [[nodiscard]] static const std::shared_ptr<Context>&
+            share(const ContextHandle& handle) noexcept
+            {
+                return handle.context_;
+            }
+
+            /**
+             * @brief Returns the handle an owner keeps in its context_ member.
+             * @tparam Owner A type that befriends this struct, such as Runtime.
+             */
+            template <class Owner>
+            [[nodiscard]] static const ContextHandle& handle_of(const Owner& owner) noexcept
+            {
+                return owner.context_;
+            }
+        };
+    } // namespace Detail
 } // namespace SushiRuntime

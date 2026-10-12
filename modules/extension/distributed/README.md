@@ -85,8 +85,8 @@ knobs and counters. Until attach() runs, the runtime is a
 single machine: no header of `api` or `execution` names a transport or a share, and a buffer is
 shared through the handle attach() returns.
 
-attach() takes a Runtime. It reaches the context through `Detail::ContextAccess` of the
-`execution` module in `cluster.cpp`, so the header names no engine type.
+attach() takes a Runtime. It reaches the context through `Internal::ContextAccess` of the
+`context_access` module in `cluster.cpp`, so the header names no engine type.
 
 attach() refuses an empty secret when the transport's exposure() is Network. When the transport
 does not start, attach() installs nothing and returns `InvalidState` with the transport's
@@ -590,7 +590,7 @@ it.
 `WorkerAgent` builds `WorkerBufferCache`, `DispatchDeduplicator`, `MasterLink` and
 `DispatchExecutor` over one transport and one `RuntimeContext`, and is the transport's only event
 receiver. Its constructor takes a `Runtime` and reaches the context through
-`Detail::ContextAccess`, as `Cluster::attach()` does. The agent holds the context's
+`Internal::ContextAccess`, as `Cluster::attach()` does. The agent holds the context's
 `shared_ptr`, declared before the bricks, so the queue and the allocator they use are alive
 until the last of them is destroyed, whatever happens to the `Runtime`. Kernels run on the queue
 of device 0 of that context. The cache allocates shared USM on the same device through

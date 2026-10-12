@@ -34,6 +34,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -45,7 +46,6 @@
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
 #include <SushiRuntime/api/runtime/advanced_controls.hpp>
-#include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/api/runtime/runtime_config.hpp>
 
 namespace SushiRuntime
@@ -155,7 +155,8 @@ namespace SushiRuntime
             [[nodiscard]] Interop interop() const noexcept { return Interop(context_); }
 
         private:
-            friend struct Detail::ContextAccess;
+            // The library reads the handle of a runtime through this one seam.
+            friend struct Detail::ContextHandleAccess;
 
             /**
              * @brief Builds the context of a runtime on the devices and settings of a config.

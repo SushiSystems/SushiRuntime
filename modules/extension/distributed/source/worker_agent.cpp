@@ -48,7 +48,7 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
-#include <SushiRuntime/execution/context_access.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
 
 #include "dispatch_deduplicator.hpp"
 #include "dispatch_executor.hpp"
@@ -649,7 +649,7 @@ namespace SushiRuntime
 
         WorkerAgent::WorkerAgent(Runtime& runtime, std::shared_ptr<Transport> transport,
                                  sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
-            : impl_(std::make_unique<Impl>(SushiRuntime::Detail::ContextAccess::shared(runtime),
+            : impl_(std::make_unique<Impl>(SushiRuntime::Internal::ContextAccess::shared(runtime),
                                            std::move(transport), std::move(kernels),
                                            std::move(options)))
         {

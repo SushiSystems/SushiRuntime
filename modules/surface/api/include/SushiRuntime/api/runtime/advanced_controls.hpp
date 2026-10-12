@@ -38,8 +38,8 @@
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/machine/device_description.hpp>
 
-#include <SushiRuntime/api/runtime/context_handle.hpp>
 #include <SushiRuntime/api/runtime/runtime_config.hpp>
+#include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/machine/worker_pool.hpp>
 

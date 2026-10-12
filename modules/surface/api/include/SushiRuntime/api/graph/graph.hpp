@@ -43,7 +43,7 @@
 #include <SushiRuntime/api/graph/recorder.hpp>
 #include <SushiRuntime/api/graph/run_handle.hpp>
 #include <SushiRuntime/api/graph/step_driver.hpp>
-#include <SushiRuntime/api/runtime/context_handle.hpp>
+#include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
