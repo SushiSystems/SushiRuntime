@@ -31,11 +31,14 @@ SushiRuntime is below 1.0.0, and its public interface is not stable.
   `<SushiRuntime/sushiruntime.hpp>` and exposes only what your code needs, in your own types.
   When a release breaks the interface, that module is the only place you edit.
 
-Two libraries built on SushiRuntime show parts of such an adapter. SushiBLAS records every
-operation through one class and keeps the graph in another (`TaskRecorder` and `RecordedGraph`
-in `sushiblas/modules/engine/engine`), and SushiAI turns every `SushiRuntime::Error` into its own
-`Status` in one file (`sushiai/modules/core/core/source/seam.cpp`).
-[The integration guide](docs/guides/INTEGRATION.md#6-write-one-adapter) shows how to write one.
+`applications/examples/adapter/` is such an adapter in three files: a header in the host's own
+types, one source file that includes the library and maps every `ErrorCode` to the host's
+status, and a host that includes the header alone. Two libraries built on SushiRuntime do the
+same at their own size. SushiBLAS records every operation through one class and keeps the graph
+in another (`TaskRecorder` and `RecordedGraph` in `sushiblas/modules/engine/engine`), and
+SushiAI turns every `SushiRuntime::Error` into its own status in one file.
+[The integration guide](docs/guides/INTEGRATION.md#6-write-one-adapter) walks through the
+example.
 
 ## Requirements
 
@@ -129,9 +132,10 @@ The program includes `<SushiRuntime/sushiruntime.hpp>` and writes
 
 `Runtime::create()`, `state()` and `run()` return a `Result`. `value()` stops the process when
 the result holds an error; a program that handles the error tests the result first, as
-`applications/examples/operating_path_demo.cpp` does. No call of the library throws.
+`applications/examples/errors_demo.cpp` does. No call of the library throws.
 
-[applications/examples/README.md](applications/examples/README.md) describes the other examples.
+[applications/examples/README.md](applications/examples/README.md) describes the other
+examples, one per part of the interface.
 
 ## Use it from another project
 
@@ -170,7 +174,7 @@ modules/                One folder per module, grouped by tier, lowest first.
   surface/              interop, context, api (public);
                         memory_exchange, context_access (internal)
   extension/            distributed (public, optional)
-applications/examples/  Nine example programs on the public API
+applications/examples/  Sixteen example programs on the public API
 tests/                  Tests that cross module boundaries, and tests/package/, a consumer
                         built against the installed package
 cmake/                  Build functions and the tier table (SushiRuntimeTiers.cmake)

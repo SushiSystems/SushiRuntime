@@ -163,7 +163,19 @@ The library separates three kinds of failure.
 | A recording the graph refuses | A rule over a `State` that holds no memory | The graph keeps the `Error`; `refusal()` reads it and the next run returns it |
 | A rule the caller broke | A device index the runtime does not have; `value()` on an error | The process stops, through `SR_VERIFY`, `SR_ASSERT` or `SR_FATAL` |
 
-A host program that must not stop replaces the handler with `set_assertion_handler()`.
+A refused recording is read before the run, and the run entries return the same error:
+
+```cpp
+        const Error* refusal = graph.refusal();
+        // ...
+        const Result<void> compiled = graph.compile();
+        const auto ran = graph.run(K_STEPS);
+```
+
+Source: `applications/examples/errors_demo.cpp`
+
+A host program that must not stop replaces the handler with `set_assertion_handler()`, as
+`applications/examples/host_hooks_demo.cpp` does.
 `SR_ASSERT` is compiled out when `NDEBUG` is defined; the other two are always checked.
 [The core README](../../modules/foundation/core/README.md) has the full contract of `Result`,
 `Error` and the three macros.
@@ -199,6 +211,8 @@ Source: `applications/examples/operating_path_demo.cpp`
 
 `DeviceIndex{0}` is the first device SYCL lists, which is a CPU on one machine and a GPU on
 another. `rt.advanced().devices()` describes each index.
+`applications/examples/data_access_demo.cpp` uses each residency, an aligned buffer and a copy
+on the device's own queue.
 [The data README](../../modules/surface/api/include/SushiRuntime/api/data/README.md) covers the
 range calls, the residencies and what a moved-from handle is.
 
@@ -356,25 +370,61 @@ covers `based_at_device()`, `LateCount` and what happens when a live count excee
 the tasks it depends on. Use it for host C++ that shares data with kernels.
 
 ```cpp
-    auto g = rt.graph();
-    g.add_host(Reads{}, Writes(buf), [&released, &saw_release, p]()
-    {
-        saw_release.store(wait_for_gate(released), std::memory_order_release);
-        p[0] = 42;
-    });
+        graph.add_host(Reads(result), Writes(checksum),
+                       [r, sum]()
+                       {
+                           std::uint64_t total = 0;
+                           for (std::size_t i = 0; i < K_COUNT; ++i)
+                               total += r[i];
+                           sum[0] = total;
+                       },
+                       named("checksum"));
 ```
 
-Source: `modules/surface/api/tests/graph/running/test_async_step.cpp`
+Source: `applications/examples/tasks_demo.cpp`
 
 `add_task(reads, writes, body)` hands the body the queue and the events it must run after. The
 body submits what it needs and returns the event that ends its work. A library that calls
 another library with a queue records its work this way.
+
+```cpp
+        // The body submits two command groups and returns the event of the last one.
+        graph.add_task(Reads(values), Writes(staged, result),
+                       [v, s, r](sycl::queue& queue, const std::vector<sycl::event>& after)
+                       {
+                           const sycl::event doubled = queue.submit([&](sycl::handler& handler)
+                           {
+                               handler.depends_on(after);
+                               // ...
+                           });
+                           return queue.submit([&](sycl::handler& handler)
+                           {
+                               handler.depends_on(doubled);
+                               // ...
+                           });
+                       },
+                       named("double_then_add_one"));
+```
+
+Source: `applications/examples/tasks_demo.cpp`
 
 ### Work that shares nothing: `add_untracked`
 
 `add_untracked(launch, kernel)` records a kernel with no declared data. The runtime orders it
 against nothing and runs it on device 0 unless `On(...)` names another. It is wrong as soon as
 another rule of the graph touches the same memory.
+
+```cpp
+        graph.add_untracked(K_COUNT, [a](std::size_t i) { a[i] = 7u; }, named("apart"));
+```
+
+Source: `applications/examples/tasks_demo.cpp`
+
+### From a library: `extend`
+
+`extend(extension)` hands the graph's `Recorder` to a callable, and the nodes it records form
+one rule. A library on top of the runtime records its operations this way;
+`applications/examples/extension_demo.cpp` is one, with `scratch()`, `kernel()` and `task()`.
 
 ### Names and options
 
@@ -413,15 +463,14 @@ loop that should not allocate a report per tick. That form returns a pointer to 
 step and returns its report; the `State`s advance there.
 
 ```cpp
-    auto step = g.run_async().value();
-
-    // The caller is still running: this is the work a frame would overlap.
-    released.store(true, std::memory_order_release);
-
-    const RunReport report = step.wait().value();
+        auto started = graph.run_async();
+        // ...
+        RunHandle<Graph> step = std::move(started).value();
+        const bool was_pending = step.pending();
+        const RunReport overlapped = step.wait().value();
 ```
 
-Source: `modules/surface/api/tests/graph/running/test_async_step.cpp`
+Source: `applications/examples/stepping_demo.cpp`
 
 A runtime runs one graph at a time. A run entry called while another run is in flight on the
 same runtime returns `InvalidState`.
@@ -430,21 +479,18 @@ same runtime returns `InvalidState`.
 called the run. It is where a program writes a value the next step reads.
 
 ```cpp
-    std::vector<std::uint32_t> observed;
-    g.before_each_step([w](std::size_t finished_steps)
-     {
-         w[0] = static_cast<std::uint32_t>(finished_steps);
-         w[1] = K_BASE + static_cast<std::uint32_t>(finished_steps);
-     })
-     .before_each_step([w, &observed](std::size_t) { observed.push_back(w[1]); });
-
-    g.run(K_STEPS).value();
+        graph.before_each_step([&gain, &expected, &steps](std::size_t finished_steps)
+        {
+            gain[0] = static_cast<std::uint32_t>(finished_steps) + 1u;
+            expected += gain[0];
+            ++steps;
+        });
 ```
 
-Source: `modules/surface/api/tests/graph/running/test_run_driver.cpp`
+Source: `applications/examples/stepping_demo.cpp`
 
 `compile()` builds the plan and runs nothing. `Graph::plan()` returns a `PlanView` of the nodes
-in recording order. `cancel()` stops the run in flight of the graph it is called on, from any
+in recording order, which `applications/examples/tasks_demo.cpp` prints. `cancel()` stops the run in flight of the graph it is called on, from any
 thread. `Graph::clear()` removes every rule and keeps the graph.
 
 ## 7. A graph whose work changes: DynamicGraph
