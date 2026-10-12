@@ -89,7 +89,7 @@ sr test
 
 `sr build` makes a release build in `build/`. `sr test` runs the `functional` suite: the unit,
 integration and regression tests. [The CLI guide](docs/guides/CLI_GUIDE.md) lists every command,
-build type and suite, and [the architecture page](docs/architecture/ARCHITECTURE.md#14-build-time-configuration)
+build type and suite, and [the architecture page](docs/architecture/ARCHITECTURE.md#7-build-time-configuration)
 lists the CMake options.
 
 Every build and test in this repository goes through `sr`. A project that consumes the library
