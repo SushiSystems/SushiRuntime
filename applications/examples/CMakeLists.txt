@@ -67,6 +67,7 @@ sushiruntime_add_example(sr_streaming_world_demo   streaming_world_demo.cpp)
 sushiruntime_add_example(sr_operating_path_demo    operating_path_demo.cpp)
 sushiruntime_add_example(sr_errors_demo            errors_demo.cpp)
 sushiruntime_add_example(sr_tasks_demo             tasks_demo.cpp)
+sushiruntime_add_example(sr_stepping_demo          stepping_demo.cpp)
 sushiruntime_add_example(sr_adapter_demo
     adapter/adapter_demo.cpp
     adapter/sushiruntime_adapter.cpp)
