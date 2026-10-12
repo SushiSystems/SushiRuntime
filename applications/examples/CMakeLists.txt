@@ -65,6 +65,7 @@ sushiruntime_add_example(sr_coupled_fields_demo    coupled_fields_demo.cpp)
 sushiruntime_add_example(sr_game_engine_demo       game_engine_demo.cpp)
 sushiruntime_add_example(sr_streaming_world_demo   streaming_world_demo.cpp)
 sushiruntime_add_example(sr_operating_path_demo    operating_path_demo.cpp)
+sushiruntime_add_example(sr_errors_demo            errors_demo.cpp)
 sushiruntime_add_example(sr_adapter_demo
     adapter/adapter_demo.cpp
     adapter/sushiruntime_adapter.cpp)

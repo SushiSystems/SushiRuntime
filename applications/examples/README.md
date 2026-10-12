@@ -16,14 +16,16 @@ for the subject at hand:
 | `game_engine_demo.cpp` | An ECS-style frame loop built from the data flow, each system named with `name()` |
 | `streaming_world_demo.cpp` | A `DynamicGraph` whose set of work changes between steps |
 | `operating_path_demo.cpp` | `RuntimeConfig`, `advanced()`, `run()` with its error branch, `Dynamic` and a `read_range()` readback |
+| `errors_demo.cpp` | A `Result` tested and handled, a refused recording read with `refusal()`, `compile()` before any step, and `clear()` |
 | `adapter/` | A host program that reaches the library through one file, in its own types and its own status |
 | `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
 | `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
 
-The examples read most results with `value()`, which stops the process with the error's message
-when a call failed. `operating_path_demo.cpp` tests the result of each run and returns 1 with
-the message, and `distributed_demo.cpp` does the same when the secret cannot be read or the
-master does not start. `distributed_worker.cpp` returns the exit code of `run_worker()`.
+The examples read a result with `value()` where a failure is not their subject; `value()` stops
+the process with the error's message. `errors_demo.cpp` is the one about failures.
+`operating_path_demo.cpp` tests the result of each run and returns 1 with the message, and
+`distributed_demo.cpp` does the same when the secret cannot be read or the master does not
+start. `distributed_worker.cpp` returns the exit code of `run_worker()`.
 
 `distributed_kernels.hpp` is the header the last two share; they also include
 `<SushiRuntime/distributed/distributed.hpp>`. The distributed programs are built only when the
@@ -152,6 +154,47 @@ Both runs use `run()`, which returns the report or an `Error`. The program then 
 graph on purpose, checks that the refusal carries `ErrorCode::InvalidGraph` and prints the remedy its
 `switch` over `ErrorCode` picks for that code. `Runtime::create()` and the range calls return a
 `Result` too; the program reads them with `value()`, which stops the process on an error.
+
+## errors_demo.cpp
+
+The three ways a call fails, each handled the way a program would handle it.
+
+A cause outside the program comes back as an `Error` in a `Result`. The program tests
+`Runtime::create()` and leaves `value()` alone. It then asks for a `State` whose bytes fill half
+the address space. No device grants that, the result holds `AllocationFailed`, and the program
+asks for 64 cells.
+
+A recording the graph cannot keep is refused. `add_rule()` with a launch of 65 elements over
+the 64 cells of the `State` records nothing, so `size()` stays 0, and the graph keeps the
+`Error`. `refusal()` returns it at once. `compile()` returns the same error and builds no plan,
+and `run()` returns it and runs no step. The first refusal stays until `clear()`.
+
+`Graph::clear()` forgets the rules and the refusal. The program records the rule over 64 cells,
+`compile()` succeeds before any step has run, and `run(10)` uses the plan it built, so
+`compile_count()` is 1.
+
+A recorder refuses these, and the next run returns the kept error:
+
+| Recording | Code |
+| --- | --- |
+| A rule over a `State` that owns no memory | `InvalidAccess` |
+| A launch that reaches past the `State` it steps or reads | `InvalidGraph` |
+| A coupled rule whose input `State` is smaller than the one it writes | `InvalidGraph` |
+| More parameters than `NodeOptions::K_MAX_PARAMETERS` | `InvalidGraph` |
+| A late-bound node whose fault record cannot be allocated | `AllocationFailed` |
+
+A rule the caller broke is the third kind and has no line here, because it stops the process:
+a device index the runtime does not have, a window past the end of a buffer, `value()` on an
+error. `host_hooks_demo.cpp` installs the handler such a stop calls.
+
+```
+errors:
+  state(too many cells) -> AllocationFailed, so the program asks for 64 cells
+  refusal() -> InvalidGraph: add_rule(launch, state, kernel), rule 0: the count 65 reaches 65 elements and the State holds 64; shrink the launch or allocate the handle larger.
+  compile() and run() return that error: yes (rules recorded = 0)
+  after clear(): 10 steps, cell = 10, compiles = 1
+  result: CORRECT
+```
 
 ## adapter/
 
