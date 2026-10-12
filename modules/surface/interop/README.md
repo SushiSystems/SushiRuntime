@@ -37,7 +37,7 @@ The caller therefore keeps ownership of the handle in every row and closes it.
 Not established: whether the SYCL backend takes the handle over inside `import_external_memory`,
 or closes it in `release_external_memory`. The toolchain's `sycl/ext/oneapi/bindless_images.hpp`
 and `bindless_images_interop.hpp` say nothing about it for `resource_fd` or
-`resource_win32_handle`, and `docs/design/SYCL_VULKAN_INTEROP.md` in SushiEngine says only that an
+`resource_win32_handle`, and SushiEngine's design document `SYCL_VULKAN_INTEROP.md` says only that an
 import is "unmapped and released, never freed". Until the backend's rule is read from its own
 documentation, when the caller may close the handle (straight after the import, or only after
 the `Buffer` dies) is open for both kinds, and for `OpaqueFd` so is whether a close after a

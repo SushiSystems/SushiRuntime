@@ -99,8 +99,8 @@ step before the plan died. `expect_step_ended_by_its_graph` then expects `pendin
 Two regions each hold one host task that waits at the gate and then adds one to its own buffer. The
 test starts a step, drops region 1 while both tasks wait, releases the gate and settles the handle.
 The step must succeed with both buffers at one: the dropped region's task finished its write, and
-settling walked that region's per-step hooks. `drop()` used to destroy the region at once, so the
-settle read a freed recorder; AddressSanitizer reports that read. A following `run()` must leave
+settling walked that region's per-step hooks. The test guards against a `drop()` that destroys the region at once: the
+settle then reads a freed recorder, which AddressSanitizer reports. A following `run()` must leave
 the dropped region's buffer at one, raise the other to two and bring `compose_count()` to two.
 
 ### `ARegionDroppedAndRecordedAgainWhileAStepIsPendingRunsItsNewWork`
@@ -1060,8 +1060,8 @@ alone.
 
 An extension records a host node, calls `clear()` and records a second host node. The graph then
 holds one rule and one node, and the run executes the second node only. `extend()` holds a rule
-scope open around the extension, so a `clear()` that left the scope's state as it was recorded the
-second node into a rule that no longer existed.
+scope open around the extension, so a `clear()` that leaves the scope's state as it is records the
+second node into a rule the recorder has already dropped.
 
 ### `ANamedRuleTakesAtMostEightParameters`
 
@@ -1132,8 +1132,8 @@ the task's text from each.
 ### `GraphReportsAThrowingHostTaskAsKernelFailed`, `DynamicGraphReportsAThrowingHostTaskAsKernelFailed`
 
 A host task that throws is a failed step, so both graph types report `KernelFailed` from the
-synchronous and the asynchronous path. `run()` used to report `CompileFailed` for it, and
-`wait()` used to let the task's own exception through.
+synchronous and the asynchronous path. The tests guard against `CompileFailed` from `run()` and against the
+task's own exception leaving `wait()`.
 
 ### `AThrowingBuildIsCompileFailed`
 
@@ -1144,7 +1144,7 @@ follows the phase and not the exception type.
 
 ### `EveryTryEntryRunsOnBothGraphs`
 
-`expect_every_try_entry_runs` calls the eight `try_` entries once each on a graph whose single host
+`expect_every_run_entry_runs` calls the eight run entries once each on a graph whose single host
 task counts its runs. The count must be twelve on a `Graph` and on a `DynamicGraph`: one, two, one
 and two steps from the `run` forms, one each from the two `run_for` forms with a zero
 budget, and two each from the two `run_until` forms.
@@ -1163,8 +1163,8 @@ request back, on both graph types.
 
 `set_profiling(true)` followed by a run, twice, must leave `Graph::compile_count()` and
 `DynamicGraph::compose_count()` at one, and `set_profiling(false)` followed by a run must raise each
-to two. `PlanCache::set_profiling` used to mark the plan dirty on every call, so the `Graph` count
-read two after the second run.
+to two. The test guards against a `PlanCache::set_profiling` that marks the plan dirty on every call,
+under which the `Graph` count reads two after the second run.
 
 ### `AProfilingToggleOnADynamicGraphComposesOnceAndTimesItsNodes`
 
@@ -1202,8 +1202,8 @@ chain, because on the scheduler they would pass without the behaviour they test.
 ### `AFailedChainedRunOfOneStepAdvancesNoState`, `AFailedChainedRunOfSeveralStepsAdvancesAllButTheLast`
 
 A chained `run()` whose step faults must return an error and leave the `State` on the field it
-started on, with the starting value five in it. The chain used to advance before it checked, so the
-`State` showed six. A chained `run(3)` whose steps fault must leave seven: the two steps before
+started on, with the starting value five in it. The test guards against a chain that advances before it checks, under which the
+`State` shows six. A chained `run(3)` whose steps fault must leave seven: the two steps before
 the last have advanced, the last has not.
 
 ### `expect_run_for_lasts_until_cancelled`, `ABudgetPastTheClocksRangeRunsUntilCancelled`
@@ -1569,9 +1569,10 @@ A State with a recorded rule is move-assigned a new State. The next `run()` retu
 
 ### `ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField`
 
-A late-bound State rule used to take its read key when it was recorded and its write key at each
-replay. After one step the two fields have swapped, so a plan rebuilt then registered the rule as a
-reader and a writer of the same field and not as a reader of the current one.
+The test guards against a late-bound State rule that takes its read key when it is recorded and
+its write key at each replay. After one step the two fields have swapped, so a plan rebuilt then
+would register the rule as a reader and a writer of the same field and not as a reader of the
+current one.
 
 The graph holds a kernel that writes `K_MARK` into the State's second field, named with
 `Writes(state)`, and then the late-bound rule `next = current + 1`. After one step the second field

@@ -292,8 +292,8 @@ stepped field can vary its active count or sleep entirely with no recompile.
 A node names its operation in `NodeOptions::operation`, on any verb; there is no verb of its
 own for it. state_rule(), dynamic_kernel(Dynamic, State, kernel) and coupled_rule() do one thing
 more for such a rule: live_fields_of() builds the lists of the fields the rule reads and writes,
-registers the hook that rewrites them before each step, and
-`Detail::with_live_fields()` of `api/detail/live_fields.hpp` hands them to the node at replay.
+registers the hook that rewrites them before each step, and the node's description carries
+them as `Detail::LiveFields` (`api/detail/node_description.hpp`) to the replay.
 A rule that names no operation registers nothing.
 
 ## node_options.hpp
@@ -552,7 +552,7 @@ ordering against other tasks.
 
 extend(extension) calls `extension(Recorder&)` once, when it is called, and the nodes the
 extension records form one rule. It is how a library that records through the public Recorder
-joins a chain: `graph.add(...).extend([&](Recorder& r) { record_my_nodes(r); }).name("mine")`.
+joins a chain: an `extend()` call follows an `add()` and is followed by `name()`.
 The extension runs once, inside the extend() call, and never when a plan is built: what it
 records is replayed like any other rule. A body that needs the queue is recorded with
 `Recorder::task`. An extension that records nothing adds no rule, so a name() chained onto it
@@ -968,7 +968,7 @@ with run_async() is pending; the "StepDriver: moves" section gives the result in
 The returned region records work with the same add() surface as a static graph. region(key) is not
 a mutation: reading a region (`world.region(k).size()`) between two runs leaves compose_count()
 unchanged. A region is rebuilt at the next run when it was created, when something was recorded on
-it, when it was cleared or when one of its rules was renamed.
+it, when it was cleared or when one of its rules was given another name.
 
 ### plan_is_stale
 
@@ -1289,10 +1289,15 @@ a RunHandle instead. The work is already proceeding on the worker pool, so the c
 extract and then settle up:
 
 ```cpp
-auto step = simulation.run_async();
-extract_previous_frame();          // overlaps with the step
-RunReport report = step.wait();
+auto step = g.run_async().value();
+
+// The caller is still running: this is the work a frame would overlap.
+released.store(true, std::memory_order_release);
+
+const RunReport report = step.wait().value();
 ```
+
+The block is from `modules/surface/api/tests/test_async_step.cpp`.
 
 The handle is move-only and owns the obligation to finish the step: its destructor waits if `wait()`
 was not called, because the compiled plan must not be destroyed while workers are still touching its

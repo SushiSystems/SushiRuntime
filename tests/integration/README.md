@@ -398,7 +398,7 @@ event-clock window of the run, not merely near it.
 The converted `submit_ns` and `start_ns` of a host record are identical, because the scheduler
 stamps the same raw steady time into both. Those of a device record rarely are. The test tells the
 two kinds apart by that difference and not by a stored flag, because `NodeEventRecord` stays field
-for field identical to the engine's `NodeEvent`, as the global constraints of the design require.
+for field identical to the record the engine fills, as the global constraints of the design require.
 
 The chain guarantees that the host node is dispatched no earlier than the kernel's completion. The
 tolerance covers only the measurement uncertainty of the pairing, not scheduling jitter between

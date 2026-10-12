@@ -553,7 +553,7 @@ costs nothing.
 
 `poll_events` touches SYCL events through `get_info` and `wait`, which can surface an
 asynchronous or device error. Uncaught, it would escape the `std::thread` body and call
-`std::terminate`. The loop routes it through `record_run_error`, as `execute_task` does: the
+`std::terminate`. The loop records it in the run's `RunOutcome`, as `execute_task` does: the
 current run fails and the pool stays re-armable.
 
 ##### Backoff
@@ -614,7 +614,7 @@ so it is never skipped.
 
 A completion is counted against the executing worker's id, not the EBR slot id. EBR slot ids are
 handed out in order of first epoch touch across all threads, so they do not match worker ids. The
-read side, `completed_tasks_for`, uses the worker id too.
+read side, `completed_task_count`, uses the worker id too.
 
 ##### Downcast
 

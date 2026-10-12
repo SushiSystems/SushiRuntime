@@ -27,8 +27,7 @@ cares about the oneAPI, Intel and CUDA environment variables listed in `env_of_i
 
 `INTEL_LLVM_BUNDLE_DIRS` names the directories an intel/llvm bundle may sit under, in
 preference order. `hub install` writes `llvm-sycl`, the bundle SushiEngine configures with and
-the one SushiStack builds the GPU adapters for (SushiStack's
-`docs/design/GPU_BACKEND_PROVISIONING.md`, section 4), so it comes first. `llvm-sycl-nightly`
+the one SushiStack builds the GPU adapters for (section 4 of `GPU_BACKEND_PROVISIONING.md` among SushiStack's design documents), so it comes first. `llvm-sycl-nightly`
 is an older manual install. A `llvm_root` written into `config.local.toml` wins over both.
 
 `TOOLCHAIN_COMPILERS` gives the default compiler pair per toolchain, so `sr toolchain <name>`
@@ -201,21 +200,19 @@ label does not survive `gtest_discover_tests` on current CMake (see `tests/CMake
 A build tree with no stamp, from before the stamp existed or from a hand-run cmake, is
 reconfigured once so that the tree is known to match the requested configuration.
 
-GPU backend selection is delegated to CMake, `cmake/gpu/DetectGpu`, on every platform. It
+GPU backend selection is delegated to CMake, `cmake/gpu/DetectGpu.cmake`, on every platform. It
 resolves the vendor: nvidia to cuda, amd to rocm, intel, or cpu. "auto" detects which vendors
 have both a toolkit and hardware and targets them. Where nothing answers it builds the
 portable CPU/OpenCL path, so a missing CUDA toolkit does not hard-fail with "cannot find
 libdevice". "cpu" forces that path, and ASan and `--no-cuda` select it. DetectGpu is the single
 source of truth; the CLI does not probe nvcc itself.
 
-Windows used to be frozen to "cpu" on the grounds that it has no nvptx toolchain. That stopped
-being true: the host compiles `-fsycl-targets=spir64,nvidia_gpu_sm_89` with the bundled
-intel/llvm and the installed CUDA toolkit, and `hub install` offers that toolkit as a
-component. The freeze meant provisioning a toolkit the build could never use, with no way to
-override it. It also made the two CLIs in the workspace disagree about the same machine, since
-SushiEngine passed no backend at all and got "auto". Detection is one question with one
-answer, and it is asked in one place. `--no-cuda` now has an effect on Windows, where it used
-to print that it had none.
+Windows is not pinned to "cpu". The host compiles `-fsycl-targets=spir64,nvidia_gpu_sm_89`
+with the bundled intel/llvm and the installed CUDA toolkit, and `hub install` offers that
+toolkit as a component. A pin would provision a toolkit the build could never use, and would
+make the two CLIs of a workspace disagree about one machine, since SushiEngine passes no
+backend and gets "auto". Detection is one question with one answer, asked in one place, and
+`--no-cuda` has an effect on Windows as elsewhere.
 
 On Windows the compiler is toolchain-specific: intel-llvm uses clang++, oneapi uses icx-cl,
 adaptivecpp uses acpp. `-DSR_SYCL_TOOLCHAIN` is passed explicitly so that `CMakeLists.txt`
@@ -241,33 +238,30 @@ That message is what the user asked the command for.
 `sushiruntime` imports sushicore, the shared core underneath every Sushi CLI, at module load,
 so the suite cannot be collected without it.
 
-The tests used to run against a hand-written stub of that package. The stub was a liability
-twice over. It had to grow every time sushicore did, and a test could end up pinning the
-imitation and not the contract; one of them asserted on an attribute only the fake had.
-sushicore now ships inside the SushiStack repository, so the real package is reachable,
-installed in the environment or sitting next door, and the tests use it.
+The tests run against the real package, installed in the environment or sitting next door,
+and not against a hand-written stub. A stub has to grow every time sushicore does, and a test
+can end up pinning the imitation and not the contract, by asserting on an attribute only the
+fake has.
 
 ## tests/test_console_lazy.py
 
-Regression tests for the lazy console. `console.py` used to build the console at import time,
-which called `config_dir()`, then `find_project_root()`, and raised `SystemExit` outside a
-checkout. Because `cli.py` imports console transitively, every `sr` invocation died with "Not
-inside a SushiRuntime project", including `sr --help`, which Typer can answer with no project.
+Regression tests for the lazy console. They guard against a console built at import time: that
+build calls `config_dir()`, then `find_project_root()`, and raises `SystemExit` outside a
+checkout. Because `cli.py` imports console transitively, every `sr` invocation would end with
+"Not inside a SushiRuntime project", including `sr --help`, which Typer can answer with no
+project.
 
-Four of the five CLIs fixed this independently and sushiengine's copy never did, so
-`se --help` outside a checkout failed for as long as the copies existed. The lifecycle now
-lives in `sushicore.cli_console.LazyConsole`. These tests pin that this CLI is wired to it,
+The lifecycle lives in `sushicore.cli_console.LazyConsole`, one copy for every Sushi CLI. These tests pin that this CLI is wired to it,
 which is the part a shared implementation cannot check on its own.
 
 ## tests/test_docker.py
 
-`sr docker` used to hand-roll its own subprocess runner and did not go through
-`sushicore.proc.Runner`. That copy printed `" ".join(cmd)`, which quotes an argument with a
-space wrongly. It passed the bare "docker" name as `argv[0]` where a resolved path belonged.
-And it let a missing docker binary raise an unhandled `FileNotFoundError` in place of the
-shared not-found guidance.
+`sr container` runs Docker through `sushicore.proc.Runner` and has no subprocess runner of its
+own. A private runner gets three things wrong that `Runner` gets right: it prints
+`" ".join(cmd)`, which quotes an argument with a space wrongly; it passes the bare "docker"
+name as `argv[0]` where a resolved path belongs; and it lets a missing docker binary raise
+Python's file-not-found error in place of the shared not-found guidance.
 
-Routing it through `Runner` fixes all three but changes real behaviour that had no coverage.
 The tests pin what `docker.build` and `docker.run` hand to it: the argv for every flag
 combination, and that the interactive `docker run -it` invocation still lets `Runner.run`
 inherit this process's stdio exactly as `subprocess.run(cmd, cwd=str(cwd))` did.
@@ -276,27 +270,23 @@ inherit this process's stdio exactly as `subprocess.run(cmd, cwd=str(cwd))` did.
 
 Detection is one question, asked in one place, on every platform.
 
-Windows was frozen to `-DSR_GPU_BACKEND=cpu` on the grounds that the host has no nvptx
-toolchain. That stopped being true: the workspace's intel/llvm bundle compiles
-`-fsycl-targets=spir64,nvidia_gpu_sm_89` against the installed CUDA toolkit, and `hub install`
-offers that toolkit as a component. The freeze meant provisioning a toolkit the build could
-never use, with no flag to override it.
+The tests guard against a CLI that forces `-DSR_GPU_BACKEND=cpu` on Windows. The workspace's
+intel/llvm bundle compiles `-fsycl-targets=spir64,nvidia_gpu_sm_89` against the installed CUDA
+toolkit, so a forced "cpu" leaves a provisioned toolkit unused, and it makes two CLIs disagree
+about one machine: SushiEngine passes no backend and gets the "auto" of
+`cmake/gpu/DetectGpu.cmake`.
 
-Worse, it made the two CLIs disagree about the same machine. SushiEngine passed no backend at
-all and so got `cmake/gpu/DetectGpu`'s "auto", while SushiRuntime forced "cpu": one checkout,
-one host, two answers about which hardware to target.
-
-Both CLIs delegate to DetectGpu now. The tests pin the delegation and not the answer, because
-the answer is the part that is supposed to depend on the machine.
+Both CLIs delegate to that file. The tests pin the delegation and not the answer, because the
+answer is the part that depends on the machine.
 
 ## tests/test_gpu_backend_resolution.py
 
 GPU backend selection resolves a set of vendors and drops the ones with no hardware.
 
-`cmake/gpu/DetectGpu.cmake` used to elect one vendor: an if/elseif chain that looked for nvcc
-and, having found it, never looked for ROCm. A machine holding both cards silently built for
-one of them. That is the exact guess `gpu/Cuda.cmake` refuses to make between two NVIDIA
-cards, made one level up where nothing was watching. Selection is a set now, and the tests pin
+The tests guard against electing one vendor: an if/elseif chain that looks for nvcc and, having
+found it, never looks for ROCm builds a machine that holds both cards for one of them. That is
+the guess `gpu/Cuda.cmake` refuses to make between two NVIDIA cards, made one level up.
+Selection is a set, and the tests pin
 both halves of that: every requested vendor is targeted, and a vendor whose hardware never
 answers drops back out and does not poison the build with a triple it cannot fill.
 

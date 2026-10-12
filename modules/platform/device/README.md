@@ -43,7 +43,7 @@ The source is `modules/platform/device/source/device_queue_set.cpp`.
    waited for. `raise_asynchronous_errors()` is its sibling that does not wait: it calls
    `throw_asynchronous()` on every built queue through the same ladder, and the engine calls it
    when a scheduled run has drained.
-2. **The NUMA fallback is resolved and logged at construction.** `get_numa_local_queue()` logs
+2. **The NUMA fallback is resolved and logged at construction.** `queue_or_numa_local()` logs
    nothing on a lookup. Construction logs one WARN that lists the nodes below the highest populated
    one that hold no device, and one INFO that states the rule for every id outside the table.
 3. **A bad device index stops the process.** `require_index()` checks it with `SR_VERIFY`, and the
