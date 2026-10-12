@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — docs: Cited the source file of every manual example, added the allow-list of the truth checker and removed the em dashes of the design documents (`docs/.docs_truth_allow`, `INTRODUCTION.md`, `ENGINE_BACKBONE_REFACTOR.md`).
 - 2026-10-12 — docs: Shortened the distributed guide to 594 lines and corrected the test notes and the module notes against the sources (`DISTRIBUTED_GUIDE.md`, `tests/integration/README.md`, `KNOWN_ISSUES.md`).
 - 2026-10-12 — docs: Rewrote the manual for the single-header, Result-only interface and added the stability notice and the adapter section (`README.md`, `INTRODUCTION.md`, `ARCHITECTURE.md`, `INTEGRATION.md`).
 - 2026-10-12 — execution: Fixed a node that writes a shared buffer running on the chain under a cluster, where nothing told the coordinator it finished and the buffer's version stayed (`chain_plan.cpp`).
