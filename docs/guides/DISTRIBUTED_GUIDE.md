@@ -24,13 +24,7 @@ and the result stays correct.
 The layer is off by default. Build it with `sr build --distributed`, which sets the CMake option
 `SR_ENABLE_DISTRIBUTED`; without it nothing under `modules/extension/distributed/` is compiled.
 The layer adds no third-party dependency: the TCP transport uses the platform's sockets, and
-SHA-256 and HMAC are written in the module.
-
-```
-sr build --distributed
-sr test --distributed
-sr run sr_distributed_tests -- --gtest_filter='Integration_DistributedE2ETest.*'
-```
+SHA-256 and HMAC are written in the module. `sr test --distributed` runs its tests.
 
 ## 2. Trust model
 
@@ -60,33 +54,17 @@ other machine can reach, which is the default bind of `127.0.0.1`.
 ## 3. Run the demo
 
 `applications/examples/distributed_demo.cpp` is a master and
-`applications/examples/distributed_worker.cpp` is its worker. Both are built by
-`sr build --distributed`.
-
-On one machine no secret is needed, because the master listens on loopback. Start the two in
-either order, each in its own terminal:
+`applications/examples/distributed_worker.cpp` is its worker. `sr build --distributed` builds
+both. On one machine no secret is needed, because the master listens on loopback. Start the two
+in either order, each in its own terminal:
 
 ```
 sr run sr_distributed_demo
 sr run sr_distributed_worker -- --master 127.0.0.1:5555
 ```
 
-`sr run` passes what follows `--` to the program. The master prints where the task ran:
-
-```
-distributed_demo: N = 1048576, result CORRECT
-  ran on: a worker
-  offloaded=1 declined=0 redispatched=0 stale_writebacks=0
-```
-
-For two machines, make a key file first (§4), then:
-
-```
-sr run sr_distributed_demo -- --bind 0.0.0.0 --port 5555 --secret-file cluster.key
-sr run sr_distributed_worker -- --master 192.168.1.10:5555 --secret-file cluster.key
-```
-
-The demo's own flags are listed in `applications/examples/README.md`.
+[The examples README](../../applications/examples/README.md) has the demo's flags, its output
+and the two commands for two machines.
 
 ## 4. Start a master
 
@@ -123,11 +101,9 @@ Source: `applications/examples/distributed_demo.cpp`, which includes
 calls `SharedSecret::from_file` when a file was named.
 
 `Cluster::attach` builds the master, binds the port, starts it and installs it on the runtime.
-It returns a `Result<Cluster>` and logs one line when it listens:
-
-```
-distributed master listening on 0.0.0.0:5555, protocol v3, authentication on
-```
+It returns a `Result<Cluster>` and logs one line when it listens, which starts
+`distributed master listening on` and names the address, the protocol version and whether
+authentication is on.
 
 The handle it returns is a view: copies name the same master, and destroying one changes
 nothing. The runtime stops the master when the runtime is destroyed; `cluster.detach()` does it
@@ -154,11 +130,7 @@ other machines, write the address out: `0.0.0.0`, `::` or the address of one int
 ### When a secret is required
 
 `attach` refuses an empty secret on a transport other machines can reach. For TCP that is every
-bind address other than `127.0.0.0/8`, `::1` and `localhost`. The error's message says so:
-
-```
-Cluster::attach: the transport can be reached from other machines and ClusterOptions::secret is empty; load one with SharedSecret::from_file(), or bind the master to a loopback address.
-```
+bind address other than `127.0.0.0/8`, `::1` and `localhost`. The error's message says so; §13 quotes it.
 
 ### Make a secret file
 
@@ -171,13 +143,7 @@ head -c 32 /dev/urandom > cluster.key
 chmod 600 cluster.key
 ```
 
-On Windows, in PowerShell:
-
-```
-$key = New-Object byte[] 32
-[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($key)
-[IO.File]::WriteAllBytes("$PWD\cluster.key", $key)
-```
+[The examples README](../../applications/examples/README.md) has the PowerShell form.
 
 `SharedSecret::from_file(path)` returns a `Result`: the secret, or `InvalidAccess` when the file
 cannot be read or its length is outside those bounds, with a message that names the file. `SharedSecret::from_environment(name)` reads the
@@ -232,64 +198,26 @@ Source: `applications/examples/distributed_worker.cpp`. `register_kernels` is th
 §6.
 
 `run_worker` reads the flags, loads the secret, builds a runtime, connects, serves the master
-until a signal and returns the exit code. It logs:
+until a signal and returns the exit code.
 
-```
-worker joining master 192.168.1.10:5555, protocol v3, authentication on
-connected to master 192.168.1.10:5555 (peer 1)
-registered with master (peer 1) as worker 1: liveness 5000 ms, chunks of 262144 bytes, new session
-```
+### Flags, exit codes and signals
 
-### Flags
-
-| Flag | Environment | Default |
-| --- | --- | --- |
-| `--master host:port` | `SR_MASTER` | required; a host name, an IPv4 address or `[ipv6]:port`; port 0 is refused |
-| `--secret-file path` | `SR_CLUSTER_SECRET_FILE` | none |
-| `--name text` | `SR_WORKER_NAME` | the machine's host name, else `worker`; at most 255 bytes |
-| `--max-jobs n` | `SR_WORKER_MAX_JOBS` | 1024; tasks that may wait to run, from 1 to 4294967295 |
-| `--cache-bytes n` | `SR_WORKER_CACHE_BYTES` | 0, which takes half of the device's memory |
-| `--heartbeat-ms n` | `SR_WORKER_HEARTBEAT_MS` | 1000; at least 1 |
-| `--pull-idle-timeout-ms n` | `SR_WORKER_PULL_IDLE_TIMEOUT_MS` | 5000; silence that fails a buffer pull, 0 waits without a limit |
-| `--connect-timeout-s n` | `SR_WORKER_CONNECT_TIMEOUT_S` | 60; time allowed to reach the master the first time, 0 waits without a limit |
-| `--no-reconnect` | | reconnecting is on |
-| `--log-level name` | | unchanged; `off`, `error`, `warn`, `info` or `debug` |
-| `--version` | | prints `sushiruntime worker, protocol v3, build <version>` and exits 0 |
-| `--help` | | prints the flags and exits 0 |
-
-A flag beats its environment variable, which beats the default. A variable set to nothing counts
-as unset. A value follows its flag as the next argument or after `=`.
+`--master host:port` is the one required flag; `--secret-file path` names the key file. `--help`
+prints every flag, and each flag that takes a value has an environment variable. The tables of
+flags, defaults and exit codes are in [the module README](../../modules/extension/distributed/README.md),
+section "worker_main.hpp". The codes a deployment meets: 2 when the master was not reached within
+the connect timeout (60 s by default), 3 when the secrets of the two machines differ, 4 when the
+master speaks another protocol version, 5 when the master was lost and `--no-reconnect` was
+given.
 
 `run_worker(argc, argv, kernels)` refuses a flag it does not know. If your worker has flags of
 its own, parse the command line yourself, fill a `WorkerOptions` and call
 `run_worker(options, kernels)`. That overload reads no environment variable.
 
-### Exit codes
-
-| Code | Meaning |
-| --- | --- |
-| 0 | Stopped by a signal, in order; also `--help` and `--version` |
-| 1 | A bad or unknown flag, no master given, an unknown log level, or a secret file that cannot be read or holds fewer than 32 bytes. One line on the error stream, prefixed `sushiruntime worker: `, says which |
-| 2 | The master was not reached within the connect timeout |
-| 3 | Authentication failed: the secrets of the two machines differ |
-| 4 | The master speaks another protocol version, or the peer is not a SushiRuntime master |
-| 5 | The master was lost and `--no-reconnect` was given |
-| 70 | An exception reached `run_worker`, the worker did not start, or the registry is null |
-| 130 | A second signal ended the process at once |
-
-### Signals
-
 The first SIGINT or SIGTERM (and SIGBREAK on Windows) asks the worker to stop. It takes no more
 tasks, reports the queued ones as shutting down, lets the running kernel finish, sends `GOODBYE`
-and exits 0. The master takes the worker's tasks back at once instead of waiting out its
-liveness timeout, and logs:
-
-```
-worker 1 "node-b" 192.168.1.11:50312 lost: said GOODBYE (shutdown): worker stopping; 0 tasks returned to the scheduler
-```
-
-The worker notices the signal within 100 ms. A second signal ends the process immediately with
-code 130 and runs no destructor.
+and exits 0. The master takes the worker's tasks back at once. A second signal ends the process
+with code 130 and runs no destructor.
 
 ### Reconnection
 
@@ -315,25 +243,11 @@ A kernel is a function the worker calls with the task's buffers. It submits work
 is given and returns the event:
 
 ```cpp
-namespace DistributedDemo
-{
-    using SushiRuntime::operator""_op;
-
     /** @brief Names the operation that adds two float vectors element by element. */
     inline constexpr auto K_VECTOR_ADD = "demo.vector_add"_op;
+```
 
-    /** @brief Writes the sum of one element of @p a and @p b to the same element of @p sum. */
-    inline void add_element(const float* a, const float* b, float* sum,
-                            std::size_t index) noexcept
-    {
-        sum[index] = a[index] + b[index];
-    }
-
-    /**
-     * @brief Runs K_VECTOR_ADD on the machine that received the task.
-     * @param inputs The two addends, in the order the task lists them.
-     * @param outputs The sum; its size gives the element count.
-     */
+```cpp
     inline sycl::event add_vectors(
         sycl::queue& queue, SushiRuntime::span<const SushiRuntime::Distributed::BufferView> inputs,
         SushiRuntime::span<const SushiRuntime::Distributed::BufferView> outputs,
@@ -354,11 +268,10 @@ namespace DistributedDemo
     {
         kernels.register_kernel(K_VECTOR_ADD, add_vectors);
     }
-} // namespace DistributedDemo
 ```
 
-Source: `applications/examples/distributed_kernels.hpp`, which includes
-`<SushiRuntime/distributed/distributed.hpp>`.
+Source: `applications/examples/distributed_kernels.hpp`, in its namespace `DistributedDemo`.
+`add_element()` of the same header writes one element of the sum.
 
 A `BufferView` is an address and a size in bytes. The views arrive in the order the task lists
 its buffers and stay valid until the returned event completes. `as<T>()` casts the address and
@@ -416,26 +329,7 @@ The demo keeps the two equal by calling `add_element()` from both.
 `record_registered_task()` (`registered_task.hpp`) removes the second statement of the work: it
 takes a `KernelRegistry` and records a task that runs the registered kernel on this machine, or
 on a worker once a cluster is attached. It records through a `Recorder&`, so a graph calls it
-inside `extend()`:
-
-```cpp
-        NodeOptions options;
-        options.name = "registered_sum";
-        options.operation = K_VEC_ADD;
-        const BufferView inputs[] = {a.view(), b.view()};
-        const BufferView outputs[] = {out.view()};
-
-        auto graph = master_runtime.graph();
-        graph.extend([&](Recorder& recorder)
-        {
-            record_registered_task(recorder, *kernels, options,
-                                   span<const BufferView>(inputs, 2),
-                                   span<const BufferView>(outputs, 1));
-        });
-        graph.run().value();
-```
-
-Source: `modules/extension/distributed/tests/test_distributed_e2e.cpp`.
+inside `extend()`; `modules/extension/distributed/tests/test_distributed_e2e.cpp` shows the call.
 
 ## 7. Share buffers
 
@@ -443,13 +337,8 @@ A buffer can cross only after you share it. `Cluster::share(buffer)` shares one 
 `Cluster::share(state)` shares both allocations of a stepped field; `share(address, bytes)`
 shares USM you own. `share` is a member of the handle `attach` returned, so a buffer cannot be
 shared before a cluster exists. The handle must be `Residency::Shared` or `Residency::Host`: the
-master reads the allocation on the host, and a device-resident handle stops the process.
-
-```cpp
-        auto a = cluster.share(runtime.buffer<float>(count).value());
-```
-
-Source: `applications/examples/distributed_demo.cpp`.
+master reads the allocation on the host, and a device-resident handle stops the process. The
+first block of §6 shares three buffers.
 
 A task may leave only when all of these hold at compile time: it names an operation, a
 registered worker has a kernel for that operation, every buffer it reads or writes is shared,
@@ -471,25 +360,18 @@ running task holds.
 
 ## 8. What the default policy does
 
-At dispatch the master asks an `OffloadPolicy` which worker gets the task, or none. The default
-is `LeastLoadedOffloadPolicy`:
-
-- A task whose inputs total under 64 KiB stays on the master. Only the bytes the task reads
-  count; outputs do not.
-- A worker whose last reported free device memory is below the input size is skipped. A worker
-  that reports 0 is treated as unknown and stays eligible.
-- Of the workers left, the one with the lowest estimate wins. The estimate adds the worker's
-  last ping round trip, a transfer time for the inputs, and one millisecond per task already out
-  on that worker.
-
-The master offers the policy only workers with room in their job queue (`--max-jobs`), so a full
-worker is never picked.
+At dispatch the master asks an `OffloadPolicy` which worker gets the task, or none. The default,
+`LeastLoadedOffloadPolicy`, keeps a task whose inputs total under 64 KiB on the master and
+otherwise picks the worker with the lowest estimated cost. [the module README](../../modules/extension/distributed/README.md),
+section "offload_policy.hpp", has the estimate and which workers are offered.
 
 To send every task whatever its size, pass a policy with a threshold of 0:
 
 ```cpp
-options.policy = std::make_shared<Distributed::LeastLoadedOffloadPolicy>(0);
+        options.policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
 ```
+
+Source: `modules/extension/distributed/tests/test_distributed_e2e.cpp`.
 
 To write your own, implement `OffloadPolicy::pick_worker` and return the `worker_id` of one of
 the workers you were offered, or nothing to run the task locally. The call runs on a pool thread
@@ -524,7 +406,7 @@ are read one by one, not at one instant.
 | `send_queue_full` | Dispatches refused because the worker's control queue was full |
 | `alive_workers` | Workers registered and answering now |
 | `pending_tasks` | Tasks out on a worker now |
-| `workers` | One `WorkerSnapshot` per registered worker |
+| `workers` | One `WorkerSnapshot` per alive worker |
 
 A `WorkerSnapshot` holds the worker's `id`, `name` and `endpoint`, its `inflight` count, the
 `rtt_micros` of its last ping, the `free_mem` of its last pong, the `queue_depth` and
@@ -538,11 +420,7 @@ between the two machines.
 `cluster.offloaded()`, `declined()`, `redispatched()`, `stale_writebacks()` and
 `alive_workers()` return single values without building the worker list.
 
-A worker logs its own counters once, when it stops:
-
-```
-worker stopped: 12 tasks run; failed: 0 kernel, 0 output allocation, 0 input unavailable, 0 unknown operation, 0 shutting down; cache 8388608 bytes, 0 evictions; 0 reconnects
-```
+A worker logs its own counters once, when it stops, in a line that starts `worker stopped:`.
 
 ## 10. What happens when something fails
 
@@ -578,18 +456,10 @@ The worker, if it is still alive, sees the close, reconnects and registers again
 ### A link stalls
 
 A link stalls when the other machine stops taking bytes: the connection stays open and nothing
-moves. Two timers watch for it.
-
-- The liveness timeout closes a worker that has also stopped sending, with the two lines above.
-  A write that has been stuck on that socket for at least 1 s is ended by the close, and the
-  loss is reported within about 100 ms.
-- `write_idle_timeout` (5 s) closes a peer whose socket takes no byte for that long, even while
-  frames still arrive from it. The cause in the log is then
-  `write stalled (no byte left for 5000 ms)`.
-
-A write that had been stuck for less than 1 s when liveness closed the worker is left to the
-second timer. That is the usual case when `liveness_timeout` is set below 1 s: the worker's
-tasks then come back after `write_idle_timeout`, not after the liveness timeout.
+moves. Two timers watch for it. The liveness timeout closes a worker that has also stopped
+sending, with the two lines above. `write_idle_timeout` (5 s) closes a peer whose socket takes
+no byte for that long, even while frames still arrive from it; the cause in the log is then
+`write stalled (no byte left for 5000 ms)`.
 
 ### One task goes missing
 
@@ -680,12 +550,9 @@ no kernel for the operation.
 
 ## 11. Protocol versions
 
-The wire protocol is version 3. Master and worker must carry the same version: a peer of another
-version is refused, and both sides log the two numbers. Build the master and every worker from
-one commit. `--version` on a worker prints the version it speaks. The frame layout and the table
-of versions are in
-[`modules/extension/distributed/README.md`](../../modules/extension/distributed/README.md),
-section "Protocol versions".
+The wire protocol is version 3, and a peer of another version is refused. Build the master and
+every worker from one commit; `--version` on a worker prints the version it speaks.
+[The module README](../../modules/extension/distributed/README.md) has the frame layout.
 
 ## 12. Limits
 
@@ -701,7 +568,6 @@ section "Protocol versions".
 | One master | The master does not fail over, and nothing about a cluster survives its process |
 | Workers present at compile | A graph compiled before a worker registered does not use that worker for an operation no earlier worker had |
 | Same layout on both ends | Frame fields are little-endian on every machine, but buffer bytes cross as they lie in memory, so master and worker must agree on the byte order and layout of your element types |
-| No measured figures | `tests/benchmark/benchmark_distributed_offload.cpp` measures the round trip. It has not been run yet, so this guide quotes no throughput |
 
 Defects that are recorded and not yet fixed are in
 [`KNOWN_ISSUES.md`](../reference/KNOWN_ISSUES.md).
@@ -726,12 +592,3 @@ Find the line you see. The second column says which side shows it.
 | `task T taken back from worker N: no result within the task deadline` | master | The kernel runs longer than `task_deadline`. Raise it, or set it to 0 for no bound |
 | `task T: input buffer B version V did not arrive` | worker | The pull went quiet for the pull idle timeout. Check the link; on a slow one raise `--pull-idle-timeout-ms` |
 | `task T: cannot allocate N bytes for buffer B (budget X, in use Y)` | worker | The buffers of one task do not fit the cache. Raise `--cache-bytes` |
-
-## 14. See also
-
-- [`modules/extension/distributed/README.md`](../../modules/extension/distributed/README.md):
-  how the code is built, class by class.
-- [`ARCHITECTURE.md`](../architecture/ARCHITECTURE.md) §6: where the layer sits in the runtime.
-- [`CLI_GUIDE.md`](CLI_GUIDE.md): `sr build`, `sr test` and `sr run`.
-- `applications/examples/distributed_demo.cpp`, `applications/examples/distributed_worker.cpp`
-  and `applications/examples/distributed_kernels.hpp`: the programs of §3.
