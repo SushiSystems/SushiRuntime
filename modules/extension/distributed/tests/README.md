@@ -445,7 +445,10 @@ that arrived.
 
 No message of version 3 carries a bool, so the bool check runs on `FieldReader::read_bool` directly.
 The enumeration checks replace one byte of a golden payload and expect `OutOfRange` at that byte's
-offset. The header checks cover a wrong magic, another version, an unknown type, a reserved flag,
+offset. `REJECT`, `GOODBYE`, `TASK_RESULT`, `BUFFER_CHUNK` and `BUFFER_ABORT` carry the
+enumerations. A `TASK_DISPATCH` of version 3 carries none, so its check is on the one bounded byte
+it has: a parameter count of 9, at offset 18 of the golden payload, behind the task id, the
+operation and the 6-byte name field. The header checks cover a wrong magic, another version, an unknown type, a reserved flag,
 the last-chunk flag on a frame that is not a chunk, and a payload length one byte above 1 MiB.
 
 ### `ListCountBoundedByRemainingBytes`

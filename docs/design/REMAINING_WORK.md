@@ -167,6 +167,14 @@ round did not close:
 - **`NodeOptions` has no named setters**, so naming only an operation means spelling the width
   before it.
 - **`version.hpp` says 0.3.0** until the release commit.
+- **The allocation tests are blind to the library on Windows.** The run loop and the report
+  builder moved into the shared library, whose allocations a counter in the test binary does
+  not see. A static-link build of that test, or an allocation observer the library exports,
+  restores the proof; `tests/allocation/README.md` says what is proven today.
+- **A plan that touches a shared buffer under a cluster leaves the chain layer**, so that the
+  scheduler's poller reports completions. `ChainRun` reporting them itself would keep the chain.
+- **The dispatch decoder accepts a name of up to 255 bytes** where the encoder refuses more
+  than `K_MAX_DISPATCH_NAME_BYTES`.
 - **In the consumers:** SushiAI has no `Status` code for a runtime that is busy with another
   run; SushiEngine keeps `.value()` in four play-time groups (device state reads and writes,
   neighbour regrowth, the water load, the skin pool), does not test the null entity a failed

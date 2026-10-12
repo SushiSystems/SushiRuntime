@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-12 — execution: Fixed a node that writes a shared buffer running on the chain under a cluster, where nothing told the coordinator it finished and the buffer's version stayed (`chain_plan.cpp`).
+- 2026-10-12 — tests: Moved the wire format tests to the version 3 offsets of a dispatch, and stated what the allocation counter cannot see on Windows (`test_wire_format.cpp`, `test_steady_state_allocation.cpp`).
 - 2026-10-12 — api: Breaking change: Made the constructors of Recorder, Region and ContextHandle and the moves of Recorder private, and the region and capture constructors explicit (`recorder.hpp`, `region.hpp`, `buffer_region.hpp`).
 - 2026-10-12 — api: Built every Buffer through one private function, so the two Interop buffer calls return AllocationFailed where an exception left them (`buffer.hpp`, `interop.hpp`, `Buffer::adopt`).
 - 2026-10-12 — api: Breaking change: Stopped the process on a placement or a device slot the runtime does not own, and refused a rule over an empty State with InvalidAccess (`recorder.hpp`, `recorder.cpp`).

@@ -11,13 +11,18 @@ symbol or passage it explains, and that header's file block cites this page.
 ### classify_chain
 
 Any doubt leaves the plan on the scheduler. classify_chain() refuses the chain for native host work,
-an offload candidate, a device value read at dispatch, a node with no USM region, a region this
-context did not allocate, or two devices.
+a node the installed coordinator acts on, a device value read at dispatch, a node with no USM
+region, a region this context did not allocate, or two devices.
 
-An offload candidate is a node whose `OffloadState::offloadable` is set, which only the installed
-coordinator's prepare() does, when the engine prepares the plan, for a node it has a worker and shared buffers for. The
-operation a node names does not decide: with no coordinator installed, or none that takes the
-operation, a named node is chained like an unnamed one.
+With a coordinator installed, it acts on a node in two cases. The node is an offload candidate:
+`OffloadState::offloadable` is set, which only the coordinator's prepare() does, when the engine
+prepares the plan, for a node it has a worker and shared buffers for. Or the node runs locally and
+the coordinator records what it wrote: its `OffloadState` holds a `payload` or a `live_writes`
+list. Only the scheduler's poller calls `on_local_completion()`, and the chain has no poller, so a
+chained node would leave the version of a shared buffer it wrote where it was.
+
+The operation a node names does not decide. With no coordinator installed a named node is chained
+like an unnamed one, and so is a node the installed coordinator keeps nothing for.
 
 ## chain_run.hpp
 

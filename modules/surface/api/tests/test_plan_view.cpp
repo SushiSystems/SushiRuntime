@@ -80,8 +80,8 @@ TEST(Integration_PlanView, CompileReturnsTheRecordersRefusal)
 {
     auto rt = Runtime::create().value();
     auto graph = rt.graph();
-    graph.add_untracked(K_WIDTH, On(DeviceIndex{rt.advanced().device_count()}),
-                        [](std::size_t) {});
+    State<int> empty;
+    graph.add_rule(empty, [](std::size_t, const int*, int*) {});
     ASSERT_NE(graph.refusal(), nullptr);
 
     const auto compiled = graph.compile();

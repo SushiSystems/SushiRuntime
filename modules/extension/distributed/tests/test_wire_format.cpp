@@ -369,7 +369,7 @@ TEST(Unit_WireFormat, FrameHeaderGolden)
     const Bytes golden = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x03, 0x00, 0x07, 0x00, 0x0C, 0x0B,
                                     0x0A, 0x00 });
     Bytes encoded;
-    append_frame_header(FrameHeader{ 2, MessageType::TaskDispatch, 0, 0x000A0B0C }, encoded);
+    append_frame_header(FrameHeader{ K_PROTOCOL_VERSION, MessageType::TaskDispatch, 0, 0x000A0B0C }, encoded);
     EXPECT_EQ(encoded, golden);
 
     FrameHeader header;
@@ -734,12 +734,10 @@ TEST(Unit_WireFormat, RejectsOutOfRangeEnumAndBool)
     EXPECT_EQ(result.status, CodecStatus::OutOfRange);
     result = decode_with_byte<GoodbyeMessage>(golden_goodbye(), 0, 4);
     EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    result = decode_with_byte<TaskDispatchMessage>(golden_task_dispatch(), 12, 5);
+    // The parameter count sits behind the task id, the operation and the 6-byte name field.
+    result = decode_with_byte<TaskDispatchMessage>(golden_task_dispatch(), 18, 9);
     EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, 12u);
-    result = decode_with_byte<TaskDispatchMessage>(golden_task_dispatch(), 21, 9);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, 21u);
+    EXPECT_EQ(result.offset, 18u);
     result = decode_with_byte<TaskResultMessage>(golden_task_result(), 8, 0);
     EXPECT_EQ(result.status, CodecStatus::OutOfRange);
     EXPECT_EQ(result.offset, 8u);
@@ -793,7 +791,7 @@ TEST(Unit_WireFormat, ListCountBoundedByRemainingBytes)
     EXPECT_EQ(proof_message.ops.capacity(), 0u);
 
     // 0x0CCCCCCD handles of 20 bytes each come to 2^32 + 4 bytes, past a 32-bit product.
-    const std::size_t inputs_offset = 38;
+    const std::size_t inputs_offset = 35;
     Bytes dispatch = prefix_of(golden_task_dispatch(), inputs_offset);
     const Bytes wrapping_count = bytes_of({ 0xCD, 0xCC, 0xCC, 0x0C });
     const Bytes two_handles(2 * K_BUFFER_HANDLE_BYTES, std::byte{ 0 });

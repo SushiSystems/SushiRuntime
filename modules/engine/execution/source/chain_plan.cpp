@@ -44,13 +44,28 @@ namespace SushiRuntime
         namespace
         {
             /**
+             * @brief Reports whether the installed coordinator acts on a node when it runs.
+             * @param node A compiled, non-sentinel node that ExecutionEngine::prepare() has seen.
+             * @return True for a node a worker may run and for a node whose local completion
+             *         the coordinator records: one with stored handles or with live write lists.
+             * @see modules/engine/execution/README.md
+             */
+            bool is_coordinator_concern(const Internal::Graph::Node& node) noexcept
+            {
+                const Internal::Graph::OffloadState* offload = node.offload_state();
+                return offload != nullptr && (offload->offloadable || offload->payload != nullptr ||
+                                              offload->live_writes != nullptr);
+            }
+
+            /**
              * @brief Reports whether one node's kind and bindings allow it on the chain.
              * @param node A compiled, non-sentinel node.
-             * @return False for native host work and for a node the installed coordinator
-             *         marked as one a worker may run; the operation a node names does not
-             *         decide.
+             * @param has_coordinator Whether the context has an offload coordinator installed.
+             * @return False for native host work and, with a coordinator installed, for a node
+             *         it acts on; the operation a node names does not decide.
              */
-            bool node_kind_is_chainable(const Internal::Graph::Node& node) noexcept
+            bool node_kind_is_chainable(const Internal::Graph::Node& node,
+                                        bool has_coordinator) noexcept
             {
                 using Mode = Internal::Scheduler::Task::ExecutionMode;
                 const bool submits_device = node.execution_mode() == Mode::Kernel ||
@@ -58,9 +73,8 @@ namespace SushiRuntime
                 if (!submits_device)
                     return false;
 
-                // ExecutionEngine::prepare() ran first and set the flag, or nothing is installed.
-                const Internal::Graph::OffloadState* offload = node.offload_state();
-                return offload == nullptr || !offload->offloadable;
+                // Only the scheduler's poller calls OffloadCoordinator::on_local_completion().
+                return !has_coordinator || !is_coordinator_concern(node);
             }
 
             /**
@@ -144,6 +158,7 @@ namespace SushiRuntime
         Internal::Graph::ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context)
         {
             const Internal::Graph::Node* sentinel = graph.sentinel.get();
+            const bool has_coordinator = context.offload() != nullptr;
             std::size_t node_count = 0;
             int device = -1;
 
@@ -154,7 +169,7 @@ namespace SushiRuntime
                     continue;
                 ++node_count;
 
-                if (!node_kind_is_chainable(*node))
+                if (!node_kind_is_chainable(*node, has_coordinator))
                     return {};
 
                 const int index = owning_queue_index(*node, context);

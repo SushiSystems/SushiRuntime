@@ -78,6 +78,13 @@ namespace
             g_allocation_count.fetch_add(1, std::memory_order_relaxed);
     }
 
+    // A Windows DLL keeps its own operator new, so the counter stops at its edge; see README.md.
+#if defined(_WIN32)
+    constexpr bool K_COUNTER_SEES_THE_LIBRARY = false;
+#else
+    constexpr bool K_COUNTER_SEES_THE_LIBRARY = true;
+#endif
+
     constexpr std::size_t N            = 4096;
     constexpr std::size_t WARMUP_TICKS = 8;
     constexpr std::size_t TICKS        = 64;
@@ -227,11 +234,25 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
     RecordProperty("baseline_allocations_per_" + std::to_string(TICKS * 4) + "_ticks",
                    static_cast<int>(baseline_long));
 
-    // Claim 1: the value form allocates at least once more per tick than reuse; see README.md.
-    EXPECT_GE(value_short, reuse_short + TICKS)
-        << "the value-returning run() did not cost a per-tick allocation more "
-           "than run(report); either the counter does not see the run path or "
-           "the reuse overload is not actually reusing";
+    RecordProperty("counter_sees_the_library", K_COUNTER_SEES_THE_LIBRARY ? 1 : 0);
+
+    // Claim 1: the counter reaches the run path, as far as this build lets it; see README.md.
+    if (K_COUNTER_SEES_THE_LIBRARY)
+    {
+        EXPECT_GE(value_short, reuse_short + TICKS)
+            << "the value-returning run() did not cost a per-tick allocation more "
+               "than run(report); either the counter does not see the run path or "
+               "the reuse overload is not actually reusing";
+    }
+    else
+    {
+        EXPECT_GE(baseline_short, TICKS)
+            << "bare SYCL no longer allocates per submission on this thread, so nothing "
+               "on the run path is left for the counter to see in this build";
+        EXPECT_GE(reuse_short, baseline_short)
+            << "the chain submitted the same kernel from this thread and the counter "
+               "saw less than bare SYCL's own cost; it does not see the run path";
+    }
 
     // Claim 2: the chain's per-tick growth does not exceed bare SYCL's; see README.md.
     const auto chain_growth    = static_cast<std::ptrdiff_t>(reuse_long) - static_cast<std::ptrdiff_t>(reuse_short);
