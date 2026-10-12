@@ -1,9 +1,11 @@
 # examples
 
-Nine programs written against the public API. Eight include `<SushiRuntime/sushiruntime.hpp>`;
-`distributed_worker.cpp` includes only `<SushiRuntime/distributed/distributed.hpp>`, and
-`distributed_demo.cpp` includes both. Each spells every name through
-`using namespace SushiRuntime;`. Read `quickstart.cpp` first, then the focused demos:
+Programs written against the public API, one subject each. A program includes
+`<SushiRuntime/sushiruntime.hpp>` and no header below it, and spells every name through
+`using namespace SushiRuntime;`. The exceptions: `distributed_worker.cpp` includes only
+`<SushiRuntime/distributed/distributed.hpp>`, `distributed_demo.cpp` includes both, and of the
+three files in `adapter/` one includes the library. Read `quickstart.cpp` first, then the file
+for the subject at hand:
 
 | File | Shows |
 | --- | --- |
@@ -14,6 +16,7 @@ Nine programs written against the public API. Eight include `<SushiRuntime/sushi
 | `game_engine_demo.cpp` | An ECS-style frame loop built from the data flow, each system named with `name()` |
 | `streaming_world_demo.cpp` | A `DynamicGraph` whose set of work changes between steps |
 | `operating_path_demo.cpp` | `RuntimeConfig`, `advanced()`, `run()` with its error branch, `Dynamic` and a `read_range()` readback |
+| `adapter/` | A host program that reaches the library through one file, in its own types and its own status |
 | `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
 | `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
 
@@ -25,6 +28,12 @@ master does not start. `distributed_worker.cpp` returns the exit code of `run_wo
 `distributed_kernels.hpp` is the header the last two share; they also include
 `<SushiRuntime/distributed/distributed.hpp>`. The distributed programs are built only when the
 distributed layer is enabled (`sr build --distributed`).
+
+A program returns 0 when its own check holds and 1 when it does not. The check compares what
+the run wrote with a value computed on the host, and the last line printed is
+`result: CORRECT` or `result: WRONG`. A number that depends on the machine, a duration or a
+count of steps in a time budget, is labelled as such in the output and is not compared. A
+target is named after its file: `sr run sr_quickstart`, `sr run sr_adapter_demo`.
 
 ## quickstart.cpp
 
@@ -143,6 +152,48 @@ Both runs use `run()`, which returns the report or an `Error`. The program then 
 graph on purpose, checks that the refusal carries `ErrorCode::InvalidGraph` and prints the remedy its
 `switch` over `ErrorCode` picks for that code. `Runtime::create()` and the range calls return a
 `Result` too; the program reads them with `value()`, which stops the process on an error.
+
+## adapter/
+
+A host program that needs one thing from a compute library: a field that advances by a rule
+for a number of steps and can be read back. It gets it through three files, built into one
+program, `sr_adapter_demo`.
+
+| File | Holds | Includes the library |
+| --- | --- | --- |
+| `adapter/diffusion_backend.hpp` | The host's side of the seam: `StatusCode`, `Status`, the handle of a backend it cannot look into, and four functions | No |
+| `adapter/sushiruntime_adapter.cpp` | The four functions on SushiRuntime, and the mapping of every `ErrorCode` to a `StatusCode` | Yes |
+| `adapter/adapter_demo.cpp` | The host: it seeds a field, advances it and compares it with its own computation | No |
+
+The header declares `DiffusionBackend` and does not define it, so the host holds a
+`BackendHandle` and passes it back to `create_backend()`, `allocate_field()`, `advance()` and
+`read_field()`. Each returns a `Status`. The adapter defines the type: a `Runtime`, a
+`State<float>` and a `Graph` with the one rule that steps the field.
+
+`status_of()` is the one place an `Error` becomes a `Status`. Its `switch` names every
+`ErrorCode` and has no `default`, so a compiler that warns on an unhandled enumerator reports a
+code a release added. A second `status_of()` takes any `Result` and returns `Ok` or the mapped
+error, and every call into the library ends in one of the two.
+
+A rule the caller broke stops the process and returns nothing to map, so the adapter tests what
+it can before the library sees it: `create_backend()` asks `version_matches()` before
+`Runtime::create()`, and `allocate_field()` turns down a field of no cells. What the library
+refuses and keeps, it reads back: after `add_rule()` it returns the graph's `refusal()` when
+there is one.
+
+The host shows the failure path once. It calls `advance()` before a field exists, the graph has
+no rule, the library returns `InvalidGraph`, and the host prints its own code:
+
+```
+adapter: advance before allocate_field -> InvalidRequest: Graph has no rule to run.
+adapter: 256 cells, 100 steps, total heat = 1.000
+  result: CORRECT
+```
+
+The check compares every cell with the same diffusion advanced on the host, within 0.00001.
+
+When a release of SushiRuntime changes a name or a signature, `sushiruntime_adapter.cpp` is the
+file that changes. The header and the host do not, because neither names the library.
 
 ## distributed_demo.cpp
 

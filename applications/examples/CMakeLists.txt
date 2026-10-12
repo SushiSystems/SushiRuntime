@@ -10,7 +10,8 @@ cmake_minimum_required(VERSION 3.20)
 # SYCL flags applied. The standalone tutorials always build; the distributed demo
 # only when the master-worker layer is enabled (it links the distributed entry
 # points). Target names follow the file names: quickstart.cpp -> sr_quickstart,
-# <topic>_demo.cpp -> sr_<topic>_demo.
+# <topic>_demo.cpp -> sr_<topic>_demo. The adapter example is the one target
+# built from two source files, both under adapter/.
 
 # On Windows the examples need sushiruntime.dll beside them to run from the build
 # tree. Staged ONCE by a target every example depends on, not by a POST_BUILD step
@@ -39,16 +40,17 @@ if(WIN32)
     add_dependencies(sushiruntime_examples_runtime_dll sushiruntime)
 endif()
 
-# Builds one example target from a single source file, applying the C++17
-# standard, the SYCL flags, the library link, and the Windows runtime-DLL copy.
-function(sushiruntime_add_example name source)
-    add_executable(${name} ${source})
+# Builds one example target from the source files that follow its name, applying
+# the C++17 standard, the SYCL flags, the library link, and the Windows
+# runtime-DLL copy.
+function(sushiruntime_add_example name)
+    add_executable(${name} ${ARGN})
     sushiruntime_apply_build_policy(${name})
     target_link_libraries(${name} PRIVATE sushiruntime)
     set_target_properties(${name} PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON)
-    add_sycl_to_target(TARGET ${name} SOURCES ${source})
+    add_sycl_to_target(TARGET ${name} SOURCES ${ARGN})
     if(WIN32)
         # A dependency, so the staging runs before this target links and its
         # applocal pass reads the directory.
@@ -63,6 +65,9 @@ sushiruntime_add_example(sr_coupled_fields_demo    coupled_fields_demo.cpp)
 sushiruntime_add_example(sr_game_engine_demo       game_engine_demo.cpp)
 sushiruntime_add_example(sr_streaming_world_demo   streaming_world_demo.cpp)
 sushiruntime_add_example(sr_operating_path_demo    operating_path_demo.cpp)
+sushiruntime_add_example(sr_adapter_demo
+    adapter/adapter_demo.cpp
+    adapter/sushiruntime_adapter.cpp)
 
 if(SR_ENABLE_DISTRIBUTED)
     sushiruntime_add_example(sr_distributed_demo   distributed_demo.cpp)
