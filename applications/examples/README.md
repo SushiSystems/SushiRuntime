@@ -127,11 +127,11 @@ the middle of one. This is the command-buffer discipline an ECS needs.
 The result is checked against an independent scalar reference that runs the same four systems
 in the same order.
 
-`XMAX`, the cull threshold, is 30.37 so that it sits off the grid. An entity's x is
+`K_CULL_X`, the cull threshold, is 30.37 so that it sits off the grid. An entity's x is
 `vx * 0.01 * step`, and no entity lands on 30.37 at an integer step. The crossing frame is
 therefore identical on host and device, and the position frozen at the cull never differs by a
-whole step of motion. Final x is `vx * (STEPS * DT) = vx * 6`, one of 12, 24, 36, 48, 60 and
-72; the first two stay under `XMAX` and survive, and the rest are culled.
+whole step of motion. Final x is `vx * (K_STEPS * K_TICK) = vx * 6`, one of 12, 24, 36, 48, 60 and
+72; the first two stay under `K_CULL_X` and survive, and the rest are culled.
 
 ## streaming_world_demo.cpp
 

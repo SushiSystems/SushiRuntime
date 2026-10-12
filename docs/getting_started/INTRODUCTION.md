@@ -297,7 +297,7 @@ receives the global index:
             const std::size_t c = y * W + x;
             const float lap = cur[c - 1] + cur[c + 1] + cur[c - W] + cur[c + W]
                               - 4.0f * cur[c];
-            next[c] = cur[c] + ALPHA * lap;
+            next[c] = cur[c] + K_ALPHA * lap;
         });
 ```
 
@@ -434,7 +434,7 @@ name, an operation and up to eight parameters.
 
 ```cpp
         world.add(Extent{N}, In(px), InOut(alive),
-            [xmax = XMAX](sycl::id<1> id, const float* px, int* alive)
+            [xmax = K_CULL_X](sycl::id<1> id, const float* px, int* alive)
             {
                 const std::size_t i = id[0];
                 if (alive[i] && px[i] > xmax) alive[i] = 0;
