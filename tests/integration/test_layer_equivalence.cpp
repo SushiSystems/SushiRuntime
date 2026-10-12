@@ -46,26 +46,26 @@ namespace
     /** @brief Names one output buffer copied to the host. */
     using Image = std::vector<Word>;
 
-    constexpr std::size_t TILE_N = 512;
-    constexpr std::size_t HOST_N = 256;
+    constexpr std::size_t K_TILE_N = 512;
+    constexpr std::size_t K_HOST_N = 256;
     constexpr std::size_t K_STEPS  = 5;
-    constexpr std::size_t RUNS   = 3;
+    constexpr std::size_t K_RUNS   = 3;
 
-    constexpr std::size_t GRID_ROWS = 12;
-    constexpr std::size_t GRID_COLS = 16;
-    constexpr std::size_t GRID_N    = GRID_ROWS * GRID_COLS;
-    constexpr std::size_t BOX_ROWS  = 6;
-    constexpr std::size_t BOX_COLS  = 8;
-    constexpr std::size_t BOX_N     = BOX_ROWS * BOX_COLS;
-    constexpr std::size_t BOX_ROW0  = 3;
-    constexpr std::size_t BOX_COL0  = 5;
-    constexpr std::size_t TILE_ROWS = 3;
-    constexpr std::size_t TILE_COLS = 4;
+    constexpr std::size_t K_GRID_ROWS = 12;
+    constexpr std::size_t K_GRID_COLS = 16;
+    constexpr std::size_t K_GRID_N    = K_GRID_ROWS * K_GRID_COLS;
+    constexpr std::size_t K_BOX_ROWS  = 6;
+    constexpr std::size_t K_BOX_COLS  = 8;
+    constexpr std::size_t K_BOX_N     = K_BOX_ROWS * K_BOX_COLS;
+    constexpr std::size_t K_BOX_ROW0  = 3;
+    constexpr std::size_t K_BOX_COL0  = 5;
+    constexpr std::size_t K_TILE_ROWS = 3;
+    constexpr std::size_t K_TILE_COLS = 4;
 
-    constexpr DynamicGraph::RegionKey KEY_SCALE = 10;
-    constexpr DynamicGraph::RegionKey KEY_MIX   = 20;
-    constexpr DynamicGraph::RegionKey KEY_FOLD  = 30;
-    constexpr DynamicGraph::RegionKey KEY_FIELD = 40;
+    constexpr DynamicGraph::RegionKey K_KEY_SCALE = 10;
+    constexpr DynamicGraph::RegionKey K_KEY_MIX   = 20;
+    constexpr DynamicGraph::RegionKey K_KEY_FOLD  = 30;
+    constexpr DynamicGraph::RegionKey K_KEY_FIELD = 40;
 
     /** @brief Holds every output of one workload run, copied out, in a fixed order. */
     struct Snapshot
@@ -149,12 +149,12 @@ namespace
     {
         /** @brief Allocates the data on @p rt and writes the starting values. */
         explicit Tiles(Runtime& rt)
-            : scale(rt.buffer<Word>(TILE_N).value()),
-              mix(rt.buffer<Word>(TILE_N).value()),
-              fold(rt.buffer<Word>(TILE_N).value()),
-              field(rt.state<Word>(TILE_N).value())
+            : scale(rt.buffer<Word>(K_TILE_N).value()),
+              mix(rt.buffer<Word>(K_TILE_N).value()),
+              fold(rt.buffer<Word>(K_TILE_N).value()),
+              field(rt.state<Word>(K_TILE_N).value())
         {
-            for (std::size_t i = 0; i < TILE_N; ++i)
+            for (std::size_t i = 0; i < K_TILE_N; ++i)
             {
                 scale[i] = static_cast<Word>(i) * 3u + 1u;
                 mix[i]   = static_cast<Word>(i) ^ 0x9E3779B9u;
@@ -172,10 +172,10 @@ namespace
     /** @brief Copies every tile output into a snapshot. */
     void take_tiles(Snapshot& shot, const Tiles& tiles)
     {
-        take(shot, "scale", Image(tiles.scale.data(), tiles.scale.data() + TILE_N));
-        take(shot, "mix", Image(tiles.mix.data(), tiles.mix.data() + TILE_N));
-        take(shot, "fold", Image(tiles.fold.data(), tiles.fold.data() + TILE_N));
-        take(shot, "field", Image(tiles.field.current(), tiles.field.current() + TILE_N));
+        take(shot, "scale", Image(tiles.scale.data(), tiles.scale.data() + K_TILE_N));
+        take(shot, "mix", Image(tiles.mix.data(), tiles.mix.data() + K_TILE_N));
+        take(shot, "fold", Image(tiles.fold.data(), tiles.fold.data() + K_TILE_N));
+        take(shot, "field", Image(tiles.field.current(), tiles.field.current() + K_TILE_N));
     }
 
     /**
@@ -186,7 +186,7 @@ namespace
     void record_scale(Builder& builder, Tiles& tiles)
     {
         Word* scale = tiles.scale.data();
-        builder.add(TILE_N, Reads(tiles.scale), Writes(tiles.scale),
+        builder.add(K_TILE_N, Reads(tiles.scale), Writes(tiles.scale),
                     [scale](std::size_t i)
                     {
                         scale[i] = scale[i] * 31u + static_cast<Word>(i) + 1u;
@@ -202,7 +202,7 @@ namespace
     {
         const Word* scale = tiles.scale.data();
         Word* mix = tiles.mix.data();
-        builder.add(TILE_N, Reads(tiles.scale), Writes(tiles.mix),
+        builder.add(K_TILE_N, Reads(tiles.scale), Writes(tiles.mix),
                     [scale, mix](std::size_t i)
                     {
                         mix[i] = (mix[i] ^ (scale[i] * 2654435761u)) + 7u;
@@ -219,7 +219,7 @@ namespace
         const Word* scale = tiles.scale.data();
         const Word* mix = tiles.mix.data();
         Word* fold = tiles.fold.data();
-        builder.add(TILE_N, Reads(tiles.scale, tiles.mix), Writes(tiles.fold),
+        builder.add(K_TILE_N, Reads(tiles.scale, tiles.mix), Writes(tiles.fold),
                     [scale, mix, fold](std::size_t i)
                     {
                         fold[i] = fold[i] * 17u + scale[i] + mix[i];
@@ -292,17 +292,17 @@ namespace
 
         // Region keys ascend in the order the static graph adds the same kernels.
         auto world = rt.dynamic_graph();
-        record_scale(world.region(KEY_SCALE), tiles);
-        record_fold(world.region(KEY_FOLD), tiles);
+        record_scale(world.region(K_KEY_SCALE), tiles);
+        record_fold(world.region(K_KEY_FOLD), tiles);
         if (script.evolve_field)
-            record_field(world.region(KEY_FIELD), tiles);
+            record_field(world.region(K_KEY_FIELD), tiles);
 
         for (const Segment& segment : script.segments)
         {
-            if (segment.mix_live && !world.has_region(KEY_MIX))
-                record_mix(world.region(KEY_MIX), tiles);
+            if (segment.mix_live && !world.has_region(K_KEY_MIX))
+                record_mix(world.region(K_KEY_MIX), tiles);
             if (!segment.mix_live)
-                world.drop(KEY_MIX);
+                world.drop(K_KEY_MIX);
 
             for (std::size_t r = 0; r < segment.runs; ++r)
                 drive(world, how, K_STEPS, shot);
@@ -315,13 +315,13 @@ namespace
     /** @brief Folds one buffer into another, element by element. */
     struct MixPass
     {
-        const Word* from; /**< HOST_N elements read. */
-        Word* into;       /**< HOST_N elements rewritten. */
+        const Word* from; /**< K_HOST_N elements read. */
+        Word* into;       /**< K_HOST_N elements rewritten. */
 
         /** @brief Runs the whole pass on the calling thread or work-item. */
         void apply() const noexcept
         {
-            for (std::size_t i = 0; i < HOST_N; ++i)
+            for (std::size_t i = 0; i < K_HOST_N; ++i)
                 into[i] = (into[i] ^ (from[i] * 2654435761u)) + 7u;
         }
     };
@@ -329,14 +329,14 @@ namespace
     /** @brief Folds a running value over one buffer into another, in index order. */
     struct ScanPass
     {
-        const Word* from; /**< HOST_N elements read in index order. */
-        Word* into;       /**< HOST_N elements rewritten. */
+        const Word* from; /**< K_HOST_N elements read in index order. */
+        Word* into;       /**< K_HOST_N elements rewritten. */
 
         /** @brief Runs the whole pass on the calling thread or work-item. */
         void apply() const noexcept
         {
             Word running = 0u;
-            for (std::size_t i = 0; i < HOST_N; ++i)
+            for (std::size_t i = 0; i < K_HOST_N; ++i)
             {
                 running = running * 33u + from[i];
                 into[i] ^= running;
@@ -373,11 +373,11 @@ namespace
      */
     Snapshot run_pass_chain(Runtime& rt, PassSite site)
     {
-        auto a = rt.buffer<Word>(HOST_N).value();
-        auto b = rt.buffer<Word>(HOST_N).value();
-        auto c = rt.buffer<Word>(HOST_N).value();
-        auto d = rt.buffer<Word>(HOST_N).value();
-        for (std::size_t i = 0; i < HOST_N; ++i)
+        auto a = rt.buffer<Word>(K_HOST_N).value();
+        auto b = rt.buffer<Word>(K_HOST_N).value();
+        auto c = rt.buffer<Word>(K_HOST_N).value();
+        auto d = rt.buffer<Word>(K_HOST_N).value();
+        for (std::size_t i = 0; i < K_HOST_N; ++i)
         {
             a[i] = static_cast<Word>(i) * 7u + 3u;
             b[i] = static_cast<Word>(i) ^ 0x85EBCA6Bu;
@@ -391,23 +391,23 @@ namespace
         Word* pd = d.data();
 
         auto g = rt.graph();
-        g.add(HOST_N, Reads(a), Writes(a),
+        g.add(K_HOST_N, Reads(a), Writes(a),
               [pa](std::size_t i) { pa[i] = pa[i] * 31u + static_cast<Word>(i) + 1u; });
         record_pass(g, Reads(a), Writes(b), MixPass{pa, pb}, site);
-        g.add(HOST_N, Reads(b), Writes(c),
+        g.add(K_HOST_N, Reads(b), Writes(c),
               [pb, pc](std::size_t i) { pc[i] = pc[i] * 17u + pb[i]; });
         record_pass(g, Reads(c), Writes(d), ScanPass{pc, pd}, site);
-        g.add(HOST_N, Reads(a, d), Writes(a),
+        g.add(K_HOST_N, Reads(a, d), Writes(a),
               [pa, pd](std::size_t i) { pa[i] += pd[i]; });
 
         Snapshot shot;
-        for (std::size_t r = 0; r < RUNS; ++r)
+        for (std::size_t r = 0; r < K_RUNS; ++r)
             drive(g, Drive::Blocking, K_STEPS, shot);
 
-        take(shot, "a", Image(pa, pa + HOST_N));
-        take(shot, "b", Image(pb, pb + HOST_N));
-        take(shot, "c", Image(pc, pc + HOST_N));
-        take(shot, "d", Image(pd, pd + HOST_N));
+        take(shot, "a", Image(pa, pa + K_HOST_N));
+        take(shot, "b", Image(pb, pb + K_HOST_N));
+        take(shot, "c", Image(pc, pc + K_HOST_N));
+        take(shot, "d", Image(pd, pd + K_HOST_N));
         return shot;
     }
 
@@ -432,41 +432,41 @@ namespace
     /** @brief Advances one grid cell in place, addressed by absolute row and column. */
     inline void stamp_cell(const Word* in, Word* out, std::size_t row, std::size_t col) noexcept
     {
-        const std::size_t cell = row * GRID_COLS + col;
+        const std::size_t cell = row * K_GRID_COLS + col;
         out[cell] = stamp(out[cell], in[cell], cell);
     }
 
     /** @brief Returns the launch box given by a range and an origin. */
     Extent<2> box_by_origin()
     {
-        return Extent<2>(sycl::range<2>(BOX_ROWS, BOX_COLS), sycl::id<2>(BOX_ROW0, BOX_COL0));
+        return Extent<2>(sycl::range<2>(K_BOX_ROWS, K_BOX_COLS), sycl::id<2>(K_BOX_ROW0, K_BOX_COL0));
     }
 
     /** @brief Returns the same launch box given by sizes and rebased with at(). */
     Extent<2> box_by_rebase()
     {
-        return Extent{BOX_ROWS, BOX_COLS}.at(sycl::id<2>(BOX_ROW0, BOX_COL0));
+        return Extent{K_BOX_ROWS, K_BOX_COLS}.at(sycl::id<2>(K_BOX_ROW0, K_BOX_COL0));
     }
 
     /** @brief Returns the box-sized tiled launch; NdRange carries no origin. */
     NdRange<2> box_tiles()
     {
-        return NdRange{sycl::range<2>(BOX_ROWS, BOX_COLS), sycl::range<2>(TILE_ROWS, TILE_COLS)};
+        return NdRange{sycl::range<2>(K_BOX_ROWS, K_BOX_COLS), sycl::range<2>(K_TILE_ROWS, K_TILE_COLS)};
     }
 
     /** @brief Returns the grid a host loop reaches after @p steps steps over the box. */
     Image reference_grid(std::size_t steps)
     {
-        Image source(GRID_N);
-        Image grid(GRID_N);
-        for (std::size_t k = 0; k < GRID_N; ++k)
+        Image source(K_GRID_N);
+        Image grid(K_GRID_N);
+        for (std::size_t k = 0; k < K_GRID_N; ++k)
         {
             source[k] = source_word(k);
             grid[k]   = seed_word(k);
         }
         for (std::size_t s = 0; s < steps; ++s)
-            for (std::size_t row = BOX_ROW0; row < BOX_ROW0 + BOX_ROWS; ++row)
-                for (std::size_t col = BOX_COL0; col < BOX_COL0 + BOX_COLS; ++col)
+            for (std::size_t row = K_BOX_ROW0; row < K_BOX_ROW0 + K_BOX_ROWS; ++row)
+                for (std::size_t col = K_BOX_COL0; col < K_BOX_COL0 + K_BOX_COLS; ++col)
                     stamp_cell(source.data(), grid.data(), row, col);
         return grid;
     }
@@ -474,18 +474,18 @@ namespace
     /** @brief Returns the box cells of a grid, packed row by row. */
     Image box_of(const Image& grid)
     {
-        Image box(BOX_N);
-        for (std::size_t row = 0; row < BOX_ROWS; ++row)
-            for (std::size_t col = 0; col < BOX_COLS; ++col)
-                box[row * BOX_COLS + col] = grid[(row + BOX_ROW0) * GRID_COLS + col + BOX_COL0];
+        Image box(K_BOX_N);
+        for (std::size_t row = 0; row < K_BOX_ROWS; ++row)
+            for (std::size_t col = 0; col < K_BOX_COLS; ++col)
+                box[row * K_BOX_COLS + col] = grid[(row + K_BOX_ROW0) * K_GRID_COLS + col + K_BOX_COL0];
         return box;
     }
 
     /** @brief Allocates a grid-sized buffer on a device of @p rt holding the starting words. */
     Buffer<Word> seeded_grid(Runtime& rt, DeviceIndex device = DeviceIndex{0})
     {
-        auto grid = rt.buffer<Word>(GRID_N, device).value();
-        for (std::size_t k = 0; k < GRID_N; ++k)
+        auto grid = rt.buffer<Word>(K_GRID_N, device).value();
+        for (std::size_t k = 0; k < K_GRID_N; ++k)
             grid[k] = seed_word(k);
         return grid;
     }
@@ -493,8 +493,8 @@ namespace
     /** @brief Allocates the read-only input grid on a device of @p rt. */
     Buffer<Word> source_grid(Runtime& rt, DeviceIndex device = DeviceIndex{0})
     {
-        auto grid = rt.buffer<Word>(GRID_N, device).value();
-        for (std::size_t k = 0; k < GRID_N; ++k)
+        auto grid = rt.buffer<Word>(K_GRID_N, device).value();
+        for (std::size_t k = 0; k < K_GRID_N; ++k)
             grid[k] = source_word(k);
         return grid;
     }
@@ -511,10 +511,10 @@ namespace
         auto by_rebase  = seeded_grid(rt);
         auto by_capture = seeded_grid(rt);
         auto by_tiles   = seeded_grid(rt);
-        auto field      = rt.state<Word>(BOX_N).value();
+        auto field      = rt.state<Word>(K_BOX_N).value();
 
         const Image seeded_box = box_of(reference_grid(0));
-        for (std::size_t slot = 0; slot < BOX_N; ++slot)
+        for (std::size_t slot = 0; slot < K_BOX_N; ++slot)
             field[slot] = seeded_box[slot];
 
         const Word* in = source.data();
@@ -534,25 +534,25 @@ namespace
               });
         g.add_rule(box_by_origin(), field, [in](sycl::id<2> idx, const Word* cur, Word* next)
         {
-            const std::size_t cell = idx[0] * GRID_COLS + idx[1];
-            const std::size_t slot = (idx[0] - BOX_ROW0) * BOX_COLS + (idx[1] - BOX_COL0);
+            const std::size_t cell = idx[0] * K_GRID_COLS + idx[1];
+            const std::size_t slot = (idx[0] - K_BOX_ROW0) * K_BOX_COLS + (idx[1] - K_BOX_COL0);
             next[slot] = stamp(cur[slot], in[cell], cell);
         });
         g.add(box_tiles(), Reads(source, by_tiles), Writes(by_tiles),
               [in, tiles_out](sycl::nd_item<2> item)
               {
-                  stamp_cell(in, tiles_out, item.get_global_id(0) + BOX_ROW0,
-                             item.get_global_id(1) + BOX_COL0);
+                  stamp_cell(in, tiles_out, item.get_global_id(0) + K_BOX_ROW0,
+                             item.get_global_id(1) + K_BOX_COL0);
               });
 
         Snapshot shot;
         drive(g, Drive::Blocking, K_STEPS, shot);
 
-        take(shot, "Extent(range, origin)", Image(origin_out, origin_out + GRID_N));
-        take(shot, "Extent{sizes}.at(origin)", Image(rebase_out, rebase_out + GRID_N));
-        take(shot, "Extent with In/InOut", Image(by_capture.data(), by_capture.data() + GRID_N));
-        take(shot, "NdRange", Image(tiles_out, tiles_out + GRID_N));
-        take(shot, "State over Extent", Image(field.current(), field.current() + BOX_N));
+        take(shot, "Extent(range, origin)", Image(origin_out, origin_out + K_GRID_N));
+        take(shot, "Extent{sizes}.at(origin)", Image(rebase_out, rebase_out + K_GRID_N));
+        take(shot, "Extent with In/InOut", Image(by_capture.data(), by_capture.data() + K_GRID_N));
+        take(shot, "NdRange", Image(tiles_out, tiles_out + K_GRID_N));
+        take(shot, "State over Extent", Image(field.current(), field.current() + K_BOX_N));
         return shot;
     }
 
@@ -588,15 +588,15 @@ namespace
         });
         g.add_untracked(box_tiles(), [in, tiles_out](sycl::nd_item<2> item)
         {
-            stamp_cell(in, tiles_out, item.get_global_id(0) + BOX_ROW0,
-                       item.get_global_id(1) + BOX_COL0);
+            stamp_cell(in, tiles_out, item.get_global_id(0) + K_BOX_ROW0,
+                       item.get_global_id(1) + K_BOX_COL0);
         });
 
         Snapshot shot;
         drive(g, Drive::Blocking, K_STEPS, shot);
 
-        take(shot, "untracked Extent", Image(extent_out, extent_out + GRID_N));
-        take(shot, "untracked NdRange", Image(tiles_out, tiles_out + GRID_N));
+        take(shot, "untracked Extent", Image(extent_out, extent_out + K_GRID_N));
+        take(shot, "untracked NdRange", Image(tiles_out, tiles_out + K_GRID_N));
         return shot;
     }
 
@@ -624,15 +624,15 @@ namespace
         });
         g.add_untracked(box_tiles(), On(device), [in, tiles_out](sycl::nd_item<2> item)
         {
-            stamp_cell(in, tiles_out, item.get_global_id(0) + BOX_ROW0,
-                       item.get_global_id(1) + BOX_COL0);
+            stamp_cell(in, tiles_out, item.get_global_id(0) + K_BOX_ROW0,
+                       item.get_global_id(1) + K_BOX_COL0);
         });
 
         Snapshot shot;
         drive(g, Drive::Blocking, K_STEPS, shot);
 
-        take(shot, "untracked Extent", Image(extent_out, extent_out + GRID_N));
-        take(shot, "untracked NdRange", Image(tiles_out, tiles_out + GRID_N));
+        take(shot, "untracked Extent", Image(extent_out, extent_out + K_GRID_N));
+        take(shot, "untracked NdRange", Image(tiles_out, tiles_out + K_GRID_N));
         return shot;
     }
 
@@ -650,7 +650,7 @@ namespace
 /** @brief Tests that four regions of a DynamicGraph leave the bytes one static Graph leaves. */
 TEST(Integration_LayerEquivalence, DynamicRegionsMatchOneStaticGraph)
 {
-    const Script script{{{true, RUNS}}, true};
+    const Script script{{{true, K_RUNS}}, true};
 
     auto chained_rt = Runtime::create().value();
     auto scheduled_rt = Runtime::create(scheduler_only()).value();
@@ -713,7 +713,7 @@ TEST(Integration_LayerEquivalence, HostTasksAmongKernelsMatchAcrossLayers)
 /** @brief Tests that N run_async() steps leave the bytes run(N) leaves, on both layers. */
 TEST(Integration_LayerEquivalence, AsyncStepsMatchBlockingRun)
 {
-    const Script script{{{true, RUNS}}, true};
+    const Script script{{{true, K_RUNS}}, true};
 
     auto chained_rt = Runtime::create().value();
     auto scheduled_rt = Runtime::create(scheduler_only()).value();

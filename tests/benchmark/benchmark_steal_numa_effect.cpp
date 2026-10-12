@@ -55,8 +55,8 @@ using SushiRuntime::Test::AtomicCounterTask;
 
 namespace
 {
-    constexpr size_t TOTAL  = 300000;
-    constexpr int    ROUNDS = 3;
+    constexpr size_t K_TOTAL  = 300000;
+    constexpr int    K_ROUNDS = 3;
 
     /**
      * @brief Wait for an atomic value to reach a target within a budget.
@@ -107,14 +107,14 @@ namespace
     };
 
     /**
-     * @brief Drains TOTAL counter tasks through the scheduler of @p ctx, best of ROUNDS.
+     * @brief Drains K_TOTAL counter tasks through the scheduler of @p ctx, best of K_ROUNDS.
      * @return The fastest round's time and its steal split.
      */
     StealMeasurement run_workload(RuntimeContext& ctx)
     {
         StealMeasurement best;
         std::atomic<size_t> executed{0};
-        for (int r = 0; r < ROUNDS; ++r)
+        for (int r = 0; r < K_ROUNDS; ++r)
         {
             TaskScheduler sched = make_scheduler(ctx);
             executed.store(0, std::memory_order_relaxed);
@@ -122,14 +122,14 @@ namespace
             sched.arm_for_execution();
 
             const auto t0 = std::chrono::steady_clock::now();
-            for (size_t i = 0; i < TOTAL; ++i)
+            for (size_t i = 0; i < K_TOTAL; ++i)
                 sched.submit(new AtomicCounterTask(executed));
-            EXPECT_TRUE(wait_for(executed, TOTAL, std::chrono::seconds(60)));
+            EXPECT_TRUE(wait_for(executed, K_TOTAL, std::chrono::seconds(60)));
             const double ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - t0).count();
 
             sched.stop();
-            EXPECT_EQ(executed.load(), TOTAL); // consume
+            EXPECT_EQ(executed.load(), K_TOTAL); // consume
 
             if (ms < best.ms)
                 best = StealMeasurement{ ms, sched.local_steal_count(),
@@ -158,14 +158,14 @@ TEST(Performance_StealNumaEffectBench, NUMAAwareVsBlindThroughput)
     const StealMeasurement blind = run_workload(blind_ctx);
     const StealMeasurement aware = run_workload(*aware_ctx);
 
-    const double blind_thr = double(TOTAL) / (blind.ms / 1000.0);
-    const double aware_thr = double(TOTAL) / (aware.ms / 1000.0);
+    const double blind_thr = double(K_TOTAL) / (blind.ms / 1000.0);
+    const double aware_thr = double(K_TOTAL) / (aware.ms / 1000.0);
     const double speedup   = blind.ms / aware.ms;
     const size_t a_steals  = aware.local + aware.remote;
     const double a_localf  = a_steals ? double(aware.local) / double(a_steals) : 1.0;
 
     std::printf("\n=== NUMA-aware vs blind stealing (%zu tasks, %d workers) ===\n",
-                TOTAL, workers);
+                K_TOTAL, workers);
     std::printf("  NUMA-blind : %10.0f tasks/s  (%.2f ms)\n", blind_thr, blind.ms);
     std::printf("  NUMA-aware : %10.0f tasks/s  (%.2f ms)\n", aware_thr, aware.ms);
     std::printf("  Speedup    : %.3fx (>1 only expected on real multi-socket)\n", speedup);

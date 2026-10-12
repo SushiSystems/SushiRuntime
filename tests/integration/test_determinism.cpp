@@ -58,7 +58,7 @@ namespace
     }
 
     constexpr std::size_t K_TILE  = 256;
-    constexpr std::size_t TILES = (N + K_TILE - 1) / K_TILE;
+    constexpr std::size_t K_TILES = (N + K_TILE - 1) / K_TILE;
 
     /**
      * @brief Records one rule of two nodes that totals N values in an order fixed by K_TILE.
@@ -71,13 +71,13 @@ namespace
                             const Buffer<float>& total)
     {
         float* partials =
-            recorder.scratch<float>(TILES, input.device_index(), input.residency()).value();
-        const BufferRegion partial_region{partials, 0, TILES * sizeof(float)};
+            recorder.scratch<float>(K_TILES, input.device_index(), input.residency()).value();
+        const BufferRegion partial_region{partials, 0, K_TILES * sizeof(float)};
         const float* in = input.data();
         float* out = total.data();
 
         auto rule = recorder.rule();
-        recorder.kernel(TILES, Access(Reads(input), Writes(partial_region)),
+        recorder.kernel(K_TILES, Access(Reads(input), Writes(partial_region)),
                         [in, partials](std::size_t t)
                         {
                             const std::size_t begin = t * K_TILE;
@@ -91,7 +91,7 @@ namespace
                         [partials, out](std::size_t)
                         {
                             float sum = partials[0];
-                            for (std::size_t t = 1; t < TILES; ++t)
+                            for (std::size_t t = 1; t < K_TILES; ++t)
                                 sum = sum + partials[t];
                             out[0] = sum;
                         });
