@@ -167,6 +167,11 @@ round did not close:
 - **`NodeOptions` has no named setters**, so naming only an operation means spelling the width
   before it.
 - **`version.hpp` says 0.3.0** until the release commit.
+- **Three module notes are above the 800-line ceiling**, which `check_docs_truth.py` reports:
+  `modules/surface/api/tests/README.md` (1677), `api/graph/README.md` (1380) and
+  `modules/extension/distributed/tests/README.md` (1128). Each describes one flat folder, one
+  section per file, and 66 source files cite them by path. Grouping the tests into folders by
+  subject, each with its own notes, closes it; that moves source files.
 - **The allocation tests are blind to the library on Windows.** The run loop and the report
   builder moved into the shared library, whose allocations a counter in the test binary does
   not see. A static-link build of that test, or an allocation observer the library exports,
