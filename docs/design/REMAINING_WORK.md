@@ -158,6 +158,14 @@ round did not close:
 - **`NodeOptions` has no named setters**, so naming only an operation means spelling the width
   before it.
 - **`version.hpp` says 0.3.0** until the release commit.
+- **Seven findings of `check_source_comments.py` stand**: five comment blocks above eight lines
+  (`runtime_context.hpp:63`, `event_polling.hpp:261`, `cluster.hpp:123` and `:200`,
+  `host_slot_check.hpp:99`), one file block above six (`task_description.hpp:22` of the
+  extension) and one pair of `//` lines (`test_heterogeneous_pipeline.cpp:62`). The reasons
+  they hold belong in the module notes.
+- **The adapter of a consumer is quoted from one example.** Each of the two examples under
+  `applications/examples/adapter/` (here and in SushiBLAS) is the source of its repository's
+  integration guide; a rename there is a change to the guide.
 - **The allocation tests are blind to the library on Windows.** The run loop and the report
   builder moved into the shared library, whose allocations a counter in the test binary does
   not see. A static-link build of that test, or an allocation observer the library exports,

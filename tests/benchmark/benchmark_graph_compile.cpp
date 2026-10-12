@@ -51,7 +51,7 @@ using namespace SushiRuntime::Internal::Graph;
 
 namespace
 {
-    constexpr int ROUNDS = 3;
+    constexpr int K_ROUNDS = 3;
 
     /**
      * @brief Measures the minimum compilation time for a task graph.
@@ -66,7 +66,7 @@ namespace
         std::vector<int> bufs(M, 0);
 
         double best = 1e300;
-        for (int r = 0; r < ROUNDS; ++r)
+        for (int r = 0; r < K_ROUNDS; ++r)
         {
             TaskGraph graph;
             for (size_t t = 0; t < nodes; ++t)
@@ -111,9 +111,9 @@ TEST(Performance_GraphCompileBench, CompileScaling)
 // H2D / D2H transfer-compute overlap.
 namespace
 {
-    constexpr size_t ELEMS  = 1u << 20; // 4 MiB of floats
-    constexpr int    INNER  = 64;       // per-element compute weight
-    constexpr int    CHUNKS = 8;
+    constexpr size_t K_ELEMS  = 1u << 20; // 4 MiB of floats
+    constexpr int    K_INNER  = 64;       // per-element compute weight
+    constexpr int    K_CHUNKS = 8;
 
     /**
      * @brief Reference compute per element, matching the device kernel.
@@ -123,7 +123,7 @@ namespace
      */
     float expected(float x)
     {
-        for (int k = 0; k < INNER; ++k)
+        for (int k = 0; k < K_INNER; ++k)
             x = x * 1.001f + 0.5f;
         return x;
     }
@@ -137,7 +137,7 @@ namespace
     double best_of(const std::function<double()>& fn)
     {
         double best = 1e300;
-        for (int r = 0; r < ROUNDS; ++r)
+        for (int r = 0; r < K_ROUNDS; ++r)
             best = std::min(best, fn());
         return best;
     }
@@ -161,14 +161,14 @@ TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
     sycl::queue qa(cxt, dev, sycl::property::queue::in_order{});
     sycl::queue qb(cxt, dev, sycl::property::queue::in_order{});
 
-    const size_t bytes = ELEMS * sizeof(float);
-    float* host_in  = sycl::malloc_host<float>(ELEMS, qa);
-    float* host_out = sycl::malloc_host<float>(ELEMS, qa);
-    float* d        = sycl::malloc_device<float>(ELEMS, qa);
+    const size_t bytes = K_ELEMS * sizeof(float);
+    float* host_in  = sycl::malloc_host<float>(K_ELEMS, qa);
+    float* host_out = sycl::malloc_host<float>(K_ELEMS, qa);
+    float* d        = sycl::malloc_device<float>(K_ELEMS, qa);
     ASSERT_NE(host_in, nullptr);
     ASSERT_NE(host_out, nullptr);
     ASSERT_NE(d, nullptr);
-    for (size_t i = 0; i < ELEMS; ++i)
+    for (size_t i = 0; i < K_ELEMS; ++i)
         host_in[i] = float(i % 97);
 
     auto compute = [](sycl::queue& q, float* p, size_t off, size_t n, sycl::event dep) -> sycl::event
@@ -176,7 +176,7 @@ TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
         return q.parallel_for(sycl::range<1>(n), dep, [=](sycl::id<1> i)
         {
             float x = p[off + i];
-            for (int k = 0; k < INNER; ++k)
+            for (int k = 0; k < K_INNER; ++k)
                 x = x * 1.001f + 0.5f;
             p[off + i] = x;
         });
@@ -187,7 +187,7 @@ TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
     {
         const auto t0 = std::chrono::steady_clock::now();
         qa.memcpy(d, host_in, bytes).wait();
-        compute(qa, d, 0, ELEMS, {}).wait();
+        compute(qa, d, 0, K_ELEMS, {}).wait();
         qa.memcpy(host_out, d, bytes).wait();
         return std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - t0).count();
@@ -196,15 +196,15 @@ TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
     // Overlapped: chunks pipelined across two in-order queues.
     auto run_overlapped = [&]() -> double
     {
-        const size_t chunk = (ELEMS + CHUNKS - 1) / CHUNKS;
+        const size_t chunk = (K_ELEMS + K_CHUNKS - 1) / K_CHUNKS;
         const auto t0 = std::chrono::steady_clock::now();
         std::vector<sycl::event> tail;
-        for (int c = 0; c < CHUNKS; ++c)
+        for (int c = 0; c < K_CHUNKS; ++c)
         {
             const size_t off = size_t(c) * chunk;
-            if (off >= ELEMS)
+            if (off >= K_ELEMS)
                 break;
-            const size_t n = std::min(chunk, ELEMS - off);
+            const size_t n = std::min(chunk, K_ELEMS - off);
             sycl::queue& q = (c & 1) ? qb : qa;
             auto e1 = q.memcpy(d + off, host_in + off, n * sizeof(float));
             auto e2 = compute(q, d, off, n, e1);
@@ -219,7 +219,7 @@ TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
 
     const double seq = best_of(run_sequential);
     bool ok = true;
-    for (size_t i = 0; i < ELEMS; ++i)
+    for (size_t i = 0; i < K_ELEMS; ++i)
     {
         if (std::fabs(host_out[i] - expected(host_in[i])) > 1e-1f)
         {
@@ -230,7 +230,7 @@ TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
 
     const double ovl = best_of(run_overlapped);
     bool ok2 = true;
-    for (size_t i = 0; i < ELEMS; ++i)
+    for (size_t i = 0; i < K_ELEMS; ++i)
     {
         if (std::fabs(host_out[i] - expected(host_in[i])) > 1e-1f)
         {
@@ -241,7 +241,7 @@ TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
 
     const double speedup = ovl > 0 ? seq / ovl : 0.0;
     std::printf("\n=== H2D/D2H transfer-compute overlap (%zu elems, %d chunks) ===\n",
-                ELEMS, CHUNKS);
+                K_ELEMS, K_CHUNKS);
     std::printf("  Sequential : %.3f ms\n", seq);
     std::printf("  Overlapped : %.3f ms\n", ovl);
     std::printf("  Speedup    : %.3fx (>1 needs a discrete GPU w/ copy engines)\n", speedup);

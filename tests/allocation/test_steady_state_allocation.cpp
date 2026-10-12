@@ -86,8 +86,8 @@ namespace
 #endif
 
     constexpr std::size_t N            = 4096;
-    constexpr std::size_t WARMUP_TICKS = 8;
-    constexpr std::size_t TICKS        = 64;
+    constexpr std::size_t K_WARMUP_TICKS = 8;
+    constexpr std::size_t K_TICKS        = 64;
 }
 
 // Each replaced form has its matching delete, and aligned forms stay default; see README.md.
@@ -123,7 +123,7 @@ namespace
     std::size_t allocations_for_reuse_ticks(Graph& g, std::size_t ticks)
     {
         RunReport report;
-        for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
+        for (std::size_t i = 0; i < K_WARMUP_TICKS; ++i)
             g.run(report).value();
 
         g_allocation_count.store(0, std::memory_order_relaxed);
@@ -138,7 +138,7 @@ namespace
     // The same, through the value-returning run() — one fresh RunReport per tick.
     std::size_t allocations_for_value_ticks(Graph& g, std::size_t ticks)
     {
-        for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
+        for (std::size_t i = 0; i < K_WARMUP_TICKS; ++i)
             g.run().value();
 
         g_allocation_count.store(0, std::memory_order_relaxed);
@@ -170,7 +170,7 @@ namespace
             queue.wait();
         };
 
-        for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
+        for (std::size_t i = 0; i < K_WARMUP_TICKS; ++i)
             submit_once();
 
         g_allocation_count.store(0, std::memory_order_relaxed);
@@ -213,25 +213,25 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
     auto g = rt.graph();
     g.add(N, Reads{}, Writes(buf), kernel(p));
 
-    const std::size_t reuse_short = allocations_for_reuse_ticks(g, TICKS);
-    const std::size_t reuse_long  = allocations_for_reuse_ticks(g, TICKS * 4);
-    const std::size_t value_short = allocations_for_value_ticks(g, TICKS);
+    const std::size_t reuse_short = allocations_for_reuse_ticks(g, K_TICKS);
+    const std::size_t reuse_long  = allocations_for_reuse_ticks(g, K_TICKS * 4);
+    const std::size_t value_short = allocations_for_value_ticks(g, K_TICKS);
 
     // The baseline queue is the in-order queue the chain itself submits to; see README.md.
     sycl::queue& baseline_queue = SushiRuntime::Internal::ContextAccess::context(rt)
         .devices().queue(0, Internal::Device::QueueFlavour{true, false});
-    const std::size_t baseline_short = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS);
-    const std::size_t baseline_long  = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS * 4);
+    const std::size_t baseline_short = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), K_TICKS);
+    const std::size_t baseline_long  = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), K_TICKS * 4);
 
-    RecordProperty("reuse_allocations_per_" + std::to_string(TICKS) + "_ticks",
+    RecordProperty("reuse_allocations_per_" + std::to_string(K_TICKS) + "_ticks",
                    static_cast<int>(reuse_short));
-    RecordProperty("reuse_allocations_per_" + std::to_string(TICKS * 4) + "_ticks",
+    RecordProperty("reuse_allocations_per_" + std::to_string(K_TICKS * 4) + "_ticks",
                    static_cast<int>(reuse_long));
-    RecordProperty("value_allocations_per_" + std::to_string(TICKS) + "_ticks",
+    RecordProperty("value_allocations_per_" + std::to_string(K_TICKS) + "_ticks",
                    static_cast<int>(value_short));
-    RecordProperty("baseline_allocations_per_" + std::to_string(TICKS) + "_ticks",
+    RecordProperty("baseline_allocations_per_" + std::to_string(K_TICKS) + "_ticks",
                    static_cast<int>(baseline_short));
-    RecordProperty("baseline_allocations_per_" + std::to_string(TICKS * 4) + "_ticks",
+    RecordProperty("baseline_allocations_per_" + std::to_string(K_TICKS * 4) + "_ticks",
                    static_cast<int>(baseline_long));
 
     RecordProperty("counter_sees_the_library", K_COUNTER_SEES_THE_LIBRARY ? 1 : 0);
@@ -239,14 +239,14 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
     // Claim 1: the counter reaches the run path, as far as this build lets it; see README.md.
     if (K_COUNTER_SEES_THE_LIBRARY)
     {
-        EXPECT_GE(value_short, reuse_short + TICKS)
+        EXPECT_GE(value_short, reuse_short + K_TICKS)
             << "the value-returning run() did not cost a per-tick allocation more "
                "than run(report); either the counter does not see the run path or "
                "the reuse overload is not actually reusing";
     }
     else
     {
-        EXPECT_GE(baseline_short, TICKS)
+        EXPECT_GE(baseline_short, K_TICKS)
             << "bare SYCL no longer allocates per submission on this thread, so nothing "
                "on the run path is left for the counter to see in this build";
         EXPECT_GE(reuse_short, baseline_short)
@@ -273,18 +273,18 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
     auto sg = scheduled_rt.graph();
     sg.add(N, Reads{}, Writes(scheduled_buf), kernel(scheduled_buf.data()));
 
-    const std::size_t scheduler_short = allocations_for_reuse_ticks(sg, TICKS);
-    const std::size_t scheduler_long  = allocations_for_reuse_ticks(sg, TICKS * 4);
+    const std::size_t scheduler_short = allocations_for_reuse_ticks(sg, K_TICKS);
+    const std::size_t scheduler_long  = allocations_for_reuse_ticks(sg, K_TICKS * 4);
 
-    RecordProperty("scheduler_reuse_allocations_per_" + std::to_string(TICKS) + "_ticks",
+    RecordProperty("scheduler_reuse_allocations_per_" + std::to_string(K_TICKS) + "_ticks",
                    static_cast<int>(scheduler_short));
-    RecordProperty("scheduler_reuse_allocations_per_" + std::to_string(TICKS * 4) + "_ticks",
+    RecordProperty("scheduler_reuse_allocations_per_" + std::to_string(K_TICKS * 4) + "_ticks",
                    static_cast<int>(scheduler_long));
 
     EXPECT_TRUE(scheduler_long == 0 || scheduler_long < 4 * scheduler_short)
         << "a scheduler-forced run's steady-state allocation scales with tick count: "
-        << scheduler_short << " over " << TICKS << " ticks, " << scheduler_long
-        << " over " << (TICKS * 4);
+        << scheduler_short << " over " << K_TICKS << " ticks, " << scheduler_long
+        << " over " << (K_TICKS * 4);
 }
 
 /** @brief Tests the same allocation claims on the asynchronous path. */
@@ -301,7 +301,7 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
           [p](std::size_t i) { p[i] = static_cast<float>(i) * 0.25f; });
 
     RunReport report;
-    for (std::size_t i = 0; i < WARMUP_TICKS; ++i)
+    for (std::size_t i = 0; i < K_WARMUP_TICKS; ++i)
     {
         auto step = g.run_async().value();
         step.wait(report).value();
@@ -320,15 +320,15 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
         return g_allocation_count.load(std::memory_order_relaxed);
     };
 
-    const std::size_t shorter = measure(TICKS);
-    const std::size_t longer  = measure(TICKS * 4);
+    const std::size_t shorter = measure(K_TICKS);
+    const std::size_t longer  = measure(K_TICKS * 4);
 
-    RecordProperty("async_allocations_per_" + std::to_string(TICKS) + "_ticks",
+    RecordProperty("async_allocations_per_" + std::to_string(K_TICKS) + "_ticks",
                    static_cast<int>(shorter));
 
     EXPECT_TRUE(longer == 0 || longer < 4 * shorter)
         << "an overlapped tick allocates per step: " << shorter << " over "
-        << TICKS << " ticks, " << longer << " over " << (TICKS * 4);
+        << K_TICKS << " ticks, " << longer << " over " << (K_TICKS * 4);
 }
 
 /** @brief Tests that a profiled run's event ledger allocates only for a new shape. */
@@ -344,22 +344,22 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
     g.set_profiling(true);
     g.add(N, Reads{}, Writes(buf), kernel(p));
 
-    const std::size_t reuse_short = allocations_for_reuse_ticks(g, TICKS);
-    const std::size_t reuse_long  = allocations_for_reuse_ticks(g, TICKS * 4);
+    const std::size_t reuse_short = allocations_for_reuse_ticks(g, K_TICKS);
+    const std::size_t reuse_long  = allocations_for_reuse_ticks(g, K_TICKS * 4);
 
     // The baseline uses the profiling flavour of the chain's in-order queue; see README.md.
     sycl::queue& baseline_queue = SushiRuntime::Internal::ContextAccess::context(rt)
         .devices().queue(0, Internal::Device::QueueFlavour{true, true});
-    const std::size_t baseline_short = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS);
-    const std::size_t baseline_long  = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), TICKS * 4);
+    const std::size_t baseline_short = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), K_TICKS);
+    const std::size_t baseline_long  = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), K_TICKS * 4);
 
-    RecordProperty("profiled_reuse_allocations_per_" + std::to_string(TICKS) + "_ticks",
+    RecordProperty("profiled_reuse_allocations_per_" + std::to_string(K_TICKS) + "_ticks",
                    static_cast<int>(reuse_short));
-    RecordProperty("profiled_reuse_allocations_per_" + std::to_string(TICKS * 4) + "_ticks",
+    RecordProperty("profiled_reuse_allocations_per_" + std::to_string(K_TICKS * 4) + "_ticks",
                    static_cast<int>(reuse_long));
-    RecordProperty("profiled_baseline_allocations_per_" + std::to_string(TICKS) + "_ticks",
+    RecordProperty("profiled_baseline_allocations_per_" + std::to_string(K_TICKS) + "_ticks",
                    static_cast<int>(baseline_short));
-    RecordProperty("profiled_baseline_allocations_per_" + std::to_string(TICKS * 4) + "_ticks",
+    RecordProperty("profiled_baseline_allocations_per_" + std::to_string(K_TICKS * 4) + "_ticks",
                    static_cast<int>(baseline_long));
 
     const auto chain_growth    = static_cast<std::ptrdiff_t>(reuse_long) - static_cast<std::ptrdiff_t>(reuse_short);
@@ -378,18 +378,18 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
     sg.set_profiling(true);
     sg.add(N, Reads{}, Writes(scheduled_buf), kernel(scheduled_buf.data()));
 
-    const std::size_t scheduler_short = allocations_for_reuse_ticks(sg, TICKS);
-    const std::size_t scheduler_long  = allocations_for_reuse_ticks(sg, TICKS * 4);
+    const std::size_t scheduler_short = allocations_for_reuse_ticks(sg, K_TICKS);
+    const std::size_t scheduler_long  = allocations_for_reuse_ticks(sg, K_TICKS * 4);
 
-    RecordProperty("profiled_scheduler_allocations_per_" + std::to_string(TICKS) + "_ticks",
+    RecordProperty("profiled_scheduler_allocations_per_" + std::to_string(K_TICKS) + "_ticks",
                    static_cast<int>(scheduler_short));
-    RecordProperty("profiled_scheduler_allocations_per_" + std::to_string(TICKS * 4) + "_ticks",
+    RecordProperty("profiled_scheduler_allocations_per_" + std::to_string(K_TICKS * 4) + "_ticks",
                    static_cast<int>(scheduler_long));
 
     EXPECT_TRUE(scheduler_long == 0 || scheduler_long < 4 * scheduler_short)
         << "a scheduler-forced profiled run's steady-state allocation scales with tick count: "
-        << scheduler_short << " over " << TICKS << " ticks, " << scheduler_long << " over "
-        << (TICKS * 4);
+        << scheduler_short << " over " << K_TICKS << " ticks, " << scheduler_long << " over "
+        << (K_TICKS * 4);
 }
 
 #endif // !defined(SR_SANITIZER_OWNS_ALLOCATOR)
