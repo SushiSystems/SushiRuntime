@@ -19,6 +19,7 @@ for the subject at hand:
 | `errors_demo.cpp` | A `Result` tested and handled, a refused recording read with `refusal()`, `compile()` before any step, and `clear()` |
 | `tasks_demo.cpp` | `add_task`, `add_host` and `add_untracked` beside kernels, nodes named through `NodeOptions`, and the `plan()` they compile to |
 | `stepping_demo.cpp` | `before_each_step`, then one rule through `run(steps)`, `run_until`, `run_async` with its `RunHandle`, and `run_for` |
+| `data_access_demo.cpp` | The three residencies, `write_range()` and `read_range()` tested as results, an aligned buffer, `Runtime::wait()` and `advanced().queue()` |
 | `adapter/` | A host program that reaches the library through one file, in its own types and its own status |
 | `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
 | `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
@@ -275,6 +276,45 @@ stepping: 256 cells; a step adds 1 + the steps its run finished
 The first three cells are fixed: 1 + 2 + 3 + 4 is 10, five more steps reach the threshold of
 25, and one step adds 1. The step count of `run_for()` differs from machine to machine, so the
 check compares every cell with the host count and not with a constant.
+
+## data_access_demo.cpp
+
+How a host program gets data into a buffer and out of it, for each place a buffer can live.
+
+| Buffer | Residency | The host reaches it by |
+| --- | --- | --- |
+| `doubled` | `Residency::Shared`, the default | Indexing it once the run has returned |
+| `resident` | `Residency::Device` | `write_range()` and `read_range()`, or a copy on the device's queue |
+| `first` | `Residency::Host` | Indexing it; a kernel writes it across the bus |
+
+`resident` is allocated with the fourth argument of `Runtime::buffer()`, an alignment of 64
+bytes, and the program checks the address. `is_host_accessible()` answers whether the host may
+index a buffer, and `residency_name()` spells the residency.
+
+`write_range()` seeds `resident` and returns a `Result<void>`; `read_range()` returns the last
+four elements as a `Result` that holds a vector. The program tests both and prints the error of
+one that failed. Both wait for their copy, and `advanced()` counts the bytes they moved.
+
+`advanced().queue()` returns the `sycl::queue` the runtime submits a device's work on. The
+program submits a kernel of its own there, which adds 1 to every element, and does not wait
+for its event. That work is outside every graph and no rule is ordered against it, so the
+program calls `Runtime::wait()`, which returns when every device queue is idle, before the
+graph that reads `resident` runs. After the run it copies the whole buffer back with a `memcpy`
+on the same queue and waits for that one itself.
+
+```
+data access: 4096 floats
+  doubled  Shared host-addressable: yes
+  resident Device host-addressable: no
+  first    Host   host-addressable: yes
+  resident is aligned to 64 bytes: yes
+  first[0] = 1, doubled[4095] = 8192
+  range calls moved 16384 bytes to the device and 16 back
+  result: CORRECT
+```
+
+The check compares every element of the copy with i + 1, every element of `doubled` with twice
+that, the four elements `read_range()` returned and the two byte counts.
 
 ## adapter/
 

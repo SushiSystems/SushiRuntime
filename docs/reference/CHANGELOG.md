@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-12 — examples: Added an example that reads and writes a buffer of each residency, by range calls and by a copy on the device queue (`data_access_demo.cpp`, `Runtime::wait`, `AdvancedControls::queue`).
 - 2026-10-12 — examples: Added an example that feeds one rule from a hook before each step and drives it with every run entry (`stepping_demo.cpp`, `before_each_step`, `run_until`, `run_async`, `run_for`).
 - 2026-10-12 — examples: Added an example that records `add_task`, `add_host` and `add_untracked` beside kernels and prints the `PlanView` of the five nodes (`tasks_demo.cpp`).
 - 2026-10-12 — examples: Added an example that handles a failed allocation and a refused recording, with `refusal()`, `compile()` and `Graph::clear()` (`errors_demo.cpp`).
