@@ -69,8 +69,6 @@ namespace
     /**
      * @brief Runs the demo on a runtime built from one RuntimeConfig.
      * @return 0 when both runs succeed and the readback holds the expected counts.
-     * @pre The runtime can be built and no range call is refused; value() stops the process
-     *      otherwise.
      */
     int run_demo()
     {
@@ -84,7 +82,8 @@ namespace
         const AdvancedControls built = runtime.advanced();
         for (const auto& device : built.devices())
             std::printf("  device %zu: %s\n", device.index, device.name.c_str());
-        std::printf("  workers: %zu\n", built.worker_pool().count);
+        std::printf("  workers: %zu  (devices and workers depend on the machine)\n",
+                    built.worker_pool().count);
 
         // A device-resident buffer is not host-addressable, so write_range() seeds it.
         auto hits = runtime.buffer<float>(K_CAPACITY, DeviceIndex{0}, Residency::Device).value();
@@ -95,7 +94,7 @@ namespace
         std::size_t live_count = K_CAPACITY / 4;
         float* cells = hits.data();
         auto graph = runtime.graph();
-        graph.add_dynamic(Dynamic().sized([&live_count] { return live_count; }), K_CAPACITY, Reads(),
+        graph.add_dynamic(sized([&live_count] { return live_count; }), K_CAPACITY, Reads(),
                           Writes(hits), [cells](std::size_t index) { cells[index] += 1.0f; })
             .name("count_hits");
 
@@ -131,7 +130,6 @@ namespace
         const float in_both_runs = hits.read_range({0, 1}).value()[0];
         const float in_second_run = hits.read_range({K_CAPACITY / 4, 1}).value()[0];
         const float in_neither_run = hits.read_range({K_CAPACITY / 2, 1}).value()[0];
-
         const bool is_correct = in_both_runs == static_cast<float>(2 * K_STEPS) &&
                                 in_second_run == static_cast<float>(K_STEPS) &&
                                 in_neither_run == 0.0f;

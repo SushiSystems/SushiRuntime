@@ -38,7 +38,7 @@ using namespace SushiRuntime;
 
 namespace
 {
-    /** @brief Runs the diffusion stencil and prints its total heat; returns 0 on success. */
+    /** @brief Runs the diffusion stencil; returns 0 when the total heat is what it started as. */
     int run_quickstart()
     {
         constexpr std::size_t N     = 1024;
@@ -64,14 +64,17 @@ namespace
         // The graph compiles once and replays STEPS times.
         const auto report = sim.run(STEPS).value();
 
-        // Heat is conserved by this closed diffusion; report it as a smoke check.
+        // Both ends reflect, so the field still holds the one unit of heat it started with.
         double total = 0.0;
         for (std::size_t i = 0; i < N; ++i)
             total += heat[i];
+        const bool is_conserved = total > 0.999 && total < 1.001;
 
-        std::printf("quickstart: %zu steps in %.2f ms; total heat = %.4f (compiles = %zu)\n",
-                    STEPS, report.total_duration_ms, total, sim.compile_count());
-        return 0;
+        std::printf("quickstart: %zu steps in %.2f ms (timing); compiles = %zu\n", STEPS,
+                    report.total_duration_ms, sim.compile_count());
+        std::printf("  total heat = %.2f  (expected 1.00)\n", total);
+        std::printf("  result: %s\n", is_conserved ? "CORRECT" : "WRONG");
+        return is_conserved ? 0 : 1;
     }
 } // namespace
 
@@ -322,7 +325,7 @@ and `when()` whether the node runs at all.
         std::size_t live_count = K_CAPACITY / 4;
         float* cells = hits.data();
         auto graph = runtime.graph();
-        graph.add_dynamic(Dynamic().sized([&live_count] { return live_count; }), K_CAPACITY, Reads(),
+        graph.add_dynamic(sized([&live_count] { return live_count; }), K_CAPACITY, Reads(),
                           Writes(hits), [cells](std::size_t index) { cells[index] += 1.0f; })
             .name("count_hits");
 ```
@@ -481,7 +484,8 @@ Source: `applications/examples/streaming_world_demo.cpp`
         const AdvancedControls built = runtime.advanced();
         for (const auto& device : built.devices())
             std::printf("  device %zu: %s\n", device.index, device.name.c_str());
-        std::printf("  workers: %zu\n", built.worker_pool().count);
+        std::printf("  workers: %zu  (devices and workers depend on the machine)\n",
+                    built.worker_pool().count);
 ```
 
 Source: `applications/examples/operating_path_demo.cpp`
