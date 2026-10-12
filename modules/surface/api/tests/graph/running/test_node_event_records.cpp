@@ -22,7 +22,7 @@
 /**
  * @file test_node_event_records.cpp
  * @brief Tests per-dispatch node event records and their pairing with the event clock.
- * @see modules/surface/api/tests/graph/stepping/README.md
+ * @see modules/surface/api/tests/graph/running/README.md
  * @author Mustafa Garip
  */
 

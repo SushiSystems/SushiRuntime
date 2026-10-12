@@ -361,7 +361,7 @@ the tasks it depends on. Use it for host C++ that shares data with kernels.
     });
 ```
 
-Source: `modules/surface/api/tests/graph/stepping/test_async_step.cpp`
+Source: `modules/surface/api/tests/graph/running/test_async_step.cpp`
 
 `add_task(reads, writes, body)` hands the body the queue and the events it must run after. The
 body submits what it needs and returns the event that ends its work. A library that calls
@@ -418,7 +418,7 @@ step and returns its report; the `State`s advance there.
     const RunReport report = step.wait().value();
 ```
 
-Source: `modules/surface/api/tests/graph/stepping/test_async_step.cpp`
+Source: `modules/surface/api/tests/graph/running/test_async_step.cpp`
 
 A runtime runs one graph at a time. A run entry called while another run is in flight on the
 same runtime returns `InvalidState`.
@@ -438,7 +438,7 @@ called the run. It is where a program writes a value the next step reads.
     g.run(K_STEPS).value();
 ```
 
-Source: `modules/surface/api/tests/graph/stepping/test_run_driver.cpp`
+Source: `modules/surface/api/tests/graph/running/test_run_driver.cpp`
 
 `compile()` builds the plan and runs nothing. `Graph::plan()` returns a `PlanView` of the nodes
 in recording order. `cancel()` stops the run in flight of the graph it is called on, from any

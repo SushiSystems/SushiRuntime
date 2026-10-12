@@ -22,7 +22,7 @@
 /**
  * @file test_run_driver.cpp
  * @brief Tests the run entries StepDriver gives Graph and DynamicGraph, and their errors.
- * @see modules/surface/api/tests/graph/stepping/README.md
+ * @see modules/surface/api/tests/graph/running/README.md
  * @author Mustafa Garip
  */
 
@@ -52,7 +52,7 @@
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 
-#include "../refusing_fill.hpp"
+#include "refusing_fill.hpp"
 
 using namespace SushiRuntime;
 

@@ -22,7 +22,7 @@
 /**
  * @file test_run_report_reuse.cpp
  * @brief Tests the caller-owned RunReport overloads of run(), run() and RunHandle::wait().
- * @see modules/surface/api/tests/graph/stepping/README.md
+ * @see modules/surface/api/tests/graph/running/README.md
  * @author Mustafa Garip
  */
 

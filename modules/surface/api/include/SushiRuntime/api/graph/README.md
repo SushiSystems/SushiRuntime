@@ -574,7 +574,7 @@ released.store(true, std::memory_order_release);
 const RunReport report = step.wait().value();
 ```
 
-The block is from `modules/surface/api/tests/graph/stepping/test_async_step.cpp`.
+The block is from `modules/surface/api/tests/graph/running/test_async_step.cpp`.
 
 The handle is move-only and owns the obligation to finish the step: its destructor waits if `wait()`
 was not called, because the compiled plan must not be destroyed while workers are still touching its

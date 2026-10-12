@@ -22,7 +22,7 @@
 /**
  * @file dynamic_graph_plan_access.hpp
  * @brief Declares the test seam onto the composed plan of a DynamicGraph and its nodes.
- * @see modules/surface/api/tests/graph/regions/README.md
+ * @see modules/surface/api/tests/graph/running/README.md
  * @author Mustafa Garip
  */
 
