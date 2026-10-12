@@ -69,6 +69,7 @@ sushiruntime_add_example(sr_errors_demo            errors_demo.cpp)
 sushiruntime_add_example(sr_tasks_demo             tasks_demo.cpp)
 sushiruntime_add_example(sr_stepping_demo          stepping_demo.cpp)
 sushiruntime_add_example(sr_data_access_demo       data_access_demo.cpp)
+sushiruntime_add_example(sr_extension_demo         extension_demo.cpp)
 sushiruntime_add_example(sr_adapter_demo
     adapter/adapter_demo.cpp
     adapter/sushiruntime_adapter.cpp)

@@ -20,6 +20,7 @@ for the subject at hand:
 | `tasks_demo.cpp` | `add_task`, `add_host` and `add_untracked` beside kernels, nodes named through `NodeOptions`, and the `plan()` they compile to |
 | `stepping_demo.cpp` | `before_each_step`, then one rule through `run(steps)`, `run_until`, `run_async` with its `RunHandle`, and `run_for` |
 | `data_access_demo.cpp` | The three residencies, `write_range()` and `read_range()` tested as results, an aligned buffer, `Runtime::wait()` and `advanced().queue()` |
+| `extension_demo.cpp` | A domain library that records through `extend()` and the `Recorder`: `rule()`, `scratch()`, `kernel()` and `task()` |
 | `adapter/` | A host program that reaches the library through one file, in its own types and its own status |
 | `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
 | `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
@@ -315,6 +316,44 @@ data access: 4096 floats
 
 The check compares every element of the copy with i + 1, every element of `doubled` with twice
 that, the four elements `read_range()` returned and the two byte counts.
+
+## extension_demo.cpp
+
+For the author of a library on top of the runtime. `ScaleLibrary::record_scale_offset()` is
+such a library's whole interface to it: a free function that takes a `Recorder&` and the
+buffers of one operation, records the nodes of that operation and returns the position of
+their rule. The library names no `Graph`, so the same function records into a region of a
+`DynamicGraph`.
+
+The operation is out = in * factor + offset, in two nodes with a staging buffer between them:
+
+| Recorder verb | What the library uses it for |
+| --- | --- |
+| `scratch()` | The staging memory; the recorder owns it and frees it with the nodes |
+| `rule()` | A scope that makes both nodes one rule, under one registration index |
+| `kernel()` | The first node: a launch over a count that reads `in` and writes the stage |
+| `task()` | The second node: a body that takes the queue, reads the stage and writes `out` |
+
+The stage is not a `Buffer`, so the library names it as a `BufferRegion` over the pointer
+`scratch()` returned, and `Access(Reads(...), Writes(...))` orders the two nodes by it.
+
+The program reaches the function through `extend()`, which hands it the graph's recorder in the
+middle of a chain, and reads the same position from `last_rule()`. `name()` after `extend()`
+names the rule. The second node states a name of its own in its `NodeOptions` and keeps it, and
+the first takes the rule's:
+
+```
+extension: 2 rules, 3 nodes, the library recorded rule 1
+  rule 0  fill           waits on 0
+  rule 1  scale_offset   waits on 1
+  rule 1  add_offset     waits on 1
+  output[1023] = 3076  (expected 3076)
+  result: CORRECT
+```
+
+Once the graph has compiled, `rule_registration()` of that position returns the index the
+rule's node events carry in a profiled `RunReport`; before that it returns
+`K_NO_REGISTRATION`. The check compares every element of the output with i * 3 + 7.
 
 ## adapter/
 
