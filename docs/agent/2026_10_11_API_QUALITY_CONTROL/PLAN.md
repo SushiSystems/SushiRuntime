@@ -1,7 +1,7 @@
 # API refinement: plan
 
 **Status:** Built and verified on 2026-10-12, not released. Stages 0 to 9 are done in
-SushiRuntime and SushiBLAS: 844 and 2207 tests pass, the installed-package tests pass, and task
+SushiRuntime and SushiBLAS: 844 and 2210 tests pass, the installed-package tests pass, and task
 6.7 measured no cost of the boundary (`REPORT.md`, "Refinement result"). SushiAI passed 5660
 tests before the last surface work and is its own session's to rebuild; SushiEngine is written,
 not built, and its session's to commit. Open: stage 10 (the version, the repositories made
