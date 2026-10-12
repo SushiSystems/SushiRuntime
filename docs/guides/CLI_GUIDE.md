@@ -210,7 +210,7 @@ the HTML site and, in `build/docs/api-site/xml`, the XML the bundle carries.
 beside it. `--out` names another folder. The release is three integers, without the `v` of the
 tag. The command stops with the page and the line when a published page links to a file that
 does not exist. The archive's layout and the keys of `docs/publish.toml` are in
-`docs/reference/DOCS_BUNDLE.md` of the SushiCore repository.
+`DOCS_BUNDLE.md`, a reference page of the SushiCore repository.
 
 ## `sr package`
 

@@ -125,7 +125,8 @@ A comment says what a thing does, in Doxygen form. The reason for a design goes 
             run_for(std::chrono::duration<Rep, Period> budget) noexcept
 ```
 
-The block is from `modules/surface/api/include/SushiRuntime/api/graph/step_driver.hpp`.
+Source: `modules/surface/api/include/SushiRuntime/api/graph/step_driver.hpp`
+
 `python tools/documentation/check_source_comments.py modules` checks these rules.
 
 ## 5. Documentation is part of the change
