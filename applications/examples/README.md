@@ -17,6 +17,7 @@ for the subject at hand:
 | `streaming_world_demo.cpp` | A `DynamicGraph` whose set of work changes between steps |
 | `operating_path_demo.cpp` | `RuntimeConfig`, `advanced()`, `run()` with its error branch, `Dynamic` and a `read_range()` readback |
 | `errors_demo.cpp` | A `Result` tested and handled, a refused recording read with `refusal()`, `compile()` before any step, and `clear()` |
+| `tasks_demo.cpp` | `add_task`, `add_host` and `add_untracked` beside kernels, nodes named through `NodeOptions`, and the `plan()` they compile to |
 | `adapter/` | A host program that reaches the library through one file, in its own types and its own status |
 | `distributed_demo.cpp` | A master that offloads a task to a worker, or runs it itself (opt-in) |
 | `distributed_worker.cpp` | The worker process of the distributed demo (opt-in) |
@@ -195,6 +196,48 @@ errors:
   after clear(): 10 steps, cell = 10, compiles = 1
   result: CORRECT
 ```
+
+## tasks_demo.cpp
+
+The three verbs for work that is not one kernel over named buffers, and the plan the data
+they name implies. Five nodes are recorded:
+
+| Node | Verb | Reads | Writes |
+| --- | --- | --- | --- |
+| `fill` | `add` with `Out` | | `values` |
+| `double_then_add_one` | `add_task` | `values` | `staged`, `result` |
+| `add_three` | `add` with `InOut` | `result` | `result` |
+| `checksum` | `add_host` | `result` | `checksum` |
+| `apart` | `add_untracked` | | |
+
+The body of `add_task` receives the `sycl::queue` of its device and the events it must run
+after. It submits two command groups, makes the second depend on the first with
+`depends_on()`, waits for nothing and returns the event of the second; the runtime releases
+`add_three` when that event completes. The body of `add_host` takes no argument and runs on a
+worker thread once `add_three` has finished, so it reads `result` through the pointer it
+captured. `add_untracked` names no data: its kernel writes a buffer no other node touches, and
+nothing orders it.
+
+Each node states its name in a `NodeOptions`, the last argument of every verb. `named()` builds
+one by assigning `name` to a default object, which is how a caller states one field alone.
+
+`Graph::plan()` compiles the graph, runs nothing and returns a `PlanView`: one `PlanNode` per
+node, in recording order, with the position of its rule, its name and how many nodes it waits
+for. The program prints the plan before it runs and compares the five counts:
+
+```
+tasks: 5 rules, 5 nodes
+  rule 0  fill                 waits on 0
+  rule 1  double_then_add_one  waits on 1
+  rule 2  add_three            waits on 1
+  rule 3  checksum             waits on 1
+  rule 4  apart                waits on 0
+  checksum = 1051648  (expected 1051648)
+  result: CORRECT
+```
+
+After the run, element i of `result` is 2 * i + 4 and `checksum` is their sum over 1024
+elements. `compile_count()` is 1: the run used the plan `plan()` built.
 
 ## adapter/
 
