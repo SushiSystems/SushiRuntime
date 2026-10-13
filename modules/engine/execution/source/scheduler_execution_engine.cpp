@@ -372,8 +372,8 @@ namespace SushiRuntime
             }
 
             // node_timings has one row per dispatched registration_index (modules/engine/execution/README.md).
-            struct NodeAgg { std::uint64_t invocations = 0; std::uint64_t device_ns = 0; std::uint64_t host_ns = 0; };
-            std::vector<NodeAgg> agg(graph.profiling_multiplicities.size());
+            auto& agg = graph.profiling_accumulators;
+            agg.assign(graph.profiling_multiplicities.size(), Internal::Graph::NodeTimingAccumulator{});
             for (const auto& rec : report.node_events)
             {
                 if (rec.node_index >= agg.size()) continue;

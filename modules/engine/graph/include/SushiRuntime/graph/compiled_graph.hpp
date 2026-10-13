@@ -42,6 +42,19 @@ namespace SushiRuntime
     namespace Internal::Graph
     {
         /**
+         * @brief Holds one registration index's profiled totals for a single run.
+         */
+        struct NodeTimingAccumulator
+        {
+            /** @brief Counts the event records that carry this registration index. */
+            std::uint64_t invocations = 0;
+            /** @brief Sums the device-clock durations of those records, in nanoseconds. */
+            std::uint64_t device_ns = 0;
+            /** @brief Sums the native-host durations of those records, in nanoseconds. */
+            std::uint64_t host_ns = 0;
+        };
+
+        /**
          * @brief Compiled representation of a task graph ready for execution.
          *
          * TaskGraph::compile() produces this struct. It contains the topologically
@@ -113,6 +126,9 @@ namespace SushiRuntime
              * already-event-clock device record.
              */
             std::vector<bool> profiling_host_native;
+
+            /** @brief Keeps per-registration-index profiled totals, reset in place on each collect. */
+            std::vector<NodeTimingAccumulator> profiling_accumulators;
 
             /** @brief Whether and how this plan runs as an in-order chain; set by the fluent Graph at build. */
             ChainPlan chain;
