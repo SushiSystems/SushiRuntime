@@ -128,11 +128,18 @@ macro(sushiruntime_sycl_configure)
         # Stub the IntelSYCL link target so src/CMakeLists.txt's link line stays
         # toolchain-neutral; AdaptiveCpp already provides add_sycl_to_target().
         if(NOT TARGET IntelSYCL::SYCL_CXX)
-            add_library(IntelSYCL::SYCL_CXX INTERFACE IMPORTED)
+            add_library(IntelSYCL::SYCL_CXX INTERFACE IMPORTED GLOBAL)
         endif()
 
     elseif(SR_SYCL_TOOLCHAIN STREQUAL "oneapi")
         find_package(IntelSYCL REQUIRED)
+        # An imported target is visible only in the directory that created it. Consumers
+        # add this project as a subdirectory and call add_sycl_to_target() from their own
+        # directories, so the target must be global.
+        if(NOT TARGET IntelSYCL::SYCL_CXX)
+            message(FATAL_ERROR "find_package(IntelSYCL) did not define IntelSYCL::SYCL_CXX")
+        endif()
+        set_target_properties(IntelSYCL::SYCL_CXX PROPERTIES IMPORTED_GLOBAL TRUE)
         message(STATUS "SYCL toolchain: Intel oneAPI commercial (${CMAKE_CXX_COMPILER})")
 
     elseif(SR_SYCL_TOOLCHAIN STREQUAL "intel-llvm")
@@ -141,7 +148,7 @@ macro(sushiruntime_sycl_configure)
         add_link_options(-fsycl)
         # Stub the IntelSYCL target/command so src/CMakeLists.txt links unchanged.
         if(NOT TARGET IntelSYCL::SYCL_CXX)
-            add_library(IntelSYCL::SYCL_CXX INTERFACE IMPORTED)
+            add_library(IntelSYCL::SYCL_CXX INTERFACE IMPORTED GLOBAL)
         endif()
         if(NOT COMMAND add_sycl_to_target)
             function(add_sycl_to_target)
