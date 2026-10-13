@@ -124,10 +124,9 @@ namespace SushiRuntime
                  * @brief Builds a master, installs it as the runtime's offload coordinator and
                  *        starts it and the transport.
                  * @pre @p transport is not null and was never started.
-                 * @return The handle, or InvalidState when a run is in flight on @p runtime,
-                 *         an option is refused or the transport does not start, and
-                 *         Unsupported when the platform has no random source; a cluster
-                 *         attached before stays installed and keeps running.
+                 * @return The handle, or InvalidState when a run is in flight on @p runtime, an option
+                 *         is refused or the transport does not start, and Unsupported when the platform
+                 *         has no random source; a cluster attached before stays installed and keeps running.
                  */
                 [[nodiscard]] static Result<Cluster>
                 attach(Runtime& runtime, std::shared_ptr<Transport> transport,
@@ -198,9 +197,8 @@ namespace SushiRuntime
                 [[nodiscard]] bool supports(OperationID op) const;
 
                 /**
-                 * @brief Makes a buffer known to the workers, so that a node that names an
-                 *        operation and touches it may run on one; does nothing for an empty
-                 *        buffer.
+                 * @brief Makes a buffer known to the workers, so a node that names an operation and
+                 *        touches it may run on one; does nothing for an empty buffer.
                  * @return buffer.
                  * @pre A buffer that owns memory is shared or host USM, and is shared before
                  *      the graph that touches it first runs.

@@ -97,8 +97,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Returns the refusal of a Dynamic whose device count or base slot is not host
-         *        USM.
+         * @brief Returns the refusal of a Dynamic whose device count or base slot is not host USM.
          *
          * Resolves each slot's owning queue through the context's registry and
          * requires sycl::usm::alloc::host there (docs/architecture/ARCHITECTURE.md,

@@ -59,8 +59,7 @@ TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     constexpr float  SCALE  = 3.0f;
     constexpr float  BIAS   = 5.0f;
 
-    // The queues come from context's deduplicated set, which get_devices() can exceed;
-    // see README.md.
+    // Queues come from the context's deduplicated set, which get_devices() can exceed; see README.md.
     std::vector<sycl::queue*> device_queues;
     for (size_t i = 0; i < context.devices().count(); ++i)
     {

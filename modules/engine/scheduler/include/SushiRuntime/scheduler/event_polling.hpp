@@ -263,10 +263,7 @@ namespace SushiRuntime
                  *
                  * Reaps an entry whose status query or wait throws as a task that did not
                  * execute, and returns the first such failure once the pass is over.
-                 * @param active_events List of events currently being monitored.
-                 * @param local_queue Current thread's task queue.
-                 * @return The error of the first query or wait that threw, or nothing when none
-                 *         did.
+                 * @return The error of the first query or wait that threw, or nothing when none did.
                  */
                 template<typename QueueType>
                 [[nodiscard]] std::optional<Error> poll_events(ActiveEventList& active_events,
