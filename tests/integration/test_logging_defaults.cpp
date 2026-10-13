@@ -26,6 +26,8 @@
  * @author Mustafa Garip
  */
 
+#include <regex>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -64,6 +66,27 @@ namespace
         return captured;
     }
 
+    /** @brief Tells whether a line starts the way the logger writes one: a time, then a level. */
+    bool is_logger_line(const std::string& line)
+    {
+        static const std::regex prefix(R"(^\[\d{2}:\d{2}:\d{2}\.\d{3}\] \[)");
+        return std::regex_search(line, prefix);
+    }
+
+    /** @brief Returns the lines of @p text the logger wrote, dropping any other output. */
+    std::string logger_lines_only(const std::string& text)
+    {
+        std::string kept;
+        std::istringstream lines(text);
+        std::string line;
+        while (std::getline(lines, line))
+        {
+            if (is_logger_line(line))
+                kept += line + '\n';
+        }
+        return kept;
+    }
+
     /** @brief Puts the logger in synchronous mode and restores the level and the sink. */
     class Integration_LoggingDefaults : public ::testing::Test
     {
@@ -87,7 +110,12 @@ namespace
     };
 }
 
-/** @brief Tests that the default sink writes nothing while a Runtime is created at Warn. */
+/**
+ * @brief Tests that the default sink writes no logger line while a Runtime is created at Warn.
+ *
+ * Output that is not the logger's, such as a SYCL device sanitizer banner printed under
+ * ThreadSanitizer, is not the logger's to silence and is ignored on stderr.
+ */
 TEST_F(Integration_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
 {
     set_log_level(LogLevel::Warn);
@@ -95,10 +123,10 @@ TEST_F(Integration_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
     const CapturedStreams captured = capture_streams_around_create();
 
     EXPECT_TRUE(captured.standard_output.empty()) << captured.standard_output;
-    EXPECT_TRUE(captured.standard_error.empty()) << captured.standard_error;
+    EXPECT_TRUE(logger_lines_only(captured.standard_error).empty()) << captured.standard_error;
 }
 
-/** @brief Tests that at Info the device line reaches the sink and neither stream. */
+/** @brief Tests that at Info the device line reaches the sink and no logger line reaches stderr. */
 TEST_F(Integration_LoggingDefaults, DeviceLineArrivesThroughTheSinkAtInfo)
 {
     std::vector<SeenRecord> records;
@@ -121,5 +149,5 @@ TEST_F(Integration_LoggingDefaults, DeviceLineArrivesThroughTheSinkAtInfo)
 
     EXPECT_TRUE(saw_device_line) << records.size() << " records, none an Info device line";
     EXPECT_TRUE(captured.standard_output.empty()) << captured.standard_output;
-    EXPECT_TRUE(captured.standard_error.empty()) << captured.standard_error;
+    EXPECT_TRUE(logger_lines_only(captured.standard_error).empty()) << captured.standard_error;
 }
