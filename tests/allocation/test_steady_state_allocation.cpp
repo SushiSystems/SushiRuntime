@@ -334,6 +334,10 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
 /** @brief Tests that a profiled run's event ledger allocates only for a new shape. */
 TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
 {
+    // Without the counter every count is zero, so both claims would pass vacuously.
+    if (!K_COUNTER_SEES_THE_LIBRARY)
+        GTEST_SKIP() << "the allocation counter does not see the library in this build; see README.md";
+
     const auto kernel = [](int* p) { return [p](std::size_t i) { p[i] = static_cast<int>(i); }; };
 
     auto rt  = Runtime::create().value();
