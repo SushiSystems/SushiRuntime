@@ -24,7 +24,6 @@
  * @brief Declares describe_task, which states a node's task as the NodeOptions a kernel and a
  *        policy are handed.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
  */
 
 #pragma once

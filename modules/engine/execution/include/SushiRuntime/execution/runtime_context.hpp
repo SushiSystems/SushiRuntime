@@ -64,10 +64,8 @@ namespace SushiRuntime
                  * @brief Creates a runtime context and scans for hardware matching config.
                  * @param provider Topology source; null selects the hwloc default.
                  * @param distance_model NUMA distance model; null selects the hwloc default.
-                 * @return The context, or why there is none: Unsupported when no device passes
-                 *         config or the devices cannot be listed, DeviceLost when a device queue
-                 *         cannot be built, AllocationFailed when the host refuses memory or a
-                 *         thread.
+                 * @return The context, or Unsupported when no device passes config or cannot be listed,
+                 *         DeviceLost when a queue cannot be built, AllocationFailed when memory or a thread is refused.
                  * @see modules/engine/execution/README.md
                  */
                 [[nodiscard]] static Result<std::shared_ptr<RuntimeContext>>
