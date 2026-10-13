@@ -58,14 +58,16 @@
 - 2026-10-12 — api: Breaking change: Replaced the replay callable of a recorded node with `Detail::NodeDescription`, the regions, the type-erased work and a kind (`node_description.hpp`, `node_emitters.cpp`).
 - 2026-10-12 — api: Breaking change: Added `ContextHandle`, which a recorder, a region and both graph types hold in place of a shared pointer to the engine's context (`context_handle.hpp`).
 - 2026-10-12 — api: Breaking change: Moved three headers that name engine types out of the installed tree into `source/` and removed `usm_scratch.hpp` and `live_fields.hpp` (`boundary_access.hpp`).
-- 2026-10-12 — region: Breaking change: Moved `Liveness`, `LivenessToken`, `LivenessObserver` and `make_liveness` from the `memory` module to `region`, declared in `SushiRuntime` (`liveness.hpp`).
+- 2026-10-12 — region: Breaking change: Moved `Liveness`, `LivenessToken`, `LivenessObserver` and `make_liveness` from the memory module to the region module, declared in SushiRuntime (`liveness.hpp`).
 - 2026-10-12 — cmake: Breaking change: Added the `INTERNAL` mark of `sushiruntime_add_module`; the eleven modules that carry it are no longer installed (`SushiRuntimeModule.cmake`, `SushiRuntimeInstall.cmake`).
 - 2026-10-12 — task: Breaking change: Removed the using-declaration that named `TaskMetadata` in `SushiRuntime`; the type is `Internal::Graph::TaskMetadata` only (`task_types.hpp`).
 - 2026-10-12 — machine: Breaking change: Renamed `HardwareFilterConfig` to `DeviceFilter` and moved it out of `topology/hw_discovery.hpp` (`machine/device_filter.hpp`).
-- 2026-10-12 — machine: Breaking change: Moved `PinPolicy`, `WorkerPool`, `DeviceDescription` and `DeviceKind` to the new public module `machine`, declared in `SushiRuntime`; `DeviceDescriptor` moved to `device/device_descriptor.hpp`.
-- 2026-10-12 — log: Breaking change: Moved `LogLevel`, `LogSink` and their four calls to the new public module `log`; `K_LOG_LEVEL_CEILING` and the macro gate moved to `logging/log_gate.hpp` (`log/log_level.hpp`, `log/log_sink.hpp`).
+- 2026-10-12 — machine: Breaking change: Moved `PinPolicy`, `WorkerPool`, `DeviceDescription` and `DeviceKind` to the new public module machine, declared in SushiRuntime (`machine/`).
+- 2026-10-12 — device: Breaking change: Moved `DeviceDescriptor` to the device module (`device/device_descriptor.hpp`).
+- 2026-10-12 — log: Breaking change: Moved `LogLevel`, `LogSink` and their four calls to the new public module log (`log/log_level.hpp`, `log/log_sink.hpp`).
+- 2026-10-12 — log: Breaking change: Moved the macro gate and `K_LOG_LEVEL_CEILING` (`logging/log_gate.hpp`).
 - 2026-10-12 — interop: Breaking change: Moved the three functions that take the engine context to the new internal module `memory_exchange`; `interop` keeps the descriptors and is header-only (`memory_exchange.hpp`, `memory_exchange.cpp`).
-- 2026-10-12 — region: Breaking change: Renamed `ResourceRegion` to `BufferRegion` and moved it with `ResourceID` to the new public module `region`, declared in `SushiRuntime` (`region/buffer_region.hpp`).
+- 2026-10-12 — region: Breaking change: Renamed `ResourceRegion` to `BufferRegion` and moved it with `ResourceID` to the new public module region, declared in SushiRuntime (`region/buffer_region.hpp`).
 - 2026-10-12 — report: Breaking change: Moved the run report types to the new public module `report`, declared in `SushiRuntime`; `Internal::Observability` no longer names them (`report/run_report.hpp`, `report/dispatch_width.hpp`).
 - 2026-10-12 — logging: Moved the declaration of `set_log_synchronous` to `log_sink.hpp`, so `<SushiRuntime/api/runtime/logging.hpp>` declares it with the other logging controls (`log_sink.hpp`, `logger.hpp`).
 - 2026-10-12 — api: Added `AdvancedControls::live_allocation_count()`, the number of USM allocations of the runtime not yet released (`advanced_controls.hpp`).
@@ -83,18 +85,32 @@
 - 2026-10-12 — api: Added `compile()` to `Graph` and `DynamicGraph`, which builds the plan when none is current and runs nothing (`step_driver.hpp`).
 - 2026-10-11 — distributed: Breaking change: Made `KernelRegistry::Kernel` and `OffloadPolicy::pick_worker` take `const NodeOptions&`; the public headers include no engine header (`kernel_registry.hpp`, `offload_policy.hpp`).
 - 2026-10-11 — distributed: Breaking change: Made `TaskDispatchMessage` carry its own operation, name and parameters, set `K_PROTOCOL_VERSION` to 3 and added `ErrorCode::ProtocolMismatch` (`wire_messages.hpp`, `wire_frame.hpp`).
-- 2026-10-11 — distributed: Breaking change: Moved `Buffer::distributed()` and `State::distributed()` to `Cluster::share`, which also takes a raw address, and removed `share` from `OffloadCoordinator` (`cluster.hpp`, `buffer.hpp`).
+- 2026-10-11 — distributed: Breaking change: Moved `Buffer::distributed()` and `State::distributed()` to `Cluster::share`, which also takes a raw address (`cluster.hpp`, `buffer.hpp`).
+- 2026-10-11 — distributed: Breaking change: Removed `share` from `OffloadCoordinator` (`cluster.hpp`, `buffer.hpp`).
 - 2026-10-11 — api: Breaking change: Removed the offload overloads of `add`, `Recorder::offload` and `offload_rule`; a node names its operation in `NodeOptions`, and the chain layer takes a named node no worker can run (`chain_plan.cpp`).
-- 2026-10-11 — api: Breaking change: Moved the State, Coupled and Dynamic forms of `add` to `add_rule`, `add_coupled` and `add_dynamic`; `Recorder::coupled_rule` takes a `Coupled` (`builder_surface.hpp`, `recorder.hpp`).
-- 2026-10-11 — core: Breaking change: Removed `SushiException` and `SR_THROW_IF`; `ExecutionEngine::execute`, `RuntimeContext::create`, `Cluster::attach` and the `SharedSecret` factories return `Result`, and a broken rule stops the process.
-- 2026-10-11 — core: Breaking change: Made `require_matching_version` stop the process on a mismatch, `DeviceQueueSet::wait_all` return `Result`, and `poll_events` return its failure (`version.hpp`, `device_queue_set.cpp`, `event_polling.hpp`).
+- 2026-10-11 — api: Breaking change: Moved the State, Coupled and Dynamic forms of `add` to `add_rule`, `add_coupled` and `add_dynamic` (`builder_surface.hpp`).
+- 2026-10-11 — api: Breaking change: Made `Recorder::coupled_rule` take a `Coupled` (`recorder.hpp`).
+- 2026-10-11 — core: Breaking change: Removed `SushiException` and `SR_THROW_IF`.
+- 2026-10-11 — core: Breaking change: Made `ExecutionEngine::execute`, `RuntimeContext::create`, `Cluster::attach` and the `SharedSecret` factories return Result, and a broken rule stops the process.
+- 2026-10-11 — core: Breaking change: Made `require_matching_version` stop the process on a mismatch (`version.hpp`).
+- 2026-10-11 — core: Breaking change: Made `DeviceQueueSet::wait_all` return Result (`device_queue_set.cpp`).
+- 2026-10-11 — core: Breaking change: Made `poll_events` return its failure (`event_polling.hpp`).
 - 2026-10-11 — api: Made a late count or a late window that does not fit its capacity a fault record the run returns as `InvalidGraph`, with no throw (`device_fault.hpp`, `late_count_resolution.hpp`, `late_window.hpp`).
-- 2026-10-11 — api: Breaking change: Removed `try_run`, `try_run_for`, `try_run_until`, `try_run_async`, `try_wait` and the throwing forms; `run`, `run_for`, `run_until`, `run_async` and `wait` return `Result` (`step_driver.hpp`, `run_handle.hpp`).
-- 2026-10-11 — api: Breaking change: Made `Runtime::create`, `buffer`, `state`, `wait`, `read_range`, `write_range`, `Recorder::scratch` and the three `Interop` calls return `Result` (`runtime.hpp`, `buffer.hpp`, `interop.hpp`).
-- 2026-10-11 — api: Breaking change: Made a refused recording a kept `Error` that `refusal()` reads and the next run returns, and made `TaskGraph::compile` return `Result` (`recorder.hpp`, `builder_surface.hpp`, `task_graph.hpp`).
-- 2026-10-11 — api: Breaking change: Made 27 broken preconditions stop the process through `SR_VERIFY`, `SR_ASSERT` or `SR_FATAL` instead of throwing (`buffer.hpp`, `late_count.hpp`, `interop.cpp`, `node.hpp`).
-- 2026-10-11 — core: Breaking change: Renamed `Errc` to `ErrorCode` with PascalCase enumerators, added `Result<void>`, and made a misused `Result` accessor stop the process (`error.hpp`, `result.hpp`).
-- 2026-10-11 — api: Wrote out the short parameter and member names `ctx`, `bg`, `fn`, `meta`, `q`, `deps` and `err` across the modules (`recorder.hpp`, `builder_surface.hpp`, `error.hpp`).
+- 2026-10-11 — api: Breaking change: Removed `try_run`, `try_run_for`, `try_run_until` and `try_run_async` (`step_driver.hpp`).
+- 2026-10-11 — api: Breaking change: Removed `try_wait` and the throwing forms (`run_handle.hpp`).
+- 2026-10-11 — api: Breaking change: Made `run`, `run_for`, `run_until` and `run_async` return Result (`step_driver.hpp`).
+- 2026-10-11 — api: Breaking change: Made `wait` return Result (`run_handle.hpp`).
+- 2026-10-11 — api: Breaking change: Made `Runtime::create`, `buffer`, `state` and `wait` return Result (`runtime.hpp`).
+- 2026-10-11 — api: Breaking change: Made `read_range`, `write_range` and `Recorder::scratch` return Result (`buffer.hpp`).
+- 2026-10-11 — api: Breaking change: Made the three `Interop` calls return Result (`interop.hpp`).
+- 2026-10-11 — api: Breaking change: Made a refused recording a kept Error that `refusal()` reads and the next run returns (`recorder.hpp`).
+- 2026-10-11 — api: Breaking change: Made `TaskGraph::compile` return Result (`task_graph.hpp`).
+- 2026-10-11 — api: Breaking change: Made 27 broken preconditions stop the process through SR_VERIFY, SR_ASSERT or SR_FATAL instead of throwing (`buffer.hpp`, `late_count.hpp`, `interop.cpp`, `node.hpp`).
+- 2026-10-11 — core: Breaking change: Renamed `Errc` to `ErrorCode` with PascalCase enumerators (`error.hpp`).
+- 2026-10-11 — core: Breaking change: Added `Result<void>` and made a misused Result accessor stop the process (`result.hpp`).
+- 2026-10-11 — api: Wrote out the short parameter and member names `ctx`, `bg` and `fn` across the modules (`recorder.hpp`).
+- 2026-10-11 — api: Wrote out the short parameter and member names `meta`, `q` and `deps` across the modules (`builder_surface.hpp`).
+- 2026-10-11 — api: Wrote out the short parameter and member name `err` across the modules (`error.hpp`).
 - 2026-10-11 — api: Fixed `TaskMetadata` and `NodeOptions` refusing a partial brace initialiser under `-Wmissing-field-initializers` (`task_types.hpp`, `node_options.hpp`).
 - 2026-10-11 — api: Breaking change: Removed `Recorder::emitter` and `add_emitter` and made `Recorder::replay` private; a library records through `extend` and the recorder's verbs (`recorder.hpp`).
 - 2026-10-11 — api: Added `Runtime::wait()`, which waits for every device queue, and `AdvancedControls::queue(device)`, which returns a device's `sycl::queue` (`runtime.hpp`, `advanced_controls.hpp`).
@@ -103,12 +119,16 @@
 - 2026-10-11 — api: Added `Recorder::task` and `add_task`, which record a body that receives the queue and returns the event that ends its work (`recorder.hpp`, `builder_surface.hpp`, `emit_task.hpp`).
 - 2026-10-11 — api: Breaking change: Renamed `OpID` to `OperationID` and gave `NodeOptions` a name, an operation and parameters, which every verb takes (`operation_id.hpp`, `node_options.hpp`).
 - 2026-10-11 — api: Breaking change: Renamed the umbrella header `SushiRuntime.h` to `sushiruntime.hpp`; a consumer includes `<SushiRuntime/sushiruntime.hpp>`.
-- 2026-10-11 — api: Breaking change: Removed the `I` and `get_` prefixes, renamed `detail` to `Detail`, gave 50 constants the `K_` prefix and made every enumerator PascalCase; `ExecutionEngine` is the interface and `SchedulerExecutionEngine` its implementation.
+- 2026-10-11 — api: Breaking change: Removed the `I` and `get_` prefixes, renamed `detail` to `Detail` and gave 50 constants the `K_` prefix.
+- 2026-10-11 — api: Breaking change: Made every enumerator PascalCase.
+- 2026-10-11 — api: Breaking change: Made `ExecutionEngine` the interface and `SchedulerExecutionEngine` its implementation.
 - 2026-10-11 — api: Breaking change: Moved the engine and platform namespaces under `SushiRuntime::Internal::` and dissolved `API::`, `Core::` and the `Interop` namespace into `SushiRuntime::`.
-- 2026-10-11 — api: Breaking change: Removed the deprecated members of `Buffer`, `State`, `BuilderSurface`, `Dynamic`, `Runtime`, `AdvancedControls`, `Extent::offset`, `BackingGraph` and two `Cluster::attach` overloads.
+- 2026-10-11 — api: Breaking change: Removed the deprecated members of `Buffer`, `State`, `BuilderSurface`, `Dynamic` and `Runtime`.
+- 2026-10-11 — api: Breaking change: Removed the deprecated members of `AdvancedControls`, `Extent::offset` and `BackingGraph`.
+- 2026-10-11 — api: Breaking change: Removed two `Cluster::attach` overloads.
 - 2026-10-11 — build: Breaking change: Removed the `Core::` aliases of the memory and observability types, the old `LogLevel` spellings, `LogType`, `ACTIVE_LOG_LEVEL` and the 15 forwarding headers of moved include paths.
 - 2026-10-11 — execution: Breaking change: Removed the 31 deprecated forwarders of `RuntimeContext`, four of `TaskGraph` and two of the rebalancer interfaces (`runtime_context.hpp`, `task_graph.hpp`, `rebalancer_interfaces.hpp`).
-- 2026-10-11 — core: Added `SR_ASSERT`, `SR_VERIFY` and `SR_FATAL`, which stop the process through a handler `set_assertion_handler()` replaces (`assert.hpp`, `assert.cpp`, `test_assert.cpp`).
+- 2026-10-11 — core: Added SR_ASSERT, SR_VERIFY and SR_FATAL, which stop the process through a handler `set_assertion_handler()` replaces (`assert.hpp`, `assert.cpp`, `test_assert.cpp`).
 - 2026-10-11 — docs: Recorded that the WSL `venv/` folder was deleted from the root and that the install path of `sr` under WSL is open (`REMAINING_WORK.md`).
 - 2026-10-11 — api: Breaking change: Wrote every acronym of a type name in capitals, so `PeerId`, `UsmKind`, `UsmRequest`, `TcpTransport` and `DeviceUuid` became PeerID, USMKind, USMRequest, TCPTransport and DeviceUUID.
 - 2026-10-11 — graph: Stated that a replayed plan reads Shared or Host USM the host wrote between two executions, and pinned it with a test (`compiled_graph.hpp`, `test_replay_host_write.cpp`).
