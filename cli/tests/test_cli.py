@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -37,6 +38,7 @@ K_PUBLISH_LIST = (
     'api = false\n'
 )
 K_ARCHIVE = "docs-bundle-1.2.3.tar.gz"
+K_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 K_DOXYFILE = Path(__file__).resolve().parents[2] / ".config" / "doxygen" / "Doxyfile"
 
 
@@ -49,7 +51,7 @@ def test_docs_runs_the_api_build_and_bundle_is_its_subcommand(monkeypatch, tmp_p
     assert runner.invoke(app, ["doxygen"]).exit_code == 6
     missing = runner.invoke(app, ["docs", "bundle"])
     assert missing.exit_code == 2
-    assert "--release" in missing.output
+    assert "--release" in K_ANSI_ESCAPE.sub("", missing.output)
 
 
 def _described() -> dict:

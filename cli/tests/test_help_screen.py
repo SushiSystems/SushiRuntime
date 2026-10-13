@@ -27,23 +27,25 @@ K_CONTAINER_COMMANDS = ["build", "run"]
 K_COLOURS = "green|red|yellow|cyan|blue|dim"
 K_RAW_MARKUP = re.compile(rf"\[/?(?:bold |italic )?(?:{K_COLOURS})\]")
 K_RAW_STYLE = re.compile(rf"(?:bold )?(?:{K_COLOURS})")
+K_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _run(*args: str) -> str:
     """Return the output of one sr invocation, asserting it exited zero."""
     result = CliRunner().invoke(app, list(args))
     assert result.exit_code == 0, result.output
-    return result.output
+    return K_ANSI_ESCAPE.sub("", result.output)
 
 
 def _commands_by_heading(page: str) -> dict[str, list[str]]:
     """Return the first word of each row, keyed by the heading above it.
 
     A row starts two columns in; a wrapped description sits deeper and is skipped.
+    Colour codes are removed first, so a heading reads the same with or without colour.
     """
     grouped: dict[str, list[str]] = {}
     heading = ""
-    for line in page.splitlines():
+    for line in K_ANSI_ESCAPE.sub("", page).splitlines():
         if line and not line.startswith(" "):
             heading = line.rstrip()
             grouped[heading] = []
