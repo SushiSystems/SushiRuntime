@@ -54,7 +54,7 @@
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 #include "dispatch_placement.hpp"
-#include "work_stealing_deque.hpp"
+#include <SushiRuntime/work_stealing/work_stealing_deque.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_placement.hpp>

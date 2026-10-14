@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* plan_access.hpp                                                        */
+/* numa_lookup.hpp                                                        */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,45 +20,32 @@
 /**************************************************************************/
 
 /**
- * @file plan_access.hpp
- * @brief Defines the conversion between Detail::Plan and the engine's compiled graph.
+ * @file numa_lookup.hpp
+ * @brief Declares local_numa_os_index, the lookup of the NUMA node local to a hwloc object.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+ * @see modules/platform/numa_lookup/README.md
  */
 
 #pragma once
 
-#include <SushiRuntime/api/detail/plan.hpp>
-#include <SushiRuntime/graph/compiled_graph.hpp>
+#include <optional>
+
+#include <hwloc.h>
+
+#include <SushiRuntime/core/export.hpp>
 
 namespace SushiRuntime
 {
-    namespace Detail
+    namespace Internal::Topology
     {
-        /** @brief Returns the compiled graph a surface plan names; null for null. */
-        [[nodiscard]] inline Internal::Graph::CompiledGraph* engine_plan(Plan* plan) noexcept
-        {
-            return reinterpret_cast<Internal::Graph::CompiledGraph*>(plan);
-        }
-
-        /** @brief Returns the compiled graph a surface plan names, read-only; null for null. */
-        [[nodiscard]] inline const Internal::Graph::CompiledGraph*
-        engine_plan(const Plan* plan) noexcept
-        {
-            return reinterpret_cast<const Internal::Graph::CompiledGraph*>(plan);
-        }
-
-        /** @brief Returns the surface's name for a compiled graph; null for null. */
-        [[nodiscard]] inline Plan* surface_plan(Internal::Graph::CompiledGraph* graph) noexcept
-        {
-            return reinterpret_cast<Plan*>(graph);
-        }
-
-        /** @brief Returns the surface's name for a compiled graph, read-only; null for null. */
-        [[nodiscard]] inline const Plan*
-        surface_plan(const Internal::Graph::CompiledGraph* graph) noexcept
-        {
-            return reinterpret_cast<const Plan*>(graph);
-        }
-    } // namespace Detail
+        /**
+         * @brief Returns the OS index of the NUMA node local to a hwloc object.
+         * @param topology A loaded hwloc topology; must not be null.
+         * @param object An object of that topology, or null.
+         * @return The OS index, or empty when hwloc reports no node for the object.
+         * @see modules/platform/numa_lookup/README.md
+         */
+        [[nodiscard]] SUSHIRUNTIME_API std::optional<unsigned>
+        local_numa_os_index(hwloc_topology_t topology, hwloc_obj_t object);
+    } // namespace Topology
 } // namespace SushiRuntime

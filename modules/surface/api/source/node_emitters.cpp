@@ -43,7 +43,7 @@
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
 
-#include "late_controls_access.hpp"
+#include <SushiRuntime/engine_handles/late_controls_access.hpp>
 
 namespace SushiRuntime
 {

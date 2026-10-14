@@ -23,7 +23,7 @@
  * @file work_stealing_deque.hpp
  * @brief Declares Deque, the lock-free Chase-Lev work-stealing deque.
  * @author Mustafa Garip
- * @see modules/engine/scheduler/README.md
+ * @see modules/engine/work_stealing/README.md
  */
 
 #pragma once
@@ -41,7 +41,7 @@ namespace SushiRuntime
     {
         /**
          * @brief Implements a lock-free Chase-Lev work-stealing deque of fixed capacity.
-         * @see modules/engine/scheduler/README.md
+         * @see modules/engine/work_stealing/README.md
          */
         class alignas(SushiRuntime::K_CACHE_LINE_SIZE) Deque : public RefCounted
         {

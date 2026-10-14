@@ -29,7 +29,7 @@
 #include <algorithm>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
-#include "dependency_tracker.hpp"
+#include <SushiRuntime/dependency_tracking/dependency_tracker.hpp>
 
 namespace SushiRuntime 
 {

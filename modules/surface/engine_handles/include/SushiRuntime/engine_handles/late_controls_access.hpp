@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* numa_lookup.hpp                                                        */
+/* late_controls_access.hpp                                               */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,32 +20,45 @@
 /**************************************************************************/
 
 /**
- * @file numa_lookup.hpp
- * @brief Declares local_numa_os_index, the lookup of the NUMA node local to a hwloc object.
+ * @file late_controls_access.hpp
+ * @brief Defines the conversion between Detail::LateControls and the engine's late bindings.
  * @author Mustafa Garip
- * @see modules/platform/topology/README.md
+ * @see modules/surface/engine_handles/README.md
  */
 
 #pragma once
 
-#include <optional>
+#include <memory>
 
-#include <hwloc.h>
-
-#include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/task/late_bindings.hpp>
 
 namespace SushiRuntime
 {
-    namespace Internal::Topology
+    namespace Detail
     {
-        /**
-         * @brief Returns the OS index of the NUMA node local to a hwloc object.
-         * @param topology A loaded hwloc topology; must not be null.
-         * @param object An object of that topology, or null.
-         * @return The OS index, or empty when hwloc reports no node for the object.
-         * @see modules/platform/topology/README.md
-         */
-        [[nodiscard]] SUSHIRUNTIME_API std::optional<unsigned>
-        local_numa_os_index(hwloc_topology_t topology, hwloc_obj_t object);
-    } // namespace Topology
+        struct LateControls;
+
+        /** @brief Returns the late bindings surface controls name, read-only; null for null. */
+        [[nodiscard]] inline const Internal::Graph::LateBindings*
+        engine_controls(const LateControls* controls) noexcept
+        {
+            return reinterpret_cast<const Internal::Graph::LateBindings*>(controls);
+        }
+
+        /** @brief Returns a share of the late bindings surface controls name; null for null. */
+        [[nodiscard]] inline std::shared_ptr<Internal::Graph::LateBindings>
+        engine_controls(const std::shared_ptr<LateControls>& controls) noexcept
+        {
+            return std::shared_ptr<Internal::Graph::LateBindings>(
+                controls, reinterpret_cast<Internal::Graph::LateBindings*>(controls.get()));
+        }
+
+        /** @brief Returns a share of late bindings under the surface's name; null for null. */
+        [[nodiscard]] inline std::shared_ptr<LateControls>
+        surface_controls(const std::shared_ptr<Internal::Graph::LateBindings>& bindings) noexcept
+        {
+            return std::shared_ptr<LateControls>(
+                bindings, reinterpret_cast<LateControls*>(bindings.get()));
+        }
+    } // namespace Detail
 } // namespace SushiRuntime

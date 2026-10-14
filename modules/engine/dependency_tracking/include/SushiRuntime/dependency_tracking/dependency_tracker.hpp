@@ -23,7 +23,7 @@
  * @file dependency_tracker.hpp
  * @brief Declares DependencyTracker, which orders tasks by the regions they access.
  * @author Mustafa Garip
- * @see modules/engine/graph/README.md
+ * @see modules/engine/dependency_tracking/README.md
  */
 
 #pragma once
@@ -94,7 +94,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Maps an allocation's identity to a shard index with a SplitMix64 hash.
-                 * @see modules/engine/graph/README.md
+                 * @see modules/engine/dependency_tracking/README.md
                  */
                 inline size_t shard_index(SushiRuntime::ResourceID base) const
                 {
@@ -115,7 +115,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Reclaims any access history left behind on destruction.
-                 * @see modules/engine/graph/README.md
+                 * @see modules/engine/dependency_tracking/README.md
                  */
                 ~DependencyTracker() { reset(); }
 

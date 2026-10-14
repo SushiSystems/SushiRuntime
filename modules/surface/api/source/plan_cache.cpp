@@ -43,7 +43,7 @@
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
 
-#include "plan_access.hpp"
+#include <SushiRuntime/engine_handles/plan_access.hpp>
 #include "recorder_replay.hpp"
 
 namespace SushiRuntime
