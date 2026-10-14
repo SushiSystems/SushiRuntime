@@ -8,7 +8,3 @@ sushiruntime_add_module(
     NAME report TIER foundation
     HEADER_ONLY
     DEPENDS core)
-
-sushiruntime_add_module_tests(
-    MODULE report
-    SOURCES test_node_event_record.cpp test_run_report_names.cpp)

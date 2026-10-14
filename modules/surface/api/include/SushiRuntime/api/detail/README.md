@@ -65,7 +65,7 @@ therefore holds the view and never a `State<T>*`.
 
 construct() calls a private constructor of either handle. Runtime and Interop do not need it, since
 they are friends of the handles; it serves code that builds a handle without a runtime, which today
-is the unit test of the adopting constructor (tests/unit/test_allocation.cpp).
+is the unit test of the adopting constructor (`tests/surface/api/data/test_buffer.cpp`).
 
 ## run_report_builder.hpp
 

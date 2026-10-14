@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from common.checker import Issue  # noqa: E402
+from checking.checker import Issue  # noqa: E402
 from documentation.check_docs_layout import K_DESIGN_LINE_CEILING  # noqa: E402
 from documentation.check_docs_truth import (  # noqa: E402
     K_CHECKER,

@@ -8,9 +8,3 @@ sushiruntime_add_module(
     NAME observability TIER platform INTERNAL
     HEADER_ONLY SYCL
     DEPENDS report)
-
-sushiruntime_add_module_tests(
-    MODULE observability
-    SOURCES
-        test_profiling_ledger.cpp
-        test_transfer_counters.cpp)

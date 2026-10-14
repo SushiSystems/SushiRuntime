@@ -6,77 +6,19 @@
 
 cmake_minimum_required(VERSION 3.22) # gtest_discover_tests(TEST_FILTER ...)
 
-# The tests that cross module boundaries. A test of one module lives in that module's
-# tests/ folder and builds sr_<module>_tests; cmake/SushiRuntimeTests.cmake holds the
-# function every program is built with.
+# The tree mirrors modules/: the tests of a module sit in tests/<tier>/<module>/, whose
+# CMakeLists.txt builds sr_<module>_tests and, under SR_BUILD_BENCHMARKS,
+# sr_<module>_benchmarks. A folder is added only when its module is switched on.
+# cmake/SushiRuntimeTests.cmake holds the function every program is built with.
 #
-#   sr_functional_tests   unit/, integration/, regression/
-#   sr_allocation_tests   allocation/
-#   sr_benchmark_tests    benchmark/, under SR_BUILD_BENCHMARKS
-#   Package.*             package/, through tools/packaging
+#   Package.*   package/, through tools/packaging
 
-sushiruntime_add_test_program(
-    NAME sr_functional_tests
-    SOURCES
-        unit/test_allocation.cpp
-        unit/test_node_dispatch_width.cpp
-        unit/test_numa_steal.cpp
-        unit/test_nvidia_topology.cpp
-        unit/test_topology.cpp
-        unit/test_topology_abstraction.cpp
-
-        regression/test_regression.cpp
-
-        integration/test_cancellation.cpp
-        integration/test_chain_layer.cpp
-        integration/test_completion_latch.cpp
-        integration/test_co_tenancy.cpp
-        integration/test_cross_context_guard.cpp
-        integration/test_determinism.cpp
-        integration/test_device_selection.cpp
-        integration/test_error_isolation.cpp
-        integration/test_error_types.cpp
-        integration/test_graph.cpp
-        integration/test_graph_profiling_switch.cpp
-        integration/test_interop_host_export.cpp
-        integration/test_layer_equivalence.cpp
-        integration/test_logging_defaults.cpp
-        integration/test_observability.cpp
-        integration/test_offload_seam_shutdown.cpp
-        integration/test_perf_controls.cpp
-        integration/test_scheduler_integration.cpp)
-
-# Its own program: the test replaces the global operator new to count allocations, and
-# a replacement is program-wide. Linked into another program it would count that
-# program's allocations too and displace a sanitizer's own operator new.
-sushiruntime_add_test_program(
-    NAME sr_allocation_tests
-    SOURCES allocation/test_steady_state_allocation.cpp)
-
-if(SR_BUILD_BENCHMARKS)
-    set(SR_BENCHMARK_SOURCES
-        benchmark/benchmark_scheduler_stress.cpp
-        benchmark/benchmark_epoch_stress.cpp
-
-        benchmark/benchmark_async_overlap.cpp
-        benchmark/benchmark_steal_locality.cpp
-        benchmark/benchmark_scheduler_dispatch.cpp
-        benchmark/benchmark_profiling_queue.cpp
-        benchmark/benchmark_steal_numa_effect.cpp
-        benchmark/benchmark_graph_compile.cpp
-        benchmark/benchmark_dynamic_graph.cpp
-        benchmark/benchmark_recompose_churn.cpp
-        benchmark/benchmark_root_fanout.cpp
-        benchmark/benchmark_chain_dispatch.cpp
-        benchmark/benchmark_wide_fanout.cpp)
-    # The offload benchmark exists only when the distributed layer is built.
-    if(SR_ENABLE_DISTRIBUTED)
-        list(APPEND SR_BENCHMARK_SOURCES benchmark/benchmark_distributed_offload.cpp)
+sushiruntime_enabled_module_folders(module_folders)
+foreach(module_folder IN LISTS module_folders)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${module_folder}/CMakeLists.txt")
+        add_subdirectory("${module_folder}")
     endif()
-    sushiruntime_add_test_program(
-        NAME sr_benchmark_tests BENCHMARK
-        SOURCES ${SR_BENCHMARK_SOURCES})
-endif()
+endforeach()
 
 # Whether an installed SushiRuntime is usable from outside its own tree. Its own label,
 # because it installs, configures a second CMake project, compiles it and runs it.

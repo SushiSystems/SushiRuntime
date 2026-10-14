@@ -1,0 +1,151 @@
+/**************************************************************************/
+/* measurement.hpp                                                        */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+/**************************************************************************/
+
+/**
+ * @file measurement.hpp
+ * @brief Declares the repeated-run measurement and the report line it prints.
+ * @author Mustafa Garip
+ */
+
+#pragma once
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdio>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace SushiRuntime
+{
+    namespace Test
+    {
+        /** @brief Holds the number of timed runs a measurement takes by default. */
+        constexpr std::size_t K_DEFAULT_RUN_COUNT = 5;
+
+        /** @brief Holds the token that opens every measurement line on stdout. */
+        constexpr const char* K_MEASUREMENT_PREFIX = "SR_MEASUREMENT";
+
+        /**
+         * @brief Holds the spread of one measured quantity across its timed runs.
+         */
+        struct RunStatistics
+        {
+            double median = 0.0;       /**< Middle sample; mean of the middle two when even. */
+            double minimum = 0.0;      /**< Smallest sample. */
+            double maximum = 0.0;      /**< Largest sample. */
+            std::size_t run_count = 0; /**< Number of samples the three figures summarise. */
+        };
+
+        /**
+         * @brief Names one measured case for its report line.
+         */
+        struct MeasurementLabel
+        {
+            const char* benchmark = "";   /**< Benchmark name; must hold no whitespace. */
+            const char* case_name = "";   /**< Case of the benchmark; must hold no whitespace. */
+            const char* unit = "";        /**< Unit of the figures; must hold no whitespace. */
+            std::size_t worker_count = 0; /**< Scheduler workers the case ran on. */
+            std::size_t problem_size = 0; /**< Input size, in the benchmark's own terms. */
+        };
+
+        /**
+         * @brief Reduces a set of samples to their median, minimum and maximum.
+         * @return The statistics of @p samples; all zero when it is empty.
+         */
+        [[nodiscard]] inline RunStatistics summarize(std::vector<double> samples)
+        {
+            RunStatistics statistics;
+            if (samples.empty())
+                return statistics;
+
+            std::sort(samples.begin(), samples.end());
+            const std::size_t middle = samples.size() / 2;
+
+            statistics.median = samples.size() % 2 == 1
+                                    ? samples[middle]
+                                    : (samples[middle - 1] + samples[middle]) / 2.0;
+            statistics.minimum = samples.front();
+            statistics.maximum = samples.back();
+            statistics.run_count = samples.size();
+            return statistics;
+        }
+
+        /**
+         * @brief Calls a timed run repeatedly and summarises the durations it returns.
+         * @tparam TimedRun Callable with no arguments that returns one run's figure as a double.
+         * @param timed_run Performs one run; it times its own region and keeps setup outside it.
+         * @param run_count Number of runs to take.
+         */
+        template <typename TimedRun>
+        [[nodiscard]] RunStatistics measure(TimedRun&& timed_run,
+                                            std::size_t run_count = K_DEFAULT_RUN_COUNT)
+        {
+            std::vector<double> samples;
+            samples.reserve(run_count);
+            for (std::size_t run = 0; run < run_count; ++run)
+                samples.push_back(static_cast<double>(timed_run()));
+
+            return summarize(std::move(samples));
+        }
+
+        /**
+         * @brief Returns the build type of this translation unit, read from NDEBUG.
+         * @return "release" when NDEBUG is defined, "debug" otherwise.
+         */
+        [[nodiscard]] inline const char* build_type() noexcept
+        {
+#ifdef NDEBUG
+            return "release";
+#else
+            return "debug";
+#endif
+        }
+
+        /**
+         * @brief Formats one measured case as a single line of space-separated key=value pairs.
+         * @return The line, without a trailing newline, opened by K_MEASUREMENT_PREFIX.
+         */
+        [[nodiscard]] inline std::string format_measurement(const MeasurementLabel& label,
+                                                            const RunStatistics& statistics)
+        {
+            char line[512];
+            std::snprintf(line, sizeof(line),
+                          "%s benchmark=%s case=%s unit=%s median=%.6g min=%.6g max=%.6g "
+                          "runs=%zu build=%s workers=%zu size=%zu",
+                          K_MEASUREMENT_PREFIX, label.benchmark, label.case_name, label.unit,
+                          statistics.median, statistics.minimum, statistics.maximum,
+                          statistics.run_count, build_type(), label.worker_count,
+                          label.problem_size);
+            return std::string(line);
+        }
+
+        /**
+         * @brief Prints one measured case to stdout on a line of its own.
+         */
+        inline void print_measurement(const MeasurementLabel& label,
+                                      const RunStatistics& statistics)
+        {
+            std::printf("%s\n", format_measurement(label, statistics).c_str());
+            std::fflush(stdout);
+        }
+    } // namespace Test
+} // namespace SushiRuntime

@@ -7,3 +7,4 @@ __FrameHandler3|GetUnwindTryBlock # function of the MSVC C++ runtime in which th
 detect_stack_use_after_return # AddressSanitizer run-time option
 enable_language # CMake command
 TerminateProcess # Win32 function
+sr_\w+_benchmarks # test program name sushiruntime_add_module_tests composes from the module name

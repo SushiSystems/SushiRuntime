@@ -137,7 +137,7 @@ Open after a repair:
 - Wording left by the register pass: "before v0.4.0" in `log_level.hpp`,
   `resource_liveness.hpp`, `dispatch_width.hpp`, `event_timestamps.hpp` and
   `profiling_ledger.hpp`; "(F4)" and "(F5)" in `execution_engine.cpp`; the "used to"
-  sentences in `modules/surface/api/tests/README.md`.
+  sentences in `tests/surface/api/README.md`.
 
 ### Left open by the review before the first build (2026-10-12)
 
@@ -161,7 +161,7 @@ round did not close:
 - **Seven findings of `check_source_comments.py` stand**: five comment blocks above eight lines
   (`runtime_context.hpp:63`, `event_polling.hpp:261`, `cluster.hpp:123` and `:200`,
   `host_slot_check.hpp:99`), one file block above six (`task_description.hpp:22` of the
-  extension) and one pair of `//` lines (`test_heterogeneous_pipeline.cpp:62`). The reasons
+  extension) and one pair of `//` lines (`test_scheduler_execution_engine.cpp:370`). The reasons
   they hold belong in the module notes.
 - **The adapter of a consumer is quoted from one example.** Each of the two examples under
   `applications/examples/adapter/` (here and in SushiBLAS) is the source of its repository's
@@ -169,7 +169,8 @@ round did not close:
 - **The allocation tests are blind to the library on Windows.** The run loop and the report
   builder moved into the shared library, whose allocations a counter in the test binary does
   not see. A static-link build of that test, or an allocation observer the library exports,
-  restores the proof; `tests/allocation/README.md` says what is proven today.
+  restores the proof; the section on `test_sushiruntime.cpp` in `tests/surface/api/README.md` says what is
+  proven today.
 - **A plan that touches a shared buffer under a cluster leaves the chain layer**, so that the
   scheduler's poller reports completions. `ChainRun` reporting them itself would keep the chain.
 - **The dispatch decoder accepts a name of up to 255 bytes** where the encoder refuses more
@@ -196,6 +197,29 @@ round did not close:
   were never verified.
 - **Logic in the root `CMakeLists.txt`.** The version equality check, the package config
   generation and the CPack settings belong in function files under `cmake/`.
+
+### Left open by the test mirror (2026-10-14)
+
+- **100 public headers have no test file.** `check_test_mirror.py --rule rule_untested_unit`
+  lists them: 28 in `api`, 11 in `task`, 6 each in `scheduler` and `distributed`, and the
+  headers of the seven test-support modules. Each needs a behaviour test of its own.
+- **Tests reach private headers.** The worker and coordinator bricks of `distributed`, the
+  dependency tracker, the work-stealing deque, the NUMA lookup and the plan access of `api`
+  are tested directly from `source/`. Each brick is either tested through the public unit that
+  uses it or becomes a module of its own.
+- **Some test files hold suites of more than one unit.** `test_offload_policy.cpp` holds the
+  protocol fuzzing, and `test_runtime_context.cpp` and `test_scheduler_execution_engine.cpp` hold
+  scheduler and topology tests that need a `RuntimeContext`. A test split by unit lands them in
+  their own files.
+- **Two test READMEs pass the 800-line ceiling in a flat folder**: `tests/surface/api/graph/`
+  (979) and `tests/extension/distributed/` (1 151). The mirror allows no subfolder to split them
+  into, so the sections need shortening.
+- **Helpers of one module's tests sit in its test folder**: `dynamic_graph_plan_access.hpp`,
+  `refusing_fill.hpp` and `tcp_fault_proxy.hpp`. The plan access reaches `api`'s private
+  headers, so it cannot be a module.
+- **`tools/` lags SushiSkills.** `check_docs_layout.py`, `check_docs_truth.py`,
+  `check_source_comments.py`, `check_layering.py` and their tests differ from the upstream
+  copies; only `checking/` and `testing/` were brought level.
 
 ## Documentation
 

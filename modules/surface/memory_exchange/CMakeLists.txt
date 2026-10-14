@@ -10,7 +10,3 @@ sushiruntime_add_module(
     SOURCES memory_exchange.cpp
     DEPENDS core memory interop
     PRIVATE_DEPENDS logging sycl device execution)
-
-sushiruntime_add_module_tests(
-    MODULE memory_exchange
-    SOURCES test_interop_import.cpp)

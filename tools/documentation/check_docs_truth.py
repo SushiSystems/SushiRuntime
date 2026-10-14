@@ -24,7 +24,7 @@ from typing import final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from common.checker import K_EXIT_CLEAN, Checker, Issue, run  # noqa: E402
+from checking.checker import K_EXIT_CLEAN, Checker, Issue, run  # noqa: E402
 
 
 class PageKind(Enum):

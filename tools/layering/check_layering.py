@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from common.checker import Checker, Issue, run  # noqa: E402
+from checking.checker import Checker, Issue, run  # noqa: E402
 
 K_TIER_ORDER: tuple[str, ...] = ("foundation", "platform", "engine", "surface", "extension")
 K_SAME_TIER_EDGES: frozenset[tuple[str, str]] = frozenset({
@@ -27,11 +27,15 @@ K_SAME_TIER_EDGES: frozenset[tuple[str, str]] = frozenset({
     ("logging", "core"),
     ("logging", "log"),
     ("sycl", "core"),
+    ("test_runner", "logging"),
     ("scheduler", "task"),
     ("graph", "task"),
     ("execution", "task"),
     ("execution", "scheduler"),
     ("execution", "graph"),
+    ("probe_tasks", "task"),
+    ("runtime_assembly", "execution"),
+    ("runtime_assembly", "scheduler"),
     ("memory_exchange", "interop"),
     ("context_access", "context"),
     ("api", "interop"),

@@ -7,7 +7,3 @@
 sushiruntime_add_module(
     NAME region TIER foundation
     HEADER_ONLY)
-
-sushiruntime_add_module_tests(
-    MODULE region
-    SOURCES test_buffer_region.cpp)

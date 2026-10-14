@@ -154,7 +154,7 @@ def test(
     """Run the test suite via CTest labels.
 
     For GTest-level knobs (shuffle, break-on-failure) run the binary directly:
-    sr run sr_functional_tests -- --gtest_shuffle --gtest_break_on_failure
+    sr run sr_api_tests -- --gtest_shuffle --gtest_break_on_failure
     """
     raise typer.Exit(project_svc.test(suite, distributed, filter, asan, repeat, module))
 
@@ -162,9 +162,9 @@ def test(
 @app.command(
     "run",
     rich_help_panel=K_PROJECT,
-    epilog="sr run sr_benchmark_tests  # Exact name, then substring match\n"
+    epilog="sr run sr_api_benchmarks  # Exact name, then substring match\n"
            "sr run --sort  # Pick an executable interactively\n"
-           "sr run sr_benchmark_tests -- --gtest_filter='Bench.*'  # Arguments after -- go to it",
+           "sr run sr_api_benchmarks -- --gtest_filter='Performance_*'  # Arguments after -- go to it",
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
 def run(

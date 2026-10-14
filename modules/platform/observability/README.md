@@ -41,5 +41,4 @@ registration_index gets a row big enough for every node behind it.
 
 ## Tests
 
-`tests/test_profiling_ledger.cpp` and `tests/test_transfer_counters.cpp` build
-`sr_observability_tests`.
+`tests/platform/observability/` builds `sr_observability_tests`.

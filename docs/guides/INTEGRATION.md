@@ -276,7 +276,7 @@ records a graph was compiled without SYCL. See §1.
 
 **A replay is not byte-equal between two builds.** Check that `SushiRuntime_DETERMINISTIC_FP`
 is `ON` in the package you consumed and that your build adds no fast-math flag. The tests named
-`Integration_Determinism` in `tests/integration/test_determinism.cpp` make the same check
+`Integration_Determinism` in `tests/surface/api/graph/test_graph.cpp` make the same check
 in this repository.
 
 **`find_package` does not find `IntelSYCL`.** Configure your SYCL toolchain before

@@ -104,8 +104,10 @@ endfunction()
 # is installed, and may name an INTERNAL module under PRIVATE_DEPENDS only.
 # HEADER_CHECK_EXCLUDE names a header the header check must not compile alone. The check
 # is built for every module that is not INTERNAL, and for the others under SR_BUILD_TESTS.
+# TEST_ONLY marks an INTERNAL module whose sources build into the test programs and never
+# into the library.
 function(sushiruntime_add_module)
-    cmake_parse_arguments(ARG "INTERNAL;HEADER_ONLY;SYCL" "NAME;TIER"
+    cmake_parse_arguments(ARG "INTERNAL;HEADER_ONLY;SYCL;TEST_ONLY" "NAME;TIER"
         "SOURCES;DEPENDS;PRIVATE_DEPENDS;EXTERNAL;HEADER_CHECK_EXCLUDE" ${ARGN})
     if("${ARG_NAME}" STREQUAL "" OR "${ARG_TIER}" STREQUAL "")
         message(FATAL_ERROR "sushiruntime_add_module(): NAME and TIER are required.")
@@ -113,6 +115,11 @@ function(sushiruntime_add_module)
     if(ARG_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR
             "sushiruntime_add_module(${ARG_NAME}): unexpected '${ARG_UNPARSED_ARGUMENTS}'.")
+    endif()
+    if(ARG_TEST_ONLY AND NOT ARG_INTERNAL)
+        message(FATAL_ERROR
+            "sushiruntime_add_module(${ARG_NAME}): TEST_ONLY needs INTERNAL; a module only "
+            "the tests link is never installed.")
     endif()
     sushiruntime_module_tier("${ARG_NAME}" table_tier)
     if(NOT "${ARG_TIER}" STREQUAL "${table_tier}")
@@ -179,8 +186,10 @@ function(sushiruntime_add_module)
             target_link_libraries(${objects} PRIVATE "sushiruntime_module_${dependency}")
         endforeach()
         target_include_directories(${objects} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/source")
+        # A test-only module is compiled as a consumer of the library, so it imports the
+        # library's symbols instead of exporting them.
         target_compile_definitions(${objects} PRIVATE
-            SUSHIRUNTIME_EXPORTS NOMINMAX WIN32_LEAN_AND_MEAN
+            $<$<NOT:$<BOOL:${ARG_TEST_ONLY}>>:SUSHIRUNTIME_EXPORTS> NOMINMAX WIN32_LEAN_AND_MEAN
             $<$<BOOL:${SR_ENABLE_DISTRIBUTED}>:SR_DISTRIBUTED>)
         sushiruntime_apply_build_policy(${objects})
         set_target_properties(${objects} PROPERTIES
@@ -192,9 +201,14 @@ function(sushiruntime_add_module)
         if(ARG_SYCL)
             add_sycl_to_target(TARGET ${objects} SOURCES ${sources})
         endif()
-        set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_MODULE_OBJECT_TARGETS ${objects})
-        set_property(GLOBAL APPEND PROPERTY
-            SUSHIRUNTIME_MODULE_EXTERNAL_LIBRARIES ${ARG_EXTERNAL})
+        if(ARG_TEST_ONLY)
+            target_link_libraries(${objects} PRIVATE sushiruntime_internal_headers)
+            set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_TEST_OBJECT_TARGETS ${objects})
+        else()
+            set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_MODULE_OBJECT_TARGETS ${objects})
+            set_property(GLOBAL APPEND PROPERTY
+                SUSHIRUNTIME_MODULE_EXTERNAL_LIBRARIES ${ARG_EXTERNAL})
+        endif()
     endif()
 
     if(SR_BUILD_TESTS OR NOT ARG_INTERNAL)
