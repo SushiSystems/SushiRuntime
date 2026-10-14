@@ -1,6 +1,6 @@
 # Test coverage: one test file per public header, no test reaching `source/`
 
-**Status:** Phases 1 to 3 landed and green; task 1.10 and the break check are open; see `REPORT.md`
+**Status:** Phases 1 to 3 and task 1.10 landed and green; the break check is open; see `REPORT.md`
 
 ## Goal
 
