@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from common.checker import Issue  # noqa: E402
+from checking.checker import Issue  # noqa: E402
 from naming.check_naming import (  # noqa: E402
     K_CHECKER,
     K_FLAG_RULES,

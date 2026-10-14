@@ -11,7 +11,7 @@
 
 [tool]
 # Default executable for `sr run` with no target.
-target_bin = "sr_functional_tests"
+target_bin = "sr_api_tests"
 
 [tool.linux]
 # cc/cxx are intentionally unset: the compiler is derived from the selected
@@ -26,7 +26,7 @@ oneapi_root = "/opt/intel/oneapi"
 generator = "Ninja"
 use_vcpkg = true
 vcpkg_triplet = "x64-windows"
-target_bin = "sr_functional_tests.exe"
+target_bin = "sr_api_tests.exe"
 # The following are machine-specific; override in config.local.toml.
 # vs_vcvars    = "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Auxiliary/Build/vcvars64.bat"
 # oneapi_root  = "C:/Program Files (x86)/Intel/oneAPI"

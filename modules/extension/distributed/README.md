@@ -279,7 +279,7 @@ registered worker only. A peer that has not registered within `handshake_timeout
 is closed by the monitor; a repeated `HELLO` restarts the handshake and not that clock.
 
 SHA-256 and HMAC are written in the module (`sha256.hpp`, `hmac_sha256.hpp`) and pinned by the
-FIPS 180-4 and RFC 4231 vectors in `tests/link/test_handshake.cpp`. Nonces come from
+FIPS 180-4 and RFC 4231 vectors in `tests/extension/distributed/test_shared_secret.cpp`. Nonces come from
 `std::random_device`. Frames after the handshake carry no MAC and are not encrypted.
 
 ## offload_policy.hpp
@@ -750,5 +750,5 @@ The flag is one per process, which is why at most one `StopSignal` exists at a t
 `Wire::K_PROTOCOL_VERSION` in `source/wire_frame.hpp` holds the current number. Master and worker
 must carry the same version: the reader checks it on every frame and there is no negotiation. The
 header and the first three fields of REJECT and GOODBYE are frozen for every later version, so two
-versions can always refuse each other in words. `test_wire_format.cpp` holds the golden bytes of
+versions can always refuse each other in words. `tests/extension/distributed/test_message_type.cpp` holds the golden bytes of
 every message and fails on a layout change, which is when the number and this table move.

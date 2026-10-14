@@ -4,10 +4,12 @@
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
 
-# One function builds a test program, wherever its sources live: a module's tests/ folder
-# or the root tests/. Every program is linked, placed and registered the same way. A test
-# links sushiruntime_internal_headers (cmake/SushiRuntimeLibrary.cmake), so it includes the
-# headers of the INTERNAL modules, which the library's own target does not publish.
+# One function builds a test program. The tests of a module sit in tests/<tier>/<module>/,
+# the mirror of its folder under modules/, and build one program there. Every program is
+# linked, placed and registered the same way. A test links sushiruntime_internal_headers
+# (cmake/SushiRuntimeLibrary.cmake), so it includes the headers of the INTERNAL modules,
+# which the library's own target does not publish, and it links the objects of the
+# TEST_ONLY modules, which hold its entry point.
 #
 # Labels come from the GoogleTest suite-name prefix: Unit_*, Integration_*, Regression_*,
 # Stress_* and Performance_*. Each group carries one label; `sr test --suite functional`
@@ -34,8 +36,6 @@ foreach(gtest_target GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_ma
         set_target_properties(${gtest_target} PROPERTIES INTERFACE_COMPILE_FEATURES "")
     endif()
 endforeach()
-
-set(SR_TEST_COMMON_DIR "${PROJECT_SOURCE_DIR}/tests/common")
 
 # Every test program lands in one folder, so one copy of the library serves them all.
 set(SR_TEST_OUTPUT_DIR "${PROJECT_BINARY_DIR}/tests")
@@ -67,10 +67,11 @@ function(sushiruntime_add_test_program)
         message(FATAL_ERROR "sushiruntime_add_test_program(): NAME and SOURCES are required.")
     endif()
 
-    add_executable(${ARG_NAME} "${SR_TEST_COMMON_DIR}/test_main.cpp" ${ARG_SOURCES})
+    add_executable(${ARG_NAME} ${ARG_SOURCES})
     sushiruntime_apply_build_policy(${ARG_NAME})
-    target_include_directories(${ARG_NAME} PRIVATE "${SR_TEST_COMMON_DIR}")
-    target_link_libraries(${ARG_NAME} PRIVATE GTest::gtest sushiruntime_internal_headers)
+    get_property(test_objects GLOBAL PROPERTY SUSHIRUNTIME_TEST_OBJECT_TARGETS)
+    target_link_libraries(${ARG_NAME} PRIVATE
+        ${test_objects} GTest::gtest sushiruntime_internal_headers)
     set_target_properties(${ARG_NAME} PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
@@ -103,21 +104,45 @@ function(sushiruntime_add_test_program)
     endforeach()
 endfunction()
 
-# sushiruntime_add_module_tests(MODULE <module> SOURCES <file under tests/>...)
+# sushiruntime_add_module_tests(MODULE <module> [SOURCES <file>...]
+#                               [BENCHMARK_SOURCES <file>...])
 #
-# Builds sr_<module>_tests from the calling module's tests/ folder. The program may
-# include the module's private headers, which sit in source/, by a quoted name.
+# Called from tests/<tier>/<module>/CMakeLists.txt, with paths relative to that folder.
+# SOURCES build sr_<module>_tests; BENCHMARK_SOURCES build sr_<module>_benchmarks under
+# SR_BUILD_BENCHMARKS. Both programs may include the module's private headers, which sit in
+# modules/<tier>/<module>/source/, and the helpers of the test folder, by a quoted name.
 function(sushiruntime_add_module_tests)
-    cmake_parse_arguments(ARG "" "MODULE" "SOURCES" ${ARGN})
-    if("${ARG_MODULE}" STREQUAL "" OR NOT ARG_SOURCES)
-        message(FATAL_ERROR "sushiruntime_add_module_tests(): MODULE and SOURCES are required.")
+    cmake_parse_arguments(ARG "" "MODULE" "SOURCES;BENCHMARK_SOURCES" ${ARGN})
+    if("${ARG_MODULE}" STREQUAL "" OR (NOT ARG_SOURCES AND NOT ARG_BENCHMARK_SOURCES))
+        message(FATAL_ERROR
+            "sushiruntime_add_module_tests(): MODULE and SOURCES or BENCHMARK_SOURCES are "
+            "required.")
     endif()
-    set(test_sources "")
-    foreach(source IN LISTS ARG_SOURCES)
-        list(APPEND test_sources "${CMAKE_CURRENT_SOURCE_DIR}/tests/${source}")
+    file(RELATIVE_PATH mirror "${PROJECT_SOURCE_DIR}/tests" "${CMAKE_CURRENT_SOURCE_DIR}")
+    set(private_root "${PROJECT_SOURCE_DIR}/modules/${mirror}/source")
+
+    set(programs "")
+    if(ARG_SOURCES)
+        list(APPEND programs "sr_${ARG_MODULE}_tests|SOURCES")
+    endif()
+    if(ARG_BENCHMARK_SOURCES AND SR_BUILD_BENCHMARKS)
+        list(APPEND programs "sr_${ARG_MODULE}_benchmarks|BENCHMARK_SOURCES")
+    endif()
+    foreach(program IN LISTS programs)
+        string(REPLACE "|" ";" parts "${program}")
+        list(GET parts 0 name)
+        list(GET parts 1 list_name)
+        set(sources "")
+        foreach(source IN LISTS ARG_${list_name})
+            list(APPEND sources "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+        endforeach()
+        if(list_name STREQUAL "BENCHMARK_SOURCES")
+            sushiruntime_add_test_program(
+                NAME "${name}" BENCHMARK MODULE "${ARG_MODULE}" SOURCES ${sources})
+        else()
+            sushiruntime_add_test_program(NAME "${name}" MODULE "${ARG_MODULE}" SOURCES ${sources})
+        endif()
+        target_include_directories("${name}" PRIVATE
+            "${private_root}" "${CMAKE_CURRENT_SOURCE_DIR}")
     endforeach()
-    sushiruntime_add_test_program(
-        NAME "sr_${ARG_MODULE}_tests" MODULE "${ARG_MODULE}" SOURCES ${test_sources})
-    target_include_directories("sr_${ARG_MODULE}_tests" PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/source")
 endfunction()

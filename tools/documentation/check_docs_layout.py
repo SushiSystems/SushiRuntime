@@ -21,7 +21,7 @@ from urllib.parse import unquote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from common.checker import Checker, Issue, run  # noqa: E402
+from checking.checker import Checker, Issue, run  # noqa: E402
 
 K_DOCS_ENTRIES = frozenset(
     {

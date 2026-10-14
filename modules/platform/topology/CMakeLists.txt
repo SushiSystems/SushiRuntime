@@ -18,16 +18,3 @@ sushiruntime_add_module(
     DEPENDS core machine
     PRIVATE_DEPENDS logging
     EXTERNAL PkgConfig::HWLOC)
-
-sushiruntime_add_module_tests(
-    MODULE topology
-    SOURCES
-        test_affinity.cpp
-        test_hw_discovery.cpp
-        test_numa_lookup.cpp
-        test_topology_view.cpp)
-
-# test_numa_lookup.cpp builds its own hwloc topologies to check the lookup against.
-if(TARGET sr_topology_tests)
-    target_link_libraries(sr_topology_tests PRIVATE PkgConfig::HWLOC)
-endif()

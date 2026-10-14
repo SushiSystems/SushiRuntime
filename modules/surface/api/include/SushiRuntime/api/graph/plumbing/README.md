@@ -347,7 +347,7 @@ Graph and DynamicGraph take every run entry from the driver, so the two cannot d
 Every entry is `noexcept` and returns a `Result`: the report, a pointer to the caller's report, or
 the RunHandle. There is one form of each. A caller that cannot go on after a failed run writes
 `graph.run().value()`, which stops the process with the error's message.
-`modules/surface/api/tests/graph/running/test_run_driver.cpp` holds the list as `static_assert`s.
+`tests/surface/api/graph/plumbing/test_step_driver.cpp` holds the list as `static_assert`s.
 
 No entry throws, also when memory runs out while it builds an Error: every Error of the driver
 and of RunHandle is built by Detail::error_without_throwing() of `core/error.hpp`, which returns the
@@ -458,7 +458,7 @@ released.store(true, std::memory_order_release);
 const RunReport report = step.wait().value();
 ```
 
-The block is from `modules/surface/api/tests/graph/running/test_async_step.cpp`.
+The block is from `tests/surface/api/graph/test_run_handle.cpp`.
 
 It runs one step only. The multi-step drivers (run(n), run_for, run_until) stay synchronous, because
 their per-step host work has to happen between steps and there is nothing for the caller to overlap

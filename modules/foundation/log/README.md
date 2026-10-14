@@ -29,5 +29,5 @@ threads.
 
 ## Tests
 
-`modules/foundation/logging/tests/test_logger.cpp` covers the four functions with the logger they
+`tests/foundation/logging/test_logger.cpp` covers the four functions with the logger they
 drive.

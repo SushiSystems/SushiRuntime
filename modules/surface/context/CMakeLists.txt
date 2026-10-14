@@ -7,7 +7,3 @@
 sushiruntime_add_module(
     NAME context TIER surface
     HEADER_ONLY)
-
-sushiruntime_add_module_tests(
-    MODULE context
-    SOURCES test_context_handle.cpp)

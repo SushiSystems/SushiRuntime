@@ -162,11 +162,11 @@ option after `--`.
 ## `sr run`
 
 Runs a built executable. With no target it runs the default of the configuration,
-`sr_functional_tests`.
+`sr_api_tests`.
 
 ```bash
 sr run                              # run the default target
-sr run sr_functional_tests          # run a program by name
+sr run sr_api_tests                 # run a program by name
 sr run --sort                       # pick from the list of executables
 ```
 
@@ -175,8 +175,8 @@ The name is matched exactly first, then as a substring.
 Everything after `--` goes to the program:
 
 ```bash
-sr run sr_benchmark_tests -- --gtest_filter='Performance_GraphCompileBench.*'
-sr run sr_functional_tests -- --gtest_shuffle --gtest_break_on_failure
+sr run sr_execution_benchmarks -- --gtest_filter='Performance_GraphCompileBench.*'
+sr run sr_api_tests -- --gtest_shuffle --gtest_break_on_failure
 ```
 
 The two programs of the distributed demo take their own flags the same way:

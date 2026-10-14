@@ -10,7 +10,3 @@ sushiruntime_add_module(
     SOURCES device_queue_set.cpp
     DEPENDS core machine
     PRIVATE_DEPENDS logging sycl)
-
-sushiruntime_add_module_tests(
-    MODULE device
-    SOURCES test_device_queue_set.cpp)

@@ -22,7 +22,7 @@ body:
       description: The smallest reproducer you can manage, including the exact command.
       placeholder: |
         1. sr build --type asan
-        2. sr run sr_functional_tests -- --gtest_filter='...'
+        2. sr run sr_api_tests -- --gtest_filter='...'
         3. ...
     validations:
       required: true

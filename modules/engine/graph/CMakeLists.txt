@@ -10,7 +10,3 @@ sushiruntime_add_module(
     SOURCES compiled_graph.cpp dependency_tracker.cpp task_graph.cpp
     DEPENDS core observability task region
     PRIVATE_DEPENDS logging memory)
-
-sushiruntime_add_module_tests(
-    MODULE graph
-    SOURCES test_dependency_tracker.cpp test_task_graph.cpp)

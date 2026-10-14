@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-14 — tests: Moved every test into `tests/<tier>/<module>/`, one file per header, built as `sr_<module>_tests` and `sr_<module>_benchmarks` in place of the three root programs (`check_test_mirror.py`).
+- 2026-10-14 — cmake: Split `tests/common` into seven internal modules that only the tests build, such as `test_runner` and `runtime_assembly` (`SushiRuntimeModule.cmake`, `TEST_ONLY`).
+- 2026-10-14 — cli: Made `sr_api_tests` the default of `sr run` and read the LeakSanitizer list from `.config/sanitizers/` (`config.toml`, `env.py`).
 - 2026-10-14 — cmake: Made the ROCm locator and the ISA probe read `ROCM_PATH` first, where sushicore installs the release chosen for the cards (`RocmToolkit.cmake`, `Rocm.cmake`).
 
 - 2026-10-14 — cmake: Made the CUDA locator read `CUDA_PATH` first on Linux too, where sushicore installs the release chosen for the cards (`CudaToolkit.cmake`, `Cuda.cmake`, `sushistack.deps.toml`).

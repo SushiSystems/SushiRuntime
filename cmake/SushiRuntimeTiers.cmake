@@ -24,6 +24,11 @@ set(SUSHIRUNTIME_MODULE_TIERS
     machine         foundation
     logging         foundation
     sycl            foundation
+    test_runner     foundation
+    measurement     foundation
+    thread_barrier  foundation
+    device_probe    foundation
+    usm_guard       foundation
     topology        platform
     memory          platform
     device          platform
@@ -32,6 +37,8 @@ set(SUSHIRUNTIME_MODULE_TIERS
     scheduler       engine
     graph           engine
     execution       engine
+    probe_tasks     engine
+    runtime_assembly engine
     interop         surface
     memory_exchange  surface
     context         surface
@@ -46,11 +53,15 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     logging         core
     logging         log
     sycl            core
+    test_runner     logging
     scheduler       task
     graph           task
     execution       task
     execution       scheduler
     execution       graph
+    probe_tasks     task
+    runtime_assembly execution
+    runtime_assembly scheduler
     memory_exchange  interop
     context_access  context
     api             interop
@@ -60,6 +71,13 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
 
 # Module, then the option that switches it on. A module not listed is always built.
 set(SUSHIRUNTIME_OPTIONAL_MODULES
+    test_runner     SR_BUILD_TESTS
+    measurement     SR_BUILD_TESTS
+    thread_barrier  SR_BUILD_TESTS
+    device_probe    SR_BUILD_TESTS
+    usm_guard       SR_BUILD_TESTS
+    probe_tasks     SR_BUILD_TESTS
+    runtime_assembly SR_BUILD_TESTS
     distributed     SR_ENABLE_DISTRIBUTED)
 
 # Sets <out> to the position of <tier> in SUSHIRUNTIME_TIER_ORDER, or -1.
