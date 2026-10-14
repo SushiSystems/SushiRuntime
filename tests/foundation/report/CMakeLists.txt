@@ -7,4 +7,5 @@
 sushiruntime_add_module_tests(
     MODULE report
     SOURCES
+        test_dispatch_width.cpp
         test_run_report.cpp)

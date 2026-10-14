@@ -21,7 +21,7 @@
 
 /**
  * @file test_buffer.cpp
- * @brief Tests Buffer, its Allocation and the windows and residency it shares with State.
+ * @brief Tests Buffer, an adopting Buffer, and the windows and residency it shares with State.
  * @see tests/surface/api/data/README.md
  * @author Mustafa Garip
  */
@@ -488,96 +488,19 @@ namespace DeviceResidentTests
     }
 } // namespace DeviceResidentTests
 
-/** @brief Tests that Allocation and an adopting Buffer release their address exactly once. */
+/** @brief Tests that a Buffer adopting an allocation releases its address exactly once. */
 namespace AllocationTests
 {
     using SushiRuntime::Buffer;
     using SushiRuntime::DeviceIndex;
     using SushiRuntime::Residency;
     using SushiRuntime::Detail::HandleAccess;
-    using SushiRuntime::Internal::Memory::Allocation;
-    using SushiRuntime::Internal::Memory::AllocationOwner;
 
     namespace
     {
-        /** @brief Counts the releases it receives and remembers the last address. */
-        class CountingOwner final : public AllocationOwner
-        {
-            public:
-                /** @brief Binds the owner to the counters it reports into. */
-                CountingOwner(int& releases, void*& last) : releases_(releases), last_(last) {}
-
-                /** @brief Records one release of @p address. */
-                void release(void* address) noexcept override
-                {
-                    ++releases_;
-                    last_ = address;
-                }
-
-            private:
-                int& releases_;
-                void*& last_;
-        };
-
         /** @brief Returns a distinct non-null address that is never dereferenced. */
         void* fake(std::uintptr_t n) { return reinterpret_cast<void*>(n * 4096u); }
-    }
 
-    TEST(Unit_Allocation, ReleasesOnceOnDestruction)
-    {
-        int releases = 0;
-        void* last = nullptr;
-        {
-            Allocation allocation(fake(1), 64, std::make_unique<CountingOwner>(releases, last));
-            EXPECT_EQ(allocation.address(), fake(1));
-            EXPECT_EQ(allocation.bytes(), 64u);
-        }
-        EXPECT_EQ(releases, 1);
-        EXPECT_EQ(last, fake(1));
-    }
-
-    TEST(Unit_Allocation, MoveTransfersTheReleaseAndEmptiesTheSource)
-    {
-        int releases = 0;
-        void* last = nullptr;
-        {
-            Allocation source(fake(2), 32, std::make_unique<CountingOwner>(releases, last));
-            Allocation target(std::move(source));
-            EXPECT_TRUE(source.empty());
-            EXPECT_EQ(target.address(), fake(2));
-        }
-        EXPECT_EQ(releases, 1);
-        EXPECT_EQ(last, fake(2));
-    }
-
-    TEST(Unit_Allocation, MoveAssignmentReleasesTheOverwrittenAddressFirst)
-    {
-        int releases = 0;
-        void* last = nullptr;
-        Allocation first(fake(3), 8, std::make_unique<CountingOwner>(releases, last));
-        Allocation second(fake(4), 8, std::make_unique<CountingOwner>(releases, last));
-        first = std::move(second);
-        EXPECT_EQ(releases, 1);
-        EXPECT_EQ(last, fake(3));
-        EXPECT_EQ(first.address(), fake(4));
-    }
-
-    TEST(Unit_Allocation, AnEmptyAllocationHasNoAddressOrOwner)
-    {
-        Allocation allocation;
-        EXPECT_TRUE(allocation.empty());
-        EXPECT_EQ(allocation.bytes(), 0u);
-    }
-
-    TEST(Unit_Allocation, ResetOnANonNullAddressWithNoOwnerReleasesNothing)
-    {
-        Allocation allocation(fake(9), 16, nullptr);
-        EXPECT_NO_THROW(allocation.reset());
-        EXPECT_TRUE(allocation.empty());
-    }
-
-    namespace
-    {
         /** @brief Builds a block whose owner counts its one release, for Buffer tests. */
         SushiRuntime::Detail::MemoryBlock counted_block(std::uintptr_t address, std::size_t bytes,
                                                         int& releases, void*& last)

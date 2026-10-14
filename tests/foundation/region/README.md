@@ -35,3 +35,12 @@ Regions of two different allocations neither overlap nor contain each other.
 
 The whole allocation contains itself and `[0, 8)`. `[0, 8)` contains itself and `[2, 6)`. `[0, 8)`
 contains neither the whole allocation nor `[4, 12)`, and `[2, 6)` does not contain `[0, 8)`.
+
+## test_liveness.cpp
+
+The file tests the liveness token: an observer sees it alive, then expired.
+
+| Test | What it proves |
+| --- | --- |
+| `AnObserverExpiresWithItsToken` | An observer locks while the token lives and expires when it goes. |
+| `EachTokenIsItsOwn` | Each call makes a distinct token. |

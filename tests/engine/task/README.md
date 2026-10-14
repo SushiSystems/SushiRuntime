@@ -49,3 +49,98 @@ and the unsigned-byte rule the hash applies.
 ### `Unit_TaskTypes`
 
 One test stores a value in the first and the last parameter slot and reads each back as its type.
+
+## test_late_bindings.cpp
+
+The file tests LateBindings: an enabled binding that uses the baked width and base 0.
+
+| Test | What it proves |
+| --- | --- |
+| `DefaultsUseTheBakedWidth` | Checks the defaults of the bindings. |
+
+## test_node.cpp
+
+The file tests Node: successors inline and spilled, readiness on completion, placement and offload
+state.
+
+| Test | What it proves |
+| --- | --- |
+| `ASuccessorIsReadyAfterItsLastPredecessor` | A successor becomes ready when its last predecessor completes. |
+| `SuccessorsPastTheInlineCapacityAreKept` | Successors past the inline capacity are kept and each visited once. |
+| `ArmingAddsTheIntraAndBoundaryCounts` | Checks arm_in_degree(): the intra and the boundary counts add up. |
+| `PlacementAndOffloadStateStartEmpty` | Placement is unstated until place_on(), and the offload state is made once. |
+
+## test_node_profiling.cpp
+
+The file tests NodeProfiling: three counters that start at zero and add up.
+
+| Test | What it proves |
+| --- | --- |
+| `CountersStartAtZeroAndAccumulate` | The counters start at zero and accumulate. |
+
+## test_node_widths.cpp
+
+The file tests snapshot_widths(): the baked width, the late count, and widths too wide for 32 bits.
+
+| Test | What it proves |
+| --- | --- |
+| `ABakedNodeReportsItsWidthTwice` | A node without bindings reports its baked width twice. |
+| `ALateCountSetsTheLiveWidth` | A late count sets the live width and leaves the launch alone. |
+| `AWidthBeyondThirtyTwoBitsIsUnknown` | A width beyond 32 bits is reported as unknown. |
+
+## test_offload_coordinator.cpp
+
+The file tests the OffloadCoordinator contract through a recording implementation.
+
+| Test | What it proves |
+| --- | --- |
+| `EveryMemberReachesTheImplementation` | Records what the scheduler asks of an offload coordinator and its sink. */ class RecordingCoordinator final : public OffloadCoordinator, public OffloadSink { public: void bind(OffloadSink& sink) override { bound = &sink; } void prepare(span<const sushi_ptr<Node>> nodes) override { prepared = nodes.size(); } bool try_offload(Node& node) override { offered = &node; return false; } void on_local_completion(Node& node) noexcept override { completed = &node; } void stop() noexcept override { stopped = true; } void resubmit(Node& node) override { resubmitted = &node; } void complete_remote(Node& node) override { remote = &node; } OffloadSink* bound = nullptr; /**< The sink bind() was given. */ std::size_t prepared = 0; /**< The nodes prepare() was given. */ Node* offered = nullptr; /**< The node try_offload() was given. */ Node* completed = nullptr; /**< The node completed locally. */ Node* resubmitted = nullptr; /**< The node given back. */ Node* remote = nullptr; /**< The node completed on a worker. */ bool stopped = false; /**< Whether stop() was called. */ }; } /** @brief Tests that each member of the seam reaches the implementation with its argument. |
+
+## test_offload_sink.cpp
+
+The file tests the OffloadSink contract through a recording implementation.
+
+| Test | What it proves |
+| --- | --- |
+| `BothCallsReachTheSink` | Records what the scheduler asks of an offload coordinator and its sink. */ class RecordingCoordinator final : public OffloadCoordinator, public OffloadSink { public: void bind(OffloadSink& sink) override { bound = &sink; } void prepare(span<const sushi_ptr<Node>> nodes) override { prepared = nodes.size(); } bool try_offload(Node& node) override { offered = &node; return false; } void on_local_completion(Node& node) noexcept override { completed = &node; } void stop() noexcept override { stopped = true; } void resubmit(Node& node) override { resubmitted = &node; } void complete_remote(Node& node) override { remote = &node; } OffloadSink* bound = nullptr; /**< The sink bind() was given. */ std::size_t prepared = 0; /**< The nodes prepare() was given. */ Node* offered = nullptr; /**< The node try_offload() was given. */ Node* completed = nullptr; /**< The node completed locally. */ Node* resubmitted = nullptr; /**< The node given back. */ Node* remote = nullptr; /**< The node completed on a worker. */ bool stopped = false; /**< Whether stop() was called. */ }; } /** @brief Tests that a node given back and a node finished remotely reach the sink. |
+
+## test_offload_state.cpp
+
+The file tests OffloadState: not offloadable, no attempt, no lists and no payload until set.
+
+| Test | What it proves |
+| --- | --- |
+| `DefaultsHoldNothingAndThePayloadIsOwned` | Counts its own destruction. */ class CountingPayload final : public OffloadPayload { public: explicit CountingPayload(int& destroyed) : destroyed_(destroyed) { } ~CountingPayload() override { ++destroyed_; } private: int& destroyed_; }; } /** @brief Tests the defaults, and that the state owns its payload. |
+
+## test_ready_sink.cpp
+
+The file tests ReadySink: the list a completed node writes its ready successors into.
+
+| Test | What it proves |
+| --- | --- |
+| `IsAnOrderedListOfTasks` | The sink is a vector of task pointers that keeps their order. |
+
+## test_region_link.cpp
+
+The file tests RegionLink: clear() drops the boundary and keeps the intra count.
+
+| Test | What it proves |
+| --- | --- |
+| `ClearDropsTheBoundaryOnly` | Clear() empties the boundary and leaves what the region baked. |
+
+## test_task.cpp
+
+The file tests Task: the defaults a subclass inherits and the two members it must write.
+
+| Test | What it proves |
+| --- | --- |
+| `ASubclassInheritsTheDefaults` | Writes the two pure members and nothing else. */ class PlainTask final : public Task { public: std::optional<sushi_ptr<Task>> split() override { return std::nullopt; } bool is_splittable() const override { return false; } }; } /** @brief Tests the defaults: a kernel task, unnamed, priority 0, device work, not a graph node. |
+
+## test_task_work.cpp
+
+The file tests TaskWork and HostWork: the two callables a node runs.
+
+| Test | What it proves |
+| --- | --- |
+| `HostWorkRunsOnAQueue` | Host work runs on a queue and returns its event. |
+| `TaskWorkRunsInsideASubmit` | A command group runs inside a submit. |

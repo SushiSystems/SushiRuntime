@@ -8,7 +8,13 @@ sushiruntime_add_module_tests(
     MODULE scheduler
     SOURCES
         test_event_polling.cpp
+        test_failure_naming.cpp
+        test_offload_gate.cpp
+        test_quiescence_latch.cpp
         test_range_task.cpp
+        test_rebalancer_interfaces.cpp
+        test_run_outcome.cpp
         test_task_scheduler.cpp
         test_thermal_proxy_strategy.cpp
+        test_worker_pool_settings.cpp
         test_workload_coordinator.cpp)

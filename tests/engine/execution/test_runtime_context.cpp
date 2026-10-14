@@ -599,41 +599,6 @@ namespace TopologyAbstractionTests
     using namespace SushiRuntime::Internal::Topology;
 
     /**
-     * @brief Verifies that a hand-built MatrixDistanceModel yields exact, deterministic distances.
-     *
-     * Creates a synthetic 2-node distance matrix and asserts local distances are 10 while remote distances match the provided configuration.
-     */
-    TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelObeysACPIConvention)
-    {
-        MatrixDistanceModel model{{{10, 21},
-                                   {21, 10}}};
-
-        EXPECT_EQ(model.node_count(), 2);
-        EXPECT_EQ(model.distance(0, 0), 10); // local
-        EXPECT_EQ(model.distance(1, 1), 10); // local
-        EXPECT_EQ(model.distance(0, 1), 21); // remote
-        EXPECT_EQ(model.distance(1, 0), 21); // symmetric remote
-    }
-
-    /**
-     * @brief Verifies that the MatrixDistanceModel correctly supports asymmetric multi-hop fabric
-     *        distances.
-     *
-     * Constructs a 3-node matrix with non-uniform interconnect costs and verifies correct distance retrievals.
-     */
-    TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelSupportsAsymmetricFabric)
-    {
-        // 3-node layout: 0<->1 cheap, 0<->2 expensive (2 hops).
-        MatrixDistanceModel model{{{10, 16, 32},
-                                   {16, 10, 16},
-                                   {32, 16, 10}}};
-
-        EXPECT_EQ(model.distance(0, 1), 16);
-        EXPECT_EQ(model.distance(0, 2), 32);
-        EXPECT_GT(model.distance(0, 2), model.distance(0, 1));
-    }
-
-    /**
      * @brief Verifies that RuntimeContext correctly utilizes an injected distance model over concrete
      *        hwloc.
      *
@@ -651,34 +616,6 @@ namespace TopologyAbstractionTests
 
         EXPECT_EQ(ctx.topology().numa_distance(0, 0), 10);
         EXPECT_EQ(ctx.topology().numa_distance(0, 1), 21);
-    }
-
-    /**
-     * @brief Verifies that the RemappingTopologyProvider distributes real devices across a synthetic
-     *        NUMA layout.
-     *
-     * Wraps a real hwloc provider with a remapper and ensures all discovered devices are assigned to NUMA nodes within the synthetic range.
-     */
-    TEST(Unit_TopologyAbstractionTest, RemappingProviderSplitsRealDevicesAcrossFakeNodes)
-    {
-        constexpr int FAKE_NODES = 4;
-
-        auto real = std::make_shared<HwlocTopologyProvider>();
-        RemappingTopologyProvider remapper(real, FAKE_NODES);
-
-        DeviceFilter config;
-        config.include_cpu = true;
-        config.include_gpu = true;
-
-        auto nodes = remapper.enumerate(config).value();
-        ASSERT_FALSE(nodes.empty()) << "No devices discovered to remap.";
-
-        for (const auto& n : nodes)
-        {
-            EXPECT_GE(n.numa_node_id, 0);
-            EXPECT_LT(n.numa_node_id, FAKE_NODES)
-                << "Device [" << n.name << "] remapped outside synthetic node range.";
-        }
     }
 
     /**

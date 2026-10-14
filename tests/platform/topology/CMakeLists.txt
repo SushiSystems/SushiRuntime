@@ -9,10 +9,10 @@ sushiruntime_add_module_tests(
     SOURCES
         test_affinity.cpp
         test_hw_discovery.cpp
+        test_hwloc_topology_provider.cpp
+        test_matrix_distance_model.cpp
         test_numa_mapper.cpp
+        test_remapping_topology_provider.cpp
+        test_topology_provider.cpp
         test_topology_view.cpp)
 
-# test_numa_mapper.cpp builds its own hwloc topologies to check the lookup against.
-if(TARGET sr_topology_tests)
-    target_link_libraries(sr_topology_tests PRIVATE PkgConfig::HWLOC)
-endif()

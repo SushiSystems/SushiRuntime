@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- 2026-10-14 — api: Resolved a host LateCount above its capacity to zero, as the device path does, so the fill runs and no dependent kernel reads an unset bound (`late_count_resolution.hpp`).
+- 2026-10-14 — tests: Gave each of the 105 untested public headers a test file of its own, and the example headers a program built with the examples (`check_test_mirror.py`, `sr_examples_tests`).
+- 2026-10-14 — scheduler: Exported describe_task() and name_failure(), so the tests reach them across the library boundary (`failure_naming.hpp`).
+- 2026-10-14 — distributed: Breaking change: Moved Endpoint, MessageType, BufferHandle and Transport to a public transport module, and OffloadPolicy and ClusterStatistics to cluster_load (`transport.hpp`, `offload_policy.hpp`).
+- 2026-10-14 — distributed: Made parse_worker_options() public, so a worker program reads its options before run_worker() (`worker_options_parser.hpp`).
+- 2026-10-14 — distributed: Split the bricks of the master and the worker into nine internal modules, such as wire, link_security and offload_coordination, so their tests reach no private header (`SushiRuntimeTiers.cmake`).
+- 2026-10-14 — engine: Moved DependencyTracker, the work-stealing deque, the NUMA lookup and the region boundary summary into internal modules of their own (`dependency_tracker.hpp`, `work_stealing_deque.hpp`, `numa_lookup.hpp`).
+- 2026-10-14 — api: Moved the plan and late-controls conversions into the internal engine_handles module (`plan_access.hpp`, `late_controls_access.hpp`).
+- 2026-10-14 — tests: Stopped the test programs from reaching `source/`, and drove the worker agent's tests through its transport (`SushiRuntimeTests.cmake`, `test_worker_agent.cpp`).
 - 2026-10-14 — tools: Brought the checkers level with SushiSkills, so they skip what git ignores and resolve an include by its project folder (`check_docs_truth.py`, `check_layering.py`).
 - 2026-10-14 — tests: Moved every test into `tests/<tier>/<module>/`, one file per header, built as `sr_<module>_tests` and `sr_<module>_benchmarks` in place of the three root programs (`check_test_mirror.py`).
 - 2026-10-14 — cmake: Split `tests/common` into seven internal modules that only the tests build, such as `test_runner` and `runtime_assembly` (`SushiRuntimeModule.cmake`, `TEST_ONLY`).

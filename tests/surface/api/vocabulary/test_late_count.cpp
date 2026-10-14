@@ -150,7 +150,7 @@ namespace LateCountResolutionTests
         EXPECT_NE(failed.error().message.find("the live count (101) exceeds the capacity"),
                   std::string::npos)
             << failed.error().message;
-        EXPECT_EQ(out[0], K_CANARY) << "a rejected count must not reach the fill";
+        EXPECT_EQ(out[0], 0u) << "a rejected count reaches the fill as zero, as the device path does";
 
         // The process goes on: the same graph runs once the provider returns a count that fits.
         live = 100;

@@ -49,7 +49,7 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 
-#include "plan_access.hpp"
+#include <SushiRuntime/engine_handles/plan_access.hpp>
 
 namespace SushiRuntime
 {

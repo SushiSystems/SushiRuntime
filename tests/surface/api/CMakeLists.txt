@@ -9,13 +9,35 @@ sushiruntime_add_module_tests(
     SOURCES
         data/test_buffer.cpp
         data/test_state.cpp
+        detail/test_before_step_hooks.cpp
+        detail/test_callable_checks.cpp
         detail/test_callable_traits.cpp
         detail/test_device_fault.cpp
+        detail/test_emit_captured.cpp
+        detail/test_emit_device_sized.cpp
+        detail/test_emit_dynamic.cpp
+        detail/test_emit_host.cpp
+        detail/test_emit_late_count_resolver.cpp
         detail/test_emit_launch.cpp
         detail/test_emit_state.cpp
+        detail/test_emit_task.cpp
+        detail/test_emit_tracked.cpp
+        detail/test_emit_untracked.cpp
+        detail/test_handle_access.cpp
+        detail/test_late_controls.cpp
+        detail/test_late_count_resolution.cpp
+        detail/test_late_window.cpp
+        detail/test_node_description.cpp
+        detail/test_node_spec.cpp
+        detail/test_node_stamp.cpp
+        detail/test_plan.cpp
+        detail/test_step_machinery.cpp
+        detail/test_step_run.cpp
         graph/plumbing/test_builder_surface.cpp
+        graph/plumbing/test_plan_cache.cpp
         graph/plumbing/test_region_composer.cpp
         graph/plumbing/test_step_driver.cpp
+        graph/test_access.cpp
         graph/test_device_sized.cpp
         graph/test_dynamic_graph.cpp
         graph/test_graph.cpp
@@ -26,14 +48,20 @@ sushiruntime_add_module_tests(
         graph/test_run_handle.cpp
         interop/test_host_export.cpp
         interop/test_interop.cpp
+        launch/test_extent.cpp
+        launch/test_nd_range.cpp
         runtime/test_advanced_controls.cpp
         runtime/test_errors.cpp
         runtime/test_logging.cpp
         runtime/test_runtime.cpp
         runtime/test_runtime_config.cpp
         test_fluent.cpp
+        vocabulary/test_captures.cpp
+        vocabulary/test_coupled.cpp
+        vocabulary/test_dependencies.cpp
         vocabulary/test_dynamic.cpp
         vocabulary/test_late_count.cpp
+        vocabulary/test_placement.cpp
     BENCHMARK_SOURCES
         graph/benchmark_dynamic_graph.cpp
         graph/benchmark_graph.cpp)

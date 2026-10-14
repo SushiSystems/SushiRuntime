@@ -39,3 +39,17 @@ dispatches matches the report of a fresh ledger, as `expect_same_run` checks.
 The target starts with one row for one node and then takes the source by move assignment. The target holds
 the clock start of 900 ns, and the source reports `event_ns` of 0 and returns `npos` from `claim_slot(0)`.
 The source is then reserved with rows for three nodes, and its report matches that of a fresh ledger.
+
+## test_event_timestamps.cpp
+
+The file tests read_event_timestamps() on an event of a profiling queue and on a default event.
+
+| Test | What it proves |
+| --- | --- |
+| `AProfiledEventReadsOrderedTimes` | A profiled event reads start before end, and submit no later than start. |
+| `AnUnprofiledEventReadsNothing` | An event with no profiling reads nothing and leaves the output alone. |
+
+## test_transfer_counters.cpp
+
+The file tests TransferCounters' starting values, per-counter adds and concurrent totals.
+

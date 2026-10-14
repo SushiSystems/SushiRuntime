@@ -36,29 +36,18 @@ The test probes every device without a filter. For each node that has a PCI addr
 the domain, bus, device and function of that address have not been returned for an earlier node.
 Nodes without a PCI address are skipped.
 
-## test_numa_mapper.cpp
+## test_matrix_distance_model.cpp
 
-The file covers `local_numa_os_index`, which returns the OS index of the NUMA node that a hwloc object
-belongs to. Each test loads a synthetic machine described as two NUMA nodes, each with two cores of one
-PU, and destroys the topology on scope exit.
+| Test | What it proves |
+| --- | --- |
+| `MatrixDistanceModelObeysACPIConvention` | A two-node matrix gives 10 on the diagonal and the stated distance off it. |
+| `MatrixDistanceModelSupportsAsymmetricFabric` | A three-node matrix whose rows differ answers each direction with its own value. |
 
-### `SyntheticTopology`
+## test_remapping_topology_provider.cpp
 
-`SyntheticTopology` loads a hwloc synthetic description and destroys the topology in its destructor.
-`get()` returns null when hwloc refuses the description. Copy and move are deleted.
-
-### `EveryPuOfATwoNodeMachineMapsToItsOwnNode`
-
-The test asserts that the machine has two NUMA nodes and four PUs. For each PU, `local_numa_os_index`
-returns the OS index of the node that holds the PU, which is the PU's index divided by two.
-
-### `ANUMANodeIsLocalToItself`
-
-For the second NUMA node, `local_numa_os_index` returns that node's own OS index.
-
-### `ANullObjectHasNoNode`
-
-`local_numa_os_index` returns no value for a null object.
+| Test | What it proves |
+| --- | --- |
+| `RemappingProviderSplitsRealDevicesAcrossFakeNodes` | The real devices hwloc reports, CPU and GPU, all land on a node within the four synthetic ones. |
 
 ## test_topology_view.cpp
 
@@ -70,3 +59,30 @@ A null model or a null inner provider stops the process, and the line names the 
 
 The matrix has three rows and its second row has two entries. The line carries the row index,
 the length of that row and the number of rows.
+
+## test_hwloc_topology_provider.cpp
+
+The file tests HwlocTopologyProvider and HwlocDistanceModel against the machine the test runs on.
+
+| Test | What it proves |
+| --- | --- |
+| `EveryDeviceSitsOnAKnownNode` | Every device found sits on a node the distance model knows. |
+| `TheCoreMapAndTheDistancesAgree` | The core map names a node for every core, and the model is local-cheapest. |
+
+## test_numa_mapper.cpp
+
+The file tests NUMAMapper: the local distance and the nodes it maps on this machine.
+
+| Test | What it proves |
+| --- | --- |
+| `ALocalNodeIsTenAway` | A node is 10 from itself, the ACPI local distance. |
+| `MappingPlacesEveryDevice` | Mapping leaves every discovered device on a node, and an empty list alone. |
+
+## test_topology_provider.cpp
+
+The file tests the TopologyProvider and NUMADistanceModel contracts over a fake of each.
+
+| Test | What it proves |
+| --- | --- |
+| `AProviderAnswersThroughTheInterface` | Reports two devices on two nodes and keeps the default core map. */ class TwoNodeProvider final : public TopologyProvider { public: [[nodiscard]] Result<std::vector<HardwareNode>> enumerate(const DeviceFilter&) override { std::vector<HardwareNode> nodes(2); nodes[0].logical_id = 0; nodes[0].numa_node_id = 0; nodes[1].logical_id = 1; nodes[1].numa_node_id = 1; return nodes; } }; /** @brief Answers 10 on the diagonal and 20 off it, over two nodes. */ class TwoNodeDistances final : public NUMADistanceModel { public: int distance(int numa_a, int numa_b) const override { return numa_a == numa_b ? 10 : 20; } int node_count() const override { return 2; } }; } /** @brief Tests that a provider is called through the interface, and the core map defaults empty. |
+| `ADistanceModelAnswersThroughTheInterface` | Checks a distance model through the interface: local is the cheapest. |

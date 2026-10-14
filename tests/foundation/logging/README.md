@@ -55,3 +55,12 @@ test looks for both the exception's text and the record on stderr.
 In asynchronous mode the sink runs on the logger's thread, so each record carries a thread id other
 than the test's. `set_log_synchronous(true)` waits for the queue, which is what lets the test read
 the vector without a sleep or a lock: all three records are there, in the order they were logged.
+
+## test_log_gate.cpp
+
+The file tests the log gate: the ceiling of the build and the levels it lets through.
+
+| Test | What it proves |
+| --- | --- |
+| `TheCeilingFollowsTheBuild` | Checks the ceiling: Info in a release build, Debug in a debug one. |
+| `ALevelPassesAtOrBelowTheLevelSet` | A level passes the gate when it is at or below the level set. |

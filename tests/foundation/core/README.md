@@ -255,3 +255,52 @@ Only the major and the minor are compared. A patch release changes no header a c
 A mismatch stops the process. The line the handler writes is compared, because it is what a person
 reads when the loader picked up a stale `sushiruntime` library: both versions, and which of the
 two is the older.
+
+## test_bit.cpp
+
+The file tests popcount_u64() and countr_zero_u64() on edge and mixed words.
+
+| Test | What it proves |
+| --- | --- |
+| `PopcountCountsEverySetBit` | Checks the bit count of an empty, a full and a mixed word. |
+| `CountrZeroFindsTheLowestSetBit` | Checks the trailing zero count, including 64 for a word with no bit set. |
+
+## test_common.cpp
+
+The file tests the constants of common.hpp: their values and the powers of two they promise.
+
+| Test | What it proves |
+| --- | --- |
+| `ConstantsHoldTheirDocumentedValues` | Checks the values the scheduler and the allocators are sized by. |
+| `AlignmentsArePowersOfTwo` | Both alignments are powers of two and the default covers a cache line. |
+
+## test_error_translation.cpp
+
+The file tests translate_exceptions(): success, a standard exception, bad_alloc and an unnamed
+throw.
+
+| Test | What it proves |
+| --- | --- |
+| `AReturningFunctionGivesAValue` | A function that returns gives a value and runs once. |
+| `AStandardExceptionKeepsItsText` | A standard exception becomes the given code with its text. |
+| `BadAllocIsAllocationFailed` | `bad_alloc` is AllocationFailed whatever code the caller gave. |
+| `AnUnnamedThrowGetsTheFixedMessage` | A thrown non-exception is named, and the default code is KernelFailed. |
+
+## test_export.cpp
+
+The file tests the export macros: each one is defined, and SR_API spells SUSHIRUNTIME_API.
+
+| Test | What it proves |
+| --- | --- |
+| `ShortSpellingExpandsLikeTheLongOne` | The short spelling expands to the same attribute as the long one. |
+| `AConsumerImportsTheSymbols` | A consumer of the library imports, which a test program is. |
+
+## test_operation_id.cpp
+
+The file tests OperationID: the FNV-1a hash, the literal, naming and ordering.
+
+| Test | What it proves |
+| --- | --- |
+| `HashIsFNV1a` | Checks the hash against the FNV-1a offset basis and a published value. |
+| `LiteralMatchesTheExplicitHash` | The literal hashes at compile time and equals the explicit form. |
+| `DefaultIsUnnamedAndOrderFollowsTheValue` | The default names nothing and ordering follows the value. |
