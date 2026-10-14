@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-14 — cmake: Made the CUDA locator read `CUDA_PATH` first on Linux too, where sushicore installs the release chosen for the cards (`CudaToolkit.cmake`, `Cuda.cmake`, `sushistack.deps.toml`).
+
 - 2026-10-12 — tests: Gave the constants of six test and benchmark files the `K_` prefix, so the naming checker reports nothing over the whole tree (`test_layer_equivalence.cpp`, `benchmark_graph_compile.cpp`).
 - 2026-10-12 — examples: Renamed the constants ALPHA, DT, REST and XMAX of two examples to `K_ALPHA`, `K_TICK`, `K_BOUNCE` and `K_CULL_X` (`stencil_demo.cpp`).
 - 2026-10-12 — docs: Quoted the adapter example in the integration guide in place of a file of another repository, and the new examples in the introduction (`INTEGRATION.md`, `INTRODUCTION.md`, `README.md`, `docs/.docs_truth_allow`).

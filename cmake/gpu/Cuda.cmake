@@ -28,8 +28,10 @@
 # Resolving the arch does not guarantee the toolkit supports it: NVIDIA drops
 # architectures from ptxas across major releases (CUDA 13 removed sm_6x/Pascal
 # outright). That failure still surfaces at the ptxas link step and needs a
-# compatible toolkit — see cli/sushistack/setup/package_managers.py::
-# ensure_cuda_toolkit, which pins CUDA 12.6 precisely to keep Pascal buildable.
+# compatible toolkit. sushicore's sushicore/provision/gpu/cuda.py installs the
+# newest release whose nvcc lists every card nvidia-smi reports, so a Pascal box
+# gets a 12.x toolkit and an Ada box a 13.x one; an SR_CUDA_ARCH naming a card
+# that is not in the machine is outside what that choice can see.
 
 if(NOT DEFINED SR_CUDA_ARCH OR SR_CUDA_ARCH STREQUAL "")
     set(_sr_caps "")
