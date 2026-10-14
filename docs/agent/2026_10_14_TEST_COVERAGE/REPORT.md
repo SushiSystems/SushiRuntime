@@ -1,7 +1,7 @@
 # Test coverage: report
 
-**Status:** Phases 1 to 3 landed on 2026-10-14 on branch `build/tools_sync`. Task 1.10 and the
-break check of the new tests are still open.
+**Status:** Phases 1 to 3 and task 1.10 landed on 2026-10-14. The break check of the new tests
+is still open.
 
 ## What landed
 
@@ -34,10 +34,20 @@ consumers.
 - `tools/layering/check_layering.py` keeps its own copy of the same-tier edges, so it gained the
   edges of the new modules. The SushiSkills copy of the checker was not touched.
 
+## Task 1.10
+
+`check_test_mirror.py` gained `rule_private_include`, written in SushiSkills as `1a1e278` and
+copied here with this repository's license header. It reports an include that names a header
+under a `source/` folder, by a path through `source/` or by its path below `source/`. A quoted
+include that resolves beside the test file is a local helper and is not reported. The copy also
+brings two rules SushiSkills already held: a unit's folder of aspect files, and the tier in the
+include path.
+
+On this tree the rule reports nothing. On `7f4bc7c`, the commit before this work, it reports 54
+includes of 31 distinct private headers, the count the plan gives.
+
 ## Open
 
-- **Task 1.10**: the SushiSkills checker rule that refuses a test reaching `source/`. It waits on
-  the owner, who holds `tools/`.
 - **Break check**: none of the new tests has been seen failing with its code broken by hand.
 - **Commit `fa75278`** (an over-capacity host LateCount resolves to 0) came from another
   session. The tests here follow its behaviour. It is also on local `main` as `51af947`, and

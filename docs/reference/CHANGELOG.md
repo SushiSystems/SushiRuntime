@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-14 — tools: Reported a test that includes a private header under `source/` (`check_test_mirror.py`, `rule_private_include`).
 - 2026-10-14 — api: Resolved a host LateCount above its capacity to zero, as the device path does, so the fill runs and no dependent kernel reads an unset bound (`late_count_resolution.hpp`).
 - 2026-10-14 — tests: Gave each of the 105 untested public headers a test file of its own, and the example headers a program built with the examples (`check_test_mirror.py`, `sr_examples_tests`).
 - 2026-10-14 — scheduler: Exported describe_task() and name_failure(), so the tests reach them across the library boundary (`failure_naming.hpp`).

@@ -3,13 +3,15 @@
 # Copyright (c) 2026-present Mustafa Garip & Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
-"""Checks that tests/ mirrors the source: one test file per header or source file, no other folder.
+"""Checks that tests/ mirrors the source: one test file per header or source file, no other folder,
+and no test that includes a private header from a source/ folder.
 
 Usage: python tools/testing/check_test_mirror.py [repository root] [--report] [--rule NAME]
 """
 
 from __future__ import annotations
 
+import re
 import sys
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -30,6 +32,9 @@ K_UNITY_NOT_PRODUCTS = frozenset({
 })
 K_PACKAGE_FOLDER = "package"
 K_APPLICATIONS_FOLDER = "applications"
+K_PRIVATE_FOLDER = "source"
+K_CPP_TEST_SUFFIXES = frozenset({".cpp", ".h", ".hpp"})
+K_INCLUDE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +78,8 @@ class TestMirror:
     def allowed_folders(self) -> frozenset[Path]:
         """Returns every folder below tests/ that a unit, a module or an application accounts for."""
         allowed: set[Path] = set()
-        for folder in {*self.owners, *(test.parent for test in self.expected)}:
+        unit_folders = {unit_folder(test) for test in self.expected}
+        for folder in {*self.owners, *(test.parent for test in self.expected), *unit_folders}:
             while folder != self.tests and self.tests in folder.parents:
                 allowed.add(folder)
                 folder = folder.parent
@@ -97,6 +103,25 @@ class TestMirror:
                     pending.append(entry)
 
 
+def unit_folder(test: Path) -> Path:
+    """Returns the folder that stands for a unit's test file when its tests need more than one file."""
+    name = test.name
+    for language in K_LANGUAGES:
+        if language.is_test(name) and name.endswith(language.test_suffix):
+            return test.parent / name[: len(name) - len(language.test_suffix)]
+    return test.parent / test.stem
+
+
+def _aspect_files(folder: Path) -> list[Path]:
+    """Returns the test files in a unit's folder."""
+    if not folder.is_dir():
+        return []
+    return [
+        path for path in sorted(folder.iterdir())
+        if path.is_file() and any(language.is_test(path.name) for language in K_LANGUAGES)
+    ]
+
+
 def _units(folder: Path, language: Language) -> Iterator[Path]:
     """Yields every file of a language below a folder that a test mirrors."""
     if folder.is_dir():
@@ -107,22 +132,27 @@ def _units(folder: Path, language: Language) -> Iterator[Path]:
         )
 
 
-def _strip(relative: Path, language: Language, module: str | None) -> Path:
-    """Returns a unit's path below its project or package folder and its module folder."""
+def _strip(relative: Path, language: Language, owner: Path) -> Path:
+    """Returns a unit's path below its project or package folder and its module folder.
+
+    The module folder is `<module>` or `<tier>/<module>`; the longer one that the path opens with is
+    stripped.
+    """
     parts = relative.parts
     if language.has_project_folder and len(parts) > 1:
         parts = parts[1:]
-    if module is not None and len(parts) > 1 and parts[0] == module:
-        parts = parts[1:]
+    for prefix in (owner.parts, owner.parts[-1:]):
+        if prefix and len(parts) > len(prefix) and parts[:len(prefix)] == prefix:
+            return Path(*parts[len(prefix):])
     return Path(*parts)
 
 
-def _add_owner(expected: dict[Path, Path], tests: Path, owner: Path, folder: Path, module: str | None) -> None:
+def _add_owner(expected: dict[Path, Path], tests: Path, owner: Path, folder: Path) -> None:
     """Adds the expected test of every unit in a module, application or single-module root."""
     for language in K_LANGUAGES:
         base = folder / language.folder
         for unit in _units(base, language):
-            relative = _strip(unit.relative_to(base), language, module)
+            relative = _strip(unit.relative_to(base), language, owner)
             test = tests / owner / relative.parent / language.test_name(unit)
             expected[test] = unit
 
@@ -137,9 +167,9 @@ def discover(root: Path) -> TestMirror:
         for tier in sorted(entry for entry in modules.iterdir() if entry.is_dir()):
             for module in sorted(entry for entry in tier.iterdir() if entry.is_dir()):
                 owners.add(tests / tier.name / module.name)
-                _add_owner(expected, tests, Path(tier.name) / module.name, module, module.name)
+                _add_owner(expected, tests, Path(tier.name) / module.name, module)
     else:
-        _add_owner(expected, tests, Path(), root, None)
+        _add_owner(expected, tests, Path(), root)
     applications = root / K_APPLICATIONS_FOLDER
     if applications.is_dir():
         for application in sorted(entry for entry in applications.iterdir() if entry.is_dir()):
@@ -182,7 +212,7 @@ def collect(paths: list[Path]) -> Iterable[TestMirror]:
 def rule_untested_unit(mirror: TestMirror) -> Iterator[Issue]:
     """Yields an issue for each header or source file whose test file does not exist."""
     for test, header in sorted(mirror.expected.items(), key=lambda item: str(item[1])):
-        if not test.is_file():
+        if not test.is_file() and not _aspect_files(unit_folder(test)):
             shown = test.relative_to(mirror.root).as_posix()
             yield Issue(header, 1, f"no test file; expected {shown}")
 
@@ -193,7 +223,8 @@ def rule_orphan_test(mirror: TestMirror) -> Iterator[Issue]:
         is_test = path.name.endswith(K_UNITY_TEST_SUFFIX) or any(
             language.is_test(path.name) for language in K_LANGUAGES
         )
-        if path.is_file() and is_test and path not in mirror.expected:
+        in_unit_folder = any(unit_folder(test) == path.parent for test in mirror.expected)
+        if path.is_file() and is_test and path not in mirror.expected and not in_unit_folder:
             yield Issue(path, 1, "mirrors no header or source file; rename it or move it to its unit's mirror")
 
 
@@ -205,6 +236,46 @@ def rule_mirror_folders(mirror: TestMirror) -> Iterator[Issue]:
             yield Issue(path, 1, "folder has no counterpart in the source tree")
 
 
+def rule_unit_file_and_folder(mirror: TestMirror) -> Iterator[Issue]:
+    """Yields an issue for each unit that has both a test file and a folder of aspect files."""
+    for test in sorted(mirror.expected):
+        if test.is_file() and _aspect_files(unit_folder(test)):
+            yield Issue(test, 1, "the unit has a test file and a test folder; keep one")
+
+
+def _private_headers(root: Path) -> frozenset[str]:
+    """Returns the path below its source/ folder of every header private to a module or the root."""
+    folders = [root / K_PRIVATE_FOLDER]
+    modules = root / "modules"
+    if modules.is_dir():
+        folders += [module / K_PRIVATE_FOLDER for tier in modules.iterdir() if tier.is_dir()
+                    for module in tier.iterdir() if module.is_dir()]
+    return frozenset(
+        header.relative_to(folder).as_posix()
+        for folder in folders if folder.is_dir()
+        for header in folder.rglob("*") if header.is_file() and header.suffix in K_CPP.suffixes
+    )
+
+
+def rule_private_include(mirror: TestMirror) -> Iterator[Issue]:
+    """Yields an issue for each include in a test that names a header under a source/ folder."""
+    private = _private_headers(mirror.root)
+    for path in mirror.walk():
+        if not path.is_file() or path.suffix not in K_CPP_TEST_SUFFIXES:
+            continue
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        for number, line in enumerate(lines, start=1):
+            match = K_INCLUDE.match(line)
+            if not match:
+                continue
+            quote, target = match.groups()
+            through_source = f"/{K_PRIVATE_FOLDER}/" in f"/{target}"
+            if not through_source and quote == '"' and (path.parent / target).is_file():
+                continue
+            if through_source or target in private:
+                yield Issue(path, number, f"includes the private header {target}; test it through the public surface")
+
+
 K_CHECKER = Checker(
     description="Checks that tests/ mirrors the source of the repository.",
     collect=collect,
@@ -212,6 +283,8 @@ K_CHECKER = Checker(
         "rule_untested_unit": rule_untested_unit,
         "rule_orphan_test": rule_orphan_test,
         "rule_mirror_folders": rule_mirror_folders,
+        "rule_unit_file_and_folder": rule_unit_file_and_folder,
+        "rule_private_include": rule_private_include,
     },
 )
 
