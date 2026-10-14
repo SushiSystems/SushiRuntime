@@ -74,11 +74,9 @@ namespace SushiRuntime
 
         /**
          * @brief Resolves a LateCount's host side and names its device slot without reading it.
-         * @param fault The node's fault record; a host count above the capacity is written
-         *        there as K_DEVICE_FAULT_LATE_COUNT.
-         * @return The source a resolver kernel reads. A host count above the capacity is
-         *         recorded as a fault and resolves to zero, as read_live_count() does on
-         *         the device, so the dependent nodes always run with zero work.
+         * @param fault The node's fault record, which takes K_DEVICE_FAULT_LATE_COUNT.
+         * @return The source a resolver kernel reads; a host count above the capacity is a
+         *         fault and resolves to zero, as read_live_count() does on the device.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
         [[nodiscard]] inline LiveCountSource late_count_source(
