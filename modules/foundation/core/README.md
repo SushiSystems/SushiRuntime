@@ -122,7 +122,7 @@ the spelling of the enumerator, or "Unknown" for a number outside the enumeratio
 the code with an empty message when the text cannot be allocated. A function that must not throw
 builds its errors with it.
 
-New enumerators go at the end of `ErrorCode`. `tests/test_error.cpp` pins the number of each one.
+New enumerators go at the end of `ErrorCode`. `tests/foundation/core/test_error.cpp` pins the number of each one.
 
 ## error_translation.hpp
 

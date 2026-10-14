@@ -35,11 +35,11 @@
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
+#include <SushiRuntime/frame_transport/frame_sending.hpp>
+#include <SushiRuntime/wire/wire_messages.hpp>
 
-#include "frame_sending.hpp"
 #include "ping_clock.hpp"
 #include "task_resubmission.hpp"
-#include "wire_messages.hpp"
 
 namespace SushiRuntime
 {

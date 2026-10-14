@@ -7,5 +7,6 @@ stays there.
 | --- | --- | --- |
 | `doxygen/Doxyfile` | Doxygen, run from the repository root | `sr docs` (`cli/sushiruntime/services/project.py`), the documentation job of `.github/workflows/ci.yml` |
 | `docker/Dockerfile` | `docker build -f`, with the repository root as the build context | `sr container build` (`cli/sushiruntime/services/docker.py`) |
+| `sanitizers/lsan_suppressions.txt` | LeakSanitizer, through `LSAN_OPTIONS=suppressions=<path>` | Every test run of the CLI (`cli/sushiruntime/env.py`) |
 
 `.dockerignore` stays in the root: Docker reads it from the build context.

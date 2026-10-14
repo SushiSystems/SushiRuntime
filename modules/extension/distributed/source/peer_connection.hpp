@@ -37,11 +37,10 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/distributed/transport.hpp>
-#include <SushiRuntime/distributed/message_type.hpp>
-
-#include "outbox.hpp"
-#include "socket.hpp"
+#include <SushiRuntime/transport/transport.hpp>
+#include <SushiRuntime/transport/message_type.hpp>
+#include <SushiRuntime/frame_transport/outbox.hpp>
+#include <SushiRuntime/network_socket/socket.hpp>
 
 namespace SushiRuntime
 {

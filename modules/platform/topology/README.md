@@ -146,16 +146,6 @@ A GPU or accelerator with a PCI address takes the NUMA node local to its PCI dev
 when hwloc reports no such node or does not know the PCI device. A GPU without a PCI address
 takes node 0. Every other device takes the NUMA node covering the process's CPU binding.
 
-### numa_lookup.cpp
-
-In hwloc 2 a NUMA node is a memory child, not a link in an object's parent chain, so
-`hwloc_get_ancestor_obj_by_type(..., HWLOC_OBJ_NUMANODE, ...)` finds none. `local_numa_os_index()`
-walks up from the object to the first one with a non-empty `nodeset` and returns the OS index of
-the lowest node in it. A PU or core has its own nodeset; a PCI device has none and takes its
-first non-I/O ancestor's. The three lookups of this module (`hw_discovery.cpp`,
-`hwloc_topology_provider.cpp`, `numa_mapper.cpp`) go through it, and each keeps its own fallback
-for an empty answer.
-
 ### remapping_topology_provider.cpp
 
 The provider spreads the real devices across synthetic NUMA nodes round-robin. The devices

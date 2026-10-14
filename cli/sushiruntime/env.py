@@ -128,7 +128,7 @@ def _inject_sanitizer_options(env: dict[str, str]) -> None:
     if "LSAN_OPTIONS" in env:
         return  # a caller who set it explicitly outranks us
     try:
-        suppressions = find_project_root() / "tests" / "lsan_suppressions.txt"
+        suppressions = find_project_root() / ".config" / "sanitizers" / "lsan_suppressions.txt"
     except SystemExit:
         return  # not inside a checkout; nothing to point at
     if suppressions.is_file():

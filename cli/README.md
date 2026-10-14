@@ -179,7 +179,7 @@ does enable C. Finding the use-after-return tuning again would be the expensive 
 ### ASAN_BENCHMARKS
 
 The benchmark binary installs a global `operator new` and `operator delete` replacement to
-count allocations (`tests/benchmark/benchmark_recompose_churn.cpp`), which is the
+count allocations (`tests/surface/api/graph/benchmark_dynamic_graph.cpp`), which is the
 same thing AddressSanitizer replaces. On Windows the two collide as a duplicate-symbol link
 error. Excluding the suite is right in any case: ASan's redzones and quarantine make its
 timings and allocation counts meaningless, so an ASan benchmark run would report numbers

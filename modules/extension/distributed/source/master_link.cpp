@@ -34,9 +34,8 @@
 #include <utility>
 
 #include <SushiRuntime/logging/logger.hpp>
-
-#include "frame_sending.hpp"
-#include "wire_frame.hpp"
+#include <SushiRuntime/frame_transport/frame_sending.hpp>
+#include <SushiRuntime/wire/wire_frame.hpp>
 
 namespace SushiRuntime
 {

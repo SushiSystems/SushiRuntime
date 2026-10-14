@@ -59,4 +59,4 @@ dependency hot path.
 
 ## Tests
 
-`tests/test_buffer_region.cpp` builds `sr_region_tests`.
+`tests/foundation/region/` builds `sr_region_tests`.

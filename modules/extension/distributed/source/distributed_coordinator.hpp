@@ -39,10 +39,10 @@
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/cluster_statistics.hpp>
-#include <SushiRuntime/distributed/transport.hpp>
+#include <SushiRuntime/cluster_load/cluster_statistics.hpp>
+#include <SushiRuntime/transport/transport.hpp>
+#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
 
-#include "buffer_registry.hpp"
 
 namespace SushiRuntime
 {

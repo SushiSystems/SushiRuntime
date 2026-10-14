@@ -27,7 +27,7 @@ PROFILE = ModuleProfile(
     program="sr",
     env_prefix="SR",
     root_marker="sushi-module.toml",
-    default_target="sr_functional_tests",
+    default_target="sr_api_tests",
     extra_env_overrides={
         "toolchain": "SR_SYCL_TOOLCHAIN",
         "cc": "SR_CC",
@@ -100,7 +100,7 @@ class Config(ProvisionSettings):
     cc: str = ""
 
     # Run defaults
-    target_bin: str = "sr_functional_tests"
+    target_bin: str = "sr_api_tests"
 
     def resolved_compilers(self) -> tuple[str, str]:
         """Return (cc, cxx), deriving them from the toolchain when not pinned.

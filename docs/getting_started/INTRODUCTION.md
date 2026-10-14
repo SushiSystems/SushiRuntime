@@ -359,7 +359,7 @@ that kernel has finished. The counter is a `Residency::Host` buffer:
                   [m](std::size_t i) { m[i] = static_cast<int>(i); });
 ```
 
-Source: `modules/surface/api/tests/vocabulary/test_device_count.cpp`
+Source: `tests/surface/api/vocabulary/test_dynamic.cpp`
 
 [The vocabulary README](../../modules/surface/api/include/SushiRuntime/api/vocabulary/README.md)
 covers `based_at_device()`, `LateCount` and what happens when a live count exceeds the capacity.
@@ -571,7 +571,7 @@ called `set_profiling(true)`.
         total += w.busy_ms + w.stealing_ms + w.polling_ms + w.idle_ms;
 ```
 
-Source: `tests/integration/test_observability.cpp`
+Source: `tests/surface/api/graph/test_graph.cpp`
 
 A node without a name reports as `unnamed_task`.
 [The report README](../../modules/foundation/report/README.md) lists the fields.
@@ -593,6 +593,6 @@ them.
 - [CLI_GUIDE.md](../guides/CLI_GUIDE.md): every `sr` command.
 - [applications/examples/README.md](../../applications/examples/README.md): what each example
   shows.
-- `modules/surface/api/tests/`: one test file per part of the interface.
-  `test_fluent_lifecycle.cpp` covers handles, stepping and coupling.
+- `tests/surface/api/`: one test file per header of the interface.
+  `test_fluent.cpp` covers handles, stepping and coupling.
 - `sr docs` builds the API reference from the headers.

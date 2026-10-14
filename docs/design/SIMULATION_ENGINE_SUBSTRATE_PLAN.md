@@ -154,7 +154,7 @@ about resolving that violation without throwing away what the runtime does well.
 These are genuine strengths and the reason the goal is realistic at all:
 
 - **Automatic data-driven ordering is the hard part of an ECS scheduler, and it
-  exists.** `DependencyTracker::resolve` (`modules/engine/graph/source/dependency_tracker.cpp:66`)
+  exists.** `DependencyTracker::resolve` (`modules/engine/dependency_tracking/source/dependency_tracker.cpp:66`)
   derives RAW/WAR/WAW edges from declared read/write sets. An ECS "system schedule"
 (run systems in parallel unless their component access conflicts) is exactly
   this mechanism with components as the tracked resources.

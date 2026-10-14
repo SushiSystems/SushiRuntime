@@ -10,10 +10,3 @@ sushiruntime_add_module(
     SOURCES node_placement.cpp node_widths.cpp
     DEPENDS core report region
     PRIVATE_DEPENDS memory)
-
-sushiruntime_add_module_tests(
-    MODULE task
-    SOURCES
-        test_node_placement.cpp
-        test_small_event_vector.cpp
-        test_task_types.cpp)

@@ -4,38 +4,44 @@ The master and worker layer that ships named kernels and buffer references acros
 built only when the CMake option `SR_ENABLE_DISTRIBUTED` is on, which `sr build --distributed`
 sets.
 
+The module depends on `core`, `api`, `transport` and `cluster_load` through its headers. Its
+sources depend on `logging`, `memory`, `device`, `task`, `execution`, `region`, `log`,
+`context_access` and the internal modules `wire`, `link_security`, `network_socket`,
+`frame_transport`, `buffer_exchange`, `pending_tasks`, `dispatch_deduplication`,
+`process_environment` and `offload_coordination`, which hold the bricks the master and the worker
+are built from.
+
 How to run a master and a worker is in
 [`DISTRIBUTED_GUIDE.md`](../../../docs/guides/DISTRIBUTED_GUIDE.md); this page describes the code.
-The tests are described in [`tests/README.md`](tests/README.md). The design is
+The tests are described in [the README of its tests](../../../tests/extension/distributed/README.md). The design is
 `docs/agent/2026_10_09_USABILITY_AUDIT/SPEC.md`, phase D.
 
 ## Public surface
 
 Headers under `include/SushiRuntime/distributed/`. Everything is in `SushiRuntime::Distributed`.
+The vocabulary of a link, `Endpoint`, `MessageType`, `BufferHandle` and `Transport`, is the public
+module `transport`; the offload policy and the cluster's statistics are the public module
+`cluster_load`. Both are installed with this one.
 
 | Header | Declares |
 | --- | --- |
 | `distributed.hpp` | Nothing; it includes what a master or a worker program needs |
 | `cluster.hpp` | `Cluster`, `ClusterOptions`, the chunk size limits |
-| `cluster_statistics.hpp` | `ClusterStatistics`, `WorkerSnapshot` |
 | `shared_secret.hpp` | `SharedSecret` |
-| `endpoint.hpp` | `Endpoint`, `EndpointParseResult` |
-| `message_type.hpp` | `MessageType`, the type byte of a frame |
-| `buffer_handle.hpp` | `GlobalBufferID`, `BufferHandle` |
 | `buffer_view.hpp` | `BufferView` |
-| `transport.hpp` | `Transport`, `TransportEvents`, `FrameSource`, `OutboundFrame`, `PeerID`, `PeerDescription`, `PeerLoss`, `SendStatus`, `TransportStatus`, `TransportResult`, `TransportExposure`, `TransportStatistics` |
 | `tcp_transport.hpp` | `TCPTransport`, `TCPMasterOptions`, `TCPWorkerOptions` |
 | `in_process_transport.hpp` | `InProcessFabric`, `InProcessTransport`, `FaultPolicy`, `FaultedFrame`, `FaultAction` |
-| `offload_policy.hpp` | `OffloadPolicy`, `WorkerLoad`, `LeastLoadedOffloadPolicy` |
 | `kernel_registry.hpp` | `KernelRegistry` and its `Kernel` form |
 | `worker_agent.hpp` | `WorkerAgent`, `WorkerAgentOptions`, `WorkerEnd`, `WorkerStatistics` |
 | `worker_main.hpp` | `run_worker()`, `WorkerOptions`, `WorkerExitCode` |
+| `worker_options_parser.hpp` | `parse_worker_options()`, `WorkerOptionsResult`, `WorkerOptionsStatus`, `EnvironmentReader` |
 | `registered_task.hpp` | `record_registered_task()` |
 
 `MessageType`, `GlobalBufferID` and `BufferHandle` are also reachable as `Wire::` names, which the
-private codec uses.
+codec of `wire` uses.
 
 `distributed.hpp` includes every header of the table except `in_process_transport.hpp` and
+`worker_options_parser.hpp`, and the headers of `transport` and `cluster_load` except
 `message_type.hpp`. The `_op` literal is no header of this module: it comes with
 `core/operation_id.hpp`, which declares it in `SushiRuntime::Literals`. A worker program includes
 `distributed.hpp` alone; a master includes it beside `SushiRuntime/sushiruntime.hpp`.
@@ -45,7 +51,7 @@ private codec uses.
 lambda registers without a cast. The last parameter of a kernel is a `const NodeOptions&`: the
 name, the operation and the parameters of the task, valid during the call. A worker fills it from
 the dispatch it received. The master fills it from the node's metadata through describe_task()
-of `source/task_description.hpp`, which sends the parameters up to the last one that is not
+of `offload_coordination/task_description.hpp`, which sends the parameters up to the last one that is not
 zero, and `OffloadPolicy::pick_worker()` is handed the same description of the task it places.
 
 `record_registered_task(recorder, kernels, options, inputs, outputs)` records a task whose body
@@ -61,7 +67,8 @@ graph.extend([&](SushiRuntime::Recorder& recorder)
 });
 ```
 
-The public headers include only headers of `api`, `core` and this module, and no signature in
+The public headers include only headers of `api`, `core`, `transport`,
+`cluster_load` and this module, and no signature in
 them names an engine type: `Cluster::attach()` and `WorkerAgent` take a `Runtime&`, and
 `record_registered_task()` a `Recorder&` and a `NodeOptions`. The tests of this module, the
 offload benchmark and `worker_main.cpp` build a `Runtime` and run a `Graph`.
@@ -163,63 +170,6 @@ chain: `auto a = cluster.share(rt.buffer<float>(n).value());`
 share() is a member of the extension and not of `Buffer`, and the engine's
 Internal::Graph::OffloadCoordinator has no share: a runtime without this module names no share.
 
-## transport.hpp
-
-### The transport contract
-
-A transport moves frames of protocol version 3. It checks each frame's 12-byte header and knows
-nothing about what a payload means; the handshake runs above it, so both transports exercise the
-same session code.
-
-**Peers.** A transport numbers its connections from 1 and never reuses a number. A worker that
-reconnects is a new `PeerID` on the master, and each connection to the master is a new `PeerID` on
-the worker. There is no fixed id for the master and no peer count on the interface.
-
-**Start and stop.** `start(events)` is called once. A master binds and listens inside it, so a
-port that is taken comes back as `BindFailed` with the endpoint and the OS reason in the message.
-On `Ok` a master's message is the endpoint it listens on. A worker returns `Ok` with an empty
-message and connects on its own thread. A second `start()` returns `AlreadyStarted`.
-`stop()` is `noexcept`, blocks until every transport thread has ended and makes no event once it
-returns; it closes peers without `on_peer_lost()`. A stopped transport does not start again.
-
-**Events.** For one peer: `on_peer_connected()`, then `on_frame()` in the order the peer sent, then
-`on_peer_lost()` exactly once, never two at a time. Events of different peers may overlap. The
-payload span is valid during `on_frame()` only. An event may call `send()`, `send_stream()` and
-`close_peer()`, also for its own peer; it must not call `start()` or `stop()`. An exception that
-leaves `on_frame()` is caught by the transport, which closes that peer with `HandlerFailed` and
-keeps the process alive. The transport does not log a loss; the receiver does, because only the
-receiver knows whether the peer was a registered worker.
-
-**Sending.** `send()` copies a control frame into the peer's queue and returns; it never waits for
-a socket. `send_stream()` hands over a `FrameSource`, which the peer's writer asks for one frame at
-a time. The writer sends every queued control frame, then one stream frame, taking the peer's
-streams in turn, so a control frame waits behind at most one chunk. Control frames to one peer keep
-their order, and so do the frames of one stream; a control frame queued after a stream may arrive
-before the stream's frames. A result that must follow its output bytes is therefore the last frame
-of the same stream. `QueueFull` means the control queue is at its bound and nothing was queued.
-
-**Closing.** `close_peer()` returns at once. Sends to the peer return `UnknownPeer` from that
-point, streams are dropped, queued control frames are written for a bounded time, and
-`on_peer_lost()` reports `ClosedLocally`.
-
-Over TCP the writer gets `close_linger` (1 s) to write those frames. A writer that has already
-waited that long inside one socket write when `close_peer()` is called has had its time:
-`PeerConnection::close()` shuts the socket itself, the reader reports the loss at once and the
-queued frames are dropped. A write that has waited for less runs on until it ends or
-`write_idle_timeout` passes, and in the second case the loss is reported as `WriteStalled`. The
-in-process transport has no such wait: its pump never blocks in a send, `Outbox::close()` drops
-the streams, and the next round of the pump reports the loss.
-
-**A worker that cannot connect.** `on_connect_abandoned()` is called once when a worker-side
-transport stops trying: the time allowed for the first connection ran out, or the master was lost
-and reconnecting is off.
-
-### Exposure
-
-`exposure()` is `Loopback` for an in-process fabric and for a TCP endpoint whose bind address or
-master host is a loopback address, and `Network` otherwise. `TCPMasterOptions::bind` defaults to
-`127.0.0.1`.
-
 ## tcp_transport.hpp
 
 `TCPTransport::make_master(TCPMasterOptions)` and `make_worker(Endpoint, TCPWorkerOptions)` make
@@ -279,37 +229,8 @@ registered worker only. A peer that has not registered within `handshake_timeout
 is closed by the monitor; a repeated `HELLO` restarts the handshake and not that clock.
 
 SHA-256 and HMAC are written in the module (`sha256.hpp`, `hmac_sha256.hpp`) and pinned by the
-FIPS 180-4 and RFC 4231 vectors in `tests/link/test_handshake.cpp`. Nonces come from
+FIPS 180-4 and RFC 4231 vectors in `tests/extension/distributed/test_shared_secret.cpp`. Nonces come from
 `std::random_device`. Frames after the handshake carry no MAC and are not encrypted.
-
-## offload_policy.hpp
-
-`WorkerDirectory::pick()` offers the policy the registered, alive workers that are below their
-`max_jobs` and registered the kernel of the task's operation, under the directory's mutex. It
-does not call the policy when no such worker has room, and an answer that names a worker it did
-not offer counts as no pick. Workers of one cluster may therefore hold different kernels.
-
-`LeastLoadedOffloadPolicy` is the default. It returns nothing, which runs the task locally, when
-the task's inputs total fewer bytes than `min_offload_bytes` (64 KiB unless the constructor is
-given another value). It skips a worker whose `free_mem` is not 0 and is below the input size.
-Among the rest it picks the lowest cost, in microseconds: `rtt_micros`, plus the input bytes
-divided by 1000, plus 1000 per inflight task. The two constants are in
-`source/offload_policy.cpp`.
-
-## cluster_statistics.hpp
-
-`Cluster::statistics()` returns `ClusterStatistics`, which the coordinator assembles from the
-brick that causes each count. What each field means to a user is in §9 of the guide.
-
-| Fields | Kept by |
-| --- | --- |
-| `offloaded`, `declined`, `send_queue_full` | `OffloadDispatcher` |
-| `tasks_reaped_deadline`, `tasks_reaped_unacknowledged`, `tasks_reaped_lost_result`, part of `redispatched` | `ClusterMonitor` |
-| `chunks_sent`, `chunks_received`, `transfers_aborted`, part of `stale_writebacks` | `BufferExchange` |
-| `completed_remote`, `handshake_rejected_auth`, `handshake_rejected_version`, `peers_lost`, `peers_closed_malformed`, the rest of `redispatched` and `stale_writebacks` | `DistributedCoordinator` |
-| `bytes_sent`, `bytes_received` | the transport |
-| `alive_workers`, `workers` | `WorkerDirectory` |
-| `pending_tasks` | `PendingTasks` |
 
 ## in_process_transport.hpp
 
@@ -325,7 +246,9 @@ liveness check closes the peer.
 
 ## Bricks
 
-Private headers under `source/`. Each class owns at most one mutex, holds it only inside its own
+The bricks a master and a worker are composed of. A header written with a folder is in the
+internal module of that name; the others are private to this module, under `source/`. Each class
+owns at most one mutex, holds it only inside its own
 members and calls no other brick, no transport and no sink while holding it, so no lock order
 exists to get wrong. The one exception is written on the class: `WorkerDirectory` calls
 `OffloadPolicy::pick_worker()` under its mutex, and the policy must not call back.
@@ -338,11 +261,11 @@ lifetime.
 
 | Header | Class | Owns | Runs on |
 | --- | --- | --- | --- |
-| `buffer_registry.hpp` | `BufferRegistry` | ids, versions, the only copies of master buffer bytes | caller's thread; `read()` on a peer writer, `write()` on a peer reader |
-| `worker_directory.hpp` | `WorkerDirectory` | one session per peer: handshake state, kernels, liveness, inflight count, alive count | caller's thread |
-| `pending_tasks.hpp` | `PendingTasks` | the task table and every offloaded node reference | caller's thread |
-| `buffer_exchange.hpp` | `BufferExchange` | the pull sources it makes, progress of incoming output transfers | reader thread; its sources on a writer thread |
-| `offload_dispatcher.hpp` | `OffloadDispatcher` | `prepare`, `try_offload`, local and remote settlement of a node | compiling thread, pool worker |
+| `buffer_exchange/buffer_registry.hpp` | `BufferRegistry` | ids, versions, the only copies of master buffer bytes | caller's thread; `read()` on a peer writer, `write()` on a peer reader |
+| `offload_coordination/worker_directory.hpp` | `WorkerDirectory` | one session per peer: handshake state, kernels, liveness, inflight count, alive count | caller's thread |
+| `pending_tasks/pending_tasks.hpp` | `PendingTasks` | the task table and every offloaded node reference | caller's thread |
+| `buffer_exchange/buffer_exchange.hpp` | `BufferExchange` | the pull sources it makes, progress of incoming output transfers | reader thread; its sources on a writer thread |
+| `offload_coordination/offload_dispatcher.hpp` | `OffloadDispatcher` | `prepare`, `try_offload`, local and remote settlement of a node | compiling thread, pool worker |
 | `cluster_monitor.hpp` | `ClusterMonitor` | the monitor thread | its own thread |
 | `ping_clock.hpp` | `make_ping_token()`, `ping_round_trip_micros()` | the clock a `PING` token is read from and measured on | monitor thread, reader thread |
 | `task_resubmission.hpp` | `resubmit_tasks()` | the one sequence that returns a taken task to the scheduler | monitor, reader, the thread in `stop()` |
@@ -353,57 +276,24 @@ lifetime.
 | Header | Class | Owns | Runs on |
 | --- | --- | --- | --- |
 | `worker_buffer_cache.hpp` | `WorkerBufferCache` | cached buffers, chunk assembly, the byte budget, pins | exec thread asks, reader thread delivers |
-| `dispatch_deduplicator.hpp` | `DispatchDeduplicator` | the task ids seen | reader thread |
+| `dispatch_deduplication/dispatch_deduplicator.hpp` | `DispatchDeduplicator` | the task ids seen | reader thread |
 | `master_link.hpp` | `MasterLink` | the handshake, the heartbeat thread, the master watch, the final `WorkerEnd` | reader thread and its own thread |
 | `dispatch_executor.hpp` | `DispatchExecutor` | the job queue, the exec thread, held task ids | reader thread enqueues, its own thread runs |
-| `stop_signal.hpp` | `StopSignal` | the process's stop handlers and their flag | signal handler, main thread |
-| `environment.hpp` | `read_environment()` | the one read of an environment variable | caller's thread |
-| `worker_options_parser.hpp` | `parse_worker_options()` | the table of flags, variables and defaults | caller's thread |
+| `process_environment/stop_signal.hpp` | `StopSignal` | the process's stop handlers and their flag | signal handler, main thread |
+| `process_environment/environment.hpp` | `read_environment()` | the one read of an environment variable | caller's thread |
 | `worker_session.hpp` | `serve_worker()`, `exit_code_of()` | one agent on a given transport, from start to exit code | caller's thread |
 
 ### Transport and codec
 
 | Header | Class | Owns | Runs on |
 | --- | --- | --- | --- |
-| `outbox.hpp` | `Outbox` | one peer's control queue and stream list | any thread pushes, one writer pops |
+| `frame_transport/outbox.hpp` | `Outbox` | one peer's control queue and stream list | any thread pushes, one writer pops |
 | `peer_connection.hpp` | `PeerConnection` | one socket, its reader thread, writer thread and outbox | its two threads |
-| `socket.hpp` | `Socket`, `Listener` | the platform's socket calls | caller's thread |
-| `wire_codec.hpp`, `wire_frame.hpp`, `wire_messages.hpp` | field codec, `FrameHeader`, the sixteen messages | bytes only | caller's thread |
-| `message_router.hpp` | `MessageRouter` | one handler per message type | reader thread |
-| `handshake.hpp`, `sha256.hpp`, `hmac_sha256.hpp` | nonce and proofs | pure functions | caller's thread |
-| `offload_handles.hpp` | `OffloadHandles` | the handles baked on a fixed-buffer node | compiling thread writes, pool worker reads |
-
-## pending_tasks.hpp
-
-### Who owns an offloaded node
-
-`PendingTasks::insert()` takes the scheduling reference `try_offload()` was handed. From then on
-the node leaves through exactly one of `take()`, `take_for_worker()`, `take_overdue()` and
-`drain()`, once, and whoever receives the `PendingTask` owns the node and passes it to the sink:
-`complete_remote()` after a result, `resubmit()` otherwise. The entry carries the worker and the
-output handles as dispatched, so nothing reads the node's lists after dispatch.
-
-Before a resubmit the owner bumps the task's outputs in the registry. `take()` has already made
-`expects_output()` false for the task, and a chunk that passed that check a moment earlier either
-wrote before the bump, and is overwritten by the local run, or meets the bumped version in
-`BufferRegistry::write()` and is refused. `resubmit_tasks()` is the one place this sequence lives.
-
-### A send that fails after insert
-
-`try_offload()` inserts before it sends. When `send()` returns anything but `Queued` it calls
-`take(task_id, worker)`. If that returns the task, the dispatcher lowers the worker's inflight
-count and returns false, and the pool runs the node. If it returns nothing, a reaper already took
-the node and will resubmit it, so `try_offload()` returns true.
-
-### Lost results
-
-A result is lost when a worker's heartbeats stop listing a task it accepted.
-`HEARTBEAT.oldest_held_task_id` is the smallest id the worker still holds, or, when it holds none,
-the largest id whose result it has handed to its writer plus one. A heartbeat is a control frame
-and can overtake the stream that ends with a task's result, and a heartbeat built just before a
-dispatch arrived does not list it. One heartbeat is therefore not proof: `take_overdue()` reaps an
-accepted task as `LostResult` only after `K_LOST_RESULT_HEARTBEATS` (2) heartbeats in a row
-reported an oldest held id above it.
+| `network_socket/socket.hpp` | `Socket`, `Listener` | the platform's socket calls | caller's thread |
+| `wire/wire_codec.hpp`, `wire/wire_frame.hpp`, `wire/wire_messages.hpp` | field codec, `FrameHeader`, the sixteen messages | bytes only | caller's thread |
+| `wire/message_router.hpp` | `MessageRouter` | one handler per message type | reader thread |
+| `link_security/handshake.hpp`, `link_security/sha256.hpp`, `link_security/hmac_sha256.hpp` | nonce and proofs | pure functions | caller's thread |
+| `offload_coordination/offload_handles.hpp` | `OffloadHandles` | the handles baked on a fixed-buffer node | compiling thread writes, pool worker reads |
 
 ## distributed_coordinator.hpp
 
@@ -483,71 +373,6 @@ to the sink, so a caller that reads the statistics when its run returns sees the
 log together, for a peer the directory still knows; a peer it has forgotten was counted and logged
 when it was dropped.
 
-## offload_dispatcher.hpp
-
-### prepare
-
-`prepare()` decides each node of a compiled graph and stores an `OffloadHandles` payload
-(`offload_handles.hpp`) on a fixed-buffer node.
-
-| Node | `offloadable` | Payload |
-| --- | --- | --- |
-| op-tagged, an alive worker has the kernel, every buffer shared | true | input handles, then output handles |
-| op-tagged, supported, every buffer shared, two writes name one buffer | false | the handles of the shared buffers it writes |
-| any other node that writes a shared buffer | false | the handles of the shared buffers it writes |
-| any other node | false | none, and no `OffloadState` is created for it |
-| double-buffered (`live_reads` or `live_writes` set) | true when tagged, supported, every live address is shared and no two live writes name one buffer | none |
-
-A dispatch raises the version of each output once. A buffer listed twice among the outputs would
-leave with two versions, and the output fence would refuse the chunks of one of them, so such a
-node runs locally. The same buffer as an input and as an output is one write and may leave.
-
-One WARN per call names how many op-tagged nodes stay local, how many for each of the three
-reasons (no live worker for the op, buffer not shared, buffer written twice) and the first
-operation id.
-
-### try_offload
-
-The steps run in this order, and no lock is held across two of them.
-
-1. Decline when the node has no `OffloadState`, when its `LateBindings::enabled` is false, or when
-   `attempts` has reached `K_MAXIMUM_OFFLOAD_ATTEMPTS`. `offloadable` is not cleared.
-2. `attempts` rises by one.
-3. Registry lock: a fixed-buffer node refreshes the versions of its stored handles, a
-   double-buffered node resolves the addresses of its live lists.
-4. Directory lock: `WorkerDirectory::pick()`.
-5. Registry lock: `bump()` on the outputs. The dispatch is encoded.
-6. Pending lock: `PendingTasks::insert()`. From here the dispatcher does not read or write the
-   node.
-7. `Transport::send()`. On any status but `Queued` it calls `take()`; with the task back it
-   lowers the worker's inflight count and returns false, without it a removal owns the node and
-   the answer is true.
-
-A `TaskDispatchMessage` declares what it sends and embeds no type of the engine: the task id,
-the operation, a name of at most `K_MAX_DISPATCH_NAME_BYTES` bytes for the worker's log, a
-parameter count and at most `K_MAX_DISPATCH_PARAMETERS` parameters, then the input and the
-output handles. Both limits are constants of `wire_messages.hpp`, and encode() returns `TooLong`
-for a message that breaks one. The dispatcher fills the message from the node: it cuts the name
-to the limit and sends the parameters up to the last one that is not zero. The worker builds the
-`NodeOptions` its kernel is handed from the same fields.
-
-A frame header carries `K_PROTOCOL_VERSION`, which is 3. check_protocol_version() of
-`wire_frame.hpp` turns a header of another version into `ErrorCode::ProtocolMismatch` with both
-versions in its message, and that message is the text of the `REJECT` the receiver sends before
-it closes the connection.
-
-The addresses, the handles, the `TaskDispatchMessage` and the encoded payload live in one
-thread-local scratch per pool thread, so the dispatcher's own code allocates nothing once the
-scratch has grown. `PendingTasks::insert()` allocates the entry and its copy of the output handles,
-and `Transport::send()` copies the payload into the peer's queue.
-
-### Local completion
-
-`complete_local()` returns after one null check for a node without an `OffloadState`. Otherwise it
-sets `attempts` to 0 and bumps what the node wrote: the addresses in `live_writes` for a
-double-buffered node, the stored output handles for a fixed-buffer one. A fixed-buffer node whose
-payload lists no output takes no lock.
-
 ## cluster_monitor.hpp
 
 ### A pass
@@ -575,13 +400,6 @@ timeout applies from the next pass. `WELCOME` carries the period a worker regist
 returns the time since a token was made, 0 for a token from the future and the largest `u32` for a
 longer trip. The monitor makes the token of each `PING`; the coordinator measures the `PONG` that
 brings it back. Both are header-only.
-
-## frame_sending.hpp
-
-`send_message(transport, peer, message, scratch)` encodes a wire message into a buffer the caller
-reuses and queues it with `Transport::send()`; the three-argument form uses a buffer of its own.
-The coordinator, the monitor, `MasterLink` and `DispatchExecutor` send every control frame through
-it.
 
 ## worker_agent.hpp
 
@@ -747,8 +565,8 @@ The flag is one per process, which is why at most one `StopSignal` exists at a t
 | 2 | unreleased | 12-byte little-endian header: magic `SRDP`, version, type, flags, payload length of at most 1 MiB. Sixteen messages with fixed-width fields. A four-message handshake with HMAC-SHA256 proofs in both directions. Buffers travel in chunks, and a task's output chunks precede its result. `TASK_ACCEPTED`, `BUFFER_ABORT`, `BUFFER_RELEASE`, `REJECT` and `GOODBYE` are new |
 | 3 | unreleased | The frame and the sixteen messages of version 2. A task's dispatch carries its own operation, name and parameters |
 
-`Wire::K_PROTOCOL_VERSION` in `source/wire_frame.hpp` holds the current number. Master and worker
+`Wire::K_PROTOCOL_VERSION` in `wire/wire_frame.hpp` holds the current number. Master and worker
 must carry the same version: the reader checks it on every frame and there is no negotiation. The
 header and the first three fields of REJECT and GOODBYE are frozen for every later version, so two
-versions can always refuse each other in words. `test_wire_format.cpp` holds the golden bytes of
+versions can always refuse each other in words. `tests/extension/wire/test_wire_messages.cpp` holds the golden bytes of
 every message and fails on a layout change, which is when the number and this table move.

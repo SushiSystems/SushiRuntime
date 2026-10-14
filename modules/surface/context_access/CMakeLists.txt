@@ -9,7 +9,3 @@ sushiruntime_add_module(
     SYCL
     SOURCES context_access.cpp
     DEPENDS core execution context)
-
-sushiruntime_add_module_tests(
-    MODULE context_access
-    SOURCES test_context_access.cpp)

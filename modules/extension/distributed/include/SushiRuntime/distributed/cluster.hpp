@@ -41,12 +41,12 @@
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
-#include <SushiRuntime/distributed/buffer_handle.hpp>
-#include <SushiRuntime/distributed/cluster_statistics.hpp>
-#include <SushiRuntime/distributed/offload_policy.hpp>
-#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
+#include <SushiRuntime/cluster_load/cluster_statistics.hpp>
+#include <SushiRuntime/cluster_load/offload_policy.hpp>
+#include <SushiRuntime/transport/buffer_handle.hpp>
+#include <SushiRuntime/transport/transport.hpp>
 
 namespace SushiRuntime
 {

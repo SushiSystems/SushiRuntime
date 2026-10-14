@@ -32,12 +32,12 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/worker_main.hpp>
+#include <SushiRuntime/transport/transport.hpp>
+#include <SushiRuntime/process_environment/stop_signal.hpp>
 
-#include "stop_signal.hpp"
 
 namespace SushiRuntime
 {

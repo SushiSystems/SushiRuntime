@@ -67,4 +67,5 @@ from a destructor and from `AllocationOwner::release`, which is `noexcept`.
 
 ## Tests
 
-`tests/test_interop_import.cpp` builds `sr_memory_exchange_tests`.
+The import is tested through the surface that reaches it, in
+`tests/surface/api/interop/test_interop.cpp`.

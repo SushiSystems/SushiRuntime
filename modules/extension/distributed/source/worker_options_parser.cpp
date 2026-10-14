@@ -25,7 +25,7 @@
  * @author Mustafa Garip
  */
 
-#include "worker_options_parser.hpp"
+#include <SushiRuntime/distributed/worker_options_parser.hpp>
 
 #include <array>
 #include <charconv>

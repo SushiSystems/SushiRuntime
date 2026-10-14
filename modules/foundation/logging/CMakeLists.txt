@@ -8,7 +8,3 @@ sushiruntime_add_module(
     NAME logging TIER foundation INTERNAL
     SOURCES logger.cpp
     DEPENDS core log)
-
-sushiruntime_add_module_tests(
-    MODULE logging
-    SOURCES test_logger.cpp)

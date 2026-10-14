@@ -35,7 +35,7 @@
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 
-#include "late_controls_access.hpp"
+#include <SushiRuntime/engine_handles/late_controls_access.hpp>
 
 namespace SushiRuntime
 {

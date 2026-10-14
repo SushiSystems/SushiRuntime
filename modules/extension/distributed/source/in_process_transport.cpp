@@ -44,9 +44,8 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
-
-#include "outbox.hpp"
-#include "wire_frame.hpp"
+#include <SushiRuntime/frame_transport/outbox.hpp>
+#include <SushiRuntime/wire/wire_frame.hpp>
 
 namespace SushiRuntime
 {

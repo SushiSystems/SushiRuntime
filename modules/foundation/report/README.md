@@ -36,4 +36,4 @@ off. With profiling on, the node labels are rebuilt each run by design.
 
 ## Tests
 
-`tests/test_node_event_record.cpp` and `tests/test_run_report_names.cpp` build `sr_report_tests`.
+`tests/foundation/report/` builds `sr_report_tests`.

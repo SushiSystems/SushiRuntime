@@ -40,7 +40,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
-#include "numa_lookup.hpp"
+#include <SushiRuntime/numa_lookup/numa_lookup.hpp>
 
 namespace SushiRuntime
 {

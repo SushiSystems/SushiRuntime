@@ -36,8 +36,8 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/distributed/endpoint.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
+#include <SushiRuntime/transport/endpoint.hpp>
 
 namespace SushiRuntime
 {

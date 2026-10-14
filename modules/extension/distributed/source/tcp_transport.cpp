@@ -44,11 +44,11 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/network_socket/socket.hpp>
+#include <SushiRuntime/wire/wire_frame.hpp>
+#include <SushiRuntime/wire/wire_messages.hpp>
 
 #include "peer_connection.hpp"
-#include "socket.hpp"
-#include "wire_frame.hpp"
-#include "wire_messages.hpp"
 
 namespace SushiRuntime
 {
