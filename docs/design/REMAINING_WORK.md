@@ -217,9 +217,6 @@ round did not close:
 - **Helpers of one module's tests sit in its test folder**: `dynamic_graph_plan_access.hpp`,
   `refusing_fill.hpp` and `tcp_fault_proxy.hpp`. The plan access reaches `api`'s private
   headers, so it cannot be a module.
-- **`tools/` lags SushiSkills.** `check_docs_layout.py`, `check_docs_truth.py`,
-  `check_source_comments.py`, `check_layering.py` and their tests differ from the upstream
-  copies; only `checking/` and `testing/` were brought level.
 
 ## Documentation
 
