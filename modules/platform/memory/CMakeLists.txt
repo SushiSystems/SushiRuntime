@@ -10,10 +10,3 @@ sushiruntime_add_module(
     SOURCES usm_allocator.cpp
     DEPENDS core
     PRIVATE_DEPENDS logging)
-
-sushiruntime_add_module_tests(
-    MODULE memory
-    SOURCES
-        test_epoch_reclamation.cpp
-        test_usm_allocator.cpp
-        test_usm_registry.cpp)

@@ -45,4 +45,4 @@ successful import closes a descriptor the driver already owns.
 
 ## Tests
 
-`tests/test_interop_vocabulary.cpp` builds `sr_interop_tests`.
+`tests/surface/interop/` builds `sr_interop_tests`.

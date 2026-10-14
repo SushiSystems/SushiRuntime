@@ -68,10 +68,13 @@ A change is ready when:
 2. A change to the scheduler, the USM registry, epoch reclamation, the dependency tracker or
    reference counting also passes an ASan build (`sr build --type asan`, then `sr test --asan`).
    `sr test --repeat N` re-runs a test until it fails.
-3. New behaviour has tests. A test of one module goes in that module's `tests/` folder. A test
-   that crosses modules goes under the root `tests/`: `unit/`, `integration/` or `regression/`,
-   and a fixed defect gets a test in `tests/regression/`. Stress and performance programs go in
-   `tests/benchmark/`.
+3. New behaviour has tests. `tests/` mirrors `modules/`: the test of the header
+   `modules/<tier>/<module>/include/SushiRuntime/<module>/<name>.hpp` is
+   `tests/<tier>/<module>/test_<name>.cpp`, and its benchmark `benchmark_<name>.cpp` beside it.
+   A test that crosses modules belongs to the highest-tier module it uses. A fixed defect gets a
+   `Regression_` test in the file of the unit the defect lives in. The kind of a test is the
+   prefix of its suite name, never a folder; `tools/testing/check_test_mirror.py` checks the
+   mirror.
 4. A change to the distributed module passes `sr build --distributed` and
    `sr test --distributed`, which run the protocol over the in-process fabric and TCP loopback.
 

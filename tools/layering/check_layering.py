@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from common.checker import Checker, Issue, run  # noqa: E402
+from checking.checker import Checker, Issue, run  # noqa: E402
 
 K_TIER_ORDER: tuple[str, ...] = ("foundation", "platform", "engine", "surface", "extension")
 K_SAME_TIER_EDGES: frozenset[tuple[str, str]] = frozenset({
@@ -27,20 +27,55 @@ K_SAME_TIER_EDGES: frozenset[tuple[str, str]] = frozenset({
     ("logging", "core"),
     ("logging", "log"),
     ("sycl", "core"),
+    ("test_runner", "logging"),
+    ("topology", "numa_lookup"),
+    ("dependency_tracking", "task"),
+    ("work_stealing", "task"),
     ("scheduler", "task"),
+    ("scheduler", "work_stealing"),
+    ("graph", "dependency_tracking"),
     ("graph", "task"),
     ("execution", "task"),
     ("execution", "scheduler"),
     ("execution", "graph"),
+    ("region_boundary", "task"),
+    ("probe_tasks", "task"),
+    ("runtime_assembly", "execution"),
+    ("runtime_assembly", "scheduler"),
     ("memory_exchange", "interop"),
     ("context_access", "context"),
+    ("api", "engine_handles"),
     ("api", "interop"),
     ("api", "memory_exchange"),
     ("api", "context"),
     ("api", "context_access"),
+    ("wire", "transport"),
+    ("network_socket", "transport"),
+    ("frame_transport", "transport"),
+    ("frame_transport", "wire"),
+    ("buffer_exchange", "transport"),
+    ("buffer_exchange", "wire"),
+    ("pending_tasks", "transport"),
+    ("offload_coordination", "transport"),
+    ("offload_coordination", "wire"),
+    ("offload_coordination", "link_security"),
+    ("offload_coordination", "cluster_load"),
+    ("offload_coordination", "buffer_exchange"),
+    ("offload_coordination", "pending_tasks"),
+    ("distributed", "cluster_load"),
+    ("distributed", "offload_coordination"),
+    ("distributed", "buffer_exchange"),
+    ("distributed", "pending_tasks"),
+    ("distributed", "dispatch_deduplication"),
+    ("distributed", "process_environment"),
+    ("distributed", "transport"),
+    ("distributed", "wire"),
+    ("distributed", "link_security"),
+    ("distributed", "network_socket"),
+    ("distributed", "frame_transport"),
 })
 K_SOURCE_SUFFIXES = frozenset({".h", ".hpp", ".cpp", ".glsl", ".comp", ".vert", ".frag"})
-K_ANGLE_INCLUDE = re.compile(r'^\s*#\s*include\s*<[^/>]+/([^/>]+)/[^>]+>')
+K_ANGLE_INCLUDE = re.compile(r'^\s*#\s*include\s*<([^/>]+)/([^/>]+)/[^>]+>')
 K_QUOTED_INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+)"')
 K_CMAKE_SOURCE_REACH = re.compile(r"(?:^|[/\s\"'])([A-Za-z0-9_]+)/source\b")
 K_CMAKE_COMMENT = re.compile(r"#.*")
@@ -73,6 +108,13 @@ class ModuleTree:
     def rank(self, tier: str) -> int | None:
         """Returns a tier's position in the order, lowest first, or None when undeclared."""
         return self.tier_order.index(tier) if tier in self.tier_order else None
+
+    def owner_of(self, project: str, name: str) -> Module | None:
+        """Returns the module whose include tree holds <project>/<name>/, or None."""
+        module = self.modules.get(name)
+        if module is None or not (module.folder / "include" / project / name).is_dir():
+            return None
+        return module
 
 
 def _discover(root: Path) -> dict[str, Module]:
@@ -108,7 +150,7 @@ def _module_includes(tree: ModuleTree, module: Module) -> Iterator[tuple[Path, i
         if path.relative_to(module.folder).parts[0] not in K_BUILT_FOLDERS:
             continue
         match = K_ANGLE_INCLUDE.match(line)
-        target = tree.modules.get(match.group(1)) if match else None
+        target = tree.owner_of(match.group(1), match.group(2)) if match else None
         if target is not None and target.name != module.name:
             yield path, number, target
 
@@ -154,7 +196,7 @@ def rule_upward_includes(tree: ModuleTree) -> Iterator[Issue]:
         own = tree.rank(module.tier)
         for path, number, line in _source_lines(module):
             match = K_ANGLE_INCLUDE.match(line)
-            target = tree.modules.get(match.group(1)) if match else None
+            target = tree.owner_of(match.group(1), match.group(2)) if match else None
             if own is None or target is None:
                 continue
             other = tree.rank(target.tier)

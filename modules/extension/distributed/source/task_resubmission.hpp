@@ -32,11 +32,11 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
+#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
+#include <SushiRuntime/pending_tasks/pending_tasks.hpp>
+#include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
-#include "buffer_exchange.hpp"
-#include "buffer_registry.hpp"
-#include "pending_tasks.hpp"
-#include "worker_directory.hpp"
 
 namespace SushiRuntime
 {

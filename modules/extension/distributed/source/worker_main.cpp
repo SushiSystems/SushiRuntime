@@ -43,12 +43,12 @@
 #include <SushiRuntime/distributed/shared_secret.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
+#include <SushiRuntime/network_socket/socket.hpp>
+#include <SushiRuntime/wire/wire_frame.hpp>
+#include <SushiRuntime/process_environment/environment.hpp>
+#include <SushiRuntime/process_environment/stop_signal.hpp>
 
-#include "environment.hpp"
-#include "socket.hpp"
-#include "stop_signal.hpp"
-#include "wire_frame.hpp"
-#include "worker_options_parser.hpp"
+#include <SushiRuntime/distributed/worker_options_parser.hpp>
 #include "worker_session.hpp"
 
 namespace SushiRuntime

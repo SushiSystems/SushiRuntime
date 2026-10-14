@@ -335,7 +335,7 @@ The demo keeps the two equal by calling `add_element()` from both.
 `record_registered_task()` (`registered_task.hpp`) removes the second statement of the work: it
 takes a `KernelRegistry` and records a task that runs the registered kernel on this machine, or
 on a worker once a cluster is attached. It records through a `Recorder&`, so a graph calls it
-inside `extend()`; `modules/extension/distributed/tests/end_to_end/test_distributed_e2e.cpp` shows the call.
+inside `extend()`; `tests/extension/distributed/test_distributed.cpp` shows the call.
 
 ## 7. Share buffers
 
@@ -368,7 +368,7 @@ running task holds.
 
 At dispatch the master asks an `OffloadPolicy` which worker gets the task, or none. The default,
 `LeastLoadedOffloadPolicy`, keeps a task whose inputs total under 64 KiB on the master and
-otherwise picks the worker with the lowest estimated cost. [the module README](../../modules/extension/distributed/README.md),
+otherwise picks the worker with the lowest estimated cost. [the `cluster_load` README](../../modules/extension/cluster_load/README.md),
 section "offload_policy.hpp", has the estimate and which workers are offered.
 
 To send every task whatever its size, pass a policy with a threshold of 0:
@@ -377,7 +377,7 @@ To send every task whatever its size, pass a policy with a threshold of 0:
         options.policy = std::make_shared<LeastLoadedOffloadPolicy>(0);
 ```
 
-Source: `modules/extension/distributed/tests/end_to_end/test_distributed_e2e.cpp`
+Source: `tests/extension/distributed/test_distributed.cpp`
 
 To write your own, implement `OffloadPolicy::pick_worker` and return the `worker_id` of one of
 the workers you were offered, or nothing to run the task locally. The call runs on a pool thread

@@ -45,7 +45,7 @@
 #include <SushiRuntime/observability/transfer_counters.hpp>
 #include <SushiRuntime/report/run_report.hpp>
 
-#include "plan_access.hpp"
+#include <SushiRuntime/engine_handles/plan_access.hpp>
 #include "run_report_builder.hpp"
 
 namespace SushiRuntime

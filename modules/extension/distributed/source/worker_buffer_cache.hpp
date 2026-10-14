@@ -39,10 +39,9 @@
 #include <unordered_map>
 
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
-
-#include "wire_messages.hpp"
+#include <SushiRuntime/transport/buffer_handle.hpp>
+#include <SushiRuntime/wire/wire_messages.hpp>
 
 namespace SushiRuntime
 {

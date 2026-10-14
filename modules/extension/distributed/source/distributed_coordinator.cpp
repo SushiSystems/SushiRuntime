@@ -42,23 +42,23 @@
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
-#include <SushiRuntime/distributed/buffer_handle.hpp>
-#include <SushiRuntime/distributed/offload_policy.hpp>
-#include <SushiRuntime/distributed/message_type.hpp>
+#include <SushiRuntime/cluster_load/offload_policy.hpp>
+#include <SushiRuntime/transport/buffer_handle.hpp>
+#include <SushiRuntime/transport/message_type.hpp>
+#include <SushiRuntime/frame_transport/frame_sending.hpp>
+#include <SushiRuntime/link_security/handshake.hpp>
+#include <SushiRuntime/wire/message_router.hpp>
+#include <SushiRuntime/wire/wire_codec.hpp>
+#include <SushiRuntime/wire/wire_frame.hpp>
+#include <SushiRuntime/wire/wire_messages.hpp>
+#include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
+#include <SushiRuntime/pending_tasks/pending_tasks.hpp>
+#include <SushiRuntime/offload_coordination/offload_dispatcher.hpp>
+#include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
-#include "buffer_exchange.hpp"
 #include "cluster_monitor.hpp"
-#include "frame_sending.hpp"
-#include "handshake.hpp"
-#include "message_router.hpp"
-#include "offload_dispatcher.hpp"
-#include "pending_tasks.hpp"
 #include "ping_clock.hpp"
 #include "task_resubmission.hpp"
-#include "wire_codec.hpp"
-#include "wire_frame.hpp"
-#include "wire_messages.hpp"
-#include "worker_directory.hpp"
 
 namespace SushiRuntime
 {

@@ -49,15 +49,15 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/link_security/handshake.hpp>
+#include <SushiRuntime/wire/message_router.hpp>
+#include <SushiRuntime/wire/wire_codec.hpp>
+#include <SushiRuntime/wire/wire_frame.hpp>
+#include <SushiRuntime/wire/wire_messages.hpp>
+#include <SushiRuntime/dispatch_deduplication/dispatch_deduplicator.hpp>
 
-#include "dispatch_deduplicator.hpp"
 #include "dispatch_executor.hpp"
-#include "handshake.hpp"
 #include "master_link.hpp"
-#include "message_router.hpp"
-#include "wire_codec.hpp"
-#include "wire_frame.hpp"
-#include "wire_messages.hpp"
 #include "worker_buffer_cache.hpp"
 
 namespace SushiRuntime

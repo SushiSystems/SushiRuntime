@@ -24,19 +24,42 @@ set(SUSHIRUNTIME_MODULE_TIERS
     machine         foundation
     logging         foundation
     sycl            foundation
+    test_runner     foundation
+    measurement     foundation
+    thread_barrier  foundation
+    device_probe    foundation
+    usm_guard       foundation
+    numa_lookup     platform
     topology        platform
     memory          platform
     device          platform
     observability   platform
     task            engine
+    dependency_tracking engine
+    work_stealing   engine
     scheduler       engine
     graph           engine
     execution       engine
+    region_boundary engine
+    probe_tasks     engine
+    runtime_assembly engine
+    engine_handles  surface
     interop         surface
     memory_exchange  surface
     context         surface
     context_access  surface
     api             surface
+    transport       extension
+    wire            extension
+    link_security   extension
+    network_socket  extension
+    frame_transport extension
+    buffer_exchange extension
+    pending_tasks   extension
+    dispatch_deduplication extension
+    process_environment extension
+    cluster_load    extension
+    offload_coordination extension
     distributed     extension)
 
 # Consumer, then dependency: the edges allowed between two modules of one tier.
@@ -46,20 +69,73 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     logging         core
     logging         log
     sycl            core
+    test_runner     logging
+    dependency_tracking task
+    work_stealing   task
+    topology        numa_lookup
     scheduler       task
+    scheduler       work_stealing
+    graph           dependency_tracking
     graph           task
     execution       task
     execution       scheduler
     execution       graph
+    region_boundary task
+    probe_tasks     task
+    runtime_assembly execution
+    runtime_assembly scheduler
     memory_exchange  interop
     context_access  context
+    api             engine_handles
     api             interop
     api             memory_exchange
     api             context
-    api             context_access)
+    api             context_access
+    wire            transport
+    network_socket  transport
+    frame_transport transport
+    frame_transport wire
+    buffer_exchange transport
+    buffer_exchange wire
+    pending_tasks   transport
+    offload_coordination transport
+    offload_coordination wire
+    offload_coordination link_security
+    offload_coordination cluster_load
+    offload_coordination buffer_exchange
+    offload_coordination pending_tasks
+    distributed     cluster_load
+    distributed     offload_coordination
+    distributed     buffer_exchange
+    distributed     pending_tasks
+    distributed     dispatch_deduplication
+    distributed     process_environment
+    distributed     transport
+    distributed     wire
+    distributed     link_security
+    distributed     network_socket
+    distributed     frame_transport)
 
 # Module, then the option that switches it on. A module not listed is always built.
 set(SUSHIRUNTIME_OPTIONAL_MODULES
+    test_runner     SR_BUILD_TESTS
+    measurement     SR_BUILD_TESTS
+    thread_barrier  SR_BUILD_TESTS
+    device_probe    SR_BUILD_TESTS
+    usm_guard       SR_BUILD_TESTS
+    probe_tasks     SR_BUILD_TESTS
+    runtime_assembly SR_BUILD_TESTS
+    transport       SR_ENABLE_DISTRIBUTED
+    wire            SR_ENABLE_DISTRIBUTED
+    link_security   SR_ENABLE_DISTRIBUTED
+    network_socket  SR_ENABLE_DISTRIBUTED
+    frame_transport SR_ENABLE_DISTRIBUTED
+    buffer_exchange SR_ENABLE_DISTRIBUTED
+    pending_tasks   SR_ENABLE_DISTRIBUTED
+    dispatch_deduplication SR_ENABLE_DISTRIBUTED
+    process_environment SR_ENABLE_DISTRIBUTED
+    cluster_load    SR_ENABLE_DISTRIBUTED
+    offload_coordination SR_ENABLE_DISTRIBUTED
     distributed     SR_ENABLE_DISTRIBUTED)
 
 # Sets <out> to the position of <tier> in SUSHIRUNTIME_TIER_ORDER, or -1.

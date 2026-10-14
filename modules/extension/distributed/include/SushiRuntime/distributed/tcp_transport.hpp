@@ -33,8 +33,8 @@
 #include <memory>
 
 #include <SushiRuntime/core/export.hpp>
-#include <SushiRuntime/distributed/endpoint.hpp>
-#include <SushiRuntime/distributed/transport.hpp>
+#include <SushiRuntime/transport/endpoint.hpp>
+#include <SushiRuntime/transport/transport.hpp>
 
 namespace SushiRuntime
 {

@@ -28,16 +28,16 @@
 
 #pragma once
 
-#include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/cluster_statistics.hpp>
-#include <SushiRuntime/distributed/endpoint.hpp>
-#include <SushiRuntime/distributed/offload_policy.hpp>
-#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/registered_task.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/distributed/worker_main.hpp>
+#include <SushiRuntime/cluster_load/cluster_statistics.hpp>
+#include <SushiRuntime/cluster_load/offload_policy.hpp>
+#include <SushiRuntime/transport/buffer_handle.hpp>
+#include <SushiRuntime/transport/endpoint.hpp>
+#include <SushiRuntime/transport/transport.hpp>

@@ -34,7 +34,7 @@
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
-#include "numa_lookup.hpp"
+#include <SushiRuntime/numa_lookup/numa_lookup.hpp>
 
 namespace SushiRuntime
 {

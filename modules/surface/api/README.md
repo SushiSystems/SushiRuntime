@@ -21,7 +21,8 @@ symbol or passage it explains, and that header's file block cites this page.
 
 The module depends on `core`, `report`, `region`, `log`, `machine`, `interop` and `context`, the
 other public modules, through its headers. Its sources depend on `sycl`, `memory`, `device`,
-`observability`, `task`, `graph`, `execution`, `memory_exchange` and `context_access`.
+`observability`, `task`, `graph`, `execution`, `memory_exchange`, `context_access`, and the internal
+modules `engine_handles` and `region_boundary`.
 
 ## The compiled boundary
 

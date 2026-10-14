@@ -35,7 +35,7 @@
 #include <hwloc/distances.h>
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
-#include "numa_lookup.hpp"
+#include <SushiRuntime/numa_lookup/numa_lookup.hpp>
 
 namespace SushiRuntime
 {

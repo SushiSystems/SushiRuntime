@@ -24,14 +24,3 @@ sushiruntime_add_module(
         report
         machine
     PRIVATE_DEPENDS logging sycl)
-
-sushiruntime_add_module_tests(
-    MODULE execution
-    SOURCES
-        test_async_execution.cpp
-        test_device_pipeline.cpp
-        test_heterogeneous_pipeline.cpp
-        test_profiling_queue.cpp
-        test_replay_host_write.cpp
-        test_run_in_progress.cpp
-        test_sycl_execution.cpp)

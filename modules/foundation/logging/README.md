@@ -125,6 +125,6 @@ objects that are destroyed before the library's statics.
 
 ## Tests
 
-`tests/test_logger.cpp` builds `sr_logging_tests`; `tests/README.md` describes it.
-`tests/integration/test_logging_defaults.cpp` checks the level and the sink around
+`tests/foundation/logging/` builds `sr_logging_tests`; its `README.md` describes it.
+`tests/surface/api/runtime/test_logging.cpp` checks the level and the sink around
 `Runtime::create()`.
