@@ -1,5 +1,5 @@
 # check_docs_truth.py
-# SushiSkills - https://github.com/SushiSystems/SushiSkills
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
 # Copyright (c) 2026-present Mustafa Garip & Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
@@ -25,6 +25,7 @@ from typing import final
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from checking.checker import K_EXIT_CLEAN, Checker, Issue, run  # noqa: E402
+from checking.ignored_paths import ignored_folders  # noqa: E402
 
 
 class PageKind(Enum):
@@ -34,6 +35,7 @@ class PageKind(Enum):
     MANUAL_PAGE = "Manual page"
     MODULE_README = "Module README"
     DESIGN_DOCUMENT = "Design document"
+    RULE_FILE = "Rule file"
 
 
 K_SOURCE_FOLDERS = (
@@ -78,6 +80,8 @@ K_UNCHECKED_DOCUMENTS = frozenset({"docs/reference/CHANGELOG.md"})
 K_UNCHECKED_DOCS_FOLDERS = frozenset({"agent", "archive"})
 K_HISTORY_EXEMPT_NAMES = frozenset({"KNOWN_ISSUES.md"})
 K_PASSAGE_FLOOR = 300
+K_RULE_FOLDERS = ("skills", "claude")
+K_RULE_SKIPPED_FOLDERS = frozenset({"research"})
 K_CITATION_REACH = 3
 K_NOT_COMPILED = "not compiled"
 K_ELISIONS = frozenset({"...", "// ...", "# ..."})
@@ -270,10 +274,15 @@ def read_allow_list(path: Path) -> tuple[AllowEntry, ...]:
     return tuple(entries)
 
 
-def _walk(folder: Path) -> Iterator[tuple[Path, list[str], list[str]]]:
-    """Yields each folder below a path with its entries, without entering skipped folders."""
+def _walk(
+    folder: Path, ignored: frozenset[Path] = frozenset()
+) -> Iterator[tuple[Path, list[str], list[str]]]:
+    """Yields each folder below a path with its entries, without entering skipped or ignored folders."""
     for current, folders, files in os.walk(folder):
-        folders[:] = sorted(name for name in folders if name not in K_SKIPPED_FOLDERS)
+        folders[:] = sorted(
+            name for name in folders
+            if name not in K_SKIPPED_FOLDERS and (Path(current) / name).resolve() not in ignored
+        )
         yield Path(current), folders, sorted(files)
 
 
@@ -292,8 +301,13 @@ class SourceTree:
             if entry.is_file():
                 yield entry
         for folder in self.folders:
-            for current, _, names in _walk(folder):
+            for current, _, names in _walk(folder, self.ignored):
                 yield from (current / name for name in names)
+
+    @cached_property
+    def ignored(self) -> frozenset[Path]:
+        """Returns the folders git ignores, which the index never enters."""
+        return ignored_folders(self.root)
 
     @cached_property
     def words(self) -> frozenset[str]:
@@ -325,7 +339,10 @@ class SourceTree:
         """Returns every file and folder of the repository and each trailing part of its path."""
         tails: set[str] = set()
         for current, folders, files in os.walk(self.root):
-            folders[:] = [name for name in folders if name not in K_BUILD_FOLDERS]
+            folders[:] = [
+                name for name in folders
+                if name not in K_BUILD_FOLDERS and (Path(current) / name).resolve() not in self.ignored
+            ]
             for name in (*folders, *files):
                 parts = (Path(current) / name).relative_to(self.root).parts
                 tails.update("/".join(parts[index:]) for index in range(len(parts)))
@@ -371,10 +388,25 @@ class Manual:
             design = docs / "design" in path.parents
             found.append((path, PageKind.DESIGN_DOCUMENT if design else PageKind.MANUAL_PAGE))
         for folder in self.source.folders:
-            for current, _, names in _walk(folder):
+            for current, _, names in _walk(folder, self.source.ignored):
                 if K_PAGE_NAME in names:
                     found.append((current / K_PAGE_NAME, PageKind.MODULE_README))
         return tuple(read_page(path, kind) for path, kind in found)
+
+    @cached_property
+    def rule_files(self) -> tuple[Page, ...]:
+        """Returns the skill and instruction files, read only for repeated passages."""
+        pages = {page.path for page in self.pages}
+        found: list[Path] = []
+        for name in K_RULE_FOLDERS:
+            folder = self.root / name
+            for current, folders, names in _walk(folder, self.source.ignored) if folder.is_dir() else ():
+                folders[:] = [entry for entry in folders if entry not in K_RULE_SKIPPED_FOLDERS]
+                found.extend(
+                    current / entry for entry in names
+                    if entry.endswith(".md") and current / entry not in pages
+                )
+        return tuple(read_page(path, PageKind.RULE_FILE) for path in found)
 
     @cached_property
     def allow_list(self) -> tuple[AllowEntry, ...]:
@@ -558,9 +590,9 @@ def rule_page_length(manual: Manual) -> Iterator[Issue]:
 
 
 def rule_duplicated_passages(manual: Manual) -> Iterator[Issue]:
-    """Yields an issue for each long paragraph that an earlier page already holds."""
+    """Yields an issue for each long paragraph that an earlier page or rule file already holds."""
     homes: dict[str, Page] = {}
-    for page in manual.pages:
+    for page in (*manual.pages, *manual.rule_files):
         for number, text in page.paragraphs():
             if len(text) < K_PASSAGE_FLOOR:
                 continue

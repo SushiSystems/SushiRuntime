@@ -1,5 +1,5 @@
 # test_check_docs_truth.py
-# SushiSkills - https://github.com/SushiSystems/SushiSkills
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
 # Copyright (c) 2026-present Mustafa Garip & Sushi Systems
 # Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
 # Commercial use requires a licence from Sushi Systems.
@@ -259,6 +259,15 @@ class DuplicatedPassagesTest(unittest.TestCase):
             "docs/guides/B.md": "# B\n\n" + K_PASSAGE.replace(". ", ".\n") + "\n",
         }
         self.assertEqual(_found(rule_duplicated_passages, files), [("docs/guides/B.md", 3)])
+
+    def test_reports_a_rule_restated_in_a_second_skill(self) -> None:
+        """Reports a skill that copies a paragraph of another skill, and skips research notes."""
+        files = {
+            "skills/commits/SKILL.md": f"# Commits\n\n{K_PASSAGE}\n",
+            "skills/git-workflow/SKILL.md": f"# Git\n\n{K_PASSAGE}\n",
+            "skills/humanizer/research/SOURCES.md": f"# Sources\n\n{K_PASSAGE}\n",
+        }
+        self.assertEqual(_found(rule_duplicated_passages, files), [("skills/git-workflow/SKILL.md", 3)])
 
     def test_accepts_a_short_repeat_and_a_repeated_code_block(self) -> None:
         """Accepts a repeated paragraph under the floor and a block repeated in a fence."""

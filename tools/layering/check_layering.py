@@ -44,7 +44,7 @@ K_SAME_TIER_EDGES: frozenset[tuple[str, str]] = frozenset({
     ("api", "context_access"),
 })
 K_SOURCE_SUFFIXES = frozenset({".h", ".hpp", ".cpp", ".glsl", ".comp", ".vert", ".frag"})
-K_ANGLE_INCLUDE = re.compile(r'^\s*#\s*include\s*<[^/>]+/([^/>]+)/[^>]+>')
+K_ANGLE_INCLUDE = re.compile(r'^\s*#\s*include\s*<([^/>]+)/([^/>]+)/[^>]+>')
 K_QUOTED_INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+)"')
 K_CMAKE_SOURCE_REACH = re.compile(r"(?:^|[/\s\"'])([A-Za-z0-9_]+)/source\b")
 K_CMAKE_COMMENT = re.compile(r"#.*")
@@ -77,6 +77,13 @@ class ModuleTree:
     def rank(self, tier: str) -> int | None:
         """Returns a tier's position in the order, lowest first, or None when undeclared."""
         return self.tier_order.index(tier) if tier in self.tier_order else None
+
+    def owner_of(self, project: str, name: str) -> Module | None:
+        """Returns the module whose include tree holds <project>/<name>/, or None."""
+        module = self.modules.get(name)
+        if module is None or not (module.folder / "include" / project / name).is_dir():
+            return None
+        return module
 
 
 def _discover(root: Path) -> dict[str, Module]:
@@ -112,7 +119,7 @@ def _module_includes(tree: ModuleTree, module: Module) -> Iterator[tuple[Path, i
         if path.relative_to(module.folder).parts[0] not in K_BUILT_FOLDERS:
             continue
         match = K_ANGLE_INCLUDE.match(line)
-        target = tree.modules.get(match.group(1)) if match else None
+        target = tree.owner_of(match.group(1), match.group(2)) if match else None
         if target is not None and target.name != module.name:
             yield path, number, target
 
@@ -158,7 +165,7 @@ def rule_upward_includes(tree: ModuleTree) -> Iterator[Issue]:
         own = tree.rank(module.tier)
         for path, number, line in _source_lines(module):
             match = K_ANGLE_INCLUDE.match(line)
-            target = tree.modules.get(match.group(1)) if match else None
+            target = tree.owner_of(match.group(1), match.group(2)) if match else None
             if own is None or target is None:
                 continue
             other = tree.rank(target.tier)

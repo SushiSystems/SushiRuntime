@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-14 — tools: Brought the checkers level with SushiSkills, so they skip what git ignores and resolve an include by its project folder (`check_docs_truth.py`, `check_layering.py`).
 - 2026-10-14 — tests: Moved every test into `tests/<tier>/<module>/`, one file per header, built as `sr_<module>_tests` and `sr_<module>_benchmarks` in place of the three root programs (`check_test_mirror.py`).
 - 2026-10-14 — cmake: Split `tests/common` into seven internal modules that only the tests build, such as `test_runner` and `runtime_assembly` (`SushiRuntimeModule.cmake`, `TEST_ONLY`).
 - 2026-10-14 — cli: Made `sr_api_tests` the default of `sr run` and read the LeakSanitizer list from `.config/sanitizers/` (`config.toml`, `env.py`).
