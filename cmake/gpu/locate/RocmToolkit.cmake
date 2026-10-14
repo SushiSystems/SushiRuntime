@@ -21,6 +21,11 @@ function(sushiruntime_gpu_locate_rocm_toolkit out_root out_searched)
         get_filename_component(_root "${_bin}" DIRECTORY)
     elseif(WIN32)
         set(_searched "nothing: no ROCm locator is provided on Windows")
+    elseif(EXISTS "$ENV{ROCM_PATH}/include/hip/hip_runtime.h")
+        # sushicore installs the release chosen for the machine's AMD cards under the user's
+        # home and names it in ROCM_PATH, so it wins over a system install in /opt/rocm.
+        set(_searched "ROCM_PATH (include/hip/hip_runtime.h)")
+        file(TO_CMAKE_PATH "$ENV{ROCM_PATH}" _root)
     else()
         set(_searched "hipcc or rocminfo on PATH, /opt/rocm/bin, /opt/rocm-*/bin")
         sushiruntime_gpu_versioned_prefixes(_prefixes "/opt/rocm-*/bin")

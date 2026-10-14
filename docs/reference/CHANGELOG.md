@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-14 — cmake: Made the ROCm locator and the ISA probe read `ROCM_PATH` first, where sushicore installs the release chosen for the cards (`RocmToolkit.cmake`, `Rocm.cmake`).
+
 - 2026-10-14 — cmake: Made the CUDA locator read `CUDA_PATH` first on Linux too, where sushicore installs the release chosen for the cards (`CudaToolkit.cmake`, `Cuda.cmake`, `sushistack.deps.toml`).
 
 - 2026-10-12 — tests: Gave the constants of six test and benchmark files the `K_` prefix, so the naming checker reports nothing over the whole tree (`test_layer_equivalence.cpp`, `benchmark_graph_compile.cpp`).
