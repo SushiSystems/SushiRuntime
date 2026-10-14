@@ -8,8 +8,13 @@ sushiruntime_add_module_tests(
     MODULE core
     SOURCES
         test_assert.cpp
+        test_bit.cpp
+        test_common.cpp
         test_delegate.cpp
         test_error.cpp
+        test_error_translation.cpp
+        test_export.cpp
+        test_operation_id.cpp
         test_ref_counted.cpp
         test_result.cpp
         test_span.cpp

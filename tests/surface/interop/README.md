@@ -14,3 +14,19 @@ The file covers the default values of the interop vocabulary.
 
 A default `ExternalMemoryDescriptor` has the kind `Unspecified`, a handle of 0, and an allocation size
 and an offset of 0.
+
+## test_device_uuid.cpp
+
+The file tests DeviceUUID: sixteen zero bytes by default, equal when every byte is.
+
+| Test | What it proves |
+| --- | --- |
+| `EqualOnlyWhenEveryByteIs` | Two UUIDs are equal only when every byte is. |
+
+## test_external_memory.cpp
+
+The file tests ExternalMemoryDescriptor: an unspecified handle of no bytes by default.
+
+| Test | What it proves |
+| --- | --- |
+| `DefaultsNameNoHandle` | Checks the defaults of a descriptor and the three handle kinds. |

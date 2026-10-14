@@ -21,3 +21,20 @@ it is null.
 
 `ContextHandleAccess::wrap(nullptr)` makes a handle that converts to `false`, and a copy of it
 does too.
+
+## test_context.cpp
+
+The file tests Detail::Context: an opaque name the surface holds only by pointer.
+
+| Test | What it proves |
+| --- | --- |
+| `IsHeldByPointerOnly` | The name is held by pointer and by shared pointer without a definition. |
+
+## test_context_handle_access.cpp
+
+The file tests ContextHandleAccess: wrap, share and the handle an owner holds.
+
+| Test | What it proves |
+| --- | --- |
+| `AnEmptyShareGivesAnEmptyHandle` | Holds a handle under the member name the accessor reads. */ struct Owner { ContextHandle context_; /**< The handle handle_of() returns. */ }; } /** @brief Tests that an empty share gives an empty handle and shares nothing back. |
+| `HandleOfReturnsTheOwnersHandle` | Handle_of() returns the owner's handle itself, not a copy. |

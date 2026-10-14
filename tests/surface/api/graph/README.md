@@ -745,3 +745,12 @@ Region 7 is dropped while its step waits at the gate, and `region(7)` then recor
 second buffer. The pending step must run the first recording only. The next run must run the second
 recording only, which shows that the map holds the new region while the old one is kept for the
 step.
+
+## test_access.cpp
+
+The file tests Access: the regions it keeps in order and the observers of both sets.
+
+| Test | What it proves |
+| --- | --- |
+| `RegionsKeepTheirOrder` | Regions given directly keep their order and carry no observer. |
+| `HandlesBringTheirObservers` | Handles given through Reads and Writes bring the observers of both. |

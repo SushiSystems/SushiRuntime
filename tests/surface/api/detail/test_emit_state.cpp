@@ -21,7 +21,7 @@
 
 /**
  * @file test_emit_state.cpp
- * @brief Tests the nodes the state emitters build from their views.
+ * @brief Tests the descriptions the state emitters build from their views, and their work.
  * @see tests/surface/api/detail/README.md
  * @author Mustafa Garip
  */
@@ -32,6 +32,8 @@
 #include <memory>
 #include <optional>
 #include <tuple>
+#include <type_traits>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -41,14 +43,10 @@
 #include <SushiRuntime/api/detail/emit_state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
-#include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/compiled_graph.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
-
-#include "late_controls_access.hpp"
-#include "node_emitters.hpp"
+#include <SushiRuntime/engine_handles/late_controls_access.hpp>
 
 using namespace SushiRuntime;
 
@@ -80,13 +78,22 @@ namespace
         return Detail::HandleAccess::view(state);
     }
 
-    /** @brief Adds one described node to a backing graph of its own and runs the plan once. */
+    /** @brief Runs the work of a described node once on the runtime's first queue. */
     void run_once(Runtime& rt, const Detail::NodeDescription& description)
     {
-        Internal::Graph::TaskGraph backing;
-        Detail::add_described_node(backing, description, std::nullopt);
-        Internal::Graph::CompiledGraph plan = backing.compile().value();
-        Internal::ContextAccess::context(rt).execution_engine().execute(plan).value();
+        sycl::queue& queue = Internal::ContextAccess::context(rt).devices().queue(0);
+        std::visit(
+            [&queue](const auto& work)
+            {
+                using Work = std::decay_t<decltype(work)>;
+                if constexpr (std::is_same_v<Work, Detail::CommandGroupWork>)
+                    queue.submit(work).wait();
+                else if constexpr (std::is_same_v<Work, Detail::QueueWork>)
+                    work(queue, std::vector<sycl::event>{}).wait();
+                else
+                    work();
+            },
+            description.work);
     }
 } // namespace
 

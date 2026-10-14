@@ -94,7 +94,11 @@ message must count 2 of 3 nodes and name a cycle member. Which member follows th
 A failed `compile()` leaves the builder empty and usable: one node added afterwards compiles into a
 plan of one node and one root.
 
-The file covers hazard resolution in the lock-free `DependencyTracker`. It pins the edge semantics
-on raw nodes: read-after-write, write-after-read and write-after-write each add an edge, two readers
-stay parallel, a shared buffer produces one edge and not several, and a node never depends on
-itself. The observable is `in_degree`, the count of incoming edges that the scheduler decrements.
+## test_chain_plan.cpp
+
+The file tests ChainPlan and PendingEvent: an empty plan that does not chain until classified.
+
+| Test | What it proves |
+| --- | --- |
+| `ADefaultPlanDoesNotChain` | A default plan does not chain and holds nothing. |
+| `APendingEventStartsWithUnknownWidths` | A pending event's widths start unknown. |

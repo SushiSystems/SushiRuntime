@@ -7,4 +7,5 @@
 sushiruntime_add_module_tests(
     MODULE region
     SOURCES
-        test_buffer_region.cpp)
+        test_buffer_region.cpp
+        test_liveness.cpp)

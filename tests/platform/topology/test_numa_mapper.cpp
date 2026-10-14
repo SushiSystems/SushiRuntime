@@ -21,98 +21,42 @@
 
 /**
  * @file test_numa_mapper.cpp
- * @brief Tests the NUMA lookup the mapper uses against topologies built in the test.
+ * @brief Tests NUMAMapper: the local distance and the nodes it maps on this machine.
  * @see tests/platform/topology/README.md
  * @author Mustafa Garip
  */
 
-#include <optional>
+#include <vector>
 
 #include <gtest/gtest.h>
-#include <hwloc.h>
 
-#include "numa_lookup.hpp"
+#include <SushiRuntime/machine/device_filter.hpp>
+#include <SushiRuntime/topology/hw_discovery.hpp>
+#include <SushiRuntime/topology/hwloc_topology_provider.hpp>
+#include <SushiRuntime/topology/numa_mapper.hpp>
 
+using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Topology;
 
-namespace
+/** @brief Tests that a node is 10 from itself, the ACPI local distance. */
+TEST(Unit_NUMAMapper, ALocalNodeIsTenAway)
 {
-    /** @brief Loads a synthetic hwloc topology and destroys it on scope exit. */
-    class SyntheticTopology final
-    {
-        public:
-            /** @brief Loads the machine a hwloc synthetic description spells; get() is null on refusal. */
-            explicit SyntheticTopology(const char* description) noexcept
-            {
-                if (hwloc_topology_init(&topology_) < 0)
-                {
-                    topology_ = nullptr;
-                    return;
-                }
-                if (hwloc_topology_set_synthetic(topology_, description) < 0 ||
-                    hwloc_topology_load(topology_) < 0)
-                {
-                    hwloc_topology_destroy(topology_);
-                    topology_ = nullptr;
-                }
-            }
-
-            /** @brief Destroys the topology, if one was loaded. */
-            ~SyntheticTopology()
-            {
-                if (topology_ != nullptr)
-                    hwloc_topology_destroy(topology_);
-            }
-
-            SyntheticTopology(const SyntheticTopology&) = delete;
-            SyntheticTopology& operator=(const SyntheticTopology&) = delete;
-            SyntheticTopology(SyntheticTopology&&) = delete;
-            SyntheticTopology& operator=(SyntheticTopology&&) = delete;
-
-            /** @brief Returns the loaded topology, or null when hwloc refused the description. */
-            [[nodiscard]] hwloc_topology_t get() const noexcept { return topology_; }
-
-        private:
-            /** @brief Holds the loaded topology, or null. */
-            hwloc_topology_t topology_ = nullptr;
-    };
-} // namespace
-
-TEST(Unit_NumaLookup, EveryPuOfATwoNodeMachineMapsToItsOwnNode)
-{
-    const SyntheticTopology machine("NUMANode:2 Core:2 PU:1");
-    ASSERT_NE(machine.get(), nullptr);
-    ASSERT_EQ(hwloc_get_nbobjs_by_type(machine.get(), HWLOC_OBJ_NUMANODE), 2);
-    ASSERT_EQ(hwloc_get_nbobjs_by_type(machine.get(), HWLOC_OBJ_PU), 4);
-
-    for (unsigned pu_index = 0; pu_index < 4; ++pu_index)
-    {
-        const hwloc_obj_t pu = hwloc_get_obj_by_type(machine.get(), HWLOC_OBJ_PU, pu_index);
-        ASSERT_NE(pu, nullptr);
-
-        const std::optional<unsigned> node = local_numa_os_index(machine.get(), pu);
-        ASSERT_TRUE(node.has_value()) << "PU " << pu_index << " has no NUMA node";
-        EXPECT_EQ(*node, pu_index / 2) << "PU " << pu_index;
-    }
+    const NUMAMapper mapper;
+    EXPECT_EQ(mapper.distance(0, 0), 10);
+    EXPECT_EQ(mapper.distance(3, 3), 10);
 }
 
-TEST(Unit_NumaLookup, ANUMANodeIsLocalToItself)
+/** @brief Tests that mapping leaves every discovered device on a node, and an empty list alone. */
+TEST(Unit_NUMAMapper, MappingPlacesEveryDevice)
 {
-    const SyntheticTopology machine("NUMANode:2 Core:2 PU:1");
-    ASSERT_NE(machine.get(), nullptr);
+    NUMAMapper mapper;
+    std::vector<HardwareNode> none;
+    mapper.map_distances(none);
+    EXPECT_TRUE(none.empty());
 
-    const hwloc_obj_t second_node = hwloc_get_obj_by_type(machine.get(), HWLOC_OBJ_NUMANODE, 1);
-    ASSERT_NE(second_node, nullptr);
-
-    const std::optional<unsigned> node = local_numa_os_index(machine.get(), second_node);
-    ASSERT_TRUE(node.has_value());
-    EXPECT_EQ(*node, second_node->os_index);
-}
-
-TEST(Unit_NumaLookup, ANullObjectHasNoNode)
-{
-    const SyntheticTopology machine("NUMANode:2 Core:2 PU:1");
-    ASSERT_NE(machine.get(), nullptr);
-
-    EXPECT_FALSE(local_numa_os_index(machine.get(), nullptr).has_value());
+    HwlocTopologyProvider provider;
+    std::vector<HardwareNode> nodes = provider.enumerate().value();
+    mapper.map_distances(nodes);
+    for (const HardwareNode& node : nodes)
+        EXPECT_GE(node.numa_node_id, 0) << node.name;
 }

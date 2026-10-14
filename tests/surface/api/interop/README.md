@@ -72,3 +72,8 @@ Compiled on platforms other than Windows only. A handle one above the largest `i
 
 `import_device` with a count of zero, on the first device that imports, returns a buffer that is empty
 and has size zero.
+
+## test_host_export.cpp
+
+The file tests exporting host memory a device and the host both reach.
+

@@ -79,3 +79,182 @@ compiles that graph and executes the plan on the runtime's engine. One step runs
 next field holds the rule's result. No advance is registered, so the test reads `next()`.
 The late-bound case sets the live count on its `LateBindings` and checks that the elements past it
 keep `K_CANARY`.
+
+## test_before_step_hooks.cpp
+
+The file tests BeforeStepHooks: hooks run in order with the step count, small and large alike.
+
+| Test | What it proves |
+| --- | --- |
+| `HooksRunInOrderWithTheCount` | Every hook runs once per call, in the order added, with the count. |
+
+## test_callable_checks.cpp
+
+The file tests the kernel traits: which callable each launch form takes.
+
+| Test | What it proves |
+| --- | --- |
+| `EachLaunchTakesItsIndex` | Checks the index type each launch form passes its kernel. |
+
+## test_emit_captured.cpp
+
+The file tests captured_node(): the kernel receives one pointer per capture.
+
+| Test | What it proves |
+| --- | --- |
+| `TheKernelReceivesEachPointer` | The kernel reads one capture and writes the other at each index. |
+
+## test_emit_device_sized.cpp
+
+The file tests device_sized_node(): the launch covers the capacity and stops at the live width.
+
+| Test | What it proves |
+| --- | --- |
+| `OnlyTheLiveIndicesRun` | Only the indices below the device-written live width run. |
+
+## test_emit_dynamic.cpp
+
+The file tests dynamic_node(): a late-bound description runs over the live window it is given.
+
+| Test | What it proves |
+| --- | --- |
+| `TheKernelRunsOverTheLiveCount` | The kernel runs over the live count and keeps its bindings. |
+
+## test_emit_host.cpp
+
+The file tests host_node(): a host description that runs its function on the calling thread.
+
+| Test | What it proves |
+| --- | --- |
+| `AHostNodeRunsItsFunction` | Checks the fields of the description and that its work runs once. |
+
+## test_emit_late_count_resolver.cpp
+
+The file tests late_count_resolver_node(): the fill receives each count's live value.
+
+| Test | What it proves |
+| --- | --- |
+| `TheFillReceivesTheLiveCounts` | A fixed and a host count reach the fill as their live values. |
+
+## test_emit_task.cpp
+
+The file tests task_node(): a task description whose work receives the queue.
+
+| Test | What it proves |
+| --- | --- |
+| `ATaskNodeRunsOnTheQueue` | Checks the fields of the description and that its work runs on the queue. |
+
+## test_emit_tracked.cpp
+
+The file tests launch_node(), range_node() and raw_node(): the width each states and the work each
+runs.
+
+| Test | What it proves |
+| --- | --- |
+| `ALaunchRunsOncePerIndex` | Holds the elements every launch here covers. */ constexpr std::size_t K_COUNT = 16; /** @brief Tests that a launch over a count runs the kernel once per index. |
+| `ARangeKernelGetsTheWholeRange` | A range kernel is handed the whole range and the handler. |
+| `ARawNodeKeepsTheStatedWidth` | A raw command group keeps the width the caller states. |
+
+## test_emit_untracked.cpp
+
+The file tests the untracked emitters: no regions, the device stated, and the work run.
+
+| Test | What it proves |
+| --- | --- |
+| `AnUntrackedLaunchNamesItsDevice` | An untracked launch names its device and touches no region. |
+| `RangeAndRawForms` | Checks the range and the raw forms: the width of the range, none for the raw. |
+
+## test_handle_access.cpp
+
+The file tests HandleAccess: the keys and the liveness of a Buffer and a State.
+
+| Test | What it proves |
+| --- | --- |
+| `ABufferKeyIsItsData` | A buffer's key is its data and its liveness ends with it. |
+| `AStateReadsCurrentAndWritesNext` | A state reads its current field and writes its next one. |
+
+## test_late_controls.cpp
+
+The file tests Detail::LateControls: an opaque name the surface holds only by pointer.
+
+| Test | What it proves |
+| --- | --- |
+| `IsHeldByPointerOnly` | The name is a class type held by shared pointer. |
+
+## test_late_count_resolution.cpp
+
+The file tests late_count_source() and read_live_count(): the host path and its refusal.
+
+| Test | What it proves |
+| --- | --- |
+| `HostCountsResolveOnTheHost` | A fixed count is its own live value, and a host count calls its provider. |
+| `AHostCountAboveTheCapacityIsAFault` | A host count above the capacity is refused and recorded as a fault. |
+
+## test_late_window.cpp
+
+The file tests resolve_live_range() and read_late_window(): windows inside and past the capacity.
+
+| Test | What it proves |
+| --- | --- |
+| `AWindowInsideTheCapacityResolves` | A window inside the capacity resolves to itself. |
+| `NoHostCountTakesTheRestOfTheCapacity` | No host count covers the rest of the capacity from the base. |
+| `AWindowPastTheCapacityIsAFault` | A window past the capacity is refused and recorded. |
+| `TheWindowIsReadFromTheBindings` | The window read from bindings carries the count and the base set on them. |
+
+## test_node_description.cpp
+
+The file tests NodeDescription: a kernel of unknown width on device 0, with no regions or bindings.
+
+| Test | What it proves |
+| --- | --- |
+| `DefaultsDescribeAnEmptyKernel` | Checks the defaults of a description. |
+
+## test_node_spec.cpp
+
+The file tests NodeSpec: it holds the description it was built from and an empty stamp.
+
+| Test | What it proves |
+| --- | --- |
+| `KeepsItsDescription` | The spec keeps the description and starts with a default stamp. |
+
+## test_node_stamp.cpp
+
+The file tests NodeStamp and parameters_refusal(): what a stamp copies and the parameter limit.
+
+| Test | What it proves |
+| --- | --- |
+| `CopiesWhatTheOptionsState` | A stamp copies the operation, the width and the parameter count. |
+| `OneParameterPastTheLimitIsRefused` | Parameters within the limit pass and one past it is refused. |
+
+## test_plan.cpp
+
+The file tests Detail::Plan: an opaque name the surface holds only by pointer.
+
+| Test | What it proves |
+| --- | --- |
+| `IsHeldByPointerOnly` | The name is a class type held by pointer. |
+
+## test_step_machinery.cpp
+
+The file tests StepMachinery: one view per state, and the fault records it reads.
+
+| Test | What it proves |
+| --- | --- |
+| `OneViewPerState` | The same state gives the same view twice. |
+| `AFaultRecordBecomesAnError` | A clean record reports nothing and a window fault reports an error. |
+
+## test_step_run.cpp
+
+The file tests StepPredicate and the context queries of step_run.hpp.
+
+| Test | What it proves |
+| --- | --- |
+| `ThePredicateForwardsTheCount` | The predicate forwards the completed count to the wrapped callable. |
+| `AnIdleRuntimeHasNoRunInProgress` | An idle runtime has no run in progress, and cancelling it is harmless. |
+
+## description_runner.hpp
+
+`run_description()` runs the work of a described node once on the runtime's first queue and waits:
+a command group is submitted, queue work is called with no dependency, and host work is called on
+the test's thread. `shared_integers()` allocates shared integers on that queue, so the memory and
+the work share one context. The emitter tests use both, so they need no graph and no plan.

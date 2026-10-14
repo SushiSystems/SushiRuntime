@@ -84,31 +84,10 @@ and a rule added then runs.
 
 ## test_region_composer.cpp
 
-The file covers the entry and exit pins `compute_boundary_access()` gives a region and the
-cross-region edges the composer makes from them. The `Unit_BoundaryAccess` cases build the nodes of
-one region on a `TaskGraph` with `add_native` and read the pins; they start no runtime. The
+The file covers the cross-region edges the composer makes from the pins of
+`region_boundary`, whose own tests are in `tests/engine/region_boundary/`. The
 `Integration_BoundaryAccess` cases record host tasks on a profiled `DynamicGraph` over a buffer of
 20 elements, run one step and assert the edges and the values.
-
-### `AReadPastItsPredecessorsWriteKeepsAnEntryPin`
-
-`p` writes bytes `[0,10)` and `node` reads `[5,20)`. `node` has an intra edge from `p`, yet `p` covers
-only part of what `node` reads, so `node` keeps an entry pin whose read interval contains `[15,20)`.
-
-### `AReadInsideItsPredecessorsWriteHasNoEntryPin`
-
-`p` writes `[0,20)` and `node` reads `[5,20)`. `p` contains everything `node` reads, so the base has one
-entry pin, that of `p`.
-
-### `AWriteBehindAReadingPredecessorKeepsItsWritePin`
-
-`p` reads `[0,10)` and `node` writes `[0,10)`. A reader takes no edge from the readers of earlier
-regions, so it cannot stand in for a write: `node` keeps an entry pin with its write interval.
-
-### `OnlyAContainingSuccessorWriteShadowsAnExit`
-
-A write of `[5,10)` followed by a write of `[0,20)` leaves one exit pin, the later one. In the
-reverse order the wide write keeps its exit pin, because the narrow one rewrites only part of it.
 
 ### `AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers`
 
@@ -277,3 +256,11 @@ expects `KernelFailed` from `run()` on both layers, then expects `Runtime::wait(
 left in a queue. It is compiled for DPC++ only, since AdaptiveCpp has no `host_task`. The chain
 layer waits with `wait_and_throw()`; the scheduler layer polls events and waits with `wait()`, and
 `SchedulerExecutionEngine::complete()` then makes each queue raise what its handler holds.
+
+## test_plan_cache.cpp
+
+The file tests PlanCache through Graph: a plan is compiled once and again only when it changes.
+
+| Test | What it proves |
+| --- | --- |
+| `CompilesOnlyWhenTheGraphChanges` | Runs reuse the plan, and a new node or profiling compiles it again. |

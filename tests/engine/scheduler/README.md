@@ -164,3 +164,58 @@ the strategy, start and stop cleanly, and swap strategies at runtime.
 
 `wait_until_at_least` spins until the value reaches the target or the budget elapses. The tests use
 it to synchronize their assertions with the background threads of the coordinator.
+
+## test_failure_naming.cpp
+
+The file tests describe_task() and name_failure(): a task by name, a node by name and index.
+
+| Test | What it proves |
+| --- | --- |
+| `ATaskIsDescribedByItsName` | Names itself and does nothing else. */ class NamedTask final : public Task { public: const char* name() const noexcept override { return "copy"; } std::optional<sushi_ptr<Task>> split() override { return std::nullopt; } bool is_splittable() const override { return false; } }; } /** @brief Tests that a plain task is described by its name. |
+| `ANodeIsDescribedByNameAndIndex` | A node is described by its name and its registration index. |
+| `AFailureKeepsItsCodeAndNamesTheTask` | A named failure keeps the code and puts the task before the cause. |
+
+## test_offload_gate.cpp
+
+The file tests OffloadGate: what it offers a coordinator, what it never offers, and what it counts.
+
+| Test | What it proves |
+| --- | --- |
+| `AnOffloadableNodeIsOfferedAndCounted` | Accepts every offer when told to, and counts the offers. */ class AcceptingCoordinator final : public Internal::Graph::OffloadCoordinator { public: void bind(Internal::Graph::OffloadSink&) override {} void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes) override { prepared = nodes.size(); } bool try_offload(Internal::Graph::Node&) override { ++offers; return accepts; } void on_local_completion(Internal::Graph::Node&) noexcept override {} void stop() noexcept override {} bool accepts = true; /**< What try_offload() answers. */ int offers = 0; /**< The calls of try_offload(). */ std::size_t prepared = 0; /**< The nodes prepare() was given. */ }; /** @brief A task that is no graph node. */ class PlainTask final : public Task { public: std::optional<sushi_ptr<Task>> split() override { return std::nullopt; } bool is_splittable() const override { return false; } }; } /** @brief Tests that an offloadable node is offered and counted once accepted. |
+| `TheGateOffersNothingItMustNot` | Checks the four cases the gate never offers: no coordinator, no node, not offloadable, aborting. |
+| `PrepareReachesTheCoordinator` | Prepare() reaches the coordinator, and does nothing without one. |
+
+## test_quiescence_latch.cpp
+
+The file tests QuiescenceLatch: a wait returns once every added unit retired.
+
+| Test | What it proves |
+| --- | --- |
+| `AnEmptyLatchDoesNotWait` | An empty latch does not wait. |
+| `TheWaiterWakesAfterTheLastRetire` | The waiter wakes only after the last of three units retires. |
+
+## test_rebalancer_interfaces.cpp
+
+The file tests the rebalancer contracts: a strategy reads telemetry and moves work through a
+migrator.
+
+| Test | What it proves |
+| --- | --- |
+| `AStrategyMovesWorkThroughTheMigrator` | Reports fixed queue sizes for two workers. */ class FixedTelemetry final : public TelemetryProvider { public: std::size_t worker_count() const override { return 2; } std::size_t queue_size(int worker_id) const override { return worker_id == 0 ? 10 : 2; } std::size_t completed_task_count(int) const override { return 0; } }; /** @brief Records each migration it is asked for. */ class RecordingMigrator final : public TaskMigrator { public: void migrate_tasks(int from_worker_id, std::size_t count) override { moves.push_back({from_worker_id, count}); } /** @brief Holds one migration. */ struct Move { int from; /**< The worker the tasks leave. */ std::size_t count; /**< How many leave. */ }; /** @brief Holds the migrations in order. */ std::vector<Move> moves; }; /** @brief Moves half the difference from the fullest worker to even the two queues. */ class EvenOutStrategy final : public RebalanceStrategy { public: void evaluate_and_rebalance(const TelemetryProvider& telemetry, TaskMigrator& migrator) override { const std::size_t first = telemetry.queue_size(0); const std::size_t second = telemetry.queue_size(1); if (first > second) migrator.migrate_tasks(0, (first - second) / 2); } }; } /** @brief Tests that a strategy reads the telemetry it is given and asks the migrator once. |
+
+## test_run_outcome.cpp
+
+The file tests RunOutcome: the first failure wins, cancellation, clearing and aborting.
+
+| Test | What it proves |
+| --- | --- |
+| `TheFirstFailureWins` | The first recorded failure is kept and a later one is not. |
+| `CancellationAbortsWithoutAFailure` | Cancellation aborts on its own and clears on its own. |
+
+## test_worker_pool_settings.cpp
+
+The file tests WorkerPoolSettings: one worker per core, pinned from core 0, by default.
+
+| Test | What it proves |
+| --- | --- |
+| `DefaultsAskForOneWorkerPerCore` | Checks the defaults of the settings. |

@@ -173,8 +173,8 @@ fixes the plan and only the live value varies.
 ### `HostCountAboveCapacityFailsTheRunWithInvalidGraph`
 
 A provider that returns 101 for a capacity of 100 makes the run return `InvalidGraph` with both
-numbers in the message, as an out-of-window `based_at()` does. The fill never runs, so the output
-keeps its canary. The provider then returns 100, and the same graph runs and writes 100: a fault
+numbers in the message, as an out-of-window `based_at()` does. The fill runs with the count
+resolved to zero, so the output holds 0. The provider then returns 100, and the same graph runs and writes 100: a fault
 driven by run-time data fails one run and nothing else.
 
 ### `DeviceSlotResolvesFromHostResidentBuffer`
@@ -258,3 +258,38 @@ five elements and `sized(host).sized_from_device(counter)` runs three.
 
 `when`, `sized` and `based_at` chain on a named `Dynamic`, which then moves into `add()`. Elements
 10 to 13 run once, and a second run with the predicate false runs none.
+
+## test_captures.cpp
+
+The file tests In, Out and InOut: the pointer, the key and the observer each capture holds.
+
+| Test | What it proves |
+| --- | --- |
+| `EachCaptureNamesItsBuffer` | In reads, Out writes, and both point at the buffer they name. |
+| `InOutReadsAndWrites` | InOut both reads and writes. |
+
+## test_coupled.cpp
+
+The file tests Coupled: the state written and the states read, in argument order.
+
+| Test | What it proves |
+| --- | --- |
+| `NamesTheStatesItWasGiven` | Coupled refers to the states it was given, in order. |
+
+## test_dependencies.cpp
+
+The file tests the dependency keys: a buffer's data, a state's two fields, and a region as given.
+
+| Test | What it proves |
+| --- | --- |
+| `KeysFollowTheHandle` | A buffer reads and writes one key, and a state reads current and writes next. |
+| `ReadsAndWritesCollectOneKeyEach` | Reads and Writes collect one key per handle, in order. |
+
+## test_placement.cpp
+
+The file tests On: a device by index, or the device of the handle it names.
+
+| Test | What it proves |
+| --- | --- |
+| `AnIndexNamesItsDevice` | An index names that device and observes nothing. |
+| `ABufferNamesItsDevice` | A buffer names its own device and is observed. |

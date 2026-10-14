@@ -43,3 +43,11 @@ A default `RunReport` is successful, names the scheduler layer and holds no node
 
 `NodeTiming::operation` is an `OperationID`: unnamed by default, and equal to the id it was
 given.
+
+## test_dispatch_width.cpp
+
+The file tests K_WIDTH_UNKNOWN: the sentinel no real launch width reaches.
+
+| Test | What it proves |
+| --- | --- |
+| `UnknownIsTheLargestWidth` | The unknown width is the largest 32-bit value. |

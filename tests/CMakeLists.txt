@@ -25,6 +25,11 @@ endforeach()
 #
 # Two tests joined by a fixture, so a failure says which half broke: a package that will
 # not install is a different defect from one that installs and will not run.
+# The tests of the example headers, built with the examples they test.
+if(SR_BUILD_EXAMPLES)
+    add_subdirectory(applications/examples)
+endif()
+
 find_package(Python3 QUIET COMPONENTS Interpreter)
 if(Python3_FOUND)
     set(SR_PACKAGE_STAGE "${PROJECT_BINARY_DIR}/stage")

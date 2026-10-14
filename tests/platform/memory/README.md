@@ -17,6 +17,19 @@ sections and retire objects, while threads spawn and exit to exercise the orphan
 Every retired object must be destroyed once, and most must be reclaimed. Under ASan and TSan
 the same run surfaces races and use-after-free.
 
+## test_allocation.cpp
+
+A counting owner records each release and the address it was given; the addresses are never
+dereferenced.
+
+| Test | What it proves |
+| --- | --- |
+| `ReleasesOnceOnDestruction` | A destroyed allocation releases its address once, to its owner. |
+| `MoveTransfersTheReleaseAndEmptiesTheSource` | A move hands the release to the target and leaves the source empty, so the address is released once. |
+| `MoveAssignmentReleasesTheOverwrittenAddressFirst` | Assigning over an allocation releases the address it held before it takes the new one. |
+| `AnEmptyAllocationHasNoAddressOrOwner` | A default allocation is empty and holds 0 bytes. |
+| `ResetOnANonNullAddressWithNoOwnerReleasesNothing` | `reset()` on an allocation with no owner empties it and releases nothing. |
+
 ## test_epoch_reclamation.cpp
 
 The file covers epoch-based reclamation. `EpochManager` is a process-wide singleton, so the tests
@@ -156,3 +169,30 @@ the table, which is keyed by base address, cannot find.
 
 An adopted address whose importer knew no size must not read as zero-length and must not swallow
 offsets it cannot vouch for.
+
+## test_usm_allocation_owner.cpp
+
+The file tests USMAllocationOwner: an Allocation returns its USM to the allocator once.
+
+| Test | What it proves |
+| --- | --- |
+| `DestroyingTheAllocationFreesTheUSM` | Destroying the allocation frees the USM through the allocator. |
+| `AnOwnerWithNoAllocatorDoesNothing` | An owner with no allocator releases nothing and does not stop. |
+
+## test_usm_release_observer.cpp
+
+The file tests USMReleaseObserver: the allocator tells an observer of each release, with its
+address.
+
+| Test | What it proves |
+| --- | --- |
+| `HearsEachReleaseWithItsAddress` | Records the address of each release it is told of. */ class RecordingObserver final : public USMReleaseObserver { public: void on_release(void* address) noexcept override { released.push_back(address); } /** @brief Holds the addresses in the order they were released. */ std::vector<void*> released; }; } /** @brief Tests that the observer hears the release of the address the allocator gave. |
+
+## test_usm_request.cpp
+
+The file tests USMRequest: shared memory of no bytes on device 0 by default, and three kinds.
+
+| Test | What it proves |
+| --- | --- |
+| `DefaultsToSharedMemoryOnDeviceZero` | Checks the defaults of a request. |
+| `ThreeKindsInOneByte` | Checks the three distinct kinds in one byte. |

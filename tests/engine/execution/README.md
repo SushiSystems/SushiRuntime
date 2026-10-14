@@ -269,3 +269,31 @@ The file validates NUMA-aware hierarchical work stealing on single-node hardware
 synthetic topology. A `RemappingTopologyProvider` spreads the cores across N nodes (core i goes to
 node i % N) with a matching `MatrixDistanceModel`. The tests then assert the locality invariant:
 victims on the local node come before remote ones.
+
+## test_chain_plan.cpp
+
+The file tests classify_chain(): a one-device kernel chain, and the nodes that keep a plan off the
+chain.
+
+| Test | What it proves |
+| --- | --- |
+| `KernelsOnOneDeviceChainInOrder` | Returns work that adds one to an integer on the device. */ TaskWork add_one(int* value) { return [value](sycl::handler& handler) { handler.single_task([value] { *value += 1; }); }; } /** @brief Allocates one shared integer of the context on device 0, set to 0. */ int* shared_integer(RuntimeContext& context) { Internal::Memory::USMRequest request; request.kind = Internal::Memory::USMKind::Shared; request.bytes = sizeof(int); int* const value = static_cast<int*>(context.memory().allocate(request)); if (value != nullptr) *value = 0; return value; } } /** @brief Tests that two kernels on one device's memory chain in order. |
+| `AHostNodeOrForeignMemoryKeepsThePlanOff` | A host node, and a node on memory no device owns, keep the plan off the chain. |
+
+## test_chain_run.cpp
+
+The file tests ChainRun: each step submits the whole chain in order, and finish() drains it.
+
+| Test | What it proves |
+| --- | --- |
+| `EachStepRunsTheWholeChain` | Returns work that adds one to an integer on the device. */ TaskWork add_one(int* value) { return [value](sycl::handler& handler) { handler.single_task([value] { *value += 1; }); }; } /** @brief Allocates one shared integer of the context on device 0, set to 0. */ int* shared_integer(RuntimeContext& context) { Internal::Memory::USMRequest request; request.kind = Internal::Memory::USMKind::Shared; request.bytes = sizeof(int); int* const value = static_cast<int*>(context.memory().allocate(request)); if (value != nullptr) *value = 0; return value; } } /** @brief Tests that two steps of a two-node chain add four, in submission order. |
+| `WaitReturnsAfterTheStep` | Wait() returns once the submitted step is done. |
+
+## test_runtime_settings.cpp
+
+The file tests RuntimeSettings: the defaults and the pool settings it hands the scheduler.
+
+| Test | What it proves |
+| --- | --- |
+| `DefaultsAskForNothingExtra` | Checks the defaults: no profiling, one worker per core, pinned, no rebalancer. |
+| `ThePoolSettingsCarryThePoolFields` | The pool settings carry the three fields of the pool, unchanged. |

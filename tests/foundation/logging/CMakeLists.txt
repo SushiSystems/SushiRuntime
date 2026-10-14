@@ -7,4 +7,5 @@
 sushiruntime_add_module_tests(
     MODULE logging
     SOURCES
+        test_log_gate.cpp
         test_logger.cpp)
