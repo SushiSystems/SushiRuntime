@@ -82,22 +82,11 @@ words into `marks[t]` for the work-items below the width. A word at or past the 
 earlier step left, so the bytes after a step depend on every width so far. `marked` is the host
 model of one such write.
 
-### `OnlyItemsBelowTheLiveWidthRun`
-
-Widths of 10, 0, the capacity and 257 run in turn on one compiled plan. After each run every word
-must equal the host model, and the word one past the capacity must still hold the canary. A launch
-that ignored the live width, or read the width of the previous run, fails on the first comparison.
-
-### `ANullLiveWidthRunsEveryItemAndTheArityPicksTheWords`
-
-A null `live_width` lets every work-item run. A callable of one argument gets the index alone and
-one of two arguments gets `live_words[0]` after it. `record_marking_rule` covers the callable of
-three arguments.
-
-### `ZeroCapacityLaunchRunsNothingAndReleasesItsSuccessor`
-
-A zero-width `parallel_for` is not portable, so a launch of capacity zero submits an empty task. The
-node must still complete: a successor that reads the same buffer copies the untouched canary.
+| Test | What it proves |
+| --- | --- |
+| `OnlyItemsBelowTheLiveWidthRun` | Widths of 10, 0, the capacity and 257 run in turn on one compiled plan. After each run every word must equal the host model, and the word one past the capacity must still hold the canary. A launch that ignored the live width, or read the width of the previous run, fails on the first comparison. |
+| `ANullLiveWidthRunsEveryItemAndTheArityPicksTheWords` | A null `live_width` lets every work-item run. A callable of one argument gets the index alone and one of two arguments gets `live_words[0]` after it. `record_marking_rule` covers the callable of three arguments. |
+| `ZeroCapacityLaunchRunsNothingAndReleasesItsSuccessor` | A zero-width `parallel_for` is not portable, so a launch of capacity zero submits an empty task. The node must still complete: a successor that reads the same buffer copies the untouched canary. |
 
 ### `DeviceSizedRuleChainMatchesSchedulerAsTheCountsChange`
 
@@ -106,15 +95,10 @@ the resolver a new salt. The chain and the forced scheduler must record the same
 whole buffer on each of 48 steps, bit for bit, and the digest must change on more than a quarter of
 them.
 
-### `SizedFromDeviceChainMatchesSchedulerAsTheCountChanges`
-
-The same comparison for a `sized_from_device` task, whose live size comes from the same counter.
-
-### `DeviceCountOverCapacityFailsAChainedRun`
-
-A producer writes a count one above the capacity. The resolver cannot throw from a kernel, so it
-writes a fault record and the run fails when the step ends. A second graph on the same runtime,
-with a count that fits, runs clean on the chain.
+| Test | What it proves |
+| --- | --- |
+| `SizedFromDeviceChainMatchesSchedulerAsTheCountChanges` | The same comparison for a `sized_from_device` task, whose live size comes from the same counter. |
+| `DeviceCountOverCapacityFailsAChainedRun` | A producer writes a count one above the capacity. The resolver cannot throw from a kernel, so it writes a fault record and the run fails when the step ends. A second graph on the same runtime, with a count that fits, runs clean on the chain. |
 
 ## test_dynamic_graph.cpp
 
@@ -123,10 +107,9 @@ asserts the numerical outcome and the composition behaviour: regions run togethe
 across regions order correctly, dropping a region removes its work, and a run without a mutation
 never recomposes.
 
-### `IndependentRegionsRunAndComposeOnce`
-
-Two independent regions each own a buffer and increment it once per step. Over several steps both
-buffers advance, and a run that mutates nothing composes the combined plan exactly once.
+| Test | What it proves |
+| --- | --- |
+| `IndependentRegionsRunAndComposeOnce` | Two independent regions each own a buffer and increment it once per step. Over several steps both buffers advance, and a run that mutates nothing composes the combined plan exactly once. |
 
 ### `CrossRegionDependencyOrders`
 
@@ -135,26 +118,12 @@ touch `x`, so the composer must wire an edge across the regions for the consumer
 producer's writes: `y[i] == 2*(i+1)`. Ordering across regions follows the ascending region key, so
 the producer has key 10 and the consumer key 11, as the documented contract requires.
 
-### `DropRegionStopsItsWork`
-
-Dropping a region removes its work at the next step boundary. After the drop the surviving region
-keeps advancing, and the buffer of the dropped region freezes.
-
-### `AddRegionBetweenSteps`
-
-Adding a region between steps recomposes exactly once, and the work of the new region takes effect
-on the next run.
-
-### `SingleRecomposePerMutation`
-
-Mutating one region out of many recomposes once, and the unchanged regions are not rebuilt. The
-proof is indirect: the results stay correct, and `compile_count` advances by exactly one per
-mutation, not per region.
-
-### `FindRegionReadsWithoutRecomposing`
-
-Reading a region through `find_region()` is not a mutation. The plan must not recompose on the next
-run, and an absent key returns `nullptr` where `region()` would create the region.
+| Test | What it proves |
+| --- | --- |
+| `DropRegionStopsItsWork` | Dropping a region removes its work at the next step boundary. After the drop the surviving region keeps advancing, and the buffer of the dropped region freezes. |
+| `AddRegionBetweenSteps` | Adding a region between steps recomposes exactly once, and the work of the new region takes effect on the next run. |
+| `SingleRecomposePerMutation` | Mutating one region out of many recomposes once, and the unchanged regions are not rebuilt. The proof is indirect: the results stay correct, and `compile_count` advances by exactly one per mutation, not per region. |
+| `FindRegionReadsWithoutRecomposing` | Reading a region through `find_region()` is not a mutation. The plan must not recompose on the next run, and an absent key returns `nullptr` where `region()` would create the region. |
 
 ### `ThreeRegionChainThreadsValue`
 
@@ -163,11 +132,9 @@ The chain has three hops across three buffers: region 0 writes `x`, region 1 rea
 the regions 0, 1, 2, so that `z` carries the value threaded through both hops: `z[i] == 2*(i+1) +
 1`.
 
-### `ReadReadSharingStaysConsistent`
-
-One producer writes `base`, and two consumer regions both read `base` and write their own outputs.
-The two readers share no hazard, so the composer must not order them against each other; both see
-the producer's writes. The observable is correctness: the output of each reader reflects `base`.
+| Test | What it proves |
+| --- | --- |
+| `ReadReadSharingStaysConsistent` | One producer writes `base`, and two consumer regions both read `base` and write their own outputs. The two readers share no hazard, so the composer must not order them against each other; both see the producer's writes. The observable is correctness: the output of each reader reflects `base`. |
 
 ### `StreamInConsumerRewiresProducer`
 
@@ -217,21 +184,11 @@ design is sections D, E (item 8) and F.6 of
 
 The file reaches the plan through `dynamic_graph_plan_access.hpp`.
 
-### `registration_index_of`
-
-`registration_index_of` returns the registration index of the one compiled node called `name`,
-which `find_plan_node` looks up. `plan.all_nodes` is populated only while the graph requests
-profiling (`publish_plan()` in `region_composer.hpp`), and every test in the file relies on that.
-
-### `NotRequestedRecordsNothing`
-
-A graph that never requested profiling records nothing, whatever the default of the runtime is.
-
-### `RequestedGraphProducesRecordsMatchingRenumberedIndex`
-
-A `DynamicGraph` that requested profiling must produce records; a correctly stamped flag is not
-enough. It needs its own call to `CompiledGraph::capture_profiling_state()`, because it has no
-`capture_base_state()` of its own that could make the call for it.
+| Test | What it proves |
+| --- | --- |
+| `registration_index_of` | `registration_index_of` returns the registration index of the one compiled node called `name`, which `find_plan_node` looks up. `plan.all_nodes` is populated only while the graph requests profiling (`publish_plan()` in `region_composer.hpp`), and every test in the file relies on that. |
+| `NotRequestedRecordsNothing` | A graph that never requested profiling records nothing, whatever the default of the runtime is. |
+| `RequestedGraphProducesRecordsMatchingRenumberedIndex` | A `DynamicGraph` that requested profiling must produce records; a correctly stamped flag is not enough. It needs its own call to `CompiledGraph::capture_profiling_state()`, because it has no `capture_base_state()` of its own that could make the call for it. |
 
 ### `IndexDenseAndOrderedByRegionThenAddOrder`
 
@@ -267,22 +224,11 @@ The file covers the native CPU execution path, work package WP-7 of
 with no SYCL submission. The task is ordered into the graph by the data it touches and shares one
 completion contract with kernel tasks.
 
-### `HostTaskRunsAfterKernel`
-
-A native host task ordered after a device kernel must see the kernel's output. The task is
-dispatched only once the kernel's event has completed, so the shared USM the kernel wrote is visible
-on the host. The ordering comes from the shared buffer `a`.
-
-### `KernelRunsAfterHostTask`
-
-A device kernel ordered after a native host task must see the host's writes. The kernel waits on the
-inline completion of the host task before it is dispatched, and shared USM written on the host is
-visible on the device.
-
-### `UntrackedHostTaskRunsEveryStep`
-
-An untracked native task runs once per step, which proves that the form without dependencies is both
-a root and a leaf and replays on every step.
+| Test | What it proves |
+| --- | --- |
+| `HostTaskRunsAfterKernel` | A native host task ordered after a device kernel must see the kernel's output. The task is dispatched only once the kernel's event has completed, so the shared USM the kernel wrote is visible on the host. The ordering comes from the shared buffer `a`. |
+| `KernelRunsAfterHostTask` | A device kernel ordered after a native host task must see the host's writes. The kernel waits on the inline completion of the host task before it is dispatched, and shared USM written on the host is visible on the device. |
+| `UntrackedHostTaskRunsEveryStep` | An untracked native task runs once per step, which proves that the form without dependencies is both a root and a leaf and replays on every step. |
 
 ### `ThrowingHostTaskKeepsRuntimeUsable`
 
@@ -296,16 +242,10 @@ design is section C and items 1, 2, 3, 4 and 6 of section E in
 `docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-plan.md`. The item numbers in the
 subsections refer to section E of the design.
 
-### `NodeEventRecordsTestAccess`
-
-`NodeEventRecordsTestAccess` is a friend used only by tests to reach the compiled plan of a
-`Graph`. It mirrors
-`RegistrationIndexTestAccess` in `graph/test_recorder.cpp`.
-
-### `RequestedGraphRecordsOnePerDispatch`
-
-Item 2: three independent kernel nodes and `run(5)` give fifteen records, invocations 0 to 4 per
-node, and `submit <= start <= end` for every record.
+| Test | What it proves |
+| --- | --- |
+| `NodeEventRecordsTestAccess` | `NodeEventRecordsTestAccess` is a friend used only by tests to reach the compiled plan of a `Graph`. It mirrors `RegistrationIndexTestAccess` in `graph/test_recorder.cpp`. |
+| `RequestedGraphRecordsOnePerDispatch` | Item 2: three independent kernel nodes and `run(5)` give fifteen records, invocations 0 to 4 per node, and `submit <= start <= end` for every record. |
 
 ### Steady-state capture
 
@@ -354,28 +294,12 @@ is to reset and then refill: the capacity stays and the values do not. Both halv
 also on the failure paths, where stale numbers would mislead most: a caller that ignored the
 returned error would otherwise read a report that looks successful.
 
-### `record_write`
-
-`record_write` zeroes `buf` and records the one task every test in the file runs: element i gets
-i+1. It takes both handles by reference and does not return them, because a `Buffer` must not be
-moved once a graph has recorded it; the graph would keep pointing at the old address.
-
-### `ReuseReportsWhatTheValueFormReports`
-
-The reuse overload must report what the value-returning one reports. If the two drivers ever
-diverged, every number a consumer reads from the cheap path would silently become a different
-measurement from the documented one.
-
-### `SteadyStateRunsDoNotReallocateTheReport`
-
-The overload exists so that the per-run vectors are refilled in place. Comparing the address of the
-row before and after proves that no reallocation happened. A capacity check alone would pass even if
-the vector were rebuilt into a new block of the same size.
-
-### `EachRunOverwritesTheLastOne`
-
-Reuse must not accumulate. A short run that follows a long one has to read as the short run, because
-the count belongs to the run, not to the report.
+| Test | What it proves |
+| --- | --- |
+| `record_write` | `record_write` zeroes `buf` and records the one task every test in the file runs: element i gets i+1. It takes both handles by reference and does not return them, because a `Buffer` must not be moved once a graph has recorded it; the graph would keep pointing at the old address. |
+| `ReuseReportsWhatTheValueFormReports` | The reuse overload must report what the value-returning one reports. If the two drivers ever diverged, every number a consumer reads from the cheap path would silently become a different measurement from the documented one. |
+| `SteadyStateRunsDoNotReallocateTheReport` | The overload exists so that the per-run vectors are refilled in place. Comparing the address of the row before and after proves that no reallocation happened. A capacity check alone would pass even if the vector were rebuilt into a new block of the same size. |
+| `EachRunOverwritesTheLastOne` | Reuse must not accumulate. A short run that follows a long one has to read as the short run, because the count belongs to the run, not to the report. |
 
 ### `ARejectedRunLeavesNoStaleNumbers`
 
@@ -384,10 +308,9 @@ returned error only sometimes. Reading a stale `is_successful` of true from a ru
 happened is worse than reading zeroes, so the failure path resets the report and marks it
 unsuccessful.
 
-### `TryRunReturnsTheCallersReport`
-
-`run(report)` returns a pointer to the report it was given, so a caller can keep using the result
-of the call without holding both.
+| Test | What it proves |
+| --- | --- |
+| `TryRunReturnsTheCallersReport` | `run(report)` returns a pointer to the report it was given, so a caller can keep using the result of the call without holding both. |
 
 ### `AsyncWaitFillsTheCallersReport`
 
@@ -417,10 +340,9 @@ behaviour the latch must preserve: a long replayed run drives every step and rea
 state, and the same plan re-runs cleanly afterwards, which requires the latch to reset and the
 sentinel to re-wire.
 
-### `ReRunsCleanlyOnTheSamePlan`
-
-The test makes three separate `run()` calls on one compiled plan. The latch must reset between them,
-and the sentinel, which is wired once, must keep signalling.
+| Test | What it proves |
+| --- | --- |
+| `ReRunsCleanlyOnTheSamePlan` | The test makes three separate `run()` calls on one compiled plan. The latch must reset between them, and the sentinel, which is wired once, must keep signalling. |
 
 ### `SingleStepRunsRepeatedlyWithoutLeak`
 
@@ -465,10 +387,9 @@ the running total but survives when the small values are summed together first. 
 input gives a different number for a different combination order, so the bit comparison can fail.
 Without such an input the test would pass on a runtime that reassociated freely.
 
-### `alternating_value`
-
-`alternating_value` is a second pattern that alternates in sign, so that a divergence which happened
-to cancel in the first total still shows in the output.
+| Test | What it proves |
+| --- | --- |
+| `alternating_value` | `alternating_value` is a second pattern that alternates in sign, so that a divergence which happened to cancel in the first total still shows in the output. |
 
 ### `record_tiled_total`
 
@@ -485,15 +406,10 @@ the whole machine, and copies the results out. Two independent rules compete for
 worker that adds a given tile varies with the pool size. A map then mixes both totals into every
 output element, so a divergence in either rule reaches the bytes being compared.
 
-### `bytes_equal`
-
-`bytes_equal` compares bytes, not numbers. A difference of one ulp must fail, and NaN payloads must
-compare as the bits they are.
-
-### `first_difference`
-
-`first_difference` returns the index of the first differing element, so that a failure message can
-name the element.
+| Test | What it proves |
+| --- | --- |
+| `bytes_equal` | `bytes_equal` compares bytes, not numbers. A difference of one ulp must fail, and NaN payloads must compare as the bits they are. |
+| `first_difference` | `first_difference` returns the index of the first differing element, so that a failure message can name the element. |
 
 ### `TheFloatingPointContractReachesConsumerCode`
 
@@ -525,10 +441,9 @@ The same configuration, run again from scratch, must land on the same bytes.
 the run-to-run scheduling jitter of an unchanged pool (which steal wins a race, which worker parks)
 to expose a dependence on order.
 
-### `TheRebalancerDoesNotChangeTheBytes`
-
-The whole machine runs the workload with the background rebalancer off and then on. Task migration
-reassigns work-items to workers in the middle of a run, and the output must not move by a byte.
+| Test | What it proves |
+| --- | --- |
+| `TheRebalancerDoesNotChangeTheBytes` | The whole machine runs the workload with the background rebalancer off and then on. Task migration reassigns work-items to workers in the middle of a run, and the output must not move by a byte. |
 
 ### `ReplayDoesNotDriftAcrossSteps`
 
@@ -562,11 +477,9 @@ The file covers `RunReport` observability, section 5.5 of
 profiling off, the report carries no profiling breakdown. With profiling on, it carries timing per
 node and per worker. Explicit transfers between host and device are accounted in both cases.
 
-### `ProfilingOnCapturesPerNodeTiming`
-
-Both kernels appear as distinct plan nodes, each dispatched once per step. The magnitudes of the
-device times depend on the backend and on noise, so the stable claim is structural: the per-node
-breakdown is present and correctly counted.
+| Test | What it proves |
+| --- | --- |
+| `ProfilingOnCapturesPerNodeTiming` | Both kernels appear as distinct plan nodes, each dispatched once per step. The magnitudes of the device times depend on the backend and on noise, so the stable claim is structural: the per-node breakdown is present and correctly counted. |
 
 ### `NamingTheLastNodeReachesNodeTiming`
 
@@ -577,20 +490,11 @@ labels.
 
 The test sets the name with `name()`, which names the rule the verb before it recorded.
 
-### `EveryAddShapeCanBeNamed`
-
-The test names a node of every launch shape: counted, captured, a State rule, host work and a
-dynamic kernel.
-
-### `UnnamedNodeStillReportsTheDefaultLabel`
-
-A node added without a name keeps the documented default label, so a call site without a label is
-still visible in the report.
-
-### `TransferBytesAttributedToTheRunWindow`
-
-A host node pushes data during the run. The bytes must land in the window of that run, not before
-it.
+| Test | What it proves |
+| --- | --- |
+| `EveryAddShapeCanBeNamed` | The test names a node of every launch shape: counted, captured, a State rule, host work and a dynamic kernel. |
+| `UnnamedNodeStillReportsTheDefaultLabel` | A node added without a name keeps the documented default label, so a call site without a label is still visible in the report. |
+| `TransferBytesAttributedToTheRunWindow` | A host node pushes data during the run. The bytes must land in the window of that run, not before it. |
 
 ## test_node_options.cpp
 
@@ -599,15 +503,10 @@ and the `live_width` of its node event records, and its name and operation are i
 `report.node_timings`. Each node of a rule reads a region the node before it wrote, so
 `report.node_events` lands in recording order whichever layer ran it.
 
-### `EachNodeOfARuleReportsItsStatedWidth`
-
-Two nodes of one rule state 600 and 1. The buffers they name are oversized by 9 and by 8 elements,
-so a stamp that read the size of either buffer and not the stated width fails.
-
-### `ResolverAndDeviceSizedNodeReportTheirStatedWidths`
-
-A resolver states a width of one and a device-sized kernel states its capacity. The `LateCount` is
-built with `LateCount::fixed`, so the live count is the capacity and every work-item writes.
+| Test | What it proves |
+| --- | --- |
+| `EachNodeOfARuleReportsItsStatedWidth` | Two nodes of one rule state 600 and 1. The buffers they name are oversized by 9 and by 8 elements, so a stamp that read the size of either buffer and not the stated width fails. |
+| `ResolverAndDeviceSizedNodeReportTheirStatedWidths` | A resolver states a width of one and a device-sized kernel states its capacity. The `LateCount` is built with `LateCount::fixed`, so the live count is the capacity and every work-item writes. |
 
 ### `ANodeReportsTheNameAndTheOperationItStated`
 
@@ -616,15 +515,10 @@ parameters. The string and the array the options point at are destroyed before t
 recorder that kept the caller's pointers reads freed memory. The row of the node holds the name
 and the value of the operation.
 
-### `ANodeNameReplacesTheNameOfItsRule`
-
-Two rules carry the same rule name, and the node of the first states a name of its own. The first
-row reports the node's name and no operation, the second the rule's name.
-
-### `MoreParametersThanANodeCarriesAreRefused`
-
-Nine parameters are refused: `refusal()` holds an `InvalidGraph` error whose message names
-`NodeOptions::parameters`, rule 0 and the nine parameters, and the graph holds no rule afterwards.
+| Test | What it proves |
+| --- | --- |
+| `ANodeNameReplacesTheNameOfItsRule` | Two rules carry the same rule name, and the node of the first states a name of its own. The first row reports the node's name and no operation, the second the rule's name. |
+| `MoreParametersThanANodeCarriesAreRefused` | Nine parameters are refused: `refusal()` holds an `InvalidGraph` error whose message names `NodeOptions::parameters`, rule 0 and the nine parameters, and the graph holds no rule afterwards. |
 
 ## test_plan_view.cpp
 
@@ -632,21 +526,11 @@ The file covers `compile()`, which builds a plan and runs nothing, and `Graph::p
 returns a copy of what the plan orders. `zeroed` allocates a buffer of `K_WIDTH` zeroes, so a
 kernel that ran is visible in the first word.
 
-### `CompileThenRunCompilesOnce`
-
-`compile()` leaves `compile_count()` at one and the buffer at zero. A second `compile()` and the
-`run()` after it build nothing more.
-
-### `CompileReturnsTheRecordersRefusal`, `CompileOfAnEmptyGraphIsRefused`
-
-`compile()` answers as `run()` does before its first step. A graph whose recorder refused a rule
-returns that refusal from `compile()` and from `plan()` and builds nothing. A graph with nothing
-recorded is `InvalidGraph`.
-
-### `ADynamicGraphCompiledThenRunComposesOnce`
-
-A DynamicGraph takes `compile()` from the same driver: `compose_count()` is one after it and still
-one after the run.
+| Test | What it proves |
+| --- | --- |
+| `CompileThenRunCompilesOnce` | `compile()` leaves `compile_count()` at one and the buffer at zero. A second `compile()` and the `run()` after it build nothing more. |
+| `CompileReturnsTheRecordersRefusal`, `CompileOfAnEmptyGraphIsRefused` | `compile()` answers as `run()` does before its first step. A graph whose recorder refused a rule returns that refusal from `compile()` and from `plan()` and builds nothing. A graph with nothing recorded is `InvalidGraph`. |
+| `ADynamicGraphCompiledThenRunComposesOnce` | A DynamicGraph takes `compile()` from the same driver: `compose_count()` is one after it and still one after the run. |
 
 ### `AChainOfThreeKernelsReportsItsPredecessorsAndRegions`
 
@@ -656,9 +540,9 @@ three nodes in recording order with predecessor counts 0, 1 and 1, and each node
 operation, and its entry carries both. `plan()` ran nothing, and the run after it does not
 compile again.
 
-### `AViewOutlivesItsGraph`
-
-The view is read after the graph that returned it is destroyed.
+| Test | What it proves |
+| --- | --- |
+| `AViewOutlivesItsGraph` | The view is read after the graph that returned it is destroyed. |
 
 ## test_recorder.cpp
 
@@ -667,24 +551,12 @@ access and a liveness observer. `add_increment` adds one rule that adds a step t
 buffer, so a wrong plan shows as a wrong sum. `record_three_node_rule` records three such kernels
 inside one `Recorder::rule()` scope.
 
-### `ReadingARegionBetweenRunsDoesNotRecompose`
-
-`world.region(k).size()` and `node_count()` between two runs leave `compose_count()` at one, and
-the second run still executes the rule.
-
-### `ARecordingThroughAHeldRegionRecomposes`
-
-A `Region&` taken before the first run records a second rule after it. The next run composes
-again and executes both rules, so a recording is seen without a second `region(key)` call.
-
-### `ClearingARegionReplacesItsWork`
-
-`Region::clear()` empties the region, a new rule is recorded, and the next run executes only the
-new one.
-
-### `ADropBetweenRunsRecomposes`
-
-Dropping one of two regions composes once more, and the dropped region's rule does not run again.
+| Test | What it proves |
+| --- | --- |
+| `ReadingARegionBetweenRunsDoesNotRecompose` | `world.region(k).size()` and `node_count()` between two runs leave `compose_count()` at one, and the second run still executes the rule. |
+| `ARecordingThroughAHeldRegionRecomposes` | A `Region&` taken before the first run records a second rule after it. The next run composes again and executes both rules, so a recording is seen without a second `region(key)` call. |
+| `ClearingARegionReplacesItsWork` | `Region::clear()` empties the region, a new rule is recorded, and the next run executes only the new one. |
+| `ADropBetweenRunsRecomposes` | Dropping one of two regions composes once more, and the dropped region's rule does not run again. |
 
 ### `AThreeNodeRuleIsOneRuleWithOneName`
 
@@ -693,45 +565,16 @@ and `node_count() == 3`. The three nodes share one registration, so the report h
 `NodeTiming` row, which carries the name given by one `name()`, and `rule_registration(1)`
 names no rule.
 
-### `ARegionRuleReportsItsRegistrationAndName`
-
-The same rule in the second of two regions. `DynamicGraph::rule_registration(key, rule)` reports no
-index before the first run, then index 0 for the first region's rule and 1 for the three-node rule,
-because a commit numbers rules by region key and then by `add()` order.
-
-### `NameLastOwnsItsText`
-
-One rule is named from a string that is overwritten and destroyed before the run, another from two
-temporaries in a row. The report carries the first name intact and the last of the two.
-
-### `ANullOrEmptyNameLeavesTheDefault`
-
-A rule named and then given a null `const char*` reports the name an unnamed rule reports.
-
-### `MovedFromGraphIsEmpty`
-
-After a move the source reports no rule, no node and no compile, refuses a run with
-`InvalidGraph`, and then records and runs a new rule. The destination runs without compiling again.
-
-### `MovedFromDynamicGraphHasNoRegions`
-
-The same for a `DynamicGraph`. The destination also composes again when its region is recorded on,
-which shows that the region still reports to the graph that owns it after the move.
-
-### `OneObserverPerAllocation`
-
-Sixteen rules over one buffer leave `Recorder::watched_allocation_count()` at one; a second buffer
-raises it to two, and naming the first again leaves it there.
-
-### `ADroppedBufferIsStillDetected`, `ADroppedBufferIsStillDetectedInARegion`
-
-A buffer named by the first and the last of six rules is destroyed after a good run. The next run
-is refused with `DanglingResource`, on a `Graph` and on a `DynamicGraph`.
-
-### `refusal_of`
-
-`refusal_of` clears a recorder, runs a call and returns the `Error` the call left as the
-recorder's refusal, or nothing when it left none. It clears the recorder again before it returns.
+| Test | What it proves |
+| --- | --- |
+| `ARegionRuleReportsItsRegistrationAndName` | The same rule in the second of two regions. `DynamicGraph::rule_registration(key, rule)` reports no index before the first run, then index 0 for the first region's rule and 1 for the three-node rule, because a commit numbers rules by region key and then by `add()` order. |
+| `NameLastOwnsItsText` | One rule is named from a string that is overwritten and destroyed before the run, another from two temporaries in a row. The report carries the first name intact and the last of the two. |
+| `ANullOrEmptyNameLeavesTheDefault` | A rule named and then given a null `const char*` reports the name an unnamed rule reports. |
+| `MovedFromGraphIsEmpty` | After a move the source reports no rule, no node and no compile, refuses a run with `InvalidGraph`, and then records and runs a new rule. The destination runs without compiling again. |
+| `MovedFromDynamicGraphHasNoRegions` | The same for a `DynamicGraph`. The destination also composes again when its region is recorded on, which shows that the region still reports to the graph that owns it after the move. |
+| `OneObserverPerAllocation` | Sixteen rules over one buffer leave `Recorder::watched_allocation_count()` at one; a second buffer raises it to two, and naming the first again leaves it there. |
+| `ADroppedBufferIsStillDetected`, `ADroppedBufferIsStillDetectedInARegion` | A buffer named by the first and the last of six rules is destroyed after a good run. The next run is refused with `DanglingResource`, on a `Graph` and on a `DynamicGraph`. |
+| `refusal_of` | `refusal_of` clears a recorder, runs a call and returns the `Error` the call left as the recorder's refusal, or nothing when it left none. It clears the recorder again before it returns. |
 
 ### `ATaskOfTwoCommandGroupsIsOrderedByItsAccess`
 
@@ -753,11 +596,9 @@ move assignment from a graph whose recorder has a generation no larger must stil
 one. Only a Graph or a Region moves a Recorder, which the static_asserts at the top of the file
 hold.
 
-### `GraphClearLeavesAGraphThatRecordsAndRunsAgain`
-
-A graph records one rule, runs and is cleared. It then holds no rule, `rule_registration(0)` is
-`K_NO_REGISTRATION`, and a run returns `InvalidGraph`. A rule recorded after the clear runs
-alone.
+| Test | What it proves |
+| --- | --- |
+| `GraphClearLeavesAGraphThatRecordsAndRunsAgain` | A graph records one rule, runs and is cleared. It then holds no rule, `rule_registration(0)` is `K_NO_REGISTRATION`, and a run returns `InvalidGraph`. A rule recorded after the clear runs alone. |
 
 ### `AClearInsideAnExtensionStartsANewRule`
 
@@ -783,25 +624,12 @@ The file covers `Recorder::scratch()`. Every case records `record_staged_rule`: 
 in which the first writes `in[i] + 1` into scratch and the second writes twice that into `out`. A
 wrong or freed scratch pointer, or a second node that ran before the first, gives a wrong `out`.
 
-### `AConsumerSeesWhatPassedThroughTheScratch`
-
-A task that reads the output of the rule is ordered after both of its nodes, not only after the
-first: the copy it makes must hold the finished values.
-
-### `EachRunReadsItsInputAsItStands`
-
-The input changes before each of four runs and the plan compiles once. Each run must produce the
-values of the input as it stood then, through the same scratch.
-
-### `ScratchSurvivesARecompile`
-
-Scratch is allocated when the node is recorded, not when the plan compiles. A node added after the
-first run forces a second plan, and the kernels replayed into it still hold a valid pointer.
-
-### `ScratchIsFreedWithTheRecorder`
-
-Recording the rule raises the allocator's live count by one, and destroying the graph brings it
-back to the baseline.
+| Test | What it proves |
+| --- | --- |
+| `AConsumerSeesWhatPassedThroughTheScratch` | A task that reads the output of the rule is ordered after both of its nodes, not only after the first: the copy it makes must hold the finished values. |
+| `EachRunReadsItsInputAsItStands` | The input changes before each of four runs and the plan compiles once. Each run must produce the values of the input as it stood then, through the same scratch. |
+| `ScratchSurvivesARecompile` | Scratch is allocated when the node is recorded, not when the plan compiles. A node added after the first run forces a second plan, and the kernels replayed into it still hold a valid pointer. |
+| `ScratchIsFreedWithTheRecorder` | Recording the rule raises the allocator's live count by one, and destroying the graph brings it back to the baseline. |
 
 ### `RegionsRecordRulesWithScratch`
 
@@ -834,11 +662,9 @@ that the plan cache replays every recorded node into a second `TaskGraph`. The n
 rule must still share one index, distinct from the index of every other node, and the indices of
 all nodes must be dense from 0 to n-1 in registration order.
 
-### `RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneIndex`
-
-A rule scope groups every node shape the same way. `record_late_bound_rule` records a late-count
-resolver, a device-sized kernel and a plain kernel in one scope, and the three share one index
-while the node after the scope takes the next one.
+| Test | What it proves |
+| --- | --- |
+| `RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneIndex` | A rule scope groups every node shape the same way. `record_late_bound_rule` records a late-count resolver, a device-sized kernel and a plain kernel in one scope, and the three share one index while the node after the scope takes the next one. |
 
 ## test_region.cpp
 
@@ -852,27 +678,12 @@ it is given, named and given its width through NodeOptions. The tasks are device
 tasks, because a host access to a `Residency::Shared` buffer while a kernel runs on the same GPU
 faults on Windows with CUDA; see `docs/reference/KNOWN_ISSUES.md`.
 
-### `ExtensionTasksOrderAgainstANeighbourRegion`
-
-One extension records two tasks on a buffer, a fill and a tripling, and a higher-keyed region reads
-that buffer through an ordinary `add()`. The consumer sees the tripled values, so the two tasks ran
-in their recorded order and the boundary edge ordered the consumer behind them.
-
-### `AnExtensionIsOneRule`
-
-An extension that records two tasks reports a region size of one, a node count of two and a graph
-size of one: `size()` counts an extension once, however many nodes it records.
-
-### `AnExtensionRunsOnceWhenItIsCalled`
-
-The extension counts its own calls. The count is one when `extend()` returns and stays one over
-three replayed steps and over a rebuild of the neighbouring region. Dropping its own region and
-extending it again raises the count to two.
-
-### `AStaticGraphTakesAnExtension`
-
-A static `Graph` records an extension beside an ordinary `add()` that reads the extension's buffer.
-Four steps advance both, so the form is not specific to regions and survives a chained replay.
+| Test | What it proves |
+| --- | --- |
+| `ExtensionTasksOrderAgainstANeighbourRegion` | One extension records two tasks on a buffer, a fill and a tripling, and a higher-keyed region reads that buffer through an ordinary `add()`. The consumer sees the tripled values, so the two tasks ran in their recorded order and the boundary edge ordered the consumer behind them. |
+| `AnExtensionIsOneRule` | An extension that records two tasks reports a region size of one, a node count of two and a graph size of one: `size()` counts an extension once, however many nodes it records. |
+| `AnExtensionRunsOnceWhenItIsCalled` | The extension counts its own calls. The count is one when `extend()` returns and stays one over three replayed steps and over a rebuild of the neighbouring region. Dropping its own region and extending it again raises the count to two. |
+| `AStaticGraphTakesAnExtension` | A static `Graph` records an extension beside an ordinary `add()` that reads the extension's buffer. Four steps advance both, so the form is not specific to regions and survives a chained replay. |
 
 ## test_run_handle.cpp
 
@@ -885,59 +696,18 @@ the step's own task waits for a flag that the caller sets after `run_async()` ha
 `run_async()` blocked, nobody could set the flag in time and the task would time out. Every wait is
 bounded, so a regression reports a failure and does not hang.
 
-### `wait_for_gate`
-
-`wait_for_gate` blocks until the flag is released or the deadline passes, and reports which
-happened. It is the body of a host task, so a step can be held open while the test does something on
-the calling thread.
-
-### `SubmitReturnsBeforeTheStepFinishes`
-
-`run_async()` must return before the step finishes. The step's host task waits for a flag the caller
-sets only afterwards, so the task can see the flag only if the caller kept running.
-
-### `MatchesTheSynchronousResult`
-
-An asynchronous step must be observationally identical to a synchronous one: the same stepped
-`State`, driven the same number of times, ends in the same place.
-
-### `StateAdvancesOnWaitNotOnSubmit`
-
-The `State` advance belongs to `wait()`, not to the submit. Until the step has been settled, the
-field it just wrote is not yet current. A runtime that advanced on submit would let a reader see the
-next field one step early.
-
-### `DestroyingAnUnwaitedHandleStillFinishesTheStep`
-
-A handle that goes out of scope unwaited must still finish the step, because the compiled plan
-cannot be destroyed while workers hold pointers into it. The graph must also be runnable again
-afterwards.
-
-### `WaitingTwiceThrows`
-
-A second wait on the same handle has no step to wait for. It must throw, because the alternative is
-to block on a latch nobody will signal again.
-
-### `ASecondRunIsRejectedWhileAStepIsInFlight`
-
-A second step started while one is in flight, synchronously or asynchronously, must be rejected
-before anything touches the plan. A synchronous run re-arms the in-degree of every node, so letting
-it proceed would rewrite the scheduling state of the DAG the workers are still walking.
-
-### `TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable`
-
-A task exception surfaces from `wait()`, and the graph stays usable. One failing step must not turn
-into a graph that fails forever.
-
-### `ReadyTracksTheStep`
-
-`ready()` reports whether a wait would return immediately, and it does so without blocking. It must
-be false while the step is held open and true once the step has finished.
-
-### `DynamicGraphRunsAsynchronously`
-
-The region-partitioned graph behaves the same way: a step overlaps the caller, and a pending
-structural change is committed before the step is submitted.
+| Test | What it proves |
+| --- | --- |
+| `wait_for_gate` | `wait_for_gate` blocks until the flag is released or the deadline passes, and reports which happened. It is the body of a host task, so a step can be held open while the test does something on the calling thread. |
+| `SubmitReturnsBeforeTheStepFinishes` | `run_async()` must return before the step finishes. The step's host task waits for a flag the caller sets only afterwards, so the task can see the flag only if the caller kept running. |
+| `MatchesTheSynchronousResult` | An asynchronous step must be observationally identical to a synchronous one: the same stepped `State`, driven the same number of times, ends in the same place. |
+| `StateAdvancesOnWaitNotOnSubmit` | The `State` advance belongs to `wait()`, not to the submit. Until the step has been settled, the field it just wrote is not yet current. A runtime that advanced on submit would let a reader see the next field one step early. |
+| `DestroyingAnUnwaitedHandleStillFinishesTheStep` | A handle that goes out of scope unwaited must still finish the step, because the compiled plan cannot be destroyed while workers hold pointers into it. The graph must also be runnable again afterwards. |
+| `WaitingTwiceThrows` | A second wait on the same handle has no step to wait for. It must throw, because the alternative is to block on a latch nobody will signal again. |
+| `ASecondRunIsRejectedWhileAStepIsInFlight` | A second step started while one is in flight, synchronously or asynchronously, must be rejected before anything touches the plan. A synchronous run re-arms the in-degree of every node, so letting it proceed would rewrite the scheduling state of the DAG the workers are still walking. |
+| `TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable` | A task exception surfaces from `wait()`, and the graph stays usable. One failing step must not turn into a graph that fails forever. |
+| `ReadyTracksTheStep` | `ready()` reports whether a wait would return immediately, and it does so without blocking. It must be false while the step is held open and true once the step has finished. |
+| `DynamicGraphRunsAsynchronously` | The region-partitioned graph behaves the same way: a step overlaps the caller, and a pending structural change is committed before the step is submitted. |
 
 ### `expect_refused_as_invalid_state`, `AnotherGraphIsRefusedWhileAStepIsPending`
 
@@ -947,11 +717,9 @@ runtime must each report `InvalidState` and must not run the second graph's task
 graph's handle must then complete with a successful report, and the second graph must run once the
 step is settled. `expect_refused_as_invalid_state` checks one `Result` for that code.
 
-### `CancelReachesOnlyTheGraphItIsCalledOn`
-
-`cancel()` on a graph with no run in flight must leave another graph's pending step alone: the
-step's report says not cancelled. `cancel()` on the graph that owns the pending step must mark its
-report cancelled. A `cancel()` sent while nothing runs must not mark the next run.
+| Test | What it proves |
+| --- | --- |
+| `CancelReachesOnlyTheGraphItIsCalledOn` | `cancel()` on a graph with no run in flight must leave another graph's pending step alone: the step's report says not cancelled. `cancel()` on the graph that owns the pending step must mark its report cancelled. A `cancel()` sent while nothing runs must not mark the next run. |
 
 ### `expect_step_ended_by_its_graph`, `AGraphDestroyedWithAPendingStepEndsTheStep`, `ADynamicGraphDestroyedWithAPendingStepEndsTheStep`
 

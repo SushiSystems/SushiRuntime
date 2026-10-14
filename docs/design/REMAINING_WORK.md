@@ -211,9 +211,6 @@ round did not close:
   protocol fuzzing, and `test_runtime_context.cpp` and `test_scheduler_execution_engine.cpp` hold
   scheduler and topology tests that need a `RuntimeContext`. A test split by unit lands them in
   their own files.
-- **Two test READMEs pass the 800-line ceiling in a flat folder**: `tests/surface/api/graph/`
-  (979) and `tests/extension/distributed/` (1 151). The mirror allows no subfolder to split them
-  into, so the sections need shortening.
 - **Helpers of one module's tests sit in its test folder**: `dynamic_graph_plan_access.hpp`,
   `refusing_fill.hpp` and `tcp_fault_proxy.hpp`. The plan access reaches `api`'s private
   headers, so it cannot be a module.
