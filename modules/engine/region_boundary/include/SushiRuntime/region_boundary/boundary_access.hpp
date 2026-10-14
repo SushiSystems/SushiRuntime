@@ -23,7 +23,7 @@
  * @file boundary_access.hpp
  * @brief Declares the summary of how one region's nodes touch each shared allocation.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+ * @see modules/engine/region_boundary/README.md
  */
 
 #pragma once
@@ -50,7 +50,7 @@ namespace SushiRuntime
         /**
          * @brief Holds one node's participation in a base's boundary with its exact byte
          *        intervals.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/engine/region_boundary/README.md
          */
         struct Pin
         {
@@ -61,7 +61,7 @@ namespace SushiRuntime
 
         /**
          * @brief Summarises one region's boundary accesses to one shared allocation.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/engine/region_boundary/README.md
          */
         struct BaseAccess
         {
@@ -82,7 +82,7 @@ namespace SushiRuntime
         /**
          * @brief Calls function(succ) for each intra successor of a node; commit-time only,
          *        single threaded.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/engine/region_boundary/README.md
          */
         template <class Fn>
         inline void for_each_intra_successor(GraphNode* n, Fn&& function)
@@ -141,7 +141,7 @@ namespace SushiRuntime
          *        order behind earlier regions.
          * @param predecessors Accesses of the node's direct intra predecessors on the base.
          * @return A pin with no interval when every access of the node is covered.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/engine/region_boundary/README.md
          */
         inline Pin entry_pin(GraphNode* node, const NodeAccess& own,
                              const NeighbourAccesses& predecessors)
@@ -160,7 +160,7 @@ namespace SushiRuntime
          *        fully contains.
          * @param successors Accesses of the node's direct intra successors on the base.
          * @return A pin with no interval when every access of the node is shadowed.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/engine/region_boundary/README.md
          */
         inline Pin exit_pin(GraphNode* node, const NodeAccess& own,
                             const NeighbourAccesses& successors)
@@ -177,7 +177,7 @@ namespace SushiRuntime
         /**
          * @brief Returns a region's per-base boundary summary: entry and exit pins by
          *        byte interval.
-         * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+         * @see modules/engine/region_boundary/README.md
          */
         inline std::map<ResourceID, BaseAccess> compute_boundary_access(
             const std::vector<sushi_ptr<GraphNode>>& nodes)

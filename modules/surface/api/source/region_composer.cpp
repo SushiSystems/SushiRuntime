@@ -47,8 +47,8 @@
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/node.hpp>
 
-#include "boundary_access.hpp"
-#include "plan_access.hpp"
+#include <SushiRuntime/region_boundary/boundary_access.hpp>
+#include <SushiRuntime/engine_handles/plan_access.hpp>
 #include "recorder_replay.hpp"
 
 namespace SushiRuntime

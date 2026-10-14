@@ -444,9 +444,10 @@ A resolver node reads a host count on the host and a device count in its kernel.
 late_count_source() runs once per step, when the resolver is submitted. For a device count it copies
 the address of the slot and reads nothing. For a host count it calls the provider, and for a fixed
 count it takes the capacity. A provider that returns more than the capacity is a fault driven by
-run-time data: late_count_source() writes a K_DEVICE_FAULT_LATE_COUNT record and returns nothing,
-and the resolver submits an empty kernel in place of the fill. read_live_count() runs in the
-kernel: it reads the slot, and a value above the capacity becomes zero and the same record.
+run-time data: late_count_source() writes a K_DEVICE_FAULT_LATE_COUNT record and resolves the
+count to zero, so the fill still runs and the nodes that depend on it run with no work.
+read_live_count() runs in the kernel: it reads the slot, and a value above the capacity becomes
+zero and the same record.
 
 Neither validates the LateCount. Its factories checked the capacity, the residency of the slot and
 the index when the count was built (api/vocabulary/README.md), so a step compares nothing but the
@@ -495,8 +496,8 @@ is declared and never defined. A header holds a `Plan*` or a `std::shared_ptr<La
 passes it on and reads nothing through it, so the engine can rename or reshape its type without
 an installed header changing.
 
-The library converts in one place per type. `source/plan_access.hpp` defines engine_plan() and
-surface_plan(), and `source/late_controls_access.hpp` defines engine_controls() and
+The library converts in one place per type. `engine_handles/plan_access.hpp` defines engine_plan() and
+surface_plan(), and `engine_handles/late_controls_access.hpp` defines engine_controls() and
 surface_controls(). Each is a pointer cast between the name and the engine's type, inline and
 private to `source/`, and a shared pointer keeps its control block. `Detail::Context` of the
 `context` module is the third name of the kind, and the `context_access` module converts it.

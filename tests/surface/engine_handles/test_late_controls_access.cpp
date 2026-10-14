@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* numa_lookup.cpp                                                        */
+/* test_late_controls_access.cpp                                          */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,36 +20,39 @@
 /**************************************************************************/
 
 /**
- * @file numa_lookup.cpp
- * @brief Finds the NUMA node local to a hwloc object through the object's nodeset.
+ * @file test_late_controls_access.cpp
+ * @brief Tests engine_controls() and surface_controls(): one object under two names, sharing its owner.
+ * @see tests/surface/engine_handles/README.md
  * @author Mustafa Garip
  */
 
-#include "numa_lookup.hpp"
+#include <memory>
 
-namespace SushiRuntime
+#include <gtest/gtest.h>
+
+#include <SushiRuntime/task/late_bindings.hpp>
+
+#include <SushiRuntime/engine_handles/late_controls_access.hpp>
+
+using namespace SushiRuntime;
+
+/** @brief Tests that the surface share and the engine share name one binding and one owner. */
+TEST(Unit_LateControlsAccess, BothSharesNameOneBinding)
 {
-    namespace Internal::Topology
-    {
-        std::optional<unsigned> local_numa_os_index(hwloc_topology_t topology, hwloc_obj_t object)
-        {
-            for (hwloc_obj_t current = object; current != nullptr; current = current->parent)
-            {
-                // An I/O object carries no nodeset; its first non-I/O ancestor does.
-                if (current->nodeset == nullptr)
-                    continue;
+    const auto bindings = std::make_shared<Internal::Graph::LateBindings>();
+    const std::shared_ptr<Detail::LateControls> controls = Detail::surface_controls(bindings);
+    EXPECT_EQ(bindings.use_count(), 2) << "the surface share does not own the binding";
 
-                const int first_node = hwloc_bitmap_first(current->nodeset);
-                if (first_node < 0)
-                    continue;
+    const std::shared_ptr<Internal::Graph::LateBindings> back = Detail::engine_controls(controls);
+    EXPECT_EQ(back.get(), bindings.get());
+    EXPECT_EQ(Detail::engine_controls(controls.get()), bindings.get());
+    back->count.store(5);
+    EXPECT_EQ(bindings->count.load(), 5u);
+}
 
-                const hwloc_obj_t numa_node = hwloc_get_numanode_obj_by_os_index(
-                    topology, static_cast<unsigned>(first_node));
-                if (numa_node == nullptr)
-                    return std::nullopt;
-                return numa_node->os_index;
-            }
-            return std::nullopt;
-        }
-    } // namespace Topology
-} // namespace SushiRuntime
+/** @brief Tests that null converts to null. */
+TEST(Unit_LateControlsAccess, NullStaysNull)
+{
+    EXPECT_EQ(Detail::surface_controls(nullptr), nullptr);
+    EXPECT_EQ(Detail::engine_controls(std::shared_ptr<Detail::LateControls>()), nullptr);
+}

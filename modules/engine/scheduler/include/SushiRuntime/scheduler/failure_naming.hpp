@@ -31,6 +31,7 @@
 #include <string>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/task/task.hpp>
 
 namespace SushiRuntime
@@ -41,13 +42,13 @@ namespace SushiRuntime
          * @brief Names a task for a failure report.
          * @return The task's label, with the registration index when it is a graph node.
          */
-        [[nodiscard]] std::string describe_task(const Task& task);
+        [[nodiscard]] SUSHIRUNTIME_API std::string describe_task(const Task& task);
 
         /**
          * @brief Builds the failure of a task from the Error its dispatch ended with.
          * @return An Error of the cause's code whose message opens with describe_task().
          */
-        [[nodiscard]] Error name_failure(const Task& task, const Error& cause);
+        [[nodiscard]] SUSHIRUNTIME_API Error name_failure(const Task& task, const Error& cause);
 
     } // namespace Internal::Scheduler
 } // namespace SushiRuntime

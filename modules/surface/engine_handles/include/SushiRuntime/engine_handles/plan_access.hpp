@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* late_controls_access.hpp                                               */
+/* plan_access.hpp                                                        */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,44 +20,46 @@
 /**************************************************************************/
 
 /**
- * @file late_controls_access.hpp
- * @brief Defines the conversion between Detail::LateControls and the engine's late bindings.
+ * @file plan_access.hpp
+ * @brief Defines the conversion between Detail::Plan and the engine's compiled graph.
  * @author Mustafa Garip
- * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+ * @see modules/surface/engine_handles/README.md
  */
 
 #pragma once
 
-#include <memory>
-
-#include <SushiRuntime/api/detail/late_controls.hpp>
-#include <SushiRuntime/task/late_bindings.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
 
 namespace SushiRuntime
 {
     namespace Detail
     {
-        /** @brief Returns the late bindings surface controls name, read-only; null for null. */
-        [[nodiscard]] inline const Internal::Graph::LateBindings*
-        engine_controls(const LateControls* controls) noexcept
+        struct Plan;
+
+        /** @brief Returns the compiled graph a surface plan names; null for null. */
+        [[nodiscard]] inline Internal::Graph::CompiledGraph* engine_plan(Plan* plan) noexcept
         {
-            return reinterpret_cast<const Internal::Graph::LateBindings*>(controls);
+            return reinterpret_cast<Internal::Graph::CompiledGraph*>(plan);
         }
 
-        /** @brief Returns a share of the late bindings surface controls name; null for null. */
-        [[nodiscard]] inline std::shared_ptr<Internal::Graph::LateBindings>
-        engine_controls(const std::shared_ptr<LateControls>& controls) noexcept
+        /** @brief Returns the compiled graph a surface plan names, read-only; null for null. */
+        [[nodiscard]] inline const Internal::Graph::CompiledGraph*
+        engine_plan(const Plan* plan) noexcept
         {
-            return std::shared_ptr<Internal::Graph::LateBindings>(
-                controls, reinterpret_cast<Internal::Graph::LateBindings*>(controls.get()));
+            return reinterpret_cast<const Internal::Graph::CompiledGraph*>(plan);
         }
 
-        /** @brief Returns a share of late bindings under the surface's name; null for null. */
-        [[nodiscard]] inline std::shared_ptr<LateControls>
-        surface_controls(const std::shared_ptr<Internal::Graph::LateBindings>& bindings) noexcept
+        /** @brief Returns the surface's name for a compiled graph; null for null. */
+        [[nodiscard]] inline Plan* surface_plan(Internal::Graph::CompiledGraph* graph) noexcept
         {
-            return std::shared_ptr<LateControls>(
-                bindings, reinterpret_cast<LateControls*>(bindings.get()));
+            return reinterpret_cast<Plan*>(graph);
+        }
+
+        /** @brief Returns the surface's name for a compiled graph, read-only; null for null. */
+        [[nodiscard]] inline const Plan*
+        surface_plan(const Internal::Graph::CompiledGraph* graph) noexcept
+        {
+            return reinterpret_cast<const Plan*>(graph);
         }
     } // namespace Detail
 } // namespace SushiRuntime

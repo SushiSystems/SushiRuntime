@@ -11,10 +11,9 @@ sushiruntime_add_module(
         affinity.cpp
         hw_discovery.cpp
         hwloc_topology_provider.cpp
-        numa_lookup.cpp
         numa_mapper.cpp
         remapping_topology_provider.cpp
         topology_view.cpp
     DEPENDS core machine
-    PRIVATE_DEPENDS logging
+    PRIVATE_DEPENDS logging numa_lookup
     EXTERNAL PkgConfig::HWLOC)

@@ -37,4 +37,6 @@ sushiruntime_add_module(
         graph
         execution
         memory_exchange
-        context_access)
+        context_access
+        engine_handles
+        region_boundary)
