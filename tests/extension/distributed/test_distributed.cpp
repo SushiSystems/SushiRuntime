@@ -59,11 +59,8 @@
 #include <SushiRuntime/task/offload_state.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/api/fluent.hpp>
-#include <SushiRuntime/distributed/buffer_handle.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/offload_policy.hpp>
-#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/registered_task.hpp>
@@ -73,7 +70,6 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/distributed/message_type.hpp>
 #include <SushiRuntime/log/log_level.hpp>
 #include <SushiRuntime/log/log_sink.hpp>
 #include <SushiRuntime/logging/log_gate.hpp>
@@ -81,17 +77,20 @@
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/task_types.hpp>
-#include <SushiRuntime/distributed/cluster_statistics.hpp>
-#include <SushiRuntime/distributed/endpoint.hpp>
 #include <SushiRuntime/device_probe/device_probe.hpp>
+#include <SushiRuntime/cluster_load/offload_policy.hpp>
+#include <SushiRuntime/cluster_load/cluster_statistics.hpp>
+#include <SushiRuntime/transport/buffer_handle.hpp>
+#include <SushiRuntime/transport/transport.hpp>
+#include <SushiRuntime/transport/message_type.hpp>
+#include <SushiRuntime/transport/endpoint.hpp>
+#include <SushiRuntime/frame_transport/frame_sending.hpp>
+#include <SushiRuntime/link_security/handshake.hpp>
+#include <SushiRuntime/wire/wire_frame.hpp>
+#include <SushiRuntime/wire/wire_messages.hpp>
+#include <SushiRuntime/network_socket/socket.hpp>
+#include <SushiRuntime/offload_coordination/offload_dispatcher.hpp>
 
-#include "distributed_coordinator.hpp"
-#include "frame_sending.hpp"
-#include "handshake.hpp"
-#include "offload_dispatcher.hpp"
-#include "wire_frame.hpp"
-#include "wire_messages.hpp"
-#include "socket.hpp"
 #include "tcp_fault_proxy.hpp"
 
 using namespace SushiRuntime;

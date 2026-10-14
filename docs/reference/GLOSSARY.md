@@ -36,18 +36,18 @@ The words this repository's documents use. A term defined in code names the head
 | Kernel registry | `Distributed::KernelRegistry`, the map from `OperationID` to kernel that is compiled into a worker's program |
 | Local fallback | The kernel given to the verb that recorded a node; it runs on the master when the node is not offloaded or is taken back |
 | Shared buffer | A USM allocation the master has made known to its workers, through `Cluster::share()`. Only a task whose buffers are all shared can be offloaded |
-| Buffer handle | `Distributed::BufferHandle`: the id, version and size that name a shared buffer on the wire (`distributed/buffer_handle.hpp`) |
+| Buffer handle | `Distributed::BufferHandle`: the id, version and size that name a shared buffer on the wire (`transport/buffer_handle.hpp`) |
 | Buffer version | A number the master raises on every write to a shared buffer. A worker's cached copy at an older version is pulled again |
 | Pull | A worker asking the master for the bytes of one buffer version it does not hold |
 | Chunk | One frame's worth of a buffer's bytes, 256 KiB by default. A buffer crosses as a run of chunks |
 | Frame | One protocol message on the wire: a 12-byte header and a payload of at most 1 MiB |
-| Transport | What carries frames between a master and its workers: `Distributed::Transport`, implemented over TCP and over an in-process fabric (`distributed/transport.hpp`) |
+| Transport | What carries frames between a master and its workers: `Distributed::Transport`, implemented over TCP and over an in-process fabric (`transport/transport.hpp`) |
 | Fabric | `Distributed::InProcessFabric`, which joins a master and workers inside one process for tests |
 | Peer | One connection of a transport, named by a `PeerID` that is never reused. A worker that reconnects is a new peer |
 | Shared secret | The key file a master and its workers hold in common, at least 32 bytes (`distributed/shared_secret.hpp`) |
 | Handshake | The four frames (`HELLO`, `CHALLENGE`, `PROOF`, `WELCOME`) by which a master and a worker prove the shared secret to each other and the worker registers |
 | Session | One master process as its workers know it. A worker that registers with a new session empties its buffer cache |
-| Offload policy | `Distributed::OffloadPolicy`, which picks the worker of each offloadable task, or none (`distributed/offload_policy.hpp`) |
+| Offload policy | `Distributed::OffloadPolicy`, which picks the worker of each offloadable task, or none (`cluster_load/offload_policy.hpp`) |
 | Liveness timeout | The silence after which the master closes a worker, and a worker its master; 5 s by default |
 | Task deadline | The longest a kernel may run on a worker before the master takes the task back; 30 s by default, 0 for no bound |
 | Heartbeat | The frame a worker sends every second with its queue depth, its cache size and the oldest task it still holds |

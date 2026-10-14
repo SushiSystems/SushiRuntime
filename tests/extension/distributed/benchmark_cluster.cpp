@@ -49,8 +49,6 @@
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
 #include <SushiRuntime/distributed/cluster.hpp>
-#include <SushiRuntime/distributed/offload_policy.hpp>
-#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/in_process_transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/registered_task.hpp>
@@ -59,6 +57,8 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/measurement/measurement.hpp>
 #include <SushiRuntime/device_probe/device_probe.hpp>
+#include <SushiRuntime/cluster_load/offload_policy.hpp>
+#include <SushiRuntime/transport/transport.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;

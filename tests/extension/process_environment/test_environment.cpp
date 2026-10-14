@@ -1,0 +1,46 @@
+/**************************************************************************/
+/* test_environment.cpp                                                   */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+/**************************************************************************/
+
+/**
+ * @file test_environment.cpp
+ * @brief Tests read_environment(): a set variable and an unset one.
+ * @see tests/extension/process_environment/README.md
+ * @author Mustafa Garip
+ */
+
+#include <optional>
+#include <string>
+
+#include <gtest/gtest.h>
+
+#include <SushiRuntime/process_environment/environment.hpp>
+
+using namespace SushiRuntime::Distributed;
+
+/** @brief Tests that a set variable is returned and an unset one is nothing. */
+TEST(Unit_EnvironmentTest, ReadsASetVariableAndReportsAnUnsetOne)
+{
+    const std::optional<std::string> path = read_environment("PATH");
+    ASSERT_TRUE(path.has_value());
+    EXPECT_FALSE(path->empty());
+
+    EXPECT_FALSE(read_environment("SR_TEST_VARIABLE_THAT_NOBODY_SETS").has_value());
+}

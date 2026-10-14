@@ -109,8 +109,8 @@ endfunction()
 #
 # Called from tests/<tier>/<module>/CMakeLists.txt, with paths relative to that folder.
 # SOURCES build sr_<module>_tests; BENCHMARK_SOURCES build sr_<module>_benchmarks under
-# SR_BUILD_BENCHMARKS. Both programs may include the module's private headers, which sit in
-# modules/<tier>/<module>/source/, and the helpers of the test folder, by a quoted name.
+# SR_BUILD_BENCHMARKS. Both programs include the helpers of the test folder by a quoted name,
+# and never a header under modules/<tier>/<module>/source/: a brick a test needs is a module.
 function(sushiruntime_add_module_tests)
     cmake_parse_arguments(ARG "" "MODULE" "SOURCES;BENCHMARK_SOURCES" ${ARGN})
     if("${ARG_MODULE}" STREQUAL "" OR (NOT ARG_SOURCES AND NOT ARG_BENCHMARK_SOURCES))
@@ -118,9 +118,6 @@ function(sushiruntime_add_module_tests)
             "sushiruntime_add_module_tests(): MODULE and SOURCES or BENCHMARK_SOURCES are "
             "required.")
     endif()
-    file(RELATIVE_PATH mirror "${PROJECT_SOURCE_DIR}/tests" "${CMAKE_CURRENT_SOURCE_DIR}")
-    set(private_root "${PROJECT_SOURCE_DIR}/modules/${mirror}/source")
-
     set(programs "")
     if(ARG_SOURCES)
         list(APPEND programs "sr_${ARG_MODULE}_tests|SOURCES")
@@ -142,7 +139,7 @@ function(sushiruntime_add_module_tests)
         else()
             sushiruntime_add_test_program(NAME "${name}" MODULE "${ARG_MODULE}" SOURCES ${sources})
         endif()
-        target_include_directories("${name}" PRIVATE
-            "${private_root}" "${CMAKE_CURRENT_SOURCE_DIR}")
+        # A test reaches its module through the include roots only; source/ stays private.
+        target_include_directories("${name}" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     endforeach()
 endfunction()

@@ -44,11 +44,10 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/task/task_types.hpp>
-#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
-
-#include "handshake.hpp"
-#include "wire_messages.hpp"
+#include <SushiRuntime/transport/transport.hpp>
+#include <SushiRuntime/link_security/handshake.hpp>
+#include <SushiRuntime/wire/wire_messages.hpp>
 
 namespace SushiRuntime
 {

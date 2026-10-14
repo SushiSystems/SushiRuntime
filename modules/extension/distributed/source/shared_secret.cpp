@@ -34,9 +34,9 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/link_security/hmac_sha256.hpp>
+#include <SushiRuntime/process_environment/environment.hpp>
 
-#include "environment.hpp"
-#include "hmac_sha256.hpp"
 
 namespace SushiRuntime
 {
