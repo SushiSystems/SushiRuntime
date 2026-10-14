@@ -31,7 +31,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <utility>
 #include <vector>
 
@@ -67,16 +66,7 @@ namespace SushiRuntime
             {
                 std::array<LiveCountSource, K> sources;
                 for (std::size_t k = 0; k < K; ++k)
-                {
-                    const std::optional<LiveCountSource> source =
-                        late_count_source(counts[k], fault);
-                    if (!source)
-                    {
-                        h.single_task([]() {});
-                        return;
-                    }
-                    sources[k] = *source;
-                }
+                    sources[k] = late_count_source(counts[k], fault);
                 h.single_task([sources, fault, fill]()
                 {
                     std::array<std::size_t, K> live{};
