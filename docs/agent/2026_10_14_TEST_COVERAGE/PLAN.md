@@ -1,6 +1,6 @@
 # Test coverage: one test file per public header, no test reaching `source/`
 
-**Status:** Phases 1 to 3 written inline; one build and test run closes them
+**Status:** Phases 1 to 3 landed and green; task 1.10 and the break check are open; see `REPORT.md`
 
 ## Goal
 
