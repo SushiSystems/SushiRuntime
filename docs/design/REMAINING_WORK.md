@@ -200,13 +200,8 @@ round did not close:
 
 ### Left open by the test mirror (2026-10-14)
 
-- **100 public headers have no test file.** `check_test_mirror.py --rule rule_untested_unit`
-  lists them: 28 in `api`, 11 in `task`, 6 each in `scheduler` and `distributed`, and the
-  headers of the seven test-support modules. Each needs a behaviour test of its own.
-- **Tests reach private headers.** The worker and coordinator bricks of `distributed`, the
-  dependency tracker, the work-stealing deque, the NUMA lookup and the plan access of `api`
-  are tested directly from `source/`. Each brick is either tested through the public unit that
-  uses it or becomes a module of its own.
+- **100 public headers have no test file, and tests include 31 private headers.**
+  `docs/agent/2026_10_14_TEST_COVERAGE/PLAN.md` holds the work in three phases and the four decisions it waits on.
 - **Some test files hold suites of more than one unit.** `test_offload_policy.cpp` holds the
   protocol fuzzing, and `test_runtime_context.cpp` and `test_scheduler_execution_engine.cpp` hold
   scheduler and topology tests that need a `RuntimeContext`. A test split by unit lands them in
