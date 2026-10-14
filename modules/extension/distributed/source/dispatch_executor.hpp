@@ -44,12 +44,12 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/distributed/buffer_handle.hpp>
-#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
+#include <SushiRuntime/transport/buffer_handle.hpp>
+#include <SushiRuntime/transport/transport.hpp>
+#include <SushiRuntime/wire/wire_messages.hpp>
 
-#include "wire_messages.hpp"
 #include "worker_buffer_cache.hpp"
 
 namespace SushiRuntime

@@ -47,10 +47,10 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/link_security/handshake.hpp>
+#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
 
-#include "buffer_registry.hpp"
 #include "distributed_coordinator.hpp"
-#include "handshake.hpp"
 
 namespace SushiRuntime
 {

@@ -368,7 +368,7 @@ running task holds.
 
 At dispatch the master asks an `OffloadPolicy` which worker gets the task, or none. The default,
 `LeastLoadedOffloadPolicy`, keeps a task whose inputs total under 64 KiB on the master and
-otherwise picks the worker with the lowest estimated cost. [the module README](../../modules/extension/distributed/README.md),
+otherwise picks the worker with the lowest estimated cost. [the `cluster_load` README](../../modules/extension/cluster_load/README.md),
 section "offload_policy.hpp", has the estimate and which workers are offered.
 
 To send every task whatever its size, pass a policy with a threshold of 0:

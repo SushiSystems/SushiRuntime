@@ -46,16 +46,18 @@ function(sushiruntime_check_module_edge consumer dependency)
     endif()
 endfunction()
 
-# sushiruntime_add_header_check(MODULE <module> INCLUDE_ROOT <dir> [EXCLUDE <header>...])
+# sushiruntime_add_header_check(MODULE <module> INCLUDE_ROOT <dir> [EXCLUDE <header>...]
+#                               [EXTERNAL <third-party target>...])
 #
 # Compiles every public header of a module first and alone, with the include roots of the
 # module's DEPENDS only. A header that forgot one of its own includes, or that includes a
 # module the public surface did not declare, fails to compile here. A module that is not
 # INTERNAL has only modules of its kind under DEPENDS, so a header it installs that includes
 # an internal one fails here too. The headers are globbed so that the check does not depend
-# on someone listing a new one.
+# on someone listing a new one. EXTERNAL names the third-party targets an internal module's
+# headers include; an installed header includes none.
 function(sushiruntime_add_header_check)
-    cmake_parse_arguments(ARG "" "MODULE;INCLUDE_ROOT" "EXCLUDE" ${ARGN})
+    cmake_parse_arguments(ARG "" "MODULE;INCLUDE_ROOT" "EXCLUDE;EXTERNAL" ${ARGN})
 
     file(GLOB_RECURSE headers CONFIGURE_DEPENDS RELATIVE "${ARG_INCLUDE_ROOT}"
         "${ARG_INCLUDE_ROOT}/*.hpp" "${ARG_INCLUDE_ROOT}/*.h")
@@ -77,7 +79,8 @@ function(sushiruntime_add_header_check)
     set(check "sushiruntime_module_${ARG_MODULE}_header_check")
     add_library(${check} OBJECT ${units})
     target_link_libraries(${check} PRIVATE
-        "sushiruntime_module_${ARG_MODULE}" sushiruntime_deterministic_fp IntelSYCL::SYCL_CXX)
+        "sushiruntime_module_${ARG_MODULE}" sushiruntime_deterministic_fp IntelSYCL::SYCL_CXX
+        ${ARG_EXTERNAL})
     target_compile_definitions(${check} PRIVATE
         NOMINMAX WIN32_LEAN_AND_MEAN
         $<$<BOOL:${SR_ENABLE_DISTRIBUTED}>:SR_DISTRIBUTED>)
@@ -212,8 +215,12 @@ function(sushiruntime_add_module)
     endif()
 
     if(SR_BUILD_TESTS OR NOT ARG_INTERNAL)
+        set(header_externals "")
+        if(ARG_INTERNAL)
+            set(header_externals ${ARG_EXTERNAL})
+        endif()
         sushiruntime_add_header_check(
             MODULE ${ARG_NAME} INCLUDE_ROOT "${include_root}"
-            EXCLUDE ${ARG_HEADER_CHECK_EXCLUDE})
+            EXCLUDE ${ARG_HEADER_CHECK_EXCLUDE} EXTERNAL ${header_externals})
     endif()
 endfunction()

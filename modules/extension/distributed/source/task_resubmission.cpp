@@ -33,7 +33,7 @@
 #include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
-#include <SushiRuntime/distributed/buffer_handle.hpp>
+#include <SushiRuntime/transport/buffer_handle.hpp>
 
 namespace SushiRuntime
 {

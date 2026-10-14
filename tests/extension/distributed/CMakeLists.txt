@@ -7,15 +7,16 @@
 sushiruntime_add_module_tests(
     MODULE distributed
     SOURCES
-        test_buffer_handle.cpp
+        test_buffer_view.cpp
         test_cluster.cpp
         test_distributed.cpp
-        test_endpoint.cpp
-        test_message_type.cpp
-        test_offload_policy.cpp
+        test_in_process_transport.cpp
+        test_kernel_registry.cpp
+        test_registered_task.cpp
         test_shared_secret.cpp
-        test_transport.cpp
+        test_tcp_transport.cpp
         test_worker_agent.cpp
         test_worker_main.cpp
+        test_worker_options_parser.cpp
     BENCHMARK_SOURCES
         benchmark_cluster.cpp)

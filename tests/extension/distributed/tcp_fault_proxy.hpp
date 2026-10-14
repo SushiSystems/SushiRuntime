@@ -43,9 +43,8 @@
 #include <vector>
 
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/distributed/endpoint.hpp>
-
-#include "socket.hpp"
+#include <SushiRuntime/transport/endpoint.hpp>
+#include <SushiRuntime/network_socket/socket.hpp>
 
 namespace SushiRuntime
 {

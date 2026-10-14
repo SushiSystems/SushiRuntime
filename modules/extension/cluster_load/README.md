@@ -1,0 +1,45 @@
+# cluster_load
+
+The module holds the load of a cluster's workers as a master sees it: the policy that chooses the
+worker of a task from their loads, and the statistics that report them. It is built with the
+distributed layer, under `SR_ENABLE_DISTRIBUTED`, and every name it declares is in
+`SushiRuntime::Distributed`. Its headers are installed: a program passes its own policy in
+`ClusterOptions` and reads `Cluster::statistics()`.
+
+It depends on `core` and `api`.
+
+## Public entry points
+
+| Header | Holds |
+| --- | --- |
+| `offload_policy.hpp` | `OffloadPolicy`, `WorkerLoad`, `LeastLoadedOffloadPolicy` |
+| `cluster_statistics.hpp` | `ClusterStatistics`, `WorkerSnapshot` |
+
+## offload_policy.hpp
+
+`WorkerDirectory::pick()` offers the policy the registered, alive workers that are below their
+`max_jobs` and registered the kernel of the task's operation, under the directory's mutex. It
+does not call the policy when no such worker has room, and an answer that names a worker it did
+not offer counts as no pick. Workers of one cluster may therefore hold different kernels.
+
+`LeastLoadedOffloadPolicy` is the default. It returns nothing, which runs the task locally, when
+the task's inputs total fewer bytes than `min_offload_bytes` (64 KiB unless the constructor is
+given another value). It skips a worker whose `free_mem` is not 0 and is below the input size.
+Among the rest it picks the lowest cost, in microseconds: `rtt_micros`, plus the input bytes
+divided by 1000, plus 1000 per inflight task. The two constants are in
+`source/offload_policy.cpp`.
+
+## cluster_statistics.hpp
+
+`Cluster::statistics()` returns `ClusterStatistics`, which the coordinator assembles from the
+brick that causes each count. What each field means to a user is in §9 of the guide.
+
+| Fields | Kept by |
+| --- | --- |
+| `offloaded`, `declined`, `send_queue_full` | `OffloadDispatcher` |
+| `tasks_reaped_deadline`, `tasks_reaped_unacknowledged`, `tasks_reaped_lost_result`, part of `redispatched` | `ClusterMonitor` |
+| `chunks_sent`, `chunks_received`, `transfers_aborted`, part of `stale_writebacks` | `BufferExchange` |
+| `completed_remote`, `handshake_rejected_auth`, `handshake_rejected_version`, `peers_lost`, `peers_closed_malformed`, the rest of `redispatched` and `stale_writebacks` | `DistributedCoordinator` |
+| `bytes_sent`, `bytes_received` | the transport |
+| `alive_workers`, `workers` | `WorkerDirectory` |
+| `pending_tasks` | `PendingTasks` |

@@ -21,7 +21,7 @@
 
 /**
  * @file test_worker_agent.cpp
- * @brief Tests the bricks of a worker: buffer cache, deduplicator, executor and master link.
+ * @brief Tests WorkerAgent through its transport: handshake, dispatch, cache and liveness.
  * @see tests/extension/distributed/README.md
  * @author Mustafa Garip
  */
@@ -32,46 +32,48 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/task/task_types.hpp>
+#include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/distributed/buffer_view.hpp>
-#include <SushiRuntime/distributed/transport.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
-
-#include "dispatch_deduplicator.hpp"
-#include "dispatch_executor.hpp"
-#include "handshake.hpp"
-#include "master_link.hpp"
-#include "wire_frame.hpp"
-#include "wire_messages.hpp"
-#include "worker_buffer_cache.hpp"
+#include <SushiRuntime/distributed/shared_secret.hpp>
+#include <SushiRuntime/distributed/worker_agent.hpp>
+#include <SushiRuntime/transport/buffer_handle.hpp>
+#include <SushiRuntime/transport/message_type.hpp>
+#include <SushiRuntime/transport/transport.hpp>
+#include <SushiRuntime/link_security/handshake.hpp>
+#include <SushiRuntime/link_security/sha256.hpp>
+#include <SushiRuntime/wire/wire_frame.hpp>
+#include <SushiRuntime/wire/wire_messages.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 namespace
 {
-    /** @brief Bounds every wait on a condition, so a broken brick fails a test and hangs none. */
+    /** @brief Bounds every wait on a condition, so a broken agent fails a test and hangs none. */
     constexpr std::chrono::seconds K_WAIT{30};
 
-    /** @brief Holds the connection every executor test dispatches on. */
+    /** @brief Holds the connection most tests register the master on. */
     constexpr PeerID K_MASTER{1};
 
-    /** @brief Holds one frame a brick handed to the transport. */
+    /** @brief Holds the byte every key byte of these tests holds. */
+    constexpr std::uint8_t K_SECRET_BYTE = 0x42;
+
+    /** @brief Holds one frame the agent handed to the transport. */
     struct SentFrame
     {
         PeerID peer;                    /**< The connection it was sent to. */
@@ -81,15 +83,16 @@ namespace
     };
 
     /**
-     * @brief Records what the bricks send and close; opens no socket.
+     * @brief Records what the agent sends and closes, and hands it the master's frames.
      *
      * A stream is pulled dry on the calling thread, or kept until the test releases it.
      */
     class FakeTransport final : public Transport
     {
         public:
-            [[nodiscard]] TransportResult start(TransportEvents&) override
+            [[nodiscard]] TransportResult start(TransportEvents& events) override
             {
+                events_ = &events;
                 return TransportResult{};
             }
 
@@ -151,11 +154,35 @@ namespace
                 return TransportStatistics{};
             }
 
-            /** @brief Keeps later streams unpulled until release_streams(). */
-            void keep_streams()
+            /** @brief Opens a connection to the master, as a worker transport does. */
+            void connect(PeerID peer)
+            {
+                events_->on_peer_connected(peer, PeerDescription{});
+            }
+
+            /** @brief Reports a connection lost for a cause. */
+            void lose(PeerID peer, PeerLossCause cause)
+            {
+                PeerLoss loss;
+                loss.cause = cause;
+                events_->on_peer_lost(peer, loss);
+            }
+
+            /** @brief Encodes a message and hands it to the agent as a frame of the master. */
+            template <typename Message>
+            void deliver(PeerID peer, const Message& message, std::uint8_t flags = 0)
+            {
+                std::vector<std::byte> payload;
+                ASSERT_EQ(message.encode(payload), Wire::CodecStatus::Ok);
+                events_->on_frame(peer, Message::K_TYPE, flags,
+                                  span<const std::byte>(payload.data(), payload.size()));
+            }
+
+            /** @brief Makes send_stream() keep later streams, or pull them dry again. */
+            void keep_streams(bool value)
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
-                keep_streams_ = true;
+                keep_streams_ = value;
             }
 
             /** @brief Pulls every kept stream dry and destroys it, as a writer thread would. */
@@ -214,13 +241,6 @@ namespace
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 return changed_.wait_for(lock, K_WAIT, [this] { return stops_ > 0; });
-            }
-
-            /** @brief Returns the number of stop() calls. */
-            [[nodiscard]] std::size_t stop_count() const
-            {
-                const std::lock_guard<std::mutex> lock(mutex_);
-                return stops_;
             }
 
             /** @brief Returns whether a peer was closed. */
@@ -293,10 +313,13 @@ namespace
                 return std::find(closed_.begin(), closed_.end(), peer) != closed_.end();
             }
 
+            /// @brief The agent; set by start().
+            TransportEvents* events_ = nullptr;
+
             /// @brief Guards every member below.
             mutable std::mutex mutex_;
 
-            /// @brief Wakes the waits on a frame, a kept stream and a close.
+            /// @brief Wakes the waits on a frame, a kept stream, a close and a stop.
             std::condition_variable changed_;
 
             /// @brief Every frame sent.
@@ -313,68 +336,6 @@ namespace
 
             /// @brief Calls of stop().
             std::size_t stops_ = 0;
-    };
-
-    /**
-     * @brief Hands the cache host memory, counts it and can be told to refuse.
-     */
-    class FakeAllocator final
-    {
-        public:
-            /** @brief Returns the two callables a cache takes; this object outlives the cache. */
-            [[nodiscard]] CacheAllocator callables()
-            {
-                CacheAllocator allocator;
-                allocator.allocate = [this](std::size_t size_bytes) -> void*
-                {
-                    if (refuse_.load())
-                        return nullptr;
-                    ++live_;
-                    return std::malloc(size_bytes);
-                };
-                allocator.release = [this](void* address)
-                {
-                    {
-                        const std::lock_guard<std::mutex> lock(mutex_);
-                        freed_.push_back(address);
-                    }
-                    --live_;
-                    std::free(address);
-                };
-                return allocator;
-            }
-
-            /** @brief Makes every later allocation fail, or succeed again. */
-            void refuse(bool value)
-            {
-                refuse_.store(value);
-            }
-
-            /** @brief Returns the number of allocations not freed. */
-            [[nodiscard]] int live() const
-            {
-                return live_.load();
-            }
-
-            /** @brief Returns the addresses freed, in order. */
-            [[nodiscard]] std::vector<void*> freed() const
-            {
-                const std::lock_guard<std::mutex> lock(mutex_);
-                return freed_;
-            }
-
-        private:
-            /// @brief Guards freed_.
-            mutable std::mutex mutex_;
-
-            /// @brief The addresses freed.
-            std::vector<void*> freed_;
-
-            /// @brief Allocations not freed.
-            std::atomic<int> live_{0};
-
-            /// @brief Whether allocate returns null.
-            std::atomic<bool> refuse_{false};
     };
 
     /** @brief Returns a handle. */
@@ -419,17 +380,6 @@ namespace
         return message;
     }
 
-    /** @brief Puts a committed, unpinned buffer into a cache and returns its address. */
-    void* store(WorkerBufferCache& cache, std::uint64_t id, std::uint64_t size_bytes)
-    {
-        const BufferHandle handle = handle_of(id, 1, size_bytes);
-        BufferView view;
-        EXPECT_EQ(cache.pin_output(handle, view), CacheStatus::Ready);
-        cache.commit_output(handle);
-        cache.unpin(handle.id);
-        return view.data;
-    }
-
     /** @brief Returns a dispatch of one task. */
     Wire::TaskDispatchMessage dispatch_of(std::uint64_t task_id, OperationID op,
                                           std::vector<BufferHandle> inputs,
@@ -443,54 +393,13 @@ namespace
         return dispatch;
     }
 
-    /**
-     * @brief Holds a cache, a registry and an executor over a fake transport and allocator.
-     *
-     * A test registers its kernels, then calls executor.start().
-     */
-    struct Worker
+    /** @brief Returns a BUFFER_RELEASE of one buffer. */
+    Wire::BufferReleaseMessage release_of(std::uint64_t id)
     {
-        /** @brief Builds the bricks with a budget and the executor's bounds; no thread runs. */
-        explicit Worker(std::uint64_t budget_bytes = 1024 * 1024,
-                        const DispatchExecutorOptions& options = DispatchExecutorOptions{})
-            : cache(allocator.callables(), budget_bytes),
-              kernels(make_sushi<KernelRegistry>()),
-              executor(kernels, cache, transport, queue, options)
-        {
-
-        }
-
-        /** @brief Stops the exec thread and drops kept streams while the cache lives. */
-        ~Worker()
-        {
-            executor.stop();
-            transport.drop_streams();
-        }
-
-        Worker(const Worker&) = delete;
-        Worker& operator=(const Worker&) = delete;
-        Worker(Worker&&) = delete;
-        Worker& operator=(Worker&&) = delete;
-
-        /** @brief Returns the status of the n-th TASK_RESULT sent, counted from 0. */
-        [[nodiscard]] Wire::TaskResultMessage result(std::size_t index) const
-        {
-            const std::vector<SentFrame> frames = transport.frames_of(MessageType::TaskResult);
-            if (index >= frames.size())
-            {
-                ADD_FAILURE() << "no TASK_RESULT number " << index;
-                return Wire::TaskResultMessage{};
-            }
-            return decode<Wire::TaskResultMessage>(frames[index]);
-        }
-
-        FakeAllocator allocator;           /**< The cache's memory. */
-        FakeTransport transport;           /**< Records what the executor sends. */
-        WorkerBufferCache cache;           /**< The buffers of the tasks. */
-        sushi_ptr<KernelRegistry> kernels; /**< The kernels the test registers. */
-        sycl::queue queue;                 /**< The queue handed to the kernels. */
-        DispatchExecutor executor;         /**< The brick under test. */
-    };
+        Wire::BufferReleaseMessage release;
+        release.id = GlobalBufferID{id};
+        return release;
+    }
 
     /** @brief Returns a nonce whose bytes all hold @p value. */
     HandshakeNonce nonce_of(std::uint8_t value)
@@ -499,9 +408,6 @@ namespace
         nonce.bytes.fill(value);
         return nonce;
     }
-
-    /** @brief Holds the nonce every link of these tests sends. */
-    const HandshakeNonce K_WORKER_NONCE = nonce_of(0x11);
 
     /** @brief Holds the nonce the master of these tests answers with. */
     const HandshakeNonce K_MASTER_NONCE = nonce_of(0x22);
@@ -512,10 +418,18 @@ namespace
         return std::vector<std::uint8_t>(32, value);
     }
 
+    /** @brief Returns the worker nonce a HELLO carries. */
+    HandshakeNonce nonce_in(const Wire::HelloMessage& hello)
+    {
+        HandshakeNonce nonce{};
+        std::memcpy(nonce.bytes.data(), hello.worker_nonce.data(), nonce.bytes.size());
+        return nonce;
+    }
+
     /** @brief Returns the CHALLENGE a master holding @p secret sends for a worker's nonce. */
     Wire::ChallengeMessage challenge_of(const std::vector<std::uint8_t>& secret,
                                         std::uint64_t session_id,
-                                        const HandshakeNonce& worker_nonce = K_WORKER_NONCE)
+                                        const HandshakeNonce& worker_nonce)
     {
         const Sha256Digest proof =
             compute_proof(HandshakeRole::Master,
@@ -530,228 +444,345 @@ namespace
         return challenge;
     }
 
-    /** @brief Returns link options with a name, two operations and a heartbeat interval. */
-    MasterLinkOptions link_options(std::chrono::milliseconds heartbeat_interval)
+    /** @brief Returns a WELCOME with a liveness timeout and a chunk size. */
+    Wire::WelcomeMessage welcome_of(PeerID peer, std::uint32_t liveness_timeout_ms,
+                                    std::uint32_t chunk_bytes)
     {
-        MasterLinkOptions options;
-        options.name = "worker-a";
-        options.build_id = "test-build";
-        options.ops = {OperationID(7), OperationID(9)};
-        options.max_jobs = 16;
-        options.cache_budget = 4096;
-        options.heartbeat_interval = heartbeat_interval;
-        return options;
-    }
-
-    /** @brief Returns a nonce source that always gives K_WORKER_NONCE. */
-    NonceSource fixed_nonces()
-    {
-        return []
-        {
-            return K_WORKER_NONCE;
-        };
-    }
-
-    /** @brief Runs a whole handshake on a new connection and returns what WELCOME changed. */
-    LinkChange register_link(MasterLink& link, PeerID peer,
-                             const std::vector<std::uint8_t>& secret, std::uint64_t session_id,
-                             std::uint32_t liveness_timeout_ms)
-    {
-        link.on_connected(peer);
-        EXPECT_EQ(link.on_challenge(peer, challenge_of(secret, session_id)), LinkChange::None);
-
         Wire::WelcomeMessage welcome;
         welcome.worker_id = peer.value;
         welcome.liveness_timeout_ms = liveness_timeout_ms;
         welcome.ping_interval_ms = 250;
-        welcome.chunk_bytes = 4096;
-        return link.on_welcome(peer, welcome);
+        welcome.chunk_bytes = chunk_bytes;
+        return welcome;
     }
+
+    /** @brief Returns a kernel that counts its runs and writes nothing. */
+    KernelRegistry::Kernel counting_kernel(std::atomic<int>& calls)
+    {
+        return [&calls](sycl::queue&, span<const BufferView>, span<const BufferView>,
+                        const NodeOptions&)
+        {
+            ++calls;
+            return sycl::event{};
+        };
+    }
+
+    /** @brief Returns whether @p condition held before K_WAIT passed. */
+    template <typename Condition>
+    bool eventually(Condition condition)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + K_WAIT;
+        while (!condition())
+        {
+            if (std::chrono::steady_clock::now() > deadline)
+                return false;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return true;
+    }
+
+    /**
+     * @brief Holds a worker agent over a fake transport, and plays its master.
+     *
+     * A test registers its kernels and sets the options, then calls start().
+     */
+    class AgentRig final
+    {
+        public:
+            /** @brief Builds the rig; the agent is built by start(). */
+            AgentRig()
+                : transport(std::make_shared<FakeTransport>()),
+                  kernels(make_sushi<KernelRegistry>())
+            {
+                options.name = "worker-a";
+                options.max_jobs = 16;
+                options.cache_bytes = 1024 * 1024;
+                options.heartbeat_interval = std::chrono::milliseconds(60000);
+                const std::vector<std::uint8_t> secret = secret_of(K_SECRET_BYTE);
+                options.secret =
+                    SharedSecret::from_bytes(span<const std::uint8_t>(secret.data(), secret.size()))
+                        .value();
+            }
+
+            /** @brief Stops the agent, then drops the kept streams while its cache lives. */
+            ~AgentRig()
+            {
+                if (agent_.has_value())
+                    agent_->stop();
+                transport->drop_streams();
+            }
+
+            AgentRig(const AgentRig&) = delete;
+            AgentRig& operator=(const AgentRig&) = delete;
+            AgentRig(AgentRig&&) = delete;
+            AgentRig& operator=(AgentRig&&) = delete;
+
+            /** @brief Builds and starts the agent with the options and kernels set so far. */
+            void start()
+            {
+                agent_.emplace(runtime_, transport, kernels, std::move(options));
+                const TransportResult started = agent_->start();
+                ASSERT_TRUE(started.is_ok()) << started.message;
+            }
+
+            /** @brief Returns the agent; start() was called. */
+            WorkerAgent& agent()
+            {
+                return *agent_;
+            }
+
+            /** @brief Returns the HELLO the agent sent last. */
+            Wire::HelloMessage last_hello() const
+            {
+                const std::vector<SentFrame> hellos = transport->frames_of(MessageType::Hello);
+                if (hellos.empty())
+                {
+                    ADD_FAILURE() << "no HELLO was sent";
+                    return Wire::HelloMessage{};
+                }
+                return decode<Wire::HelloMessage>(hellos.back());
+            }
+
+            /**
+             * @brief Runs a whole handshake on a new connection.
+             * @param secret_byte The byte of the key the master proves.
+             */
+            void register_master(PeerID peer, std::uint64_t session_id,
+                                 std::uint32_t liveness_timeout_ms = 0,
+                                 std::uint32_t chunk_bytes = 4096)
+            {
+                const std::size_t hellos = transport->count(MessageType::Hello);
+                const std::size_t proofs = transport->count(MessageType::Proof);
+                transport->connect(peer);
+                ASSERT_TRUE(transport->wait_for(MessageType::Hello, hellos + 1));
+                transport->deliver(peer, challenge_of(secret_of(K_SECRET_BYTE), session_id,
+                                                      nonce_in(last_hello())));
+                ASSERT_TRUE(transport->wait_for(MessageType::Proof, proofs + 1));
+                const std::uint64_t registrations = agent_->statistics().registrations;
+                transport->deliver(peer, welcome_of(peer, liveness_timeout_ms, chunk_bytes));
+                ASSERT_TRUE(eventually([&]
+                                       {
+                                           return agent_->statistics().registrations >
+                                                  registrations;
+                                       }));
+            }
+
+            /** @brief Returns the n-th TASK_RESULT sent, counted from 0. */
+            [[nodiscard]] Wire::TaskResultMessage result(std::size_t index) const
+            {
+                const std::vector<SentFrame> frames =
+                    transport->frames_of(MessageType::TaskResult);
+                if (index >= frames.size())
+                {
+                    ADD_FAILURE() << "no TASK_RESULT number " << index;
+                    return Wire::TaskResultMessage{};
+                }
+                return decode<Wire::TaskResultMessage>(frames[index]);
+            }
+
+            /** @brief Dispatches a task and waits for the result number @p results. */
+            void run(PeerID peer, const Wire::TaskDispatchMessage& dispatch, std::size_t results)
+            {
+                transport->deliver(peer, dispatch);
+                ASSERT_TRUE(transport->wait_for(MessageType::TaskResult, results));
+            }
+
+            /** @brief Records what the agent sends; shared with the agent. */
+            std::shared_ptr<FakeTransport> transport;
+
+            /** @brief The kernels a test registers before start(). */
+            sushi_ptr<KernelRegistry> kernels;
+
+            /** @brief The options start() moves into the agent. */
+            WorkerAgentOptions options;
+
+        private:
+            /// @brief The runtime the kernels run on.
+            Runtime runtime_ = Runtime::create().value();
+
+            /// @brief The agent under test; built by start().
+            std::optional<WorkerAgent> agent_;
+    };
 } // namespace
 
+/** @brief Tests that a BUFFER_RELEASE frees an unpinned buffer and waits for a pinned one. */
 TEST(Unit_WorkerBufferCacheTest, ReleaseEvicts)
 {
-    FakeAllocator allocator;
-    WorkerBufferCache cache(allocator.callables(), 1024);
+    std::atomic<int> calls{0};
+    AgentRig rig;
+    const OperationID op(31);
+    rig.kernels->register_kernel(op, counting_kernel(calls));
+    rig.start();
+    rig.register_master(K_MASTER, 7);
 
-    store(cache, 1, 64);
-    EXPECT_EQ(cache.bytes(), 64u);
+    rig.run(K_MASTER, dispatch_of(1, op, {}, {handle_of(1, 1, 64)}), 1);
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 64u);
 
-    cache.release(GlobalBufferID{1});
-    EXPECT_EQ(cache.bytes(), 0u);
-    EXPECT_EQ(cache.evictions(), 1u);
-    EXPECT_EQ(allocator.live(), 0);
+    rig.transport->deliver(K_MASTER, release_of(1));
+    ASSERT_TRUE(eventually([&] { return rig.agent().statistics().cache_bytes == 0; }));
+    EXPECT_EQ(rig.agent().statistics().cache_evictions, 1u);
 
-    const BufferHandle pinned = handle_of(2, 1, 64);
-    BufferView view;
-    ASSERT_EQ(cache.pin_output(pinned, view), CacheStatus::Ready);
-    cache.release(pinned.id);
-    EXPECT_EQ(cache.bytes(), 64u) << "a pinned buffer was freed by BUFFER_RELEASE";
-    EXPECT_EQ(allocator.live(), 1);
+    rig.transport->keep_streams(true);
+    rig.transport->deliver(K_MASTER, dispatch_of(2, op, {}, {handle_of(2, 1, 64)}));
+    ASSERT_TRUE(rig.transport->wait_for_streams(1));
+    rig.transport->deliver(K_MASTER, release_of(2));
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 64u)
+        << "a pinned buffer was freed by BUFFER_RELEASE";
 
-    cache.unpin(pinned.id);
-    EXPECT_EQ(cache.bytes(), 0u);
-    EXPECT_EQ(allocator.live(), 0);
-    EXPECT_EQ(cache.evictions(), 2u);
+    rig.transport->keep_streams(false);
+    rig.transport->release_streams();
+    ASSERT_TRUE(eventually([&] { return rig.agent().statistics().cache_bytes == 0; }));
+    EXPECT_EQ(rig.agent().statistics().cache_evictions, 2u);
 }
 
+/** @brief Tests that a full cache evicts the buffer used longest ago, and keeps the one read. */
 TEST(Unit_WorkerBufferCacheTest, BudgetEvictsLeastRecentlyUsedUnpinned)
 {
-    FakeAllocator allocator;
-    WorkerBufferCache cache(allocator.callables(), 300);
+    std::atomic<int> calls{0};
+    AgentRig rig;
+    const OperationID op(32);
+    rig.kernels->register_kernel(op, counting_kernel(calls));
+    rig.options.cache_bytes = 300;
+    rig.start();
+    rig.register_master(K_MASTER, 7);
 
-    store(cache, 1, 100);
-    void* const second = store(cache, 2, 100);
-    store(cache, 3, 100);
+    rig.run(K_MASTER, dispatch_of(1, op, {}, {handle_of(1, 1, 100)}), 1);
+    rig.run(K_MASTER, dispatch_of(2, op, {}, {handle_of(2, 1, 100)}), 2);
+    rig.run(K_MASTER, dispatch_of(3, op, {}, {handle_of(3, 1, 100)}), 3);
+    rig.run(K_MASTER, dispatch_of(4, op, {handle_of(1, 1, 100)}, {}), 4);
+    EXPECT_EQ(rig.transport->count(MessageType::BufferRequest), 0u)
+        << "a cached input was pulled";
 
-    BufferView view;
-    ASSERT_EQ(cache.begin_input(handle_of(1, 1, 100), view), CacheStatus::Ready);
-    cache.unpin(GlobalBufferID{1});
+    rig.run(K_MASTER, dispatch_of(5, op, {}, {handle_of(4, 1, 100)}), 5);
+    EXPECT_EQ(rig.agent().statistics().cache_evictions, 1u);
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 300u);
 
-    store(cache, 4, 100);
-
-    EXPECT_EQ(allocator.freed(), std::vector<void*>{second});
-    EXPECT_EQ(cache.evictions(), 1u);
-    EXPECT_EQ(cache.bytes(), 300u);
-
-    ASSERT_EQ(cache.begin_input(handle_of(1, 1, 100), view), CacheStatus::Ready)
+    rig.run(K_MASTER, dispatch_of(6, op, {handle_of(1, 1, 100)}, {}), 6);
+    EXPECT_EQ(rig.transport->count(MessageType::BufferRequest), 0u)
         << "the buffer used last was evicted";
-    cache.unpin(GlobalBufferID{1});
+
+    const std::vector<std::byte> bytes = counting_bytes(100, 1);
+    const BufferHandle second = handle_of(2, 1, 100);
+    rig.transport->deliver(K_MASTER, dispatch_of(7, op, {second}, {}));
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 1));
+    EXPECT_EQ(decode<Wire::BufferRequestMessage>(
+                  rig.transport->frames_of(MessageType::BufferRequest)[0])
+                  .id,
+              second.id);
+    rig.transport->deliver(K_MASTER, pull_chunk(second, 0, 100, bytes),
+                           Wire::K_FRAME_FLAG_LAST_CHUNK);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 7));
 }
 
+/** @brief Tests that a buffer pinned by an output stream is never evicted to make room. */
 TEST(Unit_WorkerBufferCacheTest, PinnedEntryIsNotEvicted)
 {
-    FakeAllocator allocator;
-    WorkerBufferCache cache(allocator.callables(), 200);
+    std::atomic<int> calls{0};
+    AgentRig rig;
+    const OperationID op(33);
+    rig.kernels->register_kernel(op, counting_kernel(calls));
+    rig.options.cache_bytes = 200;
+    rig.start();
+    rig.register_master(K_MASTER, 7);
 
-    const BufferHandle oldest = handle_of(1, 1, 100);
-    BufferView view;
-    ASSERT_EQ(cache.pin_output(oldest, view), CacheStatus::Ready);
-    void* const unpinned = store(cache, 2, 100);
+    rig.transport->keep_streams(true);
+    rig.transport->deliver(K_MASTER, dispatch_of(1, op, {}, {handle_of(1, 1, 100)}));
+    ASSERT_TRUE(rig.transport->wait_for_streams(1));
+    rig.transport->keep_streams(false);
 
-    store(cache, 3, 100);
-    EXPECT_EQ(allocator.freed(), std::vector<void*>{unpinned});
+    rig.run(K_MASTER, dispatch_of(2, op, {}, {handle_of(2, 1, 100)}), 1);
+    rig.transport->keep_streams(true);
+    rig.transport->deliver(K_MASTER, dispatch_of(3, op, {}, {handle_of(3, 1, 100)}));
+    ASSERT_TRUE(rig.transport->wait_for_streams(2));
+    rig.transport->keep_streams(false);
+    EXPECT_EQ(rig.agent().statistics().cache_evictions, 1u)
+        << "the budget did not evict the one unpinned output";
 
-    ASSERT_EQ(cache.begin_input(handle_of(3, 1, 100), view), CacheStatus::Ready);
-    EXPECT_EQ(cache.pin_output(handle_of(4, 1, 100), view), CacheStatus::AllocationFailed);
-    EXPECT_EQ(cache.bytes(), 200u);
+    // Both outputs in the cache are now pinned by their streams.
+    rig.run(K_MASTER, dispatch_of(4, op, {}, {handle_of(4, 1, 100)}), 2);
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::OutputAllocationFailed);
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 200u)
+        << "a pinned output was evicted to make room";
+    EXPECT_EQ(rig.agent().statistics().cache_evictions, 1u);
 
-    cache.unpin(GlobalBufferID{3});
-    cache.unpin(oldest.id);
+    rig.transport->release_streams();
 }
 
+/** @brief Tests that a pulled buffer with a gap is discarded, and a whole pull is kept. */
 TEST(Unit_WorkerBufferCacheTest, GapInAPulledBufferDiscardsIt)
 {
-    FakeAllocator allocator;
-    WorkerBufferCache cache(allocator.callables(), 1024);
+    std::atomic<bool> is_equal{false};
     const BufferHandle handle = handle_of(9, 3, 12);
     const std::vector<std::byte> bytes = counting_bytes(12, 40);
-    const std::chrono::milliseconds no_limit{0};
-    BufferView view;
-
-    ASSERT_EQ(cache.begin_input(handle, view), CacheStatus::NeedsPull);
-    cache.accept_chunk(pull_chunk(handle, 0, 4, bytes), false);
-    cache.accept_chunk(pull_chunk(handle, 8, 4, bytes), true);
-    EXPECT_EQ(cache.wait_input(handle, no_limit, view), CacheStatus::Aborted);
-    EXPECT_EQ(cache.bytes(), 0u) << "a discarded transfer kept its memory";
-
-    ASSERT_EQ(cache.begin_input(handle, view), CacheStatus::NeedsPull);
-    cache.accept_chunk(pull_chunk(handle, 0, 4, bytes), false);
-    cache.accept_chunk(pull_chunk(handle, 4, 4, bytes), false);
-    cache.accept_chunk(pull_chunk(handle, 8, 4, bytes), true);
-    ASSERT_EQ(cache.wait_input(handle, no_limit, view), CacheStatus::Ready);
-    ASSERT_EQ(view.size_bytes, bytes.size());
-    EXPECT_EQ(std::memcmp(view.data, bytes.data(), bytes.size()), 0);
-    cache.unpin(handle.id);
-}
-
-TEST(Unit_DispatchDeduplicatorTest, DuplicateDispatchRunsOnce)
-{
-    std::atomic<int> kernel_calls{0};
-    Worker worker;
-    const OperationID op(11);
-    worker.kernels->register_kernel(
-        op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
-                                                   span<const BufferView>,
-                                                   const NodeOptions&)
+    AgentRig rig;
+    const OperationID op(34);
+    rig.kernels->register_kernel(
+        op, KernelRegistry::Kernel([&is_equal, &bytes](sycl::queue&,
+                                                       span<const BufferView> inputs,
+                                                       span<const BufferView>,
+                                                       const NodeOptions&)
                                    {
-                                       ++kernel_calls;
+                                       is_equal = inputs[0].size_bytes == bytes.size() &&
+                                                  std::memcmp(inputs[0].data, bytes.data(),
+                                                              bytes.size()) == 0;
                                        return sycl::event{};
                                    }));
-    worker.executor.start();
+    rig.start();
+    rig.register_master(K_MASTER, 7);
 
-    DispatchDeduplicator seen;
-    const auto deliver = [&worker, &seen, op](std::uint64_t task_id)
-    {
-        if (!seen.mark_seen(task_id))
-            return;
-        EXPECT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(task_id, op, {}, {}), 4096),
-                  EnqueueStatus::Queued);
-    };
+    rig.transport->deliver(K_MASTER, dispatch_of(1, op, {handle}, {}));
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 1));
+    rig.transport->deliver(K_MASTER, pull_chunk(handle, 0, 4, bytes));
+    rig.transport->deliver(K_MASTER, pull_chunk(handle, 8, 4, bytes),
+                           Wire::K_FRAME_FLAG_LAST_CHUNK);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 1));
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::InputUnavailable);
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 0u) << "a discarded transfer kept its memory";
 
-    deliver(1);
-    deliver(1);
-    deliver(2);
-
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 2));
-    EXPECT_EQ(kernel_calls.load(), 2);
-    EXPECT_EQ(worker.transport.count(MessageType::TaskAccepted), 2u);
-    EXPECT_EQ(worker.result(0).task_id, 1u);
-    EXPECT_EQ(worker.result(1).task_id, 2u);
-
-    DispatchDeduplicator bounded(2);
-    EXPECT_TRUE(bounded.mark_seen(1));
-    EXPECT_TRUE(bounded.mark_seen(2));
-    EXPECT_TRUE(bounded.mark_seen(3));
-    EXPECT_EQ(bounded.size(), 2u);
-    EXPECT_TRUE(bounded.mark_seen(1)) << "the oldest id was not forgotten at the capacity";
-    EXPECT_FALSE(bounded.mark_seen(3));
+    rig.transport->deliver(K_MASTER, dispatch_of(2, op, {handle}, {}));
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 2));
+    rig.transport->deliver(K_MASTER, pull_chunk(handle, 0, 4, bytes));
+    rig.transport->deliver(K_MASTER, pull_chunk(handle, 4, 4, bytes));
+    rig.transport->deliver(K_MASTER, pull_chunk(handle, 8, 4, bytes),
+                           Wire::K_FRAME_FLAG_LAST_CHUNK);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_TRUE(is_equal.load()) << "the kernel read other bytes than the master sent";
 }
 
+/** @brief Tests that an output the cache cannot hold fails the task, and the next one runs. */
 TEST(Unit_DispatchExecutorTest, OutputAllocationFailureFailsTheTask)
 {
-    std::atomic<int> kernel_calls{0};
-    Worker worker;
+    std::atomic<int> calls{0};
+    AgentRig rig;
     const OperationID op(12);
-    worker.kernels->register_kernel(
-        op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
-                                                   span<const BufferView>,
-                                                   const NodeOptions&)
-                                   {
-                                       ++kernel_calls;
-                                       return sycl::event{};
-                                   }));
-    worker.executor.start();
+    rig.kernels->register_kernel(op, counting_kernel(calls));
+    rig.options.cache_bytes = 32;
+    rig.start();
+    rig.register_master(K_MASTER, 7);
 
-    worker.allocator.refuse(true);
-    ASSERT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(1, op, {}, {handle_of(7, 1, 64)}),
-                                      16),
-              EnqueueStatus::Queued);
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 1));
-    EXPECT_EQ(worker.result(0).task_id, 1u);
-    EXPECT_EQ(worker.result(0).status, Wire::TaskResultStatus::OutputAllocationFailed);
-    EXPECT_EQ(kernel_calls.load(), 0);
-    EXPECT_EQ(worker.transport.count(MessageType::BufferChunk), 0u);
+    rig.run(K_MASTER, dispatch_of(1, op, {}, {handle_of(7, 1, 64)}), 1);
+    EXPECT_EQ(rig.result(0).task_id, 1u);
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::OutputAllocationFailed);
+    EXPECT_EQ(calls.load(), 0);
+    EXPECT_EQ(rig.transport->count(MessageType::BufferChunk), 0u);
 
-    worker.allocator.refuse(false);
-    ASSERT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(2, op, {}, {handle_of(7, 2, 64)}),
-                                      16),
-              EnqueueStatus::Queued);
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 2));
-    EXPECT_EQ(worker.result(1).status, Wire::TaskResultStatus::Succeeded);
+    rig.run(K_MASTER, dispatch_of(2, op, {}, {handle_of(7, 2, 16)}), 2);
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
 
-    const WorkerStatistics statistics = worker.executor.statistics();
+    const WorkerStatistics statistics = rig.agent().statistics();
     EXPECT_EQ(statistics.tasks_failed_output_allocation, 1u);
     EXPECT_EQ(statistics.tasks_run, 1u);
 }
 
+/** @brief Tests that a kernel sees each buffer's size and its output leaves in chunks. */
 TEST(Unit_DispatchExecutorTest, KernelSeesBufferSizes)
 {
     std::atomic<std::size_t> input_size{0};
     std::atomic<std::size_t> output_size{0};
-    Worker worker;
+    AgentRig rig;
     const OperationID op(13);
-    worker.kernels->register_kernel(
+    rig.kernels->register_kernel(
         op, KernelRegistry::Kernel(
                 [&input_size, &output_size](sycl::queue&, span<const BufferView> inputs,
                                             span<const BufferView> outputs,
@@ -763,31 +794,30 @@ TEST(Unit_DispatchExecutorTest, KernelSeesBufferSizes)
                     std::memcpy(outputs[0].data, inputs[0].data, inputs[0].size_bytes);
                     return sycl::event{};
                 }));
-    worker.executor.start();
+    rig.start();
+    rig.register_master(K_MASTER, 7, 0, 8);
 
     const BufferHandle input = handle_of(3, 5, 12);
     const BufferHandle output = handle_of(4, 1, 20);
     const std::vector<std::byte> bytes = counting_bytes(12, 1);
-    ASSERT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(1, op, {input}, {output}), 8),
-              EnqueueStatus::Queued);
+    rig.transport->deliver(K_MASTER, dispatch_of(1, op, {input}, {output}));
 
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::BufferRequest, 1));
-    const std::vector<SentFrame> requests =
-        worker.transport.frames_of(MessageType::BufferRequest);
-    const Wire::BufferRequestMessage request =
-        decode<Wire::BufferRequestMessage>(requests[0]);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 1));
+    const Wire::BufferRequestMessage request = decode<Wire::BufferRequestMessage>(
+        rig.transport->frames_of(MessageType::BufferRequest)[0]);
     EXPECT_EQ(request.id, input.id);
     EXPECT_EQ(request.version, input.version);
 
-    worker.cache.accept_chunk(pull_chunk(input, 0, 8, bytes), false);
-    worker.cache.accept_chunk(pull_chunk(input, 8, 4, bytes), true);
+    rig.transport->deliver(K_MASTER, pull_chunk(input, 0, 8, bytes));
+    rig.transport->deliver(K_MASTER, pull_chunk(input, 8, 4, bytes),
+                           Wire::K_FRAME_FLAG_LAST_CHUNK);
 
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 1));
-    EXPECT_EQ(worker.result(0).status, Wire::TaskResultStatus::Succeeded);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 1));
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(input_size.load(), 12u);
     EXPECT_EQ(output_size.load(), 20u);
 
-    const std::vector<SentFrame> chunks = worker.transport.frames_of(MessageType::BufferChunk);
+    const std::vector<SentFrame> chunks = rig.transport->frames_of(MessageType::BufferChunk);
     ASSERT_EQ(chunks.size(), 3u);
     const Wire::BufferChunkMessage first = decode<Wire::BufferChunkMessage>(chunks[0]);
     EXPECT_EQ(first.purpose, Wire::ChunkPurpose::TaskOutput);
@@ -796,25 +826,24 @@ TEST(Unit_DispatchExecutorTest, KernelSeesBufferSizes)
     EXPECT_EQ(std::memcmp(first.data.data(), bytes.data(), 8), 0);
 }
 
+/** @brief Tests that a generic lambda registers as a kernel and runs. */
 TEST(Unit_DispatchExecutorTest, GenericLambdaRegistersAsAKernel)
 {
-    Worker worker;
+    AgentRig rig;
     const OperationID op(14);
-    worker.kernels->register_kernel(
+    rig.kernels->register_kernel(
         op, [](auto& /*queue*/, auto /*inputs*/, auto outputs, const auto& /*metadata*/)
             {
                 std::memset(outputs[0].data, 0x5a, outputs[0].size_bytes);
                 return sycl::event{};
             });
-    worker.executor.start();
+    rig.start();
+    rig.register_master(K_MASTER, 7);
 
-    ASSERT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(1, op, {}, {handle_of(8, 1, 4)}),
-                                      4096),
-              EnqueueStatus::Queued);
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 1));
-    EXPECT_EQ(worker.result(0).status, Wire::TaskResultStatus::Succeeded);
+    rig.run(K_MASTER, dispatch_of(1, op, {}, {handle_of(8, 1, 4)}), 1);
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
 
-    const std::vector<SentFrame> chunks = worker.transport.frames_of(MessageType::BufferChunk);
+    const std::vector<SentFrame> chunks = rig.transport->frames_of(MessageType::BufferChunk);
     ASSERT_EQ(chunks.size(), 1u);
     const Wire::BufferChunkMessage chunk = decode<Wire::BufferChunkMessage>(chunks[0]);
     ASSERT_EQ(chunk.data.size(), 4u);
@@ -822,47 +851,43 @@ TEST(Unit_DispatchExecutorTest, GenericLambdaRegistersAsAKernel)
         EXPECT_EQ(byte, std::byte{0x5a});
 }
 
+/** @brief Tests that a kernel that throws fails its task and the next task still runs. */
 TEST(Unit_DispatchExecutorTest, KernelThatThrowsFailsTheTaskAndTheWorkerLives)
 {
-    std::atomic<int> kernel_calls{0};
-    Worker worker;
+    std::atomic<int> calls{0};
+    AgentRig rig;
     const OperationID op(15);
-    worker.kernels->register_kernel(
-        op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
-                                                   span<const BufferView>,
-                                                   const NodeOptions&)
+    rig.kernels->register_kernel(
+        op, KernelRegistry::Kernel([&calls](sycl::queue&, span<const BufferView>,
+                                            span<const BufferView>, const NodeOptions&)
                                    {
-                                       if (++kernel_calls == 1)
+                                       if (++calls == 1)
                                            throw std::runtime_error("kernel refused");
                                        return sycl::event{};
                                    }));
-    worker.executor.start();
+    rig.start();
+    rig.register_master(K_MASTER, 7);
 
-    ASSERT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(1, op, {}, {handle_of(5, 1, 16)}),
-                                      4096),
-              EnqueueStatus::Queued);
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 1));
-    EXPECT_EQ(worker.result(0).status, Wire::TaskResultStatus::KernelFailed);
-    EXPECT_TRUE(worker.result(0).outputs.empty());
-    EXPECT_EQ(worker.transport.count(MessageType::BufferChunk), 0u);
+    rig.run(K_MASTER, dispatch_of(1, op, {}, {handle_of(5, 1, 16)}), 1);
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::KernelFailed);
+    EXPECT_TRUE(rig.result(0).outputs.empty());
+    EXPECT_EQ(rig.transport->count(MessageType::BufferChunk), 0u);
 
-    ASSERT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(2, op, {}, {handle_of(5, 2, 16)}),
-                                      4096),
-              EnqueueStatus::Queued);
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 2));
-    EXPECT_EQ(worker.result(1).status, Wire::TaskResultStatus::Succeeded);
+    rig.run(K_MASTER, dispatch_of(2, op, {}, {handle_of(5, 2, 16)}), 2);
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
 
-    const WorkerStatistics statistics = worker.executor.statistics();
+    const WorkerStatistics statistics = rig.agent().statistics();
     EXPECT_EQ(statistics.tasks_failed_kernel, 1u);
     EXPECT_EQ(statistics.tasks_run, 1u);
 }
 
+/** @brief Tests that an output's chunks come before its TASK_RESULT, which ends the stream. */
 TEST(Unit_DispatchExecutorTest, OutputStreamEndsWithTheResult)
 {
-    Worker worker;
+    AgentRig rig;
     const OperationID op(16);
     const std::vector<std::byte> bytes = counting_bytes(10, 100);
-    worker.kernels->register_kernel(
+    rig.kernels->register_kernel(
         op, KernelRegistry::Kernel([&bytes](sycl::queue&, span<const BufferView>,
                                             span<const BufferView> outputs,
                                             const NodeOptions&)
@@ -870,22 +895,29 @@ TEST(Unit_DispatchExecutorTest, OutputStreamEndsWithTheResult)
                                        std::memcpy(outputs[0].data, bytes.data(), bytes.size());
                                        return sycl::event{};
                                    }));
-    worker.transport.keep_streams();
-    worker.executor.start();
+    rig.start();
+    rig.register_master(K_MASTER, 7, 0, 4);
 
+    rig.transport->keep_streams(true);
     const BufferHandle output = handle_of(5, 2, 10);
-    ASSERT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(9, op, {}, {output}), 4),
-              EnqueueStatus::Queued);
-    ASSERT_TRUE(worker.transport.wait_for_streams(1));
+    rig.transport->deliver(K_MASTER, dispatch_of(9, op, {}, {output}));
+    ASSERT_TRUE(rig.transport->wait_for_streams(1));
 
-    EXPECT_EQ(worker.transport.count(MessageType::TaskResult), 0u);
-    EXPECT_EQ(worker.executor.oldest_held_task_id(), 9u);
-    worker.cache.release(output.id);
-    EXPECT_EQ(worker.cache.bytes(), 10u) << "the stream's pin did not keep its output";
+    EXPECT_EQ(rig.transport->count(MessageType::TaskResult), 0u);
+    rig.transport->deliver(K_MASTER, release_of(5));
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 10u)
+        << "the stream's pin did not keep its output";
 
-    worker.transport.release_streams();
+    rig.transport->keep_streams(false);
+    rig.transport->release_streams();
 
-    const std::vector<SentFrame> frames = worker.transport.frames();
+    std::vector<SentFrame> frames;
+    for (const SentFrame& frame : rig.transport->frames())
+    {
+        if (frame.type == MessageType::TaskAccepted || frame.type == MessageType::BufferChunk ||
+            frame.type == MessageType::TaskResult)
+            frames.push_back(frame);
+    }
     ASSERT_EQ(frames.size(), 5u);
     EXPECT_EQ(frames[0].type, MessageType::TaskAccepted);
     const std::size_t lengths[] = {4, 4, 2};
@@ -910,362 +942,237 @@ TEST(Unit_DispatchExecutorTest, OutputStreamEndsWithTheResult)
     ASSERT_EQ(result.outputs.size(), 1u);
     EXPECT_EQ(result.outputs[0].id, output.id);
 
-    EXPECT_EQ(worker.executor.oldest_held_task_id(), 10u);
-    EXPECT_EQ(worker.cache.bytes(), 0u) << "the stream's destructor kept a pin";
+    ASSERT_TRUE(eventually([&] { return rig.agent().statistics().cache_bytes == 0; }))
+        << "the stream's destructor kept a pin";
 }
 
+/** @brief Tests that losing the master ends a pull that has no idle timeout. */
 TEST(Unit_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
 {
-    // With no idle timeout the pull ends only when something ends it.
-    DispatchExecutorOptions options;
-    options.pull_idle_timeout = std::chrono::milliseconds(0);
-    Worker worker(1024 * 1024, options);
-
-    std::atomic<int> kernel_calls{0};
+    std::atomic<int> calls{0};
+    AgentRig rig;
     const OperationID op(18);
-    worker.kernels->register_kernel(
-        op, KernelRegistry::Kernel([&kernel_calls](sycl::queue&, span<const BufferView>,
-                                                   span<const BufferView>,
-                                                   const NodeOptions&)
-                                   {
-                                       ++kernel_calls;
-                                       return sycl::event{};
-                                   }));
-    worker.executor.start();
+    rig.kernels->register_kernel(op, counting_kernel(calls));
+    // With no idle timeout the pull ends only when something ends it.
+    rig.options.pull_idle_timeout = std::chrono::milliseconds(0);
+    rig.start();
+    rig.register_master(K_MASTER, 7);
 
-    const BufferHandle input = handle_of(3, 5, 12);
-    ASSERT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(1, op, {input}, {}), 8),
-              EnqueueStatus::Queued);
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::BufferRequest, 1));
+    rig.transport->deliver(K_MASTER, dispatch_of(1, op, {handle_of(3, 5, 12)}, {}));
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 1));
 
-    worker.executor.discard_queued();
+    rig.transport->lose(K_MASTER, PeerLossCause::ClosedByPeer);
 
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 1))
+    ASSERT_TRUE(eventually([&]
+                           {
+                               return rig.agent().statistics().tasks_failed_input_unavailable == 1;
+                           }))
         << "the exec thread still waits for an input no master will send";
-    EXPECT_EQ(worker.result(0).status, Wire::TaskResultStatus::InputUnavailable);
-    EXPECT_EQ(kernel_calls.load(), 0);
-    EXPECT_EQ(worker.executor.statistics().tasks_failed_input_unavailable, 1u);
-    EXPECT_EQ(worker.cache.bytes(), 0u) << "the abandoned pull kept its allocation";
+    EXPECT_EQ(calls.load(), 0);
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 0u) << "the abandoned pull kept its allocation";
 
     // The exec thread is free again: a task of the next connection runs.
-    ASSERT_EQ(worker.executor.enqueue(PeerID{2}, dispatch_of(1, op, {}, {}), 8),
-              EnqueueStatus::Queued);
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 2));
-    EXPECT_EQ(worker.result(1).status, Wire::TaskResultStatus::Succeeded);
-    EXPECT_EQ(kernel_calls.load(), 1);
+    const PeerID next{2};
+    rig.register_master(next, 7);
+    const std::size_t results = rig.transport->count(MessageType::TaskResult);
+    rig.run(next, dispatch_of(2, op, {}, {}), results + 1);
+    EXPECT_EQ(rig.result(results).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(calls.load(), 1);
 }
 
+/** @brief Tests that the worker checks the master's proof before it sends its own. */
 TEST(Unit_MasterLinkTest, HandshakeChecksTheMasterBeforeProving)
 {
-    FakeTransport transport;
-    const std::vector<std::uint8_t> secret = secret_of(0x42);
-    const span<const std::uint8_t> key(secret.data(), secret.size());
-    MasterLink link(transport, key, link_options(std::chrono::milliseconds(1000)),
-                    fixed_nonces());
-    const PeerID peer{1};
+    std::atomic<int> calls{0};
+    AgentRig rig;
+    rig.kernels->register_kernel(OperationID(7), counting_kernel(calls));
+    rig.kernels->register_kernel(OperationID(9), counting_kernel(calls));
+    rig.options.cache_bytes = 4096;
+    rig.start();
 
-    link.on_connected(peer);
-    const std::vector<SentFrame> hellos = transport.frames_of(MessageType::Hello);
-    ASSERT_EQ(hellos.size(), 1u);
-    const Wire::HelloMessage hello = decode<Wire::HelloMessage>(hellos[0]);
-    EXPECT_EQ(std::memcmp(hello.worker_nonce.data(), K_WORKER_NONCE.bytes.data(),
-                          hello.worker_nonce.size()),
-              0);
+    rig.transport->connect(K_MASTER);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::Hello, 1));
+    const Wire::HelloMessage hello = rig.last_hello();
     EXPECT_EQ(hello.node_name, "worker-a");
-    EXPECT_EQ(hello.build_id, "test-build");
-    EXPECT_EQ(transport.count(MessageType::Proof), 0u) << "PROOF left before the CHALLENGE";
+    EXPECT_FALSE(hello.build_id.empty());
+    EXPECT_EQ(rig.transport->count(MessageType::Proof), 0u) << "PROOF left before the CHALLENGE";
 
-    EXPECT_EQ(link.on_challenge(peer, challenge_of(secret, 7)), LinkChange::None);
-    const std::vector<SentFrame> proofs = transport.frames_of(MessageType::Proof);
-    ASSERT_EQ(proofs.size(), 1u);
-    const Wire::ProofMessage proof = decode<Wire::ProofMessage>(proofs[0]);
+    const std::vector<std::uint8_t> secret = secret_of(K_SECRET_BYTE);
+    rig.transport->deliver(K_MASTER, challenge_of(secret, 7, nonce_in(hello)));
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::Proof, 1));
+    const Wire::ProofMessage proof =
+        decode<Wire::ProofMessage>(rig.transport->frames_of(MessageType::Proof)[0]);
     const Sha256Digest expected =
-        compute_proof(HandshakeRole::Worker, key, K_WORKER_NONCE, K_MASTER_NONCE);
+        compute_proof(HandshakeRole::Worker, span<const std::uint8_t>(secret.data(), secret.size()),
+                      nonce_in(hello), K_MASTER_NONCE);
     EXPECT_EQ(std::memcmp(proof.worker_proof.data(), expected.data(), expected.size()), 0);
     EXPECT_EQ(proof.ops.size(), 2u);
     EXPECT_EQ(proof.max_jobs, 16u);
     EXPECT_EQ(proof.cache_budget, 4096u);
-    EXPECT_FALSE(link.master().has_value());
+    EXPECT_EQ(rig.agent().statistics().registrations, 0u);
 
-    Wire::WelcomeMessage welcome;
-    welcome.worker_id = 1;
-    welcome.liveness_timeout_ms = 5000;
-    welcome.ping_interval_ms = 250;
-    welcome.chunk_bytes = 4096;
-    EXPECT_EQ(link.on_welcome(peer, welcome), LinkChange::RegisteredNewSession);
-    ASSERT_TRUE(link.master().has_value());
-    EXPECT_EQ(*link.master(), peer);
-    EXPECT_EQ(link.chunk_bytes(), 4096u);
-    EXPECT_EQ(link.end(), WorkerEnd::Running);
+    rig.transport->deliver(K_MASTER, welcome_of(K_MASTER, 5000, 4096));
+    ASSERT_TRUE(eventually([&] { return rig.agent().statistics().registrations == 1; }));
+    EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Running);
 }
 
+/** @brief Tests that a master proving another key ends the worker before it proves anything. */
 TEST(Unit_MasterLinkTest, WrongMasterProofEndsTheLink)
 {
-    FakeTransport transport;
-    const std::vector<std::uint8_t> secret = secret_of(0x42);
-    MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
-                    link_options(std::chrono::milliseconds(1000)), fixed_nonces());
-    const PeerID peer{1};
+    AgentRig rig;
+    rig.start();
 
-    link.on_connected(peer);
-    EXPECT_EQ(link.on_challenge(peer, challenge_of(secret_of(0x43), 7)), LinkChange::Ended);
-    EXPECT_EQ(link.end(), WorkerEnd::RejectedAuthentication);
-    EXPECT_EQ(transport.count(MessageType::Proof), 0u) << "PROOF went to an unproven master";
-    EXPECT_TRUE(transport.is_closed(peer));
+    rig.transport->connect(K_MASTER);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::Hello, 1));
+    rig.transport->deliver(K_MASTER, challenge_of(secret_of(0x43), 7, nonce_in(rig.last_hello())));
+    EXPECT_EQ(rig.agent().wait_for_end(K_WAIT), WorkerEnd::RejectedAuthentication);
+    EXPECT_EQ(rig.transport->count(MessageType::Proof), 0u) << "PROOF went to an unproven master";
+    EXPECT_TRUE(rig.transport->is_closed(K_MASTER));
 
     const PeerID next{2};
-    link.on_connected(next);
-    EXPECT_EQ(transport.count(MessageType::Hello), 1u) << "an ended link sent HELLO";
-    EXPECT_TRUE(transport.is_closed(next));
+    rig.transport->connect(next);
+    EXPECT_EQ(rig.transport->count(MessageType::Hello), 1u) << "an ended link sent HELLO";
+    EXPECT_TRUE(rig.transport->is_closed(next));
 }
 
+/** @brief Tests that an ended link stops its transport, so it connects no more. */
 TEST(Unit_MasterLinkTest, EndedLinkStopsItsTransport)
 {
-    FakeTransport transport;
-    const std::vector<std::uint8_t> secret = secret_of(0x42);
-    MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
-                    link_options(std::chrono::milliseconds(60000)), fixed_nonces());
-    const PeerID peer{1};
-    link.start();
+    AgentRig rig;
+    rig.start();
 
-    link.on_connected(peer);
-    EXPECT_EQ(transport.stop_count(), 0u) << "a running link stopped its transport";
-    ASSERT_EQ(link.on_challenge(peer, challenge_of(secret_of(0x43), 7)), LinkChange::Ended);
+    rig.transport->connect(K_MASTER);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::Hello, 1));
+    rig.transport->deliver(K_MASTER, challenge_of(secret_of(0x43), 7, nonce_in(rig.last_hello())));
 
-    ASSERT_TRUE(transport.wait_for_stop())
+    ASSERT_TRUE(rig.transport->wait_for_stop())
         << "the transport of a rejected link keeps connecting";
-    link.stop();
-    EXPECT_EQ(transport.stop_count(), 1u);
-    EXPECT_EQ(link.end(), WorkerEnd::RejectedAuthentication);
+    EXPECT_EQ(rig.agent().wait_for_end(K_WAIT), WorkerEnd::RejectedAuthentication);
 }
 
+/** @brief Tests that a worker answers PING only once WELCOME registered it. */
 TEST(Unit_MasterLinkTest, PingGetsNoPongBeforeRegistration)
 {
-    FakeTransport transport;
-    const std::vector<std::uint8_t> secret = secret_of(0x42);
-    MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
-                    link_options(std::chrono::milliseconds(1000)), fixed_nonces());
-    const PeerID peer{1};
+    AgentRig rig;
+    rig.start();
     Wire::PingMessage ping;
     ping.token = 99;
 
     // The master registered this worker on PROOF, but its WELCOME has not arrived.
-    link.on_connected(peer);
-    ASSERT_EQ(link.on_challenge(peer, challenge_of(secret, 7)), LinkChange::None);
-    link.on_ping(peer, ping);
-    EXPECT_EQ(transport.count(MessageType::Pong), 0u)
+    rig.transport->connect(K_MASTER);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::Hello, 1));
+    rig.transport->deliver(K_MASTER,
+                           challenge_of(secret_of(K_SECRET_BYTE), 7, nonce_in(rig.last_hello())));
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::Proof, 1));
+    rig.transport->deliver(K_MASTER, ping);
+    EXPECT_EQ(rig.transport->count(MessageType::Pong), 0u)
         << "a link that is not registered told the master it is alive";
 
-    Wire::WelcomeMessage welcome;
-    welcome.worker_id = peer.value;
-    welcome.chunk_bytes = 4096;
-    ASSERT_EQ(link.on_welcome(peer, welcome), LinkChange::RegisteredNewSession);
-    link.on_ping(peer, ping);
+    rig.transport->deliver(K_MASTER, welcome_of(K_MASTER, 0, 4096));
+    ASSERT_TRUE(eventually([&] { return rig.agent().statistics().registrations == 1; }));
+    rig.transport->deliver(K_MASTER, ping);
 
-    const std::vector<SentFrame> pongs = transport.frames_of(MessageType::Pong);
-    ASSERT_EQ(pongs.size(), 1u);
-    EXPECT_EQ(decode<Wire::PongMessage>(pongs[0]).token, 99u);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::Pong, 1));
+    EXPECT_EQ(decode<Wire::PongMessage>(rig.transport->frames_of(MessageType::Pong)[0]).token,
+              99u);
 }
 
+/** @brief Tests that a CHALLENGE for a HELLO the link forgot is ignored, not taken as wrong. */
 TEST(Unit_MasterLinkTest, LateChallengeForAForgottenHelloIsIgnored)
 {
     constexpr std::size_t K_HELLOS = 5;
-    FakeTransport transport;
-    const std::vector<std::uint8_t> secret = secret_of(0x42);
-    std::atomic<std::uint8_t> drawn{0};
-    MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
-                    link_options(std::chrono::milliseconds(1)),
-                    [&drawn] { return nonce_of(++drawn); });
-    const PeerID peer{1};
-    link.start();
+    AgentRig rig;
+    rig.options.heartbeat_interval = std::chrono::milliseconds(1);
+    rig.start();
 
     // The link remembers four nonces; the fifth HELLO forgets the nonce of the first.
-    link.on_connected(peer);
-    ASSERT_TRUE(transport.wait_for(MessageType::Hello, K_HELLOS));
-    link.stop();
+    rig.transport->connect(K_MASTER);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::Hello, K_HELLOS));
+    const HandshakeNonce first =
+        nonce_in(decode<Wire::HelloMessage>(rig.transport->frames_of(MessageType::Hello)[0]));
 
-    EXPECT_EQ(link.on_challenge(peer, challenge_of(secret, 7, nonce_of(1))), LinkChange::None)
+    rig.transport->deliver(K_MASTER, challenge_of(secret_of(K_SECRET_BYTE), 7, first));
+    EXPECT_EQ(rig.transport->count(MessageType::Proof), 0u);
+    EXPECT_FALSE(rig.transport->is_closed(K_MASTER));
+    EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Running)
         << "a CHALLENGE for a forgotten HELLO was taken for a wrong secret";
-    EXPECT_EQ(transport.count(MessageType::Proof), 0u);
-    EXPECT_FALSE(transport.is_closed(peer));
 }
 
+/** @brief Tests that an idle worker's HEARTBEAT names the task id it waits for next. */
 TEST(Unit_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskID)
 {
-    Worker worker;
+    std::atomic<int> calls{0};
+    AgentRig rig;
     const OperationID op(17);
-    worker.kernels->register_kernel(
-        op, KernelRegistry::Kernel([](sycl::queue&, span<const BufferView>,
-                                      span<const BufferView>, const NodeOptions&)
-                                   {
-                                       return sycl::event{};
-                                   }));
-    worker.executor.start();
-    EXPECT_EQ(worker.executor.oldest_held_task_id(), 0u);
+    rig.kernels->register_kernel(op, counting_kernel(calls));
+    rig.options.heartbeat_interval = std::chrono::milliseconds(5);
+    rig.start();
+    rig.register_master(K_MASTER, 7);
 
-    ASSERT_EQ(worker.executor.enqueue(K_MASTER, dispatch_of(41, op, {}, {}), 4096),
-              EnqueueStatus::Queued);
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::TaskResult, 1));
+    rig.run(K_MASTER, dispatch_of(41, op, {}, {}), 1);
+    const std::size_t before = rig.transport->count(MessageType::Heartbeat);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::Heartbeat, before + 1));
 
-    const std::vector<std::uint8_t> secret = secret_of(0x42);
-    MasterLinkOptions options = link_options(std::chrono::milliseconds(5));
-    options.heartbeat_probe = [&worker]
-    {
-        Wire::HeartbeatMessage heartbeat;
-        heartbeat.queue_depth = worker.executor.queue_depth();
-        heartbeat.oldest_held_task_id = worker.executor.oldest_held_task_id();
-        heartbeat.cache_bytes = worker.cache.bytes();
-        return heartbeat;
-    };
-    MasterLink link(worker.transport, span<const std::uint8_t>(secret.data(), secret.size()),
-                    std::move(options), fixed_nonces());
-    link.start();
-    ASSERT_EQ(register_link(link, K_MASTER, secret, 7, 0), LinkChange::RegisteredNewSession);
-
-    ASSERT_TRUE(worker.transport.wait_for(MessageType::Heartbeat, 1));
-    const std::vector<SentFrame> heartbeats = worker.transport.frames_of(MessageType::Heartbeat);
-    const Wire::HeartbeatMessage heartbeat = decode<Wire::HeartbeatMessage>(heartbeats[0]);
+    const Wire::HeartbeatMessage heartbeat = decode<Wire::HeartbeatMessage>(
+        rig.transport->frames_of(MessageType::Heartbeat).back());
     EXPECT_EQ(heartbeat.oldest_held_task_id, 42u);
     EXPECT_EQ(heartbeat.queue_depth, 0u);
-    link.stop();
-    EXPECT_EQ(link.end(), WorkerEnd::Stopped);
 }
 
+/** @brief Tests that a master silent past its liveness timeout is closed, and may come back. */
 TEST(Unit_MasterLinkTest, SilentMasterIsLost)
 {
-    FakeTransport transport;
-    const std::vector<std::uint8_t> secret = secret_of(0x42);
-    MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
-                    link_options(std::chrono::milliseconds(60000)), fixed_nonces());
-    const PeerID peer{1};
-    link.start();
+    AgentRig rig;
+    rig.start();
 
-    ASSERT_EQ(register_link(link, peer, secret, 7, 40), LinkChange::RegisteredNewSession);
-    ASSERT_TRUE(transport.wait_for_close(peer)) << "a silent master was never closed";
-    EXPECT_FALSE(link.master().has_value());
+    rig.register_master(K_MASTER, 7, 40);
+    ASSERT_TRUE(rig.transport->wait_for_close(K_MASTER)) << "a silent master was never closed";
 
-    PeerLoss loss;
-    loss.cause = PeerLossCause::ClosedLocally;
-    EXPECT_EQ(link.on_lost(peer, loss), LinkChange::Disconnected);
-    EXPECT_EQ(link.end(), WorkerEnd::Running) << "a lost master ended a link that may reconnect";
-    link.stop();
+    rig.transport->lose(K_MASTER, PeerLossCause::ClosedLocally);
+    EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Running)
+        << "a lost master ended a link that may reconnect";
 }
 
+/** @brief Tests that a new master session clears the cache and the ids seen, a reconnect not. */
 TEST(Unit_MasterLinkTest, NewSessionClearsTheCache)
 {
-    FakeTransport transport;
-    FakeAllocator allocator;
-    WorkerBufferCache cache(allocator.callables(), 1024);
-    DispatchDeduplicator seen;
-    const std::vector<std::uint8_t> secret = secret_of(0x42);
-    MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
-                    link_options(std::chrono::milliseconds(1000)), fixed_nonces());
+    std::atomic<int> calls{0};
+    AgentRig rig;
+    const OperationID op(35);
+    rig.kernels->register_kernel(op, counting_kernel(calls));
+    rig.start();
 
-    const auto apply = [&cache, &seen](LinkChange change)
-    {
-        if (change != LinkChange::RegisteredNewSession)
-            return;
-        cache.clear();
-        seen.clear();
-    };
-    PeerLoss loss;
-    loss.cause = PeerLossCause::ClosedByPeer;
+    rig.register_master(PeerID{1}, 7);
+    rig.run(PeerID{1}, dispatch_of(5, op, {}, {handle_of(1, 1, 32)}), 1);
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 32u);
 
-    LinkChange change = register_link(link, PeerID{1}, secret, 7, 0);
-    EXPECT_EQ(change, LinkChange::RegisteredNewSession);
-    apply(change);
-    store(cache, 1, 32);
-    EXPECT_TRUE(seen.mark_seen(5));
+    rig.transport->lose(PeerID{1}, PeerLossCause::ClosedByPeer);
+    rig.register_master(PeerID{2}, 7);
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 32u)
+        << "the cache was cleared for the session it was filled in";
+    rig.transport->deliver(PeerID{2}, dispatch_of(5, op, {}, {handle_of(1, 2, 32)}));
+    rig.run(PeerID{2}, dispatch_of(6, op, {}, {}), 2);
+    EXPECT_EQ(calls.load(), 2) << "a dispatch repeated in one session ran twice";
 
-    EXPECT_EQ(link.on_lost(PeerID{1}, loss), LinkChange::Disconnected);
-    change = register_link(link, PeerID{2}, secret, 7, 0);
-    EXPECT_EQ(change, LinkChange::Registered);
-    apply(change);
-    EXPECT_EQ(cache.bytes(), 32u) << "the cache was cleared for the session it was filled in";
-    EXPECT_EQ(seen.size(), 1u);
-
-    EXPECT_EQ(link.on_lost(PeerID{2}, loss), LinkChange::Disconnected);
-    change = register_link(link, PeerID{3}, secret, 8, 0);
-    EXPECT_EQ(change, LinkChange::RegisteredNewSession);
-    apply(change);
-    EXPECT_EQ(cache.bytes(), 0u);
-    EXPECT_EQ(seen.size(), 0u);
-    EXPECT_EQ(allocator.live(), 0);
-    EXPECT_EQ(link.reconnects(), 2u);
+    rig.transport->lose(PeerID{2}, PeerLossCause::ClosedByPeer);
+    rig.register_master(PeerID{3}, 8);
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 0u);
+    rig.run(PeerID{3}, dispatch_of(5, op, {}, {}), 3);
+    EXPECT_EQ(calls.load(), 3) << "a new session kept the ids of the old one";
+    EXPECT_EQ(rig.agent().statistics().reconnects, 2u);
 }
 
+/** @brief Tests that the worker's own close after GOODBYE does not end it as MasterLost. */
 TEST(Unit_MasterLinkTest, LossAfterGoodbyeIsTheWorkersOwn)
 {
-    FakeTransport transport;
-    const std::vector<std::uint8_t> secret = secret_of(0x42);
-    MasterLink link(transport, span<const std::uint8_t>(secret.data(), secret.size()),
-                    link_options(std::chrono::milliseconds(60000)), fixed_nonces());
-    const PeerID peer{1};
+    AgentRig rig;
+    rig.start();
+    rig.register_master(K_MASTER, 7);
 
-    ASSERT_EQ(register_link(link, peer, secret, 7, 0), LinkChange::RegisteredNewSession);
-    link.say_goodbye();
-    EXPECT_EQ(transport.count(MessageType::Goodbye), 1u);
+    rig.agent().stop();
+    EXPECT_EQ(rig.transport->count(MessageType::Goodbye), 1u);
 
-    PeerLoss loss;
-    loss.cause = PeerLossCause::ClosedLocally;
-    EXPECT_EQ(link.on_lost(peer, loss), LinkChange::None)
-        << "the worker's own close was reported as a lost master";
-    EXPECT_FALSE(link.master().has_value());
-
-    EXPECT_EQ(link.on_connect_abandoned(), LinkChange::None);
-    EXPECT_EQ(link.end(), WorkerEnd::Running) << "a leaving worker ended as MasterLost";
-
-    const PeerID next{2};
-    link.on_connected(next);
-    EXPECT_EQ(transport.count(MessageType::Hello), 1u) << "a leaving link sent HELLO";
-    EXPECT_TRUE(transport.is_closed(next));
-
-    link.stop();
-    EXPECT_EQ(link.end(), WorkerEnd::Stopped);
-}
-
-namespace
-{
-    /** @brief Returns a kernel that submits nothing and returns a completed event. */
-    KernelRegistry::Kernel idle_kernel()
-    {
-        return [](sycl::queue&, span<const BufferView>, span<const BufferView>,
-                  const NodeOptions&) { return sycl::event{}; };
-    }
-
-} // namespace
-
-/** @brief Tests that a sealed registry keeps its kernels and stops a registration. */
-TEST(Unit_KernelRegistryDeathTest, SealedRegistryStopsARegistration)
-{
-    const OperationID early(21);
-    const OperationID late(22);
-    const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
-    kernels->register_kernel(early, idle_kernel());
-    EXPECT_FALSE(kernels->is_sealed());
-
-    kernels->seal();
-    kernels->seal();
-
-    EXPECT_TRUE(kernels->is_sealed());
-    EXPECT_DEATH(kernels->register_kernel(late, idle_kernel()), "the registry is sealed");
-    EXPECT_DEATH(kernels->register_kernel(early, idle_kernel()), "the registry is sealed");
-    EXPECT_TRUE(kernels->has(early));
-    EXPECT_FALSE(kernels->has(late));
-    EXPECT_EQ(kernels->known_ops().size(), 1u);
-}
-
-/** @brief Tests that a kernel that holds no callable stops the process, sealed or not. */
-TEST(Unit_KernelRegistryDeathTest, EmptyKernelStopsTheRegistration)
-{
-    const OperationID operation(23);
-    const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
-
-    EXPECT_DEATH(kernels->register_kernel(operation, KernelRegistry::Kernel()),
-                 "the kernel of operation 23 is empty");
-
-    // An empty kernel is named as the fault before the seal is.
-    kernels->seal();
-    EXPECT_DEATH(kernels->register_kernel(operation, KernelRegistry::Kernel()),
-                 "the kernel of operation 23 is empty");
+    rig.transport->lose(K_MASTER, PeerLossCause::ClosedLocally);
+    EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Stopped)
+        << "a leaving worker ended as MasterLost";
 }

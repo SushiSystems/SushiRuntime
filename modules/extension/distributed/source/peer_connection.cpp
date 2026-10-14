@@ -36,9 +36,8 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
-
-#include "wire_frame.hpp"
-#include "wire_messages.hpp"
+#include <SushiRuntime/wire/wire_frame.hpp>
+#include <SushiRuntime/wire/wire_messages.hpp>
 
 namespace SushiRuntime
 {
