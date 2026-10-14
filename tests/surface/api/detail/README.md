@@ -183,12 +183,12 @@ The file tests Detail::LateControls: an opaque name the surface holds only by po
 
 ## test_late_count_resolution.cpp
 
-The file tests late_count_source() and read_live_count(): the host path and its refusal.
+The file tests late_count_source() and read_live_count(): the host path and its capacity bound.
 
 | Test | What it proves |
 | --- | --- |
 | `HostCountsResolveOnTheHost` | A fixed count is its own live value, and a host count calls its provider. |
-| `AHostCountAboveTheCapacityIsAFault` | A host count above the capacity is refused and recorded as a fault. |
+| `AHostCountAboveTheCapacityResolvesToZero` | A host count above the capacity is recorded as a fault and resolves to zero. |
 
 ## test_late_window.cpp
 

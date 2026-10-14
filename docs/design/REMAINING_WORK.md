@@ -200,8 +200,9 @@ round did not close:
 
 ### Left open by the test mirror (2026-10-14)
 
-- **100 public headers have no test file, and tests include 31 private headers.**
-  `docs/agent/2026_10_14_TEST_COVERAGE/PLAN.md` holds the work in three phases and the four decisions it waits on.
+- **The test coverage work is open on two points.** The checker rule that refuses a test
+  reaching `source/` waits on `tools/`. None of the new tests has yet been seen failing with its
+  code broken. See `docs/agent/2026_10_14_TEST_COVERAGE/REPORT.md`.
 - **Some test files hold suites of more than one unit.** `test_offload_policy.cpp` holds the
   protocol fuzzing, and `test_runtime_context.cpp` and `test_scheduler_execution_engine.cpp` hold
   scheduler and topology tests that need a `RuntimeContext`. A test split by unit lands them in
