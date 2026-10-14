@@ -1,6 +1,6 @@
 # Test coverage: one test file per public header, no test reaching `source/`
 
-**Status:** Waiting for the owner's decisions D1 to D4 and the execution mode
+**Status:** Phases 1 to 3 written inline; one build and test run closes them
 
 ## Goal
 
