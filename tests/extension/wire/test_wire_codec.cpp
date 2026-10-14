@@ -256,7 +256,7 @@ namespace
 } // namespace
 
 /** @brief Tests that random dispatches cross a whole frame with every wire field intact. */
-TEST(Unit_DistributedTest, SeededDispatchesSurviveAWholeFrame)
+TEST(Unit_WireCodec, SeededDispatchesSurviveAWholeFrame)
 {
     std::mt19937_64 random(K_SEED);
     Bytes frame;
@@ -291,7 +291,7 @@ TEST(Unit_DistributedTest, SeededDispatchesSurviveAWholeFrame)
     }
 }
 
-TEST(Unit_DistributedProtocolFuzz, TaskResultRefusesACountItCannotHold)
+TEST(Unit_WireCodecFuzz, TaskResultRefusesACountItCannotHold)
 {
     Bytes payload;
     FieldWriter writer(payload);
@@ -308,7 +308,7 @@ TEST(Unit_DistributedProtocolFuzz, TaskResultRefusesACountItCannotHold)
 }
 
 /** @brief Tests that every decoder refuses or accepts a damaged payload without leaving it. */
-TEST(Unit_DistributedProtocolFuzz, SeededMutationsDecodeOrFailInsideThePayload)
+TEST(Unit_WireCodecFuzz, SeededMutationsDecodeOrFailInsideThePayload)
 {
     std::mt19937_64 random(K_SEED);
     const std::vector<Sample> samples = every_sample();
@@ -331,7 +331,7 @@ TEST(Unit_DistributedProtocolFuzz, SeededMutationsDecodeOrFailInsideThePayload)
 }
 
 /** @brief Tests that a random header passes only with every field inside its range. */
-TEST(Unit_DistributedProtocolFuzz, SeededHeadersPassOnlyInsideTheirRanges)
+TEST(Unit_WireCodecFuzz, SeededHeadersPassOnlyInsideTheirRanges)
 {
     std::mt19937_64 random(K_SEED);
     int accepted = 0;

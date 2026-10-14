@@ -178,8 +178,9 @@ one.
 A kernel dispatched on the profiling queue correctly dereferences a USM allocation made through the
 context of the plain queue. The shared context is usable, not only reported.
 
-The file covers hardware discovery and NUMA mapping, edge cases included. The invalid-NUMA fallbacks
-check that the runtime degrades without failing on bad input.
+`Unit_RuntimeContext` covers the queue a NUMA ID routes to and the USM records of `memory()`. The
+invalid-NUMA fallbacks check that the context degrades without failing on bad input. Discovery and
+NUMA mapping alone are tested in `tests/platform/topology/`.
 
 The file validates that an NVIDIA GPU is discovered through the CUDA SYCL
 backend and mapped to a NUMA node by hwloc. The tests skip when there is no CUDA device.
@@ -260,15 +261,6 @@ between two executions. One kernel reads a word and writes it plus one. The plan
 once and replayed eight times; before each replay the host writes the word, and the output must
 follow. One case holds the word in Shared USM and one in Host USM, each on every device queue of
 the context.
-
-The scheduler checks in this file are fast and deterministic; heavy load is tested by
-`benchmark_scheduler_execution_engine.cpp`. The scheduler must run exactly the tasks submitted, honor priority bypass,
-and survive a clean round of arm, submit and stop.
-
-The file validates NUMA-aware hierarchical work stealing on single-node hardware by injecting a
-synthetic topology. A `RemappingTopologyProvider` spreads the cores across N nodes (core i goes to
-node i % N) with a matching `MatrixDistanceModel`. The tests then assert the locality invariant:
-victims on the local node come before remote ones.
 
 ## test_chain_plan.cpp
 

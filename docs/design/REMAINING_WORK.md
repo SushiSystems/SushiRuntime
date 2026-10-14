@@ -200,15 +200,13 @@ round did not close:
 
 ### Left open by the test mirror (2026-10-14)
 
-- **The new tests have not been seen failing.** None of the tests the coverage work added has
-  been run with its code broken by hand. See `docs/agent/2026_10_14_TEST_COVERAGE/REPORT.md`.
-- **Some test files hold suites of more than one unit.** `test_offload_policy.cpp` holds the
-  protocol fuzzing, and `test_runtime_context.cpp` and `test_scheduler_execution_engine.cpp` hold
-  scheduler and topology tests that need a `RuntimeContext`. A test split by unit lands them in
-  their own files.
+- **Most new tests have not been seen failing.** Five headers the coverage work tested were
+  broken by hand and their tests failed; the other new tests have not been checked that way. See
+  `docs/agent/2026_10_14_TEST_COVERAGE/REPORT.md`.
 - **Helpers of one module's tests sit in its test folder**: `dynamic_graph_plan_access.hpp`,
-  `refusing_fill.hpp` and `tcp_fault_proxy.hpp`. The plan access reaches `api`'s private
-  headers, so it cannot be a module.
+  `refusing_fill.hpp` and `tcp_fault_proxy.hpp`. Each serves the tests of one module, and
+  `TESTS.md` names no place for such a file; it makes a module only of code several modules'
+  tests share.
 
 ## Documentation
 
