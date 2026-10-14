@@ -26,6 +26,7 @@
  * @author Mustafa Garip
  */
 
+#include <cstddef>
 #include <cstdint>
 #include <set>
 #include <tuple>
@@ -95,4 +96,22 @@ TEST(Unit_HardwareDiscovery, EveryNodeTheGPUOnlyFilterAdmitsIsAGPU)
     HardwareDiscovery discovery;
     for (const HardwareNode& node : discovery.probe_all_devices(config).value())
         EXPECT_TRUE(node.sycl_dev.is_gpu()) << "device [" << node.name << "] is not a GPU";
+}
+
+/** @brief Tests that discovery finds a device, numbers the devices from zero in order and names each. */
+TEST(Unit_HardwareDiscovery, LogicalIDsAreSequentialAndEveryDeviceIsNamed)
+{
+    HardwareDiscovery discovery;
+    DeviceFilter config;
+    config.include_cpu = true;
+    config.include_gpu = true;
+    config.include_accelerator = true;
+
+    const std::vector<HardwareNode> nodes = discovery.probe_all_devices(config).value();
+    ASSERT_FALSE(nodes.empty()) << "hardware discovery found no device";
+    for (std::size_t i = 0; i < nodes.size(); ++i)
+    {
+        EXPECT_EQ(nodes[i].logical_id, i) << "logical IDs are not sequential";
+        EXPECT_FALSE(nodes[i].name.empty()) << "device " << i << " has no name";
+    }
 }

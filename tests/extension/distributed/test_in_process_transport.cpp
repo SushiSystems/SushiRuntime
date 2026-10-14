@@ -149,7 +149,7 @@ namespace
 }
 
 /** @brief Tests that frames of both directions arrive with the sender's peer id and type. */
-TEST(Unit_DistributedTest, InProcessTransportDeliversBothDirections)
+TEST(Unit_InProcessTransport, InProcessTransportDeliversBothDirections)
 {
     RecordingEvents master_events;
     RecordingEvents worker_events;

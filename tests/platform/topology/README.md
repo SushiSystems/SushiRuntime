@@ -36,6 +36,11 @@ The test probes every device without a filter. For each node that has a PCI addr
 the domain, bus, device and function of that address have not been returned for an earlier node.
 Nodes without a PCI address are skipped.
 
+### `LogicalIDsAreSequentialAndEveryDeviceIsNamed`
+
+Discovery over every device class finds at least one device, numbers the devices 0, 1, 2 in order
+and gives each a name.
+
 ## test_matrix_distance_model.cpp
 
 | Test | What it proves |
@@ -76,6 +81,7 @@ The file tests NUMAMapper: the local distance and the nodes it maps on this mach
 | Test | What it proves |
 | --- | --- |
 | `ALocalNodeIsTenAway` | A node is 10 from itself, the ACPI local distance. |
+| `ARemoteNodeIsFartherThanALocalOne` | A remote node is farther than the local distance of 10. |
 | `MappingPlacesEveryDevice` | Mapping leaves every discovered device on a node, and an empty list alone. |
 
 ## test_topology_provider.cpp

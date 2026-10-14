@@ -46,6 +46,13 @@ TEST(Unit_NUMAMapper, ALocalNodeIsTenAway)
     EXPECT_EQ(mapper.distance(3, 3), 10);
 }
 
+/** @brief Tests that a remote node is farther than the ACPI local distance of 10. */
+TEST(Unit_NUMAMapper, ARemoteNodeIsFartherThanALocalOne)
+{
+    const NUMAMapper mapper;
+    EXPECT_GT(mapper.distance(0, 1), 10);
+}
+
 /** @brief Tests that mapping leaves every discovered device on a node, and an empty list alone. */
 TEST(Unit_NUMAMapper, MappingPlacesEveryDevice)
 {

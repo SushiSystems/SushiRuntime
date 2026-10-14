@@ -191,53 +191,12 @@ namespace TopologyTests
     } // namespace
 
     /**
-     * @brief Verifies that hardware discovery finds at least one compute device with sequential logical
-     *        IDs.
-     *
-     * Probes all devices and ensures the returned list is not empty, possesses sequential IDs, and has valid names.
-     */
-    TEST(Unit_TopologyTest, HardwareDiscoveryProbe)
-    {
-        HardwareDiscovery discovery;
-        DeviceFilter config;
-        config.include_cpu         = true;
-        config.include_gpu         = true;
-        config.include_accelerator = true;
-
-        std::vector<HardwareNode> nodes = discovery.probe_all_devices(config).value();
-
-        ASSERT_FALSE(nodes.empty()) << "Hardware discovery failed to find any devices!";
-
-        for (size_t i = 0; i < nodes.size(); ++i)
-        {
-            EXPECT_EQ(nodes[i].logical_id, i) << "Logical IDs are not sequential.";
-            EXPECT_FALSE(nodes[i].name.empty()) << "Device name should not be empty.";
-        }
-    }
-
-    /**
-     * @brief Verifies basic NUMA distance matrix properties as per ACPI SLIT standards.
-     *
-     * Asserts that the local node distance is exactly 10, and a remote node distance is strictly greater than 10.
-     */
-    TEST(Unit_TopologyTest, NUMAMatrixDistances)
-    {
-        NUMAMapper mapper;
-
-        int local_distance = mapper.distance(0, 0);
-        EXPECT_EQ(local_distance, 10) << "Local NUMA distance must be 10.";
-
-        int remote_distance = mapper.distance(0, 1);
-        EXPECT_GT(remote_distance, 10) << "Remote NUMA distance must be greater than 10.";
-    }
-
-    /**
      * @brief Verifies that requesting a queue for an invalid NUMA ID falls back safely instead of
      *        crashing.
      *
      * Requests a queue with a non-existent NUMA ID and validates that the returned fallback queue functions normally.
      */
-    TEST(Unit_TopologyTest, InvalidNUMAFallbackQueue)
+    TEST(Unit_RuntimeContext, InvalidNUMAFallbackQueue)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -265,7 +224,7 @@ namespace TopologyTests
      * bounds. Allocating and freeing through it proves the fallback queue is a real
      * one and that the pointer's owner was recorded against it.
      */
-    TEST(Unit_TopologyTest, InvalidNUMAFallsBackToAUsableNode)
+    TEST(Unit_RuntimeContext, InvalidNUMAFallsBackToAUsableNode)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -292,7 +251,7 @@ namespace TopologyTests
     }
 
     /** @brief Tests that the live count follows each allocation, free and forgotten record. */
-    TEST(Unit_TopologyTest, LiveUSMCountFollowsAllocateFreeAndForget)
+    TEST(Unit_RuntimeContext, LiveUSMCountFollowsAllocateFreeAndForget)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -320,7 +279,7 @@ namespace TopologyTests
     }
 
     /** @brief Tests that every aligned allocation returns an address on the requested alignment. */
-    TEST(Unit_TopologyTest, AlignedAllocationsStartOnTheAlignment)
+    TEST(Unit_RuntimeContext, AlignedAllocationsStartOnTheAlignment)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -342,7 +301,7 @@ namespace TopologyTests
     }
 
     /** @brief Tests that an aligned allocation is recorded once and dropped by release(). */
-    TEST(Unit_TopologyTest, AlignedAllocationsAreRecordedAndFreed)
+    TEST(Unit_RuntimeContext, AlignedAllocationsAreRecordedAndFreed)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -362,7 +321,7 @@ namespace TopologyTests
     }
 
     /** @brief Tests that an aligned allocation on a device index past the last one stops. */
-    TEST(Unit_TopologyDeathTest, AnAlignedAllocationOnAMissingDeviceStops)
+    TEST(Unit_RuntimeContextDeathTest, AnAlignedAllocationOnAMissingDeviceStops)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -430,7 +389,7 @@ namespace NvidiaTopologyTests
      *
      * Probes all devices using HardwareDiscovery and asserts that an NVIDIA GPU is found.
      */
-    TEST(Unit_NvidiaTopologyTest, NvidiaGPUDiscovered)
+    TEST(Unit_RuntimeContextNvidia, NvidiaGPUDiscovered)
     {
         if (!cuda_device_available())
             GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -453,7 +412,7 @@ namespace NvidiaTopologyTests
      *
      * Maps NUMA distances for the discovered nodes and asserts that the NVIDIA GPU has a valid ID, skipping if running in WSL without ACPI passthrough.
      */
-    TEST(Unit_NvidiaTopologyTest, NvidiaGPUHasNUMAMapping)
+    TEST(Unit_RuntimeContextNvidia, NvidiaGPUHasNUMAMapping)
     {
         if (!cuda_device_available())
             GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -489,7 +448,7 @@ namespace NvidiaTopologyTests
      *
      * Identifies a CUDA platform queue and executes a trivial host_task to ensure it does not throw an exception.
      */
-    TEST(Unit_NvidiaTopologyTest, RuntimeContextExposesNvidiaQueue)
+    TEST(Unit_RuntimeContextNvidia, RuntimeContextExposesNvidiaQueue)
     {
         if (!cuda_device_available())
             GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -529,7 +488,7 @@ namespace NvidiaTopologyTests
      *
      * Allocates USM shared memory, submits a parallel_for kernel on the CUDA queue, and verifies the addition results.
      */
-    TEST(Unit_NvidiaTopologyTest, NvidiaGPUVectorAdd)
+    TEST(Unit_RuntimeContextNvidia, NvidiaGPUVectorAdd)
     {
         if (!cuda_device_available())
             GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -604,7 +563,7 @@ namespace TopologyAbstractionTests
      *
      * Injects a synthetic distance model into the RuntimeContext and ensures its reported NUMA distances match the injected values.
      */
-    TEST(Unit_TopologyAbstractionTest, InjectedDistanceModelDrivesRuntimeContext)
+    TEST(Unit_RuntimeContextTopology, InjectedDistanceModelDrivesRuntimeContext)
     {
         auto provider = std::make_shared<HwlocTopologyProvider>();
         auto distance = std::make_shared<MatrixDistanceModel>(
@@ -623,7 +582,7 @@ namespace TopologyAbstractionTests
      *
      * Injects a remapping provider and tests that queues obtained for synthetic NUMA IDs can successfully submit host tasks.
      */
-    TEST(Unit_TopologyAbstractionTest, RuntimeContextRoutesQueuesViaSyntheticNUMA)
+    TEST(Unit_RuntimeContextTopology, RuntimeContextRoutesQueuesViaSyntheticNUMA)
     {
         constexpr int FAKE_NODES = 2;
 
@@ -651,7 +610,7 @@ namespace TopologyAbstractionTests
      *
      * Builds a node by hand, leaves its PCI address empty and asserts NUMAMapper puts it on node 0.
      */
-    TEST(Unit_TopologyAbstractionTest, GPUWithoutPCIAddressTakesFallbackNUMANode)
+    TEST(Unit_RuntimeContextTopology, GPUWithoutPCIAddressTakesFallbackNUMANode)
     {
         HardwareNode gpu;
         gpu.name = "synthetic GPU without a PCI address";

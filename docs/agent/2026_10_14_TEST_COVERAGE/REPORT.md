@@ -1,7 +1,7 @@
 # Test coverage: report
 
-**Status:** Phases 1 to 3 and task 1.10 landed on 2026-10-14. The break check of the new tests
-is still open.
+**Status:** Phases 1 to 3 and task 1.10 landed on 2026-10-14. The break check covered five
+headers on 2026-10-15; the other new tests are not checked that way.
 
 ## What landed
 
@@ -46,9 +46,19 @@ include path.
 On this tree the rule reports nothing. On `7f4bc7c`, the commit before this work, it reports 54
 includes of 31 distinct private headers, the count the plan gives.
 
+## Break check
+
+On 2026-10-15 five headers were broken by hand and the suite was run. `countr_zero_u64(0)`
+returned 63, `Extent::count()` added one, the deque's `size()` added one, `late_count_source`
+kept an over-capacity host count, and the NUMA lookup added one to the node index. 11 tests
+failed, and each break failed the new test written for its header:
+`Unit_Bit.CountrZeroFindsTheLowestSetBit`, `Unit_Extent.CountIsTheProductOfTheSizes`, two
+`Unit_WorkStealingDeque` tests, `Unit_LateCountResolution.AHostCountAboveTheCapacityResolvesToZero`
+and two `Unit_NumaLookup` tests. The breaks were reverted and the suite passed 1022 of 1022.
+
 ## Open
 
-- **Break check**: none of the new tests has been seen failing with its code broken by hand.
+- **Break check**: only the five headers above were checked.
 - **Commit `fa75278`** (an over-capacity host LateCount resolves to 0) came from another
   session. The tests here follow its behaviour. It is also on local `main` as `51af947`, and
   that commit is not pushed.
