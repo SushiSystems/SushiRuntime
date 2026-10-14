@@ -30,7 +30,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <vector>
 
 #include <SushiRuntime/api/detail/device_fault.hpp>
@@ -77,11 +76,12 @@ namespace SushiRuntime
          * @brief Resolves a LateCount's host side and names its device slot without reading it.
          * @param fault The node's fault record; a host count above the capacity is written
          *        there as K_DEVICE_FAULT_LATE_COUNT.
-         * @return The source a resolver kernel reads, or nothing for a host count above the
-         *         capacity.
+         * @return The source a resolver kernel reads. A host count above the capacity is
+         *         recorded as a fault and resolves to zero, as read_live_count() does on
+         *         the device, so the dependent nodes always run with zero work.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
-        [[nodiscard]] inline std::optional<LiveCountSource> late_count_source(
+        [[nodiscard]] inline LiveCountSource late_count_source(
             const LateCount& count, std::uint32_t* fault)
         {
             LiveCountSource source;
@@ -96,7 +96,7 @@ namespace SushiRuntime
             {
                 record_device_fault(fault, K_DEVICE_FAULT_LATE_COUNT, 0, source.host_live,
                                     source.capacity);
-                return std::nullopt;
+                source.host_live = 0;
             }
             return source;
         }
