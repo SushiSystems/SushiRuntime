@@ -71,7 +71,7 @@ namespace LateCountResolutionTests
     } // namespace
 
     /** @brief Tests that a fixed LateCount resolves to the count it was built with. */
-    TEST(Integration_LateCount, FixedResolvesToItsCount)
+    TEST(Medium_LateCount, FixedResolvesToItsCount)
     {
         auto rt  = Runtime::create().value();
         auto out = rt.buffer<std::uint32_t>(1).value();
@@ -87,7 +87,7 @@ namespace LateCountResolutionTests
     }
 
     /** @brief Tests that a host provider below capacity is the live count. */
-    TEST(Integration_LateCount, HostProviderBelowCapacity)
+    TEST(Medium_LateCount, HostProviderBelowCapacity)
     {
         auto rt  = Runtime::create().value();
         auto out = rt.buffer<std::uint32_t>(1).value();
@@ -104,7 +104,7 @@ namespace LateCountResolutionTests
     }
 
     /** @brief Tests that a host count that changes between runs keeps one compile. */
-    TEST(Integration_LateCount, ChangingHostCountKeepsOneCompile)
+    TEST(Medium_LateCount, ChangingHostCountKeepsOneCompile)
     {
         auto rt  = Runtime::create().value();
         auto out = rt.buffer<std::uint32_t>(1).value();
@@ -132,7 +132,7 @@ namespace LateCountResolutionTests
     }
 
     /** @brief Tests that a host count above its capacity fails the run and a later run goes on. */
-    TEST(Integration_LateCount, HostCountAboveCapacityFailsTheRunWithInvalidGraph)
+    TEST(Medium_LateCount, HostCountAboveCapacityFailsTheRunWithInvalidGraph)
     {
         auto rt  = Runtime::create().value();
         auto out = rt.buffer<std::uint32_t>(1).value();
@@ -160,7 +160,7 @@ namespace LateCountResolutionTests
     }
 
     /** @brief Tests that a Residency::Host device slot resolves to the value written there. */
-    TEST(Integration_LateCount, DeviceSlotResolvesFromHostResidentBuffer)
+    TEST(Medium_LateCount, DeviceSlotResolvesFromHostResidentBuffer)
     {
         auto rt      = Runtime::create().value();
         auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
@@ -176,7 +176,7 @@ namespace LateCountResolutionTests
     }
 
     /** @brief Tests that a device count above its capacity fails the run on both layers. */
-    TEST(Integration_LateCount, DeviceCountAboveCapacityFailsTheRunOnBothLayers)
+    TEST(Medium_LateCount, DeviceCountAboveCapacityFailsTheRunOnBothLayers)
     {
         for (const bool force_scheduler : {false, true})
         {
@@ -203,7 +203,7 @@ namespace LateCountResolutionTests
     }
 
     /** @brief Tests that a device slot outside Residency::Host stops the call that builds the count. */
-    TEST(Integration_LateCountDeathTest, ANonHostDeviceSlotStopsAtConstruction)
+    TEST(Medium_LateCountDeathTest, ANonHostDeviceSlotStopsAtConstruction)
     {
         auto rt      = Runtime::create().value();
         auto counter = rt.buffer<std::uint32_t>(1).value();
@@ -213,7 +213,7 @@ namespace LateCountResolutionTests
     }
 
     /** @brief Tests that the resolver sees the count its predecessor wrote in the same run. */
-    TEST(Integration_LateCount, ResolverSeesTheCountItsPredecessorJustWrote)
+    TEST(Medium_LateCount, ResolverSeesTheCountItsPredecessorJustWrote)
     {
         constexpr std::size_t CAPACITY = 1000;
 
@@ -358,7 +358,7 @@ namespace LateBoundVocabularyTests
     } // namespace
 
     /** @brief Tests that from_device stops on an index one past its slot when the count is built. */
-    TEST(Integration_LateBoundVocabularyDeathTest, FromDeviceStopsOnAnIndexPastTheSlot)
+    TEST(Medium_LateBoundVocabularyDeathTest, FromDeviceStopsOnAnIndexPastTheSlot)
     {
         constexpr std::size_t CAPACITY = 64;
 
@@ -373,7 +373,7 @@ namespace LateBoundVocabularyTests
     }
 
     /** @brief Tests that from_device stops on a slot the host cannot read during a run. */
-    TEST(Integration_LateBoundVocabularyDeathTest, FromDeviceStopsOnASlotThatIsNotHostResident)
+    TEST(Medium_LateBoundVocabularyDeathTest, FromDeviceStopsOnASlotThatIsNotHostResident)
     {
         auto rt       = Runtime::create().value();
         auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device).value();
@@ -386,14 +386,14 @@ namespace LateBoundVocabularyTests
     }
 
     /** @brief Tests that from_host stops on a provider that holds no callable. */
-    TEST(Integration_LateBoundVocabularyDeathTest, FromHostStopsOnAnEmptyProvider)
+    TEST(Medium_LateBoundVocabularyDeathTest, FromHostStopsOnAnEmptyProvider)
     {
         EXPECT_DEATH(static_cast<void>(LateCount::from_host(8, LateCount::Provider{})),
                      "LateCount::from_host: the provider is empty");
     }
 
     /** @brief Tests that every factory stops on a capacity a uint32 live-count word cannot hold. */
-    TEST(Integration_LateBoundVocabularyDeathTest, EveryFactoryStopsOnACapacityPastAUint32)
+    TEST(Medium_LateBoundVocabularyDeathTest, EveryFactoryStopsOnACapacityPastAUint32)
     {
         if (sizeof(std::size_t) <= sizeof(std::uint32_t))
             GTEST_SKIP() << "std::size_t cannot hold a count past a uint32 on this target";
@@ -416,7 +416,7 @@ namespace LateBoundVocabularyTests
     }
 
     /** @brief Tests that capacity() reports the plan size each factory was given. */
-    TEST(Integration_LateBoundVocabulary, CapacityReportsThePlanSize)
+    TEST(Medium_LateBoundVocabulary, CapacityReportsThePlanSize)
     {
         auto rt   = Runtime::create().value();
         auto slot = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
@@ -427,7 +427,7 @@ namespace LateBoundVocabularyTests
     }
 
     /** @brief Tests that a recorded copy still polls the provider after the original is destroyed. */
-    TEST(Integration_LateBoundVocabulary, ARecordedCopyKeepsTheHostProvider)
+    TEST(Medium_LateBoundVocabulary, ARecordedCopyKeepsTheHostProvider)
     {
         auto rt  = Runtime::create().value();
         auto out = rt.buffer<std::uint32_t>(1).value();
@@ -451,7 +451,7 @@ namespace LateBoundVocabularyTests
     }
 
     /** @brief Tests that from_device reads the word its index names, not the first word. */
-    TEST(Integration_LateBoundVocabulary, FromDeviceReadsTheWordAtItsIndex)
+    TEST(Medium_LateBoundVocabulary, FromDeviceReadsTheWordAtItsIndex)
     {
         auto rt   = Runtime::create().value();
         auto slot = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
@@ -469,7 +469,7 @@ namespace LateBoundVocabularyTests
     }
 
     /** @brief Tests that the size source set last decides the live size, whichever kind it is. */
-    TEST(Integration_LateBoundVocabulary, TheSizeSourceSetLastWins)
+    TEST(Medium_LateBoundVocabulary, TheSizeSourceSetLastWins)
     {
         constexpr std::size_t CAPACITY = 16;
         constexpr std::uint32_t DEVICE_COUNT = 3;
@@ -498,7 +498,7 @@ namespace LateBoundVocabularyTests
     }
 
     /** @brief Tests that the members chain on a named Dynamic and carry all three controls. */
-    TEST(Integration_LateBoundVocabulary, MembersChainOnANamedDynamic)
+    TEST(Medium_LateBoundVocabulary, MembersChainOnANamedDynamic)
     {
         constexpr std::size_t CAPACITY = 32;
 

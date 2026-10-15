@@ -74,7 +74,7 @@ namespace
 }
 
 /** @brief Tests that run_async() returns before the step finishes. */
-TEST(Integration_AsyncStep, SubmitReturnsBeforeTheStepFinishes)
+TEST(Medium_AsyncStep, SubmitReturnsBeforeTheStepFinishes)
 {
     constexpr std::size_t N = 8;
 
@@ -108,7 +108,7 @@ TEST(Integration_AsyncStep, SubmitReturnsBeforeTheStepFinishes)
 }
 
 /** @brief Tests that an asynchronous step ends in the same State as a synchronous one. */
-TEST(Integration_AsyncStep, MatchesTheSynchronousResult)
+TEST(Medium_AsyncStep, MatchesTheSynchronousResult)
 {
     constexpr std::size_t N = 32;
     constexpr std::size_t STEPS = 6;
@@ -134,7 +134,7 @@ TEST(Integration_AsyncStep, MatchesTheSynchronousResult)
 }
 
 /** @brief Tests that the State advances on wait(), not on submit. */
-TEST(Integration_AsyncStep, StateAdvancesOnWaitNotOnSubmit)
+TEST(Medium_AsyncStep, StateAdvancesOnWaitNotOnSubmit)
 {
     constexpr std::size_t N = 4;
 
@@ -160,7 +160,7 @@ TEST(Integration_AsyncStep, StateAdvancesOnWaitNotOnSubmit)
  * @brief Tests that destroying an unwaited handle still finishes the step and leaves the graph
  *        runnable.
  */
-TEST(Integration_AsyncStep, DestroyingAnUnwaitedHandleStillFinishesTheStep)
+TEST(Medium_AsyncStep, DestroyingAnUnwaitedHandleStillFinishesTheStep)
 {
     constexpr std::size_t N = 8;
 
@@ -187,7 +187,7 @@ TEST(Integration_AsyncStep, DestroyingAnUnwaitedHandleStillFinishesTheStep)
 }
 
 /** @brief Tests that a second wait on the same handle throws. */
-TEST(Integration_AsyncStep, WaitingTwiceThrows)
+TEST(Medium_AsyncStep, WaitingTwiceThrows)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(4).value();
@@ -203,7 +203,7 @@ TEST(Integration_AsyncStep, WaitingTwiceThrows)
 }
 
 /** @brief Tests that a second run is rejected while a step is in flight. */
-TEST(Integration_AsyncStep, ASecondRunIsRejectedWhileAStepIsInFlight)
+TEST(Medium_AsyncStep, ASecondRunIsRejectedWhileAStepIsInFlight)
 {
     constexpr std::size_t N = 4;
 
@@ -237,7 +237,7 @@ TEST(Integration_AsyncStep, ASecondRunIsRejectedWhileAStepIsInFlight)
 }
 
 /** @brief Tests that a task exception surfaces from wait() and leaves the graph usable. */
-TEST(Integration_AsyncStep, TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable)
+TEST(Medium_AsyncStep, TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(4).value();
@@ -265,7 +265,7 @@ TEST(Integration_AsyncStep, TaskExceptionSurfacesOnWaitAndLeavesTheGraphUsable)
 }
 
 // wait() reports the same failure as a value instead of an exception.
-TEST(Integration_AsyncStep, TryWaitReportsFailureAsAValue)
+TEST(Medium_AsyncStep, TryWaitReportsFailureAsAValue)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(4).value();
@@ -281,7 +281,7 @@ TEST(Integration_AsyncStep, TryWaitReportsFailureAsAValue)
 }
 
 /** @brief Tests that ready() is false while the step is held open and true once it has finished. */
-TEST(Integration_AsyncStep, ReadyTracksTheStep)
+TEST(Medium_AsyncStep, ReadyTracksTheStep)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(4).value();
@@ -308,7 +308,7 @@ TEST(Integration_AsyncStep, ReadyTracksTheStep)
  * @brief Tests that a DynamicGraph step overlaps the caller and commits a pending structural change
  *        first.
  */
-TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
+TEST(Medium_AsyncStep, DynamicGraphRunsAsynchronously)
 {
     constexpr std::size_t N = 16;
 
@@ -346,7 +346,7 @@ TEST(Integration_AsyncStep, DynamicGraphRunsAsynchronously)
 }
 
 /** @brief Tests that another graph's run entries are refused while a step is pending. */
-TEST(Integration_AsyncStep, AnotherGraphIsRefusedWhileAStepIsPending)
+TEST(Medium_AsyncStep, AnotherGraphIsRefusedWhileAStepIsPending)
 {
     auto rt    = Runtime::create().value();
     auto first = rt.buffer<int>(4).value();
@@ -384,7 +384,7 @@ TEST(Integration_AsyncStep, AnotherGraphIsRefusedWhileAStepIsPending)
 }
 
 /** @brief Tests that cancel() stops the pending step of its own graph and of no other. */
-TEST(Integration_AsyncStep, CancelReachesOnlyTheGraphItIsCalledOn)
+TEST(Medium_AsyncStep, CancelReachesOnlyTheGraphItIsCalledOn)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(4).value();
@@ -420,7 +420,7 @@ TEST(Integration_AsyncStep, CancelReachesOnlyTheGraphItIsCalledOn)
 }
 
 /** @brief Tests that a Graph destroyed with a step pending waits for it and ends it. */
-TEST(Integration_AsyncStep, AGraphDestroyedWithAPendingStepEndsTheStep)
+TEST(Medium_AsyncStep, AGraphDestroyedWithAPendingStepEndsTheStep)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(4).value();
@@ -452,7 +452,7 @@ TEST(Integration_AsyncStep, AGraphDestroyedWithAPendingStepEndsTheStep)
 }
 
 /** @brief Tests that a DynamicGraph destroyed with a step pending waits for it and ends it. */
-TEST(Integration_AsyncStep, ADynamicGraphDestroyedWithAPendingStepEndsTheStep)
+TEST(Medium_AsyncStep, ADynamicGraphDestroyedWithAPendingStepEndsTheStep)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(4).value();
@@ -479,7 +479,7 @@ TEST(Integration_AsyncStep, ADynamicGraphDestroyedWithAPendingStepEndsTheStep)
 }
 
 /** @brief Tests that a region dropped while a step is pending finishes that step and no later one. */
-TEST(Integration_AsyncStep, ARegionDroppedWhileAStepIsPendingFinishesTheStep)
+TEST(Medium_AsyncStep, ARegionDroppedWhileAStepIsPendingFinishesTheStep)
 {
     auto rt   = Runtime::create().value();
     auto kept = rt.buffer<int>(4).value();
@@ -523,7 +523,7 @@ TEST(Integration_AsyncStep, ARegionDroppedWhileAStepIsPendingFinishesTheStep)
 }
 
 /** @brief Tests that a key dropped and recorded again while a step is pending runs its new work. */
-TEST(Integration_AsyncStep, ARegionDroppedAndRecordedAgainWhileAStepIsPendingRunsItsNewWork)
+TEST(Medium_AsyncStep, ARegionDroppedAndRecordedAgainWhileAStepIsPendingRunsItsNewWork)
 {
     auto rt    = Runtime::create().value();
     auto old   = rt.buffer<int>(4).value();

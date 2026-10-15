@@ -34,7 +34,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the ceiling: Info in a release build, Debug in a debug one. */
-TEST(Unit_LogGate, TheCeilingFollowsTheBuild)
+TEST(Small_LogGate, TheCeilingFollowsTheBuild)
 {
 #if !SR_ENABLE_LOGGING
     EXPECT_EQ(K_LOG_LEVEL_CEILING, LogLevel::Off);
@@ -46,7 +46,7 @@ TEST(Unit_LogGate, TheCeilingFollowsTheBuild)
 }
 
 /** @brief Tests that a level passes the gate when it is at or below the level set. */
-TEST(Unit_LogGate, ALevelPassesAtOrBelowTheLevelSet)
+TEST(Small_LogGate, ALevelPassesAtOrBelowTheLevelSet)
 {
     const LogLevel saved = log_level();
     set_log_level(LogLevel::Warn);

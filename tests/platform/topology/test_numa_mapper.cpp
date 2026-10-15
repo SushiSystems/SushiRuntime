@@ -39,7 +39,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Topology;
 
 /** @brief Tests that a node is 10 from itself, the ACPI local distance. */
-TEST(Unit_NUMAMapper, ALocalNodeIsTenAway)
+TEST(Small_NUMAMapper, ALocalNodeIsTenAway)
 {
     const NUMAMapper mapper;
     EXPECT_EQ(mapper.distance(0, 0), 10);
@@ -47,14 +47,14 @@ TEST(Unit_NUMAMapper, ALocalNodeIsTenAway)
 }
 
 /** @brief Tests that a remote node is farther than the ACPI local distance of 10. */
-TEST(Unit_NUMAMapper, ARemoteNodeIsFartherThanALocalOne)
+TEST(Small_NUMAMapper, ARemoteNodeIsFartherThanALocalOne)
 {
     const NUMAMapper mapper;
     EXPECT_GT(mapper.distance(0, 1), 10);
 }
 
 /** @brief Tests that mapping leaves every discovered device on a node, and an empty list alone. */
-TEST(Unit_NUMAMapper, MappingPlacesEveryDevice)
+TEST(Small_NUMAMapper, MappingPlacesEveryDevice)
 {
     NUMAMapper mapper;
     std::vector<HardwareNode> none;

@@ -374,7 +374,7 @@ namespace
 } // namespace
 
 /** @brief Tests that a secret file that does not exist exits 1 and names the file. */
-TEST(Unit_WorkerMainTest, UnreadableSecretFileExitsOne)
+TEST(Medium_WorkerMainTest, UnreadableSecretFileExitsOne)
 {
     WorkerOptions options = options_for(Endpoint{"127.0.0.1", 1});
     options.secret_file = "sr_test_worker_secret_that_is_not_there.key";
@@ -389,7 +389,7 @@ TEST(Unit_WorkerMainTest, UnreadableSecretFileExitsOne)
 }
 
 /** @brief Tests that a secret file of 31 bytes exits 1 and names the length it needs. */
-TEST(Unit_WorkerMainTest, ShortSecretFileExitsOne)
+TEST(Medium_WorkerMainTest, ShortSecretFileExitsOne)
 {
     const ScratchFile file("sr_test_worker_secret_short.key", 31);
     WorkerOptions options = options_for(Endpoint{"127.0.0.1", 1});
@@ -405,7 +405,7 @@ TEST(Unit_WorkerMainTest, ShortSecretFileExitsOne)
 }
 
 /** @brief Tests that a log level outside the five names exits 1 and lists them. */
-TEST(Unit_WorkerMainTest, UnknownLogLevelExitsOne)
+TEST(Medium_WorkerMainTest, UnknownLogLevelExitsOne)
 {
     WorkerOptions options = options_for(Endpoint{"127.0.0.1", 1});
     options.log_level = "chatty";
@@ -420,7 +420,7 @@ TEST(Unit_WorkerMainTest, UnknownLogLevelExitsOne)
 }
 
 /** @brief Tests that the command line overload prints the parser's line and exits 1. */
-TEST(Unit_WorkerMainTest, BadFlagExitsOne)
+TEST(Medium_WorkerMainTest, BadFlagExitsOne)
 {
     char program[] = "worker";
     char flag[] = "--frobnicate";
@@ -435,7 +435,7 @@ TEST(Unit_WorkerMainTest, BadFlagExitsOne)
 }
 
 /** @brief Tests that `--version` prints the protocol version and exits 0. */
-TEST(Unit_WorkerMainTest, VersionPrintsTheProtocolAndExitsZero)
+TEST(Medium_WorkerMainTest, VersionPrintsTheProtocolAndExitsZero)
 {
     char program[] = "worker";
     char flag[] = "--version";
@@ -453,7 +453,7 @@ TEST(Unit_WorkerMainTest, VersionPrintsTheProtocolAndExitsZero)
 }
 
 /** @brief Tests that a registered worker stops in order when the stop flag is set: code 0. */
-TEST(Integration_WorkerMainTest, SignalStopsWithExitZero)
+TEST(Medium_WorkerMainTest, SignalStopsWithExitZero)
 {
     const std::shared_ptr<TCPTransport> listener = TCPTransport::make_master();
     FakeMaster master(MasterScript::Register, listener);
@@ -470,7 +470,7 @@ TEST(Integration_WorkerMainTest, SignalStopsWithExitZero)
 }
 
 /** @brief Tests that REJECT(authentication) ends the worker with exit code 3. */
-TEST(Integration_WorkerMainTest, AuthenticationRejectExitsThree)
+TEST(Medium_WorkerMainTest, AuthenticationRejectExitsThree)
 {
     const std::shared_ptr<TCPTransport> listener = TCPTransport::make_master();
     FakeMaster master(MasterScript::RejectAuthentication, listener);
@@ -483,7 +483,7 @@ TEST(Integration_WorkerMainTest, AuthenticationRejectExitsThree)
 }
 
 /** @brief Tests that REJECT(version) ends the worker with exit code 4. */
-TEST(Integration_WorkerMainTest, VersionRejectExitsFour)
+TEST(Medium_WorkerMainTest, VersionRejectExitsFour)
 {
     const std::shared_ptr<TCPTransport> listener = TCPTransport::make_master();
     FakeMaster master(MasterScript::RejectVersion, listener);
@@ -496,7 +496,7 @@ TEST(Integration_WorkerMainTest, VersionRejectExitsFour)
 }
 
 /** @brief Tests that a master nobody listens for ends the worker with exit code 2. */
-TEST(Integration_WorkerMainTest, MasterNotReachedExitsTwo)
+TEST(Medium_WorkerMainTest, MasterNotReachedExitsTwo)
 {
     ServedWorker worker(Endpoint{"127.0.0.1", 1}, K_NO_MASTER_TIMEOUT);
 
@@ -506,7 +506,7 @@ TEST(Integration_WorkerMainTest, MasterNotReachedExitsTwo)
 }
 
 /** @brief Tests that losing the master with reconnecting off ends the worker with exit code 5. */
-TEST(Integration_WorkerMainTest, MasterLostWithoutReconnectExitsFive)
+TEST(Medium_WorkerMainTest, MasterLostWithoutReconnectExitsFive)
 {
     const std::shared_ptr<TCPTransport> listener = TCPTransport::make_master();
     FakeMaster master(MasterScript::RegisterThenClose, listener);
@@ -519,7 +519,7 @@ TEST(Integration_WorkerMainTest, MasterLostWithoutReconnectExitsFive)
 }
 
 /** @brief Tests that run_worker() joins a master over TCP and returns the code of its end. */
-TEST(Integration_WorkerMainTest, RunWorkerOverTCPReturnsTheCodeOfItsEnd)
+TEST(Medium_WorkerMainTest, RunWorkerOverTCPReturnsTheCodeOfItsEnd)
 {
     const std::shared_ptr<TCPTransport> listener = TCPTransport::make_master();
     FakeMaster master(MasterScript::RegisterThenClose, listener);

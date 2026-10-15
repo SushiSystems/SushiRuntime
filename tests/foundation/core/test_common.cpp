@@ -35,7 +35,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the values the scheduler and the allocators are sized by. */
-TEST(Unit_Common, ConstantsHoldTheirDocumentedValues)
+TEST(Small_Common, ConstantsHoldTheirDocumentedValues)
 {
     static_assert(K_CACHE_LINE_SIZE == 64, "a cache line is 64 bytes");
     static_assert(K_MAX_NUMA_NODES == 64, "a node mask holds 64 nodes");
@@ -45,7 +45,7 @@ TEST(Unit_Common, ConstantsHoldTheirDocumentedValues)
 }
 
 /** @brief Tests that both alignments are powers of two and the default covers a cache line. */
-TEST(Unit_Common, AlignmentsArePowersOfTwo)
+TEST(Small_Common, AlignmentsArePowersOfTwo)
 {
     const auto is_power_of_two = [](std::size_t value) { return value != 0 && (value & (value - 1)) == 0; };
     EXPECT_TRUE(is_power_of_two(K_CACHE_LINE_SIZE));

@@ -37,7 +37,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the defaults of a descriptor and the three handle kinds. */
-TEST(Unit_ExternalMemory, DefaultsNameNoHandle)
+TEST(Small_ExternalMemory, DefaultsNameNoHandle)
 {
     const ExternalMemoryDescriptor descriptor;
     EXPECT_EQ(descriptor.kind, ExternalHandleKind::Unspecified);

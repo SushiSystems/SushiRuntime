@@ -35,7 +35,7 @@ using SushiRuntime::ContextHandle;
 using SushiRuntime::Detail::ContextHandleAccess;
 
 /** @brief Tests that a default handle shares no context. */
-TEST(Unit_ContextHandle, ADefaultHandleIsEmpty)
+TEST(Small_ContextHandle, ADefaultHandleIsEmpty)
 {
     const ContextHandle handle;
 
@@ -44,7 +44,7 @@ TEST(Unit_ContextHandle, ADefaultHandleIsEmpty)
 }
 
 /** @brief Tests that a handle wrapped around no context is empty, and so is its copy. */
-TEST(Unit_ContextHandle, AHandleWrappedAroundNothingIsEmpty)
+TEST(Small_ContextHandle, AHandleWrappedAroundNothingIsEmpty)
 {
     const ContextHandle handle = ContextHandleAccess::wrap(nullptr);
     const ContextHandle copy = handle;

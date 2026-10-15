@@ -46,7 +46,7 @@ namespace
 }
 
 /** @brief Tests that an empty share gives an empty handle and shares nothing back. */
-TEST(Unit_ContextHandleAccess, AnEmptyShareGivesAnEmptyHandle)
+TEST(Small_ContextHandleAccess, AnEmptyShareGivesAnEmptyHandle)
 {
     const ContextHandle handle = Detail::ContextHandleAccess::wrap(nullptr);
     EXPECT_FALSE(handle);
@@ -54,7 +54,7 @@ TEST(Unit_ContextHandleAccess, AnEmptyShareGivesAnEmptyHandle)
 }
 
 /** @brief Tests that handle_of() returns the owner's handle itself, not a copy. */
-TEST(Unit_ContextHandleAccess, HandleOfReturnsTheOwnersHandle)
+TEST(Small_ContextHandleAccess, HandleOfReturnsTheOwnersHandle)
 {
     const Owner owner;
     EXPECT_EQ(&Detail::ContextHandleAccess::handle_of(owner), &owner.context_);

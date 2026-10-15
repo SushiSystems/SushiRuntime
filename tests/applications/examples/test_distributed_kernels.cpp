@@ -40,7 +40,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that the kernel is registered under its operation and adds element by element. */
-TEST(Integration_DistributedKernels, TheKernelAddsTwoVectors)
+TEST(Medium_DistributedKernels, TheKernelAddsTwoVectors)
 {
     constexpr std::size_t K_COUNT = 16;
     sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();

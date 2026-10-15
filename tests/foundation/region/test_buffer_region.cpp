@@ -47,7 +47,7 @@ namespace
     int second_allocation = 0;
 }
 
-TEST(Unit_BufferRegion, ADefaultRegionOverlapsNothing)
+TEST(Small_BufferRegion, ADefaultRegionOverlapsNothing)
 {
     const BufferRegion empty;
     const BufferRegion other_empty;
@@ -61,7 +61,7 @@ TEST(Unit_BufferRegion, ADefaultRegionOverlapsNothing)
     EXPECT_FALSE(BufferRegion(nullptr, 0, 8).overlaps(BufferRegion(nullptr, 4, 8)));
 }
 
-TEST(Unit_BufferRegion, ADefaultRegionContainsNothingAndIsContainedByNothing)
+TEST(Small_BufferRegion, ADefaultRegionContainsNothingAndIsContainedByNothing)
 {
     const BufferRegion empty;
     const BufferRegion other_empty;
@@ -73,7 +73,7 @@ TEST(Unit_BufferRegion, ADefaultRegionContainsNothingAndIsContainedByNothing)
     EXPECT_FALSE(whole.contains(empty));
 }
 
-TEST(Unit_BufferRegion, RegionsOfOneAllocationOverlapWhenTheirIntervalsIntersect)
+TEST(Small_BufferRegion, RegionsOfOneAllocationOverlapWhenTheirIntervalsIntersect)
 {
     const BufferRegion whole(&first_allocation);
     const BufferRegion low(&first_allocation, 0, 8);
@@ -95,7 +95,7 @@ TEST(Unit_BufferRegion, RegionsOfOneAllocationOverlapWhenTheirIntervalsIntersect
     EXPECT_FALSE(tail.overlaps(low));
 }
 
-TEST(Unit_BufferRegion, RegionsOfDifferentAllocationsNeverOverlap)
+TEST(Small_BufferRegion, RegionsOfDifferentAllocationsNeverOverlap)
 {
     const BufferRegion first(&first_allocation);
     const BufferRegion second(&second_allocation);
@@ -104,7 +104,7 @@ TEST(Unit_BufferRegion, RegionsOfDifferentAllocationsNeverOverlap)
     EXPECT_FALSE(first.contains(second));
 }
 
-TEST(Unit_BufferRegion, ARegionContainsWhatLiesEntirelyInside)
+TEST(Small_BufferRegion, ARegionContainsWhatLiesEntirelyInside)
 {
     const BufferRegion whole(&first_allocation);
     const BufferRegion low(&first_allocation, 0, 8);

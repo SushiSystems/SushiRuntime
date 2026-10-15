@@ -37,7 +37,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
 
 /** @brief Tests that host work runs on a queue and returns its event. */
-TEST(Unit_TaskWork, HostWorkRunsOnAQueue)
+TEST(Medium_TaskWork, HostWorkRunsOnAQueue)
 {
     int calls = 0;
     const HostWork work = [&calls](sycl::queue&, const std::vector<sycl::event>& dependencies)
@@ -51,7 +51,7 @@ TEST(Unit_TaskWork, HostWorkRunsOnAQueue)
 }
 
 /** @brief Tests that a command group runs inside a submit. */
-TEST(Unit_TaskWork, TaskWorkRunsInsideASubmit)
+TEST(Medium_TaskWork, TaskWorkRunsInsideASubmit)
 {
     bool called = false;
     const TaskWork work = [&called](sycl::handler&) { called = true; };

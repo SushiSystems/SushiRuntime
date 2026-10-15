@@ -36,7 +36,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
 
 /** @brief Tests that a default plan does not chain and holds nothing. */
-TEST(Unit_ChainPlanShape, ADefaultPlanDoesNotChain)
+TEST(Small_ChainPlanShape, ADefaultPlanDoesNotChain)
 {
     const ChainPlan plan;
     EXPECT_FALSE(plan.chainable);
@@ -46,7 +46,7 @@ TEST(Unit_ChainPlanShape, ADefaultPlanDoesNotChain)
 }
 
 /** @brief Tests that a pending event's widths start unknown. */
-TEST(Unit_ChainPlanShape, APendingEventStartsWithUnknownWidths)
+TEST(Small_ChainPlanShape, APendingEventStartsWithUnknownWidths)
 {
     const PendingEvent pending{nullptr, 3, sycl::event()};
     EXPECT_EQ(pending.step, 3u);

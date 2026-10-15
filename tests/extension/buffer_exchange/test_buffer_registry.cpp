@@ -62,7 +62,7 @@ namespace
     }
 } // namespace
 
-TEST(Unit_BufferRegistryTest, RegisteringASharedAddressKeepsItsHandle)
+TEST(Medium_BufferRegistryTest, RegisteringASharedAddressKeepsItsHandle)
 {
     Bytes first = pattern(K_BUFFER_BYTES, 1);
     Bytes second = pattern(K_BUFFER_BYTES / 2, 2);
@@ -82,7 +82,7 @@ TEST(Unit_BufferRegistryTest, RegisteringASharedAddressKeepsItsHandle)
     EXPECT_EQ(other.size_bytes, second.size());
 }
 
-TEST(Unit_BufferRegistryTest, BumpRaisesTheVersionAndSkipsAGoneID)
+TEST(Medium_BufferRegistryTest, BumpRaisesTheVersionAndSkipsAGoneID)
 {
     Bytes buffer = pattern(K_BUFFER_BYTES, 3);
     BufferRegistry registry;
@@ -105,7 +105,7 @@ TEST(Unit_BufferRegistryTest, BumpRaisesTheVersionAndSkipsAGoneID)
     EXPECT_EQ(current->id, handle.id);
 }
 
-TEST(Unit_BufferRegistryTest, ResolveAndRefreshFollowTheCurrentVersion)
+TEST(Medium_BufferRegistryTest, ResolveAndRefreshFollowTheCurrentVersion)
 {
     Bytes first = pattern(K_BUFFER_BYTES, 4);
     Bytes second = pattern(K_BUFFER_BYTES, 5);
@@ -134,7 +134,7 @@ TEST(Unit_BufferRegistryTest, ResolveAndRefreshFollowTheCurrentVersion)
     EXPECT_FALSE(registry.refresh({stale.data(), stale.size()}));
 }
 
-TEST(Unit_BufferRegistryTest, ReadAtAnOffsetCopiesExactlyTheChunk)
+TEST(Medium_BufferRegistryTest, ReadAtAnOffsetCopiesExactlyTheChunk)
 {
     Bytes buffer = pattern(K_BUFFER_BYTES, 6);
     BufferRegistry registry;
@@ -174,7 +174,7 @@ TEST(Unit_BufferRegistryTest, ReadAtAnOffsetCopiesExactlyTheChunk)
               BufferAccessStatus::Ok);
 }
 
-TEST(Unit_BufferRegistryTest, WriteAtAnOldVersionIsRefused)
+TEST(Medium_BufferRegistryTest, WriteAtAnOldVersionIsRefused)
 {
     const Bytes original = pattern(K_BUFFER_BYTES, 7);
     const Bytes incoming = pattern(16, 8);
@@ -206,7 +206,7 @@ TEST(Unit_BufferRegistryTest, WriteAtAnOldVersionIsRefused)
     EXPECT_EQ(current->version, handle.version);
 }
 
-TEST(Unit_BufferRegistryTest, UnregisterReturnsTheID)
+TEST(Medium_BufferRegistryTest, UnregisterReturnsTheID)
 {
     Bytes buffer = pattern(K_BUFFER_BYTES, 9);
     Bytes never_shared = pattern(K_BUFFER_BYTES, 10);

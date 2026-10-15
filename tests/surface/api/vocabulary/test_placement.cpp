@@ -38,7 +38,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that an index names that device and observes nothing. */
-TEST(Unit_Placement, AnIndexNamesItsDevice)
+TEST(Medium_Placement, AnIndexNamesItsDevice)
 {
     const On placement(DeviceIndex{0});
     EXPECT_EQ(placement.device, DeviceIndex{0});
@@ -46,7 +46,7 @@ TEST(Unit_Placement, AnIndexNamesItsDevice)
 }
 
 /** @brief Tests that a buffer names its own device and is observed. */
-TEST(Unit_Placement, ABufferNamesItsDevice)
+TEST(Medium_Placement, ABufferNamesItsDevice)
 {
     auto runtime = Runtime::create().value();
     auto buffer = runtime.buffer<int>(4).value();

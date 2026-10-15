@@ -40,7 +40,7 @@
 using namespace SushiRuntime::Internal::Memory;
 
 /** @brief Tests that destroying the allocation frees the USM through the allocator. */
-TEST(Unit_USMAllocationOwner, DestroyingTheAllocationFreesTheUSM)
+TEST(Medium_USMAllocationOwner, DestroyingTheAllocationFreesTheUSM)
 {
     if (sycl::device::get_devices().empty())
         GTEST_SKIP() << "no SYCL device";
@@ -61,7 +61,7 @@ TEST(Unit_USMAllocationOwner, DestroyingTheAllocationFreesTheUSM)
 }
 
 /** @brief Tests that an owner with no allocator releases nothing and does not stop. */
-TEST(Unit_USMAllocationOwner, AnOwnerWithNoAllocatorDoesNothing)
+TEST(Medium_USMAllocationOwner, AnOwnerWithNoAllocatorDoesNothing)
 {
     USMAllocationOwner owner(nullptr);
     int value = 0;

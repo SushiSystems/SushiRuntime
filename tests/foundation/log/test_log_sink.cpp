@@ -38,7 +38,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that a sink is called with the level and the line it was given. */
-TEST(Unit_LogSink, ASinkReceivesTheLevelAndTheLine)
+TEST(Small_LogSink, ASinkReceivesTheLevelAndTheLine)
 {
     LogLevel seen = LogLevel::Off;
     std::string line;
@@ -53,7 +53,7 @@ TEST(Unit_LogSink, ASinkReceivesTheLevelAndTheLine)
 }
 
 /** @brief Tests that a sink is installed, replaced by the default, and synchronous mode set. */
-TEST(Unit_LogSink, ASinkIsInstalledAndRemoved)
+TEST(Small_LogSink, ASinkIsInstalledAndRemoved)
 {
     set_log_synchronous(true);
     set_log_sink(LogSink([](LogLevel, std::string_view) {}));

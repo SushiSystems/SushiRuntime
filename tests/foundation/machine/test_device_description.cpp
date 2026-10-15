@@ -35,7 +35,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the defaults of a description. */
-TEST(Unit_DeviceDescription, DefaultsDescribeNoDevice)
+TEST(Small_DeviceDescription, DefaultsDescribeNoDevice)
 {
     const DeviceDescription description;
     EXPECT_EQ(description.index, 0u);

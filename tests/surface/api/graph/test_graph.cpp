@@ -72,7 +72,7 @@ using namespace SushiRuntime;
 namespace NativeCpuPathTests
 {
     /** @brief Tests that a host task ordered after a device kernel sees the kernel's output. */
-    TEST(Integration_NativeCPU, HostTaskRunsAfterKernel)
+    TEST(Medium_NativeCPU, HostTaskRunsAfterKernel)
     {
         constexpr std::size_t N = 64;
 
@@ -97,7 +97,7 @@ namespace NativeCpuPathTests
     }
 
     /** @brief Tests that a device kernel ordered after a host task sees the host's writes. */
-    TEST(Integration_NativeCPU, KernelRunsAfterHostTask)
+    TEST(Medium_NativeCPU, KernelRunsAfterHostTask)
     {
         constexpr std::size_t N = 64;
 
@@ -122,7 +122,7 @@ namespace NativeCpuPathTests
     }
 
     /** @brief Tests that an untracked host task runs once per step. */
-    TEST(Integration_NativeCPU, UntrackedHostTaskRunsEveryStep)
+    TEST(Medium_NativeCPU, UntrackedHostTaskRunsEveryStep)
     {
         constexpr std::size_t STEPS = 5;
 
@@ -138,7 +138,7 @@ namespace NativeCpuPathTests
     }
 
     /** @brief Tests that a throwing host task fails the run and leaves the runtime usable. */
-    TEST(Integration_NativeCPU, ThrowingHostTaskKeepsRuntimeUsable)
+    TEST(Medium_NativeCPU, ThrowingHostTaskKeepsRuntimeUsable)
     {
         auto rt = Runtime::create().value();
 
@@ -186,7 +186,7 @@ namespace NodeEventRecordsTests
     } // namespace
 
     // E.1 - a graph that never asked for profiling must not leak any record.
-    TEST(Integration_NodeEventRecords, ProfilingNotRequestedLeavesNodeEventsEmpty)
+    TEST(Medium_NodeEventRecords, ProfilingNotRequestedLeavesNodeEventsEmpty)
     {
         constexpr std::size_t N = 128;
 
@@ -208,7 +208,7 @@ namespace NodeEventRecordsTests
      * @brief Tests that three kernel nodes over run(5) give fifteen records with submit <= start <=
      *        end.
      */
-    TEST(Integration_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
+    TEST(Medium_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
     {
         constexpr std::size_t N = 64;
 
@@ -250,7 +250,7 @@ namespace NodeEventRecordsTests
     // The steady-state capture case is in test_sushiruntime.cpp; see README.md.
 
     /** @brief Tests that node_index follows registration order, not the compiled order. */
-    TEST(Integration_NodeEventRecords, NodeIndexIsRegistrationOrder)
+    TEST(Medium_NodeEventRecords, NodeIndexIsRegistrationOrder)
     {
         constexpr std::size_t N = 32;
 
@@ -297,7 +297,7 @@ namespace NodeEventRecordsTests
     }
 
     /** @brief Tests that a host node's converted record lands inside the run's event window. */
-    TEST(Integration_NodeEventRecords, HostNodeLandsOnEventClock)
+    TEST(Medium_NodeEventRecords, HostNodeLandsOnEventClock)
     {
         constexpr std::size_t N = 64;
 
@@ -364,7 +364,7 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that the reuse overload reports what the value-returning one reports. */
-    TEST(Integration_RunReportReuse, ReuseReportsWhatTheValueFormReports)
+    TEST(Medium_RunReportReuse, ReuseReportsWhatTheValueFormReports)
     {
         auto rt  = Runtime::create().value();
         auto buf = rt.buffer<int>(N).value();
@@ -387,7 +387,7 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that steady-state runs refill the report's vectors in place. */
-    TEST(Integration_RunReportReuse, SteadyStateRunsDoNotReallocateTheReport)
+    TEST(Medium_RunReportReuse, SteadyStateRunsDoNotReallocateTheReport)
     {
         auto rt  = Runtime::create().value();
         auto buf = rt.buffer<int>(N).value();
@@ -414,7 +414,7 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that a short run after a long one reports the short run's count. */
-    TEST(Integration_RunReportReuse, EachRunOverwritesTheLastOne)
+    TEST(Medium_RunReportReuse, EachRunOverwritesTheLastOne)
     {
         auto rt  = Runtime::create().value();
         auto buf = rt.buffer<int>(N).value();
@@ -433,7 +433,7 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that a rejected run clears the report and marks it unsuccessful. */
-    TEST(Integration_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
+    TEST(Medium_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
     {
         auto rt  = Runtime::create().value();
         auto buf = rt.buffer<int>(N).value();
@@ -457,7 +457,7 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that run(RunReport&) returns the report it was given. */
-    TEST(Integration_RunReportReuse, TryRunReturnsTheCallersReport)
+    TEST(Medium_RunReportReuse, TryRunReturnsTheCallersReport)
     {
         auto rt  = Runtime::create().value();
         auto buf = rt.buffer<int>(N).value();
@@ -473,7 +473,7 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that RunHandle::wait(RunReport&) fills the caller's report. */
-    TEST(Integration_RunReportReuse, AsyncWaitFillsTheCallersReport)
+    TEST(Medium_RunReportReuse, AsyncWaitFillsTheCallersReport)
     {
         auto rt  = Runtime::create().value();
         auto buf = rt.buffer<int>(N).value();
@@ -495,7 +495,7 @@ namespace RunReportReuseTests
     }
 
     // The composed-plan driver shares the fill path, so it gets the same guarantee.
-    TEST(Integration_RunReportReuse, DynamicGraphRunsIntoACallersReport)
+    TEST(Medium_RunReportReuse, DynamicGraphRunsIntoACallersReport)
     {
         auto rt = Runtime::create().value();
 
@@ -647,7 +647,7 @@ namespace CancellationTests
     /**
      * @brief A second thread cancels an unbounded run_until and it returns quickly.
      */
-    TEST(Integration_Cancellation, CancelStopsRunUntilFromAnotherThread)
+    TEST(Medium_Cancellation, CancelStopsRunUntilFromAnotherThread)
     {
         constexpr std::size_t N = 1024;
         auto rt    = Runtime::create().value();
@@ -668,7 +668,7 @@ namespace CancellationTests
     /**
      * @brief After a cancelled run, the next run starts clean and completes fully.
      */
-    TEST(Integration_Cancellation, NextRunIsNotCancelledAfterReset)
+    TEST(Medium_Cancellation, NextRunIsNotCancelledAfterReset)
     {
         constexpr std::size_t N = 256;
         auto rt    = Runtime::create().value();
@@ -792,7 +792,7 @@ namespace ChainLayerTests
         }
     } // namespace
 
-    TEST(Integration_ChainLayer, ChainMatchesForcedSchedulerBitForBit)
+    TEST(Medium_ChainLayer, ChainMatchesForcedSchedulerBitForBit)
     {
         constexpr std::size_t RUNS  = 3;
         constexpr std::size_t STEPS = 40;
@@ -812,7 +812,7 @@ namespace ChainLayerTests
         expect_identical(chained, scheduled);
     }
 
-    TEST(Integration_ChainLayer, NonChainablePlanMatchesChainBitForBit)
+    TEST(Medium_ChainLayer, NonChainablePlanMatchesChainBitForBit)
     {
         constexpr std::size_t RUNS  = 2;
         constexpr std::size_t STEPS = 64;
@@ -836,7 +836,7 @@ namespace ChainLayerTests
      * @brief Tests that a node that names an operation runs on the chain when no cluster is
      *        attached; see README.md.
      */
-    TEST(Integration_ChainLayer, ANamedNodeRunsOnTheChainWithNoClusterAttached)
+    TEST(Medium_ChainLayer, ANamedNodeRunsOnTheChainWithNoClusterAttached)
     {
         auto rt = Runtime::create().value();
         auto values = rt.buffer<std::uint32_t>(N).value();
@@ -872,7 +872,7 @@ namespace ChainLayerTests
         }
     }
 
-    TEST(Integration_ChainLayer, RunUntilSeesEveryStepsResult)
+    TEST(Medium_ChainLayer, RunUntilSeesEveryStepsResult)
     {
         constexpr std::uint32_t TARGET = 9;
 
@@ -892,7 +892,7 @@ namespace ChainLayerTests
         EXPECT_EQ(counter[0], TARGET);
     }
 
-    TEST(Integration_ChainLayer, ProfiledChainRecordsEveryDispatch)
+    TEST(Medium_ChainLayer, ProfiledChainRecordsEveryDispatch)
     {
         constexpr std::size_t STEPS = 12;
 
@@ -941,7 +941,7 @@ namespace ChainLayerTests
 /** @brief Tests that the reusable completion latch drives a replayed run and re-runs on one plan. */
 namespace CompletionLatchTests
 {
-    TEST(Integration_CompletionLatch, ManyStepReplayReachesCorrectState)
+    TEST(Medium_CompletionLatch, ManyStepReplayReachesCorrectState)
     {
         constexpr std::size_t N = 1024;
         constexpr std::size_t STEPS = 5000;
@@ -962,7 +962,7 @@ namespace CompletionLatchTests
             ASSERT_EQ(field[i], static_cast<int>(STEPS)) << "at i=" << i;
     }
 
-    TEST(Integration_CompletionLatch, ReRunsCleanlyOnTheSamePlan)
+    TEST(Medium_CompletionLatch, ReRunsCleanlyOnTheSamePlan)
     {
         constexpr std::size_t N = 256;
 
@@ -982,7 +982,7 @@ namespace CompletionLatchTests
             ASSERT_EQ(field[i], 25) << "at i=" << i;
     }
 
-    TEST(Integration_CompletionLatch, SingleStepRunsRepeatedlyWithoutLeak)
+    TEST(Medium_CompletionLatch, SingleStepRunsRepeatedlyWithoutLeak)
     {
         constexpr std::size_t N = 64;
 
@@ -1007,7 +1007,7 @@ namespace CompletionLatchTests
 /** @brief Tests that a node spanning two device contexts fails the run with an error. */
 namespace CrossContextGuardTests
 {
-    TEST(Integration_CrossContextGuard, NodeSpanningTwoContextsFailsCleanly)
+    TEST(Medium_CrossContextGuard, NodeSpanningTwoContextsFailsCleanly)
     {
         constexpr std::size_t N = 256;
 
@@ -1188,7 +1188,7 @@ namespace DeterminismTests
     }
 
     /** @brief Tests that the floating-point compile contract reaches a consumer translation unit. */
-    TEST(Integration_Determinism, TheFloatingPointContractReachesConsumerCode)
+    TEST(Medium_Determinism, TheFloatingPointContractReachesConsumerCode)
     {
     #ifndef SR_DETERMINISTIC_FP
         GTEST_SKIP() << "built with SR_DETERMINISTIC_FP=OFF; byte-equal replay is "
@@ -1207,7 +1207,7 @@ namespace DeterminismTests
     }
 
     /** @brief Tests that the compiler does not reassociate host arithmetic. */
-    TEST(Integration_Determinism, HostArithmeticIsNotReassociated)
+    TEST(Medium_Determinism, HostArithmeticIsNotReassociated)
     {
         volatile double big   = 1.0e16;
         volatile double minus = -1.0e16;
@@ -1224,7 +1224,7 @@ namespace DeterminismTests
     }
 
     /** @brief Tests that one worker, two workers and the whole machine agree on every output byte. */
-    TEST(Integration_Determinism, OutputIsByteEqualAcrossWorkerCounts)
+    TEST(Medium_Determinism, OutputIsByteEqualAcrossWorkerCounts)
     {
         const Outcome single = run_workload(1);
         const Outcome pair   = run_workload(2);
@@ -1254,7 +1254,7 @@ namespace DeterminismTests
     }
 
     /** @brief Tests that the same configuration run again from scratch lands on the same bytes. */
-    TEST(Integration_Determinism, RepeatedConfigurationsAgreeByteForByte)
+    TEST(Medium_Determinism, RepeatedConfigurationsAgreeByteForByte)
     {
         const Outcome first  = run_workload(0);
         const Outcome second = run_workload(0);
@@ -1266,7 +1266,7 @@ namespace DeterminismTests
     }
 
     /** @brief Tests that a run with the background rebalancer on lands on the same bytes. */
-    TEST(Integration_Determinism, TheRebalancerDoesNotChangeTheBytes)
+    TEST(Medium_Determinism, TheRebalancerDoesNotChangeTheBytes)
     {
         const Outcome quiet  = run_workload(0, false);
         const Outcome moving = run_workload(0, true);
@@ -1277,7 +1277,7 @@ namespace DeterminismTests
     }
 
     /** @brief Tests that the first and the last step of a multi-step run produce the same bytes. */
-    TEST(Integration_Determinism, ReplayDoesNotDriftAcrossSteps)
+    TEST(Medium_Determinism, ReplayDoesNotDriftAcrossSteps)
     {
         RuntimeConfig config;
         config.rebalancer = false;
@@ -1320,7 +1320,7 @@ namespace GraphProfilingSwitchTests
         }
     } // namespace
 
-    TEST(Integration_GraphProfilingSwitch, TwoGraphsIndependentSwitch)
+    TEST(Medium_GraphProfilingSwitch, TwoGraphsIndependentSwitch)
     {
         constexpr std::size_t N = 256;
 
@@ -1358,7 +1358,7 @@ namespace GraphProfilingSwitchTests
             << "the unrequested graph must carry no profiling info of its own";
     }
 
-    TEST(Integration_GraphProfilingSwitch, ChangedRequestRecompilesOnceAndSwitches)
+    TEST(Medium_GraphProfilingSwitch, ChangedRequestRecompilesOnceAndSwitches)
     {
         constexpr std::size_t N = 128;
 
@@ -1390,7 +1390,7 @@ namespace GraphProfilingSwitchTests
      * @brief Tests that a node without declared Reads or Writes takes the NUMA fallback branch and
      *        still uses a profiling queue.
      */
-    TEST(Integration_GraphProfilingSwitch, NUMAFallbackBranchUsesProfilingQueue)
+    TEST(Medium_GraphProfilingSwitch, NUMAFallbackBranchUsesProfilingQueue)
     {
         constexpr std::size_t N = 256;
 
@@ -1423,7 +1423,7 @@ namespace ObservabilityTests
         }
     } // namespace
 
-    TEST(Integration_Observability, ProfilingOffLeavesBreakdownEmpty)
+    TEST(Medium_Observability, ProfilingOffLeavesBreakdownEmpty)
     {
         constexpr std::size_t N = 256;
 
@@ -1441,7 +1441,7 @@ namespace ObservabilityTests
         EXPECT_TRUE(rep.worker_timings.empty());
     }
 
-    TEST(Integration_Observability, ProfilingOnCapturesPerNodeTiming)
+    TEST(Medium_Observability, ProfilingOnCapturesPerNodeTiming)
     {
         constexpr std::size_t N = 4096;
         constexpr std::size_t STEPS = 8;
@@ -1477,7 +1477,7 @@ namespace ObservabilityTests
     }
 
     /** @brief Tests that a name given through name() reaches RunReport::NodeTiming. */
-    TEST(Integration_Observability, NamingTheLastNodeReachesNodeTiming)
+    TEST(Medium_Observability, NamingTheLastNodeReachesNodeTiming)
     {
         constexpr std::size_t N = 512;
         constexpr std::size_t STEPS = 4;
@@ -1499,7 +1499,7 @@ namespace ObservabilityTests
     }
 
     /** @brief Tests that every add() shape can be named, the two variadic ones included. */
-    TEST(Integration_Observability, EveryAddShapeCanBeNamed)
+    TEST(Medium_Observability, EveryAddShapeCanBeNamed)
     {
         constexpr std::size_t N = 256;
 
@@ -1545,7 +1545,7 @@ namespace ObservabilityTests
     }
 
     /** @brief Tests that an unnamed node reports the documented default label. */
-    TEST(Integration_Observability, UnnamedNodeStillReportsTheDefaultLabel)
+    TEST(Medium_Observability, UnnamedNodeStillReportsTheDefaultLabel)
     {
         constexpr std::size_t N = 128;
 
@@ -1561,7 +1561,7 @@ namespace ObservabilityTests
         EXPECT_STREQ(rep.node_timings[0].name.c_str(), "unnamed_task");
     }
 
-    TEST(Integration_Observability, ProfilingOnPopulatesWorkerSplit)
+    TEST(Medium_Observability, ProfilingOnPopulatesWorkerSplit)
     {
         constexpr std::size_t N = 1024;
 
@@ -1587,7 +1587,7 @@ namespace ObservabilityTests
         EXPECT_GT(total, 0.0);
     }
 
-    TEST(Integration_Observability, ExplicitTransfersAreAccounted)
+    TEST(Medium_Observability, ExplicitTransfersAreAccounted)
     {
         constexpr std::size_t N = 512;
 
@@ -1604,7 +1604,7 @@ namespace ObservabilityTests
         EXPECT_EQ(rt.advanced().device_to_host_bytes(), N * sizeof(int));
     }
 
-    TEST(Integration_Observability, TransferBytesAttributedToTheRunWindow)
+    TEST(Medium_Observability, TransferBytesAttributedToTheRunWindow)
     {
         constexpr std::size_t N = 128;
 

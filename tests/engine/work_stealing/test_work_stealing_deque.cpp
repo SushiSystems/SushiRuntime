@@ -58,7 +58,7 @@ namespace WorkStealingDequeTests
     /**
      * @brief Pushing past K_CAPACITY parks the surplus in overflow, never dropping it.
      */
-    TEST(Unit_WorkStealingDeque, PushBeyondCapacityParksOverflow)
+    TEST(Medium_WorkStealingDeque, PushBeyondCapacityParksOverflow)
     {
         Deque dq;
         const std::uintptr_t extra = 5000;
@@ -77,7 +77,7 @@ namespace WorkStealingDequeTests
      * Proves pop() relocates overflowed tasks back into the ring rather than
      * stranding them: the count out must equal the count in, with no duplicates.
      */
-    TEST(Unit_WorkStealingDeque, PopDrainsOverflowExactlyOnce)
+    TEST(Medium_WorkStealingDeque, PopDrainsOverflowExactlyOnce)
     {
         Deque dq;
         const std::uintptr_t total = static_cast<std::uintptr_t>(Deque::K_CAPACITY) + 5000;
@@ -104,7 +104,7 @@ namespace WorkStealingDequeTests
      * exactly one consumer, so the union of everything retrieved must be the full set
      * pushed — no loss, no duplication.
      */
-    TEST(Unit_WorkStealingDeque, NoLossUnderConcurrentSteal)
+    TEST(Medium_WorkStealingDeque, NoLossUnderConcurrentSteal)
     {
         Deque dq;
         const std::uintptr_t total = static_cast<std::uintptr_t>(Deque::K_CAPACITY) + 5000;

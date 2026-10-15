@@ -74,14 +74,14 @@ namespace
     }
 }
 
-TEST(Unit_NodeDispatchWidth, DefaultConstructedNodeReportsUnknown)
+TEST(Small_NodeDispatchWidth, DefaultConstructedNodeReportsUnknown)
 {
     const Node node;
     EXPECT_EQ(node.baked_width, std::size_t{K_WIDTH_UNKNOWN});
 }
 
 /** @brief Tests that a node added without a stamp reports the unknown width. */
-TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
+TEST(Small_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 {
     TaskGraph graph;
 
@@ -91,7 +91,7 @@ TEST(Unit_NodeDispatchWidth, UnstampedNodeReportsUnknown)
 }
 
 /** @brief Tests that a width set on a node and a name given after it land on that node. */
-TEST(Unit_NodeDispatchWidth, BakedWidthAndNameStampTheNodeTheyAreSetOn)
+TEST(Small_NodeDispatchWidth, BakedWidthAndNameStampTheNodeTheyAreSetOn)
 {
     TaskGraph graph;
 
@@ -104,7 +104,7 @@ TEST(Unit_NodeDispatchWidth, BakedWidthAndNameStampTheNodeTheyAreSetOn)
 }
 
 /** @brief Verifies a width set on the second of two nodes leaves the first one unknown. */
-TEST(Unit_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
+TEST(Small_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
 {
     TaskGraph graph;
 
@@ -123,7 +123,7 @@ TEST(Unit_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
 /**
  * @brief Tests that a node without late bindings reports its baked width as both launched and live.
  */
-TEST(Unit_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
+TEST(Small_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
 {
     Internal::Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}).baked_width = 1024;
@@ -134,7 +134,7 @@ TEST(Unit_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
 }
 
 /** @brief Tests that a dynamic node reports its capacity as launched and its live count as live. */
-TEST(Unit_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
+TEST(Small_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
 {
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     bindings->count.store(129, std::memory_order_relaxed);
@@ -148,7 +148,7 @@ TEST(Unit_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
 }
 
 /** @brief Tests that K_USE_BAKED falls back to the baked width. */
-TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
+TEST(Small_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
 {
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     bindings->count.store(Internal::Graph::LateBindings::K_USE_BAKED, std::memory_order_relaxed);
@@ -160,7 +160,7 @@ TEST(Unit_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
 }
 
 /** @brief Tests that a width that does not fit in uint32_t is reported as unknown. */
-TEST(Unit_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
+TEST(Small_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
 {
     Internal::Graph::TaskGraph graph;
     graph.add_node([](sycl::handler&) {}).baked_width = std::size_t{0xFFFFFFFFu} + 1;

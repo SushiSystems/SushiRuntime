@@ -66,7 +66,7 @@ namespace AllocationTests
         void* fake(std::uintptr_t n) { return reinterpret_cast<void*>(n * 4096u); }
     }
 
-    TEST(Unit_Allocation, ReleasesOnceOnDestruction)
+    TEST(Small_Allocation, ReleasesOnceOnDestruction)
     {
         int releases = 0;
         void* last = nullptr;
@@ -79,7 +79,7 @@ namespace AllocationTests
         EXPECT_EQ(last, fake(1));
     }
 
-    TEST(Unit_Allocation, MoveTransfersTheReleaseAndEmptiesTheSource)
+    TEST(Small_Allocation, MoveTransfersTheReleaseAndEmptiesTheSource)
     {
         int releases = 0;
         void* last = nullptr;
@@ -93,7 +93,7 @@ namespace AllocationTests
         EXPECT_EQ(last, fake(2));
     }
 
-    TEST(Unit_Allocation, MoveAssignmentReleasesTheOverwrittenAddressFirst)
+    TEST(Small_Allocation, MoveAssignmentReleasesTheOverwrittenAddressFirst)
     {
         int releases = 0;
         void* last = nullptr;
@@ -105,14 +105,14 @@ namespace AllocationTests
         EXPECT_EQ(first.address(), fake(4));
     }
 
-    TEST(Unit_Allocation, AnEmptyAllocationHasNoAddressOrOwner)
+    TEST(Small_Allocation, AnEmptyAllocationHasNoAddressOrOwner)
     {
         Allocation allocation;
         EXPECT_TRUE(allocation.empty());
         EXPECT_EQ(allocation.bytes(), 0u);
     }
 
-    TEST(Unit_Allocation, ResetOnANonNullAddressWithNoOwnerReleasesNothing)
+    TEST(Small_Allocation, ResetOnANonNullAddressWithNoOwnerReleasesNothing)
     {
         Allocation allocation(fake(9), 16, nullptr);
         EXPECT_NO_THROW(allocation.reset());

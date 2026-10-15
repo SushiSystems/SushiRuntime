@@ -56,7 +56,7 @@ is 0 and the test proves only that the forms record and run; with two it proves 
 
 `add_untracked` with `On(DeviceIndex{device_count})` stops the process, in the launch form and in
 the raw form. The message names the call the user wrote, the index and the device count. The test
-is in the suite `Integration_BuilderSurfaceDeathTest`.
+is in the suite `Medium_BuilderSurfaceDeathTest`.
 
 ### `PlacementWatchesTheHandleItNames`
 
@@ -86,7 +86,7 @@ and a rule added then runs.
 
 The file covers the cross-region edges the composer makes from the pins of
 `region_boundary`, whose own tests are in `tests/engine/region_boundary/`. The
-`Integration_BoundaryAccess` cases record host tasks on a profiled `DynamicGraph` over a buffer of
+`Medium_BoundaryAccess` cases record host tasks on a profiled `DynamicGraph` over a buffer of
 20 elements, run one step and assert the edges and the values.
 
 ### `AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers`

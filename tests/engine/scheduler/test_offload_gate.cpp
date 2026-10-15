@@ -73,7 +73,7 @@ namespace
 }
 
 /** @brief Tests that an offloadable node is offered and counted once accepted. */
-TEST(Unit_OffloadGate, AnOffloadableNodeIsOfferedAndCounted)
+TEST(Small_OffloadGate, AnOffloadableNodeIsOfferedAndCounted)
 {
     AcceptingCoordinator coordinator;
     OffloadGate gate;
@@ -91,7 +91,7 @@ TEST(Unit_OffloadGate, AnOffloadableNodeIsOfferedAndCounted)
 }
 
 /** @brief Tests the four cases the gate never offers: no coordinator, no node, not offloadable, aborting. */
-TEST(Unit_OffloadGate, TheGateOffersNothingItMustNot)
+TEST(Small_OffloadGate, TheGateOffersNothingItMustNot)
 {
     AcceptingCoordinator coordinator;
     OffloadGate gate;
@@ -111,7 +111,7 @@ TEST(Unit_OffloadGate, TheGateOffersNothingItMustNot)
 }
 
 /** @brief Tests that prepare() reaches the coordinator, and does nothing without one. */
-TEST(Unit_OffloadGate, PrepareReachesTheCoordinator)
+TEST(Small_OffloadGate, PrepareReachesTheCoordinator)
 {
     std::vector<sushi_ptr<Internal::Graph::Node>> nodes{make_sushi<Internal::Graph::Node>()};
     const span<const sushi_ptr<Internal::Graph::Node>> view(nodes.data(), nodes.size());

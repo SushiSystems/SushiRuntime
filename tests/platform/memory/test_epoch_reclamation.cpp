@@ -88,7 +88,7 @@ namespace
  *
  * Checks that nested guards do not throw exceptions or leave unbalanced state.
  */
-TEST(Unit_EpochReclamationTest, GuardEnterExitBalanced)
+TEST(Medium_EpochReclamationTest, GuardEnterExitBalanced)
 {
     EXPECT_NO_THROW({
         EpochGuard outer;
@@ -103,7 +103,7 @@ TEST(Unit_EpochReclamationTest, GuardEnterExitBalanced)
  *
  * Verifies that the reclamation process eventually frees objects from past epochs.
  */
-TEST(Unit_EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
+TEST(Medium_EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
 {
     Counter destroyed = make_counter();
     constexpr int RETIRED = 1024;
@@ -119,7 +119,7 @@ TEST(Unit_EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
  *
  * Its nodes go to the global orphan list and are reclaimed by another thread's draining work.
  */
-TEST(Unit_EpochReclamationTest, ThreadExitHandsOffOrphans)
+TEST(Medium_EpochReclamationTest, ThreadExitHandsOffOrphans)
 {
     Counter destroyed = make_counter();
     constexpr int RETIRED = 300;
@@ -152,7 +152,7 @@ TEST(Unit_EpochReclamationTest, ThreadExitHandsOffOrphans)
  *
  * Ensures concurrent retirements are thread-safe and objects are eventually reclaimed.
  */
-TEST(Unit_EpochReclamationTest, ConcurrentRetireNoCrash)
+TEST(Medium_EpochReclamationTest, ConcurrentRetireNoCrash)
 {
     Counter destroyed = make_counter();
     constexpr int THREADS    = 8;
@@ -253,7 +253,7 @@ namespace
 /**
  * @brief Tests that a thread arriving when every slot is held stops the process, naming the limit.
  */
-TEST(Unit_EpochReclamationDeathTest, AThreadPastTheSlotLimitStopsNamingTheLimit)
+TEST(Medium_EpochReclamationDeathTest, AThreadPastTheSlotLimitStopsNamingTheLimit)
 {
     EXPECT_DEATH(hold_one_slot_too_many(), std::to_string(K_EPOCH_SLOTS) + " epoch slots");
 
@@ -262,7 +262,7 @@ TEST(Unit_EpochReclamationDeathTest, AThreadPastTheSlotLimitStopsNamingTheLimit)
 }
 
 /** @brief Tests that a reader that blocks reclamation costs one scan per K_RETIRE_THRESHOLD. */
-TEST(Unit_EpochReclamationTest, ABlockedReclaimScansOncePerThreshold)
+TEST(Medium_EpochReclamationTest, ABlockedReclaimScansOncePerThreshold)
 {
     constexpr std::size_t THRESHOLD = Detail::EpochThreadLocalState::K_RETIRE_THRESHOLD;
     constexpr std::size_t RETIRED = 10 * THRESHOLD;
@@ -313,7 +313,7 @@ namespace
 }
 
 /** @brief Tests that a destructor that retires leaves every parent and child deleted once. */
-TEST(Unit_EpochReclamationTest, ADestructorThatRetiresDeletesParentAndChildOnce)
+TEST(Medium_EpochReclamationTest, ADestructorThatRetiresDeletesParentAndChildOnce)
 {
     constexpr std::size_t THRESHOLD = Detail::EpochThreadLocalState::K_RETIRE_THRESHOLD;
     constexpr int PARENTS = static_cast<int>(4 * THRESHOLD);
@@ -347,7 +347,7 @@ TEST(Unit_EpochReclamationTest, ADestructorThatRetiresDeletesParentAndChildOnce)
  * global orphan list and must be freed by survivors. A prior bug returned
  * orphans to the wrong free pool.
  */
-TEST(Regression_EpochReclamation, OrphanedNodesReclaimed)
+TEST(Medium_EpochReclamation, OrphanedNodesReclaimed)
 {
     // The counter is a shared_ptr, as reclamation frees Tracked after this frame; see README.md.
     using Counter = std::shared_ptr<std::atomic<int>>;

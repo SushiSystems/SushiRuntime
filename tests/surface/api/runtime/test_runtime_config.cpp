@@ -70,7 +70,7 @@ namespace CoTenancyTests
     }
 
     /** @brief Tests that the default pool is one worker per logical core, starting at core 0. */
-    TEST(Integration_CoTenancy, DefaultsToOneWorkerPerCoreFromCoreZero)
+    TEST(Medium_CoTenancy, DefaultsToOneWorkerPerCoreFromCoreZero)
     {
         auto rt = Runtime::create().value();
         const auto pool = rt.advanced().worker_pool();
@@ -83,7 +83,7 @@ namespace CoTenancyTests
     /**
      * @brief Tests that the pool takes exactly the worker count and core placement the host asked for.
      */
-    TEST(Integration_CoTenancy, ReservesTheCoresTheHostAskedFor)
+    TEST(Medium_CoTenancy, ReservesTheCoresTheHostAskedFor)
     {
         const std::size_t cores = machine_cores();
         if (cores < 4)
@@ -105,7 +105,7 @@ namespace CoTenancyTests
     }
 
     /** @brief Tests that a single worker still executes the whole graph. */
-    TEST(Integration_CoTenancy, ASingleWorkerStillExecutesTheWholeGraph)
+    TEST(Medium_CoTenancy, ASingleWorkerStillExecutesTheWholeGraph)
     {
         RuntimeConfig config;
         config.worker_count = 1;
@@ -117,7 +117,7 @@ namespace CoTenancyTests
     }
 
     /** @brief Tests that the Float policy keeps the requested pool size and binds no worker. */
-    TEST(Integration_CoTenancy, FloatPolicyRunsUnpinned)
+    TEST(Medium_CoTenancy, FloatPolicyRunsUnpinned)
     {
         RuntimeConfig config;
         config.worker_count = 2;
@@ -133,7 +133,7 @@ namespace CoTenancyTests
     }
 
     /** @brief Tests that a core range past the end of the machine is clamped. */
-    TEST(Integration_CoTenancy, AnOutOfRangeCoreRangeIsClampedNotIgnored)
+    TEST(Medium_CoTenancy, AnOutOfRangeCoreRangeIsClampedNotIgnored)
     {
         const std::size_t cores = machine_cores();
 
@@ -168,7 +168,7 @@ namespace DeviceSelectionTests
     }
 
     /** @brief Tests that every device the require_fp64 filter admits reports fp64. */
-    TEST(Integration_DeviceSelection, RequireFp64AdmitsOnlyFp64Devices)
+    TEST(Medium_DeviceSelection, RequireFp64AdmitsOnlyFp64Devices)
     {
         DeviceFilter config;
         config.require_fp64 = true;
@@ -184,7 +184,7 @@ namespace DeviceSelectionTests
     /**
      * @brief Tests that a runtime with require_fp64 still constructs on a lane that has an fp64 device.
      */
-    TEST(Integration_DeviceSelection, RequireFp64StillConstructsOnAConformingLane)
+    TEST(Medium_DeviceSelection, RequireFp64StillConstructsOnAConformingLane)
     {
         RuntimeConfig config;
         config.devices.require_fp64 = true;
@@ -204,7 +204,7 @@ namespace DeviceSelectionTests
     }
 
     /** @brief Tests that a filter that admits nothing fails at construction with Unsupported. */
-    TEST(Integration_DeviceSelection, AnEmptyFilterFailsWithUnsupported)
+    TEST(Medium_DeviceSelection, AnEmptyFilterFailsWithUnsupported)
     {
         RuntimeConfig config;
         config.devices.include_cpu         = false;
@@ -222,7 +222,7 @@ namespace DeviceSelectionTests
     }
 
     /** @brief Tests that the default filter still finds this lane's devices. */
-    TEST(Integration_DeviceSelection, DefaultFilterIsUnaffected)
+    TEST(Medium_DeviceSelection, DefaultFilterIsUnaffected)
     {
         auto rt = Runtime::create().value();
         EXPECT_GE(rt.advanced().device_count(), 1u);
@@ -246,7 +246,7 @@ namespace ErrorTypesTests
     } // namespace
 
     /** @brief Tests that a filter excluding every device returns Unsupported and throws nothing. */
-    TEST(Integration_ErrorTypes, AFilterThatExcludesEveryDeviceReturnsUnsupported)
+    TEST(Medium_ErrorTypes, AFilterThatExcludesEveryDeviceReturnsUnsupported)
     {
         EXPECT_NO_THROW({
             const auto refused = Runtime::create(config_admitting_nothing());

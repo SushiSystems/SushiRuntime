@@ -46,8 +46,8 @@ sr test
 
 `hub install-cli` comes from SushiStack. Without it, `pipx install ./cli` installs the same
 package from this checkout. `sr build` makes a release build by default, and `--type` accepts
-`debug`, `relwithdebinfo` and `asan`. `sr test` runs the functional suite by default, and
-`--suite` selects `benchmark`, `package`, `all` or one of the finer labels.
+`debug`, `relwithdebinfo` and `asan`. `sr test` runs the small, medium and large tests by default, and
+`--label` selects one size, `quarantined` or `package`; `sr bench` runs the benchmarks.
 [The CLI guide](CLI_GUIDE.md) lists every command and flag.
 
 ## Can I build it without a local compiler?

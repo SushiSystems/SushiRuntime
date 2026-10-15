@@ -55,7 +55,7 @@ namespace
 }
 
 /** @brief Tests that the observer hears the release of the address the allocator gave. */
-TEST(Unit_USMReleaseObserver, HearsEachReleaseWithItsAddress)
+TEST(Medium_USMReleaseObserver, HearsEachReleaseWithItsAddress)
 {
     if (sycl::device::get_devices().empty())
         GTEST_SKIP() << "no SYCL device";

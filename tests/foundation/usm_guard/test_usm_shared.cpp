@@ -38,7 +38,7 @@
 using namespace SushiRuntime::Test;
 
 /** @brief Tests that the host writes and reads every element. */
-TEST(Unit_USMShared, TheHostWritesAndReadsEveryElement)
+TEST(Medium_USMShared, TheHostWritesAndReadsEveryElement)
 {
     if (!has_any_sycl_device())
         GTEST_SKIP() << "no SYCL device";
@@ -53,7 +53,7 @@ TEST(Unit_USMShared, TheHostWritesAndReadsEveryElement)
 }
 
 /** @brief Tests that a move hands the allocation over and empties the source. */
-TEST(Unit_USMShared, AMoveHandsTheAllocationOver)
+TEST(Medium_USMShared, AMoveHandsTheAllocationOver)
 {
     if (!has_any_sycl_device())
         GTEST_SKIP() << "no SYCL device";

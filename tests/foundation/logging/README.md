@@ -12,7 +12,7 @@ The file covers the process-wide logger: the level gate, the sink and the two de
 The logger's state lives in the shared library, so every test changes state that the
 next test would inherit.
 
-### `Unit_LoggerTest`
+### `Medium_LoggerTest`
 
 The fixture puts the logger in synchronous mode and sets the level to `Warn` before each test, and
 afterwards restores the default sink and the level the process had. A test sink captures a pointer

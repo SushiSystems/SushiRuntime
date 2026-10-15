@@ -40,7 +40,7 @@ using namespace HostProgram;
 constexpr float K_TOLERANCE = 1e-5f;
 
 /** @brief Tests that a uniform field read back after ten steps is still the same value. */
-TEST(Integration_DiffusionBackend, AUniformFieldStaysUniform)
+TEST(Small_DiffusionBackend, AUniformFieldStaysUniform)
 {
     BackendHandle backend;
     const Status created = create_backend(backend);
@@ -59,7 +59,7 @@ TEST(Integration_DiffusionBackend, AUniformFieldStaysUniform)
 }
 
 /** @brief Tests the name of every status code. */
-TEST(Unit_DiffusionBackend, EveryCodeHasAName)
+TEST(Small_DiffusionBackend, EveryCodeHasAName)
 {
     EXPECT_STREQ(to_string(StatusCode::Ok), "Ok");
     EXPECT_STREQ(to_string(StatusCode::OutOfMemory), "OutOfMemory");

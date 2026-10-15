@@ -55,7 +55,7 @@ static_assert(std::is_nothrow_move_constructible<Runtime>::value, "a Runtime mus
 static_assert(std::is_nothrow_move_assignable<Runtime>::value, "a Runtime must move-assign");
 
 /** @brief Tests that one struct sets the worker count and that a view outlives its Runtime. */
-TEST(Integration_RuntimeEntry, OneStructConfiguresAndTheViewOutlivesTheRuntime)
+TEST(Medium_RuntimeEntry, OneStructConfiguresAndTheViewOutlivesTheRuntime)
 {
     RuntimeConfig config;
     config.worker_count = 2;
@@ -75,7 +75,7 @@ TEST(Integration_RuntimeEntry, OneStructConfiguresAndTheViewOutlivesTheRuntime)
 }
 
 /** @brief Tests that devices() has one entry per device, in the order DeviceIndex counts. */
-TEST(Integration_RuntimeEntry, DevicesListsEveryDeviceInOrder)
+TEST(Medium_RuntimeEntry, DevicesListsEveryDeviceInOrder)
 {
     const Runtime rt = Runtime::create().value();
     const AdvancedControls view = rt.advanced();
@@ -101,7 +101,7 @@ TEST(Integration_RuntimeEntry, DevicesListsEveryDeviceInOrder)
 }
 
 /** @brief Tests that create() with no argument yields a runtime that runs a graph. */
-TEST(Integration_RuntimeEntry, DefaultConfigCreates)
+TEST(Medium_RuntimeEntry, DefaultConfigCreates)
 {
     constexpr std::size_t COUNT = 64;
 
@@ -123,7 +123,7 @@ TEST(Integration_RuntimeEntry, DefaultConfigCreates)
 }
 
 /** @brief Tests that every RuntimeConfig field reaches the runtime it configures. */
-TEST(Integration_RuntimeEntry, EveryFieldReachesTheRuntime)
+TEST(Medium_RuntimeEntry, EveryFieldReachesTheRuntime)
 {
     RuntimeConfig config;
     config.worker_count = 1;
@@ -148,7 +148,7 @@ TEST(Integration_RuntimeEntry, EveryFieldReachesTheRuntime)
 }
 
 /** @brief Tests that a moved Runtime keeps the context its handles were made from. */
-TEST(Integration_RuntimeEntry, AMovedRuntimeKeepsItsContext)
+TEST(Medium_RuntimeEntry, AMovedRuntimeKeepsItsContext)
 {
     Runtime first = Runtime::create().value();
     Internal::Execution::RuntimeContext* const context =
@@ -160,7 +160,7 @@ TEST(Integration_RuntimeEntry, AMovedRuntimeKeepsItsContext)
 }
 
 /** @brief Tests that a caller waits for device work and copies through the device's queue. */
-TEST(Integration_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
+TEST(Medium_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
 {
     constexpr std::size_t K_WORDS = 256;
 
@@ -183,7 +183,7 @@ TEST(Integration_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
 }
 
 /** @brief Tests that asking for the queue of a device the runtime does not have stops. */
-TEST(Integration_RuntimeEntryDeathTest, AQueueOfAnUnknownDeviceStops)
+TEST(Medium_RuntimeEntryDeathTest, AQueueOfAnUnknownDeviceStops)
 {
     const Runtime runtime = Runtime::create().value();
     const AdvancedControls controls = runtime.advanced();
@@ -193,7 +193,7 @@ TEST(Integration_RuntimeEntryDeathTest, AQueueOfAnUnknownDeviceStops)
 }
 
 /** @brief Tests that a buffer and a state no device can hold come back as AllocationFailed. */
-TEST(Integration_RuntimeEntry, ARequestNoDeviceCanSatisfyReturnsAllocationFailed)
+TEST(Medium_RuntimeEntry, ARequestNoDeviceCanSatisfyReturnsAllocationFailed)
 {
     const Runtime runtime = Runtime::create().value();
     // Half the address space in bytes: the count fits std::size_t and no device has the room.
@@ -215,7 +215,7 @@ TEST(Integration_RuntimeEntry, ARequestNoDeviceCanSatisfyReturnsAllocationFailed
 }
 
 /** @brief Tests that the live allocation count rises with a buffer and falls when it is freed. */
-TEST(Integration_RuntimeEntry, LiveAllocationCountFollowsABuffer)
+TEST(Medium_RuntimeEntry, LiveAllocationCountFollowsABuffer)
 {
     auto rt = Runtime::create().value();
     const AdvancedControls controls = rt.advanced();
@@ -236,7 +236,7 @@ TEST(Integration_RuntimeEntry, LiveAllocationCountFollowsABuffer)
  * @brief Tests that a thread that outlives the Runtime it allocated from tears down without a
  *        fault.
  */
-TEST(Regression_Runtime, AThreadOutlivingTheRuntimeTearsDownCleanly)
+TEST(Medium_Runtime, AThreadOutlivingTheRuntimeTearsDownCleanly)
 {
     std::mutex gate_mutex;
     std::condition_variable gate;

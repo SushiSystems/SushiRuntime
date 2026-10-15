@@ -38,7 +38,7 @@ using SushiRuntime::Delegate;
 
 namespace
 {
-    TEST(Unit_Delegate, EmptyIsFalsy)
+    TEST(Small_Delegate, EmptyIsFalsy)
     {
         Delegate<int()> d;
         EXPECT_FALSE(static_cast<bool>(d));
@@ -47,27 +47,27 @@ namespace
         EXPECT_FALSE(static_cast<bool>(n));
     }
 
-    TEST(Unit_Delegate, InvokesAndReturns)
+    TEST(Small_Delegate, InvokesAndReturns)
     {
         Delegate<int()> d = [] { return 42; };
         ASSERT_TRUE(static_cast<bool>(d));
         EXPECT_EQ(d(), 42);
     }
 
-    TEST(Unit_Delegate, ForwardsArguments)
+    TEST(Small_Delegate, ForwardsArguments)
     {
         Delegate<int(int, int)> add = [](int a, int b) { return a + b; };
         EXPECT_EQ(add(3, 4), 7);
     }
 
-    TEST(Unit_Delegate, CapturesState)
+    TEST(Small_Delegate, CapturesState)
     {
         int base = 10;
         Delegate<int(int)> d = [base](int x) { return base + x; };
         EXPECT_EQ(d(5), 15);
     }
 
-    TEST(Unit_Delegate, VoidReturn)
+    TEST(Small_Delegate, VoidReturn)
     {
         int sink = 0;
         Delegate<void(int)> d = [&sink](int v) { sink = v; };
@@ -75,7 +75,7 @@ namespace
         EXPECT_EQ(sink, 99);
     }
 
-    TEST(Unit_Delegate, VoidSignatureDiscardsResultOfValueCallable)
+    TEST(Small_Delegate, VoidSignatureDiscardsResultOfValueCallable)
     {
         int sink = 0;
         Delegate<void(int)> d = [&sink](int v)
@@ -88,7 +88,7 @@ namespace
         EXPECT_EQ(sink, 99);
     }
 
-    TEST(Unit_Delegate, MoveLeavesSourceEmpty)
+    TEST(Small_Delegate, MoveLeavesSourceEmpty)
     {
         Delegate<int()> a = [] { return 7; };
         Delegate<int()> b = std::move(a);
@@ -98,7 +98,7 @@ namespace
         EXPECT_EQ(b(), 7);
     }
 
-    TEST(Unit_Delegate, MoveAssignReplacesTarget)
+    TEST(Small_Delegate, MoveAssignReplacesTarget)
     {
         Delegate<int()> a = [] { return 1; };
         Delegate<int()> b = [] { return 2; };
@@ -107,7 +107,7 @@ namespace
         EXPECT_FALSE(static_cast<bool>(b));
     }
 
-    TEST(Unit_Delegate, DestroysTarget)
+    TEST(Small_Delegate, DestroysTarget)
     {
         auto counter = std::make_shared<int>(0);
         std::weak_ptr<int> observer = counter;
@@ -120,7 +120,7 @@ namespace
         EXPECT_TRUE(observer.expired());
     }
 
-    TEST(Unit_Delegate, HoldsMoveOnlyTarget)
+    TEST(Small_Delegate, HoldsMoveOnlyTarget)
     {
         auto owned = std::make_unique<int>(123);
         Delegate<int()> d =
@@ -132,7 +132,7 @@ namespace
         EXPECT_FALSE(static_cast<bool>(d));
     }
 
-    TEST(Unit_Delegate, HoldsNothrowMovableMoveOnlyTarget)
+    TEST(Small_Delegate, HoldsNothrowMovableMoveOnlyTarget)
     {
         auto owned = std::make_unique<int>(321);
         auto target = [p = std::move(owned)] { return *p; };

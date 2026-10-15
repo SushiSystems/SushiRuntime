@@ -77,7 +77,7 @@ namespace
 }
 
 /** @brief Tests that a peer whose header announces version 2 is refused with ProtocolMismatch. */
-TEST(Unit_WireFormat, APeerThatAnnouncesVersionTwoIsRefusedWithProtocolMismatch)
+TEST(Medium_WireFormat, APeerThatAnnouncesVersionTwoIsRefusedWithProtocolMismatch)
 {
     FrameHeader header;
     ASSERT_EQ(header_status_with_byte(4, 0x02, header), FrameStatus::VersionMismatch);
@@ -96,7 +96,7 @@ TEST(Unit_WireFormat, APeerThatAnnouncesVersionTwoIsRefusedWithProtocolMismatch)
 }
 
 /** @brief Tests the 12-byte header layout, the last-chunk flag and a whole PING frame. */
-TEST(Unit_WireFormat, FrameHeaderGolden)
+TEST(Medium_WireFormat, FrameHeaderGolden)
 {
     const Bytes golden = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x03, 0x00, 0x07, 0x00, 0x0C, 0x0B,
                                     0x0A, 0x00 });
@@ -129,7 +129,7 @@ TEST(Unit_WireFormat, FrameHeaderGolden)
 }
 
 /** @brief Tests that a version 1 reader sees the magic as a length above its 256 MiB cap. */
-TEST(Unit_WireFormat, MagicReadsAsOversizedV1Length)
+TEST(Medium_WireFormat, MagicReadsAsOversizedV1Length)
 {
     Bytes frame;
     append_frame_header(FrameHeader{}, frame);

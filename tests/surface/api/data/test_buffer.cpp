@@ -99,7 +99,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that every range call of a Buffer stops on a window one past its end.
      */
-    TEST(Integration_DataHandlesDeathTest, BufferStopsOnAWindowPastTheEnd)
+    TEST(Medium_DataHandlesDeathTest, BufferStopsOnAWindowPastTheEnd)
     {
         auto rt = Runtime::create().value();
         const auto buf = rt.buffer<int>(K_SIZE).value();
@@ -111,7 +111,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that every range call of a State stops on a window one past its end.
      */
-    TEST(Integration_DataHandlesDeathTest, StateStopsOnAWindowPastTheEnd)
+    TEST(Medium_DataHandlesDeathTest, StateStopsOnAWindowPastTheEnd)
     {
         auto rt = Runtime::create().value();
         const auto field = rt.state<int>(K_SIZE).value();
@@ -123,7 +123,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that a window whose offset plus count wraps around stops the call, not wraps.
      */
-    TEST(Integration_DataHandlesDeathTest, WindowWhoseEndWrapsStops)
+    TEST(Medium_DataHandlesDeathTest, WindowWhoseEndWrapsStops)
     {
         auto rt = Runtime::create().value();
         const auto buf = rt.buffer<int>(K_SIZE).value();
@@ -136,7 +136,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that a zero-length window at the end of a Buffer or a State is accepted.
      */
-    TEST(Integration_DataHandles, EmptyWindowAtTheEndIsAccepted)
+    TEST(Medium_DataHandles, EmptyWindowAtTheEndIsAccepted)
     {
         auto rt = Runtime::create().value();
         const auto buf = rt.buffer<int>(K_SIZE).value();
@@ -149,7 +149,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that a window which fits round-trips through write_range and read_range.
      */
-    TEST(Integration_DataHandles, FittingWindowRoundTrips)
+    TEST(Medium_DataHandles, FittingWindowRoundTrips)
     {
         auto rt = Runtime::create().value();
         const auto buf = rt.buffer<int>(K_SIZE).value();
@@ -166,7 +166,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that write_range stops on a null source and a short source for a non-empty window.
      */
-    TEST(Integration_DataHandlesDeathTest, NullOrShortSourceWithACountStops)
+    TEST(Medium_DataHandlesDeathTest, NullOrShortSourceWithACountStops)
     {
         auto rt = Runtime::create().value();
         const auto buf = rt.buffer<int>(K_SIZE).value();
@@ -184,7 +184,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that an element count whose byte size overflows stops before any allocation.
      */
-    TEST(Integration_DataHandlesDeathTest, OverflowingElementCountStopsBeforeAllocating)
+    TEST(Medium_DataHandlesDeathTest, OverflowingElementCountStopsBeforeAllocating)
     {
         auto rt = Runtime::create().value();
         // The byte size of this count wraps to 8, which an unchecked allocation would grant.
@@ -198,7 +198,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that a State and a Buffer answer the queries they share alike.
      */
-    TEST(Integration_DataHandles, StateAndBufferAnswerTheSharedQueriesAlike)
+    TEST(Medium_DataHandles, StateAndBufferAnswerTheSharedQueriesAlike)
     {
         auto rt = Runtime::create().value();
         const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}).value();
@@ -220,7 +220,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that a trivially copyable struct instantiates Buffer and State and round-trips.
      */
-    TEST(Integration_DataHandles, TriviallyCopyableStructRoundTrips)
+    TEST(Medium_DataHandles, TriviallyCopyableStructRoundTrips)
     {
         EXPECT_TRUE(std::is_trivially_copyable<Pair>::value);
 
@@ -249,7 +249,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that host() on a device-resident handle stops and names the handle.
      */
-    TEST(Integration_DataHandlesDeathTest, HostOnADeviceResidentHandleStops)
+    TEST(Medium_DataHandlesDeathTest, HostOnADeviceResidentHandleStops)
     {
         auto rt = Runtime::create().value();
         const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
@@ -263,7 +263,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that operator[] on a device-resident handle stops where SR_ASSERT is checked.
      */
-    TEST(Integration_DataHandlesDeathTest, IndexingADeviceResidentHandleStops)
+    TEST(Medium_DataHandlesDeathTest, IndexingADeviceResidentHandleStops)
     {
         auto rt = Runtime::create().value();
         const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
@@ -277,7 +277,7 @@ namespace DataHandlesTests
     /**
      * @brief Tests that buffer() and state() stop on a device index that names no device.
      */
-    TEST(Integration_DataHandlesDeathTest, DeviceIndexThatNamesNoDeviceStops)
+    TEST(Medium_DataHandlesDeathTest, DeviceIndexThatNamesNoDeviceStops)
     {
         auto rt = Runtime::create().value();
         const std::size_t count = rt.advanced().device_count();
@@ -296,7 +296,7 @@ namespace DataHandlesTests
      * @brief Tests that an aligned buffer and an aligned state start on a multiple of the alignment,
      *        for each residency the device offers.
      */
-    TEST(Integration_DataHandles, AlignedAllocationStartsOnAMultipleOfTheAlignment)
+    TEST(Medium_DataHandles, AlignedAllocationStartsOnAMultipleOfTheAlignment)
     {
         constexpr std::size_t K_ALIGNMENT = 128;
         const auto is_aligned = [](const float* address)
@@ -324,7 +324,7 @@ namespace DataHandlesTests
     }
 
     /** @brief Tests that buffer() and state() stop on an alignment that is not a power of two. */
-    TEST(Integration_DataHandlesDeathTest, AlignmentThatIsNotAPowerOfTwoStops)
+    TEST(Medium_DataHandlesDeathTest, AlignmentThatIsNotAPowerOfTwoStops)
     {
         auto rt = Runtime::create().value();
 
@@ -341,7 +341,7 @@ namespace DeviceResidentTests
     /**
      * @brief Tests that a device-resident buffer round-trips a host seed, a kernel and a host readback.
      */
-    TEST(Integration_DeviceResident, BufferRoundTrip)
+    TEST(Medium_DeviceResident, BufferRoundTrip)
     {
         constexpr std::size_t N = 128;
 
@@ -367,7 +367,7 @@ namespace DeviceResidentTests
     }
 
     // read_range can pull a window without copying the whole field.
-    TEST(Integration_DeviceResident, SelectiveReadback)
+    TEST(Medium_DeviceResident, SelectiveReadback)
     {
         constexpr std::size_t N = 64;
 
@@ -388,7 +388,7 @@ namespace DeviceResidentTests
      * @brief Tests that a device-resident State steps and is seeded and read back through its range
      *        API.
      */
-    TEST(Integration_DeviceResident, StateStepsResident)
+    TEST(Medium_DeviceResident, StateStepsResident)
     {
         constexpr std::size_t N     = 96;
         constexpr std::size_t STEPS = 5;
@@ -413,7 +413,7 @@ namespace DeviceResidentTests
     }
 
     /** @brief Tests that Shared residency is the default and stays host-addressable. */
-    TEST(Integration_DeviceResident, SharedDefaultUnchanged)
+    TEST(Medium_DeviceResident, SharedDefaultUnchanged)
     {
         constexpr std::size_t N = 32;
 
@@ -432,7 +432,7 @@ namespace DeviceResidentTests
     }
 
     /** @brief Tests that host() returns a span that indexes the whole shared buffer. */
-    TEST(Integration_DeviceResident, HostSpanIndexesSharedBuffer)
+    TEST(Medium_DeviceResident, HostSpanIndexesSharedBuffer)
     {
         constexpr std::size_t N = 16;
 
@@ -450,7 +450,7 @@ namespace DeviceResidentTests
     }
 
     /** @brief Tests that host() on a device-resident buffer stops the process. */
-    TEST(Integration_DeviceResidentDeathTest, HostOnADeviceBufferStops)
+    TEST(Medium_DeviceResidentDeathTest, HostOnADeviceBufferStops)
     {
         constexpr std::size_t N = 16;
 
@@ -465,7 +465,7 @@ namespace DeviceResidentTests
      * @brief Tests that a kernel writes a host-resident buffer and the host reads it by direct
      *        indexing.
      */
-    TEST(Integration_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
+    TEST(Medium_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
     {
         constexpr std::size_t N = 64;
 
@@ -517,7 +517,7 @@ namespace AllocationTests
         }
     }
 
-    TEST(Unit_Buffer, AdoptingConstructorExposesTheAdoptedAddress)
+    TEST(Medium_Buffer, AdoptingConstructorExposesTheAdoptedAddress)
     {
         int releases = 0;
         void* last = nullptr;
@@ -528,7 +528,7 @@ namespace AllocationTests
         EXPECT_EQ(releases, 0);
     }
 
-    TEST(Unit_Buffer, DestructionReleasesTheAdoptedAllocationOnce)
+    TEST(Medium_Buffer, DestructionReleasesTheAdoptedAllocationOnce)
     {
         int releases = 0;
         void* last = nullptr;
@@ -541,7 +541,7 @@ namespace AllocationTests
         EXPECT_EQ(last, fake(6));
     }
 
-    TEST(Unit_BufferDeathTest, AdoptingATooSmallAllocationStops)
+    TEST(Medium_BufferDeathTest, AdoptingATooSmallAllocationStops)
     {
         int releases = 0;
         void* last = nullptr;
@@ -554,7 +554,7 @@ namespace AllocationTests
             "Buffer adoption: an allocation of 4 bytes cannot hold 4 elements");
     }
 
-    TEST(Unit_BufferDeathTest, AdoptingACountThatOverflowsItsByteSizeStops)
+    TEST(Medium_BufferDeathTest, AdoptingACountThatOverflowsItsByteSizeStops)
     {
         int releases = 0;
         void* last = nullptr;

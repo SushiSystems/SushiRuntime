@@ -38,7 +38,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that runs reuse the plan, and a new node or profiling compiles it again. */
-TEST(Unit_PlanCache, CompilesOnlyWhenTheGraphChanges)
+TEST(Medium_PlanCache, CompilesOnlyWhenTheGraphChanges)
 {
     auto runtime = Runtime::create().value();
     auto graph = runtime.graph();

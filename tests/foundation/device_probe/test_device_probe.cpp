@@ -34,7 +34,7 @@
 using namespace SushiRuntime::Test;
 
 /** @brief Tests that the probe agrees with the device list. */
-TEST(Unit_DeviceProbe, AgreesWithTheDeviceList)
+TEST(Medium_DeviceProbe, AgreesWithTheDeviceList)
 {
     EXPECT_EQ(has_any_sycl_device(), !sycl::device::get_devices().empty());
 }

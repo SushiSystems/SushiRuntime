@@ -35,7 +35,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the bit count of an empty, a full and a mixed word. */
-TEST(Unit_Bit, PopcountCountsEverySetBit)
+TEST(Small_Bit, PopcountCountsEverySetBit)
 {
     EXPECT_EQ(popcount_u64(0u), 0);
     EXPECT_EQ(popcount_u64(~std::uint64_t{0}), 64);
@@ -44,7 +44,7 @@ TEST(Unit_Bit, PopcountCountsEverySetBit)
 }
 
 /** @brief Tests the trailing zero count, including 64 for a word with no bit set. */
-TEST(Unit_Bit, CountrZeroFindsTheLowestSetBit)
+TEST(Small_Bit, CountrZeroFindsTheLowestSetBit)
 {
     EXPECT_EQ(countr_zero_u64(0u), 64);
     EXPECT_EQ(countr_zero_u64(1u), 0);

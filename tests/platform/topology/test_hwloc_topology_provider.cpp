@@ -38,7 +38,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Topology;
 
 /** @brief Tests that every device found sits on a node the distance model knows. */
-TEST(Unit_HwlocTopologyProvider, EveryDeviceSitsOnAKnownNode)
+TEST(Small_HwlocTopologyProvider, EveryDeviceSitsOnAKnownNode)
 {
     HwlocTopologyProvider provider;
     const HwlocDistanceModel distances;
@@ -51,7 +51,7 @@ TEST(Unit_HwlocTopologyProvider, EveryDeviceSitsOnAKnownNode)
 }
 
 /** @brief Tests that the core map names a node for every core, and the model is local-cheapest. */
-TEST(Unit_HwlocTopologyProvider, TheCoreMapAndTheDistancesAgree)
+TEST(Small_HwlocTopologyProvider, TheCoreMapAndTheDistancesAgree)
 {
     const HwlocTopologyProvider provider;
     const HwlocDistanceModel distances;

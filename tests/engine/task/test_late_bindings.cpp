@@ -36,7 +36,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
 
 /** @brief Tests the defaults of the bindings. */
-TEST(Unit_LateBindings, DefaultsUseTheBakedWidth)
+TEST(Small_LateBindings, DefaultsUseTheBakedWidth)
 {
     const LateBindings bindings;
     EXPECT_TRUE(bindings.enabled.load());

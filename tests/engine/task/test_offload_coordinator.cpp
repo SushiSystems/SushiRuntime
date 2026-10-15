@@ -65,7 +65,7 @@ namespace
 }
 
 /** @brief Tests that each member of the seam reaches the implementation with its argument. */
-TEST(Unit_OffloadCoordinator, EveryMemberReachesTheImplementation)
+TEST(Small_OffloadCoordinator, EveryMemberReachesTheImplementation)
 {
     RecordingCoordinator recorder;
     OffloadCoordinator& coordinator = recorder;

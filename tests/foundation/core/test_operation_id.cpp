@@ -36,14 +36,14 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Literals;
 
 /** @brief Tests the hash against the FNV-1a offset basis and a published value. */
-TEST(Unit_OperationID, HashIsFNV1a)
+TEST(Small_OperationID, HashIsFNV1a)
 {
     static_assert(OperationID::hash("", 0) == 2166136261u, "the empty name hashes to the offset basis");
     EXPECT_EQ(OperationID::hash("a", 1), 0xE40C292Cu);
 }
 
 /** @brief Tests that the literal hashes at compile time and equals the explicit form. */
-TEST(Unit_OperationID, LiteralMatchesTheExplicitHash)
+TEST(Small_OperationID, LiteralMatchesTheExplicitHash)
 {
     constexpr OperationID literal = "vec.double"_op;
     static_assert(literal.is_named(), "a literal names an operation");
@@ -52,7 +52,7 @@ TEST(Unit_OperationID, LiteralMatchesTheExplicitHash)
 }
 
 /** @brief Tests that the default names nothing and ordering follows the value. */
-TEST(Unit_OperationID, DefaultIsUnnamedAndOrderFollowsTheValue)
+TEST(Small_OperationID, DefaultIsUnnamedAndOrderFollowsTheValue)
 {
     constexpr OperationID none;
     EXPECT_FALSE(none.is_named());

@@ -36,7 +36,7 @@
 using namespace SushiRuntime::Internal::Memory;
 
 /** @brief Tests the defaults of a request. */
-TEST(Unit_USMRequest, DefaultsToSharedMemoryOnDeviceZero)
+TEST(Small_USMRequest, DefaultsToSharedMemoryOnDeviceZero)
 {
     const USMRequest request;
     EXPECT_EQ(request.kind, USMKind::Shared);
@@ -46,7 +46,7 @@ TEST(Unit_USMRequest, DefaultsToSharedMemoryOnDeviceZero)
 }
 
 /** @brief Tests the three distinct kinds in one byte. */
-TEST(Unit_USMRequest, ThreeKindsInOneByte)
+TEST(Small_USMRequest, ThreeKindsInOneByte)
 {
     static_assert(std::is_same_v<std::underlying_type_t<USMKind>, std::uint8_t>, "one byte");
     EXPECT_NE(USMKind::Host, USMKind::Shared);

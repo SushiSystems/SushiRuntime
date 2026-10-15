@@ -44,14 +44,14 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that device 0 reports its capabilities. */
-TEST(Integration_MemoryExchange, CapabilitiesOfDeviceZero)
+TEST(Medium_MemoryExchange, CapabilitiesOfDeviceZero)
 {
     const auto context = SushiRuntime::Test::make_context();
     EXPECT_TRUE(Internal::MemoryExchange::query_capabilities(*context, 0).has_value());
 }
 
 /** @brief Tests that a host export gives an allocation of the size asked when the device can export. */
-TEST(Integration_MemoryExchange, AHostExportGivesTheSizeAsked)
+TEST(Medium_MemoryExchange, AHostExportGivesTheSizeAsked)
 {
     const auto context = SushiRuntime::Test::make_context();
     const InteropCapabilities capabilities =
@@ -65,7 +65,7 @@ TEST(Integration_MemoryExchange, AHostExportGivesTheSizeAsked)
 }
 
 /** @brief Tests that an import naming no handle kind is refused with InvalidAccess. */
-TEST(Integration_MemoryExchange, AnImportWithNoKindIsRefused)
+TEST(Medium_MemoryExchange, AnImportWithNoKindIsRefused)
 {
     const auto context = SushiRuntime::Test::make_context();
     const InteropCapabilities capabilities =

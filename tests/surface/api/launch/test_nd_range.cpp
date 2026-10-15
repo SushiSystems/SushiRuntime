@@ -38,7 +38,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the count is the global size and the SYCL range keeps both sizes. */
-TEST(Unit_NdRange, CountIsTheGlobalSize)
+TEST(Small_NdRange, CountIsTheGlobalSize)
 {
     const NdRange<2> range(sycl::range<2>(8, 4), sycl::range<2>(4, 2));
     EXPECT_EQ(range.count(), 32u);
@@ -48,7 +48,7 @@ TEST(Unit_NdRange, CountIsTheGlobalSize)
 }
 
 /** @brief Tests that at() keeps both sizes and moves the origin. */
-TEST(Unit_NdRange, AtMovesTheOrigin)
+TEST(Small_NdRange, AtMovesTheOrigin)
 {
     const NdRange<1> range(sycl::range<1>(16), sycl::range<1>(4));
     const NdRange<1> moved = range.at(sycl::id<1>(8));

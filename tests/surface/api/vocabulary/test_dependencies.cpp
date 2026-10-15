@@ -38,7 +38,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that a buffer reads and writes one key, and a state reads current and writes next. */
-TEST(Unit_Dependencies, KeysFollowTheHandle)
+TEST(Medium_Dependencies, KeysFollowTheHandle)
 {
     auto runtime = Runtime::create().value();
     auto buffer = runtime.buffer<int>(4).value();
@@ -53,7 +53,7 @@ TEST(Unit_Dependencies, KeysFollowTheHandle)
 }
 
 /** @brief Tests that Reads and Writes collect one key per handle, in order. */
-TEST(Unit_Dependencies, ReadsAndWritesCollectOneKeyEach)
+TEST(Medium_Dependencies, ReadsAndWritesCollectOneKeyEach)
 {
     auto runtime = Runtime::create().value();
     auto first = runtime.buffer<int>(4).value();

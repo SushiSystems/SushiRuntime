@@ -45,7 +45,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that a window inside the capacity resolves to itself. */
-TEST(Unit_LateWindow, AWindowInsideTheCapacityResolves)
+TEST(Small_LateWindow, AWindowInsideTheCapacityResolves)
 {
     Detail::LateWindow window;
     window.base = 2;
@@ -57,7 +57,7 @@ TEST(Unit_LateWindow, AWindowInsideTheCapacityResolves)
 }
 
 /** @brief Tests that no host count covers the rest of the capacity from the base. */
-TEST(Unit_LateWindow, NoHostCountTakesTheRestOfTheCapacity)
+TEST(Small_LateWindow, NoHostCountTakesTheRestOfTheCapacity)
 {
     Detail::LateWindow window;
     window.base = 3;
@@ -68,7 +68,7 @@ TEST(Unit_LateWindow, NoHostCountTakesTheRestOfTheCapacity)
 }
 
 /** @brief Tests that a window past the capacity is refused and recorded. */
-TEST(Unit_LateWindow, AWindowPastTheCapacityIsAFault)
+TEST(Small_LateWindow, AWindowPastTheCapacityIsAFault)
 {
     std::uint32_t fault[Detail::K_DEVICE_FAULT_WORDS] = {};
     Detail::LateWindow window;
@@ -82,7 +82,7 @@ TEST(Unit_LateWindow, AWindowPastTheCapacityIsAFault)
 }
 
 /** @brief Tests that the window read from bindings carries the count and the base set on them. */
-TEST(Unit_LateWindow, TheWindowIsReadFromTheBindings)
+TEST(Small_LateWindow, TheWindowIsReadFromTheBindings)
 {
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     const auto controls = Detail::surface_controls(bindings);

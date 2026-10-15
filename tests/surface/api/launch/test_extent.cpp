@@ -37,7 +37,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the count of a one-, a two- and a three-dimensional extent. */
-TEST(Unit_Extent, CountIsTheProductOfTheSizes)
+TEST(Small_Extent, CountIsTheProductOfTheSizes)
 {
     EXPECT_EQ(Extent<1>(8).count(), 8u);
     EXPECT_EQ(Extent(4, 3).count(), 12u);
@@ -46,7 +46,7 @@ TEST(Unit_Extent, CountIsTheProductOfTheSizes)
 }
 
 /** @brief Tests that at() keeps the sizes and moves the origin. */
-TEST(Unit_Extent, AtMovesTheOrigin)
+TEST(Small_Extent, AtMovesTheOrigin)
 {
     const Extent<2> extent(4, 3);
     EXPECT_EQ(extent.origin, (sycl::id<2>{0, 0}));

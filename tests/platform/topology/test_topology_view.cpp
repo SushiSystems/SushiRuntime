@@ -117,7 +117,7 @@ namespace
 /**
  * @brief Verifies that the view reports the map of a hand-built two-node provider.
  */
-TEST(Unit_TopologyView, CoreMapMatchesSyntheticProvider)
+TEST(Small_TopologyView, CoreMapMatchesSyntheticProvider)
 {
     const std::vector<int> expected{0, 0, 1, 1};
     FixedTopologyProvider provider(expected);
@@ -130,7 +130,7 @@ TEST(Unit_TopologyView, CoreMapMatchesSyntheticProvider)
 /**
  * @brief Verifies that the view reads the provider once and keeps its own copy of the map.
  */
-TEST(Unit_TopologyView, CoreMapIsReadOnceAtConstruction)
+TEST(Small_TopologyView, CoreMapIsReadOnceAtConstruction)
 {
     const std::vector<int> expected{0, 1, 0, 1};
     FixedTopologyProvider provider(expected);
@@ -146,7 +146,7 @@ TEST(Unit_TopologyView, CoreMapIsReadOnceAtConstruction)
 /**
  * @brief Verifies that a provider without a core map leaves the view's map empty.
  */
-TEST(Unit_TopologyView, CoreMapIsEmptyWhenProviderSuppliesNone)
+TEST(Small_TopologyView, CoreMapIsEmptyWhenProviderSuppliesNone)
 {
     FixedTopologyProvider provider({});
 
@@ -158,7 +158,7 @@ TEST(Unit_TopologyView, CoreMapIsEmptyWhenProviderSuppliesNone)
 /**
  * @brief Verifies that distances equal the matrix entries, diagonal included.
  */
-TEST(Unit_TopologyView, DistancesMatchMatrixIncludingDiagonal)
+TEST(Small_TopologyView, DistancesMatchMatrixIncludingDiagonal)
 {
     FixedTopologyProvider provider({0, 1});
     auto model = std::make_shared<MatrixDistanceModel>(
@@ -181,7 +181,7 @@ TEST(Unit_TopologyView, DistancesMatchMatrixIncludingDiagonal)
 /**
  * @brief Verifies that out-of-range ids get the model's answer: 10 when equal, 21 otherwise.
  */
-TEST(Unit_TopologyView, OutOfRangeIDsGetTheModelsAnswer)
+TEST(Small_TopologyView, OutOfRangeIDsGetTheModelsAnswer)
 {
     FixedTopologyProvider provider({0, 1});
 
@@ -198,7 +198,7 @@ TEST(Unit_TopologyView, OutOfRangeIDsGetTheModelsAnswer)
 /**
  * @brief Verifies that the constructor stops on a null distance model.
  */
-TEST(Unit_TopologyViewDeathTest, ANullDistanceModelStops)
+TEST(Medium_TopologyViewDeathTest, ANullDistanceModelStops)
 {
     FixedTopologyProvider provider({0, 1});
 
@@ -208,7 +208,7 @@ TEST(Unit_TopologyViewDeathTest, ANullDistanceModelStops)
 /**
  * @brief Verifies that a remapping over no provider stops.
  */
-TEST(Unit_TopologyViewDeathTest, ANullInnerProviderStops)
+TEST(Medium_TopologyViewDeathTest, ANullInnerProviderStops)
 {
     EXPECT_DEATH(RemappingTopologyProvider(nullptr, 2),
                  "RemappingTopologyProvider: the inner provider is null");
@@ -217,7 +217,7 @@ TEST(Unit_TopologyViewDeathTest, ANullInnerProviderStops)
 /**
  * @brief Verifies that a ragged matrix stops with the row and both sizes.
  */
-TEST(Unit_TopologyViewDeathTest, ARaggedDistanceMatrixStopsWithItsRow)
+TEST(Medium_TopologyViewDeathTest, ARaggedDistanceMatrixStopsWithItsRow)
 {
     EXPECT_DEATH(MatrixDistanceModel({{10, 21, 21}, {21, 10}, {21, 21, 10}}),
                  "MatrixDistanceModel: row 1 holds 2 entries and the matrix has 3 rows");
@@ -226,7 +226,7 @@ TEST(Unit_TopologyViewDeathTest, ARaggedDistanceMatrixStopsWithItsRow)
 /**
  * @brief Verifies the map of a two-node remapping laid over the real cores.
  */
-TEST(Unit_TopologyView, CoreMapMatchesRemappingProvider)
+TEST(Small_TopologyView, CoreMapMatchesRemappingProvider)
 {
     constexpr int FAKE_NODES = 2;
     RemappingTopologyProvider provider(std::make_shared<HwlocTopologyProvider>(), FAKE_NODES);
@@ -244,7 +244,7 @@ TEST(Unit_TopologyView, CoreMapMatchesRemappingProvider)
 /**
  * @brief Verifies one map entry per logical core of the real machine, each a valid node id.
  */
-TEST(Unit_TopologyView, HwlocProviderYieldsOneValidNodePerLogicalCore)
+TEST(Small_TopologyView, HwlocProviderYieldsOneValidNodePerLogicalCore)
 {
     HwlocTopologyProvider provider;
     const std::vector<int> reported = provider.cpu_core_to_numa();

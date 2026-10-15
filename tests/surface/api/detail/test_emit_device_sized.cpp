@@ -41,7 +41,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that only the indices below the device-written live width run. */
-TEST(Unit_EmitDeviceSized, OnlyTheLiveIndicesRun)
+TEST(Medium_EmitDeviceSized, OnlyTheLiveIndicesRun)
 {
     constexpr std::size_t K_CAPACITY = 8;
     auto runtime = Runtime::create().value();

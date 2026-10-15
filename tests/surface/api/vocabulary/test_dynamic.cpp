@@ -41,7 +41,7 @@ using namespace SushiRuntime;
 namespace LateBindingsTests
 {
     /** @brief Tests that sized() shrinks the iteration range to a live prefix each step. */
-    TEST(Integration_LateBindings, DynamicSizePerElement)
+    TEST(Medium_LateBindings, DynamicSizePerElement)
     {
         constexpr std::size_t CAP = 8;
 
@@ -70,7 +70,7 @@ namespace LateBindingsTests
     }
 
     /** @brief Tests that when() runs the node only on the enabled steps. */
-    TEST(Integration_LateBindings, EnableTogglePerElement)
+    TEST(Medium_LateBindings, EnableTogglePerElement)
     {
         constexpr std::size_t N     = 16;
         constexpr std::size_t STEPS = 10;
@@ -102,7 +102,7 @@ namespace LateBindingsTests
     }
 
     /** @brief Tests that a disabled node still releases its successors. */
-    TEST(Integration_LateBindings, DisabledNodeStillReleasesSuccessors)
+    TEST(Medium_LateBindings, DisabledNodeStillReleasesSuccessors)
     {
         constexpr std::size_t N     = 8;
         constexpr std::size_t STEPS = 6;
@@ -137,7 +137,7 @@ namespace LateBindingsTests
     }
 
     /** @brief Tests that sized() on a stepped State follows a live prefix that grows each step. */
-    TEST(Integration_LateBindings, DynamicSizeState)
+    TEST(Medium_LateBindings, DynamicSizeState)
     {
         constexpr std::size_t CAP   = 8;
         constexpr std::size_t STEPS = 4;
@@ -165,7 +165,7 @@ namespace LateBindingsTests
     }
 
     /** @brief Tests that when() and sized() compose on one node. */
-    TEST(Integration_LateBindings, ComposedWhenAndSized)
+    TEST(Medium_LateBindings, ComposedWhenAndSized)
     {
         constexpr std::size_t CAP   = 4;
         constexpr std::size_t STEPS = 8;
@@ -198,7 +198,7 @@ namespace LateBindingsTests
     }
 
     /** @brief Tests that based_at() moves where a late-bound node starts without recompiling. */
-    TEST(Integration_LateBindings, BaseOffsetIteratesASlice)
+    TEST(Medium_LateBindings, BaseOffsetIteratesASlice)
     {
         constexpr std::size_t CAPACITY = 64;
 
@@ -244,7 +244,7 @@ namespace LateBindingsTests
     }
 
     /** @brief Tests that a base without a size runs from the base to the end of the capacity. */
-    TEST(Integration_LateBindings, BaseWithoutASizeRunsToTheEnd)
+    TEST(Medium_LateBindings, BaseWithoutASizeRunsToTheEnd)
     {
         constexpr std::size_t CAPACITY = 32;
         constexpr std::size_t BASE = 12;
@@ -270,7 +270,7 @@ namespace LateBindingsTests
      * @brief Tests that based_at_device() and sized_from_device() take both values from slots a
      *        predecessor wrote.
      */
-    TEST(Integration_LateBindings, BaseAndSizeBothFromTheDevice)
+    TEST(Medium_LateBindings, BaseAndSizeBothFromTheDevice)
     {
         constexpr std::size_t CAPACITY = 128;
 
@@ -302,7 +302,7 @@ namespace LateBindingsTests
     }
 
     /** @brief Tests that a window past the capacity fails the run and names what it asked for. */
-    TEST(Integration_LateBindings, WindowPastCapacityFailsTheRun)
+    TEST(Medium_LateBindings, WindowPastCapacityFailsTheRun)
     {
         constexpr std::size_t CAPACITY = 16;
 
@@ -327,7 +327,7 @@ namespace LateBindingsTests
     }
 
     /** @brief Tests that based_at_device stops on an unreadable slot at the call site. */
-    TEST(Integration_LateBindingsDeathTest, BasedAtDeviceStopsOnAnUnreadableSlot)
+    TEST(Medium_LateBindingsDeathTest, BasedAtDeviceStopsOnAnUnreadableSlot)
     {
         auto rt = Runtime::create().value();
         auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device).value();
@@ -344,7 +344,7 @@ namespace LateBindingsTests
     }
 
     /** @brief Tests that the member sized_from_device stops on a Shared slot where it is called. */
-    TEST(Integration_LateBindingsDeathTest, TheMemberSetterStopsOnASharedSlot)
+    TEST(Medium_LateBindingsDeathTest, TheMemberSetterStopsOnASharedSlot)
     {
         auto rt     = Runtime::create().value();
         auto shared = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Shared).value();
@@ -359,7 +359,7 @@ namespace LateBindingsTests
 namespace DeviceCountTests
 {
     /** @brief Tests that a consumer iterates exactly the count the producer wrote in the same run(). */
-    TEST(Integration_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
+    TEST(Medium_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
     {
         constexpr std::size_t CAPACITY = 4096;
 
@@ -413,7 +413,7 @@ namespace DeviceCountTests
     }
 
     /** @brief Tests that the counter is registered as a read of the consuming task. */
-    TEST(Integration_DeviceCount, CounterIsRegisteredAsAReadAutomatically)
+    TEST(Medium_DeviceCount, CounterIsRegisteredAsAReadAutomatically)
     {
         constexpr std::size_t CAPACITY = 512;
         constexpr std::uint32_t LIVE = 300;
@@ -445,7 +445,7 @@ namespace DeviceCountTests
     }
 
     /** @brief Tests a three-stage chain where each stage's output count sizes the next stage. */
-    TEST(Integration_DeviceCount, ChainedProducerCountsInOneComposition)
+    TEST(Medium_DeviceCount, ChainedProducerCountsInOneComposition)
     {
         constexpr std::size_t CAPACITY = 1024;
 
@@ -490,7 +490,7 @@ namespace DeviceCountTests
     }
 
     /** @brief Tests that a disabled when() step runs nothing whatever the counter says. */
-    TEST(Integration_DeviceCount, WhenComposesWithDeviceSize)
+    TEST(Medium_DeviceCount, WhenComposesWithDeviceSize)
     {
         constexpr std::size_t CAPACITY = 256;
 
@@ -529,7 +529,7 @@ namespace DeviceCountTests
      * @brief Tests that a count above the compiled capacity fails the run with a message naming both
      *        numbers.
      */
-    TEST(Integration_DeviceCount, CountOverCapacityFailsTheRun)
+    TEST(Medium_DeviceCount, CountOverCapacityFailsTheRun)
     {
         constexpr std::size_t CAPACITY = 64;
 
@@ -556,7 +556,7 @@ namespace DeviceCountTests
     }
 
     /** @brief Tests that a counter the host cannot read stops the call that names it. */
-    TEST(Integration_DeviceCountDeathTest, ACounterThatIsNotHostResidentStops)
+    TEST(Medium_DeviceCountDeathTest, ACounterThatIsNotHostResidentStops)
     {
         auto rt = Runtime::create().value();
         auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device).value();
@@ -573,7 +573,7 @@ namespace DeviceCountTests
     }
 
     /** @brief Tests that a count is read from the element the index names, not from element zero. */
-    TEST(Integration_DeviceCount, ReadsTheCountAtTheGivenIndex)
+    TEST(Medium_DeviceCount, ReadsTheCountAtTheGivenIndex)
     {
         constexpr std::size_t CAPACITY = 16;
         constexpr std::size_t SLOT     = 5;
@@ -601,7 +601,7 @@ namespace DeviceCountTests
     }
 
     /** @brief Tests that add() accepts a based_at_device slot at a non-zero index. */
-    TEST(Integration_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
+    TEST(Medium_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
     {
         constexpr std::size_t CAPACITY = 16;
         constexpr std::size_t SLOT     = 3;
@@ -619,7 +619,7 @@ namespace DeviceCountTests
     }
 
     /** @brief Tests that the member setters check their slot as the free builders do. */
-    TEST(Integration_DeviceCountDeathTest, MemberSettersStopOnASlotThatIsNotHostResident)
+    TEST(Medium_DeviceCountDeathTest, MemberSettersStopOnASlotThatIsNotHostResident)
     {
         auto rt       = Runtime::create().value();
         auto resident = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Device).value();
@@ -654,7 +654,7 @@ namespace DeviceSlotLivenessTests
     } // namespace
 
     /** @brief Tests that a run is refused once the buffer of sized_from_device() is destroyed. */
-    TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesTheRun)
+    TEST(Medium_DeviceSlotLiveness, ADestroyedCountBufferRefusesTheRun)
     {
         auto rt = Runtime::create().value();
         auto target = rt.buffer<Word>(K_WIDTH).value();
@@ -677,7 +677,7 @@ namespace DeviceSlotLivenessTests
     }
 
     /** @brief Tests that a run is refused once the buffer of based_at_device() is destroyed. */
-    TEST(Integration_DeviceSlotLiveness, ADestroyedBaseBufferRefusesTheRun)
+    TEST(Medium_DeviceSlotLiveness, ADestroyedBaseBufferRefusesTheRun)
     {
         auto rt = Runtime::create().value();
         auto target = rt.buffer<Word>(K_WIDTH).value();
@@ -697,7 +697,7 @@ namespace DeviceSlotLivenessTests
     }
 
     /** @brief Tests that a late-bound State rule watches its count buffer as well as its State. */
-    TEST(Integration_DeviceSlotLiveness, ADestroyedCountBufferRefusesAStateRule)
+    TEST(Medium_DeviceSlotLiveness, ADestroyedCountBufferRefusesAStateRule)
     {
         auto rt = Runtime::create().value();
         auto field = rt.state<Word>(K_WIDTH).value();

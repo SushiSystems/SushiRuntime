@@ -39,7 +39,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that a function that returns gives a value and runs once. */
-TEST(Unit_ErrorTranslation, AReturningFunctionGivesAValue)
+TEST(Small_ErrorTranslation, AReturningFunctionGivesAValue)
 {
     int calls = 0;
     const Result<void> result = Detail::translate_exceptions([&calls] { ++calls; });
@@ -48,7 +48,7 @@ TEST(Unit_ErrorTranslation, AReturningFunctionGivesAValue)
 }
 
 /** @brief Tests that a standard exception becomes the given code with its text. */
-TEST(Unit_ErrorTranslation, AStandardExceptionKeepsItsText)
+TEST(Small_ErrorTranslation, AStandardExceptionKeepsItsText)
 {
     const Result<void> result = Detail::translate_exceptions(
         ErrorCode::InvalidAccess, [] { throw std::runtime_error("the kernel refused"); });
@@ -58,7 +58,7 @@ TEST(Unit_ErrorTranslation, AStandardExceptionKeepsItsText)
 }
 
 /** @brief Tests that bad_alloc is AllocationFailed whatever code the caller gave. */
-TEST(Unit_ErrorTranslation, BadAllocIsAllocationFailed)
+TEST(Small_ErrorTranslation, BadAllocIsAllocationFailed)
 {
     const Result<void> result =
         Detail::translate_exceptions(ErrorCode::InvalidAccess, [] { throw std::bad_alloc(); });
@@ -67,7 +67,7 @@ TEST(Unit_ErrorTranslation, BadAllocIsAllocationFailed)
 }
 
 /** @brief Tests that a thrown non-exception is named, and the default code is KernelFailed. */
-TEST(Unit_ErrorTranslation, AnUnnamedThrowGetsTheFixedMessage)
+TEST(Small_ErrorTranslation, AnUnnamedThrowGetsTheFixedMessage)
 {
     const Result<void> result = Detail::translate_exceptions([] { throw 7; });
     ASSERT_FALSE(result.has_value());

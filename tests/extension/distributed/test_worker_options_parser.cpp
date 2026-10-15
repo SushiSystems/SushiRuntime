@@ -78,7 +78,7 @@ namespace
 }
 
 /** @brief Tests that the master alone gives the defaults of the flag table. */
-TEST(Unit_WorkerOptionsParserTest, MasterAloneGivesTheDefaults)
+TEST(Medium_WorkerOptionsParserTest, MasterAloneGivesTheDefaults)
 {
     const WorkerOptionsResult result = parse({"--master", "node7:7000"});
 
@@ -97,7 +97,7 @@ TEST(Unit_WorkerOptionsParserTest, MasterAloneGivesTheDefaults)
 }
 
 /** @brief Tests every flag, half written `--flag value` and half `--flag=value`. */
-TEST(Unit_WorkerOptionsParserTest, EveryFlagIsRead)
+TEST(Medium_WorkerOptionsParserTest, EveryFlagIsRead)
 {
     const WorkerOptionsResult result = parse(
         {"--master", "[::1]:7001", "--secret-file=keys/cluster.key", "--name", "gpu-box",
@@ -120,7 +120,7 @@ TEST(Unit_WorkerOptionsParserTest, EveryFlagIsRead)
 }
 
 /** @brief Tests that each variable of the table fills the setting no flag gives. */
-TEST(Unit_WorkerOptionsParserTest, EnvironmentFillsWhatNoFlagGives)
+TEST(Medium_WorkerOptionsParserTest, EnvironmentFillsWhatNoFlagGives)
 {
     const WorkerOptionsResult result = parse(
         {}, {{"SR_MASTER", "10.0.0.5:7002"},
@@ -146,7 +146,7 @@ TEST(Unit_WorkerOptionsParserTest, EnvironmentFillsWhatNoFlagGives)
 }
 
 /** @brief Tests that a flag beats its variable and that a variable behind a flag is unread. */
-TEST(Unit_WorkerOptionsParserTest, FlagBeatsEnvironmentBeatsDefault)
+TEST(Medium_WorkerOptionsParserTest, FlagBeatsEnvironmentBeatsDefault)
 {
     const WorkerOptionsResult result = parse(
         {"--master", "flag-host:1", "--max-jobs", "3"},
@@ -162,7 +162,7 @@ TEST(Unit_WorkerOptionsParserTest, FlagBeatsEnvironmentBeatsDefault)
 }
 
 /** @brief Tests that a variable set to nothing leaves the default in place. */
-TEST(Unit_WorkerOptionsParserTest, EmptyVariableCountsAsUnset)
+TEST(Medium_WorkerOptionsParserTest, EmptyVariableCountsAsUnset)
 {
     const WorkerOptionsResult result =
         parse({"--master", "node7:7000"}, {{"SR_WORKER_MAX_JOBS", ""}, {"SR_WORKER_NAME", ""}});
@@ -173,7 +173,7 @@ TEST(Unit_WorkerOptionsParserTest, EmptyVariableCountsAsUnset)
 }
 
 /** @brief Tests that `--help` wins without a master and that its text names every flag. */
-TEST(Unit_WorkerOptionsParserTest, HelpListsEveryFlagAndVariable)
+TEST(Medium_WorkerOptionsParserTest, HelpListsEveryFlagAndVariable)
 {
     const WorkerOptionsResult result = parse({"--help"});
 
@@ -188,13 +188,13 @@ TEST(Unit_WorkerOptionsParserTest, HelpListsEveryFlagAndVariable)
 }
 
 /** @brief Tests that `--version` is reported without a master. */
-TEST(Unit_WorkerOptionsParserTest, VersionNeedsNoMaster)
+TEST(Medium_WorkerOptionsParserTest, VersionNeedsNoMaster)
 {
     EXPECT_EQ(parse({"--version"}).status, WorkerOptionsStatus::Version);
 }
 
 /** @brief Tests each command line the parser refuses and what its one line names. */
-TEST(Unit_WorkerOptionsParserTest, EachRefusalNamesWhatWasWrong)
+TEST(Medium_WorkerOptionsParserTest, EachRefusalNamesWhatWasWrong)
 {
     const std::vector<RefusedCase> cases = {
         {{}, {}, "no master given"},
@@ -231,7 +231,7 @@ TEST(Unit_WorkerOptionsParserTest, EachRefusalNamesWhatWasWrong)
 }
 
 /** @brief Tests that a name HELLO cannot carry is refused with both lengths. */
-TEST(Unit_WorkerOptionsParserTest, NameAbove255BytesIsRefused)
+TEST(Medium_WorkerOptionsParserTest, NameAbove255BytesIsRefused)
 {
     const std::string name(256, 'n');
 

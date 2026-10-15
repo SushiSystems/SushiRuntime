@@ -35,7 +35,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that two UUIDs are equal only when every byte is. */
-TEST(Unit_DeviceUUID, EqualOnlyWhenEveryByteIs)
+TEST(Small_DeviceUUID, EqualOnlyWhenEveryByteIs)
 {
     const DeviceUUID zero;
     EXPECT_EQ(zero.bytes.size(), 16u);

@@ -54,7 +54,7 @@ namespace
 } // namespace
 
 /** @brief Tests that compile() builds the plan, runs nothing, and leaves run() no build. */
-TEST(Integration_PlanView, CompileThenRunCompilesOnce)
+TEST(Medium_PlanView, CompileThenRunCompilesOnce)
 {
     auto rt = Runtime::create().value();
     auto target = zeroed(rt);
@@ -76,7 +76,7 @@ TEST(Integration_PlanView, CompileThenRunCompilesOnce)
 }
 
 /** @brief Tests that compile() and plan() return the refusal the recorder kept. */
-TEST(Integration_PlanView, CompileReturnsTheRecordersRefusal)
+TEST(Medium_PlanView, CompileReturnsTheRecordersRefusal)
 {
     auto rt = Runtime::create().value();
     auto graph = rt.graph();
@@ -96,7 +96,7 @@ TEST(Integration_PlanView, CompileReturnsTheRecordersRefusal)
 }
 
 /** @brief Tests that compile() on a graph with nothing recorded is InvalidGraph, as run() is. */
-TEST(Integration_PlanView, CompileOfAnEmptyGraphIsRefused)
+TEST(Medium_PlanView, CompileOfAnEmptyGraphIsRefused)
 {
     auto rt = Runtime::create().value();
     auto graph = rt.graph();
@@ -107,7 +107,7 @@ TEST(Integration_PlanView, CompileOfAnEmptyGraphIsRefused)
 }
 
 /** @brief Tests that a DynamicGraph composes once for compile() and the run after it. */
-TEST(Integration_PlanView, ADynamicGraphCompiledThenRunComposesOnce)
+TEST(Medium_PlanView, ADynamicGraphCompiledThenRunComposesOnce)
 {
     auto rt = Runtime::create().value();
     auto target = zeroed(rt);
@@ -126,7 +126,7 @@ TEST(Integration_PlanView, ADynamicGraphCompiledThenRunComposesOnce)
 }
 
 /** @brief Tests that a chain of three kernels reports its predecessors and its regions. */
-TEST(Integration_PlanView, AChainOfThreeKernelsReportsItsPredecessorsAndRegions)
+TEST(Medium_PlanView, AChainOfThreeKernelsReportsItsPredecessorsAndRegions)
 {
     auto rt = Runtime::create().value();
     auto first = zeroed(rt);
@@ -177,7 +177,7 @@ TEST(Integration_PlanView, AChainOfThreeKernelsReportsItsPredecessorsAndRegions)
 }
 
 /** @brief Tests that a PlanView stays readable after its graph is destroyed. */
-TEST(Integration_PlanView, AViewOutlivesItsGraph)
+TEST(Medium_PlanView, AViewOutlivesItsGraph)
 {
     auto rt = Runtime::create().value();
     auto target = zeroed(rt);

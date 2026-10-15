@@ -39,7 +39,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that a SYCL exception takes the device code with its text. */
-TEST(Unit_SYCLErrorTranslation, ASYCLExceptionTakesTheDeviceCode)
+TEST(Small_SYCLErrorTranslation, ASYCLExceptionTakesTheDeviceCode)
 {
     const Result<void> result = Internal::SYCL::translate_exceptions(
         ErrorCode::DeviceLost, ErrorCode::InvalidAccess,
@@ -50,7 +50,7 @@ TEST(Unit_SYCLErrorTranslation, ASYCLExceptionTakesTheDeviceCode)
 }
 
 /** @brief Tests that a SYCL memory allocation failure is AllocationFailed. */
-TEST(Unit_SYCLErrorTranslation, AMemoryAllocationErrorIsAllocationFailed)
+TEST(Small_SYCLErrorTranslation, AMemoryAllocationErrorIsAllocationFailed)
 {
     const sycl::exception failure(sycl::make_error_code(sycl::errc::memory_allocation), "full");
     EXPECT_EQ(Internal::SYCL::error_code_of(failure, ErrorCode::DeviceLost),
@@ -58,7 +58,7 @@ TEST(Unit_SYCLErrorTranslation, AMemoryAllocationErrorIsAllocationFailed)
 }
 
 /** @brief Tests that a standard exception takes the other code, and success a value. */
-TEST(Unit_SYCLErrorTranslation, AStandardExceptionTakesTheOtherCode)
+TEST(Small_SYCLErrorTranslation, AStandardExceptionTakesTheOtherCode)
 {
     const Result<void> failed = Internal::SYCL::translate_exceptions(
         ErrorCode::DeviceLost, ErrorCode::InvalidAccess, [] { throw std::logic_error("bad"); });

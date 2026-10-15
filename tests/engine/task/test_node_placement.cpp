@@ -56,10 +56,10 @@ namespace
 } // namespace
 
 /** @brief Holds an allocator over two device entries; see README.md. */
-class Unit_NodePlacementRule : public ::testing::Test
+class Medium_NodePlacementRule : public ::testing::Test
 {
     protected:
-        Unit_NodePlacementRule() : memory_(two_queues_on_the_default_device())
+        Medium_NodePlacementRule() : memory_(two_queues_on_the_default_device())
         {
 
         }
@@ -68,7 +68,7 @@ class Unit_NodePlacementRule : public ::testing::Test
         SushiRuntime::Internal::Memory::USMAllocator memory_;
 };
 
-TEST(Unit_NodePlacementState, ANodeStatesNoPlacementUntilPlaceOn)
+TEST(Medium_NodePlacementState, ANodeStatesNoPlacementUntilPlaceOn)
 {
     const sushi_ptr<Node> node = make_sushi<Node>();
     EXPECT_FALSE(node->stated_placement().has_value());
@@ -80,7 +80,7 @@ TEST(Unit_NodePlacementState, ANodeStatesNoPlacementUntilPlaceOn)
     EXPECT_EQ(node->stated_placement(), std::optional<std::size_t>(3));
 }
 
-TEST(Unit_NodePlacementStateDeathTest, PlaceOnStopsOnAnIndexItCannotHold)
+TEST(Medium_NodePlacementStateDeathTest, PlaceOnStopsOnAnIndexItCannotHold)
 {
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->place_on(1);
@@ -91,7 +91,7 @@ TEST(Unit_NodePlacementStateDeathTest, PlaceOnStopsOnAnIndexItCannotHold)
     EXPECT_EQ(node->stated_placement(), std::optional<std::size_t>(1));
 }
 
-TEST_F(Unit_NodePlacementRule, ANodeWithNoRegionRunsOnItsStatedDeviceElseOnTheDefault)
+TEST_F(Medium_NodePlacementRule, ANodeWithNoRegionRunsOnItsStatedDeviceElseOnTheDefault)
 {
     const sushi_ptr<Node> node = make_sushi<Node>();
     EXPECT_EQ(placement_of(*node, memory_), SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT);
@@ -101,7 +101,7 @@ TEST_F(Unit_NodePlacementRule, ANodeWithNoRegionRunsOnItsStatedDeviceElseOnTheDe
     EXPECT_EQ(placement_of(*node, memory_), 1u);
 }
 
-TEST_F(Unit_NodePlacementRule, TheFirstWriteRegionOutranksTheFirstReadRegion)
+TEST_F(Medium_NodePlacementRule, TheFirstWriteRegionOutranksTheFirstReadRegion)
 {
     int read_cell = 0;
     int write_cell = 0;
@@ -121,7 +121,7 @@ TEST_F(Unit_NodePlacementRule, TheFirstWriteRegionOutranksTheFirstReadRegion)
     memory_.forget(&write_cell);
 }
 
-TEST_F(Unit_NodePlacementRule, AnOwnedRegionOutranksTheStatedPlacement)
+TEST_F(Medium_NodePlacementRule, AnOwnedRegionOutranksTheStatedPlacement)
 {
     int cell = 0;
     memory_.adopt(&cell, 1, sizeof(cell));
@@ -134,7 +134,7 @@ TEST_F(Unit_NodePlacementRule, AnOwnedRegionOutranksTheStatedPlacement)
     memory_.forget(&cell);
 }
 
-TEST_F(Unit_NodePlacementRule, AnUnownedRegionLeavesTheStatedPlacementInForce)
+TEST_F(Medium_NodePlacementRule, AnUnownedRegionLeavesTheStatedPlacementInForce)
 {
     int cell = 0;
 

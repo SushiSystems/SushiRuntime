@@ -67,7 +67,7 @@ namespace BoundaryAccessTests
     } // namespace
 
     /** @brief Tests that a read reaching past its predecessor's write keeps an entry pin. */
-    TEST(Unit_BoundaryAccess, AReadPastItsPredecessorsWriteKeepsAnEntryPin)
+    TEST(Small_BoundaryAccess, AReadPastItsPredecessorsWriteKeepsAnEntryPin)
     {
         unsigned char bytes[K_BYTES] = {};
         void* base = bytes;
@@ -89,7 +89,7 @@ namespace BoundaryAccessTests
     }
 
     /** @brief Tests that a read inside its predecessor's write has no entry pin. */
-    TEST(Unit_BoundaryAccess, AReadInsideItsPredecessorsWriteHasNoEntryPin)
+    TEST(Small_BoundaryAccess, AReadInsideItsPredecessorsWriteHasNoEntryPin)
     {
         unsigned char bytes[K_BYTES] = {};
         void* base = bytes;
@@ -108,7 +108,7 @@ namespace BoundaryAccessTests
     }
 
     /** @brief Tests that a write behind a predecessor that only reads keeps its write pin. */
-    TEST(Unit_BoundaryAccess, AWriteBehindAReadingPredecessorKeepsItsWritePin)
+    TEST(Small_BoundaryAccess, AWriteBehindAReadingPredecessorKeepsItsWritePin)
     {
         unsigned char bytes[K_BYTES] = {};
         void* base = bytes;
@@ -128,7 +128,7 @@ namespace BoundaryAccessTests
     }
 
     /** @brief Tests that only a successor's write that contains an access shadows it on exit. */
-    TEST(Unit_BoundaryAccess, OnlyAContainingSuccessorWriteShadowsAnExit)
+    TEST(Small_BoundaryAccess, OnlyAContainingSuccessorWriteShadowsAnExit)
     {
         unsigned char bytes[K_BYTES] = {};
         void* base = bytes;

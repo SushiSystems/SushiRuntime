@@ -33,7 +33,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the defaults: no worker, core 0, pinned. */
-TEST(Unit_WorkerPool, DefaultsToAnEmptyPinnedPool)
+TEST(Medium_WorkerPool, DefaultsToAnEmptyPinnedPool)
 {
     const WorkerPool pool;
     EXPECT_EQ(pool.count, 0u);

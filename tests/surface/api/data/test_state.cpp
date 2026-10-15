@@ -90,7 +90,7 @@ namespace
 } // namespace
 
 /** @brief Tests that a rule recorded before a move construction steps the moved-to State. */
-TEST(Integration_StateMove, ARuleFollowsAStateMovedAfterAdd)
+TEST(Medium_StateMove, ARuleFollowsAStateMovedAfterAdd)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
@@ -104,7 +104,7 @@ TEST(Integration_StateMove, ARuleFollowsAStateMovedAfterAdd)
 }
 
 /** @brief Tests that a rule recorded on a vector element survives the vector reallocating. */
-TEST(Integration_StateMove, ARuleFollowsAStateItsVectorReallocated)
+TEST(Medium_StateMove, ARuleFollowsAStateItsVectorReallocated)
 {
     auto rt = Runtime::create().value();
     std::vector<State<Word>> fields;
@@ -122,7 +122,7 @@ TEST(Integration_StateMove, ARuleFollowsAStateItsVectorReallocated)
 }
 
 /** @brief Tests that a coupled rule follows the State it writes and the State it reads. */
-TEST(Integration_StateMove, ACoupledRuleFollowsItsMovedStates)
+TEST(Medium_StateMove, ACoupledRuleFollowsItsMovedStates)
 {
     auto rt = Runtime::create().value();
     auto out = seeded_state(rt);
@@ -147,7 +147,7 @@ TEST(Integration_StateMove, ACoupledRuleFollowsItsMovedStates)
 }
 
 /** @brief Tests that a late-bound State rule follows the State through a move. */
-TEST(Integration_StateMove, ADynamicStateRuleFollowsAMovedState)
+TEST(Medium_StateMove, ADynamicStateRuleFollowsAMovedState)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
@@ -164,7 +164,7 @@ TEST(Integration_StateMove, ADynamicStateRuleFollowsAMovedState)
 }
 
 /** @brief Tests what a State writes into its view at an advance, a move and its destruction. */
-TEST(Integration_StateMove, TheViewFollowsAdvanceMoveAndDestruction)
+TEST(Medium_StateMove, TheViewFollowsAdvanceMoveAndDestruction)
 {
     using Detail::HandleAccess;
 
@@ -205,7 +205,7 @@ TEST(Integration_StateMove, TheViewFollowsAdvanceMoveAndDestruction)
 }
 
 /** @brief Tests that a State assigned over after add() is refused at the next run. */
-TEST(Integration_StateMove, AStateAssignedOverRefusesTheRun)
+TEST(Medium_StateMove, AStateAssignedOverRefusesTheRun)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
@@ -221,7 +221,7 @@ TEST(Integration_StateMove, AStateAssignedOverRefusesTheRun)
 }
 
 /** @brief Tests that a late-bound State rule replayed after one step reads the current field. */
-TEST(Integration_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField)
+TEST(Medium_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);

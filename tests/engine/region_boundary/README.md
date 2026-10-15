@@ -9,7 +9,7 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_boundary_access.cpp
 
-The `Unit_BoundaryAccess` cases build the nodes of one region on a `TaskGraph` with `add_native`
+The `Small_BoundaryAccess` cases build the nodes of one region on a `TaskGraph` with `add_native`
 and read the pins `compute_boundary_access()` gives; they start no runtime.
 
 ### `AReadPastItsPredecessorsWriteKeepsAnEntryPin`

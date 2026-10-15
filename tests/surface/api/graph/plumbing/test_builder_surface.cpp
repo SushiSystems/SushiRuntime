@@ -99,7 +99,7 @@ namespace
 } // namespace
 
 /** @brief Tests that a count launch hands its kernel the pointer of each capture. */
-TEST(Integration_BuilderSurface, CountLaunchWithCapturesPassesPointers)
+TEST(Medium_BuilderSurface, CountLaunchWithCapturesPassesPointers)
 {
     auto rt = Runtime::create().value();
     auto source = seeded(rt);
@@ -115,7 +115,7 @@ TEST(Integration_BuilderSurface, CountLaunchWithCapturesPassesPointers)
 }
 
 /** @brief Tests that an NdRange with an origin hands the shifted id to a two-index kernel. */
-TEST(Integration_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
+TEST(Medium_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
 {
     auto rt = Runtime::create().value();
     auto target = seeded(rt);
@@ -140,7 +140,7 @@ TEST(Integration_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
 }
 
 /** @brief Tests that add(count, state, kernel) updates the first count elements and no more. */
-TEST(Integration_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
+TEST(Medium_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
@@ -157,7 +157,7 @@ TEST(Integration_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
 }
 
 /** @brief Tests that a launch reaching past its State is refused where add() is called. */
-TEST(Integration_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
+TEST(Medium_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
@@ -177,7 +177,7 @@ TEST(Integration_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
 }
 
 /** @brief Tests both coupled forms: the whole field and a launch, each reading two States. */
-TEST(Integration_BuilderSurface, CoupledRulesReadEveryStateNamed)
+TEST(Medium_BuilderSurface, CoupledRulesReadEveryStateNamed)
 {
     auto rt = Runtime::create().value();
     auto whole = seeded_state(rt);
@@ -208,7 +208,7 @@ TEST(Integration_BuilderSurface, CoupledRulesReadEveryStateNamed)
 }
 
 /** @brief Tests that a coupled rule whose input is shorter than its output is refused. */
-TEST(Integration_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd)
+TEST(Medium_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd)
 {
     auto rt = Runtime::create().value();
     auto output = seeded_state(rt);
@@ -227,7 +227,7 @@ TEST(Integration_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd
 }
 
 /** @brief Tests the late-bound order: Dynamic, capacity, access, callable. */
-TEST(Integration_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
+TEST(Medium_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
 {
     auto rt = Runtime::create().value();
     auto target = seeded(rt);
@@ -244,7 +244,7 @@ TEST(Integration_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
 }
 
 /** @brief Tests that untracked kernels placed with On() write buffers of the device named. */
-TEST(Integration_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
+TEST(Medium_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
 {
     auto rt = Runtime::create().value();
     const DeviceIndex last{rt.advanced().device_count() - 1};
@@ -273,7 +273,7 @@ TEST(Integration_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
 }
 
 /** @brief Tests that both add_untracked() forms stop on an On() the runtime has no device for. */
-TEST(Integration_BuilderSurfaceDeathTest, PlacementOnADeviceTheRuntimeLacksStops)
+TEST(Medium_BuilderSurfaceDeathTest, PlacementOnADeviceTheRuntimeLacksStops)
 {
     auto rt = Runtime::create().value();
     const std::size_t count = rt.advanced().device_count();
@@ -289,7 +289,7 @@ TEST(Integration_BuilderSurfaceDeathTest, PlacementOnADeviceTheRuntimeLacksStops
 }
 
 /** @brief Tests that a graph watches the handle an On() names. */
-TEST(Integration_BuilderSurface, PlacementWatchesTheHandleItNames)
+TEST(Medium_BuilderSurface, PlacementWatchesTheHandleItNames)
 {
     auto rt = Runtime::create().value();
     auto graph = rt.graph();
@@ -305,7 +305,7 @@ TEST(Integration_BuilderSurface, PlacementWatchesTheHandleItNames)
 }
 
 /** @brief Tests that extend() runs its callable once and counts what it records as one rule. */
-TEST(Integration_BuilderSurface, ExtendRecordsOneNamedRule)
+TEST(Medium_BuilderSurface, ExtendRecordsOneNamedRule)
 {
     auto rt = Runtime::create().value();
     auto target = seeded(rt);
@@ -332,7 +332,7 @@ TEST(Integration_BuilderSurface, ExtendRecordsOneNamedRule)
 }
 
 /** @brief Tests that each refusal names the add() call the user wrote, through the public add(). */
-TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
+TEST(Medium_BuilderSurface, RefusalsNameTheCallTheUserWrote)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
@@ -377,7 +377,7 @@ TEST(Integration_BuilderSurface, RefusalsNameTheCallTheUserWrote)
 }
 
 /** @brief Tests that a refused add is kept, records nothing, and is what the next run returns. */
-TEST(Integration_BuilderSurface, ARefusedAddIsKeptAndReturnedByTheNextRun)
+TEST(Medium_BuilderSurface, ARefusedAddIsKeptAndReturnedByTheNextRun)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);

@@ -51,7 +51,7 @@ namespace LoggingNamesTests
                   "set_log_sink(LogSink) must be declared by api/runtime/logging.hpp");
 
     /** @brief Tests that a program switches delivery, the sink and the level with this header. */
-    TEST(Integration_LoggingNames, TheControlsAreCallableFromTheSurfaceHeader)
+    TEST(Medium_LoggingNames, TheControlsAreCallableFromTheSurfaceHeader)
     {
         const SushiRuntime::LogLevel saved = SushiRuntime::log_level();
         std::string seen;
@@ -125,7 +125,7 @@ namespace LoggingDefaultsTests
         }
 
         /** @brief Puts the logger in synchronous mode and restores the level and the sink. */
-        class Integration_LoggingDefaults : public ::testing::Test
+        class Medium_LoggingDefaults : public ::testing::Test
         {
             protected:
                 void SetUp() override
@@ -153,7 +153,7 @@ namespace LoggingDefaultsTests
      * Output that is not the logger's, such as a SYCL device sanitizer banner printed under
      * ThreadSanitizer, is not the logger's to silence and is ignored on stderr.
      */
-    TEST_F(Integration_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
+    TEST_F(Medium_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
     {
         set_log_level(LogLevel::Warn);
 
@@ -164,7 +164,7 @@ namespace LoggingDefaultsTests
     }
 
     /** @brief Tests that at Info the device line reaches the sink and no logger line reaches stderr. */
-    TEST_F(Integration_LoggingDefaults, DeviceLineArrivesThroughTheSinkAtInfo)
+    TEST_F(Medium_LoggingDefaults, DeviceLineArrivesThroughTheSinkAtInfo)
     {
         std::vector<SeenRecord> records;
         set_log_sink([&records](LogLevel level, std::string_view line)

@@ -40,7 +40,7 @@ The file covers what a program sees of the logger when it creates a `Runtime`. I
 in the `logging` module because the lines it looks for are logged by `device` and `topology` while
 `Runtime::create()` runs.
 
-### `Integration_LoggingDefaults`
+### `Medium_LoggingDefaults`
 
 The fixture puts the logger in synchronous mode with the default sink, and afterwards restores the
 default sink and the level the process had. Synchronous mode also waits for records that earlier
@@ -95,7 +95,7 @@ the compile.
 ### `EveryFieldReachesTheRuntime`
 
 Each field of `RuntimeConfig` but `first_core` is set away from its default and read back from the
-runtime; `Integration_CoTenancy` reads `first_core` back on a machine with cores to
+runtime; `Medium_CoTenancy` reads `first_core` back on a machine with cores to
 reserve. The api struct is mapped to the engine's settings by hand in one function, so a field that
 function forgets would otherwise keep its default silently.
 
@@ -232,5 +232,5 @@ module because the refusal it uses is raised by `RuntimeContext` and returned th
 
 A filter that admits no device class makes `Runtime::create()` return `ErrorCode::Unsupported` with
 a message, and no exception leaves the call. Topology returns an empty list for that filter and
-`RuntimeContext` turns the empty list into the failure; `Integration_DeviceSelection` checks that
+`RuntimeContext` turns the empty list into the failure; `Medium_DeviceSelection` checks that
 the message names the filter.

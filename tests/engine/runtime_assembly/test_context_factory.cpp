@@ -38,7 +38,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Test;
 
 /** @brief Tests that the context is built and holds at least one device. */
-TEST(Unit_ContextFactory, BuildsAContextWithADevice)
+TEST(Medium_ContextFactory, BuildsAContextWithADevice)
 {
     const std::shared_ptr<Internal::Execution::RuntimeContext> context = make_context();
     ASSERT_NE(context, nullptr);

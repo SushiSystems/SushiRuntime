@@ -37,7 +37,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Scheduler;
 
 /** @brief Tests that an empty latch does not wait. */
-TEST(Unit_QuiescenceLatch, AnEmptyLatchDoesNotWait)
+TEST(Medium_QuiescenceLatch, AnEmptyLatchDoesNotWait)
 {
     QuiescenceLatch latch;
     latch.wait();
@@ -45,7 +45,7 @@ TEST(Unit_QuiescenceLatch, AnEmptyLatchDoesNotWait)
 }
 
 /** @brief Tests that the waiter wakes only after the last of three units retires. */
-TEST(Unit_QuiescenceLatch, TheWaiterWakesAfterTheLastRetire)
+TEST(Medium_QuiescenceLatch, TheWaiterWakesAfterTheLastRetire)
 {
     QuiescenceLatch latch;
     latch.add(3);

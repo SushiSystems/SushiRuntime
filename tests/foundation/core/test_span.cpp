@@ -75,7 +75,7 @@ namespace
                   "SushiRuntime::span converts to std::span");
 #endif
 
-    TEST(Unit_Span, DefaultIsEmpty)
+    TEST(Small_Span, DefaultIsEmpty)
     {
         span<int> view;
         EXPECT_TRUE(view.empty());
@@ -83,7 +83,7 @@ namespace
         EXPECT_TRUE(view.data() == nullptr);
     }
 
-    TEST(Unit_Span, ConstructsFromPointerAndCount)
+    TEST(Small_Span, ConstructsFromPointerAndCount)
     {
         int values[] = {10, 20, 30};
         span<int> view(values, 3);
@@ -93,7 +93,7 @@ namespace
         EXPECT_EQ(view[1], 20);
     }
 
-    TEST(Unit_Span, ConstructsFromCArray)
+    TEST(Small_Span, ConstructsFromCArray)
     {
         int values[] = {1, 2, 3, 4};
         span<int> view = values;
@@ -101,7 +101,7 @@ namespace
         EXPECT_EQ(view.back(), 4);
     }
 
-    TEST(Unit_Span, ConstructsFromLvalueVector)
+    TEST(Small_Span, ConstructsFromLvalueVector)
     {
         std::vector<int> values{5, 6, 7};
         span<int> view = values;
@@ -112,7 +112,7 @@ namespace
         EXPECT_EQ(values[0], 50);
     }
 
-    TEST(Unit_Span, ConstructsFromStdArray)
+    TEST(Small_Span, ConstructsFromStdArray)
     {
         std::array<int, 3> values{8, 9, 10};
         span<int> view = values;
@@ -120,7 +120,7 @@ namespace
         EXPECT_EQ(view.front(), 8);
     }
 
-    TEST(Unit_Span, ConstViewOverConstContainer)
+    TEST(Small_Span, ConstViewOverConstContainer)
     {
         const std::vector<int> values{1, 2, 3};
         span<const int> view = values;
@@ -128,19 +128,19 @@ namespace
         EXPECT_EQ(view.data(), values.data());
     }
 
-    TEST(Unit_Span, ConstViewOverNonConstLvalue)
+    TEST(Small_Span, ConstViewOverNonConstLvalue)
     {
         std::vector<int> values{1, 2, 3};
         span<const int> view = values;
         EXPECT_EQ(sum(view), 6);
     }
 
-    TEST(Unit_Span, AcceptsTemporaryContainerForConstElements)
+    TEST(Small_Span, AcceptsTemporaryContainerForConstElements)
     {
         EXPECT_EQ(sum(std::vector<int>{1, 2, 3}), 6);
     }
 
-    TEST(Unit_Span, FirstLastAndSubspanSelectElements)
+    TEST(Small_Span, FirstLastAndSubspanSelectElements)
     {
         span<const int> all(K_VALUES, 4);
 
@@ -163,7 +163,7 @@ namespace
     }
 
 #if __cplusplus >= 202002L
-    TEST(Unit_Span, ConvertsToAndFromStdSpan)
+    TEST(Small_Span, ConvertsToAndFromStdSpan)
     {
         std::array<int, 3> values{1, 2, 3};
         std::span<int> standard(values);

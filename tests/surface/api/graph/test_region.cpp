@@ -60,7 +60,7 @@ namespace
 } // namespace
 
 /** @brief Tests that the tasks an extension records run in order and precede a consumer region. */
-TEST(Integration_RegionEmitter, ExtensionTasksOrderAgainstANeighbourRegion)
+TEST(Medium_RegionEmitter, ExtensionTasksOrderAgainstANeighbourRegion)
 {
     constexpr std::size_t N = 32;
 
@@ -92,7 +92,7 @@ TEST(Integration_RegionEmitter, ExtensionTasksOrderAgainstANeighbourRegion)
 }
 
 /** @brief Tests that an extension counts as one rule however many tasks it records. */
-TEST(Integration_RegionEmitter, AnExtensionIsOneRule)
+TEST(Medium_RegionEmitter, AnExtensionIsOneRule)
 {
     constexpr std::size_t N = 4;
 
@@ -123,7 +123,7 @@ TEST(Integration_RegionEmitter, AnExtensionIsOneRule)
 }
 
 /** @brief Tests that an extension runs once, when extend() is called, and never at a build. */
-TEST(Integration_RegionEmitter, AnExtensionRunsOnceWhenItIsCalled)
+TEST(Medium_RegionEmitter, AnExtensionRunsOnceWhenItIsCalled)
 {
     constexpr std::size_t N = 8;
 
@@ -171,7 +171,7 @@ TEST(Integration_RegionEmitter, AnExtensionRunsOnceWhenItIsCalled)
 }
 
 /** @brief Tests that a static graph accepts an extension beside an ordinary add(). */
-TEST(Integration_RegionEmitter, AStaticGraphTakesAnExtension)
+TEST(Medium_RegionEmitter, AStaticGraphTakesAnExtension)
 {
     constexpr std::size_t N = 16;
 

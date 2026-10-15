@@ -36,14 +36,14 @@
 using namespace SushiRuntime::Test;
 
 /** @brief Tests that a wait with nothing raised returns false. */
-TEST(Unit_CompletionSignal, AWaitWithNoRaiseTimesOut)
+TEST(Medium_CompletionSignal, AWaitWithNoRaiseTimesOut)
 {
     CompletionSignal signal;
     EXPECT_FALSE(signal.wait_for(std::chrono::seconds(0)));
 }
 
 /** @brief Tests that a raise on another thread wakes the waiter, and reset() clears it. */
-TEST(Unit_CompletionSignal, ARaiseWakesTheWaiterAndResetClearsIt)
+TEST(Medium_CompletionSignal, ARaiseWakesTheWaiterAndResetClearsIt)
 {
     CompletionSignal signal;
     std::thread raiser([&signal] { signal.raise(); });

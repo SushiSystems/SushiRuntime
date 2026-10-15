@@ -40,7 +40,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that trailing zero parameters are not sent and a zero inside the list is. */
-TEST(Unit_TaskDescription, TrailingZerosAreDropped)
+TEST(Medium_TaskDescription, TrailingZerosAreDropped)
 {
     Internal::Graph::TaskMetadata metadata;
     metadata.name = "advect";
@@ -58,7 +58,7 @@ TEST(Unit_TaskDescription, TrailingZerosAreDropped)
 }
 
 /** @brief Tests that a task with no parameter sends none. */
-TEST(Unit_TaskDescription, NoParameterSendsNone)
+TEST(Medium_TaskDescription, NoParameterSendsNone)
 {
     const Internal::Graph::TaskMetadata metadata;
     EXPECT_EQ(used_parameter_count(metadata), 0u);

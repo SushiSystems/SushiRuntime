@@ -347,7 +347,7 @@ namespace
 
 
 /** @brief Tests the HELLO bytes. */
-TEST(Unit_WireFormat, GoldenBytes_Hello)
+TEST(Medium_WireFormat, GoldenBytes_Hello)
 {
     HelloMessage message;
     message.worker_nonce = counting_from(0x00);
@@ -362,7 +362,7 @@ TEST(Unit_WireFormat, GoldenBytes_Hello)
 }
 
 /** @brief Tests the CHALLENGE bytes. */
-TEST(Unit_WireFormat, GoldenBytes_Challenge)
+TEST(Medium_WireFormat, GoldenBytes_Challenge)
 {
     ChallengeMessage message;
     message.master_nonce = counting_from(0x20);
@@ -377,7 +377,7 @@ TEST(Unit_WireFormat, GoldenBytes_Challenge)
 }
 
 /** @brief Tests the PROOF bytes. */
-TEST(Unit_WireFormat, GoldenBytes_Proof)
+TEST(Medium_WireFormat, GoldenBytes_Proof)
 {
     ProofMessage message;
     message.worker_proof = counting_from(0x60);
@@ -396,7 +396,7 @@ TEST(Unit_WireFormat, GoldenBytes_Proof)
 }
 
 /** @brief Tests the WELCOME bytes. */
-TEST(Unit_WireFormat, GoldenBytes_Welcome)
+TEST(Medium_WireFormat, GoldenBytes_Welcome)
 {
     WelcomeMessage message;
     message.worker_id = 7;
@@ -413,7 +413,7 @@ TEST(Unit_WireFormat, GoldenBytes_Welcome)
 }
 
 /** @brief Tests the REJECT bytes, whose layout is frozen across versions. */
-TEST(Unit_WireFormat, GoldenBytes_Reject)
+TEST(Medium_WireFormat, GoldenBytes_Reject)
 {
     RejectMessage message;
     message.reason = RejectReason::Version;
@@ -428,7 +428,7 @@ TEST(Unit_WireFormat, GoldenBytes_Reject)
 }
 
 /** @brief Tests the GOODBYE bytes, whose layout is frozen across versions. */
-TEST(Unit_WireFormat, GoldenBytes_Goodbye)
+TEST(Medium_WireFormat, GoldenBytes_Goodbye)
 {
     GoodbyeMessage message;
     message.reason = GoodbyeReason::Liveness;
@@ -441,7 +441,7 @@ TEST(Unit_WireFormat, GoldenBytes_Goodbye)
 }
 
 /** @brief Tests the TASK_DISPATCH bytes; the six zero parameters stay off the wire. */
-TEST(Unit_WireFormat, GoldenBytes_TaskDispatch)
+TEST(Medium_WireFormat, GoldenBytes_TaskDispatch)
 {
     TaskDispatchMessage message;
     message.task_id = 42;
@@ -477,7 +477,7 @@ TEST(Unit_WireFormat, GoldenBytes_TaskDispatch)
 }
 
 /** @brief Tests the TASK_ACCEPTED bytes. */
-TEST(Unit_WireFormat, GoldenBytes_TaskAccepted)
+TEST(Medium_WireFormat, GoldenBytes_TaskAccepted)
 {
     TaskAcceptedMessage message;
     message.task_id = 42;
@@ -488,7 +488,7 @@ TEST(Unit_WireFormat, GoldenBytes_TaskAccepted)
 }
 
 /** @brief Tests the TASK_RESULT bytes. */
-TEST(Unit_WireFormat, GoldenBytes_TaskResult)
+TEST(Medium_WireFormat, GoldenBytes_TaskResult)
 {
     TaskResultMessage message;
     message.task_id = 42;
@@ -506,7 +506,7 @@ TEST(Unit_WireFormat, GoldenBytes_TaskResult)
 }
 
 /** @brief Tests the BUFFER_REQUEST bytes. */
-TEST(Unit_WireFormat, GoldenBytes_BufferRequest)
+TEST(Medium_WireFormat, GoldenBytes_BufferRequest)
 {
     BufferRequestMessage message;
     message.id = GlobalBufferID{ 5 };
@@ -519,7 +519,7 @@ TEST(Unit_WireFormat, GoldenBytes_BufferRequest)
 }
 
 /** @brief Tests the BUFFER_CHUNK bytes; the data runs to the end of the payload. */
-TEST(Unit_WireFormat, GoldenBytes_BufferChunk)
+TEST(Medium_WireFormat, GoldenBytes_BufferChunk)
 {
     const Bytes data = bytes_of({ 0xDE, 0xAD, 0xBE, 0xEF });
     BufferChunkMessage message;
@@ -543,7 +543,7 @@ TEST(Unit_WireFormat, GoldenBytes_BufferChunk)
 }
 
 /** @brief Tests the BUFFER_ABORT bytes. */
-TEST(Unit_WireFormat, GoldenBytes_BufferAbort)
+TEST(Medium_WireFormat, GoldenBytes_BufferAbort)
 {
     BufferAbortMessage message;
     message.id = GlobalBufferID{ 5 };
@@ -560,7 +560,7 @@ TEST(Unit_WireFormat, GoldenBytes_BufferAbort)
 }
 
 /** @brief Tests the BUFFER_RELEASE bytes. */
-TEST(Unit_WireFormat, GoldenBytes_BufferRelease)
+TEST(Medium_WireFormat, GoldenBytes_BufferRelease)
 {
     BufferReleaseMessage message;
     message.id = GlobalBufferID{ 5 };
@@ -571,7 +571,7 @@ TEST(Unit_WireFormat, GoldenBytes_BufferRelease)
 }
 
 /** @brief Tests the PING bytes. */
-TEST(Unit_WireFormat, GoldenBytes_Ping)
+TEST(Medium_WireFormat, GoldenBytes_Ping)
 {
     PingMessage message;
     message.token = 0x1122334455667788ull;
@@ -582,7 +582,7 @@ TEST(Unit_WireFormat, GoldenBytes_Ping)
 }
 
 /** @brief Tests the PONG bytes. */
-TEST(Unit_WireFormat, GoldenBytes_Pong)
+TEST(Medium_WireFormat, GoldenBytes_Pong)
 {
     PongMessage message;
     message.token = 0x1122334455667788ull;
@@ -595,7 +595,7 @@ TEST(Unit_WireFormat, GoldenBytes_Pong)
 }
 
 /** @brief Tests the HEARTBEAT bytes. */
-TEST(Unit_WireFormat, GoldenBytes_Heartbeat)
+TEST(Medium_WireFormat, GoldenBytes_Heartbeat)
 {
     HeartbeatMessage message;
     message.queue_depth = 3;
@@ -610,7 +610,7 @@ TEST(Unit_WireFormat, GoldenBytes_Heartbeat)
 }
 
 /** @brief Tests that every strict prefix of every golden frame is refused. */
-TEST(Unit_WireFormat, EveryTruncationFailsCleanly)
+TEST(Medium_WireFormat, EveryTruncationFailsCleanly)
 {
     for (const GoldenCase& golden : golden_cases())
     {
@@ -651,7 +651,7 @@ TEST(Unit_WireFormat, EveryTruncationFailsCleanly)
 }
 
 /** @brief Tests the range checks on bools, enumerations, bounded bytes and header fields. */
-TEST(Unit_WireFormat, RejectsOutOfRangeEnumAndBool)
+TEST(Medium_WireFormat, RejectsOutOfRangeEnumAndBool)
 {
     const Bytes bools = bytes_of({ 0x00, 0x01, 0x02 });
     FieldReader reader(view_of(bools));
@@ -703,7 +703,7 @@ TEST(Unit_WireFormat, RejectsOutOfRangeEnumAndBool)
 }
 
 /** @brief Tests that a list count the payload cannot hold fails before any reserve. */
-TEST(Unit_WireFormat, ListCountBoundedByRemainingBytes)
+TEST(Medium_WireFormat, ListCountBoundedByRemainingBytes)
 {
     Bytes proof = prefix_of(golden_proof(), K_PROOF_BYTES);
     const Bytes huge_count = bytes_of({ 0xFF, 0xFF, 0xFF, 0xFF });
@@ -742,7 +742,7 @@ TEST(Unit_WireFormat, ListCountBoundedByRemainingBytes)
 }
 
 /** @brief Tests that a payload with bytes after its last field is refused. */
-TEST(Unit_WireFormat, RejectsTrailingBytes)
+TEST(Medium_WireFormat, RejectsTrailingBytes)
 {
     Bytes ping = golden_ping();
     ping.push_back(std::byte{ 0x00 });
@@ -754,7 +754,7 @@ TEST(Unit_WireFormat, RejectsTrailingBytes)
 }
 
 /** @brief Tests that a string outside 255 bytes fails on both sides and leaves no frame. */
-TEST(Unit_WireFormat, StringLengthBoundedAt255)
+TEST(Medium_WireFormat, StringLengthBoundedAt255)
 {
     const std::string long_text(256, 'a');
     GoodbyeMessage message;

@@ -138,10 +138,10 @@ namespace NodePlacementTests
     } // namespace
 
     /** @brief Runs a two-worker scheduler over a two-entry device set; see README.md. */
-    class Unit_NodePlacement : public ::testing::Test
+    class Medium_NodePlacement : public ::testing::Test
     {
         protected:
-            Unit_NodePlacement()
+            Medium_NodePlacement()
                 : topology_(SingleNodeTopology(), std::make_shared<SingleNodeDistance>()),
                   devices_(two_entries_over_the_default_device(), false),
                   memory_(devices_.plain_queues()),
@@ -153,7 +153,7 @@ namespace NodePlacementTests
                 scheduler_.arm_for_execution();
             }
 
-            ~Unit_NodePlacement() override
+            ~Medium_NodePlacement() override
             {
                 scheduler_.stop();
             }
@@ -190,7 +190,7 @@ namespace NodePlacementTests
     /**
      * @brief Two region-less nodes run on device 0 and a node placed on device 1 runs there.
      */
-    TEST_F(Unit_NodePlacement, RegionlessNodesRunOnDeviceZeroAndAPlacedNodeOnItsDevice)
+    TEST_F(Medium_NodePlacement, RegionlessNodesRunOnDeviceZeroAndAPlacedNodeOnItsDevice)
     {
         // The control proves the two entries can be told apart by their queues.
         ASSERT_EQ(devices_.count(), 2u);
@@ -215,7 +215,7 @@ namespace NodePlacementTests
     /**
      * @brief A node is handed the same device on every step.
      */
-    TEST_F(Unit_NodePlacement, ANodeKeepsItsDeviceOnEveryStep)
+    TEST_F(Medium_NodePlacement, ANodeKeepsItsDeviceOnEveryStep)
     {
         std::optional<sycl::queue> handed;
 
@@ -233,7 +233,7 @@ namespace NodePlacementTests
     /**
      * @brief A node that names an owned region runs on the owner, whatever placement it states.
      */
-    TEST_F(Unit_NodePlacement, ARegionOwnerOutranksTheStatedPlacement)
+    TEST_F(Medium_NodePlacement, ARegionOwnerOutranksTheStatedPlacement)
     {
         int cell = 0;
         memory_.adopt(&cell, 1, sizeof(cell));
@@ -251,7 +251,7 @@ namespace NodePlacementTests
     /**
      * @brief A node whose region no device owns runs on the placement it states, else on device 0.
      */
-    TEST_F(Unit_NodePlacement, AnUnownedRegionLeavesTheStatedPlacementInForce)
+    TEST_F(Medium_NodePlacement, AnUnownedRegionLeavesTheStatedPlacementInForce)
     {
         int cell = 0;
 
@@ -269,7 +269,7 @@ namespace NodePlacementTests
     /**
      * @brief A placement past the device set fails the run with the index and the device count.
      */
-    TEST_F(Unit_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
+    TEST_F(Medium_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
     {
         std::optional<sycl::queue> handed;
         const sushi_ptr<Node> node = make_recording_node(handed);
@@ -435,10 +435,10 @@ namespace OffloadSeamTests
     } // namespace
 
     /** @brief Runs a two-worker scheduler with a counting coordinator installed; see README.md. */
-    class Unit_OffloadSeam : public ::testing::Test
+    class Medium_OffloadSeam : public ::testing::Test
     {
         protected:
-            Unit_OffloadSeam()
+            Medium_OffloadSeam()
                 : topology_(SingleNodeTopology(), std::make_shared<SingleNodeDistance>()),
                   devices_(default_device(), false),
                   memory_(devices_.plain_queues()),
@@ -451,7 +451,7 @@ namespace OffloadSeamTests
                 scheduler_.arm_for_execution();
             }
 
-            ~Unit_OffloadSeam() override
+            ~Medium_OffloadSeam() override
             {
                 scheduler_.stop();
             }
@@ -478,7 +478,7 @@ namespace OffloadSeamTests
     /**
      * @brief A cancelled or failed run offers no node to the coordinator.
      */
-    TEST_F(Unit_OffloadSeam, AbortedRunOffersNoNode)
+    TEST_F(Medium_OffloadSeam, AbortedRunOffersNoNode)
     {
         std::atomic<int> runs{0};
 
@@ -508,7 +508,7 @@ namespace OffloadSeamTests
     /**
      * @brief A node the scheduler releases without running is not reported as completed.
      */
-    TEST_F(Unit_OffloadSeam, SkippedNodeNotReportedAsCompleted)
+    TEST_F(Medium_OffloadSeam, SkippedNodeNotReportedAsCompleted)
     {
         std::atomic<int> runs{0};
 
@@ -541,7 +541,7 @@ namespace OffloadSeamTests
     /**
      * @brief The scheduler counts the offers a coordinator took, and no offer it declined.
      */
-    TEST_F(Unit_OffloadSeam, OnlyAcceptedOffersAreCounted)
+    TEST_F(Medium_OffloadSeam, OnlyAcceptedOffersAreCounted)
     {
         std::atomic<int> runs{0};
         ASSERT_EQ(scheduler_.offloaded_task_count(), 0u);
@@ -603,7 +603,7 @@ namespace SchedulerIntegrationTests
      *
      * Verifies that the scheduler properly executes all submitted tasks.
      */
-    TEST(Integration_SchedulerIntegration, ExecutesExactlySubmitted)
+    TEST(Medium_SchedulerIntegration, ExecutesExactlySubmitted)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -630,7 +630,7 @@ namespace SchedulerIntegrationTests
      *
      * Verifies that the scheduler honors task priorities and executes the high priority task among the first.
      */
-    TEST(Integration_SchedulerIntegration, PriorityBypass)
+    TEST(Medium_SchedulerIntegration, PriorityBypass)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -686,7 +686,7 @@ namespace SchedulerIntegrationTests
      *
      * Verifies that a clean arm -> submit -> stop round with no inflight work exits without hanging.
      */
-    TEST(Integration_SchedulerIntegration, CleanLifecycleRound)
+    TEST(Medium_SchedulerIntegration, CleanLifecycleRound)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -743,7 +743,7 @@ namespace NUMAStealTests
      * With cores split across nodes, every worker's steal order must list all
      * same-node victims before any cross-node victim.
      */
-    TEST(Unit_NumaStealTest, LocalVictimsPrecedeRemote)
+    TEST(Medium_NumaStealTest, LocalVictimsPrecedeRemote)
     {
         constexpr int NODES = 2;
         auto ctx = make_synthetic_ctx(NODES);
@@ -784,7 +784,7 @@ namespace NUMAStealTests
      * The default (real) topology collapses to one node here; the steal order
      * must still contain every other worker.
      */
-    TEST(Unit_NumaStealTest, FlatTopologyKeepsAllVictims)
+    TEST(Medium_NumaStealTest, FlatTopologyKeepsAllVictims)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -816,7 +816,7 @@ namespace NUMAStealTests
  * Prevents deadlocks or leaked threads when stopping the scheduler immediately
  * after queuing tasks.
  */
-TEST(Regression_TaskScheduler, AbruptStopDrains)
+TEST(Medium_TaskScheduler, AbruptStopDrains)
 {
     const auto ctx_owner = SushiRuntime::Test::make_context();
     SushiRuntime::Internal::Execution::RuntimeContext& ctx = *ctx_owner;

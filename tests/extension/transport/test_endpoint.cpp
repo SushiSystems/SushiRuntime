@@ -38,7 +38,7 @@ using namespace SushiRuntime::Distributed;
 /**
  * @brief Checks each accepted and each refused text form against its status, host and port.
  */
-TEST(Unit_EndpointTest, ParseTable)
+TEST(Medium_EndpointTest, ParseTable)
 {
     /** @brief One line of the parse table. */
     struct Row
@@ -87,7 +87,7 @@ TEST(Unit_EndpointTest, ParseTable)
 /**
  * @brief Checks that a refusal quotes the text it refused and names both accepted forms.
  */
-TEST(Unit_EndpointTest, ParseFailureSaysWhatWasWrongWithWhichText)
+TEST(Medium_EndpointTest, ParseFailureSaysWhatWasWrongWithWhichText)
 {
     const EndpointParseResult result = Endpoint::parse("master.lan:http");
 
@@ -101,7 +101,7 @@ TEST(Unit_EndpointTest, ParseFailureSaysWhatWasWrongWithWhichText)
 /**
  * @brief Checks that the log form of an endpoint parses back to the same endpoint.
  */
-TEST(Unit_EndpointTest, FormatParsesBack)
+TEST(Medium_EndpointTest, FormatParsesBack)
 {
     const Endpoint endpoints[] = { { "worker-1", 5555 }, { "192.168.1.20", 1 }, { "::1", 65535 } };
 

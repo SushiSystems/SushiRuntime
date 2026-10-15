@@ -33,7 +33,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that an observer locks while the token lives and expires when it goes. */
-TEST(Unit_Liveness, AnObserverExpiresWithItsToken)
+TEST(Small_Liveness, AnObserverExpiresWithItsToken)
 {
     LivenessToken token = make_liveness();
     const LivenessObserver observer = token;
@@ -46,7 +46,7 @@ TEST(Unit_Liveness, AnObserverExpiresWithItsToken)
 }
 
 /** @brief Tests that each call makes a distinct token. */
-TEST(Unit_Liveness, EachTokenIsItsOwn)
+TEST(Small_Liveness, EachTokenIsItsOwn)
 {
     const LivenessToken first = make_liveness();
     const LivenessToken second = make_liveness();

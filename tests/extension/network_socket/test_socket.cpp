@@ -85,7 +85,7 @@ namespace
 /**
  * @brief Sends a buffer larger than the OS socket buffers one way and a short reply back.
  */
-TEST(Unit_SocketTest, ExactReadAndFullWriteRoundTrip)
+TEST(Medium_SocketTest, ExactReadAndFullWriteRoundTrip)
 {
     Listener listener;
     const SocketResult listening = listener.listen(Endpoint{ K_IPV4_LOOPBACK, 0 }, 4);
@@ -131,7 +131,7 @@ TEST(Unit_SocketTest, ExactReadAndFullWriteRoundTrip)
 /**
  * @brief Checks that an idle read and an accept with no client return Timeout.
  */
-TEST(Unit_SocketTest, IdleReadAndIdleAcceptTimeOut)
+TEST(Medium_SocketTest, IdleReadAndIdleAcceptTimeOut)
 {
     Listener listener;
     const SocketResult listening = listener.listen(Endpoint{ K_IPV4_LOOPBACK, 0 }, 4);
@@ -156,7 +156,7 @@ TEST(Unit_SocketTest, IdleReadAndIdleAcceptTimeOut)
 /**
  * @brief Checks that shutdown() from another thread ends a read that waits for bytes.
  */
-TEST(Unit_SocketTest, ShutdownEndsAWaitingRead)
+TEST(Medium_SocketTest, ShutdownEndsAWaitingRead)
 {
     Listener listener;
     const SocketResult listening = listener.listen(Endpoint{ K_IPV4_LOOPBACK, 0 }, 4);
@@ -182,7 +182,7 @@ TEST(Unit_SocketTest, ShutdownEndsAWaitingRead)
 /**
  * @brief Writes to a peer that has closed and expects a status, with the process alive.
  */
-TEST(Unit_SocketTest, WriteToClosedPeerReturnsError)
+TEST(Medium_SocketTest, WriteToClosedPeerReturnsError)
 {
     Listener listener;
     const SocketResult listening = listener.listen(Endpoint{ K_IPV4_LOOPBACK, 0 }, 4);
@@ -219,7 +219,7 @@ TEST(Unit_SocketTest, WriteToClosedPeerReturnsError)
 /**
  * @brief Binds a port twice and expects the refusal to name the port and the OS cause.
  */
-TEST(Unit_SocketTest, BindInUseNamesPortAndCause)
+TEST(Medium_SocketTest, BindInUseNamesPortAndCause)
 {
     Listener first;
     const SocketResult listening = first.listen(Endpoint{ K_IPV4_LOOPBACK, 0 }, 4);
@@ -244,7 +244,7 @@ TEST(Unit_SocketTest, BindInUseNamesPortAndCause)
 /**
  * @brief Resolves `localhost` and connects by that name to a listener on 127.0.0.1.
  */
-TEST(Unit_SocketTest, LocalhostResolves)
+TEST(Medium_SocketTest, LocalhostResolves)
 {
     std::vector<std::string> addresses;
     const SocketResult       resolved = resolve_addresses(Endpoint{ "localhost", 0 }, addresses);
@@ -275,7 +275,7 @@ TEST(Unit_SocketTest, LocalhostResolves)
 /**
  * @brief Connects over the IPv6 loopback; skipped on a machine that has none.
  */
-TEST(Unit_SocketTest, Ipv6LoopbackConnects)
+TEST(Medium_SocketTest, Ipv6LoopbackConnects)
 {
     Listener listener;
     const SocketResult listening = listener.listen(Endpoint{ K_IPV6_LOOPBACK, 0 }, 4);

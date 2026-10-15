@@ -40,7 +40,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the name is a class type held by shared pointer. */
-TEST(Unit_LateControls, IsHeldByPointerOnly)
+TEST(Small_LateControls, IsHeldByPointerOnly)
 {
     const std::shared_ptr<Detail::LateControls> controls;
     static_assert(std::is_class_v<Detail::LateControls>, "the name is a class type");

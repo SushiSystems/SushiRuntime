@@ -104,7 +104,7 @@ namespace
     }
 } // namespace
 
-TEST(Unit_InteropImport, HostExportReportsWhetherTheQueueOffersHostUSM)
+TEST(Medium_InteropImport, HostExportReportsWhetherTheQueueOffersHostUSM)
 {
     auto runtime = Runtime::create().value();
     const std::size_t count = runtime.advanced().device_count();
@@ -120,7 +120,7 @@ TEST(Unit_InteropImport, HostExportReportsWhetherTheQueueOffersHostUSM)
     }
 }
 
-TEST(Unit_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
+TEST(Medium_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
 {
     auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, false);
@@ -137,7 +137,7 @@ TEST(Unit_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
         << refusal.message;
 }
 
-TEST(Unit_InteropImport, ADeviceThatImportsReportsItsUUID)
+TEST(Medium_InteropImport, ADeviceThatImportsReportsItsUUID)
 {
     auto runtime = Runtime::create().value();
     const std::size_t count = runtime.advanced().device_count();
@@ -151,7 +151,7 @@ TEST(Unit_InteropImport, ADeviceThatImportsReportsItsUUID)
     }
 }
 
-TEST(Unit_InteropImport, ADefaultDescriptorIsRefusedForItsUnstatedKind)
+TEST(Medium_InteropImport, ADefaultDescriptorIsRefusedForItsUnstatedKind)
 {
     auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
@@ -169,7 +169,7 @@ TEST(Unit_InteropImport, ADefaultDescriptorIsRefusedForItsUnstatedKind)
 }
 
 #if defined(_WIN32)
-TEST(Unit_InteropImport, ANullWin32HandleIsRefusedByName)
+TEST(Medium_InteropImport, ANullWin32HandleIsRefusedByName)
 {
     auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
@@ -185,7 +185,7 @@ TEST(Unit_InteropImport, ANullWin32HandleIsRefusedByName)
         << refusal.message;
 }
 #else
-TEST(Unit_InteropImport, AFileDescriptorAboveIntIsRefusedWithItsValue)
+TEST(Medium_InteropImport, AFileDescriptorAboveIntIsRefusedWithItsValue)
 {
     auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
@@ -203,7 +203,7 @@ TEST(Unit_InteropImport, AFileDescriptorAboveIntIsRefusedWithItsValue)
 }
 #endif
 
-TEST(Unit_InteropImport, ZeroElementsImportNothingAndReturnAnEmptyBuffer)
+TEST(Medium_InteropImport, ZeroElementsImportNothingAndReturnAnEmptyBuffer)
 {
     auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
@@ -217,7 +217,7 @@ TEST(Unit_InteropImport, ZeroElementsImportNothingAndReturnAnEmptyBuffer)
     EXPECT_EQ(buffer.size(), 0u);
 }
 
-TEST(Unit_InteropImport, AHandleKindOfAnotherPlatformIsRefusedByName)
+TEST(Medium_InteropImport, AHandleKindOfAnotherPlatformIsRefusedByName)
 {
     auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
@@ -232,7 +232,7 @@ TEST(Unit_InteropImport, AHandleKindOfAnotherPlatformIsRefusedByName)
     EXPECT_NE(refusal.message.find("descriptor.kind is"), std::string::npos) << refusal.message;
 }
 
-TEST(Unit_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
+TEST(Medium_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
 {
     auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
@@ -257,7 +257,7 @@ TEST(Unit_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
         << offset_outside.message;
 }
 
-TEST(Unit_InteropImport, AnotherDevicesUUIDIsRefusedWithBothUUIDs)
+TEST(Medium_InteropImport, AnotherDevicesUUIDIsRefusedWithBothUUIDs)
 {
     auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);

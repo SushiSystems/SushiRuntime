@@ -37,7 +37,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that the types run from 1 to 16 and only those bytes name a type. */
-TEST(Unit_MessageType, SixteenTypesFromOne)
+TEST(Medium_MessageType, SixteenTypesFromOne)
 {
     static_assert(static_cast<int>(MessageType::Hello) == K_FIRST_MESSAGE_TYPE, "the first type is 1");
     static_assert(static_cast<int>(MessageType::Heartbeat) == K_LAST_MESSAGE_TYPE, "the last type is 16");
@@ -49,7 +49,7 @@ TEST(Unit_MessageType, SixteenTypesFromOne)
 }
 
 /** @brief Tests the name of a type and the name of a byte that names none. */
-TEST(Unit_MessageType, NamesAreTheWireNames)
+TEST(Medium_MessageType, NamesAreTheWireNames)
 {
     EXPECT_STREQ(message_type_name(MessageType::Hello), "HELLO");
     EXPECT_STREQ(message_type_name(MessageType::TaskDispatch), "TASK_DISPATCH");

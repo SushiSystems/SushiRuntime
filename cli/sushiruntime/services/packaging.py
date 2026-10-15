@@ -86,5 +86,5 @@ def package(prefix: str | None = None, archive: bool = True, force: bool = False
             console.warn(f"No {cpack_config.name} in the build tree; skipping the archive.")
 
     console.success(f"Package ready at {stage}")
-    console.info("Run `sr test --suite package` to check it actually works.")
+    console.info("Run `sr test --label package` to check it actually works.")
     return 0

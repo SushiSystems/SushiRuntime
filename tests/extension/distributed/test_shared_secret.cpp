@@ -108,7 +108,7 @@ namespace
 }
 
 /** @brief Tests that a file one byte under the minimum is refused, by name and length. */
-TEST(Unit_SharedSecretTest, FromFileRefusesAShortFile)
+TEST(Medium_SharedSecretTest, FromFileRefusesAShortFile)
 {
     const ScratchFile file("sr_test_shared_secret_short.bin", counting(0x00, 31));
 
@@ -122,7 +122,7 @@ TEST(Unit_SharedSecretTest, FromFileRefusesAShortFile)
 }
 
 /** @brief Tests that a file of exactly the minimum length is read byte for byte. */
-TEST(Unit_SharedSecretTest, FromFileAcceptsThirtyTwoBytes)
+TEST(Medium_SharedSecretTest, FromFileAcceptsThirtyTwoBytes)
 {
     const std::vector<std::uint8_t> content = counting(0xe0, 32);
     const ScratchFile file("sr_test_shared_secret_exact.bin", content);
@@ -135,7 +135,7 @@ TEST(Unit_SharedSecretTest, FromFileAcceptsThirtyTwoBytes)
 }
 
 /** @brief Tests that a missing file is refused with its path in the message. */
-TEST(Unit_SharedSecretTest, FromFileMissingNamesThePath)
+TEST(Medium_SharedSecretTest, FromFileMissingNamesThePath)
 {
     const std::filesystem::path missing =
         std::filesystem::current_path() / "sr_test_shared_secret_missing.bin";
@@ -149,7 +149,7 @@ TEST(Unit_SharedSecretTest, FromFileMissingNamesThePath)
 }
 
 /** @brief Tests that an unset environment variable yields the empty secret. */
-TEST(Unit_SharedSecretTest, FromEnvironmentUnsetIsEmpty)
+TEST(Medium_SharedSecretTest, FromEnvironmentUnsetIsEmpty)
 {
     const SharedSecret secret =
         SharedSecret::from_environment("SR_TEST_SHARED_SECRET_VARIABLE_NOBODY_SETS").value();
@@ -159,7 +159,7 @@ TEST(Unit_SharedSecretTest, FromEnvironmentUnsetIsEmpty)
 }
 
 /** @brief Tests that a move empties its source and a clone leaves it whole. */
-TEST(Unit_SharedSecretTest, MoveEmptiesTheSourceAndCloneKeepsIt)
+TEST(Medium_SharedSecretTest, MoveEmptiesTheSourceAndCloneKeepsIt)
 {
     const std::vector<std::uint8_t> content = counting(0x40, 48);
     SharedSecret original = SharedSecret::from_bytes(bytes_of(content)).value();
@@ -175,7 +175,7 @@ TEST(Unit_SharedSecretTest, MoveEmptiesTheSourceAndCloneKeepsIt)
 }
 
 /** @brief Tests that bytes passed in memory meet the same minimum as a file. */
-TEST(Unit_SharedSecretTest, FromBytesRefusesAShortSecret)
+TEST(Medium_SharedSecretTest, FromBytesRefusesAShortSecret)
 {
     const std::vector<std::uint8_t> content = counting(0x00, 31);
 

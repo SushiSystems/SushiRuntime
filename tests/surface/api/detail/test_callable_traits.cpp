@@ -44,7 +44,7 @@ namespace
 } // namespace
 
 /** @brief Tests that a per-element kernel passes without mutable and fails with it. */
-TEST(Integration_CallableTraits, AMutablePerElementKernelIsRejected)
+TEST(Small_CallableTraits, AMutablePerElementKernelIsRejected)
 {
     auto plain = [](std::size_t) {};
 
@@ -58,7 +58,7 @@ TEST(Integration_CallableTraits, AMutablePerElementKernelIsRejected)
 }
 
 /** @brief Tests that a range kernel passes without mutable and fails with it. */
-TEST(Integration_CallableTraits, AMutableRangeKernelIsRejected)
+TEST(Small_CallableTraits, AMutableRangeKernelIsRejected)
 {
     auto ranging = [](std::size_t, std::size_t, sycl::handler&) {};
     int calls = 0;
@@ -70,7 +70,7 @@ TEST(Integration_CallableTraits, AMutableRangeKernelIsRejected)
 }
 
 /** @brief Tests that a mutable raw kernel still passes, since raw_node() calls it non-const. */
-TEST(Integration_CallableTraits, AMutableRawKernelIsAccepted)
+TEST(Small_CallableTraits, AMutableRawKernelIsAccepted)
 {
     auto mutating = [](sycl::handler&) mutable {};
 
@@ -78,7 +78,7 @@ TEST(Integration_CallableTraits, AMutableRawKernelIsAccepted)
 }
 
 /** @brief Tests that a coupled kernel fits only when it takes each State read as const. */
-TEST(Integration_CallableTraits, ACoupledKernelMustTakeItsInputsAsConst)
+TEST(Small_CallableTraits, ACoupledKernelMustTakeItsInputsAsConst)
 {
     auto reading = [](std::size_t, const Word*, Word*, const Word*) {};
     auto writing = [](std::size_t, const Word*, Word*, Word*) {};

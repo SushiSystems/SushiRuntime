@@ -55,16 +55,16 @@ sr build --type debug     # Debug
 sr build --type asan      # AddressSanitizer, in the build-asan/ tree
 sr build --distributed    # also compile the distributed module
 
-sr test --suite functional        # unit + regression + integration
-sr test --suite benchmark         # stress + performance
-sr test --suite all
+sr test                           # small, medium and large
+sr test --label small             # one size; tests/README.md gives the sizes
 sr test --module scheduler        # the tests of one module
-sr test --suite functional --filter 'Steal.*'   # ctest -R over test names
+sr test --filter 'Steal.*'        # ctest -R over test names
+sr bench                          # the benchmark programs
 ```
 
 A change is ready when:
 
-1. The functional suite passes (`sr test --suite functional`).
+1. The tests pass (`sr test`).
 2. A change to the scheduler, the USM registry, epoch reclamation, the dependency tracker or
    reference counting also passes an ASan build (`sr build --type asan`, then `sr test --asan`).
    `sr test --repeat N` re-runs a test until it fails.

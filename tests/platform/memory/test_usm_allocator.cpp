@@ -192,7 +192,7 @@ namespace
     }
 
     /** @brief Builds one queue per SYCL device and an allocator over them. */
-    class Unit_UsmAllocator : public ::testing::Test
+    class Medium_UsmAllocator : public ::testing::Test
     {
         protected:
             /** @brief Skips when SYCL reports no device; otherwise builds the allocator. */
@@ -236,7 +236,7 @@ namespace
     };
 } // namespace
 
-TEST_F(Unit_UsmAllocator, EachKindAllocatesIsUsableIsCountedAndIsReleased)
+TEST_F(Medium_UsmAllocator, EachKindAllocatesIsUsableIsCountedAndIsReleased)
 {
     std::size_t kinds_tested = 0;
     for (const USMKind kind : K_ALL_KINDS)
@@ -272,7 +272,7 @@ TEST_F(Unit_UsmAllocator, EachKindAllocatesIsUsableIsCountedAndIsReleased)
         GTEST_SKIP() << "No SYCL device supports any USM kind.";
 }
 
-TEST_F(Unit_UsmAllocator, AnAlignedRequestReturnsAnAddressOnTheAlignment)
+TEST_F(Medium_UsmAllocator, AnAlignedRequestReturnsAnAddressOnTheAlignment)
 {
     std::size_t kinds_tested = 0;
     for (const USMKind kind : K_ALL_KINDS)
@@ -306,7 +306,7 @@ TEST_F(Unit_UsmAllocator, AnAlignedRequestReturnsAnAddressOnTheAlignment)
         GTEST_SKIP() << "No SYCL device supports any USM kind.";
 }
 
-TEST_F(Unit_UsmAllocator, AnAllocationResolvesToItsDeviceAtItsBaseAndInside)
+TEST_F(Medium_UsmAllocator, AnAllocationResolvesToItsDeviceAtItsBaseAndInside)
 {
     const std::size_t device = queues_.size() - 1;
     const std::optional<USMKind> kind = kind_supported_by(device);
@@ -338,7 +338,7 @@ TEST_F(Unit_UsmAllocator, AnAllocationResolvesToItsDeviceAtItsBaseAndInside)
     EXPECT_FALSE(allocator_->containing_base(interior).has_value());
 }
 
-TEST_F(Unit_UsmAllocator, AForeignPointerHasNoDevice)
+TEST_F(Medium_UsmAllocator, AForeignPointerHasNoDevice)
 {
     int foreign = 0;
 
@@ -351,7 +351,7 @@ TEST_F(Unit_UsmAllocator, AForeignPointerHasNoDevice)
     EXPECT_FALSE(allocator_->containing_base(nullptr).has_value());
 }
 
-TEST_F(Unit_UsmAllocator, OwningDeviceAsksSYCLAboutUSMItHasNoRecordOf)
+TEST_F(Medium_UsmAllocator, OwningDeviceAsksSYCLAboutUSMItHasNoRecordOf)
 {
     const std::optional<std::size_t> device = device_supporting(USMKind::Shared);
     if (!device.has_value())
@@ -368,7 +368,7 @@ TEST_F(Unit_UsmAllocator, OwningDeviceAsksSYCLAboutUSMItHasNoRecordOf)
     sycl::free(address, queues_[*device]);
 }
 
-TEST_F(Unit_UsmAllocator, AdoptRecordsAnAddressAndForgetDropsIt)
+TEST_F(Medium_UsmAllocator, AdoptRecordsAnAddressAndForgetDropsIt)
 {
     const std::size_t baseline = allocator_->live_count();
     const std::size_t device = queues_.size() - 1;
@@ -390,7 +390,7 @@ TEST_F(Unit_UsmAllocator, AdoptRecordsAnAddressAndForgetDropsIt)
     EXPECT_EQ(allocator_->live_count(), baseline);
 }
 
-TEST_F(Unit_UsmAllocator, ReleaseOfAnAdoptedAddressDropsTheRecordAndDoesNotFreeIt)
+TEST_F(Medium_UsmAllocator, ReleaseOfAnAdoptedAddressDropsTheRecordAndDoesNotFreeIt)
 {
     const std::size_t baseline = allocator_->live_count();
     const auto external = std::make_unique<unsigned char[]>(K_BYTES);
@@ -410,7 +410,7 @@ TEST_F(Unit_UsmAllocator, ReleaseOfAnAdoptedAddressDropsTheRecordAndDoesNotFreeI
     EXPECT_EQ(external[0], 0);
 }
 
-TEST_F(Unit_UsmAllocator, ASecondReleaseLogsOneErrorWithTheAddressAndFreesNothing)
+TEST_F(Medium_UsmAllocator, ASecondReleaseLogsOneErrorWithTheAddressAndFreesNothing)
 {
     const std::optional<USMKind> kind = kind_supported_by(0);
     if (!kind.has_value())
@@ -433,7 +433,7 @@ TEST_F(Unit_UsmAllocator, ASecondReleaseLogsOneErrorWithTheAddressAndFreesNothin
     EXPECT_NE(capture.lines[0].find("no record"), std::string::npos) << capture.lines[0];
 }
 
-TEST_F(Unit_UsmAllocator, ReleaseOfForeignUSMLeavesItAllocated)
+TEST_F(Medium_UsmAllocator, ReleaseOfForeignUSMLeavesItAllocated)
 {
     const std::optional<std::size_t> device = device_supporting(USMKind::Shared);
     if (!device.has_value())
@@ -460,9 +460,9 @@ TEST_F(Unit_UsmAllocator, ReleaseOfForeignUSMLeavesItAllocated)
 }
 
 /** @brief Names the fixture for the tests that stop the process; see README.md. */
-using Unit_UsmAllocatorDeathTest = Unit_UsmAllocator;
+using Medium_UsmAllocatorDeathTest = Medium_UsmAllocator;
 
-TEST_F(Unit_UsmAllocatorDeathTest, ABadDeviceIndexStopsWithTheIndexAndTheCount)
+TEST_F(Medium_UsmAllocatorDeathTest, ABadDeviceIndexStopsWithTheIndexAndTheCount)
 {
     const std::size_t count = queues_.size();
     const std::size_t bad_index = count + 7;
@@ -476,7 +476,7 @@ TEST_F(Unit_UsmAllocatorDeathTest, ABadDeviceIndexStopsWithTheIndexAndTheCount)
     EXPECT_DEATH(allocator_->adopt(&external, bad_index, sizeof(external)), pattern);
 }
 
-TEST_F(Unit_UsmAllocator, TheReleaseObserverHearsEachReleasedAddressExactlyOnce)
+TEST_F(Medium_UsmAllocator, TheReleaseObserverHearsEachReleasedAddressExactlyOnce)
 {
     const std::optional<USMKind> kind = kind_supported_by(0);
     if (!kind.has_value())
@@ -513,7 +513,7 @@ TEST_F(Unit_UsmAllocator, TheReleaseObserverHearsEachReleasedAddressExactlyOnce)
     EXPECT_EQ(observer.released.size(), 2u);
 }
 
-TEST_F(Unit_UsmAllocator, SetReleaseObserverWaitsForAnObserverCallInFlight)
+TEST_F(Medium_UsmAllocator, SetReleaseObserverWaitsForAnObserverCallInFlight)
 {
     constexpr std::chrono::milliseconds WATCH{200};
 

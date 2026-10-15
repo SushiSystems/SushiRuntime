@@ -155,7 +155,7 @@ namespace RecorderSemanticsTests
         }
     } // namespace
 
-    TEST(Integration_RecorderSemantics, ReadingARegionBetweenRunsDoesNotRecompose)
+    TEST(Medium_RecorderSemantics, ReadingARegionBetweenRunsDoesNotRecompose)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -173,7 +173,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(values[0], 2u);
     }
 
-    TEST(Integration_RecorderSemantics, ARecordingThroughAHeldRegionRecomposes)
+    TEST(Medium_RecorderSemantics, ARecordingThroughAHeldRegionRecomposes)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -190,7 +190,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(values[0], 12u) << "the second run must execute both rules";
     }
 
-    TEST(Integration_RecorderSemantics, ClearingARegionReplacesItsWork)
+    TEST(Medium_RecorderSemantics, ClearingARegionReplacesItsWork)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -209,7 +209,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(values[0], 101u) << "the cleared rule must not run again";
     }
 
-    TEST(Integration_RecorderSemantics, ADropBetweenRunsRecomposes)
+    TEST(Medium_RecorderSemantics, ADropBetweenRunsRecomposes)
     {
         auto rt = Runtime::create().value();
         auto kept = zeroed(rt);
@@ -227,7 +227,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(gone[0], 1u) << "a dropped region must not run again";
     }
 
-    TEST(Integration_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
+    TEST(Medium_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -252,7 +252,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(values[0], static_cast<std::uint32_t>(K_RULE_NODES));
     }
 
-    TEST(Integration_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
+    TEST(Medium_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
     {
         auto rt = Runtime::create().value();
         auto first = zeroed(rt);
@@ -278,7 +278,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(world.rule_registration(K_CELL + 2, 0), DynamicGraph::K_NO_REGISTRATION);
     }
 
-    TEST(Integration_RecorderSemantics, NameLastOwnsItsText)
+    TEST(Medium_RecorderSemantics, NameLastOwnsItsText)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -304,7 +304,7 @@ namespace RecorderSemanticsTests
             << "a temporary must be a valid argument, and the last name given wins";
     }
 
-    TEST(Integration_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
+    TEST(Medium_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -324,7 +324,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(report.node_timings[0].name, unnamed.node_timings[0].name);
     }
 
-    TEST(Integration_RecorderSemantics, MovedFromGraphIsEmpty)
+    TEST(Medium_RecorderSemantics, MovedFromGraphIsEmpty)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -354,7 +354,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(values[0], 12u) << "a moved-from graph records and runs again";
     }
 
-    TEST(Integration_RecorderSemantics, MovedFromDynamicGraphHasNoRegions)
+    TEST(Medium_RecorderSemantics, MovedFromDynamicGraphHasNoRegions)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -384,7 +384,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(values[0], 113u) << "a moved-from graph takes regions and runs again";
     }
 
-    TEST(Integration_RecorderSemantics, OneObserverPerAllocation)
+    TEST(Medium_RecorderSemantics, OneObserverPerAllocation)
     {
         constexpr std::size_t NODES = 16;
 
@@ -405,7 +405,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(shared[0], static_cast<std::uint32_t>(NODES + 1));
     }
 
-    TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetected)
+    TEST(Medium_RecorderSemantics, ADroppedBufferIsStillDetected)
     {
         auto rt = Runtime::create().value();
         auto kept = zeroed(rt);
@@ -425,7 +425,7 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
     }
 
-    TEST(Integration_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
+    TEST(Medium_RecorderSemantics, ADroppedBufferIsStillDetectedInARegion)
     {
         auto rt = Runtime::create().value();
         auto kept = zeroed(rt);
@@ -444,7 +444,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that the recorder of a graph moved from repeats no generation when recorded on. */
-    TEST(Integration_RecorderSemantics, ARecorderWhoseGraphMovedNeverRepeatsAGeneration)
+    TEST(Medium_RecorderSemantics, ARecorderWhoseGraphMovedNeverRepeatsAGeneration)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -477,7 +477,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that Graph::clear() forgets the rules, their registrations and the refusal. */
-    TEST(Integration_RecorderSemantics, GraphClearLeavesAGraphThatRecordsAndRunsAgain)
+    TEST(Medium_RecorderSemantics, GraphClearLeavesAGraphThatRecordsAndRunsAgain)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -500,7 +500,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that clear() inside an extension leaves a recorder that records one rule. */
-    TEST(Integration_RecorderSemantics, AClearInsideAnExtensionStartsANewRule)
+    TEST(Medium_RecorderSemantics, AClearInsideAnExtensionStartsANewRule)
     {
         auto rt = Runtime::create().value();
         auto graph = rt.graph();
@@ -522,7 +522,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that a task of two command groups runs after its producer and before its reader. */
-    TEST(Integration_RecorderSemantics, ATaskOfTwoCommandGroupsIsOrderedByItsAccess)
+    TEST(Medium_RecorderSemantics, ATaskOfTwoCommandGroupsIsOrderedByItsAccess)
     {
         auto rt = Runtime::create().value();
         auto source = zeroed(rt);
@@ -566,7 +566,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that a rule that names an operation is refused nine parameters and keeps eight. */
-    TEST(Integration_RecorderSemantics, ANamedRuleTakesAtMostEightParameters)
+    TEST(Medium_RecorderSemantics, ANamedRuleTakesAtMostEightParameters)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -615,7 +615,7 @@ namespace RecorderSemanticsTests
     }
 
     /** @brief Tests that an extension that records nothing adds no rule and no node. */
-    TEST(Integration_RecorderSemantics, AnExtensionThatRecordsNothingAddsNoRule)
+    TEST(Medium_RecorderSemantics, AnExtensionThatRecordsNothingAddsNoRule)
     {
         auto rt = Runtime::create().value();
         auto values = zeroed(rt);
@@ -683,7 +683,7 @@ namespace RecorderScratchTests
     } // namespace
 
     /** @brief Tests that a consumer of a rule's output sees what passed through its scratch. */
-    TEST(Integration_RecorderScratch, AConsumerSeesWhatPassedThroughTheScratch)
+    TEST(Medium_RecorderScratch, AConsumerSeesWhatPassedThroughTheScratch)
     {
         auto rt   = Runtime::create().value();
         auto in   = rt.buffer<std::uint32_t>(K_COUNT).value();
@@ -711,7 +711,7 @@ namespace RecorderScratchTests
     }
 
     /** @brief Tests that each run of a replayed rule reads its input as it stands, in one compile. */
-    TEST(Integration_RecorderScratch, EachRunReadsItsInputAsItStands)
+    TEST(Medium_RecorderScratch, EachRunReadsItsInputAsItStands)
     {
         auto rt  = Runtime::create().value();
         auto in  = rt.buffer<std::uint32_t>(K_COUNT).value();
@@ -731,7 +731,7 @@ namespace RecorderScratchTests
     }
 
     /** @brief Tests that the scratch a kernel captured stays valid after the graph recompiles. */
-    TEST(Integration_RecorderScratch, ScratchSurvivesARecompile)
+    TEST(Medium_RecorderScratch, ScratchSurvivesARecompile)
     {
         auto rt   = Runtime::create().value();
         auto in   = rt.buffer<std::uint32_t>(K_COUNT).value();
@@ -761,7 +761,7 @@ namespace RecorderScratchTests
     }
 
     /** @brief Tests that scratch returns to the runtime when the graph that recorded it dies. */
-    TEST(Integration_RecorderScratch, ScratchIsFreedWithTheRecorder)
+    TEST(Medium_RecorderScratch, ScratchIsFreedWithTheRecorder)
     {
         auto rt  = Runtime::create().value();
         auto in  = rt.buffer<std::uint32_t>(K_COUNT).value();
@@ -780,7 +780,7 @@ namespace RecorderScratchTests
     }
 
     /** @brief Tests that regions record rules with scratch and keep it across a region rebuild. */
-    TEST(Integration_RecorderScratch, RegionsRecordRulesWithScratch)
+    TEST(Medium_RecorderScratch, RegionsRecordRulesWithScratch)
     {
         auto rt  = Runtime::create().value();
         auto in  = rt.buffer<std::uint32_t>(K_COUNT).value();
@@ -809,7 +809,7 @@ namespace RecorderScratchTests
     }
 
     /** @brief Tests that scratch no device can hold comes back as AllocationFailed. */
-    TEST(Integration_RecorderScratch, AScratchRequestNoDeviceCanSatisfyReturnsAllocationFailed)
+    TEST(Medium_RecorderScratch, AScratchRequestNoDeviceCanSatisfyReturnsAllocationFailed)
     {
         auto rt = Runtime::create().value();
         auto graph = rt.graph();
@@ -977,7 +977,7 @@ namespace RegistrationIndexTests
      * Registers A, B, C in that order; compile() lists them C, B, A, and
      * registration_index must still read 0, 1, 2.
      */
-    TEST(Unit_RegistrationIndex, NodeIndexIsRegistrationOrder)
+    TEST(Medium_RegistrationIndex, NodeIndexIsRegistrationOrder)
     {
         TaskGraph graph;
 
@@ -1008,7 +1008,7 @@ namespace RegistrationIndexTests
      *        them under one registration_index, the mechanism a Recorder rule scope
      *        uses so every node of one rule reports the same node_index.
      */
-    TEST(Unit_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
+    TEST(Medium_RegistrationIndex, ReservedIndexSharedAcrossCallsGroupsNodes)
     {
         TaskGraph graph;
 
@@ -1051,7 +1051,7 @@ namespace RegistrationIndexTests
      * @brief Verifies a Recorder rule scope groups every node recorded in it under
      *        one registration_index, through the real fluent API.
      */
-    TEST(Unit_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
+    TEST(Medium_RegistrationIndex, RuleScopeGroupsItsNodesUnderOneIndex)
     {
         using Detail::RegistrationIndexTestAccess;
 
@@ -1075,7 +1075,7 @@ namespace RegistrationIndexTests
     }
 
     /** @brief Tests that a rule scope's group survives a rebuild onto a fresh TaskGraph. */
-    TEST(Unit_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
+    TEST(Medium_RegistrationIndex, RuleScopeGroupSurvivesRebuild)
     {
         using Detail::RegistrationIndexTestAccess;
 
@@ -1110,7 +1110,7 @@ namespace RegistrationIndexTests
      * @brief Tests that a rule scope groups a late-count resolver, a device-sized kernel and a
      *        plain kernel under one index.
      */
-    TEST(Unit_RegistrationIndex, RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneIndex)
+    TEST(Medium_RegistrationIndex, RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneIndex)
     {
         using Detail::RegistrationIndexTestAccess;
 
@@ -1211,7 +1211,7 @@ namespace RuleRegistrationTests
         }
     } // namespace
 
-    TEST(Integration_RuleRegistration, ARuleCarriesNoIndexUntilTheGraphCompiles)
+    TEST(Medium_RuleRegistration, ARuleCarriesNoIndexUntilTheGraphCompiles)
     {
         auto rt = Runtime::create().value();
         Recorded r = record(rt);
@@ -1223,7 +1223,7 @@ namespace RuleRegistrationTests
                 << "rule " << rule << " reported an index before the first run";
     }
 
-    TEST(Integration_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
+    TEST(Medium_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
     {
         auto rt = Runtime::create().value();
         Recorded r = record(rt);
@@ -1253,7 +1253,7 @@ namespace RuleRegistrationTests
         EXPECT_EQ(reported, K_RULE_NODES) << "every node of the rule scope must report its one index";
     }
 
-    TEST(Integration_RuleRegistration, EveryNodeEventNamesARecordedRule)
+    TEST(Medium_RuleRegistration, EveryNodeEventNamesARecordedRule)
     {
         auto rt = Runtime::create().value();
         Recorded r = record(rt);
@@ -1271,7 +1271,7 @@ namespace RuleRegistrationTests
                 << "node event " << event.node_index << " matches no rule the caller recorded";
     }
 
-    TEST(Integration_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
+    TEST(Medium_RuleRegistration, ARulesNodesReportOneIndexOnEveryStep)
     {
         constexpr std::size_t STEPS = 4;
 
@@ -1298,7 +1298,7 @@ namespace RuleRegistrationTests
     }
 
     /** @brief Tests that the position a Recorder verb returns is the one rule_registration() takes. */
-    TEST(Integration_RuleRegistration, AVerbReturnsThePositionOfTheRuleItRecorded)
+    TEST(Medium_RuleRegistration, AVerbReturnsThePositionOfTheRuleItRecorded)
     {
         constexpr std::uint32_t K_SCALE_MARK = 11;
         constexpr std::uint32_t K_COPY_MARK = 22;

@@ -107,7 +107,7 @@ in-tree must not offer that dependency's executables as its own.
 
 Packaging is the release action: install to a prefix, then archive that prefix. It does not
 check whether the result works. That question has a pass or fail answer and so belongs with
-the tests, as `sr test --suite package`, which installs to the build tree's own stage
+the tests, as `sr test --label package`, which installs to the build tree's own stage
 directory and then builds and runs a consumer against it with nothing else on `PATH`.
 
 ## sushiruntime/services/project.py
@@ -120,6 +120,9 @@ adapter's `urVirtualMemReserve` collides with the virtual address range ASan res
 tree stays a Release build so that the automatic TSan block for Debug and RelWithDebInfo in
 `CMakeLists.txt` never fires; TSan and ASan cannot coexist. For the same reason `sr run --asan`
 pins the run to the OpenCL CPU device, so the SYCL runtime never loads the CUDA adapter.
+
+On Linux the tree carries UndefinedBehaviorSanitizer as well, with
+`-fno-sanitize-recover=undefined`, so undefined behaviour stops the test that hit it.
 
 ### ASAN_FLAGS_WINDOWS
 

@@ -59,7 +59,7 @@ namespace
 } // namespace
 
 /** @brief Tests that a handle gives back the context it was built from. */
-TEST(Integration_ContextAccess, AHandleReturnsTheContextItWasBuiltFrom)
+TEST(Medium_ContextAccess, AHandleReturnsTheContextItWasBuiltFrom)
 {
     const std::shared_ptr<Internal::Execution::RuntimeContext> built =
         SushiRuntime::Test::make_context();
@@ -72,7 +72,7 @@ TEST(Integration_ContextAccess, AHandleReturnsTheContextItWasBuiltFrom)
 }
 
 /** @brief Tests that the owner of a handle is read through the handle it keeps. */
-TEST(Integration_ContextAccess, AnOwnerIsReadThroughItsHandle)
+TEST(Medium_ContextAccess, AnOwnerIsReadThroughItsHandle)
 {
     const std::shared_ptr<Internal::Execution::RuntimeContext> built =
         SushiRuntime::Test::make_context();
@@ -83,7 +83,7 @@ TEST(Integration_ContextAccess, AnOwnerIsReadThroughItsHandle)
 }
 
 /** @brief Tests that no context makes an empty handle, whose share is null. */
-TEST(Unit_ContextAccess, ANullContextMakesAnEmptyHandle)
+TEST(Medium_ContextAccess, ANullContextMakesAnEmptyHandle)
 {
     const ContextHandle handle = Internal::ContextAccess::handle(nullptr);
 

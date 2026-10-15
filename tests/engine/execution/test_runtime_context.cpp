@@ -77,7 +77,7 @@ namespace ProfilingQueueTests
      * @brief Tests that the profiling queue carries enable_profiling and shares the plain queue's
      *        context.
      */
-    TEST(Integration_ProfilingQueue, ProfilingQueueAddsThePropertyAndSharesTheContext)
+    TEST(Medium_ProfilingQueue, ProfilingQueueAddsThePropertyAndSharesTheContext)
     {
         const auto context_owner = SushiRuntime::Test::make_context();
         RuntimeContext& context = *context_owner;
@@ -93,7 +93,7 @@ namespace ProfilingQueueTests
     }
 
     /** @brief Tests that no profiling queue exists before the first request. */
-    TEST(Integration_ProfilingQueue, NoProfilingQueueExistsBeforeTheFirstRequest)
+    TEST(Medium_ProfilingQueue, NoProfilingQueueExistsBeforeTheFirstRequest)
     {
         const auto context_owner = SushiRuntime::Test::make_context();
         RuntimeContext& context = *context_owner;
@@ -111,7 +111,7 @@ namespace ProfilingQueueTests
     }
 
     /** @brief Tests that RuntimeSettings::profiling builds every device's profiling queue eagerly. */
-    TEST(Integration_ProfilingQueue, SettingsProfilingBuildsEveryDeviceEagerly)
+    TEST(Medium_ProfilingQueue, SettingsProfilingBuildsEveryDeviceEagerly)
     {
         RuntimeSettings settings;
         settings.profiling = true;
@@ -127,7 +127,7 @@ namespace ProfilingQueueTests
      * @brief Tests that the profiling flavour returns the plain queue itself when
      *        RuntimeSettings::profiling is on.
      */
-    TEST(Integration_ProfilingQueue, SettingsProfilingReturnsThePlainQueueItself)
+    TEST(Medium_ProfilingQueue, SettingsProfilingReturnsThePlainQueueItself)
     {
         RuntimeSettings settings;
         settings.profiling = true;
@@ -142,7 +142,7 @@ namespace ProfilingQueueTests
      * @brief Tests that a kernel on the profiling queue dereferences USM allocated through the plain
      *        queue.
      */
-    TEST(Integration_ProfilingQueue, USMFromThePlainQueueIsUsableOnTheProfilingQueue)
+    TEST(Medium_ProfilingQueue, USMFromThePlainQueueIsUsableOnTheProfilingQueue)
     {
         constexpr std::size_t N = 256;
 
@@ -196,7 +196,7 @@ namespace TopologyTests
      *
      * Requests a queue with a non-existent NUMA ID and validates that the returned fallback queue functions normally.
      */
-    TEST(Unit_RuntimeContext, InvalidNUMAFallbackQueue)
+    TEST(Medium_RuntimeContext, InvalidNUMAFallbackQueue)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -224,7 +224,7 @@ namespace TopologyTests
      * bounds. Allocating and freeing through it proves the fallback queue is a real
      * one and that the pointer's owner was recorded against it.
      */
-    TEST(Unit_RuntimeContext, InvalidNUMAFallsBackToAUsableNode)
+    TEST(Medium_RuntimeContext, InvalidNUMAFallsBackToAUsableNode)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -251,7 +251,7 @@ namespace TopologyTests
     }
 
     /** @brief Tests that the live count follows each allocation, free and forgotten record. */
-    TEST(Unit_RuntimeContext, LiveUSMCountFollowsAllocateFreeAndForget)
+    TEST(Medium_RuntimeContext, LiveUSMCountFollowsAllocateFreeAndForget)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -279,7 +279,7 @@ namespace TopologyTests
     }
 
     /** @brief Tests that every aligned allocation returns an address on the requested alignment. */
-    TEST(Unit_RuntimeContext, AlignedAllocationsStartOnTheAlignment)
+    TEST(Medium_RuntimeContext, AlignedAllocationsStartOnTheAlignment)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -301,7 +301,7 @@ namespace TopologyTests
     }
 
     /** @brief Tests that an aligned allocation is recorded once and dropped by release(). */
-    TEST(Unit_RuntimeContext, AlignedAllocationsAreRecordedAndFreed)
+    TEST(Medium_RuntimeContext, AlignedAllocationsAreRecordedAndFreed)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -321,7 +321,7 @@ namespace TopologyTests
     }
 
     /** @brief Tests that an aligned allocation on a device index past the last one stops. */
-    TEST(Unit_RuntimeContextDeathTest, AnAlignedAllocationOnAMissingDeviceStops)
+    TEST(Medium_RuntimeContextDeathTest, AnAlignedAllocationOnAMissingDeviceStops)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -389,7 +389,7 @@ namespace NvidiaTopologyTests
      *
      * Probes all devices using HardwareDiscovery and asserts that an NVIDIA GPU is found.
      */
-    TEST(Unit_RuntimeContextNvidia, NvidiaGPUDiscovered)
+    TEST(Large_RuntimeContextNvidia, NvidiaGPUDiscovered)
     {
         if (!cuda_device_available())
             GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -412,7 +412,7 @@ namespace NvidiaTopologyTests
      *
      * Maps NUMA distances for the discovered nodes and asserts that the NVIDIA GPU has a valid ID, skipping if running in WSL without ACPI passthrough.
      */
-    TEST(Unit_RuntimeContextNvidia, NvidiaGPUHasNUMAMapping)
+    TEST(Large_RuntimeContextNvidia, NvidiaGPUHasNUMAMapping)
     {
         if (!cuda_device_available())
             GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -448,7 +448,7 @@ namespace NvidiaTopologyTests
      *
      * Identifies a CUDA platform queue and executes a trivial host_task to ensure it does not throw an exception.
      */
-    TEST(Unit_RuntimeContextNvidia, RuntimeContextExposesNvidiaQueue)
+    TEST(Large_RuntimeContextNvidia, RuntimeContextExposesNvidiaQueue)
     {
         if (!cuda_device_available())
             GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -488,7 +488,7 @@ namespace NvidiaTopologyTests
      *
      * Allocates USM shared memory, submits a parallel_for kernel on the CUDA queue, and verifies the addition results.
      */
-    TEST(Unit_RuntimeContextNvidia, NvidiaGPUVectorAdd)
+    TEST(Large_RuntimeContextNvidia, NvidiaGPUVectorAdd)
     {
         if (!cuda_device_available())
             GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
@@ -563,7 +563,7 @@ namespace TopologyAbstractionTests
      *
      * Injects a synthetic distance model into the RuntimeContext and ensures its reported NUMA distances match the injected values.
      */
-    TEST(Unit_RuntimeContextTopology, InjectedDistanceModelDrivesRuntimeContext)
+    TEST(Medium_RuntimeContextTopology, InjectedDistanceModelDrivesRuntimeContext)
     {
         auto provider = std::make_shared<HwlocTopologyProvider>();
         auto distance = std::make_shared<MatrixDistanceModel>(
@@ -582,7 +582,7 @@ namespace TopologyAbstractionTests
      *
      * Injects a remapping provider and tests that queues obtained for synthetic NUMA IDs can successfully submit host tasks.
      */
-    TEST(Unit_RuntimeContextTopology, RuntimeContextRoutesQueuesViaSyntheticNUMA)
+    TEST(Medium_RuntimeContextTopology, RuntimeContextRoutesQueuesViaSyntheticNUMA)
     {
         constexpr int FAKE_NODES = 2;
 
@@ -610,7 +610,7 @@ namespace TopologyAbstractionTests
      *
      * Builds a node by hand, leaves its PCI address empty and asserts NUMAMapper puts it on node 0.
      */
-    TEST(Unit_RuntimeContextTopology, GPUWithoutPCIAddressTakesFallbackNUMANode)
+    TEST(Medium_RuntimeContextTopology, GPUWithoutPCIAddressTakesFallbackNUMANode)
     {
         HardwareNode gpu;
         gpu.name = "synthetic GPU without a PCI address";
@@ -730,7 +730,7 @@ namespace OffloadSeamShutdownTests
     /**
      * @brief shutdown() stops the installed coordinator while the worker pool still runs.
      */
-    TEST(Integration_OffloadSeam, ShutdownStopsCoordinatorBeforeEngine)
+    TEST(Medium_OffloadSeam, ShutdownStopsCoordinatorBeforeEngine)
     {
         const std::shared_ptr<PoolProbingCoordinator> coordinator =
             std::make_shared<PoolProbingCoordinator>();

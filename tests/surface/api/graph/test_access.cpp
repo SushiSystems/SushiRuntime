@@ -38,7 +38,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that regions given directly keep their order and carry no observer. */
-TEST(Unit_Access, RegionsKeepTheirOrder)
+TEST(Medium_Access, RegionsKeepTheirOrder)
 {
     int first = 0;
     int second = 0;
@@ -51,7 +51,7 @@ TEST(Unit_Access, RegionsKeepTheirOrder)
 }
 
 /** @brief Tests that handles given through Reads and Writes bring the observers of both. */
-TEST(Unit_Access, HandlesBringTheirObservers)
+TEST(Medium_Access, HandlesBringTheirObservers)
 {
     auto runtime = Runtime::create().value();
     auto in = runtime.buffer<int>(4).value();

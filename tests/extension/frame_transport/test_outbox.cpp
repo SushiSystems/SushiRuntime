@@ -113,7 +113,7 @@ namespace
 /**
  * @brief Checks that pop() returns every control frame before any frame of a stream.
  */
-TEST(Unit_OutboxTest, ControlComesBeforeStream)
+TEST(Medium_OutboxTest, ControlComesBeforeStream)
 {
     Outbox outbox(8);
     std::atomic<bool> is_destroyed{false};
@@ -145,7 +145,7 @@ TEST(Unit_OutboxTest, ControlComesBeforeStream)
 /**
  * @brief Checks that streams are served one frame each in turn.
  */
-TEST(Unit_OutboxTest, StreamsTakeTurns)
+TEST(Medium_OutboxTest, StreamsTakeTurns)
 {
     Outbox outbox(8);
     std::atomic<bool> is_long_destroyed{false};
@@ -172,7 +172,7 @@ TEST(Unit_OutboxTest, StreamsTakeTurns)
 /**
  * @brief Checks the bound of the control queue and of one payload.
  */
-TEST(Unit_OutboxTest, QueueFullAtCapacity)
+TEST(Medium_OutboxTest, QueueFullAtCapacity)
 {
     Outbox outbox(2);
     EXPECT_EQ(outbox.push_control(MessageType::Ping, {}), SendStatus::Queued);
@@ -196,7 +196,7 @@ TEST(Unit_OutboxTest, QueueFullAtCapacity)
 /**
  * @brief Checks that close() keeps queued control frames, drops streams and refuses pushes.
  */
-TEST(Unit_OutboxTest, CloseKeepsControlAndDropsStreams)
+TEST(Medium_OutboxTest, CloseKeepsControlAndDropsStreams)
 {
     Outbox outbox(8);
     std::atomic<bool> is_queued_destroyed{false};

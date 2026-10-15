@@ -64,7 +64,7 @@ namespace
 }
 
 /** @brief Tests that a node given back and a node finished remotely reach the sink. */
-TEST(Unit_OffloadSink, BothCallsReachTheSink)
+TEST(Small_OffloadSink, BothCallsReachTheSink)
 {
     RecordingCoordinator recorder;
     OffloadSink& sink = recorder;

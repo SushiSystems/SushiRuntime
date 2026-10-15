@@ -8,7 +8,7 @@ The tests of `Buffer` and `State`, the handles of `api/data/`. They are part of 
 The file covers what `Buffer` and `State` promise alike: what a range call does with a window, what
 an allocation does with a count it cannot hold, the queries both answer, which device indices and
 residencies are refused, and which element types are accepted. Most handles are shared USM on
-device 0. The device-resident handles allocate on device 0 as the `Integration_DeviceResident` tests do, so
+device 0. The device-resident handles allocate on device 0 as the `Medium_DeviceResident` tests do, so
 the file needs no cluster and no more devices than that file.
 
 ### `window_pattern`, `expect_every_range_call_stops`
@@ -17,7 +17,7 @@ the file needs no cluster and no more devices than that file.
 `offset <n>, count <n>` and `size <n>`. `expect_every_range_call_stops` runs `read_range`,
 `write_range` and `region` of one handle as death tests against it, which is how the Buffer test
 and the State test stay the same test. The tests that stop the process are in the suite
-`Integration_DataHandlesDeathTest`.
+`Medium_DataHandlesDeathTest`.
 
 ### `BufferStopsOnAWindowPastTheEnd`, `StateStopsOnAWindowPastTheEnd`
 

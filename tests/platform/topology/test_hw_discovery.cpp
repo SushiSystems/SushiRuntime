@@ -54,7 +54,7 @@ namespace
 } // namespace
 
 // An empty result is a value at this tier, not a failure; see README.md.
-TEST(Unit_HardwareDiscovery, AFilterThatAdmitsNoClassYieldsNoDeviceAndDoesNotThrow)
+TEST(Medium_HardwareDiscovery, AFilterThatAdmitsNoClassYieldsNoDeviceAndDoesNotThrow)
 {
     HardwareDiscovery discovery;
     const auto probed = discovery.probe_all_devices(filter_admitting_nothing());
@@ -68,7 +68,7 @@ TEST(Unit_HardwareDiscovery, AFilterThatAdmitsNoClassYieldsNoDeviceAndDoesNotThr
 }
 
 // Holds on any machine; it can fail only where two backends expose one GPU.
-TEST(Unit_HardwareDiscovery, NoTwoNodesShareAPCIAddress)
+TEST(Medium_HardwareDiscovery, NoTwoNodesShareAPCIAddress)
 {
     using PCIKey = std::tuple<std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t>;
 
@@ -87,7 +87,7 @@ TEST(Unit_HardwareDiscovery, NoTwoNodesShareAPCIAddress)
     }
 }
 
-TEST(Unit_HardwareDiscovery, EveryNodeTheGPUOnlyFilterAdmitsIsAGPU)
+TEST(Medium_HardwareDiscovery, EveryNodeTheGPUOnlyFilterAdmitsIsAGPU)
 {
     DeviceFilter config;
     config.include_cpu = false;
@@ -99,7 +99,7 @@ TEST(Unit_HardwareDiscovery, EveryNodeTheGPUOnlyFilterAdmitsIsAGPU)
 }
 
 /** @brief Tests that discovery finds a device, numbers the devices from zero in order and names each. */
-TEST(Unit_HardwareDiscovery, LogicalIDsAreSequentialAndEveryDeviceIsNamed)
+TEST(Medium_HardwareDiscovery, LogicalIDsAreSequentialAndEveryDeviceIsNamed)
 {
     HardwareDiscovery discovery;
     DeviceFilter config;

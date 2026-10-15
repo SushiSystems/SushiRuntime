@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from sushiruntime.services import project
-from sushiruntime.services.project import Suite
+from sushiruntime.services.project import Label
 
 
 class FakeDriver:
@@ -49,11 +49,31 @@ def driver(monkeypatch, tmp_path) -> FakeDriver:
 
 def test_module_selects_its_label_exactly(driver):
     """A module name becomes an anchored label regex, so `graph` does not match another label."""
-    assert project.test(Suite.functional, module="graph") == 0
+    assert project.test(None, module="graph") == 0
     assert [run["label_regex"] for run in driver.runs] == ["^graph$"]
 
 
-def test_suite_label_applies_without_a_module(driver):
-    """Without a module the suite's own label regex is passed, as before."""
-    assert project.test(Suite.unit) == 0
-    assert [run["label_regex"] for run in driver.runs] == [project._SUITE_LABEL_REGEX[Suite.unit]]
+def test_size_label_applies_without_a_module(driver):
+    """Without a module the size's own label is passed."""
+    assert project.test(Label.small) == 0
+    assert [run["label_regex"] for run in driver.runs] == ["^small$"]
+
+
+def test_no_label_runs_every_size_but_the_quarantined(driver):
+    """Without a label or a module every size runs and the quarantined tests do not."""
+    assert project.test(None) == 0
+    assert [(run["label_regex"], run["exclude_label_regex"]) for run in driver.runs] == [
+        ("^(small|medium|large)$", "^quarantined$")]
+
+
+def test_a_size_run_leaves_the_quarantined_tests_out(driver):
+    """A quarantined test keeps its size label, so a size run excludes the quarantined label."""
+    assert project.test(Label.medium) == 0
+    assert [run["exclude_label_regex"] for run in driver.runs] == ["^quarantined$"]
+
+
+def test_the_quarantined_run_excludes_nothing(driver):
+    """The quarantined run selects that label and leaves nothing out."""
+    assert project.test(Label.quarantined) == 0
+    assert [(run["label_regex"], run["exclude_label_regex"]) for run in driver.runs] == [
+        ("^quarantined$", None)]

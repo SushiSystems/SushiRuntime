@@ -43,7 +43,7 @@ using namespace SushiRuntime;
 constexpr std::size_t K_COUNT = 16;
 
 /** @brief Tests that a launch over a count runs the kernel once per index. */
-TEST(Unit_EmitTracked, ALaunchRunsOncePerIndex)
+TEST(Medium_EmitTracked, ALaunchRunsOncePerIndex)
 {
     auto runtime = Runtime::create().value();
     int* const data = Testing::shared_integers(runtime, K_COUNT, 0);
@@ -59,7 +59,7 @@ TEST(Unit_EmitTracked, ALaunchRunsOncePerIndex)
 }
 
 /** @brief Tests that a range kernel is handed the whole range and the handler. */
-TEST(Unit_EmitTracked, ARangeKernelGetsTheWholeRange)
+TEST(Medium_EmitTracked, ARangeKernelGetsTheWholeRange)
 {
     auto runtime = Runtime::create().value();
     int* const data = Testing::shared_integers(runtime, K_COUNT, 0);
@@ -77,7 +77,7 @@ TEST(Unit_EmitTracked, ARangeKernelGetsTheWholeRange)
 }
 
 /** @brief Tests that a raw command group keeps the width the caller states. */
-TEST(Unit_EmitTracked, ARawNodeKeepsTheStatedWidth)
+TEST(Medium_EmitTracked, ARawNodeKeepsTheStatedWidth)
 {
     auto runtime = Runtime::create().value();
     int* const data = Testing::shared_integers(runtime, 1, 0);

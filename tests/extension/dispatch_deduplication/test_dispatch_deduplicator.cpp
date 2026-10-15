@@ -33,7 +33,7 @@
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that a repeated id is refused while remembered, and the oldest goes first. */
-TEST(Unit_DispatchDeduplicatorTest, DuplicateDispatchRunsOnce)
+TEST(Medium_DispatchDeduplicatorTest, DuplicateDispatchRunsOnce)
 {
     DispatchDeduplicator seen;
     EXPECT_TRUE(seen.mark_seen(1));
@@ -51,7 +51,7 @@ TEST(Unit_DispatchDeduplicatorTest, DuplicateDispatchRunsOnce)
 }
 
 /** @brief Tests that clear() forgets every id, as a new master session needs. */
-TEST(Unit_DispatchDeduplicatorTest, ClearForgetsEveryId)
+TEST(Medium_DispatchDeduplicatorTest, ClearForgetsEveryId)
 {
     DispatchDeduplicator seen;
     EXPECT_TRUE(seen.mark_seen(7));

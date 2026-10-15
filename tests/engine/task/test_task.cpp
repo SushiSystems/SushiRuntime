@@ -58,7 +58,7 @@ namespace
 }
 
 /** @brief Tests the defaults: a kernel task, unnamed, priority 0, device work, not a graph node. */
-TEST(Unit_Task, ASubclassInheritsTheDefaults)
+TEST(Small_Task, ASubclassInheritsTheDefaults)
 {
     const sushi_ptr<PlainTask> task = make_sushi<PlainTask>();
     EXPECT_STREQ(task->name(), "unnamed_task");

@@ -95,7 +95,7 @@ namespace AsyncExecutionTests
      *
      * Submits independent workloads to CPU and GPU queues back-to-back without waiting in between, and verifies both produce correct results.
      */
-    TEST(Integration_AsyncExecutionTest, CPUGPUConcurrentVectorAdd)
+    TEST(Large_AsyncExecutionTest, CPUGPUConcurrentVectorAdd)
     {
         size_t cpu_idx = 0;
         size_t gpu_idx = 0;
@@ -180,7 +180,7 @@ namespace AsyncExecutionTests
      *
      * Submits a heavy kernel to the GPU queue and asserts that it remains in-flight immediately after the submit call returns.
      */
-    TEST(Integration_AsyncExecutionTest, AsyncDispatchDoesNotBlock)
+    TEST(Large_AsyncExecutionTest, AsyncDispatchDoesNotBlock)
     {
         size_t cpu_idx = 0;
         size_t gpu_idx = 0;
@@ -259,7 +259,7 @@ namespace DevicePipelineTests
      *
      * Verifies the engine resolves the RAW fan-out, keeps the readers parallel, joins the fan-in, and produces correct results across every buffer.
      */
-    TEST(Integration_DevicePipelineTest, DiamondAllKernelNodes)
+    TEST(Medium_DevicePipelineTest, DiamondAllKernelNodes)
     {
         const auto context_owner = SushiRuntime::Test::make_context();
         RuntimeContext& context = *context_owner;
@@ -359,7 +359,7 @@ namespace HeterogeneousPipelineTests
      *
      * Independent init -> scale -> bias chains run concurrently, split across GPU as kernels and CPU as host work.
      */
-    TEST(Integration_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
+    TEST(Medium_HeterogeneousPipelineTest, ManyChainsHostDeviceHost)
     {
         const auto context_owner = SushiRuntime::Test::make_context();
         RuntimeContext& context = *context_owner;
@@ -506,7 +506,7 @@ namespace SYCLExecutionTests
      *
      * A host task initializes the inputs, a device kernel adds them, and the host verifies the result.
      */
-    TEST(Integration_SyclExecutionTest, EndToEndVectorAddition)
+    TEST(Medium_SyclExecutionTest, EndToEndVectorAddition)
     {
         const auto context_owner = SushiRuntime::Test::make_context();
         RuntimeContext& context = *context_owner;
@@ -578,7 +578,7 @@ namespace SYCLExecutionTests
      *
      * Three dependent stages: init (host) -> scale (device kernel) -> reduce (host sum). The tracker must serialize them and the final sum must match the expected value.
      */
-    TEST(Integration_SyclExecutionTest, MultiStageChain)
+    TEST(Medium_SyclExecutionTest, MultiStageChain)
     {
         const auto context_owner = SushiRuntime::Test::make_context();
         RuntimeContext& context = *context_owner;
@@ -737,7 +737,7 @@ namespace ReplayHostWriteTests
         }
     } // namespace
 
-    TEST(Integration_ReplayHostWrite, AReplayReadsASharedWordTheHostWrote)
+    TEST(Medium_ReplayHostWrite, AReplayReadsASharedWordTheHostWrote)
     {
         const auto context_owner = SushiRuntime::Test::make_context();
         RuntimeContext& context = *context_owner;
@@ -745,7 +745,7 @@ namespace ReplayHostWriteTests
             replay_around_host_writes(context, USMKind::Shared, device);
     }
 
-    TEST(Integration_ReplayHostWrite, AReplayReadsAHostWordTheHostWrote)
+    TEST(Medium_ReplayHostWrite, AReplayReadsAHostWordTheHostWrote)
     {
         const auto context_owner = SushiRuntime::Test::make_context();
         RuntimeContext& context = *context_owner;
@@ -766,7 +766,7 @@ namespace GraphTests
      *
      * Three tasks sharing one pointer must run strictly in order (RAW, then WAR/WAW).
      */
-    TEST(Integration_TaskGraphTest, SequentialUSMDependency)
+    TEST(Medium_TaskGraphTest, SequentialUSMDependency)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -806,7 +806,7 @@ namespace GraphTests
      *
      * Tasks with no shared memory are independent roots and execute concurrently.
      */
-    TEST(Integration_TaskGraphTest, IndependentRootsExecution)
+    TEST(Medium_TaskGraphTest, IndependentRootsExecution)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -841,7 +841,7 @@ namespace GraphTests
      *
      * A(write X) -> B,C(read X) -> D(write X). B and C run in parallel after A; D waits for both resolving the WAR hazard.
      */
-    TEST(Integration_TaskGraphTest, FanOutFanInDiamond)
+    TEST(Medium_TaskGraphTest, FanOutFanInDiamond)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;

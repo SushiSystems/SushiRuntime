@@ -49,7 +49,7 @@ using namespace SushiRuntime;
 namespace DynamicGraphTests
 {
     /** @brief Tests that two independent regions advance their buffers and compose the plan once. */
-    TEST(Integration_DynamicGraph, IndependentRegionsRunAndComposeOnce)
+    TEST(Medium_DynamicGraph, IndependentRegionsRunAndComposeOnce)
     {
         constexpr std::size_t N     = 16;
         constexpr std::size_t STEPS = 5;
@@ -82,7 +82,7 @@ namespace DynamicGraphTests
     /**
      * @brief Tests that a consumer region observes the writes of a producer region with a lower key.
      */
-    TEST(Integration_DynamicGraph, CrossRegionDependencyOrders)
+    TEST(Medium_DynamicGraph, CrossRegionDependencyOrders)
     {
         constexpr std::size_t N = 32;
 
@@ -111,7 +111,7 @@ namespace DynamicGraphTests
     /**
      * @brief Tests that a dropped region's buffer freezes while the surviving region keeps advancing.
      */
-    TEST(Integration_DynamicGraph, DropRegionStopsItsWork)
+    TEST(Medium_DynamicGraph, DropRegionStopsItsWork)
     {
         constexpr std::size_t N = 8;
 
@@ -146,7 +146,7 @@ namespace DynamicGraphTests
     /**
      * @brief Tests that adding a region between steps recomposes once and takes effect on the next run.
      */
-    TEST(Integration_DynamicGraph, AddRegionBetweenSteps)
+    TEST(Medium_DynamicGraph, AddRegionBetweenSteps)
     {
         constexpr std::size_t N = 8;
 
@@ -177,7 +177,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that mutating one region recomposes exactly once. */
-    TEST(Integration_DynamicGraph, SingleRecomposePerMutation)
+    TEST(Medium_DynamicGraph, SingleRecomposePerMutation)
     {
         constexpr std::size_t N        = 4;
         constexpr std::size_t REGIONS  = 32;
@@ -222,7 +222,7 @@ namespace DynamicGraphTests
     /**
      * @brief Tests that find_region() reads without recomposing and returns nullptr for an absent key.
      */
-    TEST(Integration_DynamicGraph, FindRegionReadsWithoutRecomposing)
+    TEST(Medium_DynamicGraph, FindRegionReadsWithoutRecomposing)
     {
         constexpr std::size_t N = 4;
 
@@ -252,7 +252,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that a three-region chain threads a value through both hops. */
-    TEST(Integration_DynamicGraph, ThreeRegionChainThreadsValue)
+    TEST(Medium_DynamicGraph, ThreeRegionChainThreadsValue)
     {
         constexpr std::size_t N = 24;
 
@@ -283,7 +283,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that two regions reading one producer's buffer both see its writes. */
-    TEST(Integration_DynamicGraph, ReadReadSharingStaysConsistent)
+    TEST(Medium_DynamicGraph, ReadReadSharingStaysConsistent)
     {
         constexpr std::size_t N = 24;
 
@@ -317,7 +317,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that streaming a consumer in rewires the existing producer's boundary. */
-    TEST(Integration_DynamicGraph, StreamInConsumerRewiresProducer)
+    TEST(Medium_DynamicGraph, StreamInConsumerRewiresProducer)
     {
         constexpr std::size_t N = 16;
 
@@ -347,7 +347,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that dropping the producer leaves the consumer runnable. */
-    TEST(Integration_DynamicGraph, DropProducerLeavesConsumerRunnable)
+    TEST(Medium_DynamicGraph, DropProducerLeavesConsumerRunnable)
     {
         constexpr std::size_t N = 16;
 
@@ -382,7 +382,7 @@ namespace DynamicGraphTests
      * @brief Tests that two regions writing disjoint ranges of one buffer are not ordered against each
      *        other.
      */
-    TEST(Integration_DynamicGraph, DisjointRangeRegionsAreNotOrdered)
+    TEST(Medium_DynamicGraph, DisjointRangeRegionsAreNotOrdered)
     {
         if (std::thread::hardware_concurrency() < 2)
             GTEST_SKIP() << "needs at least two workers to observe concurrency";
@@ -424,7 +424,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that two regions writing the same range of one buffer are still ordered. */
-    TEST(Integration_DynamicGraph, OverlappingRangeRegionsStillSerialize)
+    TEST(Medium_DynamicGraph, OverlappingRangeRegionsStillSerialize)
     {
         constexpr std::size_t N = 64;
 
@@ -472,7 +472,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that a whole-buffer reader runs after both half writers. */
-    TEST(Integration_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
+    TEST(Medium_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
     {
         constexpr std::size_t N = 128;
         constexpr std::size_t HALF = N / 2;
@@ -521,7 +521,7 @@ namespace DynamicGraphNodeEventsTests
     } // namespace
 
     /** @brief Tests that a graph that never requested profiling records nothing. */
-    TEST(Integration_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
+    TEST(Medium_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
     {
         constexpr std::size_t N = 32;
 
@@ -540,7 +540,7 @@ namespace DynamicGraphNodeEventsTests
     }
 
     /** @brief Tests that a requested DynamicGraph produces records that match the renumbered index. */
-    TEST(Integration_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRenumberedIndex)
+    TEST(Medium_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRenumberedIndex)
     {
         constexpr std::size_t N = 32;
 
@@ -572,7 +572,7 @@ namespace DynamicGraphNodeEventsTests
     }
 
     /** @brief Tests that node_index is dense and ordered by ascending region key, then add() order. */
-    TEST(Integration_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrder)
+    TEST(Medium_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrder)
     {
         constexpr std::size_t N = 16;
 
@@ -609,7 +609,7 @@ namespace DynamicGraphNodeEventsTests
     }
 
     /** @brief Tests that the index stays dense after a region is dropped and re-added. */
-    TEST(Integration_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
+    TEST(Medium_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
     {
         constexpr std::size_t N = 16;
 
@@ -644,7 +644,7 @@ namespace DynamicGraphNodeEventsTests
     }
 
     // Toggling the per-graph request recompiles exactly once, not once per run.
-    TEST(Integration_DynamicGraphNodeEvents, RequestToggleRecompilesOnce)
+    TEST(Medium_DynamicGraphNodeEvents, RequestToggleRecompilesOnce)
     {
         constexpr std::size_t N = 8;
 
@@ -1285,7 +1285,7 @@ namespace LayerEquivalenceTests
     } // namespace
 
     /** @brief Tests that four regions of a DynamicGraph leave the bytes one static Graph leaves. */
-    TEST(Integration_LayerEquivalence, DynamicRegionsMatchOneStaticGraph)
+    TEST(Medium_LayerEquivalence, DynamicRegionsMatchOneStaticGraph)
     {
         const Script script{{{true, K_RUNS}}, true};
 
@@ -1308,7 +1308,7 @@ namespace LayerEquivalenceTests
     }
 
     /** @brief Tests that a region dropped and recorded again matches a static graph per stretch. */
-    TEST(Integration_LayerEquivalence, DroppedAndReaddedRegionMatchesStaticGraphs)
+    TEST(Medium_LayerEquivalence, DroppedAndReaddedRegionMatchesStaticGraphs)
     {
         const Script script{{{true, 1}, {false, 1}, {true, 1}}, false};
 
@@ -1330,7 +1330,7 @@ namespace LayerEquivalenceTests
     }
 
     /** @brief Tests that host tasks between kernels give the same bytes on both layers. */
-    TEST(Integration_LayerEquivalence, HostTasksAmongKernelsMatchAcrossLayers)
+    TEST(Medium_LayerEquivalence, HostTasksAmongKernelsMatchAcrossLayers)
     {
         auto default_rt = Runtime::create().value();
         auto scheduled_rt = Runtime::create(scheduler_only()).value();
@@ -1348,7 +1348,7 @@ namespace LayerEquivalenceTests
     }
 
     /** @brief Tests that N run_async() steps leave the bytes run(N) leaves, on both layers. */
-    TEST(Integration_LayerEquivalence, AsyncStepsMatchBlockingRun)
+    TEST(Medium_LayerEquivalence, AsyncStepsMatchBlockingRun)
     {
         const Script script{{{true, K_RUNS}}, true};
 
@@ -1369,7 +1369,7 @@ namespace LayerEquivalenceTests
     }
 
     /** @brief Tests that a DynamicGraph stepped through run_async() matches its blocking run. */
-    TEST(Integration_LayerEquivalence, AsyncStepsOfADynamicGraphMatchBlockingRun)
+    TEST(Medium_LayerEquivalence, AsyncStepsOfADynamicGraphMatchBlockingRun)
     {
         const Script script{{{true, 1}, {false, 1}, {true, 1}}, true};
 
@@ -1382,7 +1382,7 @@ namespace LayerEquivalenceTests
     }
 
     /** @brief Tests that every tracked form of an offset 2-D launch matches the host reference. */
-    TEST(Integration_LayerEquivalence, OffsetLaunchFormsMatchAcrossLayers)
+    TEST(Medium_LayerEquivalence, OffsetLaunchFormsMatchAcrossLayers)
     {
         auto chained_rt = Runtime::create().value();
         auto scheduled_rt = Runtime::create(scheduler_only()).value();
@@ -1401,7 +1401,7 @@ namespace LayerEquivalenceTests
     }
 
     /** @brief Tests that the untracked Extent and NdRange launches match the host reference. */
-    TEST(Integration_LayerEquivalence, UntrackedOffsetLaunchesMatchAcrossLayers)
+    TEST(Medium_LayerEquivalence, UntrackedOffsetLaunchesMatchAcrossLayers)
     {
         auto default_rt = Runtime::create().value();
         auto scheduled_rt = Runtime::create(scheduler_only()).value();
@@ -1418,7 +1418,7 @@ namespace LayerEquivalenceTests
     }
 
     /** @brief Tests that an untracked kernel placed with On() runs on the device it names. */
-    TEST(Integration_LayerEquivalence, PlacedUntrackedLaunchesMatchAcrossLayers)
+    TEST(Medium_LayerEquivalence, PlacedUntrackedLaunchesMatchAcrossLayers)
     {
         auto default_rt = Runtime::create().value();
         auto scheduled_rt = Runtime::create(scheduler_only()).value();

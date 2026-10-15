@@ -19,7 +19,7 @@ from sushiruntime.cli import app
 
 K_GROUPS = {
     "Toolchain": ["toolchain"],
-    "Project": ["build", "test", "run", "package", "clean", "docs"],
+    "Project": ["build", "test", "bench", "run", "package", "clean", "docs"],
     "Diagnostics": ["config", "env", "setup", "doctor", "link", "unlink"],
     "Container": ["container"],
 }

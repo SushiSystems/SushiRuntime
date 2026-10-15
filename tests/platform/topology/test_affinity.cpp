@@ -119,7 +119,7 @@ namespace
     }
 } // namespace
 
-TEST(Unit_AffinityTest, NegativeCoreLeavesAffinityUnchanged)
+TEST(Medium_AffinityTest, NegativeCoreLeavesAffinityUnchanged)
 {
     const AffinityAroundPin observed = pin_from_worker(-1);
 
@@ -127,7 +127,7 @@ TEST(Unit_AffinityTest, NegativeCoreLeavesAffinityUnchanged)
     EXPECT_EQ(observed.after, observed.before);
 }
 
-TEST(Unit_AffinityTest, CoreBeyondTheMachineLeavesAffinityUnchanged)
+TEST(Medium_AffinityTest, CoreBeyondTheMachineLeavesAffinityUnchanged)
 {
     const AffinityAroundPin observed = pin_from_worker(100000);
 
@@ -135,7 +135,7 @@ TEST(Unit_AffinityTest, CoreBeyondTheMachineLeavesAffinityUnchanged)
     EXPECT_EQ(observed.after, observed.before);
 }
 
-TEST(Unit_AffinityTest, CoreZeroBecomesTheOnlyCoreOfTheThread)
+TEST(Medium_AffinityTest, CoreZeroBecomesTheOnlyCoreOfTheThread)
 {
     const AffinityAroundPin observed = pin_from_worker(0);
 
@@ -151,7 +151,7 @@ TEST(Unit_AffinityTest, CoreZeroBecomesTheOnlyCoreOfTheThread)
  * Pinning to core 0 (always present) should be successful or at least
  * handled gracefully internally.
  */
-TEST(Unit_AffinityTest, PinToValidCore)
+TEST(Medium_AffinityTest, PinToValidCore)
 {
     bool threw = false;
     std::thread worker([&threw]()
@@ -176,7 +176,7 @@ TEST(Unit_AffinityTest, PinToValidCore)
  * Requesting a non-existent core must trigger a warning but not throw an
  * exception or crash the program.
  */
-TEST(Unit_AffinityTest, PinToInvalidCoreIsGraceful)
+TEST(Medium_AffinityTest, PinToInvalidCoreIsGraceful)
 {
     bool threw = false;
     std::thread worker([&threw]()
@@ -201,7 +201,7 @@ TEST(Unit_AffinityTest, PinToInvalidCoreIsGraceful)
  * Calling the pinning function multiple times should not cause any exceptions
  * or cumulative failure states.
  */
-TEST(Unit_AffinityTest, PinIsRepeatable)
+TEST(Medium_AffinityTest, PinIsRepeatable)
 {
     bool threw = false;
     std::thread worker([&threw]()

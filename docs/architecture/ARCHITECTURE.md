@@ -231,7 +231,7 @@ Under an MSVC-style driver that is not `cl.exe`, `/fp:precise` does not turn con
 `cmake/Determinism.cmake` probes `-ffp-contract=off` and then `/Qfp-contract=off`, adds the one
 the driver accepts and warns when it accepts neither.
 
-The tests named `Integration_Determinism` in `tests/surface/api/graph/test_graph.cpp` check the
+The tests named `Medium_Determinism` in `tests/surface/api/graph/test_graph.cpp` check the
 result.
 
 ### GPU backend

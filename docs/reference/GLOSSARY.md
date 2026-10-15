@@ -65,7 +65,7 @@ The words this repository's documents use. A term defined in code names the head
 | `hub` | SushiStack's command line, which provisions several checkouts at once |
 | sushicore | The Python package the `sr` CLI takes its shared commands and help page from |
 | Toolchain | One of the three SYCL compilers `SR_SYCL_TOOLCHAIN` selects: intel-llvm, AdaptiveCpp or Intel oneAPI |
-| Suite | A set of tests `sr test --suite` runs: `functional` (unit, regression, integration), `benchmark` (stress, performance), `package`, or `all` |
+| Size | The label a test carries for what it needs to run: `small`, `medium` or `large`; `sr test --label` runs one, and `tests/README.md` gives each one's limits |
 | Package suite | The suite that installs the runtime to a prefix, then builds and runs `tests/package/` with only that prefix on the path |
 | Lane | One build configuration that is tested as a unit, such as the ASan build or the CPU-only build |
 | Checker | A script under `tools/` that reads the repository and reports where it breaks a rule; it never rewrites a file |

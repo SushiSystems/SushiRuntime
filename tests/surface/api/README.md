@@ -45,7 +45,7 @@ The headers below are shared by tests of this module only, so they sit in this f
 
 ## test_fluent.cpp
 
-The file covers the parts of the fluent API that the `Integration_FluentLifecycle` tests do not exercise:
+The file covers the parts of the fluent API that the `Medium_FluentLifecycle` tests do not exercise:
 
 - `run_for(duration)`
 - the success path of `run()` and the fields of `RunReport`

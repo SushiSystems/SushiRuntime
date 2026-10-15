@@ -42,7 +42,7 @@ namespace TopologyAbstractionTests
      *
      * Creates a synthetic 2-node distance matrix and asserts local distances are 10 while remote distances match the provided configuration.
      */
-    TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelObeysACPIConvention)
+    TEST(Small_TopologyAbstractionTest, MatrixDistanceModelObeysACPIConvention)
     {
         MatrixDistanceModel model{{{10, 21},
                                    {21, 10}}};
@@ -60,7 +60,7 @@ namespace TopologyAbstractionTests
      *
      * Constructs a 3-node matrix with non-uniform interconnect costs and verifies correct distance retrievals.
      */
-    TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelSupportsAsymmetricFabric)
+    TEST(Small_TopologyAbstractionTest, MatrixDistanceModelSupportsAsymmetricFabric)
     {
         // 3-node layout: 0<->1 cheap, 0<->2 expensive (2 hops).
         MatrixDistanceModel model{{{10, 16, 32},
@@ -77,7 +77,7 @@ namespace TopologyAbstractionTests
      *
      * Constructs a 2-node matrix whose two directions differ and checks each direction.
      */
-    TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelReadsTheSourceRow)
+    TEST(Small_TopologyAbstractionTest, MatrixDistanceModelReadsTheSourceRow)
     {
         MatrixDistanceModel model{{{10, 12},
                                    {20, 10}}};

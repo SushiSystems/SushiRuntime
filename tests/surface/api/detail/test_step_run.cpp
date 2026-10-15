@@ -41,7 +41,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the predicate forwards the completed count to the wrapped callable. */
-TEST(Unit_StepRun, ThePredicateForwardsTheCount)
+TEST(Medium_StepRun, ThePredicateForwardsTheCount)
 {
     std::size_t limit = 3;
     auto keep_going = [&limit](std::size_t completed) { return completed < limit; };
@@ -51,7 +51,7 @@ TEST(Unit_StepRun, ThePredicateForwardsTheCount)
 }
 
 /** @brief Tests that an idle runtime has no run in progress, and cancelling it is harmless. */
-TEST(Unit_StepRun, AnIdleRuntimeHasNoRunInProgress)
+TEST(Medium_StepRun, AnIdleRuntimeHasNoRunInProgress)
 {
     auto runtime = Runtime::create().value();
     const ContextHandle& context = Detail::ContextHandleAccess::handle_of(runtime);

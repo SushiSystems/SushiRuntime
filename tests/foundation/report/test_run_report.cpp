@@ -40,7 +40,7 @@ using namespace SushiRuntime;
 namespace NodeEventRecordTests
 {
     /** @brief Tests that NodeEventRecord is 40 bytes and trivially copyable. */
-    TEST(Unit_NodeEventRecord, LayoutIsFortyBytesAndTriviallyCopyable)
+    TEST(Small_NodeEventRecord, LayoutIsFortyBytesAndTriviallyCopyable)
     {
         static_assert(sizeof(NodeEventRecord) == 40u,
                       "NodeEventRecord must stay 40 bytes");
@@ -51,7 +51,7 @@ namespace NodeEventRecordTests
     }
 
     /** @brief Tests that reset() keeps the capacity of node_events. */
-    TEST(Unit_NodeEventRecord, ResetKeepsNodeEventsCapacity)
+    TEST(Small_NodeEventRecord, ResetKeepsNodeEventsCapacity)
     {
         RunReport report;
         report.node_events.push_back(NodeEventRecord{1, 0, K_WIDTH_UNKNOWN, K_WIDTH_UNKNOWN, 10, 20, 30});
@@ -65,7 +65,7 @@ namespace NodeEventRecordTests
     }
 
     /** @brief Tests that reset() zeroes the clock pairing. */
-    TEST(Unit_NodeEventRecord, ResetZeroesClockPairing)
+    TEST(Small_NodeEventRecord, ResetZeroesClockPairing)
     {
         RunReport report;
         report.clock = ClockPairing{100, 200, 5};
@@ -78,7 +78,7 @@ namespace NodeEventRecordTests
     }
 
     /** @brief Tests that the widths default to K_WIDTH_UNKNOWN. */
-    TEST(Unit_NodeEventRecord, WidthsDefaultToUnknown)
+    TEST(Small_NodeEventRecord, WidthsDefaultToUnknown)
     {
         const NodeEventRecord rec{};
         EXPECT_EQ(K_WIDTH_UNKNOWN, 0xFFFFFFFFu);
@@ -95,7 +95,7 @@ namespace RunReportNamesTests
                   "NodeTiming::operation must be an OperationID");
 
     /** @brief Tests that a default report reads as a successful scheduler run with no rows. */
-    TEST(Unit_RunReportNames, ADefaultReportIsEmpty)
+    TEST(Small_RunReportNames, ADefaultReportIsEmpty)
     {
         const SushiRuntime::RunReport report;
         EXPECT_TRUE(report.is_successful);
@@ -105,7 +105,7 @@ namespace RunReportNamesTests
     }
 
     /** @brief Tests that a NodeTiming names no operation until it is given one. */
-    TEST(Unit_RunReportNames, ANodeTimingNamesItsOperation)
+    TEST(Small_RunReportNames, ANodeTimingNamesItsOperation)
     {
         using namespace SushiRuntime::Literals;
 

@@ -82,7 +82,7 @@ namespace
 }
 
 /** @brief Tests the two proofs against values from Python's hmac module for the same input. */
-TEST(Unit_HandshakeTest, ProofsMatchAnIndependentImplementation)
+TEST(Medium_HandshakeTest, ProofsMatchAnIndependentImplementation)
 {
     const std::vector<std::uint8_t> secret = counting(0x00, 32);
     const HandshakeNonce worker_nonce = nonce_of(0x11);
@@ -97,7 +97,7 @@ TEST(Unit_HandshakeTest, ProofsMatchAnIndependentImplementation)
 }
 
 /** @brief Tests that one side's proof cannot be sent back as the other's. */
-TEST(Unit_HandshakeTest, ProofsDifferByRole)
+TEST(Medium_HandshakeTest, ProofsDifferByRole)
 {
     const std::vector<std::uint8_t> secret = counting(0x00, 32);
     const HandshakeNonce worker_nonce = nonce_of(0x11);
@@ -120,7 +120,7 @@ TEST(Unit_HandshakeTest, ProofsDifferByRole)
 }
 
 /** @brief Tests that a proof made under another secret, or under none, is refused. */
-TEST(Unit_HandshakeTest, WrongSecretFails)
+TEST(Medium_HandshakeTest, WrongSecretFails)
 {
     const std::vector<std::uint8_t> secret = counting(0x00, 32);
     std::vector<std::uint8_t> other = secret;
@@ -141,7 +141,7 @@ TEST(Unit_HandshakeTest, WrongSecretFails)
 }
 
 /** @brief Tests that a proof recorded in one handshake fails once either nonce changes. */
-TEST(Unit_HandshakeTest, FreshNonceDefeatsReplay)
+TEST(Medium_HandshakeTest, FreshNonceDefeatsReplay)
 {
     const std::vector<std::uint8_t> secret = counting(0x00, 32);
     const HandshakeNonce worker_nonce = nonce_of(0x11);
@@ -163,7 +163,7 @@ TEST(Unit_HandshakeTest, FreshNonceDefeatsReplay)
 }
 
 /** @brief Tests that the platform's nonce source does not hand out one nonce twice. */
-TEST(Unit_HandshakeTest, PlatformNonceSourceDoesNotRepeat)
+TEST(Medium_HandshakeTest, PlatformNonceSourceDoesNotRepeat)
 {
     const HandshakeNonce first = make_nonce().value();
     const HandshakeNonce second = make_nonce().value();

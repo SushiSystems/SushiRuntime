@@ -51,7 +51,7 @@ namespace
 /**
  * @brief A throwing kernel fails its run but leaves the Runtime reusable.
  */
-TEST(Integration_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
+TEST(Medium_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
 {
     constexpr std::size_t N = 64;
     auto rt = Runtime::create().value();
@@ -76,7 +76,7 @@ TEST(Integration_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
 /**
  * @brief A throwing node is named, with its registration index, in the error run() returns.
  */
-TEST(Integration_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationIndex)
+TEST(Medium_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationIndex)
 {
     auto rt = Runtime::create().value();
     auto g  = rt.graph();
@@ -95,7 +95,7 @@ TEST(Integration_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationInde
 /**
  * @brief The pool survives repeated failures interleaved with good runs.
  */
-TEST(Integration_ErrorIsolation, RuntimeSurvivesRepeatedFailures)
+TEST(Medium_ErrorIsolation, RuntimeSurvivesRepeatedFailures)
 {
     constexpr std::size_t N = 32;
     auto rt  = Runtime::create().value();

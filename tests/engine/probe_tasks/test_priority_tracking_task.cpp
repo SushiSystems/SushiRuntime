@@ -40,7 +40,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Test;
 
 /** @brief Tests that the task records its priority in run order. */
-TEST(Unit_PriorityTrackingTask, RecordsItsPriorityWhenItRuns)
+TEST(Medium_PriorityTrackingTask, RecordsItsPriorityWhenItRuns)
 {
     std::vector<int> order;
     std::mutex order_mutex;

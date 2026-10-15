@@ -41,7 +41,7 @@ using namespace SushiRuntime::Test;
 constexpr std::size_t K_THREADS = 4;
 
 /** @brief Tests that every thread arrived before any passed, over two rounds. */
-TEST(Unit_Barrier, NoThreadPassesBeforeTheLastArrives)
+TEST(Medium_Barrier, NoThreadPassesBeforeTheLastArrives)
 {
     Barrier barrier(K_THREADS);
     std::atomic<std::size_t> arrived{0};
@@ -68,7 +68,7 @@ TEST(Unit_Barrier, NoThreadPassesBeforeTheLastArrives)
 }
 
 /** @brief Tests that a barrier of one never waits. */
-TEST(Unit_Barrier, ABarrierOfOneNeverWaits)
+TEST(Medium_Barrier, ABarrierOfOneNeverWaits)
 {
     Barrier barrier(1);
     barrier.arrive_and_wait();

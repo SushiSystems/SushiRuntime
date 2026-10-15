@@ -40,7 +40,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that a buffer's key is its data and its liveness ends with it. */
-TEST(Unit_HandleAccess, ABufferKeyIsItsData)
+TEST(Medium_HandleAccess, ABufferKeyIsItsData)
 {
     auto runtime = Runtime::create().value();
     LivenessObserver life;
@@ -54,7 +54,7 @@ TEST(Unit_HandleAccess, ABufferKeyIsItsData)
 }
 
 /** @brief Tests that a state reads its current field and writes its next one. */
-TEST(Unit_HandleAccess, AStateReadsCurrentAndWritesNext)
+TEST(Medium_HandleAccess, AStateReadsCurrentAndWritesNext)
 {
     auto runtime = Runtime::create().value();
     auto state = runtime.state<int>(4).value();

@@ -44,7 +44,7 @@ the effort belongs in steady-state execution.
 The closing loop is a smoke check. Every region ran the warm step, the replay-baseline steps
 and one step per commit, and a mutated region gained an extra increment on and after the
 commit that streamed its second task in. The test asserts forward progress and the composition
-contract and does not rebuild the exact count per cell, which the `Integration_DynamicGraph`
+contract and does not rebuild the exact count per cell, which the `Medium_DynamicGraph`
 tests own. A nonzero value that is uniform across a region is enough here.
 
 ## benchmark_graph.cpp

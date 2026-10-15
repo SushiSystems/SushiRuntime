@@ -36,7 +36,7 @@
 using namespace SushiRuntime::Internal::Observability;
 
 /** @brief Tests that a profiled event reads start before end, and submit no later than start. */
-TEST(Unit_EventTimestamps, AProfiledEventReadsOrderedTimes)
+TEST(Medium_EventTimestamps, AProfiledEventReadsOrderedTimes)
 {
     if (sycl::device::get_devices().empty())
         GTEST_SKIP() << "no SYCL device";
@@ -59,7 +59,7 @@ TEST(Unit_EventTimestamps, AProfiledEventReadsOrderedTimes)
 }
 
 /** @brief Tests that an event with no profiling reads nothing and leaves the output alone. */
-TEST(Unit_EventTimestamps, AnUnprofiledEventReadsNothing)
+TEST(Medium_EventTimestamps, AnUnprofiledEventReadsNothing)
 {
     EventTimestamps times;
     times.start_ns = 7;

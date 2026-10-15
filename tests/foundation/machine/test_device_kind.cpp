@@ -36,7 +36,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the size and the distinct values of the enumeration. */
-TEST(Unit_DeviceKind, FourDistinctClassesInOneByte)
+TEST(Small_DeviceKind, FourDistinctClassesInOneByte)
 {
     static_assert(std::is_same_v<std::underlying_type_t<DeviceKind>, std::uint8_t>, "one byte");
     EXPECT_NE(DeviceKind::CPU, DeviceKind::GPU);

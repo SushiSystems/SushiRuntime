@@ -80,7 +80,7 @@ namespace
  *
  * Sets up a scenario where one worker is backed up but stalled, while another is idle, expecting half the imbalance to be migrated.
  */
-TEST(Unit_ThermalRebalanceTest, RescuesThrottledWorker)
+TEST(Small_ThermalRebalanceTest, RescuesThrottledWorker)
 {
     FakeTelemetry telemetry;
     telemetry.queue     = {100, 0};
@@ -101,7 +101,7 @@ TEST(Unit_ThermalRebalanceTest, RescuesThrottledWorker)
  *
  * Provides a high completion delta for a worker with a deep queue, ensuring the strategy does not trigger migration.
  */
-TEST(Unit_ThermalRebalanceTest, IgnoresFastWorkerWithLongQueue)
+TEST(Small_ThermalRebalanceTest, IgnoresFastWorkerWithLongQueue)
 {
     FakeTelemetry telemetry;
     telemetry.queue     = {100,  0};
@@ -121,7 +121,7 @@ TEST(Unit_ThermalRebalanceTest, IgnoresFastWorkerWithLongQueue)
  *
  * Simulates comparable queues well below the imbalance threshold, expecting zero migrations.
  */
-TEST(Unit_ThermalRebalanceTest, NoMigrationWhenBalanced)
+TEST(Small_ThermalRebalanceTest, NoMigrationWhenBalanced)
 {
     FakeTelemetry telemetry;
     telemetry.queue     = {5,  5};
@@ -140,7 +140,7 @@ TEST(Unit_ThermalRebalanceTest, NoMigrationWhenBalanced)
  *
  * Provides only one worker and ensures that no migrations are attempted.
  */
-TEST(Unit_ThermalRebalanceTest, SingleWorkerIsNoOp)
+TEST(Small_ThermalRebalanceTest, SingleWorkerIsNoOp)
 {
     FakeTelemetry telemetry;
     telemetry.queue     = {1000};

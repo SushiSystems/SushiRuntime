@@ -33,7 +33,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that each level is more verbose than the one before, from Off to Debug. */
-TEST(Unit_LogLevel, LevelsRiseFromOffToDebug)
+TEST(Small_LogLevel, LevelsRiseFromOffToDebug)
 {
     static_assert(static_cast<int>(LogLevel::Off) == 0, "Off logs nothing");
     static_assert(static_cast<int>(LogLevel::Error) == 1, "Error is the first level that logs");
@@ -44,7 +44,7 @@ TEST(Unit_LogLevel, LevelsRiseFromOffToDebug)
 }
 
 /** @brief Tests that set_log_level() is what log_level() returns, and restores the level. */
-TEST(Unit_LogLevel, TheLevelSetIsTheLevelRead)
+TEST(Small_LogLevel, TheLevelSetIsTheLevelRead)
 {
     const LogLevel saved = log_level();
     for (const LogLevel level : {LogLevel::Off, LogLevel::Error, LogLevel::Warn, LogLevel::Info})

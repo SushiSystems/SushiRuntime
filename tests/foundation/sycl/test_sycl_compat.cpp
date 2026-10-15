@@ -45,7 +45,7 @@ namespace
 }
 
 /** @brief Tests that the trait sees host_task on a SYCL handler and not on a plain type. */
-TEST(Unit_SYCLCompat, TheTraitSeesHostTask)
+TEST(Medium_SYCLCompat, TheTraitSeesHostTask)
 {
     const auto function = [] {};
     static_assert(!Detail::has_host_task_v<NoHostTask, decltype(function)>, "no member");
@@ -53,7 +53,7 @@ TEST(Unit_SYCLCompat, TheTraitSeesHostTask)
 }
 
 /** @brief Tests that a host task enqueued through the shim runs once before wait() returns. */
-TEST(Unit_SYCLCompat, AHostTaskRunsOnce)
+TEST(Medium_SYCLCompat, AHostTaskRunsOnce)
 {
     sycl::queue queue;
     std::atomic<int> calls{0};

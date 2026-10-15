@@ -41,7 +41,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
 
 /** @brief Tests that a node without bindings reports its baked width twice. */
-TEST(Unit_NodeWidths, ABakedNodeReportsItsWidthTwice)
+TEST(Small_NodeWidths, ABakedNodeReportsItsWidthTwice)
 {
     Node node;
     node.baked_width = 64;
@@ -52,7 +52,7 @@ TEST(Unit_NodeWidths, ABakedNodeReportsItsWidthTwice)
 }
 
 /** @brief Tests that a late count sets the live width and leaves the launch alone. */
-TEST(Unit_NodeWidths, ALateCountSetsTheLiveWidth)
+TEST(Small_NodeWidths, ALateCountSetsTheLiveWidth)
 {
     Node node;
     node.baked_width = 64;
@@ -65,7 +65,7 @@ TEST(Unit_NodeWidths, ALateCountSetsTheLiveWidth)
 }
 
 /** @brief Tests that a width beyond 32 bits is reported as unknown. */
-TEST(Unit_NodeWidths, AWidthBeyondThirtyTwoBitsIsUnknown)
+TEST(Small_NodeWidths, AWidthBeyondThirtyTwoBitsIsUnknown)
 {
     Node node;
     node.baked_width = std::size_t{1} << 40;

@@ -50,7 +50,7 @@ namespace
 }
 
 /** @brief Tests that a sealed registry keeps its kernels and stops a registration. */
-TEST(Unit_KernelRegistryDeathTest, SealedRegistryStopsARegistration)
+TEST(Medium_KernelRegistryDeathTest, SealedRegistryStopsARegistration)
 {
     const OperationID early(21);
     const OperationID late(22);
@@ -70,7 +70,7 @@ TEST(Unit_KernelRegistryDeathTest, SealedRegistryStopsARegistration)
 }
 
 /** @brief Tests that a kernel that holds no callable stops the process, sealed or not. */
-TEST(Unit_KernelRegistryDeathTest, EmptyKernelStopsTheRegistration)
+TEST(Medium_KernelRegistryDeathTest, EmptyKernelStopsTheRegistration)
 {
     const OperationID operation(23);
     const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();

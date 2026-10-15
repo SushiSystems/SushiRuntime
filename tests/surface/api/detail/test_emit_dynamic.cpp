@@ -43,7 +43,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the kernel runs over the live count and keeps its bindings. */
-TEST(Unit_EmitDynamic, TheKernelRunsOverTheLiveCount)
+TEST(Medium_EmitDynamic, TheKernelRunsOverTheLiveCount)
 {
     constexpr std::size_t K_CAPACITY = 8;
     auto runtime = Runtime::create().value();

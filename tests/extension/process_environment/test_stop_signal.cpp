@@ -33,7 +33,7 @@
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that the flag starts clear, request() sets it and a later object clears it. */
-TEST(Unit_StopSignalTest, RequestSetsTheFlagAndANewObjectClearsIt)
+TEST(Medium_StopSignalTest, RequestSetsTheFlagAndANewObjectClearsIt)
 {
     {
         StopSignal stop_signal;

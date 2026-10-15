@@ -33,7 +33,7 @@
 using SushiRuntime::Internal::Device::QueueFlavour;
 
 /** @brief Tests that the default is the plain queue: out of order, no profiling. */
-TEST(Unit_QueueFlavour, TheDefaultIsThePlainQueue)
+TEST(Small_QueueFlavour, TheDefaultIsThePlainQueue)
 {
     constexpr QueueFlavour plain;
     static_assert(!plain.in_order && !plain.profiling, "the default asks for nothing");
@@ -41,7 +41,7 @@ TEST(Unit_QueueFlavour, TheDefaultIsThePlainQueue)
 }
 
 /** @brief Tests that two flavours are equal only when both fields are. */
-TEST(Unit_QueueFlavour, EqualityComparesBothFields)
+TEST(Small_QueueFlavour, EqualityComparesBothFields)
 {
     EXPECT_EQ((QueueFlavour{true, true}), (QueueFlavour{true, true}));
     EXPECT_NE((QueueFlavour{true, false}), (QueueFlavour{false, false}));

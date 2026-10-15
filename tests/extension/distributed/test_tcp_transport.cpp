@@ -429,7 +429,7 @@ namespace
  * @tparam Rig InProcessRig or TCPLoopbackRig.
  */
 template <typename Rig>
-class Unit_TransportConformanceTest : public ::testing::Test
+class Medium_TransportConformanceTest : public ::testing::Test
 {
     protected:
         /**
@@ -487,12 +487,12 @@ class Unit_TransportConformanceTest : public ::testing::Test
 
 /** @brief Lists the rigs the conformance suite runs on. */
 using RigTypes = ::testing::Types<InProcessRig, TCPLoopbackRig>;
-TYPED_TEST_SUITE(Unit_TransportConformanceTest, RigTypes, RigNames);
+TYPED_TEST_SUITE(Medium_TransportConformanceTest, RigTypes, RigNames);
 
 /**
  * @brief Checks that control frames arrive in the order they were queued, both ways.
  */
-TYPED_TEST(Unit_TransportConformanceTest, DeliversInOrderPerPeer)
+TYPED_TEST(Medium_TransportConformanceTest, DeliversInOrderPerPeer)
 {
     this->connect(false);
 
@@ -531,7 +531,7 @@ TYPED_TEST(Unit_TransportConformanceTest, DeliversInOrderPerPeer)
 /**
  * @brief Checks that a closed peer's queued frames arrive first and its loss is reported once.
  */
-TYPED_TEST(Unit_TransportConformanceTest, PeerLostOnceAfterLastFrame)
+TYPED_TEST(Medium_TransportConformanceTest, PeerLostOnceAfterLastFrame)
 {
     constexpr std::uint32_t K_FRAMES = 100;
     this->connect(false);
@@ -580,7 +580,7 @@ TYPED_TEST(Unit_TransportConformanceTest, PeerLostOnceAfterLastFrame)
 /**
  * @brief Checks that stop() reports no loss and that no event is made once it has returned.
  */
-TYPED_TEST(Unit_TransportConformanceTest, NoCallbackAfterStop)
+TYPED_TEST(Medium_TransportConformanceTest, NoCallbackAfterStop)
 {
     constexpr std::size_t K_FRAMES_BEFORE_STOP = 50;
     constexpr std::uint32_t K_FRAMES_AFTER_STOP = 200;
@@ -622,7 +622,7 @@ TYPED_TEST(Unit_TransportConformanceTest, NoCallbackAfterStop)
 /**
  * @brief Checks that an event may send to its own peer and close it.
  */
-TYPED_TEST(Unit_TransportConformanceTest, SendFromCallbackAllowed)
+TYPED_TEST(Medium_TransportConformanceTest, SendFromCallbackAllowed)
 {
     constexpr std::uint32_t K_FRAMES = 64;
     std::atomic<std::uint32_t> refused_sends{0};
@@ -684,7 +684,7 @@ TYPED_TEST(Unit_TransportConformanceTest, SendFromCallbackAllowed)
 /**
  * @brief Checks the statuses outside a transport's running life: Stopped and AlreadyStarted.
  */
-TYPED_TEST(Unit_TransportConformanceTest, SendAfterStopReturnsStopped)
+TYPED_TEST(Medium_TransportConformanceTest, SendAfterStopReturnsStopped)
 {
     this->master_ = this->rig_.make_master();
     const PeerID nobody{1};
@@ -715,7 +715,7 @@ TYPED_TEST(Unit_TransportConformanceTest, SendAfterStopReturnsStopped)
 /**
  * @brief Checks that a control frame queued behind a running stream waits one chunk at most.
  */
-TYPED_TEST(Unit_TransportConformanceTest, ControlFrameOvertakesStream)
+TYPED_TEST(Medium_TransportConformanceTest, ControlFrameOvertakesStream)
 {
     this->connect(false);
 

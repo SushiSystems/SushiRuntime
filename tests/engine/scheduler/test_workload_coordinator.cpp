@@ -114,7 +114,7 @@ namespace
  * It starts the heartbeat loop, waits for multiple evaluations to happen,
  * then asserts that stop() successfully joins the background loop.
  */
-TEST(Integration_WorkloadCoordinatorTest, HeartbeatInvokesStrategy)
+TEST(Medium_WorkloadCoordinatorTest, HeartbeatInvokesStrategy)
 {
     FakeTelemetry telemetry;
     FakeMigrator migrator;
@@ -141,7 +141,7 @@ TEST(Integration_WorkloadCoordinatorTest, HeartbeatInvokesStrategy)
  * Configures the strategy to request a task migration and asserts that
  * the migrator receives the exact call.
  */
-TEST(Integration_WorkloadCoordinatorTest, StrategyDrivesMigration)
+TEST(Medium_WorkloadCoordinatorTest, StrategyDrivesMigration)
 {
     FakeTelemetry telemetry;
     FakeMigrator migrator;
@@ -163,7 +163,7 @@ TEST(Integration_WorkloadCoordinatorTest, StrategyDrivesMigration)
  * Verifies that swapping strategies at runtime causes the coordinator
  * to stop querying the old one and start driving the new one.
  */
-TEST(Integration_WorkloadCoordinatorTest, SetStrategySwapsAtRuntime)
+TEST(Medium_WorkloadCoordinatorTest, SetStrategySwapsAtRuntime)
 {
     FakeTelemetry telemetry;
     FakeMigrator migrator;
@@ -190,7 +190,7 @@ TEST(Integration_WorkloadCoordinatorTest, SetStrategySwapsAtRuntime)
  * Calling start() while already running must not spawn duplicate threads
  * or cause deadlocks on shutdown.
  */
-TEST(Integration_WorkloadCoordinatorTest, DoubleStartIsIdempotent)
+TEST(Medium_WorkloadCoordinatorTest, DoubleStartIsIdempotent)
 {
     FakeTelemetry telemetry;
     FakeMigrator migrator;

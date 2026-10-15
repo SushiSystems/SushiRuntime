@@ -102,7 +102,7 @@ namespace TaskGraphTests
         }
     } // namespace
 
-    TEST(Unit_TaskGraph, EveryAddReturnsTheNodeItAdded)
+    TEST(Medium_TaskGraph, EveryAddReturnsTheNodeItAdded)
     {
         int source = 0;
         int target = 0;
@@ -156,7 +156,7 @@ namespace TaskGraphTests
                 EXPECT_NE(added[i], added[j]) << "calls " << i << " and " << j << " share a node";
     }
 
-    TEST(Unit_TaskGraph, AReturnedNodeTakesItsRegistrationAndConfiguration)
+    TEST(Medium_TaskGraph, AReturnedNodeTakesItsRegistrationAndConfiguration)
     {
         TaskGraph graph;
 
@@ -176,7 +176,7 @@ namespace TaskGraphTests
         EXPECT_EQ(graph.last_node_added()->stated_placement(), std::optional<std::size_t>(1));
     }
 
-    TEST(Unit_TaskGraphDeathTest, ARegistrationTheGraphNeverIssuedStops)
+    TEST(Medium_TaskGraphDeathTest, ARegistrationTheGraphNeverIssuedStops)
     {
         TaskGraph graph;
 
@@ -191,7 +191,7 @@ namespace TaskGraphTests
         EXPECT_EQ(graph.last_node_added(), nullptr);
     }
 
-    TEST(Unit_TaskGraphDeathTest, EveryAddOverloadStopsOnAnUnissuedRegistration)
+    TEST(Medium_TaskGraphDeathTest, EveryAddOverloadStopsOnAnUnissuedRegistration)
     {
         int source = 0;
         int target = 0;
@@ -223,7 +223,7 @@ namespace TaskGraphTests
                      pattern);
     }
 
-    TEST(Unit_TaskGraph, AReservedRegistrationIsAcceptedTwice)
+    TEST(Medium_TaskGraph, AReservedRegistrationIsAcceptedTwice)
     {
         TaskGraph graph;
         const std::uint32_t reserved = graph.reserve_registration();
@@ -240,7 +240,7 @@ namespace TaskGraphTests
         EXPECT_NE(drawn.registration_index, reserved);
     }
 
-    TEST(Unit_TaskGraph, TheCompiledPlanOwnsTheReturnedNodes)
+    TEST(Medium_TaskGraph, TheCompiledPlanOwnsTheReturnedNodes)
     {
         TaskGraph graph;
         Node& first = graph.add_node(idle_work());
@@ -256,7 +256,7 @@ namespace TaskGraphTests
         EXPECT_EQ(found, 2u);
     }
 
-    TEST(Unit_TaskGraph, CompileWithNoRootReturnsInvalidGraphNamingANode)
+    TEST(Medium_TaskGraph, CompileWithNoRootReturnsInvalidGraphNamingANode)
     {
         TaskGraph graph;
         Node& first = graph.add_node(idle_work());
@@ -276,7 +276,7 @@ namespace TaskGraphTests
             << failure->message;
     }
 
-    TEST(Unit_TaskGraph, CompileWithACycleBehindARootReturnsInvalidGraphNamingANode)
+    TEST(Medium_TaskGraph, CompileWithACycleBehindARootReturnsInvalidGraphNamingANode)
     {
         TaskGraph graph;
         Node& root = graph.add_node(idle_work());
@@ -299,7 +299,7 @@ namespace TaskGraphTests
         EXPECT_FALSE(contains(failure->message, "node 'root'")) << failure->message;
     }
 
-    TEST(Unit_TaskGraph, AGraphCompilesAfterAFailedCompile)
+    TEST(Medium_TaskGraph, AGraphCompilesAfterAFailedCompile)
     {
         TaskGraph graph;
         Node& first = graph.add_node(idle_work());

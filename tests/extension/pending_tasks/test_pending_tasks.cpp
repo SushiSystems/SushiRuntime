@@ -133,7 +133,7 @@ namespace PendingTasksTests
         };
     } // namespace
 
-    TEST(Unit_PendingTasks, TaskIDsRiseFromOne)
+    TEST(Medium_PendingTasks, TaskIDsRiseFromOne)
     {
         PendingTasks table;
 
@@ -142,7 +142,7 @@ namespace PendingTasksTests
         EXPECT_EQ(table.allocate_task_id(), 3u);
     }
 
-    TEST(Unit_PendingTasks, InsertAfterCloseRefused)
+    TEST(Medium_PendingTasks, InsertAfterCloseRefused)
     {
         PendingTasks table;
         const sushi_ptr<Node> first = make_sushi<Node>();
@@ -163,7 +163,7 @@ namespace PendingTasksTests
         EXPECT_EQ(drained[0].node, first.get());
     }
 
-    TEST(Unit_PendingTasks, TakeIsExactlyOnce)
+    TEST(Medium_PendingTasks, TakeIsExactlyOnce)
     {
         PendingTasks table;
         const sushi_ptr<Node> node = make_sushi<Node>();
@@ -196,7 +196,7 @@ namespace PendingTasksTests
         EXPECT_TRUE(rest.empty()) << "a taken task leaves through no second removal";
     }
 
-    TEST(Unit_PendingTasks, DrainReturnsEveryNode)
+    TEST(Medium_PendingTasks, DrainReturnsEveryNode)
     {
         PendingTasks table;
         const std::vector<sushi_ptr<Node>> nodes = {make_sushi<Node>(), make_sushi<Node>(),
@@ -223,7 +223,7 @@ namespace PendingTasksTests
         EXPECT_EQ(drained.size(), 3u) << "a second drain finds nothing";
     }
 
-    TEST(Unit_PendingTasks, LateResultLeavesInflightAlone)
+    TEST(Medium_PendingTasks, LateResultLeavesInflightAlone)
     {
         PendingTasks table;
         const sushi_ptr<Node> lost = make_sushi<Node>();
@@ -245,7 +245,7 @@ namespace PendingTasksTests
         EXPECT_EQ(table.count_for_worker(K_OTHER_WORKER), 1u);
     }
 
-    TEST(Unit_PendingTasks, ForeignWorkerCannotTake)
+    TEST(Medium_PendingTasks, ForeignWorkerCannotTake)
     {
         PendingTasks table;
         const sushi_ptr<Node> node = make_sushi<Node>();
@@ -269,7 +269,7 @@ namespace PendingTasksTests
         EXPECT_EQ(taken->node, node.get());
     }
 
-    TEST(Unit_PendingTasks, ExpectsOutputOnlyAtTheDispatchedVersion)
+    TEST(Medium_PendingTasks, ExpectsOutputOnlyAtTheDispatchedVersion)
     {
         PendingTasks table;
         const sushi_ptr<Node> node = make_sushi<Node>();
@@ -289,7 +289,7 @@ namespace PendingTasksTests
         EXPECT_FALSE(table.expects_output(1, K_WORKER, GlobalBufferID{7}, 3));
     }
 
-    TEST(Unit_PendingTasks, UnacknowledgedTaskReapedWithDeadlineZero)
+    TEST(Medium_PendingTasks, UnacknowledgedTaskReapedWithDeadlineZero)
     {
         PendingTasks table;
         const sushi_ptr<Node> silent = make_sushi<Node>();
@@ -315,7 +315,7 @@ namespace PendingTasksTests
         EXPECT_EQ(table.size(), 1u);
     }
 
-    TEST(Unit_PendingTasks, AcknowledgedTaskBelowOldestHeldReaped)
+    TEST(Medium_PendingTasks, AcknowledgedTaskBelowOldestHeldReaped)
     {
         PendingTasks table;
         const std::vector<sushi_ptr<Node>> nodes = {make_sushi<Node>(), make_sushi<Node>(),
@@ -361,7 +361,7 @@ namespace PendingTasksTests
         EXPECT_EQ(table.count_for_worker(K_OTHER_WORKER), 1u);
     }
 
-    TEST(Unit_PendingTasks, HeartbeatLeavesAnUnacknowledgedTaskToItsOwnLimit)
+    TEST(Medium_PendingTasks, HeartbeatLeavesAnUnacknowledgedTaskToItsOwnLimit)
     {
         PendingTasks table;
         const sushi_ptr<Node> node = make_sushi<Node>();
@@ -381,7 +381,7 @@ namespace PendingTasksTests
         EXPECT_EQ(reaped[0].cause, ReapCause::Unacknowledged);
     }
 
-    TEST(Unit_PendingTasks, ChunkRestartsTheDeadline)
+    TEST(Medium_PendingTasks, ChunkRestartsTheDeadline)
     {
         PendingTasks table;
         const sushi_ptr<Node> busy = make_sushi<Node>();
@@ -414,7 +414,7 @@ namespace PendingTasksTests
         EXPECT_EQ(reaped[1].cause, ReapCause::Deadline);
     }
 
-    TEST(Unit_PendingTasks, TakeForWorkerForgetsItsChunkTime)
+    TEST(Medium_PendingTasks, TakeForWorkerForgetsItsChunkTime)
     {
         PendingTasks table;
         const sushi_ptr<Node> first = make_sushi<Node>();
@@ -438,7 +438,7 @@ namespace PendingTasksTests
         EXPECT_EQ(reaped[0].cause, ReapCause::Deadline);
     }
 
-    TEST(Unit_PendingTasks, TwoRemovalsOfOneTaskHaveOneWinner)
+    TEST(Medium_PendingTasks, TwoRemovalsOfOneTaskHaveOneWinner)
     {
         PendingTasks table;
         const sushi_ptr<Node> node = make_sushi<Node>();

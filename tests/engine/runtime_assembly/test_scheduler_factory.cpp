@@ -45,7 +45,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Test;
 
 /** @brief Tests that the scheduler runs every task submitted, then stops. */
-TEST(Unit_SchedulerFactory, TheSchedulerRunsWhatItIsGiven)
+TEST(Medium_SchedulerFactory, TheSchedulerRunsWhatItIsGiven)
 {
     constexpr std::size_t K_TASKS = 16;
     const std::shared_ptr<Internal::Execution::RuntimeContext> context = make_context();
