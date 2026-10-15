@@ -17,6 +17,8 @@ from typer.testing import CliRunner
 import sushiruntime
 from sushiruntime.cli import app
 
+pytestmark = pytest.mark.medium
+
 K_GROUPS = {
     "Toolchain": ["toolchain"],
     "Project": ["build", "test", "bench", "run", "package", "clean", "docs"],

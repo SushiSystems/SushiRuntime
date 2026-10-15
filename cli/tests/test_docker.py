@@ -15,6 +15,8 @@ from sushicore.proc import Runner
 
 from sushiruntime.services import docker
 
+pytestmark = pytest.mark.medium
+
 
 @pytest.fixture
 def calls(tmp_path, monkeypatch):

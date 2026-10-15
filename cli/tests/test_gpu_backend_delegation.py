@@ -10,7 +10,11 @@ See cli/README.md.
 
 from pathlib import Path
 
+import pytest
+
 from sushiruntime.services import project
+
+pytestmark = pytest.mark.small
 
 
 class _StubConfig:

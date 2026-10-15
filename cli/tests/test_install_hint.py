@@ -16,6 +16,8 @@ from sushiruntime.config import TOOLCHAINS, Config
 from sushiruntime.services import project
 from sushiruntime.services.install_hint import toolchain_install_command
 
+pytestmark = pytest.mark.small
+
 
 @pytest.mark.parametrize("name", TOOLCHAINS)
 def test_the_install_command_is_sr_setup_for_the_toolchain(name):

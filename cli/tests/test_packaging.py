@@ -16,6 +16,8 @@ from sushiruntime.config import Config
 from sushiruntime.services import packaging
 from sushiruntime.services.stage_tree import K_STAGE_MARKER
 
+pytestmark = pytest.mark.medium
+
 
 class _Console:
     """Records the error lines a service prints and ignores the rest."""

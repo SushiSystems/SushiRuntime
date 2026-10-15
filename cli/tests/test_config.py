@@ -12,6 +12,8 @@ import pytest
 from sushiruntime import config
 from sushiruntime.config import Config
 
+pytestmark = pytest.mark.medium
+
 
 def test_find_project_root_raises_outside_checkout(tmp_path):
     """No sushi-module.toml anywhere above -> a clear SystemExit, not a crash."""

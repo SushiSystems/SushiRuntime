@@ -16,6 +16,8 @@ from sushiruntime import aliases
 from sushiruntime.cli import app
 from sushiruntime.services import docker, project
 
+pytestmark = pytest.mark.medium
+
 K_OLD_TO_NEW = {
     "sr doxygen": "sr docs",
     "sr docker build": "sr container build",

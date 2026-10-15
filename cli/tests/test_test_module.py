@@ -14,6 +14,8 @@ import pytest
 from sushiruntime.services import project
 from sushiruntime.services.project import Label
 
+pytestmark = pytest.mark.medium
+
 
 class FakeDriver:
     """Stands in for the CMake driver and records each ctest call."""

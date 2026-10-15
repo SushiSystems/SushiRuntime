@@ -7,11 +7,15 @@
 
 from __future__ import annotations
 
+import pytest
+
 from typer.testing import CliRunner
 
 from sushicore.provision.config import ProvisionSettings
 from sushiruntime.cli import app
 from sushiruntime.config import Config
+
+pytestmark = pytest.mark.medium
 
 
 def test_the_four_provision_commands_are_registered():
