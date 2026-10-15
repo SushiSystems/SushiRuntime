@@ -71,4 +71,18 @@ namespace TopologyAbstractionTests
         EXPECT_EQ(model.distance(0, 2), 32);
         EXPECT_GT(model.distance(0, 2), model.distance(0, 1));
     }
+
+    /**
+     * @brief Verifies that a distance is read from the row of its source node.
+     *
+     * Constructs a 2-node matrix whose two directions differ and checks each direction.
+     */
+    TEST(Unit_TopologyAbstractionTest, MatrixDistanceModelReadsTheSourceRow)
+    {
+        MatrixDistanceModel model{{{10, 12},
+                                   {20, 10}}};
+
+        EXPECT_EQ(model.distance(0, 1), 12);
+        EXPECT_EQ(model.distance(1, 0), 20);
+    }
 } // namespace TopologyAbstractionTests

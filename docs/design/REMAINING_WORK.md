@@ -200,8 +200,9 @@ round did not close:
 
 ### Left open by the test mirror (2026-10-14)
 
-- **Most new tests have not been seen failing.** Five headers the coverage work tested were
-  broken by hand and their tests failed; the other new tests have not been checked that way. See
+- **Some new tests have not been seen failing.** The break check skipped 36 headers: those
+  checked by `static_assert`, those with no behaviour of their own, and those on the path of
+  every run. `test_log_sink.cpp` does not check that a line reaches the sink. See
   `docs/agent/2026_10_14_TEST_COVERAGE/REPORT.md`.
 
 ## Documentation

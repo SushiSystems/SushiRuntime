@@ -1,7 +1,7 @@
 # Test coverage: report
 
-**Status:** Phases 1 to 3 and task 1.10 landed on 2026-10-14. The break check covered five
-headers on 2026-10-15; the other new tests are not checked that way.
+**Status:** Phases 1 to 3 and task 1.10 landed on 2026-10-14. The break check of the new tests
+ran on 2026-10-15.
 
 ## What landed
 
@@ -56,9 +56,66 @@ failed, and each break failed the new test written for its header:
 `Unit_WorkStealingDeque` tests, `Unit_LateCountResolution.AHostCountAboveTheCapacityResolvesToZero`
 and two `Unit_NumaLookup` tests. The breaks were reverted and the suite passed 1022 of 1022.
 
+The rest of the new test files were checked on 2026-10-15. All breaks went in at once, one per
+header, each a small change to a value or a branch the header's test reads, and the suite ran
+once with every break applied. 322 of 1022 tests failed. 62 headers were broken, and the test
+of 60 of them failed:
+
+- foundation: `operation_id`, `error_translation` (core and SYCL), `log_level`, `log_gate`,
+  `device_description`, `device_filter`, `worker_pool`, `completion_signal`, `measurement`,
+  `liveness`, `barrier`, `usm_shared`;
+- platform: `queue_flavour`, `allocation`, `usm_allocation_owner`, `usm_request`,
+  `event_timestamps`, `hwloc_topology_provider`, `remapping_topology_provider`;
+- engine: `dependency_tracker`, `chain_plan` (execution and graph), `chain_run`,
+  `runtime_settings`, the three probe tasks, `failure_naming`, `offload_gate`,
+  `worker_pool_settings`, `run_outcome`, `node`, `node_widths`, `late_bindings`, `region_link`,
+  `task`;
+- surface: `before_step_hooks`, `emit_captured`, `emit_device_sized`, `emit_host`,
+  `emit_late_count_resolver`, `emit_tracked`, `emit_untracked`, `handle_access`, `late_window`,
+  `node_description`, `node_stamp`, `step_run`, `plan_cache`, `nd_range`, `captures`,
+  `dependencies`, `device_uuid`, `external_memory`, `memory_exchange`;
+- examples: `diffusion_backend`, `distributed_kernels`.
+
+Two breaks were not caught:
+
+- `matrix_distance_model.hpp`, reading the matrix transposed. The test named for an asymmetric
+  fabric builds a symmetric matrix. `Unit_TopologyAbstractionTest.MatrixDistanceModelReadsTheSourceRow`
+  now builds one whose two directions differ; with the transposed read it failed, and so did
+  `Unit_TopologyView.DistancesMatchMatrixIncludingDiagonal`.
+- `step_machinery.hpp`, registering a view's resync on every `view_for()` call. A second resync
+  publishes the same view again, so the duplicate costs work and changes no result. No test
+  through the surface can see it.
+
+With every break applied, a test fails for its own break and also for the breaks of the headers
+it uses, so the run proves that each header's test can fail, not that only its own break fails
+it. The failure messages of the unit tests named above match their own breaks.
+
+These headers were not broken, and why:
+
+- Checked by `static_assert`, so a break stops the build: `common.hpp`, `export.hpp`,
+  `log_level` values, `device_kind.hpp`, `pin_policy.hpp`, `dispatch_width.hpp`,
+  `callable_checks.hpp`.
+- An interface, a forward declaration, an alias or plain data with no behaviour of its own:
+  `log_sink.hpp`, `device_descriptor.hpp`, `usm_release_observer.hpp`, `topology_provider.hpp`,
+  `rebalancer_interfaces.hpp`, `node_profiling.hpp`, `offload_coordinator.hpp`,
+  `offload_sink.hpp`, `offload_state.hpp`, `ready_sink.hpp`, `task_work.hpp`,
+  `late_controls.hpp`, `plan.hpp`, `node_spec.hpp`, `coupled.hpp`, `context.hpp`,
+  `graph/access.hpp`.
+- On the path of every run, so a break takes down the suite and hides the other results:
+  `quiescence_latch.hpp`, `context_factory.hpp`, `scheduler_factory.hpp`, `emit_task.hpp`,
+  `emit_dynamic.hpp`, `sycl_compat.hpp` (`enqueue_host_task`), `device_probe.hpp`,
+  `context_handle_access.hpp`, `late_controls_access.hpp`, `plan_access.hpp`,
+  `boundary_access.hpp`, `placement.hpp`.
+
+`test_log_sink.cpp` checks only that a sink can be installed and removed; it does not check that
+a line reaches the sink.
+
+With the breaks reverted and the new test added, `sr test --distributed` reported "100% tests
+passed, 0 tests failed out of 1023", with the three skips listed under Evidence.
+
 ## Open
 
-- **Break check**: only the five headers above were checked.
+- **Break check**: the headers listed above as not broken were not checked that way.
 - **Commit `fa75278`** (an over-capacity host LateCount resolves to 0) came from another
   session. The tests here follow its behaviour. It is also on local `main` as `51af947`, and
   that commit is not pushed.
