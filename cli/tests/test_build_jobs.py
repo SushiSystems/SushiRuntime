@@ -16,6 +16,8 @@ from sushiruntime.cli import app
 from sushiruntime.services import project
 from sushiruntime.services.project import BuildType
 
+pytestmark = pytest.mark.medium
+
 
 class FakeDriver:
     """Stands in for the CMake driver over a tree that is already configured."""

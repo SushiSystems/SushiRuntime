@@ -20,6 +20,8 @@ from sushiruntime.services.stage_tree import (
     StageTreeError,
 )
 
+pytestmark = pytest.mark.medium
+
 
 @pytest.fixture
 def rules(tmp_path) -> StageRules:

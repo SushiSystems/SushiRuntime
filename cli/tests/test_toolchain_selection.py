@@ -18,6 +18,8 @@ import pytest
 
 from sushiruntime.services.project import _configure_stamp
 
+pytestmark = pytest.mark.medium
+
 
 CMAKE_DIR = Path(__file__).resolve().parents[2] / "cmake"
 

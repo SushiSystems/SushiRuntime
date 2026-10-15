@@ -13,7 +13,11 @@ build message reads from, and these pin it against that guard directly.
 
 from __future__ import annotations
 
+import pytest
+
 from sushiruntime.services.project import BuildType, thread_sanitizer_applies
+
+pytestmark = pytest.mark.small
 
 
 def test_windows_relwithdebinfo_never_gets_tsan():

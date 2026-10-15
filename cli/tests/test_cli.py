@@ -22,6 +22,8 @@ from sushiruntime import cli, console
 from sushiruntime.cli import app
 from sushiruntime.services import diag, project
 
+pytestmark = pytest.mark.medium
+
 K_VISIBLE = [
     "bench", "build", "clean", "config", "container build", "container run", "docs", "docs bundle",
     "doctor", "env", "link", "package", "run", "setup", "test", "toolchain", "unlink",
