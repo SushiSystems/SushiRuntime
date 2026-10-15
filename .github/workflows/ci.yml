@@ -217,7 +217,7 @@ jobs:
   downstream:
     name: SushiBLAS against this commit
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || inputs.post_merge
-    timeout-minutes: 45
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -235,7 +235,11 @@ jobs:
         run: sudo apt-get install -y --no-install-recommends ccache
       - name: python -m pip install -e ./sushiblas/cli
         run: python -m pip install -e ./sushiblas/cli
-      # The OpenCL CPU JIT vectorizer crashes on one SushiBLAS kernel; see its KNOWN_ISSUES.md.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-linux-sushiblas-${{ hashFiles('sushiruntime/**/CMakeLists.txt', 'sushiruntime/cmake/**', 'sushiblas/**/CMakeLists.txt', 'sushiblas/cmake/**') }}-${{ github.sha }}
+          restore-keys: ccache-linux-sushiblas-${{ hashFiles('sushiruntime/**/CMakeLists.txt', 'sushiruntime/cmake/**', 'sushiblas/**/CMakeLists.txt', 'sushiblas/cmake/**') }}-
       - name: sb build
         working-directory: sushiblas
         shell: bash
@@ -244,6 +248,12 @@ jobs:
           SB_CXX: /opt/intel/oneapi/compiler/latest/bin/compiler/clang++
           SB_USE_VCPKG: "false"
         run: source /opt/intel/oneapi/setvars.sh --force > /dev/null && sb build
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: .ccache
+          key: ccache-linux-sushiblas-${{ hashFiles('sushiruntime/**/CMakeLists.txt', 'sushiruntime/cmake/**', 'sushiblas/**/CMakeLists.txt', 'sushiblas/cmake/**') }}-${{ github.sha }}
+      # The OpenCL CPU JIT vectorizer crashes on one SushiBLAS kernel; see its KNOWN_ISSUES.md.
       - name: sb test
         working-directory: sushiblas
         shell: bash
