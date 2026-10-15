@@ -18,3 +18,10 @@ runs:
         source /opt/intel/oneapi/setvars.sh --force
         icpx --version
         sycl-ls
+    # sr test restores the shell's LD_LIBRARY_PATH for a oneAPI build (cli/README.md), and the
+    # test programs carry no RPATH to the oneAPI runtime, so the job's shell carries its path.
+    - name: Export the oneAPI library path
+      shell: bash
+      run: |
+        source /opt/intel/oneapi/setvars.sh --force > /dev/null
+        echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
