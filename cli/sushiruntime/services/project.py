@@ -205,30 +205,35 @@ def _resolve_compiler(cfg: Config, force: bool,
     the parent process PATH: the oneAPI ``icpx`` only appears after setvars is
     sourced (which ``load_build_env`` does), so the parent shell need not have it.
 
-    For ASan builds the oneapi toolchain (icpx) is not suitable: Intel's ASan
-    support is limited and icpx is absent outside the container. When asan=True
-    and the selected toolchain is oneapi, the resolver automatically tries
-    adaptivecpp (acpp) then intel-llvm (clang++) before giving up.
+    For ASan builds with the oneapi toolchain the resolver prefers a clang-based
+    SYCL compiler: adaptivecpp (acpp), then the intel/llvm bundle's clang++. A
+    clang++ found only on PATH is not taken, since a system clang has no SYCL.
+    With neither, icpx builds the tree itself; it sanitizes the host pass.
 
     Returns the (cc, cxx) pair, or None to signal the caller to abort.
     """
     search_path = (env or {}).get("PATH")
     cc, cxx = cfg.resolved_compilers()
 
-    # ASan + oneapi: icpx has limited sanitizer support; prefer clang-based compilers.
+    # ASan + oneapi: prefer a clang-based SYCL compiler; a system clang++ has no SYCL.
     if asan and cfg.toolchain == "oneapi":
-        for fallback_cc, fallback_cxx in [("gcc", "acpp"), ("clang", "clang++")]:
-            if shutil.which(fallback_cxx, path=search_path) is not None:
-                console.info(
-                    f"ASan: toolchain 'oneapi' (icpx) does not support sanitizers; "
-                    f"using '{fallback_cxx}' instead.")
+        llvm_bin = cfg.llvm_bin()
+        candidates = [("gcc", shutil.which("acpp", path=search_path))]
+        if llvm_bin:
+            bundle_cxx = Path(llvm_bin) / "clang++"
+            candidates.append((str(Path(llvm_bin) / "clang"),
+                               str(bundle_cxx) if bundle_cxx.is_file() else None))
+        for fallback_cc, fallback_cxx in candidates:
+            if fallback_cxx is not None:
+                console.info(f"ASan: using '{fallback_cxx}' in place of icpx.")
                 return fallback_cc, fallback_cxx
-        console.error(
-            "ASan requires a clang-based compiler (acpp or clang++), "
-            "but neither was found on PATH.\n"
-            "  - inside the container: run `sr docker run` first, or\n"
-            "  - switch toolchain: `sr toolchain adaptivecpp` or `sr toolchain intel-llvm`")
-        return None
+        if shutil.which(cxx, path=search_path) is None:
+            console.error(
+                "ASan needs acpp, the intel/llvm bundle or icpx, and none was found.\n"
+                "  - switch toolchain: `sr toolchain adaptivecpp` or `sr toolchain intel-llvm`")
+            return None
+        console.info("ASan: no clang-based SYCL compiler found; icpx sanitizes the host pass.")
+        return cc, cxx
 
     if shutil.which(cxx, path=search_path) is not None:
         return cc, cxx

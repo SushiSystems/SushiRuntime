@@ -124,6 +124,10 @@ pins the run to the OpenCL CPU device, so the SYCL runtime never loads the CUDA 
 On Linux the tree carries UndefinedBehaviorSanitizer as well, with
 `-fno-sanitize-recover=undefined`, so undefined behaviour stops the test that hit it.
 
+With the oneapi toolchain the ASan tree takes acpp, or else the intel/llvm bundle's clang++,
+when either is installed. A clang++ found only on `PATH` is passed over, since a system clang
+has no SYCL; with neither, icpx builds the tree and sanitizes the host pass.
+
 ### ASAN_FLAGS_WINDOWS
 
 Windows needs three adjustments the Linux driver does not.
