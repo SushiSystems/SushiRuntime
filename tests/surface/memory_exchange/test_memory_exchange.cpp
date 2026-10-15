@@ -68,6 +68,10 @@ TEST(Integration_MemoryExchange, AHostExportGivesTheSizeAsked)
 TEST(Integration_MemoryExchange, AnImportWithNoKindIsRefused)
 {
     const auto context = SushiRuntime::Test::make_context();
+    const InteropCapabilities capabilities =
+        Internal::MemoryExchange::query_capabilities(*context, 0).value();
+    if (!capabilities.device_import)
+        GTEST_SKIP() << "device 0 cannot import, so its descriptor is never read";
     ExternalMemoryDescriptor descriptor;
     descriptor.allocation_bytes = 4096;
     const Result<Internal::Memory::Allocation> imported =

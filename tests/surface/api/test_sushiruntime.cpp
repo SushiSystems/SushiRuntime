@@ -28,6 +28,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <new>
 #include <string>
@@ -39,6 +40,7 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/observability/event_timestamps.hpp>
 
 using namespace SushiRuntime;
 
@@ -154,20 +156,35 @@ namespace
     }
 
     /**
+     * @brief Names whether the baseline reads each event's timestamps, as a profiled run does.
+     */
+    enum class BaselineTimestamps : std::uint8_t
+    {
+        Ignored, /**< The event is dropped unread. */
+        Read     /**< The event's timestamps are read after the wait. */
+    };
+
+    /**
      * @brief Returns the allocations bare SYCL makes on this thread submitting the same kernel on
      *        an in-order queue.
      */
     template <class F>
-    std::size_t allocations_for_baseline_ticks(sycl::queue& queue, std::size_t n, F fn,
-                                               std::size_t ticks)
+    std::size_t allocations_for_baseline_ticks(
+        sycl::queue& queue, std::size_t n, F fn, std::size_t ticks,
+        BaselineTimestamps timestamps = BaselineTimestamps::Ignored)
     {
         const auto submit_once = [&]
         {
-            queue.submit([&](sycl::handler& h)
+            sycl::event event = queue.submit([&](sycl::handler& h)
             {
                 h.parallel_for(sycl::range<1>(n), [fn](sycl::id<1> idx) { fn(idx[0]); });
             });
             queue.wait();
+            if (timestamps == BaselineTimestamps::Read)
+            {
+                Internal::Observability::EventTimestamps times;
+                (void)Internal::Observability::read_event_timestamps(event, times);
+            }
         };
 
         for (std::size_t i = 0; i < K_WARMUP_TICKS; ++i)
@@ -354,8 +371,10 @@ TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
     // The baseline uses the profiling flavour of the chain's in-order queue; see README.md.
     sycl::queue& baseline_queue = SushiRuntime::Internal::ContextAccess::context(rt)
         .devices().queue(0, Internal::Device::QueueFlavour{true, true});
-    const std::size_t baseline_short = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), K_TICKS);
-    const std::size_t baseline_long  = allocations_for_baseline_ticks(baseline_queue, N, kernel(p), K_TICKS * 4);
+    const std::size_t baseline_short = allocations_for_baseline_ticks(
+        baseline_queue, N, kernel(p), K_TICKS, BaselineTimestamps::Read);
+    const std::size_t baseline_long  = allocations_for_baseline_ticks(
+        baseline_queue, N, kernel(p), K_TICKS * 4, BaselineTimestamps::Read);
 
     RecordProperty("profiled_reuse_allocations_per_" + std::to_string(K_TICKS) + "_ticks",
                    static_cast<int>(reuse_short));

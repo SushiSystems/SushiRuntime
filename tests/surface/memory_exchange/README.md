@@ -16,4 +16,4 @@ mechanism.
 | --- | --- |
 | `CapabilitiesOfDeviceZero` | Device 0 reports its capabilities. |
 | `AHostExportGivesTheSizeAsked` | A host export gives an allocation of the size asked when the device can export. |
-| `AnImportWithNoKindIsRefused` | An import naming no handle kind is refused with InvalidAccess. |
+| `AnImportWithNoKindIsRefused` | An import naming no handle kind is refused with InvalidAccess; skipped on a device that cannot import, which refuses first with Unsupported. |

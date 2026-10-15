@@ -346,8 +346,10 @@ The event ledger of a profiled run allocates only for a new shape, never on a la
 the same shape. This is item 3 of section E in
 `docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`.
 
-The baseline uses the profiling flavour of the in-order queue the chain submits to, so it carries
-the cost of profiling as well.
+The baseline uses the profiling flavour of the in-order queue the chain submits to, and reads each
+event's timestamps after the wait as the ledger does, so it carries the cost of profiling as well.
+On some SYCL backends reading a timestamp allocates, and a baseline that left the event unread
+would grow by less than the chain on every tick.
 
 ## dynamic_graph_plan_access.hpp
 
