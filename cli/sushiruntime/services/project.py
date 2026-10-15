@@ -434,6 +434,9 @@ def build(build_type: BuildType, distributed: bool = False,
             cc, cxx = resolved
             args = _configure_args_linux(cfg, build_dir, cmake_build_type,
                                          gpu_backend, dist, asan, tests, cc, cxx)
+            # A benchmark replaces operator new, which TSan's runtime defines as well.
+            if thread_sanitizer_applies(cfg.is_windows, build_type):
+                args.append(f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}")
         rc = _DRIVER.configure(args, cwd=root, env=env)
         if rc != 0:
             console.error("CMake configure failed.")
