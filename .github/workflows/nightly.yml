@@ -1,0 +1,53 @@
+name: Nightly
+
+# Everything post-merge runs, then the benchmark programs and the quarantined tests. The
+# quarantined run reports and never gates. release.yml calls this file before it packages.
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    with:
+      post_merge: true
+    secrets: inherit
+
+  benchmarks:
+    name: Benchmarks
+    timeout-minutes: 120
+    runs-on: ubuntu-latest
+    env:
+      SR_SYCL_TOOLCHAIN: oneapi
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./.github/actions/setup-oneapi
+      - uses: ./.github/actions/setup-sr
+      - name: sr build --distributed --no-cuda
+        run: sr build --distributed --no-cuda
+      - name: sr bench
+        run: sr bench
+
+  quarantined:
+    name: Quarantined tests (reported, never gating)
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    env:
+      SR_SYCL_TOOLCHAIN: oneapi
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./.github/actions/setup-oneapi
+      - uses: ./.github/actions/setup-sr
+      - name: sr build --distributed --no-cuda
+        run: sr build --distributed --no-cuda
+      - name: sr test --label quarantined
+        id: quarantined
+        continue-on-error: true
+        run: sr test --label quarantined
+      - name: Report the quarantined result
+        run: echo "::notice::sr test --label quarantined finished with ${{ steps.quarantined.outcome }}"
