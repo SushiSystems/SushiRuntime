@@ -6,7 +6,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [ main, build/test_sizes ]
   workflow_dispatch:
   workflow_call:
     inputs:
