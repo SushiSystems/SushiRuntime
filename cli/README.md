@@ -191,7 +191,8 @@ same thing AddressSanitizer replaces. On Windows the two collide as a duplicate-
 error. Excluding the suite is right in any case: ASan's redzones and quarantine make its
 timings and allocation counts meaningless, so an ASan benchmark run would report numbers
 nobody should read. The sanitizer lane exists for correctness; the benchmark lane runs
-uninstrumented.
+uninstrumented. A ThreadSanitizer build on Linux leaves the suite out for the same reason: the
+TSan runtime defines `operator new` too, and the link fails on the duplicate.
 
 ### Suites
 
