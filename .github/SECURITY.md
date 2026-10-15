@@ -11,7 +11,7 @@ disclosure before a fix is available puts every user at risk.
 Instead, report it privately through one of:
 
 - **Email (preferred):** **mustafagarip@sushisystems.io**
-- **Discord:** reach the maintainer privately on the community server —
+- **Discord:** reach the maintainer privately on the community server,
   invite: `https://discord.gg/y5639YuaPh`
 If you prefer, you may also use GitHub's **private vulnerability reporting**
 ("Report a vulnerability" under the repository's Security tab).
@@ -40,7 +40,7 @@ disclosure. We are happy to coordinate timing with you.
 
 ## Scope and threat model
 
-A few properties are intentional design decisions rather than vulnerabilities —
+A few properties are intentional design decisions rather than vulnerabilities;
 please keep them in mind:
 
 - **The distributed layer targets a trusted LAN.** The `TCPTransport` is a
