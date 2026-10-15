@@ -74,13 +74,19 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/setup-oneapi
       - uses: ./.github/actions/setup-sr
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
           key: ccache-linux-icpx-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
           restore-keys: ccache-linux-icpx-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
       - name: sr build --distributed --no-cuda
         run: sr build --distributed --no-cuda
+      # Saved even when a later step fails or times out, so the next run starts warm.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: .ccache
+          key: ccache-linux-icpx-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
       - name: sr test --label small
         run: sr test --label small
       - name: sr test --label medium
@@ -88,7 +94,7 @@ jobs:
 
   windows:
     name: Windows (small, medium)
-    timeout-minutes: 45
+    timeout-minutes: 90
     runs-on: windows-latest
     env:
       SR_SYCL_TOOLCHAIN: intel-llvm
@@ -97,15 +103,31 @@ jobs:
       - uses: ./.github/actions/setup-sr
       - name: choco install ccache
         run: choco install ccache -y --no-progress
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
           key: ccache-windows-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
           restore-keys: ccache-windows-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+      # sr setup installs vcpkg, its ports and the intel/llvm bundle under ~/.sushisystems.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.sushisystems
+          key: sushisystems-windows-${{ hashFiles('cli/sushistack.deps.toml', 'cli/pyproject.toml') }}
       - name: sr setup --yes --no-gpu
         run: sr setup --yes --no-gpu
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: ~/.sushisystems
+          key: sushisystems-windows-${{ hashFiles('cli/sushistack.deps.toml', 'cli/pyproject.toml') }}
       - name: sr build --distributed --no-cuda
         run: sr build --distributed --no-cuda
+      # Saved even when a later step fails or times out, so the next run starts warm.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: .ccache
+          key: ccache-windows-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
       - name: sr test --label small
         run: sr test --label small
       - name: sr test --label medium
@@ -119,13 +141,19 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/setup-oneapi
       - uses: ./.github/actions/setup-sr
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
           key: ccache-linux-icpx-asan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
           restore-keys: ccache-linux-icpx-asan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
       - name: sr build --type asan --distributed
         run: sr build --type asan --distributed
+      # Saved even when a later step fails or times out, so the next run starts warm.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: .ccache
+          key: ccache-linux-icpx-asan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
       - name: sr test --asan --label small
         run: sr test --asan --label small
 
@@ -162,7 +190,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/setup-oneapi
       - uses: ./.github/actions/setup-sr
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
           key: ccache-linux-icpx-tsan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
@@ -171,6 +199,12 @@ jobs:
       # races inside their own thread pools; this option keeps it to the code built here.
       - name: sr build --type relwithdebinfo --distributed
         run: sr build --type relwithdebinfo --distributed
+      # Saved even when a later step fails or times out, so the next run starts warm.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: .ccache
+          key: ccache-linux-icpx-tsan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
       - name: sr test --label small
         env:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1
