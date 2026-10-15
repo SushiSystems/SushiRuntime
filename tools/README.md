@@ -36,11 +36,11 @@ reporting, 2 on a bad path. Python 3.11, standard library only.
 
 ## Per-repository settings
 
-`settings.py` holds them. `K_TIER_ORDER` lists the tiers, lowest first, and `K_SAME_TIER_EDGES`
-each `(includer, included)` pair of one tier; both copy `cmake/SushiRuntimeTiers.cmake`, and
-`tests/test_tier_table.py` fails when they differ. `K_MODULE_FUNCTION` names
-`sushiruntime_add_module`, whose `DEPENDS` and `PRIVATE_DEPENDS` lists are checked against the
-includes; a module marked `INTERNAL` may not be included by an installed header. `K_CLOSED`
+`settings.py` holds them. `K_TIER_ORDER` lists the tiers, lowest first; it copies
+`cmake/SushiRuntimeTiers.cmake`, and `tests/test_tier_table.py` fails when they differ.
+`K_MODULE_FUNCTION` names `sushiruntime_add_module`, whose `DEPENDS` and `PRIVATE_DEPENDS` lists
+are checked against the includes and are the one list of same-tier edges, so
+`K_SAME_TIER_EDGES` stays empty; a module marked `INTERNAL` may not be included by an installed header. `K_CLOSED`
 makes `check_source_comments.py` expect the closed licence lines. `check_docs_truth.py` takes
 the macro prefixes from the source unless `K_MACRO_PREFIXES` names them.
 

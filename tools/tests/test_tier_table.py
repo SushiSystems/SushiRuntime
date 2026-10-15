@@ -20,7 +20,7 @@ from layering.check_layering import (  # noqa: E402
     rule_public_headers,
     rule_same_tier_includes,
 )
-from settings import K_SAME_TIER_EDGES, K_TIER_ORDER  # noqa: E402
+from settings import K_TIER_ORDER  # noqa: E402
 
 K_ROOT = Path(__file__).resolve().parents[2]
 K_TIERS_FILE = K_ROOT / "cmake" / "SushiRuntimeTiers.cmake"
@@ -42,13 +42,8 @@ def _cmake_pairs(name: str) -> list[tuple[str, str]]:
     return list(zip(items[0::2], items[1::2], strict=True))
 
 
-def _edges(pairs: set[tuple[str, str]]) -> list[str]:
-    """Returns each pair as `consumer -> dependency`, sorted."""
-    return sorted(f"{consumer} -> {dependency}" for consumer, dependency in pairs)
-
-
 class TierTableTest(unittest.TestCase):
-    """Checks the checker's copies of the tier table against the CMake file."""
+    """Checks the tier order in settings.py and the module folders against the CMake file."""
 
     def test_is_registered(self) -> None:
         """Runs the rules that read a build table as part of the checker's rule table."""
@@ -63,15 +58,6 @@ class TierTableTest(unittest.TestCase):
             list(K_TIER_ORDER), declared,
             msg=f"K_TIER_ORDER is {list(K_TIER_ORDER)}; {K_TIERS_FILE.name} declares {declared}",
         )
-
-    def test_same_tier_edges_match_the_cmake_table(self) -> None:
-        """Holds exactly the pairs of SUSHIRUNTIME_SAME_TIER_EDGES."""
-        declared = set(_cmake_pairs("SUSHIRUNTIME_SAME_TIER_EDGES"))
-        difference = (
-            f"only in K_SAME_TIER_EDGES: {_edges(K_SAME_TIER_EDGES - declared)}; "
-            f"only in {K_TIERS_FILE.name}: {_edges(declared - K_SAME_TIER_EDGES)}"
-        )
-        self.assertEqual(set(K_SAME_TIER_EDGES), declared, msg=difference)
 
     def test_module_folders_match_the_cmake_table(self) -> None:
         """Finds each module of SUSHIRUNTIME_MODULE_TIERS under its tier, and no other folder."""
