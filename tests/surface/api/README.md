@@ -34,6 +34,15 @@ The sections of a test file in a subfolder are in that folder's `README.md`:
 | [`runtime/`](runtime/README.md) | The tests of `Runtime`, its configuration, its errors and its logging controls |
 | [`vocabulary/`](vocabulary/README.md) | The tests of `Dynamic` and `LateCount`, the late-bound words of `api/vocabulary/` |
 
+## Helpers
+
+The headers below are shared by tests of this module only, so they sit in this folder.
+
+| Header | What it does |
+| --- | --- |
+| `dynamic_graph_plan_access.hpp` | Reads the composed plan of a `DynamicGraph` and its boundary edges; see its section. |
+| `refusing_fill.hpp` | A host fill task whose copy throws on demand, to fail a plan build; see its section. |
+
 ## test_fluent.cpp
 
 The file covers the parts of the fluent API that the `Integration_FluentLifecycle` tests do not exercise:

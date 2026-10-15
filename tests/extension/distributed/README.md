@@ -10,6 +10,14 @@ speed only where its section says so.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 
+## Helpers
+
+The headers below are shared by tests of this module only, so they sit in this folder.
+
+| Header | What it does |
+| --- | --- |
+| `tcp_fault_proxy.hpp` | A loopback proxy that stalls, cuts, throttles or truncates a link; see its section. |
+
 ## benchmark_cluster.cpp
 
 The benchmark measures the round trip of an offloaded task: dispatch, the worker's pull of the

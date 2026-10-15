@@ -203,10 +203,6 @@ round did not close:
 - **Most new tests have not been seen failing.** Five headers the coverage work tested were
   broken by hand and their tests failed; the other new tests have not been checked that way. See
   `docs/agent/2026_10_14_TEST_COVERAGE/REPORT.md`.
-- **Helpers of one module's tests sit in its test folder**: `dynamic_graph_plan_access.hpp`,
-  `refusing_fill.hpp` and `tcp_fault_proxy.hpp`. Each serves the tests of one module, and
-  `TESTS.md` names no place for such a file; it makes a module only of code several modules'
-  tests share.
 
 ## Documentation
 
