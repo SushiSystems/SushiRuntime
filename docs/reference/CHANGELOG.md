@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-16 — tools: Brought the checkers level with SushiSkills, adding one that reports a test whose source writes no size (`check_test_sizes.py`).
 - 2026-10-15 — ci: Split CI into pre-merge, post-merge and nightly stages behind one `gate` job, each running `sr` on Linux and Windows with ccache, and ran the small tests under ASan and UBSan (`ci.yml`, `nightly.yml`, `setup-sr`).
 - 2026-10-15 — cli: Breaking change: Replaced `sr test --suite` with `--label` over the sizes, left the quarantined tests out of every other run, and added `sr bench` for the benchmark programs (`cli.py`, `project.py`).
 - 2026-10-15 — tests: Sized every test small, medium or large by its suite prefix, with a 60, 300 or 900 second limit, and failed the build of an unsized suite (`SushiRuntimeTests.cmake`, `CheckTestSizes.cmake`).
