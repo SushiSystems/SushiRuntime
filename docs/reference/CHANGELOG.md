@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-16 — cli: Stopped an ASan build with the oneapi toolchain from taking a system clang++ that has no SYCL; icpx builds the tree when no clang-based SYCL compiler is installed (`project.py`).
 - 2026-10-16 — cli: Sized every CLI test with a pytest mark, and failed the collection of a test that carries no size or two (`conftest.py`, `pyproject.toml`).
 - 2026-10-16 — tools: Brought the checkers level with SushiSkills, adding one that reports a test whose source writes no size (`check_test_sizes.py`).
 - 2026-10-15 — ci: Split CI into pre-merge, post-merge and nightly stages behind one `gate` job, each running `sr` on Linux and Windows with ccache, and ran the small tests under ASan and UBSan (`ci.yml`, `nightly.yml`, `setup-sr`).
