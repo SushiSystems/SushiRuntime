@@ -1,164 +1,38 @@
 name: CI
 
-# Functional suite on every push / PR (fast, deterministic, benchmarks skipped).
-# Heavy benchmark suite only on the nightly schedule.
+# The pre-merge stage on every pull request; the post-merge stage, which adds ThreadSanitizer
+# and SushiBLAS built against this commit, on every push to main and when nightly.yml calls
+# this file. Every job runs the project CLI; tests/README.md gives the sizes.
 on:
+  pull_request:
   push:
     branches: [ main ]
-  pull_request:
+  workflow_dispatch:
   workflow_call:
-  schedule:
-    - cron: '0 3 * * *'   # 03:00 UTC nightly
+    inputs:
+      post_merge:
+        description: Run the post-merge jobs as well.
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  SR_SYCL_TOOLCHAIN: oneapi
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 2G
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+
 jobs:
-  functional:
-    name: Functional tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Set up Intel oneAPI DPC++
-        uses: ./.github/actions/setup-oneapi
-
-      - name: Configure, build, and run functional suite
-        shell: bash
-        run: |
-          set -e
-          source /opt/intel/oneapi/setvars.sh --force
-          cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx \
-            -DCMAKE_CXX_FLAGS=-fsycl \
-            -DSR_BUILD_TESTS=ON \
-            -DSR_ENABLE_DISTRIBUTED=ON \
-            -DSR_BUILD_BENCHMARKS=OFF
-          cmake --build build
-          ctest --test-dir build -L "unit|integration|regression" --output-on-failure
-
-  sanitizers:
-    name: ThreadSanitizer (data races)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Set up Intel oneAPI DPC++
-        uses: ./.github/actions/setup-oneapi
-
-      - name: Build + run the unit/integration suite under TSan
-        shell: bash
-        run: |
-          set -e
-          source /opt/intel/oneapi/setvars.sh --force
-          # RelWithDebInfo trips the auto-TSan gate in cmake/Sanitizers.cmake on the
-          # non-MSVC toolchain, instrumenting the whole tree. The concurrency suite
-          # (EBR fences, per-worker polling, epoch nesting) is exactly what TSan
-          # catches; distributed ON so its threads are covered too.
-          cmake -B build-tsan -G Ninja \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx \
-            -DCMAKE_CXX_FLAGS=-fsycl \
-            -DSR_BUILD_TESTS=ON \
-            -DSR_ENABLE_DISTRIBUTED=ON \
-            -DSR_BUILD_BENCHMARKS=OFF
-          cmake --build build-tsan
-          # ignore_noninstrumented_modules: the Intel SYCL runtime, oneTBB and the
-          # OpenCL host device (libsycl / libtbb / libintelocl) are linked
-          # uninstrumented, so TSan cannot reason about their internal
-          # synchronization and reports false races inside their own thread pools
-          # (host-task pool cv, TBB worker memcpy). This flag scopes TSan to our
-          # instrumented code, where the races we actually own live.
-          TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1" \
-            ctest --test-dir build-tsan -L "unit|integration|regression" --output-on-failure
-
-  cli:
-    name: Python CLI (lint + tests)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.11'
-
-      - name: Install tooling
-        run: |
-          python -m pip install --upgrade pip pytest pyflakes
-          python -m pip install -e ./cli
-
-      - name: Import-safety check (no crash outside a checkout)
-        working-directory: cli
-        # pyflakes catches undefined names / bad imports without running anything.
-        run: python -m pyflakes sushiruntime || true
-
-      - name: Run CLI unit tests
-        working-directory: cli
-        run: python -m pytest tests -q
-
-  docs:
-    name: API docs site
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Install Doxygen
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends doxygen graphviz
-
-      - name: Build the fluent API reference
-        shell: bash
-        run: |
-          set -e
-          mkdir -p build/docs/api-site
-          doxygen .config/doxygen/Doxyfile
-          # Surface any undocumented public symbol or missing @param. Reported,
-          # not yet fatal: once the log is clean across the public api/ surface,
-          # flip this to `exit 1` so the reference can never regress.
-          log=build/docs/api-site/doxygen-warnings.log
-          if [ -s "$log" ]; then
-            echo "::warning::Doxygen reported documentation gaps in the public API:"
-            cat "$log"
-          fi
-
-      - name: Upload the generated site
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: api-site
-          path: build/docs/api-site/html
-          retention-days: 3
-
-  benchmark:
-    name: Benchmark suite (nightly)
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Set up Intel oneAPI DPC++
-        uses: ./.github/actions/setup-oneapi
-
-      - name: Configure, build, and run benchmark suite
-        shell: bash
-        run: |
-          set -e
-          source /opt/intel/oneapi/setvars.sh --force
-          cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx \
-            -DCMAKE_CXX_FLAGS=-fsycl \
-            -DSR_BUILD_TESTS=ON \
-            -DSR_BUILD_BENCHMARKS=ON
-          cmake --build build
-          # Benchmarks self-gate via sanity_gate(); they assert no deadlock /
-          # forward progress, not a latency threshold.
-          ctest --test-dir build -L "stress|performance" --output-on-failure
-
-  checkers:
+  checks:
     name: Checkers (${{ matrix.os }})
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -169,13 +43,173 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
-      - name: python tools/documentation/check_source_comments.py .
-        run: python tools/documentation/check_source_comments.py .
-      - name: python tools/documentation/check_docs_layout.py .
-        run: python tools/documentation/check_docs_layout.py .
-      - name: python tools/documentation/check_changelog.py .
-        run: python tools/documentation/check_changelog.py .
-      - name: python tools/layering/check_layering.py .
-        run: python tools/layering/check_layering.py .
+      - name: python tools/check_all.py .
+        run: python tools/check_all.py .
       - name: python -m unittest discover -s tools/tests
         run: python -m unittest discover -s tools/tests
+
+  cli:
+    name: Python CLI
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: python -m pip install pytest pyflakes -e ./cli
+        run: python -m pip install pytest pyflakes -e ./cli
+      - name: python -m pyflakes sushiruntime
+        working-directory: cli
+        run: python -m pyflakes sushiruntime
+      - name: python -m pytest tests -q
+        working-directory: cli
+        run: python -m pytest tests -q
+
+  linux:
+    name: Linux (small, medium)
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./.github/actions/setup-oneapi
+      - uses: ./.github/actions/setup-sr
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-linux-icpx-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
+          restore-keys: ccache-linux-icpx-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+      - name: sr build --distributed --no-cuda
+        run: sr build --distributed --no-cuda
+      - name: sr test --label small
+        run: sr test --label small
+      - name: sr test --label medium
+        run: sr test --label medium
+
+  windows:
+    name: Windows (small, medium)
+    timeout-minutes: 45
+    runs-on: windows-latest
+    env:
+      SR_SYCL_TOOLCHAIN: intel-llvm
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./.github/actions/setup-sr
+      - name: choco install ccache
+        run: choco install ccache -y --no-progress
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-windows-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
+          restore-keys: ccache-windows-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+      - name: sr setup --yes --no-gpu
+        run: sr setup --yes --no-gpu
+      - name: sr build --distributed --no-cuda
+        run: sr build --distributed --no-cuda
+      - name: sr test --label small
+        run: sr test --label small
+      - name: sr test --label medium
+        run: sr test --label medium
+
+  sanitizers:
+    name: ASan and UBSan (small)
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./.github/actions/setup-oneapi
+      - uses: ./.github/actions/setup-sr
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-linux-icpx-asan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
+          restore-keys: ccache-linux-icpx-asan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+      - name: sr build --type asan --distributed
+        run: sr build --type asan --distributed
+      - name: sr test --asan --label small
+        run: sr test --asan --label small
+
+  docs:
+    name: API docs site
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./.github/actions/setup-sr
+      - name: sudo apt-get install -y doxygen graphviz
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends doxygen graphviz
+      - name: sr docs
+        run: sr docs
+
+  gate:
+    name: gate
+    if: always()
+    needs: [checks, cli, linux, windows, sanitizers, docs]
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every pre-merge job succeeded
+        run: |
+          echo '${{ toJSON(needs) }}'
+          test "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "false"
+
+  thread-sanitizer:
+    name: ThreadSanitizer (small, medium)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || inputs.post_merge
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./.github/actions/setup-oneapi
+      - uses: ./.github/actions/setup-sr
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-linux-icpx-tsan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
+          restore-keys: ccache-linux-icpx-tsan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+      # The SYCL runtime, oneTBB and the OpenCL CPU device are not instrumented, so TSan reports
+      # races inside their own thread pools; this option keeps it to the code built here.
+      - name: sr build --type relwithdebinfo --distributed
+        run: sr build --type relwithdebinfo --distributed
+      - name: sr test --label small
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1
+        run: sr test --label small
+      - name: sr test --label medium
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1
+        run: sr test --label medium
+
+  downstream:
+    name: SushiBLAS against this commit
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || inputs.post_merge
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: sushiruntime
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: SushiSystems/SushiBLAS
+          path: sushiblas
+      - uses: ./sushiruntime/.github/actions/setup-oneapi
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: python -m pip install -e ./sushiblas/cli
+        run: python -m pip install -e ./sushiblas/cli
+      # The OpenCL CPU JIT vectorizer crashes on one SushiBLAS kernel; see its KNOWN_ISSUES.md.
+      - name: sb build
+        working-directory: sushiblas
+        shell: bash
+        env:
+          SB_CXX: icpx
+          SB_USE_VCPKG: "false"
+        run: source /opt/intel/oneapi/setvars.sh --force > /dev/null && sb build
+      - name: sb test
+        working-directory: sushiblas
+        shell: bash
+        env:
+          CL_CONFIG_CPU_VECTORIZER_MODE: "1"
+        run: source /opt/intel/oneapi/setvars.sh --force > /dev/null && sb test
