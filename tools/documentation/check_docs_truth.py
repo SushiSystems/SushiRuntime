@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from checking.checker import K_EXIT_CLEAN, Checker, Issue, run  # noqa: E402
 from checking.ignored_paths import ignored_folders  # noqa: E402
+from settings import K_MACRO_PREFIXES  # noqa: E402
 
 
 class PageKind(Enum):
@@ -72,7 +73,6 @@ K_SOURCE_LANGUAGES = frozenset(
 K_HASH_COMMENT_LANGUAGES = frozenset({"python", "py"})
 K_FOREIGN_NAMESPACES = frozenset({"std", "sycl", "cl", "testing"})
 K_NAMING_WORDS = frozenset({"snake_case", "kebab_case", "PascalCase", "CamelCase"})
-K_MACRO_PREFIXES: tuple[str, ...] = ()
 K_FOREIGN_MACRO_PREFIXES = frozenset({"K", "CMAKE", "CPACK", "EXPECT", "ASSERT", "TEST"})
 K_MACRO_PREFIX_FLOOR = 20
 K_ALLOW_LIST = Path("docs/.docs_truth_allow")

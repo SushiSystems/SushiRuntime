@@ -16,12 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from layering.check_layering import (  # noqa: E402
     K_CHECKER,
-    K_SAME_TIER_EDGES,
-    K_TIER_ORDER,
     rule_declared_dependencies,
     rule_public_headers,
     rule_same_tier_includes,
 )
+from settings import K_SAME_TIER_EDGES, K_TIER_ORDER  # noqa: E402
 
 K_ROOT = Path(__file__).resolve().parents[2]
 K_TIERS_FILE = K_ROOT / "cmake" / "SushiRuntimeTiers.cmake"

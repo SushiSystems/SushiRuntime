@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from checking.checker import Checker, Issue, run  # noqa: E402
 from checking.ignored_paths import drop_ignored  # noqa: E402
+from settings import K_CLOSED  # noqa: E402
 
 K_C_SUFFIXES = frozenset({".h", ".hpp", ".cpp", ".glsl", ".comp", ".vert", ".frag", ".ts", ".tsx"})
 K_PYTHON_SUFFIXES = frozenset({".py"})
@@ -33,7 +34,6 @@ K_SEPARATOR = re.compile(r"[-=*_~#]{5,}")
 K_HISTORY = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b|\b(previously|formerly|fixed in)\b", re.IGNORECASE)
 K_DATE_TAG = re.compile(r"@date\b")
 K_LICENSE_LINE = re.compile(r"^/\*.*\*/\s*$")
-K_CLOSED = False
 K_HOLDER = "Mustafa Garip & Sushi Systems"
 K_PART_OF = "This file is part of:"
 K_COPYRIGHT_LINE = re.compile(r"^Copyright \(c\) \d{4}-present " + re.escape(K_HOLDER) + "$")

@@ -1,11 +1,15 @@
 # tools
 
 The checkers every Sushi Systems repository carries, copied whole from `tools/` in SushiSkills.
-A rule is fixed there first and copied here; `K_` settings are the only local changes.
-`packaging/` is this repository's own.
+A rule is fixed there first and copied here with `checking/copy_shared_tools.py`; `settings.py`
+holds what differs. `naming/`, `packaging/`, `tests/test_check_naming.py` and
+`tests/test_tier_table.py` are this repository's own.
 
 | Path | Checks | Takes |
 | --- | --- | --- |
+| `check_all.py` | Nothing itself; runs the six checkers and the tests, prints only what failed | Repository root |
+| `settings.py` | Nothing; holds the settings that differ between repositories | |
+| `checking/copy_shared_tools.py` | Nothing; copies the shared tools from SushiSkills, keeping `settings.py`, this README and this repository's own tools, or lists the files that differ with `--report` | Repository root, `--from` |
 | `checking/checker.py` | Nothing itself; runs a checker's rule table and prints findings | |
 | `checking/ignored_paths.py` | Nothing itself; names the paths git ignores, so a checker reads only what the repository owns | |
 | `testing/check_test_mirror.py` | That `tests/` mirrors `modules/`: a test file per public header, no test file that mirrors nothing, no folder without a counterpart | Repository root |
@@ -16,6 +20,7 @@ A rule is fixed there first and copied here; `K_` settings are the only local ch
 | `naming/check_naming.py` | C++: `namespace detail`, the I prefix on classes, `get_` declarations, `K_` constants, enumerator case; `--short-names` adds short identifiers in `include/` | Files or folders, default `modules` |
 | `licensing/write_license_block.py` | Nothing; writes the license block of `source-comments` into every tracked source file, or lists the files that lack it with `--report` | Repository root, `--project` |
 | `packaging/verify_installed_package.py` | That an installed SushiRuntime builds and runs a consumer with only the install prefix on the loader path; `sr test --suite package` runs it | Install prefix |
+| `routing/summarize_dispatches.py` | Nothing; sums the dispatch lines of every `REPORT.md` per model and effort, for `model-routing` | Repository root |
 | `tests/` | Unit tests for the checker rules; run `python -m unittest discover -s tools/tests` | |
 
 `check_docs_layout.py` reads inline Markdown links, with or without a title, wrapped over a
@@ -31,11 +36,12 @@ reporting, 2 on a bad path. Python 3.11, standard library only.
 
 ## Per-repository settings
 
-`K_` constants at the top of each checker. `check_layering.py` does nothing until
-`K_TIER_ORDER` lists the repository's tiers, lowest first. `K_TIER_ORDER` and
-`K_SAME_TIER_EDGES` copy `cmake/SushiRuntimeTiers.cmake`, and `tests/test_tier_table.py` fails
-when they differ. The two rules that read `K_SAME_TIER_EDGES` and the module `CMakeLists.txt`
-files are this repository's own; they cover `include/` and `source/`, since a module's tests
-link the whole library. `K_COPYRIGHT_LINE` and
-`K_LICENSE_LINES` in `check_source_comments.py` hold the repository's licence lines; a closed
-repository sets `K_LICENSE_LINES` to `("All rights reserved. No licence is granted.",)`.
+`settings.py` holds them. `K_TIER_ORDER` lists the tiers, lowest first, and `K_SAME_TIER_EDGES`
+each `(includer, included)` pair of one tier; both copy `cmake/SushiRuntimeTiers.cmake`, and
+`tests/test_tier_table.py` fails when they differ. `K_MODULE_FUNCTION` names
+`sushiruntime_add_module`, whose `DEPENDS` and `PRIVATE_DEPENDS` lists are checked against the
+includes; a module marked `INTERNAL` may not be included by an installed header. `K_CLOSED`
+makes `check_source_comments.py` expect the closed licence lines. `check_docs_truth.py` takes
+the macro prefixes from the source unless `K_MACRO_PREFIXES` names them.
+
+Every other `K_` constant sits at the top of its checker and is the same in every repository.
