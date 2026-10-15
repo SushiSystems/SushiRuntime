@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-16 — cli: Scoped the sanitizer flags of an icpx ASan build to the host pass, so the SPIR-V device pass does not fail under -Werror (`project.py`).
 - 2026-10-16 — cli: Left the benchmark programs out of a ThreadSanitizer build, whose runtime defines the `operator new` a benchmark replaces (`project.py`).
 - 2026-10-16 — cli: Stopped an ASan build with the oneapi toolchain from taking a system clang++ that has no SYCL; icpx builds the tree when no clang-based SYCL compiler is installed (`project.py`).
 - 2026-10-16 — cli: Sized every CLI test with a pytest mark, and failed the collection of a test that carries no size or two (`conftest.py`, `pyproject.toml`).

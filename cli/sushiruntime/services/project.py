@@ -270,9 +270,15 @@ def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
         f"-DSR_BUILD_TESTS={'ON' if tests else 'OFF'}",
     ]
     if asan:
+        # icpx passes -fsanitize to the SPIR-V device pass too, which warns under -Werror.
+        cxx_flags = ASAN_FLAGS
+        if Path(cxx).name == "icpx":
+            cxx_flags = " ".join(f"-Xarch_host {flag}" if flag.startswith("-fsanitize")
+                                 or flag.startswith("-fno-sanitize") else flag
+                                 for flag in ASAN_FLAGS.split())
         args += [
             f"-DCMAKE_C_FLAGS={ASAN_FLAGS}",
-            f"-DCMAKE_CXX_FLAGS={ASAN_FLAGS}",
+            f"-DCMAKE_CXX_FLAGS={cxx_flags}",
             "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined",
             "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined",
             f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}",
