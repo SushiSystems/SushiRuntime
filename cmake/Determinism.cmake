@@ -51,6 +51,9 @@ if(SR_DETERMINISTIC_FP)
             "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:GNU>>:-ffp-contract=off>"
             "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:GNU>>:-fno-fast-math>"
             "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:GNU>,$<CXX_COMPILER_ID:IntelLLVM>>:-fp-model=precise>"
+            # precise re-enables contraction; the two options below put it back off.
+            "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:GNU>,$<CXX_COMPILER_ID:IntelLLVM>>:-Wno-overriding-option>"
+            "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_FRONTEND_VARIANT:GNU>,$<CXX_COMPILER_ID:IntelLLVM>>:-ffp-contract=off>"
         )
     elseif(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
         target_compile_options(sushiruntime_deterministic_fp INTERFACE
@@ -60,8 +63,11 @@ if(SR_DETERMINISTIC_FP)
             "$<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>"
             "$<$<COMPILE_LANGUAGE:CXX>:-fno-fast-math>")
         if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+            # precise re-enables contraction; the two options below put it back off.
             target_compile_options(sushiruntime_deterministic_fp INTERFACE
-                "$<$<COMPILE_LANGUAGE:CXX>:-fp-model=precise>")
+                "$<$<COMPILE_LANGUAGE:CXX>:-fp-model=precise>"
+                "$<$<COMPILE_LANGUAGE:CXX>:-Wno-overriding-option>"
+                "$<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>")
         endif()
     endif()
 
