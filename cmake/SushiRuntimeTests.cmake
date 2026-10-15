@@ -11,11 +11,14 @@
 # which the library's own target does not publish, and it links the objects of the
 # TEST_ONLY modules, which hold its entry point.
 #
-# Labels come from the GoogleTest suite-name prefix: Unit_*, Integration_*, Regression_*,
-# Stress_* and Performance_*. Each group carries one label; `sr test --suite functional`
-# is the regex 'unit|integration|regression'. A two-element LABELS list does not survive
-# gtest_discover_tests(PROPERTIES ...), which re-expands the property without its list
-# escaping.
+# A test's size comes from its GoogleTest suite-name prefix: Small_*, Medium_* and Large_*,
+# each with its own label and timeout. A test named in SR_QUARANTINED_TESTS keeps its size
+# and gains the quarantined label, which leaves it out of every gating run.
+# `sr test --label <size>` selects one label.
+
+# Suite.Case names of the intermittent tests, each with its entry in
+# docs/reference/KNOWN_ISSUES.md.
+set(SR_QUARANTINED_TESTS "")
 
 if(NOT SR_BUILD_TESTS)
     function(sushiruntime_add_test_program)
@@ -58,9 +61,9 @@ endif()
 
 # sushiruntime_add_test_program(NAME <target> [BENCHMARK] [MODULE <module>] SOURCES <file>...)
 #
-# BENCHMARK registers the Stress_* and Performance_* suites with a 900 second limit; a
-# program without it registers Unit_*, Integration_* and Regression_* with 120 seconds.
-# MODULE adds the module's name as a second label on every test of the program.
+# A BENCHMARK program is built and not registered with CTest; `sr bench` runs it. Any other
+# program registers Small_* with 60 seconds, Medium_* with 300 and Large_* with 900. MODULE
+# adds the module's name as a label on every test of the program.
 function(sushiruntime_add_test_program)
     cmake_parse_arguments(ARG "BENCHMARK" "NAME;MODULE" "SOURCES" ${ARGN})
     if("${ARG_NAME}" STREQUAL "" OR NOT ARG_SOURCES)
@@ -82,19 +85,51 @@ function(sushiruntime_add_test_program)
     endif()
 
     if(ARG_BENCHMARK)
-        set(groups "Stress_*|stress" "Performance_*|performance")
-        set(timeout 900)
-    else()
-        set(groups "Unit_*|unit" "Integration_*|integration" "Regression_*|regression")
-        set(timeout 120)
+        return()
     endif()
+
+    # A suite with no size prefix would register no test, so the build refuses it; the check
+    # reruns whenever one of the program's sources changes.
+    set(stamp "${CMAKE_CURRENT_BINARY_DIR}/${ARG_NAME}_sizes.stamp")
+    # A list in one command argument would split, so the sources cross as one '|'-joined word.
+    list(JOIN ARG_SOURCES "|" joined_sources)
+    add_custom_command(
+        OUTPUT "${stamp}"
+        COMMAND ${CMAKE_COMMAND} "-DSOURCES=${joined_sources}" "-DSTAMP=${stamp}"
+            -P "${PROJECT_SOURCE_DIR}/cmake/CheckTestSizes.cmake"
+        DEPENDS ${ARG_SOURCES} "${PROJECT_SOURCE_DIR}/cmake/CheckTestSizes.cmake"
+        COMMENT "Checking the test sizes of ${ARG_NAME}"
+        VERBATIM)
+    add_custom_target(${ARG_NAME}_sizes DEPENDS "${stamp}")
+    add_dependencies(${ARG_NAME} ${ARG_NAME}_sizes)
+    set(groups "Small_|small|60" "Medium_|medium|300" "Large_|large|900")
     foreach(group IN LISTS groups)
         string(REPLACE "|" ";" parts "${group}")
-        list(GET parts 0 filter)
+        list(GET parts 0 prefix)
         list(GET parts 1 label)
+        list(GET parts 2 timeout)
         if(NOT "${ARG_MODULE}" STREQUAL "")
             # The separator is escaped: the property list crosses a generated script.
             string(APPEND label "\;${ARG_MODULE}")
+        endif()
+
+        # A GoogleTest filter after '-' excludes, so the quarantined tests register apart.
+        set(quarantined "")
+        foreach(name IN LISTS SR_QUARANTINED_TESTS)
+            if(name MATCHES "^${prefix}")
+                list(APPEND quarantined "${name}")
+            endif()
+        endforeach()
+        list(JOIN quarantined ":" quarantined_filter)
+
+        set(filter "${prefix}*")
+        if(quarantined_filter)
+            string(APPEND filter "-${quarantined_filter}")
+            gtest_discover_tests(${ARG_NAME}
+                DISCOVERY_MODE PRE_TEST
+                WORKING_DIRECTORY "${PROJECT_BINARY_DIR}/tests"
+                TEST_FILTER "${quarantined_filter}"
+                PROPERTIES LABELS "${label}\;quarantined" TIMEOUT ${timeout})
         endif()
         gtest_discover_tests(${ARG_NAME}
             DISCOVERY_MODE PRE_TEST

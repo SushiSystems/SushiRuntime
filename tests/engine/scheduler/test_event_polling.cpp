@@ -49,7 +49,7 @@ namespace
 /**
  * @brief Pushing past the inline capacity stores every event, none dropped.
  */
-TEST(Unit_EventPolling, PushNeverDropsBeyondInlineCapacity)
+TEST(Small_EventPolling, PushNeverDropsBeyondInlineCapacity)
 {
     EventPolling::ActiveEventList list;
     constexpr std::uintptr_t N = 100000; // far beyond K_INLINE_CAP (256)
@@ -73,7 +73,7 @@ TEST(Unit_EventPolling, PushNeverDropsBeyondInlineCapacity)
  * hold is that the multiset of survivors is exactly what went in, with no loss
  * and no duplication, all the way down to empty.
  */
-TEST(Unit_EventPolling, RemoveAtDrainsEveryEventExactlyOnce)
+TEST(Small_EventPolling, RemoveAtDrainsEveryEventExactlyOnce)
 {
     EventPolling::ActiveEventList list;
     constexpr std::uintptr_t N = 5000; // spans inline buffer and spill
@@ -99,7 +99,7 @@ TEST(Unit_EventPolling, RemoveAtDrainsEveryEventExactlyOnce)
 /**
  * @brief Removing an inline entry pulls the tail in, even when it lives in spill.
  */
-TEST(Unit_EventPolling, RemoveAcrossInlineSpillBoundary)
+TEST(Small_EventPolling, RemoveAcrossInlineSpillBoundary)
 {
     EventPolling::ActiveEventList list;
     const std::uintptr_t N = EventPolling::ActiveEventList::K_INLINE_CAP + 1;
@@ -119,7 +119,7 @@ TEST(Unit_EventPolling, RemoveAcrossInlineSpillBoundary)
 /**
  * @brief Out-of-range remove_at is a no-op, and removing the tail needs no move.
  */
-TEST(Unit_EventPolling, RemoveAtEdgeCases)
+TEST(Small_EventPolling, RemoveAtEdgeCases)
 {
     EventPolling::ActiveEventList list;
     list.push({sycl::event{}, tag(10), true});

@@ -39,7 +39,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the spec keeps the description and starts with a default stamp. */
-TEST(Unit_NodeSpec, KeepsItsDescription)
+TEST(Small_NodeSpec, KeepsItsDescription)
 {
     Detail::NodeDescription description;
     description.width = 7;

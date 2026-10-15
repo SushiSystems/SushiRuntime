@@ -40,7 +40,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that an untracked launch names its device and touches no region. */
-TEST(Unit_EmitUntracked, AnUntrackedLaunchNamesItsDevice)
+TEST(Medium_EmitUntracked, AnUntrackedLaunchNamesItsDevice)
 {
     auto runtime = Runtime::create().value();
     int* const data = Testing::shared_integers(runtime, 4, 0);
@@ -59,7 +59,7 @@ TEST(Unit_EmitUntracked, AnUntrackedLaunchNamesItsDevice)
 }
 
 /** @brief Tests the range and the raw forms: the width of the range, none for the raw. */
-TEST(Unit_EmitUntracked, RangeAndRawForms)
+TEST(Medium_EmitUntracked, RangeAndRawForms)
 {
     const Detail::NodeDescription range = Detail::untracked_range_node(
         8, 2, [](std::size_t, std::size_t, sycl::handler&) {});

@@ -38,7 +38,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that Coupled refers to the states it was given, in order. */
-TEST(Unit_Coupled, NamesTheStatesItWasGiven)
+TEST(Medium_Coupled, NamesTheStatesItWasGiven)
 {
     auto runtime = Runtime::create().value();
     auto out = runtime.state<int>(4).value();

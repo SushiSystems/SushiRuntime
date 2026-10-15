@@ -34,7 +34,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
 
 /** @brief Tests that clear() empties the boundary and leaves what the region baked. */
-TEST(Unit_RegionLink, ClearDropsTheBoundaryOnly)
+TEST(Small_RegionLink, ClearDropsTheBoundaryOnly)
 {
     RegionLink link;
     link.intra_in_degree = 2;

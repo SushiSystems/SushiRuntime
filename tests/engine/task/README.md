@@ -13,13 +13,13 @@ the owner of the first write region, else of the first read region, else the sta
 device 0. `modules/engine/scheduler/README.md` states the rule under "Queue selection", and the
 scheduler's `tests/engine/scheduler/test_task_scheduler.cpp` checks the queue a dispatch receives.
 
-### `Unit_NodePlacementState`
+### `Medium_NodePlacementState`
 
 The two tests need no allocator. `place_on()` stores an index and `stated_placement()` returns it;
 an index the 16-bit field cannot hold throws `ErrorCode::InvalidGraph` with the index in the message
 and leaves the earlier placement in force.
 
-### `Unit_NodePlacementRule`
+### `Medium_NodePlacementRule`
 
 The fixture holds a `USMAllocator` over two queues on the device SYCL selects by default, so device
 indices 0 and 1 both exist. No test allocates device memory: `adopt()` records a host address as
@@ -32,7 +32,7 @@ assignment from another vector or from a `std::vector`, and `clear()`. The event
 default-constructed. Each one has its own state, so `==` tells two of them apart and a copy of
 one compares equal to it; the tests rely on that.
 
-### `Unit_SmallEventVector`
+### `Small_SmallEventVector`
 
 Each test compares `to_vector()` with the list it built. The assignment tests cover a list that
 fits the inline buffer, one that spills past it, one that shrinks the vector, and the vector's own
@@ -46,7 +46,7 @@ The file covers the operation hash of `OperationID` and the parameter slots of
 program from compiling; they cover two names the repository uses, one name with a byte above 127,
 and the unsigned-byte rule the hash applies.
 
-### `Unit_TaskTypes`
+### `Small_TaskTypes`
 
 One test stores a value in the first and the last parameter slot and reads each back as its type.
 

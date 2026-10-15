@@ -41,7 +41,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
 
 /** @brief Tests that a successor becomes ready when its last predecessor completes. */
-TEST(Unit_Node, ASuccessorIsReadyAfterItsLastPredecessor)
+TEST(Small_Node, ASuccessorIsReadyAfterItsLastPredecessor)
 {
     const sushi_ptr<Node> first = make_sushi<Node>();
     const sushi_ptr<Node> second = make_sushi<Node>();
@@ -60,7 +60,7 @@ TEST(Unit_Node, ASuccessorIsReadyAfterItsLastPredecessor)
 }
 
 /** @brief Tests that successors past the inline capacity are kept and each visited once. */
-TEST(Unit_Node, SuccessorsPastTheInlineCapacityAreKept)
+TEST(Small_Node, SuccessorsPastTheInlineCapacityAreKept)
 {
     constexpr std::size_t K_SUCCESSORS = Node::K_MAX_INLINE_SUCCESSORS + 5;
     const sushi_ptr<Node> source = make_sushi<Node>();
@@ -78,7 +78,7 @@ TEST(Unit_Node, SuccessorsPastTheInlineCapacityAreKept)
 }
 
 /** @brief Tests arm_in_degree(): the intra and the boundary counts add up. */
-TEST(Unit_Node, ArmingAddsTheIntraAndBoundaryCounts)
+TEST(Small_Node, ArmingAddsTheIntraAndBoundaryCounts)
 {
     Node node;
     node.region.intra_in_degree = 2;
@@ -88,7 +88,7 @@ TEST(Unit_Node, ArmingAddsTheIntraAndBoundaryCounts)
 }
 
 /** @brief Tests that placement is unstated until place_on(), and the offload state is made once. */
-TEST(Unit_Node, PlacementAndOffloadStateStartEmpty)
+TEST(Small_Node, PlacementAndOffloadStateStartEmpty)
 {
     Node node;
     EXPECT_FALSE(node.stated_placement().has_value());

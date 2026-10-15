@@ -41,7 +41,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that a fixed count is its own live value, and a host count calls its provider. */
-TEST(Unit_LateCountResolution, HostCountsResolveOnTheHost)
+TEST(Small_LateCountResolution, HostCountsResolveOnTheHost)
 {
     const Detail::LiveCountSource fixed = Detail::late_count_source(LateCount::fixed(6), nullptr);
     EXPECT_EQ(Detail::read_live_count(fixed, nullptr), 6u);
@@ -52,7 +52,7 @@ TEST(Unit_LateCountResolution, HostCountsResolveOnTheHost)
 }
 
 /** @brief Tests that a host count above the capacity is recorded as a fault and resolves to zero. */
-TEST(Unit_LateCountResolution, AHostCountAboveTheCapacityResolvesToZero)
+TEST(Small_LateCountResolution, AHostCountAboveTheCapacityResolvesToZero)
 {
     std::uint32_t fault[Detail::K_DEVICE_FAULT_WORDS] = {};
     const Detail::LiveCountSource source =

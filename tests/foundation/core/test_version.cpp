@@ -38,13 +38,13 @@ using SushiRuntime::Version;
 
 namespace
 {
-    TEST(Unit_Version, TheTestProgramMatchesTheLibraryItLoaded)
+    TEST(Small_Version, TheTestProgramMatchesTheLibraryItLoaded)
     {
         EXPECT_TRUE(SushiRuntime::version_matches());
         SushiRuntime::require_matching_version();
     }
 
-    TEST(Unit_Version, TheHeaderMacrosAndTheLibraryReportOneVersion)
+    TEST(Small_Version, TheHeaderMacrosAndTheLibraryReportOneVersion)
     {
         const Version loaded = SushiRuntime::runtime_version();
 
@@ -54,12 +54,12 @@ namespace
         EXPECT_STREQ(SushiRuntime::runtime_version_string(), SUSHIRUNTIME_VERSION_STRING);
     }
 
-    TEST(Unit_Version, APatchDifferenceIsAMatch)
+    TEST(Small_Version, APatchDifferenceIsAMatch)
     {
         SushiRuntime::Detail::require_same_release(Version{0, 4, 0}, Version{0, 4, 7});
     }
 
-    TEST(Unit_VersionDeathTest, AnOlderLibraryStopsWithBothVersions)
+    TEST(Medium_VersionDeathTest, AnOlderLibraryStopsWithBothVersions)
     {
         EXPECT_DEATH(
             SushiRuntime::Detail::require_same_release(Version{0, 4, 0}, Version{0, 3, 2}),
@@ -67,7 +67,7 @@ namespace
             "sushiruntime shared library is earlier on the loader path");
     }
 
-    TEST(Unit_VersionDeathTest, ANewerLibraryStopsAndIsCalledNewer)
+    TEST(Medium_VersionDeathTest, ANewerLibraryStopsAndIsCalledNewer)
     {
         EXPECT_DEATH(
             SushiRuntime::Detail::require_same_release(Version{0, 4, 0}, Version{0, 5, 1}),

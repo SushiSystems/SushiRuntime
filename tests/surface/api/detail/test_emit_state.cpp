@@ -98,7 +98,7 @@ namespace
 } // namespace
 
 /** @brief Tests that a coupled rule with const inputs computes from both States it reads. */
-TEST(Integration_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
+TEST(Medium_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
 {
     auto rt = Runtime::create().value();
     auto out = seeded_state(rt);
@@ -123,7 +123,7 @@ TEST(Integration_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
 }
 
 /** @brief Tests that State, coupled and untracked nodes report the width of their launch. */
-TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWidth)
+TEST(Medium_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWidth)
 {
     auto rt = Runtime::create().value();
     auto whole = seeded_state(rt);
@@ -156,7 +156,7 @@ TEST(Integration_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWi
 }
 
 /** @brief Tests the State emitter over a launch, added outside a recorder. */
-TEST(Integration_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
+TEST(Medium_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);
@@ -174,7 +174,7 @@ TEST(Integration_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
 }
 
 /** @brief Tests the coupled emitter over a launch, added outside a recorder. */
-TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
+TEST(Medium_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
 {
     auto rt = Runtime::create().value();
     auto out = seeded_state(rt);
@@ -193,7 +193,7 @@ TEST(Integration_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
 }
 
 /** @brief Tests the late-bound State emitter, added outside a recorder. */
-TEST(Integration_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow)
+TEST(Medium_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow)
 {
     auto rt = Runtime::create().value();
     auto field = seeded_state(rt);

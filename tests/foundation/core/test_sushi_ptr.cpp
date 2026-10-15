@@ -74,7 +74,7 @@ static_assert(std::is_nothrow_constructible_v<sushi_ptr<Probe>, Probe*>,
  * Compares an owner with its own raw pointer and with another object's raw pointer, using const
  * and non-const pointers.
  */
-TEST(Unit_SushiPtrTest, RawPointerComparisonKeepsCount)
+TEST(Small_SushiPtrTest, RawPointerComparisonKeepsCount)
 {
     int destroyed = 0;
     auto owner = make_sushi<Probe>(destroyed);
@@ -104,7 +104,7 @@ TEST(Unit_SushiPtrTest, RawPointerComparisonKeepsCount)
  * Compares a base-type smart pointer with a derived-type one in both orders and asserts the count
  * does not change.
  */
-TEST(Unit_SushiPtrTest, BaseTypeComparisonKeepsCount)
+TEST(Small_SushiPtrTest, BaseTypeComparisonKeepsCount)
 {
     int destroyed = 0;
     auto derived = make_sushi<DerivedProbe>(destroyed);
@@ -123,7 +123,7 @@ TEST(Unit_SushiPtrTest, BaseTypeComparisonKeepsCount)
  *
  * Compares an empty and a non-empty smart pointer with nullptr and with a null raw pointer.
  */
-TEST(Unit_SushiPtrTest, NullComparisonsAreUnambiguous)
+TEST(Small_SushiPtrTest, NullComparisonsAreUnambiguous)
 {
     int destroyed = 0;
     sushi_ptr<Probe> empty;
@@ -144,7 +144,7 @@ TEST(Unit_SushiPtrTest, NullComparisonsAreUnambiguous)
  * Assigns a smart pointer to itself through a reference alias, copying then moving, so the
  * compiler does not warn about a direct self-assignment.
  */
-TEST(Unit_SushiPtrTest, SelfAssignmentKeepsObject)
+TEST(Small_SushiPtrTest, SelfAssignmentKeepsObject)
 {
     int destroyed = 0;
     auto owner = make_sushi<Probe>(destroyed);
@@ -167,7 +167,7 @@ TEST(Unit_SushiPtrTest, SelfAssignmentKeepsObject)
  * Resets one owner to another owner's object, then to null, and checks which object is destroyed
  * at each step.
  */
-TEST(Unit_SushiPtrTest, ResetReleasesOldAndTakesNew)
+TEST(Small_SushiPtrTest, ResetReleasesOldAndTakesNew)
 {
     int destroyed = 0;
     auto first = make_sushi<Probe>(destroyed);
@@ -190,7 +190,7 @@ TEST(Unit_SushiPtrTest, ResetReleasesOldAndTakesNew)
  * Leaks a smart pointer, adopts the raw pointer into a new smart pointer, and releases the
  * caller's reference last so the object is destroyed once.
  */
-TEST(Unit_SushiPtrTest, LeakRoundTripHandsReferenceBack)
+TEST(Small_SushiPtrTest, LeakRoundTripHandsReferenceBack)
 {
     int destroyed = 0;
     auto owner = make_sushi<Probe>(destroyed);

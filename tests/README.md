@@ -27,20 +27,30 @@ The code the tests of several modules share is in internal modules that only the
 One function, `sushiruntime_add_test_program` in `cmake/SushiRuntimeTests.cmake`, builds every
 program, so each is linked, placed and registered the same way.
 
-## Labels
+## Sizes
 
-A test gets its CTest label from the prefix of its GoogleTest suite name, never from a folder.
+A test's size is its CTest label, taken from the prefix of its GoogleTest suite name, never from
+a folder. Every `sr_<module>_tests` program and `sr_api_allocation_tests` registers the three
+prefixes; `cmake/SushiRuntimeTests.cmake` sets the label and the time limit. A suite with no
+size prefix would register no test, so `cmake/CheckTestSizes.cmake` fails the build of its
+program.
 
-| Suite prefix | Label | Registered by | Time limit |
+| Suite prefix | Label | The test may use | Time limit |
 | --- | --- | --- | --- |
-| `Unit_` | `unit` | every `sr_<module>_tests` and `sr_api_allocation_tests` | 120 seconds |
-| `Integration_` | `integration` | the same programs | 120 seconds |
-| `Regression_` | `regression` | the same programs | 120 seconds |
-| `Stress_` | `stress` | every `sr_<module>_benchmarks` | 900 seconds |
-| `Performance_` | `performance` | every `sr_<module>_benchmarks` | 900 seconds |
+| `Small_` | `small` | One thread; no SYCL queue or context, no sleep, no file, no child process | 60 seconds |
+| `Medium_` | `medium` | Threads, a death test's child process, localhost, a SYCL CPU device | 300 seconds |
+| `Large_` | `large` | A real GPU; the test skips when none is present | 900 seconds |
 
-The two `Package.*` tests are plain CTest tests and carry the label `package`.
-`sr test --suite functional` runs the labels `unit`, `integration` and `regression`.
+An intermittent test is quarantined by naming it in `SR_QUARANTINED_TESTS` in
+`cmake/SushiRuntimeTests.cmake`, with an entry in `docs/reference/KNOWN_ISSUES.md`. It keeps its
+size and gains the label `quarantined`.
+
+`sr test --label <label>` runs one label; `sr test` with no label runs the three sizes. Every run
+but `--label quarantined` leaves the quarantined tests out. They run in the nightly workflow,
+where they never gate. The two `Package.*` tests are plain CTest tests and carry the label
+`package`.
+
+The `sr_<module>_benchmarks` programs are not registered with CTest. `sr bench` runs them.
 
 ## Source comments
 

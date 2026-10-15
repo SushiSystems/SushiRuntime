@@ -38,7 +38,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that In reads, Out writes, and both point at the buffer they name. */
-TEST(Unit_Captures, EachCaptureNamesItsBuffer)
+TEST(Medium_Captures, EachCaptureNamesItsBuffer)
 {
     auto runtime = Runtime::create().value();
     auto in = runtime.buffer<int>(4).value();
@@ -54,7 +54,7 @@ TEST(Unit_Captures, EachCaptureNamesItsBuffer)
 }
 
 /** @brief Tests that InOut both reads and writes. */
-TEST(Unit_Captures, InOutReadsAndWrites)
+TEST(Medium_Captures, InOutReadsAndWrites)
 {
     static_assert(InOut<float>::reads && InOut<float>::writes, "InOut reads and writes");
     SUCCEED();

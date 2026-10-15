@@ -36,7 +36,7 @@
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that a set variable is returned and an unset one is nothing. */
-TEST(Unit_EnvironmentTest, ReadsASetVariableAndReportsAnUnsetOne)
+TEST(Medium_EnvironmentTest, ReadsASetVariableAndReportsAnUnsetOne)
 {
     const std::optional<std::string> path = read_environment("PATH");
     ASSERT_TRUE(path.has_value());

@@ -37,7 +37,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the surface share and the engine share name one binding and one owner. */
-TEST(Unit_LateControlsAccess, BothSharesNameOneBinding)
+TEST(Small_LateControlsAccess, BothSharesNameOneBinding)
 {
     const auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     const std::shared_ptr<Detail::LateControls> controls = Detail::surface_controls(bindings);
@@ -51,7 +51,7 @@ TEST(Unit_LateControlsAccess, BothSharesNameOneBinding)
 }
 
 /** @brief Tests that null converts to null. */
-TEST(Unit_LateControlsAccess, NullStaysNull)
+TEST(Small_LateControlsAccess, NullStaysNull)
 {
     EXPECT_EQ(Detail::surface_controls(nullptr), nullptr);
     EXPECT_EQ(Detail::engine_controls(std::shared_ptr<Detail::LateControls>()), nullptr);

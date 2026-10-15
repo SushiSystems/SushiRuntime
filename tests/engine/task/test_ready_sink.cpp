@@ -36,7 +36,7 @@
 using namespace SushiRuntime::Internal::Scheduler;
 
 /** @brief Tests that the sink is a vector of task pointers that keeps their order. */
-TEST(Unit_ReadySink, IsAnOrderedListOfTasks)
+TEST(Small_ReadySink, IsAnOrderedListOfTasks)
 {
     static_assert(std::is_same_v<ReadySink, std::vector<Task*>>, "the sink is a vector of tasks");
     ReadySink sink;

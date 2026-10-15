@@ -41,7 +41,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the kernel reads one capture and writes the other at each index. */
-TEST(Unit_EmitCaptured, TheKernelReceivesEachPointer)
+TEST(Medium_EmitCaptured, TheKernelReceivesEachPointer)
 {
     constexpr std::size_t K_COUNT = 8;
     auto runtime = Runtime::create().value();

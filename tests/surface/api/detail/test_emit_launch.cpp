@@ -46,7 +46,7 @@ namespace
 } // namespace
 
 /** @brief Tests that a rank-1 reach is origin plus size, and SIZE_MAX when that sum wraps. */
-TEST(Integration_LaunchReach, ReachSaturatesAtTheLargestSize)
+TEST(Medium_LaunchReach, ReachSaturatesAtTheLargestSize)
 {
     const sycl::range<1> size(K_WIDTH);
     const Extent<1> inside{size, sycl::id<1>(16)};
@@ -60,7 +60,7 @@ TEST(Integration_LaunchReach, ReachSaturatesAtTheLargestSize)
 }
 
 /** @brief Tests that an Extent whose end wraps past SIZE_MAX is refused where add() is called. */
-TEST(Integration_LaunchReach, AnExtentWhoseEndWrapsIsRefusedAtAdd)
+TEST(Medium_LaunchReach, AnExtentWhoseEndWrapsIsRefusedAtAdd)
 {
     auto rt = Runtime::create().value();
     auto field = rt.state<Word>(K_WIDTH).value();

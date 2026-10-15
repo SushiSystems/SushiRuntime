@@ -286,7 +286,7 @@ flags 0 and the payload it was sent.
 
 ### `SealedRegistryStopsARegistration`, `EmptyKernelStopsTheRegistration`
 
-Finding QC-37. `Unit_KernelRegistryDeathTest` needs no queue: its kernel returns a default event
+Finding QC-37. `Medium_KernelRegistryDeathTest` needs no queue: its kernel returns a default event
 and is never called. After `seal()`, called twice, `register_kernel` must stop the process for a
 new operation and for one already registered, and the registry must hold what it held. A
 default-constructed `Kernel` must stop it on an open registry and on a sealed one, with the
@@ -304,7 +304,7 @@ handshake proofs it feeds are tested in `tests/extension/link_security/`.
 ## test_tcp_transport.cpp
 
 The file pins the `Transport` contract as `transport.hpp` writes it and needs no hardware. The
-suite `Unit_TransportConformanceTest` is typed over two rigs, so each test runs once over TCP on
+suite `Medium_TransportConformanceTest` is typed over two rigs, so each test runs once over TCP on
 `127.0.0.1` with port 0 and once on an `InProcessFabric`, the reference that `TCPTransport` must
 match. The tests wait on recorded events with a 10 s limit and never on a sleep.
 
@@ -384,7 +384,7 @@ of the next connection then runs on the same exec thread.
 
 ## test_worker_main.cpp
 
-The five exit-code tests of `Integration_WorkerMainTest` call `run_worker()` against a master
+The five exit-code tests of `Medium_WorkerMainTest` call `run_worker()` against a master
 listening with `TCPTransport::make_master()` on a port the OS chooses, through `ServedWorker`, which
 runs the worker on a thread of its own with an empty secret and reconnecting off. `FakeMaster` is a
 `TransportEvents` on the master endpoint that plays the frames of one script: reject for

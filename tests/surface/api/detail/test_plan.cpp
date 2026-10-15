@@ -39,7 +39,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the name is a class type held by pointer. */
-TEST(Unit_Plan, IsHeldByPointerOnly)
+TEST(Small_Plan, IsHeldByPointerOnly)
 {
     const Detail::Plan* plan = nullptr;
     static_assert(std::is_class_v<Detail::Plan>, "the name is a class type");

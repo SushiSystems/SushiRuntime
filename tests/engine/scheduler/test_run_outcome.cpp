@@ -38,7 +38,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Scheduler;
 
 /** @brief Tests that the first recorded failure is kept and a later one is not. */
-TEST(Unit_RunOutcome, TheFirstFailureWins)
+TEST(Small_RunOutcome, TheFirstFailureWins)
 {
     RunOutcome outcome;
     EXPECT_FALSE(outcome.has_failed());
@@ -56,7 +56,7 @@ TEST(Unit_RunOutcome, TheFirstFailureWins)
 }
 
 /** @brief Tests that cancellation aborts on its own and clears on its own. */
-TEST(Unit_RunOutcome, CancellationAbortsWithoutAFailure)
+TEST(Small_RunOutcome, CancellationAbortsWithoutAFailure)
 {
     RunOutcome outcome;
     outcome.cancel();

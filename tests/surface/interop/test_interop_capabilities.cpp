@@ -37,7 +37,7 @@ using SushiRuntime::ExternalHandleKind;
 using SushiRuntime::ExternalMemoryDescriptor;
 using SushiRuntime::InteropCapabilities;
 
-TEST(Unit_InteropVocabulary, UUIDsCompareByEveryByte)
+TEST(Small_InteropVocabulary, UUIDsCompareByEveryByte)
 {
     DeviceUUID left;
     DeviceUUID right;
@@ -54,7 +54,7 @@ TEST(Unit_InteropVocabulary, UUIDsCompareByEveryByte)
     EXPECT_TRUE(left != right);
 }
 
-TEST(Unit_InteropVocabulary, DefaultCapabilitiesOfferNothing)
+TEST(Small_InteropVocabulary, DefaultCapabilitiesOfferNothing)
 {
     InteropCapabilities capabilities;
 
@@ -63,7 +63,7 @@ TEST(Unit_InteropVocabulary, DefaultCapabilitiesOfferNothing)
     EXPECT_FALSE(capabilities.device_uuid.has_value());
 }
 
-TEST(Unit_InteropVocabulary, ADefaultDescriptorStatesNoHandleKind)
+TEST(Small_InteropVocabulary, ADefaultDescriptorStatesNoHandleKind)
 {
     ExternalMemoryDescriptor descriptor;
 

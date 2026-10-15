@@ -40,7 +40,7 @@ using namespace SushiRuntime::Test;
 constexpr double K_TOLERANCE = 0.0;
 
 /** @brief Tests the median of an odd and an even count, and the extremes. */
-TEST(Unit_Measurement, SummaryTakesTheMiddleAndTheExtremes)
+TEST(Small_Measurement, SummaryTakesTheMiddleAndTheExtremes)
 {
     const RunStatistics odd = summarize({5.0, 1.0, 3.0});
     EXPECT_NEAR(odd.median, 3.0, K_TOLERANCE);
@@ -53,7 +53,7 @@ TEST(Unit_Measurement, SummaryTakesTheMiddleAndTheExtremes)
 }
 
 /** @brief Tests that no sample gives an empty summary. */
-TEST(Unit_Measurement, NoSampleGivesAnEmptySummary)
+TEST(Small_Measurement, NoSampleGivesAnEmptySummary)
 {
     const RunStatistics empty = summarize({});
     EXPECT_EQ(empty.run_count, 0u);
@@ -61,7 +61,7 @@ TEST(Unit_Measurement, NoSampleGivesAnEmptySummary)
 }
 
 /** @brief Tests that measure() calls the run the number of times asked. */
-TEST(Unit_Measurement, MeasureCallsTheRunEachTime)
+TEST(Small_Measurement, MeasureCallsTheRunEachTime)
 {
     std::size_t calls = 0;
     const RunStatistics statistics = measure([&calls] { return static_cast<double>(++calls); }, 3);
@@ -71,7 +71,7 @@ TEST(Unit_Measurement, MeasureCallsTheRunEachTime)
 }
 
 /** @brief Tests that the line starts with the prefix and carries every key. */
-TEST(Unit_Measurement, TheLineCarriesEveryKey)
+TEST(Small_Measurement, TheLineCarriesEveryKey)
 {
     MeasurementLabel label;
     label.benchmark = "graph";

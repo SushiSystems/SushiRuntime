@@ -20,7 +20,7 @@ sr build
 sr test
 ```
 
-`sr setup` installs what `cli/sushistack.deps.toml` declares: hwloc and a SYCL toolchain. `sr build` makes a release build in `build/`, and `sr test` runs the functional suite.
+`sr setup` installs what `cli/sushistack.deps.toml` declares: hwloc and a SYCL toolchain. `sr build` makes a release build in `build/`, and `sr test` runs the small, medium and large tests.
 The root [README](../../README.md#requirements) lists the requirements and the script that
 installs everything on an empty machine. [The CLI guide](../guides/CLI_GUIDE.md) lists every
 command.

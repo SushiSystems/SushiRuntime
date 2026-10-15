@@ -56,7 +56,7 @@ namespace
     }
 }
 
-TEST(Unit_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
+TEST(Medium_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
 {
     USMRegistry registry;
     registry.record(fake(1), 3, K_EXTENT);
@@ -66,7 +66,7 @@ TEST(Unit_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
     EXPECT_EQ(*owner, 3u);
 }
 
-TEST(Unit_UsmRegistry, AnUnrecordedPointerHasNoOwner)
+TEST(Medium_UsmRegistry, AnUnrecordedPointerHasNoOwner)
 {
     USMRegistry registry;
     registry.record(fake(1), 0, K_EXTENT);
@@ -75,7 +75,7 @@ TEST(Unit_UsmRegistry, AnUnrecordedPointerHasNoOwner)
     EXPECT_FALSE(registry.owner_of(nullptr).has_value());
 }
 
-TEST(Unit_UsmRegistry, TakeReportsTheOwnerAndForgetsThePointer)
+TEST(Medium_UsmRegistry, TakeReportsTheOwnerAndForgetsThePointer)
 {
     USMRegistry registry;
     registry.record(fake(1), 2, K_EXTENT);
@@ -89,7 +89,7 @@ TEST(Unit_UsmRegistry, TakeReportsTheOwnerAndForgetsThePointer)
     EXPECT_FALSE(registry.owner_of(fake(1)).has_value());
 }
 
-TEST(Unit_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
+TEST(Medium_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
 {
     // Recording a pointer twice keeps the last writer; see README.md.
     USMRegistry registry;
@@ -101,7 +101,7 @@ TEST(Unit_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
     EXPECT_EQ(*owner, 4u);
 }
 
-TEST(Unit_UsmRegistry, SizeCountsLiveEntries)
+TEST(Medium_UsmRegistry, SizeCountsLiveEntries)
 {
     USMRegistry registry;
     EXPECT_EQ(registry.size(), 0u);
@@ -114,7 +114,7 @@ TEST(Unit_UsmRegistry, SizeCountsLiveEntries)
     EXPECT_EQ(registry.size(), 1u);
 }
 
-TEST(Unit_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
+TEST(Medium_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
 {
     // Every pointer recorded here is taken exactly once, by exactly one thread; see README.md.
     constexpr int THREADS = 8;
@@ -148,7 +148,7 @@ TEST(Unit_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
     EXPECT_EQ(registry.size(), 0u);
 }
 
-TEST(Unit_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
+TEST(Medium_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
 {
     // The caller passes an interior address the base-keyed table cannot find; see README.md.
     USMRegistry registry;
@@ -165,7 +165,7 @@ TEST(Unit_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
     EXPECT_FALSE(registry.containing_allocation(inside(1, K_EXTENT)).has_value());
 }
 
-TEST(Unit_UsmRegistry, ContainingAllocationIgnoresAnUnrelatedPointer)
+TEST(Medium_UsmRegistry, ContainingAllocationIgnoresAnUnrelatedPointer)
 {
     USMRegistry registry;
     registry.record(fake(1), 0, K_EXTENT);
@@ -174,7 +174,7 @@ TEST(Unit_UsmRegistry, ContainingAllocationIgnoresAnUnrelatedPointer)
     EXPECT_FALSE(registry.containing_allocation(nullptr).has_value());
 }
 
-TEST(Unit_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
+TEST(Medium_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
 {
     // An entry without a length resolves only at its base; see README.md.
     USMRegistry registry;
@@ -186,7 +186,7 @@ TEST(Unit_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
     EXPECT_FALSE(registry.containing_allocation(inside(1, 8)).has_value());
 }
 
-TEST(Unit_UsmRegistry, ContainingAllocationForgetsATakenPointer)
+TEST(Medium_UsmRegistry, ContainingAllocationForgetsATakenPointer)
 {
     USMRegistry registry;
     registry.record(fake(1), 0, K_EXTENT);

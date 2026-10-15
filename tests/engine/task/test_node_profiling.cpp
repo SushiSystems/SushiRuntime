@@ -34,7 +34,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
 
 /** @brief Tests that the counters start at zero and accumulate. */
-TEST(Unit_NodeProfiling, CountersStartAtZeroAndAccumulate)
+TEST(Small_NodeProfiling, CountersStartAtZeroAndAccumulate)
 {
     NodeProfiling profiling;
     EXPECT_EQ(profiling.invocations.load(), 0u);

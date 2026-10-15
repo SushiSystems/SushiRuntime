@@ -74,7 +74,7 @@ namespace
 }
 
 /** @brief Tests that two kernels on one device's memory chain in order. */
-TEST(Unit_ChainPlan, KernelsOnOneDeviceChainInOrder)
+TEST(Medium_ChainPlan, KernelsOnOneDeviceChainInOrder)
 {
     const auto context = SushiRuntime::Test::make_context();
     int* const value = shared_integer(*context);
@@ -97,7 +97,7 @@ TEST(Unit_ChainPlan, KernelsOnOneDeviceChainInOrder)
 }
 
 /** @brief Tests that a host node, and a node on memory no device owns, keep the plan off the chain. */
-TEST(Unit_ChainPlan, AHostNodeOrForeignMemoryKeepsThePlanOff)
+TEST(Medium_ChainPlan, AHostNodeOrForeignMemoryKeepsThePlanOff)
 {
     const auto context = SushiRuntime::Test::make_context();
     TaskGraph host_graph;

@@ -43,7 +43,7 @@ using namespace SushiRuntime;
 /**
  * @brief An exported host region is aligned and rounded to the requested alignment.
  */
-TEST(Integration_InteropHostExport, AlignsAndRoundsTheRegion)
+TEST(Medium_InteropHostExport, AlignsAndRoundsTheRegion)
 {
     auto runtime = Runtime::create().value();
     auto shared = runtime.interop().export_host<std::uint32_t>(1000, DeviceIndex{0}, 4096).value();
@@ -56,7 +56,7 @@ TEST(Integration_InteropHostExport, AlignsAndRoundsTheRegion)
 /**
  * @brief The USM registry routes the exported address back to its owning device.
  */
-TEST(Integration_InteropHostExport, TheRegistryRoutesTheExportedAddress)
+TEST(Medium_InteropHostExport, TheRegistryRoutesTheExportedAddress)
 {
     auto runtime = Runtime::create().value();
     auto shared = runtime.interop().export_host<float>(16, DeviceIndex{0}, 4096).value();
@@ -68,7 +68,7 @@ TEST(Integration_InteropHostExport, TheRegistryRoutesTheExportedAddress)
 /**
  * @brief A kernel writing through the exported buffer is visible from the host.
  */
-TEST(Integration_InteropHostExport, AKernelWritesWhatTheHostReads)
+TEST(Medium_InteropHostExport, AKernelWritesWhatTheHostReads)
 {
     auto runtime = Runtime::create().value();
     auto shared = runtime.interop().export_host<std::uint32_t>(257, DeviceIndex{0}, 4096).value();
@@ -84,7 +84,7 @@ TEST(Integration_InteropHostExport, AKernelWritesWhatTheHostReads)
 /**
  * @brief Importing on a queue without the bindless extension returns Unsupported.
  */
-TEST(Integration_InteropHostExport, ImportOnAQueueWithoutTheExtensionReturnsUnsupported)
+TEST(Medium_InteropHostExport, ImportOnAQueueWithoutTheExtensionReturnsUnsupported)
 {
     auto runtime = Runtime::create().value();
     auto interop = runtime.interop();
@@ -99,7 +99,7 @@ TEST(Integration_InteropHostExport, ImportOnAQueueWithoutTheExtensionReturnsUnsu
 /**
  * @brief An alignment that is not a power of two stops the process.
  */
-TEST(Integration_InteropHostExportDeathTest, AnAlignmentThatIsNotAPowerOfTwoStops)
+TEST(Medium_InteropHostExportDeathTest, AnAlignmentThatIsNotAPowerOfTwoStops)
 {
     auto runtime = Runtime::create().value();
 
@@ -111,7 +111,7 @@ TEST(Integration_InteropHostExportDeathTest, AnAlignmentThatIsNotAPowerOfTwoStop
 /**
  * @brief A byte size that overflows when rounded up to the alignment stops the process.
  */
-TEST(Integration_InteropHostExportDeathTest, ASizeThatOverflowsWhenRoundedStops)
+TEST(Medium_InteropHostExportDeathTest, ASizeThatOverflowsWhenRoundedStops)
 {
     auto runtime = Runtime::create().value();
     const std::size_t most = std::numeric_limits<std::size_t>::max();
@@ -124,7 +124,7 @@ TEST(Integration_InteropHostExportDeathTest, ASizeThatOverflowsWhenRoundedStops)
 /**
  * @brief An export no device can hold returns AllocationFailed and leaves the runtime usable.
  */
-TEST(Integration_InteropHostExport, AnExportNoDeviceCanSatisfyReturnsAllocationFailed)
+TEST(Medium_InteropHostExport, AnExportNoDeviceCanSatisfyReturnsAllocationFailed)
 {
     auto runtime = Runtime::create().value();
     // Half the address space in bytes: it rounds without overflow and no device has the room.

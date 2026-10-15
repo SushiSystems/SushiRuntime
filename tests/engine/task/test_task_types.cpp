@@ -66,7 +66,7 @@ static_assert("vec.add"_op == OperationID(0xE8523F28u));
 static_assert(OperationID::hash("caf\xC3\xA9", 5) == 0xA82B5049u);
 static_assert(OperationID::hash("caf\xC3\xA9", 5) == reference_fnv1a("caf\xC3\xA9", 5));
 
-TEST(Unit_TaskTypes, AParameterSlotReturnsTheValueStoredInIt)
+TEST(Small_TaskTypes, AParameterSlotReturnsTheValueStoredInIt)
 {
     TaskMetadata metadata;
     metadata.set_param(0, std::uint64_t{0x0123456789ABCDEFu});

@@ -40,7 +40,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the fields of the description and that its work runs once. */
-TEST(Unit_EmitHost, AHostNodeRunsItsFunction)
+TEST(Medium_EmitHost, AHostNodeRunsItsFunction)
 {
     auto runtime = Runtime::create().value();
     int calls = 0;

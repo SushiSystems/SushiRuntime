@@ -98,7 +98,7 @@ namespace
 
 } // namespace
 
-TEST(Unit_DeviceQueueSet, CountAndInventoryFollowTheDescriptors)
+TEST(Medium_DeviceQueueSet, CountAndInventoryFollowTheDescriptors)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -122,7 +122,7 @@ TEST(Unit_DeviceQueueSet, CountAndInventoryFollowTheDescriptors)
     }
 }
 
-TEST(Unit_DeviceQueueSet, TheSetNumbersDevicesByPosition)
+TEST(Medium_DeviceQueueSet, TheSetNumbersDevicesByPosition)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -136,7 +136,7 @@ TEST(Unit_DeviceQueueSet, TheSetNumbersDevicesByPosition)
     EXPECT_EQ(set.devices()[1].index, 1u);
 }
 
-TEST(Unit_DeviceQueueSet, PlainQueueIsOneObjectOnItsDevice)
+TEST(Medium_DeviceQueueSet, PlainQueueIsOneObjectOnItsDevice)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -161,7 +161,7 @@ TEST(Unit_DeviceQueueSet, PlainQueueIsOneObjectOnItsDevice)
     }
 }
 
-TEST(Unit_DeviceQueueSet, EachFlavourIsBuiltOnceWithThePropertiesAsked)
+TEST(Medium_DeviceQueueSet, EachFlavourIsBuiltOnceWithThePropertiesAsked)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -190,7 +190,7 @@ TEST(Unit_DeviceQueueSet, EachFlavourIsBuiltOnceWithThePropertiesAsked)
     EXPECT_NE(built[3], &plain);
 }
 
-TEST(Unit_DeviceQueueSet, HasProfilingQueueTurnsTrueWhenOneIsBuilt)
+TEST(Medium_DeviceQueueSet, HasProfilingQueueTurnsTrueWhenOneIsBuilt)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -211,7 +211,7 @@ TEST(Unit_DeviceQueueSet, HasProfilingQueueTurnsTrueWhenOneIsBuilt)
     EXPECT_FALSE(set.has_profiling_queue(set.count()));
 }
 
-TEST(Unit_DeviceQueueSet, AProfilingSetBuildsEveryPlainQueueWithProfiling)
+TEST(Medium_DeviceQueueSet, AProfilingSetBuildsEveryPlainQueueWithProfiling)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -227,7 +227,7 @@ TEST(Unit_DeviceQueueSet, AProfilingSetBuildsEveryPlainQueueWithProfiling)
     }
 }
 
-TEST(Unit_DeviceQueueSet, DeviceForNUMAReturnsTheFirstDeviceOfTheNode)
+TEST(Medium_DeviceQueueSet, DeviceForNUMAReturnsTheFirstDeviceOfTheNode)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -238,7 +238,7 @@ TEST(Unit_DeviceQueueSet, DeviceForNUMAReturnsTheFirstDeviceOfTheNode)
     EXPECT_EQ(set.device_for_numa(2), 0u);
 }
 
-TEST(Unit_DeviceQueueSet, DeviceForNUMAFallsBackToDeviceZeroWhereNoDeviceSits)
+TEST(Medium_DeviceQueueSet, DeviceForNUMAFallsBackToDeviceZeroWhereNoDeviceSits)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -251,7 +251,7 @@ TEST(Unit_DeviceQueueSet, DeviceForNUMAFallsBackToDeviceZeroWhereNoDeviceSits)
     EXPECT_EQ(set.device_for_numa(-5), 0u);
 }
 
-TEST(Unit_DeviceQueueSet, AnInvalidNUMAIDInADescriptorBecomesNodeZero)
+TEST(Medium_DeviceQueueSet, AnInvalidNUMAIDInADescriptorBecomesNodeZero)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -264,7 +264,7 @@ TEST(Unit_DeviceQueueSet, AnInvalidNUMAIDInADescriptorBecomesNodeZero)
     EXPECT_EQ(set.device_for_numa(0), 1u);
 }
 
-TEST(Unit_DeviceQueueSet, QueueOrNUMALocalReturnsTheNamedDevice)
+TEST(Medium_DeviceQueueSet, QueueOrNUMALocalReturnsTheNamedDevice)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -275,7 +275,7 @@ TEST(Unit_DeviceQueueSet, QueueOrNUMALocalReturnsTheNamedDevice)
     EXPECT_EQ(&set.queue_or_numa_local(0, 2), &set.queue(0));
 }
 
-TEST(Unit_DeviceQueueSet, QueueOrNUMALocalRotatesOverTheDevicesOfTheNode)
+TEST(Medium_DeviceQueueSet, QueueOrNUMALocalRotatesOverTheDevicesOfTheNode)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -302,7 +302,7 @@ TEST(Unit_DeviceQueueSet, QueueOrNUMALocalRotatesOverTheDevicesOfTheNode)
     EXPECT_EQ(off_node, expected_off_node);
 }
 
-TEST(Unit_DeviceQueueSetDeathTest, ABadIndexStopsNamingIndexAndCount)
+TEST(Medium_DeviceQueueSetDeathTest, ABadIndexStopsNamingIndexAndCount)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -318,14 +318,14 @@ TEST(Unit_DeviceQueueSetDeathTest, ABadIndexStopsNamingIndexAndCount)
     EXPECT_DEATH(static_cast<void>(set.queue(set.count())), "Device index 2 is out of bounds");
 }
 
-TEST(Unit_DeviceQueueSetDeathTest, AnIndexIntoAnEmptySetStops)
+TEST(Medium_DeviceQueueSetDeathTest, AnIndexIntoAnEmptySetStops)
 {
     DeviceQueueSet set({}, false);
 
     EXPECT_DEATH(static_cast<void>(set.queue(0)), "the set holds 0 device");
 }
 
-TEST(Unit_DeviceQueueSet, AnEmptySetHoldsNothingAndResolvesNoNUMANode)
+TEST(Medium_DeviceQueueSet, AnEmptySetHoldsNothingAndResolvesNoNUMANode)
 {
     DeviceQueueSet set({}, false);
 
@@ -337,7 +337,7 @@ TEST(Unit_DeviceQueueSet, AnEmptySetHoldsNothingAndResolvesNoNUMANode)
     EXPECT_TRUE(set.raise_asynchronous_errors().has_value());
 }
 
-TEST(Unit_DeviceQueueSetDeathTest, ANUMALookupOnAnEmptySetStops)
+TEST(Medium_DeviceQueueSetDeathTest, ANUMALookupOnAnEmptySetStops)
 {
     DeviceQueueSet set({}, false);
     const char* const pattern = "The device set holds no device";
@@ -346,7 +346,7 @@ TEST(Unit_DeviceQueueSetDeathTest, ANUMALookupOnAnEmptySetStops)
     EXPECT_DEATH(static_cast<void>(set.queue_or_numa_local(std::nullopt, 0)), pattern);
 }
 
-TEST(Unit_DeviceQueueSet, WaitAllReturnsAfterAKernelOnALazilyBuiltQueueFinished)
+TEST(Medium_DeviceQueueSet, WaitAllReturnsAfterAKernelOnALazilyBuiltQueueFinished)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";

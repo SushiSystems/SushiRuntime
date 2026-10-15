@@ -51,18 +51,18 @@ namespace
     static_assert(!std::is_convertible_v<std::size_t, DeviceID>,
                   "A raw integer must not convert implicitly to StrongID.");
 
-    TEST(Unit_StrongId, DefaultIsZero)
+    TEST(Small_StrongId, DefaultIsZero)
     {
         EXPECT_EQ(DeviceID{}.value(), std::size_t{0});
     }
 
-    TEST(Unit_StrongId, ExplicitConstructionKeepsValue)
+    TEST(Small_StrongId, ExplicitConstructionKeepsValue)
     {
         const DeviceID id{7};
         EXPECT_EQ(id.value(), std::size_t{7});
     }
 
-    TEST(Unit_StrongId, EqualityComparesValues)
+    TEST(Small_StrongId, EqualityComparesValues)
     {
         EXPECT_TRUE(DeviceID{3} == DeviceID{3});
         EXPECT_FALSE(DeviceID{3} != DeviceID{3});
@@ -70,14 +70,14 @@ namespace
         EXPECT_FALSE(DeviceID{3} == DeviceID{4});
     }
 
-    TEST(Unit_StrongId, OrderingFollowsValues)
+    TEST(Small_StrongId, OrderingFollowsValues)
     {
         EXPECT_TRUE(DeviceID{1} < DeviceID{2});
         EXPECT_FALSE(DeviceID{2} < DeviceID{2});
         EXPECT_FALSE(DeviceID{3} < DeviceID{2});
     }
 
-    TEST(Unit_StrongId, UsableAsUnorderedMapKey)
+    TEST(Small_StrongId, UsableAsUnorderedMapKey)
     {
         std::unordered_map<DeviceID, int> names;
         names[DeviceID{5}] = 50;
@@ -87,7 +87,7 @@ namespace
         EXPECT_EQ(names.count(DeviceID{0}), 0u);
     }
 
-    TEST(Unit_StrongId, UsableAsOrderedMapKey)
+    TEST(Small_StrongId, UsableAsOrderedMapKey)
     {
         std::map<DeviceID, int> ordered;
         ordered[DeviceID{9}] = 90;
@@ -100,7 +100,7 @@ namespace
         EXPECT_EQ(keys, (std::vector<std::size_t>{2, 5, 9}));
     }
 
-    TEST(Unit_StrongId, HashForwardsToRepresentation)
+    TEST(Small_StrongId, HashForwardsToRepresentation)
     {
         EXPECT_EQ(std::hash<DeviceID>{}(DeviceID{42}), std::hash<std::size_t>{}(42));
     }

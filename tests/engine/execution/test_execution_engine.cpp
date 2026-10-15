@@ -146,20 +146,20 @@ namespace
     }
 } // namespace
 
-TEST(Unit_RunInProgress, TheInterfaceDefaultReportsNoRun)
+TEST(Medium_RunInProgress, TheInterfaceDefaultReportsNoRun)
 {
     const MinimalEngine engine;
     EXPECT_FALSE(engine.run_in_progress());
 }
 
-TEST(Integration_RunInProgress, AFreshEngineReportsNoRun)
+TEST(Medium_RunInProgress, AFreshEngineReportsNoRun)
 {
     const auto context_owner = SushiRuntime::Test::make_context();
     RuntimeContext& context = *context_owner;
     EXPECT_FALSE(context.execution_engine().run_in_progress());
 }
 
-TEST(Integration_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
+TEST(Medium_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
 {
     const auto context_owner = SushiRuntime::Test::make_context();
     RuntimeContext& context = *context_owner;
@@ -178,7 +178,7 @@ TEST(Integration_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
     EXPECT_FALSE(engine.run_in_progress());
 }
 
-TEST(Integration_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturns)
+TEST(Medium_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturns)
 {
     const auto context_owner = SushiRuntime::Test::make_context();
     RuntimeContext& context = *context_owner;
@@ -198,7 +198,7 @@ TEST(Integration_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturn
     EXPECT_FALSE(engine.run_in_progress());
 }
 
-TEST(Integration_RunInProgress, ARunWhoseTaskThrowsReturnsKernelFailedAndLeavesNoRunInProgress)
+TEST(Medium_RunInProgress, ARunWhoseTaskThrowsReturnsKernelFailedAndLeavesNoRunInProgress)
 {
     const auto context_owner = SushiRuntime::Test::make_context();
     RuntimeContext& context = *context_owner;
@@ -222,7 +222,7 @@ TEST(Integration_RunInProgress, ARunWhoseTaskThrowsReturnsKernelFailedAndLeavesN
     EXPECT_FALSE(engine.run_in_progress());
 }
 
-TEST(Integration_RunInProgress, AChainedRunIsInProgressUntilFinishReturnsOrItIsDestroyed)
+TEST(Medium_RunInProgress, AChainedRunIsInProgressUntilFinishReturnsOrItIsDestroyed)
 {
     constexpr std::size_t COUNT = 64;
 
@@ -254,7 +254,7 @@ TEST(Integration_RunInProgress, AChainedRunIsInProgressUntilFinishReturnsOrItIsD
     EXPECT_FALSE(engine.run_in_progress()) << "the destructor left the run showing";
 }
 
-TEST(Integration_RunInProgress, AScheduledRunInsideAChainedRunLeavesTheChainedRunShowing)
+TEST(Medium_RunInProgress, AScheduledRunInsideAChainedRunLeavesTheChainedRunShowing)
 {
     constexpr std::size_t COUNT = 64;
 

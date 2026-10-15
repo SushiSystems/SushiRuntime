@@ -355,7 +355,7 @@ namespace
 } // namespace
 
 /** @brief Tests that a Graph reports a throwing host task as KernelFailed from every entry. */
-TEST(Integration_RunDriver, GraphReportsAThrowingHostTaskAsKernelFailed)
+TEST(Medium_RunDriver, GraphReportsAThrowingHostTaskAsKernelFailed)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -367,7 +367,7 @@ TEST(Integration_RunDriver, GraphReportsAThrowingHostTaskAsKernelFailed)
 }
 
 /** @brief Tests that a DynamicGraph reports a throwing host task the way a Graph does. */
-TEST(Integration_RunDriver, DynamicGraphReportsAThrowingHostTaskAsKernelFailed)
+TEST(Medium_RunDriver, DynamicGraphReportsAThrowingHostTaskAsKernelFailed)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -379,7 +379,7 @@ TEST(Integration_RunDriver, DynamicGraphReportsAThrowingHostTaskAsKernelFailed)
 }
 
 /** @brief Tests that an exception thrown while the plan is built is CompileFailed. */
-TEST(Integration_RunDriver, AThrowingBuildIsCompileFailed)
+TEST(Medium_RunDriver, AThrowingBuildIsCompileFailed)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -401,7 +401,7 @@ TEST(Integration_RunDriver, AThrowingBuildIsCompileFailed)
 }
 
 /** @brief Tests that both graph types run through every run entry. */
-TEST(Integration_RunDriver, EveryTryEntryRunsOnBothGraphs)
+TEST(Medium_RunDriver, EveryTryEntryRunsOnBothGraphs)
 {
     constexpr int STEPS_OF_ALL_ENTRIES = 12;
 
@@ -425,7 +425,7 @@ TEST(Integration_RunDriver, EveryTryEntryRunsOnBothGraphs)
 }
 
 /** @brief Tests that a run refused for the graph's state reports InvalidState. */
-TEST(Integration_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
+TEST(Medium_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -459,7 +459,7 @@ TEST(Integration_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 }
 
 /** @brief Tests that set_profiling() chains and is read back on both graph types. */
-TEST(Integration_RunDriver, SetProfilingChainsAndReadsBack)
+TEST(Medium_RunDriver, SetProfilingChainsAndReadsBack)
 {
     auto rt = Runtime::create().value();
 
@@ -475,7 +475,7 @@ TEST(Integration_RunDriver, SetProfilingChainsAndReadsBack)
 }
 
 /** @brief Tests that set_profiling() with the value already stored rebuilds no plan. */
-TEST(Integration_RunDriver, SettingTheSameProfilingValueRebuildsNothing)
+TEST(Medium_RunDriver, SettingTheSameProfilingValueRebuildsNothing)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -501,7 +501,7 @@ TEST(Integration_RunDriver, SettingTheSameProfilingValueRebuildsNothing)
 }
 
 /** @brief Tests that a profiling toggle on a DynamicGraph composes once and times its nodes. */
-TEST(Integration_RunDriver, AProfilingToggleOnADynamicGraphComposesOnceAndTimesItsNodes)
+TEST(Medium_RunDriver, AProfilingToggleOnADynamicGraphComposesOnceAndTimesItsNodes)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -529,7 +529,7 @@ TEST(Integration_RunDriver, AProfilingToggleOnADynamicGraphComposesOnceAndTimesI
 }
 
 /** @brief Tests that moving a graph with a pending step ends the step and frees both sides. */
-TEST(Integration_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
+TEST(Medium_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
 {
 #ifndef NDEBUG
     GTEST_SKIP() << "a debug build asserts on this move; the release result is tested";
@@ -565,7 +565,7 @@ TEST(Integration_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
 }
 
 /** @brief Tests that a report counts the dispatches a coordinator took during its own run. */
-TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
+TEST(Medium_RunDriver, OffloadedCountIsOfThisRun)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -597,7 +597,7 @@ TEST(Integration_RunDriver, OffloadedCountIsOfThisRun)
 }
 
 /** @brief Tests that a failed chained run of one step advances no State. */
-TEST(Integration_RunDriver, AFailedChainedRunOfOneStepAdvancesNoState)
+TEST(Medium_RunDriver, AFailedChainedRunOfOneStepAdvancesNoState)
 {
     auto rt = Runtime::create().value();
     if (!counted_step_runs_chained(rt))
@@ -615,7 +615,7 @@ TEST(Integration_RunDriver, AFailedChainedRunOfOneStepAdvancesNoState)
 }
 
 /** @brief Tests that a failed chained run of three steps advances the two before the last. */
-TEST(Integration_RunDriver, AFailedChainedRunOfSeveralStepsAdvancesAllButTheLast)
+TEST(Medium_RunDriver, AFailedChainedRunOfSeveralStepsAdvancesAllButTheLast)
 {
     constexpr std::size_t STEPS = 3;
 
@@ -634,14 +634,14 @@ TEST(Integration_RunDriver, AFailedChainedRunOfSeveralStepsAdvancesAllButTheLast
 }
 
 /** @brief Tests that a budget the clock cannot hold runs until cancelled, not for one step. */
-TEST(Integration_RunDriver, ABudgetPastTheClocksRangeRunsUntilCancelled)
+TEST(Medium_RunDriver, ABudgetPastTheClocksRangeRunsUntilCancelled)
 {
     expect_run_for_lasts_until_cancelled(std::chrono::hours::max());
     expect_run_for_lasts_until_cancelled(std::chrono::nanoseconds::max());
 }
 
 /** @brief Tests that step hooks feed eight replays of one Graph plan, in the order added. */
-TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfOnePlan)
+TEST(Medium_RunDriver, AStepHookFeedsEveryReplayOfOnePlan)
 {
     constexpr std::size_t K_STEPS = 8;
     constexpr std::uint32_t K_BASE = 100;
@@ -686,7 +686,7 @@ TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfOnePlan)
 }
 
 /** @brief Tests that a step hook feeds eight replays of one DynamicGraph plan. */
-TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfADynamicGraph)
+TEST(Medium_RunDriver, AStepHookFeedsEveryReplayOfADynamicGraph)
 {
     constexpr std::size_t K_STEPS = 8;
     constexpr std::uint32_t K_BASE = 100;
@@ -719,7 +719,7 @@ TEST(Integration_RunDriver, AStepHookFeedsEveryReplayOfADynamicGraph)
 }
 
 /** @brief Tests that a moved graph keeps its step hooks and its source has none. */
-TEST(Integration_RunDriver, AStepHookMovesWithItsGraph)
+TEST(Medium_RunDriver, AStepHookMovesWithItsGraph)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -740,7 +740,7 @@ TEST(Integration_RunDriver, AStepHookMovesWithItsGraph)
 }
 
 /** @brief Tests that a hook too large for the inline storage is held and called. */
-TEST(Integration_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
+TEST(Medium_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -763,7 +763,7 @@ TEST(Integration_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
  * @brief Tests that an error SYCL reports only through its asynchronous handler fails the run on
  *        both layers; see README.md.
  */
-TEST(Integration_RunDriver, AnErrorOnlyTheAsynchronousHandlerSeesFailsTheRunOnBothLayers)
+TEST(Medium_RunDriver, AnErrorOnlyTheAsynchronousHandlerSeesFailsTheRunOnBothLayers)
 {
     for (const bool force_scheduler : {false, true})
     {

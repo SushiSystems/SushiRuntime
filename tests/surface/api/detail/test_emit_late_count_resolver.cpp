@@ -41,7 +41,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that a fixed and a host count reach the fill as their live values. */
-TEST(Unit_EmitLateCountResolver, TheFillReceivesTheLiveCounts)
+TEST(Medium_EmitLateCountResolver, TheFillReceivesTheLiveCounts)
 {
     auto runtime = Runtime::create().value();
     int* const out = Testing::shared_integers(runtime, 2, -1);

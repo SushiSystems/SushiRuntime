@@ -201,7 +201,7 @@ namespace OffloadDispatcherTests
          * @brief Builds a dispatcher over a registry, a directory with one worker, a pending
          *        table and a recording transport, and restores the logger a test changed.
          */
-        class Unit_OffloadDispatcherTest : public ::testing::Test
+        class Medium_OffloadDispatcherTest : public ::testing::Test
         {
             protected:
                 /** @brief Registers the worker and shares two of the three buffers. */
@@ -318,7 +318,7 @@ namespace OffloadDispatcherTests
     } // namespace
 
     /** @brief Tests that a node at the attempt cap is declined and offered again next run. */
-    TEST_F(Unit_OffloadDispatcherTest, AttemptCapDeclinesWithoutClearingOffloadable)
+    TEST_F(Medium_OffloadDispatcherTest, AttemptCapDeclinesWithoutClearingOffloadable)
     {
         const sushi_ptr<Internal::Graph::Node> node =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
@@ -350,7 +350,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a send the transport refuses leaves no task, no load and a false. */
-    TEST_F(Unit_OffloadDispatcherTest, RefusedSendUndoesThePendingEntry)
+    TEST_F(Medium_OffloadDispatcherTest, RefusedSendUndoesThePendingEntry)
     {
         const sushi_ptr<Internal::Graph::Node> node =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
@@ -377,7 +377,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that nothing is dispatched once the pending table and the directory closed. */
-    TEST_F(Unit_OffloadDispatcherTest, StoppedCoordinatorDeclines)
+    TEST_F(Medium_OffloadDispatcherTest, StoppedCoordinatorDeclines)
     {
         const sushi_ptr<Internal::Graph::Node> node =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
@@ -400,7 +400,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a double-buffered node dispatches and settles its live lists. */
-    TEST_F(Unit_OffloadDispatcherTest, DynamicNodeResolvesItsLiveLists)
+    TEST_F(Medium_OffloadDispatcherTest, DynamicNodeResolvesItsLiveLists)
     {
         const sushi_ptr<Internal::Graph::Node> node =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
@@ -453,7 +453,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that one prepare() that leaves op-tagged nodes local logs one WARN. */
-    TEST_F(Unit_OffloadDispatcherTest, PrepareWarnsOnceForLocalOnlyOps)
+    TEST_F(Medium_OffloadDispatcherTest, PrepareWarnsOnceForLocalOnlyOps)
     {
         std::vector<std::string> warnings;
         std::vector<std::string>* const sink_target = &warnings;
@@ -491,7 +491,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a node that stays local raises only the shared buffers it writes. */
-    TEST_F(Unit_OffloadDispatcherTest, LocalNodeBumpsOnlyItsSharedWrites)
+    TEST_F(Medium_OffloadDispatcherTest, LocalNodeBumpsOnlyItsSharedWrites)
     {
         const sushi_ptr<Internal::Graph::Node> writer =
             fixed_node(OperationID(0), unshared_.data(), second_.data());
@@ -512,7 +512,7 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a node whose writes name one buffer twice stays local and is counted. */
-    TEST_F(Unit_OffloadDispatcherTest, NodeThatWritesOneBufferTwiceStaysLocal)
+    TEST_F(Medium_OffloadDispatcherTest, NodeThatWritesOneBufferTwiceStaysLocal)
     {
         std::vector<std::string> warnings;
         std::vector<std::string>* const sink_target = &warnings;

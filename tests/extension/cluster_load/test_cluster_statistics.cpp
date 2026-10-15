@@ -34,7 +34,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that the statistics of a cluster with no worker are zero. */
-TEST(Unit_ClusterStatistics, StartAtZero)
+TEST(Medium_ClusterStatistics, StartAtZero)
 {
     const ClusterStatistics statistics;
     EXPECT_EQ(statistics.alive_workers, 0u);

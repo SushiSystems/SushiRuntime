@@ -161,7 +161,7 @@ namespace BufferExchangeTests
         }
     } // namespace
 
-    TEST(Unit_BufferExchangeTest, ChunkedRoundTrip)
+    TEST(Medium_BufferExchangeTest, ChunkedRoundTrip)
     {
         for (const std::size_t size : K_BOUNDARY_SIZES)
         {
@@ -225,7 +225,7 @@ namespace BufferExchangeTests
         }
     }
 
-    TEST(Unit_BufferExchangeTest, EveryStreamEndsWithALastChunk)
+    TEST(Medium_BufferExchangeTest, EveryStreamEndsWithALastChunk)
     {
         for (const std::size_t size : K_BOUNDARY_SIZES)
         {
@@ -256,7 +256,7 @@ namespace BufferExchangeTests
         }
     }
 
-    TEST(Unit_BufferExchangeTest, ForgedVersionFenced)
+    TEST(Medium_BufferExchangeTest, ForgedVersionFenced)
     {
         const std::size_t size = 2 * K_CHUNK_BYTES;
         const Bytes untouched = guarded_pattern(size, 23);
@@ -292,7 +292,7 @@ namespace BufferExchangeTests
         EXPECT_EQ(statistics.chunks_received, 1u);
     }
 
-    TEST(Unit_BufferExchangeTest, GapDiscardsTransfer)
+    TEST(Medium_BufferExchangeTest, GapDiscardsTransfer)
     {
         const std::size_t size = 3 * K_CHUNK_BYTES + 7;
         const Bytes payload = guarded_pattern(size, 5);
@@ -317,7 +317,7 @@ namespace BufferExchangeTests
         EXPECT_EQ(destination, payload);
     }
 
-    TEST(Unit_BufferExchangeTest, DuplicateChunkDiscardsTransfer)
+    TEST(Medium_BufferExchangeTest, DuplicateChunkDiscardsTransfer)
     {
         const std::size_t size = 3 * K_CHUNK_BYTES;
         const Bytes payload = guarded_pattern(size, 3);
@@ -335,7 +335,7 @@ namespace BufferExchangeTests
         EXPECT_EQ(exchange.statistics().chunks_received, 2u);
     }
 
-    TEST(Unit_BufferExchangeTest, ReleaseDuringStreamAborts)
+    TEST(Medium_BufferExchangeTest, ReleaseDuringStreamAborts)
     {
         const std::size_t size = 3 * K_CHUNK_BYTES;
         std::unique_ptr<std::byte[]> storage = std::make_unique<std::byte[]>(size);
@@ -372,7 +372,7 @@ namespace BufferExchangeTests
         EXPECT_EQ(statistics.transfers_aborted, 2u);
     }
 
-    TEST(Unit_BufferExchangeTest, StaleVersionAbortsThePull)
+    TEST(Medium_BufferExchangeTest, StaleVersionAbortsThePull)
     {
         const std::size_t size = 3 * K_CHUNK_BYTES;
         Bytes source = guarded_pattern(size, 13);
@@ -403,7 +403,7 @@ namespace BufferExchangeTests
         EXPECT_EQ(statistics.transfers_aborted, 2u);
     }
 
-    TEST(Unit_BufferExchangeTest, MalformedChunkIsRefusedBeforeAnyWrite)
+    TEST(Medium_BufferExchangeTest, MalformedChunkIsRefusedBeforeAnyWrite)
     {
         const std::size_t size = 2 * K_CHUNK_BYTES;
         const Bytes untouched = guarded_pattern(size, 17);
@@ -433,7 +433,7 @@ namespace BufferExchangeTests
         EXPECT_EQ(exchange.statistics().chunks_received, 0u);
     }
 
-    TEST(Unit_BufferExchangeTest, ForgottenTaskStartsOver)
+    TEST(Medium_BufferExchangeTest, ForgottenTaskStartsOver)
     {
         const std::size_t size = 2 * K_CHUNK_BYTES;
         const Bytes payload = guarded_pattern(size, 31);

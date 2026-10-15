@@ -40,7 +40,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the index type each launch form passes its kernel. */
-TEST(Unit_CallableChecks, EachLaunchTakesItsIndex)
+TEST(Small_CallableChecks, EachLaunchTakesItsIndex)
 {
     const auto by_count = [](std::size_t) {};
     const auto by_id = [](sycl::id<2>) {};

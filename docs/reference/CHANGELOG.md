@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-15 — cli: Breaking change: Replaced `sr test --suite` with `--label` over the sizes, left the quarantined tests out of every other run, and added `sr bench` for the benchmark programs (`cli.py`, `project.py`).
+- 2026-10-15 — tests: Sized every test small, medium or large by its suite prefix, with a 60, 300 or 900 second limit, and failed the build of an unsized suite (`SushiRuntimeTests.cmake`, `CheckTestSizes.cmake`).
+- 2026-10-15 — tests: Quarantined a test by name beside its size, and stopped registering the benchmark programs with CTest (`SR_QUARANTINED_TESTS`, `SushiRuntimeTests.cmake`).
 - 2026-10-15 — cmake: Kept FMA contraction off for the IntelLLVM GNU-frontend build of SR_DETERMINISTIC_FP, where -fp-model=precise had turned it back on (`Determinism.cmake`).
 - 2026-10-14 — tools: Reported a test that includes a private header under `source/` (`check_test_mirror.py`, `rule_private_include`).
 - 2026-10-14 — api: Resolved a host LateCount above its capacity to zero, as the device path does, so the fill runs and no dependent kernel reads an unset bound (`late_count_resolution.hpp`).

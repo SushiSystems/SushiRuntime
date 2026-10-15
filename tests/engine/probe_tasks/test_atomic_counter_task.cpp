@@ -41,7 +41,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Test;
 
 /** @brief Tests that each run adds one, and the task is a host task that does not split. */
-TEST(Unit_AtomicCounterTask, EachRunAddsOne)
+TEST(Medium_AtomicCounterTask, EachRunAddsOne)
 {
     std::atomic<std::size_t> counter{0};
     AtomicCounterTask task(counter);

@@ -38,7 +38,7 @@ using namespace SushiRuntime;
 using SushiRuntime::Internal::Device::DeviceDescriptor;
 
 /** @brief Tests that a descriptor keeps the device and the description it was given. */
-TEST(Unit_DeviceDescriptor, KeepsTheDeviceAndItsDescription)
+TEST(Medium_DeviceDescriptor, KeepsTheDeviceAndItsDescription)
 {
     if (sycl::device::get_devices().empty())
         GTEST_SKIP() << "no SYCL device";

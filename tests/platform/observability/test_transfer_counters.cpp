@@ -51,7 +51,7 @@ namespace
     constexpr int K_ADDS_PER_THREAD = 1000;
 } // namespace
 
-TEST(Unit_TransferCounters, BothCountersStartAtZero)
+TEST(Medium_TransferCounters, BothCountersStartAtZero)
 {
     TransferCounters counters;
 
@@ -59,7 +59,7 @@ TEST(Unit_TransferCounters, BothCountersStartAtZero)
     EXPECT_EQ(counters.host_to_device(), 0u);
 }
 
-TEST(Unit_TransferCounters, AddDeviceToHostRaisesOnlyItsCounter)
+TEST(Medium_TransferCounters, AddDeviceToHostRaisesOnlyItsCounter)
 {
     TransferCounters counters;
 
@@ -69,7 +69,7 @@ TEST(Unit_TransferCounters, AddDeviceToHostRaisesOnlyItsCounter)
     EXPECT_EQ(counters.host_to_device(), 0u);
 }
 
-TEST(Unit_TransferCounters, AddHostToDeviceRaisesOnlyItsCounter)
+TEST(Medium_TransferCounters, AddHostToDeviceRaisesOnlyItsCounter)
 {
     TransferCounters counters;
 
@@ -79,7 +79,7 @@ TEST(Unit_TransferCounters, AddHostToDeviceRaisesOnlyItsCounter)
     EXPECT_EQ(counters.device_to_host(), 0u);
 }
 
-TEST(Unit_TransferCounters, RepeatedAddsAccumulate)
+TEST(Medium_TransferCounters, RepeatedAddsAccumulate)
 {
     TransferCounters counters;
 
@@ -92,7 +92,7 @@ TEST(Unit_TransferCounters, RepeatedAddsAccumulate)
     EXPECT_EQ(counters.host_to_device(), 8u);
 }
 
-TEST(Unit_TransferCounters, ConcurrentAddsGiveExactTotals)
+TEST(Medium_TransferCounters, ConcurrentAddsGiveExactTotals)
 {
     // Every thread adds the fixed steps to both counters K_ADDS_PER_THREAD times.
     TransferCounters counters;

@@ -44,7 +44,7 @@ using namespace SushiRuntime;
 namespace FluentApiTests
 {
     /** @brief Tests that run() on a non-empty graph returns a successful, populated RunReport. */
-    TEST(Integration_FluentAPI, TryRunSuccessPath)
+    TEST(Medium_FluentAPI, TryRunSuccessPath)
     {
         constexpr std::size_t N = 64;
 
@@ -67,7 +67,7 @@ namespace FluentApiTests
     }
 
     /** @brief Tests the RunReport fields after a multi-step run. */
-    TEST(Integration_FluentAPI, RunReportFieldsAfterMultiStep)
+    TEST(Medium_FluentAPI, RunReportFieldsAfterMultiStep)
     {
         constexpr std::size_t N     = 32;
         constexpr std::size_t STEPS = 4;
@@ -93,7 +93,7 @@ namespace FluentApiTests
     }
 
     /** @brief Tests that run_for() with a very short budget runs at least one step. */
-    TEST(Integration_FluentAPI, RunForRunsAtLeastOneStep)
+    TEST(Medium_FluentAPI, RunForRunsAtLeastOneStep)
     {
         constexpr std::size_t N = 16;
 
@@ -114,7 +114,7 @@ namespace FluentApiTests
     }
 
     /** @brief Tests that run_for() with a 50 ms budget completes several steps. */
-    TEST(Integration_FluentAPI, RunForRunsMultipleStepsWithinBudget)
+    TEST(Medium_FluentAPI, RunForRunsMultipleStepsWithinBudget)
     {
         constexpr std::size_t N = 8;
 
@@ -137,7 +137,7 @@ namespace FluentApiTests
     }
 
     /** @brief Tests the add_untracked(kernel) overload whose callable takes a sycl::handler. */
-    TEST(Integration_FluentAPI, RawHandlerKernelAdd)
+    TEST(Medium_FluentAPI, RawHandlerKernelAdd)
     {
         constexpr std::size_t N = 128;
 
@@ -164,7 +164,7 @@ namespace FluentApiTests
     }
 
     /** @brief Tests the add_untracked(n, kernel) range kernel overload. */
-    TEST(Integration_FluentAPI, RangeKernelAdd)
+    TEST(Medium_FluentAPI, RangeKernelAdd)
     {
         constexpr std::size_t N = 64;
 
@@ -194,7 +194,7 @@ namespace FluentApiTests
      * @brief Tests that add(reads, writes, n, kernel) orders a writer before the reader that
      *        squares its values.
      */
-    TEST(Integration_FluentAPI, PointerTrackedAddOrdering)
+    TEST(Medium_FluentAPI, PointerTrackedAddOrdering)
     {
         constexpr std::size_t N = 32;
 
@@ -223,7 +223,7 @@ namespace FluentApiTests
     }
 
     /** @brief Tests that the tracked range-kernel overload is ordered after the writer. */
-    TEST(Integration_FluentAPI, TrackedRangeKernelOrdering)
+    TEST(Medium_FluentAPI, TrackedRangeKernelOrdering)
     {
         constexpr std::size_t N = 32;
 
@@ -253,7 +253,7 @@ namespace FluentApiTests
     }
 
     /** @brief Tests that the tracked raw-kernel overload is ordered after the writer. */
-    TEST(Integration_FluentAPI, TrackedRawKernelOrdering)
+    TEST(Medium_FluentAPI, TrackedRawKernelOrdering)
     {
         constexpr std::size_t N = 32;
 
@@ -284,7 +284,7 @@ namespace FluentApiTests
      * @brief Tests that the tracked NdRange overload is ordered after the writer and covers the whole
      *        global range.
      */
-    TEST(Integration_FluentAPI, TrackedNdRangeOrdering)
+    TEST(Medium_FluentAPI, TrackedNdRangeOrdering)
     {
         constexpr std::size_t N = 64;   // tiles by 16
 
@@ -315,7 +315,7 @@ namespace FluentApiTests
      * @brief Tests that two writers of disjoint halves stay unordered and a whole-buffer reader runs
      *        after both.
      */
-    TEST(Integration_FluentAPI, SubRegionDisjointWritesThenWholeRead)
+    TEST(Medium_FluentAPI, SubRegionDisjointWritesThenWholeRead)
     {
         constexpr std::size_t N = 64;
 
@@ -354,7 +354,7 @@ namespace FluentApiTests
     /**
      * @brief Tests that a standalone Buffer is allocated, seeded, used in a graph task and read back.
      */
-    TEST(Integration_FluentAPI, BufferAllocateUseAndReadBack)
+    TEST(Medium_FluentAPI, BufferAllocateUseAndReadBack)
     {
         constexpr std::size_t N = 256;
 
@@ -382,7 +382,7 @@ namespace FluentApiTests
     }
 
     // Buffer is move-only: the moved-from handle must become empty.
-    TEST(Integration_FluentAPI, BufferMoveLeavesSenderEmpty)
+    TEST(Medium_FluentAPI, BufferMoveLeavesSenderEmpty)
     {
         auto rt  = Runtime::create().value();
         auto buf = rt.buffer<int>(16).value();
@@ -396,7 +396,7 @@ namespace FluentApiTests
     }
 
     /** @brief Tests that Graph::size() tracks the number of add() calls. */
-    TEST(Integration_FluentAPI, GraphSizeTracksAdds)
+    TEST(Medium_FluentAPI, GraphSizeTracksAdds)
     {
         auto rt = Runtime::create().value();
         auto g  = rt.graph();
@@ -411,7 +411,7 @@ namespace FluentApiTests
     }
 
     /** @brief Tests that the context access and advanced() reach the same RuntimeContext. */
-    TEST(Integration_FluentAPI, ContextAccessorIsConsistent)
+    TEST(Medium_FluentAPI, ContextAccessorIsConsistent)
     {
         auto rt = Runtime::create().value();
         Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(rt);
@@ -422,7 +422,7 @@ namespace FluentApiTests
     }
 
     /** @brief Tests that run(0) returns immediately and reports no work. */
-    TEST(Integration_FluentAPI, RunZeroStepsIsNoOp)
+    TEST(Medium_FluentAPI, RunZeroStepsIsNoOp)
     {
         constexpr std::size_t N = 8;
 
@@ -450,7 +450,7 @@ namespace FluentHardeningTests
      * @brief Tests that add_untracked(Extent<2>, kernel) iterates the whole box and writes a row-major
      *        index.
      */
-    TEST(Integration_FluentHardening, Extent2DPerElementMap)
+    TEST(Medium_FluentHardening, Extent2DPerElementMap)
     {
         constexpr std::size_t W = 8, H = 6;
 
@@ -478,7 +478,7 @@ namespace FluentHardeningTests
      * @brief Tests that add_untracked(NdRange<2>, kernel) runs a tiled kernel that writes its
      *        global linear index.
      */
-    TEST(Integration_FluentHardening, NdRange2DTiledKernel)
+    TEST(Medium_FluentHardening, NdRange2DTiledKernel)
     {
         constexpr std::size_t W = 8, H = 8;   // tiles by 4x4
 
@@ -504,7 +504,7 @@ namespace FluentHardeningTests
     }
 
     /** @brief Tests that add_rule(Extent<2>, state, kernel) leaves S*y in row y after S steps. */
-    TEST(Integration_FluentHardening, State2DSteppedUpdate)
+    TEST(Medium_FluentHardening, State2DSteppedUpdate)
     {
         constexpr std::size_t W = 4, H = 4, S = 3;
 
@@ -532,7 +532,7 @@ namespace FluentHardeningTests
      * @brief Tests that add(out, in0, in1, kernel) computes next = cur + a + b from previous-step
      * data.
      */
-    TEST(Integration_FluentHardening, VariadicCoupledThreeInputs)
+    TEST(Medium_FluentHardening, VariadicCoupledThreeInputs)
     {
         constexpr std::size_t N = 32;
 
@@ -563,7 +563,7 @@ namespace FluentHardeningTests
     }
 
     /** @brief Tests that the Reads and Writes wrappers order a writer before a dependent reader. */
-    TEST(Integration_FluentHardening, ReadsWritesWrappersOrdering)
+    TEST(Medium_FluentHardening, ReadsWritesWrappersOrdering)
     {
         constexpr std::size_t N = 32;
 
@@ -587,7 +587,7 @@ namespace FluentHardeningTests
      * @brief Tests that In and Out captured arguments hand the kernel raw pointers and register the
      *        dependency.
      */
-    TEST(Integration_FluentHardening, InOutCapturedArguments)
+    TEST(Medium_FluentHardening, InOutCapturedArguments)
     {
         constexpr std::size_t N = 64;
 
@@ -610,7 +610,7 @@ namespace FluentHardeningTests
     }
 
     /** @brief Tests that an interior-only update leaves the one-cell border untouched. */
-    TEST(Integration_FluentHardening, InteriorOnlyHaloUpdate)
+    TEST(Medium_FluentHardening, InteriorOnlyHaloUpdate)
     {
         constexpr std::size_t W = 6, H = 6;
 
@@ -648,7 +648,7 @@ namespace FluentLifecycleTests
      *
      * One update rule increments every element by 1 each step. Verifies that the compiled plan is properly replayed and State is double-buffered so each step reads the previous field and writes the next one.
      */
-    TEST(Integration_FluentLifecycle, StateReplayIncrement)
+    TEST(Medium_FluentLifecycle, StateReplayIncrement)
     {
         constexpr std::size_t N     = 1024;
         constexpr std::size_t STEPS = 64;
@@ -678,7 +678,7 @@ namespace FluentLifecycleTests
      *
      * Verifies that the second run resets the node state the first run consumed, ensuring continuous execution.
      */
-    TEST(Integration_FluentLifecycle, ReplayAcrossCalls)
+    TEST(Medium_FluentLifecycle, ReplayAcrossCalls)
     {
         constexpr std::size_t N = 256;
 
@@ -705,7 +705,7 @@ namespace FluentLifecycleTests
      *
      * Checks its stop condition before each step using the State the previous step produced.
      */
-    TEST(Integration_FluentLifecycle, RunUntilStopsOnCondition)
+    TEST(Medium_FluentLifecycle, RunUntilStopsOnCondition)
     {
         constexpr std::size_t N = 64;
 
@@ -730,7 +730,7 @@ namespace FluentLifecycleTests
      *
      * Both rules read the previous step's data, verifying the advance-after-step rule rather than per-rule swapping.
      */
-    TEST(Integration_FluentLifecycle, CoupledFieldsAreJacobi)
+    TEST(Medium_FluentLifecycle, CoupledFieldsAreJacobi)
     {
         constexpr std::size_t N     = 128;
         constexpr std::size_t STEPS = 10;
@@ -766,7 +766,7 @@ namespace FluentLifecycleTests
      *
      * The next run recompiles with the added rule, and existing state continues from where it left off.
      */
-    TEST(Integration_FluentLifecycle, MutationRecompiles)
+    TEST(Medium_FluentLifecycle, MutationRecompiles)
     {
         constexpr std::size_t N = 128;
 
@@ -795,7 +795,7 @@ namespace FluentLifecycleTests
      *
      * The non-throwing run() channel reports an InvalidGraph error without throwing an exception.
      */
-    TEST(Integration_FluentLifecycle, EmptyGraphIsInvalid)
+    TEST(Medium_FluentLifecycle, EmptyGraphIsInvalid)
     {
         auto rt  = Runtime::create().value();
         auto sim = rt.graph();
@@ -812,7 +812,7 @@ namespace FluentLifecycleTests
      * the Buffer was freed returns a DanglingResource error through run() instead
      * of dispatching a kernel against released memory.
      */
-    TEST(Integration_FluentLifecycle, DanglingResourceIsReported)
+    TEST(Medium_FluentLifecycle, DanglingResourceIsReported)
     {
         constexpr std::size_t N = 64;
 

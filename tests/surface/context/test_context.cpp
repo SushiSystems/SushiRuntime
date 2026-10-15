@@ -36,7 +36,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the name is held by pointer and by shared pointer without a definition. */
-TEST(Unit_Context, IsHeldByPointerOnly)
+TEST(Small_Context, IsHeldByPointerOnly)
 {
     const Detail::Context* pointer = nullptr;
     const std::shared_ptr<Detail::Context> shared;

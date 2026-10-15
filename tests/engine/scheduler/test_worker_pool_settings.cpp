@@ -36,7 +36,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Scheduler;
 
 /** @brief Tests the defaults of the settings. */
-TEST(Unit_WorkerPoolSettings, DefaultsAskForOneWorkerPerCore)
+TEST(Medium_WorkerPoolSettings, DefaultsAskForOneWorkerPerCore)
 {
     const WorkerPoolSettings settings;
     EXPECT_EQ(settings.worker_count, 0u);

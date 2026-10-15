@@ -42,7 +42,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that every hook runs once per call, in the order added, with the count. */
-TEST(Unit_BeforeStepHooks, HooksRunInOrderWithTheCount)
+TEST(Medium_BeforeStepHooks, HooksRunInOrderWithTheCount)
 {
     std::vector<std::size_t> seen;
     std::array<char, 256> large{};

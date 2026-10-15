@@ -34,7 +34,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that as() returns the address typed, and a default view names nothing. */
-TEST(Unit_BufferView, AsTypesTheAddress)
+TEST(Medium_BufferView, AsTypesTheAddress)
 {
     float values[4] = {1.0f, 2.0f, 3.0f, 4.0f};
     const BufferView view{values, sizeof(values)};

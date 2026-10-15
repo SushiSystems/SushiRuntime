@@ -23,7 +23,7 @@ from sushiruntime.cli import app
 from sushiruntime.services import diag, project
 
 K_VISIBLE = [
-    "build", "clean", "config", "container build", "container run", "docs", "docs bundle",
+    "bench", "build", "clean", "config", "container build", "container run", "docs", "docs bundle",
     "doctor", "env", "link", "package", "run", "setup", "test", "toolchain", "unlink",
 ]
 K_GIT = (

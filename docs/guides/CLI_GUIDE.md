@@ -126,30 +126,28 @@ ThreadSanitizer is added to Debug and RelWithDebInfo builds outside Windows; see
 
 ## `sr test`
 
-Runs tests through CTest. `--suite` (`-s`) picks a group by label:
+Runs tests through CTest. `--label` (`-l`) picks one label:
 
 ```bash
-sr test                          # functional suite (the default)
-sr test --suite functional       # unit + regression + integration
-sr test --suite benchmark        # stress + performance
-sr test --suite all              # every test
-sr test --suite package          # install to a prefix, then build and run a consumer
+sr test                          # small, medium and large (the default)
+sr test --label small            # one size: small, medium or large
+sr test --label quarantined      # the intermittent tests KNOWN_ISSUES.md names
+sr test --label package          # install to a prefix, then build and run a consumer
 ```
 
-The suite values are `unit`, `regression`, `integration`, `functional` (those three), `stress`,
-`performance`, `benchmark` (those two), `package` and `all`.
+`tests/README.md` gives what each size may use and its time limit.
 
-The `package` suite checks the installed package from outside. It installs the built tree to a
+The `package` label checks the installed package from outside. It installs the built tree to a
 prefix, then configures, compiles and runs `tests/package/` against that prefix with nothing
 else on the path. A missing export, a leaked private flag or a header the install rule forgot
-fails there. It is slower than the functional suite because it configures and compiles a second
+fails there. It is slower than the sized tests because it configures and compiles a second
 CMake project.
 
 ```bash
-sr test --suite functional --filter 'Steal.*'   # only tests whose name matches the regex
+sr test --filter 'Steal.*'                       # only tests whose name matches the regex
 sr test --asan                                   # run the build-asan/ tree instead of build/
 sr test --distributed                            # run against a build made with --distributed
-sr test --module scheduler                       # the tests of one module, whatever their kind
+sr test --module scheduler                       # the tests of one module, whatever their size
 sr test --repeat 50                              # re-run each test up to 50 times, stop on the first failure
 ```
 
@@ -158,6 +156,16 @@ uses CTest's `--repeat until-fail`.
 
 For a GoogleTest option CTest does not expose, run the program with `sr run` and pass the
 option after `--`.
+
+## `sr bench`
+
+Runs every `sr_<module>_benchmarks` program in `build/tests/`, one after another. A benchmark
+measures and is not a test, so CTest does not register these programs.
+
+```bash
+sr bench                         # every benchmark program
+sr bench --filter 'Stress_*'     # passed to each program as --gtest_filter
+```
 
 ## `sr run`
 
@@ -240,7 +248,7 @@ when the old tree cannot be removed completely.
 The build tree must be configured, so run `sr build` first. When the tree has no
 `CPackConfig.cmake`, the archive step is skipped with a warning.
 
-`sr package` produces the package and does not check it. `sr test --suite package` checks it.
+`sr package` produces the package and does not check it. `sr test --label package` checks it.
 
 ## `sr container`
 

@@ -87,7 +87,7 @@ namespace
 }
 
 /** @brief Tests HMAC-SHA256 against test cases 1, 2, 3, 4, 6 and 7 of RFC 4231. */
-TEST(Unit_HmacSha256Test, HmacRfc4231Vectors)
+TEST(Medium_HmacSha256Test, HmacRfc4231Vectors)
 {
     EXPECT_EQ(to_hex(hmac_sha256(bytes_of(repeated(0x0b, 20)), bytes_of("Hi There"))),
               "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7");
@@ -110,7 +110,7 @@ TEST(Unit_HmacSha256Test, HmacRfc4231Vectors)
 }
 
 /** @brief Tests that the constant-time comparison sees a difference in any byte. */
-TEST(Unit_HmacSha256Test, EqualInConstantTimeSeesEveryByte)
+TEST(Medium_HmacSha256Test, EqualInConstantTimeSeesEveryByte)
 {
     const Sha256Digest digest = sha256(bytes_of("abc"));
     EXPECT_TRUE(equal_in_constant_time(digest, digest));

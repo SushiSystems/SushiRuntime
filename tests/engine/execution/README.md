@@ -73,7 +73,7 @@ forward progress, not speed.
 A real-hardware benchmark for NUMA-aware hierarchical stealing. It drives the scheduler with a
 large batch of host tasks and reports throughput and the split between local and remote
 steals. Locality exists only across real NUMA nodes, so the test skips on a single-node
-machine or under WSL; `Unit_NumaStealTest` holds the logic check.
+machine or under WSL; `Medium_NumaStealTest` holds the logic check.
 
 Locality is asserted only above 1000 steals. Below that the ratio means little, and a
 perfectly balanced drain can legitimately produce few steals.
@@ -88,7 +88,7 @@ The steal split is gathered while the workload is timed, so it reflects locality
 cores sit on separate NUMA nodes. On a single-socket machine the two synthetic nodes share one
 set of cores, and OpenMP and runtime worker threads contending for them drag the local
 fraction below the 0.5 bar with every toolchain; 0.46 to 0.48 was observed.
-`Unit_NumaStealTest` verifies the locality ordering deterministically, so the assertion made
+`Medium_NumaStealTest` verifies the locality ordering deterministically, so the assertion made
 during timing fires only on real multi-socket hardware.
 
 The gate benchmark for the deque-steal fast path, audit steal-1, and the global quiescence
@@ -178,7 +178,7 @@ one.
 A kernel dispatched on the profiling queue correctly dereferences a USM allocation made through the
 context of the plain queue. The shared context is usable, not only reported.
 
-`Unit_RuntimeContext` covers the queue a NUMA ID routes to and the USM records of `memory()`. The
+`Medium_RuntimeContext` covers the queue a NUMA ID routes to and the USM records of `memory()`. The
 invalid-NUMA fallbacks check that the context degrades without failing on bad input. Discovery and
 NUMA mapping alone are tested in `tests/platform/topology/`.
 

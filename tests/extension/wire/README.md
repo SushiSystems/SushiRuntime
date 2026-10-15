@@ -73,7 +73,7 @@ the count.
 
 | Test | What it proves |
 | --- | --- |
-| Malformed wire input | A frame's payload is decoded before its sender is trusted with anything else, so a decoder must refuse garbage without reading past the payload. The `Unit_WireCodecFuzz` suite feeds seeded damage to the decoders; under the ASan lane an out-of-bounds read fails the run. |
+| Malformed wire input | A frame's payload is decoded before its sender is trusted with anything else, so a decoder must refuse garbage without reading past the payload. The `Medium_WireCodecFuzz` suite feeds seeded damage to the decoders; under the ASan lane an out-of-bounds read fails the run. |
 
 ### `TaskResultRefusesACountItCannotHold`
 

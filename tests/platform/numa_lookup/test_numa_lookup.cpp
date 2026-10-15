@@ -78,7 +78,7 @@ namespace
     };
 } // namespace
 
-TEST(Unit_NumaLookup, EveryPuOfATwoNodeMachineMapsToItsOwnNode)
+TEST(Small_NumaLookup, EveryPuOfATwoNodeMachineMapsToItsOwnNode)
 {
     const SyntheticTopology machine("NUMANode:2 Core:2 PU:1");
     ASSERT_NE(machine.get(), nullptr);
@@ -96,7 +96,7 @@ TEST(Unit_NumaLookup, EveryPuOfATwoNodeMachineMapsToItsOwnNode)
     }
 }
 
-TEST(Unit_NumaLookup, ANUMANodeIsLocalToItself)
+TEST(Small_NumaLookup, ANUMANodeIsLocalToItself)
 {
     const SyntheticTopology machine("NUMANode:2 Core:2 PU:1");
     ASSERT_NE(machine.get(), nullptr);
@@ -109,7 +109,7 @@ TEST(Unit_NumaLookup, ANUMANodeIsLocalToItself)
     EXPECT_EQ(*node, second_node->os_index);
 }
 
-TEST(Unit_NumaLookup, ANullObjectHasNoNode)
+TEST(Small_NumaLookup, ANullObjectHasNoNode)
 {
     const SyntheticTopology machine("NUMANode:2 Core:2 PU:1");
     ASSERT_NE(machine.get(), nullptr);

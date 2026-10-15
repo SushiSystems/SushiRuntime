@@ -45,7 +45,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that a run with no cluster calls the registered kernel with the task's views. */
-TEST(Integration_RegisteredTask, TheKernelRunsLocally)
+TEST(Medium_RegisteredTask, TheKernelRunsLocally)
 {
     constexpr std::size_t K_COUNT = 8;
     auto runtime = Runtime::create().value();

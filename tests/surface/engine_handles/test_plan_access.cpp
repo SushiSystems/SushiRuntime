@@ -35,7 +35,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the surface name and the engine plan are one object both ways. */
-TEST(Unit_PlanAccess, ARoundTripNamesTheSamePlan)
+TEST(Small_PlanAccess, ARoundTripNamesTheSamePlan)
 {
     Internal::Graph::CompiledGraph graph;
     Detail::Plan* const plan = Detail::surface_plan(&graph);
@@ -45,7 +45,7 @@ TEST(Unit_PlanAccess, ARoundTripNamesTheSamePlan)
 }
 
 /** @brief Tests that null converts to null in both directions. */
-TEST(Unit_PlanAccess, NullStaysNull)
+TEST(Small_PlanAccess, NullStaysNull)
 {
     EXPECT_EQ(Detail::engine_plan(static_cast<Detail::Plan*>(nullptr)), nullptr);
     EXPECT_EQ(Detail::surface_plan(static_cast<Internal::Graph::CompiledGraph*>(nullptr)), nullptr);

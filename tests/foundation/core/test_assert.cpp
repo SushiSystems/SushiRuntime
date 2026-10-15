@@ -51,25 +51,25 @@ namespace
         std::fflush(stderr);
     }
 
-    TEST(Unit_Assert, AssertStopsTheProcessAndNamesItsSite)
+    TEST(Small_Assert, AssertStopsTheProcessAndNamesItsSite)
     {
         const int line = __LINE__ + 1;
         EXPECT_DEATH(SR_ASSERT(1 + 1 == 3, "the sum holds"), "the sum holds.*" + site(line));
     }
 
-    TEST(Unit_Assert, VerifyStopsTheProcessAndNamesItsSite)
+    TEST(Small_Assert, VerifyStopsTheProcessAndNamesItsSite)
     {
         const int line = __LINE__ + 1;
         EXPECT_DEATH(SR_VERIFY(1 + 1 == 3, "the sum holds"), "1 \\+ 1 == 3.*" + site(line));
     }
 
-    TEST(Unit_Assert, FatalStopsTheProcessAndNamesItsSite)
+    TEST(Small_Assert, FatalStopsTheProcessAndNamesItsSite)
     {
         const int line = __LINE__ + 1;
         EXPECT_DEATH(SR_FATAL("the unreachable state"), "the unreachable state.*" + site(line));
     }
 
-    TEST(Unit_Assert, ATrueConditionLetsTheProcessContinue)
+    TEST(Small_Assert, ATrueConditionLetsTheProcessContinue)
     {
         int evaluations = 0;
         SR_VERIFY(++evaluations == 1, "the condition runs once");
@@ -77,7 +77,7 @@ namespace
         EXPECT_EQ(evaluations, 2);
     }
 
-    TEST(Unit_Assert, AReplacedHandlerIsCalledBeforeTheProcessStops)
+    TEST(Small_Assert, AReplacedHandlerIsCalledBeforeTheProcessStops)
     {
         const int line = __LINE__ + 5;
         EXPECT_DEATH(
@@ -89,7 +89,7 @@ namespace
             "replaced handler saw line " + std::to_string(line));
     }
 
-    TEST(Unit_Assert, SettingAHandlerReturnsTheOneItReplaces)
+    TEST(Small_Assert, SettingAHandlerReturnsTheOneItReplaces)
     {
         const SushiRuntime::AssertionHandler original =
             SushiRuntime::set_assertion_handler(&write_marker);

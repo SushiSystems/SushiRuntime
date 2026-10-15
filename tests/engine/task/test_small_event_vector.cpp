@@ -50,7 +50,7 @@ namespace
     }
 } // namespace
 
-TEST(Unit_SmallEventVector, ADefaultVectorIsEmpty)
+TEST(Small_SmallEventVector, ADefaultVectorIsEmpty)
 {
     const SmallEventVector events;
 
@@ -58,7 +58,7 @@ TEST(Unit_SmallEventVector, ADefaultVectorIsEmpty)
     EXPECT_TRUE(events.to_vector().empty());
 }
 
-TEST(Unit_SmallEventVector, ACopyHoldsTheSameEventsInlineAndOverflow)
+TEST(Small_SmallEventVector, ACopyHoldsTheSameEventsInlineAndOverflow)
 {
     const std::vector<sycl::event> expected = distinct_events(10);
     SmallEventVector source;
@@ -71,7 +71,7 @@ TEST(Unit_SmallEventVector, ACopyHoldsTheSameEventsInlineAndOverflow)
     EXPECT_EQ(source.to_vector(), expected);
 }
 
-TEST(Unit_SmallEventVector, AMoveHoldsTheEventsAndEmptiesTheSource)
+TEST(Small_SmallEventVector, AMoveHoldsTheEventsAndEmptiesTheSource)
 {
     const std::vector<sycl::event> expected = distinct_events(10);
     SmallEventVector source;
@@ -86,7 +86,7 @@ TEST(Unit_SmallEventVector, AMoveHoldsTheEventsAndEmptiesTheSource)
     EXPECT_TRUE(source.dynamic_data.empty());
 }
 
-TEST(Unit_SmallEventVector, ACopyAssignmentReplacesEveryPriorEvent)
+TEST(Small_SmallEventVector, ACopyAssignmentReplacesEveryPriorEvent)
 {
     const std::vector<sycl::event> expected = distinct_events(3);
     SmallEventVector source;
@@ -102,7 +102,7 @@ TEST(Unit_SmallEventVector, ACopyAssignmentReplacesEveryPriorEvent)
     EXPECT_EQ(source.to_vector(), expected);
 }
 
-TEST(Unit_SmallEventVector, AMoveAssignmentReplacesEveryPriorEventAndEmptiesTheSource)
+TEST(Small_SmallEventVector, AMoveAssignmentReplacesEveryPriorEventAndEmptiesTheSource)
 {
     const std::vector<sycl::event> expected = distinct_events(10);
     SmallEventVector source;
@@ -118,7 +118,7 @@ TEST(Unit_SmallEventVector, AMoveAssignmentReplacesEveryPriorEventAndEmptiesTheS
     EXPECT_TRUE(source.to_vector().empty());
 }
 
-TEST(Unit_SmallEventVector, AssignmentFromAVectorShrinksPastTheOldContent)
+TEST(Small_SmallEventVector, AssignmentFromAVectorShrinksPastTheOldContent)
 {
     SmallEventVector events;
     events = distinct_events(10);
@@ -131,7 +131,7 @@ TEST(Unit_SmallEventVector, AssignmentFromAVectorShrinksPastTheOldContent)
     EXPECT_TRUE(events.dynamic_data.empty());
 }
 
-TEST(Unit_SmallEventVector, AssignmentPastTheInlineCapacityKeepsEveryElementInOrder)
+TEST(Small_SmallEventVector, AssignmentPastTheInlineCapacityKeepsEveryElementInOrder)
 {
     const std::vector<sycl::event> expected = distinct_events(20);
     SmallEventVector events;
@@ -151,7 +151,7 @@ TEST(Unit_SmallEventVector, AssignmentPastTheInlineCapacityKeepsEveryElementInOr
     EXPECT_EQ(index, expected.size());
 }
 
-TEST(Unit_SmallEventVector, ClearEmptiesTheVectorAndItAcceptsNewEvents)
+TEST(Small_SmallEventVector, ClearEmptiesTheVectorAndItAcceptsNewEvents)
 {
     SmallEventVector events;
     events = distinct_events(10);
@@ -166,7 +166,7 @@ TEST(Unit_SmallEventVector, ClearEmptiesTheVectorAndItAcceptsNewEvents)
     EXPECT_EQ(events.to_vector(), expected);
 }
 
-TEST(Unit_SmallEventVector, SelfAssignmentKeepsEveryEvent)
+TEST(Small_SmallEventVector, SelfAssignmentKeepsEveryEvent)
 {
     const std::vector<sycl::event> expected = distinct_events(10);
     SmallEventVector events;
@@ -180,7 +180,7 @@ TEST(Unit_SmallEventVector, SelfAssignmentKeepsEveryEvent)
     EXPECT_EQ(events.to_vector(), expected);
 }
 
-TEST(Unit_SmallEventVector, AssignmentFromItsOwnOverflowKeepsThatList)
+TEST(Small_SmallEventVector, AssignmentFromItsOwnOverflowKeepsThatList)
 {
     const std::vector<sycl::event> all = distinct_events(20);
     SmallEventVector events;

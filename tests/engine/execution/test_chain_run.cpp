@@ -76,7 +76,7 @@ namespace
 }
 
 /** @brief Tests that two steps of a two-node chain add four, in submission order. */
-TEST(Unit_ChainRun, EachStepRunsTheWholeChain)
+TEST(Medium_ChainRun, EachStepRunsTheWholeChain)
 {
     const auto context = SushiRuntime::Test::make_context();
     int* const value = shared_integer(*context);
@@ -102,7 +102,7 @@ TEST(Unit_ChainRun, EachStepRunsTheWholeChain)
 }
 
 /** @brief Tests that wait() returns once the submitted step is done. */
-TEST(Unit_ChainRun, WaitReturnsAfterTheStep)
+TEST(Medium_ChainRun, WaitReturnsAfterTheStep)
 {
     const auto context = SushiRuntime::Test::make_context();
     int* const value = shared_integer(*context);

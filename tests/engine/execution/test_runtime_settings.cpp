@@ -37,7 +37,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
 
 /** @brief Tests the defaults: no profiling, one worker per core, pinned, no rebalancer. */
-TEST(Unit_RuntimeSettings, DefaultsAskForNothingExtra)
+TEST(Medium_RuntimeSettings, DefaultsAskForNothingExtra)
 {
     const RuntimeSettings settings;
     EXPECT_FALSE(settings.profiling);
@@ -49,7 +49,7 @@ TEST(Unit_RuntimeSettings, DefaultsAskForNothingExtra)
 }
 
 /** @brief Tests that the pool settings carry the three fields of the pool, unchanged. */
-TEST(Unit_RuntimeSettings, ThePoolSettingsCarryThePoolFields)
+TEST(Medium_RuntimeSettings, ThePoolSettingsCarryThePoolFields)
 {
     RuntimeSettings settings;
     settings.worker_count = 6;

@@ -30,8 +30,9 @@ from ..env import load_build_env
 from . import discovery
 from .install_hint import toolchain_install_command
 
-# The ASan tree is separate from build/, CUDA off and Release; see cli/README.md.
-ASAN_FLAGS = "-fsanitize=address -fno-omit-frame-pointer -g -O1"
+# The ASan tree is separate from build/, CUDA off, Release and UBSan too; see cli/README.md.
+ASAN_FLAGS = ("-fsanitize=address,undefined -fno-sanitize-recover=undefined "
+              "-fno-omit-frame-pointer -g -O1")
 
 # The Windows ASan flags differ from the Linux ones in three ways; see cli/README.md.
 ASAN_FLAGS_WINDOWS = (
@@ -61,30 +62,19 @@ class DistributedRole(str, enum.Enum):
     worker = "worker"
 
 
-class Suite(str, enum.Enum):
-    # The values are the CTest labels tests/CMakeLists.txt assigns from GTest suite prefixes.
-    unit = "unit"
-    regression = "regression"
-    integration = "integration"
-    functional = "functional"   # umbrella: unit + regression + integration
-    stress = "stress"
-    performance = "performance"
-    benchmark = "benchmark"     # umbrella: stress + performance
+class Label(str, enum.Enum):
+    # The values are the CTest labels cmake/SushiRuntimeTests.cmake assigns from suite prefixes.
+    small = "small"
+    medium = "medium"
+    large = "large"
+    quarantined = "quarantined"
     package = "package"         # installs, then builds and runs a consumer
-    all = "all"
 
 
-# Each suite maps to a `ctest -L` regex, an umbrella to an alternation; see cli/README.md.
-_SUITE_LABEL_REGEX = {
-    Suite.unit: "^unit$",
-    Suite.regression: "^regression$",
-    Suite.integration: "^integration$",
-    Suite.functional: "^(unit|integration|regression)$",
-    Suite.stress: "^stress$",
-    Suite.performance: "^performance$",
-    Suite.benchmark: "^(stress|performance)$",
-    Suite.package: "^package$",
-}
+# With no label, `sr test` runs every size and leaves out the package.
+_DEFAULT_LABEL_REGEX = "^(small|medium|large)$"
+# A quarantined test keeps its size label, so every run but the quarantined one excludes it.
+_QUARANTINED_LABEL_REGEX = "^quarantined$"
 
 
 _CMAKE_BUILD_TYPE = {
@@ -278,8 +268,8 @@ def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
         args += [
             f"-DCMAKE_C_FLAGS={ASAN_FLAGS}",
             f"-DCMAKE_CXX_FLAGS={ASAN_FLAGS}",
-            "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address",
-            "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address",
+            "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined",
+            "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined",
             f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}",
         ]
     if cfg.use_vcpkg and cfg.vcpkg_root:
@@ -455,7 +445,7 @@ def build(build_type: BuildType, distributed: bool = False,
     return rc
 
 
-def test(suite: Suite, distributed: bool = False, filter: str | None = None,
+def test(label: Label | None, distributed: bool = False, filter: str | None = None,
          asan: bool = False, repeat: int = 0, module: str | None = None) -> int:
     console.header("Project Test")
     root = find_project_root()
@@ -478,13 +468,46 @@ def test(suite: Suite, distributed: bool = False, filter: str | None = None,
     _neutralize_runtime_ld(cfg, env)
     # An inherited CUDA_LAUNCH_BLOCKING=1 serializes every kernel and breaks the overlap tests.
     env.pop("CUDA_LAUNCH_BLOCKING", None)
-    # A module's tests carry its folder name as a label, whatever their kind.
+    # A module's tests carry its folder name as a label, whatever their size.
     if module is not None:
-        label_regex: str | None = f"^{re.escape(module)}$"
+        label_regex = f"^{re.escape(module)}$"
+    elif label is not None:
+        label_regex = f"^{label.value}$"
     else:
-        label_regex = None if suite is Suite.all else _SUITE_LABEL_REGEX[suite]
+        label_regex = _DEFAULT_LABEL_REGEX
+    exclude = None if label is Label.quarantined else _QUARANTINED_LABEL_REGEX
     return _DRIVER.ctest_run(
-        cfg, build_dir, env, label_regex=label_regex, filter=filter, repeat=repeat)
+        cfg, build_dir, env, label_regex=label_regex, exclude_label_regex=exclude,
+        filter=filter, repeat=repeat)
+
+
+def bench(distributed: bool = False, filter: str | None = None) -> int:
+    console.header("Project Bench")
+    root = find_project_root()
+    cfg = load_config()
+    build_dir = _build_dir(root, False)
+    programs = sorted(p for p in (build_dir / "tests").glob("sr_*_benchmarks*")
+                      if p.is_file() and p.suffix in ("", ".exe"))
+    if not programs:
+        console.error("No benchmark program found. Run `sr build` with SR_BUILD_BENCHMARKS=ON.")
+        return 1
+    if distributed:
+        console.info("Note: distributed benchmarks only exist if built with --distributed.")
+
+    env = load_build_env(cfg, build_dir)
+    _neutralize_runtime_ld(cfg, env)
+    env.pop("CUDA_LAUNCH_BLOCKING", None)
+    forwarded = [f"--gtest_filter={filter}"] if filter else []
+    failed = 0
+    for program in programs:
+        console.info(f"Executing: {program.name}")
+        if _RUNNER.run([str(program), *forwarded], build_dir / "tests", env) != 0:
+            failed += 1
+    if failed:
+        console.error(f"{failed} of {len(programs)} benchmark programs failed.")
+        return 1
+    console.success(f"{len(programs)} benchmark programs completed.")
+    return 0
 
 
 def run(target: str | None = None, sort: bool = False,

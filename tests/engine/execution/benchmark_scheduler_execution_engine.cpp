@@ -865,7 +865,7 @@ namespace StealNumaEffectTests
         if (real_nodes.size() < 2)
             GTEST_SKIP() << "Single physical NUMA node — synthetic-NUMA steal locality "
                             "is unmeasurable via timing here; covered deterministically "
-                            "by Unit_NumaStealTest.";
+                            "by Medium_NumaStealTest.";
 
         if (a_steals > 1000)
             EXPECT_GT(a_localf, 0.5)

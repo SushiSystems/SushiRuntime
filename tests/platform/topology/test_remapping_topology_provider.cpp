@@ -45,7 +45,7 @@ namespace TopologyAbstractionTests
      *
      * Wraps a real hwloc provider with a remapper and ensures all discovered devices are assigned to NUMA nodes within the synthetic range.
      */
-    TEST(Unit_TopologyAbstractionTest, RemappingProviderSplitsRealDevicesAcrossFakeNodes)
+    TEST(Small_TopologyAbstractionTest, RemappingProviderSplitsRealDevicesAcrossFakeNodes)
     {
         constexpr int FAKE_NODES = 4;
 

@@ -978,7 +978,7 @@ namespace EndToEndTests
     } // namespace
 
     /** @brief Tests that inputs reach a worker, its kernel runs there and the output returns. */
-    TEST(Integration_DistributedE2ETest, OffloadVectorAddRoundTrip)
+    TEST(Medium_DistributedE2ETest, OffloadVectorAddRoundTrip)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1018,7 +1018,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that two independent tasks both run on the workers of a two-worker cluster. */
-    TEST(Integration_DistributedE2ETest, FanOutAcrossTwoWorkers)
+    TEST(Medium_DistributedE2ETest, FanOutAcrossTwoWorkers)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1063,7 +1063,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that a local write raises a shared buffer's version and the worker reads it. */
-    TEST(Integration_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloadedRead)
+    TEST(Medium_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloadedRead)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1120,7 +1120,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests the vector-add offload over TCP on the loopback address. */
-    TEST(Integration_DistributedE2ETest, OffloadOverTCPLoopback)
+    TEST(Medium_DistributedE2ETest, OffloadOverTCPLoopback)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1165,7 +1165,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that a task whose worker falls silent is taken back and finishes locally. */
-    TEST(Integration_DistributedE2ETest, WorkerDeathFallsBackToLocal)
+    TEST(Medium_DistributedE2ETest, WorkerDeathFallsBackToLocal)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1205,7 +1205,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that the output fence refuses a chunk of an old version and takes a current one. */
-    TEST(Integration_DistributedReliabilityTest, StaleWritebackIsFenced)
+    TEST(Medium_DistributedReliabilityTest, StaleWritebackIsFenced)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1267,7 +1267,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that a task whose input chunks are all lost fails remotely and runs locally. */
-    TEST(Integration_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHanging)
+    TEST(Medium_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHanging)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1319,7 +1319,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that the fluent surface builds and runs an offloaded task. */
-    TEST(Integration_DistributedE2ETest, FluentClusterOffload)
+    TEST(Medium_DistributedE2ETest, FluentClusterOffload)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1367,7 +1367,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests offload of a double-buffered State across even and odd step counts. */
-    TEST(Integration_DistributedE2ETest, FluentDistributedStateParity)
+    TEST(Medium_DistributedE2ETest, FluentDistributedStateParity)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1393,7 +1393,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests detach() and the displacement of one master by a later attach(). */
-    TEST(Integration_DistributedE2ETest, ClusterDetachAndDisplacement)
+    TEST(Medium_DistributedE2ETest, ClusterDetachAndDisplacement)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1433,7 +1433,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that a handle outlives its runtime and that its detach() then does nothing. */
-    TEST(Integration_DistributedE2ETest, ClusterHandleOutlivesRuntime)
+    TEST(Medium_DistributedE2ETest, ClusterHandleOutlivesRuntime)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1452,7 +1452,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that stopping the master returns a task still out on a worker to the scheduler. */
-    TEST(Integration_DistributedE2ETest, StopResubmitsPendingNodes)
+    TEST(Medium_DistributedE2ETest, StopResubmitsPendingNodes)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1496,7 +1496,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that a stopped master offloads nothing and the graph runs locally. */
-    TEST(Integration_DistributedE2ETest, TryOffloadAfterStopRunsLocally)
+    TEST(Medium_DistributedE2ETest, TryOffloadAfterStopRunsLocally)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1542,7 +1542,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that each local step of a State bumps the buffer that step wrote. */
-    TEST(Integration_DistributedE2ETest, DynamicStateBumpsTheLiveBufferAfterSwap)
+    TEST(Medium_DistributedE2ETest, DynamicStateBumpsTheLiveBufferAfterSwap)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1597,7 +1597,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that an attach whose transport does not start throws and installs nothing. */
-    TEST(Integration_DistributedE2ETest, AttachStartFailureLeavesNothingInstalled)
+    TEST(Medium_DistributedE2ETest, AttachStartFailureLeavesNothingInstalled)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1624,7 +1624,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that the attempt cap of one run does not keep a node local in the next run. */
-    TEST(Integration_DistributedE2ETest, AttemptCapDoesNotOutliveTheRun)
+    TEST(Medium_DistributedE2ETest, AttemptCapDoesNotOutliveTheRun)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1676,7 +1676,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that attach() refuses an empty secret on a transport other machines reach. */
-    TEST(Integration_DistributedE2ETest, RefusesEmptySecretOnNetworkExposure)
+    TEST(Medium_DistributedE2ETest, RefusesEmptySecretOnNetworkExposure)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1701,7 +1701,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that a task added with no lambda gives one result with a worker and with none. */
-    TEST(Integration_DistributedE2ETest, RegisteredTaskRunsWithAndWithoutAWorker)
+    TEST(Medium_DistributedE2ETest, RegisteredTaskRunsWithAndWithoutAWorker)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1725,7 +1725,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that an attach on a transport another master runs on throws and stops nothing. */
-    TEST(Integration_DistributedE2ETest, AttachOnAStartedTransportLeavesTheFirstMasterServing)
+    TEST(Medium_DistributedE2ETest, AttachOnAStartedTransportLeavesTheFirstMasterServing)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1755,7 +1755,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that a detached handle reports no worker, no kernel and no reached count. */
-    TEST(Integration_DistributedE2ETest, DetachedClusterReportsNoWorkers)
+    TEST(Medium_DistributedE2ETest, DetachedClusterReportsNoWorkers)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1792,7 +1792,7 @@ namespace EndToEndTests
      * @brief Tests that attach() is refused while a run is in flight, and that detach() then stops
      *        the master and leaves it installed until the run has returned.
      */
-    TEST(Integration_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
+    TEST(Medium_DistributedE2ETest, AttachIsRefusedAndDetachDeferredDuringARun)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1850,7 +1850,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that a handle that was moved from still names the master it named before. */
-    TEST(Integration_DistributedE2ETest, MovedFromHandleStillNamesTheMaster)
+    TEST(Medium_DistributedE2ETest, MovedFromHandleStillNamesTheMaster)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1876,7 +1876,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that a liveness or handshake timeout of 0 is refused and a deadline of 0 is not. */
-    TEST(Integration_DistributedE2ETest, RefusesATimeoutBelowOneMillisecond)
+    TEST(Medium_DistributedE2ETest, RefusesATimeoutBelowOneMillisecond)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1926,7 +1926,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that Cluster::share stops on a device-resident Buffer and on such a State. */
-    TEST(Integration_DistributedE2EDeathTest, ShareStopsOnADeviceResidentHandle)
+    TEST(Medium_DistributedE2EDeathTest, ShareStopsOnADeviceResidentHandle)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1947,7 +1947,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that Cluster::share registers a host-addressable handle and skips an empty one. */
-    TEST(Integration_DistributedE2ETest, ShareRegistersAHostAccessibleHandle)
+    TEST(Medium_DistributedE2ETest, ShareRegistersAHostAccessibleHandle)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -1976,7 +1976,7 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that a worker agent seals the registry it is built with, before start(). */
-    TEST(Integration_DistributedE2EDeathTest, WorkerAgentSealsItsRegistry)
+    TEST(Medium_DistributedE2EDeathTest, WorkerAgentSealsItsRegistry)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -2544,7 +2544,7 @@ namespace FaultInjectionTests
     } // namespace
 
     /** @brief Tests that eight seeded fault schedules each end with the outputs of a clean run. */
-    TEST(Integration_DistributedJepsenTest, DeterminismUnderRandomFaults)
+    TEST(Medium_DistributedJepsenTest, DeterminismUnderRandomFaults)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -2557,7 +2557,7 @@ namespace FaultInjectionTests
     }
 
     /** @brief Tests that a worker registers although HELLO, CHALLENGE and PROOF are each lost once. */
-    TEST(Integration_DistributedJepsenTest, RegistrationSurvivesMessageLoss)
+    TEST(Medium_DistributedJepsenTest, RegistrationSurvivesMessageLoss)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -2573,7 +2573,7 @@ namespace FaultInjectionTests
     }
 
     /** @brief Tests that a worker whose WELCOME is lost registers again and runs the task. */
-    TEST(Integration_DistributedJepsenTest, RegistrationSurvivesALostWelcome)
+    TEST(Medium_DistributedJepsenTest, RegistrationSurvivesALostWelcome)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -2869,7 +2869,7 @@ namespace TCPFaultsTests
          * The master is a Cluster on a Runtime; the worker is a WorkerAgent on a second
          * runtime with one kernel. Each test is skipped on a machine with no SYCL device.
          */
-        class Integration_DistributedTcpFaultsTest : public ::testing::Test
+        class Medium_DistributedTcpFaultsTest : public ::testing::Test
         {
             protected:
                 /** @brief Builds the master's runtime and makes log calls reach a sink at once. */
@@ -3118,7 +3118,7 @@ namespace TCPFaultsTests
     } // namespace
 
     /** @brief Tests that a connection that never says HELLO is closed and keeps no worker out. */
-    TEST_F(Integration_DistributedTcpFaultsTest, StrayConnectionTakesNoSlot)
+    TEST_F(Medium_DistributedTcpFaultsTest, StrayConnectionTakesNoSlot)
     {
         ClusterOptions options;
         options.handshake_timeout = std::chrono::milliseconds(500);
@@ -3141,7 +3141,7 @@ namespace TCPFaultsTests
     }
 
     /** @brief Tests that bytes that are no frame close their connection and leave the master up. */
-    TEST_F(Integration_DistributedTcpFaultsTest, GarbageBytesClosedMasterLives)
+    TEST_F(Medium_DistributedTcpFaultsTest, GarbageBytesClosedMasterLives)
     {
         start_master();
         Socket peer;
@@ -3169,7 +3169,7 @@ namespace TCPFaultsTests
     }
 
     /** @brief Tests that a frame of protocol version 1, a length and a type byte, is refused. */
-    TEST_F(Integration_DistributedTcpFaultsTest, V1FrameRejected)
+    TEST_F(Medium_DistributedTcpFaultsTest, V1FrameRejected)
     {
         start_master();
         Socket peer;
@@ -3192,7 +3192,7 @@ namespace TCPFaultsTests
     }
 
     /** @brief Tests that a header announcing more than 1 MiB closes the peer, not the process. */
-    TEST_F(Integration_DistributedTcpFaultsTest, OversizedLengthClosesPeerNotProcess)
+    TEST_F(Medium_DistributedTcpFaultsTest, OversizedLengthClosesPeerNotProcess)
     {
         start_master();
         Socket peer;
@@ -3213,7 +3213,7 @@ namespace TCPFaultsTests
     }
 
     /** @brief Tests that a worker and a raw peer that hold another secret are both kept out. */
-    TEST_F(Integration_DistributedTcpFaultsTest, WrongSecretRejected)
+    TEST_F(Medium_DistributedTcpFaultsTest, WrongSecretRejected)
     {
         ClusterOptions options;
         options.secret = make_secret(0x11);
@@ -3249,7 +3249,7 @@ namespace TCPFaultsTests
     }
 
     /** @brief Tests that a peer of another protocol version gets one ERROR line per connection. */
-    TEST_F(Integration_DistributedTcpFaultsTest, VersionMismatchLoggedOncePerConnection)
+    TEST_F(Medium_DistributedTcpFaultsTest, VersionMismatchLoggedOncePerConnection)
     {
         if (K_LOG_LEVEL_CEILING < LogLevel::Error)
             GTEST_SKIP() << "This build compiles no log call.";
@@ -3277,7 +3277,7 @@ namespace TCPFaultsTests
     }
 
     /** @brief Tests that a worker outlives its master and registers with the one that follows. */
-    TEST_F(Integration_DistributedTcpFaultsTest, MasterKilledWorkerSurvivesAndReconnects)
+    TEST_F(Medium_DistributedTcpFaultsTest, MasterKilledWorkerSurvivesAndReconnects)
     {
         start_master();
         ASSERT_NO_FATAL_FAILURE(start_proxy());
@@ -3300,7 +3300,7 @@ namespace TCPFaultsTests
     }
 
     /** @brief Tests that a task whose input is cut in the middle of a chunk finishes locally. */
-    TEST_F(Integration_DistributedTcpFaultsTest, WorkerCutMidChunkTaskFinishesLocally)
+    TEST_F(Medium_DistributedTcpFaultsTest, WorkerCutMidChunkTaskFinishesLocally)
     {
         constexpr std::uint64_t K_BYTES_BEFORE_THE_CUT = 100000;
         ClusterOptions options;
@@ -3331,7 +3331,7 @@ namespace TCPFaultsTests
     }
 
     /** @brief Tests that a worker behind a silent link is reaped and registers again after it. */
-    TEST_F(Integration_DistributedTcpFaultsTest, StalledLinkReapedThenWorkerRejoins)
+    TEST_F(Medium_DistributedTcpFaultsTest, StalledLinkReapedThenWorkerRejoins)
     {
         ClusterOptions options;
         options.liveness_timeout = std::chrono::milliseconds(300);
@@ -3364,7 +3364,7 @@ namespace TCPFaultsTests
      * @brief Tests that a link stalled in the middle of a large transfer is lost when liveness
      *        closes it, not when the write idle timeout ends, and that its task finishes locally.
      */
-    TEST_F(Integration_DistributedTcpFaultsTest, LinkStalledMidTransferLostAtLivenessClose)
+    TEST_F(Medium_DistributedTcpFaultsTest, LinkStalledMidTransferLostAtLivenessClose)
     {
         // The writer must have waited longer than the connection's 1 s linger when liveness closes.
         constexpr std::chrono::milliseconds K_LIVENESS{2000};
@@ -3409,7 +3409,7 @@ namespace TCPFaultsTests
     }
 
     /** @brief Tests that 8 MiB at 4 MiB/s crosses under a 500 ms liveness timeout. */
-    TEST_F(Integration_DistributedTcpFaultsTest, ThrottledTransferKeepsWorkerAlive)
+    TEST_F(Medium_DistributedTcpFaultsTest, ThrottledTransferKeepsWorkerAlive)
     {
         constexpr std::chrono::milliseconds K_LIVENESS{500};
         ClusterOptions options;
@@ -3443,7 +3443,7 @@ namespace TCPFaultsTests
     }
 
     /** @brief Tests that 1 MiB crosses whole in both directions as 256 chunks of 4 KiB each. */
-    TEST_F(Integration_DistributedTcpFaultsTest, ManyChunkBufferCrossesIntact)
+    TEST_F(Medium_DistributedTcpFaultsTest, ManyChunkBufferCrossesIntact)
     {
         ClusterOptions options;
         options.chunk_bytes = K_MINIMUM_CHUNK_BYTES;
@@ -3465,7 +3465,7 @@ namespace TCPFaultsTests
     }
 
     /** @brief Tests that a dispatch to a silent link returns and a local node runs beside it. */
-    TEST_F(Integration_DistributedTcpFaultsTest, DispatchReturnsWhilePeerStalled)
+    TEST_F(Medium_DistributedTcpFaultsTest, DispatchReturnsWhilePeerStalled)
     {
         ClusterOptions options;
         options.liveness_timeout = K_WAIT;

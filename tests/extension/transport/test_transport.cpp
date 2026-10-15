@@ -34,7 +34,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that a default result is Ok with no message. */
-TEST(Unit_Transport, ADefaultResultIsOk)
+TEST(Medium_Transport, ADefaultResultIsOk)
 {
     const TransportResult result;
     EXPECT_TRUE(result.is_ok());
@@ -43,7 +43,7 @@ TEST(Unit_Transport, ADefaultResultIsOk)
 }
 
 /** @brief Tests that peer ids compare by value and the send statuses differ. */
-TEST(Unit_Transport, PeersCompareByValue)
+TEST(Medium_Transport, PeersCompareByValue)
 {
     EXPECT_EQ(PeerID{1}, PeerID{1});
     EXPECT_NE(PeerID{1}, PeerID{2});

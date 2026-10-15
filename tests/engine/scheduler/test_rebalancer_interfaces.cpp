@@ -83,7 +83,7 @@ namespace
 }
 
 /** @brief Tests that a strategy reads the telemetry it is given and asks the migrator once. */
-TEST(Unit_RebalancerInterfaces, AStrategyMovesWorkThroughTheMigrator)
+TEST(Small_RebalancerInterfaces, AStrategyMovesWorkThroughTheMigrator)
 {
     const FixedTelemetry telemetry;
     RecordingMigrator migrator;

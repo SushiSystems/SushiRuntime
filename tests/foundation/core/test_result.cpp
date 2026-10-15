@@ -54,7 +54,7 @@ namespace
         return Error{ErrorCode::DeviceLost, "lost the device"};
     }
 
-    TEST(Unit_Result, SuccessValueIsReadThroughEveryValueAccessor)
+    TEST(Small_Result, SuccessValueIsReadThroughEveryValueAccessor)
     {
         Result<int> number(41);
         EXPECT_TRUE(number.has_value());
@@ -76,7 +76,7 @@ namespace
         EXPECT_EQ(text_view->size(), 5u);
     }
 
-    TEST(Unit_Result, AnExpiringResultGivesItsValueAway)
+    TEST(Small_Result, AnExpiringResultGivesItsValueAway)
     {
         const std::unique_ptr<int> taken =
             Result<std::unique_ptr<int>>(std::make_unique<int>(7)).value();
@@ -89,7 +89,7 @@ namespace
         EXPECT_EQ(*dereferenced, 8);
     }
 
-    TEST(Unit_Result, ErrorOnErrorReturnsTheStoredError)
+    TEST(Small_Result, ErrorOnErrorReturnsTheStoredError)
     {
         Result<int> result(make_error(Error{ErrorCode::KernelFailed, "kernel faulted"}));
         const Result<int>& result_view = result;
@@ -103,7 +103,7 @@ namespace
         EXPECT_EQ(result_view.error().message, "rewritten");
     }
 
-    TEST(Unit_Result, TheErrorTypeDefaultsToError)
+    TEST(Small_Result, TheErrorTypeDefaultsToError)
     {
         static_assert(std::is_same_v<Result<int>, Result<int, Error>>,
                       "Result<T> must name Result<T, Error>");
@@ -111,7 +111,7 @@ namespace
                       "Result<void> must name Result<void, Error>");
     }
 
-    TEST(Unit_ResultDeathTest, EveryValueAccessorOnAnErrorStopsWithTheStoredMessage)
+    TEST(Medium_ResultDeathTest, EveryValueAccessorOnAnErrorStopsWithTheStoredMessage)
     {
         Result<int> number(make_error(lost_device()));
         const Result<int>& number_view = number;
@@ -126,7 +126,7 @@ namespace
         EXPECT_DEATH(static_cast<void>(text_view->size()), "lost the device");
     }
 
-    TEST(Unit_ResultDeathTest, EveryValueAccessorOnAnErrorOfAnotherTypeStops)
+    TEST(Medium_ResultDeathTest, EveryValueAccessorOnAnErrorOfAnotherTypeStops)
     {
         Result<int, int> number(make_error(7));
         const Result<int, int>& number_view = number;
@@ -141,7 +141,7 @@ namespace
         EXPECT_DEATH(static_cast<void>(text_view->size()), K_VALUE_OF_ERROR);
     }
 
-    TEST(Unit_ResultDeathTest, AValueAccessorOnAnExpiringErrorStops)
+    TEST(Medium_ResultDeathTest, AValueAccessorOnAnExpiringErrorStops)
     {
         EXPECT_DEATH(static_cast<void>(Result<int>(make_error(lost_device())).value()),
                      "lost the device");
@@ -149,7 +149,7 @@ namespace
                      "lost the device");
     }
 
-    TEST(Unit_ResultDeathTest, ErrorOnAValueStops)
+    TEST(Medium_ResultDeathTest, ErrorOnAValueStops)
     {
         Result<int> result(5);
         const Result<int>& result_view = result;
@@ -158,7 +158,7 @@ namespace
         EXPECT_DEATH(static_cast<void>(result_view.error()), K_ERROR_OF_VALUE);
     }
 
-    TEST(Unit_Result, VoidSuccessHoldsNoErrorAndValueReturns)
+    TEST(Small_Result, VoidSuccessHoldsNoErrorAndValueReturns)
     {
         const Result<void> done;
 
@@ -167,7 +167,7 @@ namespace
         done.value();
     }
 
-    TEST(Unit_Result, VoidErrorReturnsTheStoredError)
+    TEST(Small_Result, VoidErrorReturnsTheStoredError)
     {
         Result<void> failed(make_error(lost_device()));
         const Result<void>& failed_view = failed;
@@ -178,7 +178,7 @@ namespace
         EXPECT_EQ(failed_view.error().message, "lost the device");
     }
 
-    TEST(Unit_ResultDeathTest, VoidValueOnAnErrorStopsWithTheStoredMessage)
+    TEST(Medium_ResultDeathTest, VoidValueOnAnErrorStopsWithTheStoredMessage)
     {
         const Result<void> failed(make_error(lost_device()));
         const Result<void, int> numbered(make_error(7));
@@ -187,7 +187,7 @@ namespace
         EXPECT_DEATH(numbered.value(), K_VALUE_OF_ERROR);
     }
 
-    TEST(Unit_ResultDeathTest, VoidErrorOnSuccessStops)
+    TEST(Medium_ResultDeathTest, VoidErrorOnSuccessStops)
     {
         Result<void> done;
         const Result<void>& done_view = done;

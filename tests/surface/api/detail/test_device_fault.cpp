@@ -45,7 +45,7 @@ static_assert(Detail::saturated_fault_word(std::size_t{UINT32_MAX} + 1u) == UINT
               "a value past a fault word is stored as the largest word");
 
 /** @brief Tests that each field of a record saturates and the message shows the saturated value. */
-TEST(Integration_DeviceFault, AFieldPastAUint32IsStoredSaturated)
+TEST(Small_DeviceFault, AFieldPastAUint32IsStoredSaturated)
 {
     if (sizeof(std::size_t) <= sizeof(std::uint32_t))
         GTEST_SKIP() << "std::size_t holds no value past a uint32 on this platform";

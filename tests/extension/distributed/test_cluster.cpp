@@ -40,7 +40,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that a master with no worker reports none and offloads nothing. */
-TEST(Integration_Cluster, AMasterWithNoWorkerReportsNone)
+TEST(Medium_Cluster, AMasterWithNoWorkerReportsNone)
 {
     auto runtime = Runtime::create().value();
     InProcessFabric fabric;
@@ -54,7 +54,7 @@ TEST(Integration_Cluster, AMasterWithNoWorkerReportsNone)
 }
 
 /** @brief Tests that a shared address gets a valid handle whose version bump_buffer() raises. */
-TEST(Integration_Cluster, ASharedAddressGetsAHandle)
+TEST(Medium_Cluster, ASharedAddressGetsAHandle)
 {
     auto runtime = Runtime::create().value();
     InProcessFabric fabric;
@@ -75,7 +75,7 @@ TEST(Integration_Cluster, ASharedAddressGetsAHandle)
 }
 
 /** @brief Tests that a liveness timeout under one millisecond is refused and changes nothing. */
-TEST(Integration_Cluster, ALivenessTimeoutBelowTheMinimumIsRefused)
+TEST(Medium_Cluster, ALivenessTimeoutBelowTheMinimumIsRefused)
 {
     auto runtime = Runtime::create().value();
     InProcessFabric fabric;

@@ -36,7 +36,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the unknown width is the largest 32-bit value. */
-TEST(Unit_DispatchWidth, UnknownIsTheLargestWidth)
+TEST(Small_DispatchWidth, UnknownIsTheLargestWidth)
 {
     static_assert(K_WIDTH_UNKNOWN == std::numeric_limits<std::uint32_t>::max(),
                   "the unknown width is the one value no launch counts to");

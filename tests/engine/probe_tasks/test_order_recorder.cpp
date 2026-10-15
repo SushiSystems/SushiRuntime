@@ -38,7 +38,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Test;
 
 /** @brief Tests that each recorder appends its own id, in the order they are called. */
-TEST(Unit_OrderRecorder, AppendsItsIdWhenCalled)
+TEST(Medium_OrderRecorder, AppendsItsIdWhenCalled)
 {
     std::vector<int> order;
     std::mutex order_mutex;

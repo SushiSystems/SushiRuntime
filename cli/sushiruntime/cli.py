@@ -29,7 +29,7 @@ from .services import docker as docker_svc
 from .services import packaging as packaging_svc
 from .services import project as project_svc
 from .services import select as select_svc
-from .services.project import BuildType, DistributedRole, Suite
+from .services.project import BuildType, DistributedRole, Label
 
 K_DISTRIBUTION = "sushiruntime-cli"
 K_TOOLCHAIN = "Toolchain"
@@ -126,16 +126,16 @@ def build(
 @app.command(
     "test",
     rich_help_panel=K_PROJECT,
-    epilog="sr test\n"
-           "sr test --suite all\n"
+    epilog="sr test  # Every size, without the quarantined tests\n"
+           "sr test --label small\n"
            "sr test --module scheduler  # The tests of one module\n"
            "sr test --filter 'Suite.Case'  # ctest -R regex\n"
            "sr test --repeat 5  # Hunt a flaky test",
 )
 def test(
-    suite: Suite = typer.Option(
-        Suite.functional, "--suite", "-s", case_sensitive=False,
-        help="Which CTest label group to run ('all' runs every test)."),
+    label: Optional[Label] = typer.Option(
+        None, "--label", "-l", case_sensitive=False,
+        help="Run one size (small, medium, large), the quarantined tests or the package check."),
     distributed: bool = typer.Option(
         False, "--distributed", help="Run against a distributed-enabled build."),
     filter: Optional[str] = typer.Option(
@@ -143,7 +143,7 @@ def test(
         help="ctest -R regex over 'Suite.Case' test names."),
     module: Optional[str] = typer.Option(
         None, "--module", "-m",
-        help="Run the tests of one module (its folder name); replaces --suite."),
+        help="Run the tests of one module (its folder name); replaces --label."),
     asan: bool = typer.Option(
         False, "--asan", help="Run the build-asan tree instead of build."),
     repeat: int = typer.Option(
@@ -151,12 +151,28 @@ def test(
         help="Re-run each test up to N times, stopping on the first failure "
              "(ctest --repeat until-fail). Handy for hunting flaky tests."),
 ):
-    """Run the test suite via CTest labels.
+    """Run the tests via CTest labels.
 
     For GTest-level knobs (shuffle, break-on-failure) run the binary directly:
     sr run sr_api_tests -- --gtest_shuffle --gtest_break_on_failure
     """
-    raise typer.Exit(project_svc.test(suite, distributed, filter, asan, repeat, module))
+    raise typer.Exit(project_svc.test(label, distributed, filter, asan, repeat, module))
+
+
+@app.command(
+    "bench",
+    rich_help_panel=K_PROJECT,
+    epilog="sr bench\n"
+           "sr bench --filter 'Stress_*'  # --gtest_filter for every program",
+)
+def bench(
+    distributed: bool = typer.Option(
+        False, "--distributed", help="Run against a distributed-enabled build."),
+    filter: Optional[str] = typer.Option(
+        None, "--filter", "-f", help="--gtest_filter passed to every benchmark program."),
+):
+    """Run every benchmark program the build produced."""
+    raise typer.Exit(project_svc.bench(distributed, filter))
 
 
 @app.command(
@@ -206,7 +222,7 @@ def package(
 ):
     """Install the built tree to a prefix and archive it for redistribution.
 
-    This produces the artifact; it does not check it. `sr test --suite package`
+    This produces the artifact; it does not check it. `sr test --label package`
     is the check — it builds tests/package/ against an installed prefix and runs
     it with nothing on PATH but the prefix, which is what catches a package that
     only works because this machine already has the SYCL runtime installed.

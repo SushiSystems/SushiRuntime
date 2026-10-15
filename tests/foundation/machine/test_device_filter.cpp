@@ -33,7 +33,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the defaults of the filter. */
-TEST(Unit_DeviceFilter, DefaultsAcceptEveryClass)
+TEST(Small_DeviceFilter, DefaultsAcceptEveryClass)
 {
     const DeviceFilter filter;
     EXPECT_TRUE(filter.include_cpu);

@@ -2,7 +2,7 @@
 
 A consumer project that builds against an installed SushiRuntime with no access to the
 runtime's source tree. `tools/packaging/verify_installed_package.py` configures, builds and
-runs it; `sr test --suite package` runs that script.
+runs it; `sr test --label package` runs that script.
 
 ## main.cpp
 

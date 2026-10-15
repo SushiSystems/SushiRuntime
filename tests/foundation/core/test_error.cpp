@@ -45,7 +45,7 @@ namespace
     }
 
     // A consumer compiled against an older header compares these numbers; see README.md.
-    TEST(Unit_Error, EveryEnumeratorKeepsItsNumber)
+    TEST(Small_Error, EveryEnumeratorKeepsItsNumber)
     {
         EXPECT_EQ(number_of(ErrorCode::InvalidGraph), 1);
         EXPECT_EQ(number_of(ErrorCode::CompileFailed), 2);
@@ -59,7 +59,7 @@ namespace
         EXPECT_EQ(number_of(ErrorCode::ProtocolMismatch), 10);
     }
 
-    TEST(Unit_Error, EveryEnumeratorHasItsOwnName)
+    TEST(Small_Error, EveryEnumeratorHasItsOwnName)
     {
         EXPECT_STREQ(to_string(ErrorCode::InvalidGraph), "InvalidGraph");
         EXPECT_STREQ(to_string(ErrorCode::CompileFailed), "CompileFailed");
@@ -73,7 +73,7 @@ namespace
         EXPECT_STREQ(to_string(ErrorCode::ProtocolMismatch), "ProtocolMismatch");
     }
 
-    TEST(Unit_Error, AValueOutsideTheEnumIsNamedUnknown)
+    TEST(Small_Error, AValueOutsideTheEnumIsNamedUnknown)
     {
         EXPECT_STREQ(to_string(static_cast<ErrorCode>(250)), "Unknown");
     }

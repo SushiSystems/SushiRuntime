@@ -63,7 +63,7 @@ namespace
     }
 
     /** @brief Puts the logger in synchronous mode and restores the level and the sink. */
-    class Unit_LoggerTest : public ::testing::Test
+    class Medium_LoggerTest : public ::testing::Test
     {
         protected:
             void SetUp() override
@@ -88,7 +88,7 @@ namespace
 }
 
 /** @brief Tests that a call above the process level leaves its arguments unevaluated. */
-TEST_F(Unit_LoggerTest, DisabledLevelDoesNotEvaluateItsArguments)
+TEST_F(Medium_LoggerTest, DisabledLevelDoesNotEvaluateItsArguments)
 {
     SeenRecords records;
     set_log_sink(collect_into(&records));
@@ -106,7 +106,7 @@ TEST_F(Unit_LoggerTest, DisabledLevelDoesNotEvaluateItsArguments)
 }
 
 /** @brief Tests that set_log_level decides which calls reach the sink. */
-TEST_F(Unit_LoggerTest, SetLogLevelTakesEffect)
+TEST_F(Medium_LoggerTest, SetLogLevelTakesEffect)
 {
     SeenRecords records;
     set_log_sink(collect_into(&records));
@@ -128,7 +128,7 @@ TEST_F(Unit_LoggerTest, SetLogLevelTakesEffect)
 }
 
 /** @brief Tests that the sink receives the level and the formatted line, on the caller. */
-TEST_F(Unit_LoggerTest, SinkReceivesLevelAndText)
+TEST_F(Medium_LoggerTest, SinkReceivesLevelAndText)
 {
     SeenRecords records;
     set_log_sink(collect_into(&records));
@@ -145,7 +145,7 @@ TEST_F(Unit_LoggerTest, SinkReceivesLevelAndText)
 }
 
 /** @brief Tests that log_write hands its line to the sink unchanged and unfiltered. */
-TEST_F(Unit_LoggerTest, LogWriteBypassesTheLevel)
+TEST_F(Medium_LoggerTest, LogWriteBypassesTheLevel)
 {
     SeenRecords records;
     set_log_sink(collect_into(&records));
@@ -159,7 +159,7 @@ TEST_F(Unit_LoggerTest, LogWriteBypassesTheLevel)
 }
 
 /** @brief Tests that an empty sink sends records to stderr and retires the old sink. */
-TEST_F(Unit_LoggerTest, EmptySinkRestoresTheDefault)
+TEST_F(Medium_LoggerTest, EmptySinkRestoresTheDefault)
 {
     SeenRecords records;
     set_log_sink(collect_into(&records));
@@ -179,7 +179,7 @@ TEST_F(Unit_LoggerTest, EmptySinkRestoresTheDefault)
 }
 
 /** @brief Tests that a record whose sink throws is written to stderr and the call returns. */
-TEST_F(Unit_LoggerTest, ThrowingSinkLeavesTheRecordOnStderr)
+TEST_F(Medium_LoggerTest, ThrowingSinkLeavesTheRecordOnStderr)
 {
     set_log_sink([](LogLevel, std::string_view)
     {
@@ -195,7 +195,7 @@ TEST_F(Unit_LoggerTest, ThrowingSinkLeavesTheRecordOnStderr)
 }
 
 /** @brief Tests that asynchronous records run the sink on another thread, in order. */
-TEST_F(Unit_LoggerTest, AsynchronousRecordsArriveBeforeSynchronousModeReturns)
+TEST_F(Medium_LoggerTest, AsynchronousRecordsArriveBeforeSynchronousModeReturns)
 {
     SeenRecords records;
     set_log_sink(collect_into(&records));

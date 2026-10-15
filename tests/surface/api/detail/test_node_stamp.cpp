@@ -40,7 +40,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that a stamp copies the operation, the width and the parameter count. */
-TEST(Unit_NodeStamp, CopiesWhatTheOptionsState)
+TEST(Small_NodeStamp, CopiesWhatTheOptionsState)
 {
     const std::uint64_t parameters[3] = {1, 2, 3};
     NodeOptions options;
@@ -56,7 +56,7 @@ TEST(Unit_NodeStamp, CopiesWhatTheOptionsState)
 }
 
 /** @brief Tests that parameters within the limit pass and one past it is refused. */
-TEST(Unit_NodeStamp, OneParameterPastTheLimitIsRefused)
+TEST(Small_NodeStamp, OneParameterPastTheLimitIsRefused)
 {
     const std::uint64_t parameters[Detail::K_MAX_NODE_PARAMETERS + 1] = {};
     NodeOptions options;

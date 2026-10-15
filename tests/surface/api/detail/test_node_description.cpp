@@ -40,7 +40,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the defaults of a description. */
-TEST(Unit_NodeDescription, DefaultsDescribeAnEmptyKernel)
+TEST(Small_NodeDescription, DefaultsDescribeAnEmptyKernel)
 {
     const Detail::NodeDescription description;
     EXPECT_EQ(description.kind, Detail::NodeKind::Kernel);

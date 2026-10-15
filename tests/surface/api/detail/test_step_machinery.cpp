@@ -40,7 +40,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the same state gives the same view twice. */
-TEST(Unit_StepMachinery, OneViewPerState)
+TEST(Medium_StepMachinery, OneViewPerState)
 {
     auto runtime = Runtime::create().value();
     auto state = runtime.state<int>(4).value();
@@ -49,7 +49,7 @@ TEST(Unit_StepMachinery, OneViewPerState)
 }
 
 /** @brief Tests that a clean record reports nothing and a window fault reports an error. */
-TEST(Unit_StepMachinery, AFaultRecordBecomesAnError)
+TEST(Medium_StepMachinery, AFaultRecordBecomesAnError)
 {
     std::uint32_t clean[Detail::K_DEVICE_FAULT_WORDS] = {};
     std::uint32_t faulted[Detail::K_DEVICE_FAULT_WORDS] = {};

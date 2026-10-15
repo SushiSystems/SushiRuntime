@@ -100,7 +100,7 @@ namespace
     }
 } // namespace
 
-TEST(Unit_ProfilingLedger, MovedFromLedgerClaimsNothingBeforeReserve)
+TEST(Small_ProfilingLedger, MovedFromLedgerClaimsNothingBeforeReserve)
 {
     ProfilingLedger source;
     source.reserve(K_FIRST_MULTIPLICITIES, K_EXPECTED_INVOCATIONS);
@@ -111,7 +111,7 @@ TEST(Unit_ProfilingLedger, MovedFromLedgerClaimsNothingBeforeReserve)
     EXPECT_EQ(target.claim_slot(0), 0u);
 }
 
-TEST(Unit_ProfilingLedger, MoveConstructedSourceReservesLikeFresh)
+TEST(Small_ProfilingLedger, MoveConstructedSourceReservesLikeFresh)
 {
     ProfilingLedger source;
     source.reserve(K_FIRST_MULTIPLICITIES, K_EXPECTED_INVOCATIONS);
@@ -131,7 +131,7 @@ TEST(Unit_ProfilingLedger, MoveConstructedSourceReservesLikeFresh)
                     run_dispatches(fresh, K_SECOND_ATTEMPTS));
 }
 
-TEST(Unit_ProfilingLedger, MoveAssignedSourceReservesLikeFresh)
+TEST(Small_ProfilingLedger, MoveAssignedSourceReservesLikeFresh)
 {
     ProfilingLedger source;
     source.reserve(K_FIRST_MULTIPLICITIES, K_EXPECTED_INVOCATIONS);

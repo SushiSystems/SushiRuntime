@@ -40,7 +40,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the fields of the description and that its work runs on the queue. */
-TEST(Unit_EmitTask, ATaskNodeRunsOnTheQueue)
+TEST(Medium_EmitTask, ATaskNodeRunsOnTheQueue)
 {
     auto runtime = Runtime::create().value();
     int* const value = Testing::shared_integers(runtime, 1, 0);

@@ -54,14 +54,14 @@ namespace
 }
 
 /** @brief Tests that a plain task is described by its name. */
-TEST(Unit_FailureNaming, ATaskIsDescribedByItsName)
+TEST(Small_FailureNaming, ATaskIsDescribedByItsName)
 {
     const sushi_ptr<NamedTask> task = make_sushi<NamedTask>();
     EXPECT_EQ(describe_task(*task), "task 'copy'");
 }
 
 /** @brief Tests that a node is described by its name and its registration index. */
-TEST(Unit_FailureNaming, ANodeIsDescribedByNameAndIndex)
+TEST(Small_FailureNaming, ANodeIsDescribedByNameAndIndex)
 {
     Internal::Graph::Node node;
     node.metadata.name = "advect";
@@ -70,7 +70,7 @@ TEST(Unit_FailureNaming, ANodeIsDescribedByNameAndIndex)
 }
 
 /** @brief Tests that a named failure keeps the code and puts the task before the cause. */
-TEST(Unit_FailureNaming, AFailureKeepsItsCodeAndNamesTheTask)
+TEST(Small_FailureNaming, AFailureKeepsItsCodeAndNamesTheTask)
 {
     Internal::Graph::Node node;
     node.metadata.name = "advect";

@@ -63,10 +63,10 @@ runtime cannot see names no region, so nothing but the placement rule keeps it o
 owns its memory. Each node is a host node that submits device work, so the scheduler picks a queue
 for it, and its work records the queue it receives and submits nothing.
 
-### `Unit_NodePlacement`
+### `Medium_NodePlacement`
 
 The fixture builds the scheduler from a topology view, a device set and an allocator, as
-`Unit_OffloadSeam` does. The device set holds two entries over the one device SYCL selects by
+`Medium_OffloadSeam` does. The device set holds two entries over the one device SYCL selects by
 default, both on NUMA node 0. Each entry has its own `sycl::queue`, and two queues compare equal
 only when they are copies of one another, so the queue a node receives names its entry.
 
@@ -119,7 +119,7 @@ the coordinator declines leaves it at zero and runs on the pool. A node the coor
 raises it to one and does not run; the test then returns the node through `complete_remote()`,
 which drops the reference the coordinator held.
 
-### `Unit_OffloadSeam`
+### `Medium_OffloadSeam`
 
 The fixture builds the scheduler from a topology view, a device set and an allocator, the parts a
 `RuntimeContext` would supply, because a module test names no execution header. The pool has two
@@ -146,14 +146,14 @@ Three kinds of node did not run to their end: a node of a cancelled run, a late-
 disabled for the step and a node whose work threw. None may reach `on_local_completion()`. The poller makes that call before
 it drops the in-flight count, so the counter is final when `wait_quiescent()` returns.
 
-### `Integration_SchedulerIntegration` and `Regression_TaskScheduler`
+### `Medium_SchedulerIntegration` and `Medium_TaskScheduler`
 
 These checks are fast and deterministic; heavy load is tested by
 `tests/engine/execution/benchmark_scheduler_execution_engine.cpp`. The scheduler must run exactly
 the tasks submitted, honor priority bypass, survive a clean round of arm, submit and stop, and drain
 without a deadlock when it is stopped under load.
 
-### `Unit_NumaStealTest`
+### `Medium_NumaStealTest`
 
 NUMA-aware hierarchical work stealing is checked on single-node hardware through a synthetic
 topology. A `RemappingTopologyProvider` spreads the cores across N nodes (core i goes to node

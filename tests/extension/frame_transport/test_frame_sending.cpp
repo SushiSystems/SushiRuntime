@@ -71,7 +71,7 @@ namespace
 }
 
 /** @brief Tests that a PING leaves as one frame of its type whose payload carries its token. */
-TEST(Unit_FrameSending, AMessageLeavesAsOneFrameOfItsType)
+TEST(Medium_FrameSending, AMessageLeavesAsOneFrameOfItsType)
 {
     LastFrameTransport transport;
     Wire::PingMessage ping;

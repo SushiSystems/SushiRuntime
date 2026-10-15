@@ -59,7 +59,7 @@ using namespace SushiRuntime;
 #if defined(SR_SANITIZER_OWNS_ALLOCATOR)
 
 /** @brief Skips the suite in a build whose sanitizer owns operator new. */
-TEST(Integration_SteadyStateAllocation, SkippedUnderSanitizer)
+TEST(Medium_SteadyStateAllocation, SkippedUnderSanitizer)
 {
     GTEST_SKIP() << "This sanitizer owns operator new; the allocation counter "
                     "cannot coexist with it. Run this suite in an ordinary build.";
@@ -201,7 +201,7 @@ namespace
 }
 
 /** @brief Tests that the counter observes an allocation on the calling thread. */
-TEST(Integration_SteadyStateAllocation, TheCounterObservesTheCallingThread)
+TEST(Medium_SteadyStateAllocation, TheCounterObservesTheCallingThread)
 {
     g_allocation_count.store(0, std::memory_order_relaxed);
     g_counting_this_thread = true;
@@ -217,7 +217,7 @@ TEST(Integration_SteadyStateAllocation, TheCounterObservesTheCallingThread)
 }
 
 // The four properties the header comment describes.
-TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
+TEST(Medium_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
 {
     const auto kernel = [](float* p) { return [p](std::size_t i) { p[i] = static_cast<float>(i) * 0.5f; }; };
 
@@ -305,7 +305,7 @@ TEST(Integration_SteadyStateAllocation, ReuseTicksDoNotAllocatePerTick)
 }
 
 /** @brief Tests the same allocation claims on the asynchronous path. */
-TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
+TEST(Medium_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<float>(N).value();
@@ -349,7 +349,7 @@ TEST(Integration_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
 }
 
 /** @brief Tests that a profiled run's event ledger allocates only for a new shape. */
-TEST(Integration_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
+TEST(Medium_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
 {
     // Without the counter every count is zero, so both claims would pass vacuously.
     if (!K_COUNTER_SEES_THE_LIBRARY)

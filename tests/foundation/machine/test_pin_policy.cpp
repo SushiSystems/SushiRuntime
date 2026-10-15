@@ -36,7 +36,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests the size and the two values of the enumeration. */
-TEST(Unit_PinPolicy, TwoPlacementsInOneByte)
+TEST(Small_PinPolicy, TwoPlacementsInOneByte)
 {
     static_assert(std::is_same_v<std::underlying_type_t<PinPolicy>, std::uint8_t>, "one byte");
     EXPECT_NE(PinPolicy::Pin, PinPolicy::Float);

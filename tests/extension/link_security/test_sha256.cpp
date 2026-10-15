@@ -78,7 +78,7 @@ namespace
 }
 
 /** @brief Tests SHA-256 against the example messages of FIPS 180-4. */
-TEST(Unit_Sha256Test, Sha256Fips180Vectors)
+TEST(Medium_Sha256Test, Sha256Fips180Vectors)
 {
     EXPECT_EQ(to_hex(sha256(bytes_of(""))),
               "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
@@ -98,7 +98,7 @@ TEST(Unit_Sha256Test, Sha256Fips180Vectors)
 }
 
 /** @brief Tests that a message fed in uneven pieces hashes like the whole message. */
-TEST(Unit_Sha256Test, PiecewiseUpdateMatchesOneShot)
+TEST(Medium_Sha256Test, PiecewiseUpdateMatchesOneShot)
 {
     const std::vector<std::uint8_t> million = repeated('a', 1000000);
     const std::size_t piece = 127;

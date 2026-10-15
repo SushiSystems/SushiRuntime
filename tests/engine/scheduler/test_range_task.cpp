@@ -66,7 +66,7 @@ namespace
  * Asserts that a range well above the grain (1024) is splittable, while a range of exactly the
  * grain or less is not, and returns nullopt when split.
  */
-TEST(Unit_RangeTaskTest, SplittableOnlyAboveGrain)
+TEST(Medium_RangeTaskTest, SplittableOnlyAboveGrain)
 {
     RangeTask big(size_t{0}, size_t{4096}, noop_kernel());
     EXPECT_TRUE(big.is_splittable()) << "A range well above the grain must be splittable.";
@@ -87,7 +87,7 @@ TEST(Unit_RangeTaskTest, SplittableOnlyAboveGrain)
  *
  * Repeatedly splits a large range task, tracking each yielded chunk to ensure they are distinct, and asserts the owner becomes non-splittable once exhausted.
  */
-TEST(Unit_RangeTaskTest, SplitHandsOffDistinctChunksUntilExhausted)
+TEST(Medium_RangeTaskTest, SplitHandsOffDistinctChunksUntilExhausted)
 {
     sushi_ptr<Task> owner = make_sushi<RangeTask>(size_t{0}, size_t{1u << 16}, noop_kernel());
     ASSERT_TRUE(owner->is_splittable());
@@ -119,7 +119,7 @@ TEST(Unit_RangeTaskTest, SplitHandsOffDistinctChunksUntilExhausted)
 /**
  * @brief is_splittable() and split() give the same answer on both sides of the threshold.
  */
-TEST(Unit_RangeTaskTest, IsSplittableAgreesWithSplitAroundTheThreshold)
+TEST(Medium_RangeTaskTest, IsSplittableAgreesWithSplitAroundTheThreshold)
 {
     // The offset keeps the answer a function of the size, not of where the range starts.
     constexpr size_t K_OFFSETS[] = {0, 4096};
@@ -143,7 +143,7 @@ TEST(Unit_RangeTaskTest, IsSplittableAgreesWithSplitAroundTheThreshold)
 /**
  * @brief The parts a range splits into cover it once, with no gap and no overlap.
  */
-TEST(Unit_RangeTaskTest, SplitPartsCoverTheRangeExactlyOnce)
+TEST(Medium_RangeTaskTest, SplitPartsCoverTheRangeExactlyOnce)
 {
     constexpr size_t K_BEGIN = 37;
     constexpr size_t K_END = K_BEGIN + 10007;
@@ -190,7 +190,7 @@ TEST(Unit_RangeTaskTest, SplitPartsCoverTheRangeExactlyOnce)
 /**
  * @brief A reversed range stops the process at construction.
  */
-TEST(Unit_RangeTaskDeathTest, AReversedRangeStopsAtConstruction)
+TEST(Medium_RangeTaskDeathTest, AReversedRangeStopsAtConstruction)
 {
     EXPECT_DEATH(RangeTask(size_t{8}, size_t{4}, noop_kernel()), "the reversed range .8, 4.");
 }
@@ -198,7 +198,7 @@ TEST(Unit_RangeTaskDeathTest, AReversedRangeStopsAtConstruction)
 /**
  * @brief An empty range is accepted and does not split.
  */
-TEST(Unit_RangeTaskTest, AnEmptyRangeIsAcceptedAndDoesNotSplit)
+TEST(Medium_RangeTaskTest, AnEmptyRangeIsAcceptedAndDoesNotSplit)
 {
     RangeTask empty(size_t{8}, size_t{8}, noop_kernel());
     EXPECT_FALSE(empty.is_splittable());

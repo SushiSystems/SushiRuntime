@@ -83,7 +83,7 @@ namespace
  *
  * Creates a smart pointer and ensures that the tracked object is destroyed upon the pointer going out of scope.
  */
-TEST(Unit_RefCountedTest, MakeSushiOwnsAndReleasesOnce)
+TEST(Medium_RefCountedTest, MakeSushiOwnsAndReleasesOnce)
 {
     std::atomic<int> destroyed{0};
     {
@@ -101,7 +101,7 @@ TEST(Unit_RefCountedTest, MakeSushiOwnsAndReleasesOnce)
  *
  * Tracks the reference count through move and copy operations and ensures proper decrementing upon scope exit.
  */
-TEST(Unit_RefCountedTest, CopyBumpsMoveTransfers)
+TEST(Medium_RefCountedTest, CopyBumpsMoveTransfers)
 {
     std::atomic<int> destroyed{0};
     auto a = make_sushi<Tracked>(destroyed);
@@ -126,7 +126,7 @@ TEST(Unit_RefCountedTest, CopyBumpsMoveTransfers)
  *
  * Asserts that the smart pointer is emptied while the object's reference count remains unchanged, leaving ownership to the caller.
  */
-TEST(Unit_RefCountedTest, LeakDetachesWithoutChangingCount)
+TEST(Medium_RefCountedTest, LeakDetachesWithoutChangingCount)
 {
     std::atomic<int> destroyed{0};
     auto p = make_sushi<Tracked>(destroyed);
@@ -146,7 +146,7 @@ TEST(Unit_RefCountedTest, LeakDetachesWithoutChangingCount)
  *
  * Converts a derived smart pointer to a base smart pointer, asserts virtual dispatch works, and ensures exactly one destruction occurs.
  */
-TEST(Unit_RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
+TEST(Medium_RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
 {
     std::atomic<int> destroyed{0};
     {
@@ -163,7 +163,7 @@ TEST(Unit_RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
  *
  * Spawns multiple threads to aggressively copy and drop a shared pointer, asserting that the object survives and count remains consistent.
  */
-TEST(Unit_RefCountedTest, ConcurrentRefCountingIsAtomic)
+TEST(Medium_RefCountedTest, ConcurrentRefCountingIsAtomic)
 {
     std::atomic<int> destroyed{0};
     auto root = make_sushi<Tracked>(destroyed);

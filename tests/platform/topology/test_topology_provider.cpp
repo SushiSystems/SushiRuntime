@@ -72,7 +72,7 @@ namespace
 }
 
 /** @brief Tests that a provider is called through the interface, and the core map defaults empty. */
-TEST(Unit_TopologyProvider, AProviderAnswersThroughTheInterface)
+TEST(Small_TopologyProvider, AProviderAnswersThroughTheInterface)
 {
     TwoNodeProvider provider;
     TopologyProvider& seam = provider;
@@ -83,7 +83,7 @@ TEST(Unit_TopologyProvider, AProviderAnswersThroughTheInterface)
 }
 
 /** @brief Tests a distance model through the interface: local is the cheapest. */
-TEST(Unit_TopologyProvider, ADistanceModelAnswersThroughTheInterface)
+TEST(Small_TopologyProvider, ADistanceModelAnswersThroughTheInterface)
 {
     const TwoNodeDistances distances;
     const NUMADistanceModel& seam = distances;

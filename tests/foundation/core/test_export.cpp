@@ -40,13 +40,13 @@
 #endif
 
 /** @brief Tests that the short spelling expands to the same attribute as the long one. */
-TEST(Unit_Export, ShortSpellingExpandsLikeTheLongOne)
+TEST(Small_Export, ShortSpellingExpandsLikeTheLongOne)
 {
     EXPECT_STREQ(SR_STRINGIFY_EXPANDED(SR_API), SR_STRINGIFY_EXPANDED(SUSHIRUNTIME_API));
 }
 
 /** @brief Tests that a consumer of the library imports, which a test program is. */
-TEST(Unit_Export, AConsumerImportsTheSymbols)
+TEST(Small_Export, AConsumerImportsTheSymbols)
 {
 #if defined(_WIN32) || defined(__CYGWIN__)
     EXPECT_NE(std::strstr(SR_STRINGIFY_EXPANDED(SUSHIRUNTIME_API), "dllimport"), nullptr);

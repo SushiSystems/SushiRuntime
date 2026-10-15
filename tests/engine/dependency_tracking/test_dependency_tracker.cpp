@@ -65,7 +65,7 @@ namespace DependencyTrackerTests
      * Simulates a writer followed by a reader accessing the same buffer, ensuring
      * the reader's incoming edge count increments.
      */
-    TEST(Unit_DependencyTrackerTest, RawCreatesEdge)
+    TEST(Small_DependencyTrackerTest, RawCreatesEdge)
     {
         DependencyTracker tracker;
         auto writer = make_sushi<Node>();
@@ -89,7 +89,7 @@ namespace DependencyTrackerTests
      * Creates a sequence of Write -> Read -> Write and verifies the correct
      * dependency counts for all operations.
      */
-    TEST(Unit_DependencyTrackerTest, WarAndWawChain)
+    TEST(Small_DependencyTrackerTest, WarAndWawChain)
     {
         DependencyTracker tracker;
         auto w1 = make_sushi<Node>();
@@ -116,7 +116,7 @@ namespace DependencyTrackerTests
      * Ensures that Read-After-Read (RAR) operations remain parallel and only
      * depend on the preceding write.
      */
-    TEST(Unit_DependencyTrackerTest, ReadersDependOnWriterNotEachOther)
+    TEST(Small_DependencyTrackerTest, ReadersDependOnWriterNotEachOther)
     {
         DependencyTracker tracker;
         auto writer = make_sushi<Node>();
@@ -142,7 +142,7 @@ namespace DependencyTrackerTests
      * When a writer and a reader access two distinct buffers, the dependency tracker
      * should deduplicate this into a single logical dependency edge.
      */
-    TEST(Unit_DependencyTrackerTest, SharedBuffersCreateSingleEdge)
+    TEST(Small_DependencyTrackerTest, SharedBuffersCreateSingleEdge)
     {
         DependencyTracker tracker;
         auto writer = make_sushi<Node>();
@@ -169,7 +169,7 @@ namespace DependencyTrackerTests
      * Resolving a write operation multiple times on the same node should never increment
      * its own dependency degree.
      */
-    TEST(Unit_DependencyTrackerTest, NoSelfDependency)
+    TEST(Small_DependencyTrackerTest, NoSelfDependency)
     {
         DependencyTracker tracker;
         auto node = make_sushi<Node>();
@@ -193,7 +193,7 @@ namespace DependencyTrackerTests
      * Two writers touching non-overlapping byte ranges of the same base must not be
      * ordered — the core win of region identity over base-pointer identity.
      */
-    TEST(Unit_DependencyTrackerTest, DisjointSubRegionsAreParallel)
+    TEST(Small_DependencyTrackerTest, DisjointSubRegionsAreParallel)
     {
         DependencyTracker tracker;
         auto w1 = make_sushi<Node>();
@@ -215,7 +215,7 @@ namespace DependencyTrackerTests
      * Ranges [0,40) and [32,64) share bytes [32,40), so the second writer must
      * depend on the first.
      */
-    TEST(Unit_DependencyTrackerTest, OverlappingSubRegionsAreOrdered)
+    TEST(Small_DependencyTrackerTest, OverlappingSubRegionsAreOrdered)
     {
         DependencyTracker tracker;
         auto w1 = make_sushi<Node>();
@@ -236,7 +236,7 @@ namespace DependencyTrackerTests
      * A bare base pointer is the whole-buffer region, which contains every
      * sub-region of the same allocation, so it serializes against them.
      */
-    TEST(Unit_DependencyTrackerTest, WholeBufferConflictsWithSubRegion)
+    TEST(Small_DependencyTrackerTest, WholeBufferConflictsWithSubRegion)
     {
         DependencyTracker tracker;
         auto whole = make_sushi<Node>();
@@ -258,7 +258,7 @@ namespace DependencyTrackerTests
      * A read of [0,64) follows two writers that each cover one half; stopping at the
      * first writer found would drop one RAW edge. The read must depend on both.
      */
-    TEST(Unit_DependencyTrackerTest, ReadDependsOnAllOverlappingWrites)
+    TEST(Small_DependencyTrackerTest, ReadDependsOnAllOverlappingWrites)
     {
         DependencyTracker tracker;
         auto w_lo = make_sushi<Node>();
@@ -284,7 +284,7 @@ namespace DependencyTrackerTests
      * it does not depend on the earlier read. Stopping the walk there would drop the
      * WAR edge to the read and silently race. The final write must depend on both.
      */
-    TEST(Unit_DependencyTrackerTest, WriteWalkContinuesPastPartialWriter)
+    TEST(Small_DependencyTrackerTest, WriteWalkContinuesPastPartialWriter)
     {
         DependencyTracker tracker;
         auto rd = make_sushi<Node>();
@@ -310,7 +310,7 @@ namespace DependencyTrackerTests
      * Two writers to different base allocations must stay parallel even if their
      * byte offsets coincide — overlap requires the same base.
      */
-    TEST(Unit_DependencyTrackerTest, DistinctAllocationsAreParallel)
+    TEST(Small_DependencyTrackerTest, DistinctAllocationsAreParallel)
     {
         DependencyTracker tracker;
         auto w1 = make_sushi<Node>();

@@ -60,7 +60,7 @@ namespace BoundaryAccessTests
 
 
     /** @brief Tests that an earlier region's writer orders a reader its predecessor half covers. */
-    TEST(Integration_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers)
+    TEST(Medium_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers)
     {
         auto rt = Runtime::create().value();
         rt.set_rebalancer_enabled(false);
@@ -101,7 +101,7 @@ namespace BoundaryAccessTests
     }
 
     /** @brief Tests that a reader its predecessor fully covers gains no edge of its own. */
-    TEST(Integration_BoundaryAccess, AReaderItsPredecessorCoversGainsNoEdge)
+    TEST(Medium_BoundaryAccess, AReaderItsPredecessorCoversGainsNoEdge)
     {
         auto rt = Runtime::create().value();
         rt.set_rebalancer_enabled(false);
@@ -145,7 +145,7 @@ namespace BoundaryAccessTests
     }
 
     /** @brief Tests that an earlier region's reader orders a writer whose predecessor only reads. */
-    TEST(Integration_BoundaryAccess, AnEarlierReaderOrdersAWriterBehindAReadingPredecessor)
+    TEST(Medium_BoundaryAccess, AnEarlierReaderOrdersAWriterBehindAReadingPredecessor)
     {
         auto rt = Runtime::create().value();
         rt.set_rebalancer_enabled(false);
@@ -222,7 +222,7 @@ namespace RegionCommitTests
     } // namespace
 
     /** @brief Tests that a commit whose region build throws keeps the edges of the other regions. */
-    TEST(Integration_RegionCommit, AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegions)
+    TEST(Medium_RegionCommit, AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegions)
     {
         auto rt = Runtime::create().value();
         rt.set_rebalancer_enabled(false);

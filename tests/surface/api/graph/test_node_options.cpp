@@ -54,7 +54,7 @@ namespace
 } // namespace
 
 /** @brief Tests that each node of a rule reports the width it stated, not a buffer's size. */
-TEST(Integration_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
+TEST(Medium_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
 {
     constexpr std::size_t WIDE = 600;
 
@@ -89,7 +89,7 @@ TEST(Integration_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
 }
 
 /** @brief Tests that a resolver and a device-sized node report the widths they stated. */
-TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidths)
+TEST(Medium_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidths)
 {
     constexpr std::size_t CAPACITY = 128;
 
@@ -132,7 +132,7 @@ TEST(Integration_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWi
 }
 
 /** @brief Tests that a profiled run reports the name and the operation a node stated. */
-TEST(Integration_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
+TEST(Medium_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
 {
     constexpr std::size_t WIDE = 64;
 
@@ -163,7 +163,7 @@ TEST(Integration_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
 }
 
 /** @brief Tests that a node's own name is reported in place of the name of its rule. */
-TEST(Integration_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
+TEST(Medium_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
 {
     constexpr std::size_t WIDE = 32;
 
@@ -192,7 +192,7 @@ TEST(Integration_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
 }
 
 /** @brief Tests that more parameters than a node carries are refused and record nothing. */
-TEST(Integration_NodeOptionsWidth, MoreParametersThanANodeCarriesAreRefused)
+TEST(Medium_NodeOptionsWidth, MoreParametersThanANodeCarriesAreRefused)
 {
     constexpr std::size_t WIDE = 8;
 

@@ -219,7 +219,7 @@ namespace
 } // namespace
 
 /** @brief Tests that exactly the work-items below the live width run, at every width. */
-TEST(Integration_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
+TEST(Medium_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
 {
     constexpr std::size_t CAPACITY = 600;
     constexpr std::size_t SALT = 7;
@@ -251,7 +251,7 @@ TEST(Integration_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
 }
 
 /** @brief Tests that a null live width runs every item and the arity picks the live words. */
-TEST(Integration_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksTheWords)
+TEST(Medium_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksTheWords)
 {
     constexpr std::size_t CAPACITY = 300;
     constexpr std::size_t LIVE = 123;
@@ -300,7 +300,7 @@ TEST(Integration_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksT
 }
 
 /** @brief Tests that a launch of capacity zero runs no item and still releases its successor. */
-TEST(Integration_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothingAndReleasesItsSuccessor)
+TEST(Medium_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothingAndReleasesItsSuccessor)
 {
     auto rt     = Runtime::create().value();
     auto target = rt.buffer<std::uint32_t>(1).value();
@@ -326,7 +326,7 @@ TEST(Integration_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothingAndReleasesItsS
 /**
  * @brief Tests that a device-sized rule gives the same bytes on both layers as its counts change.
  */
-TEST(Integration_DeviceSizedLaunch, DeviceSizedRuleChainMatchesSchedulerAsTheCountsChange)
+TEST(Medium_DeviceSizedLaunch, DeviceSizedRuleChainMatchesSchedulerAsTheCountsChange)
 {
     constexpr std::size_t CAPACITY = 4096;
     constexpr std::size_t SALT_CAPACITY = std::size_t{1} << 20;
@@ -352,7 +352,7 @@ TEST(Integration_DeviceSizedLaunch, DeviceSizedRuleChainMatchesSchedulerAsTheCou
 }
 
 /** @brief Tests that a sized_from_device task gives the same bytes on both layers. */
-TEST(Integration_DeviceSizedLaunch, SizedFromDeviceChainMatchesSchedulerAsTheCountChanges)
+TEST(Medium_DeviceSizedLaunch, SizedFromDeviceChainMatchesSchedulerAsTheCountChanges)
 {
     constexpr std::size_t CAPACITY = 4096;
     expect_chain_matches_scheduler([](Runtime& rt)
@@ -373,7 +373,7 @@ TEST(Integration_DeviceSizedLaunch, SizedFromDeviceChainMatchesSchedulerAsTheCou
 }
 
 /** @brief Tests that a device count over its capacity fails a chained run. */
-TEST(Integration_DeviceSizedLaunch, DeviceCountOverCapacityFailsAChainedRun)
+TEST(Medium_DeviceSizedLaunch, DeviceCountOverCapacityFailsAChainedRun)
 {
     constexpr std::size_t CAPACITY = 100;
 

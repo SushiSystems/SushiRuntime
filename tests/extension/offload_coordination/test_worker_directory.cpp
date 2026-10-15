@@ -225,11 +225,11 @@ namespace WorkerDirectoryTests
         };
 
         /** @brief Builds a directory over a 32-byte secret and a recording policy. */
-        class Unit_WorkerDirectory : public ::testing::Test
+        class Medium_WorkerDirectory : public ::testing::Test
         {
             protected:
                 /** @brief Fills the secret with the bytes 0 to 31 and builds the directory. */
-                Unit_WorkerDirectory()
+                Medium_WorkerDirectory()
                     : secret_(make_secret()),
                       policy_(std::make_shared<RecordingPolicy>()),
                       directory_(secret(), policy_)
@@ -287,7 +287,7 @@ namespace WorkerDirectoryTests
         };
     } // namespace
 
-    TEST_F(Unit_WorkerDirectory, UnregisteredPeerMessagesDropped)
+    TEST_F(Medium_WorkerDirectory, UnregisteredPeerMessagesDropped)
     {
         const HandshakeNonce worker_nonce = nonce_of(0x11);
         const HandshakeNonce master_nonce = nonce_of(0x22);
@@ -324,7 +324,7 @@ namespace WorkerDirectoryTests
         EXPECT_TRUE(admitted_types(directory_, K_FIRST).empty());
     }
 
-    TEST_F(Unit_WorkerDirectory, HandshakeDeadlineClosesPeer)
+    TEST_F(Medium_WorkerDirectory, HandshakeDeadlineClosesPeer)
     {
         const milliseconds limit(5000);
 
@@ -363,7 +363,7 @@ namespace WorkerDirectoryTests
         EXPECT_EQ(directory_.alive_count(), 1u);
     }
 
-    TEST_F(Unit_WorkerDirectory, WaitForWorkersWakesOnRegistration)
+    TEST_F(Medium_WorkerDirectory, WaitForWorkersWakesOnRegistration)
     {
         EXPECT_TRUE(directory_.wait_for_workers(0, milliseconds(0)));
         EXPECT_FALSE(directory_.wait_for_workers(1, milliseconds(0)));
@@ -386,7 +386,7 @@ namespace WorkerDirectoryTests
         EXPECT_FALSE(reached_two.load()) << "close() wakes a waiter whose count was not reached";
     }
 
-    TEST_F(Unit_WorkerDirectory, WrongProofIsRejected)
+    TEST_F(Medium_WorkerDirectory, WrongProofIsRejected)
     {
         const HandshakeNonce worker_nonce = nonce_of(0x11);
         const HandshakeNonce master_nonce = nonce_of(0x22);
@@ -437,7 +437,7 @@ namespace WorkerDirectoryTests
         EXPECT_FALSE(directory_.remove_peer(K_FIRST).registered);
     }
 
-    TEST_F(Unit_WorkerDirectory, SecondHelloRestartsTheHandshake)
+    TEST_F(Medium_WorkerDirectory, SecondHelloRestartsTheHandshake)
     {
         const HandshakeNonce first_worker_nonce = nonce_of(0x11);
         const HandshakeNonce first_master_nonce = nonce_of(0x22);
@@ -495,7 +495,7 @@ namespace WorkerDirectoryTests
         EXPECT_TRUE(directory_.admits(K_SECOND, MessageType::TaskResult));
     }
 
-    TEST_F(Unit_WorkerDirectory, SilentWorkerIsTakenOnce)
+    TEST_F(Medium_WorkerDirectory, SilentWorkerIsTakenOnce)
     {
         const sushi_ptr<Internal::Graph::Node> node = common_node();
         const milliseconds liveness(500);
@@ -549,7 +549,7 @@ namespace WorkerDirectoryTests
         EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
     }
 
-    TEST_F(Unit_WorkerDirectory, PickSkipsWorkersAtTheirJobLimit)
+    TEST_F(Medium_WorkerDirectory, PickSkipsWorkersAtTheirJobLimit)
     {
         const sushi_ptr<Internal::Graph::Node> node = common_node();
 
@@ -607,7 +607,7 @@ namespace WorkerDirectoryTests
     }
 
     /** @brief Tests that pick() offers a node only to a worker that holds its kernel. */
-    TEST_F(Unit_WorkerDirectory, PickOffersOnlyWorkersWithTheKernel)
+    TEST_F(Medium_WorkerDirectory, PickOffersOnlyWorkersWithTheKernel)
     {
         using std::chrono::milliseconds;
 
@@ -633,7 +633,7 @@ namespace WorkerDirectoryTests
             << "a node with no operation was offered to a worker";
     }
 
-    TEST_F(Unit_WorkerDirectory, SnapshotReportsWhatTheWorkerSent)
+    TEST_F(Medium_WorkerDirectory, SnapshotReportsWhatTheWorkerSent)
     {
         const sushi_ptr<Internal::Graph::Node> node = common_node();
 
@@ -662,7 +662,7 @@ namespace WorkerDirectoryTests
         EXPECT_EQ(workers[0].ms_since_last_frame, 600u);
     }
 
-    TEST_F(Unit_WorkerDirectory, IdentityCarriesTheBuildOfTheLastHello)
+    TEST_F(Medium_WorkerDirectory, IdentityCarriesTheBuildOfTheLastHello)
     {
         const HandshakeNonce first_worker_nonce = nonce_of(0x11);
         const HandshakeNonce first_master_nonce = nonce_of(0x22);
@@ -703,7 +703,7 @@ namespace WorkerDirectoryTests
         EXPECT_FALSE(directory_.identity(K_FIRST).has_value());
     }
 
-    TEST_F(Unit_WorkerDirectory, HelloFromARegisteredWorkerRegistersNothingTwice)
+    TEST_F(Medium_WorkerDirectory, HelloFromARegisteredWorkerRegistersNothingTwice)
     {
         ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
                   HandshakeStep::Accepted);
@@ -732,7 +732,7 @@ namespace WorkerDirectoryTests
     }
 
     /** @brief Tests that close() leaves no worker alive, no operation supported and no way in. */
-    TEST_F(Unit_WorkerDirectory, CloseRetiresEveryWorker)
+    TEST_F(Medium_WorkerDirectory, CloseRetiresEveryWorker)
     {
         ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION, K_COMMON_OPERATION}, 4,
                                   at(milliseconds(0))),

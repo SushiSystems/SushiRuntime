@@ -58,7 +58,7 @@ namespace
 }
 
 /** @brief Tests the defaults, and that the state owns its payload. */
-TEST(Unit_OffloadState, DefaultsHoldNothingAndThePayloadIsOwned)
+TEST(Small_OffloadState, DefaultsHoldNothingAndThePayloadIsOwned)
 {
     int destroyed = 0;
     {

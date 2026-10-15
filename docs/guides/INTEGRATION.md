@@ -72,7 +72,7 @@ Source: `tests/package/CMakeLists.txt`
 
 Configure with `CMAKE_PREFIX_PATH` set to the install prefix
 and with the same SYCL compiler as `CMAKE_CXX_COMPILER`. `tests/package/` is a complete consumer
-with no access to this source tree, and `sr test --suite package` installs the library and
+with no access to this source tree, and `sr test --label package` installs the library and
 builds and runs it.
 
 `add_subdirectory(path/to/sushiruntime)` defines the same `SushiRuntime::SushiRuntime` target.
@@ -276,7 +276,7 @@ records a graph was compiled without SYCL. See §1.
 
 **A replay is not byte-equal between two builds.** Check that `SushiRuntime_DETERMINISTIC_FP`
 is `ON` in the package you consumed and that your build adds no fast-math flag. The tests named
-`Integration_Determinism` in `tests/surface/api/graph/test_graph.cpp` make the same check
+`Medium_Determinism` in `tests/surface/api/graph/test_graph.cpp` make the same check
 in this repository.
 
 **`find_package` does not find `IntelSYCL`.** Configure your SYCL toolchain before

@@ -606,7 +606,7 @@ namespace
 } // namespace
 
 /** @brief Tests that a BUFFER_RELEASE frees an unpinned buffer and waits for a pinned one. */
-TEST(Unit_WorkerBufferCacheTest, ReleaseEvicts)
+TEST(Medium_WorkerBufferCacheTest, ReleaseEvicts)
 {
     std::atomic<int> calls{0};
     AgentRig rig;
@@ -636,7 +636,7 @@ TEST(Unit_WorkerBufferCacheTest, ReleaseEvicts)
 }
 
 /** @brief Tests that a full cache evicts the buffer used longest ago, and keeps the one read. */
-TEST(Unit_WorkerBufferCacheTest, BudgetEvictsLeastRecentlyUsedUnpinned)
+TEST(Medium_WorkerBufferCacheTest, BudgetEvictsLeastRecentlyUsedUnpinned)
 {
     std::atomic<int> calls{0};
     AgentRig rig;
@@ -675,7 +675,7 @@ TEST(Unit_WorkerBufferCacheTest, BudgetEvictsLeastRecentlyUsedUnpinned)
 }
 
 /** @brief Tests that a buffer pinned by an output stream is never evicted to make room. */
-TEST(Unit_WorkerBufferCacheTest, PinnedEntryIsNotEvicted)
+TEST(Medium_WorkerBufferCacheTest, PinnedEntryIsNotEvicted)
 {
     std::atomic<int> calls{0};
     AgentRig rig;
@@ -709,7 +709,7 @@ TEST(Unit_WorkerBufferCacheTest, PinnedEntryIsNotEvicted)
 }
 
 /** @brief Tests that a pulled buffer with a gap is discarded, and a whole pull is kept. */
-TEST(Unit_WorkerBufferCacheTest, GapInAPulledBufferDiscardsIt)
+TEST(Medium_WorkerBufferCacheTest, GapInAPulledBufferDiscardsIt)
 {
     std::atomic<bool> is_equal{false};
     const BufferHandle handle = handle_of(9, 3, 12);
@@ -751,7 +751,7 @@ TEST(Unit_WorkerBufferCacheTest, GapInAPulledBufferDiscardsIt)
 }
 
 /** @brief Tests that an output the cache cannot hold fails the task, and the next one runs. */
-TEST(Unit_DispatchExecutorTest, OutputAllocationFailureFailsTheTask)
+TEST(Medium_DispatchExecutorTest, OutputAllocationFailureFailsTheTask)
 {
     std::atomic<int> calls{0};
     AgentRig rig;
@@ -776,7 +776,7 @@ TEST(Unit_DispatchExecutorTest, OutputAllocationFailureFailsTheTask)
 }
 
 /** @brief Tests that a kernel sees each buffer's size and its output leaves in chunks. */
-TEST(Unit_DispatchExecutorTest, KernelSeesBufferSizes)
+TEST(Medium_DispatchExecutorTest, KernelSeesBufferSizes)
 {
     std::atomic<std::size_t> input_size{0};
     std::atomic<std::size_t> output_size{0};
@@ -827,7 +827,7 @@ TEST(Unit_DispatchExecutorTest, KernelSeesBufferSizes)
 }
 
 /** @brief Tests that a generic lambda registers as a kernel and runs. */
-TEST(Unit_DispatchExecutorTest, GenericLambdaRegistersAsAKernel)
+TEST(Medium_DispatchExecutorTest, GenericLambdaRegistersAsAKernel)
 {
     AgentRig rig;
     const OperationID op(14);
@@ -852,7 +852,7 @@ TEST(Unit_DispatchExecutorTest, GenericLambdaRegistersAsAKernel)
 }
 
 /** @brief Tests that a kernel that throws fails its task and the next task still runs. */
-TEST(Unit_DispatchExecutorTest, KernelThatThrowsFailsTheTaskAndTheWorkerLives)
+TEST(Medium_DispatchExecutorTest, KernelThatThrowsFailsTheTaskAndTheWorkerLives)
 {
     std::atomic<int> calls{0};
     AgentRig rig;
@@ -882,7 +882,7 @@ TEST(Unit_DispatchExecutorTest, KernelThatThrowsFailsTheTaskAndTheWorkerLives)
 }
 
 /** @brief Tests that an output's chunks come before its TASK_RESULT, which ends the stream. */
-TEST(Unit_DispatchExecutorTest, OutputStreamEndsWithTheResult)
+TEST(Medium_DispatchExecutorTest, OutputStreamEndsWithTheResult)
 {
     AgentRig rig;
     const OperationID op(16);
@@ -947,7 +947,7 @@ TEST(Unit_DispatchExecutorTest, OutputStreamEndsWithTheResult)
 }
 
 /** @brief Tests that losing the master ends a pull that has no idle timeout. */
-TEST(Unit_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
+TEST(Medium_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
 {
     std::atomic<int> calls{0};
     AgentRig rig;
@@ -981,7 +981,7 @@ TEST(Unit_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
 }
 
 /** @brief Tests that the worker checks the master's proof before it sends its own. */
-TEST(Unit_MasterLinkTest, HandshakeChecksTheMasterBeforeProving)
+TEST(Medium_MasterLinkTest, HandshakeChecksTheMasterBeforeProving)
 {
     std::atomic<int> calls{0};
     AgentRig rig;
@@ -1017,7 +1017,7 @@ TEST(Unit_MasterLinkTest, HandshakeChecksTheMasterBeforeProving)
 }
 
 /** @brief Tests that a master proving another key ends the worker before it proves anything. */
-TEST(Unit_MasterLinkTest, WrongMasterProofEndsTheLink)
+TEST(Medium_MasterLinkTest, WrongMasterProofEndsTheLink)
 {
     AgentRig rig;
     rig.start();
@@ -1036,7 +1036,7 @@ TEST(Unit_MasterLinkTest, WrongMasterProofEndsTheLink)
 }
 
 /** @brief Tests that an ended link stops its transport, so it connects no more. */
-TEST(Unit_MasterLinkTest, EndedLinkStopsItsTransport)
+TEST(Medium_MasterLinkTest, EndedLinkStopsItsTransport)
 {
     AgentRig rig;
     rig.start();
@@ -1051,7 +1051,7 @@ TEST(Unit_MasterLinkTest, EndedLinkStopsItsTransport)
 }
 
 /** @brief Tests that a worker answers PING only once WELCOME registered it. */
-TEST(Unit_MasterLinkTest, PingGetsNoPongBeforeRegistration)
+TEST(Medium_MasterLinkTest, PingGetsNoPongBeforeRegistration)
 {
     AgentRig rig;
     rig.start();
@@ -1078,7 +1078,7 @@ TEST(Unit_MasterLinkTest, PingGetsNoPongBeforeRegistration)
 }
 
 /** @brief Tests that a CHALLENGE for a HELLO the link forgot is ignored, not taken as wrong. */
-TEST(Unit_MasterLinkTest, LateChallengeForAForgottenHelloIsIgnored)
+TEST(Medium_MasterLinkTest, LateChallengeForAForgottenHelloIsIgnored)
 {
     constexpr std::size_t K_HELLOS = 5;
     AgentRig rig;
@@ -1099,7 +1099,7 @@ TEST(Unit_MasterLinkTest, LateChallengeForAForgottenHelloIsIgnored)
 }
 
 /** @brief Tests that an idle worker's HEARTBEAT names the task id it waits for next. */
-TEST(Unit_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskID)
+TEST(Medium_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskID)
 {
     std::atomic<int> calls{0};
     AgentRig rig;
@@ -1120,7 +1120,7 @@ TEST(Unit_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskID)
 }
 
 /** @brief Tests that a master silent past its liveness timeout is closed, and may come back. */
-TEST(Unit_MasterLinkTest, SilentMasterIsLost)
+TEST(Medium_MasterLinkTest, SilentMasterIsLost)
 {
     AgentRig rig;
     rig.start();
@@ -1134,7 +1134,7 @@ TEST(Unit_MasterLinkTest, SilentMasterIsLost)
 }
 
 /** @brief Tests that a new master session clears the cache and the ids seen, a reconnect not. */
-TEST(Unit_MasterLinkTest, NewSessionClearsTheCache)
+TEST(Medium_MasterLinkTest, NewSessionClearsTheCache)
 {
     std::atomic<int> calls{0};
     AgentRig rig;
@@ -1163,7 +1163,7 @@ TEST(Unit_MasterLinkTest, NewSessionClearsTheCache)
 }
 
 /** @brief Tests that the worker's own close after GOODBYE does not end it as MasterLost. */
-TEST(Unit_MasterLinkTest, LossAfterGoodbyeIsTheWorkersOwn)
+TEST(Medium_MasterLinkTest, LossAfterGoodbyeIsTheWorkersOwn)
 {
     AgentRig rig;
     rig.start();

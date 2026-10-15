@@ -34,7 +34,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that id 0 is invalid and ids compare by value. */
-TEST(Unit_BufferHandle, IDZeroIsInvalid)
+TEST(Medium_BufferHandle, IDZeroIsInvalid)
 {
     static_assert(!GlobalBufferID{}.valid(), "the default id names no buffer");
     static_assert(GlobalBufferID{3}.valid(), "a non-zero id names a buffer");
@@ -43,7 +43,7 @@ TEST(Unit_BufferHandle, IDZeroIsInvalid)
 }
 
 /** @brief Tests the defaults of a handle. */
-TEST(Unit_BufferHandle, DefaultsNameNoBuffer)
+TEST(Medium_BufferHandle, DefaultsNameNoBuffer)
 {
     const BufferHandle handle;
     EXPECT_FALSE(handle.id.valid());
