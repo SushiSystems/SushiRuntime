@@ -240,7 +240,8 @@ jobs:
         working-directory: sushiblas
         shell: bash
         env:
-          SB_CXX: icpx
+          # oneAPI's clang++ takes -fsycl and has a sibling clang for the C slot; icpx has none.
+          SB_CXX: /opt/intel/oneapi/compiler/latest/bin/compiler/clang++
           SB_USE_VCPKG: "false"
         run: source /opt/intel/oneapi/setvars.sh --force > /dev/null && sb build
       - name: sb test
