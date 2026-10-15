@@ -126,7 +126,8 @@ On Linux the tree carries UndefinedBehaviorSanitizer as well, with
 
 With the oneapi toolchain the ASan tree takes acpp, or else the intel/llvm bundle's clang++,
 when either is installed. A clang++ found only on `PATH` is passed over, since a system clang
-has no SYCL; with neither, icpx builds the tree and sanitizes the host pass.
+has no SYCL; with neither, icpx builds the tree, and each sanitizer flag reaches its host pass only, through
+`-Xarch_host`, as on Windows.
 
 ### ASAN_FLAGS_WINDOWS
 
