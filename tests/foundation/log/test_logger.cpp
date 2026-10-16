@@ -102,8 +102,6 @@ namespace
         protected:
             void SetUp() override
             {
-                // SushiLog sets a project only once it has seen one of its categories.
-                (void)SushiLog::log_level(K_ALPHA_LOG_CATEGORY);
                 saved_level_ = SushiLog::log_level(K_LOGGER_TEST_LOG_PROJECT);
                 SushiLog::set_log_synchronous(true);
                 SushiLog::set_log_level(K_LOGGER_TEST_LOG_PROJECT, SushiLog::LogLevel::Warn);
