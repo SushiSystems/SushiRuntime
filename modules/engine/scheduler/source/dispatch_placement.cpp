@@ -31,7 +31,7 @@
 #include <vector>
 
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/log/log_format.hpp>
+#include <SushiRuntime/core/text_format.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>

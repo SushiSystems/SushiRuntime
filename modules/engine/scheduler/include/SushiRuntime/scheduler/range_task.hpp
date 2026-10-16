@@ -37,7 +37,7 @@
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/log/log_format.hpp>
+#include <SushiRuntime/core/text_format.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/task.hpp>
 

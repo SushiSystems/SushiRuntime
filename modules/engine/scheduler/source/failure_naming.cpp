@@ -25,7 +25,7 @@
  * @author Mustafa Garip
  */
 
-#include <SushiRuntime/log/log_format.hpp>
+#include <SushiRuntime/core/text_format.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 
 #include <SushiRuntime/log/logger.hpp>

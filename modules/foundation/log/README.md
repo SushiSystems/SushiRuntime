@@ -33,12 +33,6 @@ SushiLog release; the CLI hands its checkout to CMake as `SUSHILOG_DIR`.
 | `K_LOG_LEVEL_FLOOR` | `SushiLog::log_level_ceiling(SR_ENABLE_LOGGING != 0)`, the least severe level a translation unit compiles calls for |
 | `Detail::is_log_enabled` | Whether a level passes a category's run-time gate |
 
-`log_format.hpp`:
-
-| Name | What it does |
-| --- | --- |
-| `Detail::sr_format` | Replaces each `{}` with the next argument, as a log call formats its message |
-
 The `SR_LOG_*` macros are SushiLog's `SL_LOG_FRONT_AT` with `K_LOG_LEVEL_FLOOR`. Everything in
 `Detail` belongs to the macros.
 
