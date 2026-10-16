@@ -28,7 +28,7 @@
 
 #pragma once
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/scheduler/scheduler_log_category.hpp>
 #include <algorithm>
 #include <vector>

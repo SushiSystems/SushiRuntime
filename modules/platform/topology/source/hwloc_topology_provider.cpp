@@ -30,7 +30,7 @@
 #endif
 #include <hwloc.h>
 #include <hwloc/distances.h>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/topology/topology_log_category.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>

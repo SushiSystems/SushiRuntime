@@ -34,23 +34,30 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiLog/log/log_calls.hpp>
+#include <SushiLog/log/log_category.hpp>
+#include <SushiLog/log/log_level.hpp>
+#include <SushiLog/log/log_project.hpp>
+#include <SushiLog/log/log_record.hpp>
+#include <SushiLog/log/log_sink.hpp>
+
+#include <SushiRuntime/log/logger.hpp>
 
 using namespace SushiRuntime;
 
 namespace
 {
     /** @brief Names the project every test category belongs to. */
-    constexpr LogProject K_LOGGER_TEST_LOG_PROJECT{"logger_test", "SR_LOGGER_TEST_LOG_LEVEL"};
+    constexpr SushiLog::LogProject K_LOGGER_TEST_LOG_PROJECT{"logger_test", "SR_LOGGER_TEST_LOG_LEVEL"};
 
     /** @brief Names the category most tests log under. */
-    constexpr LogCategory K_ALPHA_LOG_CATEGORY =
-        make_log_category(K_LOGGER_TEST_LOG_PROJECT, "alpha");
+    constexpr SushiLog::LogCategory K_ALPHA_LOG_CATEGORY =
+        SushiLog::make_log_category(K_LOGGER_TEST_LOG_PROJECT, "alpha");
 
     /** @brief Holds what a test sink saw of one record. */
     struct SeenRecord
     {
-        LogLevel level;            /**< The level of the record. */
+        SushiLog::LogLevel level;            /**< The level of the record. */
         std::string project;       /**< A copy of its project. */
         std::string module;        /**< A copy of its module. */
         std::string file;          /**< A copy of its file. */
@@ -63,7 +70,7 @@ namespace
     };
 
     /** @brief Returns what a sink sees of @p record, on the calling thread. */
-    SeenRecord seen(const LogRecord& record)
+    SeenRecord seen(const SushiLog::LogRecord& record)
     {
         return SeenRecord{record.level,
                           std::string(record.project),
@@ -81,9 +88,9 @@ namespace
     using SeenRecords = std::vector<SeenRecord>;
 
     /** @brief Returns a sink that appends each record to @p records; see README.md. */
-    LogSink collect_into(SeenRecords* records)
+    SushiLog::LogSink collect_into(SeenRecords* records)
     {
-        return [records](const LogRecord& record)
+        return [records](const SushiLog::LogRecord& record)
         {
             records->push_back(seen(record));
         };
@@ -95,21 +102,21 @@ namespace
         protected:
             void SetUp() override
             {
-                saved_level_ = log_level(K_LOGGER_TEST_LOG_PROJECT);
-                set_log_synchronous(true);
-                set_log_level(K_LOGGER_TEST_LOG_PROJECT, LogLevel::Warn);
+                saved_level_ = SushiLog::log_level(K_LOGGER_TEST_LOG_PROJECT);
+                SushiLog::set_log_synchronous(true);
+                SushiLog::set_log_level(K_LOGGER_TEST_LOG_PROJECT, SushiLog::LogLevel::Warn);
             }
 
             void TearDown() override
             {
-                set_log_synchronous(true);
-                set_log_sink(nullptr);
-                set_log_level(K_LOGGER_TEST_LOG_PROJECT, saved_level_);
+                SushiLog::set_log_synchronous(true);
+                SushiLog::set_log_sink(nullptr);
+                SushiLog::set_log_level(K_LOGGER_TEST_LOG_PROJECT, saved_level_);
             }
 
         private:
             /// @brief The level the test project had when the test began.
-            LogLevel saved_level_ = LogLevel::Warn;
+            SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;
     };
 
 }
@@ -118,38 +125,38 @@ namespace
 TEST_F(Medium_LoggerTest, DisabledLevelDoesNotEvaluateItsArguments)
 {
     SeenRecords records;
-    set_log_sink(collect_into(&records));
+    SushiLog::set_log_sink(collect_into(&records));
     int evaluations = 0;
 
-    set_log_level(K_LOGGER_TEST_LOG_PROJECT, LogLevel::Error);
+    SushiLog::set_log_level(K_LOGGER_TEST_LOG_PROJECT, SushiLog::LogLevel::Error);
     SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "evaluated {} times", ++evaluations);
     EXPECT_EQ(evaluations, 0);
     EXPECT_TRUE(records.empty());
 
-    set_log_level(K_LOGGER_TEST_LOG_PROJECT, LogLevel::Warn);
+    SushiLog::set_log_level(K_LOGGER_TEST_LOG_PROJECT, SushiLog::LogLevel::Warn);
     SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "evaluated {} times", ++evaluations);
     EXPECT_EQ(evaluations, 1);
     EXPECT_EQ(records.size(), 1u);
 }
 
-/** @brief Tests that set_log_level decides which calls reach the sink. */
+/** @brief Tests that SushiLog::set_log_level decides which calls reach the sink. */
 TEST_F(Medium_LoggerTest, SetLogLevelTakesEffect)
 {
     SeenRecords records;
-    set_log_sink(collect_into(&records));
+    SushiLog::set_log_sink(collect_into(&records));
 
-    set_log_level(K_LOGGER_TEST_LOG_PROJECT, LogLevel::Warn);
-    EXPECT_EQ(log_level(K_LOGGER_TEST_LOG_PROJECT), LogLevel::Warn);
+    SushiLog::set_log_level(K_LOGGER_TEST_LOG_PROJECT, SushiLog::LogLevel::Warn);
+    EXPECT_EQ(SushiLog::log_level(K_LOGGER_TEST_LOG_PROJECT), SushiLog::LogLevel::Warn);
     SR_LOG_INFO(K_ALPHA_LOG_CATEGORY, "below the level");
     EXPECT_TRUE(records.empty());
 
-    set_log_level(K_LOGGER_TEST_LOG_PROJECT, LogLevel::Info);
-    EXPECT_EQ(log_level(K_LOGGER_TEST_LOG_PROJECT), LogLevel::Info);
+    SushiLog::set_log_level(K_LOGGER_TEST_LOG_PROJECT, SushiLog::LogLevel::Info);
+    EXPECT_EQ(SushiLog::log_level(K_LOGGER_TEST_LOG_PROJECT), SushiLog::LogLevel::Info);
     SR_LOG_INFO(K_ALPHA_LOG_CATEGORY, "at the level");
     ASSERT_EQ(records.size(), 1u);
-    EXPECT_EQ(records[0].level, LogLevel::Info);
+    EXPECT_EQ(records[0].level, SushiLog::LogLevel::Info);
 
-    set_log_level(K_LOGGER_TEST_LOG_PROJECT, LogLevel::Off);
+    SushiLog::set_log_level(K_LOGGER_TEST_LOG_PROJECT, SushiLog::LogLevel::Off);
     SR_LOG_ERROR(K_ALPHA_LOG_CATEGORY, "nothing passes Off");
     EXPECT_EQ(records.size(), 1u);
 }
@@ -158,7 +165,7 @@ TEST_F(Medium_LoggerTest, SetLogLevelTakesEffect)
 TEST_F(Medium_LoggerTest, SinkReceivesEveryFieldAndTheLine)
 {
     SeenRecords records;
-    set_log_sink(collect_into(&records));
+    SushiLog::set_log_sink(collect_into(&records));
 
     const std::int64_t before = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                     std::chrono::system_clock::now().time_since_epoch())
@@ -167,7 +174,7 @@ TEST_F(Medium_LoggerTest, SinkReceivesEveryFieldAndTheLine)
 
     ASSERT_EQ(records.size(), 1u);
     const SeenRecord& record = records[0];
-    EXPECT_EQ(record.level, LogLevel::Warn);
+    EXPECT_EQ(record.level, SushiLog::LogLevel::Warn);
     EXPECT_EQ(record.project, "logger_test");
     EXPECT_EQ(record.module, "alpha");
     EXPECT_EQ(record.file, "test_logger.cpp");
@@ -188,9 +195,9 @@ TEST_F(Medium_LoggerTest, SinkReceivesEveryFieldAndTheLine)
 TEST_F(Medium_LoggerTest, FatalIsDeliveredAfterTheQueueOnTheCallingThread)
 {
     SeenRecords records;
-    set_log_sink(collect_into(&records));
+    SushiLog::set_log_sink(collect_into(&records));
 
-    set_log_synchronous(false);
+    SushiLog::set_log_synchronous(false);
     SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "queued {}", 0);
     SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "queued {}", 1);
     SR_LOG_FATAL(K_ALPHA_LOG_CATEGORY, "cannot continue");
@@ -198,7 +205,7 @@ TEST_F(Medium_LoggerTest, FatalIsDeliveredAfterTheQueueOnTheCallingThread)
     ASSERT_EQ(records.size(), 3u);
     EXPECT_NE(records[0].line.find("queued 0"), std::string::npos) << records[0].line;
     EXPECT_NE(records[1].line.find("queued 1"), std::string::npos) << records[1].line;
-    EXPECT_EQ(records[2].level, LogLevel::Fatal);
+    EXPECT_EQ(records[2].level, SushiLog::LogLevel::Fatal);
     EXPECT_NE(records[2].line.find("[FATAL]"), std::string::npos) << records[2].line;
     EXPECT_EQ(records[2].thread, std::this_thread::get_id());
 }

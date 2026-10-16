@@ -45,7 +45,7 @@
 #include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
 #include <SushiRuntime/task/task_types.hpp>

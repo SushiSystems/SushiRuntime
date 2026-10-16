@@ -43,7 +43,7 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/network_socket/socket.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>

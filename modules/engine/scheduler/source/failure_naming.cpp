@@ -25,9 +25,10 @@
  * @author Mustafa Garip
  */
 
+#include <SushiRuntime/log/log_format.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime

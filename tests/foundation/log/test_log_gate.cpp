@@ -28,10 +28,11 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/log/log_category.hpp>
-#include <SushiRuntime/log/log_level.hpp>
-#include <SushiRuntime/log/log_project.hpp>
-#include <SushiRuntime/logging/log_gate.hpp>
+#include <SushiLog/log/log_calls.hpp>
+#include <SushiLog/log/log_category.hpp>
+#include <SushiLog/log/log_level.hpp>
+#include <SushiLog/log/log_project.hpp>
+#include <SushiRuntime/log/log_gate.hpp>
 
 using namespace SushiRuntime;
 
@@ -39,37 +40,37 @@ namespace
 {
     /** @brief Names the category the gate tests read. */
     /** @brief Names the project of the category the gate tests read. */
-    constexpr LogProject K_GATE_TEST_LOG_PROJECT{"log_gate_test", "SR_LOG_GATE_TEST_LEVEL"};
+    constexpr SushiLog::LogProject K_GATE_TEST_LOG_PROJECT{"log_gate_test", "SR_LOG_GATE_TEST_LEVEL"};
 
     /** @brief Names the category the gate tests read. */
-    constexpr LogCategory K_GATE_LOG_CATEGORY = make_log_category(K_GATE_TEST_LOG_PROJECT, "gate");
+    constexpr SushiLog::LogCategory K_GATE_LOG_CATEGORY = SushiLog::make_log_category(K_GATE_TEST_LOG_PROJECT, "gate");
 }
 
 /** @brief Tests the floor: Error with logging off, Debug in a release build, Trace otherwise. */
 TEST(Small_LogGate, TheFloorFollowsTheBuild)
 {
 #if !SR_ENABLE_LOGGING
-    EXPECT_EQ(K_LOG_LEVEL_FLOOR, LogLevel::Error);
+    EXPECT_EQ(K_LOG_LEVEL_FLOOR, SushiLog::LogLevel::Error);
 #elif defined(NDEBUG)
-    EXPECT_EQ(K_LOG_LEVEL_FLOOR, LogLevel::Debug);
+    EXPECT_EQ(K_LOG_LEVEL_FLOOR, SushiLog::LogLevel::Debug);
 #else
-    EXPECT_EQ(K_LOG_LEVEL_FLOOR, LogLevel::Trace);
+    EXPECT_EQ(K_LOG_LEVEL_FLOOR, SushiLog::LogLevel::Trace);
 #endif
-    static_assert(K_LOG_LEVEL_FLOOR <= LogLevel::Error, "ERROR and FATAL are never compiled out");
+    static_assert(K_LOG_LEVEL_FLOOR <= SushiLog::LogLevel::Error, "ERROR and FATAL are never compiled out");
 }
 
 /** @brief Tests that a level passes the gate when it is at or above its category's level. */
 TEST(Small_LogGate, ALevelPassesAtOrAboveItsCategoryLevel)
 {
-    const LogLevel saved = log_level(K_GATE_TEST_LOG_PROJECT);
-    set_log_level(K_GATE_TEST_LOG_PROJECT, LogLevel::Warn);
-    EXPECT_TRUE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Fatal));
-    EXPECT_TRUE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Error));
-    EXPECT_TRUE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Warn));
-    EXPECT_FALSE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Info));
-    EXPECT_FALSE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Trace));
-    set_log_level(K_GATE_TEST_LOG_PROJECT, LogLevel::Off);
-    EXPECT_FALSE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Fatal));
-    set_log_level(K_GATE_TEST_LOG_PROJECT, saved);
+    const SushiLog::LogLevel saved = SushiLog::log_level(K_GATE_TEST_LOG_PROJECT);
+    SushiLog::set_log_level(K_GATE_TEST_LOG_PROJECT, SushiLog::LogLevel::Warn);
+    EXPECT_TRUE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, SushiLog::LogLevel::Fatal));
+    EXPECT_TRUE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, SushiLog::LogLevel::Error));
+    EXPECT_TRUE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, SushiLog::LogLevel::Warn));
+    EXPECT_FALSE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, SushiLog::LogLevel::Info));
+    EXPECT_FALSE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, SushiLog::LogLevel::Trace));
+    SushiLog::set_log_level(K_GATE_TEST_LOG_PROJECT, SushiLog::LogLevel::Off);
+    EXPECT_FALSE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, SushiLog::LogLevel::Fatal));
+    SushiLog::set_log_level(K_GATE_TEST_LOG_PROJECT, saved);
 }
 

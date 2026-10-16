@@ -30,14 +30,14 @@ The file includes `api/runtime/logging.hpp` and no other header of the library.
 
 ### `TheControlsAreCallableFromTheSurfaceHeader`
 
-Two `static_assert` lines state that the header declares `set_log_synchronous(bool)` and
-`set_log_sink(LogSink)` in `SushiRuntime`. The test calls `set_log_synchronous`, `set_log_sink`,
+Two `static_assert` lines state that the header brings SushiLog's `set_log_synchronous(bool)` and
+`set_log_sink(LogSink)`. The test calls `set_log_synchronous`, `set_log_sink`,
 `set_log_level` and `log_level` and puts back what it changed. It logs nothing: the header has no
-call that writes a record, and `tests/foundation/logging/test_logger.cpp` covers what
+call that writes a record, and `tests/foundation/log/test_logger.cpp` covers what
 synchronous delivery does.
 
 The file covers what a program sees of the logger when it creates a `Runtime`. It is here and not
-in the `logging` module because the lines it looks for are logged by `device` and `topology` while
+in the `log` module because the lines it looks for are logged by `device` and `topology` while
 `Runtime::create()` runs.
 
 ### `Medium_LoggingDefaults`

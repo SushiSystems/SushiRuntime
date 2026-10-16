@@ -36,7 +36,7 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/offload_coordination/offload_coordination_log_category.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>

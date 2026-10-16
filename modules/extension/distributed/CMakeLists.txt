@@ -27,13 +27,11 @@ sushiruntime_add_module(
         worker_session.cpp
     DEPENDS core log api transport cluster_load
     PRIVATE_DEPENDS
-        logging
         memory
         device
         task
         execution
         region
-        log
         context_access
         wire
         link_security

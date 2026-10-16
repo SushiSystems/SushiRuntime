@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* log_project.hpp                                                        */
+/* log_gate.hpp                                                           */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,24 +20,39 @@
 /**************************************************************************/
 
 /**
- * @file log_project.hpp
- * @brief Names SushiLog's LogProject and its level calls in SushiRuntime.
+ * @file log_gate.hpp
+ * @brief Declares the ceiling of a translation unit and the gate of a category.
  * @author Mustafa Garip
  * @see modules/foundation/log/README.md
  */
 
 #pragma once
 
-#include <SushiLog/log/log_calls.hpp>
-#include <SushiLog/log/log_project.hpp>
+#include <atomic>
 
-#include <SushiRuntime/log/log_level.hpp>
+#include <SushiLog/log/log_category.hpp>
+#include <SushiLog/log/log_front.hpp>
+#include <SushiLog/log/log_level.hpp>
+
+#ifndef SR_ENABLE_LOGGING
+    #define SR_ENABLE_LOGGING 1
+#endif
 
 namespace SushiRuntime
 {
-    /** @brief A project's name and the variable that sets its levels; SushiLog owns it. */
-    using LogProject = SushiLog::LogProject;
+    /** @brief Holds the least severe level this translation unit compiles log calls for. */
+    [[maybe_unused]] constexpr SushiLog::LogLevel K_LOG_LEVEL_FLOOR =
+        SushiLog::log_level_ceiling(SR_ENABLE_LOGGING != 0);
 
-    using SushiLog::log_level;
-    using SushiLog::set_log_level;
+    namespace Detail
+    {
+        /**
+         * @brief Returns whether a record of @p level in @p category passes the run-time gate.
+         */
+        [[nodiscard]] inline bool is_log_enabled(SushiLog::LogCategory category, SushiLog::LogLevel level) noexcept
+        {
+            return static_cast<int>(level) >=
+                   SushiLog::Detail::log_level_slot(category).load(std::memory_order_relaxed);
+        }
+    } // namespace Detail
 } // namespace SushiRuntime

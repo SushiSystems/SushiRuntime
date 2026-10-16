@@ -9,4 +9,4 @@ sushiruntime_add_module(
     SYCL
     SOURCES memory_exchange.cpp
     DEPENDS core log memory interop
-    PRIVATE_DEPENDS logging sycl device execution)
+    PRIVATE_DEPENDS sycl device execution)

@@ -115,8 +115,8 @@ holds a `using` declaration or an alias for another namespace. A program that in
 
 Two headers under `api/` declare nothing and include what a run returns and what a program sets:
 `runtime/errors.hpp` includes `core/error.hpp` and `core/result.hpp`, for `Error`, `ErrorCode` and
-`Result`; `runtime/logging.hpp` includes the headers of `log`, for `LogLevel`, `LogProject`,
-`LogCategory`, `LogRecord`, `set_log_level`, `set_log_sink`, `log_forward_sink` and the C sink.
+`Result`; `runtime/logging.hpp` includes SushiLog's log controls and
+`K_SUSHIRUNTIME_LOG_PROJECT`.
 
 `OperationID` is declared in `SushiRuntime` and the `_op` literal in `SushiRuntime::Literals`, an
 inline namespace, by `core/operation_id.hpp` of the core module. `RunReport` is declared by

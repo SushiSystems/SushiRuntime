@@ -39,7 +39,8 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/log_format.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>

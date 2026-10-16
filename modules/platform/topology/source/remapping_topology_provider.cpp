@@ -27,7 +27,7 @@
 
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/topology/topology_log_category.hpp>
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
 

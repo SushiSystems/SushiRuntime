@@ -9,4 +9,4 @@ sushiruntime_add_module(
     SYCL
     SOURCES compiled_graph.cpp task_graph.cpp
     DEPENDS core log observability task region
-    PRIVATE_DEPENDS logging dependency_tracking)
+    PRIVATE_DEPENDS dependency_tracking)
