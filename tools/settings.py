@@ -16,6 +16,15 @@ K_SAME_TIER_EDGES: frozenset[tuple[str, str]] = frozenset()
 K_MODULE_FUNCTION = "sushiruntime_add_module"
 K_PUBLIC_DEPENDS = "DEPENDS"
 K_PRIVATE_DEPENDS = "PRIVATE_DEPENDS"
+K_PRIVATE_DEPENDS_ALSO: tuple[str, ...] = ()
 K_INTERNAL_MARK = "INTERNAL"
 K_CLOSED = False
 K_MACRO_PREFIXES: tuple[str, ...] = ()
+K_LOG_PREFIX = "SR"
+K_CONSOLE_PATHS: tuple[str, ...] = (
+    "cli",
+    "modules/foundation/logging",
+    "modules/foundation/core/source/assert.cpp",
+    "modules/foundation/measurement/include/SushiRuntime/measurement/measurement.hpp",
+    "modules/extension/distributed/source/worker_main.cpp",
+)
