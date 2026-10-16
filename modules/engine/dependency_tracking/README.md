@@ -5,7 +5,7 @@ into edges: read after write, write after read and write after write, per byte r
 allocation. It is an internal module: its headers reach the modules that name it and the tests, and
 are never installed. Its names are in `SushiRuntime::Internal::Graph`.
 
-It depends on `core`, `task` and `region`, and its source on `logging` and `memory`.
+It depends on `core`, `task` and `region`, and its source on `memory`.
 
 ## Public entry points
 
