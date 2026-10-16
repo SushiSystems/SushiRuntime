@@ -34,6 +34,9 @@ K_PY_ROOT_CALL = re.compile(r"(?<![\w.])logging\.(?:debug|info|warning|error|cri
 K_PY_NAMED_LOGGER = re.compile(r"getLogger\s*\((?!\s*__name__\s*\))")
 K_PY_FSTRING_CALL = re.compile(r"\b_?log\w*\.(?:trace|debug|info|warning|error|critical|exception)\s*\(\s*f[\"']")
 K_COMMENT_STARTS = ("//", "/*", "*", "#")
+K_LOGGER_PREFIX = "SL"
+K_REEXPORT = re.compile(r"\busing\s+(?:\w+\s*=\s*)?(?:::)?SushiLog::\w+")
+K_FORWARDING_SHIM = re.compile(r"\binline\b[^{};]*\)\s*\{\s*(?:return\s+)?(?:::)?(?:SushiLog::\w+|sl_\w+)\s*\([^;]*\)\s*;\s*\}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,10 +98,11 @@ def _log_call() -> re.Pattern[str] | None:
 
 
 def _calls(pattern: re.Pattern[str], text: str) -> Iterator[re.Match[str]]:
-    """Yields each log call outside a preprocessor line, so the logger's own macros are left out."""
+    """Yields each log call outside a preprocessor or comment line, so the logger's own macros are left out."""
     for match in pattern.finditer(text):
         start = text.rfind("\n", 0, match.start()) + 1
-        if not text[start:match.start()].lstrip().startswith("#"):
+        before = text[start:match.start()]
+        if not before.lstrip().startswith(K_COMMENT_STARTS) and "//" not in before:
             yield match
 
 
@@ -187,6 +191,19 @@ def rule_python_logger(tree: SourceTree) -> Iterator[Issue]:
                 yield Issue(path, number, "an f-string record formats when the level is off; pass %s arguments")
 
 
+def rule_front_reexport(tree: SourceTree) -> Iterator[Issue]:
+    """Yields an issue for each alias, using or forwarding function of a SushiLog name in a front."""
+    if K_LOG_PREFIX in ("", K_LOGGER_PREFIX):
+        return
+    for path in tree.of(K_CPP_SUFFIXES):
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for pattern, what in ((K_REEXPORT, "re-exports a SushiLog name"),
+                              (K_FORWARDING_SHIM, "forwards to SushiLog")):
+            for match in pattern.finditer(text):
+                yield Issue(path, _line(text, match.start()),
+                            f"{what}; write SushiLog::... or sl_... at the call site")
+
+
 K_CHECKER = Checker(
     description="Checks the log calls, categories and console writes of library code.",
     collect=collect,
@@ -197,6 +214,7 @@ K_CHECKER = Checker(
         "rule_foreign_category": rule_foreign_category,
         "rule_missing_category_header": rule_missing_category_header,
         "rule_python_logger": rule_python_logger,
+        "rule_front_reexport": rule_front_reexport,
     },
 )
 
