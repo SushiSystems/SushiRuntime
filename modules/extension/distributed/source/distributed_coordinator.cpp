@@ -39,7 +39,7 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/log/log_format.hpp>
+#include <SushiRuntime/core/text_format.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/task/node.hpp>

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-17 — deps: Moved SushiLog to v0.1.2, where a level set for a project before its first log call holds (`sushistack.deps.toml`).
+- 2026-10-17 — core: Moved sr_format from log/log_format.hpp to core, since the graph, the scheduler and the distributed layer format their errors with it (`text_format.hpp`).
 - 2026-10-17 — deps: Pinned SushiLog v0.1.1, which the CLI resolves through sushicore 0.9.1 and passes as SUSHILOG_DIR, and staged sushilog.dll beside every program (`sushistack.deps.toml`, `Dependencies.cmake`).
 - 2026-10-17 — log: Breaking change: Logged through SushiLog, called by its own names, folded logging into log, and removed SR_LOG_FRONT_AT, log_level_floor and the sr_ C sink calls (`logger.hpp`, `log_gate.hpp`).
 - 2026-10-16 — log: Breaking change: Gave each category a project with its own level variable, handed the sink a LogRecord, and added log_forward_sink, a C sink and SR_LOG_FRONT_AT (`log_project.hpp`, `log_front.hpp`).

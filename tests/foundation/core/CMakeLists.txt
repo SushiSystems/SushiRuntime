@@ -20,4 +20,5 @@ sushiruntime_add_module_tests(
         test_span.cpp
         test_strong_id.cpp
         test_sushi_ptr.cpp
+        test_text_format.cpp
         test_version.cpp)

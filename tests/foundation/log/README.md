@@ -12,14 +12,6 @@ A section is named after a test file, and a subsection after the test, helper or
 | --- | --- |
 | `TheProjectIsTheRuntimeReadFromItsVariable` | `K_SUSHIRUNTIME_LOG_PROJECT` is `sushiruntime` with `SR_LOG_LEVEL`, at compile time. |
 
-## test_log_format.cpp
-
-| Test | What it proves |
-| --- | --- |
-| `EachPlaceholderTakesTheNextArgument` | Each `{}` takes the next argument through `operator<<`. |
-| `DoubledBracesAreLiteral` | `{{` and `}}` are written once, with and without arguments. |
-| `AMismatchedCountIsIgnored` | Extra arguments are dropped and extra placeholders stay as written. |
-
 ## test_logger.cpp
 
 The file covers the `SR_LOG_*` macros over SushiLog: their gates, the record they make and
