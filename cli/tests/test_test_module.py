@@ -79,3 +79,15 @@ def test_the_quarantined_run_excludes_nothing(driver):
     assert project.test(Label.quarantined) == 0
     assert [(run["label_regex"], run["exclude_label_regex"]) for run in driver.runs] == [
         ("^quarantined$", None)]
+
+
+def test_jobs_reach_ctest(driver):
+    """The number of tests run at once is handed to ctest as given."""
+    assert project.test(None, jobs=3) == 0
+    assert [run["jobs"] for run in driver.runs] == [3]
+
+
+def test_no_jobs_leaves_the_choice_to_ctest(driver):
+    """Without --jobs no count is handed to ctest."""
+    assert project.test(None) == 0
+    assert [run["jobs"] for run in driver.runs] == [None]

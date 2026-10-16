@@ -149,10 +149,12 @@ sr test --asan                                   # run the build-asan/ tree inst
 sr test --distributed                            # run against a build made with --distributed
 sr test --module scheduler                       # the tests of one module, whatever their size
 sr test --repeat 50                              # re-run each test up to 50 times, stop on the first failure
+sr test --jobs 3                                 # run at most 3 tests at once
 ```
 
 `--filter` (`-f`) is a `ctest -R` regex matched against `Suite.Case` names. `--repeat` (`-r`)
-uses CTest's `--repeat until-fail`.
+uses CTest's `--repeat until-fail`. `--jobs` (`-j`) is passed to ctest as `--parallel`; left out,
+ctest decides and `CTEST_PARALLEL_LEVEL` holds.
 
 For a GoogleTest option CTest does not expose, run the program with `sr run` and pass the
 option after `--`.
