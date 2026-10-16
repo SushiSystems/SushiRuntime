@@ -31,6 +31,7 @@
 #include <exception>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
@@ -55,13 +56,13 @@ namespace SushiRuntime
                 }
                 catch (const std::exception& error)
                 {
-                    SR_LOG_ERROR("task {} could not be resubmitted: {}; its node is released "
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {} could not be resubmitted: {}; its node is released "
                                  "and will not run",
                                  task_id, error.what());
                 }
                 catch (...)
                 {
-                    SR_LOG_ERROR("task {} could not be resubmitted: unknown exception; its node "
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {} could not be resubmitted: unknown exception; its node "
                                  "is released and will not run",
                                  task_id);
                 }

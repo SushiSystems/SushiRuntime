@@ -40,6 +40,7 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
@@ -235,7 +236,7 @@ namespace SushiRuntime
             void on_peer_connected(PeerID peer, const PeerDescription& info) override
             {
                 directory.add_peer(peer, info.endpoint, std::chrono::steady_clock::now());
-                SR_LOG_DEBUG("peer {} connected from {}; it owes HELLO", peer.value,
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "peer {} connected from {}; it owes HELLO", peer.value,
                              info.endpoint);
             }
 
@@ -267,7 +268,7 @@ namespace SushiRuntime
                 if (loss.cause == PeerLossCause::VersionMismatch)
                 {
                     rejected_version.fetch_add(1, std::memory_order_relaxed);
-                    SR_LOG_ERROR("{} (peer {}) speaks protocol v{}, this master v{}; build both "
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "{} (peer {}) speaks protocol v{}, this master v{}; build both "
                                  "from one commit; closed, {} tasks returned to the scheduler",
                                  retired.peer.endpoint, peer.value, loss.peer_version,
                                  Wire::K_PROTOCOL_VERSION, retired.tasks_returned);
@@ -281,7 +282,7 @@ namespace SushiRuntime
             /** @brief Records that a transport gave up connecting; a master's never does. */
             void on_connect_abandoned(const std::string& cause) override
             {
-                SR_LOG_DEBUG("a master-side transport reported an abandoned connect: {}", cause);
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "a master-side transport reported an abandoned connect: {}", cause);
             }
 
             /** @brief Answers HELLO with CHALLENGE, or with WELCOME for a registered worker. */
@@ -290,7 +291,7 @@ namespace SushiRuntime
                 const Result<HandshakeNonce> drawn = make_nonce();
                 if (!drawn)
                 {
-                    SR_LOG_ERROR("worker {} said HELLO and no CHALLENGE answers it: {}",
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "worker {} said HELLO and no CHALLENGE answers it: {}",
                                  peer.value, drawn.error().message);
                     return;
                 }
@@ -298,7 +299,7 @@ namespace SushiRuntime
                 const HelloReply reply = directory.accept_hello(peer, hello, master_nonce);
                 if (reply.step == HandshakeStep::AlreadyRegistered)
                 {
-                    SR_LOG_DEBUG("worker {} says HELLO again, so its WELCOME was lost; WELCOME "
+                    SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "worker {} says HELLO again, so its WELCOME was lost; WELCOME "
                                  "is sent again",
                                  peer.value);
                     send_welcome(peer);
@@ -307,7 +308,7 @@ namespace SushiRuntime
                 if (reply.step != HandshakeStep::Accepted)
                     return;
 
-                SR_LOG_DEBUG("peer {} says HELLO as \"{}\", build {}", peer.value,
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "peer {} says HELLO as \"{}\", build {}", peer.value,
                              hello.node_name, hello.build_id);
 
                 Wire::ChallengeMessage challenge;
@@ -390,7 +391,7 @@ namespace SushiRuntime
 
                 const std::size_t resubmitted =
                     resubmit(SushiRuntime::span<PendingTask>(&*task, 1));
-                SR_LOG_DEBUG("task {} came back from worker {} without a whole result ({}); {} "
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "task {} came back from worker {} without a whole result ({}); {} "
                              "resubmitted",
                              result.task_id, peer.value,
                              words_for(K_RESULT_STATUS_WORDS,
@@ -406,7 +407,7 @@ namespace SushiRuntime
                 const SendStatus sent = transport->send_stream(
                     peer, exchange.serve_pull(request.id, request.version));
                 if (sent != SendStatus::Queued)
-                    SR_LOG_DEBUG("pull of buffer {} version {} by worker {} was not queued "
+                    SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "pull of buffer {} version {} by worker {} was not queued "
                                  "(status {}); the worker's pull timeout fails the task",
                                  request.id.value, request.version, peer.value,
                                  static_cast<int>(sent));
@@ -458,7 +459,7 @@ namespace SushiRuntime
             {
                 const SendStatus sent = send_message(*transport, peer, message);
                 if (sent != SendStatus::Queued)
-                    SR_LOG_DEBUG("{} for peer {} was not queued (status {})",
+                    SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "{} for peer {} was not queued (status {})",
                                  message_type_name(Message::K_TYPE), peer.value,
                                  static_cast<int>(sent));
             }
@@ -514,7 +515,7 @@ namespace SushiRuntime
             {
                 if (retired.peer.registered)
                 {
-                    SR_LOG_WARN("worker {} \"{}\" {} lost: {}; {} tasks returned to the "
+                    SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "worker {} \"{}\" {} lost: {}; {} tasks returned to the "
                                 "scheduler",
                                 peer.value, retired.peer.name, retired.peer.endpoint, cause,
                                 retired.tasks_returned);
@@ -522,10 +523,10 @@ namespace SushiRuntime
                 }
 
                 if (is_logged_elsewhere)
-                    SR_LOG_DEBUG("{} (peer {}) closed before it registered: {}",
+                    SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "{} (peer {}) closed before it registered: {}",
                                  retired.peer.endpoint, peer.value, cause);
                 else
-                    SR_LOG_WARN("{} (peer {}) closed before it registered: {}",
+                    SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "{} (peer {}) closed before it registered: {}",
                                 retired.peer.endpoint, peer.value, cause);
             }
 
@@ -558,7 +559,7 @@ namespace SushiRuntime
                 if (!worker.has_value())
                     return;
 
-                SR_LOG_INFO("worker {} \"{}\" {} registered, {} kernels, build {}", peer.value,
+                SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "worker {} \"{}\" {} registered, {} kernels, build {}", peer.value,
                             worker->name, worker->endpoint, kernel_count, worker->build_id);
             }
 
@@ -666,7 +667,7 @@ namespace SushiRuntime
             result = impl.transport->start(impl);
             if (!result.is_ok())
             {
-                SR_LOG_ERROR("distributed master did not start: {}; nothing is left running",
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "distributed master did not start: {}; nothing is left running",
                              result.message);
                 return result;
             }
@@ -692,12 +693,12 @@ namespace SushiRuntime
                 impl.transport->stop();
                 result.status = TransportStatus::Failed;
                 result.message = "cannot start the cluster monitor thread: " + failure;
-                SR_LOG_ERROR("distributed master did not start: {}; the transport is stopped",
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "distributed master did not start: {}; the transport is stopped",
                              result.message);
                 return result;
             }
 
-            SR_LOG_INFO("distributed master listening on {}, protocol v{}, authentication {}",
+            SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "distributed master listening on {}, protocol v{}, authentication {}",
                         result.message.empty() ? K_UNNAMED_ENDPOINT : result.message.c_str(),
                         Wire::K_PROTOCOL_VERSION, impl.options.secret.empty() ? "off" : "on");
             return result;
@@ -724,13 +725,13 @@ namespace SushiRuntime
             }
             catch (const std::exception& error)
             {
-                SR_LOG_ERROR("distributed master could not drain every pending task: {}; the "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "distributed master could not drain every pending task: {}; the "
                              "nodes not drained stay with the table and do not run",
                              error.what());
             }
             catch (...)
             {
-                SR_LOG_ERROR("distributed master could not drain every pending task: unknown "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "distributed master could not drain every pending task: unknown "
                              "exception; the nodes not drained stay with the table and do not "
                              "run");
             }
@@ -738,7 +739,7 @@ namespace SushiRuntime
             // Every reader and the monitor are joined, so this thread alone holds the tasks.
             const std::size_t returned =
                 impl.resubmit(SushiRuntime::span<PendingTask>(tasks.data(), tasks.size()));
-            SR_LOG_INFO("distributed master stopped; {} tasks returned to the scheduler",
+            SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "distributed master stopped; {} tasks returned to the scheduler",
                         returned);
         }
 
@@ -797,13 +798,13 @@ namespace SushiRuntime
             }
             catch (const std::exception& error)
             {
-                SR_LOG_DEBUG("BUFFER_RELEASE for buffer {} was not sent: {}; the workers' "
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "BUFFER_RELEASE for buffer {} was not sent: {}; the workers' "
                              "cache budgets evict it",
                              released.value, error.what());
             }
             catch (...)
             {
-                SR_LOG_DEBUG("BUFFER_RELEASE for buffer {} was not sent: unknown exception; the "
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "BUFFER_RELEASE for buffer {} was not sent: unknown exception; the "
                              "workers' cache budgets evict it",
                              released.value);
             }

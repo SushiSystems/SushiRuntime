@@ -36,6 +36,7 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
@@ -160,7 +161,7 @@ namespace SushiRuntime
                 const SendStatus queued =
                     outbox.push_control(MessageType::Reject, {payload.data(), payload.size()});
                 if (queued != SendStatus::Queued)
-                    SR_LOG_DEBUG("{} gets no REJECT(version): its control queue refused the frame",
+                    SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "{} gets no REJECT(version): its control queue refused the frame",
                                  info.endpoint);
             }
 
@@ -168,7 +169,7 @@ namespace SushiRuntime
             void log_handler_failure(PeerID peer, const PeerDescription& info, const char* event,
                                      std::size_t length, const char* what)
             {
-                SR_LOG_ERROR("handler of {} ({} bytes) from {} (peer {}) threw '{}'; "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "handler of {} ({} bytes) from {} (peer {}) threw '{}'; "
                              "closing the peer, the process continues",
                              event, length, info.endpoint, peer.value, what);
             }
@@ -271,7 +272,7 @@ namespace SushiRuntime
             catch (const std::system_error& error)
             {
                 running_threads_.store(0);
-                SR_LOG_ERROR("cannot start the writer thread for {}: {}; the connection is "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "cannot start the writer thread for {}: {}; the connection is "
                              "dropped",
                              info_.endpoint, error.what());
                 return;
@@ -284,7 +285,7 @@ namespace SushiRuntime
             catch (const std::system_error& error)
             {
                 running_threads_.fetch_sub(1);
-                SR_LOG_ERROR("cannot start the reader thread for {}: {}; the connection is "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "cannot start the reader thread for {}: {}; the connection is "
                              "dropped",
                              info_.endpoint, error.what());
                 outbox_.close();

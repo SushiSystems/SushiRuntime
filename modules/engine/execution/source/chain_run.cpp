@@ -32,6 +32,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/observability/event_timestamps.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -110,7 +111,7 @@ namespace SushiRuntime
             const Result<void> drained =
                 SYCL::translate_exceptions([this]() { queue_.wait_and_throw(); });
             if (!drained)
-                SR_LOG_WARN("Device error while draining an abandoned chain run: {}",
+                SR_LOG_WARN(K_EXECUTION_LOG_CATEGORY, "Device error while draining an abandoned chain run: {}",
                             drained.error().message);
         }
 

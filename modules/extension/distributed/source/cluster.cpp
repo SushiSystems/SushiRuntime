@@ -41,6 +41,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
@@ -82,7 +83,7 @@ namespace SushiRuntime
             /** @brief Logs why a call is refused and returns the reason as InvalidState. */
             ErrorWrapper<Error> refusal(std::string message)
             {
-                SR_LOG_ERROR("{}", message);
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "{}", message);
                 return make_error(Error{ErrorCode::InvalidState, std::move(message)});
             }
 
@@ -275,7 +276,7 @@ namespace SushiRuntime
 
             // The scheduler of the run in flight reads the installed coordinator until it returns.
             state_->coordinator.stop();
-            SR_LOG_WARN("Cluster::detach: a run is in flight on the runtime; the master is "
+            SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "Cluster::detach: a run is in flight on the runtime; the master is "
                         "stopped and its tasks run locally, and it stays installed until "
                         "detach() or attach() is called after the run");
         }

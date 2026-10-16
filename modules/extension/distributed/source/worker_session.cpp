@@ -32,6 +32,7 @@
 #include <utility>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 
 namespace SushiRuntime
 {
@@ -83,7 +84,7 @@ namespace SushiRuntime
             const TransportResult started = agent.start();
             if (!started.is_ok())
             {
-                SR_LOG_ERROR("worker did not start: {}; exiting with code {}", started.message,
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "worker did not start: {}; exiting with code {}", started.message,
                              static_cast<int>(WorkerExitCode::InternalError));
                 return WorkerExitCode::InternalError;
             }

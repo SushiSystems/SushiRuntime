@@ -33,6 +33,7 @@
 #include <utility>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/frame_transport/frame_sending.hpp>
@@ -155,12 +156,12 @@ namespace SushiRuntime
                 }
                 catch (const std::exception& error)
                 {
-                    SR_LOG_ERROR("cluster monitor pass failed: {}; the next pass runs in {} ms",
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "cluster monitor pass failed: {}; the next pass runs in {} ms",
                                  error.what(), period().count());
                 }
                 catch (...)
                 {
-                    SR_LOG_ERROR("cluster monitor pass failed: unknown exception; the next pass "
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "cluster monitor pass failed: unknown exception; the next pass "
                                  "runs in {} ms",
                                  period().count());
                 }
@@ -215,7 +216,7 @@ namespace SushiRuntime
             }
 
             for (const PeerID peer : peers_)
-                SR_LOG_WARN("worker {} sent no frame for more than {} ms; its connection is "
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "worker {} sent no frame for more than {} ms; its connection is "
                             "closed and its tasks return to the scheduler",
                             peer.value, limit.count());
         }
@@ -229,7 +230,7 @@ namespace SushiRuntime
                 transport_.close_peer(peer);
 
             for (const PeerID peer : peers_)
-                SR_LOG_WARN("peer {} sent no valid handshake in {} ms; closed", peer.value,
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "peer {} sent no valid handshake in {} ms; closed", peer.value,
                             options_.handshake_timeout.count());
         }
 
@@ -284,7 +285,7 @@ namespace SushiRuntime
                 if (!last_reap_warning_.try_emplace(task.worker.value, now).second)
                     continue;
 
-                SR_LOG_WARN("task {} taken back from worker {}: {}; it is resubmitted to the "
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {} taken back from worker {}: {}; it is resubmitted to the "
                             "scheduler",
                             task.task_id, task.worker.value,
                             K_REAP_CAUSE_WORDS[static_cast<std::size_t>(task.cause)]);

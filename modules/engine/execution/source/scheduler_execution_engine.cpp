@@ -39,6 +39,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
@@ -206,7 +207,7 @@ namespace SushiRuntime
                 {
                     rebalancer_on.store(true, std::memory_order_relaxed);
                     rebalancer->start();
-                    SR_LOG_INFO("Workload rebalancer started.");
+                    SR_LOG_INFO(K_EXECUTION_LOG_CATEGORY, "Workload rebalancer started.");
                 }
             }
 
@@ -229,9 +230,9 @@ namespace SushiRuntime
                                                          std::memory_order_acq_rel))
                     return;
 
-                SR_LOG_INFO("Shutting down worker pool.");
+                SR_LOG_INFO(K_EXECUTION_LOG_CATEGORY, "Shutting down worker pool.");
                 scheduler.stop();
-                SR_LOG_INFO("All workers joined.");
+                SR_LOG_INFO(K_EXECUTION_LOG_CATEGORY, "All workers joined.");
             }
         };
 
@@ -496,7 +497,7 @@ namespace SushiRuntime
             ScheduledRunRelease submit_guard(impl_->run_marker);
 
             // DEBUG, not INFO: a run happens once per replayed step (modules/engine/execution/README.md).
-            SR_LOG_DEBUG("Executing graph ({} root nodes).", graph.roots.size());
+            SR_LOG_TRACE(K_EXECUTION_LOG_CATEGORY, "Executing graph ({} root nodes).", graph.roots.size());
 
             // The sentinel's host_work is wired once per plan (modules/engine/execution/README.md).
             if (!graph.sentinel->host_work)
@@ -570,17 +571,17 @@ namespace SushiRuntime
 
             if (impl_->completion.error)
             {
-                SR_LOG_ERROR("Graph execution aborted due to a task error.");
+                SR_LOG_ERROR(K_EXECUTION_LOG_CATEGORY, "Graph execution aborted due to a task error.");
                 return make_error(std::move(*impl_->completion.error));
             }
             if (!raised)
             {
-                SR_LOG_ERROR("Graph execution failed: a device queue reported an asynchronous "
+                SR_LOG_ERROR(K_EXECUTION_LOG_CATEGORY, "Graph execution failed: a device queue reported an asynchronous "
                              "error.");
                 return raised;
             }
 
-            SR_LOG_DEBUG("Graph execution completed."); // per-step; see the DEBUG note above
+            SR_LOG_DEBUG(K_EXECUTION_LOG_CATEGORY, "Graph execution completed."); // per-step; see the DEBUG note above
             return {};
         }
 

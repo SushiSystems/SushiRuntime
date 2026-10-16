@@ -44,6 +44,7 @@
 #include "bindless_detection.hpp"
 #include <SushiRuntime/memory_exchange/memory_exchange.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/memory_exchange/memory_exchange_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -207,7 +208,7 @@ namespace SushiRuntime
             const Result<void> released =
                 Internal::SYCL::translate_exceptions(std::forward<Step>(step));
             if (!released)
-                SR_LOG_ERROR("Interop: {} threw '{}' while releasing an import on device {}; "
+                SR_LOG_ERROR(K_MEMORY_EXCHANGE_LOG_CATEGORY, "Interop: {} threw '{}' while releasing an import on device {}; "
                              "the remaining release steps still run.",
                              name, released.error().message, device_index);
         }

@@ -39,6 +39,7 @@
 #include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/log/log_level.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
@@ -71,12 +72,14 @@ namespace SushiRuntime
             };
 
             /** @brief Lists the names `--log-level` takes. */
-            constexpr std::array<LogLevelName, 5> K_LOG_LEVEL_NAMES = {{
-                {"off", LogLevel::Off},
-                {"error", LogLevel::Error},
-                {"warn", LogLevel::Warn},
-                {"info", LogLevel::Info},
+            constexpr std::array<LogLevelName, 7> K_LOG_LEVEL_NAMES = {{
+                {"trace", LogLevel::Trace},
                 {"debug", LogLevel::Debug},
+                {"info", LogLevel::Info},
+                {"warn", LogLevel::Warn},
+                {"error", LogLevel::Error},
+                {"fatal", LogLevel::Fatal},
+                {"off", LogLevel::Off},
             }};
 
             /** @brief Returns the process's exit value for a code. */
@@ -164,13 +167,13 @@ namespace SushiRuntime
                 Result<Runtime> created = Runtime::create();
                 if (!created)
                 {
-                    SR_LOG_ERROR("worker has no runtime: {}; exiting with code {}",
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "worker has no runtime: {}; exiting with code {}",
                                  created.error().message,
                                  exit_value(WorkerExitCode::InternalError));
                     return WorkerExitCode::InternalError;
                 }
 
-                SR_LOG_INFO("worker joining master {}, protocol v{}, authentication {}",
+                SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "worker joining master {}, protocol v{}, authentication {}",
                             options.master.to_string(), Wire::K_PROTOCOL_VERSION,
                             secret.empty() ? "off" : "on");
 
@@ -194,7 +197,7 @@ namespace SushiRuntime
             }
             catch (const std::exception& error)
             {
-                SR_LOG_ERROR("worker could not read its command line: {}; exiting with code {}",
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "worker could not read its command line: {}; exiting with code {}",
                              error.what(), exit_value(WorkerExitCode::InternalError));
                 return exit_value(WorkerExitCode::InternalError);
             }
@@ -228,7 +231,7 @@ namespace SushiRuntime
             {
                 if (!kernels)
                 {
-                    SR_LOG_ERROR("run_worker() was given no kernel registry; exiting with code {}",
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "run_worker() was given no kernel registry; exiting with code {}",
                                  exit_value(WorkerExitCode::InternalError));
                     return exit_value(WorkerExitCode::InternalError);
                 }
@@ -258,13 +261,13 @@ namespace SushiRuntime
             }
             catch (const std::exception& error)
             {
-                SR_LOG_ERROR("worker for master {} failed: {}; exiting with code {}",
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "worker for master {} failed: {}; exiting with code {}",
                              options.master.to_string(), error.what(),
                              exit_value(WorkerExitCode::InternalError));
             }
             catch (...)
             {
-                SR_LOG_ERROR("worker for master {} failed: unknown exception; exiting with "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "worker for master {} failed: unknown exception; exiting with "
                              "code {}",
                              options.master.to_string(),
                              exit_value(WorkerExitCode::InternalError));

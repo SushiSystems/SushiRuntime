@@ -28,6 +28,7 @@
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/topology/topology_log_category.hpp>
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
 
 namespace SushiRuntime
@@ -70,12 +71,12 @@ namespace SushiRuntime
             for (size_t i = 0; i < nodes.size(); ++i)
             {
                 int fake_numa = static_cast<int>(i % static_cast<size_t>(fake_node_count_));
-                SR_LOG_DEBUG("Remapping device [{}] from NUMA {} to synthetic NUMA {}.",
+                SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Remapping device [{}] from NUMA {} to synthetic NUMA {}.",
                              nodes[i].name, nodes[i].numa_node_id, fake_numa);
                 nodes[i].numa_node_id = fake_numa;
             }
 
-            SR_LOG_INFO("RemappingTopologyProvider: {} devices spread across {} synthetic NUMA nodes.",
+            SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "RemappingTopologyProvider: {} devices spread across {} synthetic NUMA nodes.",
                         nodes.size(), fake_node_count_);
             return enumerated;
         }

@@ -13,6 +13,7 @@ sushiruntime_add_module_tests(
         test_matrix_distance_model.cpp
         test_numa_mapper.cpp
         test_remapping_topology_provider.cpp
+        test_topology_log_category.cpp
         test_topology_provider.cpp
         test_topology_view.cpp)
 

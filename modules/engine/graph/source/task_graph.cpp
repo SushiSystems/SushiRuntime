@@ -37,6 +37,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/graph/graph_log_category.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/dependency_tracking/dependency_tracker.hpp>
 
@@ -214,7 +215,7 @@ namespace SushiRuntime
         /** @brief Creates an empty task graph. */
         TaskGraph::TaskGraph() : impl_(make_sushi<Impl>())
         {
-            SR_LOG_DEBUG("Lock-Free O(1) TaskGraph initialized.");
+            SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "Lock-Free O(1) TaskGraph initialized.");
         }
 
         /**
@@ -238,7 +239,7 @@ namespace SushiRuntime
             node->work = std::move(work);
             node->sycl_deps = dependencies;
 
-            SR_LOG_DEBUG("Node added with {} manual dependencies.", dependencies.size());
+            SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "Node added with {} manual dependencies.", dependencies.size());
 
             // O(1) Lock-Free insertion
             return impl_->push_node_lock_free(std::move(node), registration);
@@ -290,7 +291,7 @@ namespace SushiRuntime
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
-            SR_LOG_DEBUG("Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
+            SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
 
             // O(1) Lock-Free insertion
             return impl_->push_node_lock_free(std::move(node), registration);
@@ -334,13 +335,13 @@ namespace SushiRuntime
             // A task with no executable work is the only defect (modules/engine/graph/README.md).
             if (!has_device_work && !has_host_work)
             {
-                SR_LOG_WARN("Semantic task '{}' has neither device work nor host fallback — "
+                SR_LOG_WARN(K_GRAPH_LOG_CATEGORY, "Semantic task '{}' has neither device work nor host fallback — "
                             "it will be a no-op.",
                             metadata.name);
             }
             else if (!has_device_work)
             {
-                SR_LOG_DEBUG("Semantic task '{}' scheduled as host execution (its host_work may "
+                SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "Semantic task '{}' scheduled as host execution (its host_work may "
                              "still submit device kernels).",
                              metadata.name);
             }
@@ -356,7 +357,7 @@ namespace SushiRuntime
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
-            SR_LOG_DEBUG("Semantic Node '{}' (Type: {}) added (R: {}, W: {}).",
+            SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "Semantic Node '{}' (Type: {}) added (R: {}, W: {}).",
                          metadata.name, static_cast<int>(metadata.task_type), 
                          read_access.size(), write_access.size());
             
@@ -455,7 +456,7 @@ namespace SushiRuntime
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
-            SR_LOG_DEBUG("Native CPU node added (R: {}, W: {}).",
+            SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "Native CPU node added (R: {}, W: {}).",
                          read_access.size(), write_access.size());
 
             return impl_->push_node_lock_free(std::move(node), registration);
@@ -525,7 +526,7 @@ namespace SushiRuntime
                     "{} waits on {} unfinished dependencies. Remove the dependency cycle.",
                     graph.all_nodes.size(), describe_node(waiting),
                     waiting.in_degree.load(std::memory_order_relaxed));
-                SR_LOG_ERROR("{}", message);
+                SR_LOG_ERROR(K_GRAPH_LOG_CATEGORY, "{}", message);
                 // The tracker is drained before the return (modules/engine/graph/README.md).
                 impl_->tracker.reset();
                 return make_error(Error{ErrorCode::InvalidGraph, message});
@@ -582,7 +583,7 @@ namespace SushiRuntime
                         graph.all_nodes.size() - drained, graph.all_nodes.size(),
                         undrained != graph.all_nodes.end() ? describe_node(**undrained)
                                                            : std::string("an unidentified node"));
-                    SR_LOG_ERROR("{}", message);
+                    SR_LOG_ERROR(K_GRAPH_LOG_CATEGORY, "{}", message);
                     impl_->tracker.reset(); // same UAF-avoidance as the no-roots path
                     return make_error(Error{ErrorCode::InvalidGraph, message});
                 }
@@ -591,7 +592,7 @@ namespace SushiRuntime
             graph.sentinel = std::move(sentinel);
             impl_->tracker.reset(); // Safely clear the lock-free history
 
-            SR_LOG_INFO("DAG compilation completed successfully.");
+            SR_LOG_INFO(K_GRAPH_LOG_CATEGORY, "DAG compilation completed successfully.");
             return graph;
         }
 

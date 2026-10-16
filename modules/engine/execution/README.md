@@ -381,11 +381,10 @@ before the mark is released, and a constructor that throws after it was taken re
 
 #### The log level of a run
 
-The "Executing graph" line is DEBUG, not INFO. A run happens once per replayed step, so in a
+The "Executing graph" line is TRACE, not INFO. A run happens once per replayed step, so in a
 million-step `run(n)` an INFO line would emit millions of log records, each with an
-`ostringstream`, a timestamp, a global mutex and a condition-variable notify, and that would
-undo the allocation-free latch. DEBUG is compiled out in release, where
-`K_LOG_LEVEL_CEILING` is `Info`.
+`ostringstream`, a timestamp, a lock and a condition-variable notify, and that would undo the
+allocation-free latch. TRACE is compiled out in release, where `K_LOG_LEVEL_FLOOR` is `Debug`.
 
 #### The sentinel
 

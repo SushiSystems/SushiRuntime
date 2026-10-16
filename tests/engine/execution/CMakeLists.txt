@@ -10,6 +10,7 @@ sushiruntime_add_module_tests(
         test_chain_plan.cpp
         test_chain_run.cpp
         test_execution_engine.cpp
+        test_execution_log_category.cpp
         test_runtime_context.cpp
         test_runtime_settings.cpp
         test_scheduler_execution_engine.cpp

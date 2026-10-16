@@ -44,6 +44,7 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/frame_transport/outbox.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
 
@@ -156,7 +157,7 @@ namespace SushiRuntime
             void log_handler_failure(PeerID peer, const std::string& name, const char* event,
                                      std::size_t length, const char* what)
             {
-                SR_LOG_ERROR("handler of {} ({} bytes) from {} (peer {}) threw '{}'; "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "handler of {} ({} bytes) from {} (peer {}) threw '{}'; "
                              "closing the peer, the process continues",
                              event, length, name, peer.value, what);
             }
@@ -419,13 +420,13 @@ namespace SushiRuntime
                 }
                 catch (const std::exception& error)
                 {
-                    SR_LOG_ERROR("handler of the abandoned connection of in-process worker {} "
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "handler of the abandoned connection of in-process worker {} "
                                  "threw '{}'; the endpoint stays idle",
                                  worker_index, error.what());
                 }
                 catch (...)
                 {
-                    SR_LOG_ERROR("handler of the abandoned connection of in-process worker {} "
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "handler of the abandoned connection of in-process worker {} "
                                  "threw an unknown exception; the endpoint stays idle",
                                  worker_index);
                 }

@@ -37,6 +37,7 @@
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/memory/memory_log_category.hpp>
 
 namespace SushiRuntime
 {
@@ -80,7 +81,7 @@ namespace SushiRuntime
             {
                 try
                 {
-                    SR_LOG_ERROR("release of USM address {} threw '{}': the address may still be "
+                    SR_LOG_ERROR(K_MEMORY_LOG_CATEGORY, "release of USM address {} threw '{}': the address may still be "
                                  "allocated and is no longer tracked.", address, reason);
                 }
                 catch (...)
@@ -152,12 +153,12 @@ namespace SushiRuntime
 
             if (queues_.empty())
             {
-                SR_LOG_WARN("release of USM address {} with no record: the allocator holds no "
+                SR_LOG_WARN(K_MEMORY_LOG_CATEGORY, "release of USM address {} with no record: the allocator holds no "
                             "device, so nothing was freed.", address);
                 return;
             }
 
-            SR_LOG_ERROR("release of USM address {} with no record (second release or foreign "
+            SR_LOG_ERROR(K_MEMORY_LOG_CATEGORY, "release of USM address {} with no record (second release or foreign "
                          "pointer): nothing was freed.", address);
         }
 

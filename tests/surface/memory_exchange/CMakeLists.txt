@@ -7,4 +7,5 @@
 sushiruntime_add_module_tests(
     MODULE memory_exchange
     SOURCES
-        test_memory_exchange.cpp)
+        test_memory_exchange.cpp
+        test_memory_exchange_log_category.cpp)

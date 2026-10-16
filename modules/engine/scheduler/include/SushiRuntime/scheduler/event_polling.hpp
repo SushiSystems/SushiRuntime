@@ -45,6 +45,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/scheduler/scheduler_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/observability/profiling_ledger.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -210,7 +211,7 @@ namespace SushiRuntime
                  */
                 static bool reap_failed(PolledEvent& entry)
                 {
-                    SR_LOG_ERROR("Polling the event of task '{}' threw; the task is reaped "
+                    SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "Polling the event of task '{}' threw; the task is reaped "
                                  "as not executed and its successors are released.",
                                  entry.task ? entry.task->name() : "<none>");
                     entry.ready = true;

@@ -39,6 +39,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/device/device_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 
 namespace SushiRuntime
@@ -149,7 +150,7 @@ namespace SushiRuntime
                 if (info.numa_node < 0
                     || static_cast<std::size_t>(info.numa_node) >= K_MAX_NUMA_NODES)
                 {
-                    SR_LOG_WARN("Device {} reported invalid NUMA {}. Falling back to NUMA 0 for "
+                    SR_LOG_WARN(K_DEVICE_LOG_CATEGORY, "Device {} reported invalid NUMA {}. Falling back to NUMA 0 for "
                                 "queue mapping.",
                                 info.name, info.numa_node);
                     info.numa_node = 0;
@@ -167,7 +168,7 @@ namespace SushiRuntime
                     slot.built.store(true, std::memory_order_release);
                 });
 
-                SR_LOG_INFO("Device: {} | NUMA: {} | Memory: {} MB | Compute units: {}",
+                SR_LOG_INFO(K_DEVICE_LOG_CATEGORY, "Device: {} | NUMA: {} | Memory: {} MB | Compute units: {}",
                             info.name, info.numa_node, info.memory_bytes / (1024 * 1024),
                             info.compute_units);
 
@@ -186,7 +187,7 @@ namespace SushiRuntime
                 const Result<void> drained =
                     SYCL::translate_exceptions([&built]() { built.wait_and_throw(); });
                 if (!drained)
-                    SR_LOG_WARN("Async device error on device {} ({}) during shutdown drain: {}; "
+                    SR_LOG_WARN(K_DEVICE_LOG_CATEGORY, "Async device error on device {} ({}) during shutdown drain: {}; "
                                 "the queue is released anyway.",
                                 info.index, info.name, drained.error().message);
             });
@@ -370,11 +371,11 @@ namespace SushiRuntime
             }
 
             if (!empty_nodes.empty())
-                SR_LOG_WARN("No device sits on NUMA node(s) {}; a request for one of them is "
+                SR_LOG_WARN(K_DEVICE_LOG_CATEGORY, "No device sits on NUMA node(s) {}; a request for one of them is "
                             "served from all {} devices in rotation.",
                             empty_nodes, infos_.size());
 
-            SR_LOG_INFO("Device set ready. Total devices: {}, NUMA domains: {}. A NUMA id outside "
+            SR_LOG_INFO(K_DEVICE_LOG_CATEGORY, "Device set ready. Total devices: {}, NUMA domains: {}. A NUMA id outside "
                         "[0, {}) is served from all devices in rotation.",
                         infos_.size(), populated, node_count);
         }

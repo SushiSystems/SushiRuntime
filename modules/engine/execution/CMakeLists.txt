@@ -14,6 +14,7 @@ sushiruntime_add_module(
         runtime_context.cpp
     DEPENDS
         core
+        log
         topology
         memory
         device
