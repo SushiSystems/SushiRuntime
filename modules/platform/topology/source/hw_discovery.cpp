@@ -32,6 +32,7 @@
 #include <cstdio>
 #include <hwloc.h>
 #include <optional>
+#include <exception>
 #include <regex>
 #include <set>
 #include <string>
@@ -39,6 +40,7 @@
 #include <unordered_set>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/topology/topology_log_category.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/numa_lookup/numa_lookup.hpp>
 
@@ -144,14 +146,14 @@ namespace SushiRuntime
         Result<std::vector<HardwareNode>>
         HardwareDiscovery::probe_all_devices(const DeviceFilter& config)
         {
-            SR_LOG_DEBUG("Starting expanded hardware probe...");
+            SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Starting expanded hardware probe...");
             std::vector<HardwareNode> discovered_nodes;
 
             Result<void> discovered = discover_sycl_devices(discovered_nodes, config);
             if (!discovered)
                 return make_error(std::move(discovered.error()));
 
-            SR_LOG_INFO("Expanded probe complete. {} nodes found.", discovered_nodes.size());
+            SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Expanded probe complete. {} nodes found.", discovered_nodes.size());
             return discovered_nodes;
         }
 
@@ -167,7 +169,7 @@ namespace SushiRuntime
             const LoadedHWLOCTopology loaded_topology;
             const hwloc_topology_t topology = loaded_topology.get();
             if (topology == nullptr)
-                SR_LOG_WARN("hwloc could not load the machine topology; CPU devices keep NUMA -1 "
+                SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "hwloc could not load the machine topology; CPU devices keep NUMA -1 "
                             "and a GPU's PCI address comes from SYCL alone.");
 
             try
@@ -189,7 +191,7 @@ namespace SushiRuntime
                     // fp64 is checked at discovery, not at kernel launch (modules/platform/topology/README.md).
                     if (config.require_fp64 && !dev.has(sycl::aspect::fp64))
                     {
-                        SR_LOG_INFO("Skipping device [{}]: no fp64 support and require_fp64 is set.",
+                        SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Skipping device [{}]: no fp64 support and require_fp64 is set.",
                                     dev.get_info<sycl::info::device::name>());
                         continue;
                     }
@@ -219,7 +221,7 @@ namespace SushiRuntime
                         // A second CPU on one NUMA node is dropped (modules/platform/topology/README.md).
                         if (!seen_cpu_numa.insert(node.numa_node_id).second)
                         {
-                            SR_LOG_INFO("Skipping duplicate CPU device [{}] on NUMA {} (already mapped).",
+                            SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Skipping duplicate CPU device [{}] on NUMA {} (already mapped).",
                                         node.name, node.numa_node_id);
                             --logical_id_counter;
                             continue;
@@ -253,7 +255,14 @@ namespace SushiRuntime
                                     std::smatch match;
                                     if (std::regex_search(vendor, match, pci_regex))
                                         pci_str = match.str();
-                                } catch (...) {}
+                                }
+                                catch (const std::exception& error)
+                                {
+                                    SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY,
+                                                 "reading the vendor of device '{}' threw '{}'; "
+                                                 "looking for its PCI address in hwloc instead",
+                                                 node.name, error.what());
+                                }
 
                                 // Fallback 2: hwloc PCI tree, by GPU name (modules/platform/topology/README.md).
                                 if (pci_str.empty() && topology != nullptr)
@@ -281,7 +290,7 @@ namespace SushiRuntime
                                                     io->attr->pcidev.func);
                                                 pci_str = buf;
                                                 (void)pci_obj;
-                                                SR_LOG_DEBUG("Device {} found via hwloc osdev scan: {}", dev_name, pci_str);
+                                                SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Device {} found via hwloc osdev scan: {}", dev_name, pci_str);
                                             }
                                             break;
                                         }
@@ -302,13 +311,13 @@ namespace SushiRuntime
                                     address.device = static_cast<std::uint32_t>(std::stoul(match[3].str(), nullptr, 16));
                                     address.function = static_cast<std::uint32_t>(std::stoul(match[4].str(), nullptr, 16));
                                     node.pci_address = address;
-                                    SR_LOG_DEBUG("Device {} PCI: {}", node.name, describe(address));
+                                    SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Device {} PCI: {}", node.name, describe(address));
                                 }
                             }
                         }
                         catch (...)
                         {
-                            SR_LOG_WARN("Could not retrieve PCI address for {}, NUMA mapping may be degraded.", node.name);
+                            SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "Could not retrieve PCI address for {}, NUMA mapping may be degraded.", node.name);
                             node.pci_address.reset();
                         }
                     }
@@ -317,7 +326,7 @@ namespace SushiRuntime
                     if (node.pci_address.has_value() &&
                         !seen_pci.insert(pci_key(*node.pci_address)).second)
                     {
-                        SR_LOG_INFO("Skipping duplicate device [{}] at PCI {} (already mapped).",
+                        SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Skipping duplicate device [{}] at PCI {} (already mapped).",
                                     node.name, describe(*node.pci_address));
                         --logical_id_counter;
                         continue;

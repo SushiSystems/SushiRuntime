@@ -37,6 +37,7 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/offload_coordination/offload_coordination_log_category.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -368,7 +369,7 @@ namespace SushiRuntime
             }
 
             if (local.left_local() != 0)
-                SR_LOG_WARN("{} of {} op-tagged nodes will run locally: {} no live worker for "
+                SR_LOG_WARN(K_OFFLOAD_COORDINATION_LOG_CATEGORY, "{} of {} op-tagged nodes will run locally: {} no live worker for "
                             "the op, {} buffer not shared, {} buffer written twice (first: op "
                             "{})",
                             local.left_local(), local.tagged, local.no_worker, local.not_shared,
@@ -438,7 +439,7 @@ namespace SushiRuntime
             if (sent == SendStatus::Queued)
             {
                 offloaded_.fetch_add(1, std::memory_order_relaxed);
-                SR_LOG_DEBUG("task {} queued for worker {}", task_id, worker->value);
+                SR_LOG_DEBUG(K_OFFLOAD_COORDINATION_LOG_CATEGORY, "task {} queued for worker {}", task_id, worker->value);
                 return true;
             }
 

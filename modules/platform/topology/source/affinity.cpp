@@ -41,6 +41,7 @@
 #endif
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/topology/topology_log_category.hpp>
 
 namespace SushiRuntime
 {
@@ -110,7 +111,7 @@ namespace SushiRuntime
             const int core_limit = logical_core_limit();
             if (core_id < 0 || core_id >= core_limit)
             {
-                SR_LOG_WARN("Core id {} is outside [0, {}); the thread is not pinned and keeps "
+                SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "Core id {} is outside [0, {}); the thread is not pinned and keeps "
                             "its affinity.",
                             core_id, core_limit);
                 return;
@@ -119,12 +120,12 @@ namespace SushiRuntime
             const std::uint32_t os_error = bind_calling_thread(core_id);
             if (os_error != 0)
             {
-                SR_LOG_WARN("The OS refused to pin the thread to core {} (error {}); the thread "
+                SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "The OS refused to pin the thread to core {} (error {}); the thread "
                             "keeps its affinity.",
                             core_id, os_error);
                 return;
             }
-            SR_LOG_DEBUG("Thread successfully pinned to core {}", core_id);
+            SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Thread successfully pinned to core {}", core_id);
         }
     } // namespace Topology
 } // namespace SushiRuntime

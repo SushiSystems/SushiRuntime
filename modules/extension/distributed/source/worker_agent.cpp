@@ -43,6 +43,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -115,7 +116,7 @@ namespace SushiRuntime
             {
                 if (options.name.size() > K_MAXIMUM_NAME_BYTES)
                 {
-                    SR_LOG_WARN("worker name holds {} bytes; HELLO carries {}, so the name is cut "
+                    SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "worker name holds {} bytes; HELLO carries {}, so the name is cut "
                                 "to that length",
                                 options.name.size(), K_MAXIMUM_NAME_BYTES);
                     options.name.resize(K_MAXIMUM_NAME_BYTES);
@@ -137,7 +138,7 @@ namespace SushiRuntime
                 if (half != 0)
                     return half;
 
-                SR_LOG_WARN("device {} reports no memory size; the worker's buffer cache takes "
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "device {} reports no memory size; the worker's buffer cache takes "
                             "{} bytes",
                             K_DEVICE_INDEX, K_FALLBACK_CACHE_BYTES);
                 return K_FALLBACK_CACHE_BYTES;
@@ -156,14 +157,14 @@ namespace SushiRuntime
                     }
                     catch (const std::exception& error)
                     {
-                        SR_LOG_ERROR("cannot allocate {} bytes of worker cache on device {}: {}; "
+                        SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "cannot allocate {} bytes of worker cache on device {}: {}; "
                                      "the task that needs them fails",
                                      size_bytes, K_DEVICE_INDEX, error.what());
                         return nullptr;
                     }
                     catch (...)
                     {
-                        SR_LOG_ERROR("cannot allocate {} bytes of worker cache on device {}: "
+                        SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "cannot allocate {} bytes of worker cache on device {}: "
                                      "unknown exception; the task that needs them fails",
                                      size_bytes, K_DEVICE_INDEX);
                         return nullptr;
@@ -187,7 +188,7 @@ namespace SushiRuntime
                 }
                 catch (const std::exception& error)
                 {
-                    SR_LOG_DEBUG("cannot read the free memory of device {}: {}; PONG carries 0",
+                    SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "cannot read the free memory of device {}: {}; PONG carries 0",
                                  K_DEVICE_INDEX, error.what());
                     return 0;
                 }
@@ -431,7 +432,7 @@ namespace SushiRuntime
                                                  std::size_t length,
                                                  const Wire::DecodeResult& decoded)
         {
-            SR_LOG_WARN("master {} sent a malformed {} frame ({} bytes): the field at offset {} "
+            SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "master {} sent a malformed {} frame ({} bytes): the field at offset {} "
                         "did not decode (codec status {}); closing the connection",
                         endpoint_of(peer), message_type_name(type), length, decoded.offset,
                         static_cast<int>(decoded.status));
@@ -458,7 +459,7 @@ namespace SushiRuntime
             const std::optional<PeerID> master = link_.master();
             if (!master || *master != peer)
             {
-                SR_LOG_DEBUG("task {}: dispatched on peer {}, which is not registered; ignored",
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "task {}: dispatched on peer {}, which is not registered; ignored",
                              task_id, peer.value);
                 return;
             }
@@ -469,7 +470,7 @@ namespace SushiRuntime
             const EnqueueStatus status =
                 executor_.enqueue(peer, std::move(dispatch), link_.chunk_bytes());
             if (status == EnqueueStatus::QueueFull)
-                SR_LOG_DEBUG("task {}: the job queue holds {} tasks, its bound; nothing is sent "
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the job queue holds {} tasks, its bound; nothing is sent "
                              "and the master takes the task back",
                              task_id, options_.max_jobs);
         }
@@ -509,7 +510,7 @@ namespace SushiRuntime
                 phase_.store(Phase::Stopped);
                 executor_.stop();
                 link_.stop();
-                SR_LOG_ERROR("worker agent did not start: {}; no thread of the agent is left "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "worker agent did not start: {}; no thread of the agent is left "
                              "running",
                              result.message);
             }
@@ -529,14 +530,14 @@ namespace SushiRuntime
                 const bool closed = connection_changed_.wait_for(
                     lock, K_CLOSE_LIMIT, [&] { return connected_ != *master; });
                 if (!closed)
-                    SR_LOG_WARN("master {} did not take the worker's last frames within {} ms; "
+                    SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "master {} did not take the worker's last frames within {} ms; "
                                 "GOODBYE may be lost and the master then waits for its liveness "
                                 "timeout",
                                 endpoint_, K_CLOSE_LIMIT.count());
             }
             catch (const std::exception& error)
             {
-                SR_LOG_WARN("could not close the master's connection in order: {}; the "
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "could not close the master's connection in order: {}; the "
                             "transport's stop closes it",
                             error.what());
             }
@@ -547,7 +548,7 @@ namespace SushiRuntime
             try
             {
                 const WorkerStatistics counters = statistics();
-                SR_LOG_INFO("worker stopped: {} tasks run; failed: {} kernel, {} output "
+                SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "worker stopped: {} tasks run; failed: {} kernel, {} output "
                             "allocation, {} input unavailable, {} unknown operation, {} shutting "
                             "down; cache {} bytes, {} evictions; {} reconnects",
                             counters.tasks_run, counters.tasks_failed_kernel,
@@ -559,7 +560,7 @@ namespace SushiRuntime
             }
             catch (const std::exception& error)
             {
-                SR_LOG_WARN("could not log the worker's statistics: {}", error.what());
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "could not log the worker's statistics: {}", error.what());
             }
         }
 
@@ -610,7 +611,7 @@ namespace SushiRuntime
                 endpoint_ = info.endpoint;
             }
 
-            SR_LOG_INFO("connected to master {} (peer {})", info.endpoint, peer.value);
+            SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "connected to master {} (peer {})", info.endpoint, peer.value);
             link_.on_connected(peer);
         }
 
@@ -619,7 +620,7 @@ namespace SushiRuntime
         {
             link_.note_frame(peer);
             if (router_.route(type, peer, flags, payload) == Wire::RouteStatus::Unhandled)
-                SR_LOG_DEBUG("master {} sent a {} frame, which a worker does not take; ignored",
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "master {} sent a {} frame, which a worker does not take; ignored",
                              endpoint_of(peer), message_type_name(type));
         }
 
@@ -639,10 +640,10 @@ namespace SushiRuntime
         {
             const LinkChange change = link_.on_connect_abandoned();
             if (change == LinkChange::Ended)
-                SR_LOG_WARN("the transport gave up on the master: {}; this worker stops serving",
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "the transport gave up on the master: {}; this worker stops serving",
                             cause);
             else
-                SR_LOG_DEBUG("the transport gave up on the master while this worker stops: {}",
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "the transport gave up on the master while this worker stops: {}",
                              cause);
             apply(change);
         }

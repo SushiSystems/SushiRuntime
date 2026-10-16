@@ -34,6 +34,7 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/frame_transport/frame_sending.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
@@ -214,7 +215,7 @@ namespace SushiRuntime
 
                     finished_ = true;
                     frame.payload.clear();
-                    SR_LOG_ERROR("task {}: the output stream ended before its result: {}; the "
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the output stream ended before its result: {}; the "
                                  "master takes the task back as a lost result",
                                  task_id_, failure);
                     return FrameSourceStatus::Finished;
@@ -391,7 +392,7 @@ namespace SushiRuntime
             accepted.task_id = task_id;
             const SendStatus sent = send_message(transport_, from, accepted);
             if (sent != SendStatus::Queued)
-                SR_LOG_DEBUG("task {}: TASK_ACCEPTED to peer {} was not queued (status {})",
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "task {}: TASK_ACCEPTED to peer {} was not queued (status {})",
                              task_id, from.value, static_cast<int>(sent));
             return EnqueueStatus::Queued;
         }
@@ -429,18 +430,18 @@ namespace SushiRuntime
                     fail(job.from, job.dispatch.task_id, job.generation,
                          Wire::TaskResultStatus::ShuttingDown);
                 if (!queued.empty())
-                    SR_LOG_INFO("worker stopping: {} queued tasks reported as shutting down",
+                    SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "worker stopping: {} queued tasks reported as shutting down",
                                 queued.size());
             }
             catch (const std::exception& error)
             {
-                SR_LOG_WARN("worker stopping: not every queued task was reported: {}; the "
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "worker stopping: not every queued task was reported: {}; the "
                             "master takes the rest back when the connection closes",
                             error.what());
             }
             catch (...)
             {
-                SR_LOG_WARN("worker stopping: not every queued task was reported: unknown "
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "worker stopping: not every queued task was reported: unknown "
                             "exception; the master takes the rest back when the connection "
                             "closes");
             }
@@ -544,7 +545,7 @@ namespace SushiRuntime
             const SendStatus sent = send_message(transport_, from, result);
             held_->let_go(task_id, generation);
             if (sent != SendStatus::Queued)
-                SR_LOG_DEBUG("task {}: TASK_RESULT to peer {} was not queued (status {})",
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "task {}: TASK_RESULT to peer {} was not queued (status {})",
                              task_id, from.value, static_cast<int>(sent));
         }
 
@@ -552,7 +553,7 @@ namespace SushiRuntime
         {
             try
             {
-                SR_LOG_ERROR("task {}: the worker failed outside the kernel: {}; reported as "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the worker failed outside the kernel: {}; reported as "
                              "kernel failed",
                              job.dispatch.task_id, cause);
                 fail(job.from, job.dispatch.task_id, job.generation,
@@ -561,7 +562,7 @@ namespace SushiRuntime
             catch (...)
             {
                 held_->let_go(job.dispatch.task_id, job.generation);
-                SR_LOG_ERROR("the worker could not report a failed task; the master takes it "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "the worker could not report a failed task; the master takes it "
                              "back as a lost result");
             }
         }
@@ -595,7 +596,7 @@ namespace SushiRuntime
         void DispatchExecutor::log_no_room(std::uint64_t task_id, const BufferHandle& handle,
                                            const char* consequence) const
         {
-            SR_LOG_ERROR("task {}: cannot allocate {} bytes for buffer {} (budget {}, in use "
+            SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {}: cannot allocate {} bytes for buffer {} (budget {}, in use "
                          "{}); reported as {}",
                          task_id, handle.size_bytes, handle.id.value, cache_.budget(),
                          cache_.bytes(), consequence);
@@ -609,7 +610,7 @@ namespace SushiRuntime
             const KernelRegistry::Kernel* kernel = kernels_->find(dispatch.operation);
             if (kernel == nullptr)
             {
-                SR_LOG_WARN("task {}: this worker has no kernel for operation {}; reported as "
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {}: this worker has no kernel for operation {}; reported as "
                             "unknown operation",
                             task_id, dispatch.operation.value);
                 fail(job.from, task_id, job.generation,
@@ -649,7 +650,7 @@ namespace SushiRuntime
                     if (status == CacheStatus::AllocationFailed)
                         log_no_room(task_id, handle, "input unavailable");
                     else
-                        SR_LOG_WARN("task {}: input buffer {} version {} did not arrive from "
+                        SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {}: input buffer {} version {} did not arrive from "
                                     "peer {}: {}; reported as input unavailable",
                                     task_id, handle.id.value, handle.version, job.from.value,
                                     cache_status_name(status));
@@ -686,7 +687,7 @@ namespace SushiRuntime
                 // A kernel that threw may have written part of an output.
                 for (const BufferHandle& handle : dispatch.outputs)
                     cache_.release(handle.id);
-                SR_LOG_ERROR("task {}: the kernel of operation {} threw: {}; reported as "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the kernel of operation {} threw: {}; reported as "
                              "kernel failed",
                              task_id, dispatch.operation.value, failure);
                 fail(job.from, task_id, job.generation, Wire::TaskResultStatus::KernelFailed);
@@ -704,7 +705,7 @@ namespace SushiRuntime
 
             const SendStatus sent = transport_.send_stream(job.from, std::move(stream));
             if (sent != SendStatus::Queued)
-                SR_LOG_DEBUG("task {}: the output stream to peer {} was not queued (status {})",
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the output stream to peer {} was not queued (status {})",
                              task_id, job.from.value, static_cast<int>(sent));
         }
 

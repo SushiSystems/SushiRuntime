@@ -44,6 +44,7 @@
 #include <vector>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/network_socket/socket.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
@@ -416,7 +417,7 @@ namespace SushiRuntime
                 socket.shutdown();
 
                 if (is_logged_attempt(refusal))
-                    SR_LOG_WARN("{} refused: {} peers are open, the limit; refusal {}, "
+                    SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "{} refused: {} peers are open, the limit; refusal {}, "
                                 "REJECT(busy) {}",
                                 name, open_peers, refusal,
                                 is_sent ? "sent" : "not sent");
@@ -518,7 +519,7 @@ namespace SushiRuntime
                     if (!result.is_ok())
                     {
                         if (is_logged_attempt(++failures))
-                            SR_LOG_WARN("accept on {} failed: {}; failure {}, next try in {} ms",
+                            SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "accept on {} failed: {}; failure {}, next try in {} ms",
                                         local, describe(result), failures,
                                         K_ACCEPT_RETRY.count());
                         if (table.wait_shut_for(K_ACCEPT_RETRY))
@@ -533,7 +534,7 @@ namespace SushiRuntime
                         refuse_busy(accepted, name, open_peers, ++refusals);
                         continue;
                     }
-                    SR_LOG_DEBUG("{} accepted a connection from {}", local, name);
+                    SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "{} accepted a connection from {}", local, name);
                     if (!table.open(std::move(accepted), PeerDescription{name}))
                         return;
                 }
@@ -548,13 +549,13 @@ namespace SushiRuntime
                 }
                 catch (const std::exception& error)
                 {
-                    SR_LOG_ERROR("handler of the abandoned connection to master {} threw '{}'; "
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "handler of the abandoned connection to master {} threw '{}'; "
                                  "the connector ends as planned",
                                  master.to_string(), error.what());
                 }
                 catch (...)
                 {
-                    SR_LOG_ERROR("handler of the abandoned connection to master {} threw an "
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "handler of the abandoned connection to master {} threw an "
                                  "unknown exception; the connector ends as planned",
                                  master.to_string());
                 }
@@ -585,7 +586,7 @@ namespace SushiRuntime
                         const Clock::time_point opened = Clock::now();
                         was_connected = true;
                         const std::string name = peer_name(socket, target);
-                        SR_LOG_DEBUG("connected to master {} ({}) at attempt {}", target, name,
+                        SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "connected to master {} ({}) at attempt {}", target, name,
                                      attempt);
                         if (!table.open(std::move(socket), PeerDescription{name}) ||
                             table.wait_until_no_peer())
@@ -624,7 +625,7 @@ namespace SushiRuntime
                                           std::chrono::milliseconds(1));
                         }
                         if (is_logged_attempt(attempt))
-                            SR_LOG_WARN("{}; attempt {}, next in {} ms", cause, attempt,
+                            SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "{}; attempt {}, next in {} ms", cause, attempt,
                                         wait.count());
                     }
 

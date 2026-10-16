@@ -58,7 +58,6 @@ int main(int argc, char** argv)
     ::testing::InitGoogleTest(&argc, argv);
 
     int res = RUN_ALL_TESTS();
-    SR_LOG_INFO("All tests finished with result: {}", res);
 
 #if defined(SR_TSAN_BUILD)
     // A TSan run exits without C++ teardown; see modules/foundation/test_runner/README.md.

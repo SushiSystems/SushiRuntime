@@ -34,6 +34,7 @@
 #include <hwloc.h>
 #include <hwloc/distances.h>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/topology/topology_log_category.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/numa_lookup/numa_lookup.hpp>
 
@@ -49,14 +50,14 @@ namespace SushiRuntime
          */
         void NUMAMapper::map_distances(std::vector<HardwareNode>& nodes) 
         {
-            SR_LOG_INFO("Initializing hardware topology mapping via hwloc...");
+            SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Initializing hardware topology mapping via hwloc...");
 
             hwloc_topology_t topology;
             
             /** @brief Step 1: initialize and load the topology. */
             if (hwloc_topology_init(&topology) < 0)
             {
-                SR_LOG_ERROR("Failed to initialize hwloc topology.");
+                SR_LOG_ERROR(K_TOPOLOGY_LOG_CATEGORY, "Failed to initialize hwloc topology.");
                 return;
             }
             // KEEP_ALL lets hwloc_get_pcidev_by_busid() find the GPU (modules/platform/topology/README.md).
@@ -77,12 +78,12 @@ namespace SushiRuntime
                         node.numa_node_id = 0;
                         if (numa_node_count > 1)
                         {
-                            SR_LOG_WARN("No PCI address for [{}]; bus lookup skipped, placed on NUMA node 0 of {}, which may not be its nearest.",
+                            SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "No PCI address for [{}]; bus lookup skipped, placed on NUMA node 0 of {}, which may not be its nearest.",
                                         node.name, numa_node_count);
                         }
                         else
                         {
-                            SR_LOG_INFO("No PCI address for [{}] (expected on WSL2, where hwloc sees no PCI devices); bus lookup skipped, placed on NUMA node 0, the only node.",
+                            SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "No PCI address for [{}] (expected on WSL2, where hwloc sees no PCI devices); bus lookup skipped, placed on NUMA node 0, the only node.",
                                         node.name);
                         }
                         continue;
@@ -109,7 +110,7 @@ namespace SushiRuntime
                                           static_cast<unsigned>(pci_address.bus),
                                           static_cast<unsigned>(pci_address.device),
                                           static_cast<unsigned>(pci_address.function));
-                            SR_LOG_INFO("Device [{}] (PCI {}) is hard-bound to NUMA node {}",
+                            SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "Device [{}] (PCI {}) is hard-bound to NUMA node {}",
                                         node.name, pci_str, node.numa_node_id);
                         } 
                         else
@@ -117,12 +118,12 @@ namespace SushiRuntime
                             node.numa_node_id = 0;
                             if (numa_node_count > 1)
                             {
-                                SR_LOG_WARN("hwloc reports no local NUMA node for [{}]; placed on NUMA node 0 of {}, which may not be its nearest.",
+                                SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "hwloc reports no local NUMA node for [{}]; placed on NUMA node 0 of {}, which may not be its nearest.",
                                             node.name, numa_node_count);
                             }
                             else
                             {
-                                SR_LOG_INFO("hwloc reports no local NUMA node for [{}]; placed on NUMA node 0, the only node.",
+                                SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "hwloc reports no local NUMA node for [{}]; placed on NUMA node 0, the only node.",
                                             node.name);
                             }
                         }
@@ -132,12 +133,12 @@ namespace SushiRuntime
                         node.numa_node_id = 0;
                         if (numa_node_count > 1)
                         {
-                            SR_LOG_WARN("hwloc lists no PCI device for [{}]; placed on NUMA node 0 of {}, which may not be its nearest.",
+                            SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "hwloc lists no PCI device for [{}]; placed on NUMA node 0 of {}, which may not be its nearest.",
                                         node.name, numa_node_count);
                         }
                         else
                         {
-                            SR_LOG_INFO("hwloc lists no PCI device for [{}]; placed on NUMA node 0, the only node.",
+                            SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "hwloc lists no PCI device for [{}]; placed on NUMA node 0, the only node.",
                                         node.name);
                         }
                     }
@@ -152,11 +153,11 @@ namespace SushiRuntime
                     if (numa_obj) 
                     {
                         node.numa_node_id = numa_obj->os_index;
-                        SR_LOG_INFO("CPU Device [{}] is bound to NUMA node {}.", node.name, node.numa_node_id);
+                        SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "CPU Device [{}] is bound to NUMA node {}.", node.name, node.numa_node_id);
                     } else 
                     {
                         node.numa_node_id = 0; 
-                        SR_LOG_WARN("Exact NUMA assignment for CPU could not be made, Default (0) is being used.");
+                        SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "Exact NUMA assignment for CPU could not be made, Default (0) is being used.");
                     }
                     
                     hwloc_bitmap_free(cpuset);

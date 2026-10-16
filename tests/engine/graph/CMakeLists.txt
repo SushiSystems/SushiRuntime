@@ -9,4 +9,5 @@ sushiruntime_add_module_tests(
     SOURCES
         test_chain_plan.cpp
         test_compiled_graph.cpp
+        test_graph_log_category.cpp
         test_task_graph.cpp)

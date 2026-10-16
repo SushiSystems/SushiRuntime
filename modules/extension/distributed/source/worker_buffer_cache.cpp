@@ -32,6 +32,7 @@
 #include <utility>
 
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/distributed/distributed_log_category.hpp>
 
 namespace SushiRuntime
 {
@@ -327,7 +328,7 @@ namespace SushiRuntime
 
             progress_.notify_all();
             if (discarded)
-                SR_LOG_DEBUG("pull of buffer {} version {} discarded: chunk at offset {} with {} "
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "pull of buffer {} version {} discarded: chunk at offset {} with {} "
                              "bytes does not continue the transfer",
                              chunk.handle.id.value, chunk.handle.version, chunk.offset,
                              chunk.data.size());

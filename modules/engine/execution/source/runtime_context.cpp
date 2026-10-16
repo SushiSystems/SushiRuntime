@@ -38,6 +38,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -127,7 +128,7 @@ namespace SushiRuntime
             ErrorWrapper<Error> initialization_failure(Error reason)
             {
                 // The device set leaves a failed queue build unlogged; this is its one line.
-                SR_LOG_ERROR("Critical initialization failure: {}", reason.message);
+                SR_LOG_ERROR(K_EXECUTION_LOG_CATEGORY, "Critical initialization failure: {}", reason.message);
                 return make_error(std::move(reason));
             }
         } // namespace
@@ -218,7 +219,7 @@ namespace SushiRuntime
                                std::shared_ptr<Internal::Topology::NUMADistanceModel> distance_model,
                                const RuntimeSettings& settings)
         {
-            SR_LOG_INFO("Initializing compute stack...");
+            SR_LOG_INFO(K_EXECUTION_LOG_CATEGORY, "Initializing compute stack...");
 
             std::shared_ptr<RuntimeContext> context;
             std::optional<Error> refused;

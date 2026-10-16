@@ -3251,9 +3251,6 @@ namespace TCPFaultsTests
     /** @brief Tests that a peer of another protocol version gets one ERROR line per connection. */
     TEST_F(Medium_DistributedTcpFaultsTest, VersionMismatchLoggedOncePerConnection)
     {
-        if (K_LOG_LEVEL_CEILING < LogLevel::Error)
-            GTEST_SKIP() << "This build compiles no log call.";
-
         constexpr std::size_t K_CONNECTIONS = 2;
         count_version_errors();
         start_master();

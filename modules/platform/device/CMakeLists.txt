@@ -8,5 +8,5 @@ sushiruntime_add_module(
     NAME device TIER platform INTERNAL
     SYCL
     SOURCES device_queue_set.cpp
-    DEPENDS core machine
+    DEPENDS core log machine
     PRIVATE_DEPENDS logging sycl)

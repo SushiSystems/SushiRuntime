@@ -29,6 +29,7 @@
 #pragma once
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/scheduler/scheduler_log_category.hpp>
 #include <algorithm>
 #include <vector>
 
@@ -99,7 +100,7 @@ namespace SushiRuntime
                         size_t tasks_to_move = std::max(static_cast<size_t>(10), (max_queue - min_queue) / 2);
                         migrator.migrate_tasks(bottleneck_worker, tasks_to_move);
 
-                        SR_LOG_DEBUG("Rebalancer: took up to {} tasks off worker {} (queue depth "
+                        SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "Rebalancer: took up to {} tasks off worker {} (queue depth "
                                      "{}, {} completed since the last check); the idlest worker "
                                      "is {} (queue depth {}).",
                                      tasks_to_move, bottleneck_worker, max_queue, bottleneck_rate,

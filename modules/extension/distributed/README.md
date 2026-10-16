@@ -526,7 +526,7 @@ transport and `StopSignal::request()`.
 | `--pull-idle-timeout-ms n` | `SR_WORKER_PULL_IDLE_TIMEOUT_MS` | 5000; 0 waits without a limit |
 | `--connect-timeout-s n` | `SR_WORKER_CONNECT_TIMEOUT_S` | 60; 0 waits without a limit |
 | `--no-reconnect` | | reconnect on |
-| `--log-level name` | | unchanged; `off`, `error`, `warn`, `info`, `debug` |
+| `--log-level name` | | unchanged; `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `off`; sets every category |
 | `--version`, `--help` | | print and exit 0 |
 
 A flag beats its variable, which beats the default. A variable set to nothing counts as unset. A

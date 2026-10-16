@@ -42,6 +42,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/scheduler/scheduler_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/task.hpp>
@@ -115,7 +116,7 @@ namespace SushiRuntime
                 if (first_core_ + num_workers_ > machine_cores)
                     num_workers_ = machine_cores > first_core_ ? machine_cores - first_core_ : 1;
 
-                SR_LOG_WARN("Worker core range [{}, {}) exceeds the machine's {} cores; "
+                SR_LOG_WARN(K_SCHEDULER_LOG_CATEGORY, "Worker core range [{}, {}) exceeds the machine's {} cores; "
                             "clamped to {} workers starting at core {}.",
                             pool.first_core, last, machine_cores, num_workers_, first_core_);
             }
@@ -132,12 +133,12 @@ namespace SushiRuntime
 
             if (pinning_ == PinPolicy::Pin)
             {
-                SR_LOG_INFO("Task scheduler initialized with {} workers pinned to cores [{}, {}).",
+                SR_LOG_INFO(K_SCHEDULER_LOG_CATEGORY, "Task scheduler initialized with {} workers pinned to cores [{}, {}).",
                             num_workers_, first_core_, first_core_ + num_workers_);
             }
             else
             {
-                SR_LOG_INFO("Task scheduler initialized with {} unpinned workers.", num_workers_);
+                SR_LOG_INFO(K_SCHEDULER_LOG_CATEGORY, "Task scheduler initialized with {} unpinned workers.", num_workers_);
             }
         }
 
@@ -206,7 +207,7 @@ namespace SushiRuntime
             bool expected = false;
             if (!threads_started_.compare_exchange_strong(expected, true))
             {
-                SR_LOG_WARN("TaskScheduler::start() called more than once; ignoring.");
+                SR_LOG_WARN(K_SCHEDULER_LOG_CATEGORY, "TaskScheduler::start() called more than once; ignoring.");
                 return;
             }
 
@@ -409,7 +410,7 @@ namespace SushiRuntime
         {
             if (static_cast<size_t>(thread_id) >= num_workers_) 
             {
-                SR_LOG_ERROR("Dispatch loop thread_id {} out of bounds!", thread_id);
+                SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "Dispatch loop thread_id {} out of bounds!", thread_id);
                 return;
             }
 
@@ -481,12 +482,12 @@ namespace SushiRuntime
                     });
                     if (!poll_ran)
                     {
-                        SR_LOG_ERROR("poll_events threw; aborting the current run.");
+                        SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "poll_events threw; aborting the current run.");
                         outcome_.record(std::move(poll_ran.error()));
                     }
                     else if (polled)
                     {
-                        SR_LOG_ERROR("An event of the current run failed; aborting the run.");
+                        SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "An event of the current run failed; aborting the run.");
                         outcome_.record(std::move(*polled));
                     }
 
@@ -601,7 +602,7 @@ namespace SushiRuntime
 
             const auto abort_run = [this, task, &events](Error failure)
             {
-                SR_LOG_ERROR("{}; the run is aborted and its remaining tasks are skipped.",
+                SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "{}; the run is aborted and its remaining tasks are skipped.",
                              failure.message);
 
                 // Only this run fails; the pool stays re-armable (modules/engine/scheduler/README.md).
@@ -613,7 +614,7 @@ namespace SushiRuntime
 
             Result<void> ran = SYCL::translate_exceptions([&]()
             {
-                SR_LOG_DEBUG("Executing task: {}", task->name());
+                SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "Executing task: {}", task->name());
                 
                 SushiRuntime::Internal::Graph::Node* node = nullptr;
 

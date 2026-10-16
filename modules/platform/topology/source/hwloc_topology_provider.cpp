@@ -31,6 +31,7 @@
 #include <hwloc.h>
 #include <hwloc/distances.h>
 #include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/topology/topology_log_category.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
@@ -70,7 +71,7 @@ namespace SushiRuntime
             hwloc_topology_t topology;
             if (hwloc_topology_init(&topology) < 0)
             {
-                SR_LOG_WARN("cpu_core_to_numa: topology init failed, returning empty map.");
+                SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "cpu_core_to_numa: topology init failed, returning empty map.");
                 return map;
             }
             hwloc_topology_load(topology);
@@ -108,7 +109,7 @@ namespace SushiRuntime
             hwloc_topology_t topology;
             if (hwloc_topology_init(&topology) < 0)
             {
-                SR_LOG_WARN("HwlocDistanceModel: topology init failed, using ACPI fallback (10/21).");
+                SR_LOG_WARN(K_TOPOLOGY_LOG_CATEGORY, "HwlocDistanceModel: topology init failed, using ACPI fallback (10/21).");
                 return;
             }
             hwloc_topology_load(topology);
@@ -131,11 +132,11 @@ namespace SushiRuntime
                     matrix_[i] = static_cast<int>(distances->values[i]);
 
                 hwloc_distances_release(topology, distances);
-                SR_LOG_INFO("HwlocDistanceModel: cached {}x{} SLIT distance matrix.", dim_, dim_);
+                SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "HwlocDistanceModel: cached {}x{} SLIT distance matrix.", dim_, dim_);
             }
             else
             {
-                SR_LOG_INFO("HwlocDistanceModel: no SLIT table exposed, using ACPI fallback (10/21).");
+                SR_LOG_INFO(K_TOPOLOGY_LOG_CATEGORY, "HwlocDistanceModel: no SLIT table exposed, using ACPI fallback (10/21).");
             }
 
             hwloc_topology_destroy(topology);
