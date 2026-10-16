@@ -551,8 +551,9 @@ the pool as built. [The runtime README](../../modules/surface/api/include/SushiR
 describes each field and the calls of `AdvancedControls`.
 
 Logging is process state: `set_log_level()` and `set_log_sink()` set it, and the environment
-variable `SR_LOG_LEVEL` sets the levels at startup, one for every module and then any it names:
-`SR_LOG_LEVEL=warn,distributed=debug`.
+variable `SR_LOG_LEVEL` sets the runtime's levels at startup, one for every module and then any it
+names: `SR_LOG_LEVEL=warn,distributed=debug`. A record shows its project and module, as
+`[sushiruntime.distributed]`, and a project built on the runtime reads its own variable.
 
 ## 9. Reading a run
 

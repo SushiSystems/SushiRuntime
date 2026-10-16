@@ -29,9 +29,11 @@
 #pragma once
 
 #include <SushiRuntime/log/log_category.hpp>
+#include <SushiRuntime/log/sushiruntime_log_project.hpp>
 
 namespace SushiRuntime
 {
     /** @brief Names the records the memory module logs. */
-    inline constexpr LogCategory K_MEMORY_LOG_CATEGORY = make_log_category("memory");
+    inline constexpr LogCategory K_MEMORY_LOG_CATEGORY =
+        make_log_category(K_SUSHIRUNTIME_LOG_PROJECT, "memory");
 } // namespace SushiRuntime

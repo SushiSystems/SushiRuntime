@@ -32,9 +32,12 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that the category is named after the module's folder. */
+/** @brief Tests that the category is the module's folder in the runtime's project. */
 TEST(Small_OffloadCoordinationLogCategory, TheCategoryIsNamedAfterTheModule)
 {
-    static_assert(K_OFFLOAD_COORDINATION_LOG_CATEGORY.name() == "offload_coordination", "the folder name of the module");
+    static_assert(K_OFFLOAD_COORDINATION_LOG_CATEGORY.module() == "offload_coordination",
+                  "the folder name of the module");
+    static_assert(K_OFFLOAD_COORDINATION_LOG_CATEGORY.project().name() == "sushiruntime",
+                  "the project of the runtime");
     SUCCEED();
 }

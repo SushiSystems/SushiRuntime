@@ -1,8 +1,8 @@
 # logging
 
 The module holds the runtime's logger. One logger exists per process: its level table, its sink and
-its thread live in `source/logger.cpp` inside the shared library, so a program and the library it loads
-log through the same state. The module is internal: its headers are for the other modules of the
+its thread live in `source/logger.cpp` inside the shared library, so a program, the library it loads
+and every project built on the runtime log through the same state. The module is internal: its headers are for the other modules of the
 library, and they are not installed.
 
 It depends on the C++ standard library, on `core` (`export.hpp`, `error.hpp`) and on `log`, whose
@@ -10,7 +10,7 @@ functions `source/logger.cpp` defines.
 
 ## Public entry points
 
-`logger.hpp`, which includes `log_gate.hpp` and the two headers of `log`:
+`logger.hpp`, which includes `log_gate.hpp` and the headers of `log`:
 
 | Name | What it does |
 | --- | --- |
@@ -18,25 +18,30 @@ functions `source/logger.cpp` defines.
 | `SR_LOG_WARN`, `SR_LOG_ERROR` | The same, at the two levels that report a fallback or a failure |
 | `SR_LOG_FATAL` | Logs after every queued record and flushes; the caller then ends the process |
 | `SR_LOGGER_SET_SYNC_MODE(mode)` | Forwards to `set_log_synchronous` |
-| `log_write(level, line)` | Hands a finished line to the sink, whatever the level |
 
 `log_gate.hpp`:
 
 | Name | What it does |
 | --- | --- |
-| `K_LOG_LEVEL_FLOOR` | The least severe level a translation unit compiles calls for |
-| `Detail::log_level_slot`, `Detail::is_log_enabled` | What a macro reads before it formats a record |
+| `K_LOG_LEVEL_FLOOR` | `log_level_floor(SR_ENABLE_LOGGING != 0)`, the least severe level a translation unit compiles calls for |
+| `Detail::is_log_enabled` | Whether a level passes a category's run-time gate |
 
-`LogLevel`, `LogCategory`, `LogSink` and the calls that set them are declared by the `log` module.
+`LogLevel`, `LogProject`, `LogCategory`, `LogRecord`, `LogSink`, `SR_LOG_FRONT_AT`, the C sink
+and the calls that set them are declared by the `log` module. The `SR_LOG_*` macros are
+`SR_LOG_FRONT_AT` with `K_LOG_LEVEL_FLOOR`.
 
 Everything in `Detail` belongs to the macros.
 
 ## Categories
 
 Each module that logs declares one category, named after its folder, in
-`<module>_log_category.hpp`: `K_DISTRIBUTED_LOG_CATEGORY` is `make_log_category("distributed")`. A
-call names it first: `SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "peer {} lost", id)`. A module logs
-only under its own category, and `tools/logs/check_logging.py` reports a call without one.
+`<module>_log_category.hpp`: `K_DISTRIBUTED_LOG_CATEGORY` is
+`make_log_category(K_SUSHIRUNTIME_LOG_PROJECT, "distributed")`. A call names it first:
+`SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "peer {} lost", id)`. A module logs only under its own
+category, and `tools/logs/check_logging.py` reports a call without one.
+
+A project built on the runtime logs through the same logger under its own `LogProject`;
+`modules/foundation/log/README.md` shows how.
 
 ## Level
 
@@ -44,13 +49,15 @@ Every category is at `Warn` unless something sets it. A record passes when its l
 above the level of its category, so `Warn` passes warnings, errors and fatal records and drops the
 `Info` lines that `Runtime::create()` logs for each device.
 
-`SR_LOG_LEVEL` in the environment sets the levels at the first log or level call. It takes a level
-for every category, then any number of `category=level` pairs, in any case:
+Each project's variable sets the levels of that project's categories, and no other project's, the
+first time one of its categories is used. For the runtime it is `SR_LOG_LEVEL`. It takes a level
+for every category of the project, then any number of `module=level` pairs, in any case:
 `SR_LOG_LEVEL=warn,distributed=debug`. The levels are `trace`, `debug`, `info`, `warn`, `error`,
-`fatal` and `off`. A value the logger cannot read is reported once on stderr, and every level stays
-`Warn`. In code, `set_log_level(level)` sets every category and `set_log_level(category, level)`
-sets one; a category set that way keeps its level when `set_log_level(level)` runs later. A call
-made before the first log call wins over the environment.
+`fatal` and `off`. A value the logger cannot read is reported once on stderr, and every level of
+that project stays `Warn`. In code, `set_log_level(project, level)` sets every category of one
+project and `set_log_level(category, level)` sets one; a category set that way keeps its level
+when `set_log_level(project, level)` runs later. A call made before the project's first use wins
+over the environment.
 
 A log call goes through two gates.
 
@@ -58,13 +65,14 @@ A log call goes through two gates.
    as 0 before the header is included, `Debug` under `NDEBUG`, `Trace` otherwise. A call below it
    compiles to nothing; `ERROR` and `FATAL` are never compiled out.
 2. Each category's level is one `std::atomic<int>` in a table the library holds, 64 categories at
-   most; past that, every new category shares one level and the logger says so on stderr. A call
-   site keeps the address of its category's atomic in a static on its first pass, so each later
-   call costs one relaxed load and a branch, and its arguments are not evaluated when it fails.
+   most across every project; past that, every new category shares one level and the logger says
+   so on stderr. A call site keeps the address of its category's atomic in a static on its first
+   pass, so each later call costs one relaxed load and a branch, and its arguments are not
+   evaluated when it fails.
 
 ## Format
 
-`Detail::sr_format` replaces each `{}` with the next argument, written through `operator<<`, and
+`Detail::sr_format`, in `log/log_format.hpp`, replaces each `{}` with the next argument, written through `operator<<`, and
 writes `{{` and `}}` as single braces. It takes no format specification; a call site that needs a
 width or hex formats the value first. Extra arguments and extra placeholders are ignored.
 
@@ -73,17 +81,27 @@ The format string travels inside `__VA_ARGS__`, so the macros take `(...)` and n
 
 ## Record and sink
 
-A record is one line: `[HH:MM:SS.mmm] [LEVEL] [category] [tN] [file:line] message`, in local time,
-with no line break. `tN` is a small number the logger gives each thread on its first record, and
-the file is its name without its folder. The sink receives the level and that line as a `std::string_view` that is valid
-during the call.
+A record's line is `[HH:MM:SS.mmm] [LEVEL] [project.module] [tN] [file:line] message`, in local
+time, with no line break, such as `[sushiruntime.memory]`. `tN` is a small number the logger gives
+each thread on its first record, and the file is its name without its folder.
+
+The sink receives a `LogRecord`: the level, the project, the module, the file, the line, the
+thread number, `time_ns` (system clock, nanoseconds since the Unix epoch), the message alone and
+the whole line, each a view valid during the call. A host files each field where its own logging
+system keeps it.
 
 With no sink set, every record goes to stderr, whatever its level, in one `fprintf` followed by a
-flush. Stdout is left to the program. `set_log_sink` with an empty sink (`nullptr` or `{}`) restores
-this default.
+flush. Stdout is left to the program. `set_log_sink` with an empty sink (`nullptr` or `{}`), or
+`sr_set_log_sink` with a null function, restores this default.
 
 A `LogSink` is a `Delegate` with 48 bytes of inline storage, so a capture larger than that
 does not compile.
+
+### Forwarded records
+
+A record that enters through `log_forward_sink()` passes no level of this logger. It is queued like
+a record logged here, with its level, project, module, file, line and time kept; this logger gives
+it the number of the calling thread and writes its line.
 
 ### Which thread calls the sink
 
@@ -109,7 +127,7 @@ reports the exception on stderr and writes the record there.
 ### The queue
 
 In asynchronous mode the records wait in a queue of 4096. A record that finds it full is dropped
-and counted, and the next record delivered is preceded by a `WARN` in the category `logging` that
+and counted, and the next record delivered is preceded by a `WARN` in the category `sushiruntime.logging` that
 names how many were dropped. Synchronous mode queues nothing and drops nothing.
 
 ### FATAL

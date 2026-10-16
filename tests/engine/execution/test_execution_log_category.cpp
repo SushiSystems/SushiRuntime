@@ -32,9 +32,12 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that the category is named after the module's folder. */
+/** @brief Tests that the category is the module's folder in the runtime's project. */
 TEST(Small_ExecutionLogCategory, TheCategoryIsNamedAfterTheModule)
 {
-    static_assert(K_EXECUTION_LOG_CATEGORY.name() == "execution", "the folder name of the module");
+    static_assert(K_EXECUTION_LOG_CATEGORY.module() == "execution",
+                  "the folder name of the module");
+    static_assert(K_EXECUTION_LOG_CATEGORY.project().name() == "sushiruntime",
+                  "the project of the runtime");
     SUCCEED();
 }

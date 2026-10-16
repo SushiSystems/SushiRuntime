@@ -21,22 +21,24 @@
 
 /**
  * @file log_level.hpp
- * @brief Declares LogLevel and the calls that set and read the level of every category.
+ * @brief Declares LogLevel, the severity of a log record.
  * @author Mustafa Garip
  * @see modules/foundation/log/README.md
  */
 
 #pragma once
 
-#include <SushiRuntime/core/export.hpp>
+#include <cstdint>
 
 namespace SushiRuntime
 {
     /**
      * @brief Orders the severities of a log record, least severe first; a record passes when
      *        its level is at or above the level set for its category.
+     *
+     * The numbers are part of the C interface in log_c_sink.h and never change.
      */
-    enum class LogLevel : int
+    enum class LogLevel : std::uint8_t
     {
         Trace = 0, /**< Step-by-step flow, for chasing one bug. */
         Debug = 1, /**< Internal state at a decision point. */
@@ -46,17 +48,4 @@ namespace SushiRuntime
         Fatal = 5, /**< The process cannot continue. */
         Off   = 6  /**< A setting that passes nothing; never the level of a record. */
     };
-
-    /**
-     * @brief Sets the level of every category; records below it are dropped unformatted.
-     * @see modules/foundation/log/README.md
-     */
-    SUSHIRUNTIME_API void set_log_level(LogLevel level) noexcept;
-
-    /**
-     * @brief Returns the level a category takes when nothing sets its own.
-     * @return LogLevel::Warn, or the first level SR_LOG_LEVEL names, until set_log_level() is
-     *         called.
-     */
-    [[nodiscard]] SUSHIRUNTIME_API LogLevel log_level() noexcept;
 } // namespace SushiRuntime

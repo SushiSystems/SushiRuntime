@@ -33,51 +33,64 @@
 #include <SushiRuntime/core/export.hpp>
 
 #include <SushiRuntime/log/log_level.hpp>
+#include <SushiRuntime/log/log_project.hpp>
 
 namespace SushiRuntime
 {
     /**
-     * @brief Names the module a record comes from; a module logs only under its own.
+     * @brief Names the project and the module a record comes from; a module logs only under
+     *        its own.
      */
     class LogCategory final
     {
         public:
             /**
-             * @brief Holds @p name, the folder name of the module, in lower case.
+             * @brief Holds @p project and @p module, the folder name of the module in lower case.
              */
-            constexpr explicit LogCategory(std::string_view name) noexcept : name_(name)
+            constexpr LogCategory(LogProject project, std::string_view module) noexcept
+                : project_(project), module_(module)
             {
 
             }
 
-            /** @brief Returns the name records and SR_LOG_LEVEL use for the category. */
-            [[nodiscard]] constexpr std::string_view name() const noexcept
+            /** @brief Returns the project whose variable sets the category's level. */
+            [[nodiscard]] constexpr LogProject project() const noexcept
             {
-                return name_;
+                return project_;
+            }
+
+            /** @brief Returns the module name records and the level variable use. */
+            [[nodiscard]] constexpr std::string_view module() const noexcept
+            {
+                return module_;
             }
 
         private:
+            /// @brief The project the module belongs to.
+            LogProject project_;
             /// @brief The folder name of the module.
-            std::string_view name_;
+            std::string_view module_;
     };
 
     /**
-     * @brief Returns the category named @p name, for a module's K_<MODULE>_LOG_CATEGORY.
+     * @brief Returns the category of @p module in @p project, for a K_<MODULE>_LOG_CATEGORY.
      */
-    [[nodiscard]] constexpr LogCategory make_log_category(std::string_view name) noexcept
+    [[nodiscard]] constexpr LogCategory make_log_category(LogProject project,
+                                                          std::string_view module) noexcept
     {
-        return LogCategory(name);
+        return LogCategory(project, module);
     }
 
     /**
-     * @brief Sets the level of one category, which then ignores set_log_level(level).
+     * @brief Sets the level of one category, which then ignores set_log_level(project, level).
      * @see modules/foundation/log/README.md
      */
     SUSHIRUNTIME_API void set_log_level(LogCategory category, LogLevel level) noexcept;
 
     /**
      * @brief Returns the level of one category.
-     * @return What set_log_level() or SR_LOG_LEVEL set for it, else log_level().
+     * @return What set_log_level() or the project's variable set for it, else the level of its
+     *         project.
      */
     [[nodiscard]] SUSHIRUNTIME_API LogLevel log_level(LogCategory category) noexcept;
 } // namespace SushiRuntime

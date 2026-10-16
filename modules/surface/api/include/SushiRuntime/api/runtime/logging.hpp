@@ -21,13 +21,17 @@
 
 /**
  * @file logging.hpp
- * @brief Includes the log levels, the log categories and the log sink controls.
+ * @brief Includes the log levels, projects, categories, records, sinks and the C sink.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
  */
 
 #pragma once
 
+#include <SushiRuntime/log/log_c_sink.h>
 #include <SushiRuntime/log/log_category.hpp>
 #include <SushiRuntime/log/log_level.hpp>
+#include <SushiRuntime/log/log_project.hpp>
+#include <SushiRuntime/log/log_record.hpp>
 #include <SushiRuntime/log/log_sink.hpp>
+#include <SushiRuntime/log/sushiruntime_log_project.hpp>

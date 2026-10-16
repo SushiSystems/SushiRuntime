@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-16 — log: Breaking change: Gave each category a project with its own level variable, handed the sink a LogRecord, and added log_forward_sink, a C sink and SR_LOG_FRONT_AT (`log_project.hpp`, `log_front.hpp`).
 - 2026-10-16 — cli: Added `sr test --jobs`, which caps how many tests ctest runs at once (`cli.py`, `project.py`).
 - 2026-10-16 — runtime: Logged every record under the category of its module, and logged the error an empty catch hid in the hardware discovery (`<module>_log_category.hpp`, `hw_discovery.cpp`).
 - 2026-10-16 — logging: Bounded the log queue and reported what it dropped, delivered FATAL after the queue and flushed, and gave the record its category and thread for its function (`logger.cpp`, `SR_LOG_FATAL`).

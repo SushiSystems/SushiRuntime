@@ -30,8 +30,8 @@
 
 #include <atomic>
 
-#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/log/log_category.hpp>
+#include <SushiRuntime/log/log_front.hpp>
 #include <SushiRuntime/log/log_level.hpp>
 
 #ifndef SR_ENABLE_LOGGING
@@ -40,32 +40,11 @@
 
 namespace SushiRuntime
 {
-    #if !SR_ENABLE_LOGGING
-        /** @brief Holds the least severe level this translation unit compiles log calls for. */
-        constexpr LogLevel K_LOG_LEVEL_FLOOR = LogLevel::Error;
-    #elif defined(NDEBUG)
-        /** @brief Holds the least severe level this translation unit compiles log calls for. */
-        constexpr LogLevel K_LOG_LEVEL_FLOOR = LogLevel::Debug;
-    #else
-        /** @brief Holds the least severe level this translation unit compiles log calls for. */
-        constexpr LogLevel K_LOG_LEVEL_FLOOR = LogLevel::Trace;
-    #endif
+    /** @brief Holds the least severe level this translation unit compiles log calls for. */
+    constexpr LogLevel K_LOG_LEVEL_FLOOR = log_level_floor(SR_ENABLE_LOGGING != 0);
 
-    /**
-     * @brief Holds what the log macros read; nothing else calls into it.
-     */
     namespace Detail
     {
-        /**
-         * @brief Returns the level of @p category as an int, reading SR_LOG_LEVEL on the first
-         *        call of the process.
-         *
-         * A call site keeps the reference in a static, so each later call costs one relaxed
-         * load. The reference stays valid for the life of the process.
-         */
-        [[nodiscard]] SUSHIRUNTIME_API std::atomic<int>& log_level_slot(
-            LogCategory category) noexcept;
-
         /**
          * @brief Returns whether a record of @p level in @p category passes the run-time gate.
          */

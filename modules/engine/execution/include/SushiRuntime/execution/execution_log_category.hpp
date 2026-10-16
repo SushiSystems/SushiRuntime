@@ -29,9 +29,11 @@
 #pragma once
 
 #include <SushiRuntime/log/log_category.hpp>
+#include <SushiRuntime/log/sushiruntime_log_project.hpp>
 
 namespace SushiRuntime
 {
     /** @brief Names the records the execution module logs. */
-    inline constexpr LogCategory K_EXECUTION_LOG_CATEGORY = make_log_category("execution");
+    inline constexpr LogCategory K_EXECUTION_LOG_CATEGORY =
+        make_log_category(K_SUSHIRUNTIME_LOG_PROJECT, "execution");
 } // namespace SushiRuntime

@@ -30,6 +30,7 @@
 
 #include <SushiRuntime/log/log_category.hpp>
 #include <SushiRuntime/log/log_level.hpp>
+#include <SushiRuntime/log/log_project.hpp>
 #include <SushiRuntime/logging/log_gate.hpp>
 
 using namespace SushiRuntime;
@@ -37,7 +38,11 @@ using namespace SushiRuntime;
 namespace
 {
     /** @brief Names the category the gate tests read. */
-    constexpr LogCategory K_GATE_LOG_CATEGORY = make_log_category("log_gate_test");
+    /** @brief Names the project of the category the gate tests read. */
+    constexpr LogProject K_GATE_TEST_LOG_PROJECT{"log_gate_test", "SR_LOG_GATE_TEST_LEVEL"};
+
+    /** @brief Names the category the gate tests read. */
+    constexpr LogCategory K_GATE_LOG_CATEGORY = make_log_category(K_GATE_TEST_LOG_PROJECT, "gate");
 }
 
 /** @brief Tests the floor: Error with logging off, Debug in a release build, Trace otherwise. */
@@ -56,21 +61,21 @@ TEST(Small_LogGate, TheFloorFollowsTheBuild)
 /** @brief Tests that a level passes the gate when it is at or above its category's level. */
 TEST(Small_LogGate, ALevelPassesAtOrAboveItsCategoryLevel)
 {
-    const LogLevel saved = log_level();
-    set_log_level(LogLevel::Warn);
+    const LogLevel saved = log_level(K_GATE_TEST_LOG_PROJECT);
+    set_log_level(K_GATE_TEST_LOG_PROJECT, LogLevel::Warn);
     EXPECT_TRUE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Fatal));
     EXPECT_TRUE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Error));
     EXPECT_TRUE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Warn));
     EXPECT_FALSE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Info));
     EXPECT_FALSE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Trace));
-    set_log_level(LogLevel::Off);
+    set_log_level(K_GATE_TEST_LOG_PROJECT, LogLevel::Off);
     EXPECT_FALSE(Detail::is_log_enabled(K_GATE_LOG_CATEGORY, LogLevel::Fatal));
-    set_log_level(saved);
+    set_log_level(K_GATE_TEST_LOG_PROJECT, saved);
 }
 
 /** @brief Tests that a category's slot keeps its address, so a call site may keep it. */
 TEST(Small_LogGate, ACategorySlotKeepsItsAddress)
 {
     EXPECT_EQ(&Detail::log_level_slot(K_GATE_LOG_CATEGORY),
-              &Detail::log_level_slot(make_log_category("log_gate_test")));
+              &Detail::log_level_slot(make_log_category(K_GATE_TEST_LOG_PROJECT, "gate")));
 }

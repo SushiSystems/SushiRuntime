@@ -53,23 +53,26 @@ namespace LoggingNamesTests
     /** @brief Tests that a program switches delivery, the sink and the level with this header. */
     TEST(Medium_LoggingNames, TheControlsAreCallableFromTheSurfaceHeader)
     {
-        const SushiRuntime::LogLevel saved = SushiRuntime::log_level();
+        const SushiRuntime::LogLevel saved =
+            SushiRuntime::log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT);
         std::string seen;
 
         SushiRuntime::set_log_synchronous(true);
-        SushiRuntime::set_log_sink([&seen](SushiRuntime::LogLevel, std::string_view line)
+        SushiRuntime::set_log_sink([&seen](const SushiRuntime::LogRecord& record)
         {
-            seen.assign(line);
+            seen.assign(record.text);
         });
-        SushiRuntime::set_log_level(SushiRuntime::LogLevel::Error);
-        EXPECT_EQ(SushiRuntime::log_level(), SushiRuntime::LogLevel::Error);
+        SushiRuntime::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
+                                    SushiRuntime::LogLevel::Error);
+        EXPECT_EQ(SushiRuntime::log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT),
+                  SushiRuntime::LogLevel::Error);
 
         // No record is logged here, so the sink stays unused.
         EXPECT_TRUE(seen.empty());
 
         SushiRuntime::set_log_sink(SushiRuntime::LogSink());
         SushiRuntime::set_log_synchronous(false);
-        SushiRuntime::set_log_level(saved);
+        SushiRuntime::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT, saved);
     }
 } // namespace LoggingNamesTests
 
@@ -130,7 +133,7 @@ namespace LoggingDefaultsTests
             protected:
                 void SetUp() override
                 {
-                    saved_level_ = log_level();
+                    saved_level_ = log_level(K_SUSHIRUNTIME_LOG_PROJECT);
                     set_log_synchronous(true);
                     set_log_sink(nullptr);
                 }
@@ -138,7 +141,7 @@ namespace LoggingDefaultsTests
                 void TearDown() override
                 {
                     set_log_sink(nullptr);
-                    set_log_level(saved_level_);
+                    set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, saved_level_);
                 }
 
             private:
@@ -155,7 +158,7 @@ namespace LoggingDefaultsTests
      */
     TEST_F(Medium_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
     {
-        set_log_level(LogLevel::Warn);
+        set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Warn);
 
         const CapturedStreams captured = capture_streams_around_create();
 
@@ -167,11 +170,11 @@ namespace LoggingDefaultsTests
     TEST_F(Medium_LoggingDefaults, DeviceLineArrivesThroughTheSinkAtInfo)
     {
         std::vector<SeenRecord> records;
-        set_log_sink([&records](LogLevel level, std::string_view line)
+        set_log_sink([&records](const LogRecord& record)
         {
-            records.emplace_back(level, std::string(line));
+            records.emplace_back(record.level, std::string(record.text));
         });
-        set_log_level(LogLevel::Info);
+        set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Info);
 
         const CapturedStreams captured = capture_streams_around_create();
         set_log_sink(nullptr);
