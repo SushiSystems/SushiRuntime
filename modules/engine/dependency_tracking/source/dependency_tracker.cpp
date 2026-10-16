@@ -27,7 +27,6 @@
 
 #include <thread>
 #include <algorithm>
-#include <SushiRuntime/logging/logger.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/dependency_tracking/dependency_tracker.hpp>
 

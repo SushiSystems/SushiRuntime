@@ -9,4 +9,4 @@ sushiruntime_add_module(
     SOURCES
         dependency_tracker.cpp
     DEPENDS core task region
-    PRIVATE_DEPENDS logging memory)
+    PRIVATE_DEPENDS memory)
