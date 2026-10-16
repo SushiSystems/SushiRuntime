@@ -2878,9 +2878,9 @@ namespace TCPFaultsTests
                     if (!SushiRuntime::Test::has_any_sycl_device())
                         GTEST_SKIP() << "SYCL reports no device.";
 
-                    saved_level_ = log_level();
+                    saved_level_ = log_level(K_SUSHIRUNTIME_LOG_PROJECT);
                     set_log_synchronous(true);
-                    set_log_level(LogLevel::Warn);
+                    set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Warn);
                     master_runtime_.emplace(Runtime::create().value());
                 }
 
@@ -2900,7 +2900,7 @@ namespace TCPFaultsTests
 
                     set_log_sink(nullptr);
                     if (saved_level_)
-                        set_log_level(*saved_level_);
+                        set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, *saved_level_);
                 }
 
                 /** @brief Attaches a master that listens on a free loopback port. */
@@ -3064,9 +3064,9 @@ namespace TCPFaultsTests
                 void count_version_errors()
                 {
                     ErrorLineCounter* const counter = &version_errors_;
-                    set_log_sink([counter](LogLevel level, std::string_view line)
+                    set_log_sink([counter](const LogRecord& record)
                     {
-                        counter->record(level, line);
+                        counter->record(record.level, record.text);
                     });
                 }
 

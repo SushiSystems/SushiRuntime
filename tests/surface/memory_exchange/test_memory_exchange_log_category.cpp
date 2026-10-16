@@ -32,9 +32,12 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that the category is named after the module's folder. */
+/** @brief Tests that the category is the module's folder in the runtime's project. */
 TEST(Small_MemoryExchangeLogCategory, TheCategoryIsNamedAfterTheModule)
 {
-    static_assert(K_MEMORY_EXCHANGE_LOG_CATEGORY.name() == "memory_exchange", "the folder name of the module");
+    static_assert(K_MEMORY_EXCHANGE_LOG_CATEGORY.module() == "memory_exchange",
+                  "the folder name of the module");
+    static_assert(K_MEMORY_EXCHANGE_LOG_CATEGORY.project().name() == "sushiruntime",
+                  "the project of the runtime");
     SUCCEED();
 }

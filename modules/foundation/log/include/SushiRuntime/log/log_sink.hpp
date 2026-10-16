@@ -21,29 +21,25 @@
 
 /**
  * @file log_sink.hpp
- * @brief Declares LogSink, the callable that receives each log line, and its setter.
+ * @brief Declares LogSink, the callable that receives each record, and the calls around it.
  * @author Mustafa Garip
  * @see modules/foundation/log/README.md
  */
 
 #pragma once
 
-#include <string_view>
-
 #include <SushiRuntime/core/delegate.hpp>
 #include <SushiRuntime/core/export.hpp>
 
-#include <SushiRuntime/log/log_level.hpp>
+#include <SushiRuntime/log/log_record.hpp>
 
 namespace SushiRuntime
 {
     /**
-     * @brief Receives one record: its level and its line, which carries no line break.
-     *
-     * The line is valid only during the call. A sink does not log and does not call
-     * set_log_sink().
+     * @brief Receives one record. The record is valid only during the call; a sink does not
+     *        log and does not call set_log_sink().
      */
-    using LogSink = Delegate<void(LogLevel level, std::string_view line), 48>;
+    using LogSink = Delegate<void(const LogRecord& record), 48>;
 
     /**
      * @brief Replaces the sink of the whole process and returns once the old one is idle.
@@ -59,4 +55,13 @@ namespace SushiRuntime
      * @see modules/foundation/log/README.md
      */
     SUSHIRUNTIME_API void set_log_synchronous(bool synchronous);
+
+    /**
+     * @brief Returns a sink that enters another logger's records into this logger's queue.
+     *
+     * A forwarded record passes no level gate here. It keeps its time and call site, takes
+     * this logger's number for the calling thread and gets its line written here.
+     * @see modules/foundation/log/README.md
+     */
+    [[nodiscard]] SUSHIRUNTIME_API LogSink log_forward_sink();
 } // namespace SushiRuntime

@@ -207,9 +207,9 @@ namespace OffloadDispatcherTests
                 /** @brief Registers the worker and shares two of the three buffers. */
                 void SetUp() override
                 {
-                    saved_level_ = log_level();
+                    saved_level_ = log_level(K_SUSHIRUNTIME_LOG_PROJECT);
                     set_log_synchronous(true);
-                    set_log_level(LogLevel::Warn);
+                    set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Warn);
 
                     register_worker();
                     registry_.register_buffer(first_.data(), sizeof(Storage));
@@ -220,7 +220,7 @@ namespace OffloadDispatcherTests
                 void TearDown() override
                 {
                     set_log_sink(nullptr);
-                    set_log_level(saved_level_);
+                    set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, saved_level_);
                 }
 
                 /** @brief Takes the worker through HELLO and PROOF under the empty secret. */
@@ -457,10 +457,10 @@ namespace OffloadDispatcherTests
     {
         std::vector<std::string> warnings;
         std::vector<std::string>* const sink_target = &warnings;
-        set_log_sink([sink_target](LogLevel level, std::string_view line)
+        set_log_sink([sink_target](const LogRecord& record)
         {
-            if (level == LogLevel::Warn)
-                sink_target->push_back(std::string(line));
+            if (record.level == LogLevel::Warn)
+                sink_target->push_back(std::string(record.text));
         });
 
         const sushi_ptr<Internal::Graph::Node> offloadable =
@@ -516,10 +516,10 @@ namespace OffloadDispatcherTests
     {
         std::vector<std::string> warnings;
         std::vector<std::string>* const sink_target = &warnings;
-        set_log_sink([sink_target](LogLevel level, std::string_view line)
+        set_log_sink([sink_target](const LogRecord& record)
         {
-            if (level == LogLevel::Warn)
-                sink_target->push_back(std::string(line));
+            if (record.level == LogLevel::Warn)
+                sink_target->push_back(std::string(record.text));
         });
 
         const sushi_ptr<Internal::Graph::Node> fixed =

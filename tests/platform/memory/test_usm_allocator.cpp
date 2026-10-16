@@ -151,15 +151,17 @@ namespace
     {
         public:
             /** @brief Makes the logger synchronous and routes its records here. */
-            ErrorLineCapture() : saved_level_(SushiRuntime::log_level())
+            ErrorLineCapture()
+                : saved_level_(SushiRuntime::log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT))
             {
                 SushiRuntime::set_log_synchronous(true);
-                SushiRuntime::set_log_level(SushiRuntime::LogLevel::Warn);
+                SushiRuntime::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
+                                            SushiRuntime::LogLevel::Warn);
                 SushiRuntime::set_log_sink(
-                    [this](SushiRuntime::LogLevel level, std::string_view line)
+                    [this](const SushiRuntime::LogRecord& record)
                     {
-                        if (level == SushiRuntime::LogLevel::Error)
-                            lines.emplace_back(line);
+                        if (record.level == SushiRuntime::LogLevel::Error)
+                            lines.emplace_back(record.text);
                     });
             }
 
@@ -167,7 +169,8 @@ namespace
             ~ErrorLineCapture()
             {
                 SushiRuntime::set_log_sink(nullptr);
-                SushiRuntime::set_log_level(saved_level_);
+                SushiRuntime::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
+                                            saved_level_);
             }
 
             ErrorLineCapture(const ErrorLineCapture&) = delete;

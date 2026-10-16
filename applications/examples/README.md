@@ -381,8 +381,9 @@ the host's own format. A handler that returns does not keep the process alive, s
 breaks no rule: it installs the handler, runs, puts the old one back and checks that the
 handler it took out was its own.
 
-`set_log_sink()` routes every log record of the library to a callable of the host.
-`set_log_level(LogLevel::Info)` admits the lifecycle lines a runtime writes while it starts and
+`set_log_sink()` routes every log record of the library to a callable of the host, which
+receives each `LogRecord` with its fields apart.
+`set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Info)` admits the lifecycle lines a runtime writes while it starts and
 stops, and `set_log_synchronous(true)` delivers each record before the call that logged it
 returns, so the sink has seen every line when the runtime is gone. The sink counts lines. An
 empty sink restores the default one, which writes to standard error.

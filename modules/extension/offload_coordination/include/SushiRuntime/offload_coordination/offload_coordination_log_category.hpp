@@ -21,7 +21,7 @@
 
 /**
  * @file offload_coordination_log_category.hpp
- * @brief Declares K_OFFLOAD_COORDINATION_LOG_CATEGORY, the log category of the offload_coordination module.
+ * @brief Declares K_OFFLOAD_COORDINATION_LOG_CATEGORY, the category of offload_coordination.
  * @author Mustafa Garip
  * @see modules/extension/offload_coordination/README.md
  */
@@ -29,9 +29,11 @@
 #pragma once
 
 #include <SushiRuntime/log/log_category.hpp>
+#include <SushiRuntime/log/sushiruntime_log_project.hpp>
 
 namespace SushiRuntime
 {
     /** @brief Names the records the offload_coordination module logs. */
-    inline constexpr LogCategory K_OFFLOAD_COORDINATION_LOG_CATEGORY = make_log_category("offload_coordination");
+    inline constexpr LogCategory K_OFFLOAD_COORDINATION_LOG_CATEGORY =
+        make_log_category(K_SUSHIRUNTIME_LOG_PROJECT, "offload_coordination");
 } // namespace SushiRuntime

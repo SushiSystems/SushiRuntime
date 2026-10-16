@@ -246,7 +246,7 @@ namespace SushiRuntime
                                "' is not one of off, error, warn, info, debug");
                         return exit_value(WorkerExitCode::BadArguments);
                     }
-                    set_log_level(*level);
+                    set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, *level);
                 }
 
                 SharedSecret secret;

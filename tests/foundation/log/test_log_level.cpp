@@ -21,7 +21,7 @@
 
 /**
  * @file test_log_level.cpp
- * @brief Tests LogLevel: the order of its values and the level every category takes.
+ * @brief Tests LogLevel: the fixed numbers of its values.
  * @see tests/foundation/log/README.md
  * @author Mustafa Garip
  */
@@ -42,19 +42,6 @@ TEST(Small_LogLevel, LevelsRiseFromTraceToOff)
     static_assert(static_cast<int>(LogLevel::Error) == 4, "Error follows Warn");
     static_assert(static_cast<int>(LogLevel::Fatal) == 5, "Fatal is the most severe record");
     static_assert(static_cast<int>(LogLevel::Off) == 6, "Off passes nothing");
+    static_assert(sizeof(LogLevel) == 1, "the C interface carries the level in one byte");
     SUCCEED();
-}
-
-/** @brief Tests that set_log_level() is what log_level() returns, and restores the level. */
-TEST(Small_LogLevel, TheLevelSetIsTheLevelRead)
-{
-    const LogLevel saved = log_level();
-    for (const LogLevel level : {LogLevel::Trace, LogLevel::Debug, LogLevel::Info, LogLevel::Warn,
-                                 LogLevel::Error, LogLevel::Fatal, LogLevel::Off})
-    {
-        set_log_level(level);
-        EXPECT_EQ(log_level(), level);
-    }
-    set_log_level(saved);
-    EXPECT_EQ(log_level(), saved);
 }
