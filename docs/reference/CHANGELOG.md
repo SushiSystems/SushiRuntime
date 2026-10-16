@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-16 — logging: Bounded the log queue and reported the records it dropped, delivered FATAL after the queue and flushed, and gave the record its category and thread in place of the function (`logger.cpp`, `SR_LOG_FATAL`).
+- 2026-10-16 — log: Breaking change: Renumbered LogLevel from Trace to Fatal, least severe first, then Off, and gave each module's category a level of its own, which SR_LOG_LEVEL=warn,distributed=debug sets (`log_level.hpp`, `log_category.hpp`).
 - 2026-10-16 — cli: Scoped the sanitizer flags of an icpx ASan build to the host pass, so the SPIR-V device pass does not fail under -Werror (`project.py`).
 - 2026-10-16 — cli: Left the benchmark programs out of a ThreadSanitizer build, whose runtime defines the `operator new` a benchmark replaces (`project.py`).
 - 2026-10-16 — cli: Stopped an ASan build with the oneapi toolchain from taking a system clang++ that has no SYCL; icpx builds the tree when no clang-based SYCL compiler is installed (`project.py`).

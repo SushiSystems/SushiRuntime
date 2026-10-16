@@ -34,7 +34,7 @@ A module is public or internal.
 | foundation | [core](../../modules/foundation/core/README.md) | public | Assertions, `Error`, `Result`, `OperationID`, `span`, the intrusive pointer, the version |
 | foundation | [report](../../modules/foundation/report/README.md) | public | `RunReport` and the records it carries |
 | foundation | [region](../../modules/foundation/region/README.md) | public | `BufferRegion`, the byte window a node reads or writes, and the liveness token |
-| foundation | [log](../../modules/foundation/log/README.md) | public | `LogLevel`, `set_log_level()`, `set_log_sink()` |
+| foundation | [log](../../modules/foundation/log/README.md) | public | `LogLevel`, `LogCategory`, `set_log_level()`, `set_log_sink()` |
 | foundation | [machine](../../modules/foundation/machine/README.md) | public | `DeviceFilter`, `PinPolicy`, `DeviceDescription`, `WorkerPool` |
 | foundation | [logging](../../modules/foundation/logging/README.md) | internal | The logger and its macros |
 | foundation | [sycl](../../modules/foundation/sycl/README.md) | internal | The differences between SYCL toolchains, and the translation of a SYCL exception to an `Error` |

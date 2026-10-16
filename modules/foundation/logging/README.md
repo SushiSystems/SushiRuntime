@@ -1,12 +1,12 @@
 # logging
 
-The module holds the runtime's logger. One logger exists per process: its level, its sink and its
-thread live in `source/logger.cpp` inside the shared library, so a program and the library it loads
+The module holds the runtime's logger. One logger exists per process: its level table, its sink and
+its thread live in `source/logger.cpp` inside the shared library, so a program and the library it loads
 log through the same state. The module is internal: its headers are for the other modules of the
 library, and they are not installed.
 
 It depends on the C++ standard library, on `core` (`export.hpp`, `error.hpp`) and on `log`, whose
-four functions `source/logger.cpp` defines.
+functions `source/logger.cpp` defines.
 
 ## Public entry points
 
@@ -14,8 +14,9 @@ four functions `source/logger.cpp` defines.
 
 | Name | What it does |
 | --- | --- |
-| `SR_LOG_ERROR`, `SR_LOG_WARN` | Log one record; each `{}` takes the next argument |
-| `SR_LOG_INFO`, `SR_LOG_DEBUG` | The same, at the two lower levels |
+| `SR_LOG_TRACE`, `SR_LOG_DEBUG`, `SR_LOG_INFO` | Log one record in a category; each `{}` takes the next argument |
+| `SR_LOG_WARN`, `SR_LOG_ERROR` | The same, at the two levels that report a fallback or a failure |
+| `SR_LOG_FATAL` | Logs after every queued record and flushes; the caller then ends the process |
 | `SR_LOGGER_SET_SYNC_MODE(mode)` | Forwards to `set_log_synchronous` |
 | `log_write(level, line)` | Hands a finished line to the sink, whatever the level |
 
@@ -23,35 +24,43 @@ four functions `source/logger.cpp` defines.
 
 | Name | What it does |
 | --- | --- |
-| `K_LOG_LEVEL_CEILING` | The highest level a translation unit compiles calls for |
-| `Detail::active_log_level`, `Detail::is_log_enabled` | What a macro reads before it formats a record |
+| `K_LOG_LEVEL_FLOOR` | The least severe level a translation unit compiles calls for |
+| `Detail::log_level_slot`, `Detail::is_log_enabled` | What a macro reads before it formats a record |
 
-`LogLevel`, `LogSink` and the calls that set them are declared by the `log` module.
+`LogLevel`, `LogCategory`, `LogSink` and the calls that set them are declared by the `log` module.
 
 Everything in `Detail` belongs to the macros.
 
+## Categories
+
+Each module that logs declares one category, named after its folder, in
+`<module>_log_category.hpp`: `K_DISTRIBUTED_LOG_CATEGORY` is `make_log_category("distributed")`. A
+call names it first: `SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "peer {} lost", id)`. A module logs
+only under its own category, and `tools/logs/check_logging.py` reports a call without one.
+
 ## Level
 
-The level of the process is `Warn` unless something sets it. A record passes when its level is at
-or below the process level, so `Warn` passes errors and warnings and drops the `Info` lines that
-`Runtime::create()` logs for each device.
+Every category is at `Warn` unless something sets it. A record passes when its level is at or
+above the level of its category, so `Warn` passes warnings, errors and fatal records and drops the
+`Info` lines that `Runtime::create()` logs for each device.
 
-`SR_LOG_LEVEL` in the environment sets the initial level. It takes `off`, `error`, `warn`, `info`
-or `debug` in any case. Any other value is reported once on stderr and the level stays `Warn`. The
-variable is read at the first log call that passes the gate or the first `log_level()` call, and
-it is not read at all when `set_log_level()` runs before either.
+`SR_LOG_LEVEL` in the environment sets the levels at the first log or level call. It takes a level
+for every category, then any number of `category=level` pairs, in any case:
+`SR_LOG_LEVEL=warn,distributed=debug`. The levels are `trace`, `debug`, `info`, `warn`, `error`,
+`fatal` and `off`. A value the logger cannot read is reported once on stderr, and every level stays
+`Warn`. In code, `set_log_level(level)` sets every category and `set_log_level(category, level)`
+sets one; a category set that way keeps its level when `set_log_level(level)` runs later. A call
+made before the first log call wins over the environment.
 
 A log call goes through two gates.
 
-1. `K_LOG_LEVEL_CEILING` is fixed per translation unit: `Off` when `SR_ENABLE_LOGGING` is defined
-   as 0 before the header is included, `Info` under `NDEBUG`, `Debug` otherwise. A call above it
-   compiles to nothing.
-2. The process level is one `std::atomic<int>` exported from the library. A call above it costs one
-   relaxed load and a branch, and its arguments are not evaluated.
-
-The atomic starts at a value above every level, which marks the environment as unread. A call that
-passes the load then asks `Detail::is_log_enabled`, which reads the variable once and answers for
-the real level. That second question is asked only on calls that are about to format a record.
+1. `K_LOG_LEVEL_FLOOR` is fixed per translation unit: `Error` when `SR_ENABLE_LOGGING` is defined
+   as 0 before the header is included, `Debug` under `NDEBUG`, `Trace` otherwise. A call below it
+   compiles to nothing; `ERROR` and `FATAL` are never compiled out.
+2. Each category's level is one `std::atomic<int>` in a table the library holds, 64 categories at
+   most; past that, every new category shares one level and the logger says so on stderr. A call
+   site keeps the address of its category's atomic in a static on its first pass, so each later
+   call costs one relaxed load and a branch, and its arguments are not evaluated when it fails.
 
 ## Format
 
@@ -64,8 +73,9 @@ The format string travels inside `__VA_ARGS__`, so the macros take `(...)` and n
 
 ## Record and sink
 
-A record is one line: `[HH:MM:SS.mmm] [LEVEL] [file:line] [function] message`, in local time, with
-no line break. The sink receives the level and that line as a `std::string_view` that is valid
+A record is one line: `[HH:MM:SS.mmm] [LEVEL] [category] [tN] [file:line] message`, in local time,
+with no line break. `tN` is a small number the logger gives each thread on its first record, and
+the file is its name without its folder. The sink receives the level and that line as a `std::string_view` that is valid
 during the call.
 
 With no sink set, every record goes to stderr, whatever its level, in one `fprintf` followed by a
@@ -95,6 +105,18 @@ old sink is never called again, so the caller may destroy what the old sink capt
 A sink must not log, call `set_log_sink` or call `set_log_synchronous`. Each of them can end up
 waiting for the sink call that made it. A sink that throws does not lose its record; the logger
 reports the exception on stderr and writes the record there.
+
+### The queue
+
+In asynchronous mode the records wait in a queue of 4096. A record that finds it full is dropped
+and counted, and the next record delivered is preceded by a `WARN` in the category `logging` that
+names how many were dropped. Synchronous mode queues nothing and drops nothing.
+
+### FATAL
+
+A `FATAL` record is not queued. The call waits until every queued record has been delivered, then
+delivers its own on the calling thread, then flushes every output stream, so the reason the process
+ends is the last line written. The caller ends the process.
 
 ### Synchronous mode
 

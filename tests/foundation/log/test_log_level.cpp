@@ -21,7 +21,7 @@
 
 /**
  * @file test_log_level.cpp
- * @brief Tests LogLevel: the order of its values and the level the process keeps.
+ * @brief Tests LogLevel: the order of its values and the level every category takes.
  * @see tests/foundation/log/README.md
  * @author Mustafa Garip
  */
@@ -32,14 +32,16 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that each level is more verbose than the one before, from Off to Debug. */
-TEST(Small_LogLevel, LevelsRiseFromOffToDebug)
+/** @brief Tests that each level is more severe than the one before, from Trace to Off. */
+TEST(Small_LogLevel, LevelsRiseFromTraceToOff)
 {
-    static_assert(static_cast<int>(LogLevel::Off) == 0, "Off logs nothing");
-    static_assert(static_cast<int>(LogLevel::Error) == 1, "Error is the first level that logs");
-    static_assert(static_cast<int>(LogLevel::Warn) == 2, "Warn follows Error");
-    static_assert(static_cast<int>(LogLevel::Info) == 3, "Info follows Warn");
-    static_assert(static_cast<int>(LogLevel::Debug) == 4, "Debug is the most verbose");
+    static_assert(static_cast<int>(LogLevel::Trace) == 0, "Trace is the least severe");
+    static_assert(static_cast<int>(LogLevel::Debug) == 1, "Debug follows Trace");
+    static_assert(static_cast<int>(LogLevel::Info) == 2, "Info follows Debug");
+    static_assert(static_cast<int>(LogLevel::Warn) == 3, "Warn follows Info");
+    static_assert(static_cast<int>(LogLevel::Error) == 4, "Error follows Warn");
+    static_assert(static_cast<int>(LogLevel::Fatal) == 5, "Fatal is the most severe record");
+    static_assert(static_cast<int>(LogLevel::Off) == 6, "Off passes nothing");
     SUCCEED();
 }
 
@@ -47,7 +49,8 @@ TEST(Small_LogLevel, LevelsRiseFromOffToDebug)
 TEST(Small_LogLevel, TheLevelSetIsTheLevelRead)
 {
     const LogLevel saved = log_level();
-    for (const LogLevel level : {LogLevel::Off, LogLevel::Error, LogLevel::Warn, LogLevel::Info})
+    for (const LogLevel level : {LogLevel::Trace, LogLevel::Debug, LogLevel::Info, LogLevel::Warn,
+                                 LogLevel::Error, LogLevel::Fatal, LogLevel::Off})
     {
         set_log_level(level);
         EXPECT_EQ(log_level(), level);

@@ -25,7 +25,6 @@ Defects that are recorded and not yet fixed. The work each one needs is in
 
 | Issue | Where |
 | --- | --- |
-| The post-merge SushiBLAS job fails one SushiBLAS test, Medium_DeviceMath.TheHostFunctionsGiveTheStandardResults, which compares the cube root of 27 with 3 by `==` and gets 3.0000000000000004 from oneAPI's clang++ on Linux. A tolerance in the test, which SushiBLAS owns, resolves it. Seen on CI run 38825715740 of 2026-10-16 | `.github/workflows/ci.yml`; in SushiBLAS, its test of the device math |
 | The CLI package declares version 1.0.0 and `Doxyfile` says `v1 (unreleased)`, while the library is 0.3.0 | `cli/pyproject.toml`, `cli/sushiruntime/__init__.py`, `.config/doxygen/Doxyfile` |
 | Configuring leaves empty `CXX-DetectStdlib-*.h` files in the repository root, because the CLI runs the configure step with the source root as its working directory | `cli/sushiruntime/services/project.py` |
 | `_walk` in this copy of the source comment checker tests `K_SKIPPED_FOLDERS` before `is_file()`; the SushiSkills original still tests them the other way round and stops with Windows error 1920 on `venv/bin/python` | `tools/documentation/check_source_comments.py` |
