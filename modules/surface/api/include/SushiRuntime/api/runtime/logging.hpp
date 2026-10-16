@@ -21,12 +21,13 @@
 
 /**
  * @file logging.hpp
- * @brief Includes the process-wide log level and the log sink controls.
+ * @brief Includes the log levels, the log categories and the log sink controls.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
  */
 
 #pragma once
 
+#include <SushiRuntime/log/log_category.hpp>
 #include <SushiRuntime/log/log_level.hpp>
 #include <SushiRuntime/log/log_sink.hpp>

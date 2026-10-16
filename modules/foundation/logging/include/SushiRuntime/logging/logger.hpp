@@ -38,6 +38,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
 
+#include <SushiRuntime/log/log_category.hpp>
 #include <SushiRuntime/log/log_level.hpp>
 #include <SushiRuntime/log/log_sink.hpp>
 
@@ -108,56 +109,66 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Prefixes @p message with the time, the level and the call site, then
-         *        writes it.
+         * @brief Prefixes @p message with the time, the level, the category, the thread and the
+         *        call site, then writes it.
          */
-        SUSHIRUNTIME_API void emit_record(LogLevel level, const char* file, int line,
-                                          const char* function, std::string&& message);
+        SUSHIRUNTIME_API void emit_record(LogLevel level, LogCategory category, const char* file,
+                                          int line, std::string&& message);
 
         /**
          * @brief Formats one record and writes it; a log macro calls it past its gate.
          */
         template <typename... Args>
-        void log_record(LogLevel level, const char* file, int line, const char* function,
+        void log_record(LogLevel level, LogCategory category, const char* file, int line,
                         std::string_view format, const Args&... args)
         {
-            emit_record(level, file, line, function, sr_format(format, args...));
+            emit_record(level, category, file, line, sr_format(format, args...));
         }
     } // namespace Detail
 } // namespace SushiRuntime
 
 /**
- * @brief Logs one record at @p level when the ceiling and the process level both admit it.
+ * @brief Logs one record at @p level in @p category when the floor and the category's level
+ *        both admit it.
  *
- * A call above K_LOG_LEVEL_CEILING compiles to nothing. A call above the process level costs
+ * A call below K_LOG_LEVEL_FLOOR compiles to nothing. A call below the category's level costs
  * one relaxed load and a branch, and its arguments are not evaluated.
  */
-#define SR_LOG_AT(level, ...)                                                                \
-    do                                                                                       \
-    {                                                                                        \
-        if constexpr (SushiRuntime::K_LOG_LEVEL_CEILING >= (level))                    \
-        {                                                                                    \
-            if (SushiRuntime::Detail::active_log_level.load(                           \
-                    std::memory_order_relaxed) >= static_cast<int>(level) &&                 \
-                SushiRuntime::Detail::is_log_enabled(level))                           \
-            {                                                                                \
-                SushiRuntime::Detail::log_record((level), __FILE__, __LINE__,          \
-                                                       __func__, __VA_ARGS__);               \
-            }                                                                                \
-        }                                                                                    \
+#define SR_LOG_AT(level, category, ...)                                                          \
+    do                                                                                           \
+    {                                                                                            \
+        if constexpr ((level) >= SushiRuntime::K_LOG_LEVEL_FLOOR)                                \
+        {                                                                                        \
+            static std::atomic<int>& sr_log_level_slot_ =                                        \
+                SushiRuntime::Detail::log_level_slot(category);                                  \
+            if (static_cast<int>(level) >= sr_log_level_slot_.load(std::memory_order_relaxed))   \
+            {                                                                                    \
+                SushiRuntime::Detail::log_record((level), (category), __FILE__, __LINE__,        \
+                                                 __VA_ARGS__);                                   \
+            }                                                                                    \
+        }                                                                                        \
     } while (0)
 
-/** @brief Logs a message at error level; each {} takes the next argument. */
-#define SR_LOG_ERROR(...) SR_LOG_AT(SushiRuntime::LogLevel::Error, __VA_ARGS__)
+/** @brief Logs step-by-step flow in a category; each {} takes the next argument. */
+#define SR_LOG_TRACE(category, ...) SR_LOG_AT(SushiRuntime::LogLevel::Trace, category, __VA_ARGS__)
 
-/** @brief Logs a message at warning level; each {} takes the next argument. */
-#define SR_LOG_WARN(...) SR_LOG_AT(SushiRuntime::LogLevel::Warn, __VA_ARGS__)
+/** @brief Logs internal state in a category; each {} takes the next argument. */
+#define SR_LOG_DEBUG(category, ...) SR_LOG_AT(SushiRuntime::LogLevel::Debug, category, __VA_ARGS__)
 
-/** @brief Logs a message at info level; each {} takes the next argument. */
-#define SR_LOG_INFO(...) SR_LOG_AT(SushiRuntime::LogLevel::Info, __VA_ARGS__)
+/** @brief Logs a lifecycle event in a category; each {} takes the next argument. */
+#define SR_LOG_INFO(category, ...) SR_LOG_AT(SushiRuntime::LogLevel::Info, category, __VA_ARGS__)
 
-/** @brief Logs a message at debug level; each {} takes the next argument. */
-#define SR_LOG_DEBUG(...) SR_LOG_AT(SushiRuntime::LogLevel::Debug, __VA_ARGS__)
+/** @brief Logs a recovery or a fallback in a category; each {} takes the next argument. */
+#define SR_LOG_WARN(category, ...) SR_LOG_AT(SushiRuntime::LogLevel::Warn, category, __VA_ARGS__)
+
+/** @brief Logs a failed operation in a category; each {} takes the next argument. */
+#define SR_LOG_ERROR(category, ...) SR_LOG_AT(SushiRuntime::LogLevel::Error, category, __VA_ARGS__)
+
+/**
+ * @brief Logs why the process cannot continue, after every queued record, and flushes; the
+ *        caller then ends the process.
+ */
+#define SR_LOG_FATAL(category, ...) SR_LOG_AT(SushiRuntime::LogLevel::Fatal, category, __VA_ARGS__)
 
 /** @brief Forwards to set_log_synchronous(); tests pass true to read records in order. */
 #define SR_LOGGER_SET_SYNC_MODE(mode) SushiRuntime::set_log_synchronous(mode)

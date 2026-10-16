@@ -21,7 +21,7 @@
 
 /**
  * @file log_gate.hpp
- * @brief Declares the compile-time ceiling and the run-time gate the log macros read.
+ * @brief Declares the compile-time floor and the run-time gate the log macros read.
  * @author Mustafa Garip
  * @see modules/foundation/logging/README.md
  */
@@ -31,6 +31,7 @@
 #include <atomic>
 
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/log/log_category.hpp>
 #include <SushiRuntime/log/log_level.hpp>
 
 #ifndef SR_ENABLE_LOGGING
@@ -40,14 +41,14 @@
 namespace SushiRuntime
 {
     #if !SR_ENABLE_LOGGING
-        /** @brief Holds the highest level this translation unit compiles log calls for. */
-        constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Off;
+        /** @brief Holds the least severe level this translation unit compiles log calls for. */
+        constexpr LogLevel K_LOG_LEVEL_FLOOR = LogLevel::Error;
     #elif defined(NDEBUG)
-        /** @brief Holds the highest level this translation unit compiles log calls for. */
-        constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Info;
+        /** @brief Holds the least severe level this translation unit compiles log calls for. */
+        constexpr LogLevel K_LOG_LEVEL_FLOOR = LogLevel::Debug;
     #else
-        /** @brief Holds the highest level this translation unit compiles log calls for. */
-        constexpr LogLevel K_LOG_LEVEL_CEILING = LogLevel::Debug;
+        /** @brief Holds the least severe level this translation unit compiles log calls for. */
+        constexpr LogLevel K_LOG_LEVEL_FLOOR = LogLevel::Trace;
     #endif
 
     /**
@@ -55,15 +56,23 @@ namespace SushiRuntime
      */
     namespace Detail
     {
-        /** @brief Marks a level that SR_LOG_LEVEL has not been read for; above every level. */
-        constexpr int K_LOG_LEVEL_UNRESOLVED = 127;
-
-        /** @brief Holds the process level as an int, or K_LOG_LEVEL_UNRESOLVED. */
-        SUSHIRUNTIME_API extern std::atomic<int> active_log_level;
+        /**
+         * @brief Returns the level of @p category as an int, reading SR_LOG_LEVEL on the first
+         *        call of the process.
+         *
+         * A call site keeps the reference in a static, so each later call costs one relaxed
+         * load. The reference stays valid for the life of the process.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API std::atomic<int>& log_level_slot(
+            LogCategory category) noexcept;
 
         /**
-         * @brief Returns whether a record of @p level is written, reading SR_LOG_LEVEL once.
+         * @brief Returns whether a record of @p level in @p category passes the run-time gate.
          */
-        [[nodiscard]] SUSHIRUNTIME_API bool is_log_enabled(LogLevel level) noexcept;
+        [[nodiscard]] inline bool is_log_enabled(LogCategory category, LogLevel level) noexcept
+        {
+            return static_cast<int>(level) >=
+                   log_level_slot(category).load(std::memory_order_relaxed);
+        }
     } // namespace Detail
 } // namespace SushiRuntime

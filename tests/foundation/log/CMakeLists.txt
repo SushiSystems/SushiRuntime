@@ -7,5 +7,6 @@
 sushiruntime_add_module_tests(
     MODULE log
     SOURCES
+        test_log_category.cpp
         test_log_level.cpp
         test_log_sink.cpp)

@@ -21,7 +21,7 @@
 
 /**
  * @file log_level.hpp
- * @brief Declares LogLevel and the calls that set and read the level of the process.
+ * @brief Declares LogLevel and the calls that set and read the level of every category.
  * @author Mustafa Garip
  * @see modules/foundation/log/README.md
  */
@@ -33,26 +33,30 @@
 namespace SushiRuntime
 {
     /**
-     * @brief Orders the severities of a log record; a level admits itself and every lower one.
+     * @brief Orders the severities of a log record, least severe first; a record passes when
+     *        its level is at or above the level set for its category.
      */
     enum class LogLevel : int
     {
-        Off   = 0, /**< Nothing is logged. */
-        Error = 1, /**< An operation failed. */
-        Warn  = 2, /**< The runtime recovered or fell back. */
-        Info  = 3, /**< A lifecycle event. */
-        Debug = 4  /**< Internal state at a decision point. */
+        Trace = 0, /**< Step-by-step flow, for chasing one bug. */
+        Debug = 1, /**< Internal state at a decision point. */
+        Info  = 2, /**< A lifecycle event. */
+        Warn  = 3, /**< The runtime recovered or fell back. */
+        Error = 4, /**< An operation failed. */
+        Fatal = 5, /**< The process cannot continue. */
+        Off   = 6  /**< A setting that passes nothing; never the level of a record. */
     };
 
     /**
-     * @brief Sets the level of the whole process; records above it are dropped unformatted.
+     * @brief Sets the level of every category; records below it are dropped unformatted.
      * @see modules/foundation/log/README.md
      */
     SUSHIRUNTIME_API void set_log_level(LogLevel level) noexcept;
 
     /**
-     * @brief Returns the level of the whole process.
-     * @return LogLevel::Warn, or what SR_LOG_LEVEL names, until set_log_level() is called.
+     * @brief Returns the level a category takes when nothing sets its own.
+     * @return LogLevel::Warn, or the first level SR_LOG_LEVEL names, until set_log_level() is
+     *         called.
      */
     [[nodiscard]] SUSHIRUNTIME_API LogLevel log_level() noexcept;
 } // namespace SushiRuntime
