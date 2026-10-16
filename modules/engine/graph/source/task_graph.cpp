@@ -35,8 +35,9 @@
 #include <sycl/sycl.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/log/log_format.hpp>
 #include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/graph/graph_log_category.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/dependency_tracking/dependency_tracker.hpp>

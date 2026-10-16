@@ -10,4 +10,4 @@ sushiruntime_add_module(
         offload_dispatcher.cpp
         worker_directory.cpp
     DEPENDS core log api task transport wire link_security cluster_load buffer_exchange pending_tasks
-    PRIVATE_DEPENDS logging region)
+    PRIVATE_DEPENDS region)

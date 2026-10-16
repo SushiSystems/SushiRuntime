@@ -42,10 +42,14 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiLog/log/log_calls.hpp>
+#include <SushiLog/log/log_level.hpp>
+#include <SushiLog/log/log_record.hpp>
+
 #include <SushiRuntime/distributed/cluster.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
 #include <SushiRuntime/task/task_types.hpp>
@@ -207,9 +211,9 @@ namespace OffloadDispatcherTests
                 /** @brief Registers the worker and shares two of the three buffers. */
                 void SetUp() override
                 {
-                    saved_level_ = log_level(K_SUSHIRUNTIME_LOG_PROJECT);
-                    set_log_synchronous(true);
-                    set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Warn);
+                    saved_level_ = SushiLog::log_level(K_SUSHIRUNTIME_LOG_PROJECT);
+                    SushiLog::set_log_synchronous(true);
+                    SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Warn);
 
                     register_worker();
                     registry_.register_buffer(first_.data(), sizeof(Storage));
@@ -219,8 +223,8 @@ namespace OffloadDispatcherTests
                 /** @brief Puts the default sink and the saved level back. */
                 void TearDown() override
                 {
-                    set_log_sink(nullptr);
-                    set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, saved_level_);
+                    SushiLog::set_log_sink(nullptr);
+                    SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, saved_level_);
                 }
 
                 /** @brief Takes the worker through HELLO and PROOF under the empty secret. */
@@ -313,7 +317,7 @@ namespace OffloadDispatcherTests
                 OffloadDispatcher dispatcher_{registry_, directory_, pending_, transport_};
 
                 /// @brief The level the process had when the test began.
-                LogLevel saved_level_ = LogLevel::Warn;
+                SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;
         };
     } // namespace
 
@@ -457,9 +461,9 @@ namespace OffloadDispatcherTests
     {
         std::vector<std::string> warnings;
         std::vector<std::string>* const sink_target = &warnings;
-        set_log_sink([sink_target](const LogRecord& record)
+        SushiLog::set_log_sink([sink_target](const SushiLog::LogRecord& record)
         {
-            if (record.level == LogLevel::Warn)
+            if (record.level == SushiLog::LogLevel::Warn)
                 sink_target->push_back(std::string(record.text));
         });
 
@@ -516,9 +520,9 @@ namespace OffloadDispatcherTests
     {
         std::vector<std::string> warnings;
         std::vector<std::string>* const sink_target = &warnings;
-        set_log_sink([sink_target](const LogRecord& record)
+        SushiLog::set_log_sink([sink_target](const SushiLog::LogRecord& record)
         {
-            if (record.level == LogLevel::Warn)
+            if (record.level == SushiLog::LogLevel::Warn)
                 sink_target->push_back(std::string(record.text));
         });
 

@@ -42,7 +42,7 @@
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/version.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>

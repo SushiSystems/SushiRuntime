@@ -28,12 +28,13 @@
 
 #pragma once
 
-#include <SushiRuntime/log/log_category.hpp>
+#include <SushiLog/log/log_calls.hpp>
+#include <SushiLog/log/log_category.hpp>
 #include <SushiRuntime/log/sushiruntime_log_project.hpp>
 
 namespace SushiRuntime
 {
     /** @brief Names the records the execution module logs. */
-    inline constexpr LogCategory K_EXECUTION_LOG_CATEGORY =
-        make_log_category(K_SUSHIRUNTIME_LOG_PROJECT, "execution");
+    inline constexpr SushiLog::LogCategory K_EXECUTION_LOG_CATEGORY =
+        SushiLog::make_log_category(K_SUSHIRUNTIME_LOG_PROJECT, "execution");
 } // namespace SushiRuntime

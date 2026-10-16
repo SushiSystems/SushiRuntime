@@ -70,10 +70,12 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/log/log_level.hpp>
-#include <SushiRuntime/log/log_sink.hpp>
-#include <SushiRuntime/logging/log_gate.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiLog/log/log_level.hpp>
+#include <SushiLog/log/log_calls.hpp>
+#include <SushiLog/log/log_sink.hpp>
+#include <SushiLog/log/log_record.hpp>
+#include <SushiRuntime/log/log_gate.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/task/task_types.hpp>
@@ -2745,9 +2747,9 @@ namespace TCPFaultsTests
                 }
 
                 /** @brief Counts the line when it is an ERROR that holds the text. */
-                void record(LogLevel level, std::string_view line)
+                void record(SushiLog::LogLevel level, std::string_view line)
                 {
-                    if (level != LogLevel::Error || line.find(text_) == std::string_view::npos)
+                    if (level != SushiLog::LogLevel::Error || line.find(text_) == std::string_view::npos)
                         return;
                     {
                         const std::lock_guard<std::mutex> lock(mutex_);
@@ -2878,9 +2880,9 @@ namespace TCPFaultsTests
                     if (!SushiRuntime::Test::has_any_sycl_device())
                         GTEST_SKIP() << "SYCL reports no device.";
 
-                    saved_level_ = log_level(K_SUSHIRUNTIME_LOG_PROJECT);
-                    set_log_synchronous(true);
-                    set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Warn);
+                    saved_level_ = SushiLog::log_level(K_SUSHIRUNTIME_LOG_PROJECT);
+                    SushiLog::set_log_synchronous(true);
+                    SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Warn);
                     master_runtime_.emplace(Runtime::create().value());
                 }
 
@@ -2898,9 +2900,9 @@ namespace TCPFaultsTests
                         run_.wait();
                     buffers_.clear();
 
-                    set_log_sink(nullptr);
+                    SushiLog::set_log_sink(nullptr);
                     if (saved_level_)
-                        set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, *saved_level_);
+                        SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, *saved_level_);
                 }
 
                 /** @brief Attaches a master that listens on a free loopback port. */
@@ -3064,7 +3066,7 @@ namespace TCPFaultsTests
                 void count_version_errors()
                 {
                     ErrorLineCounter* const counter = &version_errors_;
-                    set_log_sink([counter](const LogRecord& record)
+                    SushiLog::set_log_sink([counter](const SushiLog::LogRecord& record)
                     {
                         counter->record(record.level, record.text);
                     });
@@ -3083,7 +3085,7 @@ namespace TCPFaultsTests
                 ErrorLineCounter version_errors_{"protocol v2"};
 
                 /// @brief The log level to put back; empty when SetUp() skipped the test.
-                std::optional<LogLevel> saved_level_;
+                std::optional<SushiLog::LogLevel> saved_level_;
 
                 /// @brief The buffers of every mask task, released in TearDown().
                 std::vector<std::unique_ptr<SharedBytes>> buffers_;

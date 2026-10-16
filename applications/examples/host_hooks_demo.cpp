@@ -32,6 +32,10 @@
 #include <cstdio>
 #include <string_view>
 
+#include <SushiLog/log/log_calls.hpp>
+#include <SushiLog/log/log_level.hpp>
+#include <SushiLog/log/log_record.hpp>
+
 #include <SushiRuntime/sushiruntime.hpp>
 
 using namespace SushiRuntime;
@@ -66,10 +70,10 @@ namespace
         // The sink receives every record at or below the level, on the thread that logged it.
         std::atomic<std::size_t> lines{0};
         std::atomic<std::size_t>* const counter = &lines;
-        const LogLevel default_level = log_level(K_SUSHIRUNTIME_LOG_PROJECT);
-        set_log_synchronous(true);
-        set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Info);
-        set_log_sink([counter](const LogRecord&)
+        const SushiLog::LogLevel default_level = SushiLog::log_level(K_SUSHIRUNTIME_LOG_PROJECT);
+        SushiLog::set_log_synchronous(true);
+        SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
+        SushiLog::set_log_sink([counter](const SushiLog::LogRecord&)
         {
             counter->fetch_add(1, std::memory_order_relaxed);
         });
@@ -90,9 +94,9 @@ namespace
         }
 
         // An empty sink restores the default one, which writes to standard error.
-        set_log_sink(nullptr);
-        set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, default_level);
-        set_log_synchronous(false);
+        SushiLog::set_log_sink(nullptr);
+        SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, default_level);
+        SushiLog::set_log_synchronous(false);
         const AssertionHandler replaced = set_assertion_handler(default_handler);
 
         const bool saw_lines = lines.load() > 0;

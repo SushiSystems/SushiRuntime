@@ -25,6 +25,9 @@
  * @author Mustafa Garip
  */
 
+#include <SushiLog/log/log_calls.hpp>
+#include <SushiLog/log/log_level.hpp>
+
 #include <SushiRuntime/distributed/worker_main.hpp>
 
 #include <array>
@@ -37,7 +40,7 @@
 
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/version.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
@@ -67,18 +70,18 @@ namespace SushiRuntime
                 std::string_view name;
 
                 /** @brief The level it selects. */
-                LogLevel level;
+                SushiLog::LogLevel level;
             };
 
             /** @brief Lists the names `--log-level` takes. */
             constexpr std::array<LogLevelName, 7> K_LOG_LEVEL_NAMES = {{
-                {"trace", LogLevel::Trace},
-                {"debug", LogLevel::Debug},
-                {"info", LogLevel::Info},
-                {"warn", LogLevel::Warn},
-                {"error", LogLevel::Error},
-                {"fatal", LogLevel::Fatal},
-                {"off", LogLevel::Off},
+                {"trace", SushiLog::LogLevel::Trace},
+                {"debug", SushiLog::LogLevel::Debug},
+                {"info", SushiLog::LogLevel::Info},
+                {"warn", SushiLog::LogLevel::Warn},
+                {"error", SushiLog::LogLevel::Error},
+                {"fatal", SushiLog::LogLevel::Fatal},
+                {"off", SushiLog::LogLevel::Off},
             }};
 
             /** @brief Returns the process's exit value for a code. */
@@ -94,7 +97,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the level a name selects, or nothing for an unknown name. */
-            [[nodiscard]] std::optional<LogLevel> find_log_level(std::string_view name)
+            [[nodiscard]] std::optional<SushiLog::LogLevel> find_log_level(std::string_view name)
             {
                 for (const LogLevelName& entry : K_LOG_LEVEL_NAMES)
                 {
@@ -238,14 +241,14 @@ namespace SushiRuntime
 
                 if (!options.log_level.empty())
                 {
-                    const std::optional<LogLevel> level = find_log_level(options.log_level);
+                    const std::optional<SushiLog::LogLevel> level = find_log_level(options.log_level);
                     if (!level)
                     {
                         report("log level '" + options.log_level +
                                "' is not one of off, error, warn, info, debug");
                         return exit_value(WorkerExitCode::BadArguments);
                     }
-                    set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, *level);
+                    SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, *level);
                 }
 
                 SharedSecret secret;

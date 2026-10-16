@@ -177,14 +177,11 @@ errors.hpp declares nothing. It includes `core/error.hpp` and `core/result.hpp`,
 
 ### The logging names
 
-logging.hpp declares nothing. It includes the headers of `log` that declare `LogLevel`,
-`LogProject`, `K_SUSHIRUNTIME_LOG_PROJECT`, `LogCategory`, `make_log_category`, `set_log_level`,
-`log_level`, `LogRecord`, `LogSink`, `set_log_sink`, `set_log_synchronous` and
-`log_forward_sink` in `SushiRuntime`, and the C sink of `log/log_c_sink.h`. A program sets the
-runtime's level with `set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Info)` and the level of
-one module with `set_log_level(make_log_category(K_SUSHIRUNTIME_LOG_PROJECT, "distributed"),
-LogLevel::Debug)`, the module being its folder. Those are the controls a program above the
-runtime calls; each is SushiLog's, the one logger of the process. The `SR_LOG_*` macros stay
-in `logging/logger.hpp`, which the surface does not include, and a project that logs through
-SushiLog uses SushiLog's own `SL_LOG_FRONT_AT`. A consumer's test calls `set_log_synchronous(true)` before it installs a sink, so
-each record has reached the sink when the call that logged it returns.
+logging.hpp declares nothing. It includes SushiLog's log controls and
+`log/sushiruntime_log_project.hpp`, which declares `K_SUSHIRUNTIME_LOG_PROJECT`. The logger is
+SushiLog, the one logger of the process, so a program calls it by its own names: it sets the
+runtime's level with `SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info)`
+and the level of one module with a category of that project, the module being its folder. The
+`SR_LOG_*` macros stay in `log/logger.hpp`, which the surface does not include. A consumer's test
+calls `SushiLog::set_log_synchronous(true)` before it installs a sink, so each record has reached
+the sink when the call that logged it returns.

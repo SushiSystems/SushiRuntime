@@ -22,7 +22,6 @@ set(SUSHIRUNTIME_MODULE_TIERS
     region          foundation
     log             foundation
     machine         foundation
-    logging         foundation
     sycl            foundation
     test_runner     foundation
     measurement     foundation
@@ -65,11 +64,8 @@ set(SUSHIRUNTIME_MODULE_TIERS
 # Consumer, then dependency: the edges allowed between two modules of one tier.
 set(SUSHIRUNTIME_SAME_TIER_EDGES
     report          core
-    log             core
-    logging         core
-    logging         log
     sycl            core
-    test_runner     logging
+    test_runner     log
     dependency_tracking task
     work_stealing   task
     topology        numa_lookup

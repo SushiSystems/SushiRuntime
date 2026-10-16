@@ -34,9 +34,8 @@ A module is public or internal.
 | foundation | [core](../../modules/foundation/core/README.md) | public | Assertions, `Error`, `Result`, `OperationID`, `span`, the intrusive pointer, the version |
 | foundation | [report](../../modules/foundation/report/README.md) | public | `RunReport` and the records it carries |
 | foundation | [region](../../modules/foundation/region/README.md) | public | `BufferRegion`, the byte window a node reads or writes, and the liveness token |
-| foundation | [log](../../modules/foundation/log/README.md) | public | SushiRuntime's names for SushiLog: `LogLevel`, `LogProject`, `LogCategory`, `LogRecord`, `set_log_level()`, `set_log_sink()` |
+| foundation | [log](../../modules/foundation/log/README.md) | public | The front over SushiLog: `K_SUSHIRUNTIME_LOG_PROJECT` and the `SR_LOG_*` macros |
 | foundation | [machine](../../modules/foundation/machine/README.md) | public | `DeviceFilter`, `PinPolicy`, `DeviceDescription`, `WorkerPool` |
-| foundation | [logging](../../modules/foundation/logging/README.md) | internal | The `SR_LOG_*` macros over SushiLog |
 | foundation | [sycl](../../modules/foundation/sycl/README.md) | internal | The differences between SYCL toolchains, and the translation of a SYCL exception to an `Error` |
 | platform | [topology](../../modules/platform/topology/README.md) | internal | Hardware discovery, NUMA mapping, thread affinity |
 | platform | [memory](../../modules/platform/memory/README.md) | internal | The USM allocator and registry, epoch-based reclamation |

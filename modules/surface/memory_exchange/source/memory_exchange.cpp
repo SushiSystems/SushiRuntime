@@ -43,7 +43,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include "bindless_detection.hpp"
 #include <SushiRuntime/memory_exchange/memory_exchange.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/memory_exchange/memory_exchange_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>

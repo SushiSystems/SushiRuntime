@@ -36,7 +36,7 @@
 
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/memory/memory_log_category.hpp>
 
 namespace SushiRuntime

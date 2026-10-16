@@ -39,7 +39,7 @@
 #include <tuple>
 #include <unordered_set>
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/topology/topology_log_category.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/numa_lookup/numa_lookup.hpp>

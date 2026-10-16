@@ -45,8 +45,12 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiLog/log/log_calls.hpp>
+#include <SushiLog/log/log_level.hpp>
+#include <SushiLog/log/log_record.hpp>
+
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
@@ -152,15 +156,15 @@ namespace
         public:
             /** @brief Makes the logger synchronous and routes its records here. */
             ErrorLineCapture()
-                : saved_level_(SushiRuntime::log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT))
+                : saved_level_(SushiLog::log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT))
             {
-                SushiRuntime::set_log_synchronous(true);
-                SushiRuntime::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
-                                            SushiRuntime::LogLevel::Warn);
-                SushiRuntime::set_log_sink(
-                    [this](const SushiRuntime::LogRecord& record)
+                SushiLog::set_log_synchronous(true);
+                SushiLog::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
+                                            SushiLog::LogLevel::Warn);
+                SushiLog::set_log_sink(
+                    [this](const SushiLog::LogRecord& record)
                     {
-                        if (record.level == SushiRuntime::LogLevel::Error)
+                        if (record.level == SushiLog::LogLevel::Error)
                             lines.emplace_back(record.text);
                     });
             }
@@ -168,8 +172,8 @@ namespace
             /** @brief Restores the default sink and the level the process had. */
             ~ErrorLineCapture()
             {
-                SushiRuntime::set_log_sink(nullptr);
-                SushiRuntime::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
+                SushiLog::set_log_sink(nullptr);
+                SushiLog::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
                                             saved_level_);
             }
 
@@ -183,7 +187,7 @@ namespace
 
         private:
             /// @brief The level the process had before the capture.
-            SushiRuntime::LogLevel saved_level_;
+            SushiLog::LogLevel saved_level_;
     };
 
     /** @brief Returns an address as the logger prints it. */

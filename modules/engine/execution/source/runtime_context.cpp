@@ -37,7 +37,7 @@
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>

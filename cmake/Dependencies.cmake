@@ -33,7 +33,7 @@ message(STATUS "Found hwloc: ${HWLOC_INCLUDEDIR}")
 # install prefix is found as a package. Nothing is downloaded here.
 if(NOT TARGET SushiLog::SushiLog)
     if(SUSHILOG_DIR AND EXISTS "${SUSHILOG_DIR}/CMakeLists.txt")
-        set(SL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(SL_BUILD_TESTS OFF)
         add_subdirectory("${SUSHILOG_DIR}" "${PROJECT_BINARY_DIR}/sushilog")
     else()
         find_package(SushiLog CONFIG HINTS "${SUSHILOG_DIR}")

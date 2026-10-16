@@ -36,6 +36,11 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiLog/log/log_calls.hpp>
+#include <SushiLog/log/log_level.hpp>
+#include <SushiLog/log/log_record.hpp>
+#include <SushiLog/log/log_sink.hpp>
+
 #include <SushiRuntime/api/runtime/logging.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
@@ -44,35 +49,35 @@ using namespace SushiRuntime;
 /** @brief Tests that the logging controls are reachable from the surface's logging header alone. */
 namespace LoggingNamesTests
 {
-    static_assert(std::is_same<decltype(&SushiRuntime::set_log_synchronous), void (*)(bool)>::value,
-                  "set_log_synchronous(bool) must be declared by api/runtime/logging.hpp");
-    static_assert(std::is_same<decltype(&SushiRuntime::set_log_sink),
-                               void (*)(SushiRuntime::LogSink)>::value,
-                  "set_log_sink(LogSink) must be declared by api/runtime/logging.hpp");
+    static_assert(std::is_same<decltype(&SushiLog::set_log_synchronous), void (*)(bool)>::value,
+                  "SushiLog::set_log_synchronous(bool) must be declared by api/runtime/logging.hpp");
+    static_assert(std::is_same<decltype(&SushiLog::set_log_sink),
+                               void (*)(SushiLog::LogSink)>::value,
+                  "SushiLog::set_log_sink(SushiLog::LogSink) must be declared by api/runtime/logging.hpp");
 
     /** @brief Tests that a program switches delivery, the sink and the level with this header. */
     TEST(Medium_LoggingNames, TheControlsAreCallableFromTheSurfaceHeader)
     {
-        const SushiRuntime::LogLevel saved =
-            SushiRuntime::log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT);
+        const SushiLog::LogLevel saved =
+            SushiLog::log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT);
         std::string seen;
 
-        SushiRuntime::set_log_synchronous(true);
-        SushiRuntime::set_log_sink([&seen](const SushiRuntime::LogRecord& record)
+        SushiLog::set_log_synchronous(true);
+        SushiLog::set_log_sink([&seen](const SushiLog::LogRecord& record)
         {
             seen.assign(record.text);
         });
-        SushiRuntime::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
-                                    SushiRuntime::LogLevel::Error);
-        EXPECT_EQ(SushiRuntime::log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT),
-                  SushiRuntime::LogLevel::Error);
+        SushiLog::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
+                                    SushiLog::LogLevel::Error);
+        EXPECT_EQ(SushiLog::log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT),
+                  SushiLog::LogLevel::Error);
 
         // No record is logged here, so the sink stays unused.
         EXPECT_TRUE(seen.empty());
 
-        SushiRuntime::set_log_sink(SushiRuntime::LogSink());
-        SushiRuntime::set_log_synchronous(false);
-        SushiRuntime::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT, saved);
+        SushiLog::set_log_sink(SushiLog::LogSink());
+        SushiLog::set_log_synchronous(false);
+        SushiLog::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT, saved);
     }
 } // namespace LoggingNamesTests
 
@@ -82,7 +87,7 @@ namespace LoggingDefaultsTests
     namespace
     {
         /** @brief Holds one record a test sink received: its level and a copy of its line. */
-        using SeenRecord = std::pair<LogLevel, std::string>;
+        using SeenRecord = std::pair<SushiLog::LogLevel, std::string>;
 
         /** @brief Holds the two process streams as captured around one call. */
         struct CapturedStreams
@@ -133,20 +138,20 @@ namespace LoggingDefaultsTests
             protected:
                 void SetUp() override
                 {
-                    saved_level_ = log_level(K_SUSHIRUNTIME_LOG_PROJECT);
-                    set_log_synchronous(true);
-                    set_log_sink(nullptr);
+                    saved_level_ = SushiLog::log_level(K_SUSHIRUNTIME_LOG_PROJECT);
+                    SushiLog::set_log_synchronous(true);
+                    SushiLog::set_log_sink(nullptr);
                 }
 
                 void TearDown() override
                 {
-                    set_log_sink(nullptr);
-                    set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, saved_level_);
+                    SushiLog::set_log_sink(nullptr);
+                    SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, saved_level_);
                 }
 
             private:
                 /// @brief The level the process had when the test began.
-                LogLevel saved_level_ = LogLevel::Warn;
+                SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;
         };
     }
 
@@ -158,7 +163,7 @@ namespace LoggingDefaultsTests
      */
     TEST_F(Medium_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
     {
-        set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Warn);
+        SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Warn);
 
         const CapturedStreams captured = capture_streams_around_create();
 
@@ -170,19 +175,19 @@ namespace LoggingDefaultsTests
     TEST_F(Medium_LoggingDefaults, DeviceLineArrivesThroughTheSinkAtInfo)
     {
         std::vector<SeenRecord> records;
-        set_log_sink([&records](const LogRecord& record)
+        SushiLog::set_log_sink([&records](const SushiLog::LogRecord& record)
         {
             records.emplace_back(record.level, std::string(record.text));
         });
-        set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Info);
+        SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
 
         const CapturedStreams captured = capture_streams_around_create();
-        set_log_sink(nullptr);
+        SushiLog::set_log_sink(nullptr);
 
         bool saw_device_line = false;
         for (const SeenRecord& record : records)
         {
-            if (record.first == LogLevel::Info &&
+            if (record.first == SushiLog::LogLevel::Info &&
                 record.second.find("Device: ") != std::string::npos)
                 saw_device_line = true;
         }

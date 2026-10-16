@@ -30,7 +30,8 @@
 #include <utility>
 
 #include <SushiRuntime/core/assert.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/log_format.hpp>
+#include <SushiRuntime/log/logger.hpp>
 
 namespace SushiRuntime
 {

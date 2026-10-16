@@ -38,7 +38,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/logging/logger.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/node.hpp>

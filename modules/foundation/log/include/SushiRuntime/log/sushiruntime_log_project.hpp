@@ -28,10 +28,11 @@
 
 #pragma once
 
-#include <SushiRuntime/log/log_project.hpp>
+#include <SushiLog/log/log_calls.hpp>
+#include <SushiLog/log/log_project.hpp>
 
 namespace SushiRuntime
 {
     /** @brief Names SushiRuntime's records, whose levels SR_LOG_LEVEL sets. */
-    inline constexpr LogProject K_SUSHIRUNTIME_LOG_PROJECT{"sushiruntime", "SR_LOG_LEVEL"};
+    inline constexpr SushiLog::LogProject K_SUSHIRUNTIME_LOG_PROJECT{"sushiruntime", "SR_LOG_LEVEL"};
 } // namespace SushiRuntime
