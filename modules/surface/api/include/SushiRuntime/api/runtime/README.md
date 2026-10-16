@@ -184,7 +184,7 @@ logging.hpp declares nothing. It includes the headers of `log` that declare `Log
 runtime's level with `set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, LogLevel::Info)` and the level of
 one module with `set_log_level(make_log_category(K_SUSHIRUNTIME_LOG_PROJECT, "distributed"),
 LogLevel::Debug)`, the module being its folder. Those are the controls a program above the
-runtime calls; the `SR_LOG_*` macros stay in `logging/logger.hpp`, which the surface does not
-include, and a project that logs through the runtime takes `SR_LOG_FRONT_AT` from
-`log/log_front.hpp`. A consumer's test calls `set_log_synchronous(true)` before it installs a sink, so
+runtime calls; each is SushiLog's, the one logger of the process. The `SR_LOG_*` macros stay
+in `logging/logger.hpp`, which the surface does not include, and a project that logs through
+SushiLog uses SushiLog's own `SL_LOG_FRONT_AT`. A consumer's test calls `set_log_synchronous(true)` before it installs a sink, so
 each record has reached the sink when the call that logged it returns.

@@ -128,6 +128,16 @@ def test_the_stamp_changes_with_a_pinned_compiler():
     assert before != after
 
 
+def test_the_stamp_changes_with_a_pinned_library_checkout():
+    """A SushiLog pin resolved to another checkout reaches CMake only through a reconfigure."""
+    before = _configure_stamp("OFF", "Release", "auto", True, "intel-llvm", "",
+                              ("-DSUSHILOG_DIR=/a/sushilog",))
+    after = _configure_stamp("OFF", "Release", "auto", True, "intel-llvm", "",
+                             ("-DSUSHILOG_DIR=/b/sushilog",))
+
+    assert before != after
+
+
 def test_the_stamp_is_stable_for_an_unchanged_configuration():
     """It has to keep skipping the configure it was invented to skip."""
     first = _configure_stamp("OFF", "Release", "auto", True, "intel-llvm", "/a/clang++")

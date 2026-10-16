@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-17 — deps: Pinned SushiLog v0.1.1, which the CLI resolves through sushicore 0.9.1 and passes as SUSHILOG_DIR, and staged sushilog.dll beside every program (`sushistack.deps.toml`, `Dependencies.cmake`).
+- 2026-10-17 — log: Breaking change: Logged through SushiLog, whose types and calls the log headers name in SushiRuntime, and removed SR_LOG_FRONT_AT and log_level_floor for SL_LOG_FRONT_AT (`log_sink.hpp`, `logger.hpp`).
 - 2026-10-16 — log: Breaking change: Gave each category a project with its own level variable, handed the sink a LogRecord, and added log_forward_sink, a C sink and SR_LOG_FRONT_AT (`log_project.hpp`, `log_front.hpp`).
 - 2026-10-16 — cli: Added `sr test --jobs`, which caps how many tests ctest runs at once (`cli.py`, `project.py`).
 - 2026-10-16 — runtime: Logged every record under the category of its module, and logged the error an empty catch hid in the hardware discovery (`<module>_log_category.hpp`, `hw_discovery.cpp`).

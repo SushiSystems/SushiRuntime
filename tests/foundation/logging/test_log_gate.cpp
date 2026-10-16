@@ -73,9 +73,3 @@ TEST(Small_LogGate, ALevelPassesAtOrAboveItsCategoryLevel)
     set_log_level(K_GATE_TEST_LOG_PROJECT, saved);
 }
 
-/** @brief Tests that a category's slot keeps its address, so a call site may keep it. */
-TEST(Small_LogGate, ACategorySlotKeepsItsAddress)
-{
-    EXPECT_EQ(&Detail::log_level_slot(K_GATE_LOG_CATEGORY),
-              &Detail::log_level_slot(make_log_category(K_GATE_TEST_LOG_PROJECT, "gate")));
-}

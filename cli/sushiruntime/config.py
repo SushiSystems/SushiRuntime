@@ -18,7 +18,7 @@ from sushicore.config_base import write_tool_section
 from sushicore.module_config import ModuleConfig
 from sushicore.profile import ModuleProfile
 from sushicore.provision import probe
-from sushicore.provision.config import ProvisionSettings
+from sushicore.stack_config import StackConfig
 
 
 # PROFILE names no siblings, because SushiRuntime is the bottom of the stack; see cli/README.md.
@@ -83,11 +83,11 @@ _ENV_OVERRIDES = PROFILE.env_overrides()
 
 
 @dataclass
-class Config(ProvisionSettings):
+class Config(StackConfig):
     """Resolved, platform-specific tool configuration for the SYCL runtime build.
 
     Inherits the host build-tool fields and the toolchain roots (``oneapi_root``,
-    ``icx_compiler``, ``llvm_root``, ``acpp_exe``) from :class:`ProvisionSettings`
+    ``icx_compiler``, ``llvm_root``, ``acpp_exe``) from :class:`StackConfig`
     and adds the SYCL toolchain selection.
     """
 

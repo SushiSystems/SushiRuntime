@@ -54,8 +54,9 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SR_TEST_OUTPUT_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:sushiruntime>
+            $<TARGET_FILE:SushiLog::SushiLog>
             "${SR_TEST_OUTPUT_DIR}"
-        COMMENT "Staging sushiruntime.dll next to the test binaries")
+        COMMENT "Staging sushiruntime.dll and sushilog.dll next to the test binaries")
     add_dependencies(sushiruntime_tests_runtime_dll sushiruntime)
 endif()
 

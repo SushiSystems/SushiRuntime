@@ -17,6 +17,9 @@
 
 include(CMakeFindDependencyMacro)
 
+# The public log headers include SushiLog, and the library links it.
+find_dependency(SushiLog CONFIG)
+
 # The package does not provide SYCL. The runtime's kernels are header templates a
 # consumer instantiates in its own translation units, so the consumer's compiler is a
 # SYCL compiler it configured itself.

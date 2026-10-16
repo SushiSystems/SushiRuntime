@@ -21,73 +21,30 @@
 
 /**
  * @file log_format.hpp
- * @brief Defines sr_format, the formatter of every log message.
+ * @brief Declares sr_format, which formats a message as every SR_LOG call does.
  * @author Mustafa Garip
  * @see modules/foundation/log/README.md
  */
 
 #pragma once
 
-#include <cstddef>
-#include <sstream>
 #include <string>
 #include <string_view>
 
+#include <SushiLog/log/log_format.hpp>
+
 namespace SushiRuntime
 {
-    /**
-     * @brief Holds what the log macros expand to; nothing else calls into it.
-     */
     namespace Detail
     {
         /**
-         * @brief Returns @p format with each doubled brace written once.
+         * @brief Returns @p format with each {} replaced by the next argument, as a log call
+         *        formats its message.
          */
-        inline std::string sr_format(std::string_view format)
+        template <typename... Args>
+        [[nodiscard]] std::string sr_format(std::string_view format, const Args&... args)
         {
-            std::string out;
-            out.reserve(format.size());
-            for (std::size_t i = 0; i < format.size(); ++i)
-            {
-                const char c = format[i];
-                const bool doubled = (c == '{' || c == '}') && i + 1 < format.size() &&
-                                     format[i + 1] == c;
-                if (doubled)
-                    ++i;
-                out += c;
-            }
-            return out;
-        }
-
-        /**
-         * @brief Returns @p format with each {} replaced by the next argument, in order.
-         * @tparam T A type an output stream can write.
-         */
-        template <typename T, typename... Args>
-        std::string sr_format(std::string_view format, const T& value, const Args&... args)
-        {
-            std::string out;
-            for (std::size_t i = 0; i < format.size(); ++i)
-            {
-                const char c = format[i];
-                const bool has_next = i + 1 < format.size();
-                if ((c == '{' || c == '}') && has_next && format[i + 1] == c)
-                {
-                    out += c;
-                    ++i;
-                    continue;
-                }
-                if (c == '{' && has_next && format[i + 1] == '}')
-                {
-                    std::ostringstream os;
-                    os << value;
-                    out += os.str();
-                    out += sr_format(format.substr(i + 2), args...);
-                    return out;
-                }
-                out += c;
-            }
-            return out;
+            return SushiLog::Detail::format_log_message(format, args...);
         }
     } // namespace Detail
 } // namespace SushiRuntime

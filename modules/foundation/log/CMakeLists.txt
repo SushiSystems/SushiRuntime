@@ -7,4 +7,4 @@
 sushiruntime_add_module(
     NAME log TIER foundation
     HEADER_ONLY
-    DEPENDS core)
+    PUBLIC_EXTERNAL SushiLog::SushiLog)

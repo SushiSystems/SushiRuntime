@@ -26,6 +26,8 @@
  * @author Mustafa Garip
  */
 
+#include <type_traits>
+
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/log/log_level.hpp>
@@ -42,6 +44,6 @@ TEST(Small_LogLevel, LevelsRiseFromTraceToOff)
     static_assert(static_cast<int>(LogLevel::Error) == 4, "Error follows Warn");
     static_assert(static_cast<int>(LogLevel::Fatal) == 5, "Fatal is the most severe record");
     static_assert(static_cast<int>(LogLevel::Off) == 6, "Off passes nothing");
-    static_assert(sizeof(LogLevel) == 1, "the C interface carries the level in one byte");
+    static_assert(std::is_same<LogLevel, SushiLog::LogLevel>::value, "one level type");
     SUCCEED();
 }

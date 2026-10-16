@@ -21,19 +21,17 @@
 
 /**
  * @file logger.hpp
- * @brief Declares the process-wide logger and the SR_LOG macros.
+ * @brief Declares the SR_LOG macros, SushiRuntime's front over SushiLog.
  * @author Mustafa Garip
  * @see modules/foundation/logging/README.md
  */
 
 #pragma once
 
-#include <atomic>
-
-#include <SushiRuntime/core/error.hpp>
+#include <SushiLog/log/log_front.hpp>
 
 #include <SushiRuntime/log/log_category.hpp>
-#include <SushiRuntime/log/log_front.hpp>
+#include <SushiRuntime/log/log_format.hpp>
 #include <SushiRuntime/log/log_level.hpp>
 #include <SushiRuntime/log/log_project.hpp>
 #include <SushiRuntime/log/log_record.hpp>
@@ -46,10 +44,10 @@
  * @brief Logs one record at @p level in @p category when the floor and the category's level
  *        both admit it.
  *
- * SR_LOG_FRONT_AT with this translation unit's K_LOG_LEVEL_FLOOR.
+ * SushiLog's SL_LOG_FRONT_AT with this translation unit's K_LOG_LEVEL_FLOOR.
  */
 #define SR_LOG_AT(level, category, ...)                                                          \
-    SR_LOG_FRONT_AT(SushiRuntime::K_LOG_LEVEL_FLOOR, level, category, __VA_ARGS__)
+    SL_LOG_FRONT_AT(SushiRuntime::K_LOG_LEVEL_FLOOR, level, category, __VA_ARGS__)
 
 /** @brief Logs step-by-step flow in a category; each {} takes the next argument. */
 #define SR_LOG_TRACE(category, ...) SR_LOG_AT(SushiRuntime::LogLevel::Trace, category, __VA_ARGS__)
