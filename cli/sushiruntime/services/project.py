@@ -460,7 +460,8 @@ def build(build_type: BuildType, distributed: bool = False,
 
 
 def test(label: Label | None, distributed: bool = False, filter: str | None = None,
-         asan: bool = False, repeat: int = 0, module: str | None = None) -> int:
+         asan: bool = False, repeat: int = 0, module: str | None = None,
+         jobs: int | None = None) -> int:
     console.header("Project Test")
     root = find_project_root()
     cfg = load_config()
@@ -492,7 +493,7 @@ def test(label: Label | None, distributed: bool = False, filter: str | None = No
     exclude = None if label is Label.quarantined else _QUARANTINED_LABEL_REGEX
     return _DRIVER.ctest_run(
         cfg, build_dir, env, label_regex=label_regex, exclude_label_regex=exclude,
-        filter=filter, repeat=repeat)
+        filter=filter, repeat=repeat, jobs=jobs)
 
 
 def bench(distributed: bool = False, filter: str | None = None) -> int:

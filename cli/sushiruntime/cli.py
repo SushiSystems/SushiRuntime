@@ -150,13 +150,17 @@ def test(
         0, "--repeat", "-r", min=0,
         help="Re-run each test up to N times, stopping on the first failure "
              "(ctest --repeat until-fail). Handy for hunting flaky tests."),
+    jobs: Optional[int] = typer.Option(
+        None, "--jobs", "-j", min=1,
+        help="Tests run at once. When omitted ctest decides, and "
+             "CTEST_PARALLEL_LEVEL is honoured."),
 ):
     """Run the tests via CTest labels.
 
     For GTest-level knobs (shuffle, break-on-failure) run the binary directly:
     sr run sr_api_tests -- --gtest_shuffle --gtest_break_on_failure
     """
-    raise typer.Exit(project_svc.test(label, distributed, filter, asan, repeat, module))
+    raise typer.Exit(project_svc.test(label, distributed, filter, asan, repeat, module, jobs))
 
 
 @app.command(

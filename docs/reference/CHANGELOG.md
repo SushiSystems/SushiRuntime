@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-16 — cli: Added `sr test --jobs`, which caps how many tests ctest runs at once (`cli.py`, `project.py`).
 - 2026-10-16 — runtime: Logged every record under the category of its module, and logged the error an empty catch hid in the hardware discovery (`<module>_log_category.hpp`, `hw_discovery.cpp`).
 - 2026-10-16 — logging: Bounded the log queue and reported what it dropped, delivered FATAL after the queue and flushed, and gave the record its category and thread for its function (`logger.cpp`, `SR_LOG_FATAL`).
 - 2026-10-16 — log: Breaking change: Renumbered LogLevel from Trace to Fatal, then Off, and gave each module's category its own level, which SR_LOG_LEVEL=warn,distributed=debug sets (`log_level.hpp`, `log_category.hpp`).
