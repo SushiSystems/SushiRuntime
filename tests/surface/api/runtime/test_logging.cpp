@@ -37,6 +37,7 @@
 #include <gtest/gtest.h>
 
 #include <SushiLog/log/log_calls.hpp>
+#include <SushiLog/log/log_category.hpp>
 #include <SushiLog/log/log_level.hpp>
 #include <SushiLog/log/log_record.hpp>
 #include <SushiLog/log/log_sink.hpp>
@@ -58,6 +59,9 @@ namespace LoggingNamesTests
     /** @brief Tests that a program switches delivery, the sink and the level with this header. */
     TEST(Medium_LoggingNames, TheControlsAreCallableFromTheSurfaceHeader)
     {
+        // SushiLog sets a project only once it has seen one of its categories.
+        (void)SushiLog::log_level(
+            SushiLog::make_log_category(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT, "device"));
         const SushiLog::LogLevel saved =
             SushiLog::log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT);
         std::string seen;
@@ -138,6 +142,9 @@ namespace LoggingDefaultsTests
             protected:
                 void SetUp() override
                 {
+                    // SushiLog sets a project only once it has seen one of its categories.
+                    (void)SushiLog::log_level(
+                        SushiLog::make_log_category(K_SUSHIRUNTIME_LOG_PROJECT, "device"));
                     saved_level_ = SushiLog::log_level(K_SUSHIRUNTIME_LOG_PROJECT);
                     SushiLog::set_log_synchronous(true);
                     SushiLog::set_log_sink(nullptr);
