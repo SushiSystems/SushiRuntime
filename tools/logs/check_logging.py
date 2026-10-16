@@ -26,7 +26,7 @@ from settings import K_CONSOLE_PATHS, K_LOG_PREFIX  # noqa: E402
 K_SOURCE_FOLDERS = ("modules", "source", "cli")
 K_CPP_SUFFIXES = frozenset({".hpp", ".h", ".cpp", ".cc", ".cxx", ".inl"})
 K_LEVELS = ("TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL")
-K_CPP_CONSOLE = re.compile(r"std::(?:cout|cerr|clog)\b|(?<![\w.:])(?:f?printf|puts)\s*\(")
+K_CPP_CONSOLE = re.compile(r"std::(?:cout|cerr|clog)\b|(?<![\w.])(?:f?printf|puts)\s*\(")
 K_PY_CONSOLE = re.compile(r"(?<![\w.])(?<!def )print\s*\(")
 K_CPP_EMPTY_CATCH = re.compile(r"catch\s*\([^)]*\)\s*\{\s*\}")
 K_CATEGORY = re.compile(r"K_(\w+)_LOG_CATEGORY")

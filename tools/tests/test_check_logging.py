@@ -54,12 +54,13 @@ class LoggingTest(unittest.TestCase):
 
     def test_reports_console_writes_outside_the_allowed_paths_and_tests(self) -> None:
         self.write("modules/core/ecs/source/world.cpp",
-                   "// printf(\"x\")\nstd::cout << 1;\nstd::snprintf(b, 4, \"x\");\nfprintf(stderr, \"x\");\n")
+                   "// printf(\"x\")\nstd::cout << 1;\nstd::snprintf(b, 4, \"x\");\nfprintf(stderr, \"x\");\n"
+                   "std::fprintf(stderr, \"x\");\n")
         self.write("source/px/store.py", "print('x')\nconsole.print('y')\nclass Sink:\n    def print(self) -> None: ...\n")
         self.write("cli/px/commands/build.py", "print('ok')\n")
         self.write("tests/core/test_world.cpp", "std::cout << 1;\n")
         self.assertEqual(self.found(rule_console_output),
-                         [("world.cpp", 2), ("world.cpp", 4), ("store.py", 1)])
+                         [("world.cpp", 2), ("world.cpp", 4), ("world.cpp", 5), ("store.py", 1)])
 
     def test_reports_an_empty_catch_and_an_except_that_only_passes(self) -> None:
         self.write("modules/core/ecs/source/world.cpp",
