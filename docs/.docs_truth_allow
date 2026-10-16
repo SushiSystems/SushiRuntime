@@ -6,7 +6,5 @@ StoreLambda # function of the intel/llvm SYCL headers
 __FrameHandler3|GetUnwindTryBlock # function of the MSVC C++ runtime in which the ASan fault occurs
 detect_stack_use_after_return # AddressSanitizer run-time option
 enable_language # CMake command
-TerminateProcess # Win32 function
 sr_\w+_benchmarks # test program name sushiruntime_add_module_tests composes from the module name
 cli/config\.local\.toml # the machine's own CLI config, gitignored and written by sr toolchain
-SushiDSP::set_log_\w+ # SushiDSP's logger, shown joining SushiRuntime's by forwarding

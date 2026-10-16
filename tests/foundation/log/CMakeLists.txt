@@ -10,7 +10,6 @@ sushiruntime_add_module_tests(
         test_log_c_sink.cpp
         test_log_category.cpp
         test_log_format.cpp
-        test_log_front.cpp
         test_log_level.cpp
         test_log_project.cpp
         test_log_record.cpp

@@ -21,7 +21,7 @@
 
 /**
  * @file log_gate.hpp
- * @brief Declares the compile-time floor and the run-time gate the log macros read.
+ * @brief Declares the ceiling of a translation unit and the gate of a category.
  * @author Mustafa Garip
  * @see modules/foundation/logging/README.md
  */
@@ -30,8 +30,9 @@
 
 #include <atomic>
 
+#include <SushiLog/log/log_front.hpp>
+
 #include <SushiRuntime/log/log_category.hpp>
-#include <SushiRuntime/log/log_front.hpp>
 #include <SushiRuntime/log/log_level.hpp>
 
 #ifndef SR_ENABLE_LOGGING
@@ -41,7 +42,8 @@
 namespace SushiRuntime
 {
     /** @brief Holds the least severe level this translation unit compiles log calls for. */
-    constexpr LogLevel K_LOG_LEVEL_FLOOR = log_level_floor(SR_ENABLE_LOGGING != 0);
+    [[maybe_unused]] constexpr LogLevel K_LOG_LEVEL_FLOOR =
+        SushiLog::log_level_ceiling(SR_ENABLE_LOGGING != 0);
 
     namespace Detail
     {
@@ -51,7 +53,7 @@ namespace SushiRuntime
         [[nodiscard]] inline bool is_log_enabled(LogCategory category, LogLevel level) noexcept
         {
             return static_cast<int>(level) >=
-                   log_level_slot(category).load(std::memory_order_relaxed);
+                   SushiLog::Detail::log_level_slot(category).load(std::memory_order_relaxed);
         }
     } // namespace Detail
 } // namespace SushiRuntime

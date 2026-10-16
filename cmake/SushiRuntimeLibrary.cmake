@@ -53,6 +53,11 @@ function(sushiruntime_compose_library)
         sushiruntime_deterministic_fp
         IntelSYCL::SYCL_CXX)
 
+    # A library a public header includes is part of the link interface a consumer sees.
+    get_property(public_externals GLOBAL PROPERTY SUSHIRUNTIME_PUBLIC_EXTERNAL_LIBRARIES)
+    list(REMOVE_DUPLICATES public_externals)
+    target_link_libraries(sushiruntime PUBLIC ${public_externals})
+
     # A third-party library of a module is an implementation detail of the shared
     # library. BUILD_INTERFACE keeps it out of the exported link interface, where a
     # consumer could not define its target.

@@ -21,7 +21,7 @@
 
 /**
  * @file test_log_record.cpp
- * @brief Tests LogRecord: the fields a sink reads, in the order the C record keeps.
+ * @brief Tests LogRecord: SushiLog's record under its SushiRuntime name.
  * @see tests/foundation/log/README.md
  * @author Mustafa Garip
  */
@@ -34,16 +34,9 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that a record is a plain value whose fields are given in the documented order. */
-TEST(Small_LogRecord, TheFieldsFollowTheDocumentedOrder)
+/** @brief Tests that the SushiRuntime name is SushiLog's record type. */
+TEST(Small_LogRecord, TheRecordIsSushiLogs)
 {
-    static_assert(std::is_trivially_copyable<LogRecord>::value, "a record is copied as a value");
-    constexpr LogRecord record{LogLevel::Error, "project", "module", "file.cpp", 9, 2, 7,
-                               "message", "text"};
-    static_assert(record.level == LogLevel::Error, "level first");
-    static_assert(record.project == "project" && record.module == "module", "then the category");
-    static_assert(record.file == "file.cpp" && record.line == 9, "then the call site");
-    static_assert(record.thread == 2 && record.time_ns == 7, "then the thread and the time");
-    static_assert(record.message == "message" && record.text == "text", "then the two texts");
+    static_assert(std::is_same<LogRecord, SushiLog::LogRecord>::value, "one record type");
     SUCCEED();
 }

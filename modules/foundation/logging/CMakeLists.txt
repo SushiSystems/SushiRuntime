@@ -6,5 +6,5 @@
 
 sushiruntime_add_module(
     NAME logging TIER foundation INTERNAL
-    SOURCES logger.cpp
-    DEPENDS core log)
+    HEADER_ONLY
+    DEPENDS log)

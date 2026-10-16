@@ -40,7 +40,8 @@ class FakeDriver:
 def driver(monkeypatch, tmp_path) -> FakeDriver:
     """Returns a fake driver installed in the build service, with its surroundings stubbed."""
     fake = FakeDriver()
-    config = SimpleNamespace(is_windows=False, toolchain="intel-llvm", cxx="clang++", generator="Ninja")
+    config = SimpleNamespace(is_windows=False, toolchain="intel-llvm", cxx="clang++", generator="Ninja",
+                             sushi_definitions=lambda root: [])
     quiet = SimpleNamespace(**{
         name: lambda *arguments, **options: None
         for name in ("header", "info", "success", "error")

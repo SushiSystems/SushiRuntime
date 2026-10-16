@@ -35,8 +35,9 @@ if(WIN32)
     add_custom_target(sushiruntime_examples_runtime_dll
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:sushiruntime>
+            $<TARGET_FILE:SushiLog::SushiLog>
             "${SR_EXAMPLES_STAGE_DIR}"
-        COMMENT "Staging sushiruntime.dll next to the examples")
+        COMMENT "Staging sushiruntime.dll and sushilog.dll next to the examples")
     add_dependencies(sushiruntime_examples_runtime_dll sushiruntime)
 endif()
 

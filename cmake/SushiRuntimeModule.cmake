@@ -97,7 +97,7 @@ endfunction()
 #     [INTERNAL] [HEADER_ONLY] [SYCL]
 #     [SOURCES <file under source/>...]
 #     [DEPENDS <module>...] [PRIVATE_DEPENDS <module>...]
-#     [EXTERNAL <third-party target>...]
+#     [EXTERNAL <third-party target>...] [PUBLIC_EXTERNAL <library target>...]
 #     [HEADER_CHECK_EXCLUDE <header path under include/>...])
 #
 # DEPENDS are the modules the public headers include; PRIVATE_DEPENDS the ones only
@@ -107,11 +107,13 @@ endfunction()
 # is installed, and may name an INTERNAL module under PRIVATE_DEPENDS only.
 # HEADER_CHECK_EXCLUDE names a header the header check must not compile alone. The check
 # is built for every module that is not INTERNAL, and for the others under SR_BUILD_TESTS.
+# PUBLIC_EXTERNAL names a library the public headers include; it reaches every consumer of
+# the module and of the library.
 # TEST_ONLY marks an INTERNAL module whose sources build into the test programs and never
 # into the library.
 function(sushiruntime_add_module)
     cmake_parse_arguments(ARG "INTERNAL;HEADER_ONLY;SYCL;TEST_ONLY" "NAME;TIER"
-        "SOURCES;DEPENDS;PRIVATE_DEPENDS;EXTERNAL;HEADER_CHECK_EXCLUDE" ${ARGN})
+        "SOURCES;DEPENDS;PRIVATE_DEPENDS;EXTERNAL;PUBLIC_EXTERNAL;HEADER_CHECK_EXCLUDE" ${ARGN})
     if("${ARG_NAME}" STREQUAL "" OR "${ARG_TIER}" STREQUAL "")
         message(FATAL_ERROR "sushiruntime_add_module(): NAME and TIER are required.")
     endif()
@@ -172,6 +174,11 @@ function(sushiruntime_add_module)
     foreach(dependency IN LISTS ARG_DEPENDS)
         target_link_libraries(${target} INTERFACE "sushiruntime_module_${dependency}")
     endforeach()
+    if(ARG_PUBLIC_EXTERNAL)
+        target_link_libraries(${target} INTERFACE ${ARG_PUBLIC_EXTERNAL})
+        set_property(GLOBAL APPEND PROPERTY
+            SUSHIRUNTIME_PUBLIC_EXTERNAL_LIBRARIES ${ARG_PUBLIC_EXTERNAL})
+    endif()
     # A public root reaches every consumer of the library and is installed; an internal
     # one reaches the modules that name it and the programs of this tree that test it.
     if(ARG_INTERNAL)

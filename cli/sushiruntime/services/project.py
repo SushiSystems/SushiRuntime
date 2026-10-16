@@ -154,7 +154,8 @@ def _flags_fingerprint() -> str:
 
 
 def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
-                     tests: bool, toolchain: str, cxx: str) -> str:
+                     tests: bool, toolchain: str, cxx: str,
+                     sushi_definitions: tuple[str, ...] = ()) -> str:
     """A stable key of every configure-affecting knob.
 
     A single-config generator (Ninja) bakes the build type into the cache, so a
@@ -172,9 +173,12 @@ def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
     -DCMAKE_CXX_COMPILER, which makes them as configure-affecting as the build
     type, and the only warning was a printed hint on a branch a developer
     selecting a not-yet-installed toolchain never reaches.
+
+    ``sushi_definitions`` are the ``-D<NAME>_DIR`` of the pinned Sushi libraries: a pin
+    moved to another checkout has to reach the cache the same way.
     """
     return (f"{dist}|{build_type}|{gpu_backend}|{'ON' if tests else 'OFF'}"
-            f"|{toolchain}|{cxx}|{_flags_fingerprint()}")
+            f"|{toolchain}|{cxx}|{'|'.join(sushi_definitions)}|{_flags_fingerprint()}")
 
 
 def _stamp_differs(build_dir: Path, stamp_key: str) -> bool:
@@ -418,8 +422,9 @@ def build(build_type: BuildType, distributed: bool = False,
 
     env = load_build_env(cfg, build_dir)
 
+    sushi_definitions = tuple(cfg.sushi_definitions(root))
     stamp_key = _configure_stamp(dist, cmake_build_type, gpu_backend, tests,
-                                 cfg.toolchain, cfg.cxx)
+                                 cfg.toolchain, cfg.cxx, sushi_definitions)
     if _DRIVER.needs_configure(build_dir, cfg.generator, root=root) or \
             _stamp_differs(build_dir, stamp_key):
         console.info(f"Configuring CMake... (type={build_type.value}, "
@@ -443,6 +448,8 @@ def build(build_type: BuildType, distributed: bool = False,
             # A benchmark replaces operator new, which TSan's runtime defines as well.
             if thread_sanitizer_applies(cfg.is_windows, build_type):
                 args.append(f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}")
+        # Each pinned Sushi library reaches CMake as <NAME>_DIR; CMake never downloads.
+        args += list(sushi_definitions)
         rc = _DRIVER.configure(args, cwd=root, env=env)
         if rc != 0:
             console.error("CMake configure failed.")

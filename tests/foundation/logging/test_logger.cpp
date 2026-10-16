@@ -21,25 +21,19 @@
 
 /**
  * @file test_logger.cpp
- * @brief Tests the levels of each project and category, the record, the sink, queue and FATAL.
+ * @brief Tests the SR_LOG macros: their gates, the record they make and FATAL.
  * @see tests/foundation/logging/README.md
  * @author Mustafa Garip
  */
 
 #include <chrono>
-#include <condition_variable>
-#include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <mutex>
-#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/logging/logger.hpp>
 
 using namespace SushiRuntime;
@@ -49,20 +43,9 @@ namespace
     /** @brief Names the project every test category belongs to. */
     constexpr LogProject K_LOGGER_TEST_LOG_PROJECT{"logger_test", "SR_LOGGER_TEST_LOG_LEVEL"};
 
-    /** @brief Names a second project, which the variable of the first must not touch. */
-    constexpr LogProject K_OTHER_TEST_LOG_PROJECT{"logger_other", "SR_LOGGER_OTHER_LOG_LEVEL"};
-
     /** @brief Names the category most tests log under. */
     constexpr LogCategory K_ALPHA_LOG_CATEGORY =
         make_log_category(K_LOGGER_TEST_LOG_PROJECT, "alpha");
-
-    /** @brief Names a second category, whose level the tests set apart. */
-    constexpr LogCategory K_BETA_LOG_CATEGORY =
-        make_log_category(K_LOGGER_TEST_LOG_PROJECT, "beta");
-
-    /** @brief Names a category of the second project, with the module name of the first. */
-    constexpr LogCategory K_OTHER_ALPHA_LOG_CATEGORY =
-        make_log_category(K_OTHER_TEST_LOG_PROJECT, "alpha");
 
     /** @brief Holds what a test sink saw of one record. */
     struct SeenRecord
@@ -201,124 +184,6 @@ TEST_F(Medium_LoggerTest, SinkReceivesEveryFieldAndTheLine)
     EXPECT_EQ(record.thread, std::this_thread::get_id());
 }
 
-/** @brief Tests that an empty sink sends records to stderr and retires the old sink. */
-TEST_F(Medium_LoggerTest, EmptySinkRestoresTheDefault)
-{
-    SeenRecords records;
-    set_log_sink(collect_into(&records));
-    SR_LOG_ERROR(K_ALPHA_LOG_CATEGORY, "to the test sink");
-    ASSERT_EQ(records.size(), 1u);
-
-    set_log_sink(nullptr);
-    testing::internal::CaptureStdout();
-    testing::internal::CaptureStderr();
-    SR_LOG_ERROR(K_ALPHA_LOG_CATEGORY, "restored {}", 1);
-    const std::string standard_error = testing::internal::GetCapturedStderr();
-    const std::string standard_output = testing::internal::GetCapturedStdout();
-
-    EXPECT_EQ(records.size(), 1u);
-    EXPECT_NE(standard_error.find("restored 1\n"), std::string::npos) << standard_error;
-    EXPECT_TRUE(standard_output.empty()) << standard_output;
-}
-
-/** @brief Tests that a record whose sink throws is written to stderr and the call returns. */
-TEST_F(Medium_LoggerTest, ThrowingSinkLeavesTheRecordOnStderr)
-{
-    set_log_sink([](const LogRecord&)
-    {
-        throw std::runtime_error("sink failure");
-    });
-
-    testing::internal::CaptureStderr();
-    EXPECT_NO_THROW({ SR_LOG_ERROR(K_ALPHA_LOG_CATEGORY, "kept {}", 2); });
-    const std::string standard_error = testing::internal::GetCapturedStderr();
-
-    EXPECT_NE(standard_error.find("sink failure"), std::string::npos) << standard_error;
-    EXPECT_NE(standard_error.find("kept 2\n"), std::string::npos) << standard_error;
-}
-
-/** @brief Tests that asynchronous records run the sink on another thread, in order. */
-TEST_F(Medium_LoggerTest, AsynchronousRecordsArriveBeforeSynchronousModeReturns)
-{
-    SeenRecords records;
-    set_log_sink(collect_into(&records));
-
-    set_log_synchronous(false);
-    SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "record {}", 0);
-    SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "record {}", 1);
-    SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "record {}", 2);
-    set_log_synchronous(true);
-
-    ASSERT_EQ(records.size(), 3u);
-    for (std::size_t i = 0; i < records.size(); ++i)
-    {
-        const std::string expected = "record " + std::to_string(i);
-        EXPECT_NE(records[i].line.find(expected), std::string::npos) << records[i].line;
-        EXPECT_NE(records[i].thread, std::this_thread::get_id());
-    }
-}
-
-/** @brief Tests that each category keeps its own level, which its project's level leaves. */
-TEST_F(Medium_LoggerTest, EachCategoryKeepsItsOwnLevel)
-{
-    SeenRecords records;
-    set_log_sink(collect_into(&records));
-
-    set_log_level(K_BETA_LOG_CATEGORY, LogLevel::Debug);
-    set_log_level(K_LOGGER_TEST_LOG_PROJECT, LogLevel::Error);
-    EXPECT_EQ(log_level(K_ALPHA_LOG_CATEGORY), LogLevel::Error);
-    EXPECT_EQ(log_level(K_BETA_LOG_CATEGORY), LogLevel::Debug);
-
-    SR_LOG_DEBUG(K_ALPHA_LOG_CATEGORY, "alpha below its level");
-    SR_LOG_DEBUG(K_BETA_LOG_CATEGORY, "beta at its level");
-
-    ASSERT_EQ(records.size(), 1u);
-    EXPECT_NE(records[0].line.find("[logger_test.beta]"), std::string::npos) << records[0].line;
-    EXPECT_NE(records[0].line.find("[DEBUG]"), std::string::npos) << records[0].line;
-}
-
-/** @brief Tests that a full queue drops records and reports how many before the next one. */
-TEST_F(Medium_LoggerTest, AFullQueueReportsTheRecordsItDropped)
-{
-    constexpr std::size_t K_QUEUE_CAPACITY = 4096;
-    constexpr std::size_t K_DROPPED = 5;
-
-    std::mutex mutex;
-    std::condition_variable changed;
-    bool entered = false;
-    bool released = false;
-    SeenRecords records;
-    set_log_sink([&](const LogRecord& record)
-    {
-        std::unique_lock<std::mutex> lock(mutex);
-        records.push_back(seen(record));
-        entered = true;
-        changed.notify_all();
-        changed.wait(lock, [&]() { return released; });
-    });
-
-    set_log_synchronous(false);
-    SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "held in the sink");
-    {
-        std::unique_lock<std::mutex> lock(mutex);
-        changed.wait(lock, [&]() { return entered; });
-    }
-    for (std::size_t i = 0; i < K_QUEUE_CAPACITY + K_DROPPED; ++i)
-        SR_LOG_WARN(K_ALPHA_LOG_CATEGORY, "queued {}", i);
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        released = true;
-    }
-    changed.notify_all();
-    set_log_synchronous(true);
-
-    ASSERT_EQ(records.size(), 2 + K_QUEUE_CAPACITY);
-    EXPECT_EQ(records[1].level, LogLevel::Warn);
-    EXPECT_NE(records[1].line.find("dropped 5 records"), std::string::npos) << records[1].line;
-    EXPECT_NE(records[1].line.find("[sushiruntime.logging]"), std::string::npos) << records[1].line;
-    EXPECT_NE(records[2].line.find("queued 0"), std::string::npos) << records[2].line;
-}
-
 /** @brief Tests that a FATAL record reaches the sink after every queued one, on the caller. */
 TEST_F(Medium_LoggerTest, FatalIsDeliveredAfterTheQueueOnTheCallingThread)
 {
@@ -338,47 +203,3 @@ TEST_F(Medium_LoggerTest, FatalIsDeliveredAfterTheQueueOnTheCallingThread)
     EXPECT_EQ(records[2].thread, std::this_thread::get_id());
 }
 
-namespace
-{
-    /** @brief Sets an environment variable of this process. */
-    void set_environment(const char* name, const char* value)
-    {
-#ifdef _WIN32
-        _putenv_s(name, value);
-#else
-        setenv(name, value, 1);
-#endif
-    }
-}
-
-/** @brief Tests that a project's variable sets its categories, then the modules it names, and
- *         leaves every other project. */
-TEST(Medium_LoggerEnvironment, TheVariableSetsItsProjectThenTheNamedModules)
-{
-    // A new process, so the level table reads the variable set here.
-    GTEST_FLAG_SET(death_test_style, "threadsafe");
-    EXPECT_EXIT(
-        {
-            set_environment("SR_LOGGER_TEST_LOG_LEVEL", "error, BETA=DEBUG");
-            const bool read = log_level(K_ALPHA_LOG_CATEGORY) == LogLevel::Error &&
-                              log_level(K_BETA_LOG_CATEGORY) == LogLevel::Debug &&
-                              log_level(K_LOGGER_TEST_LOG_PROJECT) == LogLevel::Error &&
-                              log_level(K_OTHER_ALPHA_LOG_CATEGORY) == LogLevel::Warn;
-            std::exit(read ? 0 : 1);
-        },
-        ::testing::ExitedWithCode(0), "");
-}
-
-/** @brief Tests that a value the logger cannot read is reported and leaves its project at WARN. */
-TEST(Medium_LoggerEnvironment, AnUnreadableValueLeavesItsProjectAtWarn)
-{
-    GTEST_FLAG_SET(death_test_style, "threadsafe");
-    EXPECT_EXIT(
-        {
-            set_environment("SR_LOGGER_TEST_LOG_LEVEL", "error,beta=loud");
-            const bool kept = log_level(K_ALPHA_LOG_CATEGORY) == LogLevel::Warn &&
-                              log_level(K_BETA_LOG_CATEGORY) == LogLevel::Warn;
-            std::exit(kept ? 0 : 1);
-        },
-        ::testing::ExitedWithCode(0), "SR_LOGGER_TEST_LOG_LEVEL='error,beta=loud' is not a level");
-}
