@@ -25,8 +25,9 @@
  * @author Mustafa Garip
  */
 
-#include <SushiRuntime/core/text_format.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
+
+#include <SushiLog/text/text_format.hpp>
 
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -38,17 +39,18 @@ namespace SushiRuntime
         std::string describe_task(const Task& task)
         {
             if (!task.is_graph_node())
-                return format_text("task '{}'", task.name());
+                return SushiLog::format_text("task '{}'", task.name());
 
             const auto& node = static_cast<const SushiRuntime::Internal::Graph::Node&>(task);
-            return format_text("node '{}' (registration index {})",
-                                           node.name(), node.registration_index);
+            return SushiLog::format_text("node '{}' (registration index {})",
+                                         node.name(), node.registration_index);
         }
 
         Error name_failure(const Task& task, const Error& cause)
         {
             return Error{cause.code,
-                         format_text("{} failed: {}", describe_task(task), cause.message)};
+                         SushiLog::format_text("{} failed: {}", describe_task(task),
+                                               cause.message)};
         }
 
     } // namespace Internal::Scheduler

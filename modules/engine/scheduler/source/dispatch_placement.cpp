@@ -30,8 +30,9 @@
 #include <optional>
 #include <vector>
 
+#include <SushiLog/text/text_format.hpp>
+
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/core/text_format.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -93,7 +94,7 @@ namespace SushiRuntime
             if (placement >= device_count)
                 return make_error(Error{
                     ErrorCode::InvalidGraph,
-                    format_text(
+                    SushiLog::format_text(
                         "it is placed on device {}, but the runtime holds {} device(s); "
                         "pass place_on() an index below {}.",
                         placement, device_count, device_count)});

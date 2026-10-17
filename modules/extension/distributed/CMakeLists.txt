@@ -41,4 +41,5 @@ sushiruntime_add_module(
         pending_tasks
         dispatch_deduplication
         process_environment
-        offload_coordination)
+        offload_coordination
+    EXTERNAL SushiLog::text)

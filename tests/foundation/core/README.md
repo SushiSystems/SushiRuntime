@@ -304,11 +304,3 @@ The file tests OperationID: the FNV-1a hash, the literal, naming and ordering.
 | `HashIsFNV1a` | Checks the hash against the FNV-1a offset basis and a published value. |
 | `LiteralMatchesTheExplicitHash` | The literal hashes at compile time and equals the explicit form. |
 | `DefaultIsUnnamedAndOrderFollowsTheValue` | The default names nothing and ordering follows the value. |
-
-## test_text_format.cpp
-
-| Test | What it proves |
-| --- | --- |
-| `EachPlaceholderTakesTheNextArgument` | Each `{}` takes the next argument through `operator<<`. |
-| `DoubledBracesAreLiteral` | `{{` and `}}` are written once, with and without arguments. |
-| `AMismatchedCountIsIgnored` | Extra arguments are dropped and extra placeholders stay as written. |

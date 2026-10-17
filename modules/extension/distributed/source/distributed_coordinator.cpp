@@ -39,7 +39,8 @@
 #include <utility>
 #include <vector>
 
-#include <SushiRuntime/core/text_format.hpp>
+#include <SushiLog/text/text_format.hpp>
+
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -225,7 +226,7 @@ namespace SushiRuntime
                         }
 
                         drop_malformed(
-                            peer, format_text(
+                            peer, SushiLog::format_text(
                                       "sent a malformed {} frame ({} bytes): decoding stopped "
                                       "at offset {} with status {}",
                                       message_type_name(Message::K_TYPE), payload.size(),
@@ -250,7 +251,7 @@ namespace SushiRuntime
 
                 directory.note_frame(peer, std::chrono::steady_clock::now());
                 if (router.route(type, peer, flags, payload) == Wire::RouteStatus::Unhandled)
-                    drop_peer(peer, format_text(
+                    drop_peer(peer, SushiLog::format_text(
                                         "sent {}, which a master does not take",
                                         message_type_name(type)));
             }
