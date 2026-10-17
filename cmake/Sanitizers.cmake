@@ -22,7 +22,10 @@ add_library(sushiruntime_sanitizers INTERFACE)
 # generally, not a toolchain-specific id.
 if(NOT (MSVC OR (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")))
     if(CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
-        target_compile_options(sushiruntime_sanitizers INTERFACE -fsanitize=thread)
+        # Under Clang the SYCL device pass is left uninstrumented: the device ThreadSanitizer
+        # of the SYCL runtime cannot reserve its shadow memory beside the host one and aborts.
+        target_compile_options(sushiruntime_sanitizers INTERFACE
+            "$<IF:$<COMPILE_LANG_AND_ID:CXX,Clang,IntelLLVM>,SHELL:-Xarch_host -fsanitize=thread,-fsanitize=thread>")
         target_link_options(sushiruntime_sanitizers INTERFACE -fsanitize=thread)
     endif()
 endif()
