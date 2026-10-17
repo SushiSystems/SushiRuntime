@@ -6,5 +6,5 @@ The file tests the adapter example's backend: a uniform field stays uniform, and
 
 | Test | What it proves |
 | --- | --- |
-| `AUniformFieldStaysUniform` | Holds the tolerance of a diffused value, absolute; the field is uniform. */ constexpr float K_TOLERANCE = 1e-5f; /** @brief Tests that a uniform field read back after ten steps is still the same value. |
+| `AUniformFieldStaysUniform` | A uniform field read back after ten steps keeps its value within an absolute tolerance. Skipped under ThreadSanitizer, whose device sanitizer aborts the kernel. |
 | `EveryCodeHasAName` | Checks the name of every status code. |
