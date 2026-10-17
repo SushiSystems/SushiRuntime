@@ -27,7 +27,6 @@ Defects that are recorded and not yet fixed. The work each one needs is in
 | --- | --- |
 | The CLI package declares version 1.0.0 and `Doxyfile` says `v1 (unreleased)`, while the library is 0.3.0 | `cli/pyproject.toml`, `cli/sushiruntime/__init__.py`, `.config/doxygen/Doxyfile` |
 | Configuring leaves empty `CXX-DetectStdlib-*.h` files in the repository root, because the CLI runs the configure step with the source root as its working directory | `cli/sushiruntime/services/project.py` |
-| Under ThreadSanitizer on Linux the SYCL runtime starts its device sanitizer, which cannot reserve its shadow memory beside the host one and aborts any kernel launch; `Small_DiffusionBackend.AUniformFieldStaysUniform` is skipped there. Instrumenting the host pass only resolves it once icpx honours `-Xarch_host -fsanitize=thread` | `cmake/Sanitizers.cmake`, `tests/applications/examples/adapter/test_diffusion_backend.cpp` |
 | `_walk` in this copy of the source comment checker tests `K_SKIPPED_FOLDERS` before `is_file()`; the SushiSkills original still tests them the other way round and stops with Windows error 1920 on `venv/bin/python` | `tools/documentation/check_source_comments.py` |
 
 ## Documentation

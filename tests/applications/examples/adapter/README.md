@@ -6,5 +6,5 @@ The file tests the adapter example's backend: a uniform field stays uniform, and
 
 | Test | What it proves |
 | --- | --- |
-| `AUniformFieldStaysUniform` | A uniform field read back after ten steps keeps its value within an absolute tolerance. Skipped under ThreadSanitizer, whose device sanitizer aborts the kernel. |
+| `AUniformFieldStaysUniform` | A uniform field read back after ten steps keeps its value within an absolute tolerance. |
 | `EveryCodeHasAName` | Checks the name of every status code. |

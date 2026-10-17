@@ -36,26 +36,12 @@
 
 using namespace HostProgram;
 
-// SR_TSAN_BUILD is set under ThreadSanitizer by Clang's feature test or GCC's macro.
-#if defined(__has_feature)
-#  if __has_feature(thread_sanitizer)
-#    define SR_TSAN_BUILD 1
-#  endif
-#endif
-#if !defined(SR_TSAN_BUILD) && defined(__SANITIZE_THREAD__)
-#  define SR_TSAN_BUILD 1
-#endif
-
 /** @brief Holds the tolerance of a diffused value, absolute; the field is uniform. */
 constexpr float K_TOLERANCE = 1e-5f;
 
 /** @brief Tests that a uniform field read back after ten steps is still the same value. */
 TEST(Small_DiffusionBackend, AUniformFieldStaysUniform)
 {
-#if defined(SR_TSAN_BUILD)
-    GTEST_SKIP() << "the device ThreadSanitizer of the SYCL runtime cannot reserve its shadow "
-                    "memory beside the host one; see docs/reference/KNOWN_ISSUES.md";
-#endif
     BackendHandle backend;
     const Status created = create_backend(backend);
     if (created.code == StatusCode::Unsupported)
