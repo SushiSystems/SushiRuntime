@@ -78,6 +78,23 @@ builds and runs it.
 `add_subdirectory(path/to/sushiruntime)` defines the same `SushiRuntime::SushiRuntime` target.
 Under a parent project the examples are not built (`SR_BUILD_EXAMPLES` is off there).
 
+### One target per module
+
+`SushiRuntime::SushiRuntime` links every public module. A consumer that uses only some of them
+links those instead, and sees only their headers and the headers of the modules they depend on:
+
+| Target | Module |
+| --- | --- |
+| `SushiRuntime::core` | Assertions, `Error`, `Result` and the shared value types |
+| `SushiRuntime::log` | The front over SushiLog; links `SushiLog::SushiLog` |
+| `SushiRuntime::machine`, `SushiRuntime::region`, `SushiRuntime::report` | The machine, region and report types |
+| `SushiRuntime::interop`, `SushiRuntime::context` | The interop and context headers |
+| `SushiRuntime::api` | The surface: the runtime, graphs and kernels |
+| `SushiRuntime::transport`, `SushiRuntime::cluster_load`, `SushiRuntime::distributed` | The distributed layer |
+
+A module with compiled code links the shared library; a header-only one, such as `log`, does
+not. The installed package and the build tree export the same targets.
+
 ### Version compatibility
 
 The package file declares `SameMinorVersion` compatibility: `find_package(SushiRuntime 0.4)`

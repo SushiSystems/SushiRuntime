@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-17 — cmake: Exported one target per public module such as SushiRuntime::log so a consumer links only the modules it uses; SushiRuntime::SushiRuntime links them all (`SushiRuntimeModule.cmake`, `SushiRuntimeLibrary.cmake`).
 - 2026-10-17 — deps: Moved SushiLog to v0.1.2, where a level set for a project before its first log call holds (`sushistack.deps.toml`).
 - 2026-10-17 — core: Moved sr_format from log/log_format.hpp to core, since the graph, the scheduler and the distributed layer format their errors with it (`text_format.hpp`).
 - 2026-10-17 — deps: Pinned SushiLog v0.1.1, which the CLI resolves through sushicore 0.9.1 and passes as SUSHILOG_DIR, and staged sushilog.dll beside every program (`sushistack.deps.toml`, `Dependencies.cmake`).

@@ -31,6 +31,14 @@ project(SushiRuntimePackageConsumer LANGUAGES CXX)
 
 find_package(SushiRuntime REQUIRED)
 
+# Every public module is exported as a target of its own.
+foreach(_sr_module IN ITEMS core log machine region report interop context api transport
+                            cluster_load distributed)
+    if(NOT TARGET SushiRuntime::${_sr_module})
+        message(FATAL_ERROR "The package exports no SushiRuntime::${_sr_module} target.")
+    endif()
+endforeach()
+
 # --- Flag hygiene ------------------------------------------------------------
 #
 # The assertion BB-3's split exists to make: a consumer inherits the library's
