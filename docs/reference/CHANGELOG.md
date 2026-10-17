@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-17 — deps: Upgraded sushicore to 0.9.2, whose setup skips the Build Tools install where Visual Studio has the C++ tools (`pyproject.toml`).
 - 2026-10-17 — api: Breaking change: Removed api/runtime/logging.hpp; include SushiLog's headers and log/sushiruntime_log_project.hpp instead (`logging.hpp`).
 - 2026-10-17 — cmake: Exported one target per public module such as SushiRuntime::log so a consumer links only the modules it uses; SushiRuntime::SushiRuntime links them all (`SushiRuntimeModule.cmake`, `SushiRuntimeLibrary.cmake`).
 - 2026-10-17 — deps: Moved SushiLog to v0.1.2, where a level set for a project before its first log call holds (`sushistack.deps.toml`).
