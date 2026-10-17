@@ -69,5 +69,5 @@ depends_on = ["sushilog"]
 # SushiLog, the one logger of the process. sushicore resolves it as SUSHILOG_DIR, the sibling
 # ../sushilog, or the copy `sr setup` fetches at this tag, and the CLI hands it to CMake.
 [sushi.sushilog]
-version = "v0.2.1"
-commit  = "56631fd10919f20c3cac3bd6512f927e7f09cccc"
+version = "v0.2.2"
+commit  = "d97bd28f34914f7f47e1b42db6f28bb34d3411df"

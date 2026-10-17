@@ -1,412 +1,549 @@
 # Changelog
 
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 ## Unreleased
 
 - 2026-10-17 — cmake: Fixed the ThreadSanitizer build aborting a test that runs a kernel; under Clang TSan instruments the host pass only, since the device TSan cannot reserve its shadow memory (`Sanitizers.cmake`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-17 — core: Breaking change: Removed format_text and core/text_format.hpp; include SushiLog/text/text_format.hpp and call SushiLog::format_text (`text_format.hpp`).
 - 2026-10-17 — deps: Moved SushiLog to v0.2.1 and linked SushiLog::text, where the graph, the scheduler and the distributed layer format their messages (`sushistack.deps.toml`).
 - 2026-10-17 — core: Breaking change: Renamed Detail::sr_format to the public SushiRuntime::format_text, so a consumer formats its messages without Detail (`text_format.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-17 — deps: Upgraded sushicore to 0.9.2, whose setup skips the Build Tools install where Visual Studio has the C++ tools (`pyproject.toml`).
 - 2026-10-17 — api: Breaking change: Removed api/runtime/logging.hpp; include SushiLog's headers and log/sushiruntime_log_project.hpp instead (`logging.hpp`).
 - 2026-10-17 — cmake: Exported one target per public module such as SushiRuntime::log so a consumer links only the modules it uses; SushiRuntime::SushiRuntime links them all (`SushiRuntimeModule.cmake`, `SushiRuntimeLibrary.cmake`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-17 — deps: Moved SushiLog to v0.1.2, where a level set for a project before its first log call holds (`sushistack.deps.toml`).
 - 2026-10-17 — core: Moved sr_format from log/log_format.hpp to core, since the graph, the scheduler and the distributed layer format their errors with it (`text_format.hpp`).
 - 2026-10-17 — deps: Pinned SushiLog v0.1.1, which the CLI resolves through sushicore 0.9.1 and passes as SUSHILOG_DIR, and staged sushilog.dll beside every program (`sushistack.deps.toml`, `Dependencies.cmake`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-17 — log: Breaking change: Logged through SushiLog, called by its own names, folded logging into log, and removed SR_LOG_FRONT_AT, log_level_floor and the sr_ C sink calls (`logger.hpp`, `log_gate.hpp`).
 - 2026-10-16 — log: Breaking change: Gave each category a project with its own level variable, handed the sink a LogRecord, and added log_forward_sink, a C sink and SR_LOG_FRONT_AT (`log_project.hpp`, `log_front.hpp`).
 - 2026-10-16 — cli: Added `sr test --jobs`, which caps how many tests ctest runs at once (`cli.py`, `project.py`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-16 — runtime: Logged every record under the category of its module, and logged the error an empty catch hid in the hardware discovery (`<module>_log_category.hpp`, `hw_discovery.cpp`).
 - 2026-10-16 — logging: Bounded the log queue and reported what it dropped, delivered FATAL after the queue and flushed, and gave the record its category and thread for its function (`logger.cpp`, `SR_LOG_FATAL`).
 - 2026-10-16 — log: Breaking change: Renumbered LogLevel from Trace to Fatal, then Off, and gave each module's category its own level, which SR_LOG_LEVEL=warn,distributed=debug sets (`log_level.hpp`, `log_category.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-16 — cli: Scoped the sanitizer flags of an icpx ASan build to the host pass, so the SPIR-V device pass does not fail under -Werror (`project.py`).
 - 2026-10-16 — cli: Left the benchmark programs out of a ThreadSanitizer build, whose runtime defines the `operator new` a benchmark replaces (`project.py`).
 - 2026-10-16 — cli: Stopped an ASan build with the oneapi toolchain from taking a system clang++ that has no SYCL; icpx builds the tree when no clang-based SYCL compiler is installed (`project.py`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-16 — cli: Sized every CLI test with a pytest mark, and failed the collection of a test that carries no size or two (`conftest.py`, `pyproject.toml`).
 - 2026-10-16 — tools: Brought the checkers level with SushiSkills, adding one that reports a test whose source writes no size (`check_test_sizes.py`).
 - 2026-10-15 — ci: Split CI into pre-merge, post-merge and nightly stages behind one `gate` job, each running `sr` on Linux and Windows with ccache, and ran the small tests under ASan and UBSan (`ci.yml`, `nightly.yml`, `setup-sr`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-15 — cli: Breaking change: Replaced `sr test --suite` with `--label` over the sizes, left the quarantined tests out of every other run, and added `sr bench` for the benchmark programs (`cli.py`, `project.py`).
 - 2026-10-15 — tests: Sized every test small, medium or large by its suite prefix, with a 60, 300 or 900 second limit, and failed the build of an unsized suite (`SushiRuntimeTests.cmake`, `CheckTestSizes.cmake`).
 - 2026-10-15 — tests: Quarantined a test by name beside its size, and stopped registering the benchmark programs with CTest (`SR_QUARANTINED_TESTS`, `SushiRuntimeTests.cmake`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-15 — cmake: Kept FMA contraction off for the IntelLLVM GNU-frontend build of SR_DETERMINISTIC_FP, where -fp-model=precise had turned it back on (`Determinism.cmake`).
 - 2026-10-14 — tools: Reported a test that includes a private header under `source/` (`check_test_mirror.py`, `rule_private_include`).
 - 2026-10-14 — api: Resolved a host LateCount above its capacity to zero, as the device path does, so the fill runs and no dependent kernel reads an unset bound (`late_count_resolution.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-14 — tests: Gave each of the 105 untested public headers a test file of its own, and the example headers a program built with the examples (`check_test_mirror.py`, `sr_examples_tests`).
 - 2026-10-14 — scheduler: Exported describe_task() and name_failure(), so the tests reach them across the library boundary (`failure_naming.hpp`).
 - 2026-10-14 — distributed: Breaking change: Moved Endpoint, MessageType, BufferHandle and Transport to a public transport module, and OffloadPolicy and ClusterStatistics to cluster_load (`transport.hpp`, `offload_policy.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-14 — distributed: Made parse_worker_options() public, so a worker program reads its options before run_worker() (`worker_options_parser.hpp`).
 - 2026-10-14 — distributed: Split the bricks of the master and the worker into nine internal modules, such as wire, link_security and offload_coordination, so their tests reach no private header (`SushiRuntimeTiers.cmake`).
 - 2026-10-14 — engine: Moved DependencyTracker, the work-stealing deque, the NUMA lookup and the region boundary summary into internal modules of their own (`dependency_tracker.hpp`, `work_stealing_deque.hpp`, `numa_lookup.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-14 — api: Moved the plan and late-controls conversions into the internal engine_handles module (`plan_access.hpp`, `late_controls_access.hpp`).
 - 2026-10-14 — tests: Stopped the test programs from reaching `source/`, and drove the worker agent's tests through its transport (`SushiRuntimeTests.cmake`, `test_worker_agent.cpp`).
 - 2026-10-14 — tools: Brought the checkers level with SushiSkills, so they skip what git ignores and resolve an include by its project folder (`check_docs_truth.py`, `check_layering.py`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-14 — tests: Moved every test into `tests/<tier>/<module>/`, one file per header, built as `sr_<module>_tests` and `sr_<module>_benchmarks` in place of the three root programs (`check_test_mirror.py`).
 - 2026-10-14 — cmake: Split `tests/common` into seven internal modules that only the tests build, such as `test_runner` and `runtime_assembly` (`SushiRuntimeModule.cmake`, `TEST_ONLY`).
 - 2026-10-14 — cli: Made `sr_api_tests` the default of `sr run` and read the LeakSanitizer list from `.config/sanitizers/` (`config.toml`, `env.py`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-14 — cmake: Made the ROCm locator and the ISA probe read `ROCM_PATH` first, where sushicore installs the release chosen for the cards (`RocmToolkit.cmake`, `Rocm.cmake`).
 
 - 2026-10-14 — cmake: Made the CUDA locator read `CUDA_PATH` first on Linux too, where sushicore installs the release chosen for the cards (`CudaToolkit.cmake`, `Cuda.cmake`, `sushistack.deps.toml`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 
 - 2026-10-12 — tests: Gave the constants of six test and benchmark files the `K_` prefix, so the naming checker reports nothing over the whole tree (`test_layer_equivalence.cpp`, `benchmark_graph_compile.cpp`).
 - 2026-10-12 — examples: Renamed the constants ALPHA, DT, REST and XMAX of two examples to `K_ALPHA`, `K_TICK`, `K_BOUNCE` and `K_CULL_X` (`stencil_demo.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — docs: Quoted the adapter example in the integration guide in place of a file of another repository, and the new examples in the introduction (`INTEGRATION.md`, `INTRODUCTION.md`, `README.md`, `docs/.docs_truth_allow`).
 - 2026-10-12 — examples: Made the quickstart and the stencil return 1 when their result is off the host's, and recorded the late-bound launch with `sized()` (`quickstart.cpp`, `stencil_demo.cpp`, `operating_path_demo.cpp`).
 - 2026-10-12 — examples: Added an example that installs a host's assertion handler and log sink around a run and restores both (`host_hooks_demo.cpp`, `set_assertion_handler`, `set_log_sink`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — examples: Added an example of a domain library that records one rule of two nodes through `extend` and the verbs of the `Recorder` (`extension_demo.cpp`, `Recorder::scratch`, `Recorder::task`).
 - 2026-10-12 — examples: Added an example that reads and writes a buffer of each residency, by range calls and by a copy on the device queue (`data_access_demo.cpp`, `Runtime::wait`, `AdvancedControls::queue`).
 - 2026-10-12 — examples: Added an example that feeds one rule from a hook before each step and drives it with every run entry (`stepping_demo.cpp`, `before_each_step`, `run_until`, `run_async`, `run_for`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — examples: Added an example that records `add_task`, `add_host` and `add_untracked` beside kernels and prints the `PlanView` of the five nodes (`tasks_demo.cpp`).
 - 2026-10-12 — examples: Added an example that handles a failed allocation and a refused recording, with `refusal()`, `compile()` and `Graph::clear()` (`errors_demo.cpp`).
 - 2026-10-12 — examples: Added an adapter example in which a host program reaches the library through one file and its own status type (`adapter/sushiruntime_adapter.cpp`, `adapter/diffusion_backend.hpp`, `adapter/adapter_demo.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — tests: Merged the region and the stepping tests of the api graph into `graph/running/`, beside the two helper headers they share (`refusing_fill.hpp`, `dynamic_graph_plan_access.hpp`, `test_region_emitter.cpp`).
 - 2026-10-12 — api: Moved the four headers a consumer never includes into `api/graph/plumbing/`, with their notes (`builder_surface.hpp`, `plan_cache.hpp`, `region_composer.hpp`, `step_driver.hpp`).
 - 2026-10-12 — tests: Moved the distributed tests into folders named after their subject, each with its own notes (`modules/extension/distributed/tests`, `tcp_fault_proxy.hpp`, `modules/extension/distributed/CMakeLists.txt`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — tests: Moved the api tests into folders named after the part of the surface they test, each with its own notes (`modules/surface/api/tests`, `refusing_fill.hpp`, `modules/surface/api/CMakeLists.txt`).
 - 2026-10-12 — context: Breaking change: Moved ContextHandle to the new public context module and its access to the internal context_access module, out of execution (`context_handle.hpp`, `context_access.hpp`, `SushiRuntimeTiers.cmake`).
 - 2026-10-12 — api: Breaking change: Replaced CompiledGraph, LateBindings and RuntimeContext in installed signatures with the opaque Detail::Plan, Detail::LateControls and Detail::Context (`plan.hpp`, `late_controls.hpp`, `context.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — tests: Moved the registration index and the node event record tests into the api module, whose private conversion header they include (`test_registration_index.cpp`, `test_node_event_records.cpp`, `plan_access.hpp`).
 - 2026-10-12 — api: Breaking change: Moved PlanCache, RegionComposer, RegionChangeLog, StepDriver, BuilderSurface and the four callable traits into SushiRuntime::Detail (`plan_cache.hpp`, `step_driver.hpp`, `callable_traits.hpp`).
 - 2026-10-12 — docs: Cited the source file of every manual example, added the allow-list of the truth checker and removed the em dashes of the design documents (`docs/.docs_truth_allow`, `INTRODUCTION.md`, `ENGINE_BACKBONE_REFACTOR.md`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — docs: Shortened the distributed guide to 594 lines and corrected the test notes and the module notes against the sources (`DISTRIBUTED_GUIDE.md`, `tests/integration/README.md`, `KNOWN_ISSUES.md`).
 - 2026-10-12 — docs: Rewrote the manual for the single-header, Result-only interface and added the stability notice and the adapter section (`README.md`, `INTRODUCTION.md`, `ARCHITECTURE.md`, `INTEGRATION.md`).
 - 2026-10-12 — execution: Fixed a node that writes a shared buffer running on the chain under a cluster, where nothing told the coordinator it finished and the buffer's version stayed (`chain_plan.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — tests: Moved the wire format tests to the version 3 offsets of a dispatch, and stated what the allocation counter cannot see on Windows (`test_wire_format.cpp`, `test_steady_state_allocation.cpp`).
 - 2026-10-12 — api: Breaking change: Made the constructors of Recorder, Region and ContextHandle and the moves of Recorder private, and the region and capture constructors explicit (`recorder.hpp`, `region.hpp`, `buffer_region.hpp`).
 - 2026-10-12 — api: Built every Buffer through one private function, so the two Interop buffer calls return AllocationFailed where an exception left them (`buffer.hpp`, `interop.hpp`, `Buffer::adopt`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — api: Breaking change: Stopped the process on a placement or a device slot the runtime does not own, and refused a rule over an empty State with InvalidAccess (`recorder.hpp`, `recorder.cpp`).
 - 2026-10-12 — api: Baked the launch count as the width of a tracked kernel that states none, and appended the reads of a coupled rule (`emit_tracked.hpp`, `emit_captured.hpp`, `emit_state.hpp`).
 - 2026-10-12 — api: Added `Graph::clear()` and `NodeOptions::K_MAX_PARAMETERS`, and included eight core headers from the umbrella (`graph.hpp`, `node_options.hpp`, `sushiruntime.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — machine: Breaking change: Renamed the device kinds Cpu and Gpu to CPU and GPU, and gave PinPolicy, Residency and StepSync an 8-bit underlying type (`device_kind.hpp`, `pin_policy.hpp`, `step_run.hpp`).
 - 2026-10-12 — core: Breaking change: Removed the global `sr` namespace alias, the Backend enumeration and one unused constant (`common.hpp`).
 - 2026-10-12 — core: Breaking change: Removed `ErrorCode::Ok` and the default Error; an Error is built from a code and a message (`error.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — core: Added one translator from a caught exception to an Error, with a SYCL arm, and routed the catch ladders of the engine and the surface through it (`core/error_translation.hpp`, `sycl/error_translation.hpp`).
 - 2026-10-12 — scheduler: Returned an optional Error from the event poll and from the run outcome (`event_polling.hpp`, `run_outcome.hpp`, `task_scheduler.hpp`).
 - 2026-10-12 — execution: Named the failing node in a chained step and cleared an abandoned chain run's events and asynchronous errors (`chain_run.cpp`, `failure_naming.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — execution: Moved the chained-run mark to the engine interface and removed three aliases of graph types (`execution_engine.hpp`, `chain_plan.hpp`, `chain_run.hpp`).
 - 2026-10-12 — api: Fixed a fault record of a failed step being returned by the next run, and a failed rebuild leaving a plan cache in mixed state (`step_run.cpp`, `plan_cache.cpp`).
 - 2026-10-12 — api: Exported two node emitters the tests call, and split a source file by the header it defines (`node_emitters.hpp`, `emit_dynamic.cpp`, `step_machinery.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — memory_exchange: Moved the three entry points to their own internal namespace and closed their catch ladders (`memory_exchange.hpp`, `memory_exchange.cpp`).
 - 2026-10-12 — distributed: Held the context's shared pointer in the worker agent, so an agent outlives the Runtime it was built from (`worker_agent.cpp`, `context_access.hpp`).
 - 2026-10-12 — build: Breaking change: Published only the public include roots on the library target; tests reach the engine through a separate interface target (`SushiRuntimeLibrary.cmake`, `SushiRuntimeTests.cmake`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — build: Built the header check for every public module, corrected over-declared module dependencies and added a rule for them (`SushiRuntimeModule.cmake`, `check_layering.py`).
 - 2026-10-12 — memory_exchange: Named the internal module that exports host memory and imports device memory `memory_exchange`; its header is `memory_exchange/memory_exchange.hpp`.
 - 2026-10-12 — layering: Added `rule_public_headers`, which reports an include of an `INTERNAL` module in a header a public module installs (`check_layering.py`, `test_check_layering.py`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — cmake: Breaking change: Made `sushiruntime_add_module` refuse an `INTERNAL` module under the `DEPENDS` of a module that is installed (`SushiRuntimeModule.cmake`).
 - 2026-10-12 — cmake: Renamed the global property of every include root of the build tree to `SUSHIRUNTIME_BUILD_INCLUDE_ROOTS` (`SushiRuntimeModule.cmake`, `SushiRuntimeLibrary.cmake`).
 - 2026-10-12 — distributed: Moved memory and task to `PRIVATE_DEPENDS` and api to `DEPENDS`, which is what the installed headers of the extension include (`CMakeLists.txt`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — api: Breaking change: Removed `Runtime::unsafe_context()`; the library and its tests reach the context through `Detail::ContextAccess` of the internal `execution` module (`runtime.hpp`, `context_access.hpp`).
 - 2026-10-12 — api: Breaking change: Made `Buffer` hold a `Detail::MemoryBlock` and a `ContextHandle`; allocation and the window copies are compiled into the library (`buffer.hpp`, `buffer.cpp`).
 - 2026-10-12 — api: Breaking change: Compiled the members of `Runtime`, `AdvancedControls` and `Interop` that reach the context into the library (`runtime.cpp`, `interop.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — api: Breaking change: Moved the engine modules of `api` to `PRIVATE_DEPENDS` and dropped topology, scheduler and logging; no header of the module includes an internal header (`CMakeLists.txt`).
 - 2026-10-12 — api: Breaking change: Compiled `Recorder::record`, `PlanCache` and `RegionComposer` into the library; no header of the graph folder includes an engine header (`recorder.cpp`, `plan_cache.cpp`).
 - 2026-10-12 — api: Breaking change: Moved the scheduler loop and the chain loop of `StepDriver` into the library, behind `Detail::run_steps` (`step_run.hpp`, `step_run.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — api: Breaking change: Replaced the replay callable of a recorded node with `Detail::NodeDescription`, the regions, the type-erased work and a kind (`node_description.hpp`, `node_emitters.cpp`).
 - 2026-10-12 — api: Breaking change: Added `ContextHandle`, which a recorder, a region and both graph types hold in place of a shared pointer to the engine's context (`context_handle.hpp`).
 - 2026-10-12 — api: Breaking change: Moved three headers that name engine types out of the installed tree into `source/` and removed `usm_scratch.hpp` and `live_fields.hpp` (`boundary_access.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — region: Breaking change: Moved `Liveness`, `LivenessToken`, `LivenessObserver` and `make_liveness` from the memory module to the region module, declared in SushiRuntime (`liveness.hpp`).
 - 2026-10-12 — cmake: Breaking change: Added the `INTERNAL` mark of `sushiruntime_add_module`; the eleven modules that carry it are no longer installed (`SushiRuntimeModule.cmake`, `SushiRuntimeInstall.cmake`).
 - 2026-10-12 — task: Breaking change: Removed the using-declaration that named `TaskMetadata` in `SushiRuntime`; the type is `Internal::Graph::TaskMetadata` only (`task_types.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — machine: Breaking change: Renamed `HardwareFilterConfig` to `DeviceFilter` and moved it out of `topology/hw_discovery.hpp` (`machine/device_filter.hpp`).
 - 2026-10-12 — machine: Breaking change: Moved `PinPolicy`, `WorkerPool`, `DeviceDescription` and `DeviceKind` to the new public module machine, declared in SushiRuntime (`machine/`).
 - 2026-10-12 — device: Breaking change: Moved `DeviceDescriptor` to the device module (`device/device_descriptor.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — log: Breaking change: Moved `LogLevel`, `LogSink` and their four calls to the new public module log (`log/log_level.hpp`, `log/log_sink.hpp`).
 - 2026-10-12 — log: Breaking change: Moved the macro gate and `K_LOG_LEVEL_CEILING` (`logging/log_gate.hpp`).
 - 2026-10-12 — interop: Breaking change: Moved the three functions that take the engine context to the new internal module `memory_exchange`; `interop` keeps the descriptors and is header-only (`memory_exchange.hpp`, `memory_exchange.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — region: Breaking change: Renamed `ResourceRegion` to `BufferRegion` and moved it with `ResourceID` to the new public module region, declared in SushiRuntime (`region/buffer_region.hpp`).
 - 2026-10-12 — report: Breaking change: Moved the run report types to the new public module `report`, declared in `SushiRuntime`; `Internal::Observability` no longer names them (`report/run_report.hpp`, `report/dispatch_width.hpp`).
 - 2026-10-12 — logging: Moved the declaration of `set_log_synchronous` to `log_sink.hpp`, so `<SushiRuntime/api/runtime/logging.hpp>` declares it with the other logging controls (`log_sink.hpp`, `logger.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — api: Added `AdvancedControls::live_allocation_count()`, the number of USM allocations of the runtime not yet released (`advanced_controls.hpp`).
 - 2026-10-12 — api: Added an alignment in bytes as the last argument of `Runtime::buffer` and `Runtime::state`; 0 keeps the device default and a value that is not a power of two stops the process (`runtime.hpp`, `buffer.hpp`).
 - 2026-10-12 — observability: Added the public names `ClockPairing` and `K_WIDTH_UNKNOWN` (`run_report.hpp`, `dispatch_width.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — observability: Added the public names `NodeTiming`, `NodeEventRecord`, `ExecutionLayer` and `WorkerTiming` beside the run report (`run_report.hpp`).
 - 2026-10-12 — observability: Breaking change: Made `NodeTiming::operation` an `OperationID`, which makes the module depend on core (`run_report.hpp`).
 - 2026-10-12 — distributed: Breaking change: Replaced `add_registered_task` with `record_registered_task`, which records through a `Recorder&` and returns the position of the rule (`registered_task.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — distributed: Breaking change: Removed the `RuntimeContext&` forms of `Cluster::attach` and `WorkerAgent`; both take a `Runtime&` (`cluster.hpp`).
 - 2026-10-12 — observability: Breaking change: Removed `remote_nodes_involved` from the distributed figures of a run report (`run_report.hpp`).
 - 2026-10-12 — scheduler: Breaking change: Removed `OffloadCoordinator::statistics` and `OffloadStatistics`; the offload gate counts accepted offers into `ExecutionMetrics::tasks_offloaded` (`offload_gate.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — execution: Breaking change: Removed the coordinator parameter of `TaskGraph`; `ExecutionEngine::prepare` marks a compiled plan for offload and `PlanCache::build` calls it (`task_graph.hpp`, `execution_engine.hpp`).
 - 2026-10-12 — api: Fixed three tests that did not compile: one called the private `Recorder::replay`, two kept an unused context (`test_state_move.cpp`, `test_registration_index.cpp`, `test_node_dispatch_width.cpp`).
 - 2026-10-12 — api: Added `Graph::plan()`, which returns a `PlanView` of the nodes in recording order with their predecessor counts and regions (`plan_view.hpp`, `plan_cache.hpp`, `graph.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-12 — api: Added `compile()` to `Graph` and `DynamicGraph`, which builds the plan when none is current and runs nothing (`step_driver.hpp`).
 - 2026-10-11 — distributed: Breaking change: Made `KernelRegistry::Kernel` and `OffloadPolicy::pick_worker` take `const NodeOptions&`; the public headers include no engine header (`kernel_registry.hpp`, `offload_policy.hpp`).
 - 2026-10-11 — distributed: Breaking change: Made `TaskDispatchMessage` carry its own operation, name and parameters, set `K_PROTOCOL_VERSION` to 3 and added `ErrorCode::ProtocolMismatch` (`wire_messages.hpp`, `wire_frame.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — distributed: Breaking change: Moved `Buffer::distributed()` and `State::distributed()` to `Cluster::share`, which also takes a raw address (`cluster.hpp`, `buffer.hpp`).
 - 2026-10-11 — distributed: Breaking change: Removed `share` from `OffloadCoordinator` (`cluster.hpp`, `buffer.hpp`).
 - 2026-10-11 — api: Breaking change: Removed the offload overloads of `add`, `Recorder::offload` and `offload_rule`; a node names its operation in `NodeOptions`, and the chain layer takes a named node no worker can run (`chain_plan.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Breaking change: Moved the State, Coupled and Dynamic forms of `add` to `add_rule`, `add_coupled` and `add_dynamic` (`builder_surface.hpp`).
 - 2026-10-11 — api: Breaking change: Made `Recorder::coupled_rule` take a `Coupled` (`recorder.hpp`).
 - 2026-10-11 — core: Breaking change: Removed `SushiException` and `SR_THROW_IF`.
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — core: Breaking change: Made `ExecutionEngine::execute`, `RuntimeContext::create`, `Cluster::attach` and the `SharedSecret` factories return Result, and a broken rule stops the process.
 - 2026-10-11 — core: Breaking change: Made `require_matching_version` stop the process on a mismatch (`version.hpp`).
 - 2026-10-11 — core: Breaking change: Made `DeviceQueueSet::wait_all` return Result (`device_queue_set.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — core: Breaking change: Made `poll_events` return its failure (`event_polling.hpp`).
 - 2026-10-11 — api: Made a late count or a late window that does not fit its capacity a fault record the run returns as `InvalidGraph`, with no throw (`device_fault.hpp`, `late_count_resolution.hpp`, `late_window.hpp`).
 - 2026-10-11 — api: Breaking change: Removed `try_run`, `try_run_for`, `try_run_until` and `try_run_async` (`step_driver.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Breaking change: Removed `try_wait` and the throwing forms (`run_handle.hpp`).
 - 2026-10-11 — api: Breaking change: Made `run`, `run_for`, `run_until` and `run_async` return Result (`step_driver.hpp`).
 - 2026-10-11 — api: Breaking change: Made `wait` return Result (`run_handle.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Breaking change: Made `Runtime::create`, `buffer`, `state` and `wait` return Result (`runtime.hpp`).
 - 2026-10-11 — api: Breaking change: Made `read_range`, `write_range` and `Recorder::scratch` return Result (`buffer.hpp`).
 - 2026-10-11 — api: Breaking change: Made the three `Interop` calls return Result (`interop.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Breaking change: Made a refused recording a kept Error that `refusal()` reads and the next run returns (`recorder.hpp`).
 - 2026-10-11 — api: Breaking change: Made `TaskGraph::compile` return Result (`task_graph.hpp`).
 - 2026-10-11 — api: Breaking change: Made 27 broken preconditions stop the process through SR_VERIFY, SR_ASSERT or SR_FATAL instead of throwing (`buffer.hpp`, `late_count.hpp`, `interop.cpp`, `node.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — core: Breaking change: Renamed `Errc` to `ErrorCode` with PascalCase enumerators (`error.hpp`).
 - 2026-10-11 — core: Breaking change: Added `Result<void>` and made a misused Result accessor stop the process (`result.hpp`).
 - 2026-10-11 — api: Wrote out the short parameter and member names `ctx`, `bg` and `fn` across the modules (`recorder.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Wrote out the short parameter and member names `meta`, `q` and `deps` across the modules (`builder_surface.hpp`).
 - 2026-10-11 — api: Wrote out the short parameter and member name `err` across the modules (`error.hpp`).
 - 2026-10-11 — api: Fixed `TaskMetadata` and `NodeOptions` refusing a partial brace initialiser under `-Wmissing-field-initializers` (`task_types.hpp`, `node_options.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Breaking change: Removed `Recorder::emitter` and `add_emitter` and made `Recorder::replay` private; a library records through `extend` and the recorder's verbs (`recorder.hpp`).
 - 2026-10-11 — api: Added `Runtime::wait()`, which waits for every device queue, and `AdvancedControls::queue(device)`, which returns a device's `sycl::queue` (`runtime.hpp`, `advanced_controls.hpp`).
 - 2026-10-11 — api: Added `before_each_step(hook)` to `Graph` and `DynamicGraph`; a graph that has a hook waits for each chained step before the next (`step_driver.hpp`, `before_step_hooks.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Breaking change: Changed every recording member of `Recorder` to return the position of the rule it recorded, the value `rule_registration()` takes (`recorder.hpp`).
 - 2026-10-11 — api: Added `Recorder::task` and `add_task`, which record a body that receives the queue and returns the event that ends its work (`recorder.hpp`, `builder_surface.hpp`, `emit_task.hpp`).
 - 2026-10-11 — api: Breaking change: Renamed `OpID` to `OperationID` and gave `NodeOptions` a name, an operation and parameters, which every verb takes (`operation_id.hpp`, `node_options.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Breaking change: Renamed the umbrella header `SushiRuntime.h` to `sushiruntime.hpp`; a consumer includes `<SushiRuntime/sushiruntime.hpp>`.
 - 2026-10-11 — api: Breaking change: Removed the `I` and `get_` prefixes, renamed `detail` to `Detail` and gave 50 constants the `K_` prefix.
 - 2026-10-11 — api: Breaking change: Made every enumerator PascalCase.
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Breaking change: Made `ExecutionEngine` the interface and `SchedulerExecutionEngine` its implementation.
 - 2026-10-11 — api: Breaking change: Moved the engine and platform namespaces under `SushiRuntime::Internal::` and dissolved `API::`, `Core::` and the `Interop` namespace into `SushiRuntime::`.
 - 2026-10-11 — api: Breaking change: Removed the deprecated members of `Buffer`, `State`, `BuilderSurface`, `Dynamic` and `Runtime`.
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Breaking change: Removed the deprecated members of `AdvancedControls`, `Extent::offset` and `BackingGraph`.
 - 2026-10-11 — api: Breaking change: Removed two `Cluster::attach` overloads.
 - 2026-10-11 — build: Breaking change: Removed the `Core::` aliases of the memory and observability types, the old `LogLevel` spellings, `LogType`, `ACTIVE_LOG_LEVEL` and the 15 forwarding headers of moved include paths.
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — execution: Breaking change: Removed the 31 deprecated forwarders of `RuntimeContext`, four of `TaskGraph` and two of the rebalancer interfaces (`runtime_context.hpp`, `task_graph.hpp`, `rebalancer_interfaces.hpp`).
 - 2026-10-11 — core: Added SR_ASSERT, SR_VERIFY and SR_FATAL, which stop the process through a handler `set_assertion_handler()` replaces (`assert.hpp`, `assert.cpp`, `test_assert.cpp`).
 - 2026-10-11 — docs: Recorded that the WSL `venv/` folder was deleted from the root and that the install path of `sr` under WSL is open (`REMAINING_WORK.md`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Breaking change: Wrote every acronym of a type name in capitals, so `PeerId`, `UsmKind`, `UsmRequest`, `TcpTransport` and `DeviceUuid` became PeerID, USMKind, USMRequest, TCPTransport and DeviceUUID.
 - 2026-10-11 — graph: Stated that a replayed plan reads Shared or Host USM the host wrote between two executions, and pinned it with a test (`compiled_graph.hpp`, `test_replay_host_write.cpp`).
 - 2026-10-11 — examples: Fixed six examples ending in an uncaught exception; each prints the message and returns 1 (`quickstart.cpp`, `vecadd_demo.cpp`, `stencil_demo.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Fixed `DynamicGraph::drop` freeing a region under a pending `run_async` step, and `Graph::set_profiling` recompiling for an unchanged value (`dynamic_graph.hpp`, `graph.hpp`).
 - 2026-10-11 — api: Made `PlanCache::set_profiling` and `is_profiling_requested` protected and removed the profiling parameter of `RegionComposer::commit` (`plan_cache.hpp`, `region_composer.hpp`).
 - 2026-10-11 — distributed: Added `KernelRegistry::seal()` and `is_sealed()`; a worker seals its registry, and `register_kernel()` throws after that and for an empty kernel (`kernel_registry.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — distributed: Changed `Cluster::attach()` to refuse a call during a run and a timeout below `K_MINIMUM_TIMEOUT`; `detach()` during a run stops the master and leaves it installed (`cluster.cpp`).
 - 2026-10-11 — distributed: Changed a detached cluster to report no workers; made the `Impl` of `InProcessTransport` and of `TcpTransport` private (`cluster.cpp`, `in_process_transport.hpp`).
 - 2026-10-11 — api: Fixed a `State` rule reading a dangling pointer after the `State` moved, and a late-bound rule registering a stale read key after an odd step (`state.hpp`, `emit_dynamic.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Renamed `detail::StateView::cur` to `current` with no forwarder and added size and owner fields; removed the `State<T>*` emitter overloads (`handle_access.hpp`, `emit_state.hpp`).
 - 2026-10-11 — api: Changed `Recorder::offload` and `offload_rule` to refuse more than `K_MAX_PARAMS` parameters; fixed `replay()` renaming the previous rule's node (`recorder.hpp`).
 - 2026-10-11 — api: Fixed a missing cross-region edge when a predecessor covered part of a node's interval; `RegionComposer::commit` keeps its regions when a build throws (`boundary_access.hpp`, `region_composer.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Changed the run entries to return `invalid_state` while another run is in flight on the same runtime, and `cancel()` to do nothing on an idle graph (`step_driver.hpp`).
 - 2026-10-11 — api: Fixed a `RunHandle` outliving its graph: the destructor of `Graph` and of `DynamicGraph` ends a pending step; a chained run leaves a State unadvanced when its last step fails (`run_handle.hpp`, `step_driver.hpp`).
 - 2026-10-11 — api: Changed `try_run_until()` to require a nothrow-move-constructible stop test; deprecated `add(OpID, n, std::vector<void*>, ...)` for the Reads and Writes form (`step_driver.hpp`, `builder_surface.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Changed `add(Coupled(...), fn)` to hand each State it reads as `const T*`; a kernel that declared a mutable input pointer no longer compiles (`callable_checks.hpp`).
 - 2026-10-11 — api: Changed `distributed()` to refuse a device-resident `Buffer` or `State`, and an element type that is not trivially copyable (`buffer.hpp`, `state.hpp`).
 - 2026-10-11 — api: Fixed a graph that recorded `sized_from_device` or `based_at_device` reading a freed slot; it refuses with `dangling_resource` (`dynamic.hpp`, `late_count.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — api: Changed a `mutable` per-element or range kernel that captures state to fail a `static_assert`, and an `Extent` whose origin plus size wraps to be refused (`callable_traits.hpp`, `extent.hpp`).
 - 2026-10-11 — execution: Added `IExecutionEngine::run_in_progress()`; an engine compiled against the old interface needs a rebuild (`i_execution_engine.hpp`, `execution_engine.cpp`).
 - 2026-10-11 — graph: Changed the `TaskGraph` add calls to throw `invalid_graph` for a registration index the graph did not issue (`task_graph.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — task: Fixed `SmallEventVector` keeping live events past its count after an assignment or a move, and added `clear()` (`small_event_vector.hpp`).
 - 2026-10-11 — task: Changed `OpID::hash_str` to read bytes as unsigned; the id of a name with a byte above 127 changes (`task_types.hpp`).
 - 2026-10-11 — scheduler: Fixed a run never quiescing when an event's status query throws; removed the `using namespace` of `Core` from `event_polling.hpp`, which leaked into every includer (`event_polling.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — scheduler: Changed `RangeTask` to throw for a range whose start is past its end (`range_task.hpp`).
 - 2026-10-11 — interop: Added `ExternalHandleKind::Unspecified` as the default kind, which `import_device` refuses; the `Interop` constructor became private and its methods nodiscard (`external_memory.hpp`, `interop.hpp`).
 - 2026-10-11 — observability: Removed `noexcept` from `ProfilingLedger::reserve`, which allocates; a moved-from ledger is empty and `read_event_timestamps` leaves its output unchanged on failure (`profiling_ledger.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — memory: Changed `UsmAllocator::release` to log an error and free nothing for an address it has no record of (`usm_allocator.cpp`).
 - 2026-10-11 — memory: Fixed `set_release_observer` returning while an `on_release` call still ran, and a retire rescanning the whole list on every call (`usm_allocator.cpp`, `epoch_reclamation.hpp`).
 - 2026-10-11 — topology: Fixed `pin_current_thread_to_core` shifting by an unchecked core index; it moved out of line and `affinity.hpp` no longer includes `<windows.h>` (`affinity.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — topology: Fixed NUMA resolution asking hwloc for a NUMA ancestor, which hwloc 2 never returns; it reads the nodeset (`numa_lookup.cpp`, `hw_discovery.cpp`).
 - 2026-10-11 — logging: Fixed a log call blocking on the sink after shutdown, and `SR_THROW_IF` naming the logger header as the place of every exception (`logger.cpp`, `logger.hpp`).
 - 2026-10-11 — core: Changed `span` to one class in every language mode; C++20 code converts to and from `std::span`, and an rvalue container binds only as a span of const (`span.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — core: Changed the `Result` accessors to throw `SushiException` on the wrong alternative in place of `std::bad_variant_access` (`result.hpp`).
 - 2026-10-11 — core: Made `sushi_ptr(T*)` explicit and the counter of `RefCounted` private; added comparisons with a raw pointer (`sushi_ptr.hpp`, `ref_counted.hpp`).
 - 2026-10-11 — core: Made the value of `StrongId` private and required a `Delegate` callable to have a noexcept move constructor (`strong_id.hpp`, `delegate.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — build: Changed the library to hidden visibility: a symbol without `SUSHIRUNTIME_API` is no longer exported on Windows or Linux; added `SR_API` and `SR_TYPE_API` (`export.hpp`, `SushiRuntimeLibrary.cmake`).
 - 2026-10-11 — cli: Added `sr test --module`, which runs the tests labelled with one module's name (`cli.py`, `project.py`, `SushiRuntimeTests.cmake`).
 - 2026-10-11 — build: Added a header check per module that compiles every public header first and alone with the declared dependencies only (`SushiRuntimeModule.cmake`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — cli: Added `--jobs` / `-j` to `sr build` (`cli.py`, `project.py`).
 - 2026-10-11 — tools: Added the same-tier and declared-dependency rules to the layering checker, and a test that compares its tables with the CMake tier table (`check_layering.py`, `test_tier_table.py`).
 - 2026-10-11 — task: Moved the promotion of `_op`, `OpID` and `TaskMetadata` into `task/task_types.hpp` and removed `api/vocabulary/op_literal.hpp`, which no release shipped.
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-11 — build: Added `SR_BUILD_EXAMPLES`, off when a parent project adds the tree, and `SR_INSTALL`; a parent no longer gets the runtime's CPack settings (`SushiRuntimeOptions.cmake`).
 - 2026-10-11 — build: Changed the shared library's SOVERSION to major.minor while the major version is 0, so the Linux file is `libsushiruntime.so.0.3` (`SushiRuntimeLibrary.cmake`).
 - 2026-10-11 — build: Moved the install and export rules, the runtime staging, CPack and the version check into one file each (`SushiRuntimeInstall.cmake`, `SushiRuntimeRedistributables.cmake`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — distributed: Added `registrations` to `WorkerStatistics`, the WELCOME frames a worker accepted (`worker_agent.hpp`, `master_link.cpp`).
 - 2026-10-10 — examples: Added an example that shows `RuntimeConfig`, `try_run` with an error branch, `read_range` and `Dynamic` (`operating_path_demo.cpp`).
 - 2026-10-10 — api: Promoted `Graph::OpID` and `Graph::TaskMetadata` into `SushiRuntime::` beside the `_op` literal (`op_literal.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Changed `SushiRuntime.h` to include only `core/version.hpp` and `api/fluent.hpp`; an engine type taken through it now needs its module header.
 - 2026-10-10 — api: Promoted every public name of the fluent API into `SushiRuntime::`, each from its own header, with the `_op` literal (`op_literal.hpp`, `errors.hpp`, `logging.hpp`).
 - 2026-10-10 — memory: Moved `ResourceRegion` and the liveness types to `SushiRuntime::Memory`; the `Core::` spellings forward and are deprecated (`resource_region.hpp`, `resource_liveness.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — observability: Moved `RunReport` and the timing and ledger types to `SushiRuntime::Observability`; the `Core::` spellings forward and are deprecated (`run_report.hpp`).
 - 2026-10-10 — graph: Deprecated `width_last_node`, `last_node_width` and `last_registration_index` of the task graph for the `Node&` an add call returns (`task_graph.hpp`).
 - 2026-10-10 — api: Deprecated `API::BackingGraph` for `Graph::TaskGraph` and removed three unused helpers, `is_graph_emitter_v` among them (`backing_graph.hpp`, `callable_traits.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — distributed: Added one header that includes what a master or a worker program needs, and moved the two example programs to it (`distributed.hpp`).
 - 2026-10-10 — docs: Rewrote the distributed guide for protocol version 2 and replaced the layer's entries in the known issues and the backlog (`DISTRIBUTED_GUIDE.md`, `KNOWN_ISSUES.md`).
 - 2026-10-10 — api: Changed `add()` and `add_untracked()` to take the launch first, as a count, an `Extent` or an `NdRange`; the old argument orders forward and are deprecated (`builder_surface.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Added `Coupled` and `On` to the vocabulary and `extend()` and `name()` to the builder; name_last() forwards to name() and is deprecated (`builder_surface.hpp`).
 - 2026-10-10 — api: Changed an untracked kernel to run on device 0 unless `On(...)` names another; it no longer rotates over devices (`emit_untracked.hpp`, `recorder.hpp`).
 - 2026-10-10 — api: Changed a State or Coupled rule to throw `invalid_graph` at `add()` when the launch reaches past a State it names (`emit_state.hpp`, `emit_launch.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Changed a callable of the wrong signature to fail one `static_assert` that states the expected signature instead of removing the overload (`callable_checks.hpp`).
 - 2026-10-10 — api: Renamed `PlanCache::set_profiling_requested` to `set_profiling` and `profiling_requested` to `is_profiling_requested` (`plan_cache.hpp`).
 - 2026-10-10 — api: Added `NdRange::origin` and renamed `Extent::offset` to `origin`, keeping the old name as a deprecated alias (`nd_range.hpp`, `extent.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Deprecated the raw key accessors of State and Buffer, `no_registration` for `NO_REGISTRATION` and `DynamicGraph::compile_count` for `compose_count` (`state.hpp`).
 - 2026-10-10 — distributed: Fixed the master offering a task to a worker that did not register its kernel (`worker_directory.cpp`).
 - 2026-10-10 — distributed: Changed the wire protocol to version 2: a 12-byte frame with magic and version, 16 message types and a 1 MiB payload bound; a version 1 peer is refused (`wire_frame.hpp`, `wire_messages.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — distributed: Added a mutual HMAC-SHA256 handshake over a shared secret; an empty secret is refused on a transport other machines reach (`handshake.hpp`, `shared_secret.hpp`, `cluster.cpp`).
 - 2026-10-10 — distributed: Changed `Cluster::attach` to take `ClusterOptions`, bind 127.0.0.1 by default and keep the cluster attached before when the new one does not start (`cluster.hpp`, `tcp_transport.hpp`).
 - 2026-10-10 — distributed: Changed `ITransport` to an event interface with per-peer sends, streams and a loss cause; the old receive callback is gone (`i_transport.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — distributed: Changed buffer transfer to chunks of 256 KiB by default, written in place and fenced by version, so a buffer above the frame bound crosses (`buffer_exchange.hpp`).
 - 2026-10-10 — distributed: Changed the kernel signature to a span of `BufferView` with sizes, and removed the pointer form of `register_kernel` and the `RemoteKernel` alias (`kernel_registry.hpp`).
 - 2026-10-10 — distributed: Added `run_worker`, the worker's flags and exit codes, a stop signal, and reconnection with backoff (`worker_main.hpp`, `worker_agent.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — distributed: Added `ClusterStatistics` with the reap, handshake and transfer counters, `completed_remote` and `peers_closed_malformed` (`cluster_statistics.hpp`).
 - 2026-10-10 — distributed: Added `add_registered_task`, which adds a node whose kernel comes from the registry on either side (`registered_task.hpp`).
 - 2026-10-10 — distributed: Fixed a write to a closed peer ending the process, a stray connection taking a worker slot, and a slow link being read as a dead worker (`socket.hpp`, `peer_connection.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — distributed: Fixed pending nodes being lost at `stop()`, a task reaped at the deadline keeping its inflight count, and a stalled link never being reported lost on Windows (`socket_windows.cpp`).
 - 2026-10-10 — distributed: Changed the demo into a master program and added `distributed_worker`, a worker program of eight lines around `run_worker` (`distributed_demo.cpp`, `distributed_worker.cpp`).
 - 2026-10-10 — api: Added `try_run_for`, `try_run_until`, `try_run_async` and the reuse forms of the timed runs to both graphs; the dynamic graph gains `try_run` (`step_driver.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Changed a throwing host task to report the kernel-failed code and a run during a pending step the invalid-state code; `RunHandle::wait` throws `SushiException` only (`step_driver.hpp`, `run_handle.hpp`).
 - 2026-10-10 — api: Changed the run handle and `run_async()` to nodiscard, and deprecated `set_profiling_requested` and `profiling_requested` for `set_profiling` and `is_profiling_requested`.
 - 2026-10-10 — api: Fixed the run report's offloaded count being cumulative; it counts the dispatches of the reported run (`run_report_builder.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Changed `LateCount` to a class built by `LateCount::fixed`, `from_host` or `from_device`; its fields and default constructor are gone and a bad slot throws at construction (`late_count.hpp`).
 - 2026-10-10 — api: Made the fields of `Dynamic` private and added the members `when`, `sized` and `based_at`; the three forms with the and prefix are deprecated (`dynamic.hpp`).
 - 2026-10-10 — api: Removed the raw-pointer setters `and_sized_from_device` and `and_based_at_device`; pass the buffer to `sized_from_device` or `based_at_device` (`dynamic.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Changed `sized()` after `sized_from_device()` on one window to drop the device slot, so the source set last decides the live size (`dynamic.hpp`).
 - 2026-10-10 — execution: Added `RuntimeContext::offload_sink()` and `ExecutionEngine::offload_sink()`, and declared `cancel()` noexcept (`runtime_context.hpp`, `execution_engine.hpp`).
 - 2026-10-10 — api: Changed `size()` of every graph kind to count rules, and `rule_registration` to take a rule position; `node_count()` and `last_rule()` are new (`builder_surface.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Changed `DynamicGraph::region(key)` so that reading a region no longer marks it for a rebuild; added `Region::clear()` (`dynamic_graph.hpp`, `region.hpp`).
 - 2026-10-10 — api: Changed `name_last` to copy its text and name every node of the last rule; a rename after a build is now seen (`builder_surface.hpp`, `recorder.hpp`).
 - 2026-10-10 — api: Removed the move of `Region`, and defined a moved-from graph of either kind as empty and reusable (`region.hpp`, `graph.hpp`, `dynamic_graph.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Fixed the recorder keeping one liveness observer per handle per node; it keeps one per allocation (`recorder.hpp`).
 - 2026-10-10 — api: Changed `RuntimeConfig` from an alias of the engine's settings to a struct with a `devices` filter, and `Runtime::create` to take it alone (`runtime_config.hpp`, `runtime.hpp`).
 - 2026-10-10 — api: Removed the copy of `Runtime`; it is move-only, and its factories and every query of the advanced view are nodiscard (`runtime.hpp`, `advanced_controls.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Added `AdvancedControls::devices()`, `is_profiling_enabled()`, `is_rebalancer_enabled()` and `Runtime::set_rebalancer_enabled()`; the old names are deprecated (`advanced_controls.hpp`).
 - 2026-10-10 — api: Removed the public constructor of `AdvancedControls`; it comes from `Runtime::advanced()` only (`advanced_controls.hpp`).
 - 2026-10-10 — api: Changed the range calls and `region` of Buffer and State to throw the invalid-access error for a window outside the handle; they clamped before (`buffer.hpp`, `state.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Removed the public constructors of Buffer and State that take a runtime context; use `Runtime::buffer()`, `Runtime::state()` or Interop (`buffer.hpp`, `state.hpp`).
 - 2026-10-10 — api: Added `is_host_accessible()`, a span overload of `write_range` and `State::device_index()`, and deprecated `host_accessible()` and the pointer overload (`buffer.hpp`).
 - 2026-10-10 — api: Fixed an element count whose byte size overflows allocating a small buffer; it throws the allocation error before allocating (`buffer.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — scheduler: Fixed a node whose work threw being reported to the offload coordinator as completed (`task_scheduler.cpp`, `event_polling.hpp`).
 - 2026-10-10 — api: Removed `add_reduce`, `add_segmented_reduce`, `add_prefix_scan` and `add_counting_sort`; they leave for SushiBLAS, built on the recorder (`graph.hpp`).
 - 2026-10-10 — api: Removed the `Sum`, `Minimum` and `Maximum` combiners and the fixed-order plan helpers; they leave for SushiBLAS (`vocabulary/combine.hpp`, `detail/fixed_order_reduce.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Changed `Recorder::resolve` to reject a non-host device slot and an oversized capacity when it records (`graph/recorder.hpp`).
 - 2026-10-10 — scheduler: Fixed a node without a region rotating over devices; it runs on the device given to `Node::place_on`, else on device 0 (`node_placement.hpp`, `task_scheduler.cpp`).
 - 2026-10-10 — graph: Changed every `TaskGraph::add_*` to return the node it added, and the compile errors to `SushiException` with `invalid_graph` (`task_graph.hpp`, `task_graph.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — scheduler: Made `TaskScheduler::num_workers` and `dispatch_loop` private; the rebalancer interfaces gain `completed_task_count` and a two-argument `migrate_tasks` (`rebalancer_interfaces.hpp`).
 - 2026-10-10 — logging: Added `set_log_level`, `set_log_sink` and the SR_LOG_LEVEL variable, and moved the logger's state into the library (`log_level.hpp`, `log_sink.hpp`, `logger.cpp`).
 - 2026-10-10 — logging: Changed the default level to Warn and the default sink to stderr for every level; a runtime no longer prints its device lines unless asked (`logger.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — logging: Changed `SR_THROW_IF` to throw a typed exception with the invalid-state code, and deprecated the log type alias and `ACTIVE_LOG_LEVEL` for `LogLevel` and `K_LOG_LEVEL_CEILING` (`logger.hpp`).
 - 2026-10-10 — topology: Logged the two NUMA fallbacks of a GPU at warning level only on a machine with more than one NUMA node (`numa_mapper.cpp`).
 - 2026-10-10 — api: Split the two graph headers into one header per symbol and built the graph, the region and the dynamic graph on one recorder (`recorder.hpp`, `builder_surface.hpp`, `step_driver.hpp`, `plan_cache.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — api: Moved the reduce, segmented reduce, prefix scan and counting sort bodies onto the public recorder interface; the add members forward to them (`primitives/reduce.hpp`, `primitives/primitive_members.hpp`).
 - 2026-10-10 — distributed: Added the protocol v2 frame and message codec, pinned by golden bytes (`wire_frame.hpp`, `wire_messages.hpp`, `wire_codec.hpp`, `test_wire_format.cpp`).
 - 2026-10-10 — distributed: Added the shared secret and the HMAC-SHA256 challenge-response a master and a worker prove it with (`shared_secret.hpp`, `handshake.hpp`, `hmac_sha256.hpp`, `sha256.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — distributed: Added the endpoint type and one socket seam over POSIX and Winsock with host name resolution and a status for every failure (`endpoint.hpp`, `socket.hpp`, `socket_posix.cpp`, `socket_windows.cpp`).
 - 2026-10-10 — scheduler: Stopped offering nodes of an aborted run to the offload coordinator and reporting skipped nodes as completed; a shutdown stops the coordinator first (`task_scheduler.cpp`, `event_polling.hpp`).
 - 2026-10-10 — core: Added `Errc::invalid_state` and `require_matching_version`, and marked the result type and its accessors nodiscard (`error.hpp`, `version.hpp`, `result.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — topology: Changed the constructors of the topology view, the remapping provider and the matrix distance model to throw `SushiException`, not `std::invalid_argument` (`topology_view.cpp`, `matrix_distance_model.hpp`).
 - 2026-10-10 — interop: Removed the default of `ExternalMemoryDescriptor::kind`; an import refuses another platform's handle kind and a region past its allocation (`interop.cpp`, `external_memory.hpp`).
 - 2026-10-10 — build: Moved the Doxygen and Docker files to a configuration folder and the security policy and code of conduct beside the workflows (`.config/README.md`, `project.py`, `docker.py`, `ci.yml`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — graph: Made `dependency_tracker.hpp`, `work_stealing_deque.hpp` and `bindless_detection.hpp` private to their modules; the umbrella header no longer includes the tracker (`SushiRuntime.h`, `SushiRuntimeTests.cmake`).
 - 2026-10-10 — docs: Moved the notes of each test beside the test, one page per module and one for the allocation program, and pointed each test source at its page (`tests/README.md`, `tests/allocation/README.md`).
 - 2026-10-10 — docs: Described the module layout in the project layout, the architecture map and the pages that named the old folders (`README.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, `REMAINING_WORK.md`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — scheduler: Removed the export macro from `RangeTask`, which is defined whole in its header (`range_task.hpp`).
 - 2026-10-10 — build: Moved every header and source to a folder per module under a tier, compiled with the include roots of its declared dependencies (`cmake/SushiRuntimeTiers.cmake`, `SushiRuntimeModule.cmake`, `modules/CMakeLists.txt`).
 - 2026-10-10 — build: Generated the forwarding headers of 15 moved include paths from one table; nine headers left the core folder for logging, sycl, memory and observability (`SushiRuntimeMovedHeaders.cmake`, `SushiRuntimeLibrary.cmake`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — tests: Moved each module's tests beside it as its own program and kept the tests that cross modules at the root; benchmark sources are named `benchmark_*.cpp` (`SushiRuntimeTests.cmake`, `tests/CMakeLists.txt`).
 - 2026-10-10 — build: Removed `CMakePresets.json` and moved the examples to an applications folder (`applications/examples/CMakeLists.txt`, `README.md`).
 - 2026-10-10 — execution: Deprecated the 31 members of `RuntimeContext` that forward to a part, each naming its replacement, and the context constructor of `TaskGraph` (`runtime_context.hpp`, `task_graph.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — tests: Moved every in-repository caller to the device set, the allocator, the transfer counters and the topology view, and to the task include paths (`test_topology.cpp`, `test_profiling_queue.cpp`, `graph.hpp`).
 - 2026-10-10 — api: Made `distributed()` on buffers and states and the offload figures of the run report unconditional; without a cluster they do nothing (`buffer.hpp`, `state.hpp`, `run_report_builder.hpp`).
 - 2026-10-10 — execution: Removed `RuntimeRole` and the distributed members of `RuntimeContext`; `install_offload` takes shared ownership of the coordinator (`runtime_context.hpp`, `runtime_context.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — distributed: Added `Cluster::attach` and its detach; removed `Runtime::cluster` and the api cluster header, so a cluster is attached from the distributed layer (`distributed/cluster.hpp`, `cluster.cpp`, `runtime.hpp`).
 - 2026-10-10 — execution: Added `RuntimeContext::install_offload` and `offload`; the distributed coordinator implements the seam and the release observer (`runtime_context.hpp`, `distributed_coordinator.hpp`).
 - 2026-10-10 — scheduler: Removed `set_coordinator`, `complete_offloaded_node` and the engine's `scheduler_ref`; the offload seam replaces them in every build (`task_scheduler.hpp`, `event_polling.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — graph: Changed `TaskGraph` to take an offload coordinator; a graph built from a context no longer offloads unless it is given `ctx.offload()` (`task_graph.hpp`, `task_graph.cpp`, `graph.hpp`).
 - 2026-10-10 — task: Gave `Node` one offload state type in every build and removed its handle lists and base copies; the coordinator marks nodes and bumps versions itself (`node.hpp`, `offload_state.hpp`, `distributed_coordinator.cpp`).
 - 2026-10-10 — scheduler: Changed the `TaskScheduler` constructor to take the pool settings, the topology view, the device set and the allocator instead of a `RuntimeContext` (`task_scheduler.hpp`, `scheduler.cpp`, `runtime_settings.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — execution: Removed `RuntimeContext::probe_hardware`; `malloc_shared(bytes, numa_id)` now picks the lowest-indexed device of the node instead of rotating (`runtime_context.hpp`, `runtime_context.cpp`).
 - 2026-10-10 — execution: Rebuilt `RuntimeContext` on the device, memory, observability and topology bricks and added an accessor for each; `UsmAllocationOwner` holds the allocator (`runtime_context.hpp`, `usm_allocation_owner.hpp`).
 - 2026-10-10 — task: Added the offload seam a distributed layer implements: the state a node carries, the sink a scheduler offers and the coordinator (`offload_state.hpp`, `offload_sink.hpp`, `offload_coordinator.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-10 — graph: Moved `CompiledGraph` and the chain plan to the graph folder; the execution spellings stay as aliases (`graph/compiled_graph.hpp`, `graph/chain_plan.hpp`, `compiled_graph.cpp`).
 
 - 2026-10-09 — topology: Added `TopologyView`, the core-to-NUMA map and the NUMA distance a scheduler reads (`topology_view.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-09 — observability: Added `TransferCounters`, the two byte counters of host and device transfers (`transfer_counters.hpp`).
 - 2026-10-09 — memory: Added `UsmAllocator` with one allocation entry point; releasing adopted memory no longer passes it to SYCL's free (`usm_allocator.hpp`, `usm_request.hpp`, `usm_release_observer.hpp`).
 - 2026-10-09 — device: Added `DeviceQueueSet`, the device inventory and queue families of a runtime, with NUMA routing resolved once at construction (`device_queue_set.hpp`, `device_info.hpp`, `queue_flavour.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-09 — api: Moved the interop facade and `HostExport` into the api folder; the old `Interop::HostExport` spelling stays as an alias and interop no longer includes api (`api/interop/interop.hpp`, `api/interop/host_export.hpp`).
 - 2026-10-09 — scheduler: Moved `PinPolicy` and `WorkerPoolInfo` to the scheduler, kept as aliases in the execution namespace, and added the worker pool settings struct (`pin_policy.hpp`, `worker_pool_info.hpp`, `worker_pool_settings.hpp`).
 - 2026-10-09 — task: Moved `Task`, `Node`, the task types and the late bindings to headers of a task folder; the old scheduler and graph paths forward (`task/task.hpp`, `task/node.hpp`, `task/task_types.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-09 — core: Removed two unused includes, of the run report and of the logger; a file that relied on either includes it itself (`error.hpp`, `ref_counted.hpp`).
 - 2026-10-09 — scheduler: Named the failing node and its registration index in the failure log and in the run's error; a non-SushiException, non-SYCL throw now reaches the caller as `std::runtime_error` (`scheduler.cpp`, `node.hpp`).
 - 2026-10-09 — scheduler: Removed `Task::set_name` and the `Task(const char*)` constructor; a task type answers `get_name()` itself (`task.hpp`, `node.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-09 — topology: Changed `HardwareNode::pci_address` to `std::optional` and gave every field a default; a GPU without an address skips the bus lookup and logs one line (`hw_discovery.hpp`, `hw_discovery.cpp`, `numa_mapper.cpp`).
 - 2026-10-09 — tests: Added byte-equality tests for dynamic against static graphs, host tasks among kernels, asynchronous against blocking steps and offset launches (`test_layer_equivalence.cpp`).
 - 2026-10-09 — tests: Gated the cancellation tests on the run's progress, limited device skips to "SYCL reports no device", and set a per-test timeout (`test_cancellation.cpp`, `test_helpers.hpp`, `tests/CMakeLists.txt`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-09 — tests: Added a five-run measurement helper with one parseable line per case and took allocation and polling out of the timed regions (`measurement.hpp`, `test_scheduler_dispatch_perf.cpp`).
 - 2026-10-09 — api: Moved the report out of the result in `unwrap` instead of copying it (`graph.hpp`, `dynamic_graph.hpp`).
 - 2026-10-09 — build: Dropped the missing `memory/usm_allocator.cpp` from the SYCL source list (`src/CMakeLists.txt`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-07 — execution: Added `RuntimeContext::aligned_malloc_shared_on` and `aligned_malloc_device_on`, the aligned siblings of the host entry point (`runtime_context.hpp`, `runtime_context.cpp`, `test_topology.cpp`).
 - 2026-10-07 — docs: Took the publish list's summary from the README, passed secrets to the called CI and pinned `docs bundle` with tests (`docs/publish.toml`, `release.yml`, `cli/tests/test_cli.py`).
 - 2026-10-07 — ci: Added the release job that builds the documentation bundle after CI and attaches it to the tag's release (`.github/workflows/release.yml`, `ci.yml`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-07 — docs: Added the frequently asked questions page (`docs/guides/FAQ.md`).
 - 2026-10-07 — cli: Added `sr docs bundle` and made `docs` a command group registered from SushiCore (`cli/sushiruntime/cli.py`, `register_docs_commands`).
 - 2026-10-07 — docs: Added the publish list and turned on Doxygen's XML output for the documentation bundle (`docs/publish.toml`, `Doxyfile`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-07 — graph: Added `add_emitter`, a recording form that hands the caller the backing graph, to Graph and Region (`graph.hpp`, `region.hpp`, `test_region_emitter.cpp`).
 - 2026-10-07 — docs: Moved the Doxygen main page into the manual and the generated site into the build tree (`docs/reference/API_MAINPAGE.md`, `Doxyfile`, `services/project.py`, `ci.yml`).
 - 2026-10-07 — licence: Named Mustafa Garip and Sushi Systems as the copyright holders in the licence and notice files (`LICENSE`, `NOTICE.md`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-06 — licence: Restored the three-section license box and named both holders in the copyright line of every source file (`tools/licensing/write_license_block.py`, `tools/documentation/check_source_comments.py`).
 - 2026-10-05 — execution: Added `RuntimeContext::live_usm_count`, the number of USM allocations recorded and not yet freed (`runtime_context.hpp`, `runtime_context.cpp`, `test_topology.cpp`).
 - 2026-10-05 — docs: Moved design reasoning out of source comments into folder READMEs and gave every source file its file block (`include/SushiRuntime/`, `src/`, `tests/`, `examples/`, `cli/`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-05 — docs: Moved the manual into the documentation tree, merged the two changelogs, added the root README and the required documents, and copied the checkers (`README.md`, `docs/`, `tools/`).
 - 2026-10-05 — cli: Renamed `sr doxygen` to `sr docs`, keeping the old word as a hidden alias until 2027-03-25 (`cli/sushiruntime/cli.py`, `cli/sushiruntime/aliases.py`).
 - 2026-10-05 — cli: Renamed `sr docker` to `sr container`, keeping the old word as a hidden alias until 2027-03-25 (`cli/sushiruntime/cli.py`, `cli/sushiruntime/aliases.py`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-05 — cli: Made `sr package --prefix` refuse a protected or foreign non-empty directory without the new `--force` (`services/packaging.py`, `services/stage_tree.py`).
 - 2026-10-05 — cli: Took the project root from `sushi-module.toml`, so a directory holding only `CMakeLists.txt` is no longer a checkout (`cli/sushiruntime/config.py`).
 - 2026-10-05 — cli: Made `sr run --distributed` reject a role other than master or worker with exit code 2 (`cli/sushiruntime/cli.py`, `DistributedRole`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-05 — cli: Added `--version`, `--describe` and a `main()` entry point (`cli/sushiruntime/cli.py`).
 - 2026-10-05 — cli: Took `sr config` from sushicore (`cli/sushiruntime/cli.py`, `services/diag.py`).
 - 2026-10-05 — cli: Named `sr setup --toolchain` in every missing-toolchain message (`services/install_hint.py`, `services/project.py`, `services/select.py`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-05 — docs: Corrected the `hub install-cli`, `--no-cuda` and Windows ASan flag descriptions (`docs/guides/CLI_GUIDE.md`, `README.md`).
 - 2026-10-05 — licence: Changed the licence from Apache-2.0 WITH LLVM-exception to PolyForm Noncommercial 1.0.0 and removed `docs/LICENSE` (`LICENSE`, `COMMERCIAL.md`, `NOTICE.md`, source headers).
 - 2026-10-04 — cli: Named sr setup --toolchain as the way to install a missing toolchain (`cli/sushiruntime/services/select.py`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-04 — cli: Added setup, doctor, link and unlink from sushicore and stopped reading a repo-local dependencies folder (`cli/sushiruntime/cli.py`, `cli/sushiruntime/config.py`).
 - 2026-09-22 — cli: Described this module in its own `sushi-module.toml` (`sushi-module.toml`).
 - 2026-09-22 — cli: Took `sushicore` from PyPI instead of a sibling checkout (`cli/pyproject.toml`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-22 — cli: Drew `sr --help` as sushicore's grouped help page, with examples on every command (`cli/sushiruntime/cli.py`, `console.py`).
 - 2026-09-22 — cli: Took the theme's style names for the CLI's colours in place of raw Rich colour names (`services/select.py`, `services/project.py`).
 - 2026-09-22 — cli: Raised the `sushicore` lower bound to 0.4.0 (`cli/pyproject.toml`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-21 — graph: Fixed the late-bound `add_reduce` overload's and `add_prefix_scan`'s zero-capacity emits reporting `WIDTH_UNKNOWN` (`graph.hpp`).
 - 2026-09-21 — scheduler: Fixed the scheduler path snapshotting dispatch widths with profiling off (`scheduler.cpp`).
 - 2026-09-21 — graph: Documented `width_last_node`'s single-threaded-compilation precondition (`task_graph.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-20 — graph: Added `API::Graph::rule_registration`, which returns the registration index a recorded rule took, the identity `RunReport::node_events` numbers by (`api/graph/graph.hpp`, `graph/task_graph.hpp`).
 - 2026-09-20 — execution: Submitted the chain layer's unprofiled nodes through `ext::oneapi::experimental::submit`, which keeps no per-node event (`ChainRun::submit_node_discarding`, `src/execution/chain_run.cpp`).
 - 2026-09-20 — tests: Fixed the prefix scan chain test folding its digest over the whole capacity, so the stale tail held it constant (`tests/functional/integration/test_device_sized_primitives.cpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-19 — execution: Added the in-order chain that runs a chainable plan from the calling thread, with `RuntimeSettings::force_scheduler` and `RunReport::layer` (`execution/chain_plan.cpp`, `execution/chain_run.cpp`, `graph.hpp`).
 - 2026-09-19 — scheduler: Kept a worker holding in-flight events on yield instead of the 100 us sleep (`TaskScheduler::worker_loop`, `src/scheduler/scheduler.cpp`).
 - 2026-09-19 — graph: Changed the scan, counting sort, late-bound reductions and `sized_from_device` tasks to size themselves on the device, so their plans take the chain (`graph.hpp`, `chain_plan.cpp`, `device_fault.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-19 — tests: Restated the steady-state allocation tests' rule as a bare-SYCL baseline comparison, not an absolute per-tick count (`tests/functional/integration/test_steady_state_allocation.cpp`).
 - 2026-09-19 — scheduler: Removed the per-node dependency allocation in `TaskScheduler::execute_task` by iterating `SmallEventVector` inline (`scheduler/scheduler.cpp`, `graph/node.hpp`).
 - 2026-09-17 — memory: Changed `Memory::UsmRegistry::record` and `RuntimeContext::adopt_usm` to take the allocation's length beside its device index (`memory/usm_registry.hpp`, `execution/runtime_context.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-17 — memory: Added `UsmRegistry::containing_allocation` and `RuntimeContext::containing_usm_base`, which resolve an interior pointer to the allocation holding it (`memory/usm_registry.hpp`, `runtime_context.cpp`).
 - 2026-09-17 — graph: Added `add_prefix_scan` and `add_counting_sort` to `API::Region` (`api/graph/region.hpp`).
 - 2026-09-17 — graph: Added `DynamicGraph::set_profiling_requested`, stamped into its plan and mirrored by a `node_index` renumbered densely by region key then add() order at every recompose (`api/graph/dynamic_graph.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-17 — graph: Changed `Graph::add_counting_sort` to run only the digits its live key range needs, skipping the rest (`graph.hpp`, `api/detail/fixed_order_scan.hpp`).
 - 2026-09-17 — graph: Fixed `Graph::add` rejecting an interior pointer into a `Residency::Host` slot, and named the fault when a late-bound slot does not resolve (`api/graph/graph.hpp`).
 - 2026-09-17 — graph: Fixed `add_counting_sort` passing `sized_from_device` an interior pointer into its radix plan, which threw on a CUDA device (`api/graph/graph.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-16 — graph: Added `Graph::add_counting_sort`, a stable late-bound radix argsort writing indices, exclusive offsets and the total (`graph.hpp`).
 - 2026-09-16 — graph: Added `API::LateCount` and late-bound overloads of `add_reduce` and `add_segmented_reduce`, planned from a capacity and resolved per run (`graph.hpp`, `api/detail/fixed_order_scan.hpp`).
 - 2026-09-16 — graph: Added `Graph::add_prefix_scan`, a late-bound exclusive uint32 scan over `add_reduce`'s tile tree (`graph.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-16 — core: Added per-dispatch node event records with a run clock pairing, and derived `NodeTiming` from them (`core/profiling_ledger.hpp`, `event_polling.hpp`, `execution_engine.cpp`).
 - 2026-09-16 — graph: Added `Graph::set_profiling_requested`, which routes a graph's device nodes to the profiling queue and gates its timing per graph instead of runtime-wide (`graph.hpp`, `scheduler.cpp`).
 - 2026-09-15 — core: Added `Core::NodeEventRecord`, `Core::ClockPairing` and `RunReport::node_events`/`clock` for per-dispatch node timing (`core/run_report.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-15 — graph: Added a registration index on every node, shared by the tile levels of one `add_reduce`, and `TaskGraph::reserve_registration()` (`graph/node.hpp`, `graph/task_graph.hpp`).
 - 2026-09-15 — execution: Added a lazily built profiling queue per device on the plain queue's context (`RuntimeContext::profiling_queue`, `runtime_context.cpp`).
 
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 ## v0.3.0 — 2026-09-15
 
 - 2026-09-15 — cmake: Added the `sushiruntime_gpu_offload` interface target and its `SushiRuntime::gpu_offload` alias, publishing `-fsycl-targets` and backend options to consumers outside the runtime's tree (`cmake/gpu/GpuBackend.cmake`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-14 — graph: Made `Graph::add` reject a late-bound device counter that is not host USM, throwing `Errc::invalid_access` for Shared and Device counters that worked before (`buffer.hpp`, `dynamic.hpp`, `runtime_context.cpp`).
 - 2026-09-14 — interop: Added `API::Interop` for host memory export and device memory import (`interop/`, `Runtime::interop()`).
 - 2026-09-14 — memory: Added `Memory::Allocation`, `IAllocationOwner` and `UsmAllocationOwner` (`memory/allocation.hpp`, `memory/usm_allocation_owner.hpp`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-14 — api: Made `Buffer<T>` own its memory through a `Memory::Allocation` (`api/data/buffer.hpp`).
 - 2026-09-14 — cmake: Added a per-vendor GPU toolkit locator layer that `DetectGpu` and `Cuda` request vendors through (`cmake/gpu/locate/CudaToolkit.cmake`, `IntelToolkit.cmake`, `RocmToolkit.cmake`).
 - 2026-09-14 — cmake: Changed the Windows CUDA locator to fall back to the machine registry when the shell's `CUDA_PATH` predates the install (`cmake/gpu/locate/CudaToolkit.cmake`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-09-14 — memory: Added `Residency::Host` over pinned host USM and `RuntimeContext::malloc_host_on` (`buffer.hpp`, `dynamic.hpp`, `runtime_context.cpp`).
 - 2026-09-14 — cli: Fixed the TSan message of `sr build` to match the Windows exclusion in `cmake/Sanitizers.cmake` instead of naming icx-cl as the untested case (`cli/sushiruntime/services/project.py`, `docs/architecture/ARCHITECTURE.md`).
 - 2026-09-07 — docs: Renamed the hub's command from `ss` to `hub` in the manual (`docs/`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-08-30 — graph: Added `API::DynamicGraph::find_region(key)`, a const lookup returning the live region or `nullptr` without marking it for rebuild (`api/graph/dynamic_graph.hpp`).
 - 2026-08-25 — cli: Renamed the shared CLI layer's import from sushicli to sushicore across every import site (`cli/config.toml`, `cli/sushiruntime/config.py`, `cli/sushiruntime/console.py`, `cli/sushiruntime/services/diag.py`).
 - 2026-08-18 — memory: Removed the pooled USM allocation path with `BitmaskMemoryPool`, `ThreadLocalMagazine` and `USMAllocator` (`include/SushiRuntime/memory/`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-08-18 — memory: Removed `IAllocatorStrategy`, `create_allocator` and `RuntimeContext::get_allocator()` with the pool (`execution/runtime_context.hpp`).
 - 2026-08-18 — memory: Moved USM pointer ownership out of `RuntimeContext` into `Memory::UsmRegistry` and made `free_usm` resolve and forget in one locked step (`memory/usm_registry.hpp`, `Unit_UsmRegistry`).
 - 2026-08-18 — cli: Moved package verification into `sr test --suite package`, removed `sr package --no-verify` and changed its default prefix to `build/dist` (`tests/package/`).
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-08-18 — cmake: Included every CMake module by absolute path and prefixed `ProjectOptions.cmake` and `Vcpkg.cmake`, whose names collided with SushiEngine's (`cmake/`, `docs/CONTRIBUTING.md`).
 - 2026-08-18 — cmake: Fixed the determinism target needing CMake 3.30 by detecting the frontend at configure time where `$<CXX_COMPILER_FRONTEND_VARIANT:...>` is missing (`cmake/Determinism.cmake`).
