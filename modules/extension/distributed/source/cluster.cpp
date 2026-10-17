@@ -36,11 +36,12 @@
 #include <string>
 #include <utility>
 
+#include <SushiLog/text/text_format.hpp>
+
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/core/text_format.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -99,7 +100,7 @@ namespace SushiRuntime
                                        std::chrono::milliseconds value)
             {
                 if (value < K_MINIMUM_TIMEOUT)
-                    return refusal(format_text(
+                    return refusal(SushiLog::format_text(
                         "{}: {} is {} ms; the smallest value allowed is {} ms.", call, option,
                         value.count(), K_MINIMUM_TIMEOUT.count()));
                 return {};
@@ -127,7 +128,7 @@ namespace SushiRuntime
                         "SharedSecret::from_file(), or bind the master to a loopback address.");
                 if (options.chunk_bytes < K_MINIMUM_CHUNK_BYTES ||
                     options.chunk_bytes > K_MAXIMUM_CHUNK_BYTES)
-                    return refusal(format_text(
+                    return refusal(SushiLog::format_text(
                         "Cluster::attach: ClusterOptions::chunk_bytes is {}; it must be "
                         "between {} and {}.",
                         options.chunk_bytes, K_MINIMUM_CHUNK_BYTES, K_MAXIMUM_CHUNK_BYTES));

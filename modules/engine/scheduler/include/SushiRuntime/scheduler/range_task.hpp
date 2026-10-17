@@ -34,10 +34,11 @@
 #include <optional>
 #include <utility>
 #include <sycl/sycl.hpp>
+#include <SushiLog/text/text_format.hpp>
+
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/core/text_format.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/task.hpp>
 
@@ -89,7 +90,7 @@ namespace SushiRuntime
                     : start_(start), end_(end), kernel_func_(std::move(func)), name_(name)
                 {
                     SR_VERIFY(start <= end,
-                              ::SushiRuntime::format_text(
+                              ::SushiLog::format_text(
                                   "RangeTask '{}' was given the reversed range [{}, {}).", name,
                                   start, end)
                                   .c_str());

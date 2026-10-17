@@ -29,8 +29,9 @@
 
 #include <utility>
 
+#include <SushiLog/text/text_format.hpp>
+
 #include <SushiRuntime/core/assert.hpp>
-#include <SushiRuntime/core/text_format.hpp>
 #include <SushiRuntime/log/logger.hpp>
 
 namespace SushiRuntime
@@ -40,14 +41,14 @@ namespace SushiRuntime
         void KernelRegistry::register_kernel(OperationID id, Kernel kernel)
         {
             SR_VERIFY(static_cast<bool>(kernel),
-                      format_text("KernelRegistry::register_kernel: the kernel of "
-                                        "operation {} is empty; pass a callable.",
-                                        id.value)
+                      SushiLog::format_text("KernelRegistry::register_kernel: the kernel of "
+                                            "operation {} is empty; pass a callable.",
+                                            id.value)
                           .c_str());
 
             // Relaxed: the thread start that follows seal() publishes the flag with the map.
             SR_VERIFY(!sealed_.load(std::memory_order_relaxed),
-                      format_text(
+                      SushiLog::format_text(
                           "KernelRegistry::register_kernel: the registry is sealed, so operation "
                           "{} is not registered; register every kernel before the worker starts.",
                           id.value)
