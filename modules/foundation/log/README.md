@@ -71,5 +71,5 @@ runtime record's line reads
 ## Tests
 
 `tests/foundation/log/` builds `sr_log_tests`; its `README.md` describes it.
-`tests/surface/api/runtime/test_logging.cpp` checks the level and the sink around
+`tests/surface/api/runtime/test_runtime.cpp` checks the level and the sink around
 `Runtime::create()`.

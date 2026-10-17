@@ -35,7 +35,9 @@
 #include <SushiLog/log/log_calls.hpp>
 #include <SushiLog/log/log_level.hpp>
 #include <SushiLog/log/log_record.hpp>
+#include <SushiLog/log/log_sink.hpp>
 
+#include <SushiRuntime/log/sushiruntime_log_project.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
 using namespace SushiRuntime;

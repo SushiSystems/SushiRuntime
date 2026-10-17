@@ -39,7 +39,6 @@
 #include <SushiRuntime/api/launch/nd_range.hpp>
 #include <SushiRuntime/api/runtime/advanced_controls.hpp>
 #include <SushiRuntime/api/runtime/errors.hpp>
-#include <SushiRuntime/api/runtime/logging.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/api/runtime/runtime_config.hpp>
 #include <SushiRuntime/api/vocabulary/captures.hpp>

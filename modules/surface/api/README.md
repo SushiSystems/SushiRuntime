@@ -113,10 +113,10 @@ holds a `using` declaration or an alias for another namespace. A program that in
 `SushiRuntime/sushiruntime.hpp` writes `SushiRuntime::Runtime`, `SushiRuntime::Buffer<T>`,
 `SushiRuntime::Reads` and `SushiRuntime::RunReport`.
 
-Two headers under `api/` declare nothing and include what a run returns and what a program sets:
-`runtime/errors.hpp` includes `core/error.hpp` and `core/result.hpp`, for `Error`, `ErrorCode` and
-`Result`; `runtime/logging.hpp` includes SushiLog's log controls and
-`K_SUSHIRUNTIME_LOG_PROJECT`.
+`runtime/errors.hpp` declares nothing and includes what a run returns: `core/error.hpp` and
+`core/result.hpp`, for `Error`, `ErrorCode` and `Result`. The surface carries no logging header. A
+program that sets a level or a sink includes SushiLog's own headers, and
+`log/sushiruntime_log_project.hpp` of the `log` module for `K_SUSHIRUNTIME_LOG_PROJECT`.
 
 `OperationID` is declared in `SushiRuntime` and the `_op` literal in `SushiRuntime::Literals`, an
 inline namespace, by `core/operation_id.hpp` of the core module. `RunReport` is declared by

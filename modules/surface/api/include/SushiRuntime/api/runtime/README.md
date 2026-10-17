@@ -172,16 +172,3 @@ module for that, which reads the handle and nothing else.
 errors.hpp declares nothing. It includes `core/error.hpp` and `core/result.hpp`, which declare
 `Error`, `ErrorCode` and `Result` in `SushiRuntime`, so a program that handles a failed
 `create()` or `run()` includes one header of `api/` for them.
-
-## logging.hpp
-
-### The logging names
-
-logging.hpp declares nothing. It includes SushiLog's log controls and
-`log/sushiruntime_log_project.hpp`, which declares `K_SUSHIRUNTIME_LOG_PROJECT`. The logger is
-SushiLog, the one logger of the process, so a program calls it by its own names: it sets the
-runtime's level with `SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info)`
-and the level of one module with a category of that project, the module being its folder. The
-`SR_LOG_*` macros stay in `log/logger.hpp`, which the surface does not include. A consumer's test
-calls `SushiLog::set_log_synchronous(true)` before it installs a sink, so each record has reached
-the sink when the call that logged it returns.
