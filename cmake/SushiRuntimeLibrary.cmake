@@ -7,9 +7,10 @@
 # Composes the module object libraries into the one shared library.
 # cmake/SushiRuntimeInstall.cmake installs and exports it.
 
-# Declares the shared library `sushiruntime` (alias SushiRuntime::SushiRuntime) from the
-# object libraries the modules recorded, and `sushiruntime_internal_headers`, which adds
-# the include roots of the INTERNAL modules for the programs of this tree that test them.
+# Declares the shared library `sushiruntime` from the object libraries the modules recorded;
+# `sushiruntime_umbrella` (alias SushiRuntime::SushiRuntime), which links every public
+# module target; and `sushiruntime_internal_headers`, which adds the include roots of the
+# INTERNAL modules for the programs of this tree that test them.
 function(sushiruntime_compose_library)
     # Before 1.0 a minor release may break the ABI, so the minor number is part of the name
     # a program is linked against.
@@ -20,30 +21,30 @@ function(sushiruntime_compose_library)
     endif()
 
     add_library(sushiruntime SHARED)
-    # One spelling for an in-tree consumer (add_subdirectory) and an installed one
-    # (find_package).
-    add_library(SushiRuntime::SushiRuntime ALIAS sushiruntime)
 
     get_property(object_targets GLOBAL PROPERTY SUSHIRUNTIME_MODULE_OBJECT_TARGETS)
-    get_property(public_roots   GLOBAL PROPERTY SUSHIRUNTIME_PUBLIC_INCLUDE_ROOTS)
     get_property(internal_roots GLOBAL PROPERTY SUSHIRUNTIME_INTERNAL_INCLUDE_ROOTS)
     get_property(externals      GLOBAL PROPERTY SUSHIRUNTIME_MODULE_EXTERNAL_LIBRARIES)
     foreach(objects IN LISTS object_targets)
         target_sources(sushiruntime PRIVATE "$<TARGET_OBJECTS:${objects}>")
     endforeach()
-    # A consumer of the build tree sees the roots an installed one does, and no other.
-    foreach(include_root IN LISTS public_roots)
-        target_include_directories(sushiruntime PUBLIC "$<BUILD_INTERFACE:${include_root}>")
-    endforeach()
-    target_include_directories(sushiruntime PUBLIC
-        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
+    # The library carries no include root: each public module target carries its own, so
+    # a consumer sees the headers of the modules it links and no other. The library's own
+    # sources are compiled by the module object libraries, with their declared roots.
+    # One spelling for an in-tree consumer (add_subdirectory) and an installed one
+    # (find_package).
+    get_property(module_targets GLOBAL PROPERTY SUSHIRUNTIME_EXPORTED_MODULE_TARGETS)
+    add_library(sushiruntime_umbrella INTERFACE)
+    add_library(SushiRuntime::SushiRuntime ALIAS sushiruntime_umbrella)
+    target_link_libraries(sushiruntime_umbrella INTERFACE ${module_targets} sushiruntime)
+    set_target_properties(sushiruntime_umbrella PROPERTIES EXPORT_NAME SushiRuntime)
 
     # Neither exported nor installed: cmake/SushiRuntimeTests.cmake links it to a test.
     add_library(sushiruntime_internal_headers INTERFACE)
     foreach(include_root IN LISTS internal_roots)
         target_include_directories(sushiruntime_internal_headers INTERFACE "${include_root}")
     endforeach()
-    target_link_libraries(sushiruntime_internal_headers INTERFACE sushiruntime)
+    target_link_libraries(sushiruntime_internal_headers INTERFACE sushiruntime_umbrella)
 
     sushiruntime_apply_build_policy(sushiruntime)
 
@@ -82,7 +83,7 @@ function(sushiruntime_compose_library)
         CXX_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON
         OUTPUT_NAME "sushiruntime"
-        # install(EXPORT ... NAMESPACE SushiRuntime::) would otherwise produce
-        # SushiRuntime::sushiruntime, a different spelling from the in-tree alias.
-        EXPORT_NAME SushiRuntime)
+        # The umbrella is SushiRuntime::SushiRuntime; the library itself is named after
+        # what it is.
+        EXPORT_NAME shared_library)
 endfunction()

@@ -92,6 +92,41 @@ function(sushiruntime_add_header_check)
     add_sycl_to_target(TARGET ${check} SOURCES ${units})
 endfunction()
 
+# sushiruntime_add_exported_module(NAME <module> INCLUDE_ROOT <dir> [DEPENDS <module>...]
+#                                  [PUBLIC_EXTERNAL <target>...] [HAS_SOURCES <file>...]
+#                                  [SYCL <bool>])
+#
+# Declares `sushiruntime_public_<module>`, exported and aliased as SushiRuntime::<module>, so
+# a consumer links only the public modules it uses. It carries the module's include root and
+# links the targets of its DEPENDS and its PUBLIC_EXTERNAL libraries. A module with sources
+# links the shared library, where its symbols are; a header-only one links the
+# floating-point contract its headers are instantiated under, and the SYCL target when its
+# headers include SYCL. cmake/SushiRuntimeInstall.cmake exports the targets this records.
+function(sushiruntime_add_exported_module)
+    cmake_parse_arguments(ARG "" "NAME;INCLUDE_ROOT;SYCL"
+        "DEPENDS;PUBLIC_EXTERNAL;HAS_SOURCES" ${ARGN})
+    set(target "sushiruntime_public_${ARG_NAME}")
+    add_library(${target} INTERFACE)
+    add_library(SushiRuntime::${ARG_NAME} ALIAS ${target})
+    set_target_properties(${target} PROPERTIES EXPORT_NAME ${ARG_NAME})
+    target_include_directories(${target} INTERFACE
+        "$<BUILD_INTERFACE:${ARG_INCLUDE_ROOT}>"
+        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
+    foreach(dependency IN LISTS ARG_DEPENDS)
+        target_link_libraries(${target} INTERFACE "sushiruntime_public_${dependency}")
+    endforeach()
+    target_link_libraries(${target} INTERFACE ${ARG_PUBLIC_EXTERNAL})
+    if(ARG_HAS_SOURCES)
+        target_link_libraries(${target} INTERFACE sushiruntime)
+    else()
+        target_link_libraries(${target} INTERFACE sushiruntime_deterministic_fp)
+        if(ARG_SYCL)
+            target_link_libraries(${target} INTERFACE IntelSYCL::SYCL_CXX)
+        endif()
+    endif()
+    set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_EXPORTED_MODULE_TARGETS ${target})
+endfunction()
+
 # sushiruntime_add_module(
 #     NAME <module> TIER <tier>
 #     [INTERNAL] [HEADER_ONLY] [SYCL]
@@ -185,6 +220,9 @@ function(sushiruntime_add_module)
         set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_INTERNAL_INCLUDE_ROOTS "${include_root}")
     else()
         set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_PUBLIC_INCLUDE_ROOTS "${include_root}")
+        sushiruntime_add_exported_module(
+            NAME ${ARG_NAME} INCLUDE_ROOT "${include_root}" DEPENDS ${ARG_DEPENDS}
+            PUBLIC_EXTERNAL ${ARG_PUBLIC_EXTERNAL} HAS_SOURCES ${sources} SYCL ${ARG_SYCL})
     endif()
 
     if(sources)

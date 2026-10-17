@@ -47,7 +47,7 @@ endif()
 function(sushiruntime_add_example name)
     add_executable(${name} ${ARGN})
     sushiruntime_apply_build_policy(${name})
-    target_link_libraries(${name} PRIVATE sushiruntime)
+    target_link_libraries(${name} PRIVATE SushiRuntime::SushiRuntime)
     set_target_properties(${name} PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON)
