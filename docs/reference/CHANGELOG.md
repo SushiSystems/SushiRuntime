@@ -1,8 +1,8 @@
 # Changelog
 
-- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 ## Unreleased
 
+- 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-17 — cmake: Fixed the ThreadSanitizer build aborting a test that runs a kernel; under Clang TSan instruments the host pass only, since the device TSan cannot reserve its shadow memory (`Sanitizers.cmake`).
 - 2026-10-17 — deps: Moved SushiLog to v0.2.2, whose targets set CXX_STANDARD instead of reading compiler features, so the Windows CI configures again (`sushistack.deps.toml`).
 - 2026-10-17 — core: Breaking change: Removed format_text and core/text_format.hpp; include SushiLog/text/text_format.hpp and call SushiLog::format_text (`text_format.hpp`).
