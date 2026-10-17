@@ -1,5 +1,5 @@
 name: Set up sr
-description: Installs Python, the sr CLI from cli/ and, on Linux, ccache.
+description: Installs Python, the sr CLI from cli/, the pinned Sushi libraries and, on Linux, ccache.
 runs:
   using: composite
   steps:
@@ -9,6 +9,27 @@ runs:
     - name: python -m pip install -e ./cli
       shell: bash
       run: python -m pip install -e ./cli
+    # The Linux jobs run no `sr setup`, so the Sushi libraries cli/sushistack.deps.toml pins are
+    # cloned here, beside the checkout, where sushicore looks for a sibling. A clone off the
+    # pinned commit fails the step.
+    - name: Clone the pinned Sushi libraries beside the checkout
+      shell: bash
+      run: |
+        python - <<'EOF'
+        import pathlib, subprocess, tomllib
+        root = pathlib.Path.cwd()
+        pins = tomllib.loads((root / "cli/sushistack.deps.toml").read_text()).get("sushi", {})
+        for name, pin in pins.items():
+            target = root.parent / name
+            if not target.is_dir():
+                subprocess.run(["git", "clone", "--depth", "1", "--branch", pin["version"],
+                                f"https://github.com/sushisystems/{name}.git", str(target)],
+                               check=True)
+            head = subprocess.run(["git", "-C", str(target), "rev-parse", "HEAD"], check=True,
+                                  capture_output=True, text=True).stdout.strip()
+            if head != pin["commit"]:
+                raise SystemExit(f"{name} is at {head}; cli/sushistack.deps.toml pins {pin['commit']}")
+        EOF
     - name: sudo apt-get install -y ccache
       if: runner.os == 'Linux'
       shell: bash
