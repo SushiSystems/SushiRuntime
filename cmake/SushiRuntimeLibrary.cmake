@@ -21,6 +21,8 @@ function(sushiruntime_compose_library)
     endif()
 
     add_library(sushiruntime SHARED)
+    # The name the export gives it, so a consumer names the file the same way in-tree.
+    add_library(SushiRuntime::shared_library ALIAS sushiruntime)
 
     get_property(object_targets GLOBAL PROPERTY SUSHIRUNTIME_MODULE_OBJECT_TARGETS)
     get_property(internal_roots GLOBAL PROPERTY SUSHIRUNTIME_INTERNAL_INCLUDE_ROOTS)
