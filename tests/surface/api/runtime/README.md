@@ -24,48 +24,6 @@ single throw and left the pool dead for good.
 The command-group function of the first graph throws, so `run()` must return the error to the
 caller and not hang.
 
-## test_logging.cpp
-
-The file includes `api/runtime/logging.hpp` and no other header of the library.
-
-### `TheControlsAreCallableFromTheSurfaceHeader`
-
-Two `static_assert` lines state that the header brings SushiLog's `set_log_synchronous(bool)` and
-`set_log_sink(LogSink)`. The test calls `set_log_synchronous`, `set_log_sink`,
-`set_log_level` and `log_level` and puts back what it changed. It logs nothing: the header has no
-call that writes a record, and `tests/foundation/log/test_logger.cpp` covers what
-synchronous delivery does.
-
-The file covers what a program sees of the logger when it creates a `Runtime`. It is here and not
-in the `log` module because the lines it looks for are logged by `device` and `topology` while
-`Runtime::create()` runs.
-
-### `Medium_LoggingDefaults`
-
-The fixture puts the logger in synchronous mode with the default sink, and afterwards restores the
-default sink and the level the process had. Synchronous mode also waits for records that earlier
-tests of the program queued, so none of them lands inside a capture.
-
-### `capture_streams_around_create`
-
-The helper creates and destroys a default `Runtime` between GoogleTest's `CaptureStdout` and
-`CaptureStderr`, which redirect the two file descriptors. The streams are captured this way and not
-through a sink because the claim is about what reaches the terminal, including anything written
-past the logger.
-
-### `CreateIsSilentAtTheDefaultLevel`
-
-At `Warn` both streams are empty. The test sets `Warn` itself, since `SR_LOG_LEVEL` in the
-environment of the test run would otherwise decide the level. Every start-up line of a healthy
-machine is `Info`; a machine on which start-up warns fails this test, and the captured text is in
-the failure message.
-
-### `DeviceLineArrivesThroughTheSinkAtInfo`
-
-At `Info` with a sink installed, the sink receives the `Device: ...` line of
-`device_queue_set.cpp` at level `Info`, and both streams stay empty because the sink replaced the
-default.
-
 ## test_runtime.cpp
 
 The file covers `Runtime::create()`, `RuntimeConfig` and the `AdvancedControls` view. Four
@@ -139,6 +97,38 @@ bookkeeping of the runtime. It runs those destructors when the test joins it. Re
 after the join without a fault is the assertion: under AddressSanitizer it is a use-after-free
 check, and without AddressSanitizer the defect still crashes often enough to fail the test. The
 `SUCCEED()` after the join records that the test got there on purpose.
+
+### What a default Runtime logs
+
+The last tests of the file cover what a program sees of the logger when it creates a `Runtime`.
+They are here and not in the `log` module because the lines they look for are logged by
+`device` and `topology` while `Runtime::create()` runs.
+
+### `Medium_LoggingDefaults`
+
+The fixture puts the logger in synchronous mode with the default sink, and afterwards restores the
+default sink and the level the process had. Synchronous mode also waits for records that earlier
+tests of the program queued, so none of them lands inside a capture.
+
+### `capture_streams_around_create`
+
+The helper creates and destroys a default `Runtime` between GoogleTest's `CaptureStdout` and
+`CaptureStderr`, which redirect the two file descriptors. The streams are captured this way and not
+through a sink because the claim is about what reaches the terminal, including anything written
+past the logger.
+
+### `CreateIsSilentAtTheDefaultLevel`
+
+At `Warn` both streams are empty. The test sets `Warn` itself, since `SR_LOG_LEVEL` in the
+environment of the test run would otherwise decide the level. Every start-up line of a healthy
+machine is `Info`; a machine on which start-up warns fails this test, and the captured text is in
+the failure message.
+
+### `DeviceLineArrivesThroughTheSinkAtInfo`
+
+At `Info` with a sink installed, the sink receives the `Device: ...` line of
+`device_queue_set.cpp` at level `Info`, and both streams stay empty because the sink replaced the
+default.
 
 ## test_runtime_config.cpp
 

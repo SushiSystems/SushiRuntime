@@ -24,7 +24,6 @@ sushiruntime_add_module(
         core
         report
         region
-        log
         machine
         interop
         context
