@@ -21,7 +21,7 @@
 
 /**
  * @file text_format.hpp
- * @brief Defines sr_format, which fills the {} of a message with its arguments.
+ * @brief Defines format_text, which fills the {} of a message with its arguments.
  * @author Mustafa Garip
  * @see modules/foundation/core/README.md
  */
@@ -36,58 +36,52 @@
 namespace SushiRuntime
 {
     /**
-     * @brief Holds the formatter of the messages the runtime builds.
+     * @brief Returns @p format with each doubled brace written once.
      */
-    namespace Detail
+    inline std::string format_text(std::string_view format)
     {
-        /**
-         * @brief Returns @p format with each doubled brace written once.
-         */
-        inline std::string sr_format(std::string_view format)
+        std::string out;
+        out.reserve(format.size());
+        for (std::size_t i = 0; i < format.size(); ++i)
         {
-            std::string out;
-            out.reserve(format.size());
-            for (std::size_t i = 0; i < format.size(); ++i)
-            {
-                const char c = format[i];
-                const bool doubled = (c == '{' || c == '}') && i + 1 < format.size() &&
-                                     format[i + 1] == c;
-                if (doubled)
-                    ++i;
-                out += c;
-            }
-            return out;
+            const char c = format[i];
+            const bool doubled = (c == '{' || c == '}') && i + 1 < format.size() &&
+                                 format[i + 1] == c;
+            if (doubled)
+                ++i;
+            out += c;
         }
+        return out;
+    }
 
-        /**
-         * @brief Returns @p format with each {} replaced by the next argument, in order.
-         * @tparam T A type an output stream can write.
-         */
-        template <typename T, typename... Args>
-        std::string sr_format(std::string_view format, const T& value, const Args&... args)
+    /**
+     * @brief Returns @p format with each {} replaced by the next argument, in order.
+     * @tparam T A type an output stream can write.
+     */
+    template <typename T, typename... Args>
+    std::string format_text(std::string_view format, const T& value, const Args&... args)
+    {
+        std::string out;
+        for (std::size_t i = 0; i < format.size(); ++i)
         {
-            std::string out;
-            for (std::size_t i = 0; i < format.size(); ++i)
+            const char c = format[i];
+            const bool has_next = i + 1 < format.size();
+            if ((c == '{' || c == '}') && has_next && format[i + 1] == c)
             {
-                const char c = format[i];
-                const bool has_next = i + 1 < format.size();
-                if ((c == '{' || c == '}') && has_next && format[i + 1] == c)
-                {
-                    out += c;
-                    ++i;
-                    continue;
-                }
-                if (c == '{' && has_next && format[i + 1] == '}')
-                {
-                    std::ostringstream os;
-                    os << value;
-                    out += os.str();
-                    out += sr_format(format.substr(i + 2), args...);
-                    return out;
-                }
                 out += c;
+                ++i;
+                continue;
             }
-            return out;
+            if (c == '{' && has_next && format[i + 1] == '}')
+            {
+                std::ostringstream os;
+                os << value;
+                out += os.str();
+                out += format_text(format.substr(i + 2), args...);
+                return out;
+            }
+            out += c;
         }
-    } // namespace Detail
+        return out;
+    }
 } // namespace SushiRuntime

@@ -71,7 +71,7 @@ namespace SushiRuntime
             /** @brief Names @p node for an error message: its label and registration index. */
             std::string describe_node(const Node& node)
             {
-                return Detail::sr_format("node '{}' (registration index {})",
+                return format_text("node '{}' (registration index {})",
                                                node.name(), node.registration_index);
             }
         } // namespace
@@ -151,7 +151,7 @@ namespace SushiRuntime
                 // Indices are issued densely from zero, so the counter is the count issued.
                 const std::uint32_t issued = registration_counter_.load(std::memory_order_relaxed);
                 SR_VERIFY(*registration < issued,
-                          Detail::sr_format(
+                          format_text(
                               "TaskGraph::{}(): registration index {} was not issued by this "
                               "graph, which has issued {} so far. Pass an index "
                               "reserve_registration() returned on this graph, or none to draw a "
@@ -522,7 +522,7 @@ namespace SushiRuntime
             {
                 // all_nodes is not empty here, and with no root every node waits on another.
                 const Node& waiting = *graph.all_nodes.front();
-                const std::string message = Detail::sr_format(
+                const std::string message = format_text(
                     "TaskGraph::compile(): none of the {} nodes is a root, so no node can start; "
                     "{} waits on {} unfinished dependencies. Remove the dependency cycle.",
                     graph.all_nodes.size(), describe_node(waiting),
@@ -578,7 +578,7 @@ namespace SushiRuntime
                     const auto undrained = std::find_if(
                         graph.all_nodes.begin(), graph.all_nodes.end(),
                         [&](const sushi_ptr<Node>& n) { return shadow_indeg[n.get()] > 0; });
-                    const std::string message = Detail::sr_format(
+                    const std::string message = format_text(
                         "TaskGraph::compile(): {} of {} nodes sit in or behind a dependency cycle "
                         "and would never run, for example {}. Remove the cycle.",
                         graph.all_nodes.size() - drained, graph.all_nodes.size(),

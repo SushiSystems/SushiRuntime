@@ -21,7 +21,7 @@
 
 /**
  * @file test_text_format.cpp
- * @brief Tests sr_format: placeholders, doubled braces and a count that does not match.
+ * @brief Tests format_text: placeholders, doubled braces and a count that does not match.
  * @see tests/foundation/core/README.md
  * @author Mustafa Garip
  */
@@ -35,19 +35,19 @@ using namespace SushiRuntime;
 /** @brief Tests that each {} takes the next argument through operator<<, in order. */
 TEST(Small_TextFormat, EachPlaceholderTakesTheNextArgument)
 {
-    EXPECT_EQ(Detail::sr_format("{} of {} at {}", 3, "seven", 0.5), "3 of seven at 0.5");
+    EXPECT_EQ(format_text("{} of {} at {}", 3, "seven", 0.5), "3 of seven at 0.5");
 }
 
 /** @brief Tests that doubled braces are written once, with and without arguments. */
 TEST(Small_TextFormat, DoubledBracesAreLiteral)
 {
-    EXPECT_EQ(Detail::sr_format("{{}} and }}"), "{} and }");
-    EXPECT_EQ(Detail::sr_format("{{{}}}", 4), "{4}");
+    EXPECT_EQ(format_text("{{}} and }}"), "{} and }");
+    EXPECT_EQ(format_text("{{{}}}", 4), "{4}");
 }
 
 /** @brief Tests that extra arguments and extra placeholders are left as they are. */
 TEST(Small_TextFormat, AMismatchedCountIsIgnored)
 {
-    EXPECT_EQ(Detail::sr_format("one {}", 1, 2), "one 1");
-    EXPECT_EQ(Detail::sr_format("{} and {}", 1), "1 and {}");
+    EXPECT_EQ(format_text("one {}", 1, 2), "one 1");
+    EXPECT_EQ(format_text("{} and {}", 1), "1 and {}");
 }
