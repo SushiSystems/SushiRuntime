@@ -1,1 +1,1 @@
-- 2026-10-17 — tests: Skipped the diffusion backend test under ThreadSanitizer, whose device sanitizer aborts the kernel, and kept TSan on the device pass, since icpx then left the host pass uninstrumented (`test_diffusion_backend.cpp`).
+- 2026-10-17 — cmake: Fixed the ThreadSanitizer build aborting every test that runs a kernel; the SYCL device pass is built without TSan, since the device sanitizer cannot reserve its shadow memory (`Sanitizers.cmake`).
