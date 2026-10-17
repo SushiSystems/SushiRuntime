@@ -24,7 +24,7 @@ The fourteen public headers under `include/SushiRuntime/core/`:
 | `span.hpp` | `span`, a non-owning view of contiguous elements, with conversions to and from `std::span` from C++20 |
 | `strong_id.hpp` | `StrongID`, an integer identifier that is distinct per tag, with a `std::hash` specialisation |
 | `sushi_ptr.hpp` | `sushi_ptr` and `make_sushi`, the intrusive smart pointer and its factory, with a `std::hash` specialisation |
-| `text_format.hpp` | `Detail::sr_format`, which replaces each `{}` of a message with the next argument |
+| `text_format.hpp` | `format_text`, which replaces each `{}` of a message with the next argument |
 | `version.hpp` | The version macros, `Version`, `runtime_version()`, `runtime_version_string()`, `version_matches()` and `require_matching_version()` |
 
 The sections below record why the code is the way it is. Each one is named after a header and the
@@ -229,7 +229,7 @@ constructor sets the value to zero. It has `==`, `!=` and `<`, and its `std::has
 
 ## text_format.hpp
 
-`Detail::sr_format` replaces each `{}` of a message with the next argument, written through
+`format_text` replaces each `{}` of a message with the next argument, written through
 `operator<<`, and writes `{{` and `}}` as single braces. It takes no format specification; a call
 site that needs a width or hex formats the value first. Extra arguments and extra placeholders are
 ignored. The graph, the scheduler and the distributed layer build their error messages with it.

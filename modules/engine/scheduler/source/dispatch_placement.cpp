@@ -93,7 +93,7 @@ namespace SushiRuntime
             if (placement >= device_count)
                 return make_error(Error{
                     ErrorCode::InvalidGraph,
-                    Detail::sr_format(
+                    format_text(
                         "it is placed on device {}, but the runtime holds {} device(s); "
                         "pass place_on() an index below {}.",
                         placement, device_count, device_count)});

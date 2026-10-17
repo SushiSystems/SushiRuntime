@@ -89,7 +89,7 @@ namespace SushiRuntime
                     : start_(start), end_(end), kernel_func_(std::move(func)), name_(name)
                 {
                     SR_VERIFY(start <= end,
-                              ::SushiRuntime::Detail::sr_format(
+                              ::SushiRuntime::format_text(
                                   "RangeTask '{}' was given the reversed range [{}, {}).", name,
                                   start, end)
                                   .c_str());

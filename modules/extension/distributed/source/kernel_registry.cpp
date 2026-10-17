@@ -40,14 +40,14 @@ namespace SushiRuntime
         void KernelRegistry::register_kernel(OperationID id, Kernel kernel)
         {
             SR_VERIFY(static_cast<bool>(kernel),
-                      Detail::sr_format("KernelRegistry::register_kernel: the kernel of "
+                      format_text("KernelRegistry::register_kernel: the kernel of "
                                         "operation {} is empty; pass a callable.",
                                         id.value)
                           .c_str());
 
             // Relaxed: the thread start that follows seal() publishes the flag with the map.
             SR_VERIFY(!sealed_.load(std::memory_order_relaxed),
-                      Detail::sr_format(
+                      format_text(
                           "KernelRegistry::register_kernel: the registry is sealed, so operation "
                           "{} is not registered; register every kernel before the worker starts.",
                           id.value)

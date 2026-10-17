@@ -38,17 +38,17 @@ namespace SushiRuntime
         std::string describe_task(const Task& task)
         {
             if (!task.is_graph_node())
-                return Detail::sr_format("task '{}'", task.name());
+                return format_text("task '{}'", task.name());
 
             const auto& node = static_cast<const SushiRuntime::Internal::Graph::Node&>(task);
-            return Detail::sr_format("node '{}' (registration index {})",
+            return format_text("node '{}' (registration index {})",
                                            node.name(), node.registration_index);
         }
 
         Error name_failure(const Task& task, const Error& cause)
         {
             return Error{cause.code,
-                         Detail::sr_format("{} failed: {}", describe_task(task), cause.message)};
+                         format_text("{} failed: {}", describe_task(task), cause.message)};
         }
 
     } // namespace Internal::Scheduler
