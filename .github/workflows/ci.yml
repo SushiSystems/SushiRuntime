@@ -240,6 +240,23 @@ jobs:
           path: .ccache
           key: ccache-linux-sushiblas-${{ hashFiles('sushiruntime/**/CMakeLists.txt', 'sushiruntime/cmake/**', 'sushiblas/**/CMakeLists.txt', 'sushiblas/cmake/**') }}-${{ github.sha }}
           restore-keys: ccache-linux-sushiblas-${{ hashFiles('sushiruntime/**/CMakeLists.txt', 'sushiruntime/cmake/**', 'sushiblas/**/CMakeLists.txt', 'sushiblas/cmake/**') }}-
+      # sushiruntime/ and sushiblas/ sit side by side, so a clone at the top is the sibling
+      # sushilog/ sushicore looks for. The tag comes from the runtime's pin.
+      - name: Clone the Sushi libraries the runtime pins
+        working-directory: sushiruntime
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pathlib, subprocess, tomllib
+          root = pathlib.Path.cwd()
+          pins = tomllib.loads((root / "cli/sushistack.deps.toml").read_text()).get("sushi", {})
+          for name, pin in pins.items():
+              target = root.parent / name
+              if not target.is_dir():
+                  subprocess.run(["git", "clone", "--depth", "1", "--branch", pin["version"],
+                                  f"https://github.com/sushisystems/{name}.git", str(target)],
+                                 check=True)
+          PY
       - name: sb build
         working-directory: sushiblas
         shell: bash
