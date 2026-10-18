@@ -1,10 +1,9 @@
 # SushiRuntime manual
 
-What SushiRuntime is, its requirements and its build line are in the root
-[`README.md`](../README.md). This page lists every live document under `docs/`.
+What SushiRuntime is and its build line are in the root [`README.md`](../README.md). This page lists every live document under `docs/`.
 
 The public interface is not stable below 1.0.0: pin an exact tag and reach the library through
-one adapter module of your own, as [the stability section](../README.md#stability) says.
+one adapter module of your own, as [the integration guide](guides/INTEGRATION.md#version-compatibility) says.
 
 ## Getting started
 

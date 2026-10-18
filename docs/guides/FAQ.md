@@ -89,7 +89,7 @@ release. `SushiRuntime::version_matches()` checks the second at start-up.
 
 The package uses `SameMinorVersion` compatibility: a request for one minor version rejects the
 next. Pin the exact tag you build against and reach the library through one adapter module of
-your own; the root [README](../../README.md#stability) states the rule. `tests/package/` in the
+your own; [the integration guide](INTEGRATION.md#version-compatibility) states the rule. `tests/package/` in the
 repository is a working consumer. [The integration guide](INTEGRATION.md) covers the build
 split, the flags you inherit and the troubleshooting cases.
 

@@ -98,9 +98,15 @@ not. The installed package and the build tree export the same targets.
 ### Version compatibility
 
 The package file declares `SameMinorVersion` compatibility: `find_package(SushiRuntime 0.4)`
-accepts 0.4.x and rejects 0.5.0. A MINOR release may break the interface while the version is
-below 1.0.0, so pin the exact tag you build against, such as `v0.4.0`. The root
-[README](../../README.md#stability) states the rule.
+accepts 0.4.x and rejects 0.5.0. SushiRuntime is below 1.0.0, and its public interface is not
+stable:
+
+- A MINOR release (0.4, 0.5) may change or remove any public name, signature, header path or
+  binary layout. A PATCH release does not.
+- Pin an exact tag, such as `v0.4.0`. Do not follow a branch.
+- Reach SushiRuntime through one adapter of your own, as
+  [section 6](#6-write-one-adapter) shows. When a release breaks the interface, that module is the
+  only place you edit.
 
 ## 4. What you inherit and what you supply
 

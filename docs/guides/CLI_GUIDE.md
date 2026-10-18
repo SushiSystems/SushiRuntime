@@ -6,6 +6,35 @@ configuration files. Every build and test in this repository goes through it.
 
 For a first build, read [the introduction](../getting_started/INTRODUCTION.md).
 
+## Requirements
+
+- A SYCL 2020 compiler. `sr toolchain` or `-DSR_SYCL_TOOLCHAIN` selects one of three:
+  - `intel-llvm`: `clang++ -fsycl` from the intel/llvm nightly bundle. The default, and what the
+    container image builds with.
+  - `adaptivecpp`: AdaptiveCpp (`acpp`).
+  - `oneapi`: Intel oneAPI DPC++ (`icpx` on Linux, `icx-cl` on Windows).
+- CMake 3.20 or newer.
+- hwloc.
+- GoogleTest, for the tests.
+- A C++17 standard library.
+
+`sr setup` installs the libraries and the SYCL toolchain that `cli/sushistack.deps.toml`
+declares. [SushiStack](https://sushisystems.io) (the `hub` CLI) does the same for several
+checkouts at once.
+
+On a machine with nothing installed, SushiStack's bootstrap script installs Python, Git and
+`hub`, then runs `hub install`:
+
+```bash
+curl -fsSL https://sushisystems.io/install.sh | bash
+```
+
+```powershell
+irm https://sushisystems.io/install.ps1 | iex
+```
+
+In PowerShell `curl` is an alias for `Invoke-WebRequest`, so use `irm` there.
+
 ## Installing the CLI
 
 The CLI is a Python package in `cli/`. It installs two names for one command: `sr` and
