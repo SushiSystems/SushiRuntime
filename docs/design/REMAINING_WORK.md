@@ -1,6 +1,6 @@
 # Remaining work
 
-Next id: RW-62
+Next id: RW-63
 
 ## Decisions waiting for the owner
 
@@ -252,6 +252,14 @@ The ASan run needs a bundle with compiler-rt or the Linux machine.
 - State: open
 - Done when: every file groups its includes as the contributing guide states, in step with the
   BLAS tree
+
+### RW-62 State and test host-written memory read by a replayed plan
+- State: open
+- Done when: the runtime states that a replayed plan reads memory the host wrote before the
+  replay, and a test holds it
+
+Item R1 of SushiAI's graph capabilities plan, `docs/design/GRAPH_CAPABILITIES.md` in that
+repository; its dropout fill (B1, G1) waits on it.
 
 ## Structural debt
 
