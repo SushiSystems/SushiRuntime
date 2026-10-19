@@ -13,17 +13,17 @@ own.
 ## 1. Build
 
 ```bash
-hub install-cli sushiruntime
-sr setup
-sr toolchain intel-llvm
-sr build
+curl -fsSL https://sushisystems.io/install.sh | bash
+git clone https://github.com/SushiSystems/SushiRuntime.git
+cd SushiRuntime
+hub install-cli sushiruntime      # or, without hub: pipx install ./cli
+sr setup                          # hwloc and a SYCL toolchain
+sr build                          # a release build in build/
 sr test
 ```
 
-`sr setup` installs what `cli/sushistack.deps.toml` declares: hwloc and a SYCL toolchain. `sr build` makes a release build in `build/`, and `sr test` runs the small, medium and large tests.
-[The CLI guide](../guides/CLI_GUIDE.md#requirements) lists the requirements and the script
-that installs everything on an empty machine. [The CLI guide](../guides/CLI_GUIDE.md) lists every
-command.
+The first line installs Python, Git and `hub`, the SushiStack CLI; on Windows run
+`irm https://sushisystems.io/install.ps1 | iex` in PowerShell instead. [The CLI guide](../guides/CLI_GUIDE.md#requirements) lists the requirements and every command.
 
 ## 2. A first program
 

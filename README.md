@@ -29,9 +29,16 @@ Source: `applications/examples/quickstart.cpp`
 
 ## Build
 
+On a machine with nothing installed, the first line installs Python, Git and `hub`, the
+SushiStack CLI; on Windows run `irm https://sushisystems.io/install.ps1 | iex` in PowerShell
+instead.
+
 ```bash
-hub install-cli sushiruntime
-sr setup
+curl -fsSL https://sushisystems.io/install.sh | bash
+git clone https://github.com/SushiSystems/SushiRuntime.git
+cd SushiRuntime
+hub install-cli sushiruntime      # or, without hub: pipx install ./cli
+sr setup                          # hwloc and a SYCL toolchain
 sr build
 sr test
 ```
