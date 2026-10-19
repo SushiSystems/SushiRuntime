@@ -146,3 +146,11 @@ status lines took the four forms.
 $ python tools/check_all.py .
 clean: 11 checkers, tests
 ```
+
+## Found on the way
+
+`dfe87164` (2026-10-17) wrote `docs/reference/CHANGELOG.md` as its own single entry, and
+`cf3670db` did the same after it, so 413 lines were missing at `HEAD`. `check_changelog.py`
+passed, since the one line it read was well formed. With the owner's approval the file was
+restored from `42134c74`, with the two commits' entries and this migration's entry at the top of
+`## Unreleased`, in a commit of its own.
