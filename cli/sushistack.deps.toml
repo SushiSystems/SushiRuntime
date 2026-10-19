@@ -70,4 +70,4 @@ depends_on = ["sushilog"]
 # ../sushilog, or the copy `sr setup` fetches at this tag, and the CLI hands it to CMake.
 [sushi.sushilog]
 version = "v0.2.2"
-commit  = "d97bd28f34914f7f47e1b42db6f28bb34d3411df"
+commit  = "443e799737d7634fb0d9985721816506523211a0"
