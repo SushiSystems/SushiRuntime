@@ -8,3 +8,4 @@ detect_stack_use_after_return # AddressSanitizer run-time option
 enable_language # CMake command
 sr_\w+_benchmarks # test program name sushiruntime_add_module_tests composes from the module name
 cli/config\.local\.toml # the machine's own CLI config, gitignored and written by sr toolchain
+applications/(probes|benchmarks)  # folders the shared probe checker names in tools/README.md; this repository has none

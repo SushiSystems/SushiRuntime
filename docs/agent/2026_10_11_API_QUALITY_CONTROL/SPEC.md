@@ -1,7 +1,6 @@
 # API refinement: specification
 
-**Status:** Research closed on 2026-10-11; no source file changed. `PLAN.md` of this folder holds
-the stages.
+**Status:** Shipped — 2026-10-12. The findings left open are in the backlog.
 
 This continues the quality-control work of this folder. The first pass repaired defects and left
 fourteen reshapes of the public surface open in `docs/design/REMAINING_WORK.md`. This pass breaks

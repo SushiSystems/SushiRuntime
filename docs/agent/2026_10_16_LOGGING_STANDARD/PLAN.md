@@ -1,6 +1,6 @@
 # Logging standard: plan
 
-**Status:** planned on 2026-10-16; in progress, inline.
+**Status:** Shipped — 2026-10-17. The logger moved to SushiLog.
 
 The reference is SushiSkills `skills/logging/SKILL.md` at `d457c23`, not the current logger.
 `tools/logs/check_logging.py` reports, on this tree: 182 calls with no category, 9 modules that

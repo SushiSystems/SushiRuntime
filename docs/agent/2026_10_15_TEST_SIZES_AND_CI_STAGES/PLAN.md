@@ -1,6 +1,6 @@
 # Test sizes and CI stages: plan
 
-**Status:** planned on 2026-10-15, run inline.
+**Status:** Shipped — 2026-10-16. See `REPORT.md`.
 
 The rules are in SushiSkills `ac2242a`: `testing`, section "Sizes, scopes and names";
 `continuous-integration`, sections "Stages" and "Shape"; `repository-layout/TESTS.md`, section

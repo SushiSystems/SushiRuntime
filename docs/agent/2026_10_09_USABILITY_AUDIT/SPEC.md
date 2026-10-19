@@ -1,6 +1,6 @@
 # Phase B: many-module layout
 
-**Status:** Open. Step B0 done; the code steps of part 2 run before any file moves.
+**Status:** Open — the layout steps of part 2, RW-58.
 
 Three designers read the tree at `9956845` and returned the parts below. Nobody built or
 configured anything for them; each part ends with what only a build can confirm. This head
