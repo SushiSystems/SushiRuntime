@@ -15,6 +15,12 @@ derives the order from those declarations and runs what does not conflict in par
 It is an orchestration layer and computes nothing of its own. A reduction, a scan or a sort is
 a node kind that a library above it records through the public `Recorder`.
 
+Above it, the caller that owns a graph records into it: SushiAI's compiled step and SushiEngine's
+frame each own theirs. SushiBLAS is a library of operations and records through the `Recorder` it
+is handed; its `Engine` also keeps a graph of its own for a caller that has none. Where work runs
+across devices and machines, and who decides it, is the design in
+[`LAYERED_EXECUTION.md`](../design/LAYERED_EXECUTION.md).
+
 ## 2. Modules and tiers
 
 The code is in modules under `modules/<tier>/<module>/`. A module includes lower tiers and the

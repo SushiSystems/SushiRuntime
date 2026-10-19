@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-20 — docs: Designed placement classes, scopes, topology and placement rules across devices and machines (`LAYERED_EXECUTION.md`).
 - 2026-10-19 — cmake: Fixed the TSan lane aborting every kernel test; the device opt-out is spelled -Xsycl-target-frontend, since ccache dropped -Xarch_device and its argument (`Sanitizers.cmake`).
 - 2026-10-19 — deps: Pinned SushiLog v0.2.2 at the commit its tag now names, after the SushiLog history was rewritten with the same tree, so the CI clone passes the pin check again (`sushistack.deps.toml`).
 - 2026-10-19 — docs: Moved the backlog and the known issues to the SushiSkills entry format and took the backlog checker with the shared tools (`REMAINING_WORK.md`, `KNOWN_ISSUES.md`, `check_backlog.py`).

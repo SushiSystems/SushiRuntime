@@ -1,6 +1,6 @@
 # Remaining work
 
-Next id: RW-65
+Next id: RW-66
 
 ## Decisions waiting for the owner
 
@@ -110,6 +110,13 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
 `Core::Result<T, E>` stays by decision BB-4.5.
 
 ## Distributed layer
+
+### RW-65 Carry out the runtime's share of layered execution
+- State: open
+- Done when: tasks R1 to R13 of `docs/design/LAYERED_EXECUTION.md` are closed
+- Source: `docs/design/LAYERED_EXECUTION.md`
+
+R9 closes RW-17 and KI-6; R13 closes RW-21 and RW-22. The programme's entry is `sushiai RW-130`.
 
 ### RW-17 Dispatch a worker's kernels through its scheduler
 - State: open
