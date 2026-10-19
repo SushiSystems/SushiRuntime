@@ -78,10 +78,6 @@ TOOLCHAIN_COMPILERS = {
     "oneapi": ("icx", "icpx"),
 }
 
-# Maps a Config field to the SR_* env var that overrides it.
-_ENV_OVERRIDES = PROFILE.env_overrides()
-
-
 @dataclass
 class Config(StackConfig):
     """Resolved, platform-specific tool configuration for the SYCL runtime build.

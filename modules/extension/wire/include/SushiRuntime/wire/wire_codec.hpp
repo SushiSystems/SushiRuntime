@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <string_view>
 #include <vector>
@@ -188,7 +189,7 @@ namespace SushiRuntime::Distributed::Wire
                 std::byte bytes[sizeof(Unsigned)];
                 for (std::size_t index = 0; index < sizeof(Unsigned); ++index)
                     bytes[index] = static_cast<std::byte>((value >> (8 * index)) & 0xFFu);
-                out_.insert(out_.end(), bytes, bytes + sizeof(Unsigned));
+                out_.insert(out_.end(), std::begin(bytes), std::end(bytes));
             }
 
             /// @brief Buffer the fields are appended to.
