@@ -1,6 +1,6 @@
 # Remaining work
 
-Next id: RW-59
+Next id: RW-62
 
 ## Decisions waiting for the owner
 
@@ -237,6 +237,21 @@ The ASan run needs a bundle with compiler-rt or the Linux machine.
 ### RW-45 Bound the dispatch decoder's names by the encoder's limit
 - State: open
 - Done when: the decoder refuses every name the encoder refuses
+
+### RW-59 Offer an operand-address late binding
+- State: open
+- Done when: a compiled plan can take an operand's address at run time, so a consumer feeds a
+  batch without an extra dispatch round
+
+### RW-60 Give consumers a public "run after" edge and wider task overloads
+- State: open
+- Done when: a public "run after" edge exists, `Recorder::task` takes a span of regions and a
+  small-buffer callable, and the guide states what concurrent `Recorder::task` guarantees
+
+### RW-61 Group the includes of every source file
+- State: open
+- Done when: every file groups its includes as the contributing guide states, in step with the
+  BLAS tree
 
 ## Structural debt
 
