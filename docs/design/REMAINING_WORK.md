@@ -1,6 +1,6 @@
 # Remaining work
 
-Next id: RW-63
+Next id: RW-65
 
 ## Decisions waiting for the owner
 
@@ -322,3 +322,16 @@ repository; its dropout fill (B1, G1) waits on it.
 - State: open
 - Done when: `cli/sushiruntime/services/project.py` runs the configure and compile steps with
   the build folder as working directory, so no probe file lands in the root
+
+### RW-63 Run the GPU detection's acceptance on a CUDA machine
+- State: unmeasured
+- Done when: `sr build` reports `SR_GPU_BACKEND_RESOLVED=cuda` and the NVIDIA topology test runs
+  and passes
+
+Item R1 of SushiHub's GPU backend provisioning plan; the locate functions, `DetectGpu.cmake` and
+`--cuda-path` are in the tree.
+
+### RW-64 Take the build environment from sushicore
+- State: open
+- Done when: `cli/sushiruntime/` sets its build environment through `sushicore.build_env`, not a
+  copy of it in `env.py`
