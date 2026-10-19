@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-19 — cmake: Fixed the ThreadSanitizer lane aborting every test that runs a kernel; the device opt-out is spelled -Xsycl-target-frontend, since ccache dropped -Xarch_device and its argument and left the device pass instrumented (`Sanitizers.cmake`).
 - 2026-10-19 — deps: Pinned SushiLog v0.2.2 at the commit its tag now names, after the SushiLog history was rewritten with the same tree, so the CI clone passes the pin check again (`sushistack.deps.toml`).
 - 2026-10-19 — docs: Moved the backlog and the known issues to the SushiSkills entry format and took the backlog checker with the shared tools (`REMAINING_WORK.md`, `KNOWN_ISSUES.md`, `check_backlog.py`).
 - 2026-10-17 — cmake: Fixed the ThreadSanitizer build aborting every test that runs a kernel; the SYCL device pass is built without TSan, since the device sanitizer cannot reserve its shadow memory (`Sanitizers.cmake`).

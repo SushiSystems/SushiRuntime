@@ -23,8 +23,9 @@ add_library(sushiruntime_sanitizers INTERFACE)
 if(NOT (MSVC OR (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")))
     if(CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
         # The SYCL device pass is left uninstrumented: the device ThreadSanitizer of the SYCL
-        # runtime cannot reserve its shadow memory beside the host one and aborts.
-        set(device_off "$<$<COMPILE_LANG_AND_ID:CXX,Clang,IntelLLVM>:SHELL:-Xarch_device -fno-sanitize=thread>")
+        # runtime cannot reserve its shadow memory beside the host one and aborts. The opt-out is
+        # spelled -Xsycl-target-frontend because ccache drops -Xarch_device and its argument.
+        set(device_off "$<$<COMPILE_LANG_AND_ID:CXX,Clang,IntelLLVM>:SHELL:-Xsycl-target-frontend -fno-sanitize=thread>")
         target_compile_options(sushiruntime_sanitizers INTERFACE -fsanitize=thread ${device_off})
         target_link_options(sushiruntime_sanitizers INTERFACE -fsanitize=thread
             "$<$<LINK_LANG_AND_ID:CXX,Clang,IntelLLVM>:SHELL:-Xarch_device -fno-sanitize=thread>")
