@@ -13,7 +13,7 @@ Each repository of the stack holds its own share of this work in a document of t
 | SushiRuntime | This document: placement, topology, rules, the distributed layer's needs |
 | SushiBLAS | `docs/design/LAYERED_EXECUTION.md`: an engine without its own graph, the per-index seam, two general operations, the cluster module |
 | SushiAI | `docs/design/LAYERED_EXECUTION.md`: data-parallel training over five machines; it also holds the programme's backlog entry |
-| SushiEngine | `docs/design/LAYERED_EXECUTION.md`: every kernel through SushiBLAS, placement scopes, physics islands on several machines |
+| SushiEngine | `docs/design/LAYERED_EXECUTION.md`: two lanes behind one contract (SushiRuntime with SushiBLAS, or the engine's own native runtime and BLAS), placement scopes, physics islands on several machines in the runtime lane |
 
 ## 1. Roles
 
