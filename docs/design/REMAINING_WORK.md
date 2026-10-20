@@ -134,6 +134,11 @@ R9 closes RW-17 and KI-6; R13 closes RW-21 and RW-22. The programme's entry is `
 ### RW-20 Remember every nonce of a connection
 - State: open
 - Done when: `MasterLink` checks every `CHALLENGE` on a connection, the sixth `HELLO` included
+- Where: `modules/extension/distributed/source/master_link.cpp`
+
+A worker with a wrong secret is not rejected on its connection after five `HELLO`. The connection
+stays open until the master's handshake timeout. Cause: `MasterLink` remembers four nonces and
+ignores a `CHALLENGE` it cannot check.
 
 ### RW-21 Measure the per-dispatch allocation and the release observer
 - State: unmeasured
@@ -170,6 +175,10 @@ The ASan run needs a bundle with compiler-rt or the Linux machine.
 - State: open
 - Done when: a node whose status query throws releases no successor before the failure is
   recorded, with a test (QC-18)
+- Where: `modules/engine/scheduler/include/SushiRuntime/scheduler/event_polling.hpp`
+
+A successor can run before a failed event is recorded. A successor of a failed node runs once.
+Cause: when an event's status query throws, the node is released before the failure is stored.
 
 ### RW-28 Keep a late `cancel()` from reaching the next run
 - State: open

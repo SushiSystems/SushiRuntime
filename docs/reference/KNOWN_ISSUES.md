@@ -36,14 +36,6 @@ Next id: KI-17
 - Workaround: run the graph once more, or destroy it
 - Fix: RW-30
 
-### KI-5 A successor can run before a failed event is recorded
-- Origin: own
-- Where: `modules/engine/scheduler/include/SushiRuntime/scheduler/event_polling.hpp`
-- Cause: when an event's status query throws, the node is released before the failure is stored
-- Recognise: a successor of a failed node runs once
-- Workaround: none
-- Fix: RW-27
-
 ### KI-6 A distributed worker runs every kernel on its device 0, one at a time
 - Origin: own
 - Where: `modules/extension/distributed/source/worker_agent.cpp`,
@@ -52,14 +44,6 @@ Next id: KI-17
 - Recognise: a worker's other devices stay idle
 - Workaround: run one worker per device
 - Fix: RW-17
-
-### KI-7 A worker with a wrong secret is not rejected on its connection after five `HELLO`
-- Origin: own
-- Where: `modules/extension/distributed/source/master_link.cpp`
-- Cause: `MasterLink` remembers four nonces and ignores a `CHALLENGE` it cannot check
-- Recognise: the connection stays open until the master's handshake timeout
-- Workaround: none; the timeout closes it and the next connection is rejected
-- Fix: RW-20
 
 ### KI-8 `Cluster::detach()` during a run leaves the stopped coordinator installed
 - Origin: own
