@@ -6,7 +6,7 @@ The tests of `Dynamic` and `LateCount`, the late-bound words of `api/vocabulary/
 ## test_dynamic.cpp
 
 The file covers the persistent-graph, late-binding path, work package WP-1 of
-`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN.md`. A graph whose live size or per-step participation
+`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. A graph whose live size or per-step participation
 changes between steps must be compiled exactly once and replayed, never recompiled. Each test
 asserts the numerical result and `Graph::compile_count() == 1`.
 

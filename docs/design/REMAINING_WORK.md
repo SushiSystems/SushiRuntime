@@ -75,13 +75,13 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
 ### RW-11 Build backbone BB-1b, the sync export from SYCL to Vulkan
 - State: open
 - Done when: a SYCL completion can be exported as a Vulkan semaphore
-- Source: `docs/design/ENGINE_BACKBONE_REFACTOR.md` §5
+- Source: `docs/design/ENGINE_BACKBONE_REFACTOR/BB_1_VULKAN_INTEROP.md`
 
 ### RW-12 Re-check backbone BB-5 to BB-8 against the tree
 - State: open
-- Done when: §9 to §12 of the backbone plan and its status line match the code, BB-5d's
+- Done when: the pages BB-5 to BB-8 of the backbone plan and its status line match the code, BB-5d's
   redistributable licence question included
-- Source: `docs/design/ENGINE_BACKBONE_REFACTOR.md`
+- Source: `docs/design/ENGINE_BACKBONE_REFACTOR/README.md`
 
 ### RW-13 Build the multi-colour dispatch node, R9
 - State: open
@@ -92,7 +92,7 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
 - State: open
 - Done when: peer-to-peer domain decomposition and the native CPU path exist, and the other work
   packages are checked against the tree
-- Source: `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN.md` §7
+- Source: `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/README.md`
 
 ## Release
 

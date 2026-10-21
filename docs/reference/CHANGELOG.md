@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-21 — docs: Reshaped the five design documents into the five sections with a phase table, split two into topic folders and moved their evidence to work folders (`docs/design/`, `docs/agent/`).
 - 2026-10-20 — docs: Moved 2 known issues with a scheduled fix and no workaround into the backlog entries that fix them (`KNOWN_ISSUES.md`, `REMAINING_WORK.md`).
 - 2026-10-20 — docs: Designed placement classes, scopes, topology and placement rules across devices and machines (`LAYERED_EXECUTION.md`).
 - 2026-10-19 — cmake: Fixed the TSan lane aborting every kernel test; the device opt-out is spelled -Xsycl-target-frontend, since ccache dropped -Xarch_device and its argument (`Sanitizers.cmake`).

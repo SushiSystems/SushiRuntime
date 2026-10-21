@@ -220,7 +220,7 @@ runtime with `On`.
 ## test_graph.cpp
 
 The file covers the native CPU execution path, work package WP-7 of
-`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN.md`. `add_host()` runs plain C++ on a worker thread
+`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. `add_host()` runs plain C++ on a worker thread
 with no SYCL submission. The task is ordered into the graph by the data it touches and shares one
 completion contract with kernel tasks.
 
@@ -334,7 +334,7 @@ cluster is attached, so nothing can take either node. The run of three steps mus
 for another machine only where one can run it.
 
 The file covers the reusable completion latch, section 5.1 of
-`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN.md`. `execute()` allocates no promise and no future
+`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. `execute()` allocates no promise and no future
 per step. One latch on the engine is reset, armed and waited on each step. These tests pin the
 behaviour the latch must preserve: a long replayed run drives every step and reaches the right
 state, and the same plan re-runs cleanly afterwards, which requires the latch to reset and the
@@ -352,7 +352,7 @@ nothing on the completion path.
 A single kernel cannot dereference USM from two device contexts that are not peers. The scheduler
 detects such a node on its first dispatch and fails the run with a precise error, before the node
 can make an illegal cross-context access. The guard is section 5.4 of
-`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN.md`. Splitting data together with the work across
+`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. Splitting data together with the work across
 devices belongs to work package WP-5 of the same document, and until that is built the guard
 enforces the co-location contract. The check needs at least two device contexts, so the test skips
 on a single-device machine.
@@ -374,7 +374,7 @@ work-item could see a neighbour's partial result, a two-worker run and a sixteen
 disagree in the low bits and nothing would report an error. The compiler can: fast-math licenses reassociation, so the same source may be
 folded in a different order in two builds, and FMA contraction rounds once where the source says
 twice. This suite varies the pool size, which the `worker_count` setting from item BB-2 of
-`docs/design/ENGINE_BACKBONE_REFACTOR.md` makes possible, and it separately asserts the compiler
+`docs/design/ENGINE_BACKBONE_REFACTOR/` makes possible, and it separately asserts the compiler
 contract, which no scheduling discipline can replace.
 
 Every comparison is on the raw bytes. A check with a tolerance would pass on exactly the divergence
@@ -417,7 +417,7 @@ The test asserts the compiler half of the contract where a consumer would feel i
 unit is not part of the library and compiles against the installed-style interface, so a definition
 that arrives in it is evidence that the floating-point contract travels with the target and does not
 stop at the library edge. Restoring `/fp:fast` or `-ffast-math` fails the test at compile time,
-which is the property item BB-3 of `docs/design/ENGINE_BACKBONE_REFACTOR.md` asks the suite to have.
+which is the property item BB-3 of `docs/design/ENGINE_BACKBONE_REFACTOR/` asks the suite to have.
 
 ### `HostArithmeticIsNotReassociated`
 
@@ -473,7 +473,7 @@ cannot force it safely. Reaching it needs a device kernel that dereferences a po
 never allocated, which is an illegal access on a real GPU backend.
 
 The file covers `RunReport` observability, section 5.5 of
-`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN.md`. Profiling is chosen at construction. With
+`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. Profiling is chosen at construction. With
 profiling off, the report carries no profiling breakdown. With profiling on, it carries timing per
 node and per worker. Explicit transfers between host and device are accounted in both cases.
 

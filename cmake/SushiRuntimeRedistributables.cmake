@@ -18,7 +18,7 @@
 # distribution and `sr package` asks for the component; anyone producing an
 # actual redistributable has to name it, and that is where the licensing question
 # belongs. The SYCL toolchain bundle ships no licence or redistribution file, so
-# that question is open — see docs/slop/ENGINE_BACKBONE_REFACTOR.md BB-5d.
+# that question is open — see docs/design/ENGINE_BACKBONE_REFACTOR/BB_5_SHIP_PATH.md.
 
 set(SUSHIRUNTIME_REDIST_COMPONENT "sushiruntime_redist"
     CACHE STRING "Install component carrying third-party runtime libraries")
