@@ -36,7 +36,7 @@ namespace SushiRuntime
     /**
      * @brief Reports what one device can offer a memory pairing.
      *
-     * See docs/design/SYCL_VULKAN_INTEROP.md §3.2 in the SushiEngine repository.
+     * See docs/design/SYCL_VULKAN_INTEROP/README.md §3.2 in the SushiEngine repository.
      */
     struct InteropCapabilities
     {

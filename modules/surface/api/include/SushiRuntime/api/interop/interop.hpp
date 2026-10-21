@@ -47,7 +47,7 @@ namespace SushiRuntime
     /**
      * @brief Wraps SushiRuntime's SYCL/Vulkan interop primitives in Buffer-typed calls.
      *
-     * See docs/design/SYCL_VULKAN_INTEROP.md §3 in the SushiEngine repository.
+     * See docs/design/SYCL_VULKAN_INTEROP/README.md §3 in the SushiEngine repository.
      */
     class Interop
     {

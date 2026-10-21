@@ -272,7 +272,7 @@ Cause: when an event's status query throws, the node is released before the fail
 - Done when: the runtime states that a replayed plan reads memory the host wrote before the
   replay, and a test holds it
 
-Item R1 of SushiAI's graph capabilities plan, `docs/design/GRAPH_CAPABILITIES.md` in that
+Item R1 of SushiAI's graph capabilities plan, `docs/design/GRAPH_CAPABILITIES/README.md` in that
 repository; its dropout fill (B1, G1) waits on it.
 
 ## Structural debt
