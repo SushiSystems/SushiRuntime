@@ -37,7 +37,7 @@ namespace SushiRuntime
     {
         /**
          * @brief Releases an address that an Allocation owned.
-         * @see docs/design/SYCL_VULKAN_INTEROP.md §3.1 in the SushiEngine repository.
+         * @see docs/design/SYCL_VULKAN_INTEROP/README.md §3.1 in the SushiEngine repository.
          */
         class AllocationOwner
         {
@@ -55,7 +55,7 @@ namespace SushiRuntime
         /**
          * @brief Owning handle to an address, its size, and the owner that
          * releases it. Move-only.
-         * @see docs/design/SYCL_VULKAN_INTEROP.md §3.1 in the SushiEngine repository.
+         * @see docs/design/SYCL_VULKAN_INTEROP/README.md §3.1 in the SushiEngine repository.
          */
         class Allocation
         {

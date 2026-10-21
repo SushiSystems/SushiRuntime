@@ -1,7 +1,7 @@
 # BB-1: Vulkan interop, the missing half
 
 BB-1a is the `interop` module, shaped by SushiEngine's
-`docs/design/SYCL_VULKAN_INTEROP.md`, which supersedes this page where the two differ. BB-1b is
+`docs/design/SYCL_VULKAN_INTEROP/README.md`, which supersedes this page where the two differ. BB-1b is
 unbuilt.
 
 **The problem, precisely.** Every GPU result reaches the renderer today through a host round-trip

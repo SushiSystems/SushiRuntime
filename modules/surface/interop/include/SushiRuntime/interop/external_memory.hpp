@@ -48,7 +48,7 @@ namespace SushiRuntime
      *
      * kind defaults to Unspecified, which import_device refuses; the exporter states it.
      * See modules/surface/interop/README.md for who closes handle.
-     * See docs/design/SYCL_VULKAN_INTEROP.md §3.2 in the SushiEngine repository.
+     * See docs/design/SYCL_VULKAN_INTEROP/README.md §3.2 in the SushiEngine repository.
      */
     struct ExternalMemoryDescriptor
     {
