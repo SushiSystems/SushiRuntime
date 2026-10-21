@@ -1,5 +1,8 @@
 # Layered execution
+
 **Status:** Open — designed and ruled on 2026-10-19; nothing built
+
+## Problem
 
 What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs
 without writing it into their code: a placement vocabulary on every node, a description of the
@@ -15,7 +18,43 @@ Each repository of the stack holds its own share of this work in a document of t
 | SushiAI | `docs/design/LAYERED_EXECUTION.md`: data-parallel training over five machines; it also holds the programme's backlog entry |
 | SushiEngine | `docs/design/LAYERED_EXECUTION.md`: two lanes behind one contract (SushiRuntime with SushiBLAS, or the engine's own native runtime and BLAS), placement scopes, physics islands on several machines in the runtime lane |
 
-## 1. Roles
+The runtime today, read from the source on 2026-10-19 and 2026-10-20:
+
+Read from the source on 2026-10-19 and 2026-10-20.
+
+### One machine
+
+A tracked node (`kernel()`, `task()`) runs on the device that owns the buffer of
+its first write region, else of its first read region; a node that names no buffer runs on device
+0 (`modules/engine/task/source/node_placement.cpp`, `placement_of()`; `K_DEFAULT_PLACEMENT = 0`).
+A node whose buffers span two devices is refused with "its buffers span multiple device contexts"
+(`modules/engine/scheduler/source/dispatch_placement.cpp`). Only the untracked verbs take an `On`,
+whose default is `On(DeviceIndex{0})` (`api/graph/recorder.hpp`). `Runtime::buffer<T>(count,
+device = DeviceIndex{0}, residency = Residency::Shared, alignment = 0)` places a buffer
+(`api/runtime/runtime.hpp`). So on one machine the device of a tracked node already follows its
+data, and the device of the data is written at each allocation.
+
+### `NodeOptions`
+
+holds `width`, `name`, `operation` and up to 8 `parameters`
+(`api/graph/node_options.hpp`). It has no placement field. `TaskMetadata` has an internal
+`priority` and a `numa_affinity` that graph placement does not read.
+
+### Several machines
+
+A node leaves the machine when it names an operation an alive worker
+registered and every buffer it touches is shared. `ClusterOptions::policy` takes an
+`OffloadPolicy` whose `pick_worker(const NodeOptions&, span<const WorkerLoad>, est_bytes)` returns
+a worker id or nothing; `WorkerLoad` holds `worker_id`, `alive`, `inflight`, `free_mem` and
+`rtt_micros` (`cluster_load/offload_policy.hpp`). `HELLO` carries a nonce, a build id and a node
+name; `TASK_DISPATCH` carries the task id, the operation, the name, the parameters and the buffer
+handles (`wire/wire_messages.hpp`). The protocol is version 3 (`wire/wire_frame.hpp`). A worker
+runs every kernel on device 0, one at a time (KI-6, `worker_agent.cpp`, `K_DEVICE_INDEX = 0`).
+Nothing in the layer is measured (RW-21, RW-22).
+
+## Decision
+
+### Roles
 
 | Layer | Knows | Decides | Never |
 | --- | --- | --- | --- |
@@ -28,7 +67,9 @@ The runtime is an orchestration layer and computes nothing of its own
 ([the architecture, section 1](../architecture/ARCHITECTURE.md)). That stays true: everything
 below is placement and transport.
 
-## 2. The owner's rulings
+### The owner's rulings
+
+Made on 2026-10-19.
 
 Made on 2026-10-19.
 
@@ -45,37 +86,16 @@ Made on 2026-10-19.
 | 9 | Local devices | Rules choose among the devices of one machine as well, from the first phase |
 | 10 | Order | This document's work comes first; SushiBLAS follows, then SushiAI. SushiEngine moves in parallel |
 
-## 3. What exists
+### Out of scope
 
-Read from the source on 2026-10-19 and 2026-10-20.
+- Moving data between two devices or two machines on the caller's behalf. A copy is a node the
+  caller records.
+- A rule file format. Each application reads its own.
+- Encryption of frames after the handshake (RW-18). Rules change nothing in the trust model.
 
-**One machine.** A tracked node (`kernel()`, `task()`) runs on the device that owns the buffer of
-its first write region, else of its first read region; a node that names no buffer runs on device
-0 (`modules/engine/task/source/node_placement.cpp`, `placement_of()`; `K_DEFAULT_PLACEMENT = 0`).
-A node whose buffers span two devices is refused with "its buffers span multiple device contexts"
-(`modules/engine/scheduler/source/dispatch_placement.cpp`). Only the untracked verbs take an `On`,
-whose default is `On(DeviceIndex{0})` (`api/graph/recorder.hpp`). `Runtime::buffer<T>(count,
-device = DeviceIndex{0}, residency = Residency::Shared, alignment = 0)` places a buffer
-(`api/runtime/runtime.hpp`). So on one machine the device of a tracked node already follows its
-data, and the device of the data is written at each allocation.
+## Design
 
-**`NodeOptions`** holds `width`, `name`, `operation` and up to 8 `parameters`
-(`api/graph/node_options.hpp`). It has no placement field. `TaskMetadata` has an internal
-`priority` and a `numa_affinity` that graph placement does not read.
-
-**Several machines.** A node leaves the machine when it names an operation an alive worker
-registered and every buffer it touches is shared. `ClusterOptions::policy` takes an
-`OffloadPolicy` whose `pick_worker(const NodeOptions&, span<const WorkerLoad>, est_bytes)` returns
-a worker id or nothing; `WorkerLoad` holds `worker_id`, `alive`, `inflight`, `free_mem` and
-`rtt_micros` (`cluster_load/offload_policy.hpp`). `HELLO` carries a nonce, a build id and a node
-name; `TASK_DISPATCH` carries the task id, the operation, the name, the parameters and the buffer
-handles (`wire/wire_messages.hpp`). The protocol is version 3 (`wire/wire_frame.hpp`). A worker
-runs every kernel on device 0, one at a time (KI-6, `worker_agent.cpp`, `K_DEVICE_INDEX = 0`).
-Nothing in the layer is measured (RW-21, RW-22).
-
-## 4. The design
-
-### 4.1 Placement class and key
+### Placement class and key
 
 A node carries two more facts in `NodeOptions`: a placement class, the hash of a name such as
 `sushiai.replica` or `sushiengine.physics`, built like an `OperationID`; and a placement key, a
@@ -86,7 +106,7 @@ and the key say which group it belongs to and come from the caller that owns the
 `gemm` is `sushiai.replica` inside a training step and `sushiengine.physics` inside a physics
 tick.
 
-### 4.2 Scopes
+### Scopes
 
 ```cpp
 SushiRuntime::PlacementScope scope = runtime.placement_scope("sushiengine.physics", island);
@@ -106,7 +126,7 @@ thread-local: the scope is passed, never ambient.
 An explicit `DeviceIndex` or `On` always wins over a scope. A node recorded outside every scope
 behaves as it does today.
 
-### 4.3 Topology
+### Topology
 
 `NodeFacts` describes one machine: its name, its operating system, its labels, and one
 `DeviceFacts` per device (kind, name, memory in bytes). `Runtime::topology()` returns the local
@@ -116,7 +136,7 @@ policy sees names and labels that survive a reconnect, where a `PeerID` does not
 Labels are `key=value` pairs. A worker takes them from `--label` (repeatable) and from
 `SR_WORKER_LABELS`; a master takes them from its `RuntimeOptions`.
 
-### 4.4 Rules
+### Rules
 
 ```
 PlacementRule
@@ -137,7 +157,7 @@ replay reads no rule.
 With no rule set, or for a node no rule matches, the runtime does what it does today: the data's
 device on one machine, `LeastLoadedOffloadPolicy` across machines.
 
-### 4.5 Local devices
+### Local devices
 
 On one machine the rules decide where data lives, and the existing rule that a tracked node runs
 where its first write lives does the rest. A scope's buffer lands on the device its rule names.
@@ -147,7 +167,7 @@ moving data between two devices is a node the caller records, never a copy the r
 A rule whose device is absent on this machine, such as device 1 on a one-device machine, follows
 its `if_absent`.
 
-### 4.6 Several machines
+### Several machines
 
 `RulePlacement` replaces the decision of the `OffloadPolicy` when a rule set is in force. The
 decision a policy returns grows from "a worker or nothing" to one of: a worker and a device on
@@ -156,7 +176,7 @@ then applies `local`; `fail` ends the run with a `Status` that names the rule an
 `TASK_DISPATCH` carries the device the decision named, and the worker runs the kernel through its
 scheduler on that device, which closes KI-6.
 
-### 4.7 What a training run over several machines needs
+### What a training run over several machines needs
 
 From SushiAI's `docs/design/LAYERED_EXECUTION.md`, where a replica of a model is one registered
 kernel that runs a whole compiled step:
@@ -168,7 +188,7 @@ kernel that runs a whole compiled step:
   not serve stale parameters;
 - a rule's `deadline`, so a replica of a large model is not taken back while it works.
 
-### 4.8 Wire version 4
+### Wire version 4
 
 | Message | Gains |
 | --- | --- |
@@ -179,39 +199,38 @@ The header and the first three fields of `REJECT` and `GOODBYE` stay frozen, so 
 is refused in words. The golden bytes of the two messages and the version table of the module
 README change in the same commit.
 
-## 5. Plan
+## Phases
 
 Hierarchy first: the vocabulary, then what records it, then what decides on it, then the wire.
 Each task has one acceptance criterion and one build. "Waits on" names tasks of this document
 unless a repository is written. The guide pages and module READMEs a task makes false change in
 the task's own commit.
 
-| Task | Does | Files, mainly | Waits on | Done when |
-| --- | --- | --- | --- | --- |
-| R1 | Placement class and key in `NodeOptions`; a node keeps them | `api/graph/node_options.hpp`, the node they are copied to | | A test records a node with a class and a key and reads both back from the plan |
-| R2 | `Runtime::placement_scope()`, `Recorder::within()`, inner scope wins, explicit options win | `api/graph/recorder.hpp`, a new `api/vocabulary/placement_scope.hpp` | R1 | A test records nodes in two nested scopes and outside them and reads the class and key of each |
-| R3 | `NodeFacts`, `DeviceFacts`, `Runtime::topology()`, labels from `RuntimeOptions` | a new public vocabulary header, `platform/device` | | A test reads the local machine's facts: device count, kinds, memory, the labels it was given |
-| R4 | `PlacementRule`, `PlacementRules` with its checks, the match by class, prefix, key and operation, priority and insertion order | a new module `engine/placement` | R1, R3 | A table test resolves a set of nodes against a rule set, including two conflicting rules and every refusal |
-| R5 | `Runtime::set_placement_rules()` between runs; the compile resolves each node once | `engine/execution`, `engine/graph` | R2, R4 | A test changes the rules between two runs and sees the second compile place differently; a call during a run is refused |
-| R6 | Local placement: a scope's buffer on its rule's device; `On(scope)`; `if_absent` for an absent device | `api/runtime/runtime.hpp`, `api/vocabulary/placement.hpp` | R5 | A test on a one-device machine sees a rule for device 1 apply `local`, `fail` and a bounded `wait`; on a two-device machine a scope's buffer and its nodes land on device 1 |
-| R7 | Wire version 4: `HELLO` with operating system, devices and labels; `TASK_DISPATCH` with a device; `--label` and `SR_WORKER_LABELS` | `extension/wire`, `extension/distributed` worker options | R3 | The golden bytes of every message pass at version 4, and the worker options parser takes three labels from flags and the variable |
-| R8 | The master keeps each worker's facts; `WorkerLoad` names the worker and holds its facts | `extension/offload_coordination`, `extension/cluster_load` | R7 | A test on `InProcessFabric` reads a worker's name, labels and devices from the load a policy receives, before and after a reconnect |
-| R9 | A worker runs its kernels through its scheduler on the device a dispatch names | `extension/distributed/source/worker_agent.cpp`, `dispatch_executor.cpp` | R7 | A worker with two devices runs two dispatches on the devices they name; KI-6 and RW-17 close |
-| R10 | `RulePlacement`: the decision a policy returns becomes worker and device, local, wait or fail; a rule's `deadline` | `extension/cluster_load`, `extension/offload_coordination` | R5, R8, R9 | On `InProcessFabric` a rule pins a class and key to a named worker, its `wait` holds a node until the worker returns, its `fail` ends the run with a `Status` naming the rule |
-| R11 | Probe: a registered kernel runs a compiled graph on the worker's runtime, and its local fallback runs one inside a master run | a test under `tests/extension/distributed/` | | The test answers yes or no for each of the two, and the answer is written in section 4.7 |
-| R12 | Probe and, if needed, fix: a local task's write to a shared buffer moves its version | `extension/buffer_exchange` | | A test writes a shared buffer from a local task and sees a worker pull the new version |
-| R13 | Measure the TCP transport between two of the owner's machines: 4 MiB, 64 MiB and 256 MiB, throughput and latency; restore the offload benchmark under `applications/probes/` | `applications/probes/`, `docs/guides/DISTRIBUTED_GUIDE.md` | R10 | The guide holds the measured numbers with the two machines named; RW-21 and RW-22 close |
-| R14 | Worker-to-worker links and a ring all-reduce | | SushiAI phase A7 | Designed only if SushiAI's five-machine measurement shows the master's link bounds the step (RW-14) |
+| Id | Phase | State |
+| --- | --- | --- |
+| R1 | Placement class and key in `NodeOptions`; a node keeps them. Done when: a test records a node with a class and a key and reads both back from the plan. | planned |
+| R2 | `Runtime::placement_scope()`, `Recorder::within()`, inner scope wins, explicit options win. Done when: a test records nodes in two nested scopes and outside them and reads the class and key of each. Waits on R1. | planned |
+| R3 | `NodeFacts`, `DeviceFacts`, `Runtime::topology()`, labels from `RuntimeOptions`. Done when: a test reads the local machine's facts: device count, kinds, memory, the labels it was given. | planned |
+| R4 | `PlacementRule`, `PlacementRules` with its checks, the match by class, prefix, key and operation, priority and insertion order. Done when: a table test resolves a set of nodes against a rule set, including two conflicting rules and every refusal. Waits on R1, R3. | planned |
+| R5 | `Runtime::set_placement_rules()` between runs; the compile resolves each node once. Done when: a test changes the rules between two runs and sees the second compile place differently; a call during a run is refused. Waits on R2, R4. | planned |
+| R6 | Local placement: a scope's buffer on its rule's device; `On(scope)`; `if_absent` for an absent device. Done when: a test on a one-device machine sees a rule for device 1 apply `local`, `fail` and a bounded `wait`; on a two-device machine a scope's buffer and its nodes land on device 1. Waits on R5. | planned |
+| R7 | Wire version 4: `HELLO` with operating system, devices and labels; `TASK_DISPATCH` with a device; `--label` and `SR_WORKER_LABELS`. Done when: the golden bytes of every message pass at version 4, and the worker options parser takes three labels from flags and the variable. Waits on R3. | planned |
+| R8 | The master keeps each worker's facts; `WorkerLoad` names the worker and holds its facts. Done when: a test on `InProcessFabric` reads a worker's name, labels and devices from the load a policy receives, before and after a reconnect. Waits on R7. | planned |
+| R9 | A worker runs its kernels through its scheduler on the device a dispatch names. Done when: a worker with two devices runs two dispatches on the devices they name; KI-6 and RW-17 close. Waits on R7. | planned |
+| R10 | `RulePlacement`: the decision a policy returns becomes worker and device, local, wait or fail; a rule's `deadline`. Done when: on `InProcessFabric` a rule pins a class and key to a named worker, its `wait` holds a node until the worker returns, its `fail` ends the run with a `Status` naming the rule. Waits on R5, R8, R9. | planned |
+| R11 | Probe: a registered kernel runs a compiled graph on the worker's runtime, and its local fallback runs one inside a master run. Done when: the test answers yes or no for each of the two, and the answer is written in "What a training run over several machines needs". | planned |
+| R12 | Probe and, if needed, fix: a local task's write to a shared buffer moves its version. Done when: a test writes a shared buffer from a local task and sees a worker pull the new version. | planned |
+| R13 | Measure the TCP transport between two of the owner's machines: 4 MiB, 64 MiB and 256 MiB, throughput and latency; restore the offload benchmark under `applications/probes/`. Done when: the guide holds the measured numbers with the two machines named; RW-21 and RW-22 close. Waits on R10. | planned |
+| R14 | Worker-to-worker links and a ring all-reduce. Done when: designed only if SushiAI's five-machine measurement shows the master's link bounds the step (RW-14). Waits on SushiAI phase A7. | planned |
 
 R13 is a measurement and comes after the labels and the rules, as the owner ordered on
 2026-10-20: it is taken once the placement it is measured under exists.
 
-The owner chooses whether the plan runs inline or in waves. R1 and R3, then R11 and R12, have
+R1 and R3, then R11 and R12, have
 disjoint files and could share a wave.
 
-## 6. Out of this document
+## Open questions
 
-- Moving data between two devices or two machines on the caller's behalf. A copy is a node the
-  caller records.
-- A rule file format. Each application reads its own.
-- Encryption of frames after the handshake (RW-18). Rules change nothing in the trust model.
+- Does the plan run inline or in waves? The owner chooses.
+- R11 and R12 are probes: the answers are written in "What a training run over several machines
+  needs".

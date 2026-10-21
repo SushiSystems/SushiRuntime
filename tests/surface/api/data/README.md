@@ -87,7 +87,7 @@ An alignment of 48 stops the process in `buffer()` and in `state()`; the line na
 the value.
 
 The file covers device-resident state, work package WP-6 of
-`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN.md`. A buffer or a state allocated with
+`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. A buffer or a state allocated with
 `Residency::Device` stays on its device and is not host-addressable. The host seeds it and reads it
 back through `write_range()` and `read_range()`, while kernels run against it exactly as they do
 against shared USM.

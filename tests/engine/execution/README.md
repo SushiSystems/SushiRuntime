@@ -11,9 +11,9 @@ speed only where its section says so.
 Three design documents are cited by path in the sections that came from the integration tests:
 
 - `docs/design/GRAPH_REPLAY.md`, the replay layers and their phases.
-- `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN.md`, the work packages WP-0 to WP-7 and their
+- `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`, the work packages WP-0 to WP-7 and their
   numbered sections.
-- `docs/design/ENGINE_BACKBONE_REFACTOR.md`, the backbone items BB-0 to BB-8.
+- `docs/design/ENGINE_BACKBONE_REFACTOR/`, the backbone items BB-0 to BB-8.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 

@@ -74,8 +74,8 @@ The words this repository's documents use. A term defined in code names the head
 
 | Word | Meaning |
 | --- | --- |
-| BB-0 to BB-8 | The work packages of `docs/design/ENGINE_BACKBONE_REFACTOR.md` |
-| WP-0 to WP-7 | The work packages of `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN.md` |
+| BB-0 to BB-8 | The work packages of `docs/design/ENGINE_BACKBONE_REFACTOR/` |
+| WP-0 to WP-7 | The work packages of `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/` |
 | R1 to R9 | The requests of `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS.md` |
 | P0 to P3 | The phases of `docs/design/GRAPH_REPLAY.md` |
 | G1 | The gate that added node event records and the per-graph profiling switch; its design is in `docs/archive/superpowers/specs/` |
