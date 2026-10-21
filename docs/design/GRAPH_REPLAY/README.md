@@ -1,9 +1,11 @@
 # SushiRuntime: replaying a graph's device work as one submission
 
 **Status:** Open — P0, P1 and P3 are built and not measured; P2 is not started
+**About:** SushiEngine's matter device solver is launch-bound on the device.
+**Modules:** modules/engine/execution
 
 The reductions, the prefix scan and the counting sort this document names are SushiBLAS's;
-[the design map](README.md#names-that-left-the-runtime) says how to read them.
+[the design map](../README.md#names-that-left-the-runtime) says how to read them.
 
 ## Problem
 
@@ -13,7 +15,7 @@ which 24 ms is kernel execution; the host solver runs the same tick in under 5 m
 is 53 of the 67 dispatches a substep issues, because each prefix scan, counting sort and reduce
 lowers to several nodes. A bare SYCL probe puts a node near 1.1 us when a recorded graph is
 replayed, and `Graph::run` costs more than twice the probe's worst column per node. The numbers
-are in [the spike report](../agent/2026_10_21_GRAPH_REPLAY_SPIKE/REPORT.md).
+are in the spike report.
 
 What `Graph::run` does:
 
@@ -128,7 +130,7 @@ must not read device results, which is today's rule for a host-provided count.
 ### Profiling, events and ordering
 
 A replayed step yields one event, not one per node, so G1's per-dispatch `NodeEventRecord`s
-(`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`) cannot come from layer 2. A
+(the g1 node event records design spec in the version history) cannot come from layer 2. A
 graph with profiling requested runs on layer 1, whose per-node events on an in-order queue are
 real. `RunReport` states which layer ran, so a measurement never mixes them silently.
 Determinism does not change: layers 1 and 2 submit in the compiled topological order, which is one
@@ -146,6 +148,12 @@ valid order of the same DAG, and every primitive's result is already defined to 
 
 Each phase ends with the spike's table re-measured through `Graph::run` on every device the
 machine has, so the gain is shown, not assumed. P0, P1 and P3 have not had that measurement.
+
+### Work
+
+<!-- work:begin -->
+No open work.
+<!-- work:end -->
 
 ## Open questions
 

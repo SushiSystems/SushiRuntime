@@ -19,7 +19,7 @@ Above it, the caller that owns a graph records into it: SushiAI's compiled step 
 frame each own theirs. SushiBLAS is a library of operations and records through the `Recorder` it
 is handed; its `Engine` also keeps a graph of its own for a caller that has none. Where work runs
 across devices and machines, and who decides it, is the design in
-[`LAYERED_EXECUTION.md`](../design/LAYERED_EXECUTION.md).
+[`LAYERED_EXECUTION.md`](../design/LAYERED_EXECUTION/README.md).
 
 ## 2. Modules and tiers
 

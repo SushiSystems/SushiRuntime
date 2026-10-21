@@ -10,7 +10,7 @@ speed only where its section says so.
 
 Three design documents are cited by path in the sections that came from the integration tests:
 
-- `docs/design/GRAPH_REPLAY.md`, the replay layers and their phases.
+- `docs/design/GRAPH_REPLAY/README.md`, the replay layers and their phases.
 - `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`, the work packages WP-0 to WP-7 and their
   numbered sections.
 - `docs/design/ENGINE_BACKBONE_REFACTOR/`, the backbone items BB-0 to BB-8.
@@ -20,7 +20,7 @@ A section is named after a test file, and a subsection after the test, helper or
 ## benchmark_runtime_context.cpp
 
 This is the benchmark behind section E, item 7 of
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`. That item decided
+the g1 node event records design spec in the version history. That item decided
 F2: a second, lazily built profiling queue per device, instead of always profiling and
 filtering afterwards. The measured delta was about 24 microseconds per submission on an
 RTX 3080 Ti under CUDA.
@@ -144,8 +144,8 @@ tests are skipped. `AChainedRunIsInProgressUntilFinishReturnsOrItIsDestroyed` ch
 ## test_runtime_context.cpp
 
 The file covers the profiling queue of `RuntimeContext::devices()`, sections A and F2 of
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`, built as task 3 of
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-plan.md`. A profiled node needs the
+the g1 node event records design spec in the version history, built as task 3 of
+the g1 node event records plan spec in the version history. A profiled node needs the
 SYCL `command_submit`, `command_start` and `command_end` times, which only a queue built with
 `enable_profiling` exposes. The plain queue that `devices().queue(index)` returns must stay
 unchanged for every existing consumer.

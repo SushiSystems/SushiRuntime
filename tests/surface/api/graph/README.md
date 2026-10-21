@@ -49,7 +49,7 @@ tests own. A nonzero value that is uniform across a region is enough here.
 
 ## benchmark_graph.cpp
 
-This is the baseline for the graph-replay design, `docs/design/GRAPH_REPLAY.md`, sections 0 and
+This is the baseline for the graph-replay design, `docs/design/GRAPH_REPLAY/README.md`, sections 0 and
 G (P0). Node i reads buffer i and writes buffer i+1, so every node depends on the one before it
 and the scheduler cannot dispatch two nodes at once. The run therefore pays the scheduler's
 whole per-node dispatch path, which is dependency resolution, submit, poll and the hand-off to
@@ -70,7 +70,7 @@ and a notify per root. Correctness and forward progress are asserted; speed is n
 
 ## test_device_sized.cpp
 
-The file covers the launches of phase P3 of `docs/design/GRAPH_REPLAY.md` (sections D.2 and G): a
+The file covers the launches of phase P3 of `docs/design/GRAPH_REPLAY/README.md` (sections D.2 and G): a
 `Recorder::kernel(DeviceSized, ...)` and a `sized_from_device` task, both sized by a count a
 predecessor wrote in the same step.
 
@@ -179,8 +179,8 @@ each of them.
 The file covers the per-graph profiling switch of `DynamicGraph` and its registration index, which
 is dense and ordered by ascending region key and then by `add()` order at every recompose. The
 design is sections D, E (item 8) and F.6 of
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`, built as task 6 of
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-plan.md`.
+the g1 node event records design spec in the version history, built as task 6 of
+the g1 node event records plan spec in the version history.
 
 The file reaches the plan through `dynamic_graph_plan_access.hpp`.
 
@@ -238,8 +238,8 @@ error path and do not latch the worker pool dead.
 
 The file covers per-dispatch node event records, the clock pairing and steady-state capture. The
 design is section C and items 1, 2, 3, 4 and 6 of section E in
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`, built as task 5 of
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-plan.md`. The item numbers in the
+the g1 node event records design spec in the version history, built as task 5 of
+the g1 node event records plan spec in the version history. The item numbers in the
 subsections refer to section E of the design.
 
 | Test | What it proves |
@@ -321,7 +321,7 @@ A run must be cancellable from another thread. An otherwise unbounded `run_until
 promptly when a second thread calls `cancel()`, and the pool must stay usable so that a later run
 completes normally. Cancellation is reset per run; it does not latch.
 
-The file covers layer 1 of `docs/design/GRAPH_REPLAY.md` (sections C and G, phase P1).
+The file covers layer 1 of `docs/design/GRAPH_REPLAY/README.md` (sections C and G, phase P1).
 
 A chainable plan runs as an in-order chain, matches the scheduler bit for bit, and names the path it
 took in `RunReport::layer`.
@@ -452,8 +452,8 @@ the same input, so step 1 and step `STEPS` have to produce the same bytes. A dri
 per-step state of the plan had leaked into the arithmetic.
 
 The file covers the per-graph profiling switch: section B of
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`, built as task 4 of
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-plan.md`. It checks that
+the g1 node event records design spec in the version history, built as task 4 of
+the g1 node event records plan spec in the version history. It checks that
 `set_profiling()` is independent across graphs, that the plan recompiles once, and that
 every device-dispatch branch the scheduler can route to a profiling queue does so.
 
@@ -484,7 +484,7 @@ node and per worker. Explicit transfers between host and device are accounted in
 ### `NamingTheLastNodeReachesNodeTiming`
 
 Any node can be given a diagnostic name that reaches `RunReport::NodeTiming`. This is requirement R8
-of `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS.md`. Without a name every node reports as
+of `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS/README.md`. Without a name every node reports as
 "unnamed_task" whichever `add()` produced it, and a profile of a real graph is a list of identical
 labels.
 
@@ -646,7 +646,7 @@ of 16 bytes on the same recorder is granted.
 
 The file covers `Node::registration_index` and the grouping of the nodes of one `Recorder::rule()`
 scope under one index. The design is sections D and F5 of
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`.
+the g1 node event records design spec in the version history.
 
 `record_grouped_rule` records three kernels in one scope, each reading what the one before it
 wrote. `grouping_of` reads a compiled plan back: the index of the nodes named "before" and "after",

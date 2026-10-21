@@ -5,8 +5,8 @@
    `modules/foundation/core/include/SushiRuntime/core/version.hpp` both read 0.2.0.
 2. TODO #33 (EventPolling `Task*`→`Node*` downcast) is closed: `Task::on_complete(ReadySink&)` +
    `record_completion()`, called from `modules/engine/scheduler/include/SushiRuntime/scheduler/event_polling.hpp:426,457`.
-3. The doc truth pass ran. `TODO.md` (now `docs/archive/slop/TODO.md`) and these pages were reconciled against the tree;
-   `docs/archive/slop/CODE_AND_ARCHITECTURE_REVIEW.md` carries per-finding status.
+3. The doc truth pass ran. `TODO.md` (now the todo document in the version history) and these pages were reconciled against the tree;
+   the code and architecture review document in the version history carries per-finding status.
 
 **Engine side (filed here because the backbone-head relationship is one program).**
 4. **Essentially done; the instruction as written was wrong.** The two-node reduction and

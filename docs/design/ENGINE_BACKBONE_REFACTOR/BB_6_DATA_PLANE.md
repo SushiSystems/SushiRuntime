@@ -22,14 +22,14 @@ by leverage.
    here because it is data-plane hygiene as much as RT hygiene.
 4. **The pool decision: done, by deletion.** The choice was
    between routing the fluent handles through the allocator and demoting the pool. Measurement
-   settled it (the record is in [the evidence](../../agent/2026_10_21_ENGINE_BACKBONE_EVIDENCE/REPORT.md)): instrumenting every USM entry point showed allocation happens once per
+   settled it (the record is in the evidence): instrumenting every USM entry point showed allocation happens once per
    `Buffer`/`State` the caller constructs, at setup, and never during a run; 1000 steps, a
    reduction, and 32 regions streaming in and out all allocate nothing. Pooling amortises
    high-frequency small allocation and there is none, and the pool's 4 KB ceiling sat below the
    buffers the runtime actually allocates, so routing through it was never viable. Deleted rather
    than demoted, since demoting hides dead code instead of removing it. `Memory::USMRegistry` now
    owns pointer ownership, which is the part that had a real invariant. Design in
-   `docs/archive/superpowers/specs/2026-08-18-usm-allocation-seam-design.md`.
+   the usm allocation seam design spec in the version history.
 5. **Deterministic device sort.** The engine's contact ordering rule ("sorted by
    `(body_a, body_b, feature_id)` before solving; broadphase order must never reach the solver")
    currently runs as a host sort and will otherwise be hand-built in the graph like the

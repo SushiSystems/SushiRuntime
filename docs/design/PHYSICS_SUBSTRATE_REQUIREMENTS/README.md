@@ -1,9 +1,11 @@
 # What a physics engine needs from SushiRuntime
 
 **Status:** Open — R1 to R8 are built; R9, the multi-colour dispatch node, is open
+**About:** Labels follow the substrate plan: **BLOCKER** (incorrect results or an unusable shape at the target scale), **STRUCTURAL** (works, but is built on an assumption the target violates),...
+**Modules:** modules/engine/scheduler, modules/surface/api
 
 The reductions, the prefix scan and the counting sort this document names are SushiBLAS's;
-[the design map](README.md#names-that-left-the-runtime) says how to read them.
+[the design map](../README.md#names-that-left-the-runtime) says how to read them.
 
 ## Problem
 
@@ -46,7 +48,7 @@ The runtime builds the requests below, in the priority order below, and keeps th
 request as written so the reasoning behind each ask stays auditable. Every claim is anchored to a
 location in the tree (`file:line`) so it can be verified independently, in the style of
 `SIMULATION_ENGINE_SUBSTRATE_PLAN/`. The design and delivery are in
-[the implementation plan](../archive/slop/PHYSICS_SUBSTRATE_IMPLEMENTATION.md).
+the implementation plan.
 
 ### What is not requested
 
@@ -145,7 +147,7 @@ written so switching to (3) is one file.
 > **Outcome.** None of the three was needed. This analysis missed *when* a node's command group is
 > built: on a worker at dispatch, after `EventPolling::poll_events` has waited on every predecessor's
 > event. The count can therefore simply be read there. See the Delivery table above and
-> `docs/archive/slop/PHYSICS_SUBSTRATE_IMPLEMENTATION.md` §0; the two designs below were not built.
+> the physics substrate implementation document in the version history §0; the two designs below were not built.
 
 #### Two possible designs
 
@@ -242,7 +244,7 @@ The same reduction over the same input produces bit-identical output with the wo
 
 #### The evidence
 
-This repo already records the gap, in `TODO.md` (now `docs/archive/slop/TODO.md`) under *Future work*:
+This repo already records the gap, in `TODO.md` (now the todo document in the version history) under *Future work*:
 
 > *"Cross-region ordering keys on the whole allocation, not sub-ranges: two regions writing disjoint
 > halves of one buffer are serialized though they need not be (the intra tracker already handles
@@ -288,7 +290,7 @@ because it gates anything.
 
 ### R5: Dependency tracking on every overload
 
-`TODO.md` (now `docs/archive/slop/TODO.md`) already carried this as an open API-surface decision:
+`TODO.md` (now the todo document in the version history) already carried this as an open API-surface decision:
 
 > *"`API::Graph::add()` calls `add_node()` without read/write pointer lists. Tasks added through the
 > fluent API do not participate in automatic RAW/WAR/WAW dependency detection unless a handle-based
@@ -329,6 +331,12 @@ Option B (document it) leaves a correctness guarantee resting on a reviewer noti
 | R7 | `ThreadLocalMagazine` teardown | built |
 | R8 | A node label on the ordinary `add()` overloads | built |
 | R9 | A multi-colour (or persistent-kernel) dispatch node | planned |
+
+### Work
+
+<!-- work:begin -->
+No open work.
+<!-- work:end -->
 
 ## Open questions
 

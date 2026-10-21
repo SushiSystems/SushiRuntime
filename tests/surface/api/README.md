@@ -15,7 +15,7 @@ speed only where its section says so.
 
 Three design documents are cited by path in the sections that came from the integration tests:
 
-- `docs/design/GRAPH_REPLAY.md`, the replay layers and their phases.
+- `docs/design/GRAPH_REPLAY/README.md`, the replay layers and their phases.
 - `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`, the work packages WP-0 to WP-7 and their
   numbered sections.
 - `docs/design/ENGINE_BACKBONE_REFACTOR/`, the backbone items BB-0 to BB-8.
@@ -344,7 +344,7 @@ uses: submit, do unrelated work, settle into a report the loop owns.
 
 The event ledger of a profiled run allocates only for a new shape, never on a later run that replays
 the same shape. This is item 3 of section E in
-`docs/archive/superpowers/specs/2026-09-15-g1-node-event-records-design.md`.
+the g1 node event records design spec in the version history.
 
 The baseline uses the profiling flavour of the in-order queue the chain submits to, and reads each
 event's timestamps after the wait as the ledger does, so it carries the cost of profiling as well.

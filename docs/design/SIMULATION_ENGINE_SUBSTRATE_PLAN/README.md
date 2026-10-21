@@ -1,6 +1,8 @@
 # SushiRuntime as a simulation and game-engine substrate
 
 **Status:** Open — WP-4 is delivered, WP-5 and WP-7 are not built; the other packages were not re-checked
+**About:** SushiRuntime as a simulation and game-engine substrate.
+**Modules:** none
 
 The reductions, the prefix scan and the counting sort this page names are SushiBLAS's;
 [the design map](../README.md#names-that-left-the-runtime) says how to read them.
@@ -25,7 +27,7 @@ This document answers three questions precisely:
 
 Every claim in the pages anchors to a location (`file:line`) in the tree as it stood when the
 claim was written; the anchors have not been refreshed since. The anchors are indexed in
-[the evidence](../../agent/2026_10_21_SUBSTRATE_PLAN_EVIDENCE/REPORT.md).
+the evidence.
 
 The findings are in [FINDINGS.md](FINDINGS.md): what the runtime does mechanically, what it does
 well, and where it breaks. Three labels grade each:
@@ -190,6 +192,12 @@ sufficient for an external engine to drive: a real test of the role boundary.
 RW-14 re-checks every package against the tree. The states of WP-0, WP-1, WP-2, WP-3, WP-6 and
 WP-DOCS above are the last recorded reading, not a verified one; the physics requirements
 document reports WP-7 as shipped while the backlog lists it as unbuilt.
+
+### Work
+
+<!-- work:begin -->
+No open work.
+<!-- work:end -->
 
 ## Open questions
 

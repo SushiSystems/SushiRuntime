@@ -157,3 +157,9 @@ its headers and the loaded library agree.
 writes beside it: `core/assert.hpp`, `core/error.hpp`, `core/operation_id.hpp`,
 `core/ref_counted.hpp`, `core/result.hpp`, `core/span.hpp`, `core/sushi_ptr.hpp` and
 `core/version.hpp`. It includes no header of the engine; those are not installed.
+
+## Designs
+
+<!-- designs:begin -->
+- [PHYSICS_SUBSTRATE_REQUIREMENTS](../../../docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS/README.md): Labels follow the substrate plan: **BLOCKER** (incorrect results or an unusable shape at the target scale), **STRUCTURAL** (works, but is built on an assumption the target violates),...
+<!-- designs:end -->

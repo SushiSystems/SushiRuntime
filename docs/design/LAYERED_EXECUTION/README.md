@@ -1,6 +1,8 @@
 # Layered execution
 
 **Status:** Open — designed and ruled on 2026-10-19; nothing built
+**About:** What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs without writing it into their code: a placement vocabulary on every node, a description of...
+**Modules:** modules/engine/scheduler, modules/engine/task
 
 ## Problem
 
@@ -14,9 +16,9 @@ Each repository of the stack holds its own share of this work in a document of t
 | Repository | Its share |
 | --- | --- |
 | SushiRuntime | This document: placement, topology, rules, the distributed layer's needs |
-| SushiBLAS | `docs/design/LAYERED_EXECUTION.md`: an engine without its own graph, the per-index seam, two general operations, the cluster module |
-| SushiAI | `docs/design/LAYERED_EXECUTION.md`: data-parallel training over five machines; it also holds the programme's backlog entry |
-| SushiEngine | `docs/design/LAYERED_EXECUTION.md`: two lanes behind one contract (SushiRuntime with SushiBLAS, or the engine's own native runtime and BLAS), placement scopes, physics islands on several machines in the runtime lane |
+| SushiBLAS | `docs/design/LAYERED_EXECUTION/README.md`: an engine without its own graph, the per-index seam, two general operations, the cluster module |
+| SushiAI | `docs/design/LAYERED_EXECUTION/README.md`: data-parallel training over five machines; it also holds the programme's backlog entry |
+| SushiEngine | `docs/design/LAYERED_EXECUTION/README.md`: two lanes behind one contract (SushiRuntime with SushiBLAS, or the engine's own native runtime and BLAS), placement scopes, physics islands on several machines in the runtime lane |
 
 The runtime today, read from the source on 2026-10-19 and 2026-10-20:
 
@@ -64,7 +66,7 @@ Nothing in the layer is measured (RW-21, RW-22).
 | The person running it | The hardware and the priorities | The rules | |
 
 The runtime is an orchestration layer and computes nothing of its own
-([the architecture, section 1](../architecture/ARCHITECTURE.md)). That stays true: everything
+([the architecture, section 1](../../architecture/ARCHITECTURE.md)). That stays true: everything
 below is placement and transport.
 
 ### The owner's rulings
@@ -178,7 +180,7 @@ scheduler on that device, which closes KI-6.
 
 ### What a training run over several machines needs
 
-From SushiAI's `docs/design/LAYERED_EXECUTION.md`, where a replica of a model is one registered
+From SushiAI's `docs/design/LAYERED_EXECUTION/README.md`, where a replica of a model is one registered
 kernel that runs a whole compiled step:
 
 - a registered kernel may run a compiled graph on the worker's runtime from the exec thread, and
@@ -228,6 +230,12 @@ R13 is a measurement and comes after the labels and the rules, as the owner orde
 
 R1 and R3, then R11 and R12, have
 disjoint files and could share a wave.
+
+### Work
+
+<!-- work:begin -->
+No open work.
+<!-- work:end -->
 
 ## Open questions
 

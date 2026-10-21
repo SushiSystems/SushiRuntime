@@ -44,3 +44,4 @@ html/
 latex/
 # CMake compiler stdlib-detection scratch files (leaked to repo root on some toolchains)
 CXX-DetectStdlib-*.h
+docs/archive/
