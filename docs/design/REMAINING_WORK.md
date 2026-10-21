@@ -1,6 +1,6 @@
 # Remaining work
 
-Next id: RW-66
+Next id: RW-67
 
 ## Decisions waiting for the owner
 
@@ -349,3 +349,11 @@ Item R1 of SushiHub's GPU backend provisioning plan; the locate functions, `Dete
 - State: open
 - Done when: `cli/sushiruntime/` sets its build environment through `sushicore.build_env`, not a
   copy of it in `env.py`
+
+## Documentation architecture
+
+### RW-66 Write the About line of each design topic by hand
+- State: open
+- Done when: each topic has an `**About:**` line of one sentence written for a cold reader
+
+The topic model generated the lines from the first sentence of each document or from its title.
