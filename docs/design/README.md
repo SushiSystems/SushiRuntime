@@ -2,13 +2,17 @@
 
 One document per topic. Look the topic up here before writing; extend the document that exists.
 
-| Topic | Document | Status |
+## Topics
+
+<!-- topics:begin -->
+| Topic | State | About |
 | --- | --- | --- |
-| Running a graph's device work as one submission: the allocation removal, the in-order chain, record and replay | [`GRAPH_REPLAY.md`](GRAPH_REPLAY.md) | Open: P0, P1 and P3 built, P2 not started |
-| What SushiEngine needs from the runtime at its edges: interop, co-tenancy, determinism, packaging, the ship path (BB-0 to BB-8) | [`ENGINE_BACKBONE_REFACTOR/`](ENGINE_BACKBONE_REFACTOR/README.md) | Open: BB-1b unbuilt, BB-5 to BB-8 not re-checked |
-| What a physics engine asks of the runtime (R1 to R9) | [`PHYSICS_SUBSTRATE_REQUIREMENTS.md`](PHYSICS_SUBSTRATE_REQUIREMENTS.md) | Open: R9 |
-| Where work runs across the stack: placement class and scope on a node, the topology of machines and devices, placement rules, the distributed layer's needs (R1 to R14) | [`LAYERED_EXECUTION.md`](LAYERED_EXECUTION.md) | Open: designed and ruled, nothing built |
-| The runtime as a simulation and game-engine substrate (WP-0 to WP-7) | [`SIMULATION_ENGINE_SUBSTRATE_PLAN/`](SIMULATION_ENGINE_SUBSTRATE_PLAN/README.md) | Open: WP-5 and WP-7 not built |
+| [ENGINE_BACKBONE_REFACTOR](ENGINE_BACKBONE_REFACTOR/README.md) | Open | The runtime's simulation core is already the right machine: dependency-inferred DAG, compile-once replay, late-bound sizes and bases, fixed-order deterministic reductions, interval-exact... |
+| [GRAPH_REPLAY](GRAPH_REPLAY/README.md) | Open | SushiEngine's matter device solver is launch-bound on the device. |
+| [LAYERED_EXECUTION](LAYERED_EXECUTION/README.md) | Open | What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs without writing it into their code: a placement vocabulary on every node, a description of... |
+| [PHYSICS_SUBSTRATE_REQUIREMENTS](PHYSICS_SUBSTRATE_REQUIREMENTS/README.md) | Open | Labels follow the substrate plan: **BLOCKER** (incorrect results or an unusable shape at the target scale), **STRUCTURAL** (works, but is built on an assumption the target violates),... |
+| [SIMULATION_ENGINE_SUBSTRATE_PLAN](SIMULATION_ENGINE_SUBSTRATE_PLAN/README.md) | Open | SushiRuntime as a simulation and game-engine substrate. |
+<!-- topics:end -->
 
 The backlog is [`REMAINING_WORK.md`](REMAINING_WORK.md).
 
@@ -19,6 +23,5 @@ The four design documents name the reductions, the prefix scan and the counting 
 runtime for SushiBLAS in v0.4.0, and the runtime keeps the `Recorder` interface they are built
 on. Read every mention of them in a design document as the state before that release.
 
-Designs that shipped are in the archive: the USM allocation seam, the G1 node event records and
-the prefix scan and counting sort under `docs/archive/superpowers/specs/`, and the physics
-substrate implementation plan under `docs/archive/slop/`.
+Designs that shipped are in the version history: the USM allocation seam, the G1 node event records,
+the prefix scan and counting sort, and the physics substrate implementation plan.

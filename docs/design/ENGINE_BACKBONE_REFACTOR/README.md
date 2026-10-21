@@ -1,6 +1,8 @@
 # SushiRuntime: engine backbone refactor (BB)
 
 **Status:** Open — BB-0 runtime side, BB-1a, BB-2, BB-3, BB-4 landed; BB-1b unbuilt; BB-5, BB-7, BB-8 not re-checked
+**About:** The runtime's simulation core is already the right machine: dependency-inferred DAG, compile-once replay, late-bound sizes and bases, fixed-order deterministic reductions, interval-exact...
+**Modules:** none
 
 The reductions, the prefix scan and the counting sort this page names are SushiBLAS's;
 [the design map](../README.md#names-that-left-the-runtime) says how to read them.
@@ -18,7 +20,7 @@ promises (BB-3), no out-of-tree consumer can link it (BB-4), and no player machi
 
 Three facts reorder every plan written before this one. R1 to R7 exist and the engine did not
 know. The engine has adopted part of the new surface, and the call-site counts and the hand-built
-stand-ins it listed are in [the evidence](../../agent/2026_10_21_ENGINE_BACKBONE_EVIDENCE/REPORT.md).
+stand-ins it listed are in the evidence.
 Where the runtime was absent, the engine routed around it and recorded why: audio's real-time mix
 sidesteps the runtime, the atmosphere tier chose Vulkan compute and wrote the reason down, and
 cosmetic particles and skinning shipped as Vulkan compute with the runtime's SYCL kernel surviving
@@ -32,7 +34,7 @@ runtime refactor that makes that relationship the fastest, strongest, most opera
 shaped by what the engine *actually does and actually needs*, not by what a general compute
 runtime might want to become. It extends, and does not replace,
 [`SIMULATION_ENGINE_SUBSTRATE_PLAN/`](../SIMULATION_ENGINE_SUBSTRATE_PLAN/README.md) (WP-0…WP-7) and
-[`PHYSICS_SUBSTRATE_IMPLEMENTATION.md`](../../archive/slop/PHYSICS_SUBSTRATE_IMPLEMENTATION.md) (R1–R7). New work
+`PHYSICS_SUBSTRATE_IMPLEMENTATION.md` (R1–R7). New work
 packages are numbered **BB-0…BB-8** to avoid colliding with the WP series.
 
 ### Principles
@@ -152,8 +154,8 @@ Every package lands with the test that would fail without it, per house rule.
 
 The request register lives in the engine (`sushiengine/docs/slop/physics_system.md` §18, to be
 corrected under BB-0). The runtime-side histories are
-[`PHYSICS_SUBSTRATE_REQUIREMENTS.md`](../PHYSICS_SUBSTRATE_REQUIREMENTS.md) and
-`docs/archive/slop/PHYSICS_SUBSTRATE_IMPLEMENTATION.md`. The long-horizon substrate program is
+[`PHYSICS_SUBSTRATE_REQUIREMENTS.md`](../PHYSICS_SUBSTRATE_REQUIREMENTS/README.md) and
+the physics substrate implementation document in the version history. The long-horizon substrate program is
 [`SIMULATION_ENGINE_SUBSTRATE_PLAN.md`](../SIMULATION_ENGINE_SUBSTRATE_PLAN/README.md), whose WP-4
 (reductions, delivered) and WP-5 (multi-device, long horizon) this plan slots around, and WP-7
 (native CPU path) is referenced by BB-5b.
@@ -171,6 +173,12 @@ corrected under BB-0). The runtime-side histories are
 | BB-6 | [Data-plane maturation](BB_6_DATA_PLANE.md): the pool decision is done, the rest is open | building |
 | BB-7 | [Async depth](BB_7_ASYNC_DEPTH.md): pipelined steps, deadlines | planned |
 | BB-8 | [Platform posture](BB_8_PLATFORM_POSTURE.md): decide, document, spike | planned |
+
+### Work
+
+<!-- work:begin -->
+No open work.
+<!-- work:end -->
 
 ## Open questions
 

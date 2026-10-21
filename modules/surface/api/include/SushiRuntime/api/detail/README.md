@@ -340,7 +340,7 @@ its argument pack.
 
 late_count_resolver_node() describes the one task that resolves K late counts. A host count is
 baked in when the task is submitted. A device count is read in the kernel, and a value past its
-capacity becomes zero and a fault record (docs/design/GRAPH_REPLAY.md §D.2). A host count past
+capacity becomes zero and a fault record (docs/design/GRAPH_REPLAY/README.md §D.2). A host count past
 its capacity is written to the fault record on the host, and the fill does not run.
 
 ## node_description.hpp
@@ -514,7 +514,7 @@ node and step, and nothing per element.
 
 submit_late_window() submits the node from that window. A node with no device slot keeps its
 host-resolved range. One with a slot runs at its capacity, and each work-item past the live
-count returns (docs/design/GRAPH_REPLAY.md §D).
+count returns (docs/design/GRAPH_REPLAY/README.md §D).
 
 ### LiveRange
 

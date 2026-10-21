@@ -76,8 +76,15 @@ The words this repository's documents use. A term defined in code names the head
 | --- | --- |
 | BB-0 to BB-8 | The work packages of `docs/design/ENGINE_BACKBONE_REFACTOR/` |
 | WP-0 to WP-7 | The work packages of `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/` |
-| R1 to R9 | The requests of `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS.md` |
-| P0 to P3 | The phases of `docs/design/GRAPH_REPLAY.md` |
-| G1 | The gate that added node event records and the per-graph profiling switch; its design is in `docs/archive/superpowers/specs/` |
+| R1 to R9 | The requests of `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS/README.md` |
+| P0 to P3 | The phases of `docs/design/GRAPH_REPLAY/README.md` |
+| G1 | The gate that added node event records and the per-graph profiling switch; its design is in the version history |
 | L1 to L17 | The owner decisions locked in §0.1 of the simulation substrate plan |
 | Work folder | `docs/agent/<YYYY_MM_DD>_<WORK_NAME>/`, holding the `SPEC.md`, `PLAN.md` and `REPORT.md` of one piece of agent work |
+
+## Design topics
+
+A topic is a module or a subject that spans modules, and it has one design document.
+The list is generated in `docs/design/README.md`.
+
+**LAYERED_EXECUTION**: What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs without writing it into their code: a placement vocabulary on every node, a description of... See [the design](../design/LAYERED_EXECUTION/README.md).

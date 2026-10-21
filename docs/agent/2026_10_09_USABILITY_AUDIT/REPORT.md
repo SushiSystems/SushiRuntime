@@ -614,7 +614,7 @@ Ranked by how much each helps a user or an operator.
 
 - Nothing was built or run; "compiles against the current API" is by reading declarations, and I did not follow SFINAE resolution inside `graph.hpp`/`region.hpp` beyond the overload signatures.
 - `api/detail/step_machinery.hpp`, `run_report_builder.hpp`, `callable_traits.hpp`, `fixed_order_reduce.hpp`, `fixed_order_scan.hpp`: I read their README sections and grepped them, but did not read the bodies line by line. `device_fault.hpp` was read.
-- `docs/agent/2026_10_05_ESTATE_AUDIT/REPORT.md` was grepped for 24 terms, not read whole. `docs/architecture/ARCHITECTURE.md` was read at §3, §5 (logger and errors) and §14; `docs/CONTRIBUTING.md` at §4. The project's instruction to read every `.md` under `docs/` was not followed in full.
+- the estate audit report in the version history was grepped for 24 terms, not read whole. `docs/architecture/ARCHITECTURE.md` was read at §3, §5 (logger and errors) and §14; `docs/CONTRIBUTING.md` at §4. The project's instruction to read every `.md` under `docs/` was not followed in full.
 - `docs/getting_started/` and `docs/guides/` were only grepped for include lines and a few API names; whether their samples compile is the backlog item "Unverified manual content".
 - Whether destroying a `Runtime` while buffers or graphs still hold the context is safe at teardown (API-03) was inferred from the `shared_ptr` members, not traced through `RuntimeContext::~RuntimeContext`.
 - Whether a `sycl::exception` from `q.memcpy(...).wait()` in `read_range`/`write_range` is translated anywhere before it reaches the user.
@@ -1410,7 +1410,7 @@ Read-only. Nothing was written in the repository. No source written; nothing to 
 
 - 75 tracked `.md` files, 18 643 lines. 32 are module READMEs under `include/`, `src/`, `tests/`, `tools/`, `cli/`, `examples/`; none existed on 2026-10-05.
 - `docs/` now has the skill's shape: `README.md` (56-line index), `CONTRIBUTING.md`, `DOCUMENTATION_STYLE_GUIDE.md`, `publish.toml`, `getting_started/`, `architecture/`, `guides/` (4 pages), `reference/` (6 pages), `design/` (map, backlog, 4 topics, each with a status on line 2), `agent/2026_10_05_ESTATE_AUDIT/REPORT.md`, `archive/`.
-- `docs/archive/` holds (listed only, not read): `agent/reports/` (2), `changelog/v0.2.0.md`, `changelog/v0.3.0_LONG_FORM.md`, `slop/` (BACKBONE_WAVE_STATUS, CODE_AND_ARCHITECTURE_REVIEW, PHYSICS_SUBSTRATE_IMPLEMENTATION, TODO), `superpowers/specs/` (6).
+- the archive holds (listed only, not read): `agent/reports/` (2), `changelog/v0.2.0.md`, `changelog/v0.3.0_LONG_FORM.md`, `slop/` (BACKBONE_WAVE_STATUS, CODE_AND_ARCHITECTURE_REVIEW, PHYSICS_SUBSTRATE_IMPLEMENTATION, TODO), `superpowers/specs/` (6).
 - Checkers, system Python:
 
 ```
@@ -1425,15 +1425,15 @@ $ python tools/documentation/check_changelog.py
 - Relative links, throwaway script over every tracked `.md` (inline links outside code fences, file and heading anchor):
 
 ```
-BROKEN-FILE docs/agent/2026_10_05_ESTATE_AUDIT/REPORT.md:36 -> LICENSE
-BROKEN-FILE docs/agent/2026_10_05_ESTATE_AUDIT/REPORT.md:72 -> LICENSE
-BROKEN-FILE docs/agent/2026_10_05_ESTATE_AUDIT/REPORT.md:76 -> LICENSE
-BROKEN-FILE docs/agent/2026_10_05_ESTATE_AUDIT/REPORT.md:453 -> README.md
-BROKEN-FILE docs/agent/2026_10_05_ESTATE_AUDIT/REPORT.md:494 -> target
-BROKEN-FILE docs/agent/2026_10_05_ESTATE_AUDIT/REPORT.md:514 -> LICENSE
-BROKEN-FILE docs/agent/2026_10_05_ESTATE_AUDIT/REPORT.md:518 -> LICENSE
-BROKEN-FILE docs/archive/slop/PHYSICS_SUBSTRATE_IMPLEMENTATION.md:4 -> PHYSICS_SUBSTRATE_REQUIREMENTS.md [archive]
-BROKEN-FILE docs/archive/slop/TODO.md:224 -> SIMULATION_ENGINE_SUBSTRATE_PLAN.md [archive]
+BROKEN-FILE the estate audit report in the version history:36 -> LICENSE
+BROKEN-FILE the estate audit report in the version history:72 -> LICENSE
+BROKEN-FILE the estate audit report in the version history:76 -> LICENSE
+BROKEN-FILE the estate audit report in the version history:453 -> README.md
+BROKEN-FILE the estate audit report in the version history:494 -> target
+BROKEN-FILE the estate audit report in the version history:514 -> LICENSE
+BROKEN-FILE the estate audit report in the version history:518 -> LICENSE
+BROKEN-FILE the physics substrate implementation document in the version history:4 -> PHYSICS_SUBSTRATE_REQUIREMENTS.md [archive]
+BROKEN-FILE the todo document in the version history:224 -> SIMULATION_ENGINE_SUBSTRATE_PLAN.md [archive]
 files 75 relative links 146 broken 9
 ```
 
@@ -1451,11 +1451,11 @@ All nine are in the audit report (link syntax quoted in prose) or in the frozen 
 | D1 no root README | Closed, with a remainder | `README.md` exists (593 lines). It is still the whole product README; see DOCS-03 |
 | D2 `docs/README.md` not an index | Closed | 56 lines, one row per page; the layout checker's reachability rule is silent |
 | D3 two live changelogs | Closed | Only `docs/reference/CHANGELOG.md`; `## Unreleased` at :3, `## v0.3.0 — 2026-09-15` at :63; v0.2.0 in the archive |
-| D4 changelog entry shape | Closed | `check_changelog.py` prints nothing; the long form is `docs/archive/changelog/v0.3.0_LONG_FORM.md` |
+| D4 changelog entry shape | Closed | `check_changelog.py` prints nothing; the long form is the v0.3.0 long form document in the version history |
 | D5 CONTRIBUTING on versioning | Closed | `docs/CONTRIBUTING.md:229-235` states the one-line rule |
 | D6 two licence texts | Closed | `docs/LICENSE` is gone; `README.md:593` names PolyForm Noncommercial and links the root `LICENSE` |
 | D7 backlog in `docs/slop/TODO.md` | Closed, new defect | `docs/design/REMAINING_WORK.md` exists; four of its items are stale (DOCS-08) |
-| D8 `docs/slop/`, `docs/superpowers/` | Closed in `docs/`, open in source | Both folders are under `docs/archive/` or `docs/design/`. Old paths remain at `cmake/SushiRuntimeInstall.cmake:21`, `cmake/SushiRuntimeConfig.cmake.in:16`, `tests/package/CMakeLists.txt:28`, `Doxyfile:4,24` |
+| D8 `docs/slop/`, `docs/superpowers/` | Closed in `docs/`, open in source | Both folders are under the archive or `docs/design/`. Old paths remain at `cmake/SushiRuntimeInstall.cmake:21`, `cmake/SushiRuntimeConfig.cmake.in:16`, `tests/package/CMakeLists.txt:28`, `Doxyfile:4,24` |
 | D9 changelog scope and order | Closed | Entries carry scope, newest first (`CHANGELOG.md:5-12`) |
 | D10 status lines | Closed, weak | All four design documents have `**Status:**` on line 2. Two say "not re-checked against the tree on 2026-10-05" |
 | D11 cited paths | Closed | No unresolved path in ARCHITECTURE; `cpp_standard_migration` has no hit in source |
@@ -1464,13 +1464,13 @@ All nine are in the audit report (link syntax quoted in prose) or in the frozen 
 | D14 required files absent | Closed | All present |
 | D15 no module README | Closed in count, changed in kind | 32 READMEs. None for `include/SushiRuntime/interop/`, `cmake/`, `tests/`. Content is rationale, not what the module owns (DOCS-05) |
 | D16 README and ARCHITECTURE duplicate | Open | `README.md:424-555` against `ARCHITECTURE.md` §3 to §12 and §16; recorded at `REMAINING_WORK.md:100` |
-| D17 `docs/agent/` shape | Closed | `docs/agent/2026_10_05_ESTATE_AUDIT/REPORT.md`; old reports archived |
+| D17 `docs/agent/` shape | Closed | the estate audit report in the version history; old reports archived |
 | D18 `docs/CLAUDE.md` | Moved, content open | Root `CLAUDE.md` and `AGENTS.md`. `AGENTS.md:8` still says read every `.md` under `docs/`, `:41` still makes `sr` mandatory, `:49` still closes with the personal line |
 | D19 em dash rate | Open | Same rates as measured above |
 | D20 missing changelog entries | Open | Recorded at `REMAINING_WORK.md:109` and in `KNOWN_ISSUES.md` |
 | D21 no documentation checker | Closed | `tools/documentation/` has three checkers; `ci.yml:163-175` runs them on Linux and Windows |
 | D22 no ruling on shapes | Closed by adoption | The tree follows the skill's work-folder shape and line-2 status; I found no written ruling |
-| D23 Turkish document | Closed | Archived as `docs/archive/slop/CODE_AND_ARCHITECTURE_REVIEW.md` |
+| D23 Turkish document | Closed | Archived as the code and architecture review document in the version history |
 | D24 community and API files | Changed | `SECURITY.md`, `CODE_OF_CONDUCT.md` and the main page are in `docs/reference/`; Doxygen writes to the build tree. `repository-layout` puts the two community files in `.github/` and `Doxyfile` in `.config/doxygen/` |
 
 ### Reader journeys
@@ -1625,7 +1625,7 @@ Evidence: `ENGINE_BACKBONE_REFACTOR.md:2` "BB-5, BB-7, BB-8 and the rest of BB-6
 Change: read §9 to §12 and §7 against the code once and set each status to `Open — phase N of M`.
 
 **DOCS-20, low, S. Placement against the two skills.**
-Evidence: `docs/reference/SECURITY.md` and `CODE_OF_CONDUCT.md` (layout skill: `.github/`); `Doxyfile` and `Dockerfile` at the root (layout skill: `.config/doxygen/`, `.config/docker/`); `docs/archive/changelog/v0.3.0_LONG_FORM.md` is not a `vX.Y.Z.md` name; ignored `docs/api-site/` on disk; `.github/ISSUE_TEMPLATE/bug_report.yml` names `SECURITY.md` by its old place.
+Evidence: `docs/reference/SECURITY.md` and `CODE_OF_CONDUCT.md` (layout skill: `.github/`); `Doxyfile` and `Dockerfile` at the root (layout skill: `.config/doxygen/`, `.config/docker/`); the v0.3.0 long form document in the version history is not a `vX.Y.Z.md` name; ignored `docs/api-site/` on disk; `.github/ISSUE_TEMPLATE/bug_report.yml` names `SECURITY.md` by its old place.
 Change: move the two community files to `.github/` and drop their rows from `docs/README.md` and the `exclude` list of `docs/publish.toml`; delete the on-disk `docs/api-site/`. The `Doxyfile` move belongs to the layout auditor.
 
 **DOCS-21, low, S. `docs/publish.toml` publishes pages whose links leave the bundle.**
@@ -1638,7 +1638,7 @@ Change: write the two lines.
 
 ### Not checked
 
-- `docs/archive/`: listed only. Its two broken links were found by the script, not by reading.
+- the archive: listed only. Its two broken links were found by the script, not by reading.
 - `docs/architecture/ARCHITECTURE.md`: read the outline, §16 and the lines the scripts flagged. The other 1 200 lines were machine-checked for identifiers and paths only; described behaviour and constants were not compared with the code.
 - `docs/getting_started/INTRODUCTION.md` lines 231-404 and 546-960, `docs/guides/DISTRIBUTED_GUIDE.md` beyond lines 8-20 and three greps, `docs/guides/FAQ.md` beyond line 60, `docs/reference/GLOSSARY.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md` §6 to §9, and the four design documents beyond their status lines.
 - Of the 32 module READMEs I read the opening of nine and the heading outline of five; the bodies of the rest were not read. The claim that none states dependencies or entry points rests on those fourteen and on the shared opening sentence.
@@ -1845,7 +1845,7 @@ Interactions: `SR_ENABLE_DISTRIBUTED` gates sources (`src/CMakeLists.txt:24`), a
 
 | Finding | Status | Evidence |
 | --- | --- | --- |
-| L1 two live changelogs | closed | `docs/CHANGELOG.md` gone; `docs/reference/CHANGELOG.md` is the one file; old sections in `docs/archive/changelog/` |
+| L1 two live changelogs | closed | `docs/CHANGELOG.md` gone; `docs/reference/CHANGELOG.md` is the one file; old sections in the archive |
 | L2 CLI 1.0.0 vs product 0.3.0 | open | `cli/pyproject.toml:7`, `cli/sushiruntime/__init__.py:8`, `Doxyfile:10` unchanged |
 | L3 no checkers | closed, with a hole | four checkers under `tools/`; `check_layering.py` has an empty tier order (LAYOUT-01) |
 | L4 CI shape | changed | checkers job with an OS matrix (`ci.yml:163-176`), `release.yml` on `v*` tags; build jobs still `ubuntu-latest`, raw `cmake`/`ctest` (`ci.yml:28-36,56-71,146-155`), `pyflakes ... || true` still at `:92` |
@@ -1853,7 +1853,7 @@ Interactions: `SR_ENABLE_DISTRIBUTED` gates sources (`src/CMakeLists.txt:24`), a
 | L6 CI installs sushicore from a dead path | closed | `ci.yml:87` `pip install -e ./cli` |
 | L7 release due | open, larger | 71 commits since v0.3.0, 58 Unreleased entries (lines 4-61), no new tag |
 | L8 docs tree | closed | `getting_started/ architecture/ guides/ design/ reference/ archive/ agent/` exist; I did not run `check_docs_layout.py` |
-| L9 `docs/slop` | closed | moved to `docs/archive/slop/` and `docs/design/` |
+| L9 `docs/slop` | closed | moved to the archive and `docs/design/` |
 | L10 two licence files | closed | `docs/LICENSE` gone; licence is now PolyForm Noncommercial (9eb845f) |
 | L11 `Doxyfile` in root | open | still in root; `Dockerfile` too |
 | L12 `src/`, `examples/`, `tests/functional/`, `SushiRuntime.h` | open | unchanged; on the backlog (`REMAINING_WORK.md:130-133`) |

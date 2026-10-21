@@ -118,10 +118,3 @@ Next id: KI-17
 - Workaround: read `git log`
 - Fix: RW-34
 
-### KI-16 Archived documents cite each other by old paths
-- Origin: own
-- Where: `docs/archive/slop`, `docs/archive/superpowers/specs`, `docs/archive/agent/reports`
-- Cause: the documents moved into the archive with their text as it was
-- Recognise: a link or a path in an archived document resolves nowhere
-- Workaround: find the document by name under `docs/archive/`
-- Fix: none, the archive is frozen

@@ -43,3 +43,9 @@ and what a coordinator needs beyond the seam's fields it stores behind
 The notes on why each symbol is the way it is are in `modules/engine/graph/README.md` and
 `modules/engine/scheduler/README.md`; each header's file block cites the page that holds its
 notes.
+
+## Designs
+
+<!-- designs:begin -->
+- [LAYERED_EXECUTION](../../../docs/design/LAYERED_EXECUTION/README.md): What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs without writing it into their code: a placement vocabulary on every node, a description of...
+<!-- designs:end -->

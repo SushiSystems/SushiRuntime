@@ -31,7 +31,7 @@ exactly that many. That number does not exist yet when the step boundary polls t
 providers.
 
 The node's kernel reads it on the device, runs at its capacity and returns past the live count, so
-no host read happens between nodes (docs/design/GRAPH_REPLAY.md §D). It is null on every ordinary
+no host read happens between nodes (docs/design/GRAPH_REPLAY/README.md §D). It is null on every ordinary
 node, and the atomic `count` is used then.
 
 device_count is written once when the task is recorded, before any run, and only read afterwards, so
@@ -320,7 +320,7 @@ observes the bytes written. The caller writes only while no execution of the pla
 
 A plan fixes the addresses its kernels receive, not the bytes behind them, so the rule holds on
 the scheduler path and on the in-order chain. It binds a recorded command graph as well, layer 2
-of [`GRAPH_REPLAY.md`](../../../docs/design/GRAPH_REPLAY.md), which is not built: a recording
+of [`GRAPH_REPLAY.md`](../../../docs/design/GRAPH_REPLAY/README.md), which is not built: a recording
 that captured the bytes would break it. A Device allocation is outside the rule, since the host
 cannot address it. The write is not a node and the rule adds no ordering; the caller orders it by
 writing between executions.

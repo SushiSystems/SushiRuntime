@@ -619,3 +619,9 @@ never names a concrete coordinator: `modules/extension/distributed/README.md` de
 distributed layer installs. A plan offloads only when the engine prepared it while that
 coordinator was installed: `ExecutionEngine::prepare()`, which the fluent `Graph` calls on each
 plan it compiles.
+
+## Designs
+
+<!-- designs:begin -->
+- [GRAPH_REPLAY](../../../docs/design/GRAPH_REPLAY/README.md): SushiEngine's matter device solver is launch-bound on the device.
+<!-- designs:end -->

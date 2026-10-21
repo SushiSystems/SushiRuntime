@@ -33,7 +33,6 @@ change makes the next release v0.4.0.
 ### RW-6 Rule on the public-surface reshapes of the API review
 - State: decision
 - Done when: the owner has ruled on each reshape, each a breaking change of its own
-- Source: `docs/agent/2026_10_11_API_QUALITY_CONTROL/REPORT.md`
 
 QC-21, 22, 23 (`IExecutionEngine`, `Node`, `TaskScheduler` responsibilities); QC-56 (types in
 `buffer.hpp`); QC-57, 67, 68 (`Recorder` listener, `untracked_kernel` order, `scratch()` span);
@@ -52,7 +51,7 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
 ### RW-7 Detect a `Buffer` moved after it was recorded
 - State: open
 - Done when: the liveness guard reports a recorded `Buffer` that moved (finding H4 of
-  `docs/archive/slop/CODE_AND_ARCHITECTURE_REVIEW.md`)
+  the code and architecture review document in the version history)
 
 ### RW-8 Run the topology code on a machine with several NUMA nodes and processor groups
 - State: unmeasured
@@ -65,12 +64,12 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
 - State: open
 - Done when: plans without device-sized nodes record, finalize and replay, with fallback on
   failure
-- Source: `docs/design/GRAPH_REPLAY.md`
+- Source: `docs/design/GRAPH_REPLAY/README.md`
 
 ### RW-10 Measure the gain of graph replay P0, P1 and P3
 - State: unmeasured
 - Done when: the gain through `Graph::run` is measured on each device
-- Source: `docs/design/GRAPH_REPLAY.md`
+- Source: `docs/design/GRAPH_REPLAY/README.md`
 
 ### RW-11 Build backbone BB-1b, the sync export from SYCL to Vulkan
 - State: open
@@ -86,7 +85,7 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
 ### RW-13 Build the multi-colour dispatch node, R9
 - State: open
 - Done when: a graph-colouring consumer pays one scheduler round trip per kind, not per colour
-- Source: `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS.md`
+- Source: `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS/README.md`
 
 ### RW-14 Build simulation substrate WP-5 and WP-7, and re-check the rest
 - State: open
@@ -113,8 +112,8 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
 
 ### RW-65 Carry out the runtime's share of layered execution
 - State: open
-- Done when: tasks R1 to R13 of `docs/design/LAYERED_EXECUTION.md` are closed
-- Source: `docs/design/LAYERED_EXECUTION.md`
+- Done when: tasks R1 to R13 of `docs/design/LAYERED_EXECUTION/README.md` are closed
+- Source: `docs/design/LAYERED_EXECUTION/README.md`
 
 R9 closes RW-17 and KI-6; R13 closes RW-21 and RW-22. The programme's entry is `sushiai RW-130`.
 
@@ -169,7 +168,6 @@ The ASan run needs a bundle with compiler-rt or the Linux machine.
 ### RW-26 Measure the phase E findings
 - State: unmeasured
 - Done when: QC-19, 20, 86, 58, 08, 117 and 121 each have a measurement and a ruling
-- Source: `docs/agent/2026_10_11_API_QUALITY_CONTROL/REPORT.md`
 
 ### RW-27 Record a failed event before its successors run
 - State: open
@@ -291,7 +289,7 @@ repository; its dropout fill (B1, G1) waits on it.
 ### RW-48 Turn on interprocedural optimisation
 - State: open
 - Done when: `cmake/` sets `INTERPROCEDURAL_OPTIMIZATION`, and PERF-7 and PERF-8 of
-  `docs/archive/slop/CODE_AND_ARCHITECTURE_REVIEW.md` are verified
+  the code and architecture review document in the version history are verified
 
 ### RW-49 See every new test fail
 - State: open

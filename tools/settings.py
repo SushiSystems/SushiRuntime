@@ -27,3 +27,7 @@ K_CONSOLE_PATHS: tuple[str, ...] = (
     "modules/foundation/measurement/include/SushiRuntime/measurement/measurement.hpp",
     "modules/extension/distributed/source/worker_main.cpp",
 )
+K_DESIGN_TOPICS = True
+K_FOLDER_CEILING = 60
+K_CLOSED_GRACE_DAYS = 0
+K_ARCHIVE_UNTRACKED = True

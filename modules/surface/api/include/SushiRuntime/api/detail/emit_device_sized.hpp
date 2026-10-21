@@ -48,7 +48,7 @@ namespace SushiRuntime
          * @brief Describes a node run at capacity that reads its width on device.
          *
          * Work-items at or past *launch.live_width return at once; launch.live_words feeds
-         * kernel one or two words by its arity (docs/design/GRAPH_REPLAY.md §D.2).
+         * kernel one or two words by its arity (docs/design/GRAPH_REPLAY/README.md §D.2).
          * @pre The reads name the regions launch.live_width and launch.live_words lie in.
          */
         template <class F>

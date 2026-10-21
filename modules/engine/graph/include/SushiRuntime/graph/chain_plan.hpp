@@ -59,7 +59,7 @@ namespace SushiRuntime
          * A plan is chainable when every node submits device work, every node's
          * data lives on one device, and no node reads on the host at dispatch a
          * value a predecessor wrote on the device (spec
-         * docs/design/GRAPH_REPLAY.md §C).
+         * docs/design/GRAPH_REPLAY/README.md §C).
          */
         struct ChainPlan
         {
