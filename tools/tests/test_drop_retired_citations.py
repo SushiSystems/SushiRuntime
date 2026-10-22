@@ -42,6 +42,10 @@ class PhraseTest(unittest.TestCase):
         """Reads the folder of SPEC.md, PLAN.md and REPORT.md, not the file name."""
         self.assertEqual(phrase("agent/2026_09_22_ROOM_FURNISHINGS/PLAN.md"), "the room furnishings plan in the version history")
 
+    def test_names_a_readme_by_its_folder(self) -> None:
+        """Reads the folder of a README.md, which says nothing by itself."""
+        self.assertEqual(phrase("design/OLD_TOPIC/README.md"), "the old topic document in the version history")
+
     def test_falls_back_to_document(self) -> None:
         """Calls a file in an unknown folder a document."""
         self.assertEqual(phrase("archive/design/OLD_THING.md"), "the old thing document in the version history")
