@@ -34,6 +34,8 @@ runs:
       shell: bash
       run: |
         set -e
+        # The workflow's ccache launchers would reach this configure, and ccache is not installed yet.
+        unset CMAKE_C_COMPILER_LAUNCHER CMAKE_CXX_COMPILER_LAUNCHER
         git clone --depth 1 --branch "${{ inputs.version }}" \
           https://github.com/AdaptiveCpp/AdaptiveCpp.git "$RUNNER_TEMP/acpp"
         cmake -S "$RUNNER_TEMP/acpp" -B "$RUNNER_TEMP/acpp/build" -G Ninja \
