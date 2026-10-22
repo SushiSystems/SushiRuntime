@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 2026-10-22 — tests: Skipped seven tests on AdaptiveCpp, where bindless images, shared USM kinds, shared alignment and the steady-state allocation counts differ (`test_interop.cpp`, `test_sushiruntime.cpp`, `test_usm_allocator.cpp`).
+- 2026-10-22 — tools: Resolved the page folder before relinking a moved citation, which failed on the short temporary paths of Windows runners (`fold_design_topics.py`, `repair_design_citations.py`).
+- 2026-10-22 — tools: Synced the design-document checkers and their tests with SushiSkills (`design_status.py`, `design_views.py`, `drop_retired_citations.py`).
+- 2026-10-22 — memory_exchange: Guarded the Intel device-info and bindless-images queries by their feature macros and removed `bindless_detection.hpp`, so AdaptiveCpp builds (`memory_exchange.cpp`).
+- 2026-10-22 — execution: Submitted a node without an event through `submit_without_event`, which falls back to `queue.submit` where enqueue_functions is missing (`chain_run.cpp`).
+- 2026-10-22 — machine: Gave `DeviceDescription::backend` a value-initialised `sycl::backend`, since AdaptiveCpp has no `backend::opencl` (`device_description.hpp`).
+- 2026-10-22 — ci: Added Linux jobs for intel-llvm and AdaptiveCpp, named the jobs by toolchain and made `gate` wait for both (`ci.yml`, `setup-intel-llvm`, `setup-adaptivecpp`).
 - 2026-10-21 — docs: Reshaped the five design documents into the five sections with a phase table, split two into topic folders and moved their evidence to work folders (`docs/design/`, `docs/agent/`).
 - 2026-10-20 — docs: Moved 2 known issues with a scheduled fix and no workaround into the backlog entries that fix them (`KNOWN_ISSUES.md`, `REMAINING_WORK.md`).
 - 2026-10-20 — docs: Designed placement classes, scopes, topology and placement rules across devices and machines (`LAYERED_EXECUTION.md`).
