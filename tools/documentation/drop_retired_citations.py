@@ -49,6 +49,8 @@ def phrase(cited: str) -> str:
     name = parts[-1]
     if name in K_WORK_FILES and len(parts) >= 2:
         label, kind = parts[-2], K_WORK_FILES[name]
+    elif name == "README.md" and len(parts) >= 2:
+        label, kind = parts[-2], "document"
     else:
         label, kind = name.removesuffix(".md"), K_KINDS.get(parts[-2], "document") if len(parts) >= 2 else "document"
     words = K_WORDS.sub(" ", K_DATE_PREFIX.sub("", label)).lower().strip()
