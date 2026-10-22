@@ -97,6 +97,28 @@ namespace
         return false;
     }
 
+    /**
+     * @brief Returns whether the toolchain's aligned shared allocation honours @p alignment.
+     *
+     * Several allocations are live at once, so a heap that happens to hand out one aligned
+     * address does not pass the probe.
+     */
+    bool shared_allocation_honours(sycl::queue& queue, std::size_t alignment)
+    {
+        constexpr std::size_t K_PROBES = 8;
+        std::array<void*, K_PROBES> probes{};
+        bool honoured = true;
+        for (void*& probe : probes)
+        {
+            probe = sycl::aligned_alloc_shared(alignment, 1, queue);
+            honoured = honoured && probe != nullptr
+                       && reinterpret_cast<std::uintptr_t>(probe) % alignment == 0u;
+        }
+        for (void* const probe : probes)
+            sycl::free(probe, queue);
+        return honoured;
+    }
+
     /** @brief Records every address an allocator reports as released. */
     class RecordingObserver final : public USMReleaseObserver
     {
@@ -291,6 +313,11 @@ TEST_F(Medium_UsmAllocator, AnAlignedRequestReturnsAnAddressOnTheAlignment)
 
         for (const std::size_t alignment : {std::size_t{64}, std::size_t{128}})
         {
+            if (kind == USMKind::Shared && !shared_allocation_honours(queues_[*device], alignment))
+            {
+                RecordProperty("shared_alignment_not_honoured", std::to_string(alignment));
+                continue;
+            }
             for (const std::size_t bytes : {std::size_t{1}, std::size_t{100}, std::size_t{4096}})
             {
                 SCOPED_TRACE(std::string(name_of(kind)) + ", " + std::to_string(bytes)

@@ -26,6 +26,7 @@
  * @author Mustafa Garip
  */
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -37,9 +38,12 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory/allocation.hpp>
 
 using namespace SushiRuntime;
@@ -51,6 +55,31 @@ namespace DataHandlesTests
     {
         /** @brief Element count of every handle the range tests allocate. */
         constexpr std::size_t K_SIZE = 37;
+
+        /**
+         * @brief Returns whether the toolchain's aligned shared allocation on device 0 honours
+         *        @p alignment.
+         *
+         * Several allocations are live at once, so a heap that happens to hand out one aligned
+         * address does not pass the probe.
+         */
+        bool shared_allocation_honours(Runtime& runtime, std::size_t alignment)
+        {
+            sycl::queue& queue =
+                SushiRuntime::Internal::ContextAccess::context(runtime).devices().queue(0);
+            constexpr std::size_t K_PROBES = 8;
+            std::array<void*, K_PROBES> probes{};
+            bool honoured = true;
+            for (void*& probe : probes)
+            {
+                probe = sycl::aligned_alloc_shared(alignment, 1, queue);
+                honoured = honoured && probe != nullptr
+                           && reinterpret_cast<std::uintptr_t>(probe) % alignment == 0u;
+            }
+            for (void* const probe : probes)
+                sycl::free(probe, queue);
+            return honoured;
+        }
 
         /** @brief Returns the pattern of the line a call writes when it stops on a window. */
         std::string window_pattern(const std::string& call, ElementRange range, std::size_t size)
@@ -309,6 +338,11 @@ namespace DataHandlesTests
         for (const Residency residency : {Residency::Shared, Residency::Host, Residency::Device})
         {
             SCOPED_TRACE(residency_name(residency));
+            if (residency == Residency::Shared && !shared_allocation_honours(rt, K_ALIGNMENT))
+            {
+                RecordProperty("shared_alignment_not_honoured", std::to_string(K_ALIGNMENT));
+                continue;
+            }
             const auto buf = rt.buffer<float>(K_SIZE, DeviceIndex{0}, residency, K_ALIGNMENT);
             const auto field = rt.state<float>(K_SIZE, DeviceIndex{0}, residency, K_ALIGNMENT);
             // A residency the device does not offer returns AllocationFailed and is not checked.
