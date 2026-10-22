@@ -67,7 +67,7 @@ jobs:
         run: python -m pytest tests -q
 
   linux:
-    name: Linux (small, medium)
+    name: Linux oneapi (small, medium)
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
@@ -92,8 +92,64 @@ jobs:
       - name: sr test --label medium
         run: sr test --label medium
 
+  linux-intel-llvm:
+    name: Linux intel-llvm (small, medium)
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    env:
+      SR_SYCL_TOOLCHAIN: intel-llvm
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./.github/actions/setup-intel-llvm
+      - uses: ./.github/actions/setup-sr
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-linux-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
+          restore-keys: ccache-linux-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+      - name: sr build --distributed --no-cuda
+        run: sr build --distributed --no-cuda
+      # Saved even when a later step fails or times out, so the next run starts warm.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: .ccache
+          key: ccache-linux-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
+      - name: sr test --label small
+        run: sr test --label small
+      - name: sr test --label medium
+        run: sr test --label medium
+
+  linux-adaptivecpp:
+    name: Linux adaptivecpp (small, medium)
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    env:
+      SR_SYCL_TOOLCHAIN: adaptivecpp
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./.github/actions/setup-adaptivecpp
+      - uses: ./.github/actions/setup-sr
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-linux-adaptivecpp-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
+          restore-keys: ccache-linux-adaptivecpp-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+      - name: sr build --distributed --no-cuda
+        run: sr build --distributed --no-cuda
+      # Saved even when a later step fails or times out, so the next run starts warm.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: .ccache
+          key: ccache-linux-adaptivecpp-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
+      - name: sr test --label small
+        run: sr test --label small
+      - name: sr test --label medium
+        run: sr test --label medium
+
   windows:
-    name: Windows (small, medium)
+    name: Windows intel-llvm (small, medium)
     timeout-minutes: 90
     runs-on: windows-latest
     env:
@@ -172,7 +228,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [checks, cli, linux, windows, sanitizers, docs]
+    needs: [checks, cli, linux, linux-intel-llvm, linux-adaptivecpp, windows, sanitizers, docs]
     timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,49 @@
+name: Set up intel/llvm
+description: Installs the intel/llvm nightly SYCL bundle, the OpenCL CPU device and the build tools on an Ubuntu runner.
+inputs:
+  date:
+    description: Nightly release date of the bundle, as it appears in the release tag.
+    default: "2026-06-12"
+runs:
+  using: composite
+  steps:
+    - name: Install the OpenCL CPU device and the build dependencies
+      shell: bash
+      run: |
+        set -e
+        wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+          | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+        echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+          | sudo tee /etc/apt/sources.list.d/oneAPI.list
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          intel-oneapi-runtime-opencl \
+          cmake ninja-build pkg-config git libhwloc-dev libgtest-dev ocl-icd-opencl-dev
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: bundle
+      with:
+        path: ~/llvm-sycl
+        key: intel-llvm-bundle-${{ inputs.date }}
+    - name: Download the intel/llvm bundle
+      if: steps.bundle.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -e
+        wget -q "https://github.com/intel/llvm/releases/download/nightly-${{ inputs.date }}/sycl_linux.tar.gz" \
+          -O "$RUNNER_TEMP/sycl_linux.tar.gz"
+        mkdir -p ~/llvm-sycl
+        tar -xzf "$RUNNER_TEMP/sycl_linux.tar.gz" -C ~/llvm-sycl --strip-components=1
+        rm "$RUNNER_TEMP/sycl_linux.tar.gz"
+    # oneAPI's setvars.sh stays unsourced: its libsycl would shadow the bundle's and the
+    # Unified Runtime versions would mismatch (cli/README.md, env.py).
+    - name: Export the bundle
+      shell: bash
+      run: |
+        echo "SR_LLVM_ROOT=$HOME/llvm-sycl" >> "$GITHUB_ENV"
+        echo "$HOME/llvm-sycl/bin" >> "$GITHUB_PATH"
+        echo "LD_LIBRARY_PATH=$HOME/llvm-sycl/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+    - name: clang++ --version
+      shell: bash
+      run: |
+        "$HOME/llvm-sycl/bin/clang++" --version
+        "$HOME/llvm-sycl/bin/sycl-ls"
