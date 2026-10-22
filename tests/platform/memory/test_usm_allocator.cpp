@@ -368,6 +368,12 @@ TEST_F(Medium_UsmAllocator, OwningDeviceAsksSYCLAboutUSMItHasNoRecordOf)
     void* const address = sycl::malloc_shared(K_BYTES, queues_[*device]);
     ASSERT_NE(address, nullptr);
 
+    if (sycl::get_pointer_type(address, queues_[*device].get_context()) != sycl::usm::alloc::shared)
+    {
+        sycl::free(address, queues_[*device]);
+        GTEST_SKIP() << "SYCL does not report this device's shared allocation as shared, so it names no owner.";
+    }
+
     EXPECT_FALSE(allocator_->device_of(address).has_value());
     const std::optional<std::size_t> owning = allocator_->owning_device(address);
     EXPECT_EQ(owning, std::optional<std::size_t>(*device));
