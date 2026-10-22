@@ -335,6 +335,12 @@ The test makes the three claims in order:
 3. The scheduler runs the same kernel from a worker thread, so the counter cannot see any of it. The
    count does not scale because it stays zero.
 
+The test skips on AdaptiveCpp. The CI run on its toolchain missed claims 1 and 2 by a few
+allocations: the value form cost 454 against 456 for the reuse form plus one per tick, and the chain
+grew by 1171 against bare SYCL's 1164. Whether that is the toolchain's own variation or an extra
+allocation on the chain's path is not settled. The skip stays until a second run or a read of the
+path settles it.
+
 ### `AsyncWaitIntoAReusedReportIsAmortised`
 
 The test makes the same claim on the asynchronous path, which is the one an overlapped frame loop
