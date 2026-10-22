@@ -355,6 +355,10 @@ TEST(Medium_SteadyStateAllocation, AsyncWaitIntoAReusedReportIsAmortised)
 /** @brief Tests that a profiled run's event ledger allocates only for a new shape. */
 TEST(Medium_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
 {
+#if defined(__ADAPTIVECPP__) || defined(__HIPSYCL__)
+    GTEST_SKIP() << "AdaptiveCpp's submission allocates a different number of times per call, so "
+                    "the counts this test compares are not stable there; see README.md.";
+#endif
     // Without the counter every count is zero, so both claims would pass vacuously.
     if (!K_COUNTER_SEES_THE_LIBRARY)
         GTEST_SKIP() << "the allocation counter does not see the library in this build; see README.md";
