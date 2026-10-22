@@ -81,15 +81,6 @@ Next id: KI-17
 
 ## Build and command line
 
-### KI-12 The CLI, the documentation and the library state three versions
-- Origin: own
-- Where: `cli/pyproject.toml`, `cli/sushiruntime/__init__.py`, `.config/doxygen/Doxyfile`
-- Cause: the CLI package declares 1.0.0 and `Doxyfile` says `v1 (unreleased)` while the library
-  is 0.3.0
-- Recognise: `sr --version` and the API site name a version the library does not have
-- Workaround: read the version from `CMakeLists.txt`
-- Fix: RW-2
-
 ### KI-13 Configuring leaves empty `CXX-DetectStdlib-*.h` files in the root
 - Origin: own
 - Where: `cli/sushiruntime/services/project.py`

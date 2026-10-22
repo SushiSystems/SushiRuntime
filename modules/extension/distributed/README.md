@@ -562,8 +562,8 @@ The flag is one per process, which is why at most one `StopSignal` exists at a t
 | Version | Release | What changed |
 | --- | --- | --- |
 | 1 | v0.3.0 and earlier | Frame `[u32 length][u8 type]` in native byte order, payloads written as raw structs, nine message types. No authentication, and a buffer travelled whole in one frame. Removed with `protocol.hpp` |
-| 2 | unreleased | 12-byte little-endian header: magic `SRDP`, version, type, flags, payload length of at most 1 MiB. Sixteen messages with fixed-width fields. A four-message handshake with HMAC-SHA256 proofs in both directions. Buffers travel in chunks, and a task's output chunks precede its result. `TASK_ACCEPTED`, `BUFFER_ABORT`, `BUFFER_RELEASE`, `REJECT` and `GOODBYE` are new |
-| 3 | unreleased | The frame and the sixteen messages of version 2. A task's dispatch carries its own operation, name and parameters |
+| 2 | v0.4.0 | 12-byte little-endian header: magic `SRDP`, version, type, flags, payload length of at most 1 MiB. Sixteen messages with fixed-width fields. A four-message handshake with HMAC-SHA256 proofs in both directions. Buffers travel in chunks, and a task's output chunks precede its result. `TASK_ACCEPTED`, `BUFFER_ABORT`, `BUFFER_RELEASE`, `REJECT` and `GOODBYE` are new |
+| 3 | v0.4.0 | The frame and the sixteen messages of version 2. A task's dispatch carries its own operation, name and parameters |
 
 `Wire::K_PROTOCOL_VERSION` in `wire/wire_frame.hpp` holds the current number. Master and worker
 must carry the same version: the reader checks it on every frame and there is no negotiation. The

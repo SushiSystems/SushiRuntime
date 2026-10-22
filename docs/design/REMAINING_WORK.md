@@ -8,18 +8,6 @@ Next id: RW-67
 - State: decision
 - Done when: `AGENTS.md` and the owner's delegation rule agree on whether a subagent runs `sr`
 
-### RW-2 Decide whether the CLI shares the product version
-- State: decision
-- Done when: `cli/pyproject.toml`, `cli/sushiruntime/__init__.py` and `.config/doxygen/Doxyfile`
-  carry the library's version, or the owner has ruled that the CLI versions on its own
-
-### RW-3 Cut the v0.4.0 release
-- State: decision
-- Done when: the owner has approved v0.4.0 and the release commit sets `version.hpp`
-
-More than 49 commits have landed since v0.3.0, several of them breaking; pre-1.0, a breaking
-change makes the next release v0.4.0.
-
 ### RW-4 Choose how a host read of Shared memory during a run is made safe
 - State: decision
 - Done when: the owner has chosen a read that waits on the owning queue, a debug-build guard

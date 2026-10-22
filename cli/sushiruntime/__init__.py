@@ -5,4 +5,4 @@
 # Commercial use requires a licence from Sushi Systems.
 """SushiRuntime developer CLI package."""
 
-__version__ = "1.0.0"
+__version__ = "0.4.0"
