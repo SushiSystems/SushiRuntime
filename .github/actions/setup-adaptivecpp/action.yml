@@ -1,0 +1,56 @@
+name: Set up AdaptiveCpp
+description: Builds AdaptiveCpp against the distro's LLVM on an Ubuntu runner, cached by version, and adds the build tools.
+inputs:
+  version:
+    description: AdaptiveCpp release tag.
+    default: "v24.10.0"
+  llvm:
+    description: Major version of the LLVM from apt.llvm.org that AdaptiveCpp builds against.
+    default: "17"
+runs:
+  using: composite
+  steps:
+    - name: Install the LLVM, the Boost libraries and the build dependencies
+      shell: bash
+      run: |
+        set -e
+        codename=$(lsb_release -cs)
+        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+          | gpg --dearmor | sudo tee /usr/share/keyrings/llvm.gpg > /dev/null
+        echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-${{ inputs.llvm }} main" \
+          | sudo tee /etc/apt/sources.list.d/llvm.list
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          clang-${{ inputs.llvm }} llvm-${{ inputs.llvm }}-dev libclang-${{ inputs.llvm }}-dev lld-${{ inputs.llvm }} \
+          libboost-context-dev libboost-fiber-dev libomp-${{ inputs.llvm }}-dev \
+          cmake ninja-build pkg-config git libhwloc-dev libgtest-dev
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: acpp
+      with:
+        path: ~/adaptivecpp
+        key: adaptivecpp-${{ inputs.version }}-llvm${{ inputs.llvm }}-${{ runner.os }}-${{ runner.arch }}
+    - name: Build AdaptiveCpp
+      if: steps.acpp.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -e
+        git clone --depth 1 --branch "${{ inputs.version }}" \
+          https://github.com/AdaptiveCpp/AdaptiveCpp.git "$RUNNER_TEMP/acpp"
+        cmake -S "$RUNNER_TEMP/acpp" -B "$RUNNER_TEMP/acpp/build" -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX="$HOME/adaptivecpp" \
+          -DLLVM_DIR=/usr/lib/llvm-${{ inputs.llvm }}/lib/cmake/llvm \
+          -DCLANG_INSTALL_PREFIX=/usr/lib/llvm-${{ inputs.llvm }} \
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        cmake --build "$RUNNER_TEMP/acpp/build" --target install
+        rm -rf "$RUNNER_TEMP/acpp"
+    - name: Export AdaptiveCpp
+      shell: bash
+      run: |
+        echo "SR_ACPP=$HOME/adaptivecpp/bin/acpp" >> "$GITHUB_ENV"
+        echo "$HOME/adaptivecpp/bin" >> "$GITHUB_PATH"
+        echo "LD_LIBRARY_PATH=$HOME/adaptivecpp/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+    - name: acpp --version
+      shell: bash
+      run: |
+        "$HOME/adaptivecpp/bin/acpp" --version
