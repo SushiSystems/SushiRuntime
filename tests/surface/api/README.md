@@ -357,9 +357,10 @@ event's timestamps after the wait as the ledger does, so it carries the cost of 
 On some SYCL backends reading a timestamp allocates, and a baseline that left the event unread
 would grow by less than the chain on every tick.
 
-The test skips on AdaptiveCpp for the reason `ReuseTicksDoNotAllocatePerTick` does. In one CI run
-that test failed and this one passed; in the next run this one failed. The same code produced both
-results, so the growth comparison is not stable on that toolchain.
+The test skips on AdaptiveCpp for the reason `ReuseTicksDoNotAllocatePerTick` does. Its CI run
+missed the growth claim by 2 allocations over 192 ticks (1174 against bare SYCL's 1172); the other
+test missed it by 7 in an earlier run, while this one passed in that run. Two samples cannot tell
+a small constant allocation on the chain's path from variation, so the cause stays open.
 
 ## dynamic_graph_plan_access.hpp
 
