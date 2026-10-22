@@ -30,6 +30,9 @@ can only come from that field.
 The capability is checked before the descriptor. The refusal is `ErrorCode::Unsupported` and its
 message carries the device index.
 
+A toolchain without bindless images refuses earlier, before it reads any device, with a message that
+names the toolchain. The test skips there.
+
 ### `AHandleKindOfAnotherPlatformIsRefusedByName`
 
 Windows imports `OpaqueWin32` handles and every other platform imports `OpaqueFd`. The other kind is

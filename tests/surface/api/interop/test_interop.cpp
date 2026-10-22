@@ -122,6 +122,9 @@ TEST(Medium_InteropImport, HostExportReportsWhetherTheQueueOffersHostUSM)
 
 TEST(Medium_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
 {
+#if !defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
+    GTEST_SKIP() << "This toolchain has no bindless images, so import_device refuses before it reads a device.";
+#endif
     auto runtime = Runtime::create().value();
     const std::optional<std::size_t> index = first_device_where_import_is(runtime, false);
     if (!index)
