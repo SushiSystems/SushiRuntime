@@ -45,7 +45,7 @@ namespace SushiRuntime
         std::size_t index = 0;                         /**< Position in the device set. */
         std::string name;                              /**< Name the device reports. */
         DeviceKind kind = DeviceKind::Other;           /**< Class of the device. */
-        sycl::backend backend = sycl::backend::opencl; /**< SYCL backend that drives it. */
+        sycl::backend backend{};                       /**< SYCL backend that drives it. */
         int numa_node = 0;                             /**< NUMA node the device sits on. */
         std::uint64_t memory_bytes = 0;                /**< Global memory of the device. */
         std::uint32_t compute_units = 0;               /**< Parallel compute units it has. */
