@@ -74,8 +74,8 @@ namespace SushiRuntime
         }
 
         /// @brief Reports capabilities for a device queue already looked up by its caller.
-        InteropCapabilities capabilities_for(Internal::Execution::RuntimeContext& context, sycl::queue& queue,
-                                             std::size_t device_index)
+        InteropCapabilities capabilities_for([[maybe_unused]] Internal::Execution::RuntimeContext& context,
+                                             sycl::queue& queue, [[maybe_unused]] std::size_t device_index)
         {
             sycl::device device = queue.get_device();
 
