@@ -41,7 +41,6 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include "bindless_detection.hpp"
 #include <SushiRuntime/memory_exchange/memory_exchange.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/memory_exchange/memory_exchange_log_category.hpp>
@@ -82,16 +81,19 @@ namespace SushiRuntime
 
             InteropCapabilities capabilities;
             capabilities.host_export = device.has(sycl::aspect::usm_host_allocations);
+#if defined(SYCL_EXT_INTEL_DEVICE_INFO)
             if (device.has(sycl::aspect::ext_intel_device_info_uuid))
             {
                 DeviceUUID uuid;
                 uuid.bytes = device.get_info<sycl::ext::intel::info::device::uuid>();
                 capabilities.device_uuid = uuid;
             }
-            capabilities.device_import = Detail::K_BINDLESS_IMAGES_AVAILABLE
-                && context.devices().is_gpu(device_index)
+#endif
+#if defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
+            capabilities.device_import = context.devices().is_gpu(device_index)
                 && device.has(sycl::aspect::ext_oneapi_external_memory_import)
                 && capabilities.device_uuid.has_value();
+#endif
             return capabilities;
         }
 
