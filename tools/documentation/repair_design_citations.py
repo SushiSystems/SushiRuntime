@@ -130,7 +130,7 @@ def repair_text(
         former = None if target.exists() else _former_folder(path, design)
         earlier = None if former is None else (former / match["target"]).resolve()
         if earlier is not None and earlier.exists():
-            replacement = os.path.relpath(earlier, path.parent).replace(os.sep, "/")
+            replacement = os.path.relpath(earlier, path.parent.resolve()).replace(os.sep, "/")
             found.append(Repair(path, line_of(match), match["target"], replacement))
             return f"]({replacement}{match['anchor'] or ''})"
         if target.exists() or design.resolve() not in target.parents:
