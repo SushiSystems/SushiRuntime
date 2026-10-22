@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.0 — 2026-10-22
+
 - 2026-10-22 — tests: Skipped seven tests on AdaptiveCpp, where bindless images, shared USM kinds, shared alignment and the steady-state allocation counts differ (`test_interop.cpp`, `test_sushiruntime.cpp`, `test_usm_allocator.cpp`).
 - 2026-10-22 — tools: Resolved the page folder before relinking a moved citation, which failed on the short temporary paths of Windows runners (`fold_design_topics.py`, `repair_design_citations.py`).
 - 2026-10-22 — tools: Synced the design-document checkers and their tests with SushiSkills (`design_status.py`, `design_views.py`, `drop_retired_citations.py`).
@@ -405,24 +407,3 @@
 - 2026-09-15 — core: Added `Core::NodeEventRecord`, `Core::ClockPairing` and `RunReport::node_events`/`clock` for per-dispatch node timing (`core/run_report.hpp`).
 - 2026-09-15 — graph: Added a registration index on every node, shared by the tile levels of one `add_reduce`, and `TaskGraph::reserve_registration()` (`graph/node.hpp`, `graph/task_graph.hpp`).
 - 2026-09-15 — execution: Added a lazily built profiling queue per device on the plain queue's context (`RuntimeContext::profiling_queue`, `runtime_context.cpp`).
-
-## v0.3.0 — 2026-09-15
-
-- 2026-09-15 — cmake: Added the `sushiruntime_gpu_offload` interface target and its `SushiRuntime::gpu_offload` alias, publishing `-fsycl-targets` and backend options to consumers outside the runtime's tree (`cmake/gpu/GpuBackend.cmake`).
-- 2026-09-14 — graph: Made `Graph::add` reject a late-bound device counter that is not host USM, throwing `Errc::invalid_access` for Shared and Device counters that worked before (`buffer.hpp`, `dynamic.hpp`, `runtime_context.cpp`).
-- 2026-09-14 — interop: Added `API::Interop` for host memory export and device memory import (`interop/`, `Runtime::interop()`).
-- 2026-09-14 — memory: Added `Memory::Allocation`, `IAllocationOwner` and `UsmAllocationOwner` (`memory/allocation.hpp`, `memory/usm_allocation_owner.hpp`).
-- 2026-09-14 — api: Made `Buffer<T>` own its memory through a `Memory::Allocation` (`api/data/buffer.hpp`).
-- 2026-09-14 — cmake: Added a per-vendor GPU toolkit locator layer that `DetectGpu` and `Cuda` request vendors through (`cmake/gpu/locate/CudaToolkit.cmake`, `IntelToolkit.cmake`, `RocmToolkit.cmake`).
-- 2026-09-14 — cmake: Changed the Windows CUDA locator to fall back to the machine registry when the shell's `CUDA_PATH` predates the install (`cmake/gpu/locate/CudaToolkit.cmake`).
-- 2026-09-14 — memory: Added `Residency::Host` over pinned host USM and `RuntimeContext::malloc_host_on` (`buffer.hpp`, `dynamic.hpp`, `runtime_context.cpp`).
-- 2026-09-14 — cli: Fixed the TSan message of `sr build` to match the Windows exclusion in `cmake/Sanitizers.cmake` instead of naming icx-cl as the untested case (`cli/sushiruntime/services/project.py`, `docs/architecture/ARCHITECTURE.md`).
-- 2026-09-07 — docs: Renamed the hub's command from `ss` to `hub` in the manual (`docs/`).
-- 2026-08-30 — graph: Added `API::DynamicGraph::find_region(key)`, a const lookup returning the live region or `nullptr` without marking it for rebuild (`api/graph/dynamic_graph.hpp`).
-- 2026-08-25 — cli: Renamed the shared CLI layer's import from sushicli to sushicore across every import site (`cli/config.toml`, `cli/sushiruntime/config.py`, `cli/sushiruntime/console.py`, `cli/sushiruntime/services/diag.py`).
-- 2026-08-18 — memory: Removed the pooled USM allocation path with `BitmaskMemoryPool`, `ThreadLocalMagazine` and `USMAllocator` (`include/SushiRuntime/memory/`).
-- 2026-08-18 — memory: Removed `IAllocatorStrategy`, `create_allocator` and `RuntimeContext::get_allocator()` with the pool (`execution/runtime_context.hpp`).
-- 2026-08-18 — memory: Moved USM pointer ownership out of `RuntimeContext` into `Memory::UsmRegistry` and made `free_usm` resolve and forget in one locked step (`memory/usm_registry.hpp`, `Unit_UsmRegistry`).
-- 2026-08-18 — cli: Moved package verification into `sr test --suite package`, removed `sr package --no-verify` and changed its default prefix to `build/dist` (`tests/package/`).
-- 2026-08-18 — cmake: Included every CMake module by absolute path and prefixed `ProjectOptions.cmake` and `Vcpkg.cmake`, whose names collided with SushiEngine's (`cmake/`, `docs/CONTRIBUTING.md`).
-- 2026-08-18 — cmake: Fixed the determinism target needing CMake 3.30 by detecting the frontend at configure time where `$<CXX_COMPILER_FRONTEND_VARIANT:...>` is missing (`cmake/Determinism.cmake`).

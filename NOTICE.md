@@ -48,4 +48,4 @@ The repository is private. The tags `v0.2.0` (`8f190c1`) and `v0.3.0` (`3218aa8`
 Apache License 2.0 as `docs/LICENSE`; `v0.3.0` is also a release on the private GitHub
 repository, with no assets. The commits from `0597255` (2026-09-19) up to the licence change
 carried the Apache License 2.0 with LLVM exceptions and were never tagged. Anyone who received
-one of those states holds it under the licence it carried.
+one of those states holds it under the licence it carried. The tag `v0.4.0` carries the PolyForm Noncommercial License 1.0.0 as `LICENSE`.
