@@ -26,8 +26,13 @@
  */
 
 #include <chrono>
+#include <utility>
 #include <vector>
+#include <sycl/sycl.hpp>
+#if __has_include(<sycl/ext/oneapi/experimental/enqueue_functions.hpp>)
 #include <sycl/ext/oneapi/experimental/enqueue_functions.hpp>
+#define SR_HAS_ENQUEUE_FUNCTIONS 1
+#endif
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/observability/event_timestamps.hpp>
@@ -57,6 +62,23 @@ namespace SushiRuntime
             {
                 return static_cast<std::uint64_t>(
                     std::chrono::duration_cast<std::chrono::nanoseconds>(t.time_since_epoch()).count());
+            }
+
+            /**
+             * @brief Submits a command group and drops the event.
+             *
+             * Uses the enqueue-functions extension, which builds no event, when the compiler has it.
+             * @param queue The queue to submit to.
+             * @param group The command group.
+             */
+            template <typename Group>
+            void submit_without_event(sycl::queue& queue, Group&& group)
+            {
+#if defined(SR_HAS_ENQUEUE_FUNCTIONS)
+                sycl::ext::oneapi::experimental::submit(queue, std::forward<Group>(group));
+#else
+                static_cast<void>(queue.submit(std::forward<Group>(group)));
+#endif
             }
         } // namespace
 
@@ -217,7 +239,7 @@ namespace SushiRuntime
                 return;
             }
 
-            sycl::ext::oneapi::experimental::submit(queue_, [&node](sycl::handler& h)
+            submit_without_event(queue_, [&node](sycl::handler& h)
             {
                 for (const auto& ev : node.sycl_deps)
                     h.depends_on(ev);
