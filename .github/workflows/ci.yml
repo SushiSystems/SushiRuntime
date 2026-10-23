@@ -78,7 +78,7 @@ jobs:
         with:
           path: .ccache
           key: ccache-linux-icpx-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
-          restore-keys: ccache-linux-icpx-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+          restore-keys: ccache-linux-icpx-release-
       - name: sr build --distributed --no-cuda
         run: sr build --distributed --no-cuda
       # Saved even when a later step fails or times out, so the next run starts warm.
@@ -106,7 +106,7 @@ jobs:
         with:
           path: .ccache
           key: ccache-linux-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
-          restore-keys: ccache-linux-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+          restore-keys: ccache-linux-intel-llvm-release-
       - name: sr build --distributed --no-cuda
         run: sr build --distributed --no-cuda
       # Saved even when a later step fails or times out, so the next run starts warm.
@@ -134,7 +134,7 @@ jobs:
         with:
           path: .ccache
           key: ccache-linux-adaptivecpp-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
-          restore-keys: ccache-linux-adaptivecpp-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+          restore-keys: ccache-linux-adaptivecpp-release-
       - name: sr build --distributed --no-cuda
         run: sr build --distributed --no-cuda
       # Saved even when a later step fails or times out, so the next run starts warm.
@@ -163,7 +163,7 @@ jobs:
         with:
           path: .ccache
           key: ccache-windows-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
-          restore-keys: ccache-windows-intel-llvm-release-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+          restore-keys: ccache-windows-intel-llvm-release-
       # sr setup installs vcpkg, its ports and the intel/llvm bundle under ~/.sushisystems.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -201,7 +201,7 @@ jobs:
         with:
           path: .ccache
           key: ccache-linux-icpx-asan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
-          restore-keys: ccache-linux-icpx-asan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+          restore-keys: ccache-linux-icpx-asan-
       - name: sr build --type asan --distributed
         run: sr build --type asan --distributed
       # Saved even when a later step fails or times out, so the next run starts warm.
@@ -250,7 +250,7 @@ jobs:
         with:
           path: .ccache
           key: ccache-linux-icpx-tsan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
-          restore-keys: ccache-linux-icpx-tsan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-
+          restore-keys: ccache-linux-icpx-tsan-
       # The SYCL runtime, oneTBB and the OpenCL CPU device are not instrumented, so TSan reports
       # races inside their own thread pools; this option keeps it to the code built here.
       - name: sr build --type relwithdebinfo --distributed
@@ -295,7 +295,7 @@ jobs:
         with:
           path: .ccache
           key: ccache-linux-sushiblas-${{ hashFiles('sushiruntime/**/CMakeLists.txt', 'sushiruntime/cmake/**', 'sushiblas/**/CMakeLists.txt', 'sushiblas/cmake/**') }}-${{ github.sha }}
-          restore-keys: ccache-linux-sushiblas-${{ hashFiles('sushiruntime/**/CMakeLists.txt', 'sushiruntime/cmake/**', 'sushiblas/**/CMakeLists.txt', 'sushiblas/cmake/**') }}-
+          restore-keys: ccache-linux-sushiblas-
       # sushiruntime/ and sushiblas/ sit side by side, so a clone at the top is the sibling
       # sushilog/ sushicore looks for. The tag comes from the runtime's pin.
       - name: Clone the Sushi libraries the runtime pins
