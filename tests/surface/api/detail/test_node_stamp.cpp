@@ -39,20 +39,27 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that a stamp copies the operation, the width and the parameter count. */
+/** @brief Tests that a stamp copies the operation, the placement, the width and the parameter count. */
 TEST(Small_NodeStamp, CopiesWhatTheOptionsState)
 {
     const std::uint64_t parameters[3] = {1, 2, 3};
     NodeOptions options;
     options.operation = OperationID(42);
     options.width = 12;
+    options.placement_class = "sushiai.replica"_class;
+    options.placement_key = 0;
     options.parameters = span<const std::uint64_t>(parameters, 3);
     const Detail::NodeStamp stamp(options, "named");
     EXPECT_STREQ(stamp.name, "named");
     EXPECT_EQ(stamp.operation, OperationID(42));
+    EXPECT_EQ(stamp.placement_class, "sushiai.replica"_class);
+    ASSERT_TRUE(stamp.placement_key.has_value());
+    EXPECT_EQ(*stamp.placement_key, 0u);
     EXPECT_EQ(stamp.width, 12u);
     EXPECT_EQ(stamp.parameter_count, 3u);
     EXPECT_EQ(Detail::NodeStamp().width, K_WIDTH_UNKNOWN);
+    EXPECT_FALSE(Detail::NodeStamp().placement_class.is_named());
+    EXPECT_FALSE(Detail::NodeStamp().placement_key.has_value());
 }
 
 /** @brief Tests that parameters within the limit pass and one past it is refused. */

@@ -29,10 +29,13 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include <SushiRuntime/core/operation_id.hpp>
+#include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
 namespace SushiRuntime
@@ -51,6 +54,12 @@ namespace SushiRuntime
 
         /** @brief Operation the node names; a default id names none. */
         OperationID operation;
+
+        /** @brief Placement class the node was recorded with; a default class names none. */
+        PlacementClass placement_class;
+
+        /** @brief Placement key the node was recorded with, or none. */
+        std::optional<std::uint64_t> placement_key;
 
         /** @brief How many nodes of the plan must finish before this one starts. */
         std::size_t predecessor_count = 0;

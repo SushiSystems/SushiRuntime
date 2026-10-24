@@ -190,6 +190,10 @@ namespace SushiRuntime
                 node.metadata.name = stamp.name;
             if (stamp.operation.is_named())
                 node.metadata.op_id = stamp.operation;
+            if (stamp.placement_class.is_named())
+                node.metadata.placement_class = stamp.placement_class;
+            if (stamp.placement_key.has_value())
+                node.metadata.placement_key = stamp.placement_key;
             for (std::size_t i = 0; i < stamp.parameter_count; ++i)
                 node.metadata.set_param<std::uint64_t>(static_cast<int>(i), stamp.parameters[i]);
             if (stamp.width != ::SushiRuntime::K_WIDTH_UNKNOWN)

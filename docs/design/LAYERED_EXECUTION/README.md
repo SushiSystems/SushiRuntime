@@ -99,9 +99,24 @@ Made on 2026-10-19.
 
 ### Placement class and key
 
-A node carries two more facts in `NodeOptions`: a placement class, the hash of a name such as
-`sushiai.replica` or `sushiengine.physics`, built like an `OperationID`; and a placement key, a
-`u64` such as a replica or an island index. Both default to none.
+A node carries two more facts in `NodeOptions`: a placement class, built from a dotted name
+such as `sushiai.replica` or `sushiengine.physics`; and a placement key, a
+`std::optional<std::uint64_t>` such as a replica or an island index, where 0 is a key like any
+other. Both default to none.
+
+`PlacementClass` is a value type built from the name at compile time, as an `OperationID` is.
+It holds the 32-bit FNV-1a hash of the whole name and the hash of each prefix that ends before a
+dot, at most `K_MAX_PREFIX_DEPTH` (4) of them: `sushiengine.matter.water` holds the hashes of
+`sushiengine.matter.water`, `sushiengine` and `sushiengine.matter`. A rule for a class compares
+the whole-name hash. A rule for the prefix `sushiengine.*` looks for the hash of `sushiengine`
+among the prefixes, so it matches every class below `sushiengine` and not `sushiengine` itself.
+The class stores no name, so it is trivially copyable and has no owner whose life a plan
+depends on. A rule prefix with more than `K_MAX_PREFIX_DEPTH` segments is refused by the checks
+of `PlacementRules`.
+
+Set aside, on 2026-10-24: keeping the name beside its hash. It lets a prefix of any depth match,
+but every node or every scope then owns a string that must outlive each plan built from it, for
+a match the compile makes once per node.
 
 The operation says what a node computes and comes from the library that records it. The class
 and the key say which group it belongs to and come from the caller that owns the graph. The same
@@ -210,7 +225,7 @@ the task's own commit.
 
 | Id | Phase | State |
 | --- | --- | --- |
-| R1 | Placement class and key in `NodeOptions`; a node keeps them. Done when: a test records a node with a class and a key and reads both back from the plan. | planned |
+| R1 | Placement class and key in `NodeOptions`; a node keeps them. Done when: a test records a node with a class and a key and reads both back from the plan. | building |
 | R2 | `Runtime::placement_scope()`, `Recorder::within()`, inner scope wins, explicit options win. Done when: a test records nodes in two nested scopes and outside them and reads the class and key of each. Waits on R1. | planned |
 | R3 | `NodeFacts`, `DeviceFacts`, `Runtime::topology()`, labels from `RuntimeOptions`. Done when: a test reads the local machine's facts: device count, kinds, memory, the labels it was given. | planned |
 | R4 | `PlacementRule`, `PlacementRules` with its checks, the match by class, prefix, key and operation, priority and insertion order. Done when: a table test resolves a set of nodes against a rule set, including two conflicting rules and every refusal. Waits on R1, R3. | planned |
@@ -234,7 +249,7 @@ disjoint files and could share a wave.
 ### Work
 
 <!-- work:begin -->
-No open work.
+- [2026_10_24_LAYERED_EXECUTION](../../agent/2026_10_24_LAYERED_EXECUTION/PLAN.md): R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13
 <!-- work:end -->
 
 ## Open questions

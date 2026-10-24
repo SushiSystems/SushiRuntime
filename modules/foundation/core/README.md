@@ -19,6 +19,7 @@ The fourteen public headers under `include/SushiRuntime/core/`:
 | `error_translation.hpp` | `Detail::translate_exceptions`, which calls a function and returns what it throws as an `Error` |
 | `export.hpp` | `SUSHIRUNTIME_API`, `SR_API` and `SR_TYPE_API`, the symbol visibility macros |
 | `operation_id.hpp` | `OperationID`, the 32-bit FNV-1a hash of an operation's name, and the `_op` literal in `Literals` |
+| `placement_class.hpp` | `PlacementClass`, the 32-bit FNV-1a hash of a dotted class name with the hash of each of its prefixes, and the `_class` literal in `Literals` |
 | `ref_counted.hpp` | `RefCounted`, the intrusive reference count that `sushi_ptr` manages |
 | `result.hpp` | `Result<T, E>`, which holds a value or an error, and `ErrorWrapper` with `make_error` |
 | `span.hpp` | `span`, a non-owning view of contiguous elements, with conversions to and from `std::span` from C++20 |
@@ -161,6 +162,20 @@ default-constructed id holds and what is_named() tests.
 
 `Literals` is an inline namespace, so `"vec.add"_op` is found after `using namespace SushiRuntime;`
 and after `using namespace SushiRuntime::Literals;`, which brings in the literal and nothing else.
+
+## placement_class.hpp
+
+### PlacementClass
+
+A PlacementClass names the group a node belongs to by a dotted name such as `sushiai.replica`. It
+holds `value`, the hash of the whole name, and `prefixes`, the hash of each prefix that ends right
+before a dot, at most `K_MAX_PREFIX_DEPTH` (4) of them, so `sushiengine.matter.water` holds the
+hashes of `sushiengine` and `sushiengine.matter`. It stores no name, so it is trivially copyable
+and no plan depends on a string that must outlive it. The hash is OperationID::hash(), so the
+library has one FNV-1a implementation. Equality compares `value` only. has_prefix() looks for a
+hash among the prefixes and never matches the whole name, so a rule for `a.*` matches `a.b` and
+not `a`. The value 0, `K_NONE`, stands for "no class", which a default-constructed class holds
+and is_named() tests. The `_class` literal sits in the same inline `Literals` namespace as `_op`.
 
 ## ref_counted.hpp
 

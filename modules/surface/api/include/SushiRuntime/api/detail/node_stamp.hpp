@@ -37,6 +37,7 @@
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
+#include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
 
 namespace SushiRuntime
@@ -75,13 +76,15 @@ namespace SushiRuntime
             NodeStamp() noexcept = default;
 
             /**
-             * @brief Copies the operation, the width and the parameters of options.
+             * @brief Copies the operation, the placement, the width and the parameters of options.
              * @param owned_name The recorder's own copy of options.name, or null for none;
              *        it outlives every plan built from the recorder.
              * @pre parameters_refusal() returned nothing for options.
              */
             NodeStamp(const NodeOptions& options, const char* owned_name) noexcept
-                : name(owned_name), operation(options.operation), width(options.width),
+                : name(owned_name), operation(options.operation),
+                  placement_class(options.placement_class),
+                  placement_key(options.placement_key), width(options.width),
                   parameter_count(options.parameters.size())
             {
                 for (std::size_t i = 0; i < parameter_count; ++i)
@@ -93,6 +96,12 @@ namespace SushiRuntime
 
             /** @brief Operation the caller named; a default id names none. */
             OperationID operation;
+
+            /** @brief Placement class the caller named; a default class names none. */
+            PlacementClass placement_class;
+
+            /** @brief Placement key the caller gave, or none. */
+            std::optional<std::uint64_t> placement_key;
 
             /** @brief Launch width the caller stated, or K_WIDTH_UNKNOWN. */
             std::size_t width = K_WIDTH_UNKNOWN;

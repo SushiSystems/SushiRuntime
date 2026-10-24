@@ -304,3 +304,16 @@ The file tests OperationID: the FNV-1a hash, the literal, naming and ordering.
 | `HashIsFNV1a` | Checks the hash against the FNV-1a offset basis and a published value. |
 | `LiteralMatchesTheExplicitHash` | The literal hashes at compile time and equals the explicit form. |
 | `DefaultIsUnnamedAndOrderFollowsTheValue` | The default names nothing and ordering follows the value. |
+
+## test_placement_class.cpp
+
+The file tests PlacementClass: the whole-name hash, the prefix hashes, the literal and naming.
+
+| Test | What it proves |
+| --- | --- |
+| `ValueIsTheHashOfTheWholeName` | The value equals OperationID::hash() of the name. |
+| `ThreeSegmentNameHoldsTwoPrefixes` | A three-segment name holds the hashes of its two prefixes. |
+| `OneSegmentNameHoldsNoPrefix` | A one-segment name holds none. |
+| `SixSegmentNameKeepsFourPrefixes` | Prefixes past `K_MAX_PREFIX_DEPTH` are not kept. |
+| `HasPrefixMatchesStrictPrefixesOnly` | has_prefix() finds a prefix and never the whole name. |
+| `DefaultIsUnnamedAndEqualityComparesTheValue` | The default names nothing and equality compares the value. |

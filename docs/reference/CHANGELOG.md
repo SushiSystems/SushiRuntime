@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-24 — api: Added a placement class and an optional placement key to `NodeOptions`, kept in the node's metadata and reported by `PlanNode` (`placement_class.hpp`, `node_options.hpp`, `plan_view.hpp`).
 - 2026-10-23 — ci: Dropped the build-file hash from the ccache `restore-keys`, so a CMake change restores the closest older cache instead of starting a cold build that overran the 60-minute downstream job (`ci.yml`).
 
 ## v0.4.0 — 2026-10-22

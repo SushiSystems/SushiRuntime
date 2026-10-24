@@ -148,6 +148,8 @@ namespace SushiRuntime
                 if (node.metadata.name != nullptr)
                     described.name = node.metadata.name;
                 described.operation = node.metadata.op_id;
+                described.placement_class = node.metadata.placement_class;
+                described.placement_key = node.metadata.placement_key;
                 described.predecessor_count =
                     static_cast<std::size_t>(state_->plan.base_in_degree[node.plan_index]);
                 described.reads = node.io_reads_;

@@ -30,10 +30,12 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <type_traits>
 #include <cstddef>
 
 #include <SushiRuntime/core/operation_id.hpp>
+#include <SushiRuntime/core/placement_class.hpp>
 
 namespace SushiRuntime 
 {
@@ -63,6 +65,12 @@ namespace SushiRuntime
             const char* name = "unnamed_task"; /**< Profiler identifier. */
             TaskType task_type = TaskType::None;
             OperationID op_id = OperationID();
+
+            /** @brief Group the node belongs to, for placement; a default class names none. */
+            PlacementClass placement_class = PlacementClass();
+
+            /** @brief Index within the group; none when the caller gave no key. */
+            std::optional<uint64_t> placement_key = std::nullopt;
             
             /**
              * @brief Influences task execution order during queue retrieval.

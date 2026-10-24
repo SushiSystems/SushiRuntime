@@ -30,9 +30,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 #include <SushiRuntime/core/operation_id.hpp>
+#include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
 
@@ -62,5 +64,11 @@ namespace SushiRuntime
          * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
          */
         span<const std::uint64_t> parameters = {};
+
+        /** @brief Group the node belongs to, for placement; a default class names none. */
+        PlacementClass placement_class = {};
+
+        /** @brief Index within the group, such as a replica or an island; 0 is a key too. */
+        std::optional<std::uint64_t> placement_key = {};
     };
 } // namespace SushiRuntime

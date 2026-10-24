@@ -16,7 +16,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `recorder.hpp` | Recorder and Recorder::RuleScope |
 | `access.hpp` | Access, what one node reads and writes |
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
-| `node_options.hpp` | NodeOptions: the width, the name, the operation and the parameters of a node |
+| `node_options.hpp` | NodeOptions: the width, the name, the operation, the parameters, and the placement class and key of a node |
 | `plan_view.hpp` | PlanView and PlanNode: the copy of a plan that Graph::plan() returns |
 
 BuilderSurface, StepDriver, PlanCache, RegionComposer and RegionChangeLog are declared in
@@ -88,6 +88,8 @@ for (const SushiRuntime::PlanNode& node : plan->nodes)
 | `rule` | Position of the rule that recorded the node, the value rule_registration() takes |
 | `name` | The label of the node's row in a RunReport |
 | `operation` | The OperationID the node's NodeOptions named; a default id when it named none |
+| `placement_class` | The PlacementClass the node's NodeOptions named; a default class when it named none |
+| `placement_key` | The placement key the node's NodeOptions gave; none when it gave none |
 | `predecessor_count` | How many nodes of the plan must finish before this one starts |
 | `reads`, `writes` | The `BufferRegion`s the node named, in the order it named them |
 
@@ -314,6 +316,8 @@ nothing.
 | `name` | `NodeTiming::name` of a profiled run | The name of the node's rule, or "unnamed_task" |
 | `operation` | `NodeTiming::operation`, and the engine's metadata of the node | No operation |
 | `parameters` | The engine's metadata of the node | No parameter |
+| `placement_class` | The engine's metadata of the node, and `PlanNode::placement_class` | No class |
+| `placement_key` | The engine's metadata of the node, and `PlanNode::placement_key` | No key; 0 is a key |
 
 The recorder copies `name` and `parameters` when the node is recorded, so a temporary string and
 a local array are valid arguments. A node carries `NodeOptions::K_MAX_PARAMETERS` parameters,
