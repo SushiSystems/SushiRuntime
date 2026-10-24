@@ -146,7 +146,7 @@ manual states today:
   types.
 - The distributed layer authenticates master and worker at the handshake and encrypts nothing.
   It is meant for a trusted LAN.
-- A distributed worker runs one kernel at a time, on its device 0.
+- A distributed worker runs one kernel at a time, on the device its dispatch names.
 
 [Known issues](../reference/KNOWN_ISSUES.md) lists the recorded defects that are not yet fixed,
 and §12 of [the distributed guide](DISTRIBUTED_GUIDE.md) lists that layer's limits.

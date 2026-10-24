@@ -105,10 +105,10 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
 
 R9 closes RW-17 and KI-6; R13 closes RW-21 and RW-22. The programme's entry is `sushiai RW-130`.
 
-### RW-17 Dispatch a worker's kernels through its scheduler
+### RW-17 Run a worker's kernels through its scheduler and overlap them
 - State: open
-- Done when: `WorkerAgentOptions` takes a device and a worker dispatches through its scheduler
-  on every device
+- Done when: a worker dispatches through its runtime's scheduler, and two dispatches on two
+  devices overlap in a test
 
 ### RW-18 Protect frames after the handshake
 - State: open

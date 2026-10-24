@@ -339,9 +339,9 @@ namespace SushiRuntime
 
         DispatchExecutor::DispatchExecutor(sushi_ptr<KernelRegistry> kernels,
                                            WorkerBufferCache& cache, Transport& transport,
-                                           sycl::queue& queue,
+                                           Internal::Device::DeviceQueueSet& devices,
                                            const DispatchExecutorOptions& options)
-            : kernels_(std::move(kernels)), cache_(cache), transport_(transport), queue_(queue),
+            : kernels_(std::move(kernels)), cache_(cache), transport_(transport), devices_(devices),
               options_(options), held_(std::make_shared<HeldTasks>())
         {
 
@@ -602,6 +602,28 @@ namespace SushiRuntime
                          cache_.bytes(), consequence);
         }
 
+        sycl::queue* DispatchExecutor::queue_for(const Job& job)
+        {
+            const std::uint32_t device = job.dispatch.device_index;
+            if (device >= devices_.count())
+            {
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the dispatch names device {}, and this worker has {}; "
+                            "reported as kernel failed",
+                            job.dispatch.task_id, device, devices_.count());
+                return nullptr;
+            }
+
+            sycl::queue& queue = devices_.queue(device);
+            if (queue.get_context() != devices_.queue(options_.cache_device).get_context())
+            {
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {}: device {} does not share the context of device {}, where the "
+                            "worker's buffers live; reported as kernel failed",
+                            job.dispatch.task_id, device, options_.cache_device);
+                return nullptr;
+            }
+            return &queue;
+        }
+
         void DispatchExecutor::execute(const Job& job)
         {
             const Wire::TaskDispatchMessage& dispatch = job.dispatch;
@@ -615,6 +637,13 @@ namespace SushiRuntime
                             task_id, dispatch.operation.value);
                 fail(job.from, task_id, job.generation,
                      Wire::TaskResultStatus::UnknownOperation);
+                return;
+            }
+
+            sycl::queue* queue = queue_for(job);
+            if (queue == nullptr)
+            {
+                fail(job.from, task_id, job.generation, Wire::TaskResultStatus::KernelFailed);
                 return;
             }
 
@@ -667,7 +696,7 @@ namespace SushiRuntime
             try
             {
                 sycl::event event = (*kernel)(
-                    queue_, SushiRuntime::span<const BufferView>(inputs.data(), inputs.size()),
+                    *queue, SushiRuntime::span<const BufferView>(inputs.data(), inputs.size()),
                     SushiRuntime::span<const BufferView>(outputs.data(), outputs.size()),
                     options_of(dispatch));
                 event.wait_and_throw();

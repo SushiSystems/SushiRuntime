@@ -36,12 +36,13 @@ Next id: KI-17
 - Workaround: run the graph once more, or destroy it
 - Fix: RW-30
 
-### KI-6 A distributed worker runs every kernel on its device 0, one at a time
+### KI-6 A distributed worker runs one kernel at a time
 - Origin: own
 - Where: `modules/extension/distributed/source/worker_agent.cpp`,
   `modules/extension/distributed/source/dispatch_executor.cpp`
-- Cause: the worker uses the queue of device 0 and bypasses its scheduler
-- Recognise: a worker's other devices stay idle
+- Cause: one exec thread calls each kernel on the queue of the device its dispatch names, outside
+  the worker's scheduler, and the cache allocates its shared USM on device 0
+- Recognise: two dispatches for two devices of one worker do not overlap
 - Workaround: run one worker per device
 - Fix: RW-17
 

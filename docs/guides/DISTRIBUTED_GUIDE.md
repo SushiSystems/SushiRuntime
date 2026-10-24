@@ -293,7 +293,7 @@ Put the ids and the kernels in one header that both programs include, as
 `applications/examples/distributed_kernels.hpp` does.
 
 A kernel may throw. The worker catches the exception, reports the task as failed and keeps
-running, and the master resubmits the task. A worker runs one kernel at a time, on the queue of its device 0.
+running, and the master resubmits the task. A worker runs one kernel at a time, on the device its dispatch names.
 
 ### Adding the task on the master
 
@@ -569,7 +569,7 @@ every worker from one commit; `--version` on a worker prints the version it spea
 | Frame size | A frame's payload is at most 1 MiB. A buffer of any size crosses, because it travels in chunks; a task's dispatch, with its list of buffer handles, must fit in one frame |
 | Chunk size | `chunk_bytes` is 256 KiB by default and must lie between 4096 and 1048512 (1 MiB less 64). The master chooses it and tells each worker in `WELCOME` |
 | Queues | A peer's control queue holds 4096 frames; a dispatch that finds it full runs on the master and counts in `send_queue_full`. A worker holds at most `--max-jobs` waiting tasks |
-| One kernel at a time | A worker runs its tasks one after another, on its device 0 |
+| One kernel at a time | A worker runs its tasks one after another, each on the device its dispatch names |
 | Two attempts | A task is offered to workers at most twice per run |
 | One master | The master does not fail over, and nothing about a cluster survives its process |
 | Workers present at compile | A graph compiled before a worker registered does not use that worker for an operation no earlier worker had |

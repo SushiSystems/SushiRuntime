@@ -1,6 +1,6 @@
 # Layered execution: report
 
-**Status:** Open — R1 to R8 landed on 2026-10-24; all but R1 are not built yet.
+**Status:** Open — R1 to R8 and half of R9 landed on 2026-10-24; all but R1 are not built yet.
 
 ## R1
 
@@ -108,6 +108,22 @@ Seen and kept: `Buffer<T>` gains a third friend; the vocabulary header of `On` n
 scope's header; `topology()` on a moved-from `Runtime` dereferences null. The two-device tests
 check the buffer's device and the node's write region, since a plan node reports no device.
 
+## R9, first half
+
+The executor takes the worker's `DeviceQueueSet` and calls each kernel on the queue of the device
+its dispatch names; `K_DEVICE_INDEX` now names only the cache's device. A dispatch for a device
+the worker lacks, or whose queue sits in another context than device 0's, fails with
+`KernelFailed` and one WARN, and its kernel is not called. Shared USM on device 0 is reachable
+from every device of one context, so a dispatch on device 1 reads the same bytes.
+
+Not done: the kernel does not run through the worker's scheduler, and dispatches do not overlap.
+No public verb hands a body a `sycl::queue&` on a named device, and no `Buffer` adopts USM the
+worker's cache already holds, so the scheduler route needs a public interface change; it waits
+on the owner. One exec thread stays; `pulling_` assumes one pull at a time.
+
+Seen and kept: `DispatchExecutor` has seven duties (queue, exec thread, pull, pins, kernel call,
+output stream, held ids); `KernelFailed` cannot tell a missing device from a kernel that threw.
+
 ## Dispatches
 
 ```
@@ -119,4 +135,5 @@ dispatch: R5 — sonnet medium, passed, rung 1
 dispatch: R7 — sonnet medium, 76 turns, passed, rung 1
 dispatch: R8 — sonnet medium, 45 turns, passed, rung 1
 dispatch: R6 — sonnet medium, 73 turns, passed, rung 1
+dispatch: R9 — sonnet medium, 44 turns, partial (public interface needed), rung 1
 ```

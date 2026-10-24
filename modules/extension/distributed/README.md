@@ -410,9 +410,14 @@ brings it back. Both are header-only.
 receiver. Its constructor takes a `Runtime` and reaches the context through
 `Internal::ContextAccess`, as `Cluster::attach()` does. The agent holds the context's
 `shared_ptr`, declared before the bricks, so the queue and the allocator they use are alive
-until the last of them is destroyed, whatever happens to the `Runtime`. Kernels run on the queue
-of device 0 of that context. The cache allocates shared USM on the same device through
-`RuntimeContext::memory()`, so the context's allocator records every cached buffer. A `cache_bytes` of 0 becomes half of the device's `memory_bytes`; a device that
+until the last of them is destroyed, whatever happens to the `Runtime`. A kernel runs on the queue
+of the device its `TASK_DISPATCH` names (`device_index`); the exec thread still runs one kernel at
+a time. The cache allocates shared USM on device 0 through
+`RuntimeContext::memory()`, so the context's allocator records every cached buffer. Shared USM is
+reachable from every device of one SYCL context, so a dispatch for another device sees the same
+bytes, moved by the driver. The executor refuses a dispatch whose device index the worker does not
+have, and one whose device queue is in another context than device 0's, with a `TASK_RESULT` of
+`KernelFailed` and one WARN that names the task and the device; the kernel is not called. A `cache_bytes` of 0 becomes half of the device's `memory_bytes`; a device that
 reports no size gets 1 GiB and one WARN.
 
 Every frame goes to `MasterLink::note_frame()` first and then through a `MessageRouter`. The agent

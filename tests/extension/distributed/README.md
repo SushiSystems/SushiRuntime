@@ -373,6 +373,8 @@ and read their `TASK_RESULT`s. The link tests play the handshake and the livenes
 | `GenericLambdaRegistersAsAKernel` | `register_kernel` has one overload, so a lambda whose four parameters are all `auto` registers without a cast. It fills its output with 0x5a, and the four bytes come back in one chunk. |
 | `KernelThatThrowsFailsTheTaskAndTheWorkerLives` | A kernel that throws produces `KernelFailed` with no outputs and no chunk. The next dispatch runs. |
 | `OutputStreamEndsWithTheResult` | The transport keeps the stream. Until it is pulled no `TASK_RESULT` exists and a `BUFFER_RELEASE` cannot free the output. Pulled, the stream gives chunks of 4, 4 and 2 bytes, the last one flagged, then `TASK_RESULT`; its destructor returns the pin. |
+| `DispatchRunsOnTheDeviceItNames` | Two dispatches name devices 0 and 1, and the kernel records the device of the queue it is handed: both succeed, on two devices. Skipped on a worker with fewer than two devices. |
+| `DispatchNamingAMissingDeviceFailsTheTask` | A dispatch for a device index the worker lacks ends in `KernelFailed` and its kernel never runs. The next dispatch, on device 0, succeeds. |
 
 ### `DisconnectEndsAnOpenInputPull`
 

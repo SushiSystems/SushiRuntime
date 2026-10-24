@@ -68,7 +68,7 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Holds the device the worker's kernels run on and its cache lives on. */
+            /** @brief Holds the device the worker's cache lives on and its free memory is read from. */
             constexpr std::size_t K_DEVICE_INDEX = 0;
 
             /** @brief Holds the cache budget of a device that reports no memory size. */
@@ -281,7 +281,7 @@ namespace SushiRuntime
                 /** @brief Writes the counters as one INFO line. */
                 void log_statistics() const noexcept;
 
-                /// @brief Supplies the queue kernels run on and the cache's memory; first, so last gone.
+                /// @brief Supplies the queues kernels run on and the cache's memory; first, so last gone.
                 std::shared_ptr<Internal::Execution::RuntimeContext> context_;
 
                 /// @brief Carries every frame; the agent is its only receiver.
@@ -331,8 +331,9 @@ namespace SushiRuntime
                      resolve_cache_budget(*context_, options_.cache_bytes)),
               link_(*transport_, options_.secret.bytes(),
                     make_link_options(sealed(*require_kernels(kernels)), topology), make_nonce),
-              executor_(kernels, cache_, *transport_, context_->devices().queue(K_DEVICE_INDEX),
-                        DispatchExecutorOptions{options_.max_jobs, options_.pull_idle_timeout})
+              executor_(kernels, cache_, *transport_, context_->devices(),
+                        DispatchExecutorOptions{options_.max_jobs, options_.pull_idle_timeout,
+                                                K_DEVICE_INDEX})
         {
             build_routes();
         }

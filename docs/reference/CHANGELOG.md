@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-24 — distributed: Ran each dispatched kernel on the worker device its `TASK_DISPATCH` names, failing a dispatch for a missing device with `KernelFailed` (`dispatch_executor.cpp`, `worker_agent.cpp`).
 - 2026-10-24 — api: Added `PlacementScope::device()` and `buffer()`, and `On(scope)` for untracked kernels, which place work on the device the scope's rule names and follow its absent-target policy (`placement_scope.hpp`, `placement.hpp`).
 - 2026-10-24 — offload_coordination: Kept each worker's `NodeFacts` by name, committed once its proof is accepted, and handed them to a policy through `WorkerLoad::facts` (`worker_directory.cpp`, `offload_policy.hpp`).
 - 2026-10-24 — wire: Moved the protocol to version 4: `HELLO` carries the operating system, the devices and the labels, and `TASK_DISPATCH` a target device index, so a version 3 peer is refused (`wire_frame.hpp`, `wire_messages.hpp`).

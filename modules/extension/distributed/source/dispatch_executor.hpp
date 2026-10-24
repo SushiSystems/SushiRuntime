@@ -44,6 +44,7 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
@@ -66,6 +67,9 @@ namespace SushiRuntime
 
             /** @brief Fails a task when no chunk of a requested input arrives for this long. */
             std::chrono::milliseconds pull_idle_timeout{5000};
+
+            /** @brief Device whose context the cache's memory belongs to; see queue_for(). */
+            std::size_t cache_device = 0;
         };
 
         /**
@@ -79,12 +83,12 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Runs dispatched kernels one at a time and returns their outputs and results.
+         * @brief Runs dispatched kernels one at a time, each on the device it names.
          *
          * A job: pin each output, get each input from the cache or pull it, call the kernel
          * inside one try and wait for its event, then send one stream of output chunks that
          * ends with TASK_RESULT. A failed task sends TASK_RESULT alone, as a control frame.
-         * The executor's one mutex guards the queue and is released before any call out.
+         * The one mutex guards the queue and is released before any call out.
          */
         class SUSHIRUNTIME_API DispatchExecutor final
         {
@@ -93,10 +97,11 @@ namespace SushiRuntime
                  * @brief Builds an executor; no thread runs until start().
                  * @param kernels Not null; only read.
                  * @param cache Outlives the executor and every stream it sent.
-                 * @param queue The queue kernels submit to; outlives the executor.
+                 * @param devices The queues kernels submit to, one per device; outlives the
+                 *        executor.
                  */
                 DispatchExecutor(sushi_ptr<KernelRegistry> kernels, WorkerBufferCache& cache,
-                                 Transport& transport, sycl::queue& queue,
+                                 Transport& transport, Internal::Device::DeviceQueueSet& devices,
                                  const DispatchExecutorOptions& options);
 
                 /** @brief Calls stop(). */
@@ -222,6 +227,14 @@ namespace SushiRuntime
                 void log_no_room(std::uint64_t task_id, const BufferHandle& handle,
                                  const char* consequence) const;
 
+                /**
+                 * @brief Returns the queue of the device a job names.
+                 * @return Null, after logging why, when the worker has no such device or the
+                 *         device does not share the cache's context, so the cache's memory
+                 *         would not be reachable from it.
+                 */
+                [[nodiscard]] sycl::queue* queue_for(const Job& job);
+
                 /** @brief Runs one job from its pins to its result. */
                 void execute(const Job& job);
 
@@ -240,8 +253,8 @@ namespace SushiRuntime
                 /// @brief Carries requests, output streams and results.
                 Transport& transport_;
 
-                /// @brief The queue kernels submit to.
-                sycl::queue& queue_;
+                /// @brief The queue of each device; a job's kernel submits to one of them.
+                Internal::Device::DeviceQueueSet& devices_;
 
                 /// @brief The queue bound and the pull timeout.
                 DispatchExecutorOptions options_;

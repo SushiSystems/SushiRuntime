@@ -587,6 +587,12 @@ namespace
                 ASSERT_TRUE(transport->wait_for(MessageType::TaskResult, results));
             }
 
+            /** @brief Returns the number of devices the worker's runtime has. */
+            [[nodiscard]] std::size_t device_count() const
+            {
+                return runtime_.topology().devices.size();
+            }
+
             /** @brief Records what the agent sends; shared with the agent. */
             std::shared_ptr<FakeTransport> transport;
 
@@ -824,6 +830,66 @@ TEST(Medium_DispatchExecutorTest, KernelSeesBufferSizes)
     EXPECT_EQ(first.handle.size_bytes, 20u);
     ASSERT_EQ(first.data.size(), 8u);
     EXPECT_EQ(std::memcmp(first.data.data(), bytes.data(), 8), 0);
+}
+
+/** @brief Tests that two dispatches that name two devices run on those two devices. */
+TEST(Medium_DispatchExecutorTest, DispatchRunsOnTheDeviceItNames)
+{
+    AgentRig rig;
+    if (rig.device_count() < 2)
+        GTEST_SKIP() << "The worker's runtime has fewer than two devices.";
+
+    std::mutex mutex;
+    std::vector<sycl::device> ran_on;
+    const OperationID op(16);
+    rig.kernels->register_kernel(
+        op, KernelRegistry::Kernel(
+                [&mutex, &ran_on](sycl::queue& queue, span<const BufferView>,
+                                  span<const BufferView> outputs, const NodeOptions&)
+                {
+                    std::memset(outputs[0].data, 0, outputs[0].size_bytes);
+                    const std::lock_guard<std::mutex> lock(mutex);
+                    ran_on.push_back(queue.get_device());
+                    return sycl::event{};
+                }));
+    rig.start();
+    rig.register_master(K_MASTER, 7);
+
+    Wire::TaskDispatchMessage first = dispatch_of(1, op, {}, {handle_of(1, 1, 16)});
+    first.device_index = 0;
+    rig.run(K_MASTER, first, 1);
+    Wire::TaskDispatchMessage second = dispatch_of(2, op, {}, {handle_of(2, 1, 16)});
+    second.device_index = 1;
+    rig.run(K_MASTER, second, 2);
+
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded)
+        << "device 1 may not share the context of the cache's device";
+    const std::lock_guard<std::mutex> lock(mutex);
+    ASSERT_EQ(ran_on.size(), 2u);
+    EXPECT_NE(ran_on[0], ran_on[1]);
+}
+
+/** @brief Tests that a dispatch naming a device the worker lacks fails as KernelFailed. */
+TEST(Medium_DispatchExecutorTest, DispatchNamingAMissingDeviceFailsTheTask)
+{
+    std::atomic<int> calls{0};
+    AgentRig rig;
+    const OperationID op(17);
+    rig.kernels->register_kernel(op, counting_kernel(calls));
+    rig.start();
+    rig.register_master(K_MASTER, 7);
+
+    Wire::TaskDispatchMessage missing = dispatch_of(1, op, {}, {handle_of(1, 1, 16)});
+    missing.device_index = static_cast<std::uint32_t>(rig.device_count());
+    rig.run(K_MASTER, missing, 1);
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::KernelFailed);
+    EXPECT_EQ(calls.load(), 0);
+    EXPECT_EQ(rig.transport->count(MessageType::BufferChunk), 0u);
+
+    rig.run(K_MASTER, dispatch_of(2, op, {}, {handle_of(1, 2, 16)}), 2);
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(calls.load(), 1);
 }
 
 /** @brief Tests that a generic lambda registers as a kernel and runs. */
