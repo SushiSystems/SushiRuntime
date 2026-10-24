@@ -243,7 +243,7 @@ namespace SushiRuntime
                 /**
                  * @brief Adds a kernel that names no region and runs on the device stated.
                  * @tparam Launch An element count, an Extent<N> or an NdRange<N>.
-                 * @param placement On(buffer), On(state) or On(DeviceIndex).
+                 * @param placement On(buffer), On(state), On(DeviceIndex) or On(scope).
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 template <class Launch, class F,
@@ -273,7 +273,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Adds a raw kernel that names no region and runs on the device stated.
-                 * @param placement On(buffer), On(state) or On(DeviceIndex).
+                 * @param placement On(buffer), On(state), On(DeviceIndex) or On(scope).
                  * @param kernel Callable invoked as kernel(sycl::handler&).
                  */
                 template <class F>
