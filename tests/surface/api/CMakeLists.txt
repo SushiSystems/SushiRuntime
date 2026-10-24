@@ -52,6 +52,7 @@ sushiruntime_add_module_tests(
         launch/test_nd_range.cpp
         runtime/test_advanced_controls.cpp
         runtime/test_errors.cpp
+        runtime/test_placement_scope.cpp
         runtime/test_runtime.cpp
         runtime/test_runtime_config.cpp
         test_fluent.cpp

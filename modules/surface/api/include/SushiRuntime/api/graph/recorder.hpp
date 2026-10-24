@@ -68,6 +68,7 @@
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/api/launch/extent.hpp>
 #include <SushiRuntime/api/launch/nd_range.hpp>
+#include <SushiRuntime/api/runtime/placement_scope.hpp>
 #include <SushiRuntime/api/vocabulary/coupled.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/dynamic.hpp>
@@ -149,6 +150,21 @@ namespace SushiRuntime
                 scope_open_ = true;
                 scope_has_node_ = false;
                 return RuleScope(this);
+            }
+
+            /**
+             * @brief Runs a callable whose recorded nodes take a placement scope.
+             * @param scope    Class and key given to every node recorded through this recorder
+             *                 while the callable runs, unless the node's options name a class.
+             * @param callable Invoked as callable(*this); its result is returned.
+             * @pre This recorder is not moved while the callable runs.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            template <class Callable>
+            decltype(auto) within(const PlacementScope& scope, Callable&& callable)
+            {
+                const PlacementGuard guard(*this, scope);
+                return std::forward<Callable>(callable)(*this);
             }
 
             /**
@@ -685,7 +701,8 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Takes over another recorder's nodes, rules, scratch, hooks and refusal.
+             * @brief Takes over another recorder's nodes, rules, scratch, hooks, refusal and
+             *        open placement scope.
              * @param other Left empty on the same context; its generation() moves on.
              * @pre No rule scope is open on other.
              */
@@ -707,12 +724,45 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Opens a placement scope for its lifetime and puts the outer one back after.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            class PlacementGuard
+            {
+                public:
+                    /** @brief Makes scope the open placement scope of recorder. */
+                    PlacementGuard(Recorder& recorder, const PlacementScope& scope)
+                        : recorder_(recorder), outer_(recorder.placement_scope_)
+                    {
+                        recorder_.placement_scope_ = scope;
+                    }
+
+                    PlacementGuard(const PlacementGuard&) = delete;
+                    PlacementGuard(PlacementGuard&&) = delete;
+                    PlacementGuard& operator=(const PlacementGuard&) = delete;
+                    PlacementGuard& operator=(PlacementGuard&&) = delete;
+
+                    /** @brief Puts back the scope that was open before, or none. */
+                    ~PlacementGuard()
+                    {
+                        recorder_.placement_scope_ = outer_;
+                    }
+
+                private:
+                    /** @brief The recorder whose placement scope this guard holds. */
+                    Recorder& recorder_;
+
+                    /** @brief The scope that was open when the guard started, or none. */
+                    std::optional<PlacementScope> outer_;
+            };
+
+            /**
              * @brief Appends one node; every recording member ends here.
              * @param description What the library adds to a plan for the node; moved from.
              * @param lives   Observers of the handles the node names; moved from.
-             * @param options What the caller stated; its name and parameters are copied.
-             * @return The position of the rule the node belongs to, or rule_count() when
-             *         options are refused.
+             * @param options What the caller stated; the open placement scope fills a class
+             *                and key it leaves unnamed.
+             * @return The node's rule position, or rule_count() when options are refused.
              */
             SUSHIRUNTIME_API std::size_t record(Detail::NodeDescription&& description,
                                                 std::vector<LivenessObserver>& lives,
@@ -933,6 +983,7 @@ namespace SushiRuntime
                 observers_ = std::exchange(other.observers_, {});
                 steps_ = std::exchange(other.steps_, Detail::StepMachinery());
                 refusal_ = std::exchange(other.refusal_, std::nullopt);
+                placement_scope_ = std::exchange(other.placement_scope_, std::nullopt);
                 // A value this recorder returned before must not name other's work.
                 if (other.generation_ > generation_)
                     generation_ = other.generation_;
@@ -997,5 +1048,8 @@ namespace SushiRuntime
 
             /** @brief Whether the open rule scope has recorded a node. */
             bool scope_has_node_ = false;
+
+            /** @brief The innermost placement scope within() has open, or none. */
+            std::optional<PlacementScope> placement_scope_;
     };
 } // namespace SushiRuntime

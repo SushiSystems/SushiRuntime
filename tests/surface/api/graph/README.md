@@ -666,6 +666,17 @@ all nodes must be dense from 0 to n-1 in registration order.
 | --- | --- |
 | `RuleScopeGroupsResolverAndDeviceSizedNodesUnderOneIndex` | A rule scope groups every node shape the same way. `record_late_bound_rule` records a late-count resolver, a device-sized kernel and a plain kernel in one scope, and the three share one index while the node after the scope takes the next one. |
 
+### Placement scopes
+
+`record_idle` records a host node that reads and writes nothing, with the options it is given. The
+tests read each node's class and key back from `Graph::plan()`.
+
+| Test | What it proves |
+| --- | --- |
+| `NestedScopesStampTheInnermostClassAndKey` | Seven nodes are recorded outside both scopes, in the outer one, in the inner one, in the inner one with its own class and key, in the outer one again after the inner scope closed, in the outer one with its own class and no key, and outside again. The plan shows none, outer, inner, the node's own class and key, outer, the node's own class with no key, and none. The inner key is 0. |
+| `WithinReturnsWhatTheCallableReturns` | `within()` returns the rule position the callable returned. |
+| `AThrowingCallableClosesItsScope` | A callable that throws leaves no scope open: the next node carries no class and no key. |
+
 ## test_region.cpp
 
 The file covers `extend()` as a library above the runtime uses it: the extension receives the

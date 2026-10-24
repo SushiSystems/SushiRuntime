@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-24 — api: Added `Runtime::placement_scope()` and `Recorder::within()`, which stamp a scope's class and key on every node recorded inside it that names no class, the innermost scope winning (`placement_scope.hpp`, `recorder.hpp`).
 - 2026-10-24 — api: Added `Runtime::topology()`, the machine's name, operating system, labels and devices, named and labelled through `RuntimeConfig` (`runtime.hpp`, `node_facts.hpp`, `device_facts.hpp`).
 - 2026-10-24 — core: Added `ErrorCode::InvalidArgument`, which `Runtime::create()` returns for a label with an empty key, a key holding `=` or a repeated key (`error.hpp`, `runtime.cpp`).
 - 2026-10-24 — api: Added a placement class and an optional placement key to `NodeOptions`, kept in the node's metadata and reported by `PlanNode` (`placement_class.hpp`, `node_options.hpp`, `plan_view.hpp`).

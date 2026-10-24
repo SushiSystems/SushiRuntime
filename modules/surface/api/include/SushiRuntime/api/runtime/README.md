@@ -84,6 +84,18 @@ A caller that reserved cores for its own threads uses `worker_pool()` to verify 
 took effect: a range that did not fit the machine is clamped, and `worker_pool()` reports the
 clamped result, not the request.
 
+## placement_scope.hpp
+
+### PlacementScope
+
+A `PlacementScope` is a class and a key and nothing else: no name, no device, no memory. It is a
+trivially copyable value, so it outlives the `Runtime` that made it and costs a few words to pass.
+Its constructor is public. The class has no invariant for a private constructor to guard: the
+name rule is checked by `Runtime::placement_scope()`, which takes a name, and a caller that
+already holds a `PlacementClass` built it from a literal. A public constructor also lets the
+scope be tested without a device. `Recorder::within()` is what gives a scope its effect; see
+`api/graph/README.md`.
+
 ## runtime.hpp
 
 ### create
@@ -116,6 +128,19 @@ the `Runtime` is moved from or destroyed.
 A label key is refused with `InvalidArgument` when it is empty, holds `=` or repeats the key of an
 earlier label. The message names the label's position and key and says what to pass instead. A value
 may be empty. Labels keep the order the config gave them.
+
+### placement_scope
+
+`placement_scope(name, key)` returns the scope of the class a dotted name spells, such as
+`sushiai.replica`, and an optional key; the key 0 is a key like any other. The overload taking a
+`PlacementClass` takes a class built elsewhere, as in `placement_scope("sushiai.replica"_class)`,
+and builds the same scope as the string overload for the same name.
+
+A name that is empty, starts or ends with `.`, or holds two `.` in a row is a rule the caller broke,
+so the string overload stops the process through `SR_VERIFY`, as `buffer()` does for a device
+index it does not drive. It does not return a `Result`: the name is a literal in the caller's
+source, and a caller that wrote a bad one cannot recover at run time. The call touches no
+context, so it costs one hash of the name.
 
 ### Copy and const
 

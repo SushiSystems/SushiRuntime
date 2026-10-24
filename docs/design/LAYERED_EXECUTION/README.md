@@ -237,7 +237,7 @@ the task's own commit.
 | Id | Phase | State |
 | --- | --- | --- |
 | R1 | Placement class and key in `NodeOptions`; a node keeps them. Done when: a test records a node with a class and a key and reads both back from the plan. | building |
-| R2 | `Runtime::placement_scope()`, `Recorder::within()`, inner scope wins, explicit options win. Done when: a test records nodes in two nested scopes and outside them and reads the class and key of each. Waits on R1. | planned |
+| R2 | `Runtime::placement_scope()`, `Recorder::within()`, inner scope wins, explicit options win. Done when: a test records nodes in two nested scopes and outside them and reads the class and key of each. Waits on R1. | building |
 | R3 | `NodeFacts`, `DeviceFacts`, `Runtime::topology()`, labels from `RuntimeConfig`. Done when: a test reads the local machine's facts: device count, kinds, memory, the labels it was given. | building |
 | R4 | `PlacementRule`, `PlacementRules` with its checks, the match by class, prefix, key and operation, priority and insertion order. Done when: a table test resolves a set of nodes against a rule set, including two conflicting rules and every refusal. Waits on R1, R3. | planned |
 | R5 | `Runtime::set_placement_rules()` between runs; the compile resolves each node once. Done when: a test changes the rules between two runs and sees the second compile place differently; a call during a run is refused. Waits on R2, R4. | planned |

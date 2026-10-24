@@ -1,6 +1,6 @@
 # Layered execution: report
 
-**Status:** Open — R1 and R3 landed on 2026-10-24; R3 is not built yet.
+**Status:** Open — R1, R2 and R3 landed on 2026-10-24; R2 and R3 are not built yet.
 
 ## R1
 
@@ -32,9 +32,24 @@ Verification: `clang++ -fsyntax-only` of every changed source; the comment, nami
 test-mirror, docs-truth and changelog checkers pass. Not built: the owner ruled that each
 repository is built once at the end.
 
+## R2
+
+`Recorder::within()` holds the open scope in `placement_scope_`, set and put back by a
+`PlacementGuard`, so a throwing callable closes its scope. `Recorder::record()` is the only place
+a stamp is built, so every recording verb, and the `Graph`, `Region` and `DynamicGraph` verbs that
+reach the recorder through `BuilderSurface::sink()`, take the scope. A malformed scope name stops
+the process through `SR_VERIFY`. `PlacementScope` has a public constructor: it guards no
+invariant, the name rule being `Runtime::placement_scope()`'s.
+
+Seen and kept: an exception from the callable passes through `within()` unchanged, as it does
+from the caller's own code; the library adds none.
+
+Verification: syntax checks and the checkers, as for R3. Not built.
+
 ## Dispatches
 
 ```
 dispatch: R1 — sonnet medium, 36 turns, passed, rung 1
 dispatch: R3 — sonnet medium, 57 turns, passed, rung 1
+dispatch: R2 — sonnet medium, 46 turns, passed, rung 1
 ```

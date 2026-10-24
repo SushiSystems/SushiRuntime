@@ -29,7 +29,10 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <string_view>
 #include <utility>
 
 #include <sycl/sycl.hpp>
@@ -37,6 +40,7 @@
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
@@ -47,6 +51,7 @@
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
 #include <SushiRuntime/api/runtime/advanced_controls.hpp>
+#include <SushiRuntime/api/runtime/placement_scope.hpp>
 #include <SushiRuntime/api/runtime/runtime_config.hpp>
 
 namespace SushiRuntime
@@ -165,6 +170,29 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             [[nodiscard]] SUSHIRUNTIME_API const NodeFacts& topology() const;
+
+            /**
+             * @brief Returns the scope that names a placement class and a key.
+             * @param name Dotted name of the class, such as "sushiai.replica".
+             * @param key  Key of the scope; 0 is a key like any other.
+             * @pre name is not empty, does not start or end with '.' and holds no "..".
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] SUSHIRUNTIME_API PlacementScope
+            placement_scope(std::string_view name,
+                            std::optional<std::uint64_t> key = std::nullopt) const;
+
+            /**
+             * @brief Returns the scope that names a class built elsewhere, such as "x"_class.
+             * @param key Key of the scope; 0 is a key like any other.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] PlacementScope
+            placement_scope(PlacementClass placement_class,
+                            std::optional<std::uint64_t> key = std::nullopt) const noexcept
+            {
+                return PlacementScope(placement_class, key);
+            }
 
             /** @brief Returns the facade that exchanges this runtime's memory with Vulkan. */
             [[nodiscard]] Interop interop() const noexcept { return Interop(context_); }

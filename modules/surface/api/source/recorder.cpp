@@ -63,6 +63,11 @@ namespace SushiRuntime
             return rule_count();
         Detail::NodeSpec spec(std::move(description));
         spec.stamp = Detail::NodeStamp(options, label_of(options.name));
+        if (placement_scope_ && !options.placement_class.is_named())
+        {
+            spec.stamp.placement_class = placement_scope_->placement_class();
+            spec.stamp.placement_key = placement_scope_->placement_key();
+        }
         if (!scope_open_ || !scope_has_node_)
             rule_names_.push_back(nullptr);
         scope_has_node_ = true;

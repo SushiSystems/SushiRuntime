@@ -24,6 +24,17 @@ single throw and left the pool dead for good.
 The command-group function of the first graph throws, so `run()` must return the error to the
 caller and not hang.
 
+## test_placement_scope.cpp
+
+The file covers `PlacementScope` and the two overloads of `Runtime::placement_scope()`. The tests of
+the value need no device; the tests of the overloads create a `Runtime`.
+
+| Test | What it proves |
+| --- | --- |
+| `AccessorsReturnTheClassAndTheKeyItWasBuiltWith`, `ANoneKeyStaysNone`, `AKeyOfZeroIsKeptAsZero`, `ACopyReportsTheSameClassAndKey` | The accessors return what the constructor took. A key of 0 stays 0 and is not read as none, and a copy reports what the original reports. |
+| `TheStringAndClassOverloadsGiveEqualClasses`, `BothOverloadsKeepAKeyOfZeroAndANoneKey`, `ANameWithoutADotIsAClass` | The string and the `PlacementClass` overloads build equal classes for one name and keep a key of 0 and a none key. A name with no dot is a class. |
+| `AMalformedNameStopsTheProcess` | An empty name, a name that starts or ends with `.` and a name with two `.` in a row each stop the process. |
+
 ## test_runtime.cpp
 
 The file covers `Runtime::create()`, `RuntimeConfig` and the `AdvancedControls` view. Four

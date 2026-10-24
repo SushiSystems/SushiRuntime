@@ -33,6 +33,7 @@
 #include <limits>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -1357,3 +1358,112 @@ namespace RuleRegistrationTests
         EXPECT_EQ(copies[K_WIDTH - 1], static_cast<std::uint32_t>(K_WIDTH - 1) * 2u);
     }
 } // namespace RuleRegistrationTests
+
+namespace PlacementScopeRecordingTests
+{
+    namespace
+    {
+        /** @brief Records one host node that reads and writes nothing. */
+        void record_idle(Recorder& recorder, const NodeOptions& options = {})
+        {
+            recorder.host(Access(Reads(), Writes()), [] {}, options);
+        }
+    } // namespace
+
+    /** @brief Tests that nodes take the innermost open scope, and none outside every scope. */
+    TEST(Medium_RecorderPlacementScope, NestedScopesStampTheInnermostClassAndKey)
+    {
+        auto rt = Runtime::create().value();
+        auto graph = rt.graph();
+        Recorder& recorder = graph.recorder();
+        const PlacementScope outer = rt.placement_scope("outer.group", 7u);
+        const PlacementScope inner = rt.placement_scope("inner.group", 0u);
+
+        NodeOptions own_class_and_key;
+        own_class_and_key.placement_class = "own.group"_class;
+        own_class_and_key.placement_key = 3u;
+        NodeOptions own_class_without_key;
+        own_class_without_key.placement_class = "own.group"_class;
+
+        record_idle(recorder);
+        recorder.within(outer, [&](Recorder& in_outer)
+        {
+            record_idle(in_outer);
+            in_outer.within(inner, [&](Recorder& in_inner)
+            {
+                record_idle(in_inner);
+                record_idle(in_inner, own_class_and_key);
+            });
+            record_idle(in_outer);
+            record_idle(in_outer, own_class_without_key);
+        });
+        record_idle(recorder);
+
+        const auto plan = graph.plan();
+        ASSERT_TRUE(plan);
+        ASSERT_EQ(plan->nodes.size(), 7u);
+
+        EXPECT_FALSE(plan->nodes[0].placement_class.is_named()) << "before every scope";
+        EXPECT_FALSE(plan->nodes[0].placement_key.has_value());
+
+        EXPECT_EQ(plan->nodes[1].placement_class, "outer.group"_class);
+        ASSERT_TRUE(plan->nodes[1].placement_key.has_value());
+        EXPECT_EQ(*plan->nodes[1].placement_key, 7u);
+
+        EXPECT_EQ(plan->nodes[2].placement_class, "inner.group"_class);
+        ASSERT_TRUE(plan->nodes[2].placement_key.has_value());
+        EXPECT_EQ(*plan->nodes[2].placement_key, 0u) << "a key of 0 is a key";
+
+        EXPECT_EQ(plan->nodes[3].placement_class, "own.group"_class);
+        ASSERT_TRUE(plan->nodes[3].placement_key.has_value());
+        EXPECT_EQ(*plan->nodes[3].placement_key, 3u) << "the own key beats the scope key";
+
+        EXPECT_EQ(plan->nodes[4].placement_class, "outer.group"_class)
+            << "after the inner scope closed";
+        ASSERT_TRUE(plan->nodes[4].placement_key.has_value());
+        EXPECT_EQ(*plan->nodes[4].placement_key, 7u);
+
+        EXPECT_EQ(plan->nodes[5].placement_class, "own.group"_class);
+        EXPECT_FALSE(plan->nodes[5].placement_key.has_value())
+            << "a node that names a class keeps a none key; the scope key is not borrowed";
+
+        EXPECT_FALSE(plan->nodes[6].placement_class.is_named()) << "after every scope";
+        EXPECT_FALSE(plan->nodes[6].placement_key.has_value());
+    }
+
+    /** @brief Tests that within() returns the callable result. */
+    TEST(Medium_RecorderPlacementScope, WithinReturnsWhatTheCallableReturns)
+    {
+        auto rt = Runtime::create().value();
+        auto graph = rt.graph();
+        Recorder& recorder = graph.recorder();
+
+        const std::size_t rule = recorder.within(
+            rt.placement_scope("a.b"),
+            [](Recorder& in_scope)
+            {
+                return in_scope.host(Access(Reads(), Writes()), [] {});
+            });
+
+        EXPECT_EQ(rule, graph.last_rule());
+    }
+
+    /** @brief Tests that a callable that throws leaves no scope open on the recorder. */
+    TEST(Medium_RecorderPlacementScope, AThrowingCallableClosesItsScope)
+    {
+        auto rt = Runtime::create().value();
+        auto graph = rt.graph();
+        Recorder& recorder = graph.recorder();
+
+        EXPECT_THROW(recorder.within(rt.placement_scope("a.b", 1u),
+                                     [](Recorder&) { throw std::runtime_error("unwound"); }),
+                     std::runtime_error);
+        record_idle(recorder);
+
+        const auto plan = graph.plan();
+        ASSERT_TRUE(plan);
+        ASSERT_EQ(plan->nodes.size(), 1u);
+        EXPECT_FALSE(plan->nodes[0].placement_class.is_named());
+        EXPECT_FALSE(plan->nodes[0].placement_key.has_value());
+    }
+} // namespace PlacementScopeRecordingTests

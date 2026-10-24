@@ -29,13 +29,16 @@
 #include <SushiRuntime/api/runtime/runtime.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 
 #include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -97,6 +100,14 @@ namespace SushiRuntime
             facts.operating_system = Detail::host_operating_system();
             facts.labels = config.labels;
             return facts;
+        }
+
+        /** @brief Returns whether a class name is non-empty and has no empty dotted segment. */
+        [[nodiscard]] bool is_dotted_name(std::string_view name) noexcept
+        {
+            if (name.empty() || name.front() == '.' || name.back() == '.')
+                return false;
+            return name.find("..") == std::string_view::npos;
         }
     } // namespace
 
@@ -160,6 +171,18 @@ namespace SushiRuntime
     const NodeFacts& Runtime::topology() const
     {
         return topology_;
+    }
+
+    PlacementScope Runtime::placement_scope(std::string_view name,
+                                            std::optional<std::uint64_t> key) const
+    {
+        SR_VERIFY(is_dotted_name(name),
+                  (std::string("Runtime::placement_scope: the class name \"") +
+                   std::string(name) +
+                   "\" is empty, starts or ends with '.' or holds two '.' in a row; pass a "
+                   "dotted name such as \"sushiai.replica\".")
+                      .c_str());
+        return PlacementScope(PlacementClass(name.data(), name.size()), key);
     }
 
     Result<void> Runtime::wait() const

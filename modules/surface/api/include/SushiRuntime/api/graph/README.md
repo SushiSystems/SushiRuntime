@@ -13,7 +13,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `dynamic_graph.hpp` | DynamicGraph: the regions by key, the pending changes and the run entries of StepDriver |
 | `region.hpp` | Region: a Recorder behind the add() surface, and RegionChangeLog |
 | `run_handle.hpp` | RunHandle and AsyncRunState |
-| `recorder.hpp` | Recorder and Recorder::RuleScope |
+| `recorder.hpp` | Recorder, Recorder::RuleScope and the placement scope Recorder::within() opens |
 | `access.hpp` | Access, what one node reads and writes |
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
 | `node_options.hpp` | NodeOptions: the width, the name, the operation, the parameters, and the placement class and key of a node |
@@ -150,6 +150,26 @@ rule; a node recorded outside a scope is a rule of its own. At replay the record
 registration index on the backing graph when the first node of a rule is added and stamps it on all
 of them. The nodes of a rule are contiguous, so the replay needs two locals and no allocation. A
 scope that records nothing adds no rule.
+
+### within
+
+within(scope, callable) calls `callable(*this)` and returns what it returns. Every node the
+recorder records while the callable runs takes the scope's class and key, unless the node's own
+NodeOptions name a class. A node that names a class keeps that class and its own key, even when its
+own key is none: the pair belongs to the node, and filling one half from the scope would build a
+class and key nobody wrote. The innermost open scope wins, and when its callable returns, or
+throws, the scope that was open before it is back.
+
+The stamp is applied in record(), the one place a node gets its NodeStamp, so every recording
+member, the Graph and Region verbs and the late-bound and State rules included, takes the scope
+with no code of its own. The open scope is a member of the Recorder, held as an optional
+PlacementScope; nothing is thread-local or global, and a Recorder moved by a Graph or a Region
+carries it. It is a different idea from RuleScope: a RuleScope groups nodes into one rule, a
+placement scope labels them. The two nest in either order and do not read each other.
+
+The guard that puts the outer scope back is a private nested class, so a consumer cannot leave a
+scope open on purpose. The recorder must not be moved while the callable runs, as it must not be
+moved while a RuleScope is open.
 
 ### name_last_rule
 
