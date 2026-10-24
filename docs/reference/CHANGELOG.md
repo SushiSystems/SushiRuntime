@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-24 — offload_coordination: Fixed a rule naming another machine being ignored for a node that cannot travel or is out of attempts; its absent policy applies, with a warning (`rule_placement.hpp`).
 - 2026-10-24 — api: Fixed a dynamic graph never preparing its nodes for an installed coordinator, so a rule naming another machine did nothing (`region_composer.cpp`).
 - 2026-10-24 — offload_coordination: Made holding a node cost the same whatever the number held (`held_nodes.cpp`).
 - 2026-10-24 — offload_coordination: Fixed plans run in turn placing by the newest rule set, by making each node keep the set it was prepared against (`offload_state.hpp`).

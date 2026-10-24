@@ -252,9 +252,12 @@ entry, so holding N cost O(N²); it lowers the earliest deadline in O(1). A work
 output travels back whole, so the distributed README states that a registered kernel writes every
 byte of every output.
 
-Confirmed and left for the owner: a `Fail` rule that names a remote machine is not applied to a
-node the dispatcher cannot ship (untagged, not shared, written twice), which runs locally without a
-word, and the resubmission cap overrides a rule.
+The audit also found a rule naming a remote machine ignored for a node the dispatcher cannot ship
+(untagged, not shared, written twice) and overridden by the resubmission cap. R17 treats either as a
+target the node cannot reach: the rule's absent policy applies (`Fail` ends the run naming the rule,
+the node and the cause; `Local` and `Wait` run it on the master, since waiting gives a node neither
+travel nor attempts), with one warning per rule and cause per compiled plan, so a replayed plan does
+not repeat it. A node no rule places keeps the dispatcher's own behaviour.
 
 
 ## Dispatches
@@ -274,6 +277,7 @@ dispatch: R16b — opus low, 160 turns, passed, rung 1
 dispatch: R16c — opus low, 125 turns, passed, rung 1
 dispatch: R16d — sonnet medium, passed, rung 1
 dispatch: R16e — opus low, passed, rung 1
+dispatch: R17 — opus low, passed, rung 1
 dispatch: R15 — haiku high, 68 turns, passed, rung 1
 dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
 dispatch: R9 second half — opus low, 146 turns, passed, rung 1

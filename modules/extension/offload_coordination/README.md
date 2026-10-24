@@ -17,7 +17,7 @@ It depends on `core`, `api`, `task`, `transport`, `wire`, `link_security`, `clus
 | `worker_directory.hpp` | `WorkerDirectory`, `HandshakeStep`, `HelloReply`, `RemovedPeer`, `WorkerIdentity` |
 | `offload_dispatcher.hpp` | `OffloadDispatcher`, `OffloadDispatcherStatistics`, `K_MAXIMUM_OFFLOAD_ATTEMPTS` |
 | `task_description.hpp` | `describe_task()` |
-| `offload_handles.hpp` | `OffloadHandles` |
+| `offload_handles.hpp` | `OffloadHandles`, `UnreachableCause` |
 | `rule_placement.hpp` | `RulePlacement` |
 | `held_nodes.hpp` | `HeldNodes` |
 | `task_resubmission.hpp` | `resubmit_tasks()`, `reoffer_nodes()` |
@@ -72,21 +72,29 @@ node runs locally. The same buffer as an input and as an output is one write and
 The dispatcher keeps no rule set of its own, so two plans compiled under different sets and run in
 turn each place their nodes by their own set. The copy is made once per node at `prepare()`; a
 replay reads it through the offload state `try_offload()` loads anyway, with no reference count
-touched. A node whose rule
-names another machine is offloadable with no worker alive yet, so its rule can wait for one.
+touched. A node whose rule names another machine is offloadable with no worker alive yet, so its
+rule can wait for one. Such a node that cannot travel (it names no operation, a buffer it touches
+is not shared, or two of its writes name one buffer) is made offloadable as well, with the cause
+in `OffloadHandles::unreachable`, so the scheduler offers it and `try_offload()` applies the
+rule's absent policy. Each `prepare()` lets every rule and cause log its fallback WARN once more.
 
-One WARN per call names how many op-tagged nodes stay local, how many for each of the three
-reasons (no live worker for the op, buffer not shared, buffer written twice) and the first
+One WARN per call names how many op-tagged nodes without such a rule stay local, how many for
+each of the three reasons (no live worker for the op, buffer not shared, buffer written twice) and the first
 operation id.
 
 ### try_offload
 
 The steps run in this order, and no lock is held across two of them.
 
-1. Decline when the node has no `OffloadState`, when its `LateBindings::enabled` is false, or when
-   `attempts` has reached `K_MAXIMUM_OFFLOAD_ATTEMPTS`. `offloadable` is not cleared.
+1. Decline when the node has no `OffloadState` or when its `LateBindings::enabled` is false. A node
+   whose winning rule names another machine and that `prepare()` marked unreachable, or whose
+   `attempts` has reached `K_MAXIMUM_OFFLOAD_ATTEMPTS`, goes to
+   `RulePlacement::decide_unreachable()`: `FailRun` reaches the sink, `RunLocally` declines. Any
+   other node at the cap declines. `offloadable` is not cleared.
 2. Registry lock: a fixed-buffer node refreshes the versions of its stored handles, a
-   double-buffered node resolves the addresses of its live lists.
+   double-buffered node resolves the addresses of its live lists. A node whose buffer is not
+   shared any more declines, or, under a rule naming another machine, goes to
+   `decide_unreachable()` with `NotShared`.
 3. The decision, a `PlacementDecision`. A node with a winning rule asks `RulePlacement::decide()`;
    any other node asks `WorkerDirectory::pick()` under the directory lock, and its answer becomes
    `RunOnWorker` on device 0 or `RunLocally`.
@@ -146,6 +154,15 @@ and what fails is the state of the cluster, which lacks the worker. The master's
 `Runtime::topology()`, copied when the cluster attaches.
 
 A `Wait` bound counts only while the target is absent: a busy target records no first offer.
+
+`RulePlacement::decide_unreachable(rule, position, node, cause)` places a node its rule sends to
+another machine that it cannot reach, for an `UnreachableCause`: `Untagged`, `NotShared`,
+`WrittenTwice` or `OutOfAttempts`.
+
+| `if_absent` | Decision |
+| --- | --- |
+| `Local` or `Wait` | `RunLocally` at once, since waiting cannot remove the cause; the first such decision for a rule and cause logs one WARN naming the rule, the node, the target and the cause, until `forget_warnings()` |
+| `Fail` | `FailRun` naming the rule, the node, the target and the cause: `ErrorCode::InvalidArgument` for a node that cannot travel, `InvalidState` for one out of attempts |
 
 ### Fail
 

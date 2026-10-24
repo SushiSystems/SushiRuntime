@@ -46,6 +46,7 @@
 
 #include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/rule_placement.hpp>
+#include <SushiRuntime/offload_coordination/offload_handles.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
 namespace SushiRuntime
@@ -98,9 +99,9 @@ namespace SushiRuntime
                 /**
                  * @brief Marks each node a worker may run; the body of prepare() on the seam.
                  *
-                 * A node qualifies when its op id is not 0, an alive worker supports it (or its
-                 * rule names another machine), every buffer it touches is shared and no two of
-                 * its writes name one buffer. Logs one WARN per call that leaves such nodes local.
+                 * A node qualifies when its op id is not 0, a worker runs the op or its rule names
+                 * another machine, its buffers are shared and written once; a remote-rule node
+                 * that fails this gets its UnreachableCause. One WARN per call leaves some local.
                  * @param rules Null for none; each node's OffloadState::rules keeps it.
                  */
                 void prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes,
@@ -108,9 +109,9 @@ namespace SushiRuntime
 
                 /**
                  * @brief Dispatches a ready node; the body of OffloadCoordinator::try_offload().
-                 * In order: decline at the attempt cap; resolve the handles; decide by the
-                 * winning rule (RulePlacement), else by WorkerDirectory::pick(); for a worker,
-                 * count the attempt, bump the outputs, insert() and send(); for a wait, hold().
+                 * In order: a node its remote rule cannot send follows the absent policy; other
+                 * nodes decline at the attempt cap; resolve the handles; decide by the rule, else
+                 * by WorkerDirectory::pick(); dispatch() to a worker, or hold() for a wait.
                  * @return False when the pool must run the node; true when a worker, a reaper
                  *         or the held table owns it.
                  */
@@ -148,6 +149,15 @@ namespace SushiRuntime
                 /** @brief Returns where a node goes: by its rule, else by the policy. */
                 [[nodiscard]] PlacementDecision decide(const Internal::Graph::Node& node,
                                                        std::uint64_t estimated_bytes);
+
+                /**
+                 * @brief Applies the absent policy of a node's remote rule when the node cannot
+                 *        reach the target: RulePlacement::decide_unreachable().
+                 * @return False when the pool must run the node; true when the sink owns it.
+                 */
+                [[nodiscard]] bool settle_unreachable(Internal::Graph::Node& node,
+                                                      const PlacementRule& rule,
+                                                      UnreachableCause cause);
 
                 /**
                  * @brief Dispatches a node to the worker a decision named.

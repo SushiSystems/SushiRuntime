@@ -50,7 +50,9 @@
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/cluster_load/cluster_statistics.hpp>
@@ -214,6 +216,50 @@ namespace OffloadDispatcherTests
             return rules;
         }
 
+        /** @brief Returns a rule set whose one rule, "pin", sends every node to K_WORKER_NAME. */
+        std::shared_ptr<const PlacementRules> pin_rules(AbsentAction action)
+        {
+            PlacementRule rule;
+            rule.name = "pin";
+            rule.target.machine_name = K_WORKER_NAME;
+            rule.if_absent.action = action;
+            auto rules = std::make_shared<PlacementRules>();
+            EXPECT_TRUE(rules->add(std::move(rule)));
+            return rules;
+        }
+
+        /** @brief Records the errors a Fail rule ends a run with; it never resubmits. */
+        class RecordingSink final : public Internal::Graph::OffloadSink
+        {
+            public:
+                /** @brief Counts a resubmission, which no test here expects. */
+                void resubmit(Internal::Graph::Node& /*node*/) override
+                {
+                    ++resubmitted;
+                }
+
+                /** @brief Counts a remote completion, which no test here expects. */
+                void complete_remote(Internal::Graph::Node& /*node*/) override
+                {
+                    ++completed;
+                }
+
+                /** @brief Keeps the error a run ended with. */
+                void fail(Internal::Graph::Node& /*node*/, Error error) override
+                {
+                    errors.push_back(std::move(error));
+                }
+
+                /** @brief Holds every error fail() was given, in order. */
+                std::vector<Error> errors;
+
+                /** @brief Counts the calls to resubmit(). */
+                int resubmitted = 0;
+
+                /** @brief Counts the calls to complete_remote(). */
+                int completed = 0;
+        };
+
         /** @brief Returns the dispatch a transport was offered, decoded. */
         Wire::TaskDispatchMessage decode_dispatch(const OfferedFrame& frame)
         {
@@ -314,6 +360,29 @@ namespace OffloadDispatcherTests
                                                                  : PeerID{0};
                 }
 
+                /** @brief Sends the text of every WARN to warnings_ until TearDown(). */
+                void capture_warnings()
+                {
+                    std::vector<std::string>* const sink_target = &warnings_;
+                    SushiLog::set_log_sink([sink_target](const SushiLog::LogRecord& record)
+                    {
+                        if (record.level == SushiLog::LogLevel::Warn)
+                            sink_target->push_back(std::string(record.text));
+                    });
+                }
+
+                /** @brief Returns the WARNs that name the "pin" rule and contain @p reason. */
+                std::size_t pin_warnings(const char* reason) const
+                {
+                    return static_cast<std::size_t>(std::count_if(
+                        warnings_.begin(), warnings_.end(),
+                        [reason](const std::string& text)
+                        {
+                            return text.find("\"pin\"") != std::string::npos &&
+                                   text.find(reason) != std::string::npos;
+                        }));
+                }
+
                 /** @brief Returns the version the registry holds for an address. */
                 std::uint32_t version_of(void* address) const
                 {
@@ -362,6 +431,12 @@ namespace OffloadDispatcherTests
                 OffloadDispatcher dispatcher_{
                     registry_,  directory_, pending_,
                     transport_, held_,      NodeFacts{"master", OperatingSystem::Unknown, {}, {}}};
+
+                /// @brief The WARNs capture_warnings() collected.
+                std::vector<std::string> warnings_;
+
+                /// @brief The sink a test binds when a Fail rule must end a run.
+                RecordingSink sink_;
 
                 /// @brief The level the process had when the test began.
                 SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;
@@ -633,5 +708,106 @@ namespace OffloadDispatcherTests
             EXPECT_EQ(offload_and_return(*second_plan), K_SECOND_WORKER) << "round " << round;
         }
         EXPECT_EQ(policy_->calls, 0);
+    }
+
+    /** @brief Tests that a Fail rule naming a worker ends the run of an untagged node. */
+    TEST_F(Medium_OffloadDispatcherTest, FailRuleRefusesAnUntaggedNodeNamingTheRule)
+    {
+        dispatcher_.bind(sink_);
+        const sushi_ptr<Internal::Graph::Node> node =
+            fixed_node(OperationID(0), first_.data(), second_.data());
+        node->metadata.placement_rule = 0;
+        prepare({node}, pin_rules(AbsentAction::Fail));
+        ASSERT_NE(node->offload_state(), nullptr);
+        EXPECT_TRUE(node->offload_state()->offloadable);
+
+        EXPECT_TRUE(dispatcher_.try_offload(*node));
+        ASSERT_EQ(sink_.errors.size(), 1u);
+        EXPECT_EQ(sink_.errors.front().code, ErrorCode::InvalidArgument);
+        EXPECT_NE(sink_.errors.front().message.find("\"pin\""), std::string::npos)
+            << sink_.errors.front().message;
+        EXPECT_NE(sink_.errors.front().message.find("names no operation"), std::string::npos)
+            << sink_.errors.front().message;
+        EXPECT_TRUE(transport_.offered.empty());
+    }
+
+    /**
+     * @brief Tests that a Local rule naming a worker runs nodes that cannot travel on the master
+     *        and logs one WARN per rule and reason.
+     */
+    TEST_F(Medium_OffloadDispatcherTest, LocalRuleRunsNodesThatCannotTravelAndWarnsOnce)
+    {
+        capture_warnings();
+        dispatcher_.bind(sink_);
+        const sushi_ptr<Internal::Graph::Node> untagged =
+            fixed_node(OperationID(0), first_.data(), second_.data());
+        const sushi_ptr<Internal::Graph::Node> also_untagged =
+            fixed_node(OperationID(0), second_.data(), first_.data());
+        const sushi_ptr<Internal::Graph::Node> not_shared =
+            fixed_node(K_KNOWN_OPERATION, first_.data(), unshared_.data());
+        for (const sushi_ptr<Internal::Graph::Node>& node : {untagged, also_untagged, not_shared})
+            node->metadata.placement_rule = 0;
+        prepare({untagged, also_untagged, not_shared}, pin_rules(AbsentAction::Local));
+
+        for (int round = 0; round < 2; ++round)
+            for (const sushi_ptr<Internal::Graph::Node>& node :
+                 {untagged, also_untagged, not_shared})
+            {
+                ASSERT_NE(node->offload_state(), nullptr);
+                EXPECT_FALSE(dispatcher_.try_offload(*node)) << "round " << round;
+                dispatcher_.complete_local(*node);
+            }
+
+        EXPECT_EQ(pin_warnings("names no operation"), 1u);
+        EXPECT_EQ(pin_warnings("not shared"), 1u);
+        EXPECT_TRUE(sink_.errors.empty());
+        EXPECT_TRUE(transport_.offered.empty());
+    }
+
+    /** @brief Tests that a rule-placed node out of attempts follows the rule's absent policy. */
+    TEST_F(Medium_OffloadDispatcherTest, RulePlacedNodeOutOfAttemptsFollowsItsPolicy)
+    {
+        capture_warnings();
+        dispatcher_.bind(sink_);
+        const sushi_ptr<Internal::Graph::Node> failing =
+            fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
+        failing->metadata.placement_rule = 0;
+        prepare({failing}, pin_rules(AbsentAction::Fail));
+        failing->offload_state()->attempts.store(K_MAXIMUM_OFFLOAD_ATTEMPTS);
+        EXPECT_TRUE(dispatcher_.try_offload(*failing));
+        ASSERT_EQ(sink_.errors.size(), 1u);
+        EXPECT_EQ(sink_.errors.front().code, ErrorCode::InvalidState);
+        EXPECT_NE(sink_.errors.front().message.find("\"pin\""), std::string::npos)
+            << sink_.errors.front().message;
+
+        const sushi_ptr<Internal::Graph::Node> local =
+            fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
+        local->metadata.placement_rule = 0;
+        prepare({local}, pin_rules(AbsentAction::Wait));
+        local->offload_state()->attempts.store(K_MAXIMUM_OFFLOAD_ATTEMPTS);
+        EXPECT_FALSE(dispatcher_.try_offload(*local));
+        EXPECT_EQ(held_.size(), 0u);
+        EXPECT_EQ(pin_warnings("every dispatch"), 1u);
+        EXPECT_EQ(sink_.errors.size(), 1u);
+        EXPECT_TRUE(transport_.offered.empty());
+    }
+
+    /** @brief Tests that a node no rule places is declined at the cap and never refused. */
+    TEST_F(Medium_OffloadDispatcherTest, NodeWithoutARuleOutOfAttemptsIsDeclined)
+    {
+        capture_warnings();
+        dispatcher_.bind(sink_);
+        const sushi_ptr<Internal::Graph::Node> node =
+            fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
+        const sushi_ptr<Internal::Graph::Node> untagged =
+            fixed_node(OperationID(0), first_.data(), second_.data());
+        prepare({node, untagged}, pin_rules(AbsentAction::Fail));
+        EXPECT_FALSE(untagged->offload_state()->offloadable);
+
+        node->offload_state()->attempts.store(K_MAXIMUM_OFFLOAD_ATTEMPTS);
+        EXPECT_FALSE(dispatcher_.try_offload(*node));
+        EXPECT_TRUE(sink_.errors.empty());
+        EXPECT_TRUE(warnings_.empty());
+        EXPECT_EQ(dispatcher_.statistics().declined, 1u);
     }
 } // namespace OffloadDispatcherTests

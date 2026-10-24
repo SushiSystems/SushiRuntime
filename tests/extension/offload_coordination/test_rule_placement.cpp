@@ -183,3 +183,30 @@ TEST_F(Small_RulePlacement, Regression_AHugeWaitBoundWaitsUntilTheLatestTime)
     EXPECT_EQ(std::get<WaitForTarget>(decision).until,
               std::chrono::steady_clock::time_point::max());
 }
+
+/** @brief Tests that Fail refuses a node that cannot travel with an error naming the cause. */
+TEST_F(Small_RulePlacement, FailRefusesANodeThatCannotTravel)
+{
+    const PlacementRule rule = remote_rule(AbsentAction::Fail);
+    const PlacementDecision shared = placement_.decide_unreachable(
+        rule, 0, *node_, UnreachableCause::NotShared);
+    ASSERT_TRUE(std::holds_alternative<FailRun>(shared));
+    const Error& error = std::get<FailRun>(shared).error;
+    EXPECT_EQ(error.code, ErrorCode::InvalidArgument);
+    EXPECT_NE(error.message.find("\"pin\""), std::string::npos) << error.message;
+    EXPECT_NE(error.message.find("not shared"), std::string::npos) << error.message;
+
+    const PlacementDecision spent = placement_.decide_unreachable(
+        rule, 0, *node_, UnreachableCause::OutOfAttempts);
+    ASSERT_TRUE(std::holds_alternative<FailRun>(spent));
+    EXPECT_EQ(std::get<FailRun>(spent).error.code, ErrorCode::InvalidState);
+}
+
+/** @brief Tests that Local and Wait run a node that cannot travel on the master at once. */
+TEST_F(Small_RulePlacement, LocalAndWaitRunANodeThatCannotTravelOnTheMaster)
+{
+    for (const AbsentAction action : {AbsentAction::Local, AbsentAction::Wait})
+        EXPECT_TRUE(std::holds_alternative<RunLocally>(placement_.decide_unreachable(
+            remote_rule(action), 0, *node_, UnreachableCause::Untagged)));
+    EXPECT_EQ(held_.size(), 0u);
+}

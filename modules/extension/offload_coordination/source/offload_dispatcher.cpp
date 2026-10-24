@@ -303,6 +303,47 @@ namespace SushiRuntime
                 return every_buffer_shared ? Placement::WrittenTwice : Placement::NotShared;
             }
 
+            /** @brief Returns why a node placed as @p placement cannot travel; none if it can. */
+            std::optional<UnreachableCause> unreachable_cause(Placement placement) noexcept
+            {
+                switch (placement)
+                {
+                    case Placement::Untagged:
+                        return UnreachableCause::Untagged;
+                    case Placement::NotShared:
+                        return UnreachableCause::NotShared;
+                    case Placement::WrittenTwice:
+                        return UnreachableCause::WrittenTwice;
+                    case Placement::Offloadable:
+                    case Placement::NoWorker:
+                        break;
+                }
+                return std::nullopt;
+            }
+
+            /**
+             * @brief Marks a node its remote rule cannot send, so the scheduler offers it and
+             *        try_offload() applies the rule's absent policy.
+             */
+            void mark_unreachable(Internal::Graph::Node& node, UnreachableCause cause)
+            {
+                Internal::Graph::OffloadState& state = node.offload();
+                if (state.payload == nullptr)
+                    state.payload = std::make_unique<OffloadHandles>();
+                static_cast<OffloadHandles*>(state.payload.get())->unreachable = cause;
+                state.offloadable = true;
+            }
+
+            /** @brief Returns the cause prepare() marked a node with; none when it was not. */
+            std::optional<UnreachableCause>
+            marked_cause(const Internal::Graph::OffloadState& state) noexcept
+            {
+                const auto* baked = static_cast<const OffloadHandles*>(state.payload.get());
+                if (baked == nullptr)
+                    return std::nullopt;
+                return baked->unreachable;
+            }
+
             /**
              * @brief Writes a node's current handles into the scratch under one registry lock.
              *
@@ -365,6 +406,7 @@ namespace SushiRuntime
         OffloadDispatcher::prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes,
                                    const std::shared_ptr<const PlacementRules>& rules)
         {
+            rule_placement_.forget_warnings();
             LocalOnlyCount local;
             for (const sushi_ptr<Internal::Graph::Node>& slot : nodes)
             {
@@ -380,9 +422,13 @@ namespace SushiRuntime
                 const Placement placement =
                     is_dynamic ? place_dynamic(registry_, directory_, *node, *state, may_wait)
                                : place_fixed(registry_, directory_, *node, may_wait);
+                const std::optional<UnreachableCause> cause =
+                    may_wait ? unreachable_cause(placement) : std::nullopt;
+                if (cause.has_value())
+                    mark_unreachable(*node, *cause);
                 if (Internal::Graph::OffloadState* placed = node->offload_state())
                     placed->rules = rules;
-                if (placement == Placement::Untagged)
+                if (placement == Placement::Untagged || cause.has_value())
                     continue;
 
                 local.count(placement, node->metadata.op_id.value);
@@ -406,14 +452,29 @@ namespace SushiRuntime
             if (node.bindings_ && !node.bindings_->enabled.load(std::memory_order_relaxed))
                 return decline();
 
+            const PlacementRule* rule = winning_rule(node, state->rules.get());
+            const PlacementRule* remote_rule =
+                rule != nullptr && !rule_placement_.names_master(*rule) ? rule : nullptr;
+            if (remote_rule != nullptr)
+                if (const std::optional<UnreachableCause> cause = marked_cause(*state))
+                    return settle_unreachable(node, *remote_rule, *cause);
+
             if (state->attempts.load(std::memory_order_relaxed) >= K_MAXIMUM_OFFLOAD_ATTEMPTS)
-                return decline();
+            {
+                if (remote_rule == nullptr)
+                    return decline();
+                return settle_unreachable(node, *remote_rule, UnreachableCause::OutOfAttempts);
+            }
 
             DispatchScratch& scratch = dispatch_scratch();
             const std::optional<std::size_t> input_count =
                 snapshot_handles(registry_, *state, scratch);
             if (!input_count.has_value())
-                return decline();
+            {
+                if (remote_rule == nullptr)
+                    return decline();
+                return settle_unreachable(node, *remote_rule, UnreachableCause::NotShared);
+            }
 
             std::uint64_t estimated_bytes = 0;
             for (std::size_t index = 0; index < *input_count; ++index)
@@ -471,6 +532,18 @@ namespace SushiRuntime
             if (!std::holds_alternative<WaitForTarget>(decision))
                 held_.forget(node);
             return decision;
+        }
+
+        bool OffloadDispatcher::settle_unreachable(Internal::Graph::Node& node,
+                                                   const PlacementRule& rule,
+                                                   UnreachableCause cause)
+        {
+            held_.forget(node);
+            const PlacementDecision decision = rule_placement_.decide_unreachable(
+                rule, *node.metadata.placement_rule, node, cause);
+            if (const FailRun* failure = std::get_if<FailRun>(&decision))
+                return refuse(node, *failure);
+            return decline();
         }
 
         bool OffloadDispatcher::dispatch(Internal::Graph::Node& node,

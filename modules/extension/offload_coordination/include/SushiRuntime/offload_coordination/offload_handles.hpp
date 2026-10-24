@@ -29,6 +29,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <vector>
 
 #include <SushiRuntime/core/span.hpp>
@@ -39,13 +41,22 @@ namespace SushiRuntime
 {
     namespace Distributed
     {
+        /** @brief Names why a node whose rule names another machine cannot go there. */
+        enum class UnreachableCause : std::uint8_t
+        {
+            Untagged,      /**< The node names no operation, so no worker can run it. */
+            NotShared,     /**< A buffer the node touches is not shared. */
+            WrittenTwice,  /**< Two of the node's writes name one shared buffer. */
+            OutOfAttempts, /**< The node used every dispatch it may have in one run. */
+        };
+
         /**
          * @brief Holds the handles of the shared buffers a fixed-buffer node touches.
          *
-         * OffloadDispatcher::prepare() stores one in Internal::Graph::OffloadState::payload. On an
-         * offloadable node it lists every buffer read, then every buffer written. On a node
-         * that stays local it lists only the shared buffers the node writes, so a local
-         * completion can raise their versions. A double-buffered node has none.
+         * OffloadDispatcher::prepare() stores one in OffloadState::payload: every buffer read,
+         * then every buffer written, on an offloadable node; only the shared writes, for a
+         * local completion to bump, on a node that stays local. A double-buffered node has one
+         * only to carry an UnreachableCause.
          */
         struct OffloadHandles final : public Internal::Graph::OffloadPayload
         {
@@ -67,6 +78,9 @@ namespace SushiRuntime
 
             /** @brief Counts the leading entries of handles that are inputs. */
             std::size_t input_count = 0;
+
+            /** @brief Names why the node's rule cannot send it away; none when it can travel. */
+            std::optional<UnreachableCause> unreachable;
         };
 
     } // namespace Distributed

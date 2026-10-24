@@ -106,6 +106,8 @@ when it connects, and keeps them across a reconnect under the same name; a perso
 | Alive, with a free slot | The node is dispatched to it, on the chosen device |
 | Alive, at its job limit | The node is held and offered again when the worker frees a slot, whatever the rule's absent policy says |
 | Absent | `Local` runs the node on the master; `Wait` holds it until the worker returns or the bound passes, then runs it on the master; `Fail` ends the run with an error naming the rule and the target |
+| Out of the node's reach: the node names no operation, a buffer it touches is not shared, or two of its writes name one buffer | `Local` and `Wait` run the node on the master at once, since waiting cannot change the node, and log one warning per rule and reason naming the rule, the node and the reason; `Fail` ends the run with `ErrorCode::InvalidArgument` naming the rule and the reason |
+| Out of attempts: the node was sent to a worker and taken back as many times as one run allows | The same as the row above, with `ErrorCode::InvalidState` for `Fail`; a node no rule places runs on the master |
 | This machine | The node runs on the master |
 
 A rule's `deadline` replaces the cluster's `task_deadline` for the nodes it places. With no rule

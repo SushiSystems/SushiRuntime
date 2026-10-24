@@ -30,6 +30,9 @@
 
 #include <chrono>
 #include <cstddef>
+#include <mutex>
+#include <utility>
+#include <vector>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/cluster_load/placement_decision.hpp>
@@ -37,6 +40,7 @@
 #include <SushiRuntime/placement/placement_rule.hpp>
 
 #include <SushiRuntime/offload_coordination/held_nodes.hpp>
+#include <SushiRuntime/offload_coordination/offload_handles.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
 namespace SushiRuntime
@@ -48,10 +52,10 @@ namespace SushiRuntime
         /**
          * @brief Decides where a node goes from its winning rule, in place of the OffloadPolicy.
          *
-         * A target device_on() finds on the master keeps the node local, on the device the
-         * compile stated. Otherwise the directory picks a worker and a device the target
-         * names; an absent target follows if_absent, a wait timed from the first offer.
-         * It owns no lock; the directory and the held table take their own.
+         * A target device_on() finds on the master keeps the node local. Otherwise the
+         * directory picks a worker and a device the target names; an absent target follows
+         * if_absent, a wait timed from the first offer, and an unreachable one at once. Its
+         * lock guards the warnings it logged; the directory and held table take their own.
          */
         class SUSHIRUNTIME_API RulePlacement final
         {
@@ -85,7 +89,26 @@ namespace SushiRuntime
                                                        const Internal::Graph::Node& node,
                                                        std::chrono::steady_clock::time_point now);
 
+                /**
+                 * @brief Returns where a node goes when its rule names another machine but the
+                 *        node cannot get there.
+                 *
+                 * Fail ends the run; Local and Wait run it on the master at once, since waiting
+                 * cannot remove the cause. A fallback logs one WARN per rule and cause.
+                 * @param position The rule's position in its set, for the error and the log.
+                 */
+                [[nodiscard]] PlacementDecision decide_unreachable(
+                    const PlacementRule& rule, std::size_t position,
+                    const Internal::Graph::Node& node, UnreachableCause cause);
+
+                /** @brief Lets each rule and cause log its fallback WARN once more. */
+                void forget_warnings();
+
             private:
+                /** @brief Returns whether a rule and cause have not logged their WARN yet. */
+                [[nodiscard]] bool is_first_warning(const PlacementRule& rule,
+                                                    UnreachableCause cause);
+
                 /** @brief Applies if_absent to a node whose target no alive worker matches. */
                 [[nodiscard]] PlacementDecision follow_if_absent(
                     const PlacementRule& rule, std::size_t position,
@@ -99,6 +122,12 @@ namespace SushiRuntime
 
                 /// @brief The master's own facts, for a rule that names this machine.
                 NodeFacts master_;
+
+                /// @brief Guards warned_.
+                std::mutex warned_mutex_;
+
+                /// @brief Lists each rule and cause whose fallback WARN was logged.
+                std::vector<std::pair<const PlacementRule*, UnreachableCause>> warned_;
         };
 
     } // namespace Distributed

@@ -356,11 +356,11 @@ namespace EndToEndTests
 
         /**
          * @brief Adds a task with no operation that writes element i of a buffer as base + i, so
-         *        it always runs on the master.
+         *        no worker can run it.
          */
-        void add_local_fill(Graph& graph, const char* name, const USMFloats& buffer, float base)
+        void add_local_fill(Graph& graph, const char* name, const USMFloats& buffer, float base,
+                            NodeOptions options = NodeOptions())
         {
-            NodeOptions options;
             options.name = name;
 
             float* values = buffer.data();
@@ -1834,6 +1834,102 @@ namespace EndToEndTests
             << ran.error().message;
         expect_elements(out.data(), out.count(), [](std::size_t) { return K_UNWRITTEN; });
         EXPECT_EQ(cluster.offloaded(), 0u);
+    }
+
+    namespace
+    {
+        /**
+         * @brief Runs an untagged node a rule sends to a live worker, under @p action, and
+         *        returns the run's result; @p warnings gets every WARN of the run.
+         */
+        Result<RunReport> run_untagged_pinned_node(AbsentAction action, const USMFloats& out,
+                                                   Runtime& master_runtime,
+                                                   std::vector<std::string>& warnings)
+        {
+            InProcessFabric fabric;
+            Cluster cluster = Cluster::attach(master_runtime,
+                                              InProcessTransport::make_master(fabric),
+                                              eager_options()).value();
+            ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+            worker.report(two_device_facts("rack-7-gpu", "a"));
+            EXPECT_TRUE(worker.start());
+            EXPECT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+            share(cluster, out);
+
+            PlacementRule rule = pinned_rule();
+            rule.target.machine_name = "rack-7-gpu";
+            rule.if_absent.action = action;
+            set_rule(master_runtime, std::move(rule));
+
+            std::vector<std::string>* const sink_target = &warnings;
+            SushiLog::set_log_synchronous(true);
+            SushiLog::set_log_sink([sink_target](const SushiLog::LogRecord& record)
+            {
+                if (record.level == SushiLog::LogLevel::Warn)
+                    sink_target->push_back(std::string(record.text));
+            });
+
+            auto graph = master_runtime.graph();
+            add_local_fill(graph, "stranded", out, 1.0f, pinned_options());
+            Result<RunReport> ran = graph.run();
+            SushiLog::set_log_sink(nullptr);
+
+            EXPECT_EQ(worker.dispatch_count(), 0u);
+            EXPECT_EQ(cluster.offloaded(), 0u);
+            return ran;
+        }
+    } // namespace
+
+    /** @brief Tests that Fail ends the run of an untagged node a rule sends to a live worker. */
+    TEST(Medium_DistributedPlacementTest, FailEndsTheRunOfANodeThatCannotTravel)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        USMFloats out(master_context.devices().queue(0), 16, K_UNWRITTEN);
+
+        std::vector<std::string> warnings;
+        const Result<RunReport> ran =
+            run_untagged_pinned_node(AbsentAction::Fail, out, master_runtime, warnings);
+        ASSERT_FALSE(ran) << "the run returned no error";
+        EXPECT_EQ(ran.error().code, ErrorCode::InvalidArgument);
+        EXPECT_NE(ran.error().message.find("\"pin\""), std::string::npos) << ran.error().message;
+        EXPECT_NE(ran.error().message.find("names no operation"), std::string::npos)
+            << ran.error().message;
+        expect_elements(out.data(), out.count(), [](std::size_t) { return K_UNWRITTEN; });
+    }
+
+    /**
+     * @brief Tests that Local runs an untagged node a rule sends to a live worker on the master
+     *        and logs one WARN naming the rule, the node and the reason.
+     */
+    TEST(Medium_DistributedPlacementTest, LocalRunsANodeThatCannotTravelAndWarnsOnce)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        USMFloats out(master_context.devices().queue(0), 16, K_UNWRITTEN);
+
+        std::vector<std::string> warnings;
+        const Result<RunReport> ran =
+            run_untagged_pinned_node(AbsentAction::Local, out, master_runtime, warnings);
+        ASSERT_TRUE(ran) << ran.error().message;
+        expect_elements(out.data(), out.count(),
+                        [](std::size_t index) { return 1.0f + static_cast<float>(index); });
+
+        const auto is_stranding = [](const std::string& text)
+        {
+            return text.find("\"pin\"") != std::string::npos &&
+                   text.find("\"stranded\"") != std::string::npos &&
+                   text.find("names no operation") != std::string::npos;
+        };
+        EXPECT_EQ(std::count_if(warnings.begin(), warnings.end(), is_stranding), 1);
     }
 
     /** @brief Tests that a rule deadline shorter than the cluster's takes a silent task back. */
