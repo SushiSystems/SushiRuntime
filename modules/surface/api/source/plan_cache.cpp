@@ -36,17 +36,20 @@
 #include <vector>
 
 #include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 #include <SushiRuntime/engine_handles/plan_access.hpp>
 #include "recorder_replay.hpp"
+#include "rule_stamp.hpp"
 
 namespace SushiRuntime
 {
@@ -97,7 +100,8 @@ namespace SushiRuntime
 
         PlanCache::~PlanCache() = default;
 
-        Result<void> PlanCache::build(const Recorder& recorder, const ContextHandle& context)
+        Result<void> PlanCache::build(const Recorder& recorder, const ContextHandle& context,
+                                      const NodeFacts* here)
         {
             using Internal::Graph::TaskGraph;
 
@@ -110,28 +114,26 @@ namespace SushiRuntime
             built->recorded.reserve(recorder.node_count());
             built->rules = runtime.placement_rules();
             built->rules_generation = runtime.placement_generation();
-            const PlacementRules* rules = built->rules.get();
+            const RuleStamp stamp(built->rules.get(), here, runtime.offload() == nullptr);
+            std::optional<Error> refusal;
             Detail::RecorderReplay::replay(
                 recorder, backing_graph,
-                [&built, &registrations, &backing_graph, rules](std::size_t rule, std::size_t)
+                [&built, &registrations, &backing_graph, &stamp, &refusal](std::size_t rule,
+                                                                          std::size_t)
                 {
                     Internal::Graph::Node* added = backing_graph.last_node_added();
                     if (added)
                     {
-                        if (rules != nullptr)
-                        {
-                            const Internal::Graph::TaskMetadata& metadata = added->metadata;
-                            const std::optional<std::size_t> winner = rules->resolve(
-                                metadata.placement_class, metadata.placement_key, metadata.op_id);
-                            if (winner)
-                                added->metadata.placement_rule =
-                                    static_cast<std::uint32_t>(*winner);
-                        }
+                        Result<void> stamped = stamp.stamp(*added);
+                        if (!stamped && !refusal)
+                            refusal = std::move(stamped.error());
                         registrations[rule] = added->registration_index;
                         built->recorded.push_back(
                             Detail::PlanCacheState::RecordedNode{added, rule});
                     }
                 });
+            if (refusal)
+                return make_error(std::move(*refusal));
             // Nothing of this build is kept until it compiled; a failure leaves the last one whole.
             Result<Internal::Graph::CompiledGraph> compiled = backing_graph.compile();
             if (!compiled)
@@ -151,7 +153,7 @@ namespace SushiRuntime
 
         bool PlanCache::stale(const Recorder& recorder, const ContextHandle& context) const noexcept
         {
-            return dirty_ || built_generation_ != recorder.generation() ||
+            return state_ == nullptr || dirty_ || built_generation_ != recorder.generation() ||
                    state_->rules_generation !=
                        Internal::ContextAccess::context(context).placement_generation();
         }

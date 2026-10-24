@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
@@ -42,10 +43,20 @@ namespace SushiRuntime
     inline constexpr std::size_t K_DEFAULT_PLACEMENT_DEVICE = 0;
 
     /**
+     * @brief Returns whether two machine names are equal in their canonical form.
+     *
+     * The canonical form is the first DNS label, the text before the first '.', in ASCII
+     * lower case, so "Rack-7" and "rack-7.lab.example" are one machine.
+     * @see modules/foundation/placement/README.md
+     */
+    [[nodiscard]] SUSHIRUNTIME_API bool machine_names_match(std::string_view first,
+                                                            std::string_view second) noexcept;
+
+    /**
      * @brief Returns whether the machine part of a target names a machine.
      *
-     * A target with no machine part names every machine. A name compares equal to
-     * NodeFacts::name; a label matches when the machine carries that key with that value.
+     * A target with no machine part names every machine. A name matches NodeFacts::name by
+     * machine_names_match(); a label matches when the machine carries that key with that value.
      */
     [[nodiscard]] SUSHIRUNTIME_API bool machine_matches(const PlacementTarget& target,
                                                         const NodeFacts& machine) noexcept;
@@ -60,6 +71,17 @@ namespace SushiRuntime
      */
     [[nodiscard]] SUSHIRUNTIME_API std::optional<std::size_t>
     pick_device(const PlacementTarget& target, const NodeFacts& machine) noexcept;
+
+    /**
+     * @brief Returns the device of a machine a target puts a node on.
+     *
+     * The target names the machine only when its machine part matches and its device part
+     * picks a device there; every caller that asks where a target places a node asks this.
+     * @return The position in NodeFacts::devices, or none when the target does not name it.
+     * @see modules/foundation/placement/README.md
+     */
+    [[nodiscard]] SUSHIRUNTIME_API std::optional<std::size_t>
+    device_on(const PlacementTarget& target, const NodeFacts& machine) noexcept;
 
     /** @brief Returns a rule's name in quotes, or "at position N" when it has none. */
     [[nodiscard]] SUSHIRUNTIME_API std::string describe_rule(const PlacementRule& rule,

@@ -40,7 +40,6 @@
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
-#include <SushiRuntime/task/node_placement.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
 
@@ -90,13 +89,15 @@ namespace SushiRuntime
                 return node;
             }
 
-            /** @brief Adds a command group that names no region and places it on its device. */
+            /** @brief Adds a command group that names no region, on the device it states. */
             Node& add_untracked(TaskGraph& backing_graph, const NodeDescription& description,
                                 std::optional<std::uint32_t> registration)
             {
                 Node& node = backing_graph.add_node(std::get<CommandGroupWork>(description.work),
                                                     std::vector<sycl::event>{}, registration);
-                node.place_on(description.device.value_or(Internal::Graph::K_DEFAULT_PLACEMENT));
+                // A command group that states no device is placed by the compile's rule, else 0.
+                if (description.device)
+                    node.place_on(*description.device);
                 bake_width(node, description.width);
                 return node;
             }

@@ -156,6 +156,8 @@ worker is covered end to end in `tests/extension/distributed/README.md`.
 | `Small_RulePlacement.LocalRunsAnAbsentTargetOnTheMaster` | An absent target under `Local` gives `RunLocally`. |
 | `Small_RulePlacement.WaitEndsAtTheBoundFromTheFirstOffer` | Under `Wait` the end stays first offer plus bound across offers, and an offer at that end gives `RunLocally`. |
 | `Small_RulePlacement.FailNamesTheRuleAndTheTarget` | Under `Fail` the error is `InvalidState` and names the rule, else its position, and the target. |
+| `Small_RulePlacementDevice.Regression_ADeviceOnlyRuleTheMasterLacksIsNotTheMasters` | On a master with one CPU, a rule for a GPU or for device 1 does not name the master, and a rule for a CPU does. |
+| `Small_RulePlacement.Regression_AHugeWaitBoundWaitsUntilTheLatestTime` | A `Wait` bound of `milliseconds::max()` waits until `steady_clock::time_point::max()` instead of overflowing the sum. |
 
 ## test_held_nodes.cpp
 

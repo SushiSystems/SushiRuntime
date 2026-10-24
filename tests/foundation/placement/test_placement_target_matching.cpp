@@ -119,3 +119,45 @@ TEST(Small_PlacementTargetMatching, DescriptionsNameTheRuleAndEveryTargetPart)
     target.device_kind = DeviceKind::GPU;
     EXPECT_EQ(describe_target(target), "machine \"rack-7\", the first device of kind GPU");
 }
+
+/** @brief Tests that a device-only target names a machine only when the machine has the device. */
+TEST(Small_PlacementTargetMatching, Regression_ADeviceOnlyTargetNamesOnlyAMachineWithTheDevice)
+{
+    const NodeFacts machine = rack_seven();
+    NodeFacts cpu_only = machine;
+    cpu_only.devices.pop_back();
+
+    PlacementTarget gpu;
+    gpu.device_kind = DeviceKind::GPU;
+    EXPECT_TRUE(machine_matches(gpu, cpu_only)) << "the machine part alone names every machine";
+    EXPECT_EQ(device_on(gpu, cpu_only), std::nullopt);
+    EXPECT_EQ(device_on(gpu, machine), std::optional<std::size_t>(1));
+
+    PlacementTarget second;
+    second.device_index = 1;
+    EXPECT_EQ(device_on(second, machine), std::optional<std::size_t>(1));
+    EXPECT_EQ(device_on(second, cpu_only), std::nullopt);
+
+    second.machine_name = "rack-8";
+    EXPECT_EQ(device_on(second, machine), std::nullopt) << "the machine part must match too";
+}
+
+/** @brief Tests that machine names compare in any case and by their first DNS label. */
+TEST(Small_PlacementTargetMatching, Regression_MachineNamesCompareByCaseAndFirstLabel)
+{
+    EXPECT_TRUE(machine_names_match("Rack-7", "rack-7"));
+    EXPECT_TRUE(machine_names_match("RACK-7", "rack-7.lab.example.com"));
+    EXPECT_TRUE(machine_names_match("rack-7.lab", "rack-7.other"));
+    EXPECT_FALSE(machine_names_match("rack-7", "rack-70"));
+    EXPECT_FALSE(machine_names_match("rack-7", "lab.rack-7"));
+
+    const NodeFacts machine = rack_seven();
+    PlacementTarget target;
+    target.machine_name = "RACK-7.lab.example.com";
+    EXPECT_TRUE(machine_matches(target, machine));
+
+    NodeFacts qualified = machine;
+    qualified.name = "rack-7.lab.example.com";
+    target.machine_name = "Rack-7";
+    EXPECT_TRUE(machine_matches(target, qualified));
+}

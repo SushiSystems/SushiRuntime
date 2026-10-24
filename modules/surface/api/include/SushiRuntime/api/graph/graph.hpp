@@ -47,6 +47,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/report/run_report.hpp>
 
 namespace SushiRuntime
@@ -83,6 +84,7 @@ namespace SushiRuntime
                   StepDriver<Graph>(std::move(other)),
                   PlanCache(std::move(other)),
                   context_(other.context_),
+                  topology_(other.topology_),
                   recorder_(std::move(other.recorder_))
             {
             }
@@ -99,6 +101,7 @@ namespace SushiRuntime
                     StepDriver<Graph>::operator=(std::move(other));
                     PlanCache::operator=(std::move(other));
                     context_ = other.context_;
+                    topology_ = other.topology_;
                     recorder_ = std::move(other.recorder_);
                 }
                 return *this;
@@ -189,9 +192,14 @@ namespace SushiRuntime
             static constexpr const char* K_DANGLING_RESOURCE =
                 "Graph references a Buffer/State freed before the run.";
 
-            explicit Graph(ContextHandle context)
+            /**
+             * @brief Starts an empty graph on a runtime.
+             * @param topology The facts of the runtime's machine, which its rules are read
+             *                 against at compile; shared with the runtime.
+             */
+            Graph(ContextHandle context, std::shared_ptr<const NodeFacts> topology)
                 : PlanCache(Detail::profiling_default(context)), context_(std::move(context)),
-                  recorder_(context_)
+                  topology_(std::move(topology)), recorder_(context_)
             {
             }
 
@@ -232,7 +240,10 @@ namespace SushiRuntime
             [[nodiscard]] bool plan_is_stale() const noexcept { return stale(recorder_, context_); }
 
             /** @brief Builds the plan from the recorder, or returns why it has none. */
-            [[nodiscard]] Result<void> rebuild_plan() { return build(recorder_, context_); }
+            [[nodiscard]] Result<void> rebuild_plan()
+            {
+                return build(recorder_, context_, topology_.get());
+            }
 
             /** @brief Returns success: a built plan needs no further preparation. */
             [[nodiscard]] Result<void> prepare_run() noexcept { return {}; }
@@ -254,6 +265,9 @@ namespace SushiRuntime
 
             /** @brief The runtime this graph runs on. */
             ContextHandle context_;
+
+            /** @brief The facts of the runtime's machine; null names no local device. */
+            std::shared_ptr<const NodeFacts> topology_;
 
             /** @brief Owns the recorded nodes, their scratch and their per-step hooks. */
             Recorder recorder_;

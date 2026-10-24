@@ -31,13 +31,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <thread>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/task/node.hpp>
 
@@ -1434,3 +1439,73 @@ namespace LayerEquivalenceTests
         expect_identical(default_layer, scheduler_layer, "default layer vs forced scheduler");
     }
 } // namespace LayerEquivalenceTests
+
+/** @brief Tests that the placement rules place the nodes of a DynamicGraph's regions. */
+namespace DynamicGraphPlacementTests
+{
+    namespace
+    {
+        /** @brief Returns a rule set whose one rule sends class "dynamic.ruled" to a device. */
+        PlacementRules rule_to_device(std::size_t device, AbsentAction if_absent)
+        {
+            PlacementRule rule;
+            rule.name = "ruled";
+            rule.match.placement_class = "dynamic.ruled";
+            rule.target.device_index = device;
+            rule.if_absent = AbsentPolicy{if_absent, std::chrono::milliseconds{0}};
+            PlacementRules rules;
+            EXPECT_TRUE(rules.add(std::move(rule)));
+            return rules;
+        }
+
+        /** @brief Records in region 0, in the rule's scope, a task that notes its device. */
+        void record_ruled_task(Runtime& rt, DynamicGraph& world,
+                               std::optional<sycl::device>& ran_on)
+        {
+            world.region(0).recorder().within(
+                rt.placement_scope("dynamic.ruled"),
+                [&ran_on](Recorder& in_scope)
+                {
+                    in_scope.task(Access(),
+                                  [&ran_on](sycl::queue& queue, const std::vector<sycl::event>&)
+                                  {
+                                      ran_on = queue.get_device();
+                                      return sycl::event{};
+                                  });
+                });
+        }
+    } // namespace
+
+    /** @brief Tests that a rule change between two runs re-places a region's node unrecorded. */
+    TEST(Medium_DynamicGraphPlacement, Regression_ARuleChangeReplacesARegionsNodeWithoutARecord)
+    {
+        auto rt = Runtime::create().value();
+        const std::size_t absent = rt.advanced().device_count();
+        std::optional<sycl::device> noted;
+        auto world = rt.dynamic_graph();
+        record_ruled_task(rt, world, noted);
+
+        ASSERT_TRUE(rt.set_placement_rules(rule_to_device(absent, AbsentAction::Fail)));
+        const auto refused = world.run();
+        ASSERT_FALSE(refused) << "the region's node is placed by the Fail rule";
+        EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
+        EXPECT_NE(refused.error().message.find("\"ruled\""), std::string::npos)
+            << refused.error().message;
+
+        ASSERT_TRUE(rt.set_placement_rules(rule_to_device(absent, AbsentAction::Local)));
+        ASSERT_TRUE(world.run()) << "the new set reaches the region without a re-record";
+        ASSERT_TRUE(noted.has_value());
+        EXPECT_EQ(*noted, Internal::ContextAccess::context(rt).devices().queue(0).get_device());
+        const std::size_t composed = world.compose_count();
+
+        ASSERT_TRUE(world.run());
+        EXPECT_EQ(world.compose_count(), composed) << "an unchanged set composes nothing";
+
+        if (absent < 2)
+            return;
+        ASSERT_TRUE(rt.set_placement_rules(rule_to_device(1, AbsentAction::Fail)));
+        ASSERT_TRUE(world.run());
+        EXPECT_EQ(world.compose_count(), composed + 1);
+        EXPECT_EQ(*noted, Internal::ContextAccess::context(rt).devices().queue(1).get_device());
+    }
+} // namespace DynamicGraphPlacementTests

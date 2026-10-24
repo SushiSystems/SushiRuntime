@@ -110,6 +110,7 @@ never recomposes.
 | Test | What it proves |
 | --- | --- |
 | `IndependentRegionsRunAndComposeOnce` | Two independent regions each own a buffer and increment it once per step. Over several steps both buffers advance, and a run that mutates nothing composes the combined plan exactly once. |
+| `Regression_ARuleChangeReplacesARegionsNodeWithoutARecord` | A task recorded once in region 0, inside the scope a rule matches: a `Fail` rule for an absent device fails the run with `InvalidArgument` naming `"ruled"`, a `Local` set given before the next run lets it run on device 0 with no re-record, an unchanged set composes nothing more, and on a machine with two devices a rule for device 1 moves the task there. |
 
 ### `CrossRegionDependencyOrders`
 
@@ -699,6 +700,8 @@ needs a second device and skips below two.
 | `AStatedDeviceInTheOwnersContextWinsOverTheOwner` | A task over a buffer the runtime allocated on device 0 that states another device of device 0's context is handed the stated device's queue; skipped when no such device exists. |
 | `AStatedDeviceInAnotherContextIsRefused` | The same task stating a device outside device 0's context fails the run with an `InvalidGraph` error naming the other context, and its body never runs; skipped when every device shares device 0's context. |
 | `ATaskThatStatesNoDeviceRunsOnTheOwner` | A task that states no device, over a buffer allocated on the last device, is handed that device's queue. |
+| `Regression_ARuleNamingDeviceOneRunsTheNodeThere` | A task that states no device and names no region, recorded in the scope a rule for device 1 matches, is handed device 1's queue; skipped below two devices. |
+| `Regression_ARuleNamingAnAbsentDeviceFollowsItsPolicy` | The same task under a rule for a device the machine lacks runs on device 0 under `Local`, and under `Fail` the run ends with `InvalidArgument` naming `"ruled"` and the body never runs. |
 | `ATaskPlacedPastTheDeviceCountStops` | A task placed on one past the last device stops the process with a message that says the index names no device. |
 
 ## test_region.cpp

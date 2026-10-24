@@ -48,9 +48,9 @@ namespace SushiRuntime
         /**
          * @brief Decides where a node goes from its winning rule, in place of the OffloadPolicy.
          *
-         * A rule whose machine part names the master keeps the node local. Otherwise the
-         * directory picks a worker the target names and the device on it; an absent target
-         * follows the rule's if_absent, and a wait is measured from the node's first offer.
+         * A target device_on() finds on the master keeps the node local, on the device the
+         * compile stated. Otherwise the directory picks a worker and a device the target
+         * names; an absent target follows if_absent, a wait timed from the first offer.
          * It owns no lock; the directory and the held table take their own.
          */
         class SUSHIRUNTIME_API RulePlacement final
@@ -67,7 +67,10 @@ namespace SushiRuntime
                 RulePlacement(RulePlacement&&) = delete;
                 RulePlacement& operator=(RulePlacement&&) = delete;
 
-                /** @brief Returns whether the machine part of a rule's target names the master. */
+                /**
+                 * @brief Returns whether a rule's target names the master: its machine part
+                 *        matches and its device part picks a device there.
+                 */
                 [[nodiscard]] bool names_master(const PlacementRule& rule) const noexcept;
 
                 /**

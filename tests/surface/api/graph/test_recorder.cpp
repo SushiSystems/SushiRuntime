@@ -1757,4 +1757,68 @@ namespace PlacedTaskTests
         EXPECT_EQ(*ran_on,
                   Internal::ContextAccess::context(rt).devices().queue(device).get_device());
     }
+
+    /** @brief Returns a rule set whose one rule sends class "recorder.ruled" to a device index. */
+    PlacementRules rule_to_device(std::size_t device, AbsentAction if_absent)
+    {
+        PlacementRule rule;
+        rule.name = "ruled";
+        rule.match.placement_class = "recorder.ruled";
+        rule.target.device_index = device;
+        rule.if_absent = AbsentPolicy{if_absent, std::chrono::milliseconds{0}};
+        PlacementRules rules;
+        EXPECT_TRUE(rules.add(std::move(rule)));
+        return rules;
+    }
+
+    /** @brief Records one task that states no device inside the scope the rule matches. */
+    void record_ruled_task(Runtime& rt, Graph& graph, std::optional<sycl::device>& ran_on)
+    {
+        graph.recorder().within(rt.placement_scope("recorder.ruled"),
+                                [&ran_on](Recorder& in_scope)
+                                { in_scope.task(Access(), noting_body(ran_on)); });
+    }
+
+    /** @brief Tests that a rule naming device 1 of this machine runs its node on device 1. */
+    TEST(Medium_RecorderRuledTask, Regression_ARuleNamingDeviceOneRunsTheNodeThere)
+    {
+        auto rt = Runtime::create().value();
+        if (rt.advanced().device_count() < 2)
+            GTEST_SKIP() << "needs a second device for the rule's target";
+        ASSERT_TRUE(rt.set_placement_rules(rule_to_device(1, AbsentAction::Fail)));
+
+        std::optional<sycl::device> ran_on;
+        auto graph = rt.graph();
+        record_ruled_task(rt, graph, ran_on);
+        ASSERT_TRUE(graph.run());
+
+        ASSERT_TRUE(ran_on.has_value());
+        EXPECT_EQ(*ran_on, Internal::ContextAccess::context(rt).devices().queue(1).get_device());
+    }
+
+    /** @brief Tests that a rule naming a device this machine lacks follows its if_absent. */
+    TEST(Medium_RecorderRuledTask, Regression_ARuleNamingAnAbsentDeviceFollowsItsPolicy)
+    {
+        auto rt = Runtime::create().value();
+        const std::size_t absent = rt.advanced().device_count();
+
+        ASSERT_TRUE(rt.set_placement_rules(rule_to_device(absent, AbsentAction::Local)));
+        std::optional<sycl::device> ran_on;
+        auto local = rt.graph();
+        record_ruled_task(rt, local, ran_on);
+        ASSERT_TRUE(local.run());
+        ASSERT_TRUE(ran_on.has_value());
+        EXPECT_EQ(*ran_on, Internal::ContextAccess::context(rt).devices().queue(0).get_device());
+
+        ASSERT_TRUE(rt.set_placement_rules(rule_to_device(absent, AbsentAction::Fail)));
+        ran_on.reset();
+        auto failing = rt.graph();
+        record_ruled_task(rt, failing, ran_on);
+        const auto refused = failing.run();
+        ASSERT_FALSE(refused);
+        EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
+        EXPECT_NE(refused.error().message.find("\"ruled\""), std::string::npos)
+            << refused.error().message;
+        EXPECT_FALSE(ran_on.has_value()) << "a refused compile runs nothing";
+    }
 } // namespace PlacedTaskTests

@@ -322,13 +322,11 @@ namespace SushiRuntime
             {
                 if (!session.alive || session.facts == nullptr)
                     continue;
-                if (!machine_matches(target, *session.facts))
-                    continue;
                 if (std::find(session.operations.begin(), session.operations.end(), operation) ==
                     session.operations.end())
                     continue;
 
-                const std::optional<std::size_t> device = pick_device(target, *session.facts);
+                const std::optional<std::size_t> device = device_on(target, *session.facts);
                 if (!device.has_value())
                     continue;
 

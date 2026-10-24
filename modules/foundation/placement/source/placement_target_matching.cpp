@@ -28,7 +28,11 @@
 
 #include <SushiRuntime/placement/placement_target_matching.hpp>
 
+#include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
 
 #include <SushiRuntime/machine/device_facts.hpp>
 #include <SushiRuntime/machine/device_kind.hpp>
@@ -53,6 +57,20 @@ namespace SushiRuntime
                     return "Other";
             }
             return "Other";
+        }
+
+        /** @brief Returns the first DNS label of a machine name: the text before the first '.'. */
+        [[nodiscard]] std::string_view first_label(std::string_view name) noexcept
+        {
+            return name.substr(0, name.find('.'));
+        }
+
+        /** @brief Returns a character in ASCII lower case; other bytes are kept. */
+        [[nodiscard]] char lower_ascii(char character) noexcept
+        {
+            if (character >= 'A' && character <= 'Z')
+                return static_cast<char>(character - 'A' + 'a');
+            return character;
         }
 
         /** @brief Returns the first device of a kind, if any. */
@@ -80,9 +98,24 @@ namespace SushiRuntime
         }
     } // namespace
 
+    bool machine_names_match(std::string_view first, std::string_view second) noexcept
+    {
+        const std::string_view left = first_label(first);
+        const std::string_view right = first_label(second);
+        if (left.size() != right.size())
+            return false;
+        for (std::size_t index = 0; index < left.size(); ++index)
+        {
+            if (lower_ascii(left[index]) != lower_ascii(right[index]))
+                return false;
+        }
+        return true;
+    }
+
     bool machine_matches(const PlacementTarget& target, const NodeFacts& machine) noexcept
     {
-        if (!target.machine_name.empty() && target.machine_name != machine.name)
+        if (!target.machine_name.empty() &&
+            !machine_names_match(target.machine_name, machine.name))
             return false;
         if (!target.machine_label)
             return true;
@@ -109,6 +142,14 @@ namespace SushiRuntime
         if (target.device_min_memory)
             return first_with_memory(machine, *target.device_min_memory);
         return K_DEFAULT_PLACEMENT_DEVICE;
+    }
+
+    std::optional<std::size_t> device_on(const PlacementTarget& target,
+                                         const NodeFacts& machine) noexcept
+    {
+        if (!machine_matches(target, machine))
+            return std::nullopt;
+        return pick_device(target, machine);
     }
 
     std::string describe_rule(const PlacementRule& rule, std::size_t position)

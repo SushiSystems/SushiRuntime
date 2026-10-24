@@ -41,15 +41,21 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
+#include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 #include <SushiRuntime/region_boundary/boundary_access.hpp>
 #include <SushiRuntime/engine_handles/plan_access.hpp>
 #include "recorder_replay.hpp"
+#include "rule_stamp.hpp"
 
 namespace SushiRuntime
 {
@@ -72,25 +78,36 @@ namespace SushiRuntime
                  * @pre A commit that threw is repeated with the dirty and dropped keys it had.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
-                void commit(const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
-                            const std::function<const Recorder*(RegionKey)>& recorder_of,
-                            bool profiling)
+                [[nodiscard]] Result<void>
+                commit(const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
+                       const std::function<const Recorder*(RegionKey)>& recorder_of,
+                       bool profiling, const Internal::Execution::RuntimeContext& runtime,
+                       const NodeFacts* here)
                 {
-                    profiling_requested_ = profiling;
-
                     const bool everything = recompose_everything_;
                     std::set<RegionKey> rebuilt(dirty.begin(), dirty.end());
                     if (everything)
                         for (const auto& kv : states_)
                             rebuilt.insert(kv.first);
 
+                    std::shared_ptr<const PlacementRules> rules = runtime.placement_rules();
+                    const RuleStamp stamp(rules.get(), here, runtime.offload() == nullptr);
                     std::map<RegionKey, RegionState> built;
                     for (RegionKey k : rebuilt)
                     {
                         const Recorder* recorder = recorder_of(k);
-                        if (recorder != nullptr)
-                            built.emplace(k, build_region(*recorder));
+                        if (recorder == nullptr)
+                            continue;
+                        RegionState state = build_region(*recorder);
+                        for (auto& np : state.nodes)
+                        {
+                            Result<void> stamped = stamp.stamp(*np);
+                            if (!stamped)
+                                return make_error(std::move(stamped.error()));
+                        }
+                        built.emplace(k, std::move(state));
                     }
+                    profiling_requested_ = profiling;
 
                     std::set<RegionKey> retired(rebuilt);
                     retired.insert(dropped.begin(), dropped.end());
@@ -115,7 +132,16 @@ namespace SushiRuntime
                     guard.dismiss();
                     recompose_everything_ = false;
                     committed_once_ = true;
+                    rules_ = std::move(rules);
+                    rules_generation_ = runtime.placement_generation();
                     ++compiles_;
+                    return {};
+                }
+
+                /** @brief Returns whether a rule change followed the last commit. */
+                [[nodiscard]] bool rules_changed(std::uint64_t generation) const noexcept
+                {
+                    return committed_once_ && generation != rules_generation_;
                 }
 
                 /**
@@ -615,6 +641,12 @@ namespace SushiRuntime
 
                 /** @brief The request of the commit in progress; stamped into the plan. */
                 bool profiling_requested_ = false;
+
+                /** @brief The rule set the last commit stamped with; the plan's nodes index it. */
+                std::shared_ptr<const PlacementRules> rules_;
+
+                /** @brief The context's placement generation at the last commit. */
+                std::uint64_t rules_generation_ = 0;
         };
 
         RegionComposer::RegionComposer(bool profiling) noexcept : profiling_requested_(profiling)
@@ -638,14 +670,23 @@ namespace SushiRuntime
 
         RegionComposer::~RegionComposer() = default;
 
-        void RegionComposer::commit(const std::set<RegionKey>& dirty,
-                                    const std::set<RegionKey>& dropped,
-                                    const std::function<const Recorder*(RegionKey)>& recorder_of)
+        Result<void> RegionComposer::commit(
+            const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
+            const std::function<const Recorder*(RegionKey)>& recorder_of,
+            const ContextHandle& context, const NodeFacts* here)
         {
             // A composer that never composed, or was moved from, holds no state yet.
             if (state_ == nullptr)
                 state_ = std::make_unique<Detail::RegionComposerState>();
-            state_->commit(dirty, dropped, recorder_of, profiling_requested_);
+            return state_->commit(dirty, dropped, recorder_of, profiling_requested_,
+                                  Internal::ContextAccess::context(context), here);
+        }
+
+        bool RegionComposer::rules_changed(const ContextHandle& context) const noexcept
+        {
+            return state_ != nullptr &&
+                   state_->rules_changed(
+                       Internal::ContextAccess::context(context).placement_generation());
         }
 
         void RegionComposer::rearm() noexcept

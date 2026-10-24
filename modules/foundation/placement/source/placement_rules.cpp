@@ -178,9 +178,19 @@ namespace SushiRuntime
                 rule.if_absent.bound <= std::chrono::milliseconds::zero())
                 return "if_absent waits with a bound that is not positive; pass a bound above "
                        "0 ms, or use Local or Fail.";
+            const std::string most = std::to_string(PlacementRules::K_MAX_DURATION.count());
+            if (rule.if_absent.action == AbsentAction::Wait &&
+                rule.if_absent.bound > PlacementRules::K_MAX_DURATION)
+                return "if_absent waits " + std::to_string(rule.if_absent.bound.count()) +
+                       " ms, above the longest bound of " + most +
+                       " ms; pass a bound of at most that, or use Fail.";
             if (rule.deadline.has_value() && *rule.deadline <= std::chrono::milliseconds::zero())
                 return "the deadline is not positive; pass a deadline above 0 ms, or leave it "
                        "unset.";
+            if (rule.deadline.has_value() && *rule.deadline > PlacementRules::K_MAX_DURATION)
+                return "the deadline of " + std::to_string(rule.deadline->count()) +
+                       " ms is above the longest of " + most +
+                       " ms; pass a deadline of at most that, or leave it unset.";
             return std::string();
         }
     } // namespace

@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -48,6 +49,12 @@ namespace SushiRuntime
     class SUSHIRUNTIME_API PlacementRules
     {
         public:
+            /**
+             * @brief Holds the longest Wait bound and deadline add() accepts: one day.
+             * @see modules/foundation/placement/README.md
+             */
+            static constexpr std::chrono::milliseconds K_MAX_DURATION{24LL * 60 * 60 * 1000};
+
             /**
              * @brief Checks a rule and, when it passes, keeps it after the rules already held.
              * @return Nothing, or ErrorCode::InvalidArgument naming the rule and what to pass

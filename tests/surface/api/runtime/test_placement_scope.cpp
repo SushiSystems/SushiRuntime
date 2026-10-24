@@ -171,7 +171,7 @@ namespace PlacementScopeDeviceTests
             return AbsentPolicy{AbsentAction::Fail, std::chrono::milliseconds{0}};
         }
 
-        /** @brief Returns the policy that waits for a bound, then falls back to device 0. */
+        /** @brief Returns the policy that waits for the target for at most a bound. */
         AbsentPolicy wait_for(std::chrono::milliseconds bound)
         {
             return AbsentPolicy{AbsentAction::Wait, bound};
@@ -277,10 +277,11 @@ namespace PlacementScopeDeviceTests
             << device.error().message;
     }
 
-    /** @brief Tests that Wait gives device 0 only after its bound has passed. */
-    TEST(Medium_PlacementScopeDevice, WaitGivesDeviceZeroAfterItsBound)
+    /** @brief Tests that Wait gives device 0 at once, since a local device never appears. */
+    TEST(Medium_PlacementScopeDevice, Regression_WaitGivesDeviceZeroWithoutWaiting)
     {
-        constexpr std::chrono::milliseconds K_BOUND{40};
+        // Longer than a medium test may run, so a call that waits fails the test.
+        constexpr std::chrono::milliseconds K_BOUND{std::chrono::minutes(10)};
         auto rt = Runtime::create().value();
         ASSERT_TRUE(rt.set_placement_rules(rules_of(device_at(absent_index(rt)),
                                                     wait_for(K_BOUND))));
@@ -292,7 +293,7 @@ namespace PlacementScopeDeviceTests
 
         ASSERT_TRUE(device);
         EXPECT_EQ(device->value(), 0u);
-        EXPECT_GE(elapsed, K_BOUND);
+        EXPECT_LT(elapsed, K_BOUND);
     }
 
     /** @brief Tests that a machine another name or label names makes the target absent here. */

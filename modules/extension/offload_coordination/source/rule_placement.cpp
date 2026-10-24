@@ -28,6 +28,7 @@
 
 #include <SushiRuntime/offload_coordination/rule_placement.hpp>
 
+#include <chrono>
 #include <string>
 #include <utility>
 
@@ -55,6 +56,18 @@ namespace SushiRuntime
                                  "the rule's if_absent is Fail. Start that worker, or set "
                                  "if_absent to Local or Wait."};
             }
+
+            /** @brief Returns start plus bound, or the latest time point when the sum overflows. */
+            [[nodiscard]] std::chrono::steady_clock::time_point
+            saturating_end(std::chrono::steady_clock::time_point start,
+                           std::chrono::milliseconds bound) noexcept
+            {
+                using Clock = std::chrono::steady_clock;
+                const Clock::duration room = Clock::time_point::max() - start;
+                if (bound >= room)
+                    return Clock::time_point::max();
+                return start + std::chrono::duration_cast<Clock::duration>(bound);
+            }
         } // namespace
 
         RulePlacement::RulePlacement(WorkerDirectory& directory, HeldNodes& held,
@@ -66,7 +79,7 @@ namespace SushiRuntime
 
         bool RulePlacement::names_master(const PlacementRule& rule) const noexcept
         {
-            return machine_matches(rule.target, master_);
+            return device_on(rule.target, master_).has_value();
         }
 
         PlacementDecision RulePlacement::decide(const PlacementRule& rule, std::size_t position,
@@ -99,7 +112,7 @@ namespace SushiRuntime
                 case AbsentAction::Wait:
                 {
                     const std::chrono::steady_clock::time_point until =
-                        held_.first_offer(node, now) + rule.if_absent.bound;
+                        saturating_end(held_.first_offer(node, now), rule.if_absent.bound);
                     if (now < until)
                         return WaitForTarget{until};
                     return RunLocally{};

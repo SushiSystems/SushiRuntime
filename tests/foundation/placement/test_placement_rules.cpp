@@ -300,3 +300,36 @@ TEST(Small_PlacementRules, APositiveWaitBoundAndDeadlineAreAccepted)
     EXPECT_TRUE(rules.add(rule).has_value());
     EXPECT_EQ(rules.size(), 1u);
 }
+
+/** @brief Tests that a Wait bound or a deadline above K_MAX_DURATION is refused, and it is not. */
+TEST(Small_PlacementRules, Regression_AWaitBoundOrDeadlineAboveTheMaximumIsRefused)
+{
+    const std::chrono::milliseconds above =
+        PlacementRules::K_MAX_DURATION + std::chrono::milliseconds(1);
+    PlacementRules rules;
+
+    PlacementRule waits = valid_rule();
+    waits.if_absent.action = AbsentAction::Wait;
+    waits.if_absent.bound = std::chrono::milliseconds::max();
+    Result<void> refused = rules.add(waits);
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
+    EXPECT_NE(refused.error().message.find("longest bound"), std::string::npos)
+        << refused.error().message;
+    waits.if_absent.bound = above;
+    EXPECT_FALSE(rules.add(waits).has_value());
+
+    PlacementRule late = valid_rule();
+    late.deadline = above;
+    refused = rules.add(late);
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
+    EXPECT_NE(refused.error().message.find("deadline"), std::string::npos)
+        << refused.error().message;
+    EXPECT_EQ(rules.size(), 0u);
+
+    waits.if_absent.bound = PlacementRules::K_MAX_DURATION;
+    late.deadline = PlacementRules::K_MAX_DURATION;
+    EXPECT_TRUE(rules.add(waits).has_value());
+    EXPECT_TRUE(rules.add(late).has_value());
+}

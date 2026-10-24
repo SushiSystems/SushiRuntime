@@ -40,6 +40,8 @@
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
 #include <SushiRuntime/cluster_load/placement_decision.hpp>
+#include <SushiRuntime/machine/device_facts.hpp>
+#include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/machine/node_label.hpp>
 #include <SushiRuntime/placement/placement_rule.hpp>
@@ -143,4 +145,41 @@ TEST_F(Small_RulePlacement, FailNamesTheRuleAndTheTarget)
     const PlacementDecision unnamed = placement_.decide(rule, 2, *node_, at(milliseconds(0)));
     ASSERT_TRUE(std::holds_alternative<FailRun>(unnamed));
     EXPECT_NE(std::get<FailRun>(unnamed).error.message.find("at position 2"), std::string::npos);
+}
+
+/** @brief Tests that a device-only rule names the master only when the master has the device. */
+TEST(Small_RulePlacementDevice, Regression_ADeviceOnlyRuleTheMasterLacksIsNotTheMasters)
+{
+    WorkerDirectory directory{span<const std::uint8_t>(),
+                              std::make_shared<LeastLoadedOffloadPolicy>(0)};
+    HeldNodes held;
+    NodeFacts master{"master", OperatingSystem::Unknown, {},
+                     {DeviceFacts{DeviceKind::CPU, "Test CPU", 1ull << 30}}};
+    RulePlacement placement{directory, held, master};
+
+    PlacementRule gpu;
+    gpu.name = "gpu";
+    gpu.match.placement_class = "test.pinned";
+    gpu.target.device_kind = DeviceKind::GPU;
+    EXPECT_FALSE(placement.names_master(gpu));
+
+    PlacementRule second = gpu;
+    second.target.device_kind.reset();
+    second.target.device_index = 1;
+    EXPECT_FALSE(placement.names_master(second));
+
+    PlacementRule cpu = gpu;
+    cpu.target.device_kind = DeviceKind::CPU;
+    EXPECT_TRUE(placement.names_master(cpu));
+}
+
+/** @brief Tests that a Wait bound too large to add to the first offer saturates. */
+TEST_F(Small_RulePlacement, Regression_AHugeWaitBoundWaitsUntilTheLatestTime)
+{
+    PlacementRule rule = remote_rule(AbsentAction::Wait);
+    rule.if_absent.bound = milliseconds::max();
+    const PlacementDecision decision = placement_.decide(rule, 0, *node_, at(milliseconds(0)));
+    ASSERT_TRUE(std::holds_alternative<WaitForTarget>(decision));
+    EXPECT_EQ(std::get<WaitForTarget>(decision).until,
+              std::chrono::steady_clock::time_point::max());
 }

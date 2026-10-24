@@ -99,7 +99,7 @@ namespace SushiRuntime
              * @brief Returns the local device the rules in force give this scope.
              * @return The device, or ErrorCode::InvalidArgument naming the rule and the device
              *         when the target is absent and the rule says Fail; Local and Wait give
-             *         device 0, Wait after its bound has passed.
+             *         device 0 at once, since a local device never appears during a run.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             [[nodiscard]] SUSHIRUNTIME_API Result<DeviceIndex> device() const;
