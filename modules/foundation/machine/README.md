@@ -5,8 +5,9 @@ pin policy a caller sets, the device descriptions and the worker pool a runtime 
 facts a machine states about itself. The
 module is header-only and its headers are installed.
 
-It depends on the C++ standard library and on the SYCL headers, for the `sycl::backend` a device
-description names. It depends on no other module of the repository.
+It depends on the C++ standard library. `device_description.hpp` alone also includes the SYCL
+headers, for the `sycl::backend` a device description names; the other headers include no SYCL
+header. It depends on no other module of the repository.
 
 ## Public entry points
 

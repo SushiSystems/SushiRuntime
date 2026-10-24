@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-24 — placement: Added the `placement` module, whose `PlacementRules` checks each `PlacementRule` and resolves a node's class, key and operation to the winning rule (`placement_rule.hpp`, `placement_rules.hpp`).
 - 2026-10-24 — api: Added `Runtime::placement_scope()` and `Recorder::within()`, which stamp a scope's class and key on every node recorded inside it that names no class, the innermost scope winning (`placement_scope.hpp`, `recorder.hpp`).
 - 2026-10-24 — api: Added `Runtime::topology()`, the machine's name, operating system, labels and devices, named and labelled through `RuntimeConfig` (`runtime.hpp`, `node_facts.hpp`, `device_facts.hpp`).
 - 2026-10-24 — core: Added `ErrorCode::InvalidArgument`, which `Runtime::create()` returns for a label with an empty key, a key holding `=` or a repeated key (`error.hpp`, `runtime.cpp`).

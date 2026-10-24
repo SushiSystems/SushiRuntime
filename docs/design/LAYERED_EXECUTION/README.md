@@ -182,6 +182,21 @@ takes a set between two runs and is refused while a run is in flight; the next c
 graph reads it. The compile resolves each node's class, key and operation to a target once, so a
 replay reads no rule.
 
+The rule model is the public module `placement` (foundation tier, after `core` and `machine`),
+so that `api` resolves rules at compile time and the distributed layer picks workers by the
+same code. A rule is plain data a caller fills from its own format:
+
+| Part | Fields | Refused when |
+| --- | --- | --- |
+| Match | `placement_class` (`a.b` exact, `a.b.*` prefix, empty for any), `key`, `operation` (a name, empty for any) | all three empty; an empty segment; a `*` other than a trailing `.*`; a prefix deeper than `K_MAX_PREFIX_DEPTH` |
+| Target | `machine_name` or `machine_label`; `device_index`, `device_kind` or `device_min_memory` | no machine and no device; two machine fields; two device fields; a label key empty or holding `=` |
+| Policy | `priority`, `if_absent` (`Local`, `Wait` with a `bound`, `Fail`), `deadline`, `name` | a `Wait` bound or a deadline that is not positive |
+
+`PlacementRules::add()` checks a rule, keeps it and its hashes, and returns
+`ErrorCode::InvalidArgument` naming the rule. `resolve(class, key, operation)` returns the
+position of the winning rule or none. A rule with a key matches only a node with that key. The
+device index is a `std::size_t`, since `DeviceIndex` is declared in `api`, above `placement`.
+
 With no rule set, or for a node no rule matches, the runtime does what it does today: the data's
 device on one machine, `LeastLoadedOffloadPolicy` across machines.
 
@@ -239,7 +254,7 @@ the task's own commit.
 | R1 | Placement class and key in `NodeOptions`; a node keeps them. Done when: a test records a node with a class and a key and reads both back from the plan. | building |
 | R2 | `Runtime::placement_scope()`, `Recorder::within()`, inner scope wins, explicit options win. Done when: a test records nodes in two nested scopes and outside them and reads the class and key of each. Waits on R1. | building |
 | R3 | `NodeFacts`, `DeviceFacts`, `Runtime::topology()`, labels from `RuntimeConfig`. Done when: a test reads the local machine's facts: device count, kinds, memory, the labels it was given. | building |
-| R4 | `PlacementRule`, `PlacementRules` with its checks, the match by class, prefix, key and operation, priority and insertion order. Done when: a table test resolves a set of nodes against a rule set, including two conflicting rules and every refusal. Waits on R1, R3. | planned |
+| R4 | `PlacementRule`, `PlacementRules` with its checks, the match by class, prefix, key and operation, priority and insertion order. Done when: a table test resolves a set of nodes against a rule set, including two conflicting rules and every refusal. Waits on R1, R3. | building |
 | R5 | `Runtime::set_placement_rules()` between runs; the compile resolves each node once. Done when: a test changes the rules between two runs and sees the second compile place differently; a call during a run is refused. Waits on R2, R4. | planned |
 | R6 | Local placement: a scope's buffer on its rule's device; `On(scope)`; `if_absent` for an absent device. Done when: a test on a one-device machine sees a rule for device 1 apply `local`, `fail` and a bounded `wait`; on a two-device machine a scope's buffer and its nodes land on device 1. Waits on R5. | planned |
 | R7 | Wire version 4: `HELLO` with operating system, devices and labels; `TASK_DISPATCH` with a device; `--label` and `SR_WORKER_LABELS`. Done when: the golden bytes of every message pass at version 4, and the worker options parser takes three labels from flags and the variable. Waits on R3. | planned |

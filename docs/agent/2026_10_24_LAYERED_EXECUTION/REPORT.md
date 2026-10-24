@@ -1,6 +1,6 @@
 # Layered execution: report
 
-**Status:** Open — R1, R2 and R3 landed on 2026-10-24; R2 and R3 are not built yet.
+**Status:** Open — R1 to R4 landed on 2026-10-24; R2 to R4 are not built yet.
 
 ## R1
 
@@ -46,10 +46,21 @@ from the caller's own code; the library adds none.
 
 Verification: syntax checks and the checkers, as for R3. Not built.
 
+## R4
+
+The new public module `placement` holds the rule records and `PlacementRules`. `add()` checks a
+rule in the order match, class pattern, target, policy, and reports the first refusal; a rule's
+hashes are kept beside it in one private `Entry` vector. `resolve()` is a linear pass, run once
+per node per compile. A `Local` or `Fail` rule ignores its `bound`.
+
+Verification: syntax checks without `-fsycl` and without a SYCL include root, which proves the
+module includes no SYCL header; the checkers pass. Not built.
+
 ## Dispatches
 
 ```
 dispatch: R1 — sonnet medium, 36 turns, passed, rung 1
 dispatch: R3 — sonnet medium, 57 turns, passed, rung 1
 dispatch: R2 — sonnet medium, 46 turns, passed, rung 1
+dispatch: R4 — sonnet medium, 36 turns, passed, rung 1
 ```

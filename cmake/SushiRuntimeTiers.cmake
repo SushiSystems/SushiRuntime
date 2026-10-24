@@ -22,6 +22,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
     region          foundation
     log             foundation
     machine         foundation
+    placement       foundation
     sycl            foundation
     test_runner     foundation
     measurement     foundation
@@ -65,6 +66,8 @@ set(SUSHIRUNTIME_MODULE_TIERS
 set(SUSHIRUNTIME_SAME_TIER_EDGES
     report          core
     sycl            core
+    placement       core
+    placement       machine
     test_runner     log
     dependency_tracking task
     work_stealing   task

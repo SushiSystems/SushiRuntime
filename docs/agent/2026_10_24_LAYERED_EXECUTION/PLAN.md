@@ -1,12 +1,12 @@
 # Layered execution: plan of the run
 
-**Status:** Open — R1, R2 and R3 landed, R4 next
+**Status:** Open — R1 to R4 landed; R7 under way, with B1 and A0 in the other repositories
 **Implements:** LAYERED_EXECUTION#R1, LAYERED_EXECUTION#R2, LAYERED_EXECUTION#R3, LAYERED_EXECUTION#R4, LAYERED_EXECUTION#R5, LAYERED_EXECUTION#R6, LAYERED_EXECUTION#R7, LAYERED_EXECUTION#R8, LAYERED_EXECUTION#R9, LAYERED_EXECUTION#R10, LAYERED_EXECUTION#R11, LAYERED_EXECUTION#R12, LAYERED_EXECUTION#R13
 
 ## How it runs
 
 The owner chose on 2026-10-24: one orchestrator session over the four repositories, one worker
-per task, tasks in sequence. A worker checks its C++ with `clang -fsyntax-only` and builds
+per task, up to four workers at once on tasks whose files are disjoint. A worker checks its C++ with `clang -fsyntax-only` and builds
 nothing; the orchestrator runs the checkers under `tools/` and commits each task. The owner
 ruled on 2026-10-24 that no task is built on its own: each repository is built and tested once,
 at the end of the programme, and AdaptiveCpp is checked then too. Every task is written for
@@ -23,7 +23,7 @@ runtime tasks it waits on are built; each of those repositories keeps its own wo
 | R1 | nothing | built |
 | R3 | nothing | built |
 | R2 | R1 | built |
-| R4 | R1, R3 | planned |
+| R4 | R1, R3 | built |
 | R5 | R2, R4 | planned |
 | R6 | R5 | planned |
 | R7 | R3 | planned |
