@@ -123,7 +123,8 @@ the spelling of the enumerator, or "Unknown" for a number outside the enumeratio
 the code with an empty message when the text cannot be allocated. A function that must not throw
 builds its errors with it.
 
-New enumerators go at the end of `ErrorCode`. `tests/foundation/core/test_error.cpp` pins the number of each one.
+`InvalidArgument` is the code of a value a caller passed that breaks a rule the call states, such as
+a label key `Runtime::create()` refuses. New enumerators go at the end of `ErrorCode`. `tests/foundation/core/test_error.cpp` pins the number of each one.
 
 ## error_translation.hpp
 

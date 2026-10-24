@@ -39,6 +39,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/version.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
@@ -63,7 +64,8 @@ namespace SushiRuntime
         public:
             /**
              * @brief Creates a runtime on the devices and with the settings of one struct.
-             * @return The runtime, or an Unsupported, DeviceLost or AllocationFailed error.
+             * @return The runtime, or an InvalidArgument, Unsupported, DeviceLost or
+             *         AllocationFailed error.
              * @pre The loaded library is of the release of these headers; version_matches()
              *      tells.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
@@ -71,10 +73,16 @@ namespace SushiRuntime
             [[nodiscard]] static Result<Runtime> create(const RuntimeConfig& config = {})
             {
                 require_matching_version();
+                Result<NodeFacts> facts = create_topology(config);
+                if (!facts)
+                    return make_error(std::move(facts.error()));
                 Result<ContextHandle> context = create_context(config);
                 if (!context)
                     return make_error(std::move(context.error()));
-                return Runtime(std::move(*context));
+                Result<void> listed = list_devices(*context, *facts);
+                if (!listed)
+                    return make_error(std::move(listed.error()));
+                return Runtime(std::move(*context), std::move(*facts));
             }
 
             Runtime(Runtime&&) noexcept = default;
@@ -151,12 +159,34 @@ namespace SushiRuntime
                 return AdvancedControls(context_);
             }
 
+            /**
+             * @brief Returns the facts of the machine this runtime runs on.
+             * @return The facts built by create(); valid while this Runtime is not moved from.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] SUSHIRUNTIME_API const NodeFacts& topology() const;
+
             /** @brief Returns the facade that exchanges this runtime's memory with Vulkan. */
             [[nodiscard]] Interop interop() const noexcept { return Interop(context_); }
 
         private:
             // The library reads the handle of a runtime through this one seam.
             friend struct Detail::ContextHandleAccess;
+
+            /**
+             * @brief Builds the facts of the machine except its devices, and checks the labels.
+             * @return The facts, or an InvalidArgument error naming the first label that breaks
+             *         a rule, or an Unsupported error when the host name cannot be read.
+             */
+            [[nodiscard]] SUSHIRUNTIME_API static Result<NodeFacts>
+            create_topology(const RuntimeConfig& config);
+
+            /**
+             * @brief Appends one DeviceFacts per device of a context to facts.
+             * @return Nothing, or an AllocationFailed error.
+             */
+            [[nodiscard]] SUSHIRUNTIME_API static Result<void>
+            list_devices(const ContextHandle& context, NodeFacts& facts);
 
             /**
              * @brief Builds the context of a runtime on the devices and settings of a config.
@@ -166,14 +196,18 @@ namespace SushiRuntime
             create_context(const RuntimeConfig& config);
 
             /**
-             * @brief Takes ownership of a built context.
+             * @brief Takes ownership of a built context and the facts of its machine.
              * @param context Must not be empty.
              */
-            explicit Runtime(ContextHandle context) noexcept : context_(std::move(context))
+            Runtime(ContextHandle context, NodeFacts facts) noexcept
+                : context_(std::move(context)), topology_(std::move(facts))
             {
             }
 
             /** @brief The context shared with every handle; empty only after a move. */
             ContextHandle context_;
+
+            /** @brief The facts of the machine, built once by create(). */
+            NodeFacts topology_;
     };
 } // namespace SushiRuntime

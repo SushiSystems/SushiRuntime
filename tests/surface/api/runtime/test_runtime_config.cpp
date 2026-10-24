@@ -229,6 +229,19 @@ namespace DeviceSelectionTests
     }
 } // namespace DeviceSelectionTests
 
+/** @brief Tests the defaults of the fields that describe the machine to topology(). */
+namespace MachineDescriptionTests
+{
+    /** @brief Tests that a default config names no machine and carries no label. */
+    TEST(Small_RuntimeConfig, NamesNoMachineAndCarriesNoLabelByDefault)
+    {
+        const RuntimeConfig config;
+
+        EXPECT_TRUE(config.node_name.empty());
+        EXPECT_TRUE(config.labels.empty());
+    }
+} // namespace MachineDescriptionTests
+
 /** @brief Tests the code a caller of the library reads from a failed factory. */
 namespace ErrorTypesTests
 {

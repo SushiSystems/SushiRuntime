@@ -229,6 +229,7 @@ enumerator (`-Wswitch`) reports a code a new release added:
                 case ErrorCode::InvalidGraph:
                 case ErrorCode::InvalidAccess:
                 case ErrorCode::InvalidState:
+                case ErrorCode::InvalidArgument:
                     return Status{StatusCode::InvalidRequest, error.message};
                 case ErrorCode::Unsupported:
                     return Status{StatusCode::Unsupported, error.message};

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-24 — api: Added `Runtime::topology()`, the machine's name, operating system, labels and devices, named and labelled through `RuntimeConfig` (`runtime.hpp`, `node_facts.hpp`, `device_facts.hpp`).
+- 2026-10-24 — core: Added `ErrorCode::InvalidArgument`, which `Runtime::create()` returns for a label with an empty key, a key holding `=` or a repeated key (`error.hpp`, `runtime.cpp`).
 - 2026-10-24 — api: Added a placement class and an optional placement key to `NodeOptions`, kept in the node's metadata and reported by `PlanNode` (`placement_class.hpp`, `node_options.hpp`, `plan_view.hpp`).
 - 2026-10-23 — ci: Dropped the build-file hash from the ccache `restore-keys`, so a CMake change restores the closest older cache instead of starting a cold build that overran the 60-minute downstream job (`ci.yml`).
 

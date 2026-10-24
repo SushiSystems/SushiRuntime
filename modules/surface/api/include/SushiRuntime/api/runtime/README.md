@@ -23,7 +23,8 @@ between two handles, such as a graph and the buffers recorded in it; `api/graph/
 
 `RuntimeConfig` is the one argument of `Runtime::create()`. It holds the device filter (`devices`)
 and the co-tenancy contract: worker count, core placement, pinning policy, profiling, the background
-rebalancer and the forced scheduler path. A runtime inside a game shares the machine with a render
+rebalancer and the forced scheduler path. `node_name` and `labels` describe the machine to
+`topology()`. A runtime inside a game shares the machine with a render
 thread, an audio callback and asset I/O, so every default is chosen for a tenant and not for an
 owner.
 
@@ -97,9 +98,24 @@ decide for itself.
 `create()` returns `Result<Runtime>`. Nothing else a runtime needs at construction is a rule of
 the caller, so every other failure comes back as an `Error`: `Unsupported` when no device passes
 `config.devices`, `DeviceLost` when SYCL cannot build a device queue, and `AllocationFailed` when
-the host cannot give the runtime its memory or its threads. A program that cannot go on without a
+the host cannot give the runtime its memory or its threads. A label that breaks a rule returns
+`InvalidArgument` before any context is built; see topology. A program that cannot go on without a
 runtime writes `Runtime::create().value()`, which stops the process with the error's message on
 standard error.
+
+### topology
+
+`topology()` returns the `NodeFacts` of the machine: its name, its operating system, its labels and
+one `DeviceFacts` per device. `create()` builds them once, before it builds the context, so a refused
+label creates nothing. The devices are copied from the inventory `advanced().devices()` returns, entry
+for entry. The name is `RuntimeConfig::node_name`, or the host name when that is empty; a host name
+that cannot be read returns `Unsupported`. The operating system is the one the library was compiled
+for. The facts live in the `Runtime`, not in the shared context, so the reference stays valid until
+the `Runtime` is moved from or destroyed.
+
+A label key is refused with `InvalidArgument` when it is empty, holds `=` or repeats the key of an
+earlier label. The message names the label's position and key and says what to pass instead. A value
+may be empty. Labels keep the order the config gave them.
 
 ### Copy and const
 

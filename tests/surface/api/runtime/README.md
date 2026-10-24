@@ -44,6 +44,22 @@ selects. The test compares each entry's name with the name the SYCL device behin
 then allocates a buffer with no `DeviceIndex` and asks the allocator which device owns it: that is
 entry 0.
 
+### `TopologyReportsTheLocalMachine`
+
+`topology()` must report the name and labels the config gave, in order, the operating system the test
+was built for, and one `DeviceFacts` per entry of `advanced().devices()` with the same kind, name and
+memory. The test compares against that inventory and never against a fixed device count.
+
+### `TopologyNamesTheMachineByItsHostNameWhenTheConfigGivesNone`
+
+A config with no `node_name` must produce a non-empty name, and a config with no labels an empty list.
+
+### `CreateRefusesALabelKeyThatBreaksARule`
+
+An empty key, a key holding `=` and a repeated key must each make `create()` return
+`ErrorCode::InvalidArgument`, with a message that names `RuntimeConfig::labels` and the position or
+the key of the label.
+
 ### `DefaultConfigCreates`
 
 `create()` with no argument must yield a runtime with profiling and the rebalancer off that runs a
@@ -139,6 +155,10 @@ and asset I/O. A batch runtime takes every core and pins worker 0 onto the core 
 thread runs on. A host has to be able to keep some cores for itself. These tests assert the
 mechanism that allows it (a worker count, a core range, and the option not to pin at all) and check
 that a narrower pool still executes correctly.
+
+### `NamesNoMachineAndCarriesNoLabelByDefault`
+
+A default `RuntimeConfig` has an empty `node_name` and no label. The test needs no device.
 
 ### `expect_runs_correctly`
 

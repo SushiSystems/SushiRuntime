@@ -108,6 +108,82 @@ TEST(Medium_RuntimeEntry, DevicesListsEveryDeviceInOrder)
     EXPECT_EQ(landed.device_index().value(), devices.front().index);
 }
 
+/** @brief Tests that topology() reports the machine, its devices and the labels the config gave. */
+TEST(Medium_RuntimeEntry, TopologyReportsTheLocalMachine)
+{
+    RuntimeConfig config;
+    config.node_name = "forge-3";
+    config.labels = {NodeLabel{"zone", "north"}, NodeLabel{"gpu", ""}, NodeLabel{"tier", "a"}};
+
+    const Runtime rt = Runtime::create(config).value();
+    const NodeFacts& facts = rt.topology();
+    const std::vector<DeviceDescription>& devices = rt.advanced().devices();
+
+    EXPECT_EQ(facts.name, "forge-3");
+#if defined(_WIN32)
+    EXPECT_EQ(facts.operating_system, OperatingSystem::Windows);
+#elif defined(__linux__)
+    EXPECT_EQ(facts.operating_system, OperatingSystem::Linux);
+#else
+    EXPECT_EQ(facts.operating_system, OperatingSystem::Unknown);
+#endif
+
+    ASSERT_EQ(facts.devices.size(), rt.advanced().device_count());
+    ASSERT_EQ(facts.devices.size(), devices.size());
+    for (std::size_t index = 0; index < devices.size(); ++index)
+    {
+        EXPECT_EQ(facts.devices[index].kind, devices[index].kind) << "device " << index;
+        EXPECT_EQ(facts.devices[index].name, devices[index].name) << "device " << index;
+        EXPECT_EQ(facts.devices[index].memory_bytes, devices[index].memory_bytes)
+            << "device " << index;
+    }
+
+    ASSERT_EQ(facts.labels.size(), config.labels.size());
+    for (std::size_t index = 0; index < facts.labels.size(); ++index)
+    {
+        EXPECT_EQ(facts.labels[index].key, config.labels[index].key) << "label " << index;
+        EXPECT_EQ(facts.labels[index].value, config.labels[index].value) << "label " << index;
+    }
+}
+
+/** @brief Tests that an empty node_name makes topology() report the host name. */
+TEST(Medium_RuntimeEntry, TopologyNamesTheMachineByItsHostNameWhenTheConfigGivesNone)
+{
+    const Runtime rt = Runtime::create().value();
+
+    EXPECT_FALSE(rt.topology().name.empty());
+    EXPECT_TRUE(rt.topology().labels.empty());
+}
+
+/** @brief Tests that create() refuses an empty key, a key holding '=' and a repeated key. */
+TEST(Medium_RuntimeEntry, CreateRefusesALabelKeyThatBreaksARule)
+{
+    struct Case
+    {
+        std::vector<NodeLabel> labels;
+        std::string named;
+    };
+    const std::vector<Case> cases = {
+        {{NodeLabel{"zone", "a"}, NodeLabel{"", "b"}}, "position 1"},
+        {{NodeLabel{"a=b", "c"}}, "\"a=b\""},
+        {{NodeLabel{"zone", "a"}, NodeLabel{"rack", "b"}, NodeLabel{"zone", "c"}}, "\"zone\""},
+    };
+
+    for (const Case& refused_case : cases)
+    {
+        RuntimeConfig config;
+        config.labels = refused_case.labels;
+
+        const auto refused = Runtime::create(config);
+        ASSERT_FALSE(refused.has_value()) << refused_case.named;
+        EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument) << refused_case.named;
+        EXPECT_NE(refused.error().message.find(refused_case.named), std::string::npos)
+            << refused.error().message;
+        EXPECT_NE(refused.error().message.find("RuntimeConfig::labels"), std::string::npos)
+            << refused.error().message;
+    }
+}
+
 /** @brief Tests that create() with no argument yields a runtime that runs a graph. */
 TEST(Medium_RuntimeEntry, DefaultConfigCreates)
 {

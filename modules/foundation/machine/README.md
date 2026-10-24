@@ -1,7 +1,8 @@
 # machine
 
 What a runtime is asked to run on and what it reports back about it: the device filter and the
-pin policy a caller sets, the device descriptions and the worker pool a runtime returns. The
+pin policy a caller sets, the device descriptions and the worker pool a runtime returns, and the
+facts a machine states about itself. The
 module is header-only and its headers are installed.
 
 It depends on the C++ standard library and on the SYCL headers, for the `sycl::backend` a device
@@ -16,10 +17,15 @@ description names. It depends on no other module of the repository.
 | `device_description.hpp` | `DeviceDescription`, the inventory record of one device |
 | `pin_policy.hpp` | `PinPolicy`, the choice between bound and floating workers |
 | `worker_pool.hpp` | `WorkerPool`, the worker pool as the scheduler built it |
+| `operating_system.hpp` | `OperatingSystem`, the system a machine runs |
+| `node_label.hpp` | `NodeLabel`, one `key`/`value` pair a machine reports |
+| `device_facts.hpp` | `DeviceFacts`, a device's kind, name and memory in bytes |
+| `node_facts.hpp` | `NodeFacts`, the name, system, labels and devices of one machine |
 
 Every name is declared in `SushiRuntime`. `topology` reads the filter, `device` fills the
 descriptions, `scheduler` reads the policy and fills the pool, and `api` passes all of them to and
-from the caller, so the module sits in the foundation tier, below the four.
+from the caller, so the module sits in the foundation tier, below the four. `api` fills `NodeFacts`
+and returns it from `Runtime::topology()`; `wire` and `cluster_load` will read it.
 
 The module has no source and no test program: its headers define plain records, and the header
 check of the build compiles each one alone.
@@ -42,6 +48,14 @@ render or audio thread is using. Float gives that up in exchange for letting the
 worker off a core that a higher-priority thread has taken over. That is the better trade on an
 oversubscribed machine or inside a container whose CPU allowance is enforced by quota and not by
 affinity.
+
+## node_facts.hpp
+
+### DeviceFacts and DeviceDescription
+
+`DeviceFacts` is not `DeviceDescription`. It leaves out the SYCL backend, the NUMA node, the index
+and the compute-unit count, which mean nothing on another machine, and it includes no SYCL header,
+so a module that only moves facts between machines does not compile against SYCL.
 
 ## worker_pool.hpp
 

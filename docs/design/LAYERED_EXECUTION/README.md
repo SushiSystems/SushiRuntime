@@ -147,11 +147,22 @@ behaves as it does today.
 
 `NodeFacts` describes one machine: its name, its operating system, its labels, and one
 `DeviceFacts` per device (kind, name, memory in bytes). `Runtime::topology()` returns the local
-machine's facts. A worker sends its own in `HELLO`, and the master keeps one per worker, so a
+machine's facts, built once when the runtime is created.
+
+The records live in the public module `machine`, beside `DeviceDescription` and `DeviceKind`,
+since `api`, `wire` and `cluster_load` all read them and `machine` sits below the three.
+`DeviceFacts` is not `DeviceDescription`: it leaves out the SYCL backend and the NUMA node, which
+mean nothing on another machine, so it can cross the wire between two builds.
+`OperatingSystem` is a closed enumeration (`Unknown`, `Linux`, `Windows`).
+
+A worker sends its own facts in `HELLO`, and the master keeps one per worker, so a
 policy sees names and labels that survive a reconnect, where a `PeerID` does not.
 
 Labels are `key=value` pairs. A worker takes them from `--label` (repeatable) and from
-`SR_WORKER_LABELS`; a master takes them from its `RuntimeOptions`.
+`SR_WORKER_LABELS`; a master takes them from its `RuntimeConfig`, which also names the machine
+(the host name when left empty). A label whose key is empty, holds `=` or repeats an earlier
+key is refused by `Runtime::create()` with `ErrorCode::InvalidArgument`, the code the checks of
+`PlacementRules` return too.
 
 ### Rules
 
@@ -227,7 +238,7 @@ the task's own commit.
 | --- | --- | --- |
 | R1 | Placement class and key in `NodeOptions`; a node keeps them. Done when: a test records a node with a class and a key and reads both back from the plan. | building |
 | R2 | `Runtime::placement_scope()`, `Recorder::within()`, inner scope wins, explicit options win. Done when: a test records nodes in two nested scopes and outside them and reads the class and key of each. Waits on R1. | planned |
-| R3 | `NodeFacts`, `DeviceFacts`, `Runtime::topology()`, labels from `RuntimeOptions`. Done when: a test reads the local machine's facts: device count, kinds, memory, the labels it was given. | planned |
+| R3 | `NodeFacts`, `DeviceFacts`, `Runtime::topology()`, labels from `RuntimeConfig`. Done when: a test reads the local machine's facts: device count, kinds, memory, the labels it was given. | building |
 | R4 | `PlacementRule`, `PlacementRules` with its checks, the match by class, prefix, key and operation, priority and insertion order. Done when: a table test resolves a set of nodes against a rule set, including two conflicting rules and every refusal. Waits on R1, R3. | planned |
 | R5 | `Runtime::set_placement_rules()` between runs; the compile resolves each node once. Done when: a test changes the rules between two runs and sees the second compile place differently; a call during a run is refused. Waits on R2, R4. | planned |
 | R6 | Local placement: a scope's buffer on its rule's device; `On(scope)`; `if_absent` for an absent device. Done when: a test on a one-device machine sees a rule for device 1 apply `local`, `fail` and a bounded `wait`; on a two-device machine a scope's buffer and its nodes land on device 1. Waits on R5. | planned |

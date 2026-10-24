@@ -29,7 +29,10 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
+#include <vector>
 
+#include <SushiRuntime/machine/node_label.hpp>
 #include <SushiRuntime/machine/pin_policy.hpp>
 #include <SushiRuntime/machine/worker_pool.hpp>
 #include <SushiRuntime/machine/device_filter.hpp>
@@ -49,5 +52,11 @@ namespace SushiRuntime
         bool profiling = false;             /**< Builds queues that record device timing. */
         bool rebalancer = false;            /**< Starts the background thermal rebalancer. */
         bool force_scheduler = false;       /**< Runs every graph on the work-stealing path. */
+
+        /** @brief The machine's name in NodeFacts; empty is the host name. */
+        std::string node_name;
+
+        /** @brief Labels the machine reports in NodeFacts, in order. */
+        std::vector<NodeLabel> labels;
     };
 } // namespace SushiRuntime

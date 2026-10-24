@@ -14,6 +14,14 @@ The file tests DeviceDescription: the values a description holds before discover
 | --- | --- |
 | `DefaultsDescribeNoDevice` | Checks the defaults of a description. |
 
+## test_device_facts.cpp
+
+The file tests DeviceFacts: the values a record holds before a device fills it.
+
+| Test | What it proves |
+| --- | --- |
+| `DefaultsDescribeNoDevice` | Checks the defaults of the record. |
+
 ## test_device_filter.cpp
 
 The file tests DeviceFilter: every class accepted, double precision not required.
@@ -29,6 +37,32 @@ The file tests DeviceKind: four distinct classes in one byte.
 | Test | What it proves |
 | --- | --- |
 | `FourDistinctClassesInOneByte` | Checks the size and the distinct values of the enumeration. |
+
+## test_node_facts.cpp
+
+The file tests NodeFacts: the values a record holds before a runtime fills it.
+
+| Test | What it proves |
+| --- | --- |
+| `DefaultsDescribeNoMachine` | Checks the defaults of the record. |
+| `ACopyKeepsTheLabelsInOrderAndTheDevices` | Checks that a copy keeps the label order and each device. |
+
+## test_node_label.cpp
+
+The file tests NodeLabel: a key and a value that copy as plain strings.
+
+| Test | What it proves |
+| --- | --- |
+| `DefaultsHoldAnEmptyKeyAndValue` | Checks the defaults of a label. |
+| `ACopyKeepsTheKeyAndTheValue` | Checks that a copy keeps both strings. |
+
+## test_operating_system.cpp
+
+The file tests OperatingSystem: three distinct systems in one byte.
+
+| Test | What it proves |
+| --- | --- |
+| `ThreeDistinctSystemsInOneByte` | Checks the size and the distinct values of the enumeration. |
 
 ## test_pin_policy.cpp
 

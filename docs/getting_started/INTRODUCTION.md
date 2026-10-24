@@ -536,19 +536,10 @@ Source: `applications/examples/streaming_world_demo.cpp`
 
 Source: `applications/examples/operating_path_demo.cpp`
 
-| Field | Default | Meaning |
-| --- | --- | --- |
-| `devices` | Every device | A `DeviceFilter`: which devices the runtime drives |
-| `worker_count` | 0 | Worker threads; 0 is one per logical core |
-| `first_core` | 0 | First core of the range the workers pin into |
-| `pinning` | `PinPolicy::Pin` | Whether workers bind to cores |
-| `profiling` | `false` | Builds queues that record device timing |
-| `rebalancer` | `false` | Starts the background thermal rebalancer |
-| `force_scheduler` | `false` | Runs every graph on the work-stealing path |
-
 A core range that does not fit the machine is clamped, and `advanced().worker_pool()` reports
 the pool as built. [The runtime README](../../modules/surface/api/include/SushiRuntime/api/runtime/README.md)
-describes each field and the calls of `AdvancedControls`.
+describes each field, the calls of `AdvancedControls` and the machine facts `topology()`
+returns.
 
 Logging is process state: `set_log_level()` and `set_log_sink()` set it, and the environment
 variable `SR_LOG_LEVEL` sets the runtime's levels at startup, one for every module and then any it

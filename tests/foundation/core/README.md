@@ -53,7 +53,7 @@ The file covers `ErrorCode` and its `to_string`.
 
 `ErrorCode` is stored as a `std::uint8_t` and crosses the library boundary inside `Error`. A consumer
 built against an older header compares the numbers it compiled in, so a new enumerator goes at the
-end and the test pins each number, `ProtocolMismatch` at 10.
+end and the test pins each number, `ProtocolMismatch` at 10 and `InvalidArgument` at 11.
 
 ## test_ref_counted.cpp
 
