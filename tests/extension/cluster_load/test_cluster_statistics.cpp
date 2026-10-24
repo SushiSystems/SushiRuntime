@@ -39,6 +39,7 @@ TEST(Medium_ClusterStatistics, StartAtZero)
     const ClusterStatistics statistics;
     EXPECT_EQ(statistics.alive_workers, 0u);
     EXPECT_EQ(statistics.pending_tasks, 0u);
+    EXPECT_EQ(statistics.held_nodes, 0u);
     EXPECT_TRUE(statistics.workers.empty());
     const WorkerSnapshot worker;
     EXPECT_TRUE(worker.name.empty());

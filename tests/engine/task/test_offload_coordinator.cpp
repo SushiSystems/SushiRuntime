@@ -27,10 +27,12 @@
  */
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -53,6 +55,7 @@ namespace
             void stop() noexcept override { stopped = true; }
             void resubmit(Node& node) override { resubmitted = &node; }
             void complete_remote(Node& node) override { remote = &node; }
+            void fail(Node& node, Error error) override { failed = &node; failure = error.message; }
 
             OffloadSink* bound = nullptr;     /**< The sink bind() was given. */
             std::size_t prepared = 0;         /**< The nodes prepare() was given. */
@@ -60,6 +63,8 @@ namespace
             Node* completed = nullptr;        /**< The node completed locally. */
             Node* resubmitted = nullptr;      /**< The node given back. */
             Node* remote = nullptr;           /**< The node completed on a worker. */
+            Node* failed = nullptr;           /**< The node that ended its run. */
+            std::string failure;              /**< The message fail() was given. */
             bool stopped = false;             /**< Whether stop() was called. */
     };
 }

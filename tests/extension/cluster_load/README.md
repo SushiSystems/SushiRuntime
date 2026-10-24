@@ -23,3 +23,12 @@ The file tests ClusterStatistics and WorkerSnapshot: everything starts at zero a
 | Test | What it proves |
 | --- | --- |
 | `StartAtZero` | The statistics of a cluster with no worker are zero. |
+
+## test_placement_decision.cpp
+
+The file tests PlacementDecision, the variant the dispatcher visits.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_PlacementDecision.DefaultIsAWorkerOnDeviceZeroWithNoId` | A default decision is `RunOnWorker` with id -1 and device 0. |
+| `Small_PlacementDecision.WaitAndFailCarryTheirFacts` | `WaitForTarget` carries its end and `FailRun` its error. |

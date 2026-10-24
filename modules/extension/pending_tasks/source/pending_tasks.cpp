@@ -48,7 +48,8 @@ namespace SushiRuntime
 
         bool PendingTasks::insert(std::uint64_t task_id, Internal::Graph::Node& node, PeerID worker,
                                   SushiRuntime::span<const BufferHandle> outputs,
-                                  std::chrono::steady_clock::time_point now)
+                                  std::chrono::steady_clock::time_point now,
+                                  std::optional<std::chrono::milliseconds> deadline)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             if (closed_ || tasks_.count(task_id) != 0)
@@ -59,6 +60,7 @@ namespace SushiRuntime
             entry.worker = worker;
             entry.outputs.assign(outputs.begin(), outputs.end());
             entry.dispatched_at = now;
+            entry.deadline = deadline;
 
             const auto notes = workers_.try_emplace(worker.value).first;
             tasks_.emplace(task_id, std::move(entry));
@@ -200,13 +202,15 @@ namespace SushiRuntime
                 return ReapCause::LostResult;
             }
 
-            if (limits.task_deadline <= std::chrono::milliseconds::zero())
+            const std::chrono::milliseconds deadline =
+                entry.deadline.value_or(limits.task_deadline);
+            if (deadline <= std::chrono::milliseconds::zero())
                 return std::nullopt;
 
             // insert() and detach() keep a notes entry for every worker that has a task here.
             const WorkerNotes& notes = workers_.find(entry.worker.value)->second;
             const auto restarted_at = std::max(entry.dispatched_at, notes.last_chunk);
-            if (now - restarted_at > limits.task_deadline)
+            if (now - restarted_at > deadline)
                 return ReapCause::Deadline;
 
             return std::nullopt;

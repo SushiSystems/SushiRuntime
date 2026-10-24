@@ -55,6 +55,7 @@
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/cluster_load/cluster_statistics.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
@@ -63,6 +64,7 @@
 #include <SushiRuntime/link_security/handshake.hpp>
 #include <SushiRuntime/link_security/sha256.hpp>
 
+#include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/offload_dispatcher.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
@@ -313,8 +315,12 @@ namespace OffloadDispatcherTests
                 /// @brief The transport that records each dispatch.
                 RecordingTransport transport_;
 
-                /// @brief The dispatcher under test.
-                OffloadDispatcher dispatcher_{registry_, directory_, pending_, transport_};
+                /// @brief The table that holds a node a rule makes wait.
+                HeldNodes held_;
+
+                /// @brief The dispatcher under test, on a master named after no rule.
+                OffloadDispatcher dispatcher_{registry_, directory_, pending_, transport_, held_,
+                                              NodeFacts{"master", OperatingSystem::Unknown, {}, {}}};
 
                 /// @brief The level the process had when the test began.
                 SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;

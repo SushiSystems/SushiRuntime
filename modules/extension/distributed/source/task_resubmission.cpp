@@ -89,5 +89,15 @@ namespace SushiRuntime
             return tasks.size();
         }
 
+        std::size_t reoffer_nodes(const std::vector<Internal::Graph::Node*>& nodes,
+                                  Internal::Graph::OffloadSink& sink) noexcept
+        {
+            // A held node has no task id; 0 names none in the log line.
+            for (Internal::Graph::Node* node : nodes)
+                if (node != nullptr && !hand_to_sink(sink, *node, 0))
+                    node->release();
+            return nodes.size();
+        }
+
     } // namespace Distributed
 } // namespace SushiRuntime

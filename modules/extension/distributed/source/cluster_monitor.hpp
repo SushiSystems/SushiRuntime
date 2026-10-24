@@ -43,12 +43,17 @@
 #include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
 #include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
+#include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
 
 namespace SushiRuntime
 {
-    namespace Internal::Graph { class OffloadSink; }
+    namespace Internal::Graph
+    {
+        struct Node;
+        class OffloadSink;
+    }
 
     namespace Distributed
     {
@@ -86,16 +91,17 @@ namespace SushiRuntime
          *
          * A pass: PING every alive worker, with the send time in microseconds as the token;
          * close_peer() what take_silent() and take_handshake_overdue() list; resubmit_tasks()
-         * what take_overdue() returns. The monitor's mutex only guards its sleep; it holds no
-         * lock while it calls a brick, the transport or the sink.
+         * what take_overdue() returns; reoffer_nodes() what HeldNodes::take_expired() returns,
+         * also when the earliest held wait ends. The mutex only guards the sleep.
          */
         class SUSHIRUNTIME_API ClusterMonitor final
         {
             public:
                 /** @brief Builds a monitor over bricks that outlive it; no thread runs yet. */
                 ClusterMonitor(WorkerDirectory& directory, PendingTasks& pending,
-                               BufferRegistry& registry, BufferExchange& exchange,
-                               Transport& transport, const ClusterMonitorOptions& options);
+                               HeldNodes& held, BufferRegistry& registry,
+                               BufferExchange& exchange, Transport& transport,
+                               const ClusterMonitorOptions& options);
 
                 /** @brief Calls stop(). */
                 ~ClusterMonitor();
@@ -125,6 +131,13 @@ namespace SushiRuntime
                 /** @brief Sets the task deadline the next pass applies; any thread. */
                 void set_task_deadline(std::chrono::milliseconds deadline) noexcept;
 
+                /**
+                 * @brief Wakes the thread when @p moment comes before its next pass; any thread.
+                 *
+                 * Reads one atomic when it does not; called after a node is held.
+                 */
+                void wake_by(std::chrono::steady_clock::time_point moment) noexcept;
+
                 /** @brief Returns the liveness timeout in force, for WELCOME. */
                 [[nodiscard]] std::chrono::milliseconds liveness_timeout() const noexcept;
 
@@ -153,6 +166,9 @@ namespace SushiRuntime
                 /** @brief Takes the tasks past a limit, resubmits them and counts each cause. */
                 void reap_overdue_tasks(std::chrono::steady_clock::time_point now);
 
+                /** @brief Re-offers the held nodes whose wait has ended. */
+                void release_expired_holds(std::chrono::steady_clock::time_point now);
+
                 /** @brief Logs the reaped tasks, at most one line per worker per second. */
                 void log_reaped_tasks(const std::vector<PendingTask>& reaped,
                                       std::chrono::steady_clock::time_point now);
@@ -162,6 +178,9 @@ namespace SushiRuntime
 
                 /// @brief The tasks whose limits are checked.
                 PendingTasks& pending_;
+
+                /// @brief The nodes whose waits end.
+                HeldNodes& held_;
 
                 /// @brief Bumped for every task taken back.
                 BufferRegistry& registry_;
@@ -190,6 +209,13 @@ namespace SushiRuntime
                 /// @brief Set by stop().
                 bool stopping_ = false;
 
+                /// @brief Marks next_pass_ while the thread runs a pass and reads no wait yet.
+                static constexpr std::chrono::steady_clock::rep K_IN_A_PASS =
+                    std::chrono::steady_clock::time_point::max().time_since_epoch().count();
+
+                /// @brief The time of the next pass, in ticks of the steady clock.
+                std::atomic<std::chrono::steady_clock::rep> next_pass_{K_IN_A_PASS};
+
                 /// @brief The monitor thread.
                 std::thread thread_;
 
@@ -210,6 +236,9 @@ namespace SushiRuntime
 
                 /// @brief The peers one step of a pass lists; touched by the monitor thread only.
                 std::vector<PeerID> peers_;
+
+                /// @brief The held nodes one pass re-offers; touched by the monitor thread only.
+                std::vector<Internal::Graph::Node*> nodes_;
 
                 /// @brief The tasks one pass took back; touched by the monitor thread only.
                 std::vector<PendingTask> tasks_;

@@ -125,15 +125,17 @@ namespace SushiRuntime
 
                 /**
                  * @brief Takes ownership of a node that is about to be dispatched.
-                 *
-                 * On true the caller must not touch the node again: a removal on another
-                 * thread may already have handed it on. On false the caller keeps it.
+                 * On true the caller must not touch the node again, since a removal on another
+                 * thread may have handed it on; on false the caller keeps it.
                  * @param outputs Copied; the versions are those the dispatch frame carries.
+                 * @param deadline Replaces OverdueLimits::task_deadline for this task, when set.
                  * @return False once close() was called, or when @p task_id is in the table.
                  */
                 [[nodiscard]] bool insert(std::uint64_t task_id, Internal::Graph::Node& node, PeerID worker,
                                           SushiRuntime::span<const BufferHandle> outputs,
-                                          std::chrono::steady_clock::time_point now);
+                                          std::chrono::steady_clock::time_point now,
+                                          std::optional<std::chrono::milliseconds> deadline =
+                                              std::nullopt);
 
                 /**
                  * @brief Records TASK_ACCEPTED for a task.
@@ -213,6 +215,9 @@ namespace SushiRuntime
 
                     /** @brief The time insert() was given. */
                     std::chrono::steady_clock::time_point dispatched_at;
+
+                    /** @brief The task's own deadline; none applies the cluster's. */
+                    std::optional<std::chrono::milliseconds> deadline;
 
                     /** @brief Heartbeats in a row that did not list the task. */
                     std::uint32_t heartbeat_misses = 0;

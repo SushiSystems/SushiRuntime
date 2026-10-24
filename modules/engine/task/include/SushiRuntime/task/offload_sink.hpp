@@ -28,6 +28,8 @@
 
 #pragma once
 
+#include <SushiRuntime/core/error.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Graph
@@ -37,8 +39,8 @@ namespace SushiRuntime
         /**
          * @brief Takes back the nodes an offload coordinator accepted at dispatch.
          *
-         * Both members run on a coordinator thread, never on a pool worker, and several
-         * threads may call at once. Each consumes the reference OffloadCoordinator::try_offload()
+         * resubmit() and complete_remote() run on a coordinator thread; fail() also runs on a
+         * pool worker inside try_offload(). Several threads may call at once. Each consumes the reference OffloadCoordinator::try_offload()
          * handed over, so the caller reads and writes the node before the call, not after.
          * @see modules/engine/task/README.md
          */
@@ -64,6 +66,16 @@ namespace SushiRuntime
                  * @param node Accepted by try_offload(); its outputs are already in place.
                  */
                 virtual void complete_remote(Node& node) = 0;
+
+                /**
+                 * @brief Ends the node's run with an error and completes the node unrun.
+                 *
+                 * The implementer records @p error as the run's failure, the way a task that
+                 * throws does, releases the node's successors, which the aborting run skips,
+                 * and releases the caller's reference.
+                 * @param node Accepted by try_offload() and not yet returned through this sink.
+                 */
+                virtual void fail(Node& node, Error error) = 0;
 
             protected:
                 /** @brief Keeps a sink from being destroyed through this interface. */

@@ -47,6 +47,7 @@
 #include <SushiRuntime/cluster_load/cluster_statistics.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
+#include <SushiRuntime/placement/placement_rule.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
 #include <SushiRuntime/link_security/handshake.hpp>
@@ -114,6 +115,26 @@ namespace SushiRuntime
 
             /** @brief Holds the build identifier from HELLO. */
             std::string build_id;
+        };
+
+        /**
+         * @brief Names what pick_target() found for the target of a rule.
+         */
+        enum class TargetStatus : std::uint8_t
+        {
+            Picked, /**< A matching worker with room took the task. */
+            Busy,   /**< Every matching worker is at its max_jobs. */
+            Absent, /**< No alive worker matches the target and has the kernel. */
+        };
+
+        /**
+         * @brief Carries the outcome of pick_target().
+         */
+        struct TargetPick
+        {
+            TargetStatus status = TargetStatus::Absent; /**< What the directory found. */
+            PeerID worker;                              /**< The worker; set when Picked. */
+            std::size_t device_index = 0;               /**< Its device; set when Picked. */
         };
 
         /**
@@ -204,6 +225,16 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] std::optional<PeerID> pick(const Internal::Graph::Node& node,
                                                          std::uint64_t estimated_bytes);
+
+                /**
+                 * @brief Finds an alive worker a rule's target names and counts the task on it.
+                 *
+                 * A worker matches when its facts match the machine part, it has the kernel of
+                 * @p operation and the device part picks one of its devices. The first match
+                 * with room, by rising id, is picked. A closed directory answers Absent.
+                 */
+                [[nodiscard]] TargetPick pick_target(const PlacementTarget& target,
+                                                     OperationID operation);
 
                 /**
                  * @brief Lowers a worker's inflight count by one, never below 0.

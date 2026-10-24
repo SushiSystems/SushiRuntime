@@ -131,6 +131,32 @@ rather than a parameter slot or a SushiBLAS-only fact. `Determinism` sits in `co
 `PlacementClass`, and the field follows R1's path through the stamp and `TaskMetadata` to
 `PlanNode`. The runtime stores and reports it and never branches on it.
 
+## R10
+
+A placement is a `PlacementDecision`, a `std::variant` of run on a worker and device, run
+locally, wait until a time, or fail with an error, visited once in
+`OffloadDispatcher::try_offload`; `OffloadPolicy::pick_worker` keeps its signature and the
+dispatcher wraps its answer. `RulePlacement` decides when a rule set is in force and the node has
+a winning rule: a rule whose machine part matches the master's topology, or that names no machine,
+runs locally; otherwise `WorkerDirectory::pick_target` answers picked, busy or absent under the
+directory's lock. Absent applies `if_absent`. Busy holds the node in `HeldNodes` whatever
+`if_absent` says, so a pinned node never runs on the master while its worker lives. Held nodes
+are offered again on a registration, after a task result, after a resubmission and when a bound
+passes; a hold that a release overtook is stale and decided again. `Fail` reaches
+`OffloadSink::fail`, which records the error into the run's outcome. A rule's `deadline` rides in
+`RunOnWorker` into `PendingTasks::insert`. The matching of a target against a machine's facts
+moved into `placement` and serves the local scopes too.
+
+The owner ruled the busy hold on 2026-10-24, for SushiAI's repeatability.
+
+Seen and kept: the distributed coordinator holds a `const RuntimeContext&` whose lifetime its type
+does not enforce; a pinned node whose dispatch fails twice runs locally after
+`K_MAXIMUM_OFFLOAD_ATTEMPTS`; a short rule deadline is applied up to one monitor period (at most
+250 ms) late; every release re-offers every held node.
+
+Owed: `docs/guides/DISTRIBUTED_GUIDE.md` has no section on placement rules, and the page is at its
+600-line ceiling; it is split when the programme closes.
+
 ## Dispatches
 
 ```
@@ -144,4 +170,5 @@ dispatch: R8 — sonnet medium, 45 turns, passed, rung 1
 dispatch: R6 — sonnet medium, 73 turns, passed, rung 1
 dispatch: R9 — sonnet medium, 44 turns, partial (public interface needed), rung 1
 dispatch: R15 — haiku high, 68 turns, passed, rung 1
+dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
 ```

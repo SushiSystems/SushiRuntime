@@ -518,6 +518,13 @@ namespace SushiRuntime
                  * @see modules/engine/scheduler/README.md
                  */
                 void complete_remote(Internal::Graph::Node& node) override;
+
+                /**
+                 * @brief Records an error as the run's failure, then completes the node as
+                 *        complete_remote() does, so the aborting run skips its successors.
+                 * @param node Accepted by the coordinator's try_offload().
+                 */
+                void fail(Internal::Graph::Node& node, Error error) override;
         };
 
     } // namespace Scheduler

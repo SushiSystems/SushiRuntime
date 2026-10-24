@@ -8,6 +8,7 @@ sushiruntime_add_module(
     NAME placement TIER foundation
     SOURCES
         placement_rules.cpp
+        placement_target_matching.cpp
     DEPENDS
         core
         machine)

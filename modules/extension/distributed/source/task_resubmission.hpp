@@ -29,6 +29,7 @@
 #pragma once
 
 #include <cstddef>
+#include <vector>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
@@ -40,7 +41,11 @@
 
 namespace SushiRuntime
 {
-    namespace Internal::Graph { class OffloadSink; }
+    namespace Internal::Graph
+    {
+        struct Node;
+        class OffloadSink;
+    }
 
     namespace Distributed
     {
@@ -57,6 +62,16 @@ namespace SushiRuntime
                                                     BufferExchange& exchange,
                                                     WorkerDirectory& directory,
                                                     Internal::Graph::OffloadSink& sink) noexcept;
+
+        /**
+         * @brief Offers nodes HeldNodes handed out to the scheduler again.
+         *
+         * Each node goes to OffloadSink::resubmit(); an exception out of the sink is caught
+         * without a rethrow, logged, and the node released.
+         * @return The number of nodes handled.
+         */
+        SUSHIRUNTIME_API std::size_t reoffer_nodes(const std::vector<Internal::Graph::Node*>& nodes,
+                                                   Internal::Graph::OffloadSink& sink) noexcept;
 
     } // namespace Distributed
 } // namespace SushiRuntime

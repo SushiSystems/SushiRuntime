@@ -6,7 +6,7 @@ distributed layer, under `SR_ENABLE_DISTRIBUTED`, and every name it declares is 
 `SushiRuntime::Distributed`. Its headers are installed: a program passes its own policy in
 `ClusterOptions` and reads `Cluster::statistics()`.
 
-It depends on `core` and `api`.
+It depends on `core`, `api` and `machine`.
 
 ## Public entry points
 
@@ -14,6 +14,7 @@ It depends on `core` and `api`.
 | --- | --- |
 | `offload_policy.hpp` | `OffloadPolicy`, `WorkerLoad`, `LeastLoadedOffloadPolicy` |
 | `cluster_statistics.hpp` | `ClusterStatistics`, `WorkerSnapshot` |
+| `placement_decision.hpp` | `PlacementDecision` and its outcomes `RunOnWorker`, `RunLocally`, `WaitForTarget`, `FailRun` |
 
 ## offload_policy.hpp
 
@@ -36,6 +37,22 @@ Among the rest it picks the lowest cost, in microseconds: `rtt_micros`, plus the
 divided by 1000, plus 1000 per inflight task. The two constants are in
 `source/offload_policy.cpp`.
 
+## placement_decision.hpp
+
+`PlacementDecision` is a `std::variant` of the four places a task can go at dispatch, a closed
+set that `OffloadDispatcher::try_offload()` visits in one place:
+
+| Outcome | Carries | The dispatcher |
+| --- | --- | --- |
+| `RunOnWorker` | `worker_id`, `device_index`, an optional `deadline` | sends `TASK_DISPATCH` with that `device_index`; the deadline replaces the cluster's for the task |
+| `RunLocally` | nothing | declines, and the pool runs the task |
+| `WaitForTarget` | `until`, `time_point::max()` for a busy target | holds the node in `HeldNodes` until a worker registers, frees a slot or leaves, or `until` passes |
+| `FailRun` | an `Error` naming the rule and its target | ends the run through `OffloadSink::fail()`; see `offload_coordination/README.md` |
+
+`OffloadPolicy::pick_worker()` keeps its signature: the dispatcher turns its answer into
+`RunOnWorker` on device 0, or `RunLocally` for none, so a policy written before rules works
+unchanged. A rule's decision comes from `RulePlacement` of `offload_coordination`.
+
 ## cluster_statistics.hpp
 
 `Cluster::statistics()` returns `ClusterStatistics`, which the coordinator assembles from the
@@ -50,3 +67,4 @@ brick that causes each count. What each field means to a user is in §9 of the g
 | `bytes_sent`, `bytes_received` | the transport |
 | `alive_workers`, `workers` | `WorkerDirectory` |
 | `pending_tasks` | `PendingTasks` |
+| `held_nodes` | `HeldNodes` |

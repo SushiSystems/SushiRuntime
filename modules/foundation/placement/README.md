@@ -13,9 +13,11 @@ rules between machines does not compile against SYCL.
 | --- | --- |
 | `placement_rule.hpp` | `PlacementRule` with `PlacementMatch`, `PlacementTarget`, `AbsentPolicy` and `AbsentAction`, plain records with no behaviour |
 | `placement_rules.hpp` | `PlacementRules`: `add()` checks and keeps a rule, `resolve()` returns the position of the winning rule, `rule()`, `size()` and `empty()` read the set |
+| `placement_target_matching.hpp` | `machine_matches()`, `pick_device()`, `describe_rule()`, `describe_target()` and `K_DEFAULT_PLACEMENT_DEVICE`: a target read against the `NodeFacts` of one machine |
 
-Every name is declared in `SushiRuntime`. `PlacementRules` is exported with `SUSHIRUNTIME_API` and
-built from `source/placement_rules.cpp`.
+Every name is declared in `SushiRuntime`. `PlacementRules` and the four functions are exported
+with `SUSHIRUNTIME_API` and built from `source/placement_rules.cpp` and
+`source/placement_target_matching.cpp`.
 
 ## Matching and winning
 
@@ -56,7 +58,22 @@ only those hashes and the priority, so it never touches a string. The design is 
 [`docs/design/LAYERED_EXECUTION/README.md`](../../../docs/design/LAYERED_EXECUTION/README.md),
 section "Rules".
 
+## placement_target_matching.hpp
+
+A target is read against one machine's `NodeFacts` in two parts. `machine_matches()` compares the
+machine part: a `machine_name` equals `NodeFacts::name`, a `machine_label` is one of the machine's
+labels with that key and that value, and a target with no machine part matches every machine.
+`pick_device()` reads the device part alone: the device at `device_index`, the first device of
+`device_kind`, or the first device with at least `device_min_memory` bytes, by position in
+`NodeFacts::devices`; it returns none when the machine has no such device, and
+`K_DEFAULT_PLACEMENT_DEVICE` (0) for a target with no device part. `describe_rule()` and
+`describe_target()` give the phrases an error names a rule and its target with: the rule's name in
+quotes, else `at position N`.
+
 ## Who uses it
 
-- `api` resolves each node's class, key and operation against the set at compile time (phase R5).
-- The distributed layer picks a worker with the same `resolve()` (phase R10).
+- `api` resolves each node's class, key and operation against the set at compile time (phase R5),
+  and a placement scope matches its rule's target against `Runtime::topology()` with
+  `machine_matches()` and `pick_device()` (phase R6).
+- `offload_coordination` matches a rule's target against each worker's facts with the same two
+  functions, and against the master's own facts (phase R10).

@@ -398,11 +398,10 @@ are read one by one, not at one instant.
 | `completed_remote` | Tasks a worker finished with every output byte back on the master |
 | `redispatched` | Tasks taken back from a worker and resubmitted: the worker was lost, it reported a failure, the task was reaped, or the master stopped |
 | `stale_writebacks` | Output chunks the master refused, because their task was not out on a worker or their version was old |
-| `handshake_rejected_auth` | Peers that sent a proof made with another secret |
-| `handshake_rejected_version` | Peers closed for speaking another protocol version |
+| `handshake_rejected_auth`, `handshake_rejected_version` | Peers that sent a proof made with another secret; peers closed for speaking another protocol version |
 | `peers_lost` | Registered workers that left, for any reason |
 | `peers_closed_malformed` | Peers closed for bytes that are not a frame, a bad header or a payload that does not decode |
-| `tasks_reaped_deadline` | Tasks with no result within `task_deadline` |
+| `tasks_reaped_deadline` | Tasks with no result within `task_deadline`, or within the deadline of the placement rule that placed them |
 | `tasks_reaped_unacknowledged` | Dispatches no worker confirmed within the liveness timeout |
 | `tasks_reaped_lost_result` | Tasks a worker confirmed and then stopped listing in two heartbeats in a row |
 | `bytes_sent`, `bytes_received` | Bytes the transport wrote and read, headers included |
@@ -412,6 +411,7 @@ are read one by one, not at one instant.
 | `send_queue_full` | Dispatches refused because the worker's control queue was full |
 | `alive_workers` | Workers registered and answering now |
 | `pending_tasks` | Tasks out on a worker now |
+| `held_nodes` | Nodes a placement rule holds now, waiting for their worker to come back or to free a slot |
 | `workers` | One `WorkerSnapshot` per alive worker |
 
 A `WorkerSnapshot` holds the worker's `id`, `name` and `endpoint`, its `inflight` count, the

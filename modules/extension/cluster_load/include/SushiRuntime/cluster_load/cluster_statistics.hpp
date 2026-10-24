@@ -81,6 +81,7 @@ namespace SushiRuntime
             std::uint64_t send_queue_full = 0;             /**< Sends refused by a full queue. */
             std::size_t alive_workers = 0;                 /**< Workers registered and answering. */
             std::size_t pending_tasks = 0;                 /**< Tasks out on a worker. */
+            std::size_t held_nodes = 0;                    /**< Nodes a rule holds for a worker. */
             std::vector<WorkerSnapshot> workers;           /**< One entry per alive worker. */
         };
 

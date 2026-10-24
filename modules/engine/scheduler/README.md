@@ -707,6 +707,12 @@ thread and not on a worker. The walk covers the cross-region boundary successors
 dynamic region graph. Last, the scheduling reference that passed to the coordinator at
 offload is dropped.
 
+`fail(node, error)` ends a run a coordinator cannot place a node in, such as a placement rule
+whose target is absent and whose `if_absent` is `Fail`. It logs the error, records it in the run's
+`RunOutcome` as a task that threw does, then completes the node as `complete_remote()` does: the
+run is aborting, so every successor is skipped, the run drains to its sentinel and returns the
+error. It may run on a pool worker, inside `try_offload()`.
+
 #### migrate_tasks
 
 `migrate_tasks()` steals up to `count` tasks, lock-free, from the congested worker and puts

@@ -43,6 +43,7 @@
 
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
+#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
@@ -56,6 +57,7 @@
 #include <SushiRuntime/wire/wire_messages.hpp>
 #include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
+#include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/offload_dispatcher.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
@@ -180,14 +182,16 @@ namespace SushiRuntime
 
             /** @brief Builds the bricks in the order they are declared and sets the handlers. */
             Impl(BufferRegistry& shared_buffers, std::shared_ptr<Transport> master_transport,
-                 ClusterOptions cluster_options, std::uint64_t session)
+                 ClusterOptions cluster_options, std::uint64_t session,
+                 const Internal::Execution::RuntimeContext& runtime_context, NodeFacts master)
                 : options(std::move(cluster_options)),
                   registry(shared_buffers),
+                  context(runtime_context),
                   transport(require_transport(std::move(master_transport))),
                   directory(options.secret.bytes(), policy_or_default(options.policy)),
                   exchange(registry, options.chunk_bytes),
-                  dispatcher(registry, directory, pending, *transport),
-                  monitor(directory, pending, registry, exchange, *transport,
+                  dispatcher(registry, directory, pending, *transport, held, std::move(master)),
+                  monitor(directory, pending, held, registry, exchange, *transport,
                           monitor_options(options)),
                   session_id(session)
             {
@@ -330,6 +334,7 @@ namespace SushiRuntime
                 {
                     send_welcome(peer);
                     log_registered(peer, proof.ops.size());
+                    reoffer_held();
                     return;
                 }
 
@@ -388,6 +393,9 @@ namespace SushiRuntime
                     directory.release_inflight(peer);
                     dispatcher.complete_remote(*task->node);
                     sink->complete_remote(*task->node);
+
+                    // The worker has a free slot, which a node held for it may take.
+                    reoffer_held();
                     return;
                 }
 
@@ -477,7 +485,24 @@ namespace SushiRuntime
                 send_control(peer, welcome);
             }
 
-            /** @brief Counts taken tasks, then passes them to resubmit_tasks(). */
+            /** @brief Offers every held node again; the worker its rule waits for may be back. */
+            void reoffer_held() noexcept
+            {
+                std::vector<Internal::Graph::Node*> nodes;
+                try
+                {
+                    held.take_all(nodes);
+                }
+                catch (const std::exception& error)
+                {
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "held nodes were not offered again: {}; "
+                                 "the next registration or result offers them", error.what());
+                }
+                if (!nodes.empty() && sink != nullptr)
+                    reoffer_nodes(nodes, *sink);
+            }
+
+            /** @brief Counts taken tasks, passes them to resubmit_tasks(), then re-offers held nodes. */
             std::size_t resubmit(SushiRuntime::span<PendingTask> tasks) noexcept
             {
                 if (tasks.empty() || sink == nullptr)
@@ -485,7 +510,12 @@ namespace SushiRuntime
 
                 // The count rises before the scheduler can end the run that reads it.
                 redispatched.fetch_add(tasks.size(), std::memory_order_relaxed);
-                return resubmit_tasks(tasks, registry, exchange, directory, *sink);
+                const std::size_t resubmitted =
+                    resubmit_tasks(tasks, registry, exchange, directory, *sink);
+
+                // A slot freed or a worker left; a held node is decided again.
+                reoffer_held();
+                return resubmitted;
             }
 
             /**
@@ -571,6 +601,9 @@ namespace SushiRuntime
             /// @brief Names and versions of the shared buffers; owned by Cluster::State.
             BufferRegistry& registry;
 
+            /// @brief The runtime whose placement rules prepare() reads.
+            const Internal::Execution::RuntimeContext& context;
+
             /// @brief Carries every frame; this object is its only event receiver.
             std::shared_ptr<Transport> transport;
 
@@ -579,6 +612,9 @@ namespace SushiRuntime
 
             /// @brief The tasks out on a worker and the nodes they own.
             PendingTasks pending;
+
+            /// @brief The nodes a rule holds until their worker registers or the bound passes.
+            HeldNodes held;
 
             /// @brief Pull streams and the progress of incoming outputs.
             BufferExchange exchange;
@@ -632,9 +668,12 @@ namespace SushiRuntime
         DistributedCoordinator::DistributedCoordinator(BufferRegistry& registry,
                                                        std::shared_ptr<Transport> transport,
                                                        ClusterOptions options,
-                                                       std::uint64_t session_id)
+                                                       std::uint64_t session_id,
+                                                       const Internal::Execution::RuntimeContext&
+                                                           context,
+                                                       NodeFacts master)
             : impl_(std::make_unique<Impl>(registry, std::move(transport), std::move(options),
-                                           session_id))
+                                           session_id, context, std::move(master)))
         {
 
         }
@@ -647,6 +686,7 @@ namespace SushiRuntime
         void DistributedCoordinator::bind(Internal::Graph::OffloadSink& sink)
         {
             impl_->sink = &sink;
+            impl_->dispatcher.bind(sink);
         }
 
         TransportResult DistributedCoordinator::start()
@@ -713,6 +753,7 @@ namespace SushiRuntime
                 return;
 
             impl.pending.close();
+            impl.held.close();
             impl.directory.close();
             impl.monitor.stop();
 
@@ -721,9 +762,11 @@ namespace SushiRuntime
                 impl.transport->stop();
 
             std::vector<PendingTask> tasks;
+            std::vector<Internal::Graph::Node*> held;
             try
             {
                 impl.pending.drain(tasks);
+                impl.held.drain(held);
             }
             catch (const std::exception& error)
             {
@@ -739,20 +782,27 @@ namespace SushiRuntime
             }
 
             // Every reader and the monitor are joined, so this thread alone holds the tasks.
-            const std::size_t returned =
+            std::size_t returned =
                 impl.resubmit(SushiRuntime::span<PendingTask>(tasks.data(), tasks.size()));
+            if (impl.sink != nullptr)
+                returned += reoffer_nodes(held, *impl.sink);
             SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "distributed master stopped; {} tasks returned to the scheduler",
                         returned);
         }
 
         void DistributedCoordinator::prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes)
         {
-            impl_->dispatcher.prepare(nodes);
+            impl_->dispatcher.prepare(nodes, impl_->context.placement_rules());
         }
 
         bool DistributedCoordinator::try_offload(Internal::Graph::Node& node)
         {
-            return impl_->dispatcher.try_offload(node);
+            Impl& impl = *impl_;
+            if (!impl.dispatcher.try_offload(node))
+                return false;
+
+            impl.monitor.wake_by(impl.held.earliest());
+            return true;
         }
 
         void DistributedCoordinator::on_local_completion(Internal::Graph::Node& node) noexcept
@@ -846,6 +896,7 @@ namespace SushiRuntime
             snapshot.send_queue_full = dispatched.send_queue_full;
             snapshot.alive_workers = impl.directory.alive_count();
             snapshot.pending_tasks = impl.pending.size();
+            snapshot.held_nodes = impl.held.size();
             impl.directory.snapshot(std::chrono::steady_clock::now(), snapshot.workers);
             return snapshot;
         }

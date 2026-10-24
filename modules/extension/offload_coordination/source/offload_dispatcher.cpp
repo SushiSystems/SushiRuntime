@@ -33,7 +33,9 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <SushiRuntime/log/logger.hpp>
@@ -41,6 +43,7 @@
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
@@ -190,10 +193,13 @@ namespace SushiRuntime
                            handles.data(), handles.size()));
             }
 
-            /** @brief Decides a double-buffered node, whose handles are resolved per dispatch. */
+            /**
+             * @brief Decides a double-buffered node, whose handles are resolved per dispatch.
+             * @param may_wait The node's rule names another machine; no alive worker is needed.
+             */
             Placement place_dynamic(const BufferRegistry& registry,
                                     const WorkerDirectory& directory, const Internal::Graph::Node& node,
-                                    Internal::Graph::OffloadState& state)
+                                    Internal::Graph::OffloadState& state, bool may_wait)
             {
                 state.offloadable = false;
                 state.payload.reset();
@@ -202,7 +208,7 @@ namespace SushiRuntime
                 const OperationID operation = node.metadata.op_id;
                 if (operation.value == 0)
                     return Placement::Untagged;
-                if (!directory.supports(operation))
+                if (!may_wait && !directory.supports(operation))
                     return Placement::NoWorker;
                 if (!is_all_shared(registry, state.live_reads) ||
                     !is_all_shared(registry, state.live_writes))
@@ -219,13 +225,15 @@ namespace SushiRuntime
              *
              * A node that stays local keeps the handles of the shared buffers it writes; a
              * node that writes none keeps no payload, and gets no OffloadState for it.
+             * @param may_wait The node's rule names another machine; no alive worker is needed.
              */
             Placement place_fixed(const BufferRegistry& registry, const WorkerDirectory& directory,
-                                  Internal::Graph::Node& node)
+                                  Internal::Graph::Node& node, bool may_wait)
             {
                 const OperationID operation = node.metadata.op_id;
                 const bool is_tagged = operation.value != 0;
-                const bool is_supported = is_tagged && directory.supports(operation);
+                const bool is_supported =
+                    is_tagged && (may_wait || directory.supports(operation));
 
                 auto baked = std::make_unique<OffloadHandles>();
                 bool every_buffer_shared = true;
@@ -341,14 +349,22 @@ namespace SushiRuntime
         } // namespace
 
         OffloadDispatcher::OffloadDispatcher(BufferRegistry& registry, WorkerDirectory& directory,
-                                             PendingTasks& pending, Transport& transport)
-            : registry_(registry), directory_(directory), pending_(pending), transport_(transport)
+                                             PendingTasks& pending, Transport& transport,
+                                             HeldNodes& held, NodeFacts master)
+            : registry_(registry),
+              directory_(directory),
+              pending_(pending),
+              transport_(transport),
+              held_(held),
+              rule_placement_(directory, held, std::move(master))
         {
 
         }
 
-        void OffloadDispatcher::prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes)
+        void OffloadDispatcher::prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes,
+                                        std::shared_ptr<const PlacementRules> rules)
         {
+            rules_ = std::move(rules);
             LocalOnlyCount local;
             for (const sushi_ptr<Internal::Graph::Node>& slot : nodes)
             {
@@ -359,9 +375,11 @@ namespace SushiRuntime
                 Internal::Graph::OffloadState* state = node->offload_state();
                 const bool is_dynamic =
                     state != nullptr && (state->live_reads || state->live_writes);
+                const PlacementRule* rule = winning_rule(*node);
+                const bool may_wait = rule != nullptr && !rule_placement_.names_master(*rule);
                 const Placement placement =
-                    is_dynamic ? place_dynamic(registry_, directory_, *node, *state)
-                               : place_fixed(registry_, directory_, *node);
+                    is_dynamic ? place_dynamic(registry_, directory_, *node, *state, may_wait)
+                               : place_fixed(registry_, directory_, *node, may_wait);
                 if (placement == Placement::Untagged)
                     continue;
 
@@ -388,7 +406,6 @@ namespace SushiRuntime
 
             if (state->attempts.load(std::memory_order_relaxed) >= K_MAXIMUM_OFFLOAD_ATTEMPTS)
                 return decline();
-            state->attempts.fetch_add(1, std::memory_order_relaxed);
 
             DispatchScratch& scratch = dispatch_scratch();
             const std::optional<std::size_t> input_count =
@@ -400,18 +417,77 @@ namespace SushiRuntime
             for (std::size_t index = 0; index < *input_count; ++index)
                 estimated_bytes += scratch.handles[index].size_bytes;
 
-            const std::optional<PeerID> worker = directory_.pick(node, estimated_bytes);
-            if (!worker.has_value())
-                return decline();
+            // A release between the decision and the hold would be missed; decide again then.
+            for (;;)
+            {
+                const std::uint64_t releases = held_.releases();
+                const PlacementDecision decision = decide(node, estimated_bytes);
+                const std::optional<bool> taken = std::visit(
+                    [&](const auto& outcome) -> std::optional<bool>
+                    {
+                        using Outcome = std::decay_t<decltype(outcome)>;
+                        if constexpr (std::is_same_v<Outcome, RunOnWorker>)
+                            return dispatch(node, *state, outcome, *input_count);
+                        else if constexpr (std::is_same_v<Outcome, WaitForTarget>)
+                            return hold(node, outcome, releases);
+                        else if constexpr (std::is_same_v<Outcome, FailRun>)
+                            return refuse(node, outcome);
+                        else
+                            return decline();
+                    },
+                    decision);
+                if (taken.has_value())
+                    return *taken;
+            }
+        }
 
+        const PlacementRule* OffloadDispatcher::winning_rule(
+            const Internal::Graph::Node& node) const noexcept
+        {
+            const std::optional<std::uint32_t> position = node.metadata.placement_rule;
+            if (!rules_ || !position.has_value() || *position >= rules_->size())
+                return nullptr;
+            return &rules_->rule(*position);
+        }
+
+        PlacementDecision OffloadDispatcher::decide(const Internal::Graph::Node& node,
+                                                    std::uint64_t estimated_bytes)
+        {
+            const PlacementRule* rule = winning_rule(node);
+            if (rule == nullptr)
+            {
+                const std::optional<PeerID> worker = directory_.pick(node, estimated_bytes);
+                if (!worker.has_value())
+                    return RunLocally{};
+                return RunOnWorker{static_cast<int>(worker->value), 0, std::nullopt};
+            }
+
+            const PlacementDecision decision = rule_placement_.decide(
+                *rule, *node.metadata.placement_rule, node, std::chrono::steady_clock::now());
+            if (!std::holds_alternative<WaitForTarget>(decision))
+                held_.forget(node);
+            return decision;
+        }
+
+        bool OffloadDispatcher::dispatch(Internal::Graph::Node& node,
+                                         Internal::Graph::OffloadState& state,
+                                         const RunOnWorker& target, std::size_t input_count)
+        {
+            const PeerID worker{static_cast<std::uint32_t>(target.worker_id)};
+
+            // The attempt is the last write to the node before the pending table may own it.
+            state.attempts.fetch_add(1, std::memory_order_relaxed);
+
+            DispatchScratch& scratch = dispatch_scratch();
             const SushiRuntime::span<BufferHandle> outputs(
-                scratch.handles.data() + *input_count, scratch.handles.size() - *input_count);
+                scratch.handles.data() + input_count, scratch.handles.size() - input_count);
             registry_.bump(outputs);
 
             const std::uint64_t task_id = pending_.allocate_task_id();
             const auto first_output =
-                scratch.handles.begin() + static_cast<std::ptrdiff_t>(*input_count);
+                scratch.handles.begin() + static_cast<std::ptrdiff_t>(input_count);
             scratch.message.task_id = task_id;
+            scratch.message.device_index = static_cast<std::uint32_t>(target.device_index);
             fill_description(node.metadata, scratch.message);
             scratch.message.inputs.assign(scratch.handles.begin(), first_output);
             scratch.message.outputs.assign(first_output, scratch.handles.end());
@@ -421,25 +497,27 @@ namespace SushiRuntime
                 scratch.message.encode(scratch.payload) == Wire::CodecStatus::Ok;
             const bool is_inserted =
                 is_encoded &&
-                pending_.insert(task_id, node, *worker,
+                pending_.insert(task_id, node, worker,
                                 SushiRuntime::span<const BufferHandle>(outputs.data(),
                                                                        outputs.size()),
-                                std::chrono::steady_clock::now());
+                                std::chrono::steady_clock::now(), target.deadline);
             if (!is_inserted)
             {
-                directory_.release_inflight(*worker);
+                directory_.release_inflight(worker);
                 return decline();
             }
 
             // The pending table owns the node from here; this thread reads and writes it no more.
             const SendStatus sent = transport_.send(
-                *worker, MessageType::TaskDispatch,
+                worker, MessageType::TaskDispatch,
                 SushiRuntime::span<const std::byte>(scratch.payload.data(),
                                                     scratch.payload.size()));
             if (sent == SendStatus::Queued)
             {
                 offloaded_.fetch_add(1, std::memory_order_relaxed);
-                SR_LOG_DEBUG(K_OFFLOAD_COORDINATION_LOG_CATEGORY, "task {} queued for worker {}", task_id, worker->value);
+                SR_LOG_DEBUG(K_OFFLOAD_COORDINATION_LOG_CATEGORY,
+                             "task {} queued for worker {} device {}", task_id, worker.value,
+                             target.device_index);
                 return true;
             }
 
@@ -447,15 +525,49 @@ namespace SushiRuntime
                 send_queue_full_.fetch_add(1, std::memory_order_relaxed);
 
             // A removal that got there first owns the node and resubmits it.
-            const std::optional<PendingTask> undone = pending_.take(task_id, *worker);
+            const std::optional<PendingTask> undone = pending_.take(task_id, worker);
             if (!undone.has_value())
             {
                 offloaded_.fetch_add(1, std::memory_order_relaxed);
                 return true;
             }
 
-            directory_.release_inflight(*worker);
+            directory_.release_inflight(worker);
             return decline();
+        }
+
+        std::optional<bool> OffloadDispatcher::hold(Internal::Graph::Node& node,
+                                                    const WaitForTarget& wait,
+                                                    std::uint64_t releases)
+        {
+            const HoldStatus status = held_.hold(node, wait.until, releases);
+            if (status == HoldStatus::Held)
+                return true;
+            if (status == HoldStatus::Stale)
+                return std::nullopt;
+
+            held_.forget(node);
+            return decline();
+        }
+
+        bool OffloadDispatcher::refuse(Internal::Graph::Node& node, const FailRun& failure)
+        {
+            if (sink_ == nullptr)
+            {
+                SR_LOG_ERROR(K_OFFLOAD_COORDINATION_LOG_CATEGORY,
+                             "{} No sink is bound, so the node runs on the master.",
+                             failure.error.message);
+                return decline();
+            }
+
+            // The sink owns the node from here and ends its run.
+            sink_->fail(node, failure.error);
+            return true;
+        }
+
+        void OffloadDispatcher::bind(Internal::Graph::OffloadSink& sink) noexcept
+        {
+            sink_ = &sink;
         }
 
         void OffloadDispatcher::complete_local(Internal::Graph::Node& node) noexcept

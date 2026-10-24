@@ -159,8 +159,10 @@ namespace SushiRuntime
 
             /** @brief Builds the registry, then the coordinator that reads it. */
             State(std::shared_ptr<Transport> transport, ClusterOptions options,
-                  std::uint64_t session_id)
-                : coordinator(buffers, std::move(transport), std::move(options), session_id)
+                  std::uint64_t session_id, const Internal::Execution::RuntimeContext& context,
+                  NodeFacts master)
+                : coordinator(buffers, std::move(transport), std::move(options), session_id,
+                              context, std::move(master))
             {
 
             }
@@ -238,7 +240,7 @@ namespace SushiRuntime
                 return make_error(std::move(session_id.error()));
 
             auto state = std::make_shared<State>(std::move(transport), std::move(options),
-                                                 *session_id);
+                                                 *session_id, context, runtime.topology());
 
             // The new master starts before the installed one is touched, so a failure costs nothing.
             state->coordinator.bind(context.offload_sink());

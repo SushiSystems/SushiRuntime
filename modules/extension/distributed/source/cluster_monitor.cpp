@@ -66,10 +66,12 @@ namespace SushiRuntime
         } // namespace
 
         ClusterMonitor::ClusterMonitor(WorkerDirectory& directory, PendingTasks& pending,
-                                       BufferRegistry& registry, BufferExchange& exchange,
-                                       Transport& transport, const ClusterMonitorOptions& options)
+                                       HeldNodes& held, BufferRegistry& registry,
+                                       BufferExchange& exchange, Transport& transport,
+                                       const ClusterMonitorOptions& options)
             : directory_(directory),
               pending_(pending),
+              held_(held),
               registry_(registry),
               exchange_(exchange),
               transport_(transport),
@@ -112,6 +114,18 @@ namespace SushiRuntime
         void ClusterMonitor::set_task_deadline(std::chrono::milliseconds deadline) noexcept
         {
             task_deadline_ms_.store(deadline.count(), std::memory_order_relaxed);
+            wake_.notify_all();
+        }
+
+        void ClusterMonitor::wake_by(std::chrono::steady_clock::time_point moment) noexcept
+        {
+            if (moment.time_since_epoch().count() >= next_pass_.load(std::memory_order_acquire))
+                return;
+
+            {
+                // The lock orders this notify after the thread waits or after it reads the new end.
+                const std::lock_guard<std::mutex> lock(mutex_);
+            }
             wake_.notify_all();
         }
 
@@ -169,7 +183,13 @@ namespace SushiRuntime
 
                 // A setter's notify ends the wait early, so the next pass reads the new period.
                 if (!stopping_)
-                    wake_.wait_for(lock, period());
+                {
+                    const std::chrono::steady_clock::time_point next = std::min(
+                        std::chrono::steady_clock::now() + period(), held_.earliest());
+                    next_pass_.store(next.time_since_epoch().count(), std::memory_order_release);
+                    wake_.wait_until(lock, next);
+                    next_pass_.store(K_IN_A_PASS, std::memory_order_release);
+                }
             }
         }
 
@@ -181,6 +201,21 @@ namespace SushiRuntime
             close_silent_workers(now);
             close_handshake_overdue(now);
             reap_overdue_tasks(now);
+            release_expired_holds(now);
+        }
+
+        void ClusterMonitor::release_expired_holds(std::chrono::steady_clock::time_point now)
+        {
+            nodes_.clear();
+            held_.take_expired(now, nodes_);
+            if (nodes_.empty())
+                return;
+
+            const std::size_t reoffered = reoffer_nodes(nodes_, *sink_);
+            nodes_.clear();
+            SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY,
+                         "{} held nodes waited out their rule's bound and are offered again",
+                         reoffered);
         }
 
         void ClusterMonitor::ping_workers()
@@ -259,6 +294,12 @@ namespace SushiRuntime
                 SushiRuntime::span<PendingTask>(tasks_.data(), tasks_.size()), registry_,
                 exchange_, directory_, *sink_);
             redispatched_.fetch_sub(taken - resubmitted, std::memory_order_relaxed);
+
+            // The reaped tasks freed slots, which a node held for a busy worker may take.
+            nodes_.clear();
+            held_.take_all(nodes_);
+            reoffer_nodes(nodes_, *sink_);
+            nodes_.clear();
 
             std::vector<PendingTask> reaped;
             reaped.swap(tasks_);

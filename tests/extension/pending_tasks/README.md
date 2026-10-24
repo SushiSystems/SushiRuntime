@@ -44,6 +44,7 @@ two more misses. A task of another worker is untouched.
 | Test | What it proves |
 | --- | --- |
 | `ChunkRestartsTheDeadline`, `TakeForWorkerForgetsItsChunkTime` | The task deadline runs from the later of the dispatch and the worker's last chunk, per worker. A worker's chunk time is dropped with its tasks, so a task dispatched to it afterwards is measured from its own dispatch. |
+| `OwnDeadlineReplacesTheClusterDeadline` | A task inserted with its own deadline is reaped by it, shorter or longer than the cluster's; a task with none keeps the cluster's. |
 
 ### `TwoRemovalsOfOneTaskHaveOneWinner`
 

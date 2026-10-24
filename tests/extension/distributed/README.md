@@ -100,6 +100,23 @@ one GPU and one CPU, and runs one offloaded task to its result. It leaves; the t
 whose name, system, labels and devices (kind, name, memory) are the ones that worker sent, the
 second with `zone=b`.
 
+### Placement rules
+
+The tests set one rule named `pin` that matches the class `test.pinned` with the key 7, and record
+one vec-add node of that class and key. The workers are `ScriptedWorker`s whose facts list a CPU,
+then a GPU. A wait is observed through `ClusterStatistics::held_nodes`, never through a sleep.
+
+| Test | What it proves |
+| --- | --- |
+| `Medium_DistributedPlacementTest.RulePinsANodeToTheWorkerItNames` | With a decoy worker registered first, a rule for `machine_name` `rack-7-gpu` and `device_kind` GPU sends the node to that worker with `device_index` 1, and the decoy gets nothing. |
+| `Medium_DistributedPlacementTest.RulePinsANodeToTheWorkerItsLabelNames` | The same with `machine_label` `zone=b` and `device_index` 1. |
+| `Medium_DistributedPlacementTest.WaitHoldsTheNodeUntilTheWorkerRegisters` | Under `Wait`, with no worker, the node is held; the named worker registers and gets the node on device 0. The bound is `K_WAIT`, so only a hang reaches it. |
+| `Medium_DistributedPlacementTest.WaitRunsTheNodeLocallyOnceTheBoundPasses` | Under `Wait` with a 30 ms bound and no worker, the run returns no sooner than the bound, the master computed the sum, and nothing was offloaded. |
+| `Medium_DistributedPlacementTest.FailEndsTheRunNamingTheRuleAndTheTarget` | Under `Fail`, with no worker, `run()` returns `InvalidState` whose message names the rule `"pin"` and `machine "rack-7-gpu"`; the output stays unwritten and nothing is offloaded. |
+| `Medium_DistributedPlacementTest.RuleDeadlineTakesASilentTaskBackSooner` | With the liveness timeout and `task_deadline` at 60 s, a rule deadline of 100 ms takes a `FallSilent` worker's task back, counted as `tasks_reaped_deadline`, and the master computes the sum within `K_WAIT`. |
+| `Medium_DistributedPlacementTest.BusyTargetRunsBothNodesOneAfterTheOther` | A worker whose `max_jobs` is 1 gets the first of two pinned nodes; the second is held, then dispatched to it once the first result frees the slot. Both outputs hold what the worker wrote and nothing was redispatched, so neither ran on the master. `ScriptedWorker::limit_jobs()` sets the limit `PROOF` reports. |
+| `Medium_DistributedPlacementTest.UnmatchedNodeIsPlacedByThePolicy` | A rule for another key leaves the node to the policy, which is called once, and the dispatch carries device 0. |
+
 ### `StaleWritebackIsFenced`
 
 An `Accept` worker holds the dispatched task. The test first streams an output chunk at the

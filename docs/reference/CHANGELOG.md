@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-10-24 — placement: Added the matching of a rule's target against a machine's facts and the choice of its device, shared by the local scopes and the distributed layer (`placement_target_matching.hpp`).
+- 2026-10-24 — offload_coordination: Placed a node by its winning rule on a worker and device named or labelled, holding it while the worker is absent or busy and failing the run under `Fail` (`rule_placement.cpp`, `held_nodes.cpp`).
+- 2026-10-24 — cluster_load: Added `PlacementDecision`, the outcome of a placement, and `ClusterStatistics::held_nodes`, which changes the struct's layout (`placement_decision.hpp`, `cluster_statistics.hpp`).
+- 2026-10-24 — pending_tasks: Let a task carry its own deadline, which a placement rule's `deadline` sets in place of `task_deadline` (`pending_tasks.hpp`).
 - 2026-10-24 — api: Added `NodeOptions::determinism`, the determinism class a node's recorder states, which the plan reports (`determinism.hpp`, `node_options.hpp`, `plan_view.hpp`).
 - 2026-10-24 — distributed: Ran each dispatched kernel on the worker device its `TASK_DISPATCH` names, failing a dispatch for a missing device with `KernelFailed` (`dispatch_executor.cpp`, `worker_agent.cpp`).
 - 2026-10-24 — api: Added `PlacementScope::device()` and `buffer()`, and `On(scope)` for untracked kernels, which place work on the device the scope's rule names and follow its absent-target policy (`placement_scope.hpp`, `placement.hpp`).

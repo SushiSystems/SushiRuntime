@@ -30,7 +30,6 @@
 
 #include <chrono>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -42,131 +41,25 @@
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/machine/device_facts.hpp>
-#include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
-#include <SushiRuntime/machine/node_label.hpp>
 #include <SushiRuntime/placement/placement_rule.hpp>
 #include <SushiRuntime/placement/placement_rules.hpp>
+#include <SushiRuntime/placement/placement_target_matching.hpp>
 
 namespace SushiRuntime
 {
     namespace
     {
         /** @brief Holds the device a scope takes when no rule or no device part decides. */
-        constexpr std::size_t K_DEFAULT_DEVICE = 0;
+        constexpr std::size_t K_DEFAULT_DEVICE = K_DEFAULT_PLACEMENT_DEVICE;
 
-        /** @brief Returns the name of a device kind for a message. */
-        [[nodiscard]] const char* kind_name(DeviceKind kind) noexcept
-        {
-            switch (kind)
-            {
-                case DeviceKind::CPU:
-                    return "CPU";
-                case DeviceKind::GPU:
-                    return "GPU";
-                case DeviceKind::Accelerator:
-                    return "Accelerator";
-                case DeviceKind::Other:
-                    return "Other";
-            }
-            return "Other";
-        }
-
-        /** @brief Returns the name of a rule, or its position when it has none. */
-        [[nodiscard]] std::string rule_label(const PlacementRule& rule, std::size_t position)
-        {
-            if (!rule.name.empty())
-                return "\"" + rule.name + "\"";
-            return "at position " + std::to_string(position);
-        }
-
-        /** @brief Returns the target of a rule as a phrase for a message. */
-        [[nodiscard]] std::string describe_target(const PlacementTarget& target)
-        {
-            std::string text;
-            const auto append = [&text](const std::string& part)
-            {
-                if (!text.empty())
-                    text += ", ";
-                text += part;
-            };
-            if (!target.machine_name.empty())
-                append("machine \"" + target.machine_name + "\"");
-            if (target.machine_label)
-                append("machine label " + target.machine_label->key + "=" +
-                       target.machine_label->value);
-            if (target.device_index)
-                append("device index " + std::to_string(*target.device_index));
-            if (target.device_kind)
-                append(std::string("the first device of kind ") + kind_name(*target.device_kind));
-            if (target.device_min_memory)
-                append("the first device with at least " +
-                       std::to_string(*target.device_min_memory) + " bytes");
-            return text;
-        }
-
-        /** @brief Returns whether the machine part of a target names this machine. */
-        [[nodiscard]] bool machine_matches(const PlacementTarget& target, const NodeFacts& here)
-        {
-            if (!target.machine_name.empty() && target.machine_name != here.name)
-                return false;
-            if (!target.machine_label)
-                return true;
-            for (const NodeLabel& label : here.labels)
-            {
-                if (label.key == target.machine_label->key &&
-                    label.value == target.machine_label->value)
-                    return true;
-            }
-            return false;
-        }
-
-        /** @brief Returns the first device that holds at least a given memory, if any. */
-        [[nodiscard]] std::optional<std::size_t> first_with_memory(const NodeFacts& here,
-                                                                   std::uint64_t memory)
-        {
-            for (std::size_t index = 0; index < here.devices.size(); ++index)
-            {
-                if (here.devices[index].memory_bytes >= memory)
-                    return index;
-            }
-            return std::nullopt;
-        }
-
-        /** @brief Returns the first device of a kind, if any. */
-        [[nodiscard]] std::optional<std::size_t> first_of_kind(const NodeFacts& here,
-                                                               DeviceKind kind)
-        {
-            for (std::size_t index = 0; index < here.devices.size(); ++index)
-            {
-                if (here.devices[index].kind == kind)
-                    return index;
-            }
-            return std::nullopt;
-        }
-
-        /**
-         * @brief Returns the local device a target names, or none when this machine lacks it.
-         *
-         * A target with no device part names device 0.
-         */
+        /** @brief Returns the local device a target names, or none when this machine lacks it. */
         [[nodiscard]] std::optional<std::size_t> local_device(const PlacementTarget& target,
-                                                              const NodeFacts& here)
+                                                              const NodeFacts& here) noexcept
         {
             if (!machine_matches(target, here))
                 return std::nullopt;
-            if (target.device_index)
-            {
-                if (*target.device_index < here.devices.size())
-                    return *target.device_index;
-                return std::nullopt;
-            }
-            if (target.device_kind)
-                return first_of_kind(here, *target.device_kind);
-            if (target.device_min_memory)
-                return first_with_memory(here, *target.device_min_memory);
-            return K_DEFAULT_DEVICE;
+            return pick_device(target, here);
         }
 
         /** @brief Returns the refusal of a rule whose target is absent and whose policy is Fail. */
@@ -174,7 +67,7 @@ namespace SushiRuntime
                                            const NodeFacts& here)
         {
             return Error{ErrorCode::InvalidArgument,
-                         "PlacementScope::device: rule " + rule_label(rule, position) +
+                         "PlacementScope::device: rule " + describe_rule(rule, position) +
                              " places the scope on " + describe_target(rule.target) +
                              ", which machine \"" + here.name + "\" does not have (it has " +
                              std::to_string(here.devices.size()) +

@@ -29,7 +29,11 @@
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 
 #include <atomic>
+#include <utility>
 
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/scheduler/scheduler_log_category.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 namespace SushiRuntime
@@ -62,6 +66,17 @@ namespace SushiRuntime
             });
 
             node.release();
+        }
+
+        void TaskScheduler::fail(Internal::Graph::Node& node, Error error)
+        {
+            SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY,
+                         "{}; the run is aborted and its remaining tasks are skipped.",
+                         error.message);
+
+            // The failure is recorded before a successor can run, so each one is skipped.
+            outcome_.record(std::move(error));
+            complete_remote(node);
         }
 
     } // namespace Scheduler

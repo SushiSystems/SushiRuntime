@@ -414,6 +414,37 @@ namespace PendingTasksTests
         EXPECT_EQ(reaped[1].cause, ReapCause::Deadline);
     }
 
+    TEST(Medium_PendingTasks, OwnDeadlineReplacesTheClusterDeadline)
+    {
+        PendingTasks table;
+        const sushi_ptr<Node> ruled = make_sushi<Node>();
+        const sushi_ptr<Node> plain = make_sushi<Node>();
+        const sushi_ptr<Node> patient = make_sushi<Node>();
+        const OverdueLimits limits = limits_with(milliseconds(1000));
+
+        ASSERT_TRUE(table.insert(1, *ruled, K_WORKER, span<const BufferHandle>(),
+                                 at(milliseconds(0)), milliseconds(100)));
+        ASSERT_TRUE(insert_plain(table, 2, *plain, K_WORKER));
+        ASSERT_TRUE(table.insert(3, *patient, K_WORKER, span<const BufferHandle>(),
+                                 at(milliseconds(0)), milliseconds(5000)));
+        for (std::uint64_t task_id = 1; task_id <= 3; ++task_id)
+            ASSERT_TRUE(table.acknowledge(task_id, K_WORKER));
+
+        std::vector<PendingTask> reaped;
+        table.take_overdue(at(milliseconds(101)), limits, reaped);
+        ASSERT_EQ(reaped.size(), 1u) << "the task's own 100 ms deadline applies";
+        EXPECT_EQ(reaped[0].task_id, 1u);
+        EXPECT_EQ(reaped[0].cause, ReapCause::Deadline);
+
+        table.take_overdue(at(milliseconds(1001)), limits, reaped);
+        ASSERT_EQ(reaped.size(), 2u) << "a task with no deadline keeps the cluster's";
+        EXPECT_EQ(reaped[1].task_id, 2u);
+
+        table.take_overdue(at(milliseconds(5001)), limits, reaped);
+        ASSERT_EQ(reaped.size(), 3u) << "a longer own deadline outlasts the cluster's";
+        EXPECT_EQ(reaped[2].task_id, 3u);
+    }
+
     TEST(Medium_PendingTasks, TakeForWorkerForgetsItsChunkTime)
     {
         PendingTasks table;

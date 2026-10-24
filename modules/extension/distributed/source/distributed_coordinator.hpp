@@ -35,6 +35,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/task_types.hpp>
@@ -46,6 +47,8 @@
 
 namespace SushiRuntime
 {
+    namespace Internal::Execution { class RuntimeContext; }
+
     namespace Distributed
     {
         /**
@@ -78,10 +81,13 @@ namespace SushiRuntime
                  * @param transport A master-side transport that was never started; not null.
                  * @param options Moved in; the secret stays here for the directory to read.
                  * @param session_id Names this master to its workers; drawn at random.
+                 * @param context Its rules feed prepare(); @p master, this machine's facts, is copied.
                  */
                 DistributedCoordinator(BufferRegistry& registry,
                                        std::shared_ptr<Transport> transport,
-                                       ClusterOptions options, std::uint64_t session_id);
+                                       ClusterOptions options, std::uint64_t session_id,
+                                       const Internal::Execution::RuntimeContext& context,
+                                       NodeFacts master);
 
                 /** @brief Calls stop(), then destroys the bricks. */
                 ~DistributedCoordinator() override;
@@ -107,16 +113,20 @@ namespace SushiRuntime
                 /**
                  * @brief Ends all remote work; a second call does nothing.
                  *
-                 * In order: close the pending table and the directory, so nothing more is
-                 * dispatched; join the monitor; stop the transport, which joins every reader;
-                 * drain the pending table and resubmit each node through the sink.
+                 * In order: close the pending table, the held table and the directory, so
+                 * nothing more is dispatched or held; join the monitor; stop the transport,
+                 * which joins every reader; drain the pending and the held tables and resubmit
+                 * each node through the sink.
                  */
                 void stop() noexcept override;
 
-                /** @brief Forwards to OffloadDispatcher::prepare(). */
+                /** @brief Forwards to OffloadDispatcher::prepare() with the context's rules. */
                 void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes) override;
 
-                /** @brief Forwards to OffloadDispatcher::try_offload(); false once stopped. */
+                /**
+                 * @brief Forwards to OffloadDispatcher::try_offload(); false once stopped. A
+                 *        node held for its rule wakes the monitor for the end of the wait.
+                 */
                 [[nodiscard]] bool try_offload(Internal::Graph::Node& node) override;
 
                 /** @brief Forwards to OffloadDispatcher::complete_local(). */
@@ -161,7 +171,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Holds the options, the transport and the bricks, declared in the
-                 *        order they are built: directory, pending, exchange, dispatcher, monitor.
+                 *        order they are built: directory, pending, held, exchange, dispatcher,
+                 *        monitor.
                  */
                 std::unique_ptr<Impl> impl_;
         };

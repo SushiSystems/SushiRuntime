@@ -82,6 +82,8 @@
 #include <SushiRuntime/device_probe/device_probe.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
+#include <SushiRuntime/placement/placement_rule.hpp>
+#include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/cluster_load/cluster_statistics.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
 #include <SushiRuntime/transport/transport.hpp>
@@ -321,11 +323,13 @@ namespace EndToEndTests
             cluster.share(buffer.data(), buffer.size_bytes());
         }
 
-        /** @brief Adds an op-tagged task out = a + b whose local body computes the same sum. */
+        /**
+         * @brief Adds an op-tagged task out = a + b whose local body computes the same sum.
+         * @param options The node's options; the name and the operation are set here.
+         */
         void add_vec_add(Graph& graph, const char* name, const USMFloats& a, const USMFloats& b,
-                         const USMFloats& out)
+                         const USMFloats& out, NodeOptions options = NodeOptions())
         {
-            NodeOptions options;
             options.name = name;
             options.operation = K_VEC_ADD;
 
@@ -577,6 +581,12 @@ namespace EndToEndTests
                     facts_ = std::move(facts);
                 }
 
+                /** @brief Sets the task limit PROOF reports; call before start(). */
+                void limit_jobs(std::uint32_t max_jobs) noexcept
+                {
+                    max_jobs_ = max_jobs;
+                }
+
                 /** @brief Starts the transport and returns whether it started. */
                 [[nodiscard]] bool start()
                 {
@@ -722,7 +732,7 @@ namespace EndToEndTests
                         compute_proof(HandshakeRole::Worker, span<const std::uint8_t>(),
                                       worker_nonce_, to_nonce(challenge.master_nonce)));
                     proof.ops = {operation_};
-                    proof.max_jobs = 16;
+                    proof.max_jobs = max_jobs_;
                     send(peer, proof);
                 }
 
@@ -780,6 +790,9 @@ namespace EndToEndTests
 
                 /// @brief The nonce the worker sends in HELLO.
                 HandshakeNonce worker_nonce_{};
+
+                /// @brief The task limit PROOF reports.
+                std::uint32_t max_jobs_ = 16;
 
                 /// @brief The facts HELLO reports; HELLO's views point into them.
                 NodeFacts facts_{"scripted-worker", OperatingSystem::Unknown, {}, {}};
@@ -1420,6 +1433,419 @@ namespace EndToEndTests
             EXPECT_EQ(facts.devices[1].kind, DeviceKind::CPU);
             EXPECT_EQ(facts.devices[1].memory_bytes, K_CPU_MEMORY);
         }
+    }
+
+    namespace
+    {
+        /** @brief Names the placement class the rule tests pin. */
+        constexpr auto K_PINNED = "test.pinned"_class;
+
+        /** @brief Holds the placement key the rule tests pin. */
+        constexpr std::uint64_t K_PINNED_KEY = 7;
+
+        /** @brief Holds the memory of a scripted worker's CPU. */
+        constexpr std::uint64_t K_SCRIPTED_CPU_MEMORY = 32ull << 30;
+
+        /** @brief Holds the memory of a scripted worker's GPU. */
+        constexpr std::uint64_t K_SCRIPTED_GPU_MEMORY = 8ull << 30;
+
+        /** @brief Returns the facts of a worker with a CPU, then a GPU, and one zone label. */
+        NodeFacts two_device_facts(const char* name, const char* zone)
+        {
+            NodeFacts facts;
+            facts.name = name;
+            facts.operating_system = OperatingSystem::Linux;
+            facts.labels = {NodeLabel{"zone", zone}};
+            facts.devices = {DeviceFacts{DeviceKind::CPU, "Test CPU", K_SCRIPTED_CPU_MEMORY},
+                             DeviceFacts{DeviceKind::GPU, "Test GPU", K_SCRIPTED_GPU_MEMORY}};
+            return facts;
+        }
+
+        /** @brief Returns a rule that matches K_PINNED with K_PINNED_KEY, for a test to target. */
+        PlacementRule pinned_rule()
+        {
+            PlacementRule rule;
+            rule.name = "pin";
+            rule.match.placement_class = "test.pinned";
+            rule.match.key = K_PINNED_KEY;
+            return rule;
+        }
+
+        /** @brief Returns the options of a node the class and key of pinned_rule() match. */
+        NodeOptions pinned_options()
+        {
+            NodeOptions options;
+            options.placement_class = K_PINNED;
+            options.placement_key = K_PINNED_KEY;
+            return options;
+        }
+
+        /** @brief Puts one rule in force on a runtime; the test fails when the rule is refused. */
+        void set_rule(const Runtime& runtime, PlacementRule rule)
+        {
+            PlacementRules rules;
+            ASSERT_TRUE(rules.add(std::move(rule)));
+            ASSERT_TRUE(runtime.set_placement_rules(std::move(rules)));
+        }
+
+        /**
+         * @brief Runs a node a rule pins to the machine part of @p target on the GPU of the
+         *        worker it names, while a decoy worker that registered first stays idle.
+         */
+        void expect_pinned_to_second_worker(PlacementTarget target)
+        {
+            constexpr std::size_t K_COUNT = 16;
+            Runtime master_runtime = Runtime::create().value();
+            RuntimeContext& master_context =
+                SushiRuntime::Internal::ContextAccess::context(master_runtime);
+            sycl::queue& queue = master_context.devices().queue(0);
+            USMFloats a(queue, K_COUNT, 1.0f);
+            USMFloats b(queue, K_COUNT, 2.0f);
+            USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+
+            InProcessFabric fabric;
+            Cluster cluster =
+                Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                eager_options()).value();
+            ScriptedWorker decoy(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+            decoy.report(two_device_facts("decoy", "a"));
+            ASSERT_TRUE(decoy.start());
+            ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+            ScriptedWorker pinned(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+            pinned.report(two_device_facts("rack-7-gpu", "b"));
+            ASSERT_TRUE(pinned.start());
+            ASSERT_TRUE(cluster.wait_for_workers(2, K_WAIT));
+            share(cluster, a);
+            share(cluster, b);
+            share(cluster, out);
+
+            PlacementRule rule = pinned_rule();
+            rule.target = std::move(target);
+            set_rule(master_runtime, std::move(rule));
+
+            auto graph = master_runtime.graph();
+            add_vec_add(graph, "pinned", a, b, out, pinned_options());
+            ASSERT_TRUE(graph.compile());
+            BackgroundRun run(graph);
+            ASSERT_TRUE(pinned.wait_for_dispatches(1)) << "the node did not reach the named worker";
+
+            const Wire::TaskDispatchMessage dispatch = pinned.dispatch(0);
+            EXPECT_EQ(dispatch.device_index, 1u) << "the rule's device part picks the GPU";
+            ASSERT_EQ(pinned.send_stream({success_frame(dispatch)}), SendStatus::Queued);
+            ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
+            EXPECT_EQ(decoy.dispatch_count(), 0u);
+            EXPECT_EQ(cluster.offloaded(), 1u);
+        }
+    } // namespace
+
+    /** @brief Tests that a rule pins a class and key to the worker its machine_name names. */
+    TEST(Medium_DistributedPlacementTest, RulePinsANodeToTheWorkerItNames)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        PlacementTarget target;
+        target.machine_name = "rack-7-gpu";
+        target.device_kind = DeviceKind::GPU;
+        expect_pinned_to_second_worker(std::move(target));
+    }
+
+    /** @brief Tests that a rule pins a class and key to the worker its machine_label names. */
+    TEST(Medium_DistributedPlacementTest, RulePinsANodeToTheWorkerItsLabelNames)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        PlacementTarget target;
+        target.machine_label = NodeLabel{"zone", "b"};
+        target.device_index = 1;
+        expect_pinned_to_second_worker(std::move(target));
+    }
+
+    /** @brief Tests that Wait holds a node while its worker is absent and sends it on registration. */
+    TEST(Medium_DistributedPlacementTest, WaitHoldsTheNodeUntilTheWorkerRegisters)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 16;
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats a(queue, K_COUNT, 1.0f);
+        USMFloats b(queue, K_COUNT, 2.0f);
+        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+
+        InProcessFabric fabric;
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          eager_options()).value();
+        share(cluster, a);
+        share(cluster, b);
+        share(cluster, out);
+
+        // The bound outlasts the registration below by far; the test waits on events, not on it.
+        PlacementRule rule = pinned_rule();
+        rule.target.machine_name = "rack-7-gpu";
+        rule.if_absent.action = AbsentAction::Wait;
+        rule.if_absent.bound = std::chrono::duration_cast<std::chrono::milliseconds>(K_WAIT);
+        set_rule(master_runtime, std::move(rule));
+
+        auto graph = master_runtime.graph();
+        add_vec_add(graph, "waits", a, b, out, pinned_options());
+        ASSERT_TRUE(graph.compile());
+        BackgroundRun run(graph);
+        ASSERT_TRUE(eventually([&] { return cluster.statistics().held_nodes == 1; }))
+            << "the node was not held while its worker was absent";
+
+        ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+        worker.report(two_device_facts("rack-7-gpu", "a"));
+        ASSERT_TRUE(worker.start());
+        ASSERT_TRUE(worker.wait_for_dispatches(1)) << "the held node did not reach the worker";
+
+        EXPECT_EQ(cluster.statistics().held_nodes, 0u);
+        EXPECT_EQ(worker.dispatch(0).device_index, 0u) << "a rule with no device part names 0";
+        ASSERT_EQ(worker.send_stream({success_frame(worker.dispatch(0))}), SendStatus::Queued);
+        ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
+        EXPECT_EQ(cluster.offloaded(), 1u);
+    }
+
+    /** @brief Tests that Wait runs the node on the master once its bound passes. */
+    TEST(Medium_DistributedPlacementTest, WaitRunsTheNodeLocallyOnceTheBoundPasses)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 16;
+        constexpr std::chrono::milliseconds K_BOUND{30};
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats a(queue, K_COUNT, 0.0f);
+        USMFloats b(queue, K_COUNT, 0.0f);
+        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+        a.ramp(1.0f);
+        b.ramp(2.0f);
+
+        InProcessFabric fabric;
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          eager_options()).value();
+        share(cluster, a);
+        share(cluster, b);
+        share(cluster, out);
+
+        PlacementRule rule = pinned_rule();
+        rule.target.machine_name = "rack-7-gpu";
+        rule.if_absent.action = AbsentAction::Wait;
+        rule.if_absent.bound = K_BOUND;
+        set_rule(master_runtime, std::move(rule));
+
+        auto graph = master_runtime.graph();
+        add_vec_add(graph, "waits_out", a, b, out, pinned_options());
+        ASSERT_TRUE(graph.compile());
+        const auto started = std::chrono::steady_clock::now();
+        BackgroundRun run(graph);
+        ASSERT_TRUE(run.wait()) << "execute() did not return after the bound passed";
+
+        EXPECT_GE(std::chrono::steady_clock::now() - started, K_BOUND)
+            << "the node ran before its bound passed";
+        expect_sum(out, a, b);
+        EXPECT_EQ(cluster.offloaded(), 0u);
+        EXPECT_EQ(cluster.statistics().held_nodes, 0u);
+    }
+
+    /** @brief Tests that Fail ends the run with an error that names the rule and the target. */
+    TEST(Medium_DistributedPlacementTest, FailEndsTheRunNamingTheRuleAndTheTarget)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 16;
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats a(queue, K_COUNT, 1.0f);
+        USMFloats b(queue, K_COUNT, 2.0f);
+        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+
+        InProcessFabric fabric;
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          eager_options()).value();
+        share(cluster, a);
+        share(cluster, b);
+        share(cluster, out);
+
+        PlacementRule rule = pinned_rule();
+        rule.target.machine_name = "rack-7-gpu";
+        rule.if_absent.action = AbsentAction::Fail;
+        set_rule(master_runtime, std::move(rule));
+
+        auto graph = master_runtime.graph();
+        add_vec_add(graph, "fails", a, b, out, pinned_options());
+        const Result<RunReport> ran = graph.run();
+        ASSERT_FALSE(ran) << "the run returned no error";
+        EXPECT_EQ(ran.error().code, ErrorCode::InvalidState);
+        EXPECT_NE(ran.error().message.find("\"pin\""), std::string::npos) << ran.error().message;
+        EXPECT_NE(ran.error().message.find("machine \"rack-7-gpu\""), std::string::npos)
+            << ran.error().message;
+        expect_elements(out.data(), out.count(), [](std::size_t) { return K_UNWRITTEN; });
+        EXPECT_EQ(cluster.offloaded(), 0u);
+    }
+
+    /** @brief Tests that a rule deadline shorter than the cluster's takes a silent task back. */
+    TEST(Medium_DistributedPlacementTest, RuleDeadlineTakesASilentTaskBackSooner)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 16;
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats a(queue, K_COUNT, 0.0f);
+        USMFloats b(queue, K_COUNT, 0.0f);
+        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+        a.ramp(1.0f);
+        b.ramp(2.0f);
+
+        // Neither the liveness timeout nor the cluster's deadline can end within K_WAIT.
+        InProcessFabric fabric;
+        ClusterOptions options = eager_options();
+        options.liveness_timeout = std::chrono::milliseconds(60000);
+        options.task_deadline = std::chrono::milliseconds(60000);
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          std::move(options)).value();
+        ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::FallSilent);
+        worker.report(two_device_facts("rack-7-gpu", "a"));
+        ASSERT_TRUE(worker.start());
+        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+        share(cluster, a);
+        share(cluster, b);
+        share(cluster, out);
+
+        PlacementRule rule = pinned_rule();
+        rule.target.machine_name = "rack-7-gpu";
+        rule.deadline = std::chrono::milliseconds(100);
+        set_rule(master_runtime, std::move(rule));
+
+        auto graph = master_runtime.graph();
+        add_vec_add(graph, "deadline", a, b, out, pinned_options());
+        ASSERT_TRUE(graph.compile());
+        BackgroundRun run(graph);
+        ASSERT_TRUE(run.wait()) << "the rule's deadline did not take the task back";
+
+        EXPECT_GE(worker.dispatch_count(), 1u);
+        EXPECT_GE(cluster.statistics().tasks_reaped_deadline, 1u);
+        expect_sum(out, a, b);
+    }
+
+    /** @brief Tests that a busy target holds its nodes for its own slots instead of the master. */
+    TEST(Medium_DistributedPlacementTest, BusyTargetRunsBothNodesOneAfterTheOther)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 16;
+        constexpr float K_FROM_WORKER = 42.0f;
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats a(queue, K_COUNT, 1.0f);
+        USMFloats b(queue, K_COUNT, 2.0f);
+        USMFloats first_out(queue, K_COUNT, K_UNWRITTEN);
+        USMFloats second_out(queue, K_COUNT, K_UNWRITTEN);
+
+        InProcessFabric fabric;
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          eager_options()).value();
+        ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+        worker.report(two_device_facts("rack-7-gpu", "a"));
+        worker.limit_jobs(1);
+        ASSERT_TRUE(worker.start());
+        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+        share(cluster, a);
+        share(cluster, b);
+        share(cluster, first_out);
+        share(cluster, second_out);
+
+        PlacementRule rule = pinned_rule();
+        rule.target.machine_name = "rack-7-gpu";
+        set_rule(master_runtime, std::move(rule));
+
+        auto graph = master_runtime.graph();
+        add_vec_add(graph, "first", a, b, first_out, pinned_options());
+        add_vec_add(graph, "second", a, b, second_out, pinned_options());
+        ASSERT_TRUE(graph.compile());
+        BackgroundRun run(graph);
+        ASSERT_TRUE(worker.wait_for_dispatches(1));
+        ASSERT_TRUE(eventually([&] { return cluster.statistics().held_nodes == 1; }))
+            << "the second node was not held for the busy worker";
+        EXPECT_EQ(worker.dispatch_count(), 1u);
+
+        // A whole result writes K_FROM_WORKER, which the master's own sum never gives.
+        const std::vector<float> written(K_COUNT, K_FROM_WORKER);
+        const auto answer = [&](std::size_t index)
+        {
+            const Wire::TaskDispatchMessage dispatch = worker.dispatch(index);
+            return worker.send_stream({output_chunk_frame(dispatch.task_id, dispatch.outputs[0],
+                                                          bytes_of(written)),
+                                       success_frame(dispatch)});
+        };
+        ASSERT_EQ(answer(0), SendStatus::Queued);
+        ASSERT_TRUE(worker.wait_for_dispatches(2)) << "the freed slot did not take the held node";
+        ASSERT_EQ(answer(1), SendStatus::Queued);
+        ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's results";
+
+        EXPECT_EQ(cluster.offloaded(), 2u);
+        EXPECT_EQ(cluster.statistics().redispatched, 0u);
+        const auto from_worker = [](std::size_t) { return K_FROM_WORKER; };
+        expect_elements(first_out.data(), first_out.count(), from_worker);
+        expect_elements(second_out.data(), second_out.count(), from_worker);
+    }
+
+    /** @brief Tests that a rule set that matches no node leaves the policy to pick, on device 0. */
+    TEST(Medium_DistributedPlacementTest, UnmatchedNodeIsPlacedByThePolicy)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 16;
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats a(queue, K_COUNT, 1.0f);
+        USMFloats b(queue, K_COUNT, 2.0f);
+        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+
+        const auto policy = std::make_shared<FactsRecordingPolicy>();
+        ClusterOptions options = eager_options();
+        options.policy = policy;
+        InProcessFabric fabric;
+        Cluster cluster =
+            Cluster::attach(master_runtime, InProcessTransport::make_master(fabric), std::move(options))
+                .value();
+        ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+        worker.report(two_device_facts("rack-7-gpu", "a"));
+        ASSERT_TRUE(worker.start());
+        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+        share(cluster, a);
+        share(cluster, b);
+        share(cluster, out);
+
+        PlacementRule rule = pinned_rule();
+        rule.match.key = K_PINNED_KEY + 1;
+        rule.target.machine_name = "rack-7-gpu";
+        rule.target.device_index = 1;
+        set_rule(master_runtime, std::move(rule));
+
+        auto graph = master_runtime.graph();
+        add_vec_add(graph, "unmatched", a, b, out, pinned_options());
+        ASSERT_TRUE(graph.compile());
+        BackgroundRun run(graph);
+        ASSERT_TRUE(worker.wait_for_dispatches(1));
+        EXPECT_EQ(worker.dispatch(0).device_index, 0u);
+        ASSERT_EQ(worker.send_stream({success_frame(worker.dispatch(0))}), SendStatus::Queued);
+        ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
+        EXPECT_EQ(policy->offers().size(), 1u) << "the policy did not decide the node";
     }
 
     /** @brief Tests that a task whose input chunks are all lost fails remotely and runs locally. */

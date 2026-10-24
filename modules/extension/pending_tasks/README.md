@@ -44,3 +44,11 @@ and can overtake the stream that ends with a task's result, and a heartbeat buil
 dispatch arrived does not list it. One heartbeat is therefore not proof: `take_overdue()` reaps an
 accepted task as `LostResult` only after `K_LOST_RESULT_HEARTBEATS` (2) heartbeats in a row
 reported an oldest held id above it.
+
+### A task's own deadline
+
+`insert()` takes an optional deadline. When set, `take_overdue()` measures the task against it in
+place of `OverdueLimits::task_deadline`, from the later of its dispatch and its worker's last chunk,
+as for the cluster's deadline; a deadline of 0 or less sets no bound. The dispatcher passes the
+`deadline` of the placement rule that sent the task, so a long task a rule pins is not taken back
+at the cluster's limit. `Unacknowledged` and `LostResult` do not read it.

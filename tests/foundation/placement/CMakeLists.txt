@@ -8,4 +8,5 @@ sushiruntime_add_module_tests(
     MODULE placement
     SOURCES
         test_placement_rule.cpp
-        test_placement_rules.cpp)
+        test_placement_rules.cpp
+        test_placement_target_matching.cpp)

@@ -103,6 +103,7 @@ The file tests the OffloadSink contract through a recording implementation.
 | Test | What it proves |
 | --- | --- |
 | `BothCallsReachTheSink` | Records what the scheduler asks of an offload coordinator and its sink. */ class RecordingCoordinator final : public OffloadCoordinator, public OffloadSink { public: void bind(OffloadSink& sink) override { bound = &sink; } void prepare(span<const sushi_ptr<Node>> nodes) override { prepared = nodes.size(); } bool try_offload(Node& node) override { offered = &node; return false; } void on_local_completion(Node& node) noexcept override { completed = &node; } void stop() noexcept override { stopped = true; } void resubmit(Node& node) override { resubmitted = &node; } void complete_remote(Node& node) override { remote = &node; } OffloadSink* bound = nullptr; /**< The sink bind() was given. */ std::size_t prepared = 0; /**< The nodes prepare() was given. */ Node* offered = nullptr; /**< The node try_offload() was given. */ Node* completed = nullptr; /**< The node completed locally. */ Node* resubmitted = nullptr; /**< The node given back. */ Node* remote = nullptr; /**< The node completed on a worker. */ bool stopped = false; /**< Whether stop() was called. */ }; } /** @brief Tests that a node given back and a node finished remotely reach the sink. |
+| `FailReachesTheSinkWithTheError` | `fail()` reaches the implementation with the node and the error. |
 
 ## test_offload_state.cpp
 

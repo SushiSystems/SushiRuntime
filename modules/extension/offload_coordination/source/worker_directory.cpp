@@ -32,6 +32,7 @@
 #include <array>
 #include <utility>
 
+#include <SushiRuntime/placement/placement_target_matching.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 #include <SushiRuntime/offload_coordination/task_description.hpp>
@@ -307,6 +308,43 @@ namespace SushiRuntime
 
             ++position->second.inflight;
             return PeerID{position->first};
+        }
+
+        TargetPick WorkerDirectory::pick_target(const PlacementTarget& target,
+                                                OperationID operation)
+        {
+            const std::lock_guard<std::mutex> lock(mutex_);
+            TargetPick pick;
+            if (closed_)
+                return pick;
+
+            for (auto& [value, session] : sessions_)
+            {
+                if (!session.alive || session.facts == nullptr)
+                    continue;
+                if (!machine_matches(target, *session.facts))
+                    continue;
+                if (std::find(session.operations.begin(), session.operations.end(), operation) ==
+                    session.operations.end())
+                    continue;
+
+                const std::optional<std::size_t> device = pick_device(target, *session.facts);
+                if (!device.has_value())
+                    continue;
+
+                if (!has_room(session))
+                {
+                    pick.status = TargetStatus::Busy;
+                    continue;
+                }
+
+                ++session.inflight;
+                pick.status = TargetStatus::Picked;
+                pick.worker = PeerID{value};
+                pick.device_index = *device;
+                return pick;
+            }
+            return pick;
         }
 
         void WorkerDirectory::release_inflight(PeerID worker) noexcept

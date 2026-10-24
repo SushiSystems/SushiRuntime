@@ -143,3 +143,27 @@ one.
 | --- | --- |
 | `TrailingZerosAreDropped` | Trailing zero parameters are not sent and a zero inside the list is. |
 | `NoParameterSendsNone` | A task with no parameter sends none. |
+
+## test_rule_placement.cpp
+
+The tests run `RulePlacement` over a directory where no worker registers, on a master named
+`master` with the label `zone=a`, at fixed points of the steady clock. A target that names a
+worker is covered end to end in `tests/extension/distributed/README.md`.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_RulePlacement.RuleForTheMasterRunsLocally` | A rule whose label names the master gives `RunLocally`; a rule for another machine does not name the master. |
+| `Small_RulePlacement.LocalRunsAnAbsentTargetOnTheMaster` | An absent target under `Local` gives `RunLocally`. |
+| `Small_RulePlacement.WaitEndsAtTheBoundFromTheFirstOffer` | Under `Wait` the end stays first offer plus bound across offers, and an offer at that end gives `RunLocally`. |
+| `Small_RulePlacement.FailNamesTheRuleAndTheTarget` | Under `Fail` the error is `InvalidState` and names the rule, else its position, and the target. |
+
+## test_held_nodes.cpp
+
+The tests hold real nodes that no graph runs, at fixed points of the steady clock.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_HeldNodes.FirstOfferIsKeptUntilForgotten` | A node's first offer stays until `forget()`. |
+| `Small_HeldNodes.TakeExpiredReturnsOnlyTheEndedWaits` | `take_expired()` returns the waits that ended, `take_all()` the rest, and `earliest()` follows both. |
+| `Small_HeldNodes.CloseRefusesAHoldAndDrainEmptiesTheTable` | After `close()` a hold is refused; `drain()` returns the held node and forgets every first offer. |
+| `Small_HeldNodes.HoldAfterAReleaseIsStale` | A hold whose decision came before a `take_all()` is refused as `Stale` and keeps nothing; one made after it is held. |

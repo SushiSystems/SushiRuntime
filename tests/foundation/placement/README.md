@@ -30,3 +30,14 @@ The file tests PlacementRules: the match, the winner and the refusals of `add()`
 | `Small_PlacementRules.AddRefusesEveryCaseOfTheRefusedWhenColumn` | Checks that `add()` refuses each case of the design table with `InvalidArgument`, a message that names the rule and says what to pass, and keeps nothing. |
 | `Small_PlacementRules.ARefusalNamesAnUnnamedRuleByItsPosition` | Checks that a rule without a name is named by its position. |
 | `Small_PlacementRules.APositiveWaitBoundAndDeadlineAreAccepted` | Checks that a positive `Wait` bound and deadline pass. |
+
+## test_placement_target_matching.cpp
+
+The file tests the match of a target against one machine's facts: a machine "rack-7" in zone `a`
+with a CPU, then a GPU.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_PlacementTargetMatching.MachinePartMatchesByNameOrLabel` | A target with no machine part matches; a name or a label matches its machine and no other. |
+| `Small_PlacementTargetMatching.DevicePartPicksByIndexKindOrMemory` | No device part picks 0; an index, a kind and a least memory each pick their device, and none when the machine lacks it. |
+| `Small_PlacementTargetMatching.DescriptionsNameTheRuleAndEveryTargetPart` | A rule is named by its name in quotes, else by its position; a target's phrase lists each part it states. |
