@@ -1239,7 +1239,8 @@ namespace EndToEndTests
         constexpr std::size_t K_COUNT = 512;
         std::atomic<int> worker_runs{0};
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats x(queue, K_COUNT, 1.0f);
         USMFloats y(queue, K_COUNT, K_UNWRITTEN);
@@ -1275,7 +1276,10 @@ namespace EndToEndTests
         EXPECT_GT(cluster.statistics().chunks_sent, first_chunks)
             << "the worker read its cached old version";
         expect_elements(y.data(), y.count(),
-                        [](std::size_t index) { return 2.0f * (10.0f + static_cast<float>(index)); });
+                        [](std::size_t index)
+                        {
+                            return 2.0f * (10.0f + static_cast<float>(index));
+                        });
 
         worker.stop();
     }
@@ -1289,7 +1293,8 @@ namespace EndToEndTests
         constexpr std::size_t K_COUNT = 512;
         std::atomic<int> worker_runs{0};
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats x(queue, K_COUNT, 1.0f);
         USMFloats y(queue, K_COUNT, K_UNWRITTEN);
@@ -1323,7 +1328,10 @@ namespace EndToEndTests
         EXPECT_EQ(cluster.statistics().chunks_sent, 2 * pull_chunks)
             << "the worker pulled the buffer once for the two writes";
         expect_elements(y.data(), y.count(),
-                        [](std::size_t index) { return 2.0f * (20.0f + static_cast<float>(index)); });
+                        [](std::size_t index)
+                        {
+                            return 2.0f * (20.0f + static_cast<float>(index));
+                        });
 
         worker.stop();
     }
@@ -1485,7 +1493,8 @@ namespace EndToEndTests
         constexpr std::uint64_t K_GPU_MEMORY = 8ull << 30;
         constexpr std::uint64_t K_CPU_MEMORY = 32ull << 30;
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 1.0f);
         USMFloats b(queue, K_COUNT, 2.0f);
@@ -1495,9 +1504,9 @@ namespace EndToEndTests
         ClusterOptions options = eager_options();
         options.policy = policy;
         InProcessFabric fabric;
-        Cluster cluster =
-            Cluster::attach(master_runtime, InProcessTransport::make_master(fabric), std::move(options))
-                .value();
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          std::move(options))
+                              .value();
 
         const auto facts_with_zone = [&](const char* zone)
         {
@@ -1548,7 +1557,8 @@ namespace EndToEndTests
         for (std::size_t index = 0; index < offers.size(); ++index)
         {
             const NodeFacts& facts = offers[index].facts;
-            ASSERT_TRUE(offers[index].had_facts) << "the load of offer " << index << " had no facts";
+            ASSERT_TRUE(offers[index].had_facts)
+                << "the load of offer " << index << " had no facts";
             EXPECT_EQ(facts.name, "rack-7-gpu");
             EXPECT_EQ(facts.operating_system, OperatingSystem::Linux);
             ASSERT_EQ(facts.labels.size(), 2u);
@@ -1692,7 +1702,9 @@ namespace EndToEndTests
         expect_pinned_to_second_worker(std::move(target));
     }
 
-    /** @brief Tests that Wait holds a node while its worker is absent and sends it on registration. */
+    /**
+     * @brief Tests that Wait holds a node while its worker is absent and sends it on registration.
+     */
     TEST(Medium_DistributedPlacementTest, WaitHoldsTheNodeUntilTheWorkerRegisters)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
@@ -1700,7 +1712,8 @@ namespace EndToEndTests
 
         constexpr std::size_t K_COUNT = 16;
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 1.0f);
         USMFloats b(queue, K_COUNT, 2.0f);
@@ -1748,7 +1761,8 @@ namespace EndToEndTests
         constexpr std::size_t K_COUNT = 16;
         constexpr std::chrono::milliseconds K_BOUND{30};
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 0.0f);
         USMFloats b(queue, K_COUNT, 0.0f);
@@ -1791,7 +1805,8 @@ namespace EndToEndTests
 
         constexpr std::size_t K_COUNT = 16;
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 1.0f);
         USMFloats b(queue, K_COUNT, 2.0f);
@@ -1829,7 +1844,8 @@ namespace EndToEndTests
 
         constexpr std::size_t K_COUNT = 16;
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 0.0f);
         USMFloats b(queue, K_COUNT, 0.0f);
@@ -1882,7 +1898,8 @@ namespace EndToEndTests
         constexpr std::chrono::milliseconds K_RULE_DEADLINE{50};
         constexpr std::chrono::milliseconds K_SLACK{150};
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 0.0f);
         USMFloats b(queue, K_COUNT, 0.0f);
@@ -1939,7 +1956,8 @@ namespace EndToEndTests
         constexpr std::size_t K_COUNT = 16;
         constexpr float K_FROM_WORKER = 42.0f;
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 1.0f);
         USMFloats b(queue, K_COUNT, 2.0f);
@@ -2002,7 +2020,8 @@ namespace EndToEndTests
 
         constexpr std::size_t K_COUNT = 16;
         Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 1.0f);
         USMFloats b(queue, K_COUNT, 2.0f);
@@ -2012,9 +2031,9 @@ namespace EndToEndTests
         ClusterOptions options = eager_options();
         options.policy = policy;
         InProcessFabric fabric;
-        Cluster cluster =
-            Cluster::attach(master_runtime, InProcessTransport::make_master(fabric), std::move(options))
-                .value();
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          std::move(options))
+                              .value();
         ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
         worker.report(two_device_facts("rack-7-gpu", "a"));
         ASSERT_TRUE(worker.start());

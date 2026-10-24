@@ -39,9 +39,9 @@ namespace SushiRuntime
         /**
          * @brief Takes back the nodes an offload coordinator accepted at dispatch.
          *
-         * resubmit() and complete_remote() run on a coordinator thread; fail() also runs on a
-         * pool worker inside try_offload(). Several threads may call at once. Each consumes the reference OffloadCoordinator::try_offload()
-         * handed over, so the caller reads and writes the node before the call, not after.
+         * resubmit() and complete_remote() run on a coordinator thread; fail() also on a pool
+         * worker inside try_offload(). Several threads may call at once; each consumes the
+         * reference try_offload() handed over, so the caller touches the node before the call.
          * @see modules/engine/task/README.md
          */
         class OffloadSink

@@ -264,7 +264,8 @@ namespace SushiRuntime
                 void lower_earliest_deadline(std::chrono::steady_clock::time_point moment) noexcept;
 
                 /** @brief Publishes @p moment as the earliest deadline; called under the mutex. */
-                void publish_earliest_deadline(std::chrono::steady_clock::time_point moment) noexcept;
+                void
+                publish_earliest_deadline(std::chrono::steady_clock::time_point moment) noexcept;
 
                 /** @brief Erases an entry and returns its task; called under the mutex. */
                 [[nodiscard]] PendingTask detach(TaskTable::iterator position,

@@ -492,8 +492,10 @@ namespace SushiRuntime
                 }
                 catch (const std::exception& error)
                 {
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "held nodes were not offered again: {}; "
-                                 "the next registration or result offers them", error.what());
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY,
+                                 "held nodes were not offered again: {}; "
+                                 "the next registration or result offers them",
+                                 error.what());
                 }
                 if (!nodes.empty() && sink != nullptr)
                     reoffer_nodes(nodes, held, *sink);

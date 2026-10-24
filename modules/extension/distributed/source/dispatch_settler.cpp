@@ -109,7 +109,8 @@ namespace SushiRuntime
 
                         finished_ = true;
                         frame.payload.clear();
-                        SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the output stream ended before its result: {}; the "
+                        SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY,
+                                     "task {}: the output stream ended before its result: {}; the "
                                      "master takes the task back as a lost result",
                                      task_id_, failure);
                         return FrameSourceStatus::Finished;
@@ -215,7 +216,8 @@ namespace SushiRuntime
                 for (const BufferHandle& handle : dispatch.outputs)
                     cache_.release(handle.id);
                 const std::string& cause = !entry.failure.empty() ? entry.failure : run_failure;
-                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the kernel of operation {} did not finish: {}; reported "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY,
+                             "task {}: the kernel of operation {} did not finish: {}; reported "
                              "as kernel failed",
                              task_id, dispatch.operation.value,
                              cause.empty() ? std::string("the run did not start the task") : cause);
@@ -234,7 +236,8 @@ namespace SushiRuntime
 
             const SendStatus sent = transport_.send_stream(entry.job.from, std::move(stream));
             if (sent != SendStatus::Queued)
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the output stream to peer {} was not queued (status {})",
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY,
+                             "task {}: the output stream to peer {} was not queued (status {})",
                              task_id, entry.job.from.value, static_cast<int>(sent));
         }
 
@@ -289,15 +292,17 @@ namespace SushiRuntime
             const SendStatus sent = send_message(transport_, from, result);
             held_->let_go(task_id, generation);
             if (sent != SendStatus::Queued)
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "task {}: TASK_RESULT to peer {} was not queued (status {})",
-                             task_id, from.value, static_cast<int>(sent));
+                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY,
+                             "task {}: TASK_RESULT to peer {} was not queued (status {})", task_id,
+                             from.value, static_cast<int>(sent));
         }
 
         void DispatchSettler::abandon(const DispatchJob& job, const char* cause) noexcept
         {
             try
             {
-                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the worker failed outside the kernel: {}; reported as "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY,
+                             "task {}: the worker failed outside the kernel: {}; reported as "
                              "kernel failed",
                              job.dispatch.task_id, cause);
                 fail(job.from, job.dispatch.task_id, job.generation,
@@ -306,7 +311,8 @@ namespace SushiRuntime
             catch (...)
             {
                 held_->let_go(job.dispatch.task_id, job.generation);
-                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "the worker could not report a failed task; the master takes it "
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY,
+                             "the worker could not report a failed task; the master takes it "
                              "back as a lost result");
             }
         }

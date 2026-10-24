@@ -327,7 +327,8 @@ message that names the empty kernel.
 ## test_registered_task/test_nested_run_probe.cpp
 
 The file probes whether a registered kernel may run a compiled graph from inside its own body, as
-SushiAI's replica does with a whole compiled step (R11 of `docs/design/LAYERED_EXECUTION/README.md`).
+SushiAI's replica does with a whole compiled step; the nested-run rule is in
+`docs/design/LAYERED_EXECUTION/README.md`.
 The kernel runs a one-task graph, `out = 2 * in`, and records how its `Graph::run()` ended. A worker
 runs each dispatch as a task of its runtime's run, and the master runs a local fallback as a task
 of its own run, so in both places the kernel's body is inside a run. Every master run goes through

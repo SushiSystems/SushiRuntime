@@ -359,8 +359,9 @@ namespace OffloadDispatcherTests
                 HeldNodes held_;
 
                 /// @brief The dispatcher under test, on a master named after no rule.
-                OffloadDispatcher dispatcher_{registry_, directory_, pending_, transport_, held_,
-                                              NodeFacts{"master", OperatingSystem::Unknown, {}, {}}};
+                OffloadDispatcher dispatcher_{
+                    registry_,  directory_, pending_,
+                    transport_, held_,      NodeFacts{"master", OperatingSystem::Unknown, {}, {}}};
 
                 /// @brief The level the process had when the test began.
                 SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;

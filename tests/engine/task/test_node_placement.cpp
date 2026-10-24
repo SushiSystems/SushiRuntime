@@ -104,7 +104,8 @@ TEST(Medium_NodePlacementStateDeathTest, PlaceOnStopsOnAnIndexItCannotHold)
 TEST_F(Medium_NodePlacementRule, ANodeWithNoRegionRunsOnItsStatedDeviceElseOnTheDefault)
 {
     const sushi_ptr<Node> node = make_sushi<Node>();
-    EXPECT_EQ(placement_of(*node, memory_).value(), SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT);
+    EXPECT_EQ(placement_of(*node, memory_).value(),
+              SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT);
     EXPECT_EQ(SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT, 0u);
 
     node->place_on(1);

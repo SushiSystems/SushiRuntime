@@ -102,6 +102,6 @@ gives each a first label of its own.
 - `api` resolves each node's class, key and operation against the set when a `Graph` compiles or
   a `DynamicGraph` composes its regions, and writes the device `device_on()` gives on
   `Runtime::topology()` into the node's stated placement unless the node states one; a placement
-  scope reads its rule's target the same way (phases R5, R6, R16a).
+  scope reads its rule's target the same way.
 - `offload_coordination` reads a rule's target with `device_on()` against each worker's facts and
-  against the master's own facts (phases R10, R16a).
+  against the master's own facts.

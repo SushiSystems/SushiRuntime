@@ -55,7 +55,8 @@ namespace SushiRuntime
         /**
          * @brief Returns the device @p node runs on, or the refusal of its stated device.
          */
-        Result<std::size_t> placement_of(const Node& node, const Internal::Memory::USMAllocator& memory)
+        Result<std::size_t> placement_of(const Node& node,
+                                         const Internal::Memory::USMAllocator& memory)
         {
             const std::optional<std::size_t> stated = node.stated_placement();
             const std::optional<std::size_t> owner = memory.owning_device(anchor_of(node));

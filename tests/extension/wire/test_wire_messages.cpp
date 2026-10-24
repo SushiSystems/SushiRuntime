@@ -191,7 +191,9 @@ namespace
         });
     }
 
-    /** @brief Returns the TASK_DISPATCH payload: task 42, two parameters, three handles, device 2. */
+    /**
+     * @brief Returns the TASK_DISPATCH payload: task 42, two parameters, three handles, device 2.
+     */
     Bytes golden_task_dispatch()
     {
         return bytes_of({

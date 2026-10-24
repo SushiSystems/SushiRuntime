@@ -178,12 +178,28 @@ TEST(Medium_WorkerOptionsParserTest, HelpListsEveryFlagAndVariable)
     const WorkerOptionsResult result = parse({"--help"});
 
     ASSERT_EQ(result.status, WorkerOptionsStatus::Help);
-    for (const char* word :
-         {"--master", "--secret-file", "--name", "--max-jobs", "--cache-bytes", "--heartbeat-ms",
-          "--pull-idle-timeout-ms", "--connect-timeout-s", "--no-reconnect", "--log-level",
-          "--version", "--help", "--label", "SR_WORKER_LABELS", "SR_MASTER", "SR_CLUSTER_SECRET_FILE", "SR_WORKER_NAME",
-          "SR_WORKER_MAX_JOBS", "SR_WORKER_CACHE_BYTES", "SR_WORKER_HEARTBEAT_MS",
-          "SR_WORKER_PULL_IDLE_TIMEOUT_MS", "SR_WORKER_CONNECT_TIMEOUT_S"})
+    for (const char* word : {"--master",
+                             "--secret-file",
+                             "--name",
+                             "--max-jobs",
+                             "--cache-bytes",
+                             "--heartbeat-ms",
+                             "--pull-idle-timeout-ms",
+                             "--connect-timeout-s",
+                             "--no-reconnect",
+                             "--log-level",
+                             "--version",
+                             "--help",
+                             "--label",
+                             "SR_WORKER_LABELS",
+                             "SR_MASTER",
+                             "SR_CLUSTER_SECRET_FILE",
+                             "SR_WORKER_NAME",
+                             "SR_WORKER_MAX_JOBS",
+                             "SR_WORKER_CACHE_BYTES",
+                             "SR_WORKER_HEARTBEAT_MS",
+                             "SR_WORKER_PULL_IDLE_TIMEOUT_MS",
+                             "SR_WORKER_CONNECT_TIMEOUT_S"})
         EXPECT_NE(result.message.find(word), std::string::npos) << word;
 }
 

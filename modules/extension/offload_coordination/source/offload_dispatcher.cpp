@@ -361,8 +361,9 @@ namespace SushiRuntime
 
         }
 
-        void OffloadDispatcher::prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes,
-                                        const std::shared_ptr<const PlacementRules>& rules)
+        void
+        OffloadDispatcher::prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes,
+                                   const std::shared_ptr<const PlacementRules>& rules)
         {
             LocalOnlyCount local;
             for (const sushi_ptr<Internal::Graph::Node>& slot : nodes)

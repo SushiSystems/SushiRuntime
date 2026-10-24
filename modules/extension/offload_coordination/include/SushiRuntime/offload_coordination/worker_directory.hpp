@@ -325,7 +325,9 @@ namespace SushiRuntime
                     /** @brief The facts from the last HELLO; kept by name once the peer proves. */
                     NodeFacts pending_facts;
 
-                    /** @brief The entry of facts_by_name_ for this worker; null before it proves. */
+                    /**
+                     * @brief The entry of facts_by_name_ for this worker; null before it proves.
+                     */
                     const NodeFacts* facts = nullptr;
 
                     /** @brief The nonce of the last HELLO. */

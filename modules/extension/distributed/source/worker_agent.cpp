@@ -71,7 +71,9 @@ namespace SushiRuntime
     {
         namespace
         {
-            /** @brief Holds the device the worker's cache lives on and its free memory is read from. */
+            /**
+             * @brief Holds the device the worker's cache lives on and its free memory is read from.
+             */
             constexpr std::size_t K_DEVICE_INDEX = 0;
 
             /** @brief Holds the cache budget of a device that reports no memory size. */
@@ -276,7 +278,8 @@ namespace SushiRuntime
                 /** @brief Writes the counters as one INFO line. */
                 void log_statistics() const noexcept;
 
-                /// @brief Supplies the queues kernels run on and the cache's memory; first, so last gone.
+                /// @brief Supplies the queues kernels run on and the cache's memory; first, so last
+                ///        gone.
                 std::shared_ptr<Internal::Execution::RuntimeContext> context_;
 
                 /// @brief Carries every frame; the agent is its only receiver.
@@ -499,7 +502,8 @@ namespace SushiRuntime
             if (std::optional<std::string> problem = link_.unsendable_fact())
             {
                 phase_.store(Phase::Stopped);
-                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "worker agent did not start: {}", *problem);
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "worker agent did not start: {}",
+                             *problem);
                 return TransportResult{TransportStatus::InvalidArgument, std::move(*problem)};
             }
 

@@ -433,7 +433,8 @@ namespace SushiRuntime
             const std::uint32_t device = job.dispatch.device_index;
             if (device >= devices_.count())
             {
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the dispatch names device {}, and this worker has {}; "
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY,
+                            "task {}: the dispatch names device {}, and this worker has {}; "
                             "reported as kernel failed",
                             job.dispatch.task_id, device, devices_.count());
                 return false;
@@ -442,7 +443,8 @@ namespace SushiRuntime
             if (devices_.queue(device).get_context() !=
                 devices_.queue(options_.cache_device).get_context())
             {
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {}: device {} does not share the context of device {}, where the "
+                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY,
+                            "task {}: device {} does not share the context of device {}, where the "
                             "worker's buffers live; reported as kernel failed",
                             job.dispatch.task_id, device, options_.cache_device);
                 return false;

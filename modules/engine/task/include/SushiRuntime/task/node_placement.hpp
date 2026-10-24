@@ -54,8 +54,8 @@ namespace SushiRuntime
          *         the stated device and the memory's owner are in different contexts.
          * @see modules/engine/task/README.md
          */
-        SUSHIRUNTIME_API Result<std::size_t> placement_of(const Node& node,
-                                                          const Internal::Memory::USMAllocator& memory);
+        SUSHIRUNTIME_API Result<std::size_t>
+        placement_of(const Node& node, const Internal::Memory::USMAllocator& memory);
 
     } // namespace Graph
 } // namespace SushiRuntime
