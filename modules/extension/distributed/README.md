@@ -536,7 +536,9 @@ command-line order. A key must not be empty, a label must hold a `=`, a key may 
 across the variable and the flags, and a key or a value holds at most 255 bytes; the first label that
 breaks a rule makes the command line invalid. `run_worker()` hands the labels to its `Runtime`
 through `RuntimeConfig::labels`, and `WorkerAgent` sends the facts of `Runtime::topology()` (system,
-devices, labels) in `HELLO` beside its own name. A
+devices, labels) in `HELLO` beside its own name. The master keeps these facts per worker name
+and hands them to the offload policy in `WorkerLoad::facts`; they survive a reconnect
+(`offload_coordination/README.md`). A
 value follows its flag as the next argument or after `=`. `parse_worker_options()` holds this
 table once; the usage text of `--help` is generated from it. The parser takes the environment
 through an `EnvironmentReader`, and `read_environment()` is the one it gets in a worker process.

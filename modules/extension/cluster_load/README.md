@@ -22,6 +22,13 @@ It depends on `core` and `api`.
 does not call the policy when no such worker has room, and an answer that names a worker it did
 not offer counts as no pick. Workers of one cluster may therefore hold different kernels.
 
+`WorkerLoad::facts` points at the `NodeFacts` the worker sent in `HELLO`: its name
+(`facts->name`), operating system, labels and devices. The pointer is not null in a load the
+directory builds and is valid only during the `pick_worker()` call, so a policy that keeps a fact
+copies it. The facts belong to the worker's name, not to its `worker_id`: a worker that reconnects
+under the same name gets a new `worker_id` and its newest facts. `machine` is a dependency of
+this module for that type.
+
 `LeastLoadedOffloadPolicy` is the default. It returns nothing, which runs the task locally, when
 the task's inputs total fewer bytes than `min_offload_bytes` (64 KiB unless the constructor is
 given another value). It skips a worker whose `free_mem` is not 0 and is below the input size.

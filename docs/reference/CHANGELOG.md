@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-24 — offload_coordination: Kept each worker's `NodeFacts` by name, committed once its proof is accepted, and handed them to a policy through `WorkerLoad::facts` (`worker_directory.cpp`, `offload_policy.hpp`).
 - 2026-10-24 — wire: Moved the protocol to version 4: `HELLO` carries the operating system, the devices and the labels, and `TASK_DISPATCH` a target device index, so a version 3 peer is refused (`wire_frame.hpp`, `wire_messages.hpp`).
 - 2026-10-24 — distributed: Added the `--label` flag and `SR_WORKER_LABELS` to the worker, which sends its labels and its runtime's devices in the hello (`worker_options_parser.cpp`, `master_link.cpp`).
 - 2026-10-24 — api: Added `Runtime::set_placement_rules()` and `clear_placement_rules()`, refused during a run, and resolved each node's winning rule once per compile into `PlanNode::placement_rule` (`plan_cache.cpp`).

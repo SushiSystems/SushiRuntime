@@ -34,6 +34,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/api/graph/node_options.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
 
 namespace SushiRuntime
 {
@@ -50,6 +51,14 @@ namespace SushiRuntime
             std::uint32_t inflight   = 0;     /**< Tasks dispatched to it and not settled. */
             std::uint64_t free_mem   = 0;     /**< Free device memory in bytes, from its PONG. */
             std::uint32_t rtt_micros = 0;     /**< Round trip of its last PING in microseconds. */
+
+            /**
+             * @brief The worker's name, operating system, labels and devices from its HELLO.
+             *
+             * Not null in a load the directory builds. It is valid for the duration of the
+             * pick_worker() call only; a policy that keeps a fact copies it.
+             */
+            const NodeFacts* facts = nullptr;
         };
 
         /**

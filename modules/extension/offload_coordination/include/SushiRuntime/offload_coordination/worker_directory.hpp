@@ -46,6 +46,7 @@
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/cluster_load/cluster_statistics.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
 #include <SushiRuntime/link_security/handshake.hpp>
@@ -164,8 +165,8 @@ namespace SushiRuntime
                  * @brief Records a HELLO and computes the master's proof for CHALLENGE.
                  *
                  * A second HELLO from a peer that is not registered restarts its handshake
-                 * with the new nonces. From a registered worker, which lost its WELCOME, it
-                 * changes nothing and answers AlreadyRegistered.
+                 * with the new nonces and the new facts. From a registered worker, which lost
+                 * its WELCOME, it changes nothing and answers AlreadyRegistered.
                  * @param master_nonce Fresh for this call; the caller sends the same bytes.
                  */
                 [[nodiscard]] HelloReply accept_hello(PeerID peer, const Wire::HelloMessage& hello,
@@ -174,7 +175,8 @@ namespace SushiRuntime
                 /**
                  * @brief Verifies a PROOF and, when it holds, registers the peer as a worker.
                  *
-                 * On Accepted the worker is alive, its kernels count toward supports() and
+                 * On Accepted the worker is alive, its kernels count toward supports(),
+                 * its facts from HELLO replace those kept under its name, and
                  * wait_for_workers() wakes; the caller sends WELCOME with the peer's value.
                  * A closed directory registers nobody and answers OutOfOrder.
                  */
@@ -289,6 +291,12 @@ namespace SushiRuntime
                     /** @brief The build identifier from HELLO. */
                     std::string build_id;
 
+                    /** @brief The facts from the last HELLO; kept by name once the peer proves. */
+                    NodeFacts pending_facts;
+
+                    /** @brief The entry of facts_by_name_ for this worker; null before it proves. */
+                    const NodeFacts* facts = nullptr;
+
                     /** @brief The nonce of the last HELLO. */
                     HandshakeNonce worker_nonce{};
 
@@ -352,6 +360,10 @@ namespace SushiRuntime
 
                 /// @brief The number of alive workers per operation id value.
                 std::unordered_map<std::uint32_t, std::size_t> workers_per_operation_;
+
+                /// @brief The facts of each worker name that proved itself, kept after it leaves;
+                ///        entries are replaced in place, never erased, so pointers stay valid.
+                std::map<std::string, NodeFacts> facts_by_name_;
 
                 /// @brief The workers offered to the policy; reused by every pick().
                 std::vector<WorkerLoad> candidates_;

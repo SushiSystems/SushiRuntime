@@ -8,4 +8,4 @@ sushiruntime_add_module(
     NAME cluster_load TIER extension
     SOURCES
         offload_policy.cpp
-    DEPENDS core api)
+    DEPENDS core machine api)

@@ -68,7 +68,8 @@ with a `PROOF` under the empty secret, and answers `PING` with `PONG`, so the ma
 alive. It records each `TASK_DISPATCH` and wakes the test through a condition variable. What it
 does next is one of three scripts: `Accept` sends `TASK_ACCEPTED` and holds the task, `Fail` also
 sends `TASK_RESULT` with `KernelFailed`, `FallSilent` sends nothing from then on. Its transport
-does not reconnect. `send_stream` hands the master a `ScriptedFrames` source, because a frame that
+does not reconnect. `report(facts)` sets the name, system, labels and devices its `HELLO` carries;
+without it the name is `scripted-worker` and the rest is empty. `send_stream` hands the master a `ScriptedFrames` source, because a frame that
 carries the last-chunk flag can only travel in a stream.
 
 | Test | What it proves |
@@ -88,6 +89,16 @@ timing. The TCP test binds `TCPMasterOptions` defaults (127.0.0.1, port 0) and r
 | --- | --- |
 | `AutoVersionBumpAcrossLocalWriteThenOffloadedRead` | A local task with no operation writes a shared buffer and an offloaded task reads it. The buffer's version must rise, and the worker must compute from the values the local task wrote. The worker's kernel runs once, so the writer ran on the master. |
 | `WorkerDeathFallsBackToLocal` | A `FallSilent` worker takes the dispatch and stops answering. With a liveness timeout of 300 ms the master closes it and resubmits the task, which finishes locally. Until the dispatch the worker answers pings, so it cannot be closed early on a slow machine. |
+
+### `PolicySeesWorkerFactsAcrossReconnect`
+
+A `FactsRecordingPolicy` picks the first worker it is offered and keeps a copy of that load's
+`facts`. A `ScriptedWorker` named `rack-7-gpu` registers with the labels `zone=a` and `tier=fast`,
+one GPU and one CPU, and runs one offloaded task to its result. It leaves; the test waits for
+`alive_workers()` to reach 0. A second `ScriptedWorker` registers under the same name with
+`zone=b` and runs a second task. The policy must have been called twice, each time with facts
+whose name, system, labels and devices (kind, name, memory) are the ones that worker sent, the
+second with `zone=b`.
 
 ### `StaleWritebackIsFenced`
 

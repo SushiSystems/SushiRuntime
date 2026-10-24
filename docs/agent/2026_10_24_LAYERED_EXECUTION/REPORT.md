@@ -1,6 +1,6 @@
 # Layered execution: report
 
-**Status:** Open — R1 to R5 and R7 landed on 2026-10-24; all but R1 are not built yet.
+**Status:** Open — R1 to R5, R7 and R8 landed on 2026-10-24; all but R1 are not built yet.
 
 ## R1
 
@@ -84,6 +84,15 @@ them.
 Seen and kept: `wire_messages.hpp` holds 18 types and its source is over 450 lines; splitting it
 is its own task.
 
+## R8
+
+The worker directory keeps one `NodeFacts` per worker name in a map whose entries are replaced
+in place and never erased, so a reconnect under the same name finds them and a lost peer leaves
+them. A `HELLO`'s facts wait in the session until `accept_proof()` accepts, so a peer that has
+not proved the secret cannot overwrite a registered worker's facts. `pick()` calls the policy
+under the directory's mutex, which every write to the map also takes, so `WorkerLoad::facts` is
+a raw pointer valid for the call. Two live workers with one name share an entry.
+
 ## Dispatches
 
 ```
@@ -93,4 +102,5 @@ dispatch: R2 — sonnet medium, 46 turns, passed, rung 1
 dispatch: R4 — sonnet medium, 36 turns, passed, rung 1
 dispatch: R5 — sonnet medium, passed, rung 1
 dispatch: R7 — sonnet medium, 76 turns, passed, rung 1
+dispatch: R8 — sonnet medium, 45 turns, passed, rung 1
 ```

@@ -27,7 +27,7 @@ runtime tasks it waits on are built; each of those repositories keeps its own wo
 | R5 | R2, R4 | built |
 | R6 | R5 | planned |
 | R7 | R3 | built |
-| R8 | R7 | planned |
+| R8 | R7 | built |
 | R9 | R7 | planned |
 | R10 | R5, R8, R9 | planned |
 | R11 | nothing | planned |

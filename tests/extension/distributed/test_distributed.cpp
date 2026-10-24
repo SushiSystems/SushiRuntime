@@ -81,6 +81,7 @@
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/device_probe/device_probe.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/cluster_load/cluster_statistics.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
 #include <SushiRuntime/transport/transport.hpp>
@@ -570,6 +571,12 @@ namespace EndToEndTests
                 ScriptedWorker(ScriptedWorker&&) = delete;
                 ScriptedWorker& operator=(ScriptedWorker&&) = delete;
 
+                /** @brief Sets the facts HELLO reports; call before start(). */
+                void report(NodeFacts facts)
+                {
+                    facts_ = std::move(facts);
+                }
+
                 /** @brief Starts the transport and returns whether it started. */
                 [[nodiscard]] bool start()
                 {
@@ -630,7 +637,13 @@ namespace EndToEndTests
                     Wire::HelloMessage hello;
                     hello.worker_nonce = to_wire(worker_nonce_.bytes);
                     hello.build_id = "scripted";
-                    hello.node_name = "scripted-worker";
+                    hello.node_name = facts_.name;
+                    hello.operating_system = facts_.operating_system;
+                    for (const NodeLabel& label : facts_.labels)
+                        hello.labels.push_back(Wire::HelloLabel{label.key, label.value});
+                    for (const DeviceFacts& device : facts_.devices)
+                        hello.devices.push_back(
+                            Wire::HelloDevice{device.kind, device.name, device.memory_bytes});
                     send(peer, hello);
                 }
 
@@ -768,6 +781,9 @@ namespace EndToEndTests
                 /// @brief The nonce the worker sends in HELLO.
                 HandshakeNonce worker_nonce_{};
 
+                /// @brief The facts HELLO reports; HELLO's views point into them.
+                NodeFacts facts_{"scripted-worker", OperatingSystem::Unknown, {}, {}};
+
                 /// @brief Guards master_, silent_ and dispatches_.
                 mutable std::mutex mutex_;
 
@@ -785,6 +801,54 @@ namespace EndToEndTests
 
                 /// @brief Frames the transport did not queue.
                 std::atomic<int> refused_sends_{0};
+        };
+
+        /** @brief Picks the first worker offered and keeps a copy of the facts of every offer. */
+        class FactsRecordingPolicy final : public OffloadPolicy
+        {
+            public:
+                /** @brief Holds what one call was handed about the worker it picked. */
+                struct Offer
+                {
+                    int worker_id = -1;     /**< The worker's id. */
+                    bool had_facts = false; /**< Whether the load carried facts. */
+                    NodeFacts facts;        /**< A copy of those facts. */
+                };
+
+                /** @brief Copies the facts of the first worker, then picks it. */
+                std::optional<int> pick_worker(const NodeOptions& /*task*/,
+                                               span<const WorkerLoad> workers,
+                                               std::uint64_t /*est_bytes*/) override
+                {
+                    if (workers.empty())
+                        return std::nullopt;
+
+                    const WorkerLoad& first = *workers.begin();
+                    Offer offer;
+                    offer.worker_id = first.worker_id;
+                    offer.had_facts = first.facts != nullptr;
+                    if (offer.had_facts)
+                        offer.facts = *first.facts;
+                    {
+                        const std::lock_guard<std::mutex> lock(mutex_);
+                        offers_.push_back(std::move(offer));
+                    }
+                    return first.worker_id;
+                }
+
+                /** @brief Returns the offers recorded so far, in call order. */
+                [[nodiscard]] std::vector<Offer> offers() const
+                {
+                    const std::lock_guard<std::mutex> lock(mutex_);
+                    return offers_;
+                }
+
+            private:
+                /// @brief Guards offers_.
+                mutable std::mutex mutex_;
+
+                /// @brief The offers, in call order.
+                std::vector<Offer> offers_;
         };
 
         /**
@@ -1266,6 +1330,96 @@ namespace EndToEndTests
         EXPECT_EQ(statistics.chunks_received, 1u);
         EXPECT_EQ(statistics.redispatched, 0u);
         EXPECT_EQ(worker.refused_sends(), 0);
+    }
+
+    /** @brief Tests that a policy reads a worker's facts, and the new ones after a reconnect. */
+    TEST(Medium_DistributedE2ETest, PolicySeesWorkerFactsAcrossReconnect)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 16;
+        constexpr std::uint64_t K_GPU_MEMORY = 8ull << 30;
+        constexpr std::uint64_t K_CPU_MEMORY = 32ull << 30;
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats a(queue, K_COUNT, 1.0f);
+        USMFloats b(queue, K_COUNT, 2.0f);
+        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+
+        const auto policy = std::make_shared<FactsRecordingPolicy>();
+        ClusterOptions options = eager_options();
+        options.policy = policy;
+        InProcessFabric fabric;
+        Cluster cluster =
+            Cluster::attach(master_runtime, InProcessTransport::make_master(fabric), std::move(options))
+                .value();
+
+        const auto facts_with_zone = [&](const char* zone)
+        {
+            NodeFacts facts;
+            facts.name = "rack-7-gpu";
+            facts.operating_system = OperatingSystem::Linux;
+            facts.labels = {NodeLabel{"zone", zone}, NodeLabel{"tier", "fast"}};
+            facts.devices = {DeviceFacts{DeviceKind::GPU, "Test GPU", K_GPU_MEMORY},
+                             DeviceFacts{DeviceKind::CPU, "Test CPU", K_CPU_MEMORY}};
+            return facts;
+        };
+
+        const auto offload_once = [&](ScriptedWorker& worker, const char* node_name)
+        {
+            auto graph = master_runtime.graph();
+            add_vec_add(graph, node_name, a, b, out);
+            ASSERT_TRUE(graph.compile());
+            BackgroundRun run(graph);
+            ASSERT_TRUE(worker.wait_for_dispatches(1));
+            ASSERT_EQ(worker.send_stream({success_frame(worker.dispatch(0))}), SendStatus::Queued);
+            ASSERT_TRUE(run.wait()) << "execute() did not return after the result of the worker";
+        };
+
+        {
+            ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+            worker.report(facts_with_zone("a"));
+            ASSERT_TRUE(worker.start());
+            ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+            share(cluster, a);
+            share(cluster, b);
+            share(cluster, out);
+            offload_once(worker, "before_reconnect");
+        }
+        ASSERT_TRUE(eventually([&] { return cluster.alive_workers() == 0; }))
+            << "the master kept the worker after it left";
+
+        {
+            ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+            worker.report(facts_with_zone("b"));
+            ASSERT_TRUE(worker.start());
+            ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+            offload_once(worker, "after_reconnect");
+        }
+
+        const std::vector<FactsRecordingPolicy::Offer> offers = policy->offers();
+        ASSERT_EQ(offers.size(), 2u);
+        const char* const zones[] = {"a", "b"};
+        for (std::size_t index = 0; index < offers.size(); ++index)
+        {
+            const NodeFacts& facts = offers[index].facts;
+            ASSERT_TRUE(offers[index].had_facts) << "the load of offer " << index << " had no facts";
+            EXPECT_EQ(facts.name, "rack-7-gpu");
+            EXPECT_EQ(facts.operating_system, OperatingSystem::Linux);
+            ASSERT_EQ(facts.labels.size(), 2u);
+            EXPECT_EQ(facts.labels[0].key, "zone");
+            EXPECT_EQ(facts.labels[0].value, zones[index]);
+            EXPECT_EQ(facts.labels[1].key, "tier");
+            EXPECT_EQ(facts.labels[1].value, "fast");
+            ASSERT_EQ(facts.devices.size(), 2u);
+            EXPECT_EQ(facts.devices[0].kind, DeviceKind::GPU);
+            EXPECT_EQ(facts.devices[0].name, "Test GPU");
+            EXPECT_EQ(facts.devices[0].memory_bytes, K_GPU_MEMORY);
+            EXPECT_EQ(facts.devices[1].kind, DeviceKind::CPU);
+            EXPECT_EQ(facts.devices[1].memory_bytes, K_CPU_MEMORY);
+        }
     }
 
     /** @brief Tests that a task whose input chunks are all lost fails remotely and runs locally. */

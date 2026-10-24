@@ -55,6 +55,25 @@ namespace SushiRuntime
                                [](std::byte byte) { return std::to_integer<std::uint8_t>(byte); });
                 return octets;
             }
+
+            /** @brief Returns the facts a HELLO carries, with every view copied. */
+            NodeFacts to_facts(const Wire::HelloMessage& hello)
+            {
+                NodeFacts facts;
+                facts.name.assign(hello.node_name);
+                facts.operating_system = hello.operating_system;
+                facts.labels.reserve(hello.labels.size());
+                for (const Wire::HelloLabel& label : hello.labels)
+                    facts.labels.push_back(
+                        NodeLabel{std::string(label.key), std::string(label.value)});
+
+                facts.devices.reserve(hello.devices.size());
+                for (const Wire::HelloDevice& device : hello.devices)
+                    facts.devices.push_back(
+                        DeviceFacts{device.kind, std::string(device.name), device.memory_bytes});
+
+                return facts;
+            }
         } // namespace
 
         WorkerDirectory::WorkerDirectory(SushiRuntime::span<const std::uint8_t> secret,
@@ -136,6 +155,7 @@ namespace SushiRuntime
             }
 
             session.name.assign(hello.node_name);
+            session.pending_facts = to_facts(hello);
             session.build_id.assign(hello.build_id);
             session.worker_nonce = worker_nonce;
             session.master_nonce = master_nonce;
@@ -189,6 +209,8 @@ namespace SushiRuntime
                 for (const OperationID operation : session.operations)
                     ++workers_per_operation_[operation.value];
 
+                // Only a proven HELLO replaces the facts kept under the name.
+                session.facts = &(facts_by_name_[session.name] = std::move(session.pending_facts));
                 session.max_jobs = proof.max_jobs;
                 session.last_frame = now;
                 session.phase = Phase::Registered;
@@ -257,6 +279,7 @@ namespace SushiRuntime
                 stats.inflight = session.inflight;
                 stats.free_mem = session.free_mem;
                 stats.rtt_micros = session.rtt_micros;
+                stats.facts = session.facts;
                 candidates_.push_back(stats);
             }
 

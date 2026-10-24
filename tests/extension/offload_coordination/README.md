@@ -99,6 +99,14 @@ a late frame does not bring the worker back.
 | --- | --- |
 | `SnapshotReportsWhatTheWorkerSent` | One registered worker and one peer that only connected. After a `PONG`, a `HEARTBEAT`, a frame and a pick, the snapshot holds one entry, the worker's, with its id, name, endpoint, an inflight count of 1 and the round trip, free memory, queue depth and cache size it sent. Its `ms_since_last_frame` is 600, the time from its last frame to the snapshot. |
 
+### `FactsFollowTheNameAndOnlyAProvenHelloReplacesThem`
+
+One worker named `gpu-box` registers with the label `zone=a` and one GPU. A pick hands the policy
+a load whose `facts` hold that name, system, label and device. A second peer sends a `HELLO`
+under the same name with `zone=b` and does not prove the secret: the next pick still shows
+`zone=a`. The first worker is removed and no pick succeeds. The second peer proves, and the next
+pick shows `zone=b` under the same name.
+
 ### `IdentityCarriesTheBuildOfTheLastHello`
 
 `WorkerDirectory::identity()` returns nothing for a stranger and for a peer that still owes

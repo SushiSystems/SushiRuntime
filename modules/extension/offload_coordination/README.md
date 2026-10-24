@@ -7,7 +7,7 @@ tests, and are never installed. It is built with the distributed layer, under
 `SR_ENABLE_DISTRIBUTED`, and every name it declares is in `SushiRuntime::Distributed`.
 
 It depends on `core`, `api`, `task`, `transport`, `wire`, `link_security`, `cluster_load`,
-`buffer_exchange` and `pending_tasks`, and its sources on `logging` and `region`.
+`machine`, `buffer_exchange` and `pending_tasks`, and its sources on `logging` and `region`.
 
 ## Public entry points
 
@@ -17,6 +17,22 @@ It depends on `core`, `api`, `task`, `transport`, `wire`, `link_security`, `clus
 | `offload_dispatcher.hpp` | `OffloadDispatcher`, `OffloadDispatcherStatistics`, `K_MAXIMUM_OFFLOAD_ATTEMPTS` |
 | `task_description.hpp` | `describe_task()` |
 | `offload_handles.hpp` | `OffloadHandles` |
+
+## worker_directory.hpp
+
+### Facts per worker
+
+The directory keeps one `NodeFacts` (name, operating system, labels, devices) per worker name,
+copied from the worker's `HELLO` once `accept_proof()` returns `Accepted`; a `HELLO` from a peer
+that has not proved the secret replaces nothing. A worker that reconnects under the same name
+replaces that entry with the facts of its new `HELLO`. The entry is keyed by name, so it outlives
+the peer: `remove_peer()` erases the session and keeps the facts. Entries are replaced in place and
+never erased, so a pointer to one stays valid, and the map grows by one entry per distinct name
+that ever registered. Two live workers with one name share one entry.
+
+`pick()` sets `WorkerLoad::facts` to that entry for each worker it offers. Every change to an
+entry happens under the directory's mutex, which `pick()` also holds across
+`OffloadPolicy::pick_worker()`, so the facts cannot change while a policy reads them.
 
 ## offload_dispatcher.hpp
 

@@ -195,6 +195,12 @@ namespace WorkerDirectoryTests
                 {
                     ++calls;
                     offered.assign(workers.begin(), workers.end());
+                    facts_seen.clear();
+                    for (const WorkerLoad& worker : workers)
+                    {
+                        if (worker.facts != nullptr)
+                            facts_seen.push_back(*worker.facts);
+                    }
                     if (keeps_local)
                         return std::nullopt;
                     if (answer.has_value())
@@ -216,6 +222,9 @@ namespace WorkerDirectoryTests
 
                 /** @brief Holds the workers of the last call. */
                 std::vector<WorkerLoad> offered;
+
+                /** @brief Holds copies of the facts of the workers of the last call. */
+                std::vector<NodeFacts> facts_seen;
 
                 /** @brief Holds the id to answer with in place of the first worker. */
                 std::optional<int> answer;
@@ -660,6 +669,77 @@ namespace WorkerDirectoryTests
         EXPECT_EQ(workers[0].queue_depth, 3u);
         EXPECT_EQ(workers[0].cache_bytes, 8192u);
         EXPECT_EQ(workers[0].ms_since_last_frame, 600u);
+    }
+
+    TEST_F(Medium_WorkerDirectory, FactsFollowTheNameAndOnlyAProvenHelloReplacesThem)
+    {
+        const sushi_ptr<Internal::Graph::Node> node = common_node();
+        const std::string name = "gpu-box";
+        const std::string zone_key = "zone";
+        const std::string first_zone = "a";
+        const std::string second_zone = "b";
+        const std::string device_name = "Test GPU";
+
+        // Sends HELLO under the shared name with one label and one device; proves when asked.
+        const auto connect = [&](PeerID peer, const std::string& zone, bool proves)
+        {
+            const HandshakeNonce worker_nonce =
+                nonce_of(static_cast<std::uint8_t>(0x10 + peer.value));
+            const HandshakeNonce master_nonce =
+                nonce_of(static_cast<std::uint8_t>(0x80 + peer.value));
+            Wire::HelloMessage hello = hello_with(worker_nonce);
+            hello.node_name = name;
+            hello.operating_system = OperatingSystem::Linux;
+            hello.labels.push_back(Wire::HelloLabel{zone_key, zone});
+            hello.devices.push_back(Wire::HelloDevice{DeviceKind::GPU, device_name, 4096});
+
+            directory_.add_peer(peer, "10.0.0.1:7000", at(milliseconds(0)));
+            ASSERT_EQ(directory_.accept_hello(peer, hello, master_nonce).step,
+                      HandshakeStep::Accepted);
+            if (!proves)
+                return;
+
+            ASSERT_EQ(directory_.accept_proof(peer,
+                                              proof_with(secret(), worker_nonce, master_nonce,
+                                                         {K_COMMON_OPERATION}, 4),
+                                              at(milliseconds(0))),
+                      HandshakeStep::Accepted);
+        };
+
+        connect(K_FIRST, first_zone, true);
+        ASSERT_TRUE(directory_.pick(*node, 1024).has_value());
+        ASSERT_EQ(policy_->facts_seen.size(), 1u);
+        EXPECT_EQ(policy_->facts_seen[0].name, name);
+        EXPECT_EQ(policy_->facts_seen[0].operating_system, OperatingSystem::Linux);
+        ASSERT_EQ(policy_->facts_seen[0].labels.size(), 1u);
+        EXPECT_EQ(policy_->facts_seen[0].labels[0].value, first_zone);
+        ASSERT_EQ(policy_->facts_seen[0].devices.size(), 1u);
+        EXPECT_EQ(policy_->facts_seen[0].devices[0].kind, DeviceKind::GPU);
+        EXPECT_EQ(policy_->facts_seen[0].devices[0].name, device_name);
+        EXPECT_EQ(policy_->facts_seen[0].devices[0].memory_bytes, 4096u);
+
+        // A HELLO that has not proved the secret replaces nothing.
+        connect(K_SECOND, second_zone, false);
+        ASSERT_TRUE(directory_.pick(*node, 1024).has_value());
+        ASSERT_EQ(policy_->facts_seen.size(), 1u);
+        EXPECT_EQ(policy_->facts_seen[0].labels[0].value, first_zone);
+
+        // The facts outlive the peer, and the proven HELLO of the same name replaces them.
+        const RemovedPeer removed = directory_.remove_peer(K_FIRST);
+        EXPECT_TRUE(removed.registered);
+        EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
+
+        const HandshakeNonce second_worker_nonce = nonce_of(static_cast<std::uint8_t>(0x10 + 2));
+        const HandshakeNonce second_master_nonce = nonce_of(static_cast<std::uint8_t>(0x80 + 2));
+        ASSERT_EQ(directory_.accept_proof(K_SECOND,
+                                          proof_with(secret(), second_worker_nonce,
+                                                     second_master_nonce, {K_COMMON_OPERATION}, 4),
+                                          at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_TRUE(directory_.pick(*node, 1024).has_value());
+        ASSERT_EQ(policy_->facts_seen.size(), 1u);
+        EXPECT_EQ(policy_->facts_seen[0].name, name);
+        EXPECT_EQ(policy_->facts_seen[0].labels[0].value, second_zone);
     }
 
     TEST_F(Medium_WorkerDirectory, IdentityCarriesTheBuildOfTheLastHello)
