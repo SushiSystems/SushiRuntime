@@ -112,12 +112,13 @@ namespace SushiRuntime
                     return profiling_requested_;
                 }
 
-                /** @brief Marks the plan stale and forgets the registration of every rule. */
-                void discard() noexcept
-                {
-                    registrations_.clear();
-                    dirty_ = true;
-                }
+                /**
+                 * @brief Frees the plan and everything its task bodies captured, and forgets the
+                 *        registration of every rule.
+                 * @pre No step that runs the plan is pending.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
+                 */
+                SUSHIRUNTIME_API void discard() noexcept;
 
                 /**
                  * @brief Returns whether the plan is missing or older than what recorder holds

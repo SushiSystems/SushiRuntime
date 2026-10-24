@@ -32,6 +32,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -500,6 +501,25 @@ namespace RecorderSemanticsTests
         add_increment(graph, values, 10u);
         graph.run().value();
         EXPECT_EQ(values[0], 11u) << "the plan of the cleared rule must not run again";
+    }
+
+    /** @brief Tests that Graph::clear() frees what the task bodies of its compiled plan hold. */
+    TEST(Medium_RecorderSemantics, Regression_GraphClearFreesWhatItsCompiledPlanCaptured)
+    {
+        auto rt = Runtime::create().value();
+        auto graph = rt.graph();
+        std::weak_ptr<std::vector<int>> watched;
+        {
+            auto operand = std::make_shared<std::vector<int>>(64, 0);
+            watched = operand;
+            graph.recorder().host(Access(), [operand] { ++(*operand)[0]; });
+        }
+        graph.run().value();
+        ASSERT_FALSE(watched.expired()) << "the plan holds the body until the clear";
+
+        graph.clear();
+        EXPECT_TRUE(watched.expired()) << "clear() must free the compiled plan and its captures";
+        EXPECT_FALSE(graph.run()) << "a cleared graph has nothing to run";
     }
 
     /** @brief Tests that clear() inside an extension leaves a recorder that records one rule. */

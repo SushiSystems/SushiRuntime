@@ -196,6 +196,14 @@ namespace SushiRuntime
             return surface_plan(&state_->plan);
         }
 
+        void PlanCache::discard() noexcept
+        {
+            state_.reset();
+            registrations_.clear();
+            built_generation_ = 0;
+            dirty_ = true;
+        }
+
         void PlanCache::take(PlanCache& other) noexcept
         {
             state_ = std::move(other.state_);

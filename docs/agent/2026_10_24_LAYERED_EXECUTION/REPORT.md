@@ -276,6 +276,11 @@ machine, whose second device is outside the first's context; a test of the refus
 The ASan lane did not run: the installed intel-llvm bundle ships no AddressSanitizer runtime, and
 installing a toolchain is the owner's. AdaptiveCpp was not built either.
 
+SushiBLAS's final build found that `Graph::clear()` kept the compiled plan, which holds a copy of
+every task body, until the next build or the graph's end, so a cleared graph kept every operand it
+captured. R18 makes `clear()` discard the plan; a dynamic graph's region clear still frees its part
+of the plan at the next compose. All 1181 tests pass.
+
 ## Dispatches
 
 ```
@@ -295,6 +300,7 @@ dispatch: R16d — sonnet medium, passed, rung 1
 dispatch: R16e — opus low, passed, rung 1
 dispatch: R17 — opus low, passed, rung 1
 dispatch: final-build fixes — opus low, passed, rung 1
+dispatch: R18 — opus low, passed, rung 1
 dispatch: R15 — haiku high, 68 turns, passed, rung 1
 dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
 dispatch: R9 second half — opus low, 146 turns, passed, rung 1

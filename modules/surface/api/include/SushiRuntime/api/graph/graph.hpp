@@ -125,8 +125,8 @@ namespace SushiRuntime
             [[nodiscard]] const Recorder& recorder() const noexcept { return recorder_; }
 
             /**
-             * @brief Forgets every rule and marks the plan stale, so the graph can be
-             *        recorded afresh.
+             * @brief Forgets every rule and frees the compiled plan with every operand its
+             *        task bodies captured, so the graph can be recorded afresh.
              * @pre No step started with run_async() on this graph is pending.
              */
             void clear()

@@ -193,10 +193,14 @@ again, which the owner guarantees by rebuilding whenever generation() changed.
 clear() may be called with a rule scope open, which is how an extension that extend() handed the
 recorder reaches it. The scope stays open, and the next node recorded inside it starts a new rule.
 
-Graph::clear() calls it and PlanCache::discard(), which marks the plan stale and forgets the
+Graph::clear() calls it and PlanCache::discard(), which frees the compiled plan and forgets the
 registration of every rule, so rule_registration() answers `K_NO_REGISTRATION` until the next
-build. The plan itself is freed by that build or with the graph. Region::clear() calls it
-through recorder(), which lists the region as written to.
+build. The plan holds a copy of every task body, so the free also releases every operand and
+scratch block a body captured: a graph cleared to drop its recording holds none of it. The
+precondition is the recorder's: no step is pending. The profiling request, the compile count, the
+hooks and the recorder's generation stay. Region::clear() calls it through recorder(), which lists
+the region as written to; the region's part of the composed plan is freed by the next run's
+compose or with the graph.
 
 ### refusal
 

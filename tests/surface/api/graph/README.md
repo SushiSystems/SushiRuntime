@@ -600,6 +600,7 @@ hold.
 | Test | What it proves |
 | --- | --- |
 | `GraphClearLeavesAGraphThatRecordsAndRunsAgain` | A graph records one rule, runs and is cleared. It then holds no rule, `rule_registration(0)` is `K_NO_REGISTRATION`, and a run returns `InvalidGraph`. A rule recorded after the clear runs alone. |
+| `Regression_GraphClearFreesWhatItsCompiledPlanCaptured` | A host task captures the only other owner of a `shared_ptr`. After a run the plan keeps it alive; after `clear()` the `weak_ptr` watching it has expired, so the plan and its captures were freed, not marked stale. |
 
 ### `AClearInsideAnExtensionStartsANewRule`
 
