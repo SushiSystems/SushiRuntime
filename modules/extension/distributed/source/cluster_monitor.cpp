@@ -184,8 +184,9 @@ namespace SushiRuntime
                 // A setter's notify ends the wait early, so the next pass reads the new period.
                 if (!stopping_)
                 {
-                    const std::chrono::steady_clock::time_point next = std::min(
-                        std::chrono::steady_clock::now() + period(), held_.earliest());
+                    const std::chrono::steady_clock::time_point next =
+                        std::min({std::chrono::steady_clock::now() + period(), held_.earliest(),
+                                  pending_.earliest_deadline()});
                     next_pass_.store(next.time_since_epoch().count(), std::memory_order_release);
                     wake_.wait_until(lock, next);
                     next_pass_.store(K_IN_A_PASS, std::memory_order_release);
@@ -211,7 +212,7 @@ namespace SushiRuntime
             if (nodes_.empty())
                 return;
 
-            const std::size_t reoffered = reoffer_nodes(nodes_, *sink_);
+            const std::size_t reoffered = reoffer_nodes(nodes_, held_, *sink_);
             nodes_.clear();
             SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY,
                          "{} held nodes waited out their rule's bound and are offered again",
@@ -298,7 +299,7 @@ namespace SushiRuntime
             // The reaped tasks freed slots, which a node held for a busy worker may take.
             nodes_.clear();
             held_.take_all(nodes_);
-            reoffer_nodes(nodes_, *sink_);
+            reoffer_nodes(nodes_, held_, *sink_);
             nodes_.clear();
 
             std::vector<PendingTask> reaped;

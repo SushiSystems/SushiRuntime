@@ -271,7 +271,7 @@ lifetime.
 | `offload_coordination/offload_dispatcher.hpp` | `OffloadDispatcher` | `prepare`, `try_offload`, local and remote settlement of a node | compiling thread, pool worker |
 | `cluster_monitor.hpp` | `ClusterMonitor` | the monitor thread | its own thread |
 | `ping_clock.hpp` | `make_ping_token()`, `ping_round_trip_micros()` | the clock a `PING` token is read from and measured on | monitor thread, reader thread |
-| `task_resubmission.hpp` | `resubmit_tasks()`, `reoffer_nodes()` | the one sequence that returns a taken task to the scheduler, and the one that offers held nodes again | monitor, reader, the thread in `stop()` |
+| `task_resubmission.hpp` | `resubmit_tasks()`, `reoffer_nodes()` | the one sequence that returns a taken task to the scheduler, and the one that offers held nodes again and forgets the first offer of each node the sink refuses | monitor, reader, the thread in `stop()` |
 | `distributed_coordinator.hpp` | `DistributedCoordinator` | the bricks above, the router, start and stop order | every thread of the seam |
 
 ### Worker
@@ -280,8 +280,12 @@ lifetime.
 | --- | --- | --- | --- |
 | `worker_buffer_cache.hpp` | `WorkerBufferCache` | cached buffers, chunk assembly, the byte budget, pins | exec thread asks, reader thread delivers |
 | `dispatch_deduplication/dispatch_deduplicator.hpp` | `DispatchDeduplicator` | the task ids seen | reader thread |
-| `master_link.hpp` | `MasterLink` | the handshake, the heartbeat thread, the master watch, the final `WorkerEnd` | reader thread and its own thread |
-| `dispatch_executor.hpp` | `DispatchExecutor` | the job queue, the exec thread, the graph each batch runs on, held task ids | reader thread enqueues, its own thread gathers and runs batches, the runtime's pool runs the kernels |
+| `master_link.hpp` | `MasterLink` | the handshake, the heartbeat thread, the master watch, the final `WorkerEnd`, the check that every HELLO fact fits 255 bytes | reader thread and its own thread |
+| `dispatch_executor.hpp` | `DispatchExecutor` | the job queue, the exec thread, the pins and the device check of each job | reader thread enqueues, its own thread gathers batches |
+| `dispatch_job.hpp` | `DispatchJob`, `DispatchEntry` | one queued dispatch; one job of a batch and the run of its kernel | exec thread builds, the runtime's pool runs the kernel |
+| `dispatch_recorder.hpp` | `DispatchRecorder` | the graph each batch runs on, the borrowed buffers, the run | exec thread |
+| `dispatch_settler.hpp` | `DispatchSettler` | the commit and output stream of a job that ran, every failed `TASK_RESULT`, the task counters | exec thread, reader thread for a refused enqueue |
+| `held_tasks.hpp` | `HeldTasks` | the task ids held until their result leaves | exec thread, reader thread, transport writer |
 | `process_environment/stop_signal.hpp` | `StopSignal` | the process's stop handlers and their flag | signal handler, main thread |
 | `process_environment/environment.hpp` | `read_environment()` | the one read of an environment variable | caller's thread |
 | `worker_session.hpp` | `serve_worker()`, `exit_code_of()` | one agent on a given transport, from start to exit code | caller's thread |

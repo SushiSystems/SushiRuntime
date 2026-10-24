@@ -66,6 +66,8 @@ namespace SushiRuntime
             tasks_.emplace(task_id, std::move(entry));
             ++notes->second.tasks;
             size_.store(tasks_.size(), std::memory_order_relaxed);
+            if (deadline.has_value() && *deadline > std::chrono::milliseconds::zero())
+                lower_earliest_deadline(now + *deadline);
             return true;
         }
 
@@ -149,17 +151,22 @@ namespace SushiRuntime
                                         std::vector<PendingTask>& out)
         {
             const std::lock_guard<std::mutex> lock(mutex_);
+            auto earliest = std::chrono::steady_clock::time_point::max();
             for (auto position = tasks_.begin(); position != tasks_.end();)
             {
                 const auto current = position++;
                 const std::optional<ReapCause> cause = overdue_cause(current->second, now, limits);
                 if (!cause.has_value())
+                {
+                    earliest = std::min(earliest, own_deadline(current->second));
                     continue;
+                }
 
                 // The slot exists before the entry leaves, so a failed allocation loses no node.
                 out.emplace_back();
                 out.back() = detach(current, *cause);
             }
+            publish_earliest_deadline(earliest);
         }
 
         void PendingTasks::close() noexcept
@@ -174,6 +181,17 @@ namespace SushiRuntime
             out.reserve(out.size() + tasks_.size());
             while (!tasks_.empty())
                 out.push_back(detach(tasks_.begin(), ReapCause::Deadline));
+        }
+
+        std::chrono::steady_clock::time_point PendingTasks::earliest_deadline() const noexcept
+        {
+            const auto deadline = std::chrono::steady_clock::time_point(
+                std::chrono::steady_clock::duration(
+                    earliest_deadline_.load(std::memory_order_acquire)));
+            if (deadline == std::chrono::steady_clock::time_point::max())
+                return deadline;
+            // A task is overdue once the clock passes its deadline, so one tick after it.
+            return deadline + std::chrono::steady_clock::duration(1);
         }
 
         std::size_t PendingTasks::size() const noexcept
@@ -216,6 +234,32 @@ namespace SushiRuntime
             return std::nullopt;
         }
 
+        std::chrono::steady_clock::time_point
+        PendingTasks::own_deadline(const Entry& entry) const noexcept
+        {
+            if (!entry.deadline.has_value() || *entry.deadline <= std::chrono::milliseconds::zero())
+                return std::chrono::steady_clock::time_point::max();
+
+            // insert() and detach() keep a notes entry for every worker that has a task here.
+            const WorkerNotes& notes = workers_.find(entry.worker.value)->second;
+            return std::max(entry.dispatched_at, notes.last_chunk) + *entry.deadline;
+        }
+
+        void PendingTasks::lower_earliest_deadline(
+            std::chrono::steady_clock::time_point moment) noexcept
+        {
+            // Writers hold the mutex, so a load then a store cannot lose a lower value.
+            const std::chrono::steady_clock::rep ticks = moment.time_since_epoch().count();
+            if (ticks < earliest_deadline_.load(std::memory_order_relaxed))
+                earliest_deadline_.store(ticks, std::memory_order_release);
+        }
+
+        void PendingTasks::publish_earliest_deadline(
+            std::chrono::steady_clock::time_point moment) noexcept
+        {
+            earliest_deadline_.store(moment.time_since_epoch().count(), std::memory_order_release);
+        }
+
         PendingTask PendingTasks::detach(TaskTable::iterator position, ReapCause cause) noexcept
         {
             Entry& entry = position->second;
@@ -233,6 +277,9 @@ namespace SushiRuntime
 
             tasks_.erase(position);
             size_.store(tasks_.size(), std::memory_order_relaxed);
+            // A bound a removed task left only wakes the monitor early; an empty table has none.
+            if (tasks_.empty())
+                publish_earliest_deadline(std::chrono::steady_clock::time_point::max());
             return task;
         }
 

@@ -499,7 +499,7 @@ namespace SushiRuntime
                                  "the next registration or result offers them", error.what());
                 }
                 if (!nodes.empty() && sink != nullptr)
-                    reoffer_nodes(nodes, *sink);
+                    reoffer_nodes(nodes, held, *sink);
             }
 
             /** @brief Counts taken tasks, passes them to resubmit_tasks(), then re-offers held nodes. */
@@ -785,7 +785,7 @@ namespace SushiRuntime
             std::size_t returned =
                 impl.resubmit(SushiRuntime::span<PendingTask>(tasks.data(), tasks.size()));
             if (impl.sink != nullptr)
-                returned += reoffer_nodes(held, *impl.sink);
+                returned += reoffer_nodes(held, impl.held, *impl.sink);
             SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "distributed master stopped; {} tasks returned to the scheduler",
                         returned);
         }
@@ -801,7 +801,7 @@ namespace SushiRuntime
             if (!impl.dispatcher.try_offload(node))
                 return false;
 
-            impl.monitor.wake_by(impl.held.earliest());
+            impl.monitor.wake_by(std::min(impl.held.earliest(), impl.pending.earliest_deadline()));
             return true;
         }
 

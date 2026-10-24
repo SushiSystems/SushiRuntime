@@ -414,6 +414,34 @@ namespace PendingTasksTests
         EXPECT_EQ(reaped[1].cause, ReapCause::Deadline);
     }
 
+    TEST(Medium_PendingTasks, EarliestDeadlineFollowsTheOwnDeadlines)
+    {
+        PendingTasks table;
+        const sushi_ptr<Node> ruled = make_sushi<Node>();
+        const sushi_ptr<Node> plain = make_sushi<Node>();
+        const OverdueLimits limits = limits_with(milliseconds(1000));
+        const auto none = std::chrono::steady_clock::time_point::max();
+        const auto tick = std::chrono::steady_clock::duration(1);
+        EXPECT_EQ(table.earliest_deadline(), none);
+
+        ASSERT_TRUE(insert_plain(table, 2, *plain, K_WORKER));
+        EXPECT_EQ(table.earliest_deadline(), none) << "the cluster's deadline is not published";
+        ASSERT_TRUE(table.insert(1, *ruled, K_WORKER, span<const BufferHandle>(),
+                                 at(milliseconds(0)), milliseconds(50)));
+        EXPECT_EQ(table.earliest_deadline(), at(milliseconds(50)) + tick);
+
+        // A chunk moves the deadline on; the next pass makes the bound exact again.
+        table.note_chunk(K_WORKER, at(milliseconds(40)));
+        std::vector<PendingTask> reaped;
+        table.take_overdue(at(milliseconds(45)), limits, reaped);
+        EXPECT_TRUE(reaped.empty());
+        EXPECT_EQ(table.earliest_deadline(), at(milliseconds(90)) + tick);
+
+        ASSERT_TRUE(table.take(1, K_WORKER).has_value());
+        table.take_overdue(at(milliseconds(46)), limits, reaped);
+        EXPECT_EQ(table.earliest_deadline(), none);
+    }
+
     TEST(Medium_PendingTasks, OwnDeadlineReplacesTheClusterDeadline)
     {
         PendingTasks table;

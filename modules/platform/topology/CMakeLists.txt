@@ -9,6 +9,8 @@ sushiruntime_add_module(
     SYCL
     SOURCES
         affinity.cpp
+        host_identity_posix.cpp
+        host_identity_windows.cpp
         hw_discovery.cpp
         hwloc_topology_provider.cpp
         numa_mapper.cpp

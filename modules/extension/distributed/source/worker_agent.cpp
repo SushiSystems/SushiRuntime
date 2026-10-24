@@ -34,6 +34,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -76,9 +77,6 @@ namespace SushiRuntime
             /** @brief Holds the cache budget of a device that reports no memory size. */
             constexpr std::uint64_t K_FALLBACK_CACHE_BYTES = 1024ull * 1024ull * 1024ull;
 
-            /** @brief Holds the longest name HELLO can carry, in bytes. */
-            constexpr std::size_t K_MAXIMUM_NAME_BYTES = 255;
-
             /** @brief Bounds the wait for the master's connection to drain in stop(). */
             constexpr std::chrono::milliseconds K_CLOSE_LIMIT{2000};
 
@@ -112,19 +110,6 @@ namespace SushiRuntime
             {
                 kernels.seal();
                 return kernels;
-            }
-
-            /** @brief Returns the options with a name HELLO can carry. */
-            WorkerAgentOptions bounded(WorkerAgentOptions options)
-            {
-                if (options.name.size() > K_MAXIMUM_NAME_BYTES)
-                {
-                    SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "worker name holds {} bytes; HELLO carries {}, so the name is cut "
-                                "to that length",
-                                options.name.size(), K_MAXIMUM_NAME_BYTES);
-                    options.name.resize(K_MAXIMUM_NAME_BYTES);
-                }
-                return options;
             }
 
             /** @brief Returns the cache budget: the one asked for, or half the device's memory. */
@@ -337,7 +322,7 @@ namespace SushiRuntime
                                 sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
             : context_(std::move(context)),
               transport_(require_transport(std::move(transport))),
-              options_(bounded(std::move(options))),
+              options_(std::move(options)),
               cache_(make_cache_allocator(context_->memory()),
                      resolve_cache_budget(*context_, options_.cache_bytes)),
               link_(*transport_, options_.secret.bytes(),
@@ -509,6 +494,14 @@ namespace SushiRuntime
             if (!phase_.compare_exchange_strong(expected, Phase::Started))
                 return TransportResult{TransportStatus::AlreadyStarted,
                                        "the worker agent was started before"};
+
+            // A fact HELLO cannot carry is refused before any thread runs or any peer is dialled.
+            if (std::optional<std::string> problem = link_.unsendable_fact())
+            {
+                phase_.store(Phase::Stopped);
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "worker agent did not start: {}", *problem);
+                return TransportResult{TransportStatus::InvalidArgument, std::move(*problem)};
+            }
 
             TransportResult result;
             try

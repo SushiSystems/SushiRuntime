@@ -48,8 +48,7 @@
 #include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/machine/device_description.hpp>
 #include <SushiRuntime/machine/device_facts.hpp>
-
-#include "host_identity.hpp"
+#include <SushiRuntime/topology/host_identity.hpp>
 
 namespace SushiRuntime
 {
@@ -97,7 +96,7 @@ namespace SushiRuntime
         {
             NodeFacts facts;
             facts.name = std::move(name);
-            facts.operating_system = Detail::host_operating_system();
+            facts.operating_system = Internal::Topology::host_operating_system();
             facts.labels = config.labels;
             return facts;
         }
@@ -128,7 +127,8 @@ namespace SushiRuntime
                 refusal = labels_refusal(config.labels);
                 if (refusal)
                     return;
-                std::string name = config.node_name.empty() ? Detail::host_name() : config.node_name;
+                std::string name = config.node_name.empty() ? Internal::Topology::host_name()
+                                                            : config.node_name;
                 if (name.empty())
                 {
                     refusal = Error{ErrorCode::Unsupported,
@@ -195,20 +195,20 @@ namespace SushiRuntime
     Result<void> Runtime::set_placement_rules(PlacementRules rules) const
     {
         Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(context_);
-        if (context.execution_engine().run_in_progress())
+        // One hold against run start makes the check and the swap a single step.
+        if (!context.set_placement_rules(std::make_shared<const PlacementRules>(std::move(rules))))
             return make_error(
                 Error{ErrorCode::InvalidState, rules_refusal("set_placement_rules")});
-        context.set_placement_rules(std::make_shared<const PlacementRules>(std::move(rules)));
         return {};
     }
 
     Result<void> Runtime::clear_placement_rules() const
     {
         Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(context_);
-        if (context.execution_engine().run_in_progress())
+        // One hold against run start makes the check and the swap a single step.
+        if (!context.set_placement_rules(nullptr))
             return make_error(
                 Error{ErrorCode::InvalidState, rules_refusal("clear_placement_rules")});
-        context.set_placement_rules(nullptr);
         return {};
     }
 

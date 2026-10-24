@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* host_identity_posix.cpp                                                */
+/* host_identity_windows.cpp                                              */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,38 +20,47 @@
 /**************************************************************************/
 
 /**
- * @file host_identity_posix.cpp
- * @brief Implements the host identity queries on POSIX systems.
+ * @file host_identity_windows.cpp
+ * @brief Implements the host identity queries on Windows.
  * @author Mustafa Garip
+ * @see modules/platform/topology/README.md
  */
 
-#include "host_identity.hpp"
+#include <SushiRuntime/topology/host_identity.hpp>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
 
-#include <unistd.h>
+#if !defined(NOMINMAX)
+    #define NOMINMAX
+#endif
+#if !defined(WIN32_LEAN_AND_MEAN)
+    #define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 
 namespace SushiRuntime
 {
-    namespace Detail
+    namespace Internal::Topology
     {
         std::string host_name()
         {
-            char buffer[256] = {};
-            if (gethostname(buffer, sizeof(buffer) - 1) != 0)
+            DWORD size = 0;
+            // The sizing call fails with ERROR_MORE_DATA and sets size to the length with the null.
+            GetComputerNameExA(ComputerNameDnsHostname, nullptr, &size);
+            if (size == 0)
                 return std::string();
-            return std::string(buffer);
+            std::string name(size, '\0');
+            if (GetComputerNameExA(ComputerNameDnsHostname, name.data(), &size) == 0)
+                return std::string();
+            name.resize(size);
+            return name;
         }
 
         OperatingSystem host_operating_system() noexcept
         {
-#if defined(__linux__)
-            return OperatingSystem::Linux;
-#else
-            return OperatingSystem::Unknown;
-#endif
+            return OperatingSystem::Windows;
         }
-    } // namespace Detail
+    } // namespace Topology
 } // namespace SushiRuntime
 
-#endif // !defined(_WIN32)
+#endif // defined(_WIN32)

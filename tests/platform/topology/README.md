@@ -15,6 +15,11 @@ core 0 leaves core 0 as the only core of the thread; the test is skipped when th
 request does not list core 0. Three further tests pin to core 0 or to core 100000 and assert that no
 call throws. `PinIsRepeatable` makes 16 requests for core 0 on one thread.
 
+## test_host_identity.cpp
+
+`host_name()` returns the same name twice and the name holds no null byte. `host_operating_system()`
+names the system the test was compiled for: Windows, Linux, or Unknown elsewhere.
+
 ## test_hw_discovery.cpp
 
 The file covers what `HardwareDiscovery` and `HwlocTopologyProvider` return for a filter. It

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* host_identity.hpp                                                      */
+/* test_host_identity.cpp                                                 */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -20,31 +20,38 @@
 /**************************************************************************/
 
 /**
- * @file host_identity.hpp
- * @brief Declares what the api tier asks the platform about the machine it runs on.
+ * @file test_host_identity.cpp
+ * @brief Tests the queries that name the machine the library runs on.
+ * @see tests/platform/topology/README.md
  * @author Mustafa Garip
  */
 
-#pragma once
-
 #include <string>
 
+#include <gtest/gtest.h>
+
 #include <SushiRuntime/machine/operating_system.hpp>
+#include <SushiRuntime/topology/host_identity.hpp>
 
-namespace SushiRuntime
+using namespace SushiRuntime;
+using namespace SushiRuntime::Internal::Topology;
+
+/** @brief Tests that the host name is stable between two calls and holds no terminator. */
+TEST(Small_HostIdentity, HostNameIsStableAndHoldsNoTerminator)
 {
-    namespace Detail
-    {
-        /**
-         * @brief Returns the host name of this machine.
-         * @return The name, or an empty string when the platform does not give one.
-         */
-        [[nodiscard]] std::string host_name();
+    const std::string first = host_name();
+    EXPECT_EQ(host_name(), first);
+    EXPECT_EQ(first.find('\0'), std::string::npos);
+}
 
-        /**
-         * @brief Returns the operating system the library runs on.
-         * @return Unknown for a system the library does not name.
-         */
-        [[nodiscard]] OperatingSystem host_operating_system() noexcept;
-    } // namespace Detail
-} // namespace SushiRuntime
+/** @brief Tests that the operating system is the one this test was compiled for. */
+TEST(Small_HostIdentity, OperatingSystemIsTheOneCompiledFor)
+{
+#if defined(_WIN32)
+    EXPECT_EQ(host_operating_system(), OperatingSystem::Windows);
+#elif defined(__linux__)
+    EXPECT_EQ(host_operating_system(), OperatingSystem::Linux);
+#else
+    EXPECT_EQ(host_operating_system(), OperatingSystem::Unknown);
+#endif
+}

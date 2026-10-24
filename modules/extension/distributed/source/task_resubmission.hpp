@@ -36,8 +36,8 @@
 #include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
 #include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
+#include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
-
 
 namespace SushiRuntime
 {
@@ -67,10 +67,11 @@ namespace SushiRuntime
          * @brief Offers nodes HeldNodes handed out to the scheduler again.
          *
          * Each node goes to OffloadSink::resubmit(); an exception out of the sink is caught
-         * without a rethrow, logged, and the node released.
+         * without a rethrow, logged, and the node released after @p held forgets its first offer.
          * @return The number of nodes handled.
          */
         SUSHIRUNTIME_API std::size_t reoffer_nodes(const std::vector<Internal::Graph::Node*>& nodes,
+                                                   HeldNodes& held,
                                                    Internal::Graph::OffloadSink& sink) noexcept;
 
     } // namespace Distributed

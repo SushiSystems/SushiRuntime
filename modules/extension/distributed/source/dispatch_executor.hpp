@@ -37,24 +37,22 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <set>
-#include <string>
 #include <thread>
-
-#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
-#include <SushiRuntime/transport/buffer_handle.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
+#include "dispatch_job.hpp"
+#include "dispatch_recorder.hpp"
+#include "dispatch_settler.hpp"
+#include "held_tasks.hpp"
 #include "worker_buffer_cache.hpp"
 
 namespace SushiRuntime
@@ -89,9 +87,8 @@ namespace SushiRuntime
         /**
          * @brief Runs dispatched kernels as tasks of the worker's runtime, each on its device.
          *
-         * The exec thread pins each job's buffers, pulls missing inputs and records one task
-         * over borrowed buffers; one run of the batch orders the jobs that share a buffer and
-         * overlaps the rest. Each job then sends its outputs and TASK_RESULT.
+         * The exec thread pins each job's buffers, pulls missing inputs and checks its device;
+         * DispatchRecorder records and runs the batch, DispatchSettler reports each job.
          * @see modules/extension/distributed/README.md
          */
         class SUSHIRUNTIME_API DispatchExecutor final
@@ -155,68 +152,8 @@ namespace SushiRuntime
                 [[nodiscard]] WorkerStatistics statistics() const noexcept;
 
             private:
-                /**
-                 * @brief Keeps the task ids the worker holds for one connection, for HEARTBEAT.
-                 *
-                 * An output stream may outlive the executor, so the two share this object. Its
-                 * mutex is a leaf: nothing is called while it is held.
-                 */
-                class HeldTasks final
-                {
-                    public:
-                        /**
-                         * @brief Starts holding a task.
-                         * @return The generation let_go() must be given for the same task.
-                         */
-                        [[nodiscard]] std::uint64_t hold(std::uint64_t task_id);
-
-                        /** @brief Stops holding a task whose result left or cannot leave. */
-                        void let_go(std::uint64_t task_id, std::uint64_t generation) noexcept;
-
-                        /** @brief Forgets every task and the idle value; the connection is gone. */
-                        void reset() noexcept;
-
-                        /** @brief Returns the smallest held id, or the idle value when none is. */
-                        [[nodiscard]] std::uint64_t oldest() const;
-
-                    private:
-                        /// @brief Guards every member below.
-                        mutable std::mutex mutex_;
-
-                        /// @brief The ids held, smallest first.
-                        std::set<std::uint64_t> held_;
-
-                        /// @brief The largest id let go plus one; 0 before the first.
-                        std::uint64_t idle_value_ = 0;
-
-                        /// @brief Counts the resets, so a task of an earlier connection is ignored.
-                        std::uint64_t generation_ = 0;
-                };
-
-                /** @brief Produces the output chunks of one finished task, then its TASK_RESULT. */
-                class OutputStream;
-
                 /** @brief Holds the jobs of one run and the pins they keep. */
                 class Batch;
-
-                /** @brief Holds one job of a batch from its pins to its outcome. */
-                struct Prepared;
-
-                /** @brief Holds one dispatch that waits for the exec thread. */
-                struct Job
-                {
-                    /** @brief The connection every reply goes to. */
-                    PeerID from;
-
-                    /** @brief The task. */
-                    Wire::TaskDispatchMessage dispatch;
-
-                    /** @brief Data bytes per output chunk. */
-                    std::uint32_t chunk_bytes = 0;
-
-                    /** @brief What HeldTasks::hold() returned for the task. */
-                    std::uint64_t generation = 0;
-                };
 
                 /** @brief Gathers and runs batches until stop(). */
                 void run() noexcept;
@@ -226,42 +163,21 @@ namespace SushiRuntime
                  * @return None when the queue is empty, stop() began, or the next job reads a
                  *         buffer the batch writes; that job then opens the next batch.
                  */
-                [[nodiscard]] std::optional<Job> next_job(const Batch& batch);
+                [[nodiscard]] std::optional<DispatchJob> next_job(const Batch& batch);
 
                 /**
                  * @brief Pins a job's buffers and adds it to the batch with its task, or fails
                  *        the job.
                  * @param job Moved from once it joins the batch.
                  */
-                void prepare(Job& job, Batch& batch);
-
-                /**
-                 * @brief Records a job's task over borrowed views of its pinned buffers, on the
-                 *        device it names; a failure is kept in the entry.
-                 */
-                void record(Prepared& entry) noexcept;
+                void prepare(DispatchJob& job, Batch& batch);
 
                 /** @brief Runs the recorded batch and settles each of its jobs. */
                 void run_batch(Batch& batch);
 
-                /**
-                 * @brief Commits and streams the outputs of a job that ran, or fails it.
-                 * @param run_failure Why the run failed, or empty.
-                 */
-                void settle(Prepared& entry, const std::string& run_failure);
-
-                /** @brief Counts one failed task under its status. */
-                void count_failure(Wire::TaskResultStatus status) noexcept;
-
-                /** @brief Sends TASK_RESULT alone with a failure status and lets the task go. */
-                void fail(PeerID from, std::uint64_t task_id, std::uint64_t generation,
-                          Wire::TaskResultStatus status);
-
-                /** @brief Lets a task go after execute() failed, with a result if one fits. */
-                void abandon(const Job& job, const char* cause) noexcept;
-
                 /** @brief Gets one input from the cache, pulling it from the master on a miss. */
-                [[nodiscard]] CacheStatus acquire_input(const Job& job, const BufferHandle& handle,
+                [[nodiscard]] CacheStatus acquire_input(const DispatchJob& job,
+                                                        const BufferHandle& handle,
                                                         BufferView& view);
 
                 /** @brief Logs that the cache has no room for a buffer of a task. */
@@ -274,8 +190,7 @@ namespace SushiRuntime
                  *         device does not share the cache's context, so the cache's memory
                  *         would not be reachable from it.
                  */
-                [[nodiscard]] bool can_run_on_its_device(const Job& job);
-
+                [[nodiscard]] bool can_run_on_its_device(const DispatchJob& job);
 
                 /// @brief Guards jobs_, stopping_ and pulling_.
                 mutable std::mutex mutex_;
@@ -295,15 +210,6 @@ namespace SushiRuntime
                 /// @brief The queue of each device, read to check a job's device.
                 Internal::Device::DeviceQueueSet& devices_;
 
-                /// @brief Holds the tasks of the batch being run; cleared for each batch.
-                Graph graph_;
-
-                /// @brief Wraps the cache's memory as buffers the graph tracks.
-                Interop interop_;
-
-                /// @brief The owner every borrowed buffer names; the pins keep the memory.
-                LivenessToken pinned_life_;
-
                 /// @brief The queue bound and the pull timeout.
                 DispatchExecutorOptions options_;
 
@@ -317,7 +223,7 @@ namespace SushiRuntime
                 std::atomic<std::uint32_t> queue_depth_{0};
 
                 /// @brief Jobs waiting for the exec thread, oldest first.
-                std::deque<Job> jobs_;
+                std::deque<DispatchJob> jobs_;
 
                 /// @brief The input the exec thread is pulling; discard_queued() aborts it.
                 std::optional<BufferHandle> pulling_;
@@ -325,23 +231,11 @@ namespace SushiRuntime
                 /// @brief The tasks held, shared with every output stream.
                 std::shared_ptr<HeldTasks> held_;
 
-                /// @brief Kernels that ran to the end.
-                std::atomic<std::uint64_t> tasks_run_{0};
+                /// @brief Records each batch's tasks and runs them.
+                DispatchRecorder recorder_;
 
-                /// @brief Kernels that threw.
-                std::atomic<std::uint64_t> failed_kernel_{0};
-
-                /// @brief Tasks whose output did not fit.
-                std::atomic<std::uint64_t> failed_output_allocation_{0};
-
-                /// @brief Tasks whose input never arrived.
-                std::atomic<std::uint64_t> failed_input_unavailable_{0};
-
-                /// @brief Tasks whose operation has no kernel.
-                std::atomic<std::uint64_t> failed_unknown_operation_{0};
-
-                /// @brief Tasks failed by stop().
-                std::atomic<std::uint64_t> failed_shutting_down_{0};
+                /// @brief Reports each job's outcome and counts it.
+                DispatchSettler settler_;
         };
 
     } // namespace Distributed

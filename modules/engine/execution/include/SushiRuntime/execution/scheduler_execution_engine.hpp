@@ -180,6 +180,18 @@ namespace SushiRuntime
             void end_chained_run() noexcept override;
 
             /**
+             * @brief Holds the engine idle for a change no run may see half done.
+             * @return False, holding nothing, when a run is in progress; a run that starts
+             *         while the hold lasts waits in submit() or begin_chained_run().
+             * @pre Exactly one end_idle_change() follows a true return.
+             * @see modules/engine/execution/README.md
+             */
+            [[nodiscard]] bool begin_idle_change() noexcept;
+
+            /** @brief Releases the hold a true begin_idle_change() took. */
+            void end_idle_change() noexcept;
+
+            /**
              * @brief Forwards to the scheduler's set_offload_coordinator().
              * @pre No run is in flight.
              * @param offload Not owned; null removes the installed one.

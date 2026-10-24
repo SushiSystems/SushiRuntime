@@ -194,6 +194,15 @@ namespace SushiRuntime
                  */
                 void drain(std::vector<PendingTask>& out);
 
+                /**
+                 * @brief Returns a time at or before the first moment a task's own deadline
+                 *        passes, or time_point::max() when no task carries one.
+                 *
+                 * Reads an atomic and takes no lock; take_overdue() makes it exact again.
+                 */
+                [[nodiscard]] std::chrono::steady_clock::time_point
+                earliest_deadline() const noexcept;
+
                 /** @brief Returns the number of tasks in the table; reads an atomic. */
                 [[nodiscard]] std::size_t size() const noexcept;
 
@@ -244,6 +253,19 @@ namespace SushiRuntime
                     const Entry& entry, std::chrono::steady_clock::time_point now,
                     const OverdueLimits& limits) const noexcept;
 
+                /**
+                 * @brief Returns when an entry's own deadline passes, counting the worker's
+                 *        last chunk, or time_point::max() for none; called under the mutex.
+                 */
+                [[nodiscard]] std::chrono::steady_clock::time_point
+                own_deadline(const Entry& entry) const noexcept;
+
+                /** @brief Lowers the published deadline to @p moment; called under the mutex. */
+                void lower_earliest_deadline(std::chrono::steady_clock::time_point moment) noexcept;
+
+                /** @brief Publishes @p moment as the earliest deadline; called under the mutex. */
+                void publish_earliest_deadline(std::chrono::steady_clock::time_point moment) noexcept;
+
                 /** @brief Erases an entry and returns its task; called under the mutex. */
                 [[nodiscard]] PendingTask detach(TaskTable::iterator position,
                                                  ReapCause cause) noexcept;
@@ -256,6 +278,10 @@ namespace SushiRuntime
 
                 /// @brief The number of entries, for size().
                 std::atomic<std::size_t> size_{0};
+
+                /// @brief The bound earliest_deadline() returns, in ticks of the steady clock.
+                std::atomic<std::chrono::steady_clock::rep> earliest_deadline_{
+                    std::chrono::steady_clock::time_point::max().time_since_epoch().count()};
 
                 /// @brief Set by close().
                 bool closed_ = false;

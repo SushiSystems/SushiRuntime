@@ -11,7 +11,11 @@ sushiruntime_add_module(
         cluster.cpp
         cluster_monitor.cpp
         dispatch_executor.cpp
+        dispatch_job.cpp
+        dispatch_recorder.cpp
+        dispatch_settler.cpp
         distributed_coordinator.cpp
+        held_tasks.cpp
         in_process_transport.cpp
         kernel_registry.cpp
         master_link.cpp

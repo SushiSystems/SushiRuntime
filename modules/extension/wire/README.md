@@ -20,7 +20,8 @@ It depends on `core` and `transport`.
 ## Protocol versions
 
 `K_PROTOCOL_VERSION` in `wire_frame.hpp` is 4. The header and the first three fields of `REJECT` and
-`GOODBYE` are frozen for every version, so a peer of another version is refused in words.
+`GOODBYE` are frozen for every version, so a peer of another version is answered with a `REJECT` of
+reason `Version` that names both versions: this build's in `sender_version`, the peer's in its text.
 
 | Version | What the code does with it | How it differs from version 4 |
 | --- | --- | --- |

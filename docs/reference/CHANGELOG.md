@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- 2026-10-24 — placement: Fixed a rule's device part never reaching a compiled node, through one resolver that matches a machine and picks its device (`placement_target_matching.hpp`).
+- 2026-10-24 — api: Fixed a dynamic graph ignoring placement rules; a rule change re-places its regions' nodes without a re-record (`dynamic_graph.hpp`).
+- 2026-10-24 — placement: Refused a wait bound or deadline above one day, and made a local scope's `Wait` resolve at once (`placement_rules.hpp`, `placement_scope.hpp`).
+- 2026-10-24 — placement: Compared machine names by their lower-case first label, so Windows and POSIX hosts match one rule (`placement_target_matching.hpp`).
+- 2026-10-24 — execution: Fixed `set_placement_rules()` racing a starting run, by publishing the rules atomically and refusing a change inside one step (`runtime_context.hpp`).
+- 2026-10-24 — distributed: Fixed a refused re-offer leaking its first offer, per-task deadlines firing only at the monitor period, and an over-long worker fact being cut silently (`pending_tasks.hpp`).
+- 2026-10-24 — topology: Moved the host identity into the platform tier (`host_identity.hpp`).
+- 2026-10-24 — distributed: Split the worker's dispatch executor into its recorder, settler and job units (`dispatch_recorder.hpp`, `dispatch_settler.hpp`).
 - 2026-10-24 — docs: Added the placement guide and moved the distributed layer's failure cases to a page of their own (`PLACEMENT_GUIDE.md`, `DISTRIBUTED_FAILURES.md`, `DISTRIBUTED_GUIDE.md`).
 - 2026-10-24 — task: Let a tracked node's stated device win over the device that owns its memory when both share a SYCL context, and refused the node when they do not (`node_placement.cpp`, `dispatch_placement.cpp`).
 - 2026-10-24 — distributed: Allocated the worker's buffer cache through the runtime's allocator again, now that each dispatch's stated device wins in the cache's context (`worker_agent.cpp`).

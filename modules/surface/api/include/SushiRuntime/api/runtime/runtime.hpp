@@ -98,7 +98,7 @@ namespace SushiRuntime
             ~Runtime() = default;
 
             /** @brief Returns a new, empty graph that runs on this runtime. */
-            [[nodiscard]] Graph graph() const { return Graph(context_); }
+            [[nodiscard]] Graph graph() const { return Graph(context_, topology_); }
 
             /**
              * @brief Returns a new, empty graph whose work is grouped into regions.
@@ -106,7 +106,7 @@ namespace SushiRuntime
              */
             [[nodiscard]] DynamicGraph dynamic_graph() const
             {
-                return DynamicGraph(context_);
+                return DynamicGraph(context_, topology_);
             }
 
             /**

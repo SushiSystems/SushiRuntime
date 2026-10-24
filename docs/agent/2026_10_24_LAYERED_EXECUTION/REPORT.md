@@ -213,6 +213,30 @@ Owed at the final build: the ASan lane, since the scheduler's placement path cha
 Seen and kept: `dispatch_placement.cpp` repeats the anchor selection `node_placement.cpp` keeps
 privately.
 
+## R16a and R16b, the branch review
+
+A review of the branch found that a rule's device part never reached a compiled node and that a
+dynamic graph ignored rules. One resolver in `placement`, `device_on()`, answers where a target
+puts a node on a machine (its machine part matches and its device part picks a device there);
+`RulePlacement`, the worker directory, `PlacementScope` and both compiles use it, and the compile
+writes the picked device into the node's stated placement, so the stated-placement path runs it.
+With no coordinator, the compile applies the absent policy itself. A dynamic graph stamps each
+rebuilt node at commit and goes stale on a rule change. A wait bound or deadline is at most one day,
+the sum saturates, a local scope's `Wait` is immediate, and machine names compare by their
+lower-case first DNS label, so two hosts that differ only after it compare equal.
+
+The rule set is one immutable record swapped atomically; a change takes an idle-change bit of the
+run marker by compare-exchange, so a run cannot start between the check and the swap, and a run
+pays one branch. A refused re-offer forgets its node, `PendingTasks` publishes its earliest deadline
+to the monitor, and a worker fact over 255 bytes is refused before connecting instead of cut. The
+host identity lives in the topology module; the dispatch executor's recording and settling are
+their own units.
+
+R16c follows: the compile reads the rules and their generation in one snapshot; the machine's facts
+reach the compile through the runtime context instead of each graph; installing a coordinator after
+a compile marks plans stale; `task_resubmission` moves into the internal offload-coordination
+module, where its fix can be tested.
+
 ## Dispatches
 
 ```
@@ -225,6 +249,8 @@ dispatch: R7 — sonnet medium, 76 turns, passed, rung 1
 dispatch: R8 — sonnet medium, 45 turns, passed, rung 1
 dispatch: R6 — sonnet medium, 73 turns, passed, rung 1
 dispatch: R9 — sonnet medium, 44 turns, partial (public interface needed), rung 1
+dispatch: R16a — opus low, 116 turns, passed, rung 1
+dispatch: R16b — opus low, 160 turns, passed, rung 1
 dispatch: R15 — haiku high, 68 turns, passed, rung 1
 dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
 dispatch: R9 second half — opus low, 146 turns, passed, rung 1

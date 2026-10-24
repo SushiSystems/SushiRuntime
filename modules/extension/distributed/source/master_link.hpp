@@ -70,10 +70,10 @@ namespace SushiRuntime
             /** @brief Holds the operating system sent in HELLO. */
             OperatingSystem operating_system = OperatingSystem::Unknown;
 
-            /** @brief Holds the devices sent in HELLO; each name is cut to 255 bytes. */
+            /** @brief Holds the devices sent in HELLO; each name holds at most 255 bytes. */
             std::vector<DeviceFacts> devices;
 
-            /** @brief Holds the labels sent in HELLO; each key and value is cut to 255 bytes. */
+            /** @brief Holds the labels sent in HELLO; keys and values of at most 255 bytes. */
             std::vector<NodeLabel> labels;
 
             /** @brief Holds the operations sent in PROOF: KernelRegistry::known_ops(). */
@@ -133,6 +133,13 @@ namespace SushiRuntime
                 MasterLink& operator=(const MasterLink&) = delete;
                 MasterLink(MasterLink&&) = delete;
                 MasterLink& operator=(MasterLink&&) = delete;
+
+                /**
+                 * @brief Names the first fact HELLO cannot carry: a name, a build id, a device
+                 *        name, a label key or value above Wire::K_MAX_STRING_BYTES.
+                 * @return Nothing when every fact fits; otherwise the field and the limit.
+                 */
+                [[nodiscard]] std::optional<std::string> unsendable_fact() const;
 
                 /** @brief Starts the heartbeat thread; called once, before the transport starts. */
                 void start();

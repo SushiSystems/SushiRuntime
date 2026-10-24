@@ -26,6 +26,7 @@
  */
 
 #include <atomic>
+#include <thread>
 #include <memory>
 #include <mutex>
 #include <condition_variable>
@@ -113,8 +114,22 @@ namespace SushiRuntime
             /** @brief Bit of the run marker a scheduled run holds from submit() to complete(). */
             constexpr std::uint32_t K_SCHEDULED_RUN = 1u;
 
+            /** @brief Bit of the run marker an idle change holds; it is not a run. */
+            constexpr std::uint32_t K_IDLE_CHANGE = 2u;
+
             /** @brief Amount one chained run adds to the run marker while it lasts. */
-            constexpr std::uint32_t K_CHAINED_RUN = 2u;
+            constexpr std::uint32_t K_CHAINED_RUN = 4u;
+
+            /** @brief Waits for an idle change seen in @p prior to release the marker. */
+            void wait_for_idle_change(const std::atomic<std::uint32_t>& marker,
+                                      std::uint32_t prior) noexcept
+            {
+                if ((prior & K_IDLE_CHANGE) == 0)
+                    return;
+                // A change holds the bit for one pointer store, so the wait is a few yields.
+                while ((marker.load(std::memory_order_acquire) & K_IDLE_CHANGE) != 0)
+                    std::this_thread::yield();
+            }
 
             /**
              * @brief Clears the scheduled-run bit of a run marker on scope exit, unless disarmed.
@@ -487,11 +502,13 @@ namespace SushiRuntime
                                   "Received a compiled graph with no root nodes."});
 
             // An overlapping run is refused and leaves the owner's bit set (modules/engine/execution/README.md).
-            if ((impl_->run_marker.fetch_or(K_SCHEDULED_RUN, std::memory_order_acq_rel) &
-                 K_SCHEDULED_RUN) != 0)
+            const std::uint32_t prior =
+                impl_->run_marker.fetch_or(K_SCHEDULED_RUN, std::memory_order_acq_rel);
+            if ((prior & K_SCHEDULED_RUN) != 0)
                 return make_error(Error{ErrorCode::InvalidState,
                                   "ExecutionEngine::submit() is not reentrant: a graph run is "
                                   "already in progress on this engine."});
+            wait_for_idle_change(impl_->run_marker, prior);
 
             // The guard clears the bit only on an early exit (modules/engine/execution/README.md).
             ScheduledRunRelease submit_guard(impl_->run_marker);
@@ -604,19 +621,36 @@ namespace SushiRuntime
         bool SchedulerExecutionEngine::run_in_progress() const noexcept
         {
             // acq_rel writes, acquire load: whoever reads the marker sees what its writer did before.
-            return impl_->run_marker.load(std::memory_order_acquire) != 0;
+            return (impl_->run_marker.load(std::memory_order_acquire) & ~K_IDLE_CHANGE) != 0;
         }
 
         /** @brief Marks one chained run in progress. */
         void SchedulerExecutionEngine::begin_chained_run() noexcept
         {
-            impl_->run_marker.fetch_add(K_CHAINED_RUN, std::memory_order_acq_rel);
+            wait_for_idle_change(
+                impl_->run_marker,
+                impl_->run_marker.fetch_add(K_CHAINED_RUN, std::memory_order_acq_rel));
         }
 
         /** @brief Clears the mark one begin_chained_run() set. */
         void SchedulerExecutionEngine::end_chained_run() noexcept
         {
             impl_->run_marker.fetch_sub(K_CHAINED_RUN, std::memory_order_acq_rel);
+        }
+
+        /** @brief Takes the idle-change bit only from an idle marker. */
+        bool SchedulerExecutionEngine::begin_idle_change() noexcept
+        {
+            std::uint32_t idle = 0;
+            return impl_->run_marker.compare_exchange_strong(idle, K_IDLE_CHANGE,
+                                                             std::memory_order_acq_rel,
+                                                             std::memory_order_acquire);
+        }
+
+        /** @brief Clears the idle-change bit. */
+        void SchedulerExecutionEngine::end_idle_change() noexcept
+        {
+            impl_->run_marker.fetch_and(~K_IDLE_CHANGE, std::memory_order_acq_rel);
         }
 
         /**

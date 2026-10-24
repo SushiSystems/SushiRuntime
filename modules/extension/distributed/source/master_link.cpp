@@ -29,10 +29,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstring>
 #include <exception>
 #include <string>
-#include <string_view>
+#include <optional>
 #include <utility>
 
 #include <SushiRuntime/log/logger.hpp>
@@ -64,10 +65,14 @@ namespace SushiRuntime
                 return wire;
             }
 
-            /** @brief Returns a view of the first 255 bytes of a text, the most HELLO carries. */
-            std::string_view bounded_text(const std::string& text) noexcept
+            /** @brief Returns the refusal of a text HELLO cannot carry, naming its field. */
+            std::optional<std::string> oversized(const std::string& field, const std::string& text)
             {
-                return std::string_view(text).substr(0, Wire::K_MAX_STRING_BYTES);
+                if (text.size() <= Wire::K_MAX_STRING_BYTES)
+                    return std::nullopt;
+                return field + " holds " + std::to_string(text.size()) +
+                       " bytes; HELLO carries at most " +
+                       std::to_string(Wire::K_MAX_STRING_BYTES);
             }
 
             /** @brief Returns the words a log line uses for a loss cause. */
@@ -183,11 +188,10 @@ namespace SushiRuntime
             hello.node_name = options_.name;
             hello.operating_system = options_.operating_system;
             for (const DeviceFacts& device : options_.devices)
-                hello.devices.push_back(Wire::HelloDevice{device.kind, bounded_text(device.name),
-                                                           device.memory_bytes});
+                hello.devices.push_back(
+                    Wire::HelloDevice{device.kind, device.name, device.memory_bytes});
             for (const NodeLabel& label : options_.labels)
-                hello.labels.push_back(
-                    Wire::HelloLabel{bounded_text(label.key), bounded_text(label.value)});
+                hello.labels.push_back(Wire::HelloLabel{label.key, label.value});
             const SendStatus status = send_message(transport_, peer, hello);
             if (status != SendStatus::Queued)
                 SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "HELLO to master (peer {}) was not queued (status {})", peer.value,
@@ -207,6 +211,26 @@ namespace SushiRuntime
         MasterLink::~MasterLink()
         {
             stop();
+        }
+
+        std::optional<std::string> MasterLink::unsendable_fact() const
+        {
+            std::optional<std::string> problem = oversized("the worker name", options_.name);
+            if (!problem)
+                problem = oversized("the build id", options_.build_id);
+            for (std::size_t index = 0; !problem && index < options_.devices.size(); ++index)
+                problem = oversized("the name of device " + std::to_string(index),
+                                    options_.devices[index].name);
+            for (const NodeLabel& label : options_.labels)
+            {
+                if (!problem)
+                    problem = oversized("the key of label '" + label.key.substr(0, 32) + "'",
+                                        label.key);
+                if (!problem)
+                    problem = oversized("the value of label '" + label.key.substr(0, 32) + "'",
+                                        label.value);
+            }
+            return problem;
         }
 
         void MasterLink::start()

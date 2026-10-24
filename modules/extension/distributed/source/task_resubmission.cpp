@@ -68,6 +68,29 @@ namespace SushiRuntime
                 }
                 return false;
             }
+
+            /**
+             * @brief Forgets the first offer of a node about to be released.
+             *
+             * A plan rearmed later may reuse the node's address, which must not inherit the wait.
+             */
+            void forget_first_offer(HeldNodes& held, const Internal::Graph::Node& node) noexcept
+            {
+                try
+                {
+                    held.forget(node);
+                }
+                catch (const std::exception& error)
+                {
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "a released node kept its first offer: {}",
+                                 error.what());
+                }
+                catch (...)
+                {
+                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY,
+                                 "a released node kept its first offer: unknown exception");
+                }
+            }
         } // namespace
 
         std::size_t resubmit_tasks(SushiRuntime::span<PendingTask> tasks,
@@ -90,12 +113,15 @@ namespace SushiRuntime
         }
 
         std::size_t reoffer_nodes(const std::vector<Internal::Graph::Node*>& nodes,
-                                  Internal::Graph::OffloadSink& sink) noexcept
+                                  HeldNodes& held, Internal::Graph::OffloadSink& sink) noexcept
         {
             // A held node has no task id; 0 names none in the log line.
             for (Internal::Graph::Node* node : nodes)
                 if (node != nullptr && !hand_to_sink(sink, *node, 0))
+                {
+                    forget_first_offer(held, *node);
                     node->release();
+                }
             return nodes.size();
         }
 

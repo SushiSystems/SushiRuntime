@@ -118,6 +118,8 @@ then a GPU. A wait is observed through `ClusterStatistics::held_nodes`, never th
 | `Medium_DistributedPlacementTest.RuleDeadlineTakesASilentTaskBackSooner` | With the liveness timeout and `task_deadline` at 60 s, a rule deadline of 100 ms takes a `FallSilent` worker's task back, counted as `tasks_reaped_deadline`, and the master computes the sum within `K_WAIT`. |
 | `Medium_DistributedPlacementTest.BusyTargetRunsBothNodesOneAfterTheOther` | A worker whose `max_jobs` is 1 gets the first of two pinned nodes; the second is held, then dispatched to it once the first result frees the slot. Both outputs hold what the worker wrote and nothing was redispatched, so neither ran on the master. `ScriptedWorker::limit_jobs()` sets the limit `PROOF` reports. |
 | `Medium_DistributedPlacementTest.UnmatchedNodeIsPlacedByThePolicy` | A rule for another key leaves the node to the policy, which is called once, and the dispatch carries device 0. |
+| `Medium_DistributedPlacementTest.Regression_ADeviceOnlyRuleTheMasterLacksOffloads` | A master built on CPU devices only, under a rule with `device_kind` GPU and no machine part, sends the node to the worker with a GPU, on its `device_index` 1. Skipped when SYCL has no CPU device. |
+| `Medium_DistributedPlacementTest.Regression_ARegionsNodeInAScopeReachesTheNamedWorker` | A task recorded in region 0 of a `DynamicGraph`, inside the scope a rule matches, reaches the worker the rule names, on device 1. |
 
 ### `StaleWritebackIsFenced`
 

@@ -275,6 +275,64 @@ TEST(Medium_RuntimePlacementRules, ChangingTheRulesDuringARunIsRefusedAsInvalidS
     EXPECT_TRUE(rt.clear_placement_rules());
 }
 
+/**
+ * @brief Tests that a rule change racing runs and scope reads never lands inside a run.
+ *
+ * Every shared value is an atomic or a std::atomic_load of the rules, so TSan sees no race.
+ */
+TEST(Medium_RuntimePlacementRules, Regression_ARuleChangeRacingARunStartNeverLandsInsideTheRun)
+{
+    const Runtime rt = Runtime::create().value();
+    Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(rt);
+    std::atomic<bool> stop{false};
+    std::atomic<std::uint64_t> changed_inside_a_run{0};
+    std::atomic<std::uint64_t> applied{0};
+
+    auto target = rt.buffer<int>(1).value();
+    auto graph = rt.graph();
+    graph.add_host(Reads{}, Writes(target), [&context, &changed_inside_a_run]()
+    {
+        const std::uint64_t at_start = context.placement_generation();
+        std::this_thread::yield();
+        if (context.placement_generation() != at_start)
+            changed_inside_a_run.fetch_add(1, std::memory_order_relaxed);
+    });
+
+    std::thread writer([&rt, &stop, &applied]()
+    {
+        for (int round = 0; !stop.load(std::memory_order_acquire); ++round)
+        {
+            PlacementRules rules;
+            EXPECT_TRUE(rules.add(rule_for("sushiai.replica", std::nullopt, 1)));
+            const Result<void> done = (round % 2 == 0) ? rt.set_placement_rules(std::move(rules))
+                                                       : rt.clear_placement_rules();
+            if (done)
+                applied.fetch_add(1, std::memory_order_relaxed);
+            else
+                EXPECT_EQ(done.error().code, ErrorCode::InvalidState);
+        }
+    });
+    std::vector<std::thread> readers;
+    for (int reader = 0; reader < 2; ++reader)
+        readers.emplace_back([&rt, &stop]()
+        {
+            const PlacementScope scope = rt.placement_scope("sushiai.replica");
+            while (!stop.load(std::memory_order_acquire))
+                (void)scope.device();
+        });
+
+    // EXPECT, not ASSERT: the threads must be joined whatever a run returns.
+    for (int run = 0; run < 2000; ++run)
+        EXPECT_TRUE(graph.run());
+    stop.store(true, std::memory_order_release);
+    writer.join();
+    for (std::thread& reader : readers)
+        reader.join();
+
+    EXPECT_EQ(changed_inside_a_run.load(), 0u);
+    EXPECT_GT(applied.load(), 0u) << "the writer never found the runtime idle";
+}
+
 /** @brief Tests that create() refuses an empty key, a key holding '=' and a repeated key. */
 TEST(Medium_RuntimeEntry, CreateRefusesALabelKeyThatBreaksARule)
 {

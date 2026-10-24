@@ -1,6 +1,6 @@
 # topology
 
-Hardware discovery, NUMA mapping and thread affinity.
+Hardware discovery, NUMA mapping, thread affinity and the identity of the host.
 The module is internal: its headers are for the other modules of the library and are not installed.
 
 The sections below record why the code is the way it is. Each one is named after a header and the
@@ -19,6 +19,17 @@ order, so a core above 63 can be named. An id below 0, or at or above the number
 the OS reports (`GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)` on Windows; the smaller of
 `CPU_SETSIZE` and `sysconf(_SC_NPROCESSORS_CONF)` on POSIX), logs one warning and leaves the
 thread's affinity as it was. So does an id the OS refuses.
+
+## host_identity.hpp
+
+### host_name and host_operating_system
+
+`host_name()` asks the OS for the machine's name: `gethostname()` on POSIX in
+`source/host_identity_posix.cpp`, `GetComputerNameExA(ComputerNameDnsHostname)` on Windows in
+`source/host_identity_windows.cpp`. It returns an empty string when the OS gives none.
+`host_operating_system()` names the system the library was compiled for. Each adapter file compiles
+to nothing on the other platform, so the module lists both. `Runtime::create()` in the `api` module
+builds the machine's facts from them.
 
 ## topology_provider.hpp
 

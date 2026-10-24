@@ -57,6 +57,13 @@ namespace SushiRuntime
 {
     namespace Internal::Execution
     {
+        /** @brief Holds one published rule set with the generation it was published under. */
+        struct PlacementState
+        {
+            std::shared_ptr<const PlacementRules> rules; /**< Null for none. */
+            std::uint64_t generation = 0;                 /**< Count of changes before it. */
+        };
+
         namespace
         {
             /** @brief Converts a discovered hardware node to the descriptor a device set takes. */
@@ -211,11 +218,13 @@ namespace SushiRuntime
             /** @brief Installed offload coordinator, co-owned; null when there is none. */
             std::shared_ptr<Internal::Graph::OffloadCoordinator> offload;
 
-            /** @brief Placement rules in force; null for none. Plain: set between runs only. */
-            std::shared_ptr<const PlacementRules> placement_rules;
-
-            /** @brief Counts the calls of set_placement_rules(). */
-            std::uint64_t placement_generation = 0;
+            /**
+             * @brief The rules in force and their generation, swapped whole; never null.
+             *
+             * Read and written only through std::atomic_load and std::atomic_store.
+             */
+            std::shared_ptr<const PlacementState> placement =
+                std::make_shared<const PlacementState>();
 
             /** @brief Execution engine; built last, by RuntimeContext::create(). */
             std::unique_ptr<SchedulerExecutionEngine> engine;
@@ -333,21 +342,31 @@ namespace SushiRuntime
             return impl_->engine->offload_sink();
         }
 
-        void RuntimeContext::set_placement_rules(std::shared_ptr<const PlacementRules> rules)
+        bool RuntimeContext::set_placement_rules(std::shared_ptr<const PlacementRules> rules)
         {
-            impl_->placement_rules = std::move(rules);
-            ++impl_->placement_generation;
+            SR_VERIFY(impl_->engine != nullptr,
+                      "ExecutionEngine is not initialized: the context is still being built.");
+            // Allocated before the hold, so a run waiting on it waits for no allocation.
+            std::shared_ptr<PlacementState> next =
+                std::make_shared<PlacementState>(PlacementState{std::move(rules), 0});
+            if (!impl_->engine->begin_idle_change())
+                return false;
+            // One hold at a time, so two setters never publish one generation twice.
+            next->generation = std::atomic_load(&impl_->placement)->generation + 1;
+            std::atomic_store(&impl_->placement,
+                              std::shared_ptr<const PlacementState>(std::move(next)));
+            impl_->engine->end_idle_change();
+            return true;
         }
 
-        const std::shared_ptr<const PlacementRules>&
-        RuntimeContext::placement_rules() const noexcept
+        std::shared_ptr<const PlacementRules> RuntimeContext::placement_rules() const noexcept
         {
-            return impl_->placement_rules;
+            return std::atomic_load(&impl_->placement)->rules;
         }
 
         std::uint64_t RuntimeContext::placement_generation() const noexcept
         {
-            return impl_->placement_generation;
+            return std::atomic_load(&impl_->placement)->generation;
         }
 
     } // namespace Execution

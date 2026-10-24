@@ -151,19 +151,18 @@ namespace SushiRuntime
 
                 /**
                  * @brief Installs the placement rules the next compile reads and counts the change.
-                 * @pre No run is in flight, and the caller is the thread that starts runs: the
-                 *      rules and their generation are plain members, read without a lock.
                  * @param rules Null removes the rules. A plan compiled earlier keeps its own share.
+                 * @return False, changing nothing, when a run is in flight; a run that starts
+                 *         meanwhile waits for the swap and then reads the new rules.
                  * @see modules/engine/execution/README.md
                  */
-                void set_placement_rules(std::shared_ptr<const PlacementRules> rules);
+                [[nodiscard]] bool set_placement_rules(std::shared_ptr<const PlacementRules> rules);
 
-                /** @brief Returns the rules in force, or null for none. */
-                [[nodiscard]] const std::shared_ptr<const PlacementRules>&
-                placement_rules() const noexcept;
+                /** @brief Returns a share of the rules in force, or null for none; any thread. */
+                [[nodiscard]] std::shared_ptr<const PlacementRules> placement_rules() const noexcept;
 
                 /**
-                 * @brief Returns how many times set_placement_rules() has been called.
+                 * @brief Returns how many times set_placement_rules() has changed the rules.
                  *
                  * A plan compiled under a different value is stale.
                  */

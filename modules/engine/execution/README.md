@@ -238,10 +238,20 @@ each node against the rules and keeps its own share of them, so a later set cann
 compiled plan points into. A plan whose recorded counter differs from `placement_generation()` is
 stale.
 
-Both are plain members. The public `Runtime::set_placement_rules()` refuses a call while
-`run_in_progress()` is true, and a compile runs on the thread that starts runs, so a write and a read
-never overlap when the caller starts runs and sets rules from one thread. The context checks nothing
-beyond that: like `install_offload()`, it states the precondition and trusts it.
+The rules and their counter are one immutable record behind a `shared_ptr`, swapped whole with
+`std::atomic_store` and read with `std::atomic_load`, so any thread may read while another sets.
+A reader loads once per use and keeps its share: `PlacementScope::device()`, a compile and
+`DistributedCoordinator::prepare()` each see one whole set. A mutex was the alternative; it would
+cost a lock and an unlock on every scope read and on the start of every run, where the swap costs
+the reader one load and the run nothing.
+
+`set_placement_rules()` returns false while a run is in flight, and the refusal is exact against a
+run that starts at the same moment. It builds the new record first, then takes the idle-change bit
+of the engine's run marker with one compare-exchange that succeeds only from zero (see "The run
+marker"), stores the record and clears the bit. A run that starts while the bit is held waits for
+the store, so no run sees the swap land inside it. A compile reads the rules and the counter in two
+loads; a set between them may leave a plan with old rules under the new counter, so a caller that
+compiles while another thread sets rules gets no guarantee beyond each load being whole.
 
 ## runtime_settings.hpp
 
@@ -372,8 +382,12 @@ clears the bit on every exit.
 #### The run marker
 
 `run_marker` is one `std::atomic<std::uint32_t>` and `run_in_progress()` is one load of it,
-compared with zero. Bit 0 is the scheduled run. Every live `ChainRun` adds `K_CHAINED_RUN`,
-which is 2, through `begin_chained_run()` and takes it off through `end_chained_run()`. A
+compared with zero once bit 1 is masked off. Bit 0 is the scheduled run. Bit 1, `K_IDLE_CHANGE`,
+is held by `begin_idle_change()` for a change no run may see half done, and is no run: it is taken
+only from an idle marker, and `submit()` and `begin_chained_run()` that find it in the value their
+read-modify-write returned yield until `end_idle_change()` clears it. The check reads that returned
+value, so a run pays one branch and no extra atomic. Every live `ChainRun` adds `K_CHAINED_RUN`,
+which is 4, through `begin_chained_run()` and takes it off through `end_chained_run()`. A
 count is needed because runs nest: a chained run's host node executes on the calling thread
 and can start another graph's run, and a second graph can run chained while the first has an
 asynchronous step pending. With a single flag the inner run's end would clear the outer

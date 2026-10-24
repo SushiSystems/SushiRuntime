@@ -96,6 +96,12 @@ namespace
                 return TransportResult{};
             }
 
+            /** @brief Returns whether start() reached this transport. */
+            [[nodiscard]] bool was_started() const noexcept
+            {
+                return events_ != nullptr;
+            }
+
             void stop() noexcept override
             {
                 {
@@ -1475,4 +1481,38 @@ TEST(Medium_MasterLinkTest, LossAfterGoodbyeIsTheWorkersOwn)
     rig.transport->lose(K_MASTER, PeerLossCause::ClosedLocally);
     EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Stopped)
         << "a leaving worker ended as MasterLost";
+}
+
+/** @brief Tests that a worker name HELLO cannot carry is refused before the transport starts. */
+TEST(Medium_WorkerAgentTest, Regression_ANameAbove255BytesIsRefusedBeforeConnecting)
+{
+    Runtime runtime = Runtime::create().value();
+    const auto transport = std::make_shared<FakeTransport>();
+    WorkerAgentOptions options;
+    options.name = std::string(256, 'n');
+    WorkerAgent agent(runtime, transport, make_sushi<KernelRegistry>(), std::move(options));
+
+    const TransportResult started = agent.start();
+    EXPECT_EQ(started.status, TransportStatus::InvalidArgument);
+    EXPECT_NE(started.message.find("worker name"), std::string::npos) << started.message;
+    EXPECT_NE(started.message.find("255"), std::string::npos) << started.message;
+    EXPECT_FALSE(transport->was_started());
+}
+
+/** @brief Tests that a label value HELLO cannot carry is refused, naming the label. */
+TEST(Medium_WorkerAgentTest, Regression_ALabelValueAbove255BytesIsRefusedBeforeConnecting)
+{
+    RuntimeConfig config;
+    config.labels = {NodeLabel{"zone", std::string(300, 'v')}};
+    Runtime runtime = Runtime::create(config).value();
+    const auto transport = std::make_shared<FakeTransport>();
+    WorkerAgentOptions options;
+    options.name = "worker-a";
+    WorkerAgent agent(runtime, transport, make_sushi<KernelRegistry>(), std::move(options));
+
+    const TransportResult started = agent.start();
+    EXPECT_EQ(started.status, TransportStatus::InvalidArgument);
+    EXPECT_NE(started.message.find("label 'zone'"), std::string::npos) << started.message;
+    EXPECT_NE(started.message.find("300 bytes"), std::string::npos) << started.message;
+    EXPECT_FALSE(transport->was_started());
 }

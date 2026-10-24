@@ -11,8 +11,6 @@ sushiruntime_add_module(
         advanced_controls.cpp
         buffer.cpp
         emit_dynamic.cpp
-        host_identity_posix.cpp
-        host_identity_windows.cpp
         interop.cpp
         late_window.cpp
         node_emitters.cpp
@@ -42,4 +40,5 @@ sushiruntime_add_module(
         memory_exchange
         context_access
         engine_handles
-        region_boundary)
+        region_boundary
+        topology)

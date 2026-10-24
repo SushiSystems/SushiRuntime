@@ -327,7 +327,8 @@ namespace EndToEndTests
          * @brief Adds an op-tagged task out = a + b whose local body computes the same sum.
          * @param options The node's options; the name and the operation are set here.
          */
-        void add_vec_add(Graph& graph, const char* name, const USMFloats& a, const USMFloats& b,
+        template <class Builder>
+        void add_vec_add(Builder& graph, const char* name, const USMFloats& a, const USMFloats& b,
                          const USMFloats& out, NodeOptions options = NodeOptions())
         {
             options.name = name;
@@ -387,8 +388,9 @@ namespace EndToEndTests
         class BackgroundRun final
         {
             public:
-                /** @brief Starts the run; @p graph outlives this object. */
-                explicit BackgroundRun(Graph& graph)
+                /** @brief Starts the run of a graph of either kind that outlives this object. */
+                template <class Runnable>
+                explicit BackgroundRun(Runnable& graph)
                 {
                     auto done = std::make_shared<std::promise<void>>();
                     finished_ = done->get_future();
@@ -1866,6 +1868,68 @@ namespace EndToEndTests
         expect_sum(out, a, b);
     }
 
+    /**
+     * @brief Tests that a 50 ms rule deadline reaps before the monitor's 250 ms period ends.
+     *
+     * The slack, 150 ms past the deadline, still ends 50 ms before the first periodic pass.
+     */
+    TEST(Medium_DistributedPlacementTest, Regression_ARuleDeadlineReapsBeforeTheMonitorPeriod)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 16;
+        constexpr std::chrono::milliseconds K_RULE_DEADLINE{50};
+        constexpr std::chrono::milliseconds K_SLACK{150};
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats a(queue, K_COUNT, 0.0f);
+        USMFloats b(queue, K_COUNT, 0.0f);
+        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+        a.ramp(1.0f);
+        b.ramp(2.0f);
+
+        // Long timeouts leave the monitor its 250 ms ceiling as the period.
+        InProcessFabric fabric;
+        ClusterOptions options = eager_options();
+        options.liveness_timeout = std::chrono::milliseconds(60000);
+        options.task_deadline = std::chrono::milliseconds(60000);
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          std::move(options)).value();
+        ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::FallSilent);
+        worker.report(two_device_facts("rack-7-gpu", "a"));
+        ASSERT_TRUE(worker.start());
+        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+        share(cluster, a);
+        share(cluster, b);
+        share(cluster, out);
+
+        PlacementRule rule = pinned_rule();
+        rule.target.machine_name = "rack-7-gpu";
+        rule.deadline = K_RULE_DEADLINE;
+        set_rule(master_runtime, std::move(rule));
+
+        auto graph = master_runtime.graph();
+        add_vec_add(graph, "deadline", a, b, out, pinned_options());
+        ASSERT_TRUE(graph.compile());
+        BackgroundRun run(graph);
+        const auto wait_end = std::chrono::steady_clock::now() + K_WAIT;
+        while (worker.dispatch_count() == 0 && std::chrono::steady_clock::now() < wait_end)
+            std::this_thread::yield();
+        const auto dispatched = std::chrono::steady_clock::now();
+        while (cluster.statistics().tasks_reaped_deadline == 0 &&
+               std::chrono::steady_clock::now() < wait_end)
+            std::this_thread::yield();
+        const auto reaped = std::chrono::steady_clock::now();
+        ASSERT_TRUE(run.wait()) << "the rule's deadline did not take the task back";
+
+        ASSERT_GE(cluster.statistics().tasks_reaped_deadline, 1u);
+        EXPECT_LT(reaped - dispatched, K_RULE_DEADLINE + K_SLACK)
+            << "the reap waited for the monitor's period, not for the task's deadline";
+        expect_sum(out, a, b);
+    }
+
     /** @brief Tests that a busy target holds its nodes for its own slots instead of the master. */
     TEST(Medium_DistributedPlacementTest, BusyTargetRunsBothNodesOneAfterTheOther)
     {
@@ -1974,6 +2038,106 @@ namespace EndToEndTests
         ASSERT_EQ(worker.send_stream({success_frame(worker.dispatch(0))}), SendStatus::Queued);
         ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
         EXPECT_EQ(policy->offers().size(), 1u) << "the policy did not decide the node";
+    }
+
+    /** @brief Tests that a device-only GPU rule on a CPU-only master offloads to a GPU worker. */
+    TEST(Medium_DistributedPlacementTest, Regression_ADeviceOnlyRuleTheMasterLacksOffloads)
+    {
+        RuntimeConfig cpu_only;
+        cpu_only.devices.include_gpu = false;
+        cpu_only.devices.include_accelerator = false;
+        Result<Runtime> created = Runtime::create(cpu_only);
+        if (!created)
+            GTEST_SKIP() << "SYCL reports no CPU device.";
+        Runtime master_runtime = std::move(*created);
+
+        constexpr std::size_t K_COUNT = 16;
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats a(queue, K_COUNT, 1.0f);
+        USMFloats b(queue, K_COUNT, 2.0f);
+        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+
+        InProcessFabric fabric;
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          eager_options()).value();
+        ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+        worker.report(two_device_facts("rack-7-gpu", "a"));
+        ASSERT_TRUE(worker.start());
+        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+        share(cluster, a);
+        share(cluster, b);
+        share(cluster, out);
+
+        PlacementRule rule = pinned_rule();
+        rule.target.device_kind = DeviceKind::GPU;
+        set_rule(master_runtime, std::move(rule));
+
+        auto graph = master_runtime.graph();
+        add_vec_add(graph, "gpu_only", a, b, out, pinned_options());
+        ASSERT_TRUE(graph.compile());
+        BackgroundRun run(graph);
+        ASSERT_TRUE(worker.wait_for_dispatches(1)) << "the master kept a node it has no GPU for";
+        EXPECT_EQ(worker.dispatch(0).device_index, 1u) << "the worker's GPU is its device 1";
+        ASSERT_EQ(worker.send_stream({success_frame(worker.dispatch(0))}), SendStatus::Queued);
+        ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
+        EXPECT_EQ(cluster.offloaded(), 1u);
+    }
+
+    /** @brief Tests that a region's node in a scope reaches the worker its rule names. */
+    TEST(Medium_DistributedPlacementTest, Regression_ARegionsNodeInAScopeReachesTheNamedWorker)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 16;
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context =
+            SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats a(queue, K_COUNT, 1.0f);
+        USMFloats b(queue, K_COUNT, 2.0f);
+        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
+
+        InProcessFabric fabric;
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          eager_options()).value();
+        ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::Accept);
+        worker.report(two_device_facts("rack-7-gpu", "a"));
+        ASSERT_TRUE(worker.start());
+        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+        share(cluster, a);
+        share(cluster, b);
+        share(cluster, out);
+
+        PlacementRule rule = pinned_rule();
+        rule.target.machine_name = "rack-7-gpu";
+        rule.target.device_index = 1;
+        set_rule(master_runtime, std::move(rule));
+
+        NodeOptions options;
+        options.name = "in_region";
+        options.operation = K_VEC_ADD;
+        auto world = master_runtime.dynamic_graph();
+        world.region(0).recorder().within(
+            master_runtime.placement_scope(K_PINNED, K_PINNED_KEY),
+            [&a, &b, &out, &options](Recorder& in_scope)
+            {
+                in_scope.task(Access(Reads(BufferRegion(a.data()), BufferRegion(b.data())),
+                                     Writes(BufferRegion(out.data()))),
+                              [](sycl::queue&, const std::vector<sycl::event>&)
+                              {
+                                  return sycl::event{};
+                              },
+                              options);
+            });
+        BackgroundRun run(world);
+        ASSERT_TRUE(worker.wait_for_dispatches(1)) << "the region's node did not reach the worker";
+        EXPECT_EQ(worker.dispatch(0).device_index, 1u);
+        ASSERT_EQ(worker.send_stream({success_frame(worker.dispatch(0))}), SendStatus::Queued);
+        ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
+        EXPECT_EQ(cluster.offloaded(), 1u);
     }
 
     /** @brief Tests that a task whose input chunks are all lost fails remotely and runs locally. */

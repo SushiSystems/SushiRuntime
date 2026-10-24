@@ -12,6 +12,10 @@ ruled on 2026-10-24 that no task is built on its own: each repository is built a
 at the end of the programme, and AdaptiveCpp is checked then too. Every task is written for
 AdaptiveCpp as well as intel-llvm. Work lands on `feature/layered_execution` in each repository.
 
+The owner granted one exception on 2026-10-24: a docs-sync worker may edit the manual pages a
+dispatch names, line by line. `docs/design/`, the changelog, `REMAINING_WORK.md` and
+`KNOWN_ISSUES.md` stay the orchestrator's, who reviews and commits each such change.
+
 The order across repositories follows ruling 10 of the design: this repository's R1 to R10
 first, then SushiBLAS, then SushiAI. A SushiBLAS, SushiAI or SushiEngine task starts once the
 runtime tasks it waits on are built; each of those repositories keeps its own work folder.
