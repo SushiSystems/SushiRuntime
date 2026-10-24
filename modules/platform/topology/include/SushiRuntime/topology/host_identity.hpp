@@ -30,6 +30,7 @@
 
 #include <string>
 
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/machine/operating_system.hpp>
 
 namespace SushiRuntime
@@ -40,12 +41,12 @@ namespace SushiRuntime
          * @brief Returns the host name of this machine.
          * @return The name, or an empty string when the platform does not give one.
          */
-        [[nodiscard]] std::string host_name();
+        [[nodiscard]] SUSHIRUNTIME_API std::string host_name();
 
         /**
          * @brief Returns the operating system the library runs on.
          * @return Unknown for a system the library does not name.
          */
-        [[nodiscard]] OperatingSystem host_operating_system() noexcept;
-    } // namespace Topology
+        [[nodiscard]] SUSHIRUNTIME_API OperatingSystem host_operating_system() noexcept;
+    } // namespace Internal::Topology
 } // namespace SushiRuntime
