@@ -24,6 +24,8 @@ one adapter module of your own, as [the integration guide](guides/INTEGRATION.md
 | [CLI guide](guides/CLI_GUIDE.md) | Every `sr` command, its flags and the configuration it reads |
 | [Integration](guides/INTEGRATION.md) | Consuming the installed package, and writing the one adapter module that reaches the library, shown on `applications/examples/adapter/` |
 | [Distributed guide](guides/DISTRIBUTED_GUIDE.md) | Building and running the optional master and worker layer, and its limits |
+| [Distributed failures](guides/DISTRIBUTED_FAILURES.md) | What the distributed layer does when a worker, a link or the master fails |
+| [Placement guide](guides/PLACEMENT_GUIDE.md) | Placement classes, scopes and the placement rules that send work to a device or a machine |
 | [FAQ](guides/FAQ.md) | The questions a newcomer asks, each answered from this manual |
 
 ## Reference
