@@ -21,7 +21,7 @@
 
 /**
  * @file wire_messages.hpp
- * @brief Declares the sixteen messages of protocol version 3, each with encode and decode.
+ * @brief Declares the sixteen messages of protocol version 4, each with encode and decode.
  * @author Mustafa Garip
  * @see modules/extension/wire/README.md
  */
@@ -38,6 +38,9 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
+
+#include <SushiRuntime/machine/device_kind.hpp>
+#include <SushiRuntime/machine/operating_system.hpp>
 
 #include <SushiRuntime/transport/buffer_handle.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
@@ -108,9 +111,33 @@ namespace SushiRuntime::Distributed::Wire
     };
 
     /**
+     * @brief Describes one device of the worker inside a HELLO.
+     *
+     * A decoded entry's name is a view into the payload.
+     */
+    struct HelloDevice
+    {
+        DeviceKind kind = DeviceKind::Other; /**< Class of the device. */
+        std::string_view name;               /**< Name the device reports, at most 255 bytes. */
+        std::uint64_t memory_bytes = 0;      /**< Global memory of the device. */
+    };
+
+    /**
+     * @brief Holds one label of the worker inside a HELLO.
+     *
+     * A decoded entry's key and value are views into the payload.
+     */
+    struct HelloLabel
+    {
+        std::string_view key;   /**< Key of the label, at most 255 bytes. */
+        std::string_view value; /**< Value of the label, at most 255 bytes. */
+    };
+
+    /**
      * @brief Opens the handshake: the worker's nonce and what it is.
      *
-     * A decoded message's strings are views into the payload.
+     * A decoded message's strings are views into the payload, and so are the strings of its
+     * devices and labels.
      */
     struct HelloMessage
     {
@@ -132,6 +159,15 @@ namespace SushiRuntime::Distributed::Wire
 
         /** @brief Holds the worker's display name, at most 255 bytes. */
         std::string_view node_name;
+
+        /** @brief Holds the system the worker runs. */
+        OperatingSystem operating_system = OperatingSystem::Unknown;
+
+        /** @brief Holds the devices of the worker, in the order its runtime lists them. */
+        std::vector<HelloDevice> devices;
+
+        /** @brief Holds the labels of the worker, in the order given. */
+        std::vector<HelloLabel> labels;
     };
 
     /**
@@ -312,6 +348,9 @@ namespace SushiRuntime::Distributed::Wire
 
         /** @brief Holds the buffers the kernel writes, at the versions its output must carry. */
         std::vector<BufferHandle> outputs;
+
+        /** @brief Holds the index of the worker's device that runs the kernel. */
+        std::uint32_t device_index = 0;
     };
 
     /**

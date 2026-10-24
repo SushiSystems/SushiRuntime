@@ -36,6 +36,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 namespace SushiRuntime
 {
@@ -191,6 +192,77 @@ namespace SushiRuntime
                 options.reconnect = false;
             }
 
+            /** @brief Holds the flag that adds one label; it may be given many times. */
+            constexpr std::string_view K_LABEL_FLAG = "--label";
+
+            /** @brief Holds the variable that lists labels separated by commas. */
+            constexpr const char* K_LABEL_VARIABLE = "SR_WORKER_LABELS";
+
+            /** @brief Holds the separator between two labels in the variable. */
+            constexpr char K_LABEL_SEPARATOR = ',';
+
+            /**
+             * @brief Appends one `key=value` label unless it breaks a rule.
+             * @param problem Receives what was wrong with the text when the call fails.
+             */
+            [[nodiscard]] bool append_label(std::string_view text, std::vector<NodeLabel>& labels,
+                                            std::string& problem)
+            {
+                const std::size_t equals = text.find('=');
+                if (equals == std::string_view::npos)
+                {
+                    problem = "label '" + std::string(text) +
+                              "' has no '='; write it as key=value";
+                    return false;
+                }
+
+                const std::string_view key = text.substr(0, equals);
+                const std::string_view value = text.substr(equals + 1);
+                if (key.empty())
+                {
+                    problem = "label '" + std::string(text) +
+                              "' has an empty key; write at least one character before the '='";
+                    return false;
+                }
+
+                if (key.size() > K_MAXIMUM_NAME_BYTES || value.size() > K_MAXIMUM_NAME_BYTES)
+                {
+                    problem = "label '" + std::string(key) +
+                              "' holds a key or a value longer than " +
+                              std::to_string(K_MAXIMUM_NAME_BYTES) + " bytes";
+                    return false;
+                }
+
+                for (const NodeLabel& earlier : labels)
+                {
+                    if (earlier.key == key)
+                    {
+                        problem = "label key '" + std::string(key) +
+                                  "' is given twice; give each key once";
+                        return false;
+                    }
+                }
+
+                labels.push_back(NodeLabel{std::string(key), std::string(value)});
+                return true;
+            }
+
+            /** @brief Appends the labels of a comma-separated list, in order. */
+            [[nodiscard]] bool append_label_list(std::string_view list,
+                                                 std::vector<NodeLabel>& labels,
+                                                 std::string& problem)
+            {
+                while (true)
+                {
+                    const std::size_t separator = list.find(K_LABEL_SEPARATOR);
+                    if (!append_label(list.substr(0, separator), labels, problem))
+                        return false;
+                    if (separator == std::string_view::npos)
+                        return true;
+                    list.remove_prefix(separator + 1);
+                }
+            }
+
             /** @brief Describes one flag that takes a value. */
             struct ValueOption
             {
@@ -294,6 +366,11 @@ namespace SushiRuntime
                     usage.append("\n      ").append(option.help).append("\n");
                 }
 
+                usage.append("  ").append(K_LABEL_FLAG).append(" key=value (");
+                usage.append(K_LABEL_VARIABLE).append(")\n      ");
+                usage.append("a label the master sees; repeat the flag for more, the variable ");
+                usage.append("lists key=value pairs separated by commas; a key is given once\n");
+
                 for (const SwitchOption& option : K_SWITCH_OPTIONS)
                 {
                     usage.append("  ").append(option.flag);
@@ -317,6 +394,7 @@ namespace SushiRuntime
         {
             WorkerOptionsResult result;
             std::array<std::optional<std::string_view>, K_VALUE_OPTIONS.size()> given;
+            std::vector<std::string_view> label_flags;
 
             for (std::size_t index = 0; index < arguments.size(); ++index)
             {
@@ -341,17 +419,25 @@ namespace SushiRuntime
                     continue;
                 }
 
-                const std::size_t slot = find_value_option(flag);
-                if (slot == K_VALUE_OPTIONS.size())
+                const bool is_label = flag == K_LABEL_FLAG;
+                const std::size_t slot =
+                    is_label ? K_VALUE_OPTIONS.size() : find_value_option(flag);
+                if (!is_label && slot == K_VALUE_OPTIONS.size())
                     return refuse("unknown argument '" + std::string(argument) +
                                   "'; --help lists the flags");
 
+                std::string_view value;
                 if (equals != std::string_view::npos)
-                    given[slot] = argument.substr(equals + 1);
+                    value = argument.substr(equals + 1);
                 else if (index + 1 < arguments.size())
-                    given[slot] = std::string_view(arguments[++index]);
+                    value = std::string_view(arguments[++index]);
                 else
                     return refuse(std::string(flag) + " needs a value");
+
+                if (is_label)
+                    label_flags.push_back(value);
+                else
+                    given[slot] = value;
             }
 
             for (std::size_t slot = 0; slot < K_VALUE_OPTIONS.size(); ++slot)
@@ -375,6 +461,18 @@ namespace SushiRuntime
                 std::string problem;
                 if (!option.apply(*text, result.options, problem))
                     return refuse(source + ": " + problem);
+            }
+
+            std::string problem;
+            const std::optional<std::string> listed = environment(K_LABEL_VARIABLE);
+            if (listed && !listed->empty() &&
+                !append_label_list(*listed, result.options.labels, problem))
+                return refuse(std::string(K_LABEL_VARIABLE) + ": " + problem);
+
+            for (const std::string_view label : label_flags)
+            {
+                if (!append_label(label, result.options.labels, problem))
+                    return refuse(std::string(K_LABEL_FLAG) + ": " + problem);
             }
 
             if (result.options.master.host.empty())

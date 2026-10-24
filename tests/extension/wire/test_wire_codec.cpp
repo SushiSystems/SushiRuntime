@@ -39,6 +39,8 @@
 
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/machine/device_kind.hpp>
+#include <SushiRuntime/machine/operating_system.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
 #include <SushiRuntime/transport/transport.hpp>
@@ -113,6 +115,7 @@ namespace
 
         message.inputs = random_handles(random, 6);
         message.outputs = random_handles(random, 4);
+        message.device_index = static_cast<std::uint32_t>(random());
         return message;
     }
 
@@ -172,6 +175,10 @@ namespace
         HelloMessage hello;
         hello.build_id = "build-1";
         hello.node_name = "worker-a";
+        hello.operating_system = OperatingSystem::Linux;
+        hello.devices = {HelloDevice{DeviceKind::GPU, "gpu0", 1u << 30},
+                         HelloDevice{DeviceKind::CPU, "cpu0", 1u << 20}};
+        hello.labels = {HelloLabel{"role", "trainer"}, HelloLabel{"rack", "r4"}};
 
         ProofMessage proof;
         proof.ops = {OperationID(7), OperationID(8), OperationID(9)};
@@ -288,6 +295,7 @@ TEST(Medium_WireCodec, SeededDispatchesSurviveAWholeFrame)
                 << "parameter " << index;
         expect_same_handles(received.inputs, sent.inputs);
         expect_same_handles(received.outputs, sent.outputs);
+        EXPECT_EQ(received.device_index, sent.device_index);
     }
 }
 

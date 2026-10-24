@@ -43,6 +43,9 @@
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/machine/device_facts.hpp>
+#include <SushiRuntime/machine/node_label.hpp>
+#include <SushiRuntime/machine/operating_system.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/transport/transport.hpp>
@@ -63,6 +66,15 @@ namespace SushiRuntime
 
             /** @brief Holds the build identifier sent in HELLO, at most 255 bytes. */
             std::string build_id;
+
+            /** @brief Holds the operating system sent in HELLO. */
+            OperatingSystem operating_system = OperatingSystem::Unknown;
+
+            /** @brief Holds the devices sent in HELLO; each name is cut to 255 bytes. */
+            std::vector<DeviceFacts> devices;
+
+            /** @brief Holds the labels sent in HELLO; each key and value is cut to 255 bytes. */
+            std::vector<NodeLabel> labels;
 
             /** @brief Holds the operations sent in PROOF: KernelRegistry::known_ops(). */
             std::vector<OperationID> ops;

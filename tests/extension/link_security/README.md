@@ -5,7 +5,7 @@ The tests of the `link_security` module, mirroring `modules/extension/link_secur
 runs them with the rest; `sr run sr_link_security_tests -- --gtest_filter='<pattern>'` runs one
 program alone.
 
-The tests need no hardware and no network. They pin the two primitives the protocol v3
+The tests need no hardware and no network. They pin the two primitives the protocol v4
 handshake is built on, SHA-256 and HMAC-SHA256, to the vectors their standards publish, then the
 proofs built from them.
 

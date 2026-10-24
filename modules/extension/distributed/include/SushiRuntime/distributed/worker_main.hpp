@@ -33,10 +33,12 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
+#include <SushiRuntime/machine/node_label.hpp>
 #include <SushiRuntime/transport/endpoint.hpp>
 
 namespace SushiRuntime
@@ -96,6 +98,14 @@ namespace SushiRuntime
 
             /** @brief `--log-level name`; empty leaves the process's log level alone. */
             std::string log_level;
+
+            /**
+             * @brief `--label key=value`, repeatable, and `SR_WORKER_LABELS`; sent to the master.
+             *
+             * The variable's labels come first, then the flags'. A key is not empty, holds no
+             * '=' and appears once; the worker's runtime refuses a list that breaks this.
+             */
+            std::vector<NodeLabel> labels;
         };
 
         /**

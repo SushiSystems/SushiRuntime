@@ -181,7 +181,7 @@ TEST(Medium_WorkerOptionsParserTest, HelpListsEveryFlagAndVariable)
     for (const char* word :
          {"--master", "--secret-file", "--name", "--max-jobs", "--cache-bytes", "--heartbeat-ms",
           "--pull-idle-timeout-ms", "--connect-timeout-s", "--no-reconnect", "--log-level",
-          "--version", "--help", "SR_MASTER", "SR_CLUSTER_SECRET_FILE", "SR_WORKER_NAME",
+          "--version", "--help", "--label", "SR_WORKER_LABELS", "SR_MASTER", "SR_CLUSTER_SECRET_FILE", "SR_WORKER_NAME",
           "SR_WORKER_MAX_JOBS", "SR_WORKER_CACHE_BYTES", "SR_WORKER_HEARTBEAT_MS",
           "SR_WORKER_PULL_IDLE_TIMEOUT_MS", "SR_WORKER_CONNECT_TIMEOUT_S"})
         EXPECT_NE(result.message.find(word), std::string::npos) << word;
@@ -240,4 +240,87 @@ TEST(Medium_WorkerOptionsParserTest, NameAbove255BytesIsRefused)
     EXPECT_EQ(result.status, WorkerOptionsStatus::Invalid);
     EXPECT_NE(result.message.find("256 bytes"), std::string::npos) << result.message;
     EXPECT_NE(result.message.find("255"), std::string::npos) << result.message;
+}
+
+/** @brief Tests that the variable's labels come first, then the flags', three in all. */
+TEST(Medium_WorkerOptionsParserTest, LabelsComeFromTheVariableAndRepeatedFlags)
+{
+    const WorkerOptionsResult result =
+        parse({"--master", "a:1", "--label", "rack=r4", "--label=zone=eu=west"},
+              {{"SR_WORKER_LABELS", "role=trainer"}});
+
+    ASSERT_EQ(result.status, WorkerOptionsStatus::Run) << result.message;
+    ASSERT_EQ(result.options.labels.size(), 3u);
+    EXPECT_EQ(result.options.labels[0].key, "role");
+    EXPECT_EQ(result.options.labels[0].value, "trainer");
+    EXPECT_EQ(result.options.labels[1].key, "rack");
+    EXPECT_EQ(result.options.labels[1].value, "r4");
+    EXPECT_EQ(result.options.labels[2].key, "zone");
+    EXPECT_EQ(result.options.labels[2].value, "eu=west");
+}
+
+/** @brief Tests that a variable holding several pairs is split at each comma. */
+TEST(Medium_WorkerOptionsParserTest, TheVariableHoldsPairsSeparatedByCommas)
+{
+    const WorkerOptionsResult result =
+        parse({"--master", "a:1"}, {{"SR_WORKER_LABELS", "role=trainer,gpu=,rack=r4"}});
+
+    ASSERT_EQ(result.status, WorkerOptionsStatus::Run) << result.message;
+    ASSERT_EQ(result.options.labels.size(), 3u);
+    EXPECT_EQ(result.options.labels[1].key, "gpu");
+    EXPECT_TRUE(result.options.labels[1].value.empty());
+    EXPECT_EQ(result.options.labels[2].key, "rack");
+}
+
+/** @brief Tests that no label means an empty list, and an empty variable counts as unset. */
+TEST(Medium_WorkerOptionsParserTest, NoLabelGivesAnEmptyList)
+{
+    const WorkerOptionsResult result =
+        parse({"--master", "a:1"}, {{"SR_WORKER_LABELS", ""}});
+
+    ASSERT_EQ(result.status, WorkerOptionsStatus::Run) << result.message;
+    EXPECT_TRUE(result.options.labels.empty());
+}
+
+/** @brief Tests the three label refusals, from a flag and from the variable. */
+TEST(Medium_WorkerOptionsParserTest, ALabelThatBreaksARuleIsRefused)
+{
+    const std::vector<RefusedCase> cases = {
+        {{"--master", "a:1", "--label", "=value"}, {}, "--label: label '=value' has an empty key"},
+        {{"--master", "a:1", "--label", "rack"}, {}, "--label: label 'rack' has no '='"},
+        {{"--master", "a:1", "--label", "rack=r4", "--label", "rack=r5"}, {},
+         "--label: label key 'rack' is given twice"},
+        {{"--master", "a:1"}, {{"SR_WORKER_LABELS", "=value"}},
+         "SR_WORKER_LABELS: label '=value' has an empty key"},
+        {{"--master", "a:1"}, {{"SR_WORKER_LABELS", "rack"}},
+         "SR_WORKER_LABELS: label 'rack' has no '='"},
+        {{"--master", "a:1"}, {{"SR_WORKER_LABELS", "rack=r4,rack=r5"}},
+         "SR_WORKER_LABELS: label key 'rack' is given twice"},
+        {{"--master", "a:1", "--label", "rack=r5"}, {{"SR_WORKER_LABELS", "rack=r4"}},
+         "--label: label key 'rack' is given twice"},
+        {{"--master", "a:1"}, {{"SR_WORKER_LABELS", "rack=r4,"}},
+         "SR_WORKER_LABELS: label '' has no '='"},
+        {{"--master", "a:1", "--label"}, {}, "--label needs a value"},
+    };
+
+    for (const RefusedCase& refused : cases)
+    {
+        const WorkerOptionsResult result = parse(refused.arguments, refused.variables);
+
+        EXPECT_EQ(result.status, WorkerOptionsStatus::Invalid) << refused.expected;
+        EXPECT_NE(result.message.find(refused.expected), std::string::npos)
+            << "expected '" << refused.expected << "' in '" << result.message << "'";
+        EXPECT_EQ(result.message.find('\n'), std::string::npos) << result.message;
+    }
+}
+
+/** @brief Tests that a key or a value HELLO cannot carry is refused. */
+TEST(Medium_WorkerOptionsParserTest, ALabelAbove255BytesIsRefused)
+{
+    const std::string label = "key=" + std::string(256, 'v');
+
+    const WorkerOptionsResult result = parse({"--master", "a:1", "--label", label.c_str()});
+
+    EXPECT_EQ(result.status, WorkerOptionsStatus::Invalid);
+    EXPECT_NE(result.message.find("255 bytes"), std::string::npos) << result.message;
 }

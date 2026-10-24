@@ -21,7 +21,7 @@
 
 /**
  * @file wire_messages.cpp
- * @brief Encodes and decodes the sixteen messages of protocol version 3.
+ * @brief Encodes and decodes the sixteen messages of protocol version 4.
  * @author Mustafa Garip
  * @see modules/extension/wire/README.md
  */
@@ -53,6 +53,66 @@ namespace SushiRuntime::Distributed::Wire
             return handle;
         }
 
+        /** @brief Holds the smallest encoded size of one device: kind, empty name, memory. */
+        constexpr std::size_t K_DEVICE_MIN_BYTES = 11;
+
+        /** @brief Holds the smallest encoded size of one label: two empty strings. */
+        constexpr std::size_t K_LABEL_MIN_BYTES = 4;
+
+        /** @brief Appends the devices of a HELLO behind their count. */
+        void put_devices(FieldWriter& writer, const std::vector<HelloDevice>& devices)
+        {
+            writer.put_count(devices.size());
+            for (const HelloDevice& device : devices)
+            {
+                writer.put_enum(device.kind);
+                writer.put_string(device.name);
+                writer.put_u64(device.memory_bytes);
+            }
+        }
+
+        /** @brief Reads the devices of a HELLO; reserves once, after the count passed its check. */
+        void read_devices(FieldReader& reader, std::vector<HelloDevice>& out)
+        {
+            const std::uint32_t count = reader.read_count(K_DEVICE_MIN_BYTES);
+            out.clear();
+            out.reserve(count);
+            for (std::uint32_t index = 0; index < count; ++index)
+            {
+                HelloDevice device;
+                device.kind = reader.read_enum(DeviceKind::CPU, DeviceKind::Other);
+                device.name = reader.read_string();
+                device.memory_bytes = reader.read_u64();
+                out.push_back(device);
+            }
+        }
+
+        /** @brief Appends the labels of a HELLO behind their count. */
+        void put_labels(FieldWriter& writer, const std::vector<HelloLabel>& labels)
+        {
+            writer.put_count(labels.size());
+            for (const HelloLabel& label : labels)
+            {
+                writer.put_string(label.key);
+                writer.put_string(label.value);
+            }
+        }
+
+        /** @brief Reads the labels of a HELLO; reserves once, after the count passed its check. */
+        void read_labels(FieldReader& reader, std::vector<HelloLabel>& out)
+        {
+            const std::uint32_t count = reader.read_count(K_LABEL_MIN_BYTES);
+            out.clear();
+            out.reserve(count);
+            for (std::uint32_t index = 0; index < count; ++index)
+            {
+                HelloLabel label;
+                label.key = reader.read_string();
+                label.value = reader.read_string();
+                out.push_back(label);
+            }
+        }
+
         /** @brief Appends a list of handles behind its count. */
         void put_handles(FieldWriter& writer, const std::vector<BufferHandle>& handles)
         {
@@ -79,6 +139,9 @@ namespace SushiRuntime::Distributed::Wire
         writer.put_bytes({worker_nonce.data(), worker_nonce.size()});
         writer.put_string(build_id);
         writer.put_string(node_name);
+        writer.put_enum(operating_system);
+        put_devices(writer, devices);
+        put_labels(writer, labels);
         return writer.status();
     }
 
@@ -89,6 +152,10 @@ namespace SushiRuntime::Distributed::Wire
         reader.read_bytes({out.worker_nonce.data(), out.worker_nonce.size()});
         out.build_id = reader.read_string();
         out.node_name = reader.read_string();
+        out.operating_system =
+            reader.read_enum(OperatingSystem::Unknown, OperatingSystem::Windows);
+        read_devices(reader, out.devices);
+        read_labels(reader, out.labels);
         return reader.finish();
     }
 
@@ -211,6 +278,7 @@ namespace SushiRuntime::Distributed::Wire
             writer.put_u64(parameters[index]);
         put_handles(writer, inputs);
         put_handles(writer, outputs);
+        writer.put_u32(device_index);
         return writer.status();
     }
 
@@ -228,6 +296,7 @@ namespace SushiRuntime::Distributed::Wire
             out.parameters[index] = reader.read_u64();
         read_handles(reader, out.inputs);
         read_handles(reader, out.outputs);
+        out.device_index = reader.read_u32();
         return reader.finish();
     }
 

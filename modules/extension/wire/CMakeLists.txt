@@ -9,4 +9,4 @@ sushiruntime_add_module(
     SOURCES
         wire_frame.cpp
         wire_messages.cpp
-    DEPENDS core transport)
+    DEPENDS core machine transport)

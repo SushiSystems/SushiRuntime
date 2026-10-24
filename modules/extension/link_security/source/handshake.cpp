@@ -21,7 +21,7 @@
 
 /**
  * @file handshake.cpp
- * @brief Implements the nonce and the two proofs of the protocol v3 handshake.
+ * @brief Implements the nonce and the two proofs of the protocol v4 handshake.
  * @author Mustafa Garip
  */
 

@@ -21,7 +21,7 @@ It depends on `core`.
 
 ### The transport contract
 
-A transport moves frames of protocol version 3. It checks each frame's 12-byte header and knows
+A transport moves frames of protocol version 4. It checks each frame's 12-byte header and knows
 nothing about what a payload means; the handshake runs above it, so both transports exercise the
 same session code.
 

@@ -66,7 +66,7 @@ for a message that breaks one. The dispatcher fills the message from the node: i
 to the limit and sends the parameters up to the last one that is not zero. The worker builds the
 `NodeOptions` its kernel is handed from the same fields.
 
-A frame header carries `K_PROTOCOL_VERSION`, which is 3. check_protocol_version() of
+A frame header carries `K_PROTOCOL_VERSION`, which is 4. check_protocol_version() of
 `wire_frame.hpp` turns a header of another version into `ErrorCode::ProtocolMismatch` with both
 versions in its message, and that message is the text of the `REJECT` the receiver sends before
 it closes the connection.

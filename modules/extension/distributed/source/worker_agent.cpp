@@ -51,6 +51,7 @@
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/link_security/handshake.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/wire/message_router.hpp>
 #include <SushiRuntime/wire/wire_codec.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
@@ -204,9 +205,10 @@ namespace SushiRuntime
                 /**
                  * @brief Builds the bricks and the routing table; no thread runs yet.
                  * @param context Not null; shared, so it outlives the bricks built on it.
+                 * @param topology The facts of the runtime's machine; HELLO reports them.
                  */
                 Impl(std::shared_ptr<Internal::Execution::RuntimeContext> context,
-                     std::shared_ptr<Transport> transport,
+                     const NodeFacts& topology, std::shared_ptr<Transport> transport,
                      sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options);
 
                 /** @brief Starts the exec thread, the heartbeat thread and the transport. */
@@ -247,7 +249,8 @@ namespace SushiRuntime
                 using Router = Wire::MessageRouter<PeerID, std::uint8_t, Payload>;
 
                 /** @brief Returns what the link tells the master and how it probes this worker. */
-                [[nodiscard]] MasterLinkOptions make_link_options(const KernelRegistry& kernels);
+                [[nodiscard]] MasterLinkOptions make_link_options(const KernelRegistry& kernels,
+                                                                  const NodeFacts& topology);
 
                 /**
                  * @brief Routes one message type to a handler that receives it decoded.
@@ -319,7 +322,7 @@ namespace SushiRuntime
         };
 
         WorkerAgent::Impl::Impl(std::shared_ptr<Internal::Execution::RuntimeContext> context,
-                                std::shared_ptr<Transport> transport,
+                                const NodeFacts& topology, std::shared_ptr<Transport> transport,
                                 sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
             : context_(std::move(context)),
               transport_(require_transport(std::move(transport))),
@@ -327,17 +330,21 @@ namespace SushiRuntime
               cache_(make_cache_allocator(context_->memory()),
                      resolve_cache_budget(*context_, options_.cache_bytes)),
               link_(*transport_, options_.secret.bytes(),
-                    make_link_options(sealed(*require_kernels(kernels))), make_nonce),
+                    make_link_options(sealed(*require_kernels(kernels)), topology), make_nonce),
               executor_(kernels, cache_, *transport_, context_->devices().queue(K_DEVICE_INDEX),
                         DispatchExecutorOptions{options_.max_jobs, options_.pull_idle_timeout})
         {
             build_routes();
         }
 
-        MasterLinkOptions WorkerAgent::Impl::make_link_options(const KernelRegistry& kernels)
+        MasterLinkOptions WorkerAgent::Impl::make_link_options(const KernelRegistry& kernels,
+                                                               const NodeFacts& topology)
         {
             MasterLinkOptions link;
             link.name = options_.name;
+            link.operating_system = topology.operating_system;
+            link.devices = topology.devices;
+            link.labels = topology.labels;
             link.build_id = runtime_version_string();
             link.ops = kernels.known_ops();
             link.max_jobs = static_cast<std::uint32_t>(std::min<std::size_t>(
@@ -651,7 +658,7 @@ namespace SushiRuntime
         WorkerAgent::WorkerAgent(Runtime& runtime, std::shared_ptr<Transport> transport,
                                  sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
             : impl_(std::make_unique<Impl>(SushiRuntime::Internal::ContextAccess::shared(runtime),
-                                           std::move(transport), std::move(kernels),
+                                           runtime.topology(), std::move(transport), std::move(kernels),
                                            std::move(options)))
         {
 

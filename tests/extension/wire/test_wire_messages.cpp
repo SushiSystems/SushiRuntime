@@ -36,6 +36,8 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/machine/device_kind.hpp>
+#include <SushiRuntime/machine/operating_system.hpp>
 #include <SushiRuntime/wire/wire_codec.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
@@ -108,7 +110,10 @@ namespace
         return decoded;
     }
 
-    /** @brief Returns the HELLO payload: nonce 00..1F, "b1", "node". */
+    /**
+     * @brief Returns the HELLO payload: nonce 00..1F, "b1", "node", Linux, one GPU "gpu0" of
+     *        8 GiB, one label rack=r4.
+     */
     Bytes golden_hello()
     {
         return bytes_of({
@@ -117,6 +122,13 @@ namespace
             0x1C, 0x1D, 0x1E, 0x1F,
             0x02, 0x00, 0x62, 0x31,
             0x04, 0x00, 0x6E, 0x6F, 0x64, 0x65,
+            0x01,
+            0x01, 0x00, 0x00, 0x00,
+            0x01, 0x04, 0x00, 0x67, 0x70, 0x75, 0x30,
+            0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+            0x01, 0x00, 0x00, 0x00,
+            0x04, 0x00, 0x72, 0x61, 0x63, 0x6B,
+            0x02, 0x00, 0x72, 0x34,
         });
     }
 
@@ -160,13 +172,13 @@ namespace
         });
     }
 
-    /** @brief Returns the REJECT payload: version, sender version 3, "v3". */
+    /** @brief Returns the REJECT payload: version, sender version 4, "v4". */
     Bytes golden_reject()
     {
         return bytes_of({
             0x01,
-            0x03, 0x00,
-            0x02, 0x00, 0x76, 0x33,
+            0x04, 0x00,
+            0x02, 0x00, 0x76, 0x34,
         });
     }
 
@@ -179,7 +191,7 @@ namespace
         });
     }
 
-    /** @brief Returns the TASK_DISPATCH payload: task 42, two parameters, three handles. */
+    /** @brief Returns the TASK_DISPATCH payload: task 42, two parameters, three handles, device 2. */
     Bytes golden_task_dispatch()
     {
         return bytes_of({
@@ -200,6 +212,7 @@ namespace
             0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x01, 0x00, 0x00, 0x00,
             0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x02, 0x00, 0x00, 0x00,
         });
     }
 
@@ -330,7 +343,7 @@ namespace
     /** @brief Decodes a frame header after one of its bytes is replaced. */
     FrameStatus header_status_with_byte(std::size_t offset, unsigned value, FrameHeader& out)
     {
-        Bytes header = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x03, 0x00, 0x0E, 0x00, 0x08, 0x00,
+        Bytes header = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0E, 0x00, 0x08, 0x00,
                                   0x00, 0x00 });
         header[offset] = static_cast<std::byte>(value);
         return decode_frame_header(view_of(header), out);
@@ -353,12 +366,56 @@ TEST(Medium_WireFormat, GoldenBytes_Hello)
     message.worker_nonce = counting_from(0x00);
     message.build_id = "b1";
     message.node_name = "node";
+    message.operating_system = OperatingSystem::Linux;
+    message.devices = { HelloDevice{ DeviceKind::GPU, "gpu0", 0x0000000200000000ull } };
+    message.labels = { HelloLabel{ "rack", "r4" } };
 
     const Bytes golden = golden_hello();
     const HelloMessage decoded = expect_golden(message, golden);
     EXPECT_EQ(decoded.worker_nonce, message.worker_nonce);
     EXPECT_EQ(decoded.build_id, "b1");
     EXPECT_EQ(decoded.node_name, "node");
+    EXPECT_EQ(decoded.operating_system, OperatingSystem::Linux);
+    ASSERT_EQ(decoded.devices.size(), 1u);
+    EXPECT_EQ(decoded.devices[0].kind, DeviceKind::GPU);
+    EXPECT_EQ(decoded.devices[0].name, "gpu0");
+    EXPECT_EQ(decoded.devices[0].memory_bytes, 0x0000000200000000ull);
+    ASSERT_EQ(decoded.labels.size(), 1u);
+    EXPECT_EQ(decoded.labels[0].key, "rack");
+    EXPECT_EQ(decoded.labels[0].value, "r4");
+}
+
+/** @brief Tests that a HELLO with two devices and two labels keeps every field and its order. */
+TEST(Medium_WireFormat, HelloWithTwoDevicesAndTwoLabelsDecodes)
+{
+    HelloMessage message;
+    message.worker_nonce = counting_from(0x00);
+    message.build_id = "b1";
+    message.node_name = "node";
+    message.operating_system = OperatingSystem::Windows;
+    message.devices = { HelloDevice{ DeviceKind::CPU, "cpu0", 0x100000000ull },
+                        HelloDevice{ DeviceKind::Accelerator, "", 0 } };
+    message.labels = { HelloLabel{ "role", "trainer" }, HelloLabel{ "gpu", "" } };
+
+    Bytes encoded;
+    ASSERT_EQ(message.encode(encoded), CodecStatus::Ok);
+
+    HelloMessage decoded;
+    const DecodeResult result = HelloMessage::decode(view_of(encoded), decoded);
+    ASSERT_TRUE(result.ok()) << "offset " << result.offset;
+    EXPECT_EQ(decoded.operating_system, OperatingSystem::Windows);
+    ASSERT_EQ(decoded.devices.size(), 2u);
+    EXPECT_EQ(decoded.devices[0].kind, DeviceKind::CPU);
+    EXPECT_EQ(decoded.devices[0].name, "cpu0");
+    EXPECT_EQ(decoded.devices[0].memory_bytes, 0x100000000ull);
+    EXPECT_EQ(decoded.devices[1].kind, DeviceKind::Accelerator);
+    EXPECT_TRUE(decoded.devices[1].name.empty());
+    EXPECT_EQ(decoded.devices[1].memory_bytes, 0u);
+    ASSERT_EQ(decoded.labels.size(), 2u);
+    EXPECT_EQ(decoded.labels[0].key, "role");
+    EXPECT_EQ(decoded.labels[0].value, "trainer");
+    EXPECT_EQ(decoded.labels[1].key, "gpu");
+    EXPECT_TRUE(decoded.labels[1].value.empty());
 }
 
 /** @brief Tests the CHALLENGE bytes. */
@@ -417,14 +474,14 @@ TEST(Medium_WireFormat, GoldenBytes_Reject)
 {
     RejectMessage message;
     message.reason = RejectReason::Version;
-    message.sender_version = 3;
-    message.text = "v3";
+    message.sender_version = 4;
+    message.text = "v4";
 
     const Bytes golden = golden_reject();
     const RejectMessage decoded = expect_golden(message, golden);
     EXPECT_EQ(decoded.reason, RejectReason::Version);
-    EXPECT_EQ(decoded.sender_version, 3u);
-    EXPECT_EQ(decoded.text, "v3");
+    EXPECT_EQ(decoded.sender_version, 4u);
+    EXPECT_EQ(decoded.text, "v4");
 }
 
 /** @brief Tests the GOODBYE bytes, whose layout is frozen across versions. */
@@ -453,6 +510,7 @@ TEST(Medium_WireFormat, GoldenBytes_TaskDispatch)
     message.inputs = { BufferHandle{ GlobalBufferID{ 1 }, 3, 256 },
                        BufferHandle{ GlobalBufferID{ 2 }, 1, 512 } };
     message.outputs = { BufferHandle{ GlobalBufferID{ 3 }, 1, 128 } };
+    message.device_index = 2;
 
     const Bytes golden = golden_task_dispatch();
     const TaskDispatchMessage decoded = expect_golden(message, golden);
@@ -474,6 +532,7 @@ TEST(Medium_WireFormat, GoldenBytes_TaskDispatch)
     EXPECT_EQ(decoded.outputs[0].id.value, 3u);
     EXPECT_EQ(decoded.outputs[0].version, 1u);
     EXPECT_EQ(decoded.outputs[0].size_bytes, 128u);
+    EXPECT_EQ(decoded.device_index, 2u);
 }
 
 /** @brief Tests the TASK_ACCEPTED bytes. */
@@ -694,10 +753,10 @@ TEST(Medium_WireFormat, RejectsOutOfRangeEnumAndBool)
     EXPECT_EQ(header_status_with_byte(4, 0x02, header), FrameStatus::VersionMismatch);
     EXPECT_EQ(header.version, 2u);
 
-    const Bytes largest = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x03, 0x00, 0x0B, 0x00, 0x00,
+    const Bytes largest = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0B, 0x00, 0x00,
                                      0x00, 0x10, 0x00 });
     EXPECT_EQ(decode_frame_header(view_of(largest), header), FrameStatus::Ok);
-    const Bytes too_long = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x03, 0x00, 0x0B, 0x00, 0x01,
+    const Bytes too_long = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0B, 0x00, 0x01,
                                       0x00, 0x10, 0x00 });
     EXPECT_EQ(decode_frame_header(view_of(too_long), header), FrameStatus::PayloadTooLong);
 }
@@ -739,6 +798,75 @@ TEST(Medium_WireFormat, ListCountBoundedByRemainingBytes)
     EXPECT_EQ(result.status, CodecStatus::OutOfRange);
     EXPECT_EQ(result.offset, inputs_offset);
     EXPECT_EQ(dispatch_message.inputs.capacity(), 0u);
+}
+
+/** @brief Tests that a HELLO device or label count the payload cannot hold fails first. */
+TEST(Medium_WireFormat, HelloListCountsAreBoundedByRemainingBytes)
+{
+    // The fixed fields: nonce, "b1", "node" and the operating system.
+    const std::size_t counts_offset = 32 + 4 + 6 + 1;
+    const Bytes huge_count = bytes_of({ 0xFF, 0xFF, 0xFF, 0xFF });
+
+    Bytes devices = prefix_of(golden_hello(), counts_offset);
+    devices.insert(devices.end(), huge_count.begin(), huge_count.end());
+    devices.insert(devices.end(), 11, std::byte{ 0 });
+    HelloMessage message;
+    DecodeResult result = HelloMessage::decode(view_of(devices), message);
+    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
+    EXPECT_EQ(result.offset, counts_offset);
+    EXPECT_EQ(message.devices.capacity(), 0u);
+
+    // Twenty-one bytes hold one device of at least 11 bytes, so a count of two is one too many.
+    devices = prefix_of(golden_hello(), counts_offset);
+    const Bytes two = bytes_of({ 0x02, 0x00, 0x00, 0x00 });
+    devices.insert(devices.end(), two.begin(), two.end());
+    devices.insert(devices.end(), 21, std::byte{ 0 });
+    result = HelloMessage::decode(view_of(devices), message);
+    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
+    EXPECT_EQ(result.offset, counts_offset);
+    EXPECT_EQ(message.devices.capacity(), 0u);
+
+    // No devices, then a label count of 0x40000000 with eight bytes behind it.
+    Bytes labels = prefix_of(golden_hello(), counts_offset);
+    const Bytes no_devices = bytes_of({ 0x00, 0x00, 0x00, 0x00 });
+    const Bytes wrapping_count = bytes_of({ 0x00, 0x00, 0x00, 0x40 });
+    labels.insert(labels.end(), no_devices.begin(), no_devices.end());
+    labels.insert(labels.end(), wrapping_count.begin(), wrapping_count.end());
+    labels.insert(labels.end(), 8, std::byte{ 0 });
+    result = HelloMessage::decode(view_of(labels), message);
+    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
+    EXPECT_EQ(result.offset, counts_offset + 4);
+    EXPECT_EQ(message.labels.capacity(), 0u);
+}
+
+/** @brief Tests that an operating system or a device kind outside its enumeration is refused. */
+TEST(Medium_WireFormat, HelloRefusesAnUnknownOperatingSystemAndDeviceKind)
+{
+    const std::size_t os_offset = 32 + 4 + 6;
+    DecodeResult result = decode_with_byte<HelloMessage>(golden_hello(), os_offset, 3);
+    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
+    EXPECT_EQ(result.offset, os_offset);
+
+    // The device kind follows the operating system byte and the 4-byte device count.
+    const std::size_t kind_offset = os_offset + 1 + 4;
+    result = decode_with_byte<HelloMessage>(golden_hello(), kind_offset, 4);
+    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
+    EXPECT_EQ(result.offset, kind_offset);
+}
+
+/** @brief Tests that a HELLO device name or label key above 255 bytes does not encode. */
+TEST(Medium_WireFormat, HelloRefusesAStringAbove255Bytes)
+{
+    const std::string long_text(256, 'a');
+    Bytes encoded;
+
+    HelloMessage device_message;
+    device_message.devices = { HelloDevice{ DeviceKind::GPU, long_text, 0 } };
+    EXPECT_EQ(device_message.encode(encoded), CodecStatus::TooLong);
+
+    HelloMessage label_message;
+    label_message.labels = { HelloLabel{ long_text, "v" } };
+    EXPECT_EQ(label_message.encode(encoded), CodecStatus::TooLong);
 }
 
 /** @brief Tests that a payload with bytes after its last field is refused. */

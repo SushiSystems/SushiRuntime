@@ -76,10 +76,10 @@ namespace SushiRuntime
         /**
          * @brief Reads a worker's settings: a flag beats its variable, which beats the default.
          *
-         * The first of `--help`, `--version` or a bad flag decides. A variable set to
-         * nothing counts as unset. run_worker() opens the secret file and checks the level.
+         * The first of `--help`, `--version` or a bad flag decides. A variable set to nothing
+         * counts as unset. Labels combine: those of `SR_WORKER_LABELS` first, then each `--label`.
+         * A label with an empty key, no '=', a repeated key or a part over 255 bytes is Invalid.
          * @param arguments The command line without the program's name; no entry is null.
-         * @param environment Called once per variable no flag overrides; not empty.
          */
         [[nodiscard]] SUSHIRUNTIME_API WorkerOptionsResult parse_worker_options(
             SushiRuntime::span<const char* const> arguments,

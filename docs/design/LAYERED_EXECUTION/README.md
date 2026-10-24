@@ -210,6 +210,16 @@ moving data between two devices is a node the caller records, never a copy the r
 A rule whose device is absent on this machine, such as device 1 on a one-device machine, follows
 its `if_absent`.
 
+A scope resolves its device when it is asked, by `PlacementScope::buffer()` or by `On(scope)`,
+against the rules in force at that moment, so a scope opened before `set_placement_rules()`
+follows the new set. The winning rule's machine part is matched against `Runtime::topology()`: a
+machine name or label that is not this machine's makes the target absent here. Its device part
+picks the device of that index, the first device of that kind, or the first with at least that
+much memory. A scope no rule matches, or a rule with no device part, gives device 0, as today.
+When the target is absent, `Local` gives device 0, `Fail` returns `ErrorCode::InvalidArgument`
+naming the rule and the device, and `Wait` gives device 0 after its bound has passed: a local
+device never appears during a run, and the bound is the rule writer's to keep short.
+
 ### Several machines
 
 `RulePlacement` replaces the decision of the `OffloadPolicy` when a rule set is in force. The
@@ -257,7 +267,7 @@ the task's own commit.
 | R4 | `PlacementRule`, `PlacementRules` with its checks, the match by class, prefix, key and operation, priority and insertion order. Done when: a table test resolves a set of nodes against a rule set, including two conflicting rules and every refusal. Waits on R1, R3. | building |
 | R5 | `Runtime::set_placement_rules()` between runs; the compile resolves each node once. Done when: a test changes the rules between two runs and sees the second compile place differently; a call during a run is refused. Waits on R2, R4. | building |
 | R6 | Local placement: a scope's buffer on its rule's device; `On(scope)`; `if_absent` for an absent device. Done when: a test on a one-device machine sees a rule for device 1 apply `local`, `fail` and a bounded `wait`; on a two-device machine a scope's buffer and its nodes land on device 1. Waits on R5. | planned |
-| R7 | Wire version 4: `HELLO` with operating system, devices and labels; `TASK_DISPATCH` with a device; `--label` and `SR_WORKER_LABELS`. Done when: the golden bytes of every message pass at version 4, and the worker options parser takes three labels from flags and the variable. Waits on R3. | planned |
+| R7 | Wire version 4: `HELLO` with operating system, devices and labels; `TASK_DISPATCH` with a device; `--label` and `SR_WORKER_LABELS`. Done when: the golden bytes of every message pass at version 4, and the worker options parser takes three labels from flags and the variable. Waits on R3. | building |
 | R8 | The master keeps each worker's facts; `WorkerLoad` names the worker and holds its facts. Done when: a test on `InProcessFabric` reads a worker's name, labels and devices from the load a policy receives, before and after a reconnect. Waits on R7. | planned |
 | R9 | A worker runs its kernels through its scheduler on the device a dispatch names. Done when: a worker with two devices runs two dispatches on the devices they name; KI-6 and RW-17 close. Waits on R7. | planned |
 | R10 | `RulePlacement`: the decision a policy returns becomes worker and device, local, wait or fail; a rule's `deadline`. Done when: on `InProcessFabric` a rule pins a class and key to a named worker, its `wait` holds a node until the worker returns, its `fail` ends the run with a `Status` naming the rule. Waits on R5, R8, R9. | planned |

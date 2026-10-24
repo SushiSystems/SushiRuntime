@@ -31,11 +31,14 @@
 #include <array>
 #include <cstring>
 #include <exception>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/frame_transport/frame_sending.hpp>
+#include <SushiRuntime/wire/wire_codec.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
 
 namespace SushiRuntime
@@ -59,6 +62,12 @@ namespace SushiRuntime
                 std::array<std::byte, Wire::K_NONCE_BYTES> wire{};
                 std::memcpy(wire.data(), bytes.data(), wire.size());
                 return wire;
+            }
+
+            /** @brief Returns a view of the first 255 bytes of a text, the most HELLO carries. */
+            std::string_view bounded_text(const std::string& text) noexcept
+            {
+                return std::string_view(text).substr(0, Wire::K_MAX_STRING_BYTES);
             }
 
             /** @brief Returns the words a log line uses for a loss cause. */
@@ -172,6 +181,13 @@ namespace SushiRuntime
             hello.worker_nonce = to_wire(nonce.bytes);
             hello.build_id = options_.build_id;
             hello.node_name = options_.name;
+            hello.operating_system = options_.operating_system;
+            for (const DeviceFacts& device : options_.devices)
+                hello.devices.push_back(Wire::HelloDevice{device.kind, bounded_text(device.name),
+                                                           device.memory_bytes});
+            for (const NodeLabel& label : options_.labels)
+                hello.labels.push_back(
+                    Wire::HelloLabel{bounded_text(label.key), bounded_text(label.value)});
             const SendStatus status = send_message(transport_, peer, hello);
             if (status != SendStatus::Queued)
                 SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "HELLO to master (peer {}) was not queued (status {})", peer.value,

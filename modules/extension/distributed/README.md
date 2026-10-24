@@ -114,7 +114,7 @@ new master, binds it to `RuntimeContext::offload_sink()` and calls
 DistributedCoordinator::start(). Only when that returns `TransportStatus::Ok` does it stop and remove the
 coordinator the runtime held before, set the release observer and install the new coordinator.
 start() starts the transport, then the monitor, and logs
-`distributed master listening on 127.0.0.1:7000, protocol v3, authentication off`. The endpoint is
+`distributed master listening on 127.0.0.1:7000, protocol v4, authentication off`. The endpoint is
 the message of the `TransportResult` the transport's `start()` returned: the bound `address:port`
 for TCP, so a bind to port 0 shows the port the OS chose, and `in-process` for a fabric.
 
@@ -211,7 +211,7 @@ the worker, so the in-process fabric exercises the same code as TCP.
 
 | Step | Frame | Carries |
 | --- | --- | --- |
-| 1 | `HELLO`, worker to master | a 32-byte worker nonce, the build id, the node name |
+| 1 | `HELLO`, worker to master | a 32-byte worker nonce, the build id, the node name, the operating system, the devices (kind, name, memory) and the labels |
 | 2 | `CHALLENGE`, master to worker | a 32-byte master nonce, the master's proof, the session id |
 | 3 | `PROOF`, worker to master | the worker's proof, its operation ids, `max_jobs`, its cache budget |
 | 4 | `WELCOME`, master to worker | the worker id, the liveness timeout, the ping interval, `chunk_bytes` |
@@ -520,6 +520,7 @@ transport and `StopSignal::request()`.
 | `--master host:port` | `SR_MASTER` | required; port 0 is refused |
 | `--secret-file path` | `SR_CLUSTER_SECRET_FILE` | none |
 | `--name text` | `SR_WORKER_NAME` | the machine's host name, else `worker` |
+| `--label key=value` | `SR_WORKER_LABELS` | none; the flag repeats, the variable lists pairs separated by `,` |
 | `--max-jobs n` | `SR_WORKER_MAX_JOBS` | 1024; from 1 to 4294967295 |
 | `--cache-bytes n` | `SR_WORKER_CACHE_BYTES` | 0, half of device memory |
 | `--heartbeat-ms n` | `SR_WORKER_HEARTBEAT_MS` | 1000; at least 1 |
@@ -529,7 +530,13 @@ transport and `StopSignal::request()`.
 | `--log-level name` | | unchanged; `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `off`; sets every category |
 | `--version`, `--help` | | print and exit 0 |
 
-A flag beats its variable, which beats the default. A variable set to nothing counts as unset. A
+A flag beats its variable, which beats the default. A variable set to nothing counts as unset.
+Labels are the exception: the labels of `SR_WORKER_LABELS` come first and each `--label` follows, in
+command-line order. A key must not be empty, a label must hold a `=`, a key may appear only once
+across the variable and the flags, and a key or a value holds at most 255 bytes; the first label that
+breaks a rule makes the command line invalid. `run_worker()` hands the labels to its `Runtime`
+through `RuntimeConfig::labels`, and `WorkerAgent` sends the facts of `Runtime::topology()` (system,
+devices, labels) in `HELLO` beside its own name. A
 value follows its flag as the next argument or after `=`. `parse_worker_options()` holds this
 table once; the usage text of `--help` is generated from it. The parser takes the environment
 through an `EnvironmentReader`, and `read_environment()` is the one it gets in a worker process.
@@ -564,6 +571,7 @@ The flag is one per process, which is why at most one `StopSignal` exists at a t
 | 1 | v0.3.0 and earlier | Frame `[u32 length][u8 type]` in native byte order, payloads written as raw structs, nine message types. No authentication, and a buffer travelled whole in one frame. Removed with `protocol.hpp` |
 | 2 | v0.4.0 | 12-byte little-endian header: magic `SRDP`, version, type, flags, payload length of at most 1 MiB. Sixteen messages with fixed-width fields. A four-message handshake with HMAC-SHA256 proofs in both directions. Buffers travel in chunks, and a task's output chunks precede its result. `TASK_ACCEPTED`, `BUFFER_ABORT`, `BUFFER_RELEASE`, `REJECT` and `GOODBYE` are new |
 | 3 | v0.4.0 | The frame and the sixteen messages of version 2. A task's dispatch carries its own operation, name and parameters |
+| 4 | unreleased | `HELLO` carries the worker's operating system, devices and labels; `TASK_DISPATCH` carries the index of the device that runs the kernel |
 
 `Wire::K_PROTOCOL_VERSION` in `wire/wire_frame.hpp` holds the current number. Master and worker
 must carry the same version: the reader checks it on every frame and there is no negotiation. The

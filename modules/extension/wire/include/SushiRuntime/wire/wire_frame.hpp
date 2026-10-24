@@ -21,7 +21,7 @@
 
 /**
  * @file wire_frame.hpp
- * @brief Declares FrameHeader, the 12-byte header in front of every version 3 payload.
+ * @brief Declares FrameHeader, the 12-byte header in front of every version 4 payload.
  * @author Mustafa Garip
  * @see modules/extension/wire/README.md
  */
@@ -48,7 +48,7 @@ namespace SushiRuntime::Distributed::Wire
         std::byte{0x53}, std::byte{0x52}, std::byte{0x44}, std::byte{0x50}};
 
     /** @brief Holds the protocol version this build writes and the only one it reads. */
-    inline constexpr std::uint16_t K_PROTOCOL_VERSION = 3;
+    inline constexpr std::uint16_t K_PROTOCOL_VERSION = 4;
 
     /** @brief Holds the size of the frame header in bytes. */
     inline constexpr std::size_t K_FRAME_HEADER_BYTES = 12;
@@ -64,7 +64,7 @@ namespace SushiRuntime::Distributed::Wire
      */
     enum class FrameStatus : std::uint8_t
     {
-        Ok,              /**< The header is a version 3 header this build accepts. */
+        Ok,              /**< The header is a version 4 header this build accepts. */
         Truncated,       /**< Fewer than 12 bytes were given. */
         BadMagic,        /**< The first four bytes are not the magic. */
         VersionMismatch, /**< The magic is right and the version is not this build's. */

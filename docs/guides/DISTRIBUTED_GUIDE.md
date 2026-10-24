@@ -535,7 +535,7 @@ logs this, counts `handshake_rejected_version` and closes:
 The worker logs this and exits with code 4:
 
 ```
-master (peer 1) speaks protocol v3, this worker v2; build both from one commit; not reconnecting
+master (peer 1) speaks protocol v4, this worker v3; build both from one commit; not reconnecting
 ```
 
 Something that is not a SushiRuntime program at all, such as a port scanner, is closed with
@@ -556,7 +556,7 @@ no kernel for the operation.
 
 ## 11. Protocol versions
 
-The wire protocol is version 3, and a peer of another version is refused. Build the master and
+The wire protocol is version 4, and a peer of another version is refused. Build the master and
 every worker from one commit; `--version` on a worker prints the version it speaks.
 [The module README](../../modules/extension/distributed/README.md) has the frame layout.
 

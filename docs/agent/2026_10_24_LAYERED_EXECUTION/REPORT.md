@@ -1,6 +1,6 @@
 # Layered execution: report
 
-**Status:** Open — R1 to R5 landed on 2026-10-24; R2 to R5 are not built yet.
+**Status:** Open — R1 to R5 and R7 landed on 2026-10-24; all but R1 are not built yet.
 
 ## R1
 
@@ -68,6 +68,22 @@ set it was built with alive.
 Left for later: `DynamicGraph` and `RegionComposer` resolve no rule, so a node of a dynamic graph
 reports none.
 
+## R7
+
+`HELLO` gains the operating system, a device list and a label list after its version 3 fields,
+as `std::string_view` records into the payload; counts are bounded by the bytes left.
+`TASK_DISPATCH` gains a u32 device index after the output handles, so earlier offsets stay; the
+master sends 0 until R10 and the worker ignores it until R9. The worker reads labels from
+`SR_WORKER_LABELS` first, then from each `--label`; a key cannot hold `=` because the text splits
+at the first one, and a key or value over 255 bytes is refused, the limit of a `HELLO` string.
+`WorkerAgent` copies `Runtime::topology()` into the link options.
+
+The golden bytes were worked out by hand and have not met the encoder: the final build runs
+them.
+
+Seen and kept: `wire_messages.hpp` holds 18 types and its source is over 450 lines; splitting it
+is its own task.
+
 ## Dispatches
 
 ```
@@ -76,4 +92,5 @@ dispatch: R3 — sonnet medium, 57 turns, passed, rung 1
 dispatch: R2 — sonnet medium, 46 turns, passed, rung 1
 dispatch: R4 — sonnet medium, 36 turns, passed, rung 1
 dispatch: R5 — sonnet medium, passed, rung 1
+dispatch: R7 — sonnet medium, 76 turns, passed, rung 1
 ```

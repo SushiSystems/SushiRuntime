@@ -25,7 +25,7 @@ sushiruntime_add_module(
         worker_main.cpp
         worker_options_parser.cpp
         worker_session.cpp
-    DEPENDS core log api transport cluster_load
+    DEPENDS core log machine api transport cluster_load
     PRIVATE_DEPENDS
         memory
         device

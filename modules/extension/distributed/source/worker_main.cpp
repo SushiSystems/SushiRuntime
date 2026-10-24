@@ -43,6 +43,7 @@
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
+#include <SushiRuntime/api/runtime/runtime_config.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
@@ -166,7 +167,9 @@ namespace SushiRuntime
                                                sushi_ptr<KernelRegistry> kernels)
             {
                 const StopSignal stop_signal;
-                Result<Runtime> created = Runtime::create();
+                RuntimeConfig config;
+                config.labels = options.labels;
+                Result<Runtime> created = Runtime::create(config);
                 if (!created)
                 {
                     SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "worker has no runtime: {}; exiting with code {}",

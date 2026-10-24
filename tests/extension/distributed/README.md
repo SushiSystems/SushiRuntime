@@ -235,14 +235,14 @@ table. The proxy uses `Socket` and `Listener` of the module, so it holds no plat
 ### `GarbageBytesClosedMasterLives`, `V1FrameRejected`, `OversizedLengthClosesPeerNotProcess`
 
 Findings DIST-15 and DIST-16. A raw socket writes 12 bytes: the text `GET / HTTP/1`, a version 1
-frame (a 32-bit length and a type byte), or a version 3 header that announces 1 MiB plus one byte.
+frame (a 32-bit length and a type byte), or a version 4 header that announces 1 MiB plus one byte.
 The master closes the connection with no reply and `peers_closed_malformed` reaches 1. A worker
 then registers, and in the first and the third test a task runs on it.
 
 | Test | What it proves |
 | --- | --- |
 | `WrongSecretRejected` | Finding DIST-03. A worker with another secret ends with `RejectedAuthentication`: it checks the master's proof first and sends no PROOF, so the master counts nothing for it. A raw peer then answers CHALLENGE with a proof of 0x44 bytes, and `handshake_rejected_auth` is 1. |
-| `VersionMismatchLoggedOncePerConnection` | Finding DIST-06. Two connections each send two headers of version 3. A sink installed with `set_log_sink` counts the ERROR lines that hold `protocol v3`: two after the master is detached, one for each connection, and `handshake_rejected_version` is 2. |
+| `VersionMismatchLoggedOncePerConnection` | Finding DIST-06. Two connections each send two headers of version 2. A sink installed with `set_log_sink` counts the ERROR lines that hold `protocol v2`: two after the master is detached, one for each connection, and `handshake_rejected_version` is 2. |
 | `MasterKilledWorkerSurvivesAndReconnects` | Findings DIST-01 and DIST-07. The proxy cuts the link and the master is detached. A second master attaches on another port and the proxy is retargeted. The worker registers with it, counts one reconnect, and a task runs on it. |
 
 ### `WorkerCutMidChunkTaskFinishesLocally`
@@ -394,7 +394,7 @@ bounded at 60 s.
 | Test | What it proves |
 | --- | --- |
 | `UnreadableSecretFileExitsOne`, `ShortSecretFileExitsOne`, `UnknownLogLevelExitsOne`, `BadFlagExitsOne` | Exit code 1. Each test captures the error stream and finds the file name, `31 bytes` and `at least 32`, the five level names, or the parser's line. All four return before a runtime is built. |
-| `VersionPrintsTheProtocolAndExitsZero` | `--version` prints `protocol v3` and the build, and returns 0. |
+| `VersionPrintsTheProtocolAndExitsZero` | `--version` prints `protocol v4` and the build, and returns 0. |
 
 ### `SignalStopsWithExitZero`
 
@@ -419,7 +419,9 @@ the test process.
 | --- | --- |
 | `MasterAloneGivesTheDefaults`, `EveryFlagIsRead` | `--master` alone leaves every other setting at the default of the flag table. The second test gives every flag, half as `--flag value` and half as `--flag=value`, and reads each field back. |
 | `EnvironmentFillsWhatNoFlagGives`, `FlagBeatsEnvironmentBeatsDefault`, `EmptyVariableCountsAsUnset` | With no flag, each of the eight variables sets its field. With `--max-jobs 3` and `SR_WORKER_MAX_JOBS` set to text that is not a number, the flag wins and the variable is never parsed. A variable set to nothing leaves the default. |
-| `HelpListsEveryFlagAndVariable`, `VersionNeedsNoMaster` | `--help` and `--version` are answered without `--master`. The usage text names all twelve flags and all eight variables. |
+| `HelpListsEveryFlagAndVariable`, `VersionNeedsNoMaster` | `--help` and `--version` are answered without `--master`. The usage text names all thirteen flags and all nine variables. |
+| `LabelsComeFromTheVariableAndRepeatedFlags`, `TheVariableHoldsPairsSeparatedByCommas`, `NoLabelGivesAnEmptyList` | `SR_WORKER_LABELS` and two `--label` flags give three labels, the variable's first. The variable splits at each comma and a label's value may hold '='. An empty variable counts as unset. |
+| `ALabelThatBreaksARuleIsRefused`, `ALabelAbove255BytesIsRefused` | An empty key, a label with no '=' and a repeated key are each refused, from a flag and from the variable, and so is a repeat across the two. A key or a value over 255 bytes is refused. Each message is one line that starts with `--label` or `SR_WORKER_LABELS`. |
 
 ### `EachRefusalNamesWhatWasWrong`, `NameAbove255BytesIsRefused`
 

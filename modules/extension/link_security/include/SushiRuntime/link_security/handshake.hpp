@@ -21,7 +21,7 @@
 
 /**
  * @file handshake.hpp
- * @brief Declares the nonce and the two proofs of the protocol v3 handshake.
+ * @brief Declares the nonce and the two proofs of the protocol v4 handshake.
  * @author Mustafa Garip
  * @see modules/extension/link_security/README.md
  */
