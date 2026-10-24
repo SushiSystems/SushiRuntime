@@ -180,6 +180,13 @@ events; a job that arrives while a batch runs waits for that run.
 
 KI-6 and RW-17 close in the commit that records the final build's passing tests.
 
+## R12
+
+The version already moved: `complete_local()` bumps the stored output handles of a fixed-buffer
+node, or the live writes of a double-buffered one, when a node that stayed local completes. The
+two new end-to-end tests pin the case the old test missed, a worker that already holds the old
+version, and the cost of two local writes before one dispatch: one pull. No source changed.
+
 ## Dispatches
 
 ```
@@ -195,4 +202,5 @@ dispatch: R9 — sonnet medium, 44 turns, partial (public interface needed), run
 dispatch: R15 — haiku high, 68 turns, passed, rung 1
 dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
 dispatch: R9 second half — opus low, 146 turns, passed, rung 1
+dispatch: R12 — sonnet medium, 28 turns, passed, rung 1
 ```

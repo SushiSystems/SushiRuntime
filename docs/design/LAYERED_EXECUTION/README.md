@@ -229,6 +229,13 @@ then applies `local`; `fail` ends the run with a `Status` that names the rule an
 `TASK_DISPATCH` carries the device the decision named, and the worker runs the kernel through its
 scheduler on that device, which closes KI-6.
 
+The owner chose on 2026-10-24 how the worker reaches its scheduler: `Interop::borrow()` wraps the
+memory of the worker's buffer cache as `Buffer`s the recorder tracks, without taking ownership,
+and each dispatch is one task placed on its device; a batch of dispatches runs in one graph run,
+so dispatches over disjoint buffers overlap and writers of one buffer keep their order. He also
+ruled that a stated placement wins over the device that owns a node's memory when both share a
+SYCL context, and is refused when they do not, so the cache allocates through the runtime.
+
 ### What a training run over several machines needs
 
 From SushiAI's `docs/design/LAYERED_EXECUTION/README.md`, where a replica of a model is one registered
@@ -238,7 +245,10 @@ kernel that runs a whole compiled step:
   its local fallback may do the same inside a run of the master's graph; if a graph cannot run
   inside a task of another run, SushiAI runs its master replica on a second `Runtime`;
 - a shared buffer that a task on the master writes gets a new version, so a worker's cache does
-  not serve stale parameters;
+  not serve stale parameters. R12 answered yes: `OffloadDispatcher::complete_local()` raises the
+  version of what a local node wrote when it completes, so the next dispatch carries the new
+  version and a worker holding the old one pulls; two local writes before one dispatch raise it
+  twice and cost one pull;
 - a rule's `deadline`, so a replica of a large model is not taken back while it works.
 
 ### Wire version 4
@@ -272,7 +282,7 @@ the task's own commit.
 | R9 | A worker runs its kernels through its scheduler on the device a dispatch names. Done when: a worker with two devices runs two dispatches on the devices they name; KI-6 and RW-17 close. Waits on R7. | building |
 | R10 | `RulePlacement`: the decision a policy returns becomes worker and device, local, wait or fail; a rule's `deadline`. Done when: on `InProcessFabric` a rule pins a class and key to a named worker, its `wait` holds a node until the worker returns, its `fail` ends the run with a `Status` naming the rule. Waits on R5, R8, R9. | building |
 | R11 | Probe: a registered kernel runs a compiled graph on the worker's runtime, and its local fallback runs one inside a master run. Done when: the test answers yes or no for each of the two, and the answer is written in "What a training run over several machines needs". | planned |
-| R12 | Probe and, if needed, fix: a local task's write to a shared buffer moves its version. Done when: a test writes a shared buffer from a local task and sees a worker pull the new version. | planned |
+| R12 | Probe and, if needed, fix: a local task's write to a shared buffer moves its version. Done when: a test writes a shared buffer from a local task and sees a worker pull the new version. | building |
 | R13 | Measure the TCP transport between two of the owner's machines: 4 MiB, 64 MiB and 256 MiB, throughput and latency; restore the offload benchmark under `applications/probes/`. Done when: the guide holds the measured numbers with the two machines named; RW-21 and RW-22 close. Waits on R10. | planned |
 | R14 | Worker-to-worker links and a ring all-reduce. Done when: designed only if SushiAI's five-machine measurement shows the master's link bounds the step (RW-14). Waits on SushiAI phase A7. | planned |
 | R15 | A node's determinism class: `NodeOptions::determinism` (`Unstated`, `Bitwise`, `Tolerant`, `Cosmetic`), kept in the node and reported by `PlanNode`; the runtime carries it and decides nothing by it. Ruled by the owner on 2026-10-24, for SushiBLAS's `IndexOps` and SushiEngine's nodes. Done when: a test records a node with `Bitwise` and one without and reads `Bitwise` and `Unstated` back from the plan. | building |

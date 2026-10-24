@@ -354,6 +354,33 @@ namespace EndToEndTests
         }
 
         /**
+         * @brief Adds a task with no operation that writes element i of a buffer as base + i, so
+         *        it always runs on the master.
+         */
+        void add_local_fill(Graph& graph, const char* name, const USMFloats& buffer, float base)
+        {
+            NodeOptions options;
+            options.name = name;
+
+            float* values = buffer.data();
+            const std::size_t count = buffer.count();
+            graph.add_task(
+                Reads(), Writes(BufferRegion(values)),
+                [values, count, base](sycl::queue& queue,
+                                      const std::vector<sycl::event>&) -> sycl::event
+                {
+                    return queue.submit([&](sycl::handler& handler)
+                    {
+                        SushiRuntime::Detail::enqueue_host_task(handler, [=]
+                        {
+                            for (std::size_t index = 0; index < count; ++index)
+                                values[index] = base + static_cast<float>(index);
+                        });
+                    });
+                }, options);
+        }
+
+        /**
          * @brief Runs a graph once on its own thread, so a run that never returns fails a test
          *        by timeout.
          */
@@ -1194,6 +1221,107 @@ namespace EndToEndTests
         EXPECT_EQ(worker_runs.load(), 1);
         expect_elements(y.data(), y.count(),
                         [](std::size_t index) { return 2.0f * static_cast<float>(index + 1); });
+
+        worker.stop();
+    }
+
+    /**
+     * @brief Tests that a worker holding an old version of a shared buffer pulls the new one
+     *        after a local task wrote it.
+     */
+    TEST(Medium_DistributedE2ETest, WorkerPullsTheNewVersionAfterALocalWrite)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 512;
+        std::atomic<int> worker_runs{0};
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats x(queue, K_COUNT, 1.0f);
+        USMFloats y(queue, K_COUNT, K_UNWRITTEN);
+
+        InProcessFabric fabric;
+        LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          eager_options()).value();
+        ASSERT_TRUE(worker.start());
+        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+        share(cluster, x);
+        share(cluster, y);
+
+        auto first = master_runtime.graph();
+        add_vec_add(first, "first_read", x, x, y);
+        first.run().value();
+        ASSERT_EQ(worker_runs.load(), 1);
+        expect_elements(y.data(), y.count(), [](std::size_t) { return 2.0f; });
+        const std::uint64_t first_chunks = cluster.statistics().chunks_sent;
+        ASSERT_GT(first_chunks, 0u) << "the worker did not pull the first version";
+        const std::optional<BufferHandle> held = cluster.buffer_handle(x.data());
+        ASSERT_TRUE(held.has_value());
+
+        auto second = master_runtime.graph();
+        add_local_fill(second, "optimizer", x, 10.0f);
+        add_vec_add(second, "second_read", x, x, y);
+        second.run().value();
+
+        const std::optional<BufferHandle> current = cluster.buffer_handle(x.data());
+        ASSERT_TRUE(current.has_value());
+        EXPECT_GT(current->version, held->version);
+        EXPECT_EQ(worker_runs.load(), 2);
+        EXPECT_GT(cluster.statistics().chunks_sent, first_chunks)
+            << "the worker read its cached old version";
+        expect_elements(y.data(), y.count(),
+                        [](std::size_t index) { return 2.0f * (10.0f + static_cast<float>(index)); });
+
+        worker.stop();
+    }
+
+    /** @brief Tests that two local writes before one dispatch cost the worker one pull. */
+    TEST(Medium_DistributedE2ETest, TwoLocalWritesBeforeADispatchCostOnePull)
+    {
+        if (!SushiRuntime::Test::has_any_sycl_device())
+            GTEST_SKIP() << "SYCL reports no device.";
+
+        constexpr std::size_t K_COUNT = 512;
+        std::atomic<int> worker_runs{0};
+        Runtime master_runtime = Runtime::create().value();
+        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
+        sycl::queue& queue = master_context.devices().queue(0);
+        USMFloats x(queue, K_COUNT, 1.0f);
+        USMFloats y(queue, K_COUNT, K_UNWRITTEN);
+
+        InProcessFabric fabric;
+        LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          eager_options()).value();
+        ASSERT_TRUE(worker.start());
+        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
+        share(cluster, x);
+        share(cluster, y);
+
+        auto first = master_runtime.graph();
+        add_vec_add(first, "first_read", x, x, y);
+        first.run().value();
+        const std::uint64_t pull_chunks = cluster.statistics().chunks_sent;
+        ASSERT_GT(pull_chunks, 0u);
+        const std::optional<BufferHandle> held = cluster.buffer_handle(x.data());
+        ASSERT_TRUE(held.has_value());
+
+        auto second = master_runtime.graph();
+        add_local_fill(second, "first_write", x, 10.0f);
+        add_local_fill(second, "second_write", x, 20.0f);
+        add_vec_add(second, "second_read", x, x, y);
+        second.run().value();
+
+        const std::optional<BufferHandle> current = cluster.buffer_handle(x.data());
+        ASSERT_TRUE(current.has_value());
+        EXPECT_EQ(current->version, held->version + 2u) << "each local write raises the version";
+        EXPECT_EQ(cluster.statistics().chunks_sent, 2 * pull_chunks)
+            << "the worker pulled the buffer once for the two writes";
+        expect_elements(y.data(), y.count(),
+                        [](std::size_t index) { return 2.0f * (20.0f + static_cast<float>(index)); });
 
         worker.stop();
     }

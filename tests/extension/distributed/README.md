@@ -88,6 +88,8 @@ timing. The TCP test binds `TCPMasterOptions` defaults (127.0.0.1, port 0) and r
 | Test | What it proves |
 | --- | --- |
 | `AutoVersionBumpAcrossLocalWriteThenOffloadedRead` | A local task with no operation writes a shared buffer and an offloaded task reads it. The buffer's version must rise, and the worker must compute from the values the local task wrote. The worker's kernel runs once, so the writer ran on the master. |
+| `WorkerPullsTheNewVersionAfterALocalWrite` | One offloaded read puts version 1 of a shared buffer in the worker's cache. A local task with no operation then rewrites the buffer and a second offloaded read follows. The version rises, `chunks_sent` grows, so the worker pulled again, and the output holds the new bytes. This is the optimizer-then-replica step of a training run. |
+| `TwoLocalWritesBeforeADispatchCostOnePull` | Two local writes of one buffer, in order, before one offloaded read. The version rises by two, one per write, and `chunks_sent` doubles, so the worker pulled once for the two. |
 | `WorkerDeathFallsBackToLocal` | A `FallSilent` worker takes the dispatch and stops answering. With a liveness timeout of 300 ms the master closes it and resubmits the task, which finishes locally. Until the dispatch the worker answers pings, so it cannot be closed early on a slow machine. |
 
 ### `PolicySeesWorkerFactsAcrossReconnect`
