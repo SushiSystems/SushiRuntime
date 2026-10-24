@@ -41,7 +41,10 @@ nothing to read does not compile.
 A kernel added with add_untracked() names no region, so the runtime cannot read its device from
 its data. On states it. On(buffer) and On(state) take the device of the handle and keep its
 liveness observer, so a graph whose handle was destroyed is refused with `DanglingResource`
-like any other. On(DeviceIndex) names the device outright and watches nothing.
+like any other. On(DeviceIndex) names the device outright and watches nothing. On(scope) takes
+the device a `PlacementScope` resolves to when the kernel is recorded, through the placement
+rules in force; a scope whose rule fails leaves a refusal on the recorder and records no node
+(`api/runtime/README.md`).
 
 Without an On the kernel runs on DeviceIndex{0}, the default device of Runtime::buffer() and
 Runtime::state(). A default buffer and a default untracked kernel therefore meet on one device.

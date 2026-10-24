@@ -334,8 +334,10 @@ namespace SushiRuntime
                                          const char* call = K_UNTRACKED_KERNEL)
             {
                 std::vector<LivenessObserver> lives;
-                const std::size_t device = placed_device(call, placement, lives);
-                return record(Detail::untracked_launch_node(count, device,
+                const std::optional<std::size_t> device = placed_device(call, placement, lives);
+                if (!device)
+                    return rule_count();
+                return record(Detail::untracked_launch_node(count, *device,
                                                             std::forward<F>(kernel_body)),
                               lives, options);
             }
@@ -354,8 +356,10 @@ namespace SushiRuntime
                                          const char* call = K_UNTRACKED_KERNEL)
             {
                 std::vector<LivenessObserver> lives;
-                const std::size_t device = placed_device(call, placement, lives);
-                return record(Detail::untracked_range_node(count, device,
+                const std::optional<std::size_t> device = placed_device(call, placement, lives);
+                if (!device)
+                    return rule_count();
+                return record(Detail::untracked_range_node(count, *device,
                                                            std::forward<F>(kernel_body)),
                               lives, options);
             }
@@ -375,8 +379,10 @@ namespace SushiRuntime
                                          const char* call = K_UNTRACKED_KERNEL)
             {
                 std::vector<LivenessObserver> lives;
-                const std::size_t device = placed_device(call, placement, lives);
-                return record(Detail::untracked_launch_node(extent, device,
+                const std::optional<std::size_t> device = placed_device(call, placement, lives);
+                if (!device)
+                    return rule_count();
+                return record(Detail::untracked_launch_node(extent, *device,
                                                             std::forward<F>(kernel_body)),
                               lives, options);
             }
@@ -396,8 +402,10 @@ namespace SushiRuntime
                                          const char* call = K_UNTRACKED_KERNEL)
             {
                 std::vector<LivenessObserver> lives;
-                const std::size_t device = placed_device(call, placement, lives);
-                return record(Detail::untracked_launch_node(range, device,
+                const std::optional<std::size_t> device = placed_device(call, placement, lives);
+                if (!device)
+                    return rule_count();
+                return record(Detail::untracked_launch_node(range, *device,
                                                             std::forward<F>(kernel_body)),
                               lives, options);
             }
@@ -416,9 +424,11 @@ namespace SushiRuntime
                        const char* call = "Recorder::untracked_raw_kernel(kernel, placement)")
             {
                 std::vector<LivenessObserver> lives;
-                const std::size_t device = placed_device(call, placement, lives);
+                const std::optional<std::size_t> device = placed_device(call, placement, lives);
+                if (!device)
+                    return rule_count();
                 return record(
-                    Detail::untracked_raw_node(device, std::forward<F>(kernel_body)),
+                    Detail::untracked_raw_node(*device, std::forward<F>(kernel_body)),
                     lives, options);
             }
 
@@ -911,12 +921,24 @@ namespace SushiRuntime
              * @brief Hands over the observer of the handle a placement names.
              * @param call  Names the call the user wrote in the message.
              * @param lives Gains the placement's observer when it watches an allocation.
-             * @return Index of the device the node is placed on.
-             * @pre placement names a device of this runtime.
+             * @return Index of the device the node is placed on, or none when the placement
+             *         names a scope whose rules refuse; the refusal is kept for the next run.
+             * @pre A placement that names a device names a device of this runtime.
              */
-            std::size_t placed_device(const char* call, const On& placement,
-                                      std::vector<LivenessObserver>& lives) const
+            std::optional<std::size_t> placed_device(const char* call, const On& placement,
+                                                     std::vector<LivenessObserver>& lives)
             {
+                if (placement.scope)
+                {
+                    Result<DeviceIndex> resolved = placement.scope->device();
+                    if (!resolved)
+                    {
+                        admit(std::optional<Error>(std::move(resolved.error())));
+                        return std::nullopt;
+                    }
+                    Detail::require_device(call, *resolved, Detail::device_count(context_));
+                    return (*resolved).value();
+                }
                 Detail::require_device(call, placement.device, Detail::device_count(context_));
                 if (!placement.life.expired())
                     lives.push_back(placement.life);

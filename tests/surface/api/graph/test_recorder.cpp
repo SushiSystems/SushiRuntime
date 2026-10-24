@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -1467,3 +1468,160 @@ namespace PlacementScopeRecordingTests
         EXPECT_FALSE(plan->nodes[0].placement_key.has_value());
     }
 } // namespace PlacementScopeRecordingTests
+
+namespace PlacementScopeDeviceRecordingTests
+{
+    namespace
+    {
+        /** @brief Holds the class every rule of this file matches. */
+        constexpr const char* K_CLASS = "recorder.device";
+
+        /** @brief Holds the element count of every launch of this file. */
+        constexpr std::size_t K_COUNT = 64;
+
+        /** @brief Returns a rule set whose one rule sends K_CLASS to a device index. */
+        PlacementRules send_to(std::size_t device, AbsentAction if_absent)
+        {
+            PlacementRule rule;
+            rule.name = "send";
+            rule.match.placement_class = K_CLASS;
+            rule.target.device_index = device;
+            rule.if_absent = AbsentPolicy{if_absent, std::chrono::milliseconds{0}};
+            PlacementRules rules;
+            EXPECT_TRUE(rules.add(std::move(rule)));
+            return rules;
+        }
+    } // namespace
+
+    /** @brief Tests that On(scope) runs an untracked verb on device 0 when Local resolves it. */
+    TEST(Medium_RecorderPlacementScopeDevice, OnAScopeRunsAnUntrackedVerbOnTheLocalDevice)
+    {
+        auto rt = Runtime::create().value();
+        ASSERT_TRUE(rt.set_placement_rules(
+            send_to(rt.advanced().device_count(), AbsentAction::Local)));
+        auto graph = rt.graph();
+        Recorder& recorder = graph.recorder();
+        auto data = rt.buffer<std::uint32_t>(K_COUNT).value();
+        std::uint32_t* words = data.data();
+
+        const std::size_t rule = recorder.untracked_kernel(
+            K_COUNT, [words](std::size_t i) { words[i] = static_cast<std::uint32_t>(i) + 1u; },
+            On(rt.placement_scope(K_CLASS)));
+
+        EXPECT_EQ(recorder.refusal(), nullptr);
+        EXPECT_EQ(rule, 0u);
+        ASSERT_TRUE(graph.run());
+        for (std::size_t i = 0; i < K_COUNT; ++i)
+            ASSERT_EQ(words[i], i + 1u) << "element " << i;
+    }
+
+    /** @brief Tests that a scope with no matching rule behaves as On(DeviceIndex{0}). */
+    TEST(Medium_RecorderPlacementScopeDevice, OnAScopeNoRuleMatchesRecordsOnDeviceZero)
+    {
+        auto rt = Runtime::create().value();
+        auto graph = rt.graph();
+        Recorder& recorder = graph.recorder();
+
+        recorder.untracked_raw_kernel([](sycl::handler&) {}, On(rt.placement_scope(K_CLASS)));
+
+        EXPECT_EQ(recorder.refusal(), nullptr);
+        EXPECT_EQ(recorder.rule_count(), 1u);
+    }
+
+    /** @brief Tests that a Fail rule leaves a refusal naming the rule and records no node. */
+    TEST(Medium_RecorderPlacementScopeDevice, OnAScopeThatFailsRefusesTheVerb)
+    {
+        auto rt = Runtime::create().value();
+        const std::size_t absent = rt.advanced().device_count();
+        ASSERT_TRUE(rt.set_placement_rules(send_to(absent, AbsentAction::Fail)));
+        auto graph = rt.graph();
+        Recorder& recorder = graph.recorder();
+        const PlacementScope scope = rt.placement_scope(K_CLASS);
+
+        recorder.untracked_kernel(K_COUNT, [](std::size_t) {}, On(scope));
+
+        ASSERT_NE(recorder.refusal(), nullptr);
+        EXPECT_EQ(recorder.refusal()->code, ErrorCode::InvalidArgument);
+        const std::string& message = recorder.refusal()->message;
+        EXPECT_NE(message.find("\"send\""), std::string::npos) << message;
+        EXPECT_NE(message.find("device index " + std::to_string(absent)), std::string::npos)
+            << message;
+        EXPECT_EQ(recorder.rule_count(), 0u) << "a refused verb records no node";
+
+        recorder.clear();
+        recorder.untracked_raw_kernel([](sycl::handler&) {}, On(scope));
+
+        ASSERT_NE(recorder.refusal(), nullptr);
+        EXPECT_EQ(recorder.refusal()->code, ErrorCode::InvalidArgument);
+        EXPECT_EQ(recorder.rule_count(), 0u);
+    }
+
+    /** @brief Tests that a kept refusal ends the run with its error. */
+    TEST(Medium_RecorderPlacementScopeDevice, ARefusedScopeEndsTheRun)
+    {
+        auto rt = Runtime::create().value();
+        ASSERT_TRUE(rt.set_placement_rules(
+            send_to(rt.advanced().device_count(), AbsentAction::Fail)));
+        auto graph = rt.graph();
+
+        graph.recorder().untracked_kernel(K_COUNT, [](std::size_t) {},
+                                          On(rt.placement_scope(K_CLASS)));
+
+        const auto run = graph.run();
+        ASSERT_FALSE(run);
+        EXPECT_EQ(run.error().code, ErrorCode::InvalidArgument);
+    }
+
+    /** @brief Tests that a scope opened before the rules is read when the verb is recorded. */
+    TEST(Medium_RecorderPlacementScopeDevice, AScopeOpenedBeforeTheRulesFollowsTheNewSet)
+    {
+        auto rt = Runtime::create().value();
+        auto graph = rt.graph();
+        Recorder& recorder = graph.recorder();
+        const PlacementScope scope = rt.placement_scope(K_CLASS);
+        ASSERT_TRUE(rt.set_placement_rules(
+            send_to(rt.advanced().device_count(), AbsentAction::Fail)));
+
+        recorder.untracked_kernel(K_COUNT, [](std::size_t) {}, On(scope));
+        EXPECT_NE(recorder.refusal(), nullptr) << "the new set refuses";
+
+        recorder.clear();
+        ASSERT_TRUE(rt.clear_placement_rules());
+        recorder.untracked_kernel(K_COUNT, [](std::size_t) {}, On(scope));
+        EXPECT_EQ(recorder.refusal(), nullptr) << "the cleared set leaves nothing to refuse";
+    }
+
+    /** @brief Tests that a scope's buffer and the tracked nodes that write it land on device 1. */
+    TEST(Medium_RecorderPlacementScopeDevice, AScopeBufferAndItsTrackedNodesLandOnDeviceOne)
+    {
+        auto rt = Runtime::create().value();
+        if (rt.advanced().device_count() < 2)
+            GTEST_SKIP() << "needs a second device for the rule's target";
+        ASSERT_TRUE(rt.set_placement_rules(send_to(1, AbsentAction::Fail)));
+        const PlacementScope scope = rt.placement_scope(K_CLASS);
+        auto data = scope.buffer<std::uint32_t>(K_COUNT).value();
+        std::uint32_t* words = data.data();
+        auto graph = rt.graph();
+
+        graph.recorder().within(
+            scope,
+            [&](Recorder& in_scope)
+            {
+                in_scope.kernel(K_COUNT, Access(Reads(), Writes(data)),
+                                [words](std::size_t i)
+                                { words[i] = static_cast<std::uint32_t>(i) * 2u; });
+                in_scope.untracked_kernel(K_COUNT, [](std::size_t) {}, On(scope));
+            });
+
+        EXPECT_EQ(data.device_index().value(), 1u);
+        EXPECT_EQ(graph.recorder().refusal(), nullptr);
+        const auto plan = graph.plan();
+        ASSERT_TRUE(plan);
+        ASSERT_EQ(plan->nodes.size(), 2u);
+        ASSERT_EQ(plan->nodes[0].writes.size(), 1u);
+        EXPECT_EQ(plan->nodes[0].writes[0].base, static_cast<void*>(words));
+        ASSERT_TRUE(graph.run());
+        for (std::size_t i = 0; i < K_COUNT; ++i)
+            ASSERT_EQ(words[i], i * 2u) << "element " << i;
+    }
+} // namespace PlacementScopeDeviceRecordingTests

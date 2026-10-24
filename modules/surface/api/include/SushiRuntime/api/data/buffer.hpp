@@ -410,6 +410,7 @@ namespace SushiRuntime
         private:
             friend class Runtime;
             friend class Interop;
+            friend class PlacementScope;
             template <typename>
             friend class State;
             friend struct Detail::HandleAccess;

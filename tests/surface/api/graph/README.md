@@ -677,6 +677,20 @@ tests read each node's class and key back from `Graph::plan()`.
 | `WithinReturnsWhatTheCallableReturns` | `within()` returns the rule position the callable returned. |
 | `AThrowingCallableClosesItsScope` | A callable that throws leaves no scope open: the next node carries no class and no key. |
 
+### Placement scopes and devices
+
+The tests send a class to one past the last device, which no machine has, except the last, which
+needs a second device and skips below two.
+
+| Test | What it proves |
+| --- | --- |
+| `OnAScopeRunsAnUntrackedVerbOnTheLocalDevice` | `On(scope)` under a `Local` rule records the verb with no refusal, and the run writes every element. |
+| `OnAScopeNoRuleMatchesRecordsOnDeviceZero` | With no rules, `On(scope)` records the raw verb as `On(DeviceIndex{0})` does. |
+| `OnAScopeThatFailsRefusesTheVerb` | Under a `Fail` rule `refusal()` holds an `InvalidArgument` that names the rule and the device, and neither the launch nor the raw verb records a node. |
+| `ARefusedScopeEndsTheRun` | The kept refusal is the error `run()` returns. |
+| `AScopeOpenedBeforeTheRulesFollowsTheNewSet` | A scope made before the rules is refused once a `Fail` set is installed and accepted after `clear_placement_rules()`, since the recorder resolves it at record time. |
+| `AScopeBufferAndItsTrackedNodesLandOnDeviceOne` | With a rule for device 1, the scope's buffer is on device 1, a tracked node recorded in the scope writes it (the plan's write is the buffer) and runs, and `On(scope)` on an untracked verb records. |
+
 ## test_region.cpp
 
 The file covers `extend()` as a library above the runtime uses it: the extension receives the

@@ -79,13 +79,13 @@ namespace SushiRuntime
             [[nodiscard]] static Result<Runtime> create(const RuntimeConfig& config = {})
             {
                 require_matching_version();
-                Result<NodeFacts> facts = create_topology(config);
+                Result<std::shared_ptr<NodeFacts>> facts = create_topology(config);
                 if (!facts)
                     return make_error(std::move(facts.error()));
                 Result<ContextHandle> context = create_context(config);
                 if (!context)
                     return make_error(std::move(context.error()));
-                Result<void> listed = list_devices(*context, *facts);
+                Result<void> listed = list_devices(*context, **facts);
                 if (!listed)
                     return make_error(std::move(listed.error()));
                 return Runtime(std::move(*context), std::move(*facts));
@@ -173,7 +173,8 @@ namespace SushiRuntime
             [[nodiscard]] SUSHIRUNTIME_API const NodeFacts& topology() const;
 
             /**
-             * @brief Returns the scope that names a placement class and a key.
+             * @brief Returns the scope that names a placement class and a key, bound to this
+             *        runtime's rules and devices.
              * @param name Dotted name of the class, such as "sushiai.replica".
              * @param key  Key of the scope; 0 is a key like any other.
              * @pre name is not empty, does not start or end with '.' and holds no "..".
@@ -192,7 +193,7 @@ namespace SushiRuntime
             placement_scope(PlacementClass placement_class,
                             std::optional<std::uint64_t> key = std::nullopt) const noexcept
             {
-                return PlacementScope(placement_class, key);
+                return PlacementScope(placement_class, key, context_, topology_);
             }
 
             /**
@@ -225,7 +226,7 @@ namespace SushiRuntime
              * @return The facts, or an InvalidArgument error naming the first label that breaks
              *         a rule, or an Unsupported error when the host name cannot be read.
              */
-            [[nodiscard]] SUSHIRUNTIME_API static Result<NodeFacts>
+            [[nodiscard]] SUSHIRUNTIME_API static Result<std::shared_ptr<NodeFacts>>
             create_topology(const RuntimeConfig& config);
 
             /**
@@ -246,7 +247,7 @@ namespace SushiRuntime
              * @brief Takes ownership of a built context and the facts of its machine.
              * @param context Must not be empty.
              */
-            Runtime(ContextHandle context, NodeFacts facts) noexcept
+            Runtime(ContextHandle context, std::shared_ptr<const NodeFacts> facts) noexcept
                 : context_(std::move(context)), topology_(std::move(facts))
             {
             }
@@ -254,7 +255,7 @@ namespace SushiRuntime
             /** @brief The context shared with every handle; empty only after a move. */
             ContextHandle context_;
 
-            /** @brief The facts of the machine, built once by create(). */
-            NodeFacts topology_;
+            /** @brief The facts of the machine, built once by create() and shared with scopes. */
+            std::shared_ptr<const NodeFacts> topology_;
     };
 } // namespace SushiRuntime

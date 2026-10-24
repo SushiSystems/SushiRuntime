@@ -26,14 +26,23 @@ caller and not hang.
 
 ## test_placement_scope.cpp
 
-The file covers `PlacementScope` and the two overloads of `Runtime::placement_scope()`. The tests of
-the value need no device; the tests of the overloads create a `Runtime`.
+The file covers `PlacementScope`, the two overloads of `Runtime::placement_scope()` and the device
+a scope resolves to. The tests of the value need no device; the others create a `Runtime`. The
+device tests send a class to `advanced().device_count()`, one past the last device, which no machine
+has, so the absent-device cases run on any machine; the two tests that need a second device skip
+when `advanced().device_count()` is below 2.
 
 | Test | What it proves |
 | --- | --- |
 | `AccessorsReturnTheClassAndTheKeyItWasBuiltWith`, `ANoneKeyStaysNone`, `AKeyOfZeroIsKeptAsZero`, `ACopyReportsTheSameClassAndKey` | The accessors return what the constructor took. A key of 0 stays 0 and is not read as none, and a copy reports what the original reports. |
 | `TheStringAndClassOverloadsGiveEqualClasses`, `BothOverloadsKeepAKeyOfZeroAndANoneKey`, `ANameWithoutADotIsAClass` | The string and the `PlacementClass` overloads build equal classes for one name and keep a key of 0 and a none key. A name with no dot is a class. |
 | `AMalformedNameStopsTheProcess` | An empty name, a name that starts or ends with `.` and a name with two `.` in a row each stop the process. |
+| `AScopeWithoutARuntimeGivesDeviceZeroAndNoBuffer` | A scope built from a class and a key has no rules to read: `device()` gives 0 and `buffer()` returns `InvalidState`. |
+| `ANoRuleScopeGivesDeviceZero`, `ARuleWithAPresentDeviceGivesThatDevice` | No rule, or a rule for another class, gives device 0. A rule with a machine and no device part, an index, a kind and a least memory the machine has each give the device they name. |
+| `LocalGivesDeviceZeroForAnAbsentDevice`, `FailNamesTheRuleAndTheDevice`, `FailNamesAnUnnamedRuleByItsPosition`, `WaitGivesDeviceZeroAfterItsBound` | A rule for an absent device gives device 0 under `Local`, an `InvalidArgument` that holds the rule's name (or `at position 0`) and `device index N` under `Fail`, and device 0 after at least a 40 ms bound, measured with `std::chrono::steady_clock`, under `Wait`. |
+| `AnotherMachineMakesTheTargetAbsent`, `ALabelTheMachineCarriesMakesTheTargetPresent`, `AKindOrMemoryNoDeviceHasIsAbsent` | A machine name or label that is not this machine's makes the target absent, and a label it carries makes it present. A least memory above every device, and a kind the machine lacks, are absent. The kind case skips on a machine with an accelerator. |
+| `AScopeOpenedBeforeTheRulesFollowsTheNewSet` | A scope made before `set_placement_rules()` is refused by a `Fail` set and accepted again after `clear_placement_rules()`. |
+| `LocalPlacesTheBufferOnDeviceZero`, `FailRefusesTheBuffer`, `ABufferLandsOnTheDeviceTheRuleNames` | `buffer<T>()` allocates on device 0 under `Local`, returns the error of `device()` under `Fail`, and allocates on device 1 when a rule names it (skipped below two devices). |
 
 ## test_runtime.cpp
 

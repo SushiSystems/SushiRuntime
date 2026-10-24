@@ -218,6 +218,15 @@ process instead, as it does in Runtime::buffer(): a placement on a device index 
 not drive stops in placed_device() through `Detail::require_device()`, and a device slot that
 is not host USM of this runtime stops in require_device_slots().
 
+A placement named by `On(scope)` is the one case of a placement that refuses. The recorder
+resolves the scope in placed_device(), at the moment the verb is recorded and against the rules in
+force then, through `PlacementScope::device()`. A `Fail` rule, or a scope whose rules cannot be
+read, leaves the error `device()` returned in refusal() and records no node; a `Local` or `Wait`
+rule records the node on device 0. A device the scope resolves is one the runtime drives, so it
+passes the same `Detail::require_device()` check as an index. A scope has no handle, so it adds no
+liveness observer. A tracked verb takes no `On`: it runs where the first buffer it writes lives,
+and a buffer from `PlacementScope::buffer()` lives on the scope's device.
+
 The refusal stays until clear(), and a later refusal does not replace it. Every run entry of the
 owning graph returns it before anything else is checked and runs nothing; see entry_refusal. A
 caller that wants to know earlier reads refusal() after the verbs.

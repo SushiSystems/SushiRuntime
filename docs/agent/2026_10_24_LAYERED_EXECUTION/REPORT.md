@@ -1,6 +1,6 @@
 # Layered execution: report
 
-**Status:** Open — R1 to R5, R7 and R8 landed on 2026-10-24; all but R1 are not built yet.
+**Status:** Open — R1 to R8 landed on 2026-10-24; all but R1 are not built yet.
 
 ## R1
 
@@ -93,6 +93,21 @@ not proved the secret cannot overwrite a registered worker's facts. `pick()` cal
 under the directory's mutex, which every write to the map also takes, so `WorkerLoad::facts` is
 a raw pointer valid for the call. Two live workers with one name share an entry.
 
+## R6
+
+`PlacementScope` holds its class and key, the runtime's `ContextHandle` and a
+`shared_ptr<const NodeFacts>`; `Runtime::topology_` became that shared pointer so a scope stays
+valid after its runtime moves. `PlacementScope::device()`, defined in `placement_scope.cpp`, is
+the one place a scope reads rules. `buffer<T>()` allocates through `Buffer<T>::allocate`, which
+now has `PlacementScope` as a friend beside `Runtime` and `Interop`. `On(scope)` resolves when
+the kernel is recorded; a failed rule leaves a refusal on the recorder, which `run()` returns,
+and records no node. A scope built from its public constructor has no runtime: device 0, and
+`buffer()` returns `InvalidState`.
+
+Seen and kept: `Buffer<T>` gains a third friend; the vocabulary header of `On` now includes the
+scope's header; `topology()` on a moved-from `Runtime` dereferences null. The two-device tests
+check the buffer's device and the node's write region, since a plan node reports no device.
+
 ## Dispatches
 
 ```
@@ -103,4 +118,5 @@ dispatch: R4 — sonnet medium, 36 turns, passed, rung 1
 dispatch: R5 — sonnet medium, passed, rung 1
 dispatch: R7 — sonnet medium, 76 turns, passed, rung 1
 dispatch: R8 — sonnet medium, 45 turns, passed, rung 1
+dispatch: R6 — sonnet medium, 73 turns, passed, rung 1
 ```

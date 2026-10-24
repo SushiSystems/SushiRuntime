@@ -118,10 +118,10 @@ namespace SushiRuntime
         }
     } // namespace
 
-    Result<NodeFacts> Runtime::create_topology(const RuntimeConfig& config)
+    Result<std::shared_ptr<NodeFacts>> Runtime::create_topology(const RuntimeConfig& config)
     {
         std::optional<Error> refusal;
-        NodeFacts facts;
+        std::shared_ptr<NodeFacts> facts;
         Result<void> translated = Detail::translate_exceptions(
             [&config, &refusal, &facts]()
             {
@@ -135,7 +135,7 @@ namespace SushiRuntime
                                     "The host name is unreadable; set RuntimeConfig::node_name."};
                     return;
                 }
-                facts = facts_of(config, std::move(name));
+                facts = std::make_shared<NodeFacts>(facts_of(config, std::move(name)));
             });
         if (!translated)
             return make_error(std::move(translated.error()));
@@ -177,7 +177,7 @@ namespace SushiRuntime
 
     const NodeFacts& Runtime::topology() const
     {
-        return topology_;
+        return *topology_;
     }
 
     PlacementScope Runtime::placement_scope(std::string_view name,
@@ -189,7 +189,7 @@ namespace SushiRuntime
                    "\" is empty, starts or ends with '.' or holds two '.' in a row; pass a "
                    "dotted name such as \"sushiai.replica\".")
                       .c_str());
-        return PlacementScope(PlacementClass(name.data(), name.size()), key);
+        return PlacementScope(PlacementClass(name.data(), name.size()), key, context_, topology_);
     }
 
     Result<void> Runtime::set_placement_rules(PlacementRules rules) const

@@ -134,8 +134,8 @@ recorder.within(scope, [&](SushiRuntime::Recorder& r)   // every node recorded h
 });
 ```
 
-`Runtime::placement_scope()` returns a value that names a class and a key and resolves, through
-the rules in force, to a target. A buffer allocated through the scope lands on the scope's local
+`Runtime::placement_scope()` returns a value that names a class and a key, holds the runtime's
+context and machine facts, and resolves, through the rules in force, to a target. A buffer allocated through the scope lands on the scope's local
 device. `Recorder::within()` stamps the scope's class and key on every node recorded inside the
 callable that has none of its own. Scopes nest, and the inner one wins. Nothing is held in a
 thread-local: the scope is passed, never ambient.
@@ -266,7 +266,7 @@ the task's own commit.
 | R3 | `NodeFacts`, `DeviceFacts`, `Runtime::topology()`, labels from `RuntimeConfig`. Done when: a test reads the local machine's facts: device count, kinds, memory, the labels it was given. | building |
 | R4 | `PlacementRule`, `PlacementRules` with its checks, the match by class, prefix, key and operation, priority and insertion order. Done when: a table test resolves a set of nodes against a rule set, including two conflicting rules and every refusal. Waits on R1, R3. | building |
 | R5 | `Runtime::set_placement_rules()` between runs; the compile resolves each node once. Done when: a test changes the rules between two runs and sees the second compile place differently; a call during a run is refused. Waits on R2, R4. | building |
-| R6 | Local placement: a scope's buffer on its rule's device; `On(scope)`; `if_absent` for an absent device. Done when: a test on a one-device machine sees a rule for device 1 apply `local`, `fail` and a bounded `wait`; on a two-device machine a scope's buffer and its nodes land on device 1. Waits on R5. | planned |
+| R6 | Local placement: a scope's buffer on its rule's device; `On(scope)`; `if_absent` for an absent device. Done when: a test on a one-device machine sees a rule for device 1 apply `local`, `fail` and a bounded `wait`; on a two-device machine a scope's buffer and its nodes land on device 1. Waits on R5. | building |
 | R7 | Wire version 4: `HELLO` with operating system, devices and labels; `TASK_DISPATCH` with a device; `--label` and `SR_WORKER_LABELS`. Done when: the golden bytes of every message pass at version 4, and the worker options parser takes three labels from flags and the variable. Waits on R3. | building |
 | R8 | The master keeps each worker's facts; `WorkerLoad` names the worker and holds its facts. Done when: a test on `InProcessFabric` reads a worker's name, labels and devices from the load a policy receives, before and after a reconnect. Waits on R7. | building |
 | R9 | A worker runs its kernels through its scheduler on the device a dispatch names. Done when: a worker with two devices runs two dispatches on the devices they name; KI-6 and RW-17 close. Waits on R7. | planned |

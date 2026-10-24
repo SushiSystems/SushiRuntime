@@ -28,9 +28,12 @@
 
 #pragma once
 
+#include <optional>
+
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
+#include <SushiRuntime/api/runtime/placement_scope.hpp>
 #include <SushiRuntime/region/liveness.hpp>
 
 namespace SushiRuntime
@@ -44,11 +47,27 @@ namespace SushiRuntime
         DeviceIndex device;          /**< Device the kernel runs on. */
         LivenessObserver life; /**< Observer of the handle named, or empty. */
 
+        /** @brief The scope whose rules choose the device when the recorder reads it, or none. */
+        std::optional<PlacementScope> scope;
+
         /**
          * @brief Places the kernel on a device by index.
          * @param index Position in the runtime's device list.
          */
         explicit On(DeviceIndex index) noexcept : device(index)
+        {
+
+        }
+
+        /**
+         * @brief Places the kernel on the device the rules in force give a scope.
+         *
+         * The recorder reads the device when the verb is recorded. A refusal of the rules goes to
+         * Recorder::refusal() and the node is not recorded.
+         * @param placement_scope Scope from Runtime::placement_scope().
+         */
+        explicit On(const PlacementScope& placement_scope) noexcept
+            : device(DeviceIndex{0}), scope(placement_scope)
         {
 
         }

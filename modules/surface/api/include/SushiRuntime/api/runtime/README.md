@@ -88,13 +88,41 @@ clamped result, not the request.
 
 ### PlacementScope
 
-A `PlacementScope` is a class and a key and nothing else: no name, no device, no memory. It is a
-trivially copyable value, so it outlives the `Runtime` that made it and costs a few words to pass.
-Its constructor is public. The class has no invariant for a private constructor to guard: the
-name rule is checked by `Runtime::placement_scope()`, which takes a name, and a caller that
-already holds a `PlacementClass` built it from a literal. A public constructor also lets the
-scope be tested without a device. `Recorder::within()` is what gives a scope its effect; see
-`api/graph/README.md`.
+A `PlacementScope` is a class and a key, plus shared ownership of the context and of the machine
+facts of the `Runtime` that made it. A copy shares both, so a scope outlives the `Runtime` and costs
+a few words and two reference counts to pass. Its constructor taking a class and a key is public:
+the class has no invariant for a private constructor to guard, since the name rule is checked by
+`Runtime::placement_scope()` and a caller that holds a `PlacementClass` built it from a literal.
+A scope built that way has no runtime behind it: `device()` gives device 0 and `buffer()` returns
+`InvalidState`. `Recorder::within()` is what stamps a scope on nodes; see `api/graph/README.md`.
+
+#### device and buffer
+
+`device()` resolves the scope when it is asked, not when it was made. It reads the rules the
+context holds now, so a scope opened before `set_placement_rules()` follows the new set. The
+resolution is one function of `source/placement_scope.cpp`: `PlacementRules::resolve()` with the
+scope's class, its key and an unnamed operation, so a rule that names an operation never matches a
+scope. The winning rule's target is matched against `Runtime::topology()`:
+
+| Part of the target | Gives |
+| --- | --- |
+| `machine_name`, `machine_label` | This machine when the name or the label is the machine's own; otherwise the target is absent here |
+| `device_index` | That device, or absent when the machine has fewer devices |
+| `device_kind` | The first device of that kind, or absent |
+| `device_min_memory` | The first device with at least that many bytes, or absent |
+| none of the device fields | Device 0 |
+
+No rule, or no matching rule, gives device 0. An absent target follows the rule's `if_absent` on
+one machine: `Local` gives device 0, `Wait` sleeps for the bound and then gives device 0, since a
+local device never appears during a run, and `Fail` returns `InvalidArgument` naming the rule and
+the device. An unnamed rule is named by its position.
+
+`buffer<T>(count, residency, alignment)` calls `device()` and then allocates as `Runtime::buffer()`
+does, through the same private `Buffer<T>::allocate()` that `PlacementScope` is a friend of. It
+returns the error of `device()` unchanged, so a `Fail` rule allocates nothing.
+
+The scope reads the rules without a lock, as a compile does, so `device()` and `set_placement_rules()`
+are called from the thread that starts runs.
 
 ## runtime.hpp
 
@@ -122,8 +150,8 @@ one `DeviceFacts` per device. `create()` builds them once, before it builds the 
 label creates nothing. The devices are copied from the inventory `advanced().devices()` returns, entry
 for entry. The name is `RuntimeConfig::node_name`, or the host name when that is empty; a host name
 that cannot be read returns `Unsupported`. The operating system is the one the library was compiled
-for. The facts live in the `Runtime`, not in the shared context, so the reference stays valid until
-the `Runtime` is moved from or destroyed.
+for. The facts live in one shared allocation that the `Runtime` and its scopes hold, so the
+reference stays valid until the `Runtime` is moved from or destroyed.
 
 A label key is refused with `InvalidArgument` when it is empty, holds `=` or repeats the key of an
 earlier label. The message names the label's position and key and says what to pass instead. A value
@@ -140,7 +168,8 @@ A name that is empty, starts or ends with `.`, or holds two `.` in a row is a ru
 so the string overload stops the process through `SR_VERIFY`, as `buffer()` does for a device
 index it does not drive. It does not return a `Result`: the name is a literal in the caller's
 source, and a caller that wrote a bad one cannot recover at run time. The call touches no
-context, so it costs one hash of the name.
+context, so it costs one hash of the name. The scope it returns holds the runtime's context and facts,
+which `PlacementScope::device()` and `buffer()` read.
 
 ### set_placement_rules and clear_placement_rules
 
