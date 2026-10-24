@@ -96,6 +96,21 @@ namespace
             /// @brief The rules of the last prepare(); null before one.
             std::shared_ptr<const PlacementRules> prepared_rules;
     };
+
+    /** @brief Declines every node and counts the nodes prepare() was given. */
+    class NodeCountingCoordinator final : public DecliningCoordinator
+    {
+        public:
+            /** @brief Adds the nodes of one prepare() to the count. */
+            void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes,
+                         const std::shared_ptr<const PlacementRules>&) override
+            {
+                prepared_nodes += nodes.size();
+            }
+
+            /// @brief How many nodes every prepare() so far was given.
+            std::size_t prepared_nodes = 0;
+    };
 } // namespace
 
 /** @brief Tests that runs reuse the plan, and a new node or profiling compiles it again. */
@@ -165,6 +180,25 @@ TEST(Medium_PlanCache, Regression_TheCoordinatorSeesTheRulesTheCompileRead)
     EXPECT_NE(context.placement()->rules, compiled_rules) << "the change did not land";
     EXPECT_EQ(coordinator->prepared_rules, compiled_rules)
         << "prepare() saw rules newer than the ones the nodes were stamped with";
+}
+
+/** @brief Tests that a dynamic graph hands the nodes of each rebuilt region to the coordinator. */
+TEST(Medium_PlanCache, Regression_ADynamicGraphPreparesTheNodesOfEveryRebuiltRegion)
+{
+    auto runtime = Runtime::create().value();
+    Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(runtime);
+    const auto coordinator = std::make_shared<NodeCountingCoordinator>();
+    context.install_offload(coordinator);
+
+    auto world = runtime.dynamic_graph();
+    world.region(1).add_untracked(std::size_t{4}, [](std::size_t) {});
+    world.region(2).add_untracked(std::size_t{4}, [](std::size_t) {});
+    world.run().value();
+    EXPECT_EQ(coordinator->prepared_nodes, 2u) << "a region's nodes reached no coordinator";
+
+    world.region(2).add_untracked(std::size_t{4}, [](std::size_t) {});
+    world.run().value();
+    EXPECT_EQ(coordinator->prepared_nodes, 4u) << "the rebuilt region was not prepared again";
 }
 
 /** @brief Tests that installing or removing an offload coordinator makes the plan stale. */

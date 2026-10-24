@@ -243,6 +243,20 @@ dispatcher's one rule set: each prepared node's offload state keeps the set it w
 copied once at `prepare()`, so a replay touches no reference count and two plans run in turn each
 place by their own rules.
 
+## The audit
+
+An independent audit found a dynamic graph's commit never handing its rebuilt nodes to the
+execution engine's `prepare`, so an installed coordinator never marked them and a rule naming
+another machine did nothing; the commit prepares them now. Holding a node rescanned every held
+entry, so holding N cost O(N²); it lowers the earliest deadline in O(1). A worker's registered
+output travels back whole, so the distributed README states that a registered kernel writes every
+byte of every output.
+
+Confirmed and left for the owner: a `Fail` rule that names a remote machine is not applied to a
+node the dispatcher cannot ship (untagged, not shared, written twice), which runs locally without a
+word, and the resubmission cap overrides a rule.
+
+
 ## Dispatches
 
 ```

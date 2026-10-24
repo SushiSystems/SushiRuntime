@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-24 — api: Fixed a dynamic graph never preparing its nodes for an installed coordinator, so a rule naming another machine did nothing (`region_composer.cpp`).
+- 2026-10-24 — offload_coordination: Made holding a node cost the same whatever the number held (`held_nodes.cpp`).
 - 2026-10-24 — offload_coordination: Fixed plans run in turn placing by the newest rule set, by making each node keep the set it was prepared against (`offload_state.hpp`).
 - 2026-10-24 — task: Breaking change: Made a compile hand the offload coordinator the rules it compiled against, so the dispatcher never decides from a newer set (`offload_coordinator.hpp`).
 - 2026-10-24 — execution: Breaking change: Fixed a compile tagging older rules with a newer generation, by handing out the rules, their generation and the coordinator's presence as one snapshot (`runtime_context.hpp`).

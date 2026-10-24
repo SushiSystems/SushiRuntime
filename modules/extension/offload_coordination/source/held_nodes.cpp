@@ -65,7 +65,10 @@ namespace SushiRuntime
                 return HoldStatus::Stale;
 
             entries_.push_back(Entry{&node, until});
-            publish_earliest();
+            // A hold only adds an entry, so the earliest deadline is the old one or this one.
+            const auto held_until = until.time_since_epoch().count();
+            if (held_until < earliest_.load(std::memory_order_relaxed))
+                earliest_.store(held_until, std::memory_order_release);
             return HoldStatus::Held;
         }
 

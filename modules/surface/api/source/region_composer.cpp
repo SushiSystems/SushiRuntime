@@ -44,6 +44,7 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
@@ -80,7 +81,7 @@ namespace SushiRuntime
                 [[nodiscard]] Result<void>
                 commit(const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
                        const std::function<const Recorder*(RegionKey)>& recorder_of,
-                       bool profiling, const Internal::Execution::RuntimeContext& runtime)
+                       bool profiling, Internal::Execution::RuntimeContext& runtime)
                 {
                     const bool everything = recompose_everything_;
                     std::set<RegionKey> rebuilt(dirty.begin(), dirty.end());
@@ -106,6 +107,7 @@ namespace SushiRuntime
                         }
                         built.emplace(k, std::move(state));
                     }
+                    prepare_offload(built, placement->rules, runtime);
                     profiling_requested_ = profiling;
 
                     std::set<RegionKey> retired(rebuilt);
@@ -346,6 +348,24 @@ namespace SushiRuntime
                         roots_.insert(r);
                     for (auto& np : st.nodes)
                         if (np->region.intra_leaf) link_sentinel(np.get());
+                }
+
+                /**
+                 * @brief Hands the nodes of the rebuilt regions to the engine, so an installed
+                 *        offload coordinator marks them as a compiled graph's nodes are marked.
+                 * @param built The regions this commit rebuilt, none of whose nodes has run.
+                 * @param rules The rules the nodes were stamped with.
+                 */
+                static void prepare_offload(const std::map<RegionKey, RegionState>& built,
+                                            const std::shared_ptr<const PlacementRules>& rules,
+                                            Internal::Execution::RuntimeContext& runtime)
+                {
+                    Internal::Graph::CompiledGraph fresh;
+                    for (const auto& kv : built)
+                        fresh.all_nodes.insert(fresh.all_nodes.end(), kv.second.nodes.begin(),
+                                               kv.second.nodes.end());
+                    if (!fresh.all_nodes.empty())
+                        runtime.execution_engine().prepare(fresh, rules);
                 }
 
                 /**

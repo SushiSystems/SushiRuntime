@@ -499,7 +499,10 @@ After the run the exec thread settles each job in recording order: one that ran 
 outputs and sends the copies as its output stream, one that threw or never ran releases its
 outputs and sends `KernelFailed`. An output stream sends its copy, so a later task that writes
 the same buffer cannot change what an earlier one sends, and the stream holds no cache pin. The
-batch drops every pin when the jobs are settled. Every borrowed buffer names one liveness token
+batch drops every pin when the jobs are settled. An output is pinned without a pull, so its memory holds
+the cache's older copy or fresh, uninitialised bytes, and the stream sends the whole buffer back,
+which the master writes over its own. A registered kernel therefore writes every byte of every
+output; a kernel that leaves some bytes as they were must not be recorded as a registered task. Every borrowed buffer names one liveness token
 the executor holds for its whole life; the pins, not the token, keep the memory alive across the
 run.
 
