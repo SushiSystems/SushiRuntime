@@ -38,9 +38,9 @@
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/frame_transport/frame_sending.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
+#include <SushiRuntime/offload_coordination/task_resubmission.hpp>
 
 #include "ping_clock.hpp"
-#include "task_resubmission.hpp"
 
 namespace SushiRuntime
 {

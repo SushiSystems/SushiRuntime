@@ -230,28 +230,42 @@ offload_sink() returns the sink a coordinator hands its nodes back to. A coordin
 to it and started before install_offload() runs, so one that fails to start is never installed and
 the coordinator installed before it keeps working.
 
-### set_placement_rules, placement_rules and placement_generation
+### set_placement_rules, install_offload and placement
 
-The context holds the placement rules in force as a `shared_ptr<const PlacementRules>` (null for
-none) and a counter that grows on every `set_placement_rules()`. A compile reads both: it resolves
-each node against the rules and keeps its own share of them, so a later set cannot free rules a
-compiled plan points into. A plan whose recorded counter differs from `placement_generation()` is
-stale.
+The context publishes one immutable `PlacementSnapshot`: the rules in force (null for none),
+whether an offload coordinator is installed, and a generation that rises by one on every
+`set_placement_rules()` and every `install_offload()`, including a removal. `placement()` returns
+it with one `std::atomic_load`. A compile takes it once, at its start: it resolves each node against
+those rules, applies a rule's absent policy itself only when the record says no coordinator is
+installed, and keeps the record, so a later change cannot free rules a compiled plan points into.
+A plan whose record's generation differs from the generation `placement()` returns now is stale,
+so a change that lands while a plan compiles makes the next run compile again, and a coordinator
+installed after a compile does too.
 
-The rules and their counter are one immutable record behind a `shared_ptr`, swapped whole with
-`std::atomic_store` and read with `std::atomic_load`, so any thread may read while another sets.
-A reader loads once per use and keeps its share: `PlacementScope::device()`, a compile and
-`DistributedCoordinator::prepare()` each see one whole set. A mutex was the alternative; it would
-cost a lock and an unlock on every scope read and on the start of every run, where the swap costs
-the reader one load and the run nothing.
+A writer builds the next record from the one in force and swaps it in with
+`std::atomic_compare_exchange_strong`, so a rule change and a coordinator install on two threads
+never publish one generation twice and neither loses the other's field. A reader loads once per
+use: `PlacementScope::device()`, a compile and `DistributedCoordinator::prepare()` each see one
+whole record. A mutex was the alternative; it would cost a lock and an unlock on every scope read
+and on the start of every run, where the swap costs the reader one load and the run nothing.
 
 `set_placement_rules()` returns false while a run is in flight, and the refusal is exact against a
-run that starts at the same moment. It builds the new record first, then takes the idle-change bit
-of the engine's run marker with one compare-exchange that succeeds only from zero (see "The run
-marker"), stores the record and clears the bit. A run that starts while the bit is held waits for
-the store, so no run sees the swap land inside it. A compile reads the rules and the counter in two
-loads; a set between them may leave a plan with old rules under the new counter, so a caller that
-compiles while another thread sets rules gets no guarantee beyond each load being whole.
+run that starts at the same moment. It allocates the new record first, then takes the idle-change
+bit of the engine's run marker with one compare-exchange that succeeds only from zero (see "The run
+marker"), publishes the record and clears the bit. A run that starts while the bit is held waits for
+the publish, so no run sees the swap land inside it. `install_offload()` takes no bit: its
+precondition already excludes a run in flight.
+
+`DistributedCoordinator::prepare()` runs inside a compile but loads the record again, so a change
+that lands between the compile's load and that call gives the coordinator newer rules than the ones
+the compile stamped; the next run recompiles, since the plan keeps the older generation.
+
+### set_machine_facts and machine_facts
+
+`Runtime::create()` hands the context the `NodeFacts` of its machine once, after it lists the
+devices; `set_machine_facts()` stops the process on a second call. `machine_facts()` returns them,
+or null for a context built without a `Runtime`, and a compile and `PlacementScope::device()` read
+the targets of the rules against them. A graph holds no facts of its own.
 
 ## runtime_settings.hpp
 

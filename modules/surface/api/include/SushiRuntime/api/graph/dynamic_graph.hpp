@@ -48,7 +48,6 @@
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/machine/node_facts.hpp>
 
 namespace SushiRuntime
 {
@@ -80,8 +79,7 @@ namespace SushiRuntime
             DynamicGraph(DynamicGraph&& other) noexcept
                 : StepDriver<DynamicGraph>(std::move(other)),
                   RegionComposer(std::move(other)),
-                  context_(other.context_),
-                  topology_(other.topology_)
+                  context_(other.context_)
             {
                 take(other);
             }
@@ -98,7 +96,6 @@ namespace SushiRuntime
                     StepDriver<DynamicGraph>::operator=(std::move(other));
                     RegionComposer::operator=(std::move(other));
                     context_ = other.context_;
-                    topology_ = other.topology_;
                     take(other);
                 }
                 return *this;
@@ -247,15 +244,8 @@ namespace SushiRuntime
             static constexpr const char* K_DANGLING_RESOURCE =
                 "DynamicGraph region references a Buffer/State freed before the run.";
 
-            /**
-             * @brief Starts a graph with no region on a runtime.
-             * @param topology The facts of the runtime's machine, which its rules are read
-             *                 against at each commit; shared with the runtime.
-             */
-            DynamicGraph(ContextHandle context, std::shared_ptr<const NodeFacts> topology)
-                : RegionComposer(Detail::profiling_default(context)),
-                  context_(std::move(context)),
-                  topology_(std::move(topology))
+            explicit DynamicGraph(ContextHandle context)
+                : RegionComposer(Detail::profiling_default(context)), context_(std::move(context))
             {
             }
 
@@ -314,14 +304,14 @@ namespace SushiRuntime
              * @brief Settles the regions written to since the last run and returns whether
              *        the plan must be composed before the next step.
              *
-             * A change of the runtime's placement rules since the last commit rebuilds every
-             * region, so their nodes are placed by the new set.
+             * A change of the runtime's placement rules or of its offload coordinator since the
+             * last commit rebuilds every region, so their nodes are placed under the new state.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */
             bool plan_is_stale()
             {
                 settle_changes();
-                if (rules_changed(context_))
+                if (placement_changed(context_))
                     rebuild_every_region_ = true;
                 return needs_commit();
             }
@@ -348,7 +338,7 @@ namespace SushiRuntime
                         const auto it = regions_.find(key);
                         return it == regions_.end() ? nullptr : &recorded(*it->second);
                     },
-                    context_, topology_.get());
+                    context_);
                 if (!committed)
                     return committed;
                 rebuild_every_region_ = false;
@@ -449,9 +439,6 @@ namespace SushiRuntime
 
             /** @brief The runtime this graph runs on. */
             ContextHandle context_;
-
-            /** @brief The facts of the runtime's machine; null names no local device. */
-            std::shared_ptr<const NodeFacts> topology_;
 
             /**
              * @brief Holds the live regions by key; unique_ptr keeps each Region's address

@@ -271,7 +271,7 @@ lifetime.
 | `offload_coordination/offload_dispatcher.hpp` | `OffloadDispatcher` | `prepare`, `try_offload`, local and remote settlement of a node | compiling thread, pool worker |
 | `cluster_monitor.hpp` | `ClusterMonitor` | the monitor thread | its own thread |
 | `ping_clock.hpp` | `make_ping_token()`, `ping_round_trip_micros()` | the clock a `PING` token is read from and measured on | monitor thread, reader thread |
-| `task_resubmission.hpp` | `resubmit_tasks()`, `reoffer_nodes()` | the one sequence that returns a taken task to the scheduler, and the one that offers held nodes again and forgets the first offer of each node the sink refuses | monitor, reader, the thread in `stop()` |
+| `offload_coordination/task_resubmission.hpp` | `resubmit_tasks()`, `reoffer_nodes()` | the one sequence that returns a taken task to the scheduler, and the one that offers held nodes again and forgets the first offer of each node the sink refuses | monitor, reader, the thread in `stop()` |
 | `distributed_coordinator.hpp` | `DistributedCoordinator` | the bricks above, the router, start and stop order | every thread of the seam |
 
 ### Worker
@@ -311,8 +311,8 @@ A node no rule matches, or any node when no rule set is in force, is placed by t
 instead: on the worker its target names, on the device the target's device part picks from that
 worker's facts, carried in `TASK_DISPATCH::device_index`; on the master when the target names the
 master; and by the rule's `if_absent` when no alive worker matches. `prepare()` hands the
-dispatcher the rule set of `RuntimeContext::placement_rules()`, the set the compile resolved the
-nodes against; `Cluster::attach()` hands the coordinator the context and a copy of
+dispatcher the rules of `RuntimeContext::placement()`, loaded again, so a change that lands
+inside the compile can give it a newer set than the one the compile resolved the nodes against; `Cluster::attach()` hands the coordinator the context and a copy of
 `Runtime::topology()`. A `Wait` for an absent target, and any rule whose target is alive but at
 its `max_jobs`, hold the node in `HeldNodes`, without a thread; the node is offered again when a
 worker registers, a task result or a resubmit frees a slot, or a `Wait` bound, counted from the

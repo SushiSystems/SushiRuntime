@@ -85,10 +85,10 @@ namespace SushiRuntime
                 Result<ContextHandle> context = create_context(config);
                 if (!context)
                     return make_error(std::move(context.error()));
-                Result<void> listed = list_devices(*context, **facts);
-                if (!listed)
-                    return make_error(std::move(listed.error()));
-                return Runtime(std::move(*context), std::move(*facts));
+                Result<void> attached = attach_facts(*context, std::move(*facts));
+                if (!attached)
+                    return make_error(std::move(attached.error()));
+                return Runtime(std::move(*context));
             }
 
             Runtime(Runtime&&) noexcept = default;
@@ -98,7 +98,7 @@ namespace SushiRuntime
             ~Runtime() = default;
 
             /** @brief Returns a new, empty graph that runs on this runtime. */
-            [[nodiscard]] Graph graph() const { return Graph(context_, topology_); }
+            [[nodiscard]] Graph graph() const { return Graph(context_); }
 
             /**
              * @brief Returns a new, empty graph whose work is grouped into regions.
@@ -106,7 +106,7 @@ namespace SushiRuntime
              */
             [[nodiscard]] DynamicGraph dynamic_graph() const
             {
-                return DynamicGraph(context_, topology_);
+                return DynamicGraph(context_);
             }
 
             /**
@@ -167,7 +167,8 @@ namespace SushiRuntime
 
             /**
              * @brief Returns the facts of the machine this runtime runs on.
-             * @return The facts built by create(); valid while this Runtime is not moved from.
+             * @return The facts built by create(), kept by the context; valid while this Runtime
+             *         is not moved from.
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             [[nodiscard]] SUSHIRUNTIME_API const NodeFacts& topology() const;
@@ -193,7 +194,7 @@ namespace SushiRuntime
             placement_scope(PlacementClass placement_class,
                             std::optional<std::uint64_t> key = std::nullopt) const noexcept
             {
-                return PlacementScope(placement_class, key, context_, topology_);
+                return PlacementScope(placement_class, key, context_);
             }
 
             /**
@@ -230,11 +231,12 @@ namespace SushiRuntime
             create_topology(const RuntimeConfig& config);
 
             /**
-             * @brief Appends one DeviceFacts per device of a context to facts.
+             * @brief Appends one DeviceFacts per device of a context to facts and hands the
+             *        facts to the context, which every compile and scope reads them from.
              * @return Nothing, or an AllocationFailed error.
              */
             [[nodiscard]] SUSHIRUNTIME_API static Result<void>
-            list_devices(const ContextHandle& context, NodeFacts& facts);
+            attach_facts(const ContextHandle& context, std::shared_ptr<NodeFacts> facts);
 
             /**
              * @brief Builds the context of a runtime on the devices and settings of a config.
@@ -244,18 +246,14 @@ namespace SushiRuntime
             create_context(const RuntimeConfig& config);
 
             /**
-             * @brief Takes ownership of a built context and the facts of its machine.
+             * @brief Takes ownership of a built context that holds the facts of its machine.
              * @param context Must not be empty.
              */
-            Runtime(ContextHandle context, std::shared_ptr<const NodeFacts> facts) noexcept
-                : context_(std::move(context)), topology_(std::move(facts))
+            explicit Runtime(ContextHandle context) noexcept : context_(std::move(context))
             {
             }
 
             /** @brief The context shared with every handle; empty only after a move. */
             ContextHandle context_;
-
-            /** @brief The facts of the machine, built once by create() and shared with scopes. */
-            std::shared_ptr<const NodeFacts> topology_;
     };
 } // namespace SushiRuntime

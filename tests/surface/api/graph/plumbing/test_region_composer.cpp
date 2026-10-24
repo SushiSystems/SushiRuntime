@@ -27,6 +27,7 @@
  */
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -39,6 +40,7 @@
 #include <SushiRuntime/graph/compiled_graph.hpp>
 
 #include "dynamic_graph_plan_access.hpp"
+#include "hooked_copy_task.hpp"
 #include "refusing_fill.hpp"
 
 using namespace SushiRuntime;
@@ -282,5 +284,28 @@ namespace RegionCommitTests
             ASSERT_EQ(out_b[i], 1) << "the dropped region ran once, at i=" << i;
             ASSERT_EQ(own_d[i], 5) << "at i=" << i;
         }
+    }
+
+    /** @brief Tests that a rule change made inside a commit makes the next run compose again. */
+    TEST(Medium_RegionCommit, Regression_ARuleChangeDuringACommitComposesOnTheNextRun)
+    {
+        auto rt = Runtime::create().value();
+        auto target = rt.buffer<int>(1).value();
+        const auto hook = std::make_shared<std::function<void()>>();
+        auto world = rt.dynamic_graph();
+        world.region(0).add_host(Reads{}, Writes(target), Testing::HookedCopyTask(hook));
+
+        bool changed = false;
+        *hook = [&rt, &changed]()
+        { changed = static_cast<bool>(rt.set_placement_rules(PlacementRules{})); };
+        ASSERT_TRUE(world.run());
+        ASSERT_TRUE(changed) << "the commit copied the task and the change was accepted";
+        const std::size_t composed = world.compose_count();
+
+        ASSERT_TRUE(world.run());
+        EXPECT_EQ(world.compose_count(), composed + 1)
+            << "the commit tagged the rules it read with the newer generation";
+        ASSERT_TRUE(world.run());
+        EXPECT_EQ(world.compose_count(), composed + 1);
     }
 } // namespace RegionCommitTests

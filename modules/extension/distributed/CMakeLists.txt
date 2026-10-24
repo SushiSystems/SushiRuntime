@@ -22,7 +22,6 @@ sushiruntime_add_module(
         peer_connection.cpp
         registered_task.cpp
         shared_secret.cpp
-        task_resubmission.cpp
         tcp_transport.cpp
         worker_agent.cpp
         worker_buffer_cache.cpp

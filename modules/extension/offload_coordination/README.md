@@ -20,6 +20,7 @@ It depends on `core`, `api`, `task`, `transport`, `wire`, `link_security`, `clus
 | `offload_handles.hpp` | `OffloadHandles` |
 | `rule_placement.hpp` | `RulePlacement` |
 | `held_nodes.hpp` | `HeldNodes` |
+| `task_resubmission.hpp` | `resubmit_tasks()`, `reoffer_nodes()` |
 
 ## worker_directory.hpp
 
@@ -177,3 +178,14 @@ Every re-offer goes to every held node, which costs one decision per held node p
 `earliest()` reads an atomic, so the coordinator can wake the monitor for the end of a new wait
 without a lock. The dispatcher forgets a node's first offer once its rule places it anywhere but in
 a wait.
+
+## task_resubmission.hpp
+
+`resubmit_tasks()` is the one sequence that returns tasks `PendingTasks` handed out to the
+scheduler: per task it bumps the outputs' versions in the `BufferRegistry`, forgets the task's
+transfer progress in `BufferExchange`, lowers its worker's inflight count in the
+`WorkerDirectory` and passes the node to `OffloadSink::resubmit()`. `reoffer_nodes()` passes the
+nodes `HeldNodes` handed out to the same sink. Both catch what the sink throws, log it under the
+module's category and release the node; `reoffer_nodes()` first makes `HeldNodes` forget the node's
+first offer, so a plan rearmed later that reuses the address starts a new wait. The cluster monitor,
+the reader thread and `DistributedCoordinator::stop()` call them.

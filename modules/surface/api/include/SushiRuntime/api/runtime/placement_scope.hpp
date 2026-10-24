@@ -30,7 +30,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <utility>
 
@@ -38,7 +37,6 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/machine/node_facts.hpp>
 
 #include <SushiRuntime/api/data/buffer.hpp>
 
@@ -48,8 +46,8 @@ namespace SushiRuntime
      * @brief Names a placement class and an optional key, and gives the device the rules choose.
      *
      * Runtime::placement_scope() builds one after it checks the class name. A copy shares the
-     * runtime's context and machine facts, so a scope keeps both alive and follows the rules the
-     * runtime holds when device() or buffer() is called, not the rules of the time it was made.
+     * runtime's context, so a scope keeps it alive and follows the rules the runtime holds when
+     * device() or buffer() is called, not the rules of the time it was made.
      * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
      */
     class PlacementScope
@@ -70,16 +68,14 @@ namespace SushiRuntime
 
             /**
              * @brief Holds a class and a key, and the runtime whose rules resolve them.
-             * @param context  The context whose rules and devices the scope reads.
-             * @param topology The facts of the machine the context runs on; not null.
+             * @param context The context whose rules, machine facts and devices the scope reads.
              */
             PlacementScope(PlacementClass placement_class,
-                           std::optional<std::uint64_t> placement_key, ContextHandle context,
-                           std::shared_ptr<const NodeFacts> topology) noexcept
+                           std::optional<std::uint64_t> placement_key,
+                           ContextHandle context) noexcept
                 : placement_class_(placement_class),
                   placement_key_(placement_key),
-                  context_(std::move(context)),
-                  topology_(std::move(topology))
+                  context_(std::move(context))
             {
             }
 
@@ -141,8 +137,5 @@ namespace SushiRuntime
 
             /** @brief The context whose rules the scope reads; empty without a runtime. */
             ContextHandle context_;
-
-            /** @brief The facts of the machine; null without a runtime. */
-            std::shared_ptr<const NodeFacts> topology_;
     };
 } // namespace SushiRuntime

@@ -169,3 +169,12 @@ The tests hold real nodes that no graph runs, at fixed points of the steady cloc
 | `Small_HeldNodes.TakeExpiredReturnsOnlyTheEndedWaits` | `take_expired()` returns the waits that ended, `take_all()` the rest, and `earliest()` follows both. |
 | `Small_HeldNodes.CloseRefusesAHoldAndDrainEmptiesTheTable` | After `close()` a hold is refused; `drain()` returns the held node and forgets every first offer. |
 | `Small_HeldNodes.HoldAfterAReleaseIsStale` | A hold whose decision came before a `take_all()` is refused as `Stale` and keeps nothing; one made after it is held. |
+
+## test_task_resubmission.cpp
+
+The test hands `reoffer_nodes()` a real node that no graph runs and a sink whose `resubmit()`
+throws, at fixed points of the steady clock.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_TaskResubmission.Regression_ARefusedReofferForgetsTheFirstOffer` | A node whose first offer `HeldNodes` recorded is refused by the sink: `reoffer_nodes()` releases its scheduling reference, and the next `first_offer()` records the new time instead of the old one. |

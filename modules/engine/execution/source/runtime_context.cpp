@@ -39,6 +39,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
@@ -57,13 +58,6 @@ namespace SushiRuntime
 {
     namespace Internal::Execution
     {
-        /** @brief Holds one published rule set with the generation it was published under. */
-        struct PlacementState
-        {
-            std::shared_ptr<const PlacementRules> rules; /**< Null for none. */
-            std::uint64_t generation = 0;                 /**< Count of changes before it. */
-        };
-
         namespace
         {
             /** @brief Converts a discovered hardware node to the descriptor a device set takes. */
@@ -219,12 +213,34 @@ namespace SushiRuntime
             std::shared_ptr<Internal::Graph::OffloadCoordinator> offload;
 
             /**
-             * @brief The rules in force and their generation, swapped whole; never null.
-             *
-             * Read and written only through std::atomic_load and std::atomic_store.
+             * @brief Fills a record from the one in force, one generation above it, and
+             *        publishes it.
+             * @param next Not yet published; allocated by the caller, so a hold waits on none.
+             * @param fill Called as fill(current, next), again when another publisher won.
              */
-            std::shared_ptr<const PlacementState> placement =
-                std::make_shared<const PlacementState>();
+            template <class Fill>
+            void publish(const std::shared_ptr<PlacementSnapshot>& next, Fill&& fill)
+            {
+                std::shared_ptr<const PlacementSnapshot> current = std::atomic_load(&placement);
+                std::shared_ptr<const PlacementSnapshot> published = next;
+                do
+                {
+                    fill(*current, *next);
+                    next->generation = current->generation + 1;
+                } while (!std::atomic_compare_exchange_strong(&placement, &current, published));
+            }
+
+            /**
+             * @brief The record of the rules, the coordinator and their generation, swapped
+             *        whole; never null.
+             *
+             * Read and written only through the std::atomic_* functions for shared_ptr.
+             */
+            std::shared_ptr<const PlacementSnapshot> placement =
+                std::make_shared<const PlacementSnapshot>();
+
+            /** @brief Facts of this machine, set once by set_machine_facts(); null before. */
+            std::shared_ptr<const NodeFacts> machine;
 
             /** @brief Execution engine; built last, by RuntimeContext::create(). */
             std::unique_ptr<SchedulerExecutionEngine> engine;
@@ -325,9 +341,15 @@ namespace SushiRuntime
             SR_VERIFY(impl_->engine != nullptr,
                       "ExecutionEngine is not initialized: the context is still being built.");
             impl_->engine->install_offload(offload.get());
-
+            const bool installed = offload != nullptr;
             // The engine holds the new address before the replaced coordinator is released.
             impl_->offload = std::move(offload);
+            impl_->publish(std::make_shared<PlacementSnapshot>(),
+                           [installed](const PlacementSnapshot& current, PlacementSnapshot& next)
+                           {
+                               next.rules = current.rules;
+                               next.offload_installed = installed;
+                           });
         }
 
         Internal::Graph::OffloadCoordinator* RuntimeContext::offload() const noexcept
@@ -347,27 +369,33 @@ namespace SushiRuntime
             SR_VERIFY(impl_->engine != nullptr,
                       "ExecutionEngine is not initialized: the context is still being built.");
             // Allocated before the hold, so a run waiting on it waits for no allocation.
-            std::shared_ptr<PlacementState> next =
-                std::make_shared<PlacementState>(PlacementState{std::move(rules), 0});
+            const std::shared_ptr<PlacementSnapshot> next = std::make_shared<PlacementSnapshot>();
+            next->rules = std::move(rules);
             if (!impl_->engine->begin_idle_change())
                 return false;
-            // One hold at a time, so two setters never publish one generation twice.
-            next->generation = std::atomic_load(&impl_->placement)->generation + 1;
-            std::atomic_store(&impl_->placement,
-                              std::shared_ptr<const PlacementState>(std::move(next)));
+            impl_->publish(next, [](const PlacementSnapshot& current, PlacementSnapshot& filled)
+                           { filled.offload_installed = current.offload_installed; });
             impl_->engine->end_idle_change();
             return true;
         }
 
-        std::shared_ptr<const PlacementRules> RuntimeContext::placement_rules() const noexcept
+        std::shared_ptr<const RuntimeContext::PlacementSnapshot>
+        RuntimeContext::placement() const noexcept
         {
-            return std::atomic_load(&impl_->placement)->rules;
+            return std::atomic_load(&impl_->placement);
         }
 
-        std::uint64_t RuntimeContext::placement_generation() const noexcept
+        void RuntimeContext::set_machine_facts(std::shared_ptr<const NodeFacts> facts)
         {
-            return std::atomic_load(&impl_->placement)->generation;
+            SR_VERIFY(impl_->machine == nullptr,
+                      "RuntimeContext::set_machine_facts: the facts of this machine are already "
+                      "set; set them once, when the runtime is created.");
+            impl_->machine = std::move(facts);
         }
 
+        const NodeFacts* RuntimeContext::machine_facts() const noexcept
+        {
+            return impl_->machine.get();
+        }
     } // namespace Execution
 } // namespace SushiRuntime

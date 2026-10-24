@@ -21,20 +21,22 @@
 
 /**
  * @file task_resubmission.cpp
- * @brief Implements resubmit_tasks(), which returns taken tasks to the scheduler.
+ * @brief Implements resubmit_tasks() and reoffer_nodes(), which return nodes to the scheduler.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/offload_coordination/README.md
  */
 
-#include "task_resubmission.hpp"
+#include <SushiRuntime/offload_coordination/task_resubmission.hpp>
 
+#include <cstdint>
 #include <exception>
 
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
+
+#include <SushiRuntime/offload_coordination/offload_coordination_log_category.hpp>
 
 namespace SushiRuntime
 {
@@ -56,13 +58,15 @@ namespace SushiRuntime
                 }
                 catch (const std::exception& error)
                 {
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {} could not be resubmitted: {}; its node is released "
+                    SR_LOG_ERROR(K_OFFLOAD_COORDINATION_LOG_CATEGORY,
+                                 "task {} could not be resubmitted: {}; its node is released "
                                  "and will not run",
                                  task_id, error.what());
                 }
                 catch (...)
                 {
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {} could not be resubmitted: unknown exception; its node "
+                    SR_LOG_ERROR(K_OFFLOAD_COORDINATION_LOG_CATEGORY,
+                                 "task {} could not be resubmitted: unknown exception; its node "
                                  "is released and will not run",
                                  task_id);
                 }
@@ -82,12 +86,12 @@ namespace SushiRuntime
                 }
                 catch (const std::exception& error)
                 {
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "a released node kept its first offer: {}",
-                                 error.what());
+                    SR_LOG_ERROR(K_OFFLOAD_COORDINATION_LOG_CATEGORY,
+                                 "a released node kept its first offer: {}", error.what());
                 }
                 catch (...)
                 {
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY,
+                    SR_LOG_ERROR(K_OFFLOAD_COORDINATION_LOG_CATEGORY,
                                  "a released node kept its first offer: unknown exception");
                 }
             }

@@ -13,4 +13,5 @@ sushiruntime_add_module_tests(
         test_offload_handles.cpp
         test_rule_placement.cpp
         test_task_description.cpp
+        test_task_resubmission.cpp
         test_worker_directory.cpp)

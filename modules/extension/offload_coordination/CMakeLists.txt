@@ -10,6 +10,7 @@ sushiruntime_add_module(
         held_nodes.cpp
         offload_dispatcher.cpp
         rule_placement.cpp
+        task_resubmission.cpp
         worker_directory.cpp
     DEPENDS core log machine placement api task transport wire link_security cluster_load buffer_exchange pending_tasks
     PRIVATE_DEPENDS region)

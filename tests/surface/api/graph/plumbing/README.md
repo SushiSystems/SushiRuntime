@@ -125,6 +125,21 @@ cleared, the next run succeeds and composes once, the edge `a -> c` is there, an
 A second mid-commit failure, an allocation that fails after the first region is un-wired, has no
 test: the composer offers no seam that makes `std::set::insert` throw.
 
+### `Regression_ARuleChangeDuringACommitComposesOnTheNextRun`
+
+Region 0 holds a `Testing::HookedCopyTask` whose hook sets an empty rule set. The commit of the
+first run copies the task after it has read the placement record, so the hook's change lands
+inside the commit. The next run composes once more, and the run after it composes nothing. Code
+that reads the rules at the start of a commit and the generation at its end tags the old rules with
+the new generation and never composes again.
+
+## test_plan_cache.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `ARuleChangeDuringACompileRecompilesOnTheNextRun` | A `Testing::HookedCopyTask` sets an empty rule set while `PlanCache::build()` copies it, after the build read the placement record. The next run compiles once more and the run after it does not. |
+| `Regression_InstallingOrRemovingACoordinatorRecompiles` | Installing a coordinator that declines every node after a compile makes the next run compile again, a further run does not, and removing it compiles once more. |
+
 ## test_step_driver.cpp
 
 The file covers the run entries `StepDriver` gives `Graph` and `DynamicGraph`: that both types

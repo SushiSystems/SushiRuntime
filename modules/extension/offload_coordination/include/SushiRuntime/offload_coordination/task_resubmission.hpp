@@ -21,9 +21,9 @@
 
 /**
  * @file task_resubmission.hpp
- * @brief Declares resubmit_tasks(), the one way a task taken back reaches the scheduler.
+ * @brief Declares resubmit_tasks() and reoffer_nodes(), which return nodes to the scheduler.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/offload_coordination/README.md
  */
 
 #pragma once

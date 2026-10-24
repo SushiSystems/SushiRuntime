@@ -43,8 +43,6 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/machine/node_facts.hpp>
-#include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 #include <SushiRuntime/engine_handles/plan_access.hpp>
@@ -74,11 +72,9 @@ namespace SushiRuntime
             /** @brief The nodes of plan in recording order; plan lists them in its own. */
             std::vector<RecordedNode> recorded;
 
-            /** @brief The rule set plan was compiled with; null when none was in force. */
-            std::shared_ptr<const PlacementRules> rules;
-
-            /** @brief The context's placement generation when plan was compiled. */
-            std::uint64_t rules_generation = 0;
+            /** @brief The placement record plan was compiled under; its rules may be null. */
+            std::shared_ptr<const Internal::Execution::RuntimeContext::PlacementSnapshot>
+                placement;
         };
 
         PlanCache::PlanCache(bool profiling) noexcept : profiling_requested_(profiling)
@@ -100,8 +96,7 @@ namespace SushiRuntime
 
         PlanCache::~PlanCache() = default;
 
-        Result<void> PlanCache::build(const Recorder& recorder, const ContextHandle& context,
-                                      const NodeFacts* here)
+        Result<void> PlanCache::build(const Recorder& recorder, const ContextHandle& context)
         {
             using Internal::Graph::TaskGraph;
 
@@ -112,9 +107,9 @@ namespace SushiRuntime
             std::vector<std::uint32_t> registrations(recorder.rule_count(),
                                                      TaskGraph::K_NO_REGISTRATION);
             built->recorded.reserve(recorder.node_count());
-            built->rules = runtime.placement_rules();
-            built->rules_generation = runtime.placement_generation();
-            const RuleStamp stamp(built->rules.get(), here, runtime.offload() == nullptr);
+            built->placement = runtime.placement();
+            const RuleStamp stamp(built->placement->rules.get(), runtime.machine_facts(),
+                                  !built->placement->offload_installed);
             std::optional<Error> refusal;
             Detail::RecorderReplay::replay(
                 recorder, backing_graph,
@@ -154,8 +149,8 @@ namespace SushiRuntime
         bool PlanCache::stale(const Recorder& recorder, const ContextHandle& context) const noexcept
         {
             return state_ == nullptr || dirty_ || built_generation_ != recorder.generation() ||
-                   state_->rules_generation !=
-                       Internal::ContextAccess::context(context).placement_generation();
+                   state_->placement->generation !=
+                       Internal::ContextAccess::context(context).placement()->generation;
         }
 
         void PlanCache::rearm() noexcept

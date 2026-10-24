@@ -59,11 +59,11 @@
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
 #include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/offload_dispatcher.hpp>
+#include <SushiRuntime/offload_coordination/task_resubmission.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
 #include "cluster_monitor.hpp"
 #include "ping_clock.hpp"
-#include "task_resubmission.hpp"
 
 namespace SushiRuntime
 {
@@ -792,7 +792,7 @@ namespace SushiRuntime
 
         void DistributedCoordinator::prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes)
         {
-            impl_->dispatcher.prepare(nodes, impl_->context.placement_rules());
+            impl_->dispatcher.prepare(nodes, impl_->context.placement()->rules);
         }
 
         bool DistributedCoordinator::try_offload(Internal::Graph::Node& node)

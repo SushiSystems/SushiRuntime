@@ -232,10 +232,13 @@ to the monitor, and a worker fact over 255 bytes is refused before connecting in
 host identity lives in the topology module; the dispatch executor's recording and settling are
 their own units.
 
-R16c follows: the compile reads the rules and their generation in one snapshot; the machine's facts
-reach the compile through the runtime context instead of each graph; installing a coordinator after
-a compile marks plans stale; `task_resubmission` moves into the internal offload-coordination
-module, where its fix can be tested.
+R16c: the context hands out the rules, their generation and whether a coordinator is installed as
+one snapshot, which every compile and commit takes once; the region composer had read the rules at
+a commit's start and the generation at its end. Installing or removing a coordinator publishes a new
+snapshot, so plans compiled under the other absent policy recompile. The machine's facts live in the
+context, so a graph carries none. `task_resubmission` sits in the offload-coordination module, where
+its forget is tested. `DistributedCoordinator::prepare()` still reads the snapshot again during a
+compile, since its interface cannot receive the compile's; R16d hands it the snapshot.
 
 ## Dispatches
 
@@ -251,6 +254,7 @@ dispatch: R6 — sonnet medium, 73 turns, passed, rung 1
 dispatch: R9 — sonnet medium, 44 turns, partial (public interface needed), rung 1
 dispatch: R16a — opus low, 116 turns, passed, rung 1
 dispatch: R16b — opus low, 160 turns, passed, rung 1
+dispatch: R16c — opus low, 125 turns, passed, rung 1
 dispatch: R15 — haiku high, 68 turns, passed, rung 1
 dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
 dispatch: R9 second half — opus low, 146 turns, passed, rung 1

@@ -292,9 +292,9 @@ TEST(Medium_RuntimePlacementRules, Regression_ARuleChangeRacingARunStartNeverLan
     auto graph = rt.graph();
     graph.add_host(Reads{}, Writes(target), [&context, &changed_inside_a_run]()
     {
-        const std::uint64_t at_start = context.placement_generation();
+        const std::uint64_t at_start = context.placement()->generation;
         std::this_thread::yield();
-        if (context.placement_generation() != at_start)
+        if (context.placement()->generation != at_start)
             changed_inside_a_run.fetch_add(1, std::memory_order_relaxed);
     });
 

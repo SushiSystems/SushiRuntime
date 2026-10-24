@@ -43,8 +43,6 @@
 
 namespace SushiRuntime
 {
-    struct NodeFacts;
-
     namespace Detail
     {
         class RegionComposerState;
@@ -64,7 +62,6 @@ namespace SushiRuntime
                 /**
                  * @brief Rebuilds and places the changed regions, re-wires them, renumbers nodes.
                  * @param recorder_of Called as recorder_of(key); null when the region is gone.
-                 * @param here        This machine's facts; null names no local device.
                  * @return Nothing, or a Fail rule's refusal; a refused commit changes nothing.
                  * @pre A commit that threw is repeated with the dirty and dropped keys it had.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
@@ -72,15 +69,15 @@ namespace SushiRuntime
                 [[nodiscard]] SUSHIRUNTIME_API Result<void>
                 commit(const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
                        const std::function<const Recorder*(RegionKey)>& recorder_of,
-                       const ContextHandle& context, const NodeFacts* here);
+                       const ContextHandle& context);
 
                 /**
-                 * @brief Returns whether the context's placement rules changed since the last
-                 *        commit; false before the first one.
+                 * @brief Returns whether the context's placement rules or its offload coordinator
+                 *        changed since the last commit; false before the first one.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 [[nodiscard]] SUSHIRUNTIME_API bool
-                rules_changed(const ContextHandle& context) const noexcept;
+                placement_changed(const ContextHandle& context) const noexcept;
 
                 /**
                  * @brief Re-arms the live in-degree of every node and of the sentinel, in

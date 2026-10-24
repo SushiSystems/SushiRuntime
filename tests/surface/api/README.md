@@ -42,6 +42,7 @@ The headers below are shared by tests of this module only, so they sit in this f
 | --- | --- |
 | `dynamic_graph_plan_access.hpp` | Reads the composed plan of a `DynamicGraph` and its boundary edges; see its section. |
 | `refusing_fill.hpp` | A host fill task whose copy throws on demand, to fail a plan build; see its section. |
+| `hooked_copy_task.hpp` | A host task whose next copy runs a hook the test arms, to act inside a plan build; see its section. |
 
 ## test_fluent.cpp
 
@@ -390,3 +391,13 @@ edge of the boundary layer directly and needs no timing.
 build of a plan copies it into the node, so the flag decides whether a build throws.
 `graph/plumbing/test_step_driver.cpp` and `graph/plumbing/test_region_composer.cpp` include the
 header by name.
+
+## hooked_copy_task.hpp
+
+### `HookedCopyTask`
+
+`Testing::HookedCopyTask` is a host task that does nothing when it runs. It shares a
+`std::function<void()>` slot with the test; the first copy made after the test fills the slot
+empties it and calls the hook once. Recording moves the task and a plan build copies it, so a hook
+armed after recording runs inside the next build. `graph/plumbing/test_plan_cache.cpp` and
+`graph/plumbing/test_region_composer.cpp` include the header by name.

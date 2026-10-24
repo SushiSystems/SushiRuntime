@@ -144,17 +144,20 @@ namespace SushiRuntime
         return facts;
     }
 
-    Result<void> Runtime::list_devices(const ContextHandle& context, NodeFacts& facts)
+    Result<void> Runtime::attach_facts(const ContextHandle& context,
+                                       std::shared_ptr<NodeFacts> facts)
     {
         return Detail::translate_exceptions(
             [&context, &facts]()
             {
-                const std::vector<DeviceDescription>& devices =
-                    Internal::ContextAccess::context(context).devices().devices();
-                facts.devices.reserve(devices.size());
+                Internal::Execution::RuntimeContext& runtime =
+                    Internal::ContextAccess::context(context);
+                const std::vector<DeviceDescription>& devices = runtime.devices().devices();
+                facts->devices.reserve(devices.size());
                 for (const DeviceDescription& device : devices)
-                    facts.devices.push_back(
+                    facts->devices.push_back(
                         DeviceFacts{device.kind, device.name, device.memory_bytes});
+                runtime.set_machine_facts(std::move(facts));
             });
     }
 
@@ -177,7 +180,7 @@ namespace SushiRuntime
 
     const NodeFacts& Runtime::topology() const
     {
-        return *topology_;
+        return *Internal::ContextAccess::context(context_).machine_facts();
     }
 
     PlacementScope Runtime::placement_scope(std::string_view name,
@@ -189,7 +192,7 @@ namespace SushiRuntime
                    "\" is empty, starts or ends with '.' or holds two '.' in a row; pass a "
                    "dotted name such as \"sushiai.replica\".")
                       .c_str());
-        return PlacementScope(PlacementClass(name.data(), name.size()), key, context_, topology_);
+        return PlacementScope(PlacementClass(name.data(), name.size()), key, context_);
     }
 
     Result<void> Runtime::set_placement_rules(PlacementRules rules) const

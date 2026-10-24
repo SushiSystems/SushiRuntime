@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-24 — execution: Fixed a compile tagging older rules with a newer generation, by handing out the rules, their generation and the coordinator's presence as one snapshot (`runtime_context.hpp`).
+- 2026-10-24 — execution: Made installing or removing an offload coordinator mark compiled plans stale, and kept the machine's facts in the runtime context (`runtime_context.hpp`).
+- 2026-10-24 — offload_coordination: Moved task resubmission into the module whose bricks it drives, with its log category (`task_resubmission.hpp`).
 - 2026-10-24 — placement: Fixed a rule's device part never reaching a compiled node, through one resolver that matches a machine and picks its device (`placement_target_matching.hpp`).
 - 2026-10-24 — api: Fixed a dynamic graph ignoring placement rules; a rule change re-places its regions' nodes without a re-record (`dynamic_graph.hpp`).
 - 2026-10-24 — placement: Refused a wait bound or deadline above one day, and made a local scope's `Wait` resolve at once (`placement_rules.hpp`, `placement_scope.hpp`).

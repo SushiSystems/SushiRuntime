@@ -43,8 +43,6 @@
 
 namespace SushiRuntime
 {
-    struct NodeFacts;
-
     namespace Detail
     {
         struct PlanCacheState;
@@ -123,7 +121,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Returns whether the plan is missing or older than what recorder holds
-                 *        or than the placement rules in force.
+                 *        or than the context's placement record.
                  * @param context The runtime whose rule set the plan was compiled under.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
@@ -131,16 +129,14 @@ namespace SushiRuntime
                 stale(const Recorder& recorder, const ContextHandle& context) const noexcept;
 
                 /**
-                 * @brief Replays the recorder onto a fresh backing graph and keeps the plan.
-                 * @param here This machine's facts, which the rules' targets are read against;
-                 *             null names no local device.
+                 * @brief Replays the recorder onto a fresh backing graph, placing its nodes by the
+                 *        context's placement record and machine facts, and keeps the plan.
                  * @return Nothing, the compile's error, or the refusal of a Fail rule whose
                  *         target is absent while no offload coordinator is installed.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
-                [[nodiscard]] SUSHIRUNTIME_API Result<void>
-                build(const Recorder& recorder, const ContextHandle& context,
-                      const NodeFacts* here);
+                [[nodiscard]] SUSHIRUNTIME_API Result<void> build(const Recorder& recorder,
+                                                                  const ContextHandle& context);
 
                 /**
                  * @brief Restores the cached plan's per-run state so it can run again.

@@ -48,6 +48,7 @@
 namespace SushiRuntime
 {
     class PlacementRules;
+    struct NodeFacts;
 
     namespace Internal::Graph { class OffloadCoordinator; class OffloadSink; }
 
@@ -63,6 +64,18 @@ namespace SushiRuntime
         class SUSHIRUNTIME_API RuntimeContext
         {
             public:
+                /**
+                 * @brief Holds the rules in force, whether a coordinator is installed, and the
+                 *        generation both were published under; never changed once published.
+                 * @see modules/engine/execution/README.md
+                 */
+                struct PlacementSnapshot
+                {
+                    std::shared_ptr<const PlacementRules> rules; /**< Null for none. */
+                    std::uint64_t generation = 0;                /**< Changes before it. */
+                    bool offload_installed = false;              /**< A coordinator is in. */
+                };
+
                 /**
                  * @brief Creates a runtime context and scans for hardware matching config.
                  * @param provider Topology source; null selects the hwloc default.
@@ -129,12 +142,12 @@ namespace SushiRuntime
                 void shutdown();
 
                 /**
-                 * @brief Installs the coordinator that may run this context's nodes and co-owns it.
+                 * @brief Installs the coordinator that may run this context's nodes, co-owns it
+                 *        and counts the change in placement().
                  * @pre No run is in flight, and every TaskGraph built with the coordinator being
                  *      replaced has been compiled, emptied by take_nodes() or destroyed.
-                 * @param offload Null removes the installed one. The context releases its share
-                 *        when another is installed and, in its destructor, after the engine.
-                 * @see modules/engine/execution/README.md
+                 * @param offload Null removes the installed one; the context releases a share
+                 *        on the next install and, in its destructor, after the engine.
                  */
                 void install_offload(std::shared_ptr<Internal::Graph::OffloadCoordinator> offload);
 
@@ -158,15 +171,24 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] bool set_placement_rules(std::shared_ptr<const PlacementRules> rules);
 
-                /** @brief Returns a share of the rules in force, or null for none; any thread. */
-                [[nodiscard]] std::shared_ptr<const PlacementRules> placement_rules() const noexcept;
+                /**
+                 * @brief Returns the record of the rules in force, whether a coordinator is
+                 *        installed and their generation; never null, any thread.
+                 *
+                 * A compile reads it once; a plan compiled under another generation is stale.
+                 * @see modules/engine/execution/README.md
+                 */
+                [[nodiscard]] std::shared_ptr<const PlacementSnapshot> placement() const noexcept;
 
                 /**
-                 * @brief Returns how many times set_placement_rules() has changed the rules.
-                 *
-                 * A plan compiled under a different value is stale.
+                 * @brief Keeps the facts of the machine this context runs on.
+                 * @pre Called at most once, before any graph of this context is compiled.
+                 * @see modules/engine/execution/README.md
                  */
-                [[nodiscard]] std::uint64_t placement_generation() const noexcept;
+                void set_machine_facts(std::shared_ptr<const NodeFacts> facts);
+
+                /** @brief Returns the facts of this machine, or null when none were set. */
+                [[nodiscard]] const NodeFacts* machine_facts() const noexcept;
 
             private:
                 struct Impl;

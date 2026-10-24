@@ -79,18 +79,20 @@ namespace SushiRuntime
 
     Result<DeviceIndex> PlacementScope::device() const
     {
-        if (!context_ || !topology_)
+        if (!context_)
             return DeviceIndex{K_DEFAULT_DEVICE};
         std::optional<Error> refusal;
         std::size_t chosen = K_DEFAULT_DEVICE;
         Result<void> translated = Detail::translate_exceptions(
             [this, &refusal, &chosen]()
             {
-                const std::shared_ptr<const PlacementRules>& rules =
-                    Internal::ContextAccess::context(context_).placement_rules();
-                if (!rules)
+                const Internal::Execution::RuntimeContext& runtime =
+                    Internal::ContextAccess::context(context_);
+                const NodeFacts* here = runtime.machine_facts();
+                const auto placement = runtime.placement();
+                if (here == nullptr || !placement->rules)
                     return;
-                Result<std::size_t> resolved = resolve_device(*this, *rules, *topology_);
+                Result<std::size_t> resolved = resolve_device(*this, *placement->rules, *here);
                 if (!resolved)
                 {
                     refusal = std::move(resolved.error());
