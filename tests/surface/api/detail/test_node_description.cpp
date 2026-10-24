@@ -45,7 +45,7 @@ TEST(Small_NodeDescription, DefaultsDescribeAnEmptyKernel)
     const Detail::NodeDescription description;
     EXPECT_EQ(description.kind, Detail::NodeKind::Kernel);
     EXPECT_EQ(description.width, K_WIDTH_UNKNOWN);
-    EXPECT_EQ(description.device, 0u);
+    EXPECT_FALSE(description.device.has_value());
     EXPECT_TRUE(description.reads.empty());
     EXPECT_TRUE(description.writes.empty());
     EXPECT_EQ(description.bindings, nullptr);

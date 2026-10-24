@@ -25,12 +25,15 @@
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <optional>
 #include <vector>
+#include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/node_placement.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
@@ -78,13 +81,14 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Resolves the one device queue every region of a node belongs to.
+             * @brief Resolves the device a node runs on when every region of it belongs to one
+             *        device: placement_of(), so a stated device wins or is refused as at dispatch.
              * @param node A compiled, non-sentinel node.
              * @param context  The context whose registry owns the regions.
-             * @return The queue index, or -1 for no region, an unknown region, or two devices.
+             * @return The queue index, or -1 for no region, an unknown region, two devices, or a
+             *         placement placement_of() refuses, which the scheduler then reports.
              */
-            int owning_queue_index(const Internal::Graph::Node& node,
-                                   RuntimeContext& context) noexcept
+            int chained_queue_index(const Internal::Graph::Node& node, RuntimeContext& context)
             {
                 int owner = -1;
                 Internal::Memory::USMAllocator& memory = context.memory();
@@ -102,9 +106,13 @@ namespace SushiRuntime
                     }
                     return true;
                 };
-                if (!visit(node.io_writes_) || !visit(node.io_reads_))
+                if (!visit(node.io_writes_) || !visit(node.io_reads_) || owner < 0)
                     return -1;
-                return owner;
+
+                const Result<std::size_t> placed = Internal::Graph::placement_of(node, memory);
+                if (!placed || placed.value() >= context.devices().count())
+                    return -1;
+                return static_cast<int>(placed.value());
             }
 
             /**
@@ -150,6 +158,36 @@ namespace SushiRuntime
                 }
                 return order;
             }
+            /**
+             * @brief Reports whether the chain would serialise two host bodies the plan leaves
+             *        unordered: it holds a HOST node and some node of @p order is not a
+             *        successor of the node before it.
+             * @param order A topological order of every non-sentinel node of the plan.
+             */
+            bool orders_unordered_host_work(const std::vector<Internal::Graph::Node*>& order)
+            {
+                using Mode = Internal::Scheduler::Task::ExecutionMode;
+                const bool has_host = std::any_of(order.begin(), order.end(),
+                                                  [](const Internal::Graph::Node* node)
+                                                  {
+                                                      return node->execution_mode() == Mode::Host;
+                                                  });
+                if (!has_host)
+                    return false;
+
+                for (std::size_t position = 1; position < order.size(); ++position)
+                {
+                    bool follows = false;
+                    order[position - 1]->for_each_successor(
+                        [&follows, next = order[position]](Internal::Graph::Node* succ)
+                        {
+                            follows = follows || succ == next;
+                        });
+                    if (!follows)
+                        return true;
+                }
+                return false;
+            }
         } // namespace
 
         /**
@@ -172,7 +210,7 @@ namespace SushiRuntime
                 if (!node_kind_is_chainable(*node, has_coordinator))
                     return {};
 
-                const int index = owning_queue_index(*node, context);
+                const int index = chained_queue_index(*node, context);
                 if (index < 0 || (device >= 0 && index != device))
                     return {};
                 device = index;
@@ -183,7 +221,7 @@ namespace SushiRuntime
 
             Internal::Graph::ChainPlan plan;
             plan.order = topological_order(graph);
-            if (plan.order.size() != node_count)
+            if (plan.order.size() != node_count || orders_unordered_host_work(plan.order))
                 return {};
 
             plan.chainable = true;

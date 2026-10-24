@@ -260,6 +260,22 @@ travel nor attempts), with one warning per rule and cause per compiled plan, so 
 not repeat it. A node no rule places keeps the dispatcher's own behaviour.
 
 
+## The final build
+
+`sr build --distributed -j 10` first failed at link: the host identity queries moved to the
+topology module without their export. With it, `sr test --distributed` passed 1161 of 1179. Three
+causes were in code: the in-order chain placed a node by its region's owner alone, so a stated
+device was never weighed in a chained plan, and it ran host bodies in turn that the plan leaves
+unordered, so a worker's two disjoint tasks never overlapped; and a huge wait bound overflowed when
+compared in clock ticks. The rest were tests asserting what the design does not: results sent with
+no output chunk (every output must arrive whole, so the master resubmitted and timed out), rules the
+rule set refuses, the owner outranking a stated device (R9 rules otherwise), and a non-optional
+default device. After the fixes all 1180 pass. `DispatchRunsOnTheDeviceItNames` skips on this
+machine, whose second device is outside the first's context; a test of the refusal runs instead.
+
+The ASan lane did not run: the installed intel-llvm bundle ships no AddressSanitizer runtime, and
+installing a toolchain is the owner's. AdaptiveCpp was not built either.
+
 ## Dispatches
 
 ```
@@ -278,6 +294,7 @@ dispatch: R16c — opus low, 125 turns, passed, rung 1
 dispatch: R16d — sonnet medium, passed, rung 1
 dispatch: R16e — opus low, passed, rung 1
 dispatch: R17 — opus low, passed, rung 1
+dispatch: final-build fixes — opus low, passed, rung 1
 dispatch: R15 — haiku high, 68 turns, passed, rung 1
 dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
 dispatch: R9 second half — opus low, 146 turns, passed, rung 1

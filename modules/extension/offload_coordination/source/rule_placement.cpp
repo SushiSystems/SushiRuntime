@@ -102,7 +102,10 @@ namespace SushiRuntime
                            std::chrono::milliseconds bound) noexcept
             {
                 using Clock = std::chrono::steady_clock;
-                const Clock::duration room = Clock::time_point::max() - start;
+                // Compared in milliseconds: a huge bound in the clock's finer unit overflows.
+                const std::chrono::milliseconds room =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        Clock::time_point::max() - start);
                 if (bound >= room)
                     return Clock::time_point::max();
                 return start + std::chrono::duration_cast<Clock::duration>(bound);

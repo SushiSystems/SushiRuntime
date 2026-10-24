@@ -210,6 +210,7 @@ namespace OffloadDispatcherTests
         std::shared_ptr<const PlacementRules> rules_naming(const char* name)
         {
             PlacementRule rule;
+            rule.match.placement_class = "test.pinned";
             rule.target.machine_name = name;
             auto rules = std::make_shared<PlacementRules>();
             EXPECT_TRUE(rules->add(std::move(rule)));
@@ -221,8 +222,10 @@ namespace OffloadDispatcherTests
         {
             PlacementRule rule;
             rule.name = "pin";
+            rule.match.placement_class = "test.pinned";
             rule.target.machine_name = K_WORKER_NAME;
             rule.if_absent.action = action;
+            rule.if_absent.bound = std::chrono::milliseconds(1000);
             auto rules = std::make_shared<PlacementRules>();
             EXPECT_TRUE(rules->add(std::move(rule)));
             return rules;

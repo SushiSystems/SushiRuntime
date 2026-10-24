@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-24 — topology: Fixed the host identity queries missing their export, so a program outside the library could not link them (`host_identity.hpp`).
+- 2026-10-24 — execution: Fixed the in-order chain ignoring a node's stated device and running host bodies in turn that the plan leaves unordered (`chain_plan.cpp`).
+- 2026-10-24 — offload_coordination: Fixed a huge wait bound overflowing when it met the clock's tick (`rule_placement.cpp`).
 - 2026-10-24 — offload_coordination: Fixed a rule naming another machine being ignored for a node that cannot travel or is out of attempts; its absent policy applies, with a warning (`rule_placement.hpp`).
 - 2026-10-24 — api: Fixed a dynamic graph never preparing its nodes for an installed coordinator, so a rule naming another machine did nothing (`region_composer.cpp`).
 - 2026-10-24 — offload_coordination: Made holding a node cost the same whatever the number held (`held_nodes.cpp`).

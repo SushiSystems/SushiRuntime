@@ -87,10 +87,11 @@ dispatches in a row. The test first asserts that the two entries' queues differ.
 
 Each node is dispatched four times, so every dispatch after the first takes the cached index.
 
-### `ARegionOwnerOutranksTheStatedPlacement`
+### `AStatedPlacementInTheOwnersContextOutranksTheOwner`
 
 `USMAllocator::adopt()` records a host address as owned by entry 1 without allocating device
-memory. A node that writes it and states entry 0 still runs on entry 1.
+memory. A node that writes it and states no device runs on entry 1; one that states entry 0, in the
+owner's SYCL context, runs on entry 0.
 
 ### `AnUnownedRegionLeavesTheStatedPlacementInForce`
 

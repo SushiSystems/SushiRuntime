@@ -12,7 +12,13 @@ symbol or passage it explains, and that header's file block cites this page.
 
 Any doubt leaves the plan on the scheduler. classify_chain() refuses the chain for native host work,
 a node the installed coordinator acts on, a device value read at dispatch, a node with no USM
-region, a region this context did not allocate, or two devices.
+region, a region this context did not allocate, two devices, or a stated device that
+`placement_of()` refuses, which the scheduler then reports. A chained node runs on the device
+`placement_of()` gives it, so a stated device in its owner's context wins on the chain as it does
+at dispatch. A plan that holds a HOST node and leaves two of its nodes unordered is not chained
+either: the chain runs host bodies one after another on the calling thread, which would serialise
+work the scheduler runs at the same time, such as the distributed worker's batch of dispatches over
+disjoint buffers.
 
 With a coordinator installed, it acts on a node in two cases. The node is an offload candidate:
 `OffloadState::offloadable` is set, which only the coordinator's prepare() does, when the engine

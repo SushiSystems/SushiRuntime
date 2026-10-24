@@ -645,6 +645,22 @@ namespace
                 return runtime_.topology().devices.size();
             }
 
+            /**
+             * @brief Returns the first device after device 0 whose context is, or is not, device
+             *        0's, where the worker's buffers live.
+             * @param shared True for a device in device 0's context, false for one outside it.
+             */
+            [[nodiscard]] std::optional<std::uint32_t> other_device(bool shared) const
+            {
+                const AdvancedControls advanced = runtime_.advanced();
+                const sycl::context cache_context = advanced.queue(DeviceIndex{0}).get_context();
+                for (std::size_t device = 1; device < advanced.device_count(); ++device)
+                    if ((advanced.queue(DeviceIndex{device}).get_context() == cache_context) ==
+                        shared)
+                        return static_cast<std::uint32_t>(device);
+                return std::nullopt;
+            }
+
             /** @brief Records what the agent sends; shared with the agent. */
             std::shared_ptr<FakeTransport> transport;
 
@@ -892,8 +908,9 @@ TEST(Medium_DispatchExecutorTest, KernelSeesBufferSizes)
 TEST(Medium_DispatchExecutorTest, DispatchRunsOnTheDeviceItNames)
 {
     AgentRig rig;
-    if (rig.device_count() < 2)
-        GTEST_SKIP() << "The worker's runtime has fewer than two devices.";
+    const std::optional<std::uint32_t> second_device = rig.other_device(true);
+    if (!second_device)
+        GTEST_SKIP() << "No second device shares device 0's context.";
 
     std::mutex mutex;
     std::vector<sycl::device> ran_on;
@@ -915,12 +932,11 @@ TEST(Medium_DispatchExecutorTest, DispatchRunsOnTheDeviceItNames)
     first.device_index = 0;
     rig.run(K_MASTER, first, 1);
     Wire::TaskDispatchMessage second = dispatch_of(2, op, {}, {handle_of(2, 1, 16)});
-    second.device_index = 1;
+    second.device_index = *second_device;
     rig.run(K_MASTER, second, 2);
 
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
-    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded)
-        << "device 1 may not share the context of the cache's device";
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
     const std::lock_guard<std::mutex> lock(mutex);
     ASSERT_EQ(ran_on.size(), 2u);
     EXPECT_NE(ran_on[0], ran_on[1]);
@@ -946,6 +962,27 @@ TEST(Medium_DispatchExecutorTest, DispatchNamingAMissingDeviceFailsTheTask)
     rig.run(K_MASTER, dispatch_of(2, op, {}, {handle_of(1, 2, 16)}), 2);
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(calls.load(), 1);
+}
+
+/** @brief Tests that a dispatch naming a device outside device 0's context fails the task. */
+TEST(Medium_DispatchExecutorTest, DispatchOnADeviceOutsideTheCacheContextFailsTheTask)
+{
+    std::atomic<int> calls{0};
+    AgentRig rig;
+    const std::optional<std::uint32_t> outside = rig.other_device(false);
+    if (!outside)
+        GTEST_SKIP() << "No device lies outside device 0's context.";
+    const OperationID op(20);
+    rig.kernels->register_kernel(op, counting_kernel(calls));
+    rig.start();
+    rig.register_master(K_MASTER, 7);
+
+    Wire::TaskDispatchMessage dispatch = dispatch_of(1, op, {}, {handle_of(1, 1, 16)});
+    dispatch.device_index = *outside;
+    rig.run(K_MASTER, dispatch, 1);
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::KernelFailed);
+    EXPECT_EQ(calls.load(), 0);
+    EXPECT_EQ(rig.transport->count(MessageType::BufferChunk), 0u);
 }
 
 /** @brief Tests that a generic lambda registers as a kernel and runs. */
@@ -1129,8 +1166,8 @@ TEST(Medium_DispatchExecutorTest, DispatchesOverDisjointBuffersAreInFlightTogeth
     rig.start();
     rig.register_master(K_MASTER, 7);
 
-    // Two devices when the worker has them; otherwise both dispatches name device 0.
-    const std::uint32_t second_device = rig.device_count() >= 2 ? 1u : 0u;
+    // A second device of device 0's context when the worker has one; otherwise device 0 twice.
+    const std::uint32_t second_device = rig.other_device(true).value_or(0u);
     const BufferHandle input = handle_of(3, 1, 8);
     Wire::TaskDispatchMessage first = dispatch_of(1, op, {input}, {handle_of(4, 1, 16)});
     first.device_index = 0;
@@ -1142,7 +1179,7 @@ TEST(Medium_DispatchExecutorTest, DispatchesOverDisjointBuffersAreInFlightTogeth
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(rendezvous.most(), 2u) << "the second kernel entered only after the first left";
-    if (second_device == 1u)
+    if (second_device != 0u)
     {
         const std::lock_guard<std::mutex> lock(mutex);
         ASSERT_EQ(ran_on.size(), 2u);

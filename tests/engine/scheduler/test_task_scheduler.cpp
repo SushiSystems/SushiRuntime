@@ -231,19 +231,23 @@ namespace NodePlacementTests
     }
 
     /**
-     * @brief A node that names an owned region runs on the owner, whatever placement it states.
+     * @brief A node over an owned region runs on the owner unless it states a device in the
+     *        owner's context, which then wins.
      */
-    TEST_F(Medium_NodePlacement, ARegionOwnerOutranksTheStatedPlacement)
+    TEST_F(Medium_NodePlacement, AStatedPlacementInTheOwnersContextOutranksTheOwner)
     {
         int cell = 0;
         memory_.adopt(&cell, 1, sizeof(cell));
 
         std::optional<sycl::queue> handed;
-        const sushi_ptr<Node> node = make_recording_node(handed);
-        node->io_writes_.emplace_back(&cell);
-        node->place_on(0);
+        const sushi_ptr<Node> unplaced = make_recording_node(handed);
+        unplaced->io_writes_.emplace_back(&cell);
+        EXPECT_EQ(dispatched_device(*unplaced, handed), 1u);
 
-        EXPECT_EQ(dispatched_device(*node, handed), 1u);
+        const sushi_ptr<Node> placed = make_recording_node(handed);
+        placed->io_writes_.emplace_back(&cell);
+        placed->place_on(0);
+        EXPECT_EQ(dispatched_device(*placed, handed), 0u);
 
         memory_.forget(&cell);
     }

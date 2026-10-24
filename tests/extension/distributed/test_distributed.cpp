@@ -535,6 +535,23 @@ namespace EndToEndTests
         }
 
         /**
+         * @brief Returns the frames of a whole result: one zeroed chunk per output at its
+         *        dispatched size, then success_frame().
+         */
+        std::vector<OutboundFrame> whole_result(const Wire::TaskDispatchMessage& dispatch)
+        {
+            std::vector<OutboundFrame> frames;
+            for (const BufferHandle& output : dispatch.outputs)
+            {
+                const std::vector<std::byte> zeros(static_cast<std::size_t>(output.size_bytes));
+                frames.push_back(output_chunk_frame(
+                    dispatch.task_id, output, span<const std::byte>(zeros.data(), zeros.size())));
+            }
+            frames.push_back(success_frame(dispatch));
+            return frames;
+        }
+
+        /**
          * @brief Yields a fixed list of frames as one stream, in order.
          */
         class ScriptedFrames final : public FrameSource
@@ -1526,7 +1543,7 @@ namespace EndToEndTests
             ASSERT_TRUE(graph.compile());
             BackgroundRun run(graph);
             ASSERT_TRUE(worker.wait_for_dispatches(1));
-            ASSERT_EQ(worker.send_stream({success_frame(worker.dispatch(0))}), SendStatus::Queued);
+            ASSERT_EQ(worker.send_stream(whole_result(worker.dispatch(0))), SendStatus::Queued);
             ASSERT_TRUE(run.wait()) << "execute() did not return after the result of the worker";
         };
 
@@ -1671,7 +1688,7 @@ namespace EndToEndTests
 
             const Wire::TaskDispatchMessage dispatch = pinned.dispatch(0);
             EXPECT_EQ(dispatch.device_index, 1u) << "the rule's device part picks the GPU";
-            ASSERT_EQ(pinned.send_stream({success_frame(dispatch)}), SendStatus::Queued);
+            ASSERT_EQ(pinned.send_stream(whole_result(dispatch)), SendStatus::Queued);
             ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
             EXPECT_EQ(decoy.dispatch_count(), 0u);
             EXPECT_EQ(cluster.offloaded(), 1u);
@@ -1747,7 +1764,7 @@ namespace EndToEndTests
 
         EXPECT_EQ(cluster.statistics().held_nodes, 0u);
         EXPECT_EQ(worker.dispatch(0).device_index, 0u) << "a rule with no device part names 0";
-        ASSERT_EQ(worker.send_stream({success_frame(worker.dispatch(0))}), SendStatus::Queued);
+        ASSERT_EQ(worker.send_stream(whole_result(worker.dispatch(0))), SendStatus::Queued);
         ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
         EXPECT_EQ(cluster.offloaded(), 1u);
     }
@@ -2150,7 +2167,7 @@ namespace EndToEndTests
         BackgroundRun run(graph);
         ASSERT_TRUE(worker.wait_for_dispatches(1));
         EXPECT_EQ(worker.dispatch(0).device_index, 0u);
-        ASSERT_EQ(worker.send_stream({success_frame(worker.dispatch(0))}), SendStatus::Queued);
+        ASSERT_EQ(worker.send_stream(whole_result(worker.dispatch(0))), SendStatus::Queued);
         ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
         EXPECT_EQ(policy->offers().size(), 1u) << "the policy did not decide the node";
     }
@@ -2195,7 +2212,7 @@ namespace EndToEndTests
         BackgroundRun run(graph);
         ASSERT_TRUE(worker.wait_for_dispatches(1)) << "the master kept a node it has no GPU for";
         EXPECT_EQ(worker.dispatch(0).device_index, 1u) << "the worker's GPU is its device 1";
-        ASSERT_EQ(worker.send_stream({success_frame(worker.dispatch(0))}), SendStatus::Queued);
+        ASSERT_EQ(worker.send_stream(whole_result(worker.dispatch(0))), SendStatus::Queued);
         ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
         EXPECT_EQ(cluster.offloaded(), 1u);
     }
@@ -2250,7 +2267,7 @@ namespace EndToEndTests
         BackgroundRun run(world);
         ASSERT_TRUE(worker.wait_for_dispatches(1)) << "the region's node did not reach the worker";
         EXPECT_EQ(worker.dispatch(0).device_index, 1u);
-        ASSERT_EQ(worker.send_stream({success_frame(worker.dispatch(0))}), SendStatus::Queued);
+        ASSERT_EQ(worker.send_stream(whole_result(worker.dispatch(0))), SendStatus::Queued);
         ASSERT_TRUE(run.wait()) << "execute() did not return after the worker's result";
         EXPECT_EQ(cluster.offloaded(), 1u);
     }
