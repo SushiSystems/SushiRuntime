@@ -322,6 +322,23 @@ new operation and for one already registered, and the registry must hold what it
 default-constructed `Kernel` must stop it on an open registry and on a sealed one, with the
 message that names the empty kernel.
 
+## test_registered_task/test_nested_run_probe.cpp
+
+The file probes whether a registered kernel may run a compiled graph from inside its own body, as
+SushiAI's replica does with a whole compiled step (R11 of `docs/design/LAYERED_EXECUTION/README.md`).
+The kernel runs a one-task graph, `out = 2 * in`, and records how its `Graph::run()` ended. A worker
+runs each dispatch as a task of its runtime's run, and the master runs a local fallback as a task
+of its own run, so in both places the kernel's body is inside a run. Every master run goes through
+`BoundedRun`, which fails a test after 10 s instead of hanging it. Every test skips when SYCL
+reports no device.
+
+| Test | What it proves |
+| --- | --- |
+| `WorkerKernelRunningAGraphOfItsOwnRuntimeIsRefused` | On a worker, the nested `run()` on the worker's own runtime returns `InvalidState`, the inner output stays unwritten, the dispatch still succeeds, and the same graph runs once the dispatch is over. |
+| `WorkerKernelRunsAGraphOfASecondRuntime` | On a worker, a graph built on a second `Runtime` of the process runs to its end and writes the right output. |
+| `MasterFallbackRunningAGraphOfItsOwnRuntimeIsRefused` | On the master, the same refusal, with the task's body run locally; the runtime is usable after the run. |
+| `MasterFallbackRunsAGraphOfASecondRuntime` | On the master, a graph of a second `Runtime` runs to its end and writes the right output. |
+
 ## test_shared_secret.cpp
 
 The tests need no hardware and no network. They cover `SharedSecret`; the hash, the HMAC and the
@@ -495,7 +512,7 @@ The file tests Cluster without a worker: attach, shared buffers, versions and th
 | `ASharedAddressGetsAHandle` | A shared address gets a valid handle whose version bump_buffer() raises. |
 | `ALivenessTimeoutBelowTheMinimumIsRefused` | A liveness timeout under one millisecond is refused and changes nothing. |
 
-## test_registered_task.cpp
+## test_registered_task/test_registered_task.cpp
 
 The file tests record_registered_task(): the recorded node runs the registered kernel on this
 machine.

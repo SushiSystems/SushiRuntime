@@ -243,7 +243,13 @@ kernel that runs a whole compiled step:
 
 - a registered kernel may run a compiled graph on the worker's runtime from the exec thread, and
   its local fallback may do the same inside a run of the master's graph; if a graph cannot run
-  inside a task of another run, SushiAI runs its master replica on a second `Runtime`;
+  inside a task of another run, SushiAI runs its master replica on a second `Runtime`. R11
+  answered no for both: a worker runs each dispatch as a task inside a graph run, and a nested
+  `Graph::run()` on the same runtime is refused with `InvalidState` by the run-in-progress guard
+  before it touches the pool, without deadlock. A second `Runtime` in the same process has its own
+  run marker and runs the inner graph, at the cost of a second device context, its own scheduler
+  pool, and one outer pool thread held for each kernel in flight; so a replica runs its compiled
+  step on a `Runtime` of its own, on the worker and on the master;
 - a shared buffer that a task on the master writes gets a new version, so a worker's cache does
   not serve stale parameters. R12 answered yes: `OffloadDispatcher::complete_local()` raises the
   version of what a local node wrote when it completes, so the next dispatch carries the new
@@ -281,7 +287,7 @@ the task's own commit.
 | R8 | The master keeps each worker's facts; `WorkerLoad` names the worker and holds its facts. Done when: a test on `InProcessFabric` reads a worker's name, labels and devices from the load a policy receives, before and after a reconnect. Waits on R7. | building |
 | R9 | A worker runs its kernels through its scheduler on the device a dispatch names. Done when: a worker with two devices runs two dispatches on the devices they name; KI-6 and RW-17 close. Waits on R7. | building |
 | R10 | `RulePlacement`: the decision a policy returns becomes worker and device, local, wait or fail; a rule's `deadline`. Done when: on `InProcessFabric` a rule pins a class and key to a named worker, its `wait` holds a node until the worker returns, its `fail` ends the run with a `Status` naming the rule. Waits on R5, R8, R9. | building |
-| R11 | Probe: a registered kernel runs a compiled graph on the worker's runtime, and its local fallback runs one inside a master run. Done when: the test answers yes or no for each of the two, and the answer is written in "What a training run over several machines needs". | planned |
+| R11 | Probe: a registered kernel runs a compiled graph on the worker's runtime, and its local fallback runs one inside a master run. Done when: the test answers yes or no for each of the two, and the answer is written in "What a training run over several machines needs". | building |
 | R12 | Probe and, if needed, fix: a local task's write to a shared buffer moves its version. Done when: a test writes a shared buffer from a local task and sees a worker pull the new version. | building |
 | R13 | Measure the TCP transport between two of the owner's machines: 4 MiB, 64 MiB and 256 MiB, throughput and latency; restore the offload benchmark under `applications/probes/`. Done when: the guide holds the measured numbers with the two machines named; RW-21 and RW-22 close. Waits on R10. | planned |
 | R14 | Worker-to-worker links and a ring all-reduce. Done when: designed only if SushiAI's five-machine measurement shows the master's link bounds the step (RW-14). Waits on SushiAI phase A7. | planned |

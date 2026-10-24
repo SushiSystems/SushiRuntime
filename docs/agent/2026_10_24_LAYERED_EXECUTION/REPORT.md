@@ -187,6 +187,16 @@ node, or the live writes of a double-buffered one, when a node that stayed local
 two new end-to-end tests pin the case the old test missed, a worker that already holds the old
 version, and the cost of two local writes before one dispatch: one pull. No source changed.
 
+## R11
+
+Both answers are no, by the code, and four tests pin them. `SchedulerExecutionEngine::submit()`
+sets the run marker for the whole run, and `entry_refusal()` refuses a `Graph::run()`, `compile()`
+or `run_async()` while it is set, before the pool is touched; a registered kernel on a worker and
+its local fallback on the master both run inside a run of their runtime. A second `Runtime` has
+its own marker and runs the inner graph. The tests bound every wait at 10 s, so a hang would fail
+them. `test_registered_task.cpp` moved into `test_registered_task/` beside the probe, as the test
+mirror wants a unit's extra test files in a folder of its name.
+
 ## Dispatches
 
 ```
@@ -203,4 +213,5 @@ dispatch: R15 — haiku high, 68 turns, passed, rung 1
 dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
 dispatch: R9 second half — opus low, 146 turns, passed, rung 1
 dispatch: R12 — sonnet medium, 28 turns, passed, rung 1
+dispatch: R11 — sonnet medium, 45 turns, passed, rung 1
 ```

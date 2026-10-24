@@ -13,7 +13,8 @@ sushiruntime_add_module_tests(
         test_distributed_log_category.cpp
         test_in_process_transport.cpp
         test_kernel_registry.cpp
-        test_registered_task.cpp
+        test_registered_task/test_registered_task.cpp
+        test_registered_task/test_nested_run_probe.cpp
         test_shared_secret.cpp
         test_tcp_transport.cpp
         test_worker_agent.cpp

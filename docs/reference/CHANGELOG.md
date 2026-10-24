@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-24 — tests: Pinned that a registered kernel or its local fallback is refused a graph run of its own runtime and runs one on a second runtime (`test_nested_run_probe.cpp`).
 - 2026-10-24 — tests: Pinned that a worker holding an old version of a shared buffer pulls the new one after a local task on the master writes it (`test_distributed.cpp`).
 - 2026-10-24 — api: Added `Interop::borrow()`, a `Buffer<T>` over memory its owner keeps alive, refused as a dangling resource once the owner lets go, and `Recorder::task()` with a stated placement (`interop.hpp`, `recorder.hpp`).
 - 2026-10-24 — api: Changed the exported `Detail::copy_to_host` and `copy_to_device` to take the buffer's device, used when no device owns the address (`handle_access.hpp`, `buffer.cpp`).

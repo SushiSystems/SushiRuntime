@@ -30,7 +30,7 @@ runtime tasks it waits on are built; each of those repositories keeps its own wo
 | R8 | R7 | built |
 | R9 | R7 | built; KI-6 and RW-17 close when the final build passes its tests |
 | R10 | R5, R8, R9 | built |
-| R11 | nothing | planned |
+| R11 | nothing | built |
 | R12 | nothing | built |
 | R13 | R10, two of the owner's machines | planned |
 | R15 | R1 | built |
