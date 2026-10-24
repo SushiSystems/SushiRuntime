@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-23 — ci: Dropped the build-file hash from the ccache `restore-keys`, so a CMake change restores the closest older cache instead of starting a cold build that overran the 60-minute downstream job (`ci.yml`).
+
 ## v0.4.0 — 2026-10-22
 
 - 2026-10-22 — tests: Skipped seven tests on AdaptiveCpp, where bindless images, shared USM kinds, shared alignment and the steady-state allocation counts differ (`test_interop.cpp`, `test_sushiruntime.cpp`, `test_usm_allocator.cpp`).
