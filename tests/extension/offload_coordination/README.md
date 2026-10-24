@@ -12,8 +12,9 @@ A section is named after a test file, and a subsection after the test, helper or
 The file tests `OffloadDispatcher`
 over a real `BufferRegistry`, `WorkerDirectory` and `PendingTasks`. The transport is a fake that
 records each `send()` and answers with a status the test sets; the policy is a fake that picks the
-first worker offered and counts its calls. The one worker registers through `accept_hello` and
-`accept_proof` under the empty secret. A buffer is a `std::array<float, 16>` whose address is
+first worker offered and counts its calls. Each worker registers through `accept_hello` and
+`accept_proof` under the empty secret; every test registers one, named `worker`, and one test adds
+a second, named `second`. A buffer is a `std::array<float, 16>` whose address is
 shared; no byte of it is read, so the file needs no device and no thread.
 
 | Test | What it proves |
@@ -49,6 +50,10 @@ A fixed-buffer node and a double-buffered node each list one buffer twice among 
 Both stay local, and the one WARN counts them under the third reason, `2 buffer written twice`. A
 node that reads and writes the same buffer names it once as an output and stays offloadable. The
 local run of the first node still raises the version of the buffer it wrote.
+
+| Test | What it proves |
+| --- | --- |
+| `Regression_EachPlanPlacesByItsOwnRules` | Two nodes stand for two plans: the first is prepared under a set whose rule names `worker`, the second, after it, under a set whose rule names `second`, both at position 0. Offered in turn twice, each node is dispatched to the worker its own set names and the policy is never asked. |
 
 ## test_worker_directory.cpp
 

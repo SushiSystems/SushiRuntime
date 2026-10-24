@@ -195,7 +195,7 @@ The file tests OffloadGate: what it offers a coordinator, what it never offers, 
 
 | Test | What it proves |
 | --- | --- |
-| `AnOffloadableNodeIsOfferedAndCounted` | Accepts every offer when told to, and counts the offers. */ class AcceptingCoordinator final : public Internal::Graph::OffloadCoordinator { public: void bind(Internal::Graph::OffloadSink&) override {} void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes) override { prepared = nodes.size(); } bool try_offload(Internal::Graph::Node&) override { ++offers; return accepts; } void on_local_completion(Internal::Graph::Node&) noexcept override {} void stop() noexcept override {} bool accepts = true; /**< What try_offload() answers. */ int offers = 0; /**< The calls of try_offload(). */ std::size_t prepared = 0; /**< The nodes prepare() was given. */ }; /** @brief A task that is no graph node. */ class PlainTask final : public Task { public: std::optional<sushi_ptr<Task>> split() override { return std::nullopt; } bool is_splittable() const override { return false; } }; } /** @brief Tests that an offloadable node is offered and counted once accepted. |
+| `AnOffloadableNodeIsOfferedAndCounted` | An offloadable node is offered, and counted once accepted. |
 | `TheGateOffersNothingItMustNot` | Checks the four cases the gate never offers: no coordinator, no node, not offloadable, aborting. |
 | `PrepareReachesTheCoordinator` | Prepare() reaches the coordinator, and does nothing without one. |
 

@@ -101,10 +101,10 @@ namespace SushiRuntime
                  * A node qualifies when its op id is not 0, an alive worker supports it (or its
                  * rule names another machine), every buffer it touches is shared and no two of
                  * its writes name one buffer. Logs one WARN per call that leaves such nodes local.
-                 * @param rules Kept; try_offload() decides from it alone. Null for none.
+                 * @param rules Null for none; each node's OffloadState::rules keeps it.
                  */
                 void prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes,
-                             std::shared_ptr<const PlacementRules> rules);
+                             const std::shared_ptr<const PlacementRules>& rules);
 
                 /**
                  * @brief Dispatches a ready node; the body of OffloadCoordinator::try_offload().
@@ -141,9 +141,9 @@ namespace SushiRuntime
                 [[nodiscard]] OffloadDispatcherStatistics statistics() const noexcept;
 
             private:
-                /** @brief Returns the rule that won for a node, or null for none. */
-                [[nodiscard]] const PlacementRule* winning_rule(
-                    const Internal::Graph::Node& node) const noexcept;
+                /** @brief Returns the rule of @p rules that won for a node, or null for none. */
+                [[nodiscard]] static const PlacementRule* winning_rule(
+                    const Internal::Graph::Node& node, const PlacementRules* rules) noexcept;
 
                 /** @brief Returns where a node goes: by its rule, else by the policy. */
                 [[nodiscard]] PlacementDecision decide(const Internal::Graph::Node& node,
@@ -194,9 +194,6 @@ namespace SushiRuntime
 
                 /// @brief Places a node by its winning rule.
                 RulePlacement rule_placement_;
-
-                /// @brief The rule set of the last prepare(); null for none.
-                std::shared_ptr<const PlacementRules> rules_;
 
                 /// @brief Dispatches queued to a worker.
                 std::atomic<std::uint64_t> offloaded_{0};

@@ -35,6 +35,8 @@
 
 namespace SushiRuntime
 {
+    class PlacementRules;
+
     namespace Internal::Graph
     {
         /**
@@ -81,6 +83,13 @@ namespace SushiRuntime
 
             /** @brief Holds the coordinator's own record; OffloadCoordinator::prepare() sets it. */
             std::unique_ptr<OffloadPayload> payload;
+
+            /**
+             * @brief Holds the rule set the node's placement_rule points into; null for none.
+             *
+             * OffloadCoordinator::prepare() sets it from the rules of the node's own compile.
+             */
+            std::shared_ptr<const PlacementRules> rules;
         };
 
     } // namespace Graph

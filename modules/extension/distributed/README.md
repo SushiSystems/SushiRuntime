@@ -311,9 +311,9 @@ A node no rule matches, or any node when no rule set is in force, is placed by t
 instead: on the worker its target names, on the device the target's device part picks from that
 worker's facts, carried in `TASK_DISPATCH::device_index`; on the master when the target names the
 master; and by the rule's `if_absent` when no alive worker matches. `prepare()` hands the
-dispatcher the rules of `RuntimeContext::placement()`, loaded again, so a change that lands
-inside the compile can give it a newer set than the one the compile resolved the nodes against; `Cluster::attach()` hands the coordinator the context and a copy of
-`Runtime::topology()`. A `Wait` for an absent target, and any rule whose target is alive but at
+dispatcher the rules the compile resolved the nodes against, which `PlanCache::build` passes down,
+and each node keeps them in `OffloadState::rules`; `Cluster::attach()` hands the coordinator a copy
+of `Runtime::topology()`. A `Wait` for an absent target, and any rule whose target is alive but at
 its `max_jobs`, hold the node in `HeldNodes`, without a thread; the node is offered again when a
 worker registers, a task result or a resubmit frees a slot, or a `Wait` bound, counted from the
 first offer, passes. `Fail` ends the run through `OffloadSink::fail()` with an `InvalidState`

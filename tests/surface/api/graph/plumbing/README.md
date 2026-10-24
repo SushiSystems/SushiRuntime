@@ -139,6 +139,7 @@ the new generation and never composes again.
 | --- | --- |
 | `ARuleChangeDuringACompileRecompilesOnTheNextRun` | A `Testing::HookedCopyTask` sets an empty rule set while `PlanCache::build()` copies it, after the build read the placement record. The next run compiles once more and the run after it does not. |
 | `Regression_InstallingOrRemovingACoordinatorRecompiles` | Installing a coordinator that declines every node after a compile makes the next run compile again, a further run does not, and removing it compiles once more. |
+| `Regression_TheCoordinatorSeesTheRulesTheCompileRead` | A `Testing::HookedCopyTask` sets a second rule set while `PlanCache::build()` copies it. The installed coordinator's `prepare()` receives the rules the compile read, not the set that landed after. |
 
 ## test_step_driver.cpp
 

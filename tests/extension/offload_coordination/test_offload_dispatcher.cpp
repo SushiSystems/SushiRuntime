@@ -56,6 +56,8 @@
 #include <SushiRuntime/cluster_load/cluster_statistics.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
+#include <SushiRuntime/placement/placement_rule.hpp>
+#include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
@@ -78,6 +80,15 @@ namespace OffloadDispatcherTests
     {
         /** @brief Names the worker every test registers. */
         constexpr PeerID K_WORKER{1};
+
+        /** @brief Names the machine K_WORKER runs on. */
+        constexpr const char* K_WORKER_NAME = "worker";
+
+        /** @brief Names a second worker, which only a test of two rule sets registers. */
+        constexpr PeerID K_SECOND_WORKER{2};
+
+        /** @brief Names the machine K_SECOND_WORKER runs on. */
+        constexpr const char* K_SECOND_WORKER_NAME = "second";
 
         /** @brief Names an operation the worker has a kernel for. */
         constexpr OperationID K_KNOWN_OPERATION{501};
@@ -193,6 +204,16 @@ namespace OffloadDispatcherTests
             return bytes;
         }
 
+        /** @brief Returns a rule set whose one rule sends every node to the machine @p name. */
+        std::shared_ptr<const PlacementRules> rules_naming(const char* name)
+        {
+            PlacementRule rule;
+            rule.target.machine_name = name;
+            auto rules = std::make_shared<PlacementRules>();
+            EXPECT_TRUE(rules->add(std::move(rule)));
+            return rules;
+        }
+
         /** @brief Returns the dispatch a transport was offered, decoded. */
         Wire::TaskDispatchMessage decode_dispatch(const OfferedFrame& frame)
         {
@@ -217,7 +238,7 @@ namespace OffloadDispatcherTests
                     SushiLog::set_log_synchronous(true);
                     SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Warn);
 
-                    register_worker();
+                    register_worker(K_WORKER, K_WORKER_NAME);
                     registry_.register_buffer(first_.data(), sizeof(Storage));
                     registry_.register_buffer(second_.data(), sizeof(Storage));
                 }
@@ -229,8 +250,8 @@ namespace OffloadDispatcherTests
                     SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, saved_level_);
                 }
 
-                /** @brief Takes the worker through HELLO and PROOF under the empty secret. */
-                void register_worker()
+                /** @brief Takes a worker through HELLO and PROOF under the empty secret. */
+                void register_worker(PeerID peer, const char* name)
                 {
                     const std::chrono::steady_clock::time_point now =
                         std::chrono::steady_clock::now();
@@ -239,13 +260,13 @@ namespace OffloadDispatcherTests
                     HandshakeNonce master_nonce{};
                     master_nonce.bytes.fill(0x22);
 
-                    directory_.add_peer(K_WORKER, "test:1", now);
+                    directory_.add_peer(peer, "test:" + std::to_string(peer.value), now);
 
                     Wire::HelloMessage hello;
                     hello.worker_nonce = to_wire(worker_nonce.bytes);
                     hello.build_id = "test-build";
-                    hello.node_name = "worker";
-                    ASSERT_EQ(directory_.accept_hello(K_WORKER, hello, master_nonce).step,
+                    hello.node_name = name;
+                    ASSERT_EQ(directory_.accept_hello(peer, hello, master_nonce).step,
                               HandshakeStep::Accepted);
 
                     Wire::ProofMessage proof;
@@ -254,7 +275,7 @@ namespace OffloadDispatcherTests
                         master_nonce));
                     proof.ops = {K_KNOWN_OPERATION};
                     proof.max_jobs = K_WORKER_MAX_JOBS;
-                    ASSERT_EQ(directory_.accept_proof(K_WORKER, proof, now), HandshakeStep::Accepted);
+                    ASSERT_EQ(directory_.accept_proof(peer, proof, now), HandshakeStep::Accepted);
                 }
 
                 /** @brief Returns a node that reads @p read and writes @p written under @p op. */
@@ -267,12 +288,30 @@ namespace OffloadDispatcherTests
                     return node;
                 }
 
-                /** @brief Runs prepare() over the given nodes. */
-                void prepare(const std::vector<sushi_ptr<Internal::Graph::Node>>& nodes)
+                /** @brief Runs prepare() over the given nodes, under @p rules. */
+                void prepare(const std::vector<sushi_ptr<Internal::Graph::Node>>& nodes,
+                             const std::shared_ptr<const PlacementRules>& rules = nullptr)
                 {
                     dispatcher_.prepare(
                         span<const sushi_ptr<Internal::Graph::Node>>(nodes.data(), nodes.size()),
-                        nullptr);
+                        rules);
+                }
+
+                /**
+                 * @brief Offers a node, takes it back from the pending table as a worker's
+                 *        result would, and returns the peer its dispatch went to.
+                 */
+                PeerID offload_and_return(Internal::Graph::Node& node)
+                {
+                    const std::size_t sent = transport_.offered.size();
+                    EXPECT_TRUE(dispatcher_.try_offload(node));
+                    std::vector<PendingTask> taken;
+                    pending_.drain(taken);
+                    EXPECT_EQ(taken.size(), 1u);
+                    dispatcher_.complete_remote(node);
+                    EXPECT_EQ(transport_.offered.size(), sent + 1);
+                    return transport_.offered.size() == sent + 1 ? transport_.offered.back().peer
+                                                                 : PeerID{0};
                 }
 
                 /** @brief Returns the version the registry holds for an address. */
@@ -567,5 +606,31 @@ namespace OffloadDispatcherTests
         const std::uint32_t version = version_of(second_.data());
         dispatcher_.complete_local(*fixed);
         EXPECT_GT(version_of(second_.data()), version);
+    }
+
+    /**
+     * @brief Tests that two plans prepared under different rule sets and run alternately each
+     *        place their node by their own set, not by the set of the later prepare().
+     */
+    TEST_F(Medium_OffloadDispatcherTest, Regression_EachPlanPlacesByItsOwnRules)
+    {
+        register_worker(K_SECOND_WORKER, K_SECOND_WORKER_NAME);
+
+        const sushi_ptr<Internal::Graph::Node> first_plan =
+            fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
+        first_plan->metadata.placement_rule = 0;
+        prepare({first_plan}, rules_naming(K_WORKER_NAME));
+
+        const sushi_ptr<Internal::Graph::Node> second_plan =
+            fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
+        second_plan->metadata.placement_rule = 0;
+        prepare({second_plan}, rules_naming(K_SECOND_WORKER_NAME));
+
+        for (int round = 0; round < 2; ++round)
+        {
+            EXPECT_EQ(offload_and_return(*first_plan), K_WORKER) << "round " << round;
+            EXPECT_EQ(offload_and_return(*second_plan), K_SECOND_WORKER) << "round " << round;
+        }
+        EXPECT_EQ(policy_->calls, 0);
     }
 } // namespace OffloadDispatcherTests

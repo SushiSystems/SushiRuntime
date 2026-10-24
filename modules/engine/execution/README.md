@@ -82,8 +82,9 @@ final registration indices for this compose.
 
 ### ExecutionEngine::prepare
 
-prepare() is the one call between `TaskGraph::compile()` and the first run of a plan. The default
-does nothing. SchedulerExecutionEngine hands `all_nodes` to the scheduler's offload gate, which
+prepare() is the one call between `TaskGraph::compile()` and the first run of a plan. It takes the
+plan and the rules of the placement snapshot the plan compiled against. The default does nothing.
+SchedulerExecutionEngine hands `all_nodes` and those rules to the scheduler's offload gate, which
 passes them to the installed coordinator's `prepare()`; with none installed no node gets an
 offload state. The graph module therefore names no coordinator. A caller that compiles a
 `TaskGraph` by hand and wants its nodes offered to a worker calls prepare() itself, before
@@ -245,8 +246,7 @@ installed after a compile does too.
 A writer builds the next record from the one in force and swaps it in with
 `std::atomic_compare_exchange_strong`, so a rule change and a coordinator install on two threads
 never publish one generation twice and neither loses the other's field. A reader loads once per
-use: `PlacementScope::device()`, a compile and `DistributedCoordinator::prepare()` each see one
-whole record. A mutex was the alternative; it would cost a lock and an unlock on every scope read
+use: `PlacementScope::device()`, a compile and a region commit each see one whole record. A mutex was the alternative; it would cost a lock and an unlock on every scope read
 and on the start of every run, where the swap costs the reader one load and the run nothing.
 
 `set_placement_rules()` returns false while a run is in flight, and the refusal is exact against a
@@ -256,9 +256,10 @@ marker"), publishes the record and clears the bit. A run that starts while the b
 the publish, so no run sees the swap land inside it. `install_offload()` takes no bit: its
 precondition already excludes a run in flight.
 
-`DistributedCoordinator::prepare()` runs inside a compile but loads the record again, so a change
-that lands between the compile's load and that call gives the coordinator newer rules than the ones
-the compile stamped; the next run recompiles, since the plan keeps the older generation.
+`PlanCache::build` hands the coordinator the rules of the record the compile loaded, through
+`ExecutionEngine::prepare()`, so the coordinator never reads a set the compile did not stamp. Each
+node the coordinator marks keeps that set in its `OffloadState::rules`, so plans compiled under two
+sets and run in turn each place their nodes by their own set.
 
 ### set_machine_facts and machine_facts
 

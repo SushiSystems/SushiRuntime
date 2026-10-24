@@ -17,9 +17,11 @@ The module is internal: its headers are for the other modules of the library and
 | `sycl` | `sycl/sycl.hpp` | `sycl::event`, `sycl::handler`, `sycl::queue` |
 
 No header here changes shape with a build flag. A node carries one `Internal::Graph::OffloadState`
-pointer, null until `Node::set_live_io()` or a coordinator's `prepare()` fills it,
-and what a coordinator needs beyond the seam's fields it stores behind
-`OffloadState::payload`.
+pointer, null until `Node::set_live_io()` or a coordinator's `prepare()` fills it.
+`OffloadCoordinator::prepare()` takes a compiled graph's nodes and the rules of the placement
+snapshot the graph compiled against, and stores those rules in `OffloadState::rules`, the set the
+node's `TaskMetadata::placement_rule` points into. What a coordinator needs beyond the seam's
+fields it stores behind `OffloadState::payload`.
 
 ## Public headers
 

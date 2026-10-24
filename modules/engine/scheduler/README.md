@@ -527,7 +527,8 @@ The branch is `OffloadGate::offer()` of `offload_gate.hpp`, which the scheduler 
 With no coordinator installed it is one load of the gate's pointer and a branch
 never taken; the node's offload state is not read. With one installed, only nodes its
 `prepare()` marked offloadable reach `try_offload()`, one virtual call each. The marking runs
-through `OffloadGate::prepare()`, which the engine calls once per compiled plan. The gate adds
+through `OffloadGate::prepare()`, which the engine calls once per compiled plan with the rules that
+plan compiled against. The gate adds
 one to an atomic for each offer the coordinator takes; `offloaded_task_count()` returns it, and
 it is the engine's only figure about offload.
 The run's failed and cancelled flags are read inside that branch, after the offloadable test,

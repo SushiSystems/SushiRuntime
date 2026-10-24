@@ -66,8 +66,13 @@ A dispatch raises the version of each output once. A buffer listed twice among t
 leave with two versions, and the output fence would refuse the chunks of one of them, so such a
 node runs locally. The same buffer as an input and as an output is one write and may leave.
 
-`prepare()` takes the rule set the compile resolved the nodes against and keeps it until the
-next call; a node's `TaskMetadata::placement_rule` is a position in that set. A node whose rule
+`prepare()` takes the rule set the compile resolved the nodes against and stores it in the
+`OffloadState::rules` of each node that has an offload state; a node's
+`TaskMetadata::placement_rule` is a position in that set, and `try_offload()` resolves it there.
+The dispatcher keeps no rule set of its own, so two plans compiled under different sets and run in
+turn each place their nodes by their own set. The copy is made once per node at `prepare()`; a
+replay reads it through the offload state `try_offload()` loads anyway, with no reference count
+touched. A node whose rule
 names another machine is offloadable with no worker alive yet, so its rule can wait for one.
 
 One WARN per call names how many op-tagged nodes stay local, how many for each of the three

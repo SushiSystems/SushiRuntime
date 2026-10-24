@@ -362,9 +362,8 @@ namespace SushiRuntime
         }
 
         void OffloadDispatcher::prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes,
-                                        std::shared_ptr<const PlacementRules> rules)
+                                        const std::shared_ptr<const PlacementRules>& rules)
         {
-            rules_ = std::move(rules);
             LocalOnlyCount local;
             for (const sushi_ptr<Internal::Graph::Node>& slot : nodes)
             {
@@ -375,11 +374,13 @@ namespace SushiRuntime
                 Internal::Graph::OffloadState* state = node->offload_state();
                 const bool is_dynamic =
                     state != nullptr && (state->live_reads || state->live_writes);
-                const PlacementRule* rule = winning_rule(*node);
+                const PlacementRule* rule = winning_rule(*node, rules.get());
                 const bool may_wait = rule != nullptr && !rule_placement_.names_master(*rule);
                 const Placement placement =
                     is_dynamic ? place_dynamic(registry_, directory_, *node, *state, may_wait)
                                : place_fixed(registry_, directory_, *node, may_wait);
+                if (Internal::Graph::OffloadState* placed = node->offload_state())
+                    placed->rules = rules;
                 if (placement == Placement::Untagged)
                     continue;
 
@@ -442,18 +443,20 @@ namespace SushiRuntime
         }
 
         const PlacementRule* OffloadDispatcher::winning_rule(
-            const Internal::Graph::Node& node) const noexcept
+            const Internal::Graph::Node& node, const PlacementRules* rules) noexcept
         {
             const std::optional<std::uint32_t> position = node.metadata.placement_rule;
-            if (!rules_ || !position.has_value() || *position >= rules_->size())
+            if (rules == nullptr || !position.has_value() || *position >= rules->size())
                 return nullptr;
-            return &rules_->rule(*position);
+            return &rules->rule(*position);
         }
 
         PlacementDecision OffloadDispatcher::decide(const Internal::Graph::Node& node,
                                                     std::uint64_t estimated_bytes)
         {
-            const PlacementRule* rule = winning_rule(node);
+            const Internal::Graph::OffloadState* state = node.offload_state();
+            const PlacementRule* rule =
+                winning_rule(node, state != nullptr ? state->rules.get() : nullptr);
             if (rule == nullptr)
             {
                 const std::optional<PeerID> worker = directory_.pick(node, estimated_bytes);

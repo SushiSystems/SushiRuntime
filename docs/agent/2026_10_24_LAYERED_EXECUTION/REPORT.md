@@ -238,9 +238,10 @@ a commit's start and the generation at its end. Installing or removing a coordin
 snapshot, so plans compiled under the other absent policy recompile. The machine's facts live in the
 context, so a graph carries none. `task_resubmission` sits in the offload-coordination module, where
 its forget is tested. R16d makes `OffloadCoordinator::prepare()` take the rules the compile read, passed down from
-`PlanCache::build`, so the distributed coordinator holds no runtime context. The dispatcher still
-keeps one rule set, replaced by every `prepare()`, so two graphs compiled and run interleaved would
-resolve the older plan's rule positions against the newer set; R16e gives each plan its own.
+`PlanCache::build`, so the distributed coordinator holds no runtime context. R16e removes the
+dispatcher's one rule set: each prepared node's offload state keeps the set it was stamped against,
+copied once at `prepare()`, so a replay touches no reference count and two plans run in turn each
+place by their own rules.
 
 ## Dispatches
 
@@ -258,6 +259,7 @@ dispatch: R16a — opus low, 116 turns, passed, rung 1
 dispatch: R16b — opus low, 160 turns, passed, rung 1
 dispatch: R16c — opus low, 125 turns, passed, rung 1
 dispatch: R16d — sonnet medium, passed, rung 1
+dispatch: R16e — opus low, passed, rung 1
 dispatch: R15 — haiku high, 68 turns, passed, rung 1
 dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
 dispatch: R9 second half — opus low, 146 turns, passed, rung 1
