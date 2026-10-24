@@ -1,6 +1,6 @@
 # Layered execution
 
-**Status:** Open — designed and ruled on 2026-10-19; nothing built
+**Status:** Open — R1 to R12, R14 and R15 built and not yet compiled or run; R13 waits on the owner's machines
 **About:** What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs without writing it into their code: a placement vocabulary on every node, a description of...
 **Modules:** modules/engine/scheduler, modules/engine/task
 
