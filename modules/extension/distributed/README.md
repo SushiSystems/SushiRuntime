@@ -440,10 +440,10 @@ receiver. Its constructor takes a `Runtime` and reaches the context through
 until the last of them is destroyed, whatever happens to the `Runtime`. The agent also takes a
 `Graph` and the `Interop` facade of that `Runtime` for the executor. A kernel runs on the queue of
 the device its `TASK_DISPATCH` names (`device_index`), as a task of the runtime; the next section
-says how. The cache allocates shared USM with `sycl::malloc_shared` on the queue of device 0, so
-the runtime's allocator does not record it: a task over memory the allocator records runs on the
-device that owns it, and a task over memory it does not record runs on the device the task states.
-Shared USM is reachable from every device of one SYCL context, so a dispatch for another device
+says how. The cache allocates shared USM through the runtime's allocator on device 0, so each
+buffer is recorded, measured and tracked for leaks like any other. Each task states the device its
+dispatch names, and a stated device that shares the owner's SYCL context wins over device 0 as the
+owner. Shared USM is reachable from every device of one SYCL context, so a dispatch for another device
 sees the same bytes, moved by the driver. The executor refuses a dispatch whose device index the worker does not
 have, and one whose device queue is in another context than device 0's, with a `TASK_RESULT` of
 `KernelFailed` and one WARN that names the task and the device; the kernel is not called. A `cache_bytes` of 0 becomes half of the device's `memory_bytes`; a device that

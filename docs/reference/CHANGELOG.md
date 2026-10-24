@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-24 — task: Let a tracked node's stated device win over the device that owns its memory when both share a SYCL context, and refused the node when they do not (`node_placement.cpp`, `dispatch_placement.cpp`).
+- 2026-10-24 — distributed: Allocated the worker's buffer cache through the runtime's allocator again, now that each dispatch's stated device wins in the cache's context (`worker_agent.cpp`).
 - 2026-10-24 — tests: Pinned that a registered kernel or its local fallback is refused a graph run of its own runtime and runs one on a second runtime (`test_nested_run_probe.cpp`).
 - 2026-10-24 — tests: Pinned that a worker holding an old version of a shared buffer pulls the new one after a local task on the master writes it (`test_distributed.cpp`).
 - 2026-10-24 — api: Added `Interop::borrow()`, a `Buffer<T>` over memory its owner keeps alive, refused as a dangling resource once the owner lets go, and `Recorder::task()` with a stated placement (`interop.hpp`, `recorder.hpp`).

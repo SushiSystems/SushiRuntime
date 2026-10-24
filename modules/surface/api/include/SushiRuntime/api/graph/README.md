@@ -235,12 +235,13 @@ caller that wants to know earlier reads refusal() after the verbs.
 ### task(access, body, placement)
 
 The task verb with a placement records the same node as task(access, body) and states the device
-the node runs on, which the engine reads when no device of the runtime owns the regions the node
-names (the queue selection section of `modules/engine/scheduler/README.md`). A task over memory
-the runtime allocated runs on the device that owns it, whatever the placement says; a task over
-borrowed or other unrecorded memory runs on the stated device and is handed that device's queue.
-The placement is checked and its handle watched as an untracked verb's `On` is. task(access, body)
-states device 0, the device a node that states nothing runs on.
+the node runs on, and the node is handed that device's queue. The stated device wins over the
+device that owns the memory the node names when the two share a SYCL context. When they do not,
+the node is not moved: its first dispatch returns an `ErrorCode::InvalidGraph` error naming both
+devices and the run fails (the queue selection section of `modules/engine/scheduler/README.md`).
+A task over borrowed or other unrecorded memory runs on the stated device. The placement is
+checked and its handle watched as an untracked verb's `On` is. task(access, body) states no
+device, so the owner of its memory decides, else device 0.
 
 ### record: liveness
 

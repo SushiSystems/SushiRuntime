@@ -696,6 +696,9 @@ needs a second device and skips below two.
 | Test | What it proves |
 | --- | --- |
 | `ATaskOverBorrowedMemoryRunsOnTheDeviceItStates` | A task that writes a buffer borrowed over host memory and states the runtime's last device is handed that device's queue. |
+| `AStatedDeviceInTheOwnersContextWinsOverTheOwner` | A task over a buffer the runtime allocated on device 0 that states another device of device 0's context is handed the stated device's queue; skipped when no such device exists. |
+| `AStatedDeviceInAnotherContextIsRefused` | The same task stating a device outside device 0's context fails the run with an `InvalidGraph` error naming the other context, and its body never runs; skipped when every device shares device 0's context. |
+| `ATaskThatStatesNoDeviceRunsOnTheOwner` | A task that states no device, over a buffer allocated on the last device, is handed that device's queue. |
 | `ATaskPlacedPastTheDeviceCountStops` | A task placed on one past the last device stops the process with a message that says the index names no device. |
 
 ## test_region.cpp

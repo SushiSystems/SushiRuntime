@@ -120,6 +120,16 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] std::optional<void*> containing_base(void* address) const;
 
+                /** @brief Counts the devices of the allocator, fixed at construction. */
+                [[nodiscard]] std::size_t device_count() const noexcept;
+
+                /**
+                 * @brief Tells whether two devices' queues share one SYCL context.
+                 * @pre Both indices name devices of the allocator.
+                 * @see modules/platform/memory/README.md
+                 */
+                [[nodiscard]] bool shares_context(std::size_t first, std::size_t second) const;
+
                 /** @brief Counts the addresses recorded and not yet released or forgotten. */
                 [[nodiscard]] std::size_t live_count() const;
 

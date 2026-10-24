@@ -197,6 +197,22 @@ its own marker and runs the inner graph. The tests bound every wait at 10 s, so 
 them. `test_registered_task.cpp` moved into `test_registered_task/` beside the probe, as the test
 mirror wants a unit's extra test files in a folder of its name.
 
+## R9, the placement rule
+
+The owner ruled that a stated placement wins over the device owning a node's memory in one SYCL
+context. `placement_of()` returns a `Result`: a stated device over owned memory wins when it
+shares the owner's context and is refused as `InvalidGraph` naming both devices when it does not;
+a node with no stated device runs on its owner; a node with no owner runs on its stated device or
+device 0. The context check reads `USMAllocator::shares_context()`, since the allocator holds the
+queues. `NodeDescription::device` became optional: `Recorder::task(access, body)` used to state
+device 0 for every tracked task, which the new rule would have turned into an override. The
+worker's cache allocates through the runtime again.
+
+Owed at the final build: the ASan lane, since the scheduler's placement path changed.
+
+Seen and kept: `dispatch_placement.cpp` repeats the anchor selection `node_placement.cpp` keeps
+privately.
+
 ## Dispatches
 
 ```
@@ -214,4 +230,5 @@ dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
 dispatch: R9 second half — opus low, 146 turns, passed, rung 1
 dispatch: R12 — sonnet medium, 28 turns, passed, rung 1
 dispatch: R11 — sonnet medium, 45 turns, passed, rung 1
+dispatch: R9 placement rule — opus low, passed, rung 1
 ```

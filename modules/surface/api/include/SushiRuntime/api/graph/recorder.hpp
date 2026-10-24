@@ -321,8 +321,9 @@ namespace SushiRuntime
 
             /**
              * @brief Records a task as task(access, body), handed the queue of a stated device.
-             * @param placement Device the task runs on when no device of this runtime owns the
-             *        regions it names; a handle it names is watched.
+             * @param placement Device the task runs on; over memory a device of this runtime
+             *        owns, it must share that device's SYCL context or the run is refused. A
+             *        handle it names is watched.
              * @pre placement names a device of this runtime.
              * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
              */

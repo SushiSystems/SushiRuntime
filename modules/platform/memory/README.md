@@ -202,6 +202,13 @@ The count covers every release() between those two points, whichever observer it
 removal made while other threads release without pause waits for a gap. An observer that calls
 set_release_observer() from on_release() waits for itself and never returns.
 
+### shares_context
+
+`shares_context(first, second)` compares the contexts of two devices' queues. The task module's
+`placement_of()` asks it before a stated device wins over the device that owns a node's memory,
+since USM is only usable from the context it was allocated in. `device_count()` lets it check an
+index first, because `shares_context()` stops the process on an index past the devices.
+
 ### owning_device
 
 The record is the first answer and costs one hash lookup. Without a record the allocator asks each

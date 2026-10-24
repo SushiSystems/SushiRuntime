@@ -9,8 +9,9 @@ A section is named after a test file, and a subsection after the test, helper or
 ## test_node_placement.cpp
 
 The file covers the placement a node states and the rule `Internal::Graph::placement_of()` applies to it:
-the owner of the first write region, else of the first read region, else the stated placement, else
-device 0. `modules/engine/scheduler/README.md` states the rule under "Queue selection", and the
+a stated placement wins over the owner of the first write region, else of the first read region,
+when the two share a SYCL context, and is refused when they do not; a node that states nothing runs
+on the owner; a node with no owner runs on its stated placement, else device 0. `modules/engine/scheduler/README.md` states the rule under "Queue selection", and the
 scheduler's `tests/engine/scheduler/test_task_scheduler.cpp` checks the queue a dispatch receives.
 
 ### `Medium_NodePlacementState`
@@ -23,7 +24,15 @@ and leaves the earlier placement in force.
 
 The fixture holds a `USMAllocator` over two queues on the device SYCL selects by default, so device
 indices 0 and 1 both exist. No test allocates device memory: `adopt()` records a host address as
-owned by one of the two, and an address with no record stands for a region no device owns.
+owned by one of the two, and an address with no record stands for a region no device owns. Both
+queues are built on one explicit context, so a stated device in the owner's context wins.
+
+### `Medium_NodePlacementContexts`
+
+Each test builds its own allocator over two queues on the default device, each queue in a context of
+its own, so the refusal needs no second device. A stated device in the other context is an
+`InvalidGraph` error naming the owner; stating the owner itself is accepted. A stated index past
+the allocator's devices is returned as stated, for `place_for_dispatch()` to refuse with the count.
 
 ## test_small_event_vector.cpp
 

@@ -40,6 +40,20 @@ and what a coordinator needs beyond the seam's fields it stores behind
 | `node_widths.hpp` | `Internal::Graph::NodeWidths`, `Internal::Graph::snapshot_widths` (defined in `modules/engine/task/source/node_widths.cpp`) |
 | `node_placement.hpp` | `Internal::Graph::K_DEFAULT_PLACEMENT`, `Internal::Graph::placement_of` (defined in `modules/engine/task/source/node_placement.cpp`), the device a node runs on |
 
+## Placement rule order
+
+`placement_of()` returns the device a node runs on, or a refusal, in this order:
+
+1. A stated device (`Node::place_on()`) on a node whose first write region, else first read
+   region, a device owns: the stated device when its queue shares a SYCL context with the
+   owner's; otherwise an `ErrorCode::InvalidGraph` error. The node is never moved silently.
+2. No stated device: the owner.
+3. No owner: the stated device, else `K_DEFAULT_PLACEMENT`.
+
+The allocator answers both questions, `owning_device()` and `shares_context()`, so the
+function needs no queue. The scheduler's `place_for_dispatch()` passes the refusal on and
+refuses an index past the device count; `modules/engine/scheduler/README.md` holds why.
+
 The notes on why each symbol is the way it is are in `modules/engine/graph/README.md` and
 `modules/engine/scheduler/README.md`; each header's file block cites the page that holds its
 notes.

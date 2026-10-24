@@ -90,7 +90,11 @@ namespace SushiRuntime
                     "its buffers span multiple device contexts; co-locate them on "
                     "one device (cross-device execution is not yet supported)."});
 
-            const std::size_t placement = Internal::Graph::placement_of(node, memory);
+            const Result<std::size_t> placed = Internal::Graph::placement_of(node, memory);
+            if (!placed)
+                return make_error(placed.error());
+
+            const std::size_t placement = placed.value();
             if (placement >= device_count)
                 return make_error(Error{
                     ErrorCode::InvalidGraph,

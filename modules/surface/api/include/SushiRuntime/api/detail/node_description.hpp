@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -115,8 +116,11 @@ namespace SushiRuntime
             /** @brief Launch width baked on the node; K_WIDTH_UNKNOWN leaves it unset. */
             std::size_t width = K_WIDTH_UNKNOWN;
 
-            /** @brief Untracked and Task: index of the device the node is placed on. */
-            std::size_t device = 0;
+            /**
+             * @brief Untracked and Task: index of the device the node is placed on; a Task that
+             *        states none is placed by the device that owns its memory.
+             */
+            std::optional<std::size_t> device = std::nullopt;
 
             /** @brief Dynamic and DynamicState: the per-step controls of the node. */
             std::shared_ptr<LateControls> bindings;

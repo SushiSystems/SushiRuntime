@@ -240,6 +240,16 @@ namespace SushiRuntime
                 std::this_thread::yield();
         }
 
+        std::size_t USMAllocator::device_count() const noexcept
+        {
+            return queues_.size();
+        }
+
+        bool USMAllocator::shares_context(std::size_t first, std::size_t second) const
+        {
+            return queue_at(first).get_context() == queue_at(second).get_context();
+        }
+
         const sycl::queue& USMAllocator::queue_at(std::size_t device_index) const
         {
             SR_VERIFY(device_index < queues_.size(),

@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/result.hpp>
 
 namespace SushiRuntime
 {
@@ -48,12 +49,13 @@ namespace SushiRuntime
         /**
          * @brief Returns the device @p node runs on.
          * @param node A node whose regions and stated placement are final.
-         * @param memory The allocator that knows which device owns each region.
-         * @return The owner of the first write region, else of the first read region; when
-         *         no device owns that region, the stated placement, else K_DEFAULT_PLACEMENT.
+         * @param memory The allocator that knows which device owns each region and its context.
+         * @return The device by the rule order in the README, or an InvalidGraph error when
+         *         the stated device and the memory's owner are in different contexts.
+         * @see modules/engine/task/README.md
          */
-        SUSHIRUNTIME_API std::size_t placement_of(const Node& node,
-                                                  const Internal::Memory::USMAllocator& memory);
+        SUSHIRUNTIME_API Result<std::size_t> placement_of(const Node& node,
+                                                          const Internal::Memory::USMAllocator& memory);
 
     } // namespace Graph
 } // namespace SushiRuntime

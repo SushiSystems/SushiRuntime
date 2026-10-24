@@ -40,6 +40,7 @@
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
+#include <SushiRuntime/task/node_placement.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
 
@@ -95,7 +96,7 @@ namespace SushiRuntime
             {
                 Node& node = backing_graph.add_node(std::get<CommandGroupWork>(description.work),
                                                     std::vector<sycl::event>{}, registration);
-                node.place_on(description.device);
+                node.place_on(description.device.value_or(Internal::Graph::K_DEFAULT_PLACEMENT));
                 bake_width(node, description.width);
                 return node;
             }
@@ -108,8 +109,9 @@ namespace SushiRuntime
                                                     description.reads, description.writes,
                                                     std::get<QueueWork>(description.work), {},
                                                     registration);
-                // Device 0 is also the placement of a node that states none.
-                node.place_on(description.device);
+                // A task that states no device is placed by the owner of its memory.
+                if (description.device)
+                    node.place_on(*description.device);
                 bake_width(node, description.width);
                 return node;
             }

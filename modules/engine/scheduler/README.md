@@ -593,15 +593,24 @@ cross-context illegal access, for example CPU-allocated USM dispatched onto a CU
 A graph node therefore has one placement, and `Internal::Graph::placement_of()` in the task module is
 the one function that names it, from the first of these that applies:
 
-1. The node names a region a device owns: the owner of its first write region, else of its
-   first read region.
-2. The node states a placement with `Node::place_on()`: that device.
-3. Otherwise device 0, `Internal::Graph::K_DEFAULT_PLACEMENT`, the device a default buffer is allocated
+1. The node states a placement with `Node::place_on()` and names a region a device owns: the
+   stated device, when its queue shares a SYCL context with the owner's. When it does not,
+   `placement_of()` returns an `ErrorCode::InvalidGraph` error naming both devices, and the
+   run fails; the node is never moved to the owner.
+2. The node names a region a device owns and states no placement: the owner of its first
+   write region, else of its first read region.
+3. The node states a placement and names no owned region: that device.
+4. Otherwise device 0, `Internal::Graph::K_DEFAULT_PLACEMENT`, the device a default buffer is allocated
    on.
 
-A kernel that captured USM the runtime cannot see names no region, so rule 2 or 3 decides
+The owner is the device that owns the first write region, else the first read region. The
+context check reads the allocator's queues through `USMAllocator::shares_context()`, so
+`placement_of()` needs no queue of its own. A stated index past the allocator's devices is
+left to `place_for_dispatch()`, which refuses it with the device count.
+
+A kernel that captured USM the runtime cannot see names no region, so rule 3 or 4 decides
 where it runs, and it runs there on every step. A node whose region no device owns, such as
-a host address used as a dependency key, also falls to rules 2 and 3.
+a host address used as a dependency key, also falls to rules 3 and 4.
 `TaskMetadata::numa_affinity` plays no part in the choice.
 
 A single kernel cannot dereference USM from two device contexts that are not peers. A node
@@ -620,8 +629,9 @@ answer on the node as `cached_queue_index_`. Steady-state replay then routes thr
 `DeviceQueueSet::queue(index)`, an indexed read, and calls neither `placement_of()` nor
 `USMAllocator::owning_device()`. `place_for_dispatch()` returns `Result<void>`. A placement at or
 past the device count is an `ErrorCode::InvalidGraph` error with the index and the count, and
-execute_task() names the node in it and fails the run; like a co-location failure it is not
-cached, so it recurs on a later run.
+`place_for_dispatch()` passes on the refusal `placement_of()` returns for a stated device in
+another context. execute_task() names the node in either and fails the run; like a
+co-location failure neither is cached, so each recurs on a later run.
 
 A task that is not a graph node has no placement. It takes
 `DeviceQueueSet::queue_or_numa_local()` for NUMA node 0, which rotates over the devices of

@@ -29,7 +29,9 @@
 
 #include <cstddef>
 #include <optional>
+#include <string>
 
+#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/node.hpp>
 
@@ -51,15 +53,27 @@ namespace SushiRuntime
         } // namespace
 
         /**
-         * @brief Returns the device @p node runs on.
+         * @brief Returns the device @p node runs on, or the refusal of its stated device.
          */
-        std::size_t placement_of(const Node& node, const Internal::Memory::USMAllocator& memory)
+        Result<std::size_t> placement_of(const Node& node, const Internal::Memory::USMAllocator& memory)
         {
-            if (void* anchor = anchor_of(node))
-                if (const std::optional<std::size_t> owner = memory.owning_device(anchor))
-                    return *owner;
+            const std::optional<std::size_t> stated = node.stated_placement();
+            const std::optional<std::size_t> owner = memory.owning_device(anchor_of(node));
 
-            return node.stated_placement().value_or(K_DEFAULT_PLACEMENT);
+            if (!owner)
+                return stated.value_or(K_DEFAULT_PLACEMENT);
+            if (!stated || *stated == *owner)
+                return *owner;
+
+            // An index past the allocator's devices is refused by the dispatch, which knows why.
+            if (*stated >= memory.device_count() || memory.shares_context(*stated, *owner))
+                return *stated;
+
+            return make_error(Error{
+                ErrorCode::InvalidGraph,
+                "it is placed on device " + std::to_string(*stated) + ", but its memory belongs "
+                "to device " + std::to_string(*owner) + " in another SYCL context; place it on "
+                "a device of that context."});
         }
 
     } // namespace Graph

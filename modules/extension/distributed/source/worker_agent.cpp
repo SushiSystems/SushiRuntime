@@ -44,6 +44,8 @@
 #include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
+#include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
@@ -146,20 +148,20 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Returns an allocator that keeps cached buffers as shared USM of a queue's
-             *        context, kept out of the runtime's registry so that a task over it runs
-             *        on the device its dispatch names.
-             * @param queue Outlives the allocator.
+             * @brief Returns an allocator that keeps cached buffers as recorded shared USM of
+             *        the runtime's allocator, on device K_DEVICE_INDEX.
+             * @param memory Outlives the allocator.
              * @see modules/extension/distributed/README.md
              */
-            CacheAllocator make_cache_allocator(sycl::queue& queue)
+            CacheAllocator make_cache_allocator(Internal::Memory::USMAllocator& memory)
             {
                 CacheAllocator allocator;
-                allocator.allocate = [&queue](std::size_t size_bytes) -> void*
+                allocator.allocate = [&memory](std::size_t size_bytes) -> void*
                 {
                     try
                     {
-                        return sycl::malloc_shared(size_bytes, queue);
+                        return memory.allocate(Internal::Memory::USMRequest{Internal::Memory::USMKind::Shared,
+                                                                  size_bytes, 0, K_DEVICE_INDEX});
                     }
                     catch (const std::exception& error)
                     {
@@ -176,7 +178,7 @@ namespace SushiRuntime
                         return nullptr;
                     }
                 };
-                allocator.release = [&queue](void* address) { sycl::free(address, queue); };
+                allocator.release = [&memory](void* address) { memory.release(address); };
                 return allocator;
             }
 
@@ -336,7 +338,7 @@ namespace SushiRuntime
             : context_(std::move(context)),
               transport_(require_transport(std::move(transport))),
               options_(bounded(std::move(options))),
-              cache_(make_cache_allocator(context_->devices().queue(K_DEVICE_INDEX)),
+              cache_(make_cache_allocator(context_->memory()),
                      resolve_cache_budget(*context_, options_.cache_bytes)),
               link_(*transport_, options_.secret.bytes(),
                     make_link_options(sealed(*require_kernels(kernels)), topology), make_nonce),

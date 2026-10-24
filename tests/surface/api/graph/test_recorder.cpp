@@ -47,6 +47,7 @@
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
@@ -1671,5 +1672,89 @@ namespace PlacedTaskTests
                          },
                          On(DeviceIndex{count})),
                      "names no device");
+    }
+
+    /**
+     * @brief Returns a device other than device 0 whose context is, or is not, device 0's.
+     * @param shared Whether the device must share device 0's context.
+     */
+    std::optional<std::size_t> other_device(Runtime& rt, bool shared)
+    {
+        Internal::Device::DeviceQueueSet& devices =
+            Internal::ContextAccess::context(rt).devices();
+        for (std::size_t device = 1; device < rt.advanced().device_count(); ++device)
+            if ((devices.queue(device).get_context() == devices.queue(0).get_context()) == shared)
+                return device;
+        return std::nullopt;
+    }
+
+    /** @brief Returns a body that notes the device of the queue it is handed. */
+    auto noting_body(std::optional<sycl::device>& ran_on)
+    {
+        return [&ran_on](sycl::queue& queue, const std::vector<sycl::event>&)
+        {
+            ran_on = queue.get_device();
+            return sycl::event{};
+        };
+    }
+
+    /** @brief Tests that a stated device in the owner's context wins over the owner. */
+    TEST(Medium_RecorderPlacedTask, AStatedDeviceInTheOwnersContextWinsOverTheOwner)
+    {
+        auto rt = Runtime::create().value();
+        const std::optional<std::size_t> device = other_device(rt, true);
+        if (!device)
+            GTEST_SKIP() << "no second device shares device 0's context";
+
+        const Buffer<std::uint32_t> owned = rt.buffer<std::uint32_t>(4).value();
+        std::optional<sycl::device> ran_on;
+        auto graph = rt.graph();
+        graph.recorder().task(Access(Reads(), Writes(owned)), noting_body(ran_on),
+                              On(DeviceIndex{*device}));
+        ASSERT_TRUE(graph.run());
+
+        ASSERT_TRUE(ran_on.has_value());
+        EXPECT_EQ(*ran_on,
+                  Internal::ContextAccess::context(rt).devices().queue(*device).get_device());
+    }
+
+    /** @brief Tests that a stated device in another context than the owner's is refused. */
+    TEST(Medium_RecorderPlacedTask, AStatedDeviceInAnotherContextIsRefused)
+    {
+        auto rt = Runtime::create().value();
+        const std::optional<std::size_t> device = other_device(rt, false);
+        if (!device)
+            GTEST_SKIP() << "no device lies outside device 0's context";
+
+        const Buffer<std::uint32_t> owned = rt.buffer<std::uint32_t>(4).value();
+        std::optional<sycl::device> ran_on;
+        auto graph = rt.graph();
+        graph.recorder().task(Access(Reads(), Writes(owned)), noting_body(ran_on),
+                              On(DeviceIndex{*device}));
+        const auto refused = graph.run();
+
+        ASSERT_FALSE(refused);
+        EXPECT_EQ(refused.error().code, ErrorCode::InvalidGraph);
+        EXPECT_NE(refused.error().message.find("another SYCL context"), std::string::npos)
+            << refused.error().message;
+        EXPECT_FALSE(ran_on.has_value()) << "a refused node is never moved to the owner";
+    }
+
+    /** @brief Tests that a task that states no device runs on the owner of its memory. */
+    TEST(Medium_RecorderPlacedTask, ATaskThatStatesNoDeviceRunsOnTheOwner)
+    {
+        auto rt = Runtime::create().value();
+        const std::size_t device = rt.advanced().device_count() - 1;
+        const Buffer<std::uint32_t> owned =
+            rt.buffer<std::uint32_t>(4, DeviceIndex{device}).value();
+
+        std::optional<sycl::device> ran_on;
+        auto graph = rt.graph();
+        graph.recorder().task(Access(Reads(), Writes(owned)), noting_body(ran_on));
+        ASSERT_TRUE(graph.run());
+
+        ASSERT_TRUE(ran_on.has_value());
+        EXPECT_EQ(*ran_on,
+                  Internal::ContextAccess::context(rt).devices().queue(device).get_device());
     }
 } // namespace PlacedTaskTests
