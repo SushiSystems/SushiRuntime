@@ -89,14 +89,14 @@ namespace SushiRuntime
             }
 
             /**
-             * @brief Returns an observer that expires when the Buffer is destroyed or assigned
-             *        over by move assignment.
-             * @return An empty observer for a handle that owns no allocation.
+             * @brief Returns an observer that expires when the Buffer's memory goes: an owning
+             *        Buffer destroyed or moved over, or the owner of borrowed memory letting go.
+             * @return An empty observer for a handle that holds no memory.
              */
             template <typename T>
             static LivenessObserver liveness(const Buffer<T>& buffer) noexcept
             {
-                return buffer.liveness_;
+                return buffer.observer();
             }
 
             /** @brief Returns the observer of the State's current field. */

@@ -101,15 +101,30 @@ destruction, so it must outlive every graph run that touches it. A Buffer is mov
 
 ### Buffer(ctx, count, device_index, residency)
 
-A Buffer is built in one of two private ways. Runtime::buffer() and Runtime::state() reach
-allocate() and Interop reaches the adopting constructor, through friendship. Both take a
+A Buffer is built in one of three private ways. Runtime::buffer() and Runtime::state() reach
+allocate(), Interop::export_host() and Interop::import_device() reach the adopting constructor,
+and Interop::borrow() reaches the borrowing constructor, through friendship. All three take a
 `ContextHandle`, so no member of Buffer names `Internal::Execution::RuntimeContext`.
 
 The allocation is pinned to `device_index` and its owner recorded, so buffers used together (a
 State's two fields, for example) share a context and a kernel touching them never makes a
 cross-context access. `context` is the handle of the runtime that owns the allocation, and `residency` is one
-of the three kinds the Residency section describes. A Buffer must not be constructed over foreign
-USM.
+of the three kinds the Residency section describes. Only Interop::borrow() builds a Buffer over
+memory the runtime did not allocate; the next section says what that Buffer holds.
+
+### Borrowed Buffer
+
+A borrowed Buffer views memory another owner keeps alive. Its block owns nothing, so destroying the
+handle frees nothing, and it holds no liveness token of its own. It keeps an observer of the
+token its owner passed to Interop::borrow() instead, and Detail::HandleAccess::liveness() hands a
+graph that observer. A run that names the buffer after the owner released its token is refused with
+`DanglingResource`; a run after the borrowed handle alone was destroyed runs as recorded, because
+the memory is still the owner's. An owner token that has expired when the buffer is recorded is
+not watched, as an empty handle is not.
+
+The runtime's allocator does not record borrowed memory, so a task over it runs on the device its
+placement states, and read_range() and write_range() copy on the queue of the buffer's
+device_index(). The Buffer moves like an owning one: the observer moves with the memory.
 
 ### Buffer(Buffer&&)
 
@@ -129,8 +144,8 @@ form of add() keeps is listed here.
 | a State in `Reads` or `Writes` | the address of one field as it stood at add(), and the observer | the node runs as recorded; the State::region section says which field that address is after a step |
 | a State as the rule's own State, or in `Coupled` | the State's StateView, shared | the rule steps the moved-to State |
 
-Two things still end a recording. A handle destroyed or move-assigned over releases its token, and
-the next run is refused with `DanglingResource`. A State must not be moved while a step that names
+Two things still end a recording. An owning handle destroyed or move-assigned over releases its
+token, and so does the owner of borrowed memory; the next run is refused with `DanglingResource`. A State must not be moved while a step that names
 it is running or pending: the step advances the State through the view's `owner` when it ends.
 
 ### operator[]

@@ -60,6 +60,24 @@ Destroying the Buffer removes the address from the registry, unmaps the region a
 SYCL import handle, in that order. A step that fails is logged at ERROR and the later steps still
 run. It makes no other call, so freeing the allocation stays with the API that exported it.
 
+### borrow
+
+borrow() wraps memory the caller owns as a Buffer a graph tracks, and takes no ownership of it.
+The caller passes the address, the element count, the device the buffer reports, the residency it
+claims and a `LivenessToken` that lives exactly as long as the memory stays valid. The Buffer keeps
+an observer of that token and no share of it; the data README's "Borrowed Buffer" section says
+what a run then checks. Nothing is allocated, so the call returns the Buffer itself, not a
+`Result`.
+
+A null token, a null address for a count above 0 and a device index the runtime does not drive
+are rules the caller broke, and stop the process through `SR_VERIFY`. The memory must be reachable
+by every node that names the buffer: host memory for host tasks, USM of the stated residency in the
+context of the stated device for device kernels. The runtime does not record the address, so a
+task over it runs where its placement says, through `Recorder::task(access, body, placement)` or
+an untracked verb's `On`.
+
+A count of 0 returns an empty Buffer.
+
 ## host_export.hpp
 
 ### HostExport

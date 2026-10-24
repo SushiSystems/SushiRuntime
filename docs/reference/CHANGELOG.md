@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-10-24 — api: Added `Interop::borrow()`, a `Buffer<T>` over memory its owner keeps alive, refused as a dangling resource once the owner lets go, and `Recorder::task()` with a stated placement (`interop.hpp`, `recorder.hpp`).
+- 2026-10-24 — api: Changed the exported `Detail::copy_to_host` and `copy_to_device` to take the buffer's device, used when no device owns the address (`handle_access.hpp`, `buffer.cpp`).
+- 2026-10-24 — distributed: Ran a worker's dispatches as placed tasks of its runtime over borrowed buffers, in batches, so dispatches over disjoint buffers overlap and writers of one buffer run in order (`dispatch_executor.cpp`).
+- 2026-10-24 — distributed: Made a worker's output stream send a copy of the output instead of pinning the cache, so a later writer cannot overwrite bytes still being sent (`dispatch_executor.cpp`).
 - 2026-10-24 — placement: Added the matching of a rule's target against a machine's facts and the choice of its device, shared by the local scopes and the distributed layer (`placement_target_matching.hpp`).
 - 2026-10-24 — offload_coordination: Placed a node by its winning rule on a worker and device named or labelled, holding it while the worker is absent or busy and failing the run under `Fail` (`rule_placement.cpp`, `held_nodes.cpp`).
 - 2026-10-24 — cluster_load: Added `PlacementDecision`, the outcome of a placement, and `ClusterStatistics::held_nodes`, which changes the struct's layout (`placement_decision.hpp`, `cluster_statistics.hpp`).

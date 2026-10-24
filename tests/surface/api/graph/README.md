@@ -691,6 +691,13 @@ needs a second device and skips below two.
 | `AScopeOpenedBeforeTheRulesFollowsTheNewSet` | A scope made before the rules is refused once a `Fail` set is installed and accepted after `clear_placement_rules()`, since the recorder resolves it at record time. |
 | `AScopeBufferAndItsTrackedNodesLandOnDeviceOne` | With a rule for device 1, the scope's buffer is on device 1, a tracked node recorded in the scope writes it (the plan's write is the buffer) and runs, and `On(scope)` on an untracked verb records. |
 
+### Placed tasks
+
+| Test | What it proves |
+| --- | --- |
+| `ATaskOverBorrowedMemoryRunsOnTheDeviceItStates` | A task that writes a buffer borrowed over host memory and states the runtime's last device is handed that device's queue. |
+| `ATaskPlacedPastTheDeviceCountStops` | A task placed on one past the last device stops the process with a message that says the index names no device. |
+
 ## test_region.cpp
 
 The file covers `extend()` as a library above the runtime uses it: the extension receives the

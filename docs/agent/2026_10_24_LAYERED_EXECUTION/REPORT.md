@@ -157,6 +157,29 @@ does not enforce; a pinned node whose dispatch fails twice runs locally after
 Owed: `docs/guides/DISTRIBUTED_GUIDE.md` has no section on placement rules, and the page is at its
 600-line ceiling; it is split when the programme closes.
 
+## R9, second half
+
+The owner chose a borrowed buffer on 2026-10-24. `Interop::borrow<T>(address, count, device,
+residency, owner)` returns a plain `Buffer<T>` that keeps a weak observer of the owner's liveness
+token and frees nothing; a run after the owner lets go is refused as `DanglingResource`. A new
+`Recorder::task` overload states a node's device. The worker's executor records each dispatch as
+one placed task over borrowed cache buffers and runs a batch of them in one `Graph::run()`, since
+the runtime runs one graph at a time; a job that reads what a job of the batch writes starts the
+next batch. Each task body waits for its dependency events, calls the kernel and copies its
+outputs; output streams send that copy and hold no cache pin, which closes a race where a later
+writer could overwrite bytes a stream was still sending. Pulls stay serial on the exec thread.
+
+The worker cache allocates with `sycl::malloc_shared` on device 0 instead of the runtime's
+allocator: the scheduler places a tracked node by the owner of its memory first, so recorded
+memory would pull every task to device 0. Letting a stated placement win over the memory's owner
+when both share a context would be the cleaner rule; it is an engine change for the owner.
+
+Seen and kept: `DispatchExecutor` holds queueing, batching, recording and settling in about 1000
+lines; a task body blocks a pool thread while it waits, because a registered kernel takes no
+events; a job that arrives while a batch runs waits for that run.
+
+KI-6 and RW-17 close in the commit that records the final build's passing tests.
+
 ## Dispatches
 
 ```
@@ -171,4 +194,5 @@ dispatch: R6 — sonnet medium, 73 turns, passed, rung 1
 dispatch: R9 — sonnet medium, 44 turns, partial (public interface needed), rung 1
 dispatch: R15 — haiku high, 68 turns, passed, rung 1
 dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
+dispatch: R9 second half — opus low, 146 turns, passed, rung 1
 ```

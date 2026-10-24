@@ -28,7 +28,7 @@ runtime tasks it waits on are built; each of those repositories keeps its own wo
 | R6 | R5 | built |
 | R7 | R3 | built |
 | R8 | R7 | built |
-| R9 | R7 | building: device chosen, scheduler route waits on the owner |
+| R9 | R7 | built; KI-6 and RW-17 close when the final build passes its tests |
 | R10 | R5, R8, R9 | built |
 | R11 | nothing | planned |
 | R12 | nothing | planned |

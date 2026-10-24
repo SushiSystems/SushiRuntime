@@ -79,7 +79,8 @@ A `WorkerAgent` seals the registry in its constructor, before it reads the opera
 without a lock and the master was already told which operations the worker runs. An empty `Kernel`
 stops it at any time: both are rules of the call, not conditions of the machine. A `Cluster` only keeps `ClusterOptions::kernels` alive and reads
 nothing from it, so attach() does not seal it. A view a kernel receives is valid until the event
-the kernel returned completes: the exec thread holds the cache pins across that wait.
+the kernel returned completes: the batch that runs the kernel holds the cache pins until its run
+returns.
 
 ## cluster.hpp
 
@@ -280,7 +281,7 @@ lifetime.
 | `worker_buffer_cache.hpp` | `WorkerBufferCache` | cached buffers, chunk assembly, the byte budget, pins | exec thread asks, reader thread delivers |
 | `dispatch_deduplication/dispatch_deduplicator.hpp` | `DispatchDeduplicator` | the task ids seen | reader thread |
 | `master_link.hpp` | `MasterLink` | the handshake, the heartbeat thread, the master watch, the final `WorkerEnd` | reader thread and its own thread |
-| `dispatch_executor.hpp` | `DispatchExecutor` | the job queue, the exec thread, held task ids | reader thread enqueues, its own thread runs |
+| `dispatch_executor.hpp` | `DispatchExecutor` | the job queue, the exec thread, the graph each batch runs on, held task ids | reader thread enqueues, its own thread gathers and runs batches, the runtime's pool runs the kernels |
 | `process_environment/stop_signal.hpp` | `StopSignal` | the process's stop handlers and their flag | signal handler, main thread |
 | `process_environment/environment.hpp` | `read_environment()` | the one read of an environment variable | caller's thread |
 | `worker_session.hpp` | `serve_worker()`, `exit_code_of()` | one agent on a given transport, from start to exit code | caller's thread |
@@ -436,12 +437,14 @@ brings it back. Both are header-only.
 receiver. Its constructor takes a `Runtime` and reaches the context through
 `Internal::ContextAccess`, as `Cluster::attach()` does. The agent holds the context's
 `shared_ptr`, declared before the bricks, so the queue and the allocator they use are alive
-until the last of them is destroyed, whatever happens to the `Runtime`. A kernel runs on the queue
-of the device its `TASK_DISPATCH` names (`device_index`); the exec thread still runs one kernel at
-a time. The cache allocates shared USM on device 0 through
-`RuntimeContext::memory()`, so the context's allocator records every cached buffer. Shared USM is
-reachable from every device of one SYCL context, so a dispatch for another device sees the same
-bytes, moved by the driver. The executor refuses a dispatch whose device index the worker does not
+until the last of them is destroyed, whatever happens to the `Runtime`. The agent also takes a
+`Graph` and the `Interop` facade of that `Runtime` for the executor. A kernel runs on the queue of
+the device its `TASK_DISPATCH` names (`device_index`), as a task of the runtime; the next section
+says how. The cache allocates shared USM with `sycl::malloc_shared` on the queue of device 0, so
+the runtime's allocator does not record it: a task over memory the allocator records runs on the
+device that owns it, and a task over memory it does not record runs on the device the task states.
+Shared USM is reachable from every device of one SYCL context, so a dispatch for another device
+sees the same bytes, moved by the driver. The executor refuses a dispatch whose device index the worker does not
 have, and one whose device queue is in another context than device 0's, with a `TASK_RESULT` of
 `KernelFailed` and one WARN that names the task and the device; the kernel is not called. A `cache_bytes` of 0 becomes half of the device's `memory_bytes`; a device that
 reports no size gets 1 GiB and one WARN.
@@ -468,14 +471,52 @@ instead of after `pull_idle_timeout`. The executor sends `TASK_ACCEPTED` itself.
 The agent logs `connected to master <address:port>` when a connection opens and the transport's
 cause when the transport gives up. `MasterLink` logs registration and loss by peer number.
 
+### How a batch runs
+
+The exec thread runs dispatches in batches, and each batch is one run of the executor's `Graph`.
+It takes the first queued job, pins its outputs (`WorkerBufferCache::pin_output()`), gets each
+input from the cache or pulls it from the master, and records one task with
+`Recorder::task(access, body, On(device))`. The task's access names a borrowed buffer
+(`Interop::borrow()`) over each pinned view, its inputs as reads and its outputs as writes. It then
+takes the next queued job the same way, until the queue is empty. A job that reads a buffer a job
+of the batch writes is left in the queue and opens the next batch: its input is in no cache until
+the writer's run commits it. Jobs that arrive while a pull is open join the batch being built.
+
+`Graph::run()` then runs the batch on the runtime's scheduler. Two tasks that name the same cached
+allocation, a writer and a reader of one buffer or two writers of it, run in recording order; the
+others run at the same time, on the runtime's worker threads and on the queues of their devices.
+The body of a task waits for the events of the tasks before it, because a registered kernel takes
+none, calls the kernel, waits for its event and copies each output into memory the task owns. It
+returns a completed event, so each kernel in flight holds one worker thread. At most `min(batch
+size, worker threads)` kernels are in flight; a batch holds at most `max_jobs` jobs, because the
+queue does.
+
+After the run the exec thread settles each job in recording order: one that ran commits its
+outputs and sends the copies as its output stream, one that threw or never ran releases its
+outputs and sends `KernelFailed`. An output stream sends its copy, so a later task that writes
+the same buffer cannot change what an earlier one sends, and the stream holds no cache pin. The
+batch drops every pin when the jobs are settled. Every borrowed buffer names one liveness token
+the executor holds for its whole life; the pins, not the token, keep the memory alive across the
+run.
+
+A batch ends at the first job it cannot take, so a job that arrives while a batch runs waits for
+that run to end. The runtime runs one graph at a time, so a worker that shares its `Runtime` with
+another graph sees its batch refused with `InvalidState` while that graph runs; its jobs then fail
+as `KernelFailed`.
+
+The exec thread still pulls one input at a time, so `pulling_` names the one pull
+`discard_queued()` can abort. Two jobs of one batch that read one buffer version ask the cache one
+after the other: the first pulls it, the second finds it.
+
 ### Threads
 
 | Thread | Runs |
 | --- | --- |
 | Transport reader | every `on_` call of the agent, so the routing table and the handlers above |
-| Exec (`DispatchExecutor`) | one kernel at a time, input pulls, output pins |
+| Exec (`DispatchExecutor`) | batch gathering, input pulls, output pins, `Graph::run()`, results |
+| Runtime worker pool | the task of each dispatch: its kernel and the copy of its outputs |
 | Heartbeat (`MasterLink`) | `HEARTBEAT`, the handshake restart, the master watch, `Transport::stop()` for a link that ended |
-| Transport writer | output streams; an output stream's destructor returns its cache pins here |
+| Transport writer | output streams |
 | Caller | `start()`, `wait_for_end()`, `stop()`, `statistics()` |
 
 ### Stop order
@@ -483,14 +524,13 @@ cause when the transport gives up. `MasterLink` logs registration and loss by pe
 1. The agent's phase becomes `Stopped`, and `on_peer_connected()` closes any connection that opens
    from here on.
 2. `DispatchExecutor::stop()`: no more jobs, a `ShuttingDown` result per queued job, the running
-   kernel finishes, the exec thread is joined.
+   batch finishes, the exec thread is joined.
 3. `MasterLink::say_goodbye()` queues `GOODBYE` and marks the link as leaving.
 4. `close_peer()` on the registered connection, then a wait of at most 2 s for its
    `on_peer_lost()`. A transport's `stop()` drops queued control frames, and this is what gets the
    results and the `GOODBYE` onto the wire. The loss and a transport that then gives up are
    expected here; see the next section.
-5. `Transport::stop()`: every reader and writer is joined and every kept stream is destroyed,
-   which returns the last cache pins.
+5. `Transport::stop()`: every reader and writer is joined and every kept stream is destroyed.
 6. `MasterLink::stop()` joins the heartbeat thread; a `Running` end becomes `Stopped`.
 7. One INFO line with the worker's counters. The cache is freed when the agent is destroyed.
 

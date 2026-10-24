@@ -28,14 +28,23 @@
 #include "dispatch_executor.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <deque>
 #include <exception>
+#include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
+#include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/api/graph/access.hpp>
 #include <SushiRuntime/api/graph/node_options.hpp>
+#include <SushiRuntime/api/vocabulary/dependencies.hpp>
+#include <SushiRuntime/api/vocabulary/placement.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/frame_transport/frame_sending.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
 
@@ -133,10 +142,13 @@ namespace SushiRuntime
                         ids_.push_back(id);
                     }
 
-                    /** @brief Stops guarding: another owner unpins from here on. */
-                    void hand_on() noexcept
+                    /**
+                     * @brief Stops guarding: another owner unpins from here on.
+                     * @return The ids of the pins handed on.
+                     */
+                    [[nodiscard]] std::vector<GlobalBufferID> hand_on() noexcept
                     {
-                        ids_.clear();
+                        return std::move(ids_);
                     }
 
                 private:
@@ -151,33 +163,30 @@ namespace SushiRuntime
         /**
          * @brief Produces the output chunks of one finished task, then its TASK_RESULT.
          *
-         * It owns one cache pin per output and drops them in its destructor, on whichever
-         * transport thread destroys it.
+         * It sends the copy of each output its task took when its kernel ended, so a later
+         * task that writes the same buffer cannot change what this one sends.
          */
         class DispatchExecutor::OutputStream final : public FrameSource
         {
             public:
                 /**
                  * @brief Builds the stream of a task whose kernel succeeded.
-                 * @param cache Outlives the stream.
-                 * @param views One per handle, each pinned once for this stream.
+                 * @param outputs One copy per handle, of its size_bytes.
                  */
-                OutputStream(WorkerBufferCache& cache, std::shared_ptr<HeldTasks> held,
-                             std::uint64_t task_id, std::uint64_t generation,
-                             std::uint32_t chunk_bytes, std::vector<BufferHandle> handles,
-                             std::vector<BufferView> views) noexcept
-                    : cache_(cache), held_(std::move(held)), task_id_(task_id),
-                      generation_(generation), chunk_bytes_(chunk_bytes),
-                      handles_(std::move(handles)), views_(std::move(views))
+                OutputStream(std::shared_ptr<HeldTasks> held, std::uint64_t task_id,
+                             std::uint64_t generation, std::uint32_t chunk_bytes,
+                             std::vector<BufferHandle> handles,
+                             std::vector<std::vector<std::byte>> outputs) noexcept
+                    : held_(std::move(held)), task_id_(task_id), generation_(generation),
+                      chunk_bytes_(chunk_bytes), handles_(std::move(handles)),
+                      outputs_(std::move(outputs))
                 {
 
                 }
 
-                /** @brief Unpins the outputs and lets the task go if its result never left. */
+                /** @brief Lets the task go if its result never left. */
                 ~OutputStream() override
                 {
-                    for (const BufferHandle& handle : handles_)
-                        cache_.unpin(handle.id);
                     if (!result_written_)
                         held_->let_go(task_id_, generation_);
                 }
@@ -236,7 +245,7 @@ namespace SushiRuntime
                     chunk.offset = offset_;
                     if (length > 0)
                         chunk.data = SushiRuntime::span<const std::byte>(
-                            static_cast<const std::byte*>(views_[output_].data) + offset_,
+                            outputs_[output_].data() + offset_,
                             static_cast<std::size_t>(length));
 
                     frame.type = MessageType::BufferChunk;
@@ -271,9 +280,6 @@ namespace SushiRuntime
                     return status;
                 }
 
-                /// @brief The cache whose pins the stream holds.
-                WorkerBufferCache& cache_;
-
                 /// @brief Told when the result leaves.
                 std::shared_ptr<HeldTasks> held_;
 
@@ -289,8 +295,8 @@ namespace SushiRuntime
                 /// @brief The outputs, at the versions the dispatch named.
                 std::vector<BufferHandle> handles_;
 
-                /// @brief The memory of each output.
-                std::vector<BufferView> views_;
+                /// @brief The bytes of each output, copied when its kernel ended.
+                std::vector<std::vector<std::byte>> outputs_;
 
                 /// @brief The output being sent.
                 std::size_t output_ = 0;
@@ -303,6 +309,152 @@ namespace SushiRuntime
 
                 /// @brief Whether TASK_RESULT was written into a frame.
                 bool result_written_ = false;
+        };
+
+        /**
+         * @brief Holds one job of a batch from its pins to its outcome.
+         *
+         * Its task writes ran, failure and copies on a pool thread while the batch runs; the
+         * exec thread reads them only after the run returned.
+         */
+        struct DispatchExecutor::Prepared
+        {
+            /** @brief Builds the entry of a job whose buffers are pinned. */
+            Prepared(Job queued, const KernelRegistry::Kernel& registered,
+                     std::vector<BufferView> input_views,
+                     std::vector<BufferView> output_views) noexcept
+                : job(std::move(queued)), kernel(&registered), inputs(std::move(input_views)),
+                  outputs(std::move(output_views))
+            {
+
+            }
+
+            /**
+             * @brief Waits for the tasks before it, runs the kernel, waits for it and copies
+             *        each output; never throws.
+             */
+            void execute(sycl::queue& queue,
+                         const std::vector<sycl::event>& dependencies) noexcept
+            {
+                try
+                {
+                    // The kernel takes no events, so the tasks it follows must end first.
+                    for (sycl::event dependency : dependencies)
+                        dependency.wait();
+
+                    sycl::event event = (*kernel)(
+                        queue, SushiRuntime::span<const BufferView>(inputs.data(), inputs.size()),
+                        SushiRuntime::span<const BufferView>(outputs.data(), outputs.size()),
+                        options_of(job.dispatch));
+                    event.wait_and_throw();
+
+                    copies.resize(outputs.size());
+                    for (std::size_t index = 0; index < outputs.size(); ++index)
+                    {
+                        const std::byte* first = static_cast<const std::byte*>(outputs[index].data);
+                        copies[index].assign(first, first + outputs[index].size_bytes);
+                    }
+                    ran = true;
+                }
+                catch (const std::exception& error)
+                {
+                    failure = error.what();
+                }
+                catch (...)
+                {
+                    failure = "unknown exception";
+                }
+            }
+
+            /// @brief The dispatch and where its replies go.
+            Job job;
+
+            /// @brief The kernel of the dispatch's operation.
+            const KernelRegistry::Kernel* kernel;
+
+            /// @brief One cache pin per input and output; the batch drops them.
+            std::vector<GlobalBufferID> pins;
+
+            /// @brief The memory of each input.
+            std::vector<BufferView> inputs;
+
+            /// @brief The memory of each output.
+            std::vector<BufferView> outputs;
+
+            /// @brief The bytes of each output once the kernel ended; the stream sends them.
+            std::vector<std::vector<std::byte>> copies;
+
+            /// @brief Why the task did not run to its end; empty when it did or never started.
+            std::string failure;
+
+            /// @brief Whether the kernel ran to its end and the outputs were copied.
+            bool ran = false;
+        };
+
+        /**
+         * @brief Holds the jobs of one run and drops their pins when it goes.
+         *
+         * Its entries never move, because the recorded tasks refer to them.
+         */
+        class DispatchExecutor::Batch final
+        {
+            public:
+                /** @brief Builds an empty batch over the cache that holds its pins. */
+                explicit Batch(WorkerBufferCache& cache) noexcept : cache_(cache)
+                {
+
+                }
+
+                /** @brief Drops every pin still held. */
+                ~Batch()
+                {
+                    for (Prepared& entry : entries_)
+                        for (const GlobalBufferID id : entry.pins)
+                            cache_.unpin(id);
+                }
+
+                Batch(const Batch&) = delete;
+                Batch& operator=(const Batch&) = delete;
+                Batch(Batch&&) = delete;
+                Batch& operator=(Batch&&) = delete;
+
+                /** @brief Adds a job whose buffers are pinned; the caller hands its pins on. */
+                [[nodiscard]] Prepared& add(Job job, const KernelRegistry::Kernel& kernel,
+                                            std::vector<BufferView> inputs,
+                                            std::vector<BufferView> outputs)
+                {
+                    return entries_.emplace_back(std::move(job), kernel, std::move(inputs),
+                                                 std::move(outputs));
+                }
+
+                /** @brief Tells whether a job of the batch writes a buffer. */
+                [[nodiscard]] bool writes(GlobalBufferID id) const noexcept
+                {
+                    for (const Prepared& entry : entries_)
+                        for (const BufferHandle& output : entry.job.dispatch.outputs)
+                            if (output.id == id)
+                                return true;
+                    return false;
+                }
+
+                /** @brief Tells whether the batch holds no job. */
+                [[nodiscard]] bool empty() const noexcept
+                {
+                    return entries_.empty();
+                }
+
+                /** @brief Returns the jobs, in the order they were added. */
+                [[nodiscard]] std::deque<Prepared>& entries() noexcept
+                {
+                    return entries_;
+                }
+
+            private:
+                /// @brief The cache the pins belong to.
+                WorkerBufferCache& cache_;
+
+                /// @brief One entry per job; a deque, so an entry stays where it was built.
+                std::deque<Prepared> entries_;
         };
 
         std::uint64_t DispatchExecutor::HeldTasks::hold(std::uint64_t task_id)
@@ -340,9 +492,12 @@ namespace SushiRuntime
         DispatchExecutor::DispatchExecutor(sushi_ptr<KernelRegistry> kernels,
                                            WorkerBufferCache& cache, Transport& transport,
                                            Internal::Device::DeviceQueueSet& devices,
+                                           Graph graph, Interop interop,
                                            const DispatchExecutorOptions& options)
             : kernels_(std::move(kernels)), cache_(cache), transport_(transport), devices_(devices),
-              options_(options), held_(std::make_shared<HeldTasks>())
+              graph_(std::move(graph)), interop_(std::move(interop)),
+              pinned_life_(make_liveness()), options_(options),
+              held_(std::make_shared<HeldTasks>())
         {
 
         }
@@ -480,7 +635,6 @@ namespace SushiRuntime
         {
             for (;;)
             {
-                Job job;
                 {
                     std::unique_lock<std::mutex> lock(mutex_);
                     ready_.wait(lock, [this]
@@ -489,25 +643,46 @@ namespace SushiRuntime
                                 });
                     if (stopping_)
                         return;
-
-                    job = std::move(jobs_.front());
-                    jobs_.pop_front();
-                    queue_depth_.fetch_sub(1, std::memory_order_relaxed);
                 }
 
-                try
+                Batch batch(cache_);
+                graph_.clear();
+                while (std::optional<Job> job = next_job(batch))
                 {
-                    execute(job);
+                    try
+                    {
+                        prepare(*job, batch);
+                    }
+                    catch (const std::exception& error)
+                    {
+                        abandon(*job, error.what());
+                    }
+                    catch (...)
+                    {
+                        abandon(*job, "unknown exception");
+                    }
                 }
-                catch (const std::exception& error)
-                {
-                    abandon(job, error.what());
-                }
-                catch (...)
-                {
-                    abandon(job, "unknown exception");
-                }
+
+                if (!batch.empty())
+                    run_batch(batch);
             }
+        }
+
+        std::optional<DispatchExecutor::Job> DispatchExecutor::next_job(const Batch& batch)
+        {
+            const std::lock_guard<std::mutex> lock(mutex_);
+            if (stopping_ || jobs_.empty())
+                return std::nullopt;
+
+            // An input a job of this batch writes is in no cache yet; the next batch reads it.
+            for (const BufferHandle& input : jobs_.front().dispatch.inputs)
+                if (batch.writes(input.id))
+                    return std::nullopt;
+
+            std::optional<Job> job(std::move(jobs_.front()));
+            jobs_.pop_front();
+            queue_depth_.fetch_sub(1, std::memory_order_relaxed);
+            return job;
         }
 
         void DispatchExecutor::count_failure(Wire::TaskResultStatus status) noexcept
@@ -602,7 +777,7 @@ namespace SushiRuntime
                          cache_.bytes(), consequence);
         }
 
-        sycl::queue* DispatchExecutor::queue_for(const Job& job)
+        bool DispatchExecutor::can_run_on_its_device(const Job& job)
         {
             const std::uint32_t device = job.dispatch.device_index;
             if (device >= devices_.count())
@@ -610,21 +785,21 @@ namespace SushiRuntime
                 SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the dispatch names device {}, and this worker has {}; "
                             "reported as kernel failed",
                             job.dispatch.task_id, device, devices_.count());
-                return nullptr;
+                return false;
             }
 
-            sycl::queue& queue = devices_.queue(device);
-            if (queue.get_context() != devices_.queue(options_.cache_device).get_context())
+            if (devices_.queue(device).get_context() !=
+                devices_.queue(options_.cache_device).get_context())
             {
                 SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {}: device {} does not share the context of device {}, where the "
                             "worker's buffers live; reported as kernel failed",
                             job.dispatch.task_id, device, options_.cache_device);
-                return nullptr;
+                return false;
             }
-            return &queue;
+            return true;
         }
 
-        void DispatchExecutor::execute(const Job& job)
+        void DispatchExecutor::prepare(Job& job, Batch& batch)
         {
             const Wire::TaskDispatchMessage& dispatch = job.dispatch;
             const std::uint64_t task_id = dispatch.task_id;
@@ -640,19 +815,16 @@ namespace SushiRuntime
                 return;
             }
 
-            sycl::queue* queue = queue_for(job);
-            if (queue == nullptr)
+            if (!can_run_on_its_device(job))
             {
                 fail(job.from, task_id, job.generation, Wire::TaskResultStatus::KernelFailed);
                 return;
             }
 
-            PinGuard output_pins(cache_);
-            PinGuard input_pins(cache_);
+            PinGuard pins(cache_);
             std::vector<BufferView> outputs;
             std::vector<BufferView> inputs;
-            output_pins.reserve(dispatch.outputs.size());
-            input_pins.reserve(dispatch.inputs.size());
+            pins.reserve(dispatch.outputs.size() + dispatch.inputs.size());
             outputs.reserve(dispatch.outputs.size());
             inputs.reserve(dispatch.inputs.size());
 
@@ -666,7 +838,7 @@ namespace SushiRuntime
                          Wire::TaskResultStatus::OutputAllocationFailed);
                     return;
                 }
-                output_pins.add(handle.id);
+                pins.add(handle.id);
                 outputs.push_back(view);
             }
 
@@ -687,39 +859,121 @@ namespace SushiRuntime
                          Wire::TaskResultStatus::InputUnavailable);
                     return;
                 }
-                input_pins.add(handle.id);
+                pins.add(handle.id);
                 inputs.push_back(view);
             }
 
-            std::string failure;
-            bool ran = false;
+            Prepared& entry = batch.add(std::move(job), *kernel, std::move(inputs),
+                                        std::move(outputs));
+            entry.pins = pins.hand_on();
+            record(entry);
+        }
+
+        void DispatchExecutor::record(Prepared& entry) noexcept
+        {
             try
             {
-                sycl::event event = (*kernel)(
-                    *queue, SushiRuntime::span<const BufferView>(inputs.data(), inputs.size()),
-                    SushiRuntime::span<const BufferView>(outputs.data(), outputs.size()),
-                    options_of(dispatch));
-                event.wait_and_throw();
-                ran = true;
+                const DeviceIndex device{entry.job.dispatch.device_index};
+                Access access;
+                for (const BufferView& view : entry.inputs)
+                {
+                    const Buffer<std::byte> buffer = interop_.borrow(
+                        static_cast<std::byte*>(view.data), view.size_bytes, device,
+                        Residency::Shared, pinned_life_);
+                    if (buffer.empty())
+                        continue;
+                    const Reads read(buffer);
+                    access.reads.insert(access.reads.end(), read.keys.begin(), read.keys.end());
+                    access.lives.insert(access.lives.end(), read.lives.begin(), read.lives.end());
+                }
+                for (const BufferView& view : entry.outputs)
+                {
+                    const Buffer<std::byte> buffer = interop_.borrow(
+                        static_cast<std::byte*>(view.data), view.size_bytes, device,
+                        Residency::Shared, pinned_life_);
+                    if (buffer.empty())
+                        continue;
+                    const Writes written(buffer);
+                    access.writes.insert(access.writes.end(), written.keys.begin(),
+                                         written.keys.end());
+                    access.lives.insert(access.lives.end(), written.lives.begin(),
+                                        written.lives.end());
+                }
+
+                graph_.recorder().task(
+                    std::move(access),
+                    [&entry](sycl::queue& queue, const std::vector<sycl::event>& dependencies)
+                    {
+                        entry.execute(queue, dependencies);
+                        return sycl::event{};
+                    },
+                    On(device));
             }
             catch (const std::exception& error)
             {
-                failure = error.what();
+                entry.failure = std::string("the task was not recorded: ") + error.what();
             }
             catch (...)
             {
-                failure = "unknown exception";
+                entry.failure = "the task was not recorded: unknown exception";
+            }
+        }
+
+        void DispatchExecutor::run_batch(Batch& batch)
+        {
+            std::string run_failure;
+            try
+            {
+                if (graph_.node_count() != 0)
+                {
+                    Result<RunReport, Error> report = graph_.run();
+                    if (!report)
+                        run_failure = report.error().message;
+                }
+            }
+            catch (const std::exception& error)
+            {
+                run_failure = error.what();
+            }
+            catch (...)
+            {
+                run_failure = "unknown exception";
             }
 
-            if (!ran)
+            for (Prepared& entry : batch.entries())
+            {
+                try
+                {
+                    settle(entry, run_failure);
+                }
+                catch (const std::exception& error)
+                {
+                    abandon(entry.job, error.what());
+                }
+                catch (...)
+                {
+                    abandon(entry.job, "unknown exception");
+                }
+            }
+        }
+
+        void DispatchExecutor::settle(Prepared& entry, const std::string& run_failure)
+        {
+            const Wire::TaskDispatchMessage& dispatch = entry.job.dispatch;
+            const std::uint64_t task_id = dispatch.task_id;
+
+            if (!entry.ran)
             {
                 // A kernel that threw may have written part of an output.
                 for (const BufferHandle& handle : dispatch.outputs)
                     cache_.release(handle.id);
-                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the kernel of operation {} threw: {}; reported as "
-                             "kernel failed",
-                             task_id, dispatch.operation.value, failure);
-                fail(job.from, task_id, job.generation, Wire::TaskResultStatus::KernelFailed);
+                const std::string& cause = !entry.failure.empty() ? entry.failure : run_failure;
+                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the kernel of operation {} did not finish: {}; reported "
+                             "as kernel failed",
+                             task_id, dispatch.operation.value,
+                             cause.empty() ? std::string("the run did not start the task") : cause);
+                fail(entry.job.from, task_id, entry.job.generation,
+                     Wire::TaskResultStatus::KernelFailed);
                 return;
             }
 
@@ -728,14 +982,13 @@ namespace SushiRuntime
             tasks_run_.fetch_add(1, std::memory_order_relaxed);
 
             std::unique_ptr<FrameSource> stream = std::make_unique<OutputStream>(
-                cache_, held_, task_id, job.generation, job.chunk_bytes, dispatch.outputs,
-                std::move(outputs));
-            output_pins.hand_on();
+                held_, task_id, entry.job.generation, entry.job.chunk_bytes, dispatch.outputs,
+                std::move(entry.copies));
 
-            const SendStatus sent = transport_.send_stream(job.from, std::move(stream));
+            const SendStatus sent = transport_.send_stream(entry.job.from, std::move(stream));
             if (sent != SendStatus::Queued)
                 SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "task {}: the output stream to peer {} was not queued (status {})",
-                             task_id, job.from.value, static_cast<int>(sent));
+                             task_id, entry.job.from.value, static_cast<int>(sent));
         }
 
     } // namespace Distributed

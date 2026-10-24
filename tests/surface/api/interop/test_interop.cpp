@@ -21,7 +21,7 @@
 
 /**
  * @file test_interop.cpp
- * @brief Tests importing external memory into a Buffer.
+ * @brief Tests importing external memory into a Buffer and borrowing memory as one.
  * @see tests/surface/api/interop/README.md
  * @author Mustafa Garip
  */
@@ -31,6 +31,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
@@ -278,4 +279,86 @@ TEST(Medium_InteropImport, AnotherDevicesUUIDIsRefusedWithBothUUIDs)
     EXPECT_NE(refusal.message.find("and device " + std::to_string(*index) + " is"),
               std::string::npos)
         << refusal.message;
+}
+
+TEST(Medium_InteropBorrow, ABorrowedBufferViewsTheCallersMemory)
+{
+    auto runtime = Runtime::create().value();
+    std::vector<std::uint32_t> memory = {3u, 5u, 7u};
+    const LivenessToken owner = make_liveness();
+
+    {
+        const Buffer<std::uint32_t> borrowed = runtime.interop().borrow(
+            memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner);
+        EXPECT_EQ(borrowed.data(), memory.data());
+        EXPECT_EQ(borrowed.size(), 3u);
+        EXPECT_EQ(borrowed.device_index(), DeviceIndex{0});
+        EXPECT_EQ(borrowed.residency(), Residency::Host);
+        EXPECT_EQ(borrowed.host()[2], 7u);
+        borrowed[1] = 11u;
+    }
+
+    // The handle is gone and the memory is the caller's still.
+    EXPECT_EQ(memory[1], 11u);
+    EXPECT_EQ(owner.use_count(), 1) << "the buffer kept a share of its owner";
+}
+
+TEST(Medium_InteropBorrow, ARunNamingABorrowedBufferWhoseOwnerLetGoIsRefused)
+{
+    auto runtime = Runtime::create().value();
+    std::vector<std::uint32_t> memory(4, 0u);
+    LivenessToken owner = make_liveness();
+    const Buffer<std::uint32_t> borrowed = runtime.interop().borrow(
+        memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner);
+
+    auto graph = runtime.graph();
+    graph.recorder().host(Access(Reads(), Writes(borrowed)), [&memory]() { ++memory[0]; });
+    ASSERT_TRUE(graph.run());
+    EXPECT_EQ(memory[0], 1u);
+
+    owner.reset();
+
+    auto refused = graph.run();
+    ASSERT_FALSE(refused);
+    EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
+    EXPECT_EQ(memory[0], 1u);
+}
+
+TEST(Medium_InteropBorrow, DroppingTheBorrowedHandleLeavesTheRunValid)
+{
+    auto runtime = Runtime::create().value();
+    std::vector<std::uint32_t> memory(4, 0u);
+    const LivenessToken owner = make_liveness();
+    std::optional<Buffer<std::uint32_t>> borrowed(runtime.interop().borrow(
+        memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner));
+
+    auto graph = runtime.graph();
+    graph.recorder().host(Access(Reads(), Writes(*borrowed)), [&memory]() { ++memory[0]; });
+    borrowed.reset();
+
+    ASSERT_TRUE(graph.run());
+    EXPECT_EQ(memory[0], 1u);
+}
+
+TEST(Medium_InteropBorrow, ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAllocate)
+{
+    auto runtime = Runtime::create().value();
+    sycl::queue& queue =
+        SushiRuntime::Internal::ContextAccess::context(runtime).devices().queue(0);
+    std::uint32_t* memory = sycl::malloc_shared<std::uint32_t>(4, queue);
+    ASSERT_NE(memory, nullptr);
+    const LivenessToken owner = make_liveness();
+
+    {
+        const Buffer<std::uint32_t> borrowed = runtime.interop().borrow(
+            memory, 4, DeviceIndex{0}, Residency::Shared, owner);
+        const std::vector<std::uint32_t> written = {1u, 2u, 3u, 4u};
+        ASSERT_TRUE(borrowed.write_range(ElementRange{0, 4},
+                                         span<const std::uint32_t>(written.data(), 4)));
+        const auto read = borrowed.read_range(ElementRange{1, 2});
+        ASSERT_TRUE(read);
+        EXPECT_EQ(*read, (std::vector<std::uint32_t>{2u, 3u}));
+    }
+
+    sycl::free(memory, queue);
 }

@@ -115,7 +115,7 @@ namespace SushiRuntime
             /** @brief Launch width baked on the node; K_WIDTH_UNKNOWN leaves it unset. */
             std::size_t width = K_WIDTH_UNKNOWN;
 
-            /** @brief Untracked: index of the device the node is placed on. */
+            /** @brief Untracked and Task: index of the device the node is placed on. */
             std::size_t device = 0;
 
             /** @brief Dynamic and DynamicState: the per-step controls of the node. */

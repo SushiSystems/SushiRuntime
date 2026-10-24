@@ -35,10 +35,12 @@
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/interop/host_export.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
+#include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/interop/external_memory.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 
 namespace SushiRuntime
 {
@@ -108,6 +110,34 @@ namespace SushiRuntime
                     return make_error(std::move(block.error()));
                 return Buffer<T>::adopt(context_, std::move(*block), count, device,
                                         Residency::Device);
+            }
+
+            /**
+             * @brief Wraps memory the caller owns as a Buffer a graph tracks, without owning it.
+             * @param owner Lives exactly as long as address stays valid; a run that names the
+             *        buffer after owner is gone is refused with DanglingResource.
+             * @pre owner is not null, address is not null for a count above 0, and device
+             *      names a device of this runtime.
+             * @see modules/surface/api/include/SushiRuntime/api/interop/README.md
+             */
+            template <typename T>
+            [[nodiscard]] Buffer<T> borrow(T* address, std::size_t count, DeviceIndex device,
+                                           Residency residency, const LivenessToken& owner) const
+            {
+                const char* call = "Interop::borrow";
+                Detail::require_device(call, device, Detail::device_count(context_));
+                SR_VERIFY(owner != nullptr,
+                          "Interop::borrow: the owner token is null; pass the LivenessToken that "
+                          "lives exactly as long as the memory.");
+                SR_VERIFY(count == 0 || address != nullptr,
+                          "Interop::borrow: the address is null for a count above 0; pass the "
+                          "memory the buffer views.");
+                Detail::MemoryBlock block;
+                block.address = count == 0 ? nullptr : static_cast<void*>(address);
+                block.bytes = Detail::checked_byte_count(call, count, sizeof(T));
+                return Buffer<T>(
+                    context_, std::move(block), count, device, residency,
+                    LivenessObserver(owner));
             }
 
         private:

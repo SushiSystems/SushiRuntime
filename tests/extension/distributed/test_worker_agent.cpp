@@ -482,6 +482,52 @@ namespace
     }
 
     /**
+     * @brief Lets kernels enter, wait a bounded time for partners, and leave, and keeps the
+     *        most that were inside at once.
+     */
+    class Rendezvous final
+    {
+        public:
+            /**
+             * @brief Enters, waits until @p count kernels have entered or @p limit passed,
+             *        then leaves.
+             */
+            void meet(std::size_t count, std::chrono::milliseconds limit)
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                ++entered_;
+                ++inside_;
+                most_ = std::max(most_, inside_);
+                changed_.notify_all();
+                changed_.wait_for(lock, limit, [this, count] { return entered_ >= count; });
+                --inside_;
+            }
+
+            /** @brief Returns the most kernels that were inside at once. */
+            [[nodiscard]] std::size_t most() const
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                return most_;
+            }
+
+        private:
+            /// @brief Guards the counts.
+            mutable std::mutex mutex_;
+
+            /// @brief Wakes the waiters when a kernel enters.
+            std::condition_variable changed_;
+
+            /// @brief Kernels that entered.
+            std::size_t entered_ = 0;
+
+            /// @brief Kernels inside now.
+            std::size_t inside_ = 0;
+
+            /// @brief The most kernels inside at once.
+            std::size_t most_ = 0;
+    };
+
+    /**
      * @brief Holds a worker agent over a fake transport, and plays its master.
      *
      * A test registers its kernels and sets the options, then calls start().
@@ -628,17 +674,19 @@ TEST(Medium_WorkerBufferCacheTest, ReleaseEvicts)
     ASSERT_TRUE(eventually([&] { return rig.agent().statistics().cache_bytes == 0; }));
     EXPECT_EQ(rig.agent().statistics().cache_evictions, 1u);
 
+    // A stream that waits to be sent holds its own copy, not the cached buffer.
     rig.transport->keep_streams(true);
     rig.transport->deliver(K_MASTER, dispatch_of(2, op, {}, {handle_of(2, 1, 64)}));
     ASSERT_TRUE(rig.transport->wait_for_streams(1));
     rig.transport->deliver(K_MASTER, release_of(2));
-    EXPECT_EQ(rig.agent().statistics().cache_bytes, 64u)
-        << "a pinned buffer was freed by BUFFER_RELEASE";
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 0u)
+        << "a waiting stream kept its output in the cache";
+    EXPECT_EQ(rig.agent().statistics().cache_evictions, 2u);
 
     rig.transport->keep_streams(false);
     rig.transport->release_streams();
-    ASSERT_TRUE(eventually([&] { return rig.agent().statistics().cache_bytes == 0; }));
-    EXPECT_EQ(rig.agent().statistics().cache_evictions, 2u);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
 }
 
 /** @brief Tests that a full cache evicts the buffer used longest ago, and keeps the one read. */
@@ -680,38 +728,40 @@ TEST(Medium_WorkerBufferCacheTest, BudgetEvictsLeastRecentlyUsedUnpinned)
     ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 7));
 }
 
-/** @brief Tests that a buffer pinned by an output stream is never evicted to make room. */
+/** @brief Tests that a buffer a batch holds pinned is never evicted to make room. */
 TEST(Medium_WorkerBufferCacheTest, PinnedEntryIsNotEvicted)
 {
     std::atomic<int> calls{0};
     AgentRig rig;
     const OperationID op(33);
     rig.kernels->register_kernel(op, counting_kernel(calls));
-    rig.options.cache_bytes = 200;
+    rig.options.cache_bytes = 300;
     rig.start();
     rig.register_master(K_MASTER, 7);
 
-    rig.transport->keep_streams(true);
-    rig.transport->deliver(K_MASTER, dispatch_of(1, op, {}, {handle_of(1, 1, 100)}));
-    ASSERT_TRUE(rig.transport->wait_for_streams(1));
-    rig.transport->keep_streams(false);
+    rig.run(K_MASTER, dispatch_of(1, op, {}, {handle_of(1, 1, 100)}), 1);
 
-    rig.run(K_MASTER, dispatch_of(2, op, {}, {handle_of(2, 1, 100)}), 1);
-    rig.transport->keep_streams(true);
-    rig.transport->deliver(K_MASTER, dispatch_of(3, op, {}, {handle_of(3, 1, 100)}));
-    ASSERT_TRUE(rig.transport->wait_for_streams(2));
-    rig.transport->keep_streams(false);
-    EXPECT_EQ(rig.agent().statistics().cache_evictions, 1u)
-        << "the budget did not evict the one unpinned output";
+    // Task 2 pins its output and its input while the pull is open; tasks 3 and 4 join its batch.
+    const BufferHandle input = handle_of(2, 1, 100);
+    rig.transport->deliver(K_MASTER, dispatch_of(2, op, {input}, {handle_of(3, 1, 100)}));
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 1));
+    rig.transport->deliver(K_MASTER, dispatch_of(3, op, {}, {handle_of(4, 1, 100)}));
+    rig.transport->deliver(K_MASTER, dispatch_of(4, op, {}, {handle_of(5, 1, 100)}));
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskAccepted, 4));
+    const std::vector<std::byte> bytes = counting_bytes(100, 1);
+    rig.transport->deliver(K_MASTER, pull_chunk(input, 0, 100, bytes),
+                           Wire::K_FRAME_FLAG_LAST_CHUNK);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 4));
 
-    // Both outputs in the cache are now pinned by their streams.
-    rig.run(K_MASTER, dispatch_of(4, op, {}, {handle_of(4, 1, 100)}), 2);
+    // Task 3's output took the room of the one unpinned buffer; task 4 found none.
+    EXPECT_EQ(rig.result(1).task_id, 4u);
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::OutputAllocationFailed);
-    EXPECT_EQ(rig.agent().statistics().cache_bytes, 200u)
-        << "a pinned output was evicted to make room";
-    EXPECT_EQ(rig.agent().statistics().cache_evictions, 1u);
-
-    rig.transport->release_streams();
+    EXPECT_EQ(rig.result(2).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(rig.result(3).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(rig.agent().statistics().cache_evictions, 1u)
+        << "a pinned buffer was evicted to make room";
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 300u);
+    EXPECT_EQ(calls.load(), 3);
 }
 
 /** @brief Tests that a pulled buffer with a gap is discarded, and a whole pull is kept. */
@@ -970,9 +1020,10 @@ TEST(Medium_DispatchExecutorTest, OutputStreamEndsWithTheResult)
     ASSERT_TRUE(rig.transport->wait_for_streams(1));
 
     EXPECT_EQ(rig.transport->count(MessageType::TaskResult), 0u);
+    // The stream sends its own copy, so a release frees the cached output at once.
     rig.transport->deliver(K_MASTER, release_of(5));
-    EXPECT_EQ(rig.agent().statistics().cache_bytes, 10u)
-        << "the stream's pin did not keep its output";
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 0u)
+        << "the stream kept the cached output pinned";
 
     rig.transport->keep_streams(false);
     rig.transport->release_streams();
@@ -1008,8 +1059,191 @@ TEST(Medium_DispatchExecutorTest, OutputStreamEndsWithTheResult)
     ASSERT_EQ(result.outputs.size(), 1u);
     EXPECT_EQ(result.outputs[0].id, output.id);
 
-    ASSERT_TRUE(eventually([&] { return rig.agent().statistics().cache_bytes == 0; }))
-        << "the stream's destructor kept a pin";
+    EXPECT_EQ(rig.agent().statistics().cache_bytes, 0u);
+}
+
+namespace
+{
+/**
+ * @brief Delivers two dispatches so that the worker records them in one run: the first waits
+ *        for its input while the second is queued, then the input arrives.
+ * @param input The first dispatch's only input; @p bytes holds its size_bytes.
+ */
+void deliver_as_one_batch(AgentRig& rig, const Wire::TaskDispatchMessage& first,
+                          const Wire::TaskDispatchMessage& second, const BufferHandle& input,
+                          const std::vector<std::byte>& bytes)
+{
+    const std::size_t requests = rig.transport->count(MessageType::BufferRequest);
+    const std::size_t accepted = rig.transport->count(MessageType::TaskAccepted);
+    rig.transport->deliver(K_MASTER, first);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, requests + 1));
+    rig.transport->deliver(K_MASTER, second);
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskAccepted, accepted + 2));
+    rig.transport->deliver(K_MASTER,
+                           pull_chunk(input, 0, static_cast<std::size_t>(input.size_bytes), bytes),
+                           Wire::K_FRAME_FLAG_LAST_CHUNK);
+}
+
+/** @brief Returns the data of the first output chunk a task sent. */
+std::vector<std::byte> first_output_of(const AgentRig& rig, std::uint64_t task_id)
+{
+    for (const SentFrame& frame : rig.transport->frames_of(MessageType::BufferChunk))
+    {
+        const Wire::BufferChunkMessage chunk = decode<Wire::BufferChunkMessage>(frame);
+        if (chunk.task_id == task_id)
+            return std::vector<std::byte>(chunk.data.begin(), chunk.data.end());
+    }
+    ADD_FAILURE() << "task " << task_id << " sent no output chunk";
+    return {};
+}
+} // namespace
+
+/** @brief Tests that two dispatches over disjoint buffers have their kernels in flight at once. */
+TEST(Medium_DispatchExecutorTest, DispatchesOverDisjointBuffersAreInFlightTogether)
+{
+    AgentRig rig;
+    Rendezvous rendezvous;
+    std::mutex mutex;
+    std::vector<sycl::device> ran_on;
+    const OperationID op(19);
+    rig.kernels->register_kernel(
+        op, KernelRegistry::Kernel(
+                [&](sycl::queue& queue, span<const BufferView>, span<const BufferView> outputs,
+                    const NodeOptions&)
+                {
+                    {
+                        const std::lock_guard<std::mutex> lock(mutex);
+                        ran_on.push_back(queue.get_device());
+                    }
+                    rendezvous.meet(
+                        2, std::chrono::duration_cast<std::chrono::milliseconds>(K_WAIT));
+                    std::memset(outputs[0].data, 0, outputs[0].size_bytes);
+                    return sycl::event{};
+                }));
+    rig.start();
+    rig.register_master(K_MASTER, 7);
+
+    // Two devices when the worker has them; otherwise both dispatches name device 0.
+    const std::uint32_t second_device = rig.device_count() >= 2 ? 1u : 0u;
+    const BufferHandle input = handle_of(3, 1, 8);
+    Wire::TaskDispatchMessage first = dispatch_of(1, op, {input}, {handle_of(4, 1, 16)});
+    first.device_index = 0;
+    Wire::TaskDispatchMessage second = dispatch_of(2, op, {}, {handle_of(5, 1, 16)});
+    second.device_index = second_device;
+    deliver_as_one_batch(rig, first, second, input, counting_bytes(8, 1));
+
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(rendezvous.most(), 2u) << "the second kernel entered only after the first left";
+    if (second_device == 1u)
+    {
+        const std::lock_guard<std::mutex> lock(mutex);
+        ASSERT_EQ(ran_on.size(), 2u);
+        EXPECT_NE(ran_on[0], ran_on[1]);
+    }
+}
+
+/** @brief Tests that two dispatches writing one buffer run in order, each sending its own bytes. */
+TEST(Medium_DispatchExecutorTest, DispatchesWritingOneBufferRunOneAfterTheOther)
+{
+    AgentRig rig;
+    Rendezvous rendezvous;
+    std::mutex mutex;
+    std::vector<std::size_t> order;
+    const OperationID op(20);
+    rig.kernels->register_kernel(
+        op, KernelRegistry::Kernel(
+                [&](sycl::queue&, span<const BufferView> inputs, span<const BufferView> outputs,
+                    const NodeOptions&)
+                {
+                    // A partner that could overlap would enter within this bound.
+                    rendezvous.meet(2, std::chrono::milliseconds(250));
+                    const std::byte fill = inputs.size() == 1 ? std::byte{0x11} : std::byte{0x22};
+                    std::memset(outputs[0].data, static_cast<int>(fill), outputs[0].size_bytes);
+                    const std::lock_guard<std::mutex> lock(mutex);
+                    order.push_back(inputs.size());
+                    return sycl::event{};
+                }));
+    rig.start();
+    rig.register_master(K_MASTER, 7);
+
+    const BufferHandle input = handle_of(3, 1, 8);
+    const Wire::TaskDispatchMessage first = dispatch_of(1, op, {input}, {handle_of(6, 1, 16)});
+    const Wire::TaskDispatchMessage second = dispatch_of(2, op, {}, {handle_of(6, 2, 16)});
+    deliver_as_one_batch(rig, first, second, input, counting_bytes(8, 1));
+
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(rendezvous.most(), 1u) << "the two writers of buffer 6 overlapped";
+    {
+        const std::lock_guard<std::mutex> lock(mutex);
+        EXPECT_EQ(order, (std::vector<std::size_t>{1, 0})) << "the writers ran out of order";
+    }
+
+    EXPECT_EQ(first_output_of(rig, 1), std::vector<std::byte>(16, std::byte{0x11}))
+        << "the first task sent bytes the second wrote";
+    EXPECT_EQ(first_output_of(rig, 2), std::vector<std::byte>(16, std::byte{0x22}));
+}
+
+/** @brief Tests that two dispatches of one run that read one input version pull it once. */
+TEST(Medium_DispatchExecutorTest, OneRunPullsAnInputTwoDispatchesReadOnce)
+{
+    std::atomic<int> calls{0};
+    AgentRig rig;
+    const OperationID op(21);
+    rig.kernels->register_kernel(op, counting_kernel(calls));
+    rig.start();
+    rig.register_master(K_MASTER, 7);
+
+    const BufferHandle input = handle_of(3, 1, 8);
+    deliver_as_one_batch(rig, dispatch_of(1, op, {input}, {}), dispatch_of(2, op, {input}, {}),
+                         input, counting_bytes(8, 1));
+
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(rig.transport->count(MessageType::BufferRequest), 1u);
+    EXPECT_EQ(calls.load(), 2);
+}
+
+/** @brief Tests that a dispatch reading an output of a queued one waits for it, not the master. */
+TEST(Medium_DispatchExecutorTest, ADispatchReadingAQueuedOutputRunsAfterIt)
+{
+    AgentRig rig;
+    const OperationID write(22);
+    const OperationID copy(23);
+    rig.kernels->register_kernel(
+        write, KernelRegistry::Kernel([](sycl::queue&, span<const BufferView>,
+                                         span<const BufferView> outputs, const NodeOptions&)
+                                      {
+                                          std::memset(outputs[0].data, 0x33, outputs[0].size_bytes);
+                                          return sycl::event{};
+                                      }));
+    rig.kernels->register_kernel(
+        copy, KernelRegistry::Kernel([](sycl::queue&, span<const BufferView> inputs,
+                                        span<const BufferView> outputs, const NodeOptions&)
+                                     {
+                                         std::memcpy(outputs[0].data, inputs[0].data,
+                                                     outputs[0].size_bytes);
+                                         return sycl::event{};
+                                     }));
+    rig.start();
+    rig.register_master(K_MASTER, 7);
+
+    const BufferHandle input = handle_of(3, 1, 8);
+    const BufferHandle produced = handle_of(7, 1, 16);
+    deliver_as_one_batch(rig, dispatch_of(1, write, {input}, {produced}),
+                         dispatch_of(2, copy, {produced}, {handle_of(8, 1, 16)}), input,
+                         counting_bytes(8, 1));
+
+    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
+    EXPECT_EQ(rig.transport->count(MessageType::BufferRequest), 1u)
+        << "the reader asked the master for an output this worker makes";
+    EXPECT_EQ(first_output_of(rig, 2), std::vector<std::byte>(16, std::byte{0x33}));
 }
 
 /** @brief Tests that losing the master ends a pull that has no idle timeout. */

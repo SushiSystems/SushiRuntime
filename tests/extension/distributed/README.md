@@ -381,17 +381,31 @@ and read their `TASK_RESULT`s. The link tests play the handshake and the livenes
 
 | Test | What it proves |
 | --- | --- |
-| `ReleaseEvicts` | `BUFFER_RELEASE` frees an unpinned output at once and counts an eviction. An output pinned by its stream keeps its memory until the stream is pulled. |
+| `ReleaseEvicts` | `BUFFER_RELEASE` frees an unpinned output at once and counts an eviction. An output whose stream waits to be pulled is freed at once too, because the stream holds a copy; the stream then delivers its result. |
 | `BudgetEvictsLeastRecentlyUsedUnpinned` | Three outputs of 100 bytes fill a 300-byte budget and the first is read again. A fourth output makes the cache free the second, the one used longest ago: a task that reads it pulls it, and one that reads the first does not. |
-| `PinnedEntryIsNotEvicted` | With the first output pinned by a kept stream, the budget evicts the newer unpinned one. With every byte pinned, a task whose output does not fit ends as `OutputAllocationFailed` and frees nothing. |
+| `PinnedEntryIsNotEvicted` | A 300-byte cache holds one unpinned output. Task 2 pins an output and an input whose pull stays open while tasks 3 and 4 queue, so all three join one batch. Task 3's output evicts the unpinned buffer; task 4 finds every byte pinned and ends as `OutputAllocationFailed`, and nothing pinned was evicted. |
 | `GapInAPulledBufferDiscardsIt` | A chunk at offset 8 after a chunk that ended at 4 ends the pull: the task ends as `InputUnavailable` and the memory is returned. The same buffer is then pulled in three chunks, and the kernel reads every byte the master sent. |
 | `OutputAllocationFailureFailsTheTask` | With a 32-byte cache, a task with a 64-byte output ends in a `TASK_RESULT` with `OutputAllocationFailed`, its kernel never runs and no chunk is sent. The next task, whose output fits, succeeds on the same exec thread. |
 | `KernelSeesBufferSizes` | The kernel reads `size_bytes` of its input and its output views: 12 and 20. The input comes from a `BUFFER_REQUEST` the test answers with two chunks, and the output leaves in chunks of 8 bytes. |
 | `GenericLambdaRegistersAsAKernel` | `register_kernel` has one overload, so a lambda whose four parameters are all `auto` registers without a cast. It fills its output with 0x5a, and the four bytes come back in one chunk. |
 | `KernelThatThrowsFailsTheTaskAndTheWorkerLives` | A kernel that throws produces `KernelFailed` with no outputs and no chunk. The next dispatch runs. |
-| `OutputStreamEndsWithTheResult` | The transport keeps the stream. Until it is pulled no `TASK_RESULT` exists and a `BUFFER_RELEASE` cannot free the output. Pulled, the stream gives chunks of 4, 4 and 2 bytes, the last one flagged, then `TASK_RESULT`; its destructor returns the pin. |
+| `OutputStreamEndsWithTheResult` | The transport keeps the stream. Until it is pulled no `TASK_RESULT` exists, and a `BUFFER_RELEASE` frees the cached output at once. Pulled, the stream gives chunks of 4, 4 and 2 bytes of its own copy, the last one flagged, then `TASK_RESULT`. |
 | `DispatchRunsOnTheDeviceItNames` | Two dispatches name devices 0 and 1, and the kernel records the device of the queue it is handed: both succeed, on two devices. Skipped on a worker with fewer than two devices. |
 | `DispatchNamingAMissingDeviceFailsTheTask` | A dispatch for a device index the worker lacks ends in `KernelFailed` and its kernel never runs. The next dispatch, on device 0, succeeds. |
+
+### Batches
+
+`deliver_as_one_batch` makes two dispatches share one run: the first asks for an input, the second
+is delivered and accepted while that pull is open, and then the input's one chunk arrives.
+`Rendezvous` lets a kernel enter, wait for a partner up to a bound, and leave, and keeps the most
+kernels inside at once. `first_output_of` returns the first output chunk a task sent.
+
+| Test | What it proves |
+| --- | --- |
+| `DispatchesOverDisjointBuffersAreInFlightTogether` | Two dispatches with disjoint outputs, on devices 0 and 1 when the worker has two and both on device 0 otherwise, have both kernels inside the rendezvous at once; with two devices they ran on two. |
+| `DispatchesWritingOneBufferRunOneAfterTheOther` | Two dispatches that write buffer 6 never overlap: the first waits 250 ms for a partner that does not come. They run in dispatch order, and each sends the bytes it wrote, so the second writer did not change the first one's output. |
+| `OneRunPullsAnInputTwoDispatchesReadOnce` | Two dispatches of one batch that read one input version send one `BUFFER_REQUEST`, and both kernels run. |
+| `ADispatchReadingAQueuedOutputRunsAfterIt` | A dispatch that reads the output of a dispatch queued before it opens the next batch, finds that output in the cache, sends no `BUFFER_REQUEST` for it and copies its bytes. |
 
 ### `DisconnectEndsAnOpenInputPull`
 

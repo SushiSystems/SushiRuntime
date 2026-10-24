@@ -44,10 +44,10 @@
 #include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
-#include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/api/graph/graph.hpp>
+#include <SushiRuntime/api/interop/interop.hpp>
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/link_security/handshake.hpp>
@@ -145,16 +145,21 @@ namespace SushiRuntime
                 return K_FALLBACK_CACHE_BYTES;
             }
 
-            /** @brief Returns an allocator that keeps cached buffers as recorded shared USM. */
-            CacheAllocator make_cache_allocator(Internal::Memory::USMAllocator& memory)
+            /**
+             * @brief Returns an allocator that keeps cached buffers as shared USM of a queue's
+             *        context, kept out of the runtime's registry so that a task over it runs
+             *        on the device its dispatch names.
+             * @param queue Outlives the allocator.
+             * @see modules/extension/distributed/README.md
+             */
+            CacheAllocator make_cache_allocator(sycl::queue& queue)
             {
                 CacheAllocator allocator;
-                allocator.allocate = [&memory](std::size_t size_bytes) -> void*
+                allocator.allocate = [&queue](std::size_t size_bytes) -> void*
                 {
                     try
                     {
-                        return memory.allocate(Internal::Memory::USMRequest{Internal::Memory::USMKind::Shared,
-                                                                  size_bytes, 0, K_DEVICE_INDEX});
+                        return sycl::malloc_shared(size_bytes, queue);
                     }
                     catch (const std::exception& error)
                     {
@@ -171,7 +176,7 @@ namespace SushiRuntime
                         return nullptr;
                     }
                 };
-                allocator.release = [&memory](void* address) { memory.release(address); };
+                allocator.release = [&queue](void* address) { sycl::free(address, queue); };
                 return allocator;
             }
 
@@ -206,10 +211,13 @@ namespace SushiRuntime
                  * @brief Builds the bricks and the routing table; no thread runs yet.
                  * @param context Not null; shared, so it outlives the bricks built on it.
                  * @param topology The facts of the runtime's machine; HELLO reports them.
+                 * @param graph An empty graph of the runtime behind context.
+                 * @param interop The interop facade of that runtime.
                  */
                 Impl(std::shared_ptr<Internal::Execution::RuntimeContext> context,
-                     const NodeFacts& topology, std::shared_ptr<Transport> transport,
-                     sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options);
+                     const NodeFacts& topology, Graph graph, Interop interop,
+                     std::shared_ptr<Transport> transport, sushi_ptr<KernelRegistry> kernels,
+                     WorkerAgentOptions options);
 
                 /** @brief Starts the exec thread, the heartbeat thread and the transport. */
                 [[nodiscard]] TransportResult start();
@@ -322,16 +330,18 @@ namespace SushiRuntime
         };
 
         WorkerAgent::Impl::Impl(std::shared_ptr<Internal::Execution::RuntimeContext> context,
-                                const NodeFacts& topology, std::shared_ptr<Transport> transport,
+                                const NodeFacts& topology, Graph graph, Interop interop,
+                                std::shared_ptr<Transport> transport,
                                 sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
             : context_(std::move(context)),
               transport_(require_transport(std::move(transport))),
               options_(bounded(std::move(options))),
-              cache_(make_cache_allocator(context_->memory()),
+              cache_(make_cache_allocator(context_->devices().queue(K_DEVICE_INDEX)),
                      resolve_cache_budget(*context_, options_.cache_bytes)),
               link_(*transport_, options_.secret.bytes(),
                     make_link_options(sealed(*require_kernels(kernels)), topology), make_nonce),
-              executor_(kernels, cache_, *transport_, context_->devices(),
+              executor_(kernels, cache_, *transport_, context_->devices(), std::move(graph),
+                        std::move(interop),
                         DispatchExecutorOptions{options_.max_jobs, options_.pull_idle_timeout,
                                                 K_DEVICE_INDEX})
         {
@@ -659,8 +669,9 @@ namespace SushiRuntime
         WorkerAgent::WorkerAgent(Runtime& runtime, std::shared_ptr<Transport> transport,
                                  sushi_ptr<KernelRegistry> kernels, WorkerAgentOptions options)
             : impl_(std::make_unique<Impl>(SushiRuntime::Internal::ContextAccess::shared(runtime),
-                                           runtime.topology(), std::move(transport), std::move(kernels),
-                                           std::move(options)))
+                                           runtime.topology(), runtime.graph(),
+                                           runtime.interop(), std::move(transport),
+                                           std::move(kernels), std::move(options)))
         {
 
         }

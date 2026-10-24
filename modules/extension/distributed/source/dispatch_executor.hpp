@@ -38,13 +38,17 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <string>
 #include <thread>
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/graph/graph.hpp>
+#include <SushiRuntime/api/interop/interop.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
+#include <SushiRuntime/region/liveness.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
@@ -83,12 +87,12 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Runs dispatched kernels one at a time, each on the device it names.
+         * @brief Runs dispatched kernels as tasks of the worker's runtime, each on its device.
          *
-         * A job: pin each output, get each input from the cache or pull it, call the kernel
-         * inside one try and wait for its event, then send one stream of output chunks that
-         * ends with TASK_RESULT. A failed task sends TASK_RESULT alone, as a control frame.
-         * The one mutex guards the queue and is released before any call out.
+         * The exec thread pins each job's buffers, pulls missing inputs and records one task
+         * over borrowed buffers; one run of the batch orders the jobs that share a buffer and
+         * overlaps the rest. Each job then sends its outputs and TASK_RESULT.
+         * @see modules/extension/distributed/README.md
          */
         class SUSHIRUNTIME_API DispatchExecutor final
         {
@@ -97,11 +101,13 @@ namespace SushiRuntime
                  * @brief Builds an executor; no thread runs until start().
                  * @param kernels Not null; only read.
                  * @param cache Outlives the executor and every stream it sent.
-                 * @param devices The queues kernels submit to, one per device; outlives the
-                 *        executor.
+                 * @param devices The runtime's queues, one per device; outlives the executor.
+                 * @param graph An empty graph of the runtime that owns devices.
+                 * @param interop The interop facade of that runtime.
                  */
                 DispatchExecutor(sushi_ptr<KernelRegistry> kernels, WorkerBufferCache& cache,
                                  Transport& transport, Internal::Device::DeviceQueueSet& devices,
+                                 Graph graph, Interop interop,
                                  const DispatchExecutorOptions& options);
 
                 /** @brief Calls stop(). */
@@ -128,7 +134,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Refuses later jobs, sends a ShuttingDown result for each queued one,
-                 *        lets the running kernel finish and joins the thread.
+                 *        lets the running batch finish and joins the thread.
                  */
                 void stop() noexcept;
 
@@ -190,6 +196,12 @@ namespace SushiRuntime
                 /** @brief Produces the output chunks of one finished task, then its TASK_RESULT. */
                 class OutputStream;
 
+                /** @brief Holds the jobs of one run and the pins they keep. */
+                class Batch;
+
+                /** @brief Holds one job of a batch from its pins to its outcome. */
+                struct Prepared;
+
                 /** @brief Holds one dispatch that waits for the exec thread. */
                 struct Job
                 {
@@ -206,8 +218,37 @@ namespace SushiRuntime
                     std::uint64_t generation = 0;
                 };
 
-                /** @brief Runs jobs until stop(). */
+                /** @brief Gathers and runs batches until stop(). */
                 void run() noexcept;
+
+                /**
+                 * @brief Takes the next job for a batch.
+                 * @return None when the queue is empty, stop() began, or the next job reads a
+                 *         buffer the batch writes; that job then opens the next batch.
+                 */
+                [[nodiscard]] std::optional<Job> next_job(const Batch& batch);
+
+                /**
+                 * @brief Pins a job's buffers and adds it to the batch with its task, or fails
+                 *        the job.
+                 * @param job Moved from once it joins the batch.
+                 */
+                void prepare(Job& job, Batch& batch);
+
+                /**
+                 * @brief Records a job's task over borrowed views of its pinned buffers, on the
+                 *        device it names; a failure is kept in the entry.
+                 */
+                void record(Prepared& entry) noexcept;
+
+                /** @brief Runs the recorded batch and settles each of its jobs. */
+                void run_batch(Batch& batch);
+
+                /**
+                 * @brief Commits and streams the outputs of a job that ran, or fails it.
+                 * @param run_failure Why the run failed, or empty.
+                 */
+                void settle(Prepared& entry, const std::string& run_failure);
 
                 /** @brief Counts one failed task under its status. */
                 void count_failure(Wire::TaskResultStatus status) noexcept;
@@ -228,15 +269,13 @@ namespace SushiRuntime
                                  const char* consequence) const;
 
                 /**
-                 * @brief Returns the queue of the device a job names.
-                 * @return Null, after logging why, when the worker has no such device or the
+                 * @brief Tells whether the device a job names can run it.
+                 * @return False, after logging why, when the worker has no such device or the
                  *         device does not share the cache's context, so the cache's memory
                  *         would not be reachable from it.
                  */
-                [[nodiscard]] sycl::queue* queue_for(const Job& job);
+                [[nodiscard]] bool can_run_on_its_device(const Job& job);
 
-                /** @brief Runs one job from its pins to its result. */
-                void execute(const Job& job);
 
                 /// @brief Guards jobs_, stopping_ and pulling_.
                 mutable std::mutex mutex_;
@@ -253,8 +292,17 @@ namespace SushiRuntime
                 /// @brief Carries requests, output streams and results.
                 Transport& transport_;
 
-                /// @brief The queue of each device; a job's kernel submits to one of them.
+                /// @brief The queue of each device, read to check a job's device.
                 Internal::Device::DeviceQueueSet& devices_;
+
+                /// @brief Holds the tasks of the batch being run; cleared for each batch.
+                Graph graph_;
+
+                /// @brief Wraps the cache's memory as buffers the graph tracks.
+                Interop interop_;
+
+                /// @brief The owner every borrowed buffer names; the pins keep the memory.
+                LivenessToken pinned_life_;
 
                 /// @brief The queue bound and the pull timeout.
                 DispatchExecutorOptions options_;

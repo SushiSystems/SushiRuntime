@@ -108,6 +108,8 @@ namespace SushiRuntime
                                                     description.reads, description.writes,
                                                     std::get<QueueWork>(description.work), {},
                                                     registration);
+                // Device 0 is also the placement of a node that states none.
+                node.place_on(description.device);
                 bake_width(node, description.width);
                 return node;
             }

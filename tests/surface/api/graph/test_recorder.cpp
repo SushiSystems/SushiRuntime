@@ -1625,3 +1625,51 @@ namespace PlacementScopeDeviceRecordingTests
             ASSERT_EQ(words[i], i * 2u) << "element " << i;
     }
 } // namespace PlacementScopeDeviceRecordingTests
+
+namespace PlacedTaskTests
+{
+    using namespace SushiRuntime;
+
+    /** @brief Tests that a placed task over borrowed memory gets the queue of its device. */
+    TEST(Medium_RecorderPlacedTask, ATaskOverBorrowedMemoryRunsOnTheDeviceItStates)
+    {
+        auto rt = Runtime::create().value();
+        const std::size_t device = rt.advanced().device_count() - 1;
+        std::vector<std::uint32_t> memory(4, 0u);
+        const LivenessToken owner = make_liveness();
+        const Buffer<std::uint32_t> borrowed = rt.interop().borrow(
+            memory.data(), memory.size(), DeviceIndex{device}, Residency::Host, owner);
+
+        std::optional<sycl::device> ran_on;
+        auto graph = rt.graph();
+        graph.recorder().task(
+            Access(Reads(), Writes(borrowed)),
+            [&ran_on](sycl::queue& queue, const std::vector<sycl::event>&)
+            {
+                ran_on = queue.get_device();
+                return sycl::event{};
+            },
+            On(DeviceIndex{device}));
+        ASSERT_TRUE(graph.run());
+
+        ASSERT_TRUE(ran_on.has_value());
+        EXPECT_EQ(*ran_on,
+                  Internal::ContextAccess::context(rt).devices().queue(device).get_device());
+    }
+
+    /** @brief Tests that a task placed on a device the runtime lacks is refused at once. */
+    TEST(Medium_RecorderPlacedTaskDeathTest, ATaskPlacedPastTheDeviceCountStops)
+    {
+        auto rt = Runtime::create().value();
+        const std::size_t count = rt.advanced().device_count();
+        auto graph = rt.graph();
+        EXPECT_DEATH(graph.recorder().task(
+                         Access(),
+                         [](sycl::queue&, const std::vector<sycl::event>&)
+                         {
+                             return sycl::event{};
+                         },
+                         On(DeviceIndex{count})),
+                     "names no device");
+    }
+} // namespace PlacedTaskTests

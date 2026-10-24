@@ -232,6 +232,16 @@ The refusal stays until clear(), and a later refusal does not replace it. Every 
 owning graph returns it before anything else is checked and runs nothing; see entry_refusal. A
 caller that wants to know earlier reads refusal() after the verbs.
 
+### task(access, body, placement)
+
+The task verb with a placement records the same node as task(access, body) and states the device
+the node runs on, which the engine reads when no device of the runtime owns the regions the node
+names (the queue selection section of `modules/engine/scheduler/README.md`). A task over memory
+the runtime allocated runs on the device that owns it, whatever the placement says; a task over
+borrowed or other unrecorded memory runs on the stated device and is handed that device's queue.
+The placement is checked and its handle watched as an untracked verb's `On` is. task(access, body)
+states device 0, the device a node that states nothing runs on.
+
 ### record: liveness
 
 record() takes the liveness observers of the typed handles a node names, so a run can detect a

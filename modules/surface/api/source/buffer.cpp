@@ -57,19 +57,25 @@ namespace SushiRuntime
             /**
              * @brief Copies bytes on the queue of the device that owns an allocation.
              * @param base Start of the allocation that holds the device side of the copy.
+             * @param device Device whose queue copies when no device of the context owns base.
              * @return The context the copy ran on, or a KernelFailed error when the copy
              *         throws, and an AllocationFailed error when it was refused memory.
              */
             [[nodiscard]] Result<Internal::Execution::RuntimeContext*>
-            copy_on_owning_queue(const ContextHandle& context, void* base, void* destination,
-                                 const void* source, std::size_t bytes) noexcept
+            copy_on_owning_queue(const ContextHandle& context, void* base, DeviceIndex device,
+                                 void* destination, const void* source,
+                                 std::size_t bytes) noexcept
             {
                 Internal::Execution::RuntimeContext& runtime =
                     Internal::ContextAccess::context(context);
                 Result<void> copied = Internal::SYCL::translate_exceptions(
-                    [&runtime, base, destination, source, bytes]()
+                    [&runtime, base, device, destination, source, bytes]()
                 {
-                    owning_queue(runtime, base).memcpy(destination, source, bytes).wait();
+                    const std::optional<std::size_t> owner = runtime.memory().owning_device(base);
+                    runtime.devices()
+                        .queue(owner.value_or(device.value()))
+                        .memcpy(destination, source, bytes)
+                        .wait();
                 });
                 if (!copied)
                     return make_error(std::move(copied.error()));
@@ -118,22 +124,24 @@ namespace SushiRuntime
             return block;
         }
 
-        Result<void> copy_to_host(const ContextHandle& context, void* base, const void* source,
-                                  void* destination, std::size_t bytes) noexcept
+        Result<void> copy_to_host(const ContextHandle& context, void* base, DeviceIndex device,
+                                  const void* source, void* destination,
+                                  std::size_t bytes) noexcept
         {
             Result<Internal::Execution::RuntimeContext*> copied =
-                copy_on_owning_queue(context, base, destination, source, bytes);
+                copy_on_owning_queue(context, base, device, destination, source, bytes);
             if (!copied)
                 return make_error(std::move(copied.error()));
             (*copied)->transfers().add_device_to_host(bytes);
             return {};
         }
 
-        Result<void> copy_to_device(const ContextHandle& context, void* base, void* destination,
-                                    const void* source, std::size_t bytes) noexcept
+        Result<void> copy_to_device(const ContextHandle& context, void* base, DeviceIndex device,
+                                    void* destination, const void* source,
+                                    std::size_t bytes) noexcept
         {
             Result<Internal::Execution::RuntimeContext*> copied =
-                copy_on_owning_queue(context, base, destination, source, bytes);
+                copy_on_owning_queue(context, base, device, destination, source, bytes);
             if (!copied)
                 return make_error(std::move(copied.error()));
             (*copied)->transfers().add_host_to_device(bytes);

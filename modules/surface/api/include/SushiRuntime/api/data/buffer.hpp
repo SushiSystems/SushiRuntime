@@ -132,10 +132,12 @@ namespace SushiRuntime
          * @brief Copies bytes of an allocation to host memory through its owning queue,
          *        waits, and counts them as moved device to host.
          * @param base Base address of the allocation; source lies inside it.
+         * @param device Device whose queue copies when no device of the context owns base.
          * @return Nothing, or a KernelFailed error when the device fails.
          */
         [[nodiscard]] SUSHIRUNTIME_API Result<void> copy_to_host(const ContextHandle& context,
-                                                                 void* base, const void* source,
+                                                                 void* base, DeviceIndex device,
+                                                                 const void* source,
                                                                  void* destination,
                                                                  std::size_t bytes) noexcept;
 
@@ -143,10 +145,12 @@ namespace SushiRuntime
          * @brief Copies host bytes into an allocation through its owning queue, waits, and
          *        counts them as moved host to device.
          * @param base Base address of the allocation; destination lies inside it.
+         * @param device Device whose queue copies when no device of the context owns base.
          * @return Nothing, or a KernelFailed error when the device fails.
          */
         [[nodiscard]] SUSHIRUNTIME_API Result<void> copy_to_device(const ContextHandle& context,
-                                                                   void* base, void* destination,
+                                                                   void* base, DeviceIndex device,
+                                                                   void* destination,
                                                                    const void* source,
                                                                    std::size_t bytes) noexcept;
 
@@ -250,7 +254,7 @@ namespace SushiRuntime
             /** @brief Constructs an empty handle that owns no memory. */
             Buffer() = default;
 
-            /** @brief Frees the owned allocation, if any. */
+            /** @brief Frees the owned allocation, if any; borrowed memory stays with its owner. */
             ~Buffer()
             {
                 reset();
@@ -260,8 +264,8 @@ namespace SushiRuntime
             Buffer& operator=(const Buffer&) = delete;
 
             /**
-             * @brief Takes ownership of other's allocation and liveness token, leaving other
-             *        empty.
+             * @brief Takes other's allocation, or the memory it borrows, and its liveness,
+             *        leaving other empty.
              * @warning A Buffer a graph recorded may be moved; destroying it or move-assigning
              *        over it refuses the next run with DanglingResource.
              * @see modules/surface/api/include/SushiRuntime/api/data/README.md
@@ -272,9 +276,11 @@ namespace SushiRuntime
                   size_(other.size_),
                   device_index_(other.device_index_),
                   residency_(other.residency_),
-                  liveness_(std::move(other.liveness_))
+                  liveness_(std::move(other.liveness_)),
+                  borrowed_life_(std::move(other.borrowed_life_))
             {
                 other.size_ = 0;
+                other.borrowed_life_.reset();
             }
 
             /**
@@ -293,8 +299,10 @@ namespace SushiRuntime
                     device_index_ = other.device_index_;
                     residency_ = other.residency_;
                     liveness_ = std::move(other.liveness_);
+                    borrowed_life_ = std::move(other.borrowed_life_);
                     other.size_ = 0;
                     other.liveness_.reset();
+                    other.borrowed_life_.reset();
                 }
                 return *this;
             }
@@ -487,6 +495,37 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Views memory another owner keeps alive; Interop::borrow() is its one
+             *        caller.
+             * @param owner_life Expires when the owner releases the memory.
+             * @pre block holds at least count elements and owns nothing.
+             */
+            Buffer(ContextHandle context, Detail::MemoryBlock block, std::size_t count,
+                   DeviceIndex device_index, Residency residency,
+                   LivenessObserver owner_life) noexcept
+                : context_(std::move(context)),
+                  block_(std::move(block)),
+                  size_(count),
+                  device_index_(device_index),
+                  residency_(residency),
+                  borrowed_life_(std::move(owner_life))
+            {
+
+            }
+
+            /**
+             * @brief Returns the observer a graph keeps for this handle.
+             * @return The owned token's observer, the owner's for borrowed memory, or an
+             *         empty one for an empty handle.
+             */
+            [[nodiscard]] LivenessObserver observer() const noexcept
+            {
+                if (liveness_)
+                    return liveness_;
+                return borrowed_life_;
+            }
+
+            /**
              * @brief Copies a window out to a host vector and counts the bytes moved.
              * @param call Names the public operation in a message.
              * @return The elements, or a KernelFailed error when the device fails the copy.
@@ -504,7 +543,7 @@ namespace SushiRuntime
                 // A non-zero size_ implies a runtime and a non-null address.
                 if (copied && range.count != 0)
                     copied = Detail::copy_to_host(context_, static_cast<void*>(data()),
-                                                  data() + range.offset, out.data(),
+                                                  device_index_, data() + range.offset, out.data(),
                                                   range.count * sizeof(T));
                 if (!copied)
                     return make_error(std::move(copied.error()));
@@ -534,7 +573,7 @@ namespace SushiRuntime
                               .c_str());
                 // A non-zero size_ implies a runtime and a non-null address.
                 return Detail::copy_to_device(context_, static_cast<void*>(data()),
-                                              data() + range.offset, source.data(),
+                                              device_index_, data() + range.offset, source.data(),
                                               range.count * sizeof(T));
             }
 
@@ -571,6 +610,7 @@ namespace SushiRuntime
                 size_ = 0;
                 // Resetting the token expires every graph's observer of this allocation.
                 liveness_.reset();
+                borrowed_life_.reset();
             }
 
             /** @brief The runtime the memory came from; empty for an empty handle. */
@@ -583,5 +623,8 @@ namespace SushiRuntime
             DeviceIndex device_index_ = DeviceIndex{0};
             Residency residency_ = Residency::Shared;
             LivenessToken liveness_;
+
+            /** @brief Observer of the owner of borrowed memory; empty for an owned handle. */
+            LivenessObserver borrowed_life_;
     };
 } // namespace SushiRuntime

@@ -76,6 +76,15 @@ Compiled on platforms other than Windows only. A handle one above the largest `i
 `import_device` with a count of zero, on the first device that imports, returns a buffer that is empty
 and has size zero.
 
+### Borrowed buffers
+
+| Test | What it proves |
+| --- | --- |
+| `ABorrowedBufferViewsTheCallersMemory` | The buffer's address, size, device and residency are the ones passed, the host reads and writes the caller's vector through it, and the vector is intact after the buffer goes. The buffer keeps no share of the owner token. |
+| `ARunNamingABorrowedBufferWhoseOwnerLetGoIsRefused` | A host task over the buffer runs once; after the owner token is reset the next run is `DanglingResource` and the task does not run. |
+| `DroppingTheBorrowedHandleLeavesTheRunValid` | The borrowed handle is destroyed after recording and the run still executes the task, because the owner token lives. |
+| `ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAllocate` | Over shared USM from `sycl::malloc_shared`, which the runtime does not record, `write_range()` and `read_range()` copy through the queue of the buffer's device. |
+
 ## test_host_export.cpp
 
 The file tests exporting host memory a device and the host both reach.

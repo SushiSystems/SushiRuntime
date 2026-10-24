@@ -320,6 +320,29 @@ namespace SushiRuntime
             }
 
             /**
+             * @brief Records a task as task(access, body), handed the queue of a stated device.
+             * @param placement Device the task runs on when no device of this runtime owns the
+             *        regions it names; a handle it names is watched.
+             * @pre placement names a device of this runtime.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            template <class F>
+            std::size_t task(Access access, F&& body, const On& placement,
+                             NodeOptions options = {})
+            {
+                const std::optional<std::size_t> device =
+                    placed_device("Recorder::task(access, body, placement)", placement,
+                                  access.lives);
+                if (!device)
+                    return rule_count();
+                Detail::NodeDescription description =
+                    Detail::task_node(std::move(access.reads), std::move(access.writes),
+                                      std::forward<F>(body), options.width);
+                description.device = *device;
+                return record(std::move(description), access.lives, options);
+            }
+
+            /**
              * @brief Records a per-element launch over [0, count) that names no region.
              * @param kernel_body        Callable invoked as kernel_body(i) for each index.
              * @param placement Device the node runs on; a handle it names is watched.
