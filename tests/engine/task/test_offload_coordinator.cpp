@@ -49,7 +49,12 @@ namespace
     {
         public:
             void bind(OffloadSink& sink) override { bound = &sink; }
-            void prepare(span<const sushi_ptr<Node>> nodes) override { prepared = nodes.size(); }
+            void prepare(span<const sushi_ptr<Node>> nodes,
+                         const std::shared_ptr<const PlacementRules>& given) override
+            {
+                prepared = nodes.size();
+                rules = given;
+            }
             bool try_offload(Node& node) override { offered = &node; return false; }
             void on_local_completion(Node& node) noexcept override { completed = &node; }
             void stop() noexcept override { stopped = true; }
@@ -59,6 +64,7 @@ namespace
 
             OffloadSink* bound = nullptr;     /**< The sink bind() was given. */
             std::size_t prepared = 0;         /**< The nodes prepare() was given. */
+            std::shared_ptr<const PlacementRules> rules; /**< The rules prepare() was given. */
             Node* offered = nullptr;          /**< The node try_offload() was given. */
             Node* completed = nullptr;        /**< The node completed locally. */
             Node* resubmitted = nullptr;      /**< The node given back. */
@@ -77,13 +83,18 @@ TEST(Small_OffloadCoordinator, EveryMemberReachesTheImplementation)
     std::vector<sushi_ptr<Node>> nodes{make_sushi<Node>(), make_sushi<Node>()};
 
     coordinator.bind(recorder);
-    coordinator.prepare(span<const sushi_ptr<Node>>(nodes.data(), nodes.size()));
+    const std::shared_ptr<int> token = std::make_shared<int>(0);
+    // The address is only compared, never read, so the incomplete type needs no link.
+    const std::shared_ptr<const PlacementRules> rules(
+        token, reinterpret_cast<const PlacementRules*>(token.get()));
+    coordinator.prepare(span<const sushi_ptr<Node>>(nodes.data(), nodes.size()), rules);
     EXPECT_FALSE(coordinator.try_offload(*nodes[0]));
     coordinator.on_local_completion(*nodes[1]);
     coordinator.stop();
 
     EXPECT_EQ(recorder.bound, &recorder);
     EXPECT_EQ(recorder.prepared, 2u);
+    EXPECT_EQ(recorder.rules, rules);
     EXPECT_EQ(recorder.offered, nodes[0].get());
     EXPECT_EQ(recorder.completed, nodes[1].get());
     EXPECT_TRUE(recorder.stopped);

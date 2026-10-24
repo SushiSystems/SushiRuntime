@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 #include <sycl/sycl.hpp>
@@ -46,6 +47,7 @@
 
 namespace SushiRuntime
 {
+    class PlacementRules;
 
     namespace Internal::Graph { class OffloadCoordinator; class OffloadSink; }
 
@@ -95,12 +97,15 @@ namespace SushiRuntime
             /**
              * @brief Readies a freshly compiled graph for this engine, once, before it runs.
              *
-             * Does nothing by default. The work-stealing engine hands the nodes to the
-             * installed offload coordinator, which marks those a worker may run.
+             * Does nothing by default; the work-stealing engine has the coordinator mark nodes.
              * @pre No node of graph has been submitted.
+             * @param rules The rules of the snapshot the graph was compiled against.
              * @see modules/engine/execution/README.md
              */
-            virtual void prepare(Internal::Graph::CompiledGraph& /*graph*/) {}
+            virtual void prepare(Internal::Graph::CompiledGraph& /*graph*/,
+                                 const std::shared_ptr<const PlacementRules>& /*rules*/)
+            {
+            }
 
             /**
              * @brief Runs a compiled graph in place and blocks until completion.

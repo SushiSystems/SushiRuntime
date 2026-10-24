@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <atomic>
 #include <thread>
@@ -502,8 +503,10 @@ namespace SushiRuntime
                  * @brief Lets the installed coordinator mark the nodes a worker may run.
                  * @pre None of the nodes has been submitted.
                  * @param nodes Borrowed for the call; with no coordinator nothing happens.
+                 * @param rules The rules of the snapshot the nodes were compiled against.
                  */
-                void prepare_offload(span<const sushi_ptr<Internal::Graph::Node>> nodes);
+                void prepare_offload(span<const sushi_ptr<Internal::Graph::Node>> nodes,
+                                     const std::shared_ptr<const PlacementRules>& rules);
 
                 /**
                  * @brief Queues a node no worker finished and drops the coordinator's reference.

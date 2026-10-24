@@ -271,7 +271,8 @@ namespace OffloadDispatcherTests
                 void prepare(const std::vector<sushi_ptr<Internal::Graph::Node>>& nodes)
                 {
                     dispatcher_.prepare(
-                        span<const sushi_ptr<Internal::Graph::Node>>(nodes.data(), nodes.size()));
+                        span<const sushi_ptr<Internal::Graph::Node>>(nodes.data(), nodes.size()),
+                        nullptr);
                 }
 
                 /** @brief Returns the version the registry holds for an address. */

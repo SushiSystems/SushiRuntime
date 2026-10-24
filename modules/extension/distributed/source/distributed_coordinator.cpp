@@ -43,7 +43,6 @@
 
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
@@ -182,11 +181,9 @@ namespace SushiRuntime
 
             /** @brief Builds the bricks in the order they are declared and sets the handlers. */
             Impl(BufferRegistry& shared_buffers, std::shared_ptr<Transport> master_transport,
-                 ClusterOptions cluster_options, std::uint64_t session,
-                 const Internal::Execution::RuntimeContext& runtime_context, NodeFacts master)
+                 ClusterOptions cluster_options, std::uint64_t session, NodeFacts master)
                 : options(std::move(cluster_options)),
                   registry(shared_buffers),
-                  context(runtime_context),
                   transport(require_transport(std::move(master_transport))),
                   directory(options.secret.bytes(), policy_or_default(options.policy)),
                   exchange(registry, options.chunk_bytes),
@@ -601,9 +598,6 @@ namespace SushiRuntime
             /// @brief Names and versions of the shared buffers; owned by Cluster::State.
             BufferRegistry& registry;
 
-            /// @brief The runtime whose placement rules prepare() reads.
-            const Internal::Execution::RuntimeContext& context;
-
             /// @brief Carries every frame; this object is its only event receiver.
             std::shared_ptr<Transport> transport;
 
@@ -669,11 +663,9 @@ namespace SushiRuntime
                                                        std::shared_ptr<Transport> transport,
                                                        ClusterOptions options,
                                                        std::uint64_t session_id,
-                                                       const Internal::Execution::RuntimeContext&
-                                                           context,
                                                        NodeFacts master)
             : impl_(std::make_unique<Impl>(registry, std::move(transport), std::move(options),
-                                           session_id, context, std::move(master)))
+                                           session_id, std::move(master)))
         {
 
         }
@@ -790,9 +782,10 @@ namespace SushiRuntime
                         returned);
         }
 
-        void DistributedCoordinator::prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes)
+        void DistributedCoordinator::prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes,
+                                             const std::shared_ptr<const PlacementRules>& rules)
         {
-            impl_->dispatcher.prepare(nodes, impl_->context.placement()->rules);
+            impl_->dispatcher.prepare(nodes, rules);
         }
 
         bool DistributedCoordinator::try_offload(Internal::Graph::Node& node)

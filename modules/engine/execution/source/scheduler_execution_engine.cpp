@@ -461,9 +461,10 @@ namespace SushiRuntime
             return m;
         }
 
-        void SchedulerExecutionEngine::prepare(Internal::Graph::CompiledGraph& graph)
+        void SchedulerExecutionEngine::prepare(Internal::Graph::CompiledGraph& graph,
+                                               const std::shared_ptr<const PlacementRules>& rules)
         {
-            impl_->scheduler.prepare_offload(graph.all_nodes);
+            impl_->scheduler.prepare_offload(graph.all_nodes, rules);
         }
 
         /** @brief Forwards to the scheduler's set_offload_coordinator(). */

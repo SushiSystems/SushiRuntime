@@ -87,7 +87,8 @@ namespace SushiRuntime
              * @pre No node of graph has been submitted.
              * @see modules/engine/execution/README.md
              */
-            void prepare(Internal::Graph::CompiledGraph& graph) override;
+            void prepare(Internal::Graph::CompiledGraph& graph,
+                         const std::shared_ptr<const PlacementRules>& rules) override;
 
             using ExecutionEngine::execute; // keep the rvalue convenience overload visible
 

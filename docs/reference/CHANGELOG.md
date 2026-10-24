@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-24 — task: Made a compile hand the offload coordinator the rules it compiled against, so the dispatcher never decides from a newer set (`offload_coordinator.hpp`).
 - 2026-10-24 — execution: Fixed a compile tagging older rules with a newer generation, by handing out the rules, their generation and the coordinator's presence as one snapshot (`runtime_context.hpp`).
 - 2026-10-24 — execution: Made installing or removing an offload coordinator mark compiled plans stale, and kept the machine's facts in the runtime context (`runtime_context.hpp`).
 - 2026-10-24 — offload_coordination: Moved task resubmission into the module whose bricks it drives, with its log category (`task_resubmission.hpp`).

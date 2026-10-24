@@ -48,7 +48,11 @@ namespace
     {
         public:
             void bind(OffloadSink& sink) override { bound = &sink; }
-            void prepare(span<const sushi_ptr<Node>> nodes) override { prepared = nodes.size(); }
+            void prepare(span<const sushi_ptr<Node>> nodes,
+                         const std::shared_ptr<const PlacementRules>&) override
+            {
+                prepared = nodes.size();
+            }
             bool try_offload(Node& node) override { offered = &node; return false; }
             void on_local_completion(Node& node) noexcept override { completed = &node; }
             void stop() noexcept override { stopped = true; }

@@ -674,7 +674,8 @@ namespace OffloadSeamShutdownTests
                     sink_ = &sink;
                 }
 
-                void prepare(SushiRuntime::span<const sushi_ptr<Node>>) override
+                void prepare(SushiRuntime::span<const sushi_ptr<Node>>,
+                             const std::shared_ptr<const SushiRuntime::PlacementRules>&) override
                 {
 
                 }

@@ -50,7 +50,7 @@ using namespace SushiRuntime;
 namespace
 {
     /** @brief Declines every node, so a run with it installed runs all of them locally. */
-    class DecliningCoordinator final : public Internal::Graph::OffloadCoordinator
+    class DecliningCoordinator : public Internal::Graph::OffloadCoordinator
     {
         public:
             /** @brief Keeps no sink; it never hands a node back. */
@@ -60,7 +60,8 @@ namespace
             }
 
             /** @brief Marks no node offloadable. */
-            void prepare(span<const sushi_ptr<Internal::Graph::Node>>) override
+            void prepare(span<const sushi_ptr<Internal::Graph::Node>>,
+                         const std::shared_ptr<const PlacementRules>&) override
             {
 
             }
@@ -79,6 +80,21 @@ namespace
             {
 
             }
+    };
+
+    /** @brief Declines every node and keeps the rules its prepare() was given. */
+    class RuleRecordingCoordinator final : public DecliningCoordinator
+    {
+        public:
+            /** @brief Keeps the rules of the compile that prepared the nodes. */
+            void prepare(span<const sushi_ptr<Internal::Graph::Node>>,
+                         const std::shared_ptr<const PlacementRules>& rules) override
+            {
+                prepared_rules = rules;
+            }
+
+            /// @brief The rules of the last prepare(); null before one.
+            std::shared_ptr<const PlacementRules> prepared_rules;
     };
 } // namespace
 
@@ -122,6 +138,33 @@ TEST(Medium_PlanCache, ARuleChangeDuringACompileRecompilesOnTheNextRun)
     EXPECT_EQ(graph.compile_count(), 2u) << "the plan kept the generation of a newer rule set";
     graph.run().value();
     EXPECT_EQ(graph.compile_count(), 2u);
+}
+
+/** @brief Tests that a coordinator is prepared with the rules the compile read, not newer ones. */
+TEST(Medium_PlanCache, Regression_TheCoordinatorSeesTheRulesTheCompileRead)
+{
+    auto runtime = Runtime::create().value();
+    Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(runtime);
+    const auto coordinator = std::make_shared<RuleRecordingCoordinator>();
+    context.install_offload(coordinator);
+    ASSERT_TRUE(static_cast<bool>(runtime.set_placement_rules(PlacementRules{})));
+    const std::shared_ptr<const PlacementRules> compiled_rules = context.placement()->rules;
+    ASSERT_NE(compiled_rules, nullptr);
+
+    auto target = runtime.buffer<int>(1).value();
+    const auto hook = std::make_shared<std::function<void()>>();
+    auto graph = runtime.graph();
+    graph.add_host(Reads{}, Writes(target), Testing::HookedCopyTask(hook));
+
+    bool changed = false;
+    *hook = [&runtime, &changed]()
+    { changed = static_cast<bool>(runtime.set_placement_rules(PlacementRules{})); };
+    graph.run().value();
+    ASSERT_TRUE(changed) << "the compile copied the task and the change was accepted";
+
+    EXPECT_NE(context.placement()->rules, compiled_rules) << "the change did not land";
+    EXPECT_EQ(coordinator->prepared_rules, compiled_rules)
+        << "prepare() saw rules newer than the ones the nodes were stamped with";
 }
 
 /** @brief Tests that installing or removing an offload coordinator makes the plan stale. */

@@ -47,8 +47,6 @@
 
 namespace SushiRuntime
 {
-    namespace Internal::Execution { class RuntimeContext; }
-
     namespace Distributed
     {
         /**
@@ -81,12 +79,11 @@ namespace SushiRuntime
                  * @param transport A master-side transport that was never started; not null.
                  * @param options Moved in; the secret stays here for the directory to read.
                  * @param session_id Names this master to its workers; drawn at random.
-                 * @param context Its rules feed prepare(); @p master, this machine's facts, is copied.
+                 * @param master This machine's facts; copied.
                  */
                 DistributedCoordinator(BufferRegistry& registry,
                                        std::shared_ptr<Transport> transport,
                                        ClusterOptions options, std::uint64_t session_id,
-                                       const Internal::Execution::RuntimeContext& context,
                                        NodeFacts master);
 
                 /** @brief Calls stop(), then destroys the bricks. */
@@ -120,8 +117,9 @@ namespace SushiRuntime
                  */
                 void stop() noexcept override;
 
-                /** @brief Forwards to OffloadDispatcher::prepare() with the context's rules. */
-                void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes) override;
+                /** @brief Forwards to OffloadDispatcher::prepare() with the compile's rules. */
+                void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes,
+                             const std::shared_ptr<const PlacementRules>& rules) override;
 
                 /**
                  * @brief Forwards to OffloadDispatcher::try_offload(); false once stopped. A

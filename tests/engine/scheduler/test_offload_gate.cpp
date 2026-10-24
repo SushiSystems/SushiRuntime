@@ -53,7 +53,12 @@ namespace
     {
         public:
             void bind(Internal::Graph::OffloadSink&) override {}
-            void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes) override { prepared = nodes.size(); }
+            void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes,
+                         const std::shared_ptr<const PlacementRules>& given) override
+            {
+                prepared = nodes.size();
+                rules = given;
+            }
             bool try_offload(Internal::Graph::Node&) override { ++offers; return accepts; }
             void on_local_completion(Internal::Graph::Node&) noexcept override {}
             void stop() noexcept override {}
@@ -61,6 +66,7 @@ namespace
             bool accepts = true;        /**< What try_offload() answers. */
             int offers = 0;             /**< The calls of try_offload(). */
             std::size_t prepared = 0;   /**< The nodes prepare() was given. */
+            std::shared_ptr<const PlacementRules> rules; /**< The rules prepare() was given. */
     };
 
     /** @brief A task that is no graph node. */
@@ -115,10 +121,15 @@ TEST(Small_OffloadGate, PrepareReachesTheCoordinator)
 {
     std::vector<sushi_ptr<Internal::Graph::Node>> nodes{make_sushi<Internal::Graph::Node>()};
     const span<const sushi_ptr<Internal::Graph::Node>> view(nodes.data(), nodes.size());
+    const std::shared_ptr<int> token = std::make_shared<int>(0);
+    // The address is only compared, never read, so the incomplete type needs no link.
+    const std::shared_ptr<const PlacementRules> rules(
+        token, reinterpret_cast<const PlacementRules*>(token.get()));
     OffloadGate gate;
-    gate.prepare(view);
+    gate.prepare(view, rules);
     AcceptingCoordinator coordinator;
     gate.install(&coordinator);
-    gate.prepare(view);
+    gate.prepare(view, rules);
     EXPECT_EQ(coordinator.prepared, 1u);
+    EXPECT_EQ(coordinator.rules, rules) << "the gate passed on other rules than it was given";
 }

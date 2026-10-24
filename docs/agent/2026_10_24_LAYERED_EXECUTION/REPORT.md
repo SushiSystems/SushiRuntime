@@ -237,8 +237,10 @@ one snapshot, which every compile and commit takes once; the region composer had
 a commit's start and the generation at its end. Installing or removing a coordinator publishes a new
 snapshot, so plans compiled under the other absent policy recompile. The machine's facts live in the
 context, so a graph carries none. `task_resubmission` sits in the offload-coordination module, where
-its forget is tested. `DistributedCoordinator::prepare()` still reads the snapshot again during a
-compile, since its interface cannot receive the compile's; R16d hands it the snapshot.
+its forget is tested. R16d makes `OffloadCoordinator::prepare()` take the rules the compile read, passed down from
+`PlanCache::build`, so the distributed coordinator holds no runtime context. The dispatcher still
+keeps one rule set, replaced by every `prepare()`, so two graphs compiled and run interleaved would
+resolve the older plan's rule positions against the newer set; R16e gives each plan its own.
 
 ## Dispatches
 
@@ -255,6 +257,7 @@ dispatch: R9 — sonnet medium, 44 turns, partial (public interface needed), run
 dispatch: R16a — opus low, 116 turns, passed, rung 1
 dispatch: R16b — opus low, 160 turns, passed, rung 1
 dispatch: R16c — opus low, 125 turns, passed, rung 1
+dispatch: R16d — sonnet medium, passed, rung 1
 dispatch: R15 — haiku high, 68 turns, passed, rung 1
 dispatch: R10 — opus low, 170 turns over two rounds, passed, rung 1
 dispatch: R9 second half — opus low, 146 turns, passed, rung 1

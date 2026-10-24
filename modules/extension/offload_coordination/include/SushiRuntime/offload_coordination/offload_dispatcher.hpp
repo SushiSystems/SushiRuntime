@@ -101,10 +101,10 @@ namespace SushiRuntime
                  * A node qualifies when its op id is not 0, an alive worker supports it (or its
                  * rule names another machine), every buffer it touches is shared and no two of
                  * its writes name one buffer. Logs one WARN per call that leaves such nodes local.
-                 * @param rules The set the nodes' rule positions point into, kept; null for none.
+                 * @param rules Kept; try_offload() decides from it alone. Null for none.
                  */
                 void prepare(SushiRuntime::span<const sushi_ptr<Internal::Graph::Node>> nodes,
-                             std::shared_ptr<const PlacementRules> rules = nullptr);
+                             std::shared_ptr<const PlacementRules> rules);
 
                 /**
                  * @brief Dispatches a ready node; the body of OffloadCoordinator::try_offload().

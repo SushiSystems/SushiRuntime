@@ -30,6 +30,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 
 #include <SushiRuntime/scheduler/run_outcome.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -63,11 +64,13 @@ namespace SushiRuntime
                  * @brief Lets the coordinator mark the nodes of a compiled graph it may take.
                  * @pre None of the nodes has been submitted.
                  * @param nodes Borrowed for the call; with no coordinator nothing happens.
+                 * @param rules Passed on to the coordinator as given.
                  */
-                void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes) const
+                void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes,
+                             const std::shared_ptr<const PlacementRules>& rules) const
                 {
                     if (coordinator_ != nullptr)
-                        coordinator_->prepare(nodes);
+                        coordinator_->prepare(nodes, rules);
                 }
 
                 /**

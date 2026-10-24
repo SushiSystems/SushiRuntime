@@ -30,11 +30,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 
 namespace SushiRuntime
 {
+    class PlacementRules;
+
     namespace Internal::Graph
     {
         struct Node;
@@ -66,12 +69,13 @@ namespace SushiRuntime
                 /**
                  * @brief Marks the nodes of a compiled graph that a worker may run.
                  *
-                 * Called once per compile(), on the compiling thread, before any of the nodes
-                 * is submitted. The implementer sets OffloadState::offloadable and its payload
-                 * on each node it accepts; it may lock and allocate.
+                 * Called once per compile(), on the compiling thread, before a node is submitted;
+                 * it sets OffloadState::offloadable and its payload, and may lock and allocate.
                  * @param nodes Borrowed for the call; a slot may be null.
+                 * @param rules The rules of the snapshot the compile read; null for none.
                  */
-                virtual void prepare(span<const sushi_ptr<Node>> nodes) = 0;
+                virtual void prepare(span<const sushi_ptr<Node>> nodes,
+                                     const std::shared_ptr<const PlacementRules>& rules) = 0;
 
                 /**
                  * @brief Offers a ready node to a worker; may lock, never blocks on I/O.

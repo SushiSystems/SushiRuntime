@@ -134,7 +134,7 @@ namespace SushiRuntime
             if (!compiled)
                 return make_error(std::move(compiled.error()));
             built->plan = std::move(*compiled);
-            runtime.execution_engine().prepare(built->plan);
+            runtime.execution_engine().prepare(built->plan, built->placement->rules);
             built->plan.profiling = profiling_requested_;
             built->plan.capture_base_state();
             built->plan.chain = Internal::Execution::classify_chain(built->plan, runtime);

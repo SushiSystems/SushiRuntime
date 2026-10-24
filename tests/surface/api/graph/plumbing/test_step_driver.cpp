@@ -205,7 +205,8 @@ namespace
                 sink_ = &sink;
             }
 
-            void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes) override
+            void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes,
+                         const std::shared_ptr<const PlacementRules>&) override
             {
                 for (const sushi_ptr<Internal::Graph::Node>& node : nodes)
                     if (node)
