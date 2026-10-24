@@ -3,8 +3,8 @@
 ## Unreleased
 
 - 2026-10-24 — offload_coordination: Fixed plans run in turn placing by the newest rule set, by making each node keep the set it was prepared against (`offload_state.hpp`).
-- 2026-10-24 — task: Made a compile hand the offload coordinator the rules it compiled against, so the dispatcher never decides from a newer set (`offload_coordinator.hpp`).
-- 2026-10-24 — execution: Fixed a compile tagging older rules with a newer generation, by handing out the rules, their generation and the coordinator's presence as one snapshot (`runtime_context.hpp`).
+- 2026-10-24 — task: Breaking change: Made a compile hand the offload coordinator the rules it compiled against, so the dispatcher never decides from a newer set (`offload_coordinator.hpp`).
+- 2026-10-24 — execution: Breaking change: Fixed a compile tagging older rules with a newer generation, by handing out the rules, their generation and the coordinator's presence as one snapshot (`runtime_context.hpp`).
 - 2026-10-24 — execution: Made installing or removing an offload coordinator mark compiled plans stale, and kept the machine's facts in the runtime context (`runtime_context.hpp`).
 - 2026-10-24 — offload_coordination: Moved task resubmission into the module whose bricks it drives, with its log category (`task_resubmission.hpp`).
 - 2026-10-24 — placement: Fixed a rule's device part never reaching a compiled node, through one resolver that matches a machine and picks its device (`placement_target_matching.hpp`).
@@ -21,7 +21,7 @@
 - 2026-10-24 — tests: Pinned that a registered kernel or its local fallback is refused a graph run of its own runtime and runs one on a second runtime (`test_nested_run_probe.cpp`).
 - 2026-10-24 — tests: Pinned that a worker holding an old version of a shared buffer pulls the new one after a local task on the master writes it (`test_distributed.cpp`).
 - 2026-10-24 — api: Added `Interop::borrow()`, a `Buffer<T>` over memory its owner keeps alive, refused as a dangling resource once the owner lets go, and `Recorder::task()` with a stated placement (`interop.hpp`, `recorder.hpp`).
-- 2026-10-24 — api: Changed the exported `Detail::copy_to_host` and `copy_to_device` to take the buffer's device, used when no device owns the address (`handle_access.hpp`, `buffer.cpp`).
+- 2026-10-24 — api: Breaking change: Changed the exported `Detail::copy_to_host` and `copy_to_device` to take the buffer's device, used when no device owns the address (`handle_access.hpp`, `buffer.cpp`).
 - 2026-10-24 — distributed: Ran a worker's dispatches as placed tasks of its runtime over borrowed buffers, in batches, so dispatches over disjoint buffers overlap and writers of one buffer run in order (`dispatch_executor.cpp`).
 - 2026-10-24 — distributed: Made a worker's output stream send a copy of the output instead of pinning the cache, so a later writer cannot overwrite bytes still being sent (`dispatch_executor.cpp`).
 - 2026-10-24 — placement: Added the matching of a rule's target against a machine's facts and the choice of its device, shared by the local scopes and the distributed layer (`placement_target_matching.hpp`).
@@ -32,10 +32,10 @@
 - 2026-10-24 — distributed: Ran each dispatched kernel on the worker device its `TASK_DISPATCH` names, failing a dispatch for a missing device with `KernelFailed` (`dispatch_executor.cpp`, `worker_agent.cpp`).
 - 2026-10-24 — api: Added `PlacementScope::device()` and `buffer()`, and `On(scope)` for untracked kernels, which place work on the device the scope's rule names and follow its absent-target policy (`placement_scope.hpp`, `placement.hpp`).
 - 2026-10-24 — offload_coordination: Kept each worker's `NodeFacts` by name, committed once its proof is accepted, and handed them to a policy through `WorkerLoad::facts` (`worker_directory.cpp`, `offload_policy.hpp`).
-- 2026-10-24 — wire: Moved the protocol to version 4: `HELLO` carries the operating system, the devices and the labels, and `TASK_DISPATCH` a target device index, so a version 3 peer is refused (`wire_frame.hpp`, `wire_messages.hpp`).
+- 2026-10-24 — wire: Breaking change: Moved the protocol to version 4: `HELLO` carries the operating system, devices and labels, and `TASK_DISPATCH` a device index, so a version 3 peer is refused (`wire_frame.hpp`, `wire_messages.hpp`).
 - 2026-10-24 — distributed: Added the `--label` flag and `SR_WORKER_LABELS` to the worker, which sends its labels and its runtime's devices in the hello (`worker_options_parser.cpp`, `master_link.cpp`).
 - 2026-10-24 — api: Added `Runtime::set_placement_rules()` and `clear_placement_rules()`, refused during a run, and resolved each node's winning rule once per compile into `PlanNode::placement_rule` (`plan_cache.cpp`).
-- 2026-10-24 — api: Changed `PlanCache::stale()` to take the runtime's context, so a new rule set makes the next run recompile (`plan_cache.hpp`, `graph.hpp`).
+- 2026-10-24 — api: Breaking change: Changed `PlanCache::stale()` to take the runtime's context, so a new rule set makes the next run recompile (`plan_cache.hpp`, `graph.hpp`).
 - 2026-10-24 — placement: Added the `placement` module, whose `PlacementRules` checks each `PlacementRule` and resolves a node's class, key and operation to the winning rule (`placement_rule.hpp`, `placement_rules.hpp`).
 - 2026-10-24 — api: Added `Runtime::placement_scope()` and `Recorder::within()`, which stamp a scope's class and key on every node recorded inside it that names no class, the innermost scope winning (`placement_scope.hpp`, `recorder.hpp`).
 - 2026-10-24 — api: Added `Runtime::topology()`, the machine's name, operating system, labels and devices, named and labelled through `RuntimeConfig` (`runtime.hpp`, `node_facts.hpp`, `device_facts.hpp`).
