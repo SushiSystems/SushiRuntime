@@ -194,6 +194,8 @@ namespace SushiRuntime
                 node.metadata.placement_class = stamp.placement_class;
             if (stamp.placement_key.has_value())
                 node.metadata.placement_key = stamp.placement_key;
+            if (stamp.determinism != Determinism::Unstated)
+                node.metadata.determinism = stamp.determinism;
             for (std::size_t i = 0; i < stamp.parameter_count; ++i)
                 node.metadata.set_param<std::uint64_t>(static_cast<int>(i), stamp.parameters[i]);
             if (stamp.width != ::SushiRuntime::K_WIDTH_UNKNOWN)

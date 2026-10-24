@@ -275,6 +275,7 @@ the task's own commit.
 | R12 | Probe and, if needed, fix: a local task's write to a shared buffer moves its version. Done when: a test writes a shared buffer from a local task and sees a worker pull the new version. | planned |
 | R13 | Measure the TCP transport between two of the owner's machines: 4 MiB, 64 MiB and 256 MiB, throughput and latency; restore the offload benchmark under `applications/probes/`. Done when: the guide holds the measured numbers with the two machines named; RW-21 and RW-22 close. Waits on R10. | planned |
 | R14 | Worker-to-worker links and a ring all-reduce. Done when: designed only if SushiAI's five-machine measurement shows the master's link bounds the step (RW-14). Waits on SushiAI phase A7. | planned |
+| R15 | A node's determinism class: `NodeOptions::determinism` (`Unstated`, `Bitwise`, `Tolerant`, `Cosmetic`), kept in the node and reported by `PlanNode`; the runtime carries it and decides nothing by it. Ruled by the owner on 2026-10-24, for SushiBLAS's `IndexOps` and SushiEngine's nodes. Done when: a test records a node with `Bitwise` and one without and reads `Bitwise` and `Unstated` back from the plan. | building |
 
 R13 is a measurement and comes after the labels and the rules, as the owner ordered on
 2026-10-20: it is taken once the placement it is measured under exists.
@@ -285,7 +286,7 @@ disjoint files and could share a wave.
 ### Work
 
 <!-- work:begin -->
-- [2026_10_24_LAYERED_EXECUTION](../../agent/2026_10_24_LAYERED_EXECUTION/PLAN.md): R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13
+- [2026_10_24_LAYERED_EXECUTION](../../agent/2026_10_24_LAYERED_EXECUTION/PLAN.md): R15, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13
 <!-- work:end -->
 
 ## Open questions

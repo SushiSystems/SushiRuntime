@@ -16,7 +16,7 @@ symbol or passage it explains, and that header's file block cites this page.
 | `recorder.hpp` | Recorder, Recorder::RuleScope and the placement scope Recorder::within() opens |
 | `access.hpp` | Access, what one node reads and writes |
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
-| `node_options.hpp` | NodeOptions: the width, the name, the operation, the parameters, and the placement class and key of a node |
+| `node_options.hpp` | NodeOptions: the width, the name, the operation, the parameters, the placement class and key, and the determinism of a node |
 | `plan_view.hpp` | PlanView and PlanNode: the copy of a plan that Graph::plan() returns |
 
 BuilderSurface, StepDriver, PlanCache, RegionComposer and RegionChangeLog are declared in
@@ -90,6 +90,7 @@ for (const SushiRuntime::PlanNode& node : plan->nodes)
 | `operation` | The OperationID the node's NodeOptions named; a default id when it named none |
 | `placement_class` | The PlacementClass the node's NodeOptions named; a default class when it named none |
 | `placement_key` | The placement key the node's NodeOptions gave; none when it gave none |
+| `determinism` | The Determinism contract the node's NodeOptions stated; `Unstated` when it stated none |
 | `placement_rule` | Position, in the set `Runtime::set_placement_rules()` took, of the rule that won for the node when the plan was compiled; none when no set was in force or no rule matched |
 | `predecessor_count` | How many nodes of the plan must finish before this one starts |
 | `reads`, `writes` | The `BufferRegion`s the node named, in the order it named them |
@@ -348,6 +349,7 @@ nothing.
 | `parameters` | The engine's metadata of the node | No parameter |
 | `placement_class` | The engine's metadata of the node, and `PlanNode::placement_class` | No class |
 | `placement_key` | The engine's metadata of the node, and `PlanNode::placement_key` | No key; 0 is a key |
+| `determinism` | The engine's metadata of the node, and `PlanNode::determinism`; the runtime carries it and decides nothing by it | `Unstated`, which states no contract |
 
 The recorder copies `name` and `parameters` when the node is recorded, so a temporary string and
 a local array are valid arguments. A node carries `NodeOptions::K_MAX_PARAMETERS` parameters,

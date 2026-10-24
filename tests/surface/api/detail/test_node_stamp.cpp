@@ -39,7 +39,7 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that a stamp copies the operation, the placement, the width and the parameter count. */
+/** @brief Tests that a stamp copies the operation, placement, determinism, width and parameters. */
 TEST(Small_NodeStamp, CopiesWhatTheOptionsState)
 {
     const std::uint64_t parameters[3] = {1, 2, 3};
@@ -48,6 +48,7 @@ TEST(Small_NodeStamp, CopiesWhatTheOptionsState)
     options.width = 12;
     options.placement_class = "sushiai.replica"_class;
     options.placement_key = 0;
+    options.determinism = Determinism::Bitwise;
     options.parameters = span<const std::uint64_t>(parameters, 3);
     const Detail::NodeStamp stamp(options, "named");
     EXPECT_STREQ(stamp.name, "named");
@@ -55,11 +56,13 @@ TEST(Small_NodeStamp, CopiesWhatTheOptionsState)
     EXPECT_EQ(stamp.placement_class, "sushiai.replica"_class);
     ASSERT_TRUE(stamp.placement_key.has_value());
     EXPECT_EQ(*stamp.placement_key, 0u);
+    EXPECT_EQ(stamp.determinism, Determinism::Bitwise);
     EXPECT_EQ(stamp.width, 12u);
     EXPECT_EQ(stamp.parameter_count, 3u);
     EXPECT_EQ(Detail::NodeStamp().width, K_WIDTH_UNKNOWN);
     EXPECT_FALSE(Detail::NodeStamp().placement_class.is_named());
     EXPECT_FALSE(Detail::NodeStamp().placement_key.has_value());
+    EXPECT_EQ(Detail::NodeStamp().determinism, Determinism::Unstated);
 }
 
 /** @brief Tests that parameters within the limit pass and one past it is refused. */

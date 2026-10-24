@@ -34,6 +34,7 @@
 #include <string>
 #include <vector>
 
+#include <SushiRuntime/core/determinism.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
@@ -60,6 +61,9 @@ namespace SushiRuntime
 
         /** @brief Placement key the node was recorded with, or none. */
         std::optional<std::uint64_t> placement_key;
+
+        /** @brief Determinism contract the node was recorded with; a default states none. */
+        Determinism determinism = Determinism::Unstated;
 
         /**
          * @brief Position of the rule that won for the node when the plan was compiled.

@@ -141,6 +141,7 @@ TEST(Medium_PlanView, AChainOfThreeKernelsReportsItsPredecessorsAndRegions)
     scaled.operation = "plan_view.scale"_op;
     scaled.placement_class = "sushiai.replica"_class;
     scaled.placement_key = 0;
+    scaled.determinism = Determinism::Bitwise;
 
     auto graph = rt.graph();
     graph.add(K_WIDTH, Reads(), Writes(first), [a](std::size_t i) { a[i] = 1u; });
@@ -177,6 +178,8 @@ TEST(Medium_PlanView, AChainOfThreeKernelsReportsItsPredecessorsAndRegions)
     EXPECT_EQ(*plan->nodes[1].placement_key, 0u);
     EXPECT_FALSE(plan->nodes[0].placement_class.is_named());
     EXPECT_FALSE(plan->nodes[0].placement_key.has_value());
+    EXPECT_EQ(plan->nodes[1].determinism, Determinism::Bitwise);
+    EXPECT_EQ(plan->nodes[0].determinism, Determinism::Unstated);
 
     ASSERT_TRUE(graph.run());
     EXPECT_EQ(graph.compile_count(), 1u) << "the plan plan() built is the one run() uses";

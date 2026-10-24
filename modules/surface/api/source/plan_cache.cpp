@@ -177,6 +177,7 @@ namespace SushiRuntime
                 described.operation = node.metadata.op_id;
                 described.placement_class = node.metadata.placement_class;
                 described.placement_key = node.metadata.placement_key;
+                described.determinism = node.metadata.determinism;
                 if (node.metadata.placement_rule)
                     described.placement_rule = *node.metadata.placement_rule;
                 described.predecessor_count =

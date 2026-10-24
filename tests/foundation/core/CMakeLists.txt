@@ -11,6 +11,7 @@ sushiruntime_add_module_tests(
         test_bit.cpp
         test_common.cpp
         test_delegate.cpp
+        test_determinism.cpp
         test_error.cpp
         test_error_translation.cpp
         test_export.cpp

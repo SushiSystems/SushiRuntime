@@ -7,7 +7,7 @@ It depends on the C++ standard library and on no other module of the repository.
 
 ## Public entry points
 
-The fourteen public headers under `include/SushiRuntime/core/`:
+The sixteen public headers under `include/SushiRuntime/core/`:
 
 | Header | What it declares |
 | --- | --- |
@@ -15,6 +15,7 @@ The fourteen public headers under `include/SushiRuntime/core/`:
 | `bit.hpp` | `popcount_u64` and `countr_zero_u64`, two 64-bit bit queries for the C++17 baseline |
 | `common.hpp` | The size constants `K_CACHE_LINE_SIZE`, `K_MAX_NUMA_NODES`, `K_MAX_WORKER_THREADS` and `K_DEFAULT_ALIGNMENT` |
 | `delegate.hpp` | `Delegate`, a move-only callable stored inline, with no heap allocation |
+| `determinism.hpp` | `Determinism`, the contract a recorder states for a node's result: `Unstated`, `Bitwise`, `Tolerant` or `Cosmetic` |
 | `error.hpp` | `ErrorCode`, its `to_string` overload and `Error` |
 | `error_translation.hpp` | `Detail::translate_exceptions`, which calls a function and returns what it throws as an `Error` |
 | `export.hpp` | `SUSHIRUNTIME_API`, `SR_API` and `SR_TYPE_API`, the symbol visibility macros |
@@ -109,6 +110,19 @@ static_assert.
 vtable_for() gives one shared vtable instance per target type. It reaches the instance through a
 function-local static, so it needs no out-of-line definition and has a single address across
 translation units.
+
+## determinism.hpp
+
+### Determinism
+
+Determinism names the contract a recorder states for a node's result. `Bitwise` means the result
+repeats bit for bit on the same hardware. `Tolerant` means it agrees within a tolerance the
+recorder states, and `Cosmetic` means it only has to look right. `Unstated` means the recorder said
+nothing; it is the value 0, so a value-initialised field states nothing too. The type is one byte.
+
+The runtime stores the contract on the node and reports it in PlanNode. It schedules, places and
+checks nothing by it. A library above the runtime reads it to tell a reader of the plan whether a
+result must repeat exactly.
 
 ## error.hpp
 

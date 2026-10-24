@@ -552,7 +552,7 @@ built; that is what lets name() attach one after the add() call has already retu
 ### NodeStamp
 
 A NodeStamp is the part of a NodeOptions a recorded node keeps: the operation, the placement class
-and key, the width, the name and the parameters. It borrows nothing from the
+and key, the determinism, the width, the name and the parameters. It borrows nothing from the
 caller: the name points into the recorder's label set, and the parameters are copied into an
 inline array of K_MAX_NODE_PARAMETERS words, so recording a node allocates nothing for them.
 

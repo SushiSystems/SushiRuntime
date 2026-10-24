@@ -45,6 +45,16 @@ The lambda captures a `unique_ptr`, so it cannot be copied and its move construc
 two `static_assert`s state both. After the `Delegate` is moved, the source is empty and the
 destination returns the pointee.
 
+## test_determinism.cpp
+
+The file tests Determinism: the distinct enumerators, the zero default and the one-byte width.
+
+| Test | What it proves |
+| --- | --- |
+| `EnumeratorsHoldDistinctValues` | The four enumerators hold four different values. |
+| `UnstatedIsTheZeroValue` | Unstated is 0, and a value-initialised Determinism is Unstated. |
+| `IsOneUnsignedByte` | The type is one byte and is backed by `std::uint8_t`. |
+
 ## test_error.cpp
 
 The file covers `ErrorCode` and its `to_string`.

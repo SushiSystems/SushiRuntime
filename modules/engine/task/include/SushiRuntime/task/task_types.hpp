@@ -34,6 +34,7 @@
 #include <type_traits>
 #include <cstddef>
 
+#include <SushiRuntime/core/determinism.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
 
@@ -71,6 +72,9 @@ namespace SushiRuntime
 
             /** @brief Index within the group; none when the caller gave no key. */
             std::optional<uint64_t> placement_key = std::nullopt;
+
+            /** @brief Determinism contract the recorder stated; a default class states none. */
+            Determinism determinism = Determinism::Unstated;
 
             /**
              * @brief Position of the placement rule that won for this node at compile time.

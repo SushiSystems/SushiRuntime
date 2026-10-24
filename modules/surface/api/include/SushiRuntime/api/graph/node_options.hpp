@@ -33,6 +33,7 @@
 #include <optional>
 #include <string_view>
 
+#include <SushiRuntime/core/determinism.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/core/span.hpp>
@@ -70,5 +71,8 @@ namespace SushiRuntime
 
         /** @brief Index within the group, such as a replica or an island; 0 is a key too. */
         std::optional<std::uint64_t> placement_key = {};
+
+        /** @brief Determinism contract the result carries; a default states none. */
+        Determinism determinism = Determinism::Unstated;
     };
 } // namespace SushiRuntime

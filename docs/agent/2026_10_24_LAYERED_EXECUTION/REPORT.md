@@ -124,6 +124,13 @@ on the owner. One exec thread stays; `pulling_` assumes one pull at a time.
 Seen and kept: `DispatchExecutor` has seven duties (queue, exec thread, pull, pins, kernel call,
 output stream, held ids); `KernelFailed` cannot tell a missing device from a kernel that threw.
 
+## R15
+
+The owner ruled on 2026-10-24 that a node's determinism class is a runtime `NodeOptions` field
+rather than a parameter slot or a SushiBLAS-only fact. `Determinism` sits in `core` beside
+`PlacementClass`, and the field follows R1's path through the stamp and `TaskMetadata` to
+`PlanNode`. The runtime stores and reports it and never branches on it.
+
 ## Dispatches
 
 ```
@@ -136,4 +143,5 @@ dispatch: R7 — sonnet medium, 76 turns, passed, rung 1
 dispatch: R8 — sonnet medium, 45 turns, passed, rung 1
 dispatch: R6 — sonnet medium, 73 turns, passed, rung 1
 dispatch: R9 — sonnet medium, 44 turns, partial (public interface needed), rung 1
+dispatch: R15 — haiku high, 68 turns, passed, rung 1
 ```
