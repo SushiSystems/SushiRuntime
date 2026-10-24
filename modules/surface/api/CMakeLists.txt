@@ -27,6 +27,7 @@ sushiruntime_add_module(
         report
         region
         machine
+        placement
         interop
         context
     PRIVATE_DEPENDS

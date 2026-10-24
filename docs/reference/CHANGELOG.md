@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-24 — api: Added `Runtime::set_placement_rules()` and `clear_placement_rules()`, refused during a run, and resolved each node's winning rule once per compile into `PlanNode::placement_rule` (`plan_cache.cpp`).
+- 2026-10-24 — api: Changed `PlanCache::stale()` to take the runtime's context, so a new rule set makes the next run recompile (`plan_cache.hpp`, `graph.hpp`).
 - 2026-10-24 — placement: Added the `placement` module, whose `PlacementRules` checks each `PlacementRule` and resolves a node's class, key and operation to the winning rule (`placement_rule.hpp`, `placement_rules.hpp`).
 - 2026-10-24 — api: Added `Runtime::placement_scope()` and `Recorder::within()`, which stamp a scope's class and key on every node recorded inside it that names no class, the innermost scope winning (`placement_scope.hpp`, `recorder.hpp`).
 - 2026-10-24 — api: Added `Runtime::topology()`, the machine's name, operating system, labels and devices, named and labelled through `RuntimeConfig` (`runtime.hpp`, `node_facts.hpp`, `device_facts.hpp`).

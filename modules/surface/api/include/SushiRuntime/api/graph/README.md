@@ -90,6 +90,7 @@ for (const SushiRuntime::PlanNode& node : plan->nodes)
 | `operation` | The OperationID the node's NodeOptions named; a default id when it named none |
 | `placement_class` | The PlacementClass the node's NodeOptions named; a default class when it named none |
 | `placement_key` | The placement key the node's NodeOptions gave; none when it gave none |
+| `placement_rule` | Position, in the set `Runtime::set_placement_rules()` took, of the rule that won for the node when the plan was compiled; none when no set was in force or no rule matched |
 | `predecessor_count` | How many nodes of the plan must finish before this one starts |
 | `reads`, `writes` | The `BufferRegion`s the node named, in the order it named them |
 

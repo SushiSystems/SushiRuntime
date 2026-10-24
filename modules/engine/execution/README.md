@@ -230,6 +230,19 @@ offload_sink() returns the sink a coordinator hands its nodes back to. A coordin
 to it and started before install_offload() runs, so one that fails to start is never installed and
 the coordinator installed before it keeps working.
 
+### set_placement_rules, placement_rules and placement_generation
+
+The context holds the placement rules in force as a `shared_ptr<const PlacementRules>` (null for
+none) and a counter that grows on every `set_placement_rules()`. A compile reads both: it resolves
+each node against the rules and keeps its own share of them, so a later set cannot free rules a
+compiled plan points into. A plan whose recorded counter differs from `placement_generation()` is
+stale.
+
+Both are plain members. The public `Runtime::set_placement_rules()` refuses a call while
+`run_in_progress()` is true, and a compile runs on the thread that starts runs, so a write and a read
+never overlap when the caller starts runs and sets rules from one thread. The context checks nothing
+beyond that: like `install_offload()`, it states the precondition and trusts it.
+
 ## runtime_settings.hpp
 
 ### RuntimeSettings

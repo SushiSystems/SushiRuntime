@@ -142,6 +142,20 @@ index it does not drive. It does not return a `Result`: the name is a literal in
 source, and a caller that wrote a bad one cannot recover at run time. The call touches no
 context, so it costs one hash of the name.
 
+### set_placement_rules and clear_placement_rules
+
+`set_placement_rules(rules)` installs a `PlacementRules` for the whole runtime and
+`clear_placement_rules()` removes it. Neither changes a plan that is already compiled: the rules take
+effect at the next compile. The call bumps a generation the context keeps, a graph sees it in
+`plan_is_stale()`, and its next `compile()`, `plan()` or run builds the plan again and resolves each
+node against the new rules. A graph that no call changed is not rebuilt.
+
+Both calls return `ErrorCode::InvalidState` while a run of the runtime is in flight, with a message
+that says to wait for the run. The rules are plain data in the context and a compile reads them
+without a lock, so the refusal is what keeps a write and a read apart. A caller that sets rules on a
+thread other than the one that starts runs has to order the two itself: the refusal checks the run
+state at the moment of the call and does not hold a run back.
+
 ### Copy and const
 
 A `Runtime` moves and does not copy. A copy would be a second handle to the same context, which
@@ -196,7 +210,8 @@ does. A command that failed on a device arrives as `KernelFailed` with the devic
 ### The context is not reachable
 
 Runtime holds a `ContextHandle` and has no member that returns the context. The members that need
-it, `create()`, `set_rebalancer_enabled()` and `wait()`, are defined in `source/runtime.cpp`.
+it, `create()`, `set_rebalancer_enabled()`, `set_placement_rules()`, `clear_placement_rules()` and
+`wait()`, are defined in `source/runtime.cpp`.
 `create()` stays inline as far as the version check, which must compare the headers a program
 was compiled with against the library it loaded.
 

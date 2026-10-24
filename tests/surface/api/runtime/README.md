@@ -71,6 +71,20 @@ An empty key, a key holding `=` and a repeated key must each make `create()` ret
 `ErrorCode::InvalidArgument`, with a message that names `RuntimeConfig::labels` and the position or
 the key of the label.
 
+### `ASecondCompileReportsTheWinnerOfTheNewRules`
+
+One graph holds a node of class `sushiai.replica` with key 0 and a node with no class. With no rules
+the plan reports no winner for either. After a set with one exact rule, the next run rebuilds the
+plan and reports rule 0 for the first node and none for the second. After a set that adds a prefix
+rule `sushiai.*` of higher priority, the next run rebuilds again and reports rule 1. A run with the
+same rules does not rebuild, and `clear_placement_rules()` makes the next plan report none.
+
+### `ChangingTheRulesDuringARunIsRefusedAsInvalidState`
+
+A host node blocks on a flag while `run_async()` is in flight. `set_placement_rules()` and
+`clear_placement_rules()` called then must each return `ErrorCode::InvalidState`, the first with a
+message that says to wait. After the run ends, both calls succeed.
+
 ### `DefaultConfigCreates`
 
 `create()` with no argument must yield a runtime with profiling and the rebalancer off that runs a

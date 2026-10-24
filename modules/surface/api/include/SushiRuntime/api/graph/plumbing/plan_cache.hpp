@@ -119,11 +119,14 @@ namespace SushiRuntime
                     dirty_ = true;
                 }
 
-                /** @brief Returns whether the plan is missing or older than what recorder holds. */
-                [[nodiscard]] bool stale(const Recorder& recorder) const noexcept
-                {
-                    return dirty_ || built_generation_ != recorder.generation();
-                }
+                /**
+                 * @brief Returns whether the plan is missing or older than what recorder holds
+                 *        or than the placement rules in force.
+                 * @param context The runtime whose rule set the plan was compiled under.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
+                 */
+                [[nodiscard]] SUSHIRUNTIME_API bool
+                stale(const Recorder& recorder, const ContextHandle& context) const noexcept;
 
                 /**
                  * @brief Replays the recorder onto a fresh backing graph and keeps the plan.
@@ -152,7 +155,7 @@ namespace SushiRuntime
 
                 /**
                  * @brief Copies what the cached plan orders, one entry per recorded node.
-                 * @pre stale() is false for the recorder the plan was built from.
+                 * @pre stale() is false for the recorder and context the plan was built from.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
                 [[nodiscard]] SUSHIRUNTIME_API PlanView describe_plan() const;

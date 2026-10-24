@@ -28,6 +28,7 @@
 
 #include <SushiRuntime/execution/runtime_context.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -38,6 +39,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>
@@ -209,6 +211,12 @@ namespace SushiRuntime
             /** @brief Installed offload coordinator, co-owned; null when there is none. */
             std::shared_ptr<Internal::Graph::OffloadCoordinator> offload;
 
+            /** @brief Placement rules in force; null for none. Plain: set between runs only. */
+            std::shared_ptr<const PlacementRules> placement_rules;
+
+            /** @brief Counts the calls of set_placement_rules(). */
+            std::uint64_t placement_generation = 0;
+
             /** @brief Execution engine; built last, by RuntimeContext::create(). */
             std::unique_ptr<SchedulerExecutionEngine> engine;
         };
@@ -323,6 +331,23 @@ namespace SushiRuntime
             SR_VERIFY(impl_->engine != nullptr,
                       "ExecutionEngine is not initialized: the context is still being built.");
             return impl_->engine->offload_sink();
+        }
+
+        void RuntimeContext::set_placement_rules(std::shared_ptr<const PlacementRules> rules)
+        {
+            impl_->placement_rules = std::move(rules);
+            ++impl_->placement_generation;
+        }
+
+        const std::shared_ptr<const PlacementRules>&
+        RuntimeContext::placement_rules() const noexcept
+        {
+            return impl_->placement_rules;
+        }
+
+        std::uint64_t RuntimeContext::placement_generation() const noexcept
+        {
+            return impl_->placement_generation;
         }
 
     } // namespace Execution

@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <sycl/sycl.hpp>
@@ -46,6 +47,8 @@
 
 namespace SushiRuntime
 {
+    class PlacementRules;
+
     namespace Internal::Graph { class OffloadCoordinator; class OffloadSink; }
 
     namespace Internal::Execution
@@ -145,6 +148,26 @@ namespace SushiRuntime
                  * start that fails leaves the installed one in place.
                  */
                 [[nodiscard]] Internal::Graph::OffloadSink& offload_sink();
+
+                /**
+                 * @brief Installs the placement rules the next compile reads and counts the change.
+                 * @pre No run is in flight, and the caller is the thread that starts runs: the
+                 *      rules and their generation are plain members, read without a lock.
+                 * @param rules Null removes the rules. A plan compiled earlier keeps its own share.
+                 * @see modules/engine/execution/README.md
+                 */
+                void set_placement_rules(std::shared_ptr<const PlacementRules> rules);
+
+                /** @brief Returns the rules in force, or null for none. */
+                [[nodiscard]] const std::shared_ptr<const PlacementRules>&
+                placement_rules() const noexcept;
+
+                /**
+                 * @brief Returns how many times set_placement_rules() has been called.
+                 *
+                 * A plan compiled under a different value is stale.
+                 */
+                [[nodiscard]] std::uint64_t placement_generation() const noexcept;
 
             private:
                 struct Impl;

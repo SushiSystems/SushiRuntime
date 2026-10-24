@@ -1,6 +1,6 @@
 # Layered execution: report
 
-**Status:** Open — R1 to R4 landed on 2026-10-24; R2 to R4 are not built yet.
+**Status:** Open — R1 to R5 landed on 2026-10-24; R2 to R5 are not built yet.
 
 ## R1
 
@@ -56,6 +56,18 @@ per node per compile. A `Local` or `Fail` rule ignores its `bound`.
 Verification: syntax checks without `-fsycl` and without a SYCL include root, which proves the
 module includes no SYCL header; the checkers pass. Not built.
 
+## R5
+
+The rule set and its generation sit in `RuntimeContext` as plain members; the refusal during a
+run keeps a set and a read apart for a caller that sets rules and starts runs on one thread, and
+the doc comment says a caller on two threads orders them itself. `PlanCache::stale()` takes the
+context and compares the generation the plan was built under. The compile resolves each node in
+the replay callback into `TaskMetadata::placement_rule`, and the plan cache state keeps the rule
+set it was built with alive.
+
+Left for later: `DynamicGraph` and `RegionComposer` resolve no rule, so a node of a dynamic graph
+reports none.
+
 ## Dispatches
 
 ```
@@ -63,4 +75,5 @@ dispatch: R1 — sonnet medium, 36 turns, passed, rung 1
 dispatch: R3 — sonnet medium, 57 turns, passed, rung 1
 dispatch: R2 — sonnet medium, 46 turns, passed, rung 1
 dispatch: R4 — sonnet medium, 36 turns, passed, rung 1
+dispatch: R5 — sonnet medium, passed, rung 1
 ```

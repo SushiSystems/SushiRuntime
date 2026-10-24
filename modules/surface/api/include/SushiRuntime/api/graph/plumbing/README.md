@@ -266,8 +266,10 @@ name, and so does a null `const char*`.
 ### PlanCache
 
 PlanCache holds the plan compiled from one recorder. It is stale until the first build, after a
-change of the profiling request, and whenever the recorder's generation() differs from the one the
-plan was built at. The plan and the list of its recorded nodes sit behind one pointer to
+change of the profiling request, whenever the recorder's generation() differs from the one the
+plan was built at, and whenever the context's placement generation differs from the one the plan was
+compiled under. stale() therefore takes the ContextHandle beside the recorder; it is defined in
+`source/plan_cache.cpp`, since the header cannot see the context. The plan and the list of its recorded nodes sit behind one pointer to
 `Detail::PlanCacheState`, which `source/plan_cache.cpp` defines; the pointer is null until the
 first build. compiled_plan() is protected because the test seams of the owning Graph read it; it
 returns a `Detail::Plan*`, which `engine_handles/plan_access.hpp` turns into the engine's type. It
@@ -278,7 +280,10 @@ compiles.
 ### build
 
 build() builds a fresh backing graph by replaying the recorder, compiles it, hands the plan to
-`ExecutionEngine::prepare()` and caches it.
+`ExecutionEngine::prepare()` and caches it. During the replay it resolves every node once against
+the rules in force and stores the winning position in the node's `placement_rule`; the plan state
+also keeps a share of the rule set, so a later `set_placement_rules()` cannot free what a compiled
+plan was resolved against. `describe_plan()` reports the position as `PlanNode::placement_rule`.
 The compiled plan snapshots its own replay baseline (in-degrees) so the fluent layer never touches
 Node's scheduler-internal state. compile() drains its builder, so a fresh TaskGraph is built
 whenever the topology changes.

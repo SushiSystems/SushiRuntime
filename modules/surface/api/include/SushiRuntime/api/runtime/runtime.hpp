@@ -44,6 +44,7 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/version.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
+#include <SushiRuntime/placement/placement_rules.hpp>
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/data/state.hpp>
@@ -193,6 +194,24 @@ namespace SushiRuntime
             {
                 return PlacementScope(placement_class, key);
             }
+
+            /**
+             * @brief Installs the rules that place the nodes of every graph of this runtime.
+             *
+             * A graph reads them at its next compile; a plan compiled earlier goes stale.
+             * @return Nothing, or ErrorCode::InvalidState while a run of this runtime is in
+             *         flight; wait for it and call again.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] SUSHIRUNTIME_API Result<void>
+            set_placement_rules(PlacementRules rules) const;
+
+            /**
+             * @brief Removes the placement rules, so the next compile of a graph places by none.
+             * @return Nothing, or ErrorCode::InvalidState while a run of this runtime is in flight.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] SUSHIRUNTIME_API Result<void> clear_placement_rules() const;
 
             /** @brief Returns the facade that exchanges this runtime's memory with Vulkan. */
             [[nodiscard]] Interop interop() const noexcept { return Interop(context_); }

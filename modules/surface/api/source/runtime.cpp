@@ -102,6 +102,13 @@ namespace SushiRuntime
             return facts;
         }
 
+        /** @brief Returns the message of a rule change refused because a run is in flight. */
+        [[nodiscard]] std::string rules_refusal(const char* call)
+        {
+            return std::string("Runtime::") + call +
+                   ": a run of this runtime is in flight; wait for it to finish, then call again.";
+        }
+
         /** @brief Returns whether a class name is non-empty and has no empty dotted segment. */
         [[nodiscard]] bool is_dotted_name(std::string_view name) noexcept
         {
@@ -183,6 +190,26 @@ namespace SushiRuntime
                    "dotted name such as \"sushiai.replica\".")
                       .c_str());
         return PlacementScope(PlacementClass(name.data(), name.size()), key);
+    }
+
+    Result<void> Runtime::set_placement_rules(PlacementRules rules) const
+    {
+        Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(context_);
+        if (context.execution_engine().run_in_progress())
+            return make_error(
+                Error{ErrorCode::InvalidState, rules_refusal("set_placement_rules")});
+        context.set_placement_rules(std::make_shared<const PlacementRules>(std::move(rules)));
+        return {};
+    }
+
+    Result<void> Runtime::clear_placement_rules() const
+    {
+        Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(context_);
+        if (context.execution_engine().run_in_progress())
+            return make_error(
+                Error{ErrorCode::InvalidState, rules_refusal("clear_placement_rules")});
+        context.set_placement_rules(nullptr);
+        return {};
     }
 
     Result<void> Runtime::wait() const

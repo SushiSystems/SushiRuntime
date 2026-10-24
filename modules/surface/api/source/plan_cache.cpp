@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -41,6 +42,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 #include <SushiRuntime/engine_handles/plan_access.hpp>
@@ -68,6 +70,12 @@ namespace SushiRuntime
 
             /** @brief The nodes of plan in recording order; plan lists them in its own. */
             std::vector<RecordedNode> recorded;
+
+            /** @brief The rule set plan was compiled with; null when none was in force. */
+            std::shared_ptr<const PlacementRules> rules;
+
+            /** @brief The context's placement generation when plan was compiled. */
+            std::uint64_t rules_generation = 0;
         };
 
         PlanCache::PlanCache(bool profiling) noexcept : profiling_requested_(profiling)
@@ -100,13 +108,25 @@ namespace SushiRuntime
             std::vector<std::uint32_t> registrations(recorder.rule_count(),
                                                      TaskGraph::K_NO_REGISTRATION);
             built->recorded.reserve(recorder.node_count());
+            built->rules = runtime.placement_rules();
+            built->rules_generation = runtime.placement_generation();
+            const PlacementRules* rules = built->rules.get();
             Detail::RecorderReplay::replay(
                 recorder, backing_graph,
-                [&built, &registrations, &backing_graph](std::size_t rule, std::size_t)
+                [&built, &registrations, &backing_graph, rules](std::size_t rule, std::size_t)
                 {
-                    const Internal::Graph::Node* added = backing_graph.last_node_added();
+                    Internal::Graph::Node* added = backing_graph.last_node_added();
                     if (added)
                     {
+                        if (rules != nullptr)
+                        {
+                            const Internal::Graph::TaskMetadata& metadata = added->metadata;
+                            const std::optional<std::size_t> winner = rules->resolve(
+                                metadata.placement_class, metadata.placement_key, metadata.op_id);
+                            if (winner)
+                                added->metadata.placement_rule =
+                                    static_cast<std::uint32_t>(*winner);
+                        }
                         registrations[rule] = added->registration_index;
                         built->recorded.push_back(
                             Detail::PlanCacheState::RecordedNode{added, rule});
@@ -127,6 +147,13 @@ namespace SushiRuntime
             built_generation_ = recorder.generation();
             ++compiles_;
             return {};
+        }
+
+        bool PlanCache::stale(const Recorder& recorder, const ContextHandle& context) const noexcept
+        {
+            return dirty_ || built_generation_ != recorder.generation() ||
+                   state_->rules_generation !=
+                       Internal::ContextAccess::context(context).placement_generation();
         }
 
         void PlanCache::rearm() noexcept
@@ -150,6 +177,8 @@ namespace SushiRuntime
                 described.operation = node.metadata.op_id;
                 described.placement_class = node.metadata.placement_class;
                 described.placement_key = node.metadata.placement_key;
+                if (node.metadata.placement_rule)
+                    described.placement_rule = *node.metadata.placement_rule;
                 described.predecessor_count =
                     static_cast<std::size_t>(state_->plan.base_in_degree[node.plan_index]);
                 described.reads = node.io_reads_;

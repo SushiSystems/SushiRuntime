@@ -61,6 +61,14 @@ namespace SushiRuntime
         /** @brief Placement key the node was recorded with, or none. */
         std::optional<std::uint64_t> placement_key;
 
+        /**
+         * @brief Position of the rule that won for the node when the plan was compiled.
+         *
+         * The position is in the set Runtime::set_placement_rules() took; none when no set was in
+         * force or no rule matched.
+         */
+        std::optional<std::size_t> placement_rule;
+
         /** @brief How many nodes of the plan must finish before this one starts. */
         std::size_t predecessor_count = 0;
 

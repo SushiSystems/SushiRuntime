@@ -71,6 +71,14 @@ namespace SushiRuntime
 
             /** @brief Index within the group; none when the caller gave no key. */
             std::optional<uint64_t> placement_key = std::nullopt;
+
+            /**
+             * @brief Position of the placement rule that won for this node at compile time.
+             *
+             * None when no rule set was in force or no rule matched. A later dispatch reads it
+             * and never asks the rules again.
+             */
+            std::optional<std::uint32_t> placement_rule = std::nullopt;
             
             /**
              * @brief Influences task execution order during queue retrieval.

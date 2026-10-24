@@ -229,7 +229,7 @@ namespace SushiRuntime
             }
 
             /** @brief Returns whether the plan must be built before the next step. */
-            [[nodiscard]] bool plan_is_stale() const noexcept { return stale(recorder_); }
+            [[nodiscard]] bool plan_is_stale() const noexcept { return stale(recorder_, context_); }
 
             /** @brief Builds the plan from the recorder, or returns why it has none. */
             [[nodiscard]] Result<void> rebuild_plan() { return build(recorder_, context_); }

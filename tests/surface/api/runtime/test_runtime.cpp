@@ -26,6 +26,8 @@
  * @author Mustafa Garip
  */
 
+#include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -153,6 +155,124 @@ TEST(Medium_RuntimeEntry, TopologyNamesTheMachineByItsHostNameWhenTheConfigGives
 
     EXPECT_FALSE(rt.topology().name.empty());
     EXPECT_TRUE(rt.topology().labels.empty());
+}
+
+namespace
+{
+    constexpr auto K_RULES_GATE_TIMEOUT = std::chrono::milliseconds(2000);
+
+    /** @brief Blocks until the flag is set or the deadline passes. */
+    void wait_for_rules_gate(const std::atomic<bool>& released)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + K_RULES_GATE_TIMEOUT;
+        while (!released.load(std::memory_order_acquire) &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+    }
+
+    /** @brief Returns a rule that sends the matched class to device 0 at the given priority. */
+    PlacementRule rule_for(const char* pattern, std::optional<std::uint64_t> key, int priority)
+    {
+        PlacementRule rule;
+        rule.match.placement_class = pattern;
+        rule.match.key = key;
+        rule.target.device_index = 0;
+        rule.priority = priority;
+        return rule;
+    }
+} // namespace
+
+/** @brief Tests that new rules between two runs change the winner the next plan reports. */
+TEST(Medium_RuntimePlacementRules, ASecondCompileReportsTheWinnerOfTheNewRules)
+{
+    const Runtime rt = Runtime::create().value();
+    auto first = rt.buffer<int>(4).value();
+    auto second = rt.buffer<int>(4).value();
+    int* a = first.data();
+    int* b = second.data();
+
+    NodeOptions replica;
+    replica.placement_class = "sushiai.replica"_class;
+    replica.placement_key = 0;
+
+    auto graph = rt.graph();
+    graph.add(4, Reads(), Writes(first), [a](std::size_t i) { a[i] = 1; }, replica);
+    graph.add(4, Reads(), Writes(second), [b](std::size_t i) { b[i] = 2; });
+
+    ASSERT_TRUE(graph.run());
+    const PlanView without_rules = graph.plan().value();
+    ASSERT_EQ(without_rules.nodes.size(), 2u);
+    EXPECT_FALSE(without_rules.nodes[0].placement_rule.has_value()) << "no rule set is in force";
+    EXPECT_FALSE(without_rules.nodes[1].placement_rule.has_value());
+
+    PlacementRules first_rules;
+    ASSERT_TRUE(first_rules.add(rule_for("sushiai.replica", std::nullopt, 1)));
+    ASSERT_TRUE(rt.set_placement_rules(std::move(first_rules)));
+    ASSERT_TRUE(graph.run());
+    EXPECT_EQ(graph.compile_count(), 2u) << "a new rule set makes the plan stale";
+    const PlanView under_first = graph.plan().value();
+    ASSERT_TRUE(under_first.nodes[0].placement_rule.has_value());
+    EXPECT_EQ(*under_first.nodes[0].placement_rule, 0u);
+    EXPECT_FALSE(under_first.nodes[1].placement_rule.has_value())
+        << "a node with no class matches no rule that states one";
+
+    PlacementRules second_rules;
+    ASSERT_TRUE(second_rules.add(rule_for("sushiai.replica", std::nullopt, 1)));
+    ASSERT_TRUE(second_rules.add(rule_for("sushiai.*", 0u, 5)));
+    ASSERT_TRUE(rt.set_placement_rules(std::move(second_rules)));
+    ASSERT_TRUE(graph.run());
+    EXPECT_EQ(graph.compile_count(), 3u);
+    const PlanView under_second = graph.plan().value();
+    ASSERT_TRUE(under_second.nodes[0].placement_rule.has_value());
+    EXPECT_EQ(*under_second.nodes[0].placement_rule, 1u);
+    EXPECT_FALSE(under_second.nodes[1].placement_rule.has_value());
+
+    ASSERT_TRUE(graph.run());
+    EXPECT_EQ(graph.compile_count(), 3u) << "an unchanged rule set does not rebuild the plan";
+
+    ASSERT_TRUE(rt.clear_placement_rules());
+    ASSERT_TRUE(graph.run());
+    EXPECT_EQ(graph.compile_count(), 4u);
+    EXPECT_FALSE(graph.plan().value().nodes[0].placement_rule.has_value());
+    EXPECT_EQ(a[0], 1);
+    EXPECT_EQ(b[0], 2);
+}
+
+/** @brief Tests that the rules cannot be changed while a run is in flight. */
+TEST(Medium_RuntimePlacementRules, ChangingTheRulesDuringARunIsRefusedAsInvalidState)
+{
+    const Runtime rt = Runtime::create().value();
+    auto target = rt.buffer<int>(4).value();
+    int* data = target.data();
+    std::atomic<bool> released{false};
+
+    auto graph = rt.graph();
+    graph.add_host(Reads{}, Writes(target), [&released, data]()
+    {
+        wait_for_rules_gate(released);
+        data[0] = 7;
+    });
+
+    auto step = graph.run_async().value();
+
+    PlacementRules rules;
+    ASSERT_TRUE(rules.add(rule_for("sushiai.replica", std::nullopt, 1)));
+    const Result<void> set = rt.set_placement_rules(std::move(rules));
+    const Result<void> cleared = rt.clear_placement_rules();
+
+    released.store(true, std::memory_order_release);
+    step.wait().value();
+
+    ASSERT_FALSE(set.has_value());
+    EXPECT_EQ(set.error().code, ErrorCode::InvalidState);
+    EXPECT_NE(set.error().message.find("wait"), std::string::npos) << set.error().message;
+    ASSERT_FALSE(cleared.has_value());
+    EXPECT_EQ(cleared.error().code, ErrorCode::InvalidState);
+
+    PlacementRules after;
+    ASSERT_TRUE(after.add(rule_for("sushiai.replica", std::nullopt, 1)));
+    EXPECT_TRUE(rt.set_placement_rules(std::move(after))) << "the run ended, so the call passes";
+    EXPECT_TRUE(rt.clear_placement_rules());
 }
 
 /** @brief Tests that create() refuses an empty key, a key holding '=' and a repeated key. */
