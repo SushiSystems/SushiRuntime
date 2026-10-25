@@ -33,7 +33,6 @@
 #include <memory>
 #include <utility>
 #include <vector>
-#include <sycl/sycl.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>

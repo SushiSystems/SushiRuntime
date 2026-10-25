@@ -31,7 +31,6 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <sycl/sycl.hpp>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>

@@ -32,7 +32,6 @@
 #include <cstdint>
 #include <utility>
 #include <vector>
-#include <sycl/sycl.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/core/error.hpp>
