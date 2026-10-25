@@ -133,7 +133,7 @@ has no SYCL; with neither, icpx builds the tree, and each sanitizer flag reaches
 
 Windows needs three adjustments the Linux driver does not.
 
-`-Xarch_host`. `-fsycl` compiles every translation unit twice, once for the host and once for
+`-Xarch_host`. `-fsycl` compiles a translation unit twice, once for the host and once for
 the SPIR-V device, and AddressSanitizer exists only for the host. Passed unqualified, the
 Windows driver reports `-Woption-ignored` for the device pass, and the tree's `-Werror` turns
 that into a failure on the first source file. Scoping the flag to the host pass leaves no
@@ -226,9 +226,13 @@ backend and gets "auto". Detection is one question with one answer, asked in one
 On Windows the compiler is toolchain-specific: intel-llvm uses clang++, oneapi uses icx-cl,
 adaptivecpp uses acpp. `-DSR_SYCL_TOOLCHAIN` is passed explicitly so that `CMakeLists.txt`
 does not force it from the compiler name (icx-cl implying oneapi, for example), which would
-diverge from the environment the CLI snapshots. AdaptiveCpp injects its own SYCL flags through
-`add_sycl_to_target`; `-fsycl` means something only to the clang-based intel-llvm and oneapi
-drivers.
+diverge from the environment the CLI snapshots.
+
+`CMAKE_CXX_FLAGS` holds `BASE_CXX_FLAGS`, which is empty, and the ASan flags of an ASan build.
+It carries no `-fsycl`: `cmake/SushiRuntimeSyclTarget.cmake` gives `-fsycl` and the device
+targets to the units that instantiate a kernel, and AdaptiveCpp injects its own flags through
+`add_sycl_to_target`. The entry is passed on every configure, and `BASE_CXX_FLAGS` is part of
+the configure stamp, so a tree configured with other flags there is configured again.
 
 ### Test and run environment
 

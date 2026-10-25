@@ -140,7 +140,7 @@ AddressSanitizer on Windows needs an intel/llvm bundle that ships compiler-rt. W
 toolchain, the link fails and a newer bundle is the fix. The CLI handles three more details
 there:
 
-- It passes `-Xarch_host -fsanitize=address`. `-fsycl` compiles every translation unit for the
+- It passes `-Xarch_host -fsanitize=address`. `-fsycl` compiles a translation unit for the
   host and for the SPIR-V device, and no device AddressSanitizer exists; the unqualified flag
   draws a `-Woption-ignored` that `-Werror` turns into a failure.
 - It defines `_DISABLE_STL_ANNOTATION=1`. MSVC's STL container annotations need `stl_asan.lib`,

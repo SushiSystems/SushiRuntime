@@ -39,6 +39,9 @@ ASAN_FLAGS_WINDOWS = (
     "-Xarch_host -fsanitize=address -fsanitize-address-use-after-return=never "
     "-fno-omit-frame-pointer -g -O1 -D_DISABLE_STL_ANNOTATION=1")
 
+# CMAKE_CXX_FLAGS of a Windows tree before the ASan flags; it holds no -fsycl, see cli/README.md.
+BASE_CXX_FLAGS = ""
+
 # The C driver has no device pass and takes no -Xarch_host; see cli/README.md.
 ASAN_C_FLAGS_WINDOWS = ("-fsanitize=address -fsanitize-address-use-after-return=never "
                         "-fno-omit-frame-pointer -g -O1")
@@ -145,6 +148,7 @@ def _flags_fingerprint() -> str:
     not working. Folding them into the stamp makes an edit here self-healing.
     """
     material = " ".join([
+        BASE_CXX_FLAGS,
         ASAN_FLAGS,
         ASAN_FLAGS_WINDOWS,
         ASAN_C_FLAGS_WINDOWS,
@@ -359,7 +363,6 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
                             tests: bool) -> list[str]:
     vcpkg = cfg.expand(cfg.vcpkg_root)
     triplet = cfg.vcpkg_triplet
-    asan_flags = f" {ASAN_FLAGS_WINDOWS}" if asan else ""
 
     # -DSR_SYCL_TOOLCHAIN is explicit so CMakeLists does not infer it; see cli/README.md.
     cxx = cfg.resolved_windows_compiler()
@@ -382,12 +385,10 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
         args.append(f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}")
     if cfg.rc_exe:
         args.append(f"-DCMAKE_RC_COMPILER={cfg.expand(cfg.rc_exe)}")
-    # acpp adds its own SYCL flags; -fsycl means something only to the clang-based drivers.
-    if cfg.toolchain == "adaptivecpp":
-        if asan:
-            args += [f"-DCMAKE_CXX_FLAGS={ASAN_FLAGS}"]
-    else:
-        args += [f"-DCMAKE_CXX_FLAGS=-fsycl{asan_flags}"]
+    # Always passed, so a tree configured with other flags is rewritten to these.
+    asan_flags = ASAN_FLAGS if cfg.toolchain == "adaptivecpp" else ASAN_FLAGS_WINDOWS
+    cxx_flags = " ".join(flag for flag in (BASE_CXX_FLAGS, asan_flags if asan else "") if flag)
+    args += [f"-DCMAKE_CXX_FLAGS={cxx_flags}"]
     return args
 
 
