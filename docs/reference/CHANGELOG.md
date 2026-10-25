@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-26 — sycl: Dropped `<sycl/sycl.hpp>` from `sycl_compat.hpp`, whose templates take the handler as a parameter (`sycl_compat.hpp`).
 - 2026-10-26 — execution: Dropped the unused `<sycl/sycl.hpp>` from three headers (`execution_engine.hpp`, `runtime_context.hpp`, `scheduler_execution_engine.hpp`).
 - 2026-10-26 — api: Dropped the unused `<sycl/sycl.hpp>` from four headers, so the buffer, state, interop and vocabulary headers compile without SYCL (`buffer.hpp`, `state.hpp`, `runtime.hpp`, `step_driver.hpp`).
 - 2026-10-26 — layering: Added a checker that the units each build file lists in `DEVICE_SOURCES` are exactly those that instantiate a kernel (`check_device_sources.py`).

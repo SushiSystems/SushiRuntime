@@ -30,7 +30,6 @@
 
 #include <type_traits>
 #include <utility>
-#include <sycl/sycl.hpp>
 
 namespace SushiRuntime
 {
