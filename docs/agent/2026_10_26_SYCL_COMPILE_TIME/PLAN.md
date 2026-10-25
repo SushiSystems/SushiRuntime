@@ -1,6 +1,6 @@
 # SYCL compile time: device passes only where a kernel is instantiated
 
-**Status:** Open — written 2026-10-26; S1 to S5 are executed in order and committed, nothing is built. The owner's build measures them.
+**Status:** Open — written 2026-10-26; S1 to S5 are committed and syntax-checked, nothing is built, and section 6 waits for the owner.
 
 ## 1. Goal
 
@@ -96,4 +96,5 @@ with `-fsycl`, the whole suite, and SushiBLAS, SushiAI and SushiEngine configure
 
 ## 7. Breaches and unneeded dependencies
 
-Each is named in `REPORT.md` with what became of it.
+Section 2 names each one found before the work; the orchestrator's report names what became of
+each.
