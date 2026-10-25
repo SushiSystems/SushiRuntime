@@ -36,6 +36,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/detail/device_pass.hpp>
 #include <SushiRuntime/api/detail/late_count_resolution.hpp>
 #include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/vocabulary/late_count.hpp>
@@ -58,6 +59,7 @@ namespace SushiRuntime
                                                  std::vector<BufferRegion> writes,
                                                  std::size_t width)
         {
+            require_device_pass<Fill>();
             NodeDescription description;
             description.reads = std::move(reads);
             description.writes = std::move(writes);

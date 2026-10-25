@@ -13,6 +13,7 @@ sushiruntime_add_module_tests(
         detail/test_callable_checks.cpp
         detail/test_callable_traits.cpp
         detail/test_device_fault.cpp
+        detail/test_device_pass.cpp
         detail/test_emit_captured.cpp
         detail/test_emit_device_sized.cpp
         detail/test_emit_dynamic.cpp

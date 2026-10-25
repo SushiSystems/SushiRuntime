@@ -37,6 +37,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/api/detail/device_fault.hpp>
+#include <SushiRuntime/api/detail/device_pass.hpp>
 #include <SushiRuntime/api/detail/late_controls.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
@@ -111,6 +112,7 @@ namespace SushiRuntime
         template <class F>
         inline void submit_live_range(sycl::handler& h, LiveRange range, const F& kernel)
         {
+            require_device_pass<F>();
             if (range.count == 0)
             {
                 h.single_task([]() {});
@@ -150,6 +152,7 @@ namespace SushiRuntime
                                        std::size_t capacity, std::uint32_t* fault,
                                        const F& kernel)
         {
+            require_device_pass<F>();
             const LateWindow window = read_late_window(controls);
             if (window.count_slot == nullptr && window.base_slot == nullptr)
             {

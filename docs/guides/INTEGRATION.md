@@ -21,8 +21,10 @@ Source: `tests/package/main.cpp`
 
 The library never sees that lambda. Three things follow.
 
-1. Every translation unit that records a graph is compiled by a SYCL compiler with SYCL
-   enabled. A conventional compiler produces no device code for the lambda.
+1. Every translation unit that records a kernel is compiled by a SYCL compiler with SYCL
+   enabled. A conventional compiler produces no device code for the lambda. Under DPC++, a unit
+   compiled without `-fsycl` that records a kernel through the API fails to compile on a
+   `static_assert` that names the flag.
 2. Your floating-point flags decide whether a replay is byte-equal. The library cannot promise
    that for arithmetic it did not compile, so the exported target carries the flags; see §4.
 3. The headers and the shared library come from one release. A `Detail` type that crosses into
@@ -295,8 +297,11 @@ edit in each.
 
 ## 7. Troubleshooting
 
+**"this translation unit launches a kernel and is compiled without -fsycl".** The unit records
+a kernel; compile it with `-fsycl`. See §1.
+
 **Link errors on kernel symbols, or "kernel not found" at run time.** A translation unit that
-records a graph was compiled without SYCL. See §1.
+records a kernel, or launches one on a queue itself, was compiled without SYCL. See §1.
 
 **A replay is not byte-equal between two builds.** Check that `SushiRuntime_DETERMINISTIC_FP`
 is `ON` in the package you consumed and that your build adds no fast-math flag. The tests named

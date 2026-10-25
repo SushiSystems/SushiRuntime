@@ -221,6 +221,18 @@ family checks the index the same way and a new launch adds one specialisation. A
 two shapes, with and without the shifted id. The callable is tested as a const object because a
 SYCL kernel is called through a const reference.
 
+## device_pass.hpp
+
+### require_device_pass
+
+require_device_pass<Kernel>() is called first by each template that hands a kernel to the
+handler: the three submit_launch() overloads, submit_live_range(), submit_late_window(),
+device_sized_node() and late_count_resolver_node(). Its `static_assert` fails when the DPC++
+headers are compiled without `-fsycl`, which is when `SYCL_LANGUAGE_VERSION` is undefined. Such a
+unit emits no device image, so its kernel would be missing at run time; the assertion moves that
+failure to the build. compiled_for_device_v<Kernel> is the answer it asserts, true on every other
+toolchain. A kernel the caller launches itself, through raw_kernel() or a queue, is not covered.
+
 ## emit_launch.hpp
 
 ### Launch traits

@@ -36,6 +36,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/detail/device_pass.hpp>
 #include <SushiRuntime/api/launch/extent.hpp>
 #include <SushiRuntime/api/launch/nd_range.hpp>
 #include <SushiRuntime/core/error.hpp>
@@ -220,6 +221,7 @@ namespace SushiRuntime
         void submit_launch(sycl::handler& handler, std::size_t count, const Fn& kernel,
                            Extra... extra)
         {
+            require_device_pass<Fn>();
             handler.parallel_for(sycl::range<1>(count), [kernel, extra...](sycl::id<1> index)
             {
                 kernel(index[0], extra...);
@@ -234,6 +236,7 @@ namespace SushiRuntime
         void submit_launch(sycl::handler& handler, const Extent<N>& extent, const Fn& kernel,
                            Extra... extra)
         {
+            require_device_pass<Fn>();
             const sycl::id<N> origin = extent.origin;
             handler.parallel_for(extent.extent, [kernel, origin, extra...](sycl::id<N> index)
             {
@@ -250,6 +253,7 @@ namespace SushiRuntime
         void submit_launch(sycl::handler& handler, const NdRange<N>& range, const Fn& kernel,
                            Extra... extra)
         {
+            require_device_pass<Fn>();
             if constexpr (std::is_invocable_v<const Fn&, sycl::nd_item<N>, sycl::id<N>,
                                               Extra...>)
             {

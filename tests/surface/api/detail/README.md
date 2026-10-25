@@ -39,6 +39,14 @@ and the count as given. `take_device_fault()` then returns an `InvalidGraph` err
 `4294967295` as the start of the window, clears the record, and returns nothing when asked again.
 The test is skipped where `std::size_t` is 32 bits wide.
 
+## test_device_pass.cpp
+
+The file covers `Detail::compiled_for_device_v`.
+
+### `AnswersFalseOnlyForDpcppWithoutFsycl`
+
+The value is false when the DPC++ headers are compiled without `-fsycl`, and true otherwise.
+
 ## test_emit_launch.cpp
 
 The file covers `Detail::launch_reach()` for a rank-1 launch whose origin plus size does not fit

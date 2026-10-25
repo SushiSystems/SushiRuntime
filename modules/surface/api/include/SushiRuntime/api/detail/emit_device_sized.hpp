@@ -36,6 +36,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/detail/device_pass.hpp>
 #include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/graph/device_sized.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
@@ -56,6 +57,7 @@ namespace SushiRuntime
                                           std::vector<BufferRegion> writes,
                                           DeviceSized launch, F kernel, std::size_t width)
         {
+            require_device_pass<F>();
             NodeDescription description;
             description.reads = std::move(reads);
             description.writes = std::move(writes);
