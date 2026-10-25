@@ -2,8 +2,9 @@
 
 The checkers every Sushi Systems repository carries, copied whole from `tools/` in SushiSkills.
 A rule is fixed there first and copied here with `checking/copy_shared_tools.py`; `settings.py`
-holds what differs. `naming/`, `packaging/`, `tests/test_check_naming.py` and
-`tests/test_tier_table.py` are this repository's own.
+holds what differs. `naming/`, `packaging/`, `layering/check_device_sources.py`,
+`tests/test_check_naming.py`, `tests/test_check_device_sources.py` and `tests/test_tier_table.py`
+are this repository's own.
 
 | Path | Checks | Takes |
 | --- | --- | --- |
@@ -24,6 +25,7 @@ holds what differs. `naming/`, `packaging/`, `tests/test_check_naming.py` and
 | `documentation/check_design_format.py` | Design documents: the five sections in order, a status line of at most 160 characters, the phase table and its states, no commit hash, no line that dates built or merged work | Repository root |
 | `documentation/check_docs_truth.py` | The manual against the source: named symbols, cited paths, example sources, history words, page length, duplicated passages, em dashes, the allow-list | Repository root, `--source` |
 | `layering/check_layering.py` | Declared tiers and domains, upward includes from a module or its tests, cross-domain and unlisted same-tier includes, reaches into another module's `source/`, dependencies the build file lists, internal headers in installed ones | Repository root |
+| `layering/check_device_sources.py` | The units a declaring call lists in `DEVICE_SOURCES` are exactly those that instantiate a kernel: a `parallel_for` or `single_task` in the unit or a quoted header it includes, or, in a test or an application that includes an API header, a call that records a kernel (`add`, `add_rule`, `kernel`, `resolve`, a `Detail` emitter). The library's sources are read for the first kind only; `api/detail/device_pass.hpp` stops the build of one that records a kernel. Lists built from CMake variables are not read | Repository root |
 | `naming/check_naming.py` | C++: `namespace detail`, the I prefix on classes, `get_` declarations, `K_` constants, enumerator case; `--short-names` adds short identifiers in `include/` | Files or folders, default `modules` |
 | `licensing/write_license_block.py` | Nothing; writes the license block of `source-comments` into every tracked source file, or lists the files that lack it with `--report` | Repository root, `--project` |
 | `packaging/verify_installed_package.py` | That an installed SushiRuntime builds and runs a consumer with only the install prefix on the loader path; `sr test --label package` runs it | Install prefix |

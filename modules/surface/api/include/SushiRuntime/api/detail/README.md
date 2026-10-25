@@ -231,7 +231,8 @@ device_sized_node() and late_count_resolver_node(). Its `static_assert` fails wh
 headers are compiled without `-fsycl`, which is when `SYCL_LANGUAGE_VERSION` is undefined. Such a
 unit emits no device image, so its kernel would be missing at run time; the assertion moves that
 failure to the build. compiled_for_device_v<Kernel> is the answer it asserts, true on every other
-toolchain. A kernel the caller launches itself, through raw_kernel() or a queue, is not covered.
+toolchain. A kernel the caller launches itself, through raw_kernel() or a queue, is not covered;
+in this repository `tools/layering/check_device_sources.py` covers it.
 
 ## emit_launch.hpp
 

@@ -31,7 +31,7 @@ A test unit that instantiates a kernel, by recording one through the API or by c
 `parallel_for` or `single_task` itself, is listed in `DEVICE_SOURCES` beside its program's
 sources. Only those units compile with `-fsycl` and the device targets; the others compile for
 the host, and a kernel recorded in one of them stops the build on the assertion of
-`api/detail/device_pass.hpp`.
+`api/detail/device_pass.hpp`. `tools/layering/check_device_sources.py` checks the lists.
 
 ## Sizes
 
