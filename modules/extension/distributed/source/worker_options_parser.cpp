@@ -38,6 +38,8 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/process_environment/environment.hpp>
+
 namespace SushiRuntime
 {
     namespace Distributed
@@ -479,6 +481,11 @@ namespace SushiRuntime
                 return refuse("no master given; pass --master host:port or set SR_MASTER");
 
             return result;
+        }
+
+        WorkerOptionsResult parse_worker_options(SushiRuntime::span<const char* const> arguments)
+        {
+            return parse_worker_options(arguments, read_environment);
         }
 
     } // namespace Distributed

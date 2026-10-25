@@ -172,6 +172,18 @@ TEST(Medium_WorkerOptionsParserTest, EmptyVariableCountsAsUnset)
     EXPECT_TRUE(result.options.name.empty());
 }
 
+/** @brief Tests that the overload over the process's environment reads the flags it is given. */
+TEST(Medium_WorkerOptionsParserTest, ProcessEnvironmentOverloadReadsTheFlags)
+{
+    const std::vector<const char*> arguments = {"--master", "node7:7000", "--name", "w1"};
+    const WorkerOptionsResult result =
+        parse_worker_options(span<const char* const>(arguments.data(), arguments.size()));
+
+    ASSERT_EQ(result.status, WorkerOptionsStatus::Run) << result.message;
+    EXPECT_EQ(result.options.master.host, "node7");
+    EXPECT_EQ(result.options.name, "w1");
+}
+
 /** @brief Tests that `--help` wins without a master and that its text names every flag. */
 TEST(Medium_WorkerOptionsParserTest, HelpListsEveryFlagAndVariable)
 {

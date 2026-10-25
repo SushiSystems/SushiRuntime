@@ -43,7 +43,7 @@ namespace SushiRuntime
     {
         /**
          * @brief Names the callable that returns an environment variable's value.
-         * @return Nothing when the variable is unset; read_environment() has this shape.
+         * @return Nothing when the variable is unset; an empty string when it is set to none.
          */
         using EnvironmentReader = std::function<std::optional<std::string>(const char* name)>;
 
@@ -84,6 +84,14 @@ namespace SushiRuntime
         [[nodiscard]] SUSHIRUNTIME_API WorkerOptionsResult parse_worker_options(
             SushiRuntime::span<const char* const> arguments,
             const EnvironmentReader& environment);
+
+        /**
+         * @brief Reads a worker's settings as the overload above does, from this process's
+         *        environment.
+         * @param arguments The command line without the program's name; no entry is null.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API WorkerOptionsResult parse_worker_options(
+            SushiRuntime::span<const char* const> arguments);
 
     } // namespace Distributed
 } // namespace SushiRuntime

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-25 — distributed: Added a `parse_worker_options()` overload that reads the process's own environment, so a worker program needs no internal header (`worker_options_parser.hpp`).
 - 2026-10-24 — api: Breaking change: Made `Graph::clear()` free the compiled plan and everything its task bodies captured, through an exported `PlanCache::discard()` (`plan_cache.hpp`).
 - 2026-10-24 — topology: Fixed the host identity queries missing their export, so a program outside the library could not link them (`host_identity.hpp`).
 - 2026-10-24 — execution: Fixed the in-order chain ignoring a node's stated device and running host bodies in turn that the plan leaves unordered (`chain_plan.cpp`).

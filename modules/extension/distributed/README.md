@@ -620,7 +620,8 @@ matches a placement rule's target against them; they survive a reconnect
 (`offload_coordination/README.md`). A
 value follows its flag as the next argument or after `=`. `parse_worker_options()` holds this
 table once; the usage text of `--help` is generated from it. The parser takes the environment
-through an `EnvironmentReader`, and `read_environment()` is the one it gets in a worker process.
+through an `EnvironmentReader`; the overload without one reads the process's own environment, and
+is the one a worker program calls.
 
 The default name is what `host_name()` of the socket seam returns, the name the OS gives the
 machine; a machine that reports none is named `worker`.

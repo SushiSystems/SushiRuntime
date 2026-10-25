@@ -49,7 +49,6 @@
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/network_socket/socket.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
-#include <SushiRuntime/process_environment/environment.hpp>
 #include <SushiRuntime/process_environment/stop_signal.hpp>
 
 #include <SushiRuntime/distributed/worker_options_parser.hpp>
@@ -197,8 +196,7 @@ namespace SushiRuntime
             {
                 const std::size_t count = argc > 1 ? static_cast<std::size_t>(argc - 1) : 0;
                 parsed = parse_worker_options(
-                    SushiRuntime::span<const char* const>(count != 0 ? argv + 1 : nullptr, count),
-                    read_environment);
+                    SushiRuntime::span<const char* const>(count != 0 ? argv + 1 : nullptr, count));
             }
             catch (const std::exception& error)
             {
