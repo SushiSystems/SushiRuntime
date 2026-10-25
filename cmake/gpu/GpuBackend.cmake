@@ -8,7 +8,7 @@
 #
 # Single responsibility: provide the vocabulary a vendor backend uses to declare
 # how it offloads, and one finalize step that renders those declarations into the
-# actual compiler/linker flags for the active SYCL toolchain. It knows NOTHING
+# compiler/linker flags of the active SYCL toolchain, published on one target. It knows NOTHING
 # about any specific vendor — CUDA/ROCm/Intel/CPU each live in their own file and
 # call the primitives below. Adding a vendor never touches this file (Open-Closed).
 #
@@ -219,13 +219,12 @@ endmacro()
 
 # --- Finalize: render accumulators into flags ----------------------------------
 #
-# A macro so the directory-scope add_compile_options/add_link_options land in the
-# caller's (root) scope and cascade to add_subdirectory() exactly like the former
-# global flags. The runtime's own sources take the device flags at directory scope; the
-# same flags are published on the sushiruntime_gpu_offload INTERFACE target
-# (SushiRuntime::gpu_offload) for consumers outside this directory.
+# A macro so ACPP_TARGETS and the messages land in the caller's (root) scope. The device
+# flags are published on the sushiruntime_gpu_offload INTERFACE target
+# (SushiRuntime::gpu_offload) and on nothing else: cmake/SushiRuntimeSyclTarget.cmake reads
+# them for this tree's device units and binaries, and a consumer reads them the same way.
 macro(sushiruntime_gpu_finalize)
-    # sushiruntime_gpu_offload carries the device targets to consumers outside this directory.
+    # sushiruntime_gpu_offload carries the device targets to this tree and to its consumers.
     if(NOT TARGET sushiruntime_gpu_offload)
         add_library(sushiruntime_gpu_offload INTERFACE)
         add_library(SushiRuntime::gpu_offload ALIAS sushiruntime_gpu_offload)
@@ -243,8 +242,6 @@ macro(sushiruntime_gpu_finalize)
     elseif(SR_SYCL_TOOLCHAIN STREQUAL "intel-llvm" OR SR_SYCL_TOOLCHAIN STREQUAL "oneapi")
         if(SR_GPU_OFFLOAD_ADDED)
             string(REPLACE ";" "," _sr_targets "${SR_GPU_CLANG_TRIPLES}")
-            add_compile_options(-fsycl-targets=${_sr_targets} ${SR_GPU_CLANG_OPTIONS})
-            add_link_options(-fsycl-targets=${_sr_targets} ${SR_GPU_CLANG_OPTIONS})
             target_compile_options(sushiruntime_gpu_offload INTERFACE
                 -fsycl-targets=${_sr_targets} ${SR_GPU_CLANG_OPTIONS})
             target_link_options(sushiruntime_gpu_offload INTERFACE

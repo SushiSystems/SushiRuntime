@@ -18,4 +18,6 @@ sushiruntime_add_module_tests(
         test_task_scheduler.cpp
         test_thermal_proxy_strategy.cpp
         test_worker_pool_settings.cpp
-        test_workload_coordinator.cpp)
+        test_workload_coordinator.cpp
+    DEVICE_SOURCES
+        test_range_task.cpp)

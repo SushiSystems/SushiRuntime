@@ -16,9 +16,10 @@
 #   * on include (BEFORE project): toolchain selection, compiler inference, and
 #     the oneAPI Windows linker fixups the compiler probe needs.
 #   * sushiruntime_sycl_configure() (AFTER project): find_package(SYCL) dispatch, the
-#     add_sycl_to_target() shim, and the clang --gcc-toolchain pin.
-# Keeping GPU offload target selection OUT of here is deliberate: that is the GPU
-# backend's job (see cmake/gpu/), so a new vendor never touches this file.
+#     add_sycl_to_target() shim, the SYCL headers on IntelSYCL::SYCL_CXX, and the clang
+#     --gcc-toolchain pin.
+# GPU offload target selection is the GPU backend's job (cmake/gpu/), and which units compile
+# for the device is cmake/SushiRuntimeSyclTarget.cmake's; neither lives here.
 
 # --- Phase 1 (pre-project): toolchain selection --------------------------------
 
@@ -117,7 +118,7 @@ endif()
 # --- Phase 2 (post-project): find_package(SYCL) + shims ------------------------
 #
 # A macro (not a function) so find_package's discovered commands/targets and the
-# directory-scope compile/link options land in the caller's scope.
+# --gcc-toolchain options land in the caller's scope.
 macro(sushiruntime_sycl_configure)
     # Both find_package(AdaptiveCpp) and find_package(IntelSYCL) provide the same
     # add_sycl_to_target() command, so src/CMakeLists.txt stays toolchain-neutral.
@@ -144,11 +145,26 @@ macro(sushiruntime_sycl_configure)
 
     elseif(SR_SYCL_TOOLCHAIN STREQUAL "intel-llvm")
         # intel/llvm nightly path: clang++ -fsycl. The project's primary toolchain.
-        add_compile_options(-fsycl)
-        add_link_options(-fsycl)
         # Stub the IntelSYCL target/command so src/CMakeLists.txt links unchanged.
         if(NOT TARGET IntelSYCL::SYCL_CXX)
             add_library(IntelSYCL::SYCL_CXX INTERFACE IMPORTED GLOBAL)
+        endif()
+        # SR_SYCL_INCLUDE_DIR: where <sycl/sycl.hpp> lives, derived from the compiler. -fsycl
+        # adds it to the search path; a unit compiled without -fsycl finds it through the
+        # stub, whose include directories are system ones because the stub is imported.
+        if(NOT DEFINED SR_SYCL_INCLUDE_DIR)
+            get_filename_component(_sr_sycl_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+            get_filename_component(_sr_sycl_root "${_sr_sycl_bin}" DIRECTORY)
+            if(EXISTS "${_sr_sycl_root}/include/sycl/sycl.hpp")
+                set(SR_SYCL_INCLUDE_DIR "${_sr_sycl_root}/include" CACHE INTERNAL
+                    "SYCL headers, for translation units compiled without -fsycl")
+            endif()
+            unset(_sr_sycl_bin)
+            unset(_sr_sycl_root)
+        endif()
+        if(SR_SYCL_INCLUDE_DIR)
+            set_property(TARGET IntelSYCL::SYCL_CXX APPEND PROPERTY
+                INTERFACE_INCLUDE_DIRECTORIES "${SR_SYCL_INCLUDE_DIR}")
         endif()
         if(NOT COMMAND add_sycl_to_target)
             function(add_sycl_to_target)

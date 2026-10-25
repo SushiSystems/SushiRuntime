@@ -6,10 +6,11 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-# Each example is one self-contained binary linked against the library with the
-# SYCL flags applied. The standalone tutorials always build; the distributed demo
-# only when the master-worker layer is enabled (it links the distributed entry
-# points). Target names follow the file names: quickstart.cpp -> sr_quickstart,
+# Each example is one self-contained binary linked against the library, with the
+# SYCL policy of cmake/SushiRuntimeSyclTarget.cmake applied. The standalone
+# tutorials always build; the distributed demo only when the master-worker layer
+# is enabled (it links the distributed entry points). Target names follow the
+# file names: quickstart.cpp -> sr_quickstart,
 # <topic>_demo.cpp -> sr_<topic>_demo. The adapter example is the one target
 # built from two source files, both under adapter/.
 
@@ -41,17 +42,27 @@ if(WIN32)
     add_dependencies(sushiruntime_examples_runtime_dll sushiruntime)
 endif()
 
-# Builds one example target from the source files that follow its name, applying
-# the C++17 standard, the SYCL flags, the library link, and the Windows
-# runtime-DLL copy.
+# sushiruntime_add_example(<name> DEVICE_SOURCES <file>... [SOURCES <file>...])
+#   Builds one example from its DEVICE_SOURCES, the units that instantiate a kernel, and its
+#   SOURCES, the units that do not, with C++17, the library link and the Windows DLL staging.
 function(sushiruntime_add_example name)
-    add_executable(${name} ${ARGN})
+    cmake_parse_arguments(ARG "" "" "SOURCES;DEVICE_SOURCES" ${ARGN})
+    set(host_sources "")
+    set(device_sources "")
+    foreach(source IN LISTS ARG_SOURCES)
+        list(APPEND host_sources "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+    endforeach()
+    foreach(source IN LISTS ARG_DEVICE_SOURCES)
+        list(APPEND device_sources "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+    endforeach()
+    add_executable(${name} ${device_sources} ${host_sources})
     sushiruntime_apply_build_policy(${name})
     target_link_libraries(${name} PRIVATE SushiRuntime::SushiRuntime)
     set_target_properties(${name} PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON)
-    add_sycl_to_target(TARGET ${name} SOURCES ${ARGN})
+    sushiruntime_apply_sycl(${name}
+        SOURCES ${device_sources} ${host_sources} DEVICE_SOURCES ${device_sources})
     if(WIN32)
         # A dependency, so the staging runs before this target links and its
         # applocal pass reads the directory.
@@ -59,24 +70,24 @@ function(sushiruntime_add_example name)
     endif()
 endfunction()
 
-sushiruntime_add_example(sr_quickstart             quickstart.cpp)
-sushiruntime_add_example(sr_vecadd_demo            vecadd_demo.cpp)
-sushiruntime_add_example(sr_stencil_demo           stencil_demo.cpp)
-sushiruntime_add_example(sr_coupled_fields_demo    coupled_fields_demo.cpp)
-sushiruntime_add_example(sr_game_engine_demo       game_engine_demo.cpp)
-sushiruntime_add_example(sr_streaming_world_demo   streaming_world_demo.cpp)
-sushiruntime_add_example(sr_operating_path_demo    operating_path_demo.cpp)
-sushiruntime_add_example(sr_errors_demo            errors_demo.cpp)
-sushiruntime_add_example(sr_tasks_demo             tasks_demo.cpp)
-sushiruntime_add_example(sr_stepping_demo          stepping_demo.cpp)
-sushiruntime_add_example(sr_data_access_demo       data_access_demo.cpp)
-sushiruntime_add_example(sr_extension_demo         extension_demo.cpp)
-sushiruntime_add_example(sr_host_hooks_demo        host_hooks_demo.cpp)
+sushiruntime_add_example(sr_quickstart DEVICE_SOURCES quickstart.cpp)
+sushiruntime_add_example(sr_vecadd_demo DEVICE_SOURCES vecadd_demo.cpp)
+sushiruntime_add_example(sr_stencil_demo DEVICE_SOURCES stencil_demo.cpp)
+sushiruntime_add_example(sr_coupled_fields_demo DEVICE_SOURCES coupled_fields_demo.cpp)
+sushiruntime_add_example(sr_game_engine_demo DEVICE_SOURCES game_engine_demo.cpp)
+sushiruntime_add_example(sr_streaming_world_demo DEVICE_SOURCES streaming_world_demo.cpp)
+sushiruntime_add_example(sr_operating_path_demo DEVICE_SOURCES operating_path_demo.cpp)
+sushiruntime_add_example(sr_errors_demo DEVICE_SOURCES errors_demo.cpp)
+sushiruntime_add_example(sr_tasks_demo DEVICE_SOURCES tasks_demo.cpp)
+sushiruntime_add_example(sr_stepping_demo DEVICE_SOURCES stepping_demo.cpp)
+sushiruntime_add_example(sr_data_access_demo DEVICE_SOURCES data_access_demo.cpp)
+sushiruntime_add_example(sr_extension_demo DEVICE_SOURCES extension_demo.cpp)
+sushiruntime_add_example(sr_host_hooks_demo DEVICE_SOURCES host_hooks_demo.cpp)
 sushiruntime_add_example(sr_adapter_demo
-    adapter/adapter_demo.cpp
-    adapter/sushiruntime_adapter.cpp)
+    DEVICE_SOURCES adapter/sushiruntime_adapter.cpp
+    SOURCES adapter/adapter_demo.cpp)
 
 if(SR_ENABLE_DISTRIBUTED)
-    sushiruntime_add_example(sr_distributed_demo   distributed_demo.cpp)
-    sushiruntime_add_example(sr_distributed_worker distributed_worker.cpp)
+    sushiruntime_add_example(sr_distributed_demo DEVICE_SOURCES distributed_demo.cpp)
+    sushiruntime_add_example(sr_distributed_worker DEVICE_SOURCES distributed_worker.cpp)
 endif()

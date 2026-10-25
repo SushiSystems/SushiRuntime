@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-26 — cmake: Compiled for the device only the units a target lists in `DEVICE_SOURCES`; every other unit compiles for the host (`SushiRuntimeSyclTarget.cmake`, `Sycl.cmake`, `GpuBackend.cmake`).
 - 2026-10-26 — api: Made a kernel recorded in a DPC++ unit compiled without `-fsycl` fail to compile on `Detail::require_device_pass()` instead of at run time (`device_pass.hpp`, `emit_launch.hpp`, `late_window.hpp`).
 - 2026-10-25 — distributed: Made a worker fail a task, with the runtime's message, when borrowing a cached view is refused (`dispatch_recorder.cpp`).
 - 2026-10-25 — api: Made the late-bound slot check and `Interop::borrow()` share one `Detail::usm_kind_of()`, which answers runtime-made memory from its record without a SYCL call (`context_memory.hpp`).

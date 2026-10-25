@@ -21,4 +21,9 @@ sushiruntime_add_module_tests(
         test_worker_main.cpp
         test_worker_options_parser.cpp
     BENCHMARK_SOURCES
-        benchmark_cluster.cpp)
+        benchmark_cluster.cpp
+    DEVICE_SOURCES
+        benchmark_cluster.cpp
+        test_distributed.cpp
+        test_registered_task/test_nested_run_probe.cpp
+        test_registered_task/test_registered_task.cpp)

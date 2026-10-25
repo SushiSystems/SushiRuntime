@@ -49,6 +49,7 @@ function(sushiruntime_compose_library)
     target_link_libraries(sushiruntime_internal_headers INTERFACE sushiruntime_umbrella)
 
     sushiruntime_apply_build_policy(sushiruntime)
+    sushiruntime_apply_sycl(sushiruntime)
 
     # The floating-point contract is PUBLIC: the kernels are header templates a consumer
     # instantiates in its own translation units. See cmake/Determinism.cmake.

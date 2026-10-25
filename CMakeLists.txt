@@ -60,6 +60,10 @@ include("${SR_CMAKE_DIR}/gpu/GpuBackend.cmake")
 include("${SR_CMAKE_DIR}/gpu/DetectGpu.cmake")
 sushiruntime_gpu_finalize()
 
+# The SYCL policy every target of the tree applies: which units compile for the device, and
+# what a binary links with. It reads the device targets finalize published.
+include("${SR_CMAKE_DIR}/SushiRuntimeSyclTarget.cmake")
+
 # Declares the install layout (GNUInstallDirs) the library target reads, and the
 # function that installs it once the modules exist.
 include("${SR_CMAKE_DIR}/SushiRuntimeInstall.cmake")

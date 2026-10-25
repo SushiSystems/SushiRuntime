@@ -60,13 +60,15 @@ if(WIN32)
     add_dependencies(sushiruntime_tests_runtime_dll sushiruntime)
 endif()
 
-# sushiruntime_add_test_program(NAME <target> [BENCHMARK] [MODULE <module>] SOURCES <file>...)
+# sushiruntime_add_test_program(NAME <target> [BENCHMARK] [MODULE <module>] SOURCES <file>...
+#                               [DEVICE_SOURCES <file>...])
 #
 # A BENCHMARK program is built and not registered with CTest; `sr bench` runs it. Any other
 # program registers Small_* with 60 seconds, Medium_* with 300 and Large_* with 900. MODULE
-# adds the module's name as a label on every test of the program.
+# adds the module's name as a label on every test of the program. DEVICE_SOURCES names the
+# SOURCES that instantiate a kernel, the only units compiled for the device.
 function(sushiruntime_add_test_program)
-    cmake_parse_arguments(ARG "BENCHMARK" "NAME;MODULE" "SOURCES" ${ARGN})
+    cmake_parse_arguments(ARG "BENCHMARK" "NAME;MODULE" "SOURCES;DEVICE_SOURCES" ${ARGN})
     if("${ARG_NAME}" STREQUAL "" OR NOT ARG_SOURCES)
         message(FATAL_ERROR "sushiruntime_add_test_program(): NAME and SOURCES are required.")
     endif()
@@ -80,7 +82,7 @@ function(sushiruntime_add_test_program)
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
         RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/tests")
-    add_sycl_to_target(TARGET ${ARG_NAME} SOURCES ${ARG_SOURCES})
+    sushiruntime_apply_sycl(${ARG_NAME} SOURCES ${ARG_SOURCES} DEVICE_SOURCES ${ARG_DEVICE_SOURCES})
     if(WIN32)
         add_dependencies(${ARG_NAME} sushiruntime_tests_runtime_dll)
     endif()
@@ -141,19 +143,28 @@ function(sushiruntime_add_test_program)
 endfunction()
 
 # sushiruntime_add_module_tests(MODULE <module> [SOURCES <file>...]
-#                               [BENCHMARK_SOURCES <file>...])
+#                               [BENCHMARK_SOURCES <file>...] [DEVICE_SOURCES <file>...])
 #
 # Called from tests/<tier>/<module>/CMakeLists.txt, with paths relative to that folder.
 # SOURCES build sr_<module>_tests; BENCHMARK_SOURCES build sr_<module>_benchmarks under
-# SR_BUILD_BENCHMARKS. Both programs include the helpers of the test folder by a quoted name,
-# and never a header under modules/<tier>/<module>/source/: a brick a test needs is a module.
+# SR_BUILD_BENCHMARKS. DEVICE_SOURCES names the units of either list that instantiate a
+# kernel, the only units compiled for the device. Both programs include the helpers of the
+# test folder by a quoted name, and never a header under modules/<tier>/<module>/source/: a
+# brick a test needs is a module.
 function(sushiruntime_add_module_tests)
-    cmake_parse_arguments(ARG "" "MODULE" "SOURCES;BENCHMARK_SOURCES" ${ARGN})
+    cmake_parse_arguments(ARG "" "MODULE" "SOURCES;BENCHMARK_SOURCES;DEVICE_SOURCES" ${ARGN})
     if("${ARG_MODULE}" STREQUAL "" OR (NOT ARG_SOURCES AND NOT ARG_BENCHMARK_SOURCES))
         message(FATAL_ERROR
             "sushiruntime_add_module_tests(): MODULE and SOURCES or BENCHMARK_SOURCES are "
             "required.")
     endif()
+    foreach(source IN LISTS ARG_DEVICE_SOURCES)
+        if(NOT source IN_LIST ARG_SOURCES AND NOT source IN_LIST ARG_BENCHMARK_SOURCES)
+            message(FATAL_ERROR
+                "sushiruntime_add_module_tests(${ARG_MODULE}): DEVICE_SOURCES names '${source}', "
+                "which neither SOURCES nor BENCHMARK_SOURCES lists.")
+        endif()
+    endforeach()
     set(programs "")
     if(ARG_SOURCES)
         list(APPEND programs "sr_${ARG_MODULE}_tests|SOURCES")
@@ -166,14 +177,20 @@ function(sushiruntime_add_module_tests)
         list(GET parts 0 name)
         list(GET parts 1 list_name)
         set(sources "")
+        set(device_sources "")
         foreach(source IN LISTS ARG_${list_name})
             list(APPEND sources "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+            if(source IN_LIST ARG_DEVICE_SOURCES)
+                list(APPEND device_sources "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+            endif()
         endforeach()
         if(list_name STREQUAL "BENCHMARK_SOURCES")
             sushiruntime_add_test_program(
-                NAME "${name}" BENCHMARK MODULE "${ARG_MODULE}" SOURCES ${sources})
+                NAME "${name}" BENCHMARK MODULE "${ARG_MODULE}" SOURCES ${sources}
+                DEVICE_SOURCES ${device_sources})
         else()
-            sushiruntime_add_test_program(NAME "${name}" MODULE "${ARG_MODULE}" SOURCES ${sources})
+            sushiruntime_add_test_program(NAME "${name}" MODULE "${ARG_MODULE}" SOURCES ${sources}
+                DEVICE_SOURCES ${device_sources})
         endif()
         # A test reaches its module through the include roots only; source/ stays private.
         target_include_directories("${name}" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

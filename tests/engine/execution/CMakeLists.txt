@@ -16,4 +16,12 @@ sushiruntime_add_module_tests(
         test_scheduler_execution_engine.cpp
     BENCHMARK_SOURCES
         benchmark_runtime_context.cpp
-        benchmark_scheduler_execution_engine.cpp)
+        benchmark_scheduler_execution_engine.cpp
+    DEVICE_SOURCES
+        benchmark_runtime_context.cpp
+        benchmark_scheduler_execution_engine.cpp
+        test_chain_plan.cpp
+        test_chain_run.cpp
+        test_execution_engine.cpp
+        test_runtime_context.cpp
+        test_scheduler_execution_engine.cpp)

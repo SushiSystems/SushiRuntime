@@ -27,6 +27,12 @@ The code the tests of several modules share is in internal modules that only the
 One function, `sushiruntime_add_test_program` in `cmake/SushiRuntimeTests.cmake`, builds every
 program, so each is linked, placed and registered the same way.
 
+A test unit that instantiates a kernel, by recording one through the API or by calling
+`parallel_for` or `single_task` itself, is listed in `DEVICE_SOURCES` beside its program's
+sources. Only those units compile with `-fsycl` and the device targets; the others compile for
+the host, and a kernel recorded in one of them stops the build on the assertion of
+`api/detail/device_pass.hpp`.
+
 ## Sizes
 
 A test's size is its CTest label, taken from the prefix of its GoogleTest suite name, never from

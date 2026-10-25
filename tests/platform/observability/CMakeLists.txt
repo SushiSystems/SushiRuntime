@@ -9,4 +9,6 @@ sushiruntime_add_module_tests(
     SOURCES
         test_event_timestamps.cpp
         test_profiling_ledger.cpp
-        test_transfer_counters.cpp)
+        test_transfer_counters.cpp
+    DEVICE_SOURCES
+        test_event_timestamps.cpp)

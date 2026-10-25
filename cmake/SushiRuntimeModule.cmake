@@ -89,7 +89,7 @@ function(sushiruntime_add_header_check)
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
         POSITION_INDEPENDENT_CODE ON)
-    add_sycl_to_target(TARGET ${check} SOURCES ${units})
+    sushiruntime_apply_sycl(${check} SOURCES ${units})
 endfunction()
 
 # sushiruntime_add_exported_module(NAME <module> INCLUDE_ROOT <dir> [DEPENDS <module>...]
@@ -130,13 +130,15 @@ endfunction()
 # sushiruntime_add_module(
 #     NAME <module> TIER <tier>
 #     [INTERNAL] [HEADER_ONLY] [SYCL]
-#     [SOURCES <file under source/>...]
+#     [SOURCES <file under source/>...] [DEVICE_SOURCES <file under source/>...]
 #     [DEPENDS <module>...] [PRIVATE_DEPENDS <module>...]
 #     [EXTERNAL <third-party target>...] [PUBLIC_EXTERNAL <library target>...]
 #     [HEADER_CHECK_EXCLUDE <header path under include/>...])
 #
 # DEPENDS are the modules the public headers include; PRIVATE_DEPENDS the ones only
-# source/ includes. SYCL marks a module whose sources include a SYCL header.
+# source/ includes. SYCL marks a module whose sources include a SYCL header. DEVICE_SOURCES
+# names the SOURCES that instantiate a kernel, the only units compiled for the device
+# (cmake/SushiRuntimeSyclTarget.cmake).
 # INTERNAL marks a module whose headers are for the other modules of the library: its
 # include root reaches them and the tests, and is not installed. A module without the mark
 # is installed, and may name an INTERNAL module under PRIVATE_DEPENDS only.
@@ -147,8 +149,10 @@ endfunction()
 # TEST_ONLY marks an INTERNAL module whose sources build into the test programs and never
 # into the library.
 function(sushiruntime_add_module)
+    set(list_keywords SOURCES DEVICE_SOURCES DEPENDS PRIVATE_DEPENDS EXTERNAL PUBLIC_EXTERNAL
+        HEADER_CHECK_EXCLUDE)
     cmake_parse_arguments(ARG "INTERNAL;HEADER_ONLY;SYCL;TEST_ONLY" "NAME;TIER"
-        "SOURCES;DEPENDS;PRIVATE_DEPENDS;EXTERNAL;PUBLIC_EXTERNAL;HEADER_CHECK_EXCLUDE" ${ARGN})
+        "${list_keywords}" ${ARGN})
     if("${ARG_NAME}" STREQUAL "" OR "${ARG_TIER}" STREQUAL "")
         message(FATAL_ERROR "sushiruntime_add_module(): NAME and TIER are required.")
     endif()
@@ -180,6 +184,10 @@ function(sushiruntime_add_module)
         message(FATAL_ERROR
             "sushiruntime_add_module(${ARG_NAME}): no SOURCES; mark it HEADER_ONLY.")
     endif()
+    set(device_sources "")
+    foreach(source IN LISTS ARG_DEVICE_SOURCES)
+        list(APPEND device_sources "${CMAKE_CURRENT_SOURCE_DIR}/source/${source}")
+    endforeach()
 
     foreach(dependency IN LISTS ARG_DEPENDS ARG_PRIVATE_DEPENDS)
         sushiruntime_check_module_edge("${ARG_NAME}" "${dependency}")
@@ -246,9 +254,11 @@ function(sushiruntime_add_module)
             POSITION_INDEPENDENT_CODE ON
             CXX_VISIBILITY_PRESET hidden
             VISIBILITY_INLINES_HIDDEN ON)
+        set(sycl_sources "")
         if(ARG_SYCL)
-            add_sycl_to_target(TARGET ${objects} SOURCES ${sources})
+            set(sycl_sources ${sources})
         endif()
+        sushiruntime_apply_sycl(${objects} SOURCES ${sycl_sources} DEVICE_SOURCES ${device_sources})
         if(ARG_TEST_ONLY)
             target_link_libraries(${objects} PRIVATE sushiruntime_internal_headers)
             set_property(GLOBAL APPEND PROPERTY SUSHIRUNTIME_TEST_OBJECT_TARGETS ${objects})
