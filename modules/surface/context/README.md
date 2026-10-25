@@ -21,7 +21,7 @@ It depends on the C++ standard library and on no other module of the repository.
 
 ### Context
 
-`Detail::Context` is declared and never defined. A handle holds a
+`Detail::Context` is declared here and defined only in `context_access.cpp`. A handle holds a
 `std::shared_ptr<Detail::Context>` and reads nothing through it, so no installed header names a
 type of the engine and the engine can rename or reshape its context without one changing. The
 `context_access` module is the one place that converts between this name and the engine's

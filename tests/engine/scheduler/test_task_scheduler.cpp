@@ -237,7 +237,7 @@ namespace NodePlacementTests
     TEST_F(Medium_NodePlacement, AStatedPlacementInTheOwnersContextOutranksTheOwner)
     {
         int cell = 0;
-        memory_.adopt(&cell, 1, sizeof(cell));
+        memory_.adopt(&cell, 1, sizeof(cell), std::nullopt);
 
         std::optional<sycl::queue> handed;
         const sushi_ptr<Node> unplaced = make_recording_node(handed);

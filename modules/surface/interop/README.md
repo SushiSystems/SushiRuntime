@@ -12,6 +12,7 @@ It depends on the C++ standard library and on no other module of the repository.
 | --- | --- |
 | `device_uuid.hpp` | `DeviceUUID` and its comparisons |
 | `external_memory.hpp` | `ExternalMemoryDescriptor` and `ExternalHandleKind` |
+| `external_handle_kind_set.hpp` | `ExternalHandleKindSet` |
 | `interop_capabilities.hpp` | `InteropCapabilities` |
 
 Every name is declared in `SushiRuntime`. The `Interop` facade of `api` takes and returns these
@@ -32,16 +33,30 @@ at every point:
 | The import succeeds | Keeps the SYCL import object, not the handle. |
 | The `Buffer` dies | Forgets the address, unmaps it, calls `release_external_memory`. |
 
-The caller therefore keeps ownership of the handle in every row and closes it.
+Who closes the handle depends on its kind. Ruling 8 of SushiEngine's `SYCL_VULKAN_INTEROP`
+design topic sets the rule; it follows the CUDA driver, which the
+Unified Runtime CUDA adapter reaches without duplicating the handle.
 
-Not established: whether the SYCL backend takes the handle over inside `import_external_memory`,
-or closes it in `release_external_memory`. The toolchain's `sycl/ext/oneapi/bindless_images.hpp`
-and `bindless_images_interop.hpp` say nothing about it for `resource_fd` or
-`resource_win32_handle`, and SushiEngine's design document `SYCL_VULKAN_INTEROP.md` says only that an
-import is "unmapped and released, never freed". Until the backend's rule is read from its own
-documentation, when the caller may close the handle (straight after the import, or only after
-the `Buffer` dies) is open for both kinds, and for `OpaqueFd` so is whether a close after a
-successful import closes a descriptor the driver already owns.
+| Kind | After a refused import | After a successful import |
+| --- | --- | --- |
+| `OpaqueWin32` | The exporter keeps the handle and closes it. | The exporter keeps the handle and closes it once the `Buffer` has died; the driver does not take it over. |
+| `OpaqueFd` | The caller still owns the descriptor and closes it. | The driver owns the descriptor. Nobody closes it, and nobody uses it again. |
+| `Unspecified` | Refused before SYCL sees it; the caller keeps the handle. | Never imported. |
+
+A kind the device does not import (see `InteropCapabilities::importable_kinds`) is refused before
+SYCL sees the handle, so the caller keeps it.
+
+## external_handle_kind_set.hpp
+
+`ExternalHandleKindSet` holds a set of `ExternalHandleKind` values as one bit per enumerator, in one
+byte. `insert`, `erase` and `contains` take a kind; `is_empty` tells whether the set holds none.
+
+## interop_capabilities.hpp
+
+`InteropCapabilities::importable_kinds` holds the kinds `import_device` accepts on the device.
+`memory_exchange` fills it by asking SYCL's `supports_importing_handle_type` once per kind, and
+leaves it empty on a toolchain without the bindless-images extension, such as AdaptiveCpp, and on
+a device that is not a GPU. `device_import` is true only when the set holds a kind.
 
 ## Tests
 

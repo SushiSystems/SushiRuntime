@@ -107,7 +107,7 @@ namespace SushiRuntime
             if (!address)
                 return nullptr;
 
-            registry_.record(address, request.device_index, request.bytes);
+            registry_.record(address, request.device_index, request.bytes, request.kind);
             // A mark left by an adopted mapping that once sat at this address would leak it.
             adopted_.take(address);
             return address;
@@ -163,13 +163,13 @@ namespace SushiRuntime
         }
 
         void USMAllocator::adopt(void* address, std::size_t device_index,
-                                 std::optional<std::size_t> bytes)
+                                 std::optional<std::size_t> bytes, std::optional<USMKind> kind)
         {
             static_cast<void>(queue_at(device_index));
 
             // Marked before it is recorded: a recorded adopted address is never seen unmarked.
-            adopted_.record(address, device_index, bytes);
-            registry_.record(address, device_index, bytes);
+            adopted_.record(address, device_index, bytes, kind);
+            registry_.record(address, device_index, bytes, kind);
         }
 
         void USMAllocator::forget(void* address) noexcept
@@ -178,7 +178,7 @@ namespace SushiRuntime
             adopted_.take(address);
         }
 
-        std::optional<std::size_t> USMAllocator::device_of(void* address) const
+        std::optional<std::size_t> USMAllocator::device_of(const void* address) const
         {
             const std::optional<std::size_t> device = registry_.owner_of(address);
             if (device.has_value() && *device < queues_.size())
@@ -186,7 +186,15 @@ namespace SushiRuntime
             return std::nullopt;
         }
 
-        std::optional<std::size_t> USMAllocator::owning_device(void* address) const
+        std::optional<USMRegistry::Record> USMAllocator::record_of(const void* address) const
+        {
+            const std::optional<USMRegistry::Record> record = registry_.record_of(address);
+            if (record.has_value() && record->device_index < queues_.size())
+                return record;
+            return std::nullopt;
+        }
+
+        std::optional<std::size_t> USMAllocator::owning_device(const void* address) const
         {
             if (!address)
                 return std::nullopt;
@@ -220,11 +228,11 @@ namespace SushiRuntime
             return best;
         }
 
-        std::optional<void*> USMAllocator::containing_base(void* address) const
+        std::optional<const void*> USMAllocator::containing_base(const void* address) const
         {
             const std::optional<USMRegistry::Containment> found =
                 registry_.containing_allocation(address);
-            return found.has_value() ? std::optional<void*>(found->base) : std::nullopt;
+            return found.has_value() ? std::optional<const void*>(found->base) : std::nullopt;
         }
 
         std::size_t USMAllocator::live_count() const

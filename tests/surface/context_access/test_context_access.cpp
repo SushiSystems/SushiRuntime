@@ -35,6 +35,7 @@
 #include <SushiRuntime/context/context_handle_access.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/memory_exchange/capability_cache.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 
 using namespace SushiRuntime;
@@ -89,4 +90,31 @@ TEST(Medium_ContextAccess, ANullContextMakesAnEmptyHandle)
 
     EXPECT_FALSE(static_cast<bool>(handle));
     EXPECT_TRUE(Internal::ContextAccess::shared(handle) == nullptr);
+}
+
+/** @brief Tests that a runtime's handles and their owners reach one capability cache. */
+TEST(Medium_ContextAccess, EveryShareOfAHandleReachesOneCapabilityCache)
+{
+    const ContextHandle handle =
+        Internal::ContextAccess::handle(SushiRuntime::Test::make_context());
+    const ContextHandle copy = handle;
+    const HandleOwner owner(handle);
+
+    Internal::MemoryExchange::CapabilityCache& cache =
+        Internal::ContextAccess::capability_cache(handle);
+
+    EXPECT_EQ(&Internal::ContextAccess::capability_cache(copy), &cache);
+    EXPECT_EQ(&Internal::ContextAccess::capability_cache(owner), &cache);
+}
+
+/** @brief Tests that two runtimes built from one engine context keep two capability caches. */
+TEST(Medium_ContextAccess, EachHandleBuiltKeepsItsOwnCapabilityCache)
+{
+    const std::shared_ptr<Internal::Execution::RuntimeContext> built =
+        SushiRuntime::Test::make_context();
+    const ContextHandle first = Internal::ContextAccess::handle(built);
+    const ContextHandle second = Internal::ContextAccess::handle(built);
+
+    EXPECT_NE(&Internal::ContextAccess::capability_cache(first),
+              &Internal::ContextAccess::capability_cache(second));
 }

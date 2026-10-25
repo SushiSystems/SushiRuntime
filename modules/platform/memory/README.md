@@ -1,6 +1,6 @@
 # memory
 
-Allocation ownership, the USM registry and epoch-based reclamation.
+The USM allocator and its allocation owner, the USM registry and epoch-based reclamation.
 The module is internal: its headers are for the other modules of the library and are not installed.
 
 Everything is in `SushiRuntime::Internal::Memory`.
@@ -109,6 +109,13 @@ Recording a pointer that is already known replaces its entry instead of rejectin
 an allocator handing back an address whose free was never reported. `device_index` is the index of
 the owning device as the caller numbers its queues; the registry never interprets it.
 
+The entry also keeps the `USMKind` the allocation was made as. USMAllocator::allocate() passes the
+request's kind. adopt() takes the kind with no default, so every caller states it:
+`import_device_memory` states `USMKind::Device`, and a caller that cannot know passes nothing. record_of() returns
+device and kind in one constant-time probe, so a caller that asks what kind a runtime-made
+address is never needs `sycl::get_pointer_type`, which is a driver query on the CUDA backend.
+Every lookup takes `const void*`: the registry compares addresses and never writes through them.
+
 ### containing_allocation
 
 containing_allocation() scans every entry, because the table is keyed by base address and an
@@ -187,7 +194,7 @@ freeing it would be a double free in the second case and a free against a guesse
 first. An allocator with no device logs a WARN instead.
 
 release() is `noexcept`, because USMAllocationOwner calls it from a `noexcept` override and
-Allocation calls that from a destructor. A `sycl::free` that throws is caught and logged as one
+`Detail::Allocation` calls that from a destructor. A `sycl::free` that throws is caught and logged as one
 ERROR; the record is already gone by then, so the address is not tracked.
 
 ### set_release_observer

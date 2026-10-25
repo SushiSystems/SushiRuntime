@@ -35,18 +35,17 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/core/allocation.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/memory/allocation.hpp>
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
 
 #include "context_memory.hpp"
-#include "memory_block.hpp"
 
 namespace SushiRuntime
 {
@@ -114,8 +113,7 @@ namespace SushiRuntime
                         "."};
                     return;
                 }
-                block = block_of(
-                    Internal::Memory::Allocation(address, bytes, std::move(owner)));
+                block = MemoryBlock{Allocation(address, bytes, std::move(owner))};
             });
             if (!allocated)
                 return make_error(std::move(allocated.error()));

@@ -116,8 +116,8 @@ TEST_F(Medium_NodePlacementRule, TheFirstWriteRegionOutranksTheFirstReadRegion)
 {
     int read_cell = 0;
     int write_cell = 0;
-    memory_.adopt(&read_cell, 0, sizeof(read_cell));
-    memory_.adopt(&write_cell, 1, sizeof(write_cell));
+    memory_.adopt(&read_cell, 0, sizeof(read_cell), std::nullopt);
+    memory_.adopt(&write_cell, 1, sizeof(write_cell), std::nullopt);
 
     const sushi_ptr<Node> reader = make_sushi<Node>();
     reader->io_reads_.emplace_back(&write_cell);
@@ -135,7 +135,7 @@ TEST_F(Medium_NodePlacementRule, TheFirstWriteRegionOutranksTheFirstReadRegion)
 TEST_F(Medium_NodePlacementRule, AnOwnedRegionPlacesANodeThatStatesNothing)
 {
     int cell = 0;
-    memory_.adopt(&cell, 1, sizeof(cell));
+    memory_.adopt(&cell, 1, sizeof(cell), std::nullopt);
 
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->io_writes_.emplace_back(&cell);
@@ -147,7 +147,7 @@ TEST_F(Medium_NodePlacementRule, AnOwnedRegionPlacesANodeThatStatesNothing)
 TEST_F(Medium_NodePlacementRule, AStatedDeviceInTheOwnersContextOutranksTheOwner)
 {
     int cell = 0;
-    memory_.adopt(&cell, 1, sizeof(cell));
+    memory_.adopt(&cell, 1, sizeof(cell), std::nullopt);
 
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->io_writes_.emplace_back(&cell);
@@ -161,7 +161,7 @@ TEST(Medium_NodePlacementContexts, AStatedDeviceInAnotherContextIsRefused)
 {
     SushiRuntime::Internal::Memory::USMAllocator memory(two_queues_in_two_contexts());
     int cell = 0;
-    memory.adopt(&cell, 1, sizeof(cell));
+    memory.adopt(&cell, 1, sizeof(cell), std::nullopt);
 
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->io_writes_.emplace_back(&cell);
@@ -183,7 +183,7 @@ TEST(Medium_NodePlacementContexts, AStatedIndexPastTheDevicesIsLeftToTheDispatch
 {
     SushiRuntime::Internal::Memory::USMAllocator memory(two_queues_in_two_contexts());
     int cell = 0;
-    memory.adopt(&cell, 1, sizeof(cell));
+    memory.adopt(&cell, 1, sizeof(cell), std::nullopt);
 
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->io_writes_.emplace_back(&cell);

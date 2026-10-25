@@ -79,10 +79,52 @@ namespace SushiRuntime
          *        NUMA node 0 when no device of the context owns it.
          */
         inline sycl::queue& owning_queue(Internal::Execution::RuntimeContext& context,
-                                         void* address)
+                                         const void* address)
         {
             const std::optional<std::size_t> device = context.memory().owning_device(address);
             return context.devices().queue_or_numa_local(device, 0);
+        }
+
+        /** @brief Returns the SYCL allocation kind a recorded USM kind is. */
+        [[nodiscard]] inline sycl::usm::alloc sycl_kind_of(Internal::Memory::USMKind kind) noexcept
+        {
+            switch (kind)
+            {
+                case Internal::Memory::USMKind::Host:   return sycl::usm::alloc::host;
+                case Internal::Memory::USMKind::Shared: return sycl::usm::alloc::shared;
+                case Internal::Memory::USMKind::Device: return sycl::usm::alloc::device;
+            }
+            return sycl::usm::alloc::unknown;
+        }
+
+        /**
+         * @brief Reports which kind of USM an address is: the kind recorded at allocation,
+         *        else what SYCL answers in the context the data README names.
+         * @return The allocation kind, or unknown when that context does not know it.
+         * @see modules/surface/api/include/SushiRuntime/api/data/README.md
+         */
+        [[nodiscard]] inline sycl::usm::alloc usm_kind_of(
+            Internal::Execution::RuntimeContext& context, const void* address,
+            std::optional<std::size_t> stated_device = std::nullopt)
+        {
+            const std::optional<Internal::Memory::USMRegistry::Record> record =
+                context.memory().record_of(address);
+            if (record && record->kind)
+                return sycl_kind_of(*record->kind);
+            try
+            {
+                std::optional<std::size_t> device = stated_device;
+                if (record)
+                    device = record->device_index;
+                else if (!device)
+                    device = context.memory().owning_device(address);
+                return sycl::get_pointer_type(
+                    address, context.devices().queue_or_numa_local(device, 0).get_context());
+            }
+            catch (const sycl::exception&)
+            {
+                return sycl::usm::alloc::unknown;
+            }
         }
     } // namespace Detail
 } // namespace SushiRuntime

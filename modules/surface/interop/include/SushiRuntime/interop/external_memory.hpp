@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include <SushiRuntime/interop/device_uuid.hpp>
@@ -43,6 +44,10 @@ namespace SushiRuntime
         OpaqueFd     /**< Names a POSIX file descriptor to the allocation. */
     };
 
+    /// @brief Lists every handle kind that names a mechanism, in enumerator order.
+    inline constexpr std::array<ExternalHandleKind, 2> K_NAMED_HANDLE_KINDS = {
+        ExternalHandleKind::OpaqueWin32, ExternalHandleKind::OpaqueFd};
+
     /**
      * @brief Describes a device allocation exported by one API for another to import.
      *
@@ -57,9 +62,8 @@ namespace SushiRuntime
         /**
          * @brief Holds the exported OS handle, as an integer.
          *
-         * SushiRuntime never closes or duplicates it: not on a refused import, not on a
-         * successful one, not when the Buffer dies. The caller keeps ownership, for either
-         * kind; modules/surface/interop/README.md states what is not established.
+         * SushiRuntime never closes or duplicates it. Who closes it depends on the kind;
+         * modules/surface/interop/README.md states the rule per kind.
          * An OpaqueWin32 handle must not be null; an OpaqueFd must fit an int.
          */
         std::uint64_t handle = 0;

@@ -1,16 +1,17 @@
 # core
 
-Types every other module uses: assertions, errors, results, reference counting, the intrusive pointer, spans,
+Types every other module uses: owned allocations, assertions, errors, results, reference counting, the intrusive pointer, spans,
 strong ids, bit helpers, the export macro and the version.
 
 It depends on the C++ standard library and on no other module of the repository.
 
 ## Public entry points
 
-The sixteen public headers under `include/SushiRuntime/core/`:
+The seventeen public headers under `include/SushiRuntime/core/`:
 
 | Header | What it declares |
 | --- | --- |
+| `allocation.hpp` | `Detail::Allocation`, a move-only owner of an address and its size, and `Detail::AllocationOwner`, the interface that releases the address |
 | `assert.hpp` | `SR_ASSERT`, `SR_VERIFY` and `SR_FATAL`, `AssertionFailure`, `AssertionHandler`, `set_assertion_handler()` and `fail_assertion()` |
 | `bit.hpp` | `popcount_u64` and `countr_zero_u64`, two 64-bit bit queries for the C++17 baseline |
 | `common.hpp` | The size constants `K_CACHE_LINE_SIZE`, `K_MAX_NUMA_NODES`, `K_MAX_WORKER_THREADS` and `K_DEFAULT_ALIGNMENT` |
@@ -30,6 +31,16 @@ The sixteen public headers under `include/SushiRuntime/core/`:
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
+
+## allocation.hpp
+
+### Allocation
+
+An Allocation owns an address, its byte count and the AllocationOwner that releases the address
+once, when the Allocation is reset or destroyed. It is move-only and header-only. An Allocation
+with no owner releases nothing; a Buffer over borrowed memory holds one, so the memory stays with
+its real owner. It sits in `core` under `Detail` because `Buffer`, a public header, holds one by
+value and may not include an internal module.
 
 ## assert.hpp
 

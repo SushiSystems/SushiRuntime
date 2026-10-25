@@ -31,3 +31,12 @@ that context and `shared()` a pointer equal to the one the handle was built from
 ### `ANullContextMakesAnEmptyHandle`
 
 `handle(nullptr)` makes an empty handle, and `shared()` returns null for it.
+
+### `EveryShareOfAHandleReachesOneCapabilityCache`
+
+`capability_cache()` returns the same cache for a handle, a copy of it and an owner that keeps it.
+
+### `EachHandleBuiltKeepsItsOwnCapabilityCache`
+
+Two calls of `handle()` over one engine context build two surface contexts, each with its own
+cache.

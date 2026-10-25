@@ -5,13 +5,14 @@ sources, the distributed extension and the tests. The module is internal: its he
 `include/SushiRuntime/context_access/` for the modules of the library to include, and it is not
 installed.
 
-It depends on `core`, `execution` and `context` in its header.
+It depends on `core`, `execution` and `context` in its header, and on `memory_exchange` in its
+source.
 
 ## Public entry points
 
 | Header | Holds |
 | --- | --- |
-| `context_access.hpp` | `context()`, `shared()` and `handle()`, in `SushiRuntime::Internal::ContextAccess` |
+| `context_access.hpp` | `context()`, `shared()`, `capability_cache()` and `handle()`, in `SushiRuntime::Internal::ContextAccess` |
 
 ## context_access.hpp
 
@@ -31,11 +32,24 @@ in a `context_` member and befriends `Detail::ContextHandleAccess`. `Runtime` is
 overloads are templates over the owner, so this module names no type of `api`, which sits above
 it.
 
+### The runtime's capability cache
+
+`capability_cache()` returns the `CapabilityCache` of `memory_exchange` that the handle's runtime
+owns, for a handle or for its owner. Every copy of a handle reaches the same cache, and it dies
+with the last of them. `api` passes it to `query_capabilities()` and `import_device_memory()`.
+
 ## context_access.cpp
 
-### The one conversion
+### The surface context
 
-`engine_context()` and `surface_context()` are the two pointer casts between `Detail::Context`
-and `Internal::Execution::RuntimeContext`. They are private to this file and no other source of
-the library casts between the two types. A context is created as the engine's type and handed
-to `handle()`, so every `Detail::Context` pointer a handle holds came out of `surface_context()`.
+`Detail::Context` is defined here and nowhere else. It holds the engine's `RuntimeContext` and
+the runtime's `CapabilityCache`, declared in that order, so the cache is destroyed first and every
+`sycl::device` it holds is released before the engine context goes. `handle()` builds one
+`Detail::Context` per call, which costs one heap allocation, and hands it to
+`Detail::ContextHandleAccess::wrap()`; `handle(nullptr)` builds none and returns an empty handle.
+`context()` reads the engine context through it, and `shared()` returns a `std::shared_ptr` to the
+engine context on the surface context's control block, so the engine context lives as long as any
+share of either.
+
+This module is the one owner because it already defines what a runtime is at the surface: every
+handle of a runtime shares this one object.

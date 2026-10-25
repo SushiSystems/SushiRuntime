@@ -33,11 +33,11 @@
 
 namespace SushiRuntime
 {
-    namespace Internal::Memory
+    namespace Detail
     {
         /**
          * @brief Releases an address that an Allocation owned.
-         * @see docs/design/SYCL_VULKAN_INTEROP/README.md §3.1 in the SushiEngine repository.
+         * @see modules/foundation/core/README.md
          */
         class AllocationOwner
         {
@@ -53,11 +53,10 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Owning handle to an address, its size, and the owner that
-         * releases it. Move-only.
-         * @see docs/design/SYCL_VULKAN_INTEROP/README.md §3.1 in the SushiEngine repository.
+         * @brief Owns an address, its size, and the owner that releases it. Move-only.
+         * @see modules/foundation/core/README.md
          */
-        class Allocation
+        class Allocation final
         {
             public:
                 /** @brief Constructs an allocation that owns nothing. */
@@ -67,12 +66,13 @@ namespace SushiRuntime
                  * @brief Takes ownership of @p address.
                  * @param address The allocation's base address.
                  * @param bytes   Usable bytes at @p address.
-                 * @param owner   Releases @p address exactly once.
+                 * @param owner   Releases @p address exactly once; null releases nothing.
                  */
                 Allocation(void* address, std::size_t bytes,
                            std::unique_ptr<AllocationOwner> owner) noexcept
                     : address_(address), bytes_(bytes), owner_(std::move(owner))
                 {
+
                 }
 
                 /** @brief Releases the owned address, if any. */
@@ -86,11 +86,11 @@ namespace SushiRuntime
                  * @param other Allocation to take the address from; left empty.
                  */
                 Allocation(Allocation&& other) noexcept
-                    : address_(other.address_), bytes_(other.bytes_),
+                    : address_(std::exchange(other.address_, nullptr)),
+                      bytes_(std::exchange(other.bytes_, 0)),
                       owner_(std::move(other.owner_))
                 {
-                    other.address_ = nullptr;
-                    other.bytes_ = 0;
+
                 }
 
                 /**
@@ -103,11 +103,9 @@ namespace SushiRuntime
                     if (this != &other)
                     {
                         reset();
-                        address_ = other.address_;
-                        bytes_ = other.bytes_;
+                        address_ = std::exchange(other.address_, nullptr);
+                        bytes_ = std::exchange(other.bytes_, 0);
                         owner_ = std::move(other.owner_);
-                        other.address_ = nullptr;
-                        other.bytes_ = 0;
                     }
                     return *this;
                 }
@@ -116,19 +114,19 @@ namespace SushiRuntime
                  * @brief Returns the owned address.
                  * @return The base address, or null when empty.
                  */
-                void* address() const noexcept { return address_; }
+                [[nodiscard]] void* address() const noexcept { return address_; }
 
                 /**
                  * @brief Reports the allocation's usable size.
                  * @return Usable byte count.
                  */
-                std::size_t bytes() const noexcept { return bytes_; }
+                [[nodiscard]] std::size_t bytes() const noexcept { return bytes_; }
 
                 /**
                  * @brief Tells whether this handle still owns an address.
                  * @return True if it owns nothing, e.g. after being moved from.
                  */
-                bool empty() const noexcept { return address_ == nullptr; }
+                [[nodiscard]] bool empty() const noexcept { return address_ == nullptr; }
 
                 /** @brief Releases the owned address and empties the allocation. */
                 void reset() noexcept
@@ -141,10 +139,14 @@ namespace SushiRuntime
                 }
 
             private:
+                /** @brief Base address, or null when empty. */
                 void* address_ = nullptr;
+
+                /** @brief Usable bytes at address_. */
                 std::size_t bytes_ = 0;
+
+                /** @brief Releases address_; null for memory another owner keeps. */
                 std::unique_ptr<AllocationOwner> owner_;
         };
-
-    } // namespace Memory
+    } // namespace Detail
 } // namespace SushiRuntime

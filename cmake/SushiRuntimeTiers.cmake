@@ -85,6 +85,7 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     runtime_assembly scheduler
     memory_exchange  interop
     context_access  context
+    context_access  memory_exchange
     api             engine_handles
     api             interop
     api             memory_exchange

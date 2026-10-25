@@ -47,10 +47,10 @@ TEST(Medium_InteropHostExport, AlignsAndRoundsTheRegion)
 {
     auto runtime = Runtime::create().value();
     auto shared = runtime.interop().export_host<std::uint32_t>(1000, DeviceIndex{0}, 4096).value();
-    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(shared.address) % 4096u, 0u);
+    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(shared.address()) % 4096u, 0u);
     EXPECT_EQ(shared.bytes % 4096u, 0u);
     EXPECT_GE(shared.bytes, 1000u * sizeof(std::uint32_t));
-    EXPECT_EQ(static_cast<void*>(shared.buffer.data()), shared.address);
+    EXPECT_EQ(static_cast<void*>(shared.buffer.data()), shared.address());
 }
 
 /**
@@ -62,7 +62,7 @@ TEST(Medium_InteropHostExport, TheRegistryRoutesTheExportedAddress)
     auto shared = runtime.interop().export_host<float>(16, DeviceIndex{0}, 4096).value();
     Internal::Memory::USMAllocator& memory =
         Internal::ContextAccess::context(runtime).memory();
-    EXPECT_EQ(memory.device_of(shared.address), std::optional<std::size_t>(0));
+    EXPECT_EQ(memory.device_of(shared.address()), std::optional<std::size_t>(0));
 }
 
 /**

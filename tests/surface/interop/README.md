@@ -8,7 +8,16 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_interop_capabilities.cpp
 
-The file covers the default values of the interop vocabulary.
+The file covers the default values of the interop vocabulary and `ExternalHandleKindSet`.
+
+### `DefaultCapabilitiesOfferNothing`
+
+Default `InteropCapabilities` offer no host export, no import, no UUID and no importable kind.
+
+### `AKindSetHoldsExactlyTheKindsInserted`
+
+An `ExternalHandleKindSet` holds the kind inserted and no other, and is empty again once that kind is
+erased.
 
 ### `ADefaultDescriptorStatesNoHandleKind`
 

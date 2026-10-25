@@ -90,10 +90,11 @@ namespace SushiRuntime
                  * @brief Records memory allocated elsewhere as belonging to a device.
                  * @param address Stays the caller's to free; release() will not free it.
                  * @param bytes Length of the mapping, or nothing when it is unknown.
+                 * @param kind Kind the mapping is, or nothing when the caller does not know it.
                  * @pre device_index names a device of the allocator.
                  */
                 void adopt(void* address, std::size_t device_index,
-                           std::optional<std::size_t> bytes);
+                           std::optional<std::size_t> bytes, std::optional<USMKind> kind);
 
                 /** @brief Drops the record of an address without freeing it; null is ignored. */
                 void forget(void* address) noexcept;
@@ -103,14 +104,24 @@ namespace SushiRuntime
                  * @param address The first address of an allocation; an interior one is unknown.
                  * @return Nothing for null and for an address with no record.
                  */
-                [[nodiscard]] std::optional<std::size_t> device_of(void* address) const;
+                [[nodiscard]] std::optional<std::size_t> device_of(const void* address) const;
+
+                /**
+                 * @brief Returns the device and kind an address was recorded with, in constant
+                 *        time and with no SYCL call.
+                 * @param address The first address of an allocation; an interior one is unknown.
+                 * @return Nothing for null and for an address with no record; the kind is
+                 *         nothing for adopted memory.
+                 */
+                [[nodiscard]] std::optional<USMRegistry::Record> record_of(
+                    const void* address) const;
 
                 /**
                  * @brief Returns the device of an address, asking SYCL when no record exists.
                  * @return Nothing for null, for host USM and for memory no queue's context knows.
                  * @see modules/platform/memory/README.md
                  */
-                [[nodiscard]] std::optional<std::size_t> owning_device(void* address) const;
+                [[nodiscard]] std::optional<std::size_t> owning_device(const void* address) const;
 
                 /**
                  * @brief Finds the first address of the recorded allocation an address falls in.
@@ -118,7 +129,7 @@ namespace SushiRuntime
                  *        live_count().
                  * @return Nothing for null and when no recorded allocation covers the address.
                  */
-                [[nodiscard]] std::optional<void*> containing_base(void* address) const;
+                [[nodiscard]] std::optional<const void*> containing_base(const void* address) const;
 
                 /** @brief Counts the devices of the allocator, fixed at construction. */
                 [[nodiscard]] std::size_t device_count() const noexcept;

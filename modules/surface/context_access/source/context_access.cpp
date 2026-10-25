@@ -29,49 +29,60 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 
 #include <memory>
+#include <utility>
 
 #include <SushiRuntime/context/context.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/context/context_handle_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/memory_exchange/capability_cache.hpp>
 
 namespace SushiRuntime
 {
+    namespace Detail
+    {
+        /**
+         * @brief Holds what one runtime owns at the surface: its engine context and its caches.
+         *
+         * The cache is declared after the engine context, so it is destroyed first.
+         */
+        struct Context
+        {
+            /// @brief Holds the engine's context of the runtime.
+            std::shared_ptr<Internal::Execution::RuntimeContext> runtime;
+            /// @brief Holds each device's interop capabilities once asked.
+            Internal::MemoryExchange::CapabilityCache capabilities;
+        };
+    } // namespace Detail
+
     namespace Internal::ContextAccess
     {
-        namespace
-        {
-            /** @brief Returns the engine's context an opaque context names; null for null. */
-            [[nodiscard]] Execution::RuntimeContext*
-            engine_context(Detail::Context* context) noexcept
-            {
-                return reinterpret_cast<Execution::RuntimeContext*>(context);
-            }
-
-            /** @brief Returns the surface's name for a context of the engine; null for null. */
-            [[nodiscard]] Detail::Context*
-            surface_context(Execution::RuntimeContext* context) noexcept
-            {
-                return reinterpret_cast<Detail::Context*>(context);
-            }
-        } // namespace
-
         Execution::RuntimeContext& context(const ContextHandle& handle) noexcept
         {
-            return *engine_context(Detail::ContextHandleAccess::share(handle).get());
+            return *Detail::ContextHandleAccess::share(handle)->runtime;
         }
 
         std::shared_ptr<Execution::RuntimeContext> shared(const ContextHandle& handle) noexcept
         {
             const std::shared_ptr<Detail::Context>& share =
                 Detail::ContextHandleAccess::share(handle);
-            return std::shared_ptr<Execution::RuntimeContext>(share, engine_context(share.get()));
+            if (share == nullptr)
+                return nullptr;
+            return std::shared_ptr<Execution::RuntimeContext>(share, share->runtime.get());
         }
 
-        ContextHandle handle(std::shared_ptr<Execution::RuntimeContext> context) noexcept
+        MemoryExchange::CapabilityCache& capability_cache(const ContextHandle& handle) noexcept
         {
-            return Detail::ContextHandleAccess::wrap(
-                std::shared_ptr<Detail::Context>(context, surface_context(context.get())));
+            return Detail::ContextHandleAccess::share(handle)->capabilities;
+        }
+
+        ContextHandle handle(std::shared_ptr<Execution::RuntimeContext> context)
+        {
+            if (context == nullptr)
+                return Detail::ContextHandleAccess::wrap(nullptr);
+            auto surface = std::make_shared<Detail::Context>();
+            surface->runtime = std::move(context);
+            return Detail::ContextHandleAccess::wrap(std::move(surface));
         }
     } // namespace Internal::ContextAccess
 } // namespace SushiRuntime

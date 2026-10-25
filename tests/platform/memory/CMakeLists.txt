@@ -7,7 +7,6 @@
 sushiruntime_add_module_tests(
     MODULE memory
     SOURCES
-        test_allocation.cpp
         test_epoch_reclamation.cpp
         test_memory_log_category.cpp
         test_usm_allocation_owner.cpp

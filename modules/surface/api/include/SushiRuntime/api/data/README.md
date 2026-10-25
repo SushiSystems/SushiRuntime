@@ -42,19 +42,21 @@ none.
 
 ### MemoryBlock
 
-A Buffer holds its memory as a `Detail::MemoryBlock`: the base address, the byte count and a
-`std::shared_ptr<void>` that returns the memory when the last copy of it goes. The header names
-nothing of how the memory was made. `Detail::allocate_block()` of `source/buffer.cpp` allocates
-USM through the runtime and puts the engine's `Allocation` behind that owner; Interop does the
-same with memory it exported or imported. data(), operator[] and host() read the cached address
-and size and call nothing.
+A Buffer holds its memory as a `Detail::MemoryBlock`, which holds one `Detail::Allocation` from
+the `core` module by value: the base address, the byte count and the `Detail::AllocationOwner`
+that releases the memory. Both are move-only, so the Buffer is the one owner and no shared count
+exists. The header names nothing of how the memory was made. `Detail::allocate_block()` of
+`source/buffer.cpp` allocates USM through the runtime with a `USMAllocationOwner`; Interop moves
+the `Allocation` the engine returns for memory it exported or imported into the block. data(),
+operator[] and host() read the allocation's address and the size and call nothing.
 
 A window copy is the other call into the library: `Detail::copy_to_host()` and
 `Detail::copy_to_device()` find the queue that owns the allocation, copy, wait and count the
 bytes, and return a `Result<void>`. The vector a read fills is sized in the header, where the
 element type is known.
 
-Buffer::adopt() is the one place a Buffer is built over a block. It runs the constructor inside
+Buffer::adopt() is the one place a Buffer is built over a block. It takes the block by value, so
+the caller moves its allocation in and a refused adoption releases it. It runs the constructor inside
 `Detail::translate_exceptions()`, because the constructor allocates the liveness token, and
 returns `AllocationFailed` when that allocation fails. Buffer::allocate() and the two Interop
 calls end there, so no exception leaves any of the three.
@@ -114,8 +116,8 @@ memory the runtime did not allocate; the next section says what that Buffer hold
 
 ### Borrowed Buffer
 
-A borrowed Buffer views memory another owner keeps alive. Its block owns nothing, so destroying the
-handle frees nothing, and it holds no liveness token of its own. It keeps an observer of the
+A borrowed Buffer views memory another owner keeps alive. Its block's allocation has no owner, so
+destroying the handle frees nothing, and it holds no liveness token of its own. It keeps an observer of the
 token its owner passed to Interop::borrow() instead, and Detail::HandleAccess::liveness() hands a
 graph that observer. A run that names the buffer after the owner released its token is refused with
 `DanglingResource`; a run after the borrowed handle alone was destroyed runs as recorded, because
@@ -204,6 +206,23 @@ disjoint slices (an array's halves, a grid's interior versus its halo) run in pa
 result to Reads(...)/Writes(...) in place of the buffer itself. Offsets are in elements; the buffer
 keeps the whole-buffer default when used bare. region() returns `BufferRegion`, the api
 module's name for the byte window of one allocation, and follows the Range calls rule.
+
+## source/context_memory.hpp
+
+A private header of `source/`.
+
+### usm_kind_of
+
+`Detail::usm_kind_of()` is the one place the api module asks what kind of USM an address is.
+Memory this runtime allocated answers from its own record: `USMAllocator` keeps the `USMKind` of
+every allocation it makes, so a runtime-made first address costs one hash probe and no SYCL call.
+Only memory with no recorded kind reaches `sycl::get_pointer_type`, which answers only for the
+context it is given, so the function picks the context by one rule. An address adopted with
+no kind is recorded with its device only, and is asked in that device's context. Unrecorded memory is
+asked in the context of the device the caller states, which is what Interop::borrow() does for
+memory another API made. With no stated device the allocator's `owning_device()` scan picks the
+context, which is what the late-bound slot check does for an interior pointer. A
+`sycl::exception` from the query reads as `unknown`.
 
 ## state.hpp
 

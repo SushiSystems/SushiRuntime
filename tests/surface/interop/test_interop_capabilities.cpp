@@ -29,11 +29,13 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/interop/device_uuid.hpp>
+#include <SushiRuntime/interop/external_handle_kind_set.hpp>
 #include <SushiRuntime/interop/external_memory.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
 
 using SushiRuntime::DeviceUUID;
 using SushiRuntime::ExternalHandleKind;
+using SushiRuntime::ExternalHandleKindSet;
 using SushiRuntime::ExternalMemoryDescriptor;
 using SushiRuntime::InteropCapabilities;
 
@@ -61,6 +63,23 @@ TEST(Small_InteropVocabulary, DefaultCapabilitiesOfferNothing)
     EXPECT_FALSE(capabilities.host_export);
     EXPECT_FALSE(capabilities.device_import);
     EXPECT_FALSE(capabilities.device_uuid.has_value());
+    EXPECT_TRUE(capabilities.importable_kinds.is_empty());
+}
+
+TEST(Small_InteropVocabulary, AKindSetHoldsExactlyTheKindsInserted)
+{
+    ExternalHandleKindSet kinds;
+    kinds.insert(ExternalHandleKind::OpaqueFd);
+
+    EXPECT_FALSE(kinds.is_empty());
+    EXPECT_TRUE(kinds.contains(ExternalHandleKind::OpaqueFd));
+    EXPECT_FALSE(kinds.contains(ExternalHandleKind::OpaqueWin32));
+    EXPECT_FALSE(kinds.contains(ExternalHandleKind::Unspecified));
+
+    kinds.erase(ExternalHandleKind::OpaqueFd);
+
+    EXPECT_TRUE(kinds.is_empty());
+    EXPECT_EQ(kinds, ExternalHandleKindSet());
 }
 
 TEST(Small_InteropVocabulary, ADefaultDescriptorStatesNoHandleKind)

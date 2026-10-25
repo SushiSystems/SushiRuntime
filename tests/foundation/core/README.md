@@ -6,6 +6,19 @@ the rest; `sr run sr_core_tests -- --gtest_filter='<pattern>'` runs one program 
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 
+## test_allocation.cpp
+
+A counting owner records each release and the address it was given; the addresses are never
+dereferenced.
+
+| Test | What it proves |
+| --- | --- |
+| `ReleasesOnceOnDestruction` | A destroyed allocation releases its address once, to its owner. |
+| `MoveTransfersTheReleaseAndEmptiesTheSource` | A move hands the release to the target and leaves the source empty, so the address is released once. |
+| `MoveAssignmentReleasesTheOverwrittenAddressFirst` | Assigning over an allocation releases the address it held before it takes the new one. |
+| `AnEmptyAllocationHasNoAddressOrOwner` | A default allocation is empty and holds 0 bytes. |
+| `ResetOnANonNullAddressWithNoOwnerReleasesNothing` | `reset()` on an allocation with no owner empties it and releases nothing. |
+
 ## test_assert.cpp
 
 The file covers `SR_ASSERT`, `SR_VERIFY`, `SR_FATAL` and `set_assertion_handler()`. It defines

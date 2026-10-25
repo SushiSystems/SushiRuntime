@@ -159,10 +159,10 @@ namespace SushiRuntime
             ? count_words : Detail::DynamicAccess::base_slot(window).words;
         if (slot == nullptr)
             return host_fault_record();
-        void* address = const_cast<void*>(static_cast<const void*>(slot));
+        const void* address = slot;
         Internal::Memory::USMAllocator& memory =
             Internal::ContextAccess::context(context_).memory();
-        const std::optional<void*> base = memory.containing_base(address);
+        const std::optional<const void*> base = memory.containing_base(address);
         const std::optional<std::size_t> device = memory.device_of(base ? *base : address);
         return fault_record(DeviceIndex{device.value_or(0)});
     }

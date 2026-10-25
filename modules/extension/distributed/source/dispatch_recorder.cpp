@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <exception>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -37,6 +38,7 @@
 #include <SushiRuntime/api/graph/access.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 #include <SushiRuntime/api/vocabulary/placement.hpp>
+#include <SushiRuntime/core/result.hpp>
 
 namespace SushiRuntime
 {
@@ -54,35 +56,44 @@ namespace SushiRuntime
             graph_.clear();
         }
 
+        template <typename Role>
+        Result<void> DispatchRecorder::add_views(const std::vector<BufferView>& views,
+                                                 DeviceIndex device,
+                                                 std::vector<BufferRegion>& regions,
+                                                 std::vector<LivenessObserver>& lives) const
+        {
+            for (const BufferView& view : views)
+            {
+                // The worker cache holds recorded shared USM of the runtime's allocator.
+                Result<Buffer<std::byte>> borrowed = interop_.borrow(
+                    static_cast<std::byte*>(view.data), view.size_bytes, device,
+                    Residency::Shared, pinned_life_);
+                if (!borrowed)
+                    return make_error(std::move(borrowed.error()));
+                if (borrowed->empty())
+                    continue;
+                const Role role(*borrowed);
+                regions.insert(regions.end(), role.keys.begin(), role.keys.end());
+                lives.insert(lives.end(), role.lives.begin(), role.lives.end());
+            }
+            return {};
+        }
+
         void DispatchRecorder::record(DispatchEntry& entry) noexcept
         {
             try
             {
                 const DeviceIndex device{entry.job.dispatch.device_index};
                 Access access;
-                for (const BufferView& view : entry.inputs)
+                Result<void> borrowed =
+                    add_views<Reads>(entry.inputs, device, access.reads, access.lives);
+                if (borrowed)
+                    borrowed = add_views<Writes>(entry.outputs, device, access.writes,
+                                                 access.lives);
+                if (!borrowed)
                 {
-                    const Buffer<std::byte> buffer = interop_.borrow(
-                        static_cast<std::byte*>(view.data), view.size_bytes, device,
-                        Residency::Shared, pinned_life_);
-                    if (buffer.empty())
-                        continue;
-                    const Reads read(buffer);
-                    access.reads.insert(access.reads.end(), read.keys.begin(), read.keys.end());
-                    access.lives.insert(access.lives.end(), read.lives.begin(), read.lives.end());
-                }
-                for (const BufferView& view : entry.outputs)
-                {
-                    const Buffer<std::byte> buffer = interop_.borrow(
-                        static_cast<std::byte*>(view.data), view.size_bytes, device,
-                        Residency::Shared, pinned_life_);
-                    if (buffer.empty())
-                        continue;
-                    const Writes written(buffer);
-                    access.writes.insert(access.writes.end(), written.keys.begin(),
-                                         written.keys.end());
-                    access.lives.insert(access.lives.end(), written.lives.begin(),
-                                        written.lives.end());
+                    entry.failure = "the task was not recorded: " + borrowed.error().message;
+                    return;
                 }
 
                 // &entry lives in the batch's deque; clear() drops this task before the next batch.

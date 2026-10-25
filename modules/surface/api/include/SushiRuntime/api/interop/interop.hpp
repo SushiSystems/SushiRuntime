@@ -29,12 +29,12 @@
 #pragma once
 
 #include <cstddef>
-#include <memory>
 #include <utility>
 
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/interop/host_export.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
+#include <SushiRuntime/core/allocation.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -80,13 +80,12 @@ namespace SushiRuntime
                 Result<Detail::MemoryBlock> block = export_host_block(requested, device, alignment);
                 if (!block)
                     return make_error(std::move(block.error()));
-                void* address = block->address;
-                const std::size_t bytes = block->bytes;
+                const std::size_t bytes = block->allocation.bytes();
                 Result<Buffer<T>> buffer = Buffer<T>::adopt(context_, std::move(*block), count,
-                                                            device, Residency::Shared);
+                                                            device, Residency::Host);
                 if (!buffer)
                     return make_error(std::move(buffer.error()));
-                return HostExport<T>{std::move(*buffer), address, bytes};
+                return HostExport<T>{std::move(*buffer), bytes};
             }
 
             /**
@@ -114,15 +113,16 @@ namespace SushiRuntime
 
             /**
              * @brief Wraps memory the caller owns as a Buffer a graph tracks, without owning it.
-             * @param owner Lives exactly as long as address stays valid; a run that names the
-             *        buffer after owner is gone is refused with DanglingResource.
+             * @param owner Lives exactly as long as address stays valid.
+             * @return The buffer, or InvalidArgument when SYCL reports another residency.
              * @pre owner is not null, address is not null for a count above 0, and device
              *      names a device of this runtime.
              * @see modules/surface/api/include/SushiRuntime/api/interop/README.md
              */
             template <typename T>
-            [[nodiscard]] Buffer<T> borrow(T* address, std::size_t count, DeviceIndex device,
-                                           Residency residency, const LivenessToken& owner) const
+            [[nodiscard]] Result<Buffer<T>> borrow(T* address, std::size_t count,
+                                                   DeviceIndex device, Residency residency,
+                                                   const LivenessToken& owner) const
             {
                 const char* call = "Interop::borrow";
                 Detail::require_device(call, device, Detail::device_count(context_));
@@ -132,12 +132,16 @@ namespace SushiRuntime
                 SR_VERIFY(count == 0 || address != nullptr,
                           "Interop::borrow: the address is null for a count above 0; pass the "
                           "memory the buffer views.");
-                Detail::MemoryBlock block;
-                block.address = count == 0 ? nullptr : static_cast<void*>(address);
-                block.bytes = Detail::checked_byte_count(call, count, sizeof(T));
-                return Buffer<T>(
-                    context_, std::move(block), count, device, residency,
-                    LivenessObserver(owner));
+                const std::size_t bytes = Detail::checked_byte_count(call, count, sizeof(T));
+                if (count == 0)
+                    return Buffer<T>(context_, Detail::MemoryBlock{}, 0, device, residency,
+                                     LivenessObserver(owner));
+                Result<void> agreed = require_stated_residency(address, device, residency);
+                if (!agreed)
+                    return make_error(std::move(agreed.error()));
+                Detail::MemoryBlock block{Detail::Allocation(address, bytes, nullptr)};
+                return Buffer<T>(context_, std::move(block), count, device, residency,
+                                 LivenessObserver(owner));
             }
 
         private:
@@ -166,6 +170,17 @@ namespace SushiRuntime
             [[nodiscard]] SUSHIRUNTIME_API Result<Detail::MemoryBlock>
             import_device_block(const ExternalMemoryDescriptor& descriptor,
                                 std::size_t bytes, DeviceIndex device) const;
+
+            /**
+             * @brief Refuses a stated residency that the USM kind SYCL reports for an address
+             *        contradicts.
+             * @return Nothing when the kinds agree or SYCL does not know the address, or an
+             *         InvalidArgument error that names both residencies.
+             * @see modules/surface/api/include/SushiRuntime/api/interop/README.md
+             */
+            [[nodiscard]] SUSHIRUNTIME_API Result<void>
+            require_stated_residency(const void* address, DeviceIndex device,
+                                     Residency stated) const;
 
             /** @brief The runtime the facade forwards to; never empty. */
             ContextHandle context_;

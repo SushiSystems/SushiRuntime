@@ -30,6 +30,7 @@
 #include <optional>
 
 #include <SushiRuntime/interop/device_uuid.hpp>
+#include <SushiRuntime/interop/external_handle_kind_set.hpp>
 
 namespace SushiRuntime
 {
@@ -46,9 +47,16 @@ namespace SushiRuntime
          * @brief Reports whether import_device can import on the device.
          *
          * True only when the toolchain has the bindless-images extension, the device is a
-         * GPU, it reports the external-memory-import aspect and device_uuid holds a value.
+         * GPU, it reports the external-memory-import aspect, device_uuid holds a value and
+         * importable_kinds holds at least one kind.
          */
         bool device_import = false;
+        /**
+         * @brief Holds the handle kinds import_device accepts on the device.
+         *
+         * Empty whenever device_import is false.
+         */
+        ExternalHandleKindSet importable_kinds;
         /** @brief Holds the device's UUID, when it has one. */
         std::optional<DeviceUUID> device_uuid;
     };

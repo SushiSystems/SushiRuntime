@@ -25,6 +25,11 @@ can only come from that field.
 
 `host_export` equals `sycl::aspect::usm_host_allocations` of the device behind the queue.
 
+### `AnExportIsHostResidentAndALateCountAcceptsIt`
+
+An exported buffer reports `Residency::Host`, its `address()` is its `data()`, and
+`sized_from_device()`, which stops the process for any other residency, accepts it as a counter.
+
 ### `ADeviceWithoutImportIsRefusedByItsIndex`
 
 The capability is checked before the descriptor. The refusal is `ErrorCode::Unsupported` and its
@@ -84,6 +89,8 @@ and has size zero.
 | `ARunNamingABorrowedBufferWhoseOwnerLetGoIsRefused` | A host task over the buffer runs once; after the owner token is reset the next run is `DanglingResource` and the task does not run. |
 | `DroppingTheBorrowedHandleLeavesTheRunValid` | The borrowed handle is destroyed after recording and the run still executes the task, because the owner token lives. |
 | `ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAllocate` | Over shared USM from `sycl::malloc_shared`, which the runtime does not record, `write_range()` and `read_range()` copy through the queue of the buffer's device. |
+| `AMismatchedResidencyIsRefusedWithBothNames` | Host USM from `sycl::malloc_host` borrowed as `Residency::Shared` is refused with `InvalidArgument`, and the message names both residencies. |
+| `ARuntimeBufferBorrowedAsAnotherResidencyIsRefusedByItsRecord` | A `Residency::Host` buffer the runtime allocated, borrowed as `Residency::Shared`, is refused with `InvalidArgument` from the kind the allocator recorded; borrowed as `Residency::Host` it is accepted. |
 
 ## test_host_export.cpp
 

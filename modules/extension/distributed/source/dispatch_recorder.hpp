@@ -29,9 +29,13 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
+#include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
+#include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/region/liveness.hpp>
 
 #include "dispatch_job.hpp"
@@ -78,6 +82,17 @@ namespace SushiRuntime
                 [[nodiscard]] std::string run();
 
             private:
+                /**
+                 * @brief Borrows each view as a buffer and adds what Role makes of it.
+                 * @tparam Role Reads or Writes; its keys go to regions, its lives to lives.
+                 * @return Nothing, or the runtime's refusal of a view.
+                 */
+                template <typename Role>
+                [[nodiscard]] Result<void> add_views(const std::vector<BufferView>& views,
+                                                     DeviceIndex device,
+                                                     std::vector<BufferRegion>& regions,
+                                                     std::vector<LivenessObserver>& lives) const;
+
                 /// @brief Holds the tasks of the batch being run; cleared for each batch.
                 Graph graph_;
 

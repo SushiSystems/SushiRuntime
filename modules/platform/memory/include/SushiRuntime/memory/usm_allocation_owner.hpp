@@ -30,7 +30,8 @@
 #include <memory>
 #include <utility>
 
-#include <SushiRuntime/memory/allocation.hpp>
+#include <SushiRuntime/core/allocation.hpp>
+
 #include <SushiRuntime/memory/usm_allocator.hpp>
 
 namespace SushiRuntime
@@ -41,7 +42,7 @@ namespace SushiRuntime
          * @brief Releases an address through the allocator that allocated it.
          * @see docs/design/SYCL_VULKAN_INTEROP/README.md §3.1 in the SushiEngine repository.
          */
-        class USMAllocationOwner final : public AllocationOwner
+        class USMAllocationOwner final : public Detail::AllocationOwner
         {
             public:
                 /**

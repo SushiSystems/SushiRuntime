@@ -1659,7 +1659,7 @@ namespace PlacedTaskTests
         std::vector<std::uint32_t> memory(4, 0u);
         const LivenessToken owner = make_liveness();
         const Buffer<std::uint32_t> borrowed = rt.interop().borrow(
-            memory.data(), memory.size(), DeviceIndex{device}, Residency::Host, owner);
+            memory.data(), memory.size(), DeviceIndex{device}, Residency::Host, owner).value();
 
         std::optional<sycl::device> ran_on;
         auto graph = rt.graph();

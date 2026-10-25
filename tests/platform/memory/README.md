@@ -17,19 +17,6 @@ sections and retire objects, while threads spawn and exit to exercise the orphan
 Every retired object must be destroyed once, and most must be reclaimed. Under ASan and TSan
 the same run surfaces races and use-after-free.
 
-## test_allocation.cpp
-
-A counting owner records each release and the address it was given; the addresses are never
-dereferenced.
-
-| Test | What it proves |
-| --- | --- |
-| `ReleasesOnceOnDestruction` | A destroyed allocation releases its address once, to its owner. |
-| `MoveTransfersTheReleaseAndEmptiesTheSource` | A move hands the release to the target and leaves the source empty, so the address is released once. |
-| `MoveAssignmentReleasesTheOverwrittenAddressFirst` | Assigning over an allocation releases the address it held before it takes the new one. |
-| `AnEmptyAllocationHasNoAddressOrOwner` | A default allocation is empty and holds 0 bytes. |
-| `ResetOnANonNullAddressWithNoOwnerReleasesNothing` | `reset()` on an allocation with no owner empties it and releases nothing. |
-
 ## test_epoch_reclamation.cpp
 
 The file covers epoch-based reclamation. `EpochManager` is a process-wide singleton, so the tests
@@ -113,6 +100,11 @@ The file covers `USMAllocator`. The sections below cover its release of an addre
 record of, and the removal of its release observer. The first two tests skip when no SYCL device
 supports the USM kind they need.
 
+### `RecordOfKeepsTheKindAnAllocationWasMadeAs`
+
+An allocation's record holds its device and the kind requested until it is released; an adopted
+address is recorded with no kind.
+
 ### `ASecondReleaseLogsOneErrorWithTheAddressAndFreesNothing`
 
 The test allocates on device 0 and releases the block. That first release logs no ERROR line and lowers
@@ -159,6 +151,11 @@ first writer win.
 
 Buffers are constructed and destroyed from whichever thread owns them, so several threads write the
 registry at once. Every pointer the test records is taken exactly once, by exactly one thread.
+
+### `RecordOfReportsTheDeviceAndKindAtTheBaseOnly`
+
+record_of() returns the device and kind given to record(), no kind for an entry recorded without
+one, and nothing for an interior pointer or null.
 
 ### `ContainingAllocationResolvesAnInteriorPointer`
 

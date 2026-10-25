@@ -44,7 +44,6 @@
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/memory/allocation.hpp>
 
 using namespace SushiRuntime;
 
@@ -535,19 +534,37 @@ namespace AllocationTests
         /** @brief Returns a distinct non-null address that is never dereferenced. */
         void* fake(std::uintptr_t n) { return reinterpret_cast<void*>(n * 4096u); }
 
+        /** @brief Counts the releases it receives and remembers the last address. */
+        class CountingOwner final : public SushiRuntime::Detail::AllocationOwner
+        {
+            public:
+                /** @brief Binds the owner to the counters it reports into. */
+                CountingOwner(int& releases, void*& last) : releases_(releases), last_(last)
+                {
+
+                }
+
+                /** @brief Records one release of @p address. */
+                void release(void* address) noexcept override
+                {
+                    ++releases_;
+                    last_ = address;
+                }
+
+            private:
+                /** @brief Releases received so far. */
+                int& releases_;
+
+                /** @brief Address of the last release. */
+                void*& last_;
+        };
+
         /** @brief Builds a block whose owner counts its one release, for Buffer tests. */
         SushiRuntime::Detail::MemoryBlock counted_block(std::uintptr_t address, std::size_t bytes,
                                                         int& releases, void*& last)
         {
-            SushiRuntime::Detail::MemoryBlock block;
-            block.address = fake(address);
-            block.bytes = bytes;
-            block.owner = std::shared_ptr<void>(fake(address), [&releases, &last](void* released)
-            {
-                ++releases;
-                last = released;
-            });
-            return block;
+            return SushiRuntime::Detail::MemoryBlock{SushiRuntime::Detail::Allocation(
+                fake(address), bytes, std::make_unique<CountingOwner>(releases, last))};
         }
     }
 
@@ -573,6 +590,23 @@ namespace AllocationTests
         }
         EXPECT_EQ(releases, 1);
         EXPECT_EQ(last, fake(6));
+    }
+
+    TEST(Medium_Buffer, MovingAnAdoptedBufferReleasesTheAllocationOnce)
+    {
+        int releases = 0;
+        void* last = nullptr;
+        {
+            auto source = HandleAccess::construct<Buffer<std::uint8_t>>(
+                SushiRuntime::ContextHandle(), counted_block(9, 16, releases, last), 16,
+                DeviceIndex{0}, Residency::Shared);
+            Buffer<std::uint8_t> target(std::move(source));
+            EXPECT_TRUE(source.empty());
+            EXPECT_EQ(target.data(), fake(9));
+            EXPECT_EQ(releases, 0);
+        }
+        EXPECT_EQ(releases, 1);
+        EXPECT_EQ(last, fake(9));
     }
 
     TEST(Medium_BufferDeathTest, AdoptingATooSmallAllocationStops)

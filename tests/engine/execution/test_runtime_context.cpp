@@ -294,7 +294,7 @@ namespace TopologyTests
         EXPECT_EQ(ctx.memory().live_count(), baseline);
 
         int external = 0;
-        ctx.memory().adopt(&external, 0, sizeof(external));
+        ctx.memory().adopt(&external, 0, sizeof(external), std::nullopt);
         EXPECT_EQ(ctx.memory().live_count(), baseline + 1);
         ctx.memory().forget(&external);
         EXPECT_EQ(ctx.memory().live_count(), baseline);

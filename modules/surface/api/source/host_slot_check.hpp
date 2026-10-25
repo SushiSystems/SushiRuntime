@@ -47,25 +47,6 @@ namespace SushiRuntime
     namespace Detail
     {
         /**
-         * @brief Reports which kind of USM an address is, in its owning context.
-         * @param address The address to classify; resolved through the registry.
-         * @return The SYCL allocation kind, or unknown when nothing resolves it.
-         */
-        inline sycl::usm::alloc usm_kind_of(Internal::Execution::RuntimeContext& context,
-                                            void* address)
-        {
-            try
-            {
-                return sycl::get_pointer_type(
-                    address, owning_queue(context, address).get_context());
-            }
-            catch (const sycl::exception&)
-            {
-                return sycl::usm::alloc::unknown;
-            }
-        }
-
-        /**
          * @brief Returns the refusal of a slot that is neither null nor in host USM.
          * @param what The builder call that named the slot, which opens the message.
          * @return An InvalidAccess error for a slot that is not host USM and for one this
@@ -78,11 +59,11 @@ namespace SushiRuntime
         {
             if (slot == nullptr)
                 return std::nullopt;
-            void* address = const_cast<void*>(static_cast<const void*>(slot));
+            const void* address = slot;
             if (usm_kind_of(context, address) == sycl::usm::alloc::host)
                 return std::nullopt;
             const std::string where = std::string(what) + ", rule " + std::to_string(rule);
-            const std::optional<void*> base = context.memory().containing_base(address);
+            const std::optional<const void*> base = context.memory().containing_base(address);
             if (!base)
                 return Error{ErrorCode::InvalidAccess,
                              where + ": this runtime never allocated the slot, so its residency "

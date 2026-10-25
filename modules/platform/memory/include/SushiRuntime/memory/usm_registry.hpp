@@ -33,12 +33,14 @@
 #include <optional>
 #include <unordered_map>
 
+#include <SushiRuntime/memory/usm_request.hpp>
+
 namespace SushiRuntime
 {
     namespace Internal::Memory
     {
         /**
-         * @brief Remembers which device each USM pointer was allocated on.
+         * @brief Remembers which device each USM pointer was allocated on, and its kind.
          * @see modules/platform/memory/README.md
          */
         class USMRegistry
@@ -54,25 +56,51 @@ namespace SushiRuntime
                 struct Containment
                 {
                     /** @brief First address of the allocation. */
-                    void* base = nullptr;
+                    const void* base = nullptr;
 
                     /** @brief Index of the device the allocation belongs to. */
                     std::size_t device_index = 0;
                 };
 
+                /** @brief What the registry knows of one allocation at its first address. */
+                struct Record
+                {
+                    /** @brief Index of the device the allocation belongs to. */
+                    std::size_t device_index = 0;
+
+                    /** @brief Kind the allocation was made as; nothing for adopted memory. */
+                    std::optional<USMKind> kind;
+                };
+
                 /**
-                 * @brief Records the device and extent of a fresh allocation, replacing a known
-                 *        entry.
+                 * @brief Records the device, extent and kind of a fresh allocation, replacing a
+                 *        known entry.
                  * @param ptr The allocation; null is ignored.
                  * @param bytes Length of the allocation, or nothing when the caller cannot know it.
-                 * @see modules/platform/memory/README.md
+                 * @param kind Kind it was allocated as, or nothing when another API made it.
                  */
-                void record(void* ptr, std::size_t device_index, std::optional<std::size_t> bytes)
+                void record(const void* ptr, std::size_t device_index,
+                            std::optional<std::size_t> bytes, std::optional<USMKind> kind)
                 {
                     if (!ptr)
                         return;
                     std::lock_guard<std::mutex> lock(mutex_);
-                    owners_[ptr] = Entry{device_index, bytes};
+                    owners_[ptr] = Entry{device_index, bytes, kind};
+                }
+
+                /**
+                 * @brief Looks up the device and kind of a first address, in constant time.
+                 * @return The record, or nothing for null and for an address with no entry.
+                 */
+                std::optional<Record> record_of(const void* ptr) const
+                {
+                    if (!ptr)
+                        return std::nullopt;
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    const auto it = owners_.find(ptr);
+                    if (it == owners_.end())
+                        return std::nullopt;
+                    return Record{it->second.device_index, it->second.kind};
                 }
 
                 /**
@@ -83,7 +111,7 @@ namespace SushiRuntime
                  *         not allocated through this registry — which a caller must
                  *         treat as "unknown", not as device zero.
                  */
-                std::optional<std::size_t> owner_of(void* ptr) const
+                std::optional<std::size_t> owner_of(const void* ptr) const
                 {
                     if (!ptr)
                         return std::nullopt;
@@ -99,7 +127,7 @@ namespace SushiRuntime
                  * @return The allocation covering ptr, or nothing when none does.
                  * @see modules/platform/memory/README.md
                  */
-                std::optional<Containment> containing_allocation(void* ptr) const
+                std::optional<Containment> containing_allocation(const void* ptr) const
                 {
                     if (!ptr)
                         return std::nullopt;
@@ -124,7 +152,7 @@ namespace SushiRuntime
                  *        unknown.
                  * @see modules/platform/memory/README.md
                  */
-                std::optional<std::size_t> take(void* ptr)
+                std::optional<std::size_t> take(const void* ptr)
                 {
                     if (!ptr)
                         return std::nullopt;
@@ -159,10 +187,16 @@ namespace SushiRuntime
 
                     /** @brief Length in bytes, or nothing when the caller had none. */
                     std::optional<std::size_t> bytes;
+
+                    /** @brief Kind the allocation was made as, or nothing for adopted memory. */
+                    std::optional<USMKind> kind;
                 };
 
+                /** @brief Guards owners_. */
                 mutable std::mutex mutex_;
-                std::unordered_map<void*, Entry> owners_;
+
+                /** @brief One entry per recorded first address. */
+                std::unordered_map<const void*, Entry> owners_;
         };
 
     } // namespace Memory

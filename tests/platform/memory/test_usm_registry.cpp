@@ -59,7 +59,7 @@ namespace
 TEST(Medium_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
 {
     USMRegistry registry;
-    registry.record(fake(1), 3, K_EXTENT);
+    registry.record(fake(1), 3, K_EXTENT, std::nullopt);
 
     const auto owner = registry.owner_of(fake(1));
     ASSERT_TRUE(owner.has_value());
@@ -69,7 +69,7 @@ TEST(Medium_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
 TEST(Medium_UsmRegistry, AnUnrecordedPointerHasNoOwner)
 {
     USMRegistry registry;
-    registry.record(fake(1), 0, K_EXTENT);
+    registry.record(fake(1), 0, K_EXTENT, std::nullopt);
 
     EXPECT_FALSE(registry.owner_of(fake(2)).has_value());
     EXPECT_FALSE(registry.owner_of(nullptr).has_value());
@@ -78,7 +78,7 @@ TEST(Medium_UsmRegistry, AnUnrecordedPointerHasNoOwner)
 TEST(Medium_UsmRegistry, TakeReportsTheOwnerAndForgetsThePointer)
 {
     USMRegistry registry;
-    registry.record(fake(1), 2, K_EXTENT);
+    registry.record(fake(1), 2, K_EXTENT, std::nullopt);
 
     const auto taken = registry.take(fake(1));
     ASSERT_TRUE(taken.has_value());
@@ -93,8 +93,8 @@ TEST(Medium_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
 {
     // Recording a pointer twice keeps the last writer; see README.md.
     USMRegistry registry;
-    registry.record(fake(1), 1, K_EXTENT);
-    registry.record(fake(1), 4, K_EXTENT);
+    registry.record(fake(1), 1, K_EXTENT, std::nullopt);
+    registry.record(fake(1), 4, K_EXTENT, std::nullopt);
 
     const auto owner = registry.owner_of(fake(1));
     ASSERT_TRUE(owner.has_value());
@@ -106,8 +106,8 @@ TEST(Medium_UsmRegistry, SizeCountsLiveEntries)
     USMRegistry registry;
     EXPECT_EQ(registry.size(), 0u);
 
-    registry.record(fake(1), 0, K_EXTENT);
-    registry.record(fake(2), 0, K_EXTENT);
+    registry.record(fake(1), 0, K_EXTENT, std::nullopt);
+    registry.record(fake(2), 0, K_EXTENT, std::nullopt);
     EXPECT_EQ(registry.size(), 2u);
 
     registry.take(fake(1));
@@ -132,7 +132,7 @@ TEST(Medium_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
             for (int i = 0; i < PER_THREAD; ++i)
             {
                 void* p = fake(static_cast<std::uintptr_t>(t * PER_THREAD + i + 1));
-                registry.record(p, static_cast<std::size_t>(t), K_EXTENT);
+                registry.record(p, static_cast<std::size_t>(t), K_EXTENT, std::nullopt);
                 if (auto owner = registry.take(p))
                 {
                     EXPECT_EQ(*owner, static_cast<std::size_t>(t));
@@ -148,11 +148,30 @@ TEST(Medium_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
     EXPECT_EQ(registry.size(), 0u);
 }
 
+TEST(Medium_UsmRegistry, RecordOfReportsTheDeviceAndKindAtTheBaseOnly)
+{
+    USMRegistry registry;
+    registry.record(fake(1), 2, K_EXTENT, SushiRuntime::Internal::Memory::USMKind::Host);
+    registry.record(fake(2), 3, K_EXTENT, std::nullopt);
+
+    const auto made = registry.record_of(fake(1));
+    ASSERT_TRUE(made.has_value());
+    EXPECT_EQ(made->device_index, 2u);
+    EXPECT_EQ(made->kind, SushiRuntime::Internal::Memory::USMKind::Host);
+
+    const auto adopted = registry.record_of(fake(2));
+    ASSERT_TRUE(adopted.has_value());
+    EXPECT_FALSE(adopted->kind.has_value());
+
+    EXPECT_FALSE(registry.record_of(inside(1, 16)).has_value());
+    EXPECT_FALSE(registry.record_of(nullptr).has_value());
+}
+
 TEST(Medium_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
 {
     // The caller passes an interior address the base-keyed table cannot find; see README.md.
     USMRegistry registry;
-    registry.record(fake(1), 5, K_EXTENT);
+    registry.record(fake(1), 5, K_EXTENT, std::nullopt);
 
     const auto found = registry.containing_allocation(inside(1, 16));
     ASSERT_TRUE(found.has_value());
@@ -168,7 +187,7 @@ TEST(Medium_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
 TEST(Medium_UsmRegistry, ContainingAllocationIgnoresAnUnrelatedPointer)
 {
     USMRegistry registry;
-    registry.record(fake(1), 0, K_EXTENT);
+    registry.record(fake(1), 0, K_EXTENT, std::nullopt);
 
     EXPECT_FALSE(registry.containing_allocation(fake(9)).has_value());
     EXPECT_FALSE(registry.containing_allocation(nullptr).has_value());
@@ -178,7 +197,7 @@ TEST(Medium_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
 {
     // An entry without a length resolves only at its base; see README.md.
     USMRegistry registry;
-    registry.record(fake(1), 7, std::nullopt);
+    registry.record(fake(1), 7, std::nullopt, std::nullopt);
 
     const auto base = registry.containing_allocation(fake(1));
     ASSERT_TRUE(base.has_value());
@@ -189,7 +208,7 @@ TEST(Medium_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
 TEST(Medium_UsmRegistry, ContainingAllocationForgetsATakenPointer)
 {
     USMRegistry registry;
-    registry.record(fake(1), 0, K_EXTENT);
+    registry.record(fake(1), 0, K_EXTENT, std::nullopt);
     registry.take(fake(1));
 
     EXPECT_FALSE(registry.containing_allocation(inside(1, 8)).has_value());

@@ -7,6 +7,7 @@
 sushiruntime_add_module_tests(
     MODULE core
     SOURCES
+        test_allocation.cpp
         test_assert.cpp
         test_bit.cpp
         test_common.cpp

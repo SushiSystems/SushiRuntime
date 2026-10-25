@@ -32,12 +32,14 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/memory/allocation.hpp>
+#include <SushiRuntime/core/allocation.hpp>
+
 #include <SushiRuntime/memory/usm_allocation_owner.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 
 using namespace SushiRuntime::Internal::Memory;
+using SushiRuntime::Detail::Allocation;
 
 /** @brief Tests that destroying the allocation frees the USM through the allocator. */
 TEST(Medium_USMAllocationOwner, DestroyingTheAllocationFreesTheUSM)

@@ -8,4 +8,5 @@ sushiruntime_add_module(
     NAME context_access TIER surface INTERNAL
     SYCL
     SOURCES context_access.cpp
-    DEPENDS core execution context)
+    DEPENDS core execution context
+    PRIVATE_DEPENDS memory_exchange)

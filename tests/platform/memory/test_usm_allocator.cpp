@@ -362,10 +362,10 @@ TEST_F(Medium_UsmAllocator, AnAllocationResolvesToItsDeviceAtItsBaseAndInside)
 
     // device_of() answers for a first address only; containing_base() finds it from inside.
     EXPECT_FALSE(allocator_->device_of(interior).has_value());
-    const std::optional<void*> base = allocator_->containing_base(interior);
+    const std::optional<const void*> base = allocator_->containing_base(interior);
     ASSERT_TRUE(base.has_value());
     EXPECT_EQ(*base, address);
-    EXPECT_EQ(allocator_->containing_base(address), std::optional<void*>(address));
+    EXPECT_EQ(allocator_->containing_base(address), std::optional<const void*>(address));
     EXPECT_FALSE(allocator_->containing_base(past_the_end).has_value());
 
     allocator_->release(address);
@@ -408,19 +408,43 @@ TEST_F(Medium_UsmAllocator, OwningDeviceAsksSYCLAboutUSMItHasNoRecordOf)
     sycl::free(address, queues_[*device]);
 }
 
+TEST_F(Medium_UsmAllocator, RecordOfKeepsTheKindAnAllocationWasMadeAs)
+{
+    const std::size_t device = queues_.size() - 1;
+    const std::optional<USMKind> kind = kind_supported_by(device);
+    if (!kind.has_value())
+        GTEST_SKIP() << "The last SYCL device supports no USM kind.";
+
+    void* const address = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, device});
+    ASSERT_NE(address, nullptr);
+    const auto record = allocator_->record_of(address);
+    ASSERT_TRUE(record.has_value());
+    EXPECT_EQ(record->device_index, device);
+    EXPECT_EQ(record->kind, kind);
+    allocator_->release(address);
+    EXPECT_FALSE(allocator_->record_of(address).has_value());
+
+    std::array<int, 8> external{};
+    allocator_->adopt(external.data(), device, sizeof(external), std::nullopt);
+    const auto adopted = allocator_->record_of(external.data());
+    ASSERT_TRUE(adopted.has_value());
+    EXPECT_FALSE(adopted->kind.has_value());
+    allocator_->forget(external.data());
+}
+
 TEST_F(Medium_UsmAllocator, AdoptRecordsAnAddressAndForgetDropsIt)
 {
     const std::size_t baseline = allocator_->live_count();
     const std::size_t device = queues_.size() - 1;
     std::array<int, 8> external{};
 
-    allocator_->adopt(external.data(), device, sizeof(external));
+    allocator_->adopt(external.data(), device, sizeof(external), std::nullopt);
     EXPECT_EQ(allocator_->live_count(), baseline + 1);
 
     const std::optional<std::size_t> recorded = allocator_->device_of(external.data());
     ASSERT_TRUE(recorded.has_value());
     EXPECT_EQ(*recorded, device);
-    EXPECT_EQ(allocator_->containing_base(&external[3]), std::optional<void*>(external.data()));
+    EXPECT_EQ(allocator_->containing_base(&external[3]), std::optional<const void*>(external.data()));
 
     allocator_->forget(external.data());
     EXPECT_EQ(allocator_->live_count(), baseline);
@@ -436,7 +460,7 @@ TEST_F(Medium_UsmAllocator, ReleaseOfAnAdoptedAddressDropsTheRecordAndDoesNotFre
     const auto external = std::make_unique<unsigned char[]>(K_BYTES);
     std::memset(external.get(), K_PATTERN, K_BYTES);
 
-    allocator_->adopt(external.get(), 0, K_BYTES);
+    allocator_->adopt(external.get(), 0, K_BYTES, std::nullopt);
     ASSERT_EQ(allocator_->live_count(), baseline + 1);
 
     // A sycl::free of this heap block would be a free of memory SYCL never allocated.
@@ -513,7 +537,7 @@ TEST_F(Medium_UsmAllocatorDeathTest, ABadDeviceIndexStopsWithTheIndexAndTheCount
 
     const USMRequest request{USMKind::Shared, 64, 0, bad_index};
     EXPECT_DEATH(static_cast<void>(allocator_->allocate(request)), pattern);
-    EXPECT_DEATH(allocator_->adopt(&external, bad_index, sizeof(external)), pattern);
+    EXPECT_DEATH(allocator_->adopt(&external, bad_index, sizeof(external), std::nullopt), pattern);
 }
 
 TEST_F(Medium_UsmAllocator, TheReleaseObserverHearsEachReleasedAddressExactlyOnce)
@@ -538,12 +562,12 @@ TEST_F(Medium_UsmAllocator, TheReleaseObserverHearsEachReleasedAddressExactlyOnc
     // Null is ignored and forget() is not a release; neither reaches the observer.
     int external = 0;
     allocator_->release(nullptr);
-    allocator_->adopt(&external, 0, sizeof(external));
+    allocator_->adopt(&external, 0, sizeof(external), std::nullopt);
     allocator_->forget(&external);
     EXPECT_EQ(observer.released.size(), 1u);
 
     // An adopted address is reported like any other, although it is not freed.
-    allocator_->adopt(&external, 0, sizeof(external));
+    allocator_->adopt(&external, 0, sizeof(external), std::nullopt);
     allocator_->release(&external);
     ASSERT_EQ(observer.released.size(), 2u);
     EXPECT_EQ(observer.released[1], &external);
@@ -560,7 +584,7 @@ TEST_F(Medium_UsmAllocator, SetReleaseObserverWaitsForAnObserverCallInFlight)
     BlockingObserver observer;
     allocator_->set_release_observer(&observer);
     int external = 0;
-    allocator_->adopt(&external, 0, sizeof(external));
+    allocator_->adopt(&external, 0, sizeof(external), std::nullopt);
 
     std::thread releaser([this, &external] { allocator_->release(&external); });
     observer.wait_until_entered();

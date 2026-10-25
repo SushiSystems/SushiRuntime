@@ -31,7 +31,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -42,6 +41,7 @@
 
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
+#include <SushiRuntime/core/allocation.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
@@ -103,15 +103,13 @@ namespace SushiRuntime
     namespace Detail
     {
         /**
-         * @brief Names one allocation and what keeps it alive, with nothing of how it was
-         *        made.
+         * @brief Holds the one allocation a Buffer views, with nothing of how it was made.
+         *        Move-only.
          * @see modules/surface/api/include/SushiRuntime/api/data/README.md
          */
         struct MemoryBlock
         {
-            void* address = nullptr;     /**< Base address, or null for no memory. */
-            std::size_t bytes = 0;       /**< Bytes the block holds. */
-            std::shared_ptr<void> owner; /**< Returns the memory when the last copy goes. */
+            Allocation allocation; /**< The memory; owns no release for borrowed memory. */
         };
 
         /** @brief Returns how many devices a runtime drives. */
@@ -272,7 +270,7 @@ namespace SushiRuntime
              */
             Buffer(Buffer&& other) noexcept
                 : context_(std::move(other.context_)),
-                  block_(std::exchange(other.block_, {})),
+                  block_(std::move(other.block_)),
                   size_(other.size_),
                   device_index_(other.device_index_),
                   residency_(other.residency_),
@@ -294,7 +292,7 @@ namespace SushiRuntime
                 {
                     reset();
                     context_ = std::move(other.context_);
-                    block_ = std::exchange(other.block_, {});
+                    block_ = std::move(other.block_);
                     size_ = other.size_;
                     device_index_ = other.device_index_;
                     residency_ = other.residency_;
@@ -313,7 +311,7 @@ namespace SushiRuntime
              */
             [[nodiscard]] T* data() const noexcept
             {
-                return static_cast<T*>(block_.address);
+                return static_cast<T*>(block_.allocation.address());
             }
 
             /**
@@ -326,7 +324,7 @@ namespace SushiRuntime
              * @brief Tells whether this handle owns no memory.
              * @return True if it owns no allocation, e.g. after being moved from.
              */
-            [[nodiscard]] bool empty() const noexcept { return block_.address == nullptr; }
+            [[nodiscard]] bool empty() const noexcept { return block_.allocation.empty(); }
 
             /**
              * @brief Reports which device queue the allocation is pinned to.
@@ -450,8 +448,8 @@ namespace SushiRuntime
 
             /**
              * @brief Wraps memory another component allocated and will release.
-             * @param block Holds at least count * sizeof(T) bytes; its owner is let go when
-             *        the buffer is, or here on a failure.
+             * @param block Holds at least count * sizeof(T) bytes; the buffer takes it, and
+             *        on a failure it is released here.
              * @return The buffer, or an AllocationFailed error when its liveness token
              *         cannot be allocated.
              * @pre The byte size of count fits std::size_t and block holds at least it.
@@ -486,9 +484,9 @@ namespace SushiRuntime
             {
                 const std::size_t bytes =
                     Detail::checked_byte_count("Buffer adoption", count, sizeof(T));
-                SR_VERIFY(block_.bytes >= bytes,
+                SR_VERIFY(block_.allocation.bytes() >= bytes,
                           ("Buffer adoption: an allocation of " +
-                           std::to_string(block_.bytes) + " bytes cannot hold " +
+                           std::to_string(block_.allocation.bytes()) + " bytes cannot hold " +
                            Detail::describe_request(count, sizeof(T), device_index, residency) +
                            ".")
                               .c_str());
@@ -498,7 +496,7 @@ namespace SushiRuntime
              * @brief Views memory another owner keeps alive; Interop::borrow() is its one
              *        caller.
              * @param owner_life Expires when the owner releases the memory.
-             * @pre block holds at least count elements and owns nothing.
+             * @pre block holds at least count elements and its allocation has no owner.
              */
             Buffer(ContextHandle context, Detail::MemoryBlock block, std::size_t count,
                    DeviceIndex device_index, Residency residency,
@@ -606,7 +604,7 @@ namespace SushiRuntime
             /** @brief Frees the owned allocation and clears the handle. */
             void reset() noexcept
             {
-                block_ = {};
+                block_.allocation.reset();
                 size_ = 0;
                 // Resetting the token expires every graph's observer of this allocation.
                 liveness_.reset();
@@ -616,7 +614,7 @@ namespace SushiRuntime
             /** @brief The runtime the memory came from; empty for an empty handle. */
             ContextHandle context_;
 
-            /** @brief The allocation and what keeps it alive. */
+            /** @brief The allocation, held in place; it releases the memory it owns. */
             Detail::MemoryBlock block_;
 
             std::size_t size_ = 0;

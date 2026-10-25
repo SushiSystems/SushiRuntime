@@ -21,7 +21,7 @@
 
 /**
  * @file host_export.hpp
- * @brief Bundles a host-exported buffer with the address and size another API imports.
+ * @brief Bundles a host-exported buffer with the size another API imports.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/interop/README.md
  */
@@ -35,15 +35,23 @@
 namespace SushiRuntime
 {
     /**
-     * @brief Holds a host-exported buffer alongside the address another API imports.
+     * @brief Holds a host-exported buffer and the rounded byte size another API imports.
      * @tparam T Element type of the exported buffer.
      * @see modules/surface/api/include/SushiRuntime/api/interop/README.md
      */
     template <typename T>
     struct HostExport
     {
-        Buffer<T> buffer;        /**< Owns the exported allocation. */
-        void* address = nullptr; /**< Holds the exported region's base address. */
-        std::size_t bytes = 0;   /**< Holds the exported region's rounded byte size. */
+        Buffer<T> buffer;      /**< Owns the exported allocation. */
+        std::size_t bytes = 0; /**< Holds the exported region's rounded byte size. */
+
+        /**
+         * @brief Returns the exported region's base address, which another API imports.
+         * @return The buffer's address, or null for an empty export.
+         */
+        [[nodiscard]] void* address() const noexcept
+        {
+            return static_cast<void*>(buffer.data());
+        }
     };
 } // namespace SushiRuntime

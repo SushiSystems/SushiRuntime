@@ -22,7 +22,7 @@
 /**
  * @file test_allocation.cpp
  * @brief Tests Allocation: one release on destruction, moves, and an empty or ownerless allocation.
- * @see tests/platform/memory/README.md
+ * @see tests/foundation/core/README.md
  * @author Mustafa Garip
  */
 
@@ -33,12 +33,12 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/memory/allocation.hpp>
+#include <SushiRuntime/core/allocation.hpp>
 
 namespace AllocationTests
 {
-    using SushiRuntime::Internal::Memory::Allocation;
-    using SushiRuntime::Internal::Memory::AllocationOwner;
+    using SushiRuntime::Detail::Allocation;
+    using SushiRuntime::Detail::AllocationOwner;
 
 
     namespace

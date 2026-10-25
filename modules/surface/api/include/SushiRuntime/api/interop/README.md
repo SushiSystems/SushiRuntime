@@ -25,10 +25,11 @@ empty when the device does not report one.
 
 ### export_host
 
-export_host allocates host USM on the given device's queue and returns it as a Shared Buffer. The
+export_host allocates host USM on the given device's queue and returns it as a Host Buffer, so a
+late-bound count or control accepts it. The
 alignment is raised to at least alignof(std::max_align_t) and must be a power of two; the byte size
 is rounded up to a multiple of it, and HostExport::bytes holds the rounded size. A count of zero
-returns an empty Buffer, a null address and zero bytes without allocating. An alignment that is not
+returns an empty Buffer and zero bytes without allocating. An alignment that is not
 a power of two, or a size that overflows when rounded, is a rule the caller broke and stops the
 process through `SR_VERIFY`. A failed allocation comes back as an `AllocationFailed` error in the
 `Result<HostExport<T>>` the call returns, whether the device returned no memory or the host could
@@ -66,8 +67,15 @@ borrow() wraps memory the caller owns as a Buffer a graph tracks, and takes no o
 The caller passes the address, the element count, the device the buffer reports, the residency it
 claims and a `LivenessToken` that lives exactly as long as the memory stays valid. The Buffer keeps
 an observer of that token and no share of it; the data README's "Borrowed Buffer" section says
-what a run then checks. Nothing is allocated, so the call returns the Buffer itself, not a
-`Result`.
+what a run then checks. The Buffer's `Detail::Allocation` has no owner, so destroying the Buffer
+releases nothing.
+
+The call returns `Result<Buffer<T>>`. For a count above 0 it asks SYCL for the kind of the address
+with `sycl::get_pointer_type`, in the context of the stated device's queue. Host USM is
+`Residency::Host`, shared USM is `Residency::Shared` and device USM is `Residency::Device`; a stated
+residency that differs is refused with `InvalidArgument`, and the message names both. Memory SYCL
+does not know, such as a `std::vector` or memory of another context, reports
+`sycl::usm::alloc::unknown` and keeps the stated residency unchecked.
 
 A null token, a null address for a count above 0 and a device index the runtime does not drive
 are rules the caller broke, and stop the process through `SR_VERIFY`. The memory must be reachable
@@ -82,12 +90,7 @@ A count of 0 returns an empty Buffer.
 
 ### HostExport
 
-buffer owns the allocation. address and bytes are copies taken at export time, for handing to the
-importing API; address equals buffer.data(). Moving buffer out of the struct keeps address valid,
-because the allocation moves with it. address dangles once the Buffer that owns the allocation is
-destroyed, so that Buffer must outlive every import the other API made from it.
-
-### HostExport
-
-SushiEngine spells the type HostExport, and so does the return type of export_host. The
-alias makes that spelling name HostExport, so there is one type under two names.
+buffer owns the allocation, and address() returns buffer.data(), so the address has one source.
+bytes is the rounded size taken at export time, which the Buffer does not hold. The address
+dangles once the Buffer that owns the allocation is destroyed, so that Buffer must outlive every
+import the other API made from it.

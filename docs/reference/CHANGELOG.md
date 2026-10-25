@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- 2026-10-25 — distributed: Made a worker fail a task, with the runtime's message, when borrowing a cached view is refused (`dispatch_recorder.cpp`).
+- 2026-10-25 — api: Made the late-bound slot check and `Interop::borrow()` share one `Detail::usm_kind_of()`, which answers runtime-made memory from its record without a SYCL call (`context_memory.hpp`).
+- 2026-10-25 — memory: Recorded each allocation's `USMKind`, returned with its device by `USMAllocator::record_of()`, and made every lookup take `const void*` (`usm_allocator.hpp`, `usm_registry.hpp`).
+- 2026-10-25 — memory: Breaking change: Made `USMAllocator::adopt()` take the mapping's `USMKind` explicitly; device imports record `USMKind::Device` (`usm_allocator.hpp`, `memory_exchange.cpp`).
+- 2026-10-25 — interop: Added `InteropCapabilities::importable_kinds`, the handle kinds a device imports, and stated who closes a handle, per kind (`interop_capabilities.hpp`, `external_handle_kind_set.hpp`).
+- 2026-10-25 — memory_exchange: Breaking change: Asked SYCL per handle kind what a device imports, refused any other kind by name, and cached the answers in a `CapabilityCache` the caller passes (`memory_exchange.hpp`).
+- 2026-10-25 — context_access: Gave each runtime's surface context its own `CapabilityCache`, reached through `capability_cache()` and released with the runtime (`context_access.hpp`).
+- 2026-10-25 — api: Fixed `Interop::export_host()` labelling host USM `Residency::Shared`; it is `Residency::Host`, so a late count accepts it (`interop.hpp`).
+- 2026-10-25 — api: Breaking change: Made `Interop::borrow()` return a `Result` and refuse a residency SYCL contradicts with `InvalidArgument` (`interop.hpp`).
+- 2026-10-25 — api: Breaking change: Made `HostExport::address()` a function that reads the buffer, in place of a copied field (`host_export.hpp`).
+- 2026-10-25 — core: Breaking change: Moved `Allocation` and `AllocationOwner` from the internal memory module into the core module's `Detail` namespace (`allocation.hpp`).
+- 2026-10-25 — api: Breaking change: Made `Detail::MemoryBlock` hold one move-only `Detail::Allocation` by value, which `Buffer::adopt()` takes by value, so a Buffer costs one heap allocation less (`buffer.hpp`).
 - 2026-10-25 — distributed: Added a `parse_worker_options()` overload that reads the process's own environment, so a worker program needs no internal header (`worker_options_parser.hpp`).
 - 2026-10-24 — api: Breaking change: Made `Graph::clear()` free the compiled plan and everything its task bodies captured, through an exported `PlanCache::discard()` (`plan_cache.hpp`).
 - 2026-10-24 — topology: Fixed the host identity queries missing their export, so a program outside the library could not link them (`host_identity.hpp`).

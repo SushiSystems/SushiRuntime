@@ -121,6 +121,22 @@ TEST(Medium_InteropImport, HostExportReportsWhetherTheQueueOffersHostUSM)
     }
 }
 
+TEST(Medium_InteropHostExport, AnExportIsHostResidentAndALateCountAcceptsIt)
+{
+    auto runtime = Runtime::create().value();
+    if (!runtime.interop().capabilities(DeviceIndex{0}).value().host_export)
+        GTEST_SKIP() << "device 0 offers no host USM";
+
+    const auto exported =
+        runtime.interop().export_host<std::uint32_t>(4, DeviceIndex{0}, 64).value();
+    EXPECT_EQ(exported.buffer.residency(), Residency::Host);
+    EXPECT_EQ(exported.address(), static_cast<void*>(exported.buffer.data()));
+
+    // sized_from_device stops the process unless the counter is Residency::Host.
+    const Dynamic late = sized_from_device(exported.buffer);
+    static_cast<void>(late);
+}
+
 TEST(Medium_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
 {
 #if !defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
@@ -289,7 +305,7 @@ TEST(Medium_InteropBorrow, ABorrowedBufferViewsTheCallersMemory)
 
     {
         const Buffer<std::uint32_t> borrowed = runtime.interop().borrow(
-            memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner);
+            memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value();
         EXPECT_EQ(borrowed.data(), memory.data());
         EXPECT_EQ(borrowed.size(), 3u);
         EXPECT_EQ(borrowed.device_index(), DeviceIndex{0});
@@ -309,7 +325,7 @@ TEST(Medium_InteropBorrow, ARunNamingABorrowedBufferWhoseOwnerLetGoIsRefused)
     std::vector<std::uint32_t> memory(4, 0u);
     LivenessToken owner = make_liveness();
     const Buffer<std::uint32_t> borrowed = runtime.interop().borrow(
-        memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner);
+        memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value();
 
     auto graph = runtime.graph();
     graph.recorder().host(Access(Reads(), Writes(borrowed)), [&memory]() { ++memory[0]; });
@@ -330,7 +346,7 @@ TEST(Medium_InteropBorrow, DroppingTheBorrowedHandleLeavesTheRunValid)
     std::vector<std::uint32_t> memory(4, 0u);
     const LivenessToken owner = make_liveness();
     std::optional<Buffer<std::uint32_t>> borrowed(runtime.interop().borrow(
-        memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner));
+        memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value());
 
     auto graph = runtime.graph();
     graph.recorder().host(Access(Reads(), Writes(*borrowed)), [&memory]() { ++memory[0]; });
@@ -351,7 +367,7 @@ TEST(Medium_InteropBorrow, ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAlloca
 
     {
         const Buffer<std::uint32_t> borrowed = runtime.interop().borrow(
-            memory, 4, DeviceIndex{0}, Residency::Shared, owner);
+            memory, 4, DeviceIndex{0}, Residency::Shared, owner).value();
         const std::vector<std::uint32_t> written = {1u, 2u, 3u, 4u};
         ASSERT_TRUE(borrowed.write_range(ElementRange{0, 4},
                                          span<const std::uint32_t>(written.data(), 4)));
@@ -361,4 +377,50 @@ TEST(Medium_InteropBorrow, ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAlloca
     }
 
     sycl::free(memory, queue);
+}
+
+TEST(Medium_InteropBorrow, AMismatchedResidencyIsRefusedWithBothNames)
+{
+    auto runtime = Runtime::create().value();
+    sycl::queue& queue =
+        SushiRuntime::Internal::ContextAccess::context(runtime).devices().queue(0);
+    if (!queue.get_device().has(sycl::aspect::usm_host_allocations))
+        GTEST_SKIP() << "device 0 offers no host USM";
+    std::uint32_t* memory = sycl::malloc_host<std::uint32_t>(4, queue);
+    ASSERT_NE(memory, nullptr);
+    const LivenessToken owner = make_liveness();
+
+    const Result<Buffer<std::uint32_t>> refused = runtime.interop().borrow(
+        memory, 4, DeviceIndex{0}, Residency::Shared, owner);
+
+    ASSERT_FALSE(refused);
+    EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
+    EXPECT_NE(refused.error().message.find("Residency::Host"), std::string::npos)
+        << refused.error().message;
+    EXPECT_NE(refused.error().message.find("Residency::Shared"), std::string::npos)
+        << refused.error().message;
+    sycl::free(memory, queue);
+}
+
+TEST(Medium_InteropBorrow, ARuntimeBufferBorrowedAsAnotherResidencyIsRefusedByItsRecord)
+{
+    auto runtime = Runtime::create().value();
+    sycl::queue& queue =
+        SushiRuntime::Internal::ContextAccess::context(runtime).devices().queue(0);
+    if (!queue.get_device().has(sycl::aspect::usm_host_allocations))
+        GTEST_SKIP() << "device 0 offers no host USM";
+    const Buffer<std::uint32_t> owned =
+        runtime.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
+    const LivenessToken owner = make_liveness();
+
+    const Result<Buffer<std::uint32_t>> refused = runtime.interop().borrow(
+        owned.data(), 4, DeviceIndex{0}, Residency::Shared, owner);
+    ASSERT_FALSE(refused);
+    EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
+    EXPECT_NE(refused.error().message.find("Residency::Host"), std::string::npos)
+        << refused.error().message;
+
+    const Result<Buffer<std::uint32_t>> agreed = runtime.interop().borrow(
+        owned.data(), 4, DeviceIndex{0}, Residency::Host, owner);
+    EXPECT_TRUE(agreed);
 }
