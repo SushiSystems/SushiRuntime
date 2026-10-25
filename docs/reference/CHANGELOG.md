@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-26 — api: Dropped the unused `<sycl/sycl.hpp>` from four headers, so the buffer, state, interop and vocabulary headers compile without SYCL (`buffer.hpp`, `state.hpp`, `runtime.hpp`, `step_driver.hpp`).
 - 2026-10-26 — layering: Added a checker that the units each build file lists in `DEVICE_SOURCES` are exactly those that instantiate a kernel (`check_device_sources.py`).
 - 2026-10-26 — cli: Stopped passing `-fsycl` in `CMAKE_CXX_FLAGS` on Windows, and made the change configure an existing tree again (`project.py`, `BASE_CXX_FLAGS`).
 - 2026-10-26 — cmake: Compiled for the device only the units a target lists in `DEVICE_SOURCES`; every other unit compiles for the host (`SushiRuntimeSyclTarget.cmake`, `Sycl.cmake`, `GpuBackend.cmake`).

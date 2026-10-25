@@ -38,8 +38,6 @@
 #include <type_traits>
 #include <utility>
 
-#include <sycl/sycl.hpp>
-
 #include <SushiRuntime/api/detail/before_step_hooks.hpp>
 #include <SushiRuntime/api/detail/callable_checks.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>

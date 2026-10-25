@@ -37,8 +37,6 @@
 #include <utility>
 #include <vector>
 
-#include <sycl/sycl.hpp>
-
 #include <SushiRuntime/api/detail/handle_access.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/allocation.hpp>

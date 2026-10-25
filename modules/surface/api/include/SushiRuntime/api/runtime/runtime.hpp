@@ -35,8 +35,6 @@
 #include <string_view>
 #include <utility>
 
-#include <sycl/sycl.hpp>
-
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
