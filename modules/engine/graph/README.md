@@ -229,7 +229,7 @@ enable flag vary per step, so the graph is built once and replayed without recom
 
 ### name_last_node
 
-The name reaches the profiler as RunReport::NodeTiming::name. It is set after the fact and not
+The name reaches the profiler as the `name` of the node's row in the plan's `NodeTable`. It is set after the fact and not
 passed to each add_\* overload because two of the fluent launch shapes end in a parameter pack whose
 last element is the callable, so a trailing name is not expressible there.
 
@@ -254,7 +254,7 @@ times; each call returns a distinct value.
 An add_\* call accepts only an index this graph issued: one reserve_registration() returned, or one
 an earlier node drew. Indices are issued densely from zero, so the test is "below the count issued
 so far". Any other index stops the process through `SR_VERIFY`, and the message
-names the call, the index and the count. CompiledGraph::capture_profiling_state() sizes two vectors
+names the call, the index and the count. CompiledGraph::capture_profiling_state() sizes the multiplicity vector and the node table
 to the largest index plus one, so an index nobody issued could ask for 2^32 elements or collide with
 one the graph issues later. K_NO_REGISTRATION, the value that stands for "no node carries an index
 yet", is the first case. An issued index may be passed any number of times.
@@ -297,6 +297,8 @@ and transfers node ownership to the returned CompiledGraph. It does not submit a
 compile() is not thread-safe with respect to add_node() and add_task(). All nodes must be inserted
 before it is called.
 
+compile() is the stage zone `plan.compile`, and it writes the values `graph.nodes` and `graph.roots` at its end. It logs the nodes it added at `TRACE` and one `DEBUG` line per compile when some regions named no base address.
+
 A graph with no root, or with a cycle behind a root, makes compile() return an
 `ErrorCode::InvalidGraph` error in its `Result<CompiledGraph>`. The message gives the node counts
 and names one node that cannot run, by its label and registration index.
@@ -324,6 +326,27 @@ of [`GRAPH_REPLAY.md`](../../../docs/design/GRAPH_REPLAY/README.md), which is no
 that captured the bytes would break it. A Device allocation is outside the rule, since the host
 cannot address it. The write is not a node and the rule adds no ordering; the caller orders it by
 writing between executions.
+
+### capture_profiling_state: the node table
+
+capture_base_state() ends in capture_profiling_state(), which sizes `profiling_multiplicities` (how
+many internal nodes share each registration index, the row sizes of the ledger) and builds
+`node_table`, a `std::shared_ptr<const NodeTable>`. The table has one row per registration index
+that some node holds: the label, the operation and the optional `NodeCost` of the first node
+registered under the index, whether that node is host-native (host mode and no device work), and the
+multiplicity. The plan builds it once, so a run copies no string, and every `RunObservation` of the
+plan shares it. A node with no label gets an empty name, and the row also carries the node's `origin`, the caller's own
+operation it belongs to, empty when none. The table copies the plan's `label` and `graph_id`, which the
+owning graph sets before capture_base_state(); `NodeTable::label()` and `graph_id()` read them.
+
+The plan also keeps one scratch `RunObservation`, cleared and refilled every run, so an observed run
+allocates nothing once its vectors have grown.
+
+A `ChainPlan` also holds `not_chainable`, the first reason a plan could not run as a chain, a string literal that is null when it can.
+
+A `CompiledGraph` also holds `profiling`, which says the plan dispatches its device nodes on the
+profiling queues. It is stamped when the plan is built, from whether the runtime has an observer,
+and a plan built under the other answer is stale.
 
 ## Implementation
 
@@ -412,6 +435,12 @@ completion never fires, and the run hangs forever on the sentinel. `compile()` t
 simulates the runtime drain with Kahn's algorithm over a shadow copy of the in-degrees; any
 node left unreached sits in such a cycle. The check is O(N+E), paid once at compile and
 amortised over every replay of the plan.
+
+#### Untracked regions
+
+An access region with a null base creates no dependency, since no address can order it. The graph
+counts each one with a relaxed atomic as nodes are added and logs one `DEBUG` line at compile with
+the count, under `sushiruntime.graph`, instead of one line per region.
 
 #### take_nodes
 

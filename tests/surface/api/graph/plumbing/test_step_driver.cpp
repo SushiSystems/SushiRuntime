@@ -53,6 +53,7 @@
 #include <SushiRuntime/context_access/context_access.hpp>
 
 #include "refusing_fill.hpp"
+#include "run_recorder.hpp"
 
 using namespace SushiRuntime;
 
@@ -109,12 +110,6 @@ namespace
         static_assert(noexcept(g().run_async()), "run_async is noexcept");
         static_assert(std::is_void_v<decltype(g().cancel())> && noexcept(g().cancel()),
                       "cancel is noexcept");
-        static_assert(std::is_same_v<decltype(g().set_profiling(true)), G&> &&
-                      noexcept(g().set_profiling(true)),
-                      "set_profiling returns the graph");
-        static_assert(std::is_same_v<decltype(std::declval<const G&>().is_profiling_requested()),
-                                     bool>,
-                      "is_profiling_requested");
     };
 
     template struct RunEntries<Graph>;
@@ -459,24 +454,30 @@ TEST(Medium_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
     EXPECT_EQ(twice.error().code, ErrorCode::InvalidState);
 }
 
-/** @brief Tests that set_profiling() chains and is read back on both graph types. */
-TEST(Medium_RunDriver, SetProfilingChainsAndReadsBack)
+/** @brief Tests that add_run_observer() returns a handle that stands for the observer until it is reset. */
+TEST(Medium_RunDriver, AddRunObserverReturnsAHandleThatRemovesIt)
 {
     auto rt = Runtime::create().value();
+    auto observer = std::make_shared<TestRunner::RecordingObserver>();
 
+    RunObserverHandle handle = rt.add_run_observer(observer);
+    EXPECT_TRUE(static_cast<bool>(handle));
+
+    auto buf = rt.buffer<int>(N).value();
+    int* p = buf.data();
     auto g = rt.graph();
-    EXPECT_FALSE(g.is_profiling_requested());
-    EXPECT_TRUE(g.set_profiling(true).is_profiling_requested());
-    EXPECT_FALSE(g.set_profiling(false).is_profiling_requested());
+    g.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
+    g.run().value();
+    EXPECT_EQ(observer->count(), 1u);
 
-    auto world = rt.dynamic_graph();
-    EXPECT_FALSE(world.is_profiling_requested());
-    EXPECT_TRUE(world.set_profiling(true).is_profiling_requested());
-    EXPECT_FALSE(world.set_profiling(false).is_profiling_requested());
+    handle.reset();
+    EXPECT_FALSE(static_cast<bool>(handle));
+    g.run().value();
+    EXPECT_EQ(observer->count(), 1u) << "a removed observer saw a run";
 }
 
-/** @brief Tests that set_profiling() with the value already stored rebuilds no plan. */
-TEST(Medium_RunDriver, SettingTheSameProfilingValueRebuildsNothing)
+/** @brief Tests that only the first observer and the last removal rebuild a plan. */
+TEST(Medium_RunDriver, ASecondObserverRebuildsNothing)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -484,25 +485,45 @@ TEST(Medium_RunDriver, SettingTheSameProfilingValueRebuildsNothing)
 
     auto g = rt.graph();
     g.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
-    g.set_profiling(true).run().value();
+    g.run().value();
     EXPECT_EQ(g.compile_count(), 1u);
-    g.set_profiling(true).run().value();
-    EXPECT_EQ(g.compile_count(), 1u) << "the same request compiled the Graph again";
-    g.set_profiling(false).run().value();
-    EXPECT_EQ(g.compile_count(), 2u) << "a changed request must rebuild the plan";
+
+    auto first = std::make_shared<TestRunner::RecordingObserver>();
+    auto second = std::make_shared<TestRunner::RecordingObserver>();
+    RunObserverHandle first_handle = rt.add_run_observer(first);
+    g.run().value();
+    EXPECT_EQ(g.compile_count(), 2u) << "the first observer must rebuild the plan";
+
+    RunObserverHandle second_handle = rt.add_run_observer(second);
+    g.run().value();
+    EXPECT_EQ(g.compile_count(), 2u) << "a second observer rebuilt the Graph again";
+    EXPECT_EQ(first->count(), 2u);
+    EXPECT_EQ(second->count(), 1u);
+
+    first_handle.reset();
+    g.run().value();
+    EXPECT_EQ(g.compile_count(), 2u) << "removing one of two observers rebuilt the Graph";
+
+    second_handle.reset();
+    g.run().value();
+    EXPECT_EQ(g.compile_count(), 3u) << "the last removal must rebuild the plan";
 
     auto world = rt.dynamic_graph();
     world.region(0).add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
-    world.set_profiling(true).run().value();
+    world.run().value();
     EXPECT_EQ(world.compose_count(), 1u);
-    world.set_profiling(true).run().value();
-    EXPECT_EQ(world.compose_count(), 1u) << "the same request composed the DynamicGraph again";
-    world.set_profiling(false).run().value();
-    EXPECT_EQ(world.compose_count(), 2u) << "a changed request must compose the plan again";
+    RunObserverHandle again = rt.add_run_observer(first);
+    world.run().value();
+    EXPECT_EQ(world.compose_count(), 2u) << "the first observer must compose the plan again";
+    world.run().value();
+    EXPECT_EQ(world.compose_count(), 2u) << "the same observer composed the DynamicGraph again";
+    again.reset();
+    world.run().value();
+    EXPECT_EQ(world.compose_count(), 3u) << "the last removal must compose the plan again";
 }
 
-/** @brief Tests that a profiling toggle on a DynamicGraph composes once and times its nodes. */
-TEST(Medium_RunDriver, AProfilingToggleOnADynamicGraphComposesOnceAndTimesItsNodes)
+/** @brief Tests that adding an observer to a DynamicGraph composes once and times its nodes. */
+TEST(Medium_RunDriver, AnObserverOnADynamicGraphComposesOnceAndTimesItsNodes)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -512,20 +533,23 @@ TEST(Medium_RunDriver, AProfilingToggleOnADynamicGraphComposesOnceAndTimesItsNod
     auto world = rt.dynamic_graph();
     world.region(0).add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] += 1; });
 
-    EXPECT_TRUE(world.run().value().node_timings.empty())
-        << "a graph that requested nothing was timed";
+    world.run().value();
     EXPECT_EQ(world.compose_count(), 1u);
 
-    world.set_profiling(true);
-    EXPECT_FALSE(world.run().value().node_timings.empty()) << "the request did not reach the plan";
+    Testing::RunRecorder recorder(rt);
+    world.run().value();
+    ASSERT_EQ(recorder.count(), 1u);
+    EXPECT_FALSE(recorder.last().events.empty()) << "the observer did not reach the plan";
     EXPECT_EQ(world.compose_count(), 2u);
 
-    EXPECT_FALSE(world.run().value().node_timings.empty());
-    EXPECT_EQ(world.compose_count(), 2u) << "a run with the request unchanged composed again";
+    world.run().value();
+    ASSERT_EQ(recorder.count(), 2u);
+    EXPECT_FALSE(recorder.last().events.empty());
+    EXPECT_EQ(world.compose_count(), 2u) << "a run with the observer unchanged composed again";
 
-    world.set_profiling(false);
-    EXPECT_TRUE(world.run().value().node_timings.empty())
-        << "the withdrawal did not reach the plan";
+    recorder.stop();
+    world.run().value();
+    EXPECT_EQ(recorder.count(), 2u) << "the removal did not reach the plan";
     EXPECT_EQ(world.compose_count(), 3u);
 }
 

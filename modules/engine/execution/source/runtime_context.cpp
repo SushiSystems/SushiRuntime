@@ -28,8 +28,10 @@
 
 #include <SushiRuntime/execution/runtime_context.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -154,7 +156,7 @@ namespace SushiRuntime
                  std::vector<Internal::Device::DeviceDescriptor> descriptors)
                 : settings(runtime_settings),
                   topology(provider, std::move(distance_model)),
-                  devices(std::move(descriptors), settings.profiling),
+                  devices(std::move(descriptors), false),
                   memory(std::make_shared<Internal::Memory::USMAllocator>(devices.plain_queues()))
             {
             }
@@ -172,6 +174,9 @@ namespace SushiRuntime
 
                 // The scheduler holds the coordinator's address until its workers have joined.
                 offload.reset();
+
+                // No run is left to report to them once the engine is gone.
+                std::atomic_store(&observers, std::make_shared<const ObserverList>());
             }
 
             /**
@@ -238,6 +243,30 @@ namespace SushiRuntime
              */
             std::shared_ptr<const PlacementSnapshot> placement =
                 std::make_shared<const PlacementSnapshot>();
+
+            /** @brief Names one added observer. */
+            struct ObserverEntry
+            {
+                std::uint64_t id = 0;                   /**< What add_run_observer() returned. */
+                std::shared_ptr<RunObserver> observer;  /**< The observer; never null. */
+            };
+
+            /** @brief The observers in the order they were added. */
+            using ObserverList = std::vector<ObserverEntry>;
+
+            /**
+             * @brief The added observers, copied whole on every add and remove; never null.
+             *
+             * Read and written only through the std::atomic_* functions for shared_ptr, so a run reads
+             * one consistent list without a lock.
+             */
+            std::shared_ptr<const ObserverList> observers = std::make_shared<const ObserverList>();
+
+            /** @brief Serializes the writers of observers. */
+            std::mutex observers_mutex;
+
+            /** @brief The id the next added observer takes. */
+            std::uint64_t next_observer_id = 1;
 
             /** @brief Facts of this machine, set once by set_machine_facts(); null before. */
             std::shared_ptr<const NodeFacts> machine;
@@ -352,6 +381,49 @@ namespace SushiRuntime
                            });
         }
 
+        std::uint64_t RuntimeContext::add_run_observer(std::shared_ptr<RunObserver> observer)
+        {
+            const std::lock_guard<std::mutex> lock(impl_->observers_mutex);
+            const std::shared_ptr<const Impl::ObserverList> current = std::atomic_load(&impl_->observers);
+            auto next = std::make_shared<Impl::ObserverList>(*current);
+            const std::uint64_t id = impl_->next_observer_id++;
+            next->push_back(Impl::ObserverEntry{id, std::move(observer)});
+            std::atomic_store(&impl_->observers, std::shared_ptr<const Impl::ObserverList>(std::move(next)));
+            return id;
+        }
+
+        void RuntimeContext::remove_run_observer(std::uint64_t id) noexcept
+        {
+            try
+            {
+                const std::lock_guard<std::mutex> lock(impl_->observers_mutex);
+                const std::shared_ptr<const Impl::ObserverList> current = std::atomic_load(&impl_->observers);
+                auto next = std::make_shared<Impl::ObserverList>();
+                next->reserve(current->size());
+                for (const Impl::ObserverEntry& entry : *current)
+                    if (entry.id != id)
+                        next->push_back(entry);
+                std::atomic_store(&impl_->observers, std::shared_ptr<const Impl::ObserverList>(std::move(next)));
+            }
+            catch (const std::exception& error)
+            {
+                SR_LOG_ERROR(K_EXECUTION_LOG_CATEGORY, "Removing run observer {} failed: {}; it stays added.",
+                             id, error.what());
+            }
+        }
+
+        bool RuntimeContext::wants_device_timing() const noexcept
+        {
+            return !std::atomic_load(&impl_->observers)->empty();
+        }
+
+        void RuntimeContext::notify_run(const RunObservation& observation) const noexcept
+        {
+            const std::shared_ptr<const Impl::ObserverList> current = std::atomic_load(&impl_->observers);
+            for (const Impl::ObserverEntry& entry : *current)
+                entry.observer->on_run(observation);
+        }
+
         Internal::Graph::OffloadCoordinator* RuntimeContext::offload() const noexcept
         {
             return impl_->offload.get();
@@ -397,5 +469,18 @@ namespace SushiRuntime
         {
             return impl_->machine.get();
         }
+
+        RunObserverHandle observe_runs(const std::shared_ptr<RuntimeContext>& context,
+                                       std::shared_ptr<RunObserver> observer)
+        {
+            SR_VERIFY(observer != nullptr, "observe_runs(): the observer is null.");
+            const std::uint64_t id = context->add_run_observer(std::move(observer));
+            return RunObserverHandle([removable = std::weak_ptr<RuntimeContext>(context), id]()
+            {
+                if (const std::shared_ptr<RuntimeContext> held = removable.lock())
+                    held->remove_run_observer(id);
+            });
+        }
+
     } // namespace Execution
 } // namespace SushiRuntime

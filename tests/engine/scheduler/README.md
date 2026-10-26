@@ -234,3 +234,23 @@ The file tests WorkerPoolSettings: one worker per core, pinned from core 0, by d
 | Test | What it proves |
 | --- | --- |
 | `DefaultsAskForOneWorkerPerCore` | Checks the defaults of the settings. |
+
+## test_event_polling.cpp: the first failure and the stall drives
+
+| Test | What it proves |
+| --- | --- |
+| `Small_EventPolling.KeepsTheFirstFailureAndLogsTheSecond` | The first failure of a poll is kept and a later one is logged, not returned. |
+| `Small_EventPolling.EveryLaterFailureIsLoggedAndTheFirstStays` | A third failure is logged too and the first stays. |
+| `Medium_EventPolling.CountsAStallDrive` | A poll that stalls waits on its oldest event once and counts it. |
+| `Medium_EventPolling.AnEventThatCompletesIsNotAStallDrive` | A poll that finds progress counts no stall drive. |
+
+## test_task_scheduler.cpp: the lines about the pool and a cancelled run
+
+| Test | What it proves |
+| --- | --- |
+| `Medium_TaskScheduler.LogsAClampedWorkerCount` | A request past the largest pool is cut to it, with a line saying so. |
+| `Medium_TaskScheduler.AWorkerCountInsideTheLimitsLogsNoWarning` | A request inside the limits logs nothing about the count. |
+| `Medium_TaskScheduler.LogsAWorkerWhoseCoreHasNoNumaNode` | A pinned worker whose core the topology does not list is mapped to NUMA node 0, and says so. |
+| `Medium_TaskScheduler.AFloatingPoolLogsNoCoreMapLine` | A floating pool has no core to map and logs no such line. |
+| `Medium_TaskSchedulerCancel.LogsTheTasksASkippedRunLeftUnrun` | A cancelled run logs one INFO with the number of tasks it skipped. |
+| `Medium_TaskSchedulerCancel.ARunNobodyCancelledLogsNoSkipLine` | A run nobody cancelled logs no skip line. |

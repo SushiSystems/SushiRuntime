@@ -28,7 +28,10 @@
 
 #include <gtest/gtest.h>
 
+#include <csignal>
+
 #include <SushiRuntime/process_environment/stop_signal.hpp>
+#include <SushiRuntime/test_runner/log_capture.hpp>
 
 using namespace SushiRuntime::Distributed;
 
@@ -46,4 +49,31 @@ TEST(Medium_StopSignalTest, RequestSetsTheFlagAndANewObjectClearsIt)
 
     const StopSignal next;
     EXPECT_FALSE(next.is_requested());
+}
+
+namespace
+{
+    /** @brief Refuses every installation, as a C runtime that cannot take a handler does. */
+    StopSignal::Handler refuse_every_signal(int, StopSignal::Handler)
+    {
+        return SIG_ERR;
+    }
+} // namespace
+
+/** @brief Tests that a refused installation is logged once per signal and the flag still works. */
+TEST(Small_StopSignal, LogsAHandlerThatCouldNotBeInstalled)
+{
+    SushiRuntime::TestRunner::LogCapture capture;
+
+    {
+        StopSignal stop_signal(&refuse_every_signal);
+
+        EXPECT_GE(capture.count_at(SushiLog::LogLevel::Warn), 2u);
+        EXPECT_EQ(capture.count_in("process_environment"),
+                  capture.count_at(SushiLog::LogLevel::Warn));
+        EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Warn, "could not be installed"));
+        EXPECT_FALSE(stop_signal.is_requested());
+        stop_signal.request();
+        EXPECT_TRUE(stop_signal.is_requested());
+    }
 }

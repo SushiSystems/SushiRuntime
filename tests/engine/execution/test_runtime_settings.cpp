@@ -36,11 +36,10 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
 
-/** @brief Tests the defaults: no profiling, one worker per core, pinned, no rebalancer. */
+/** @brief Tests the defaults: one worker per core, pinned, no rebalancer. */
 TEST(Medium_RuntimeSettings, DefaultsAskForNothingExtra)
 {
     const RuntimeSettings settings;
-    EXPECT_FALSE(settings.profiling);
     EXPECT_EQ(settings.worker_count, 0u);
     EXPECT_EQ(settings.first_core, 0u);
     EXPECT_EQ(settings.pinning, PinPolicy::Pin);
@@ -55,7 +54,6 @@ TEST(Medium_RuntimeSettings, ThePoolSettingsCarryThePoolFields)
     settings.worker_count = 6;
     settings.first_core = 2;
     settings.pinning = PinPolicy::Float;
-    settings.profiling = true;
     const Internal::Scheduler::WorkerPoolSettings pool = worker_pool_settings(settings);
     EXPECT_EQ(pool.worker_count, 6u);
     EXPECT_EQ(pool.first_core, 2u);

@@ -26,93 +26,95 @@
  * @author Mustafa Garip
  */
 
+#include <cstddef>
 #include <cstdint>
+#include <string>
 #include <type_traits>
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/report/node_event_record.hpp>
 #include <SushiRuntime/report/run_report.hpp>
-#include <SushiRuntime/core/operation_id.hpp>
 
 using namespace SushiRuntime;
 
 /** @brief Tests NodeEventRecord's layout and what RunReport::reset() keeps and zeroes. */
 namespace NodeEventRecordTests
 {
-    /** @brief Tests that NodeEventRecord is 40 bytes and trivially copyable. */
-    TEST(Small_NodeEventRecord, LayoutIsFortyBytesAndTriviallyCopyable)
+    /** @brief Tests that NodeEventRecord is 48 bytes and trivially copyable. */
+    TEST(Small_NodeEventRecord, LayoutIsFortyEightBytesAndTriviallyCopyable)
     {
-        static_assert(sizeof(NodeEventRecord) == 40u,
-                      "NodeEventRecord must stay 40 bytes");
+        static_assert(sizeof(NodeEventRecord) == 48u,
+                      "NodeEventRecord must stay 48 bytes");
         static_assert(std::is_trivially_copyable<NodeEventRecord>::value,
                       "NodeEventRecord must stay trivially copyable");
-        EXPECT_EQ(sizeof(NodeEventRecord), 40u);
+        static_assert(offsetof(NodeEventRecord, end_ns) == 32u &&
+                          offsetof(NodeEventRecord, device_index) == 40u &&
+                          offsetof(NodeEventRecord, submit_thread) == 44u,
+                      "the two appended fields follow end_ns");
+        EXPECT_EQ(sizeof(NodeEventRecord), 48u);
         EXPECT_TRUE(std::is_trivially_copyable<NodeEventRecord>::value);
     }
 
-    /** @brief Tests that reset() keeps the capacity of node_events. */
-    TEST(Small_NodeEventRecord, ResetKeepsNodeEventsCapacity)
+    /** @brief Tests that reset() keeps the capacity of the report's vectors. */
+    TEST(Small_NodeEventRecord, ResetKeepsWarningsCapacity)
     {
         RunReport report;
-        report.node_events.push_back(NodeEventRecord{1, 0, K_WIDTH_UNKNOWN, K_WIDTH_UNKNOWN, 10, 20, 30});
-        report.node_events.push_back(NodeEventRecord{2, 0, K_WIDTH_UNKNOWN, K_WIDTH_UNKNOWN, 40, 50, 60});
-        const std::size_t capacity_before = report.node_events.capacity();
+        report.warnings.push_back("first");
+        report.warnings.push_back("second");
+        report.numa_statistics.push_back(NUMANodeStatistics{});
+        const std::size_t warnings_before = report.warnings.capacity();
+        const std::size_t numa_before = report.numa_statistics.capacity();
 
         report.reset();
 
-        EXPECT_TRUE(report.node_events.empty());
-        EXPECT_EQ(report.node_events.capacity(), capacity_before);
+        EXPECT_TRUE(report.warnings.empty());
+        EXPECT_TRUE(report.numa_statistics.empty());
+        EXPECT_EQ(report.warnings.capacity(), warnings_before);
+        EXPECT_EQ(report.numa_statistics.capacity(), numa_before);
     }
 
-    /** @brief Tests that reset() zeroes the clock pairing. */
-    TEST(Small_NodeEventRecord, ResetZeroesClockPairing)
+    /** @brief Tests that reset() returns the outcome and the counts to their constructed values. */
+    TEST(Small_NodeEventRecord, ResetZeroesTheOutcomeAndTheCounts)
     {
         RunReport report;
-        report.clock = ClockPairing{100, 200, 5};
+        report.is_successful = false;
+        report.cancelled = true;
+        report.total_tasks_executed = 7;
+        report.layer = ExecutionLayer::Chain;
+        report.distributed_statistics.tasks_offloaded_to_network = 3;
 
         report.reset();
 
-        EXPECT_EQ(report.clock.event_ns, 0u);
-        EXPECT_EQ(report.clock.steady_ns, 0u);
-        EXPECT_EQ(report.clock.uncertainty_ns, 0u);
+        EXPECT_TRUE(report.is_successful);
+        EXPECT_FALSE(report.cancelled);
+        EXPECT_EQ(report.total_tasks_executed, 0u);
+        EXPECT_EQ(report.layer, ExecutionLayer::Scheduler);
+        EXPECT_EQ(report.distributed_statistics.tasks_offloaded_to_network, 0u);
     }
 
-    /** @brief Tests that the widths default to K_WIDTH_UNKNOWN. */
+    /** @brief Tests that the widths default to K_WIDTH_UNKNOWN and the device to the host. */
     TEST(Small_NodeEventRecord, WidthsDefaultToUnknown)
     {
         const NodeEventRecord rec{};
         EXPECT_EQ(K_WIDTH_UNKNOWN, 0xFFFFFFFFu);
         EXPECT_EQ(rec.launched_width, K_WIDTH_UNKNOWN);
         EXPECT_EQ(rec.live_width, K_WIDTH_UNKNOWN);
+        EXPECT_EQ(rec.device_index, K_HOST_DEVICE_INDEX);
+        EXPECT_EQ(rec.submit_thread, 0u);
     }
 } // namespace NodeEventRecordTests
 
 /** @brief Tests that the report types are reachable under their public names. */
 namespace RunReportNamesTests
 {
-    static_assert(std::is_same<decltype(SushiRuntime::NodeTiming::operation),
-                               SushiRuntime::OperationID>::value,
-                  "NodeTiming::operation must be an OperationID");
-
     /** @brief Tests that a default report reads as a successful scheduler run with no rows. */
     TEST(Small_RunReportNames, ADefaultReportIsEmpty)
     {
         const SushiRuntime::RunReport report;
         EXPECT_TRUE(report.is_successful);
         EXPECT_EQ(report.layer, SushiRuntime::ExecutionLayer::Scheduler);
-        EXPECT_TRUE(report.node_events.empty());
+        EXPECT_TRUE(report.numa_statistics.empty());
         EXPECT_EQ(SushiRuntime::NodeEventRecord().launched_width, SushiRuntime::K_WIDTH_UNKNOWN);
-    }
-
-    /** @brief Tests that a NodeTiming names no operation until it is given one. */
-    TEST(Small_RunReportNames, ANodeTimingNamesItsOperation)
-    {
-        using namespace SushiRuntime::Literals;
-
-        SushiRuntime::NodeTiming timing;
-        EXPECT_FALSE(timing.operation.is_named());
-
-        timing.operation = "report.names"_op;
-        EXPECT_TRUE(timing.operation == "report.names"_op);
     }
 } // namespace RunReportNamesTests

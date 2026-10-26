@@ -149,8 +149,8 @@ expose the same ones, which `ErrorCode` each kind of failure carries, and what a
 ### `RunEntries`
 
 `RunEntries<G>` is the list of run entries as `static_assert`s: the eight forms of `run()`,
-`run_for()` and `run_until()`, then `run_async()`, `cancel()`, `set_profiling()` and
-`is_profiling_requested()`, each with its return type, and `noexcept` where the contract has it.
+`run_for()` and `run_until()`, then `run_async()` and `cancel()`, each with its return type, and
+`noexcept` where the contract has it.
 The template is instantiated for `Graph` and for `DynamicGraph`, so an entry missing from
 either, or declared differently, fails the compile.
 
@@ -185,24 +185,24 @@ budget, and two each from the two `run_until` forms.
 While a step is held open at a gate, `run()` and `run_async()` must return `InvalidState`,
 and so must a second `wait()` on the handle once the step has been waited for.
 
-### `SetProfilingChainsAndReadsBack`
+### `AddRunObserverReturnsAHandleThatRemovesIt`
 
-`set_profiling()` returns the graph it was called on and `is_profiling_requested()` reads the
-request back, on both graph types.
+`Runtime::add_run_observer()` returns a handle that stands for the observer. A graph run while it is
+added reaches the observer once, and a run after `reset()` does not.
 
-### `SettingTheSameProfilingValueRebuildsNothing`
+### `ASecondObserverRebuildsNothing`
 
-`set_profiling(true)` followed by a run, twice, must leave `Graph::compile_count()` and
-`DynamicGraph::compose_count()` at one, and `set_profiling(false)` followed by a run must raise each
-to two. The test guards against a `PlanCache::set_profiling` that marks the plan dirty on every call,
-under which the `Graph` count reads two after the second run.
+The first observer added to the runtime rebuilds a `Graph` plan once, a second observer rebuilds
+nothing, removing one of two rebuilds nothing, and removing the last rebuilds once more. The
+`DynamicGraph` reads the same on `compose_count()`: one, two after the first observer, two with the
+same observer, three after the removal.
 
-### `AProfilingToggleOnADynamicGraphComposesOnceAndTimesItsNodes`
+### `AnObserverOnADynamicGraphComposesOnceAndTimesItsNodes`
 
-A `DynamicGraph` with one kernel runs four times: with no request, after `set_profiling(true)`,
-again with nothing changed, and after `set_profiling(false)`. `RunReport::node_timings` must be
-empty, filled, filled and empty, and `compose_count()` must read one, two, two and three, so the
-request the composer keeps reaches the plan at the commit after each change and at no other.
+A `DynamicGraph` with one kernel runs four times: with no observer, after one is added, again with
+nothing changed, and after it is removed. The observer must see no run, a run with records, a run
+with records and no run, and `compose_count()` must read one, two, two and three, so the answer the
+runtime gives reaches the plan at the commit after each change and at no other.
 
 ### `MovingAGraphWithAPendingStepEndsTheStep`
 

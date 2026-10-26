@@ -37,6 +37,7 @@
 #include <vector>
 
 #include <SushiRuntime/api/data/buffer.hpp>
+#include <SushiRuntime/api/api_log_category.hpp>
 #include <SushiRuntime/api/detail/device_fault.hpp>
 #include <SushiRuntime/api/detail/node_spec.hpp>
 #include <SushiRuntime/api/detail/node_stamp.hpp>
@@ -44,6 +45,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/error_translation.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
@@ -62,7 +64,7 @@ namespace SushiRuntime
         if (!admits(options))
             return rule_count();
         Detail::NodeSpec spec(std::move(description));
-        spec.stamp = Detail::NodeStamp(options, label_of(options.name));
+        spec.stamp = Detail::NodeStamp(options, label_of(options.name), label_of(options.origin));
         if (placement_scope_ && !options.placement_class.is_named())
         {
             spec.stamp.placement_class = placement_scope_->placement_class();
@@ -78,6 +80,26 @@ namespace SushiRuntime
             watch(std::move(life));
         ++generation_;
         return rule_names_.size() - 1;
+    }
+
+    bool Recorder::admit(std::optional<Error> refused)
+    {
+        if (!refused)
+            return true;
+        if (!refusal_)
+        {
+            SR_LOG_WARN(K_API_LOG_CATEGORY, "A recording call was refused with {}: {}; nothing was recorded, and the "
+                        "next run of this graph returns this refusal.",
+                        to_string(refused->code), refused->message);
+            refusal_ = std::move(*refused);
+        }
+        else
+        {
+            SR_LOG_WARN(K_API_LOG_CATEGORY, "A later recording call was refused with {}: {}; nothing was recorded, "
+                        "and only the first refusal of the graph is kept.",
+                        to_string(refused->code), refused->message);
+        }
+        return false;
     }
 
     Result<void*> Recorder::scratch_block(std::size_t count, std::size_t element_size,

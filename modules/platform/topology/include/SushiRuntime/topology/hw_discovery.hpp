@@ -55,6 +55,15 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Reads a PCI address written as "domain:bus:device.function", all four in hex.
+         * @param text The string a driver or hwloc reported.
+         * @param device_name Names the device in the DEBUG line written when @p text does not parse.
+         * @return The address, or nothing when @p text holds no such address.
+         */
+        [[nodiscard]] SUSHIRUNTIME_API std::optional<PCIDomainAddress>
+        parse_pci_address(const std::string& text, const std::string& device_name);
+
+        /**
          * @brief Represents a hardware unit like CPU or GPU.
          */
         struct HardwareNode

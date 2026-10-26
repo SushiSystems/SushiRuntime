@@ -42,6 +42,8 @@
 #include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/device_probe/device_probe.hpp>
+#include <SushiRuntime/log/sushiruntime_log_project.hpp>
+#include <SushiRuntime/test_runner/log_capture.hpp>
 
 using SushiRuntime::ErrorCode;
 using SushiRuntime::Internal::Device::DeviceDescriptor;
@@ -367,4 +369,37 @@ TEST(Medium_DeviceQueueSet, WaitAllReturnsAfterAKernelOnALazilyBuiltQueueFinishe
               sycl::info::event_command_status::complete);
     EXPECT_EQ(*cell, WRITTEN);
     sycl::free(cell, lazy);
+}
+
+TEST(Medium_DeviceQueueSet, LogsBackendAndDriverInTheDeviceLine)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    SushiRuntime::TestRunner::LogCapture capture(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
+                                                 SushiLog::LogLevel::Info);
+    DeviceQueueSet set(describe_first_device_on({0}), false);
+
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Info, "Backend: "));
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Info, "Driver: "));
+}
+
+TEST(Medium_DeviceQueueSet, LogsTheBuildOfALazyQueueFlavour)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    DeviceQueueSet set(describe_first_device_on({0}), false);
+    SushiRuntime::TestRunner::LogCapture capture(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
+                                                 SushiLog::LogLevel::Debug);
+
+    // An in-order profiling queue is never the plain queue of a CPU or GPU device.
+    (void)set.queue(0, QueueFlavour{true, true});
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Debug, "built a queue of flavour"));
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Debug, "profiling=1"));
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Debug, " ms on first use"));
+
+    const std::size_t after_first = capture.records().size();
+    (void)set.queue(0, QueueFlavour{true, true});
+    EXPECT_EQ(capture.records().size(), after_first);
 }

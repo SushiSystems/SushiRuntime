@@ -1,6 +1,6 @@
 # Remaining work
 
-Next id: RW-68
+Next id: RW-74
 
 ## Decisions waiting for the owner
 
@@ -85,6 +85,52 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
 - Done when: peer-to-peer domain decomposition and the native CPU path exist, and the other work
   packages are checked against the tree
 - Source: `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/README.md`
+
+### RW-68 Switch device timing on and off without a plan rebuild
+- State: open
+- Done when: a run reads the timing flag per run, so adding or removing an observer rebuilds no plan, and
+  a test shows `compile_count()` unchanged across both
+- Source: `docs/design/PROFILING/README.md`
+
+The sentinel's host work captures the flag when it is first wired, and a plan is stale when its flag
+differs from the runtime's answer. Reading the flag per run removes both costs.
+
+### RW-69 Measure the closed-gate cost of the runtime's zones
+- State: unmeasured
+- Done when: `tests/engine/execution/benchmark_scheduler_execution_engine.cpp` has printed the time of
+  a run of N empty nodes at levels 0, 1 and 2 with the gate closed and open, on a named machine, and the
+  default `SR_PROFILE_LEVEL` is 1 if level 2 missed the profiler's budget
+- Source: `docs/design/PROFILING/README.md`
+
+### RW-70 Time the distributed layer
+- State: open
+- Done when: dispatch, transport and settle write zones and flows, so a record can place a remote task
+  on the timeline
+- Source: `docs/design/PROFILING/README.md`
+
+### RW-71 Build and run the profiling work
+- State: unmeasured
+- Done when: `sr build` and `sr test` pass with `SR_ENABLE_PROFILER` on and off, the end-to-end session
+  tests pass on the CPU SYCL device, and the `Large_` tests ran on the GPU and on a second device
+- Source: `docs/design/PROFILING/README.md`
+
+All of P1 to P4 is written and has not been compiled.
+
+### RW-72 Replace the runtime's local log throttles with SushiLog's
+- State: blocked
+- Blocked by: external: SushiLog ships log-once, a rate limit and a self-reporting counter
+- Done when: `RulePlacement::is_first_warning` and the TCP attempt throttle are gone, the drop counts
+  of a run use SushiLog's counter, and the tests that read their lines pass unchanged
+- Source: `docs/design/PROFILING/README.md`
+
+### RW-73 Return a `Result` from every recording call
+- State: blocked
+- Blocked by: RW-6
+- Done when: a refused recording reports its error at the call and not at the next run
+- Source: `docs/design/PROFILING/README.md`
+
+The runtime logs the first refusal and names the later ones as dropped; the public change belongs to the
+review RW-6 holds.
 
 ## Release
 

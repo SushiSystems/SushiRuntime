@@ -21,7 +21,7 @@
 
 /**
  * @file run_report_builder.hpp
- * @brief Defines fill_run_report, which assembles a RunReport from a run's measurements.
+ * @brief Defines fill_run_report, which assembles a RunReport from a run's counts.
  * @author Mustafa Garip
  * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
  */
@@ -41,7 +41,7 @@ namespace SushiRuntime
     namespace Detail
     {
         /**
-         * @brief Assembles a RunReport from a finished run's raw measurements.
+         * @brief Assembles a RunReport from a finished run's task and steal counts.
          * @param report The report to overwrite; reset before it is filled.
          * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
          */
@@ -50,15 +50,11 @@ namespace SushiRuntime
             Internal::Execution::RuntimeContext&         context,
             const Internal::Execution::ExecutionMetrics& before,
             const Internal::Execution::ExecutionMetrics& after,
-            std::size_t                        total_tasks,
-            double                             compile_ms,
-            double                             total_ms)
+            std::size_t                        total_tasks)
         {
             report.reset();
             report.is_successful = true;
             report.total_tasks_executed = total_tasks;
-            report.graph_analysis_duration_ms = compile_ms;
-            report.total_duration_ms = total_ms;
 
             // The device class comes from the runtime's own inventory, which does not allocate.
             NUMANodeStatistics node;

@@ -35,6 +35,8 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
+
+#include "run_recorder.hpp"
 #include <SushiRuntime/api/graph/plumbing/plan_cache.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/span.hpp>
@@ -128,7 +130,8 @@ TEST(Medium_PlanCache, CompilesOnlyWhenTheGraphChanges)
     graph.run().value();
     EXPECT_EQ(graph.compile_count(), 2u);
 
-    graph.set_profiling(true);
+    // The first observer asks for device timing, which rebuilds the plan once.
+    Testing::RunRecorder recorder(runtime);
     graph.run().value();
     EXPECT_EQ(graph.compile_count(), 3u);
 }

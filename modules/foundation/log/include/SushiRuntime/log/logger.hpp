@@ -65,6 +65,3 @@
  *        caller then ends the process.
  */
 #define SR_LOG_FATAL(category, ...) SR_LOG_AT(SushiLog::LogLevel::Fatal, category, __VA_ARGS__)
-
-/** @brief Forwards to SushiLog::set_log_synchronous(); tests pass true to read records in order. */
-#define SR_LOGGER_SET_SYNC_MODE(mode) SushiLog::set_log_synchronous(mode)

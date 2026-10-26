@@ -20,6 +20,16 @@ The file tests DeviceDescriptor: it carries a SYCL device and the description of
 
 The file tests DeviceQueueSet's inventory, queue table, NUMA routing and index checks.
 
+### `LogsBackendAndDriverInTheDeviceLine`
+
+A `LogCapture` at `Info` sees the constructor's device line and the test asserts it names a
+backend and a driver.
+
+### `LogsTheBuildOfALazyQueueFlavour`
+
+A `LogCapture` at `Debug` starts after construction. The first request for an in-order profiling
+queue logs one `DEBUG` with the flavour and the build time; a second request logs nothing.
+
 
 ## test_queue_flavour.cpp
 

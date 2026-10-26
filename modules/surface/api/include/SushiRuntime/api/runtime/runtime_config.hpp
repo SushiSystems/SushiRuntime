@@ -49,7 +49,6 @@ namespace SushiRuntime
         std::size_t worker_count = 0;       /**< Worker threads; 0 is one per logical core. */
         std::size_t first_core = 0;         /**< First core of the range workers pin into. */
         PinPolicy pinning = PinPolicy::Pin; /**< Whether workers bind to cores at all. */
-        bool profiling = false;             /**< Builds queues that record device timing. */
         bool rebalancer = false;            /**< Starts the background thermal rebalancer. */
         bool force_scheduler = false;       /**< Runs every graph on the work-stealing path. */
 

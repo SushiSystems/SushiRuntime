@@ -31,6 +31,9 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <utility>
+#include <vector>
 
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/task.hpp>
@@ -64,7 +67,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Sizes profiling_multiplicities and profiling_host_native from all_nodes.
+         * @brief Sizes profiling_multiplicities and builds node_table from all_nodes.
          */
         void CompiledGraph::capture_profiling_state()
         {
@@ -74,15 +77,41 @@ namespace SushiRuntime
             const std::size_t index_count = all_nodes.empty() ? 0 : static_cast<std::size_t>(max_index) + 1;
 
             profiling_multiplicities.assign(index_count, 0);
-            profiling_host_native.assign(index_count, false);
+            std::vector<NodeTableRow> rows(index_count);
+            std::vector<bool> named(index_count, false);
             for (auto& n : all_nodes)
             {
                 if (n->is_sentinel) continue;
-                ++profiling_multiplicities[n->registration_index];
-                if (n->execution_mode() == SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Host &&
-                    !n->submits_device_work())
-                    profiling_host_native[n->registration_index] = true;
+                const std::uint32_t index = n->registration_index;
+                ++profiling_multiplicities[index];
+                NodeTableRow& row = rows[index];
+                row.index = index;
+                // The first node registered under an index names it.
+                if (!named[index])
+                {
+                    named[index] = true;
+                    if (n->metadata.name != nullptr)
+                        row.name = n->metadata.name;
+                    if (n->metadata.origin != nullptr)
+                        row.origin = n->metadata.origin;
+                    row.operation = n->metadata.op_id;
+                    row.cost = n->metadata.cost;
+                    row.host_native =
+                        n->execution_mode() == SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Host &&
+                        !n->submits_device_work();
+                }
             }
+
+            // An index no node registered under has no row.
+            std::vector<NodeTableRow> present;
+            present.reserve(index_count);
+            for (std::size_t index = 0; index < index_count; ++index)
+            {
+                if (!named[index]) continue;
+                rows[index].multiplicity = profiling_multiplicities[index];
+                present.push_back(std::move(rows[index]));
+            }
+            node_table = std::make_shared<const NodeTable>(std::move(present), label, graph_id);
         }
 
         /**

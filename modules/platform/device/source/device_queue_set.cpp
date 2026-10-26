@@ -28,17 +28,21 @@
 
 #include <SushiRuntime/device/device_queue_set.hpp>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
 
+#include <SushiLog/text/value_text.hpp>
+
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/device/device_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 
@@ -116,6 +120,41 @@ namespace SushiRuntime
                 return numa_cursors[static_cast<std::size_t>(numa_node)]++;
             }
 
+            /** @brief Returns the name of a SYCL backend as the device line prints it. */
+            const char* backend_name(sycl::backend backend) noexcept
+            {
+                switch (backend)
+                {
+                    case sycl::backend::opencl:
+                        return "opencl";
+                    case sycl::backend::ext_oneapi_level_zero:
+                        return "level_zero";
+                    case sycl::backend::ext_oneapi_cuda:
+                        return "cuda";
+                    case sycl::backend::ext_oneapi_hip:
+                        return "hip";
+                    default:
+                        return "other";
+                }
+            }
+
+            /** @brief Returns the driver version a device reports, or "unknown" when it cannot. */
+            std::string driver_version_of(const sycl::device& device)
+            {
+                try
+                {
+                    return device.get_info<sycl::info::device::driver_version>();
+                }
+                catch (const sycl::exception& error)
+                {
+                    SR_LOG_DEBUG(K_DEVICE_LOG_CATEGORY,
+                                 "Driver version of device {} is not answerable: {}; the device "
+                                 "line names it unknown.",
+                                 device.get_info<sycl::info::device::name>(), error.what());
+                    return "unknown";
+                }
+            }
+
             /** @brief Names the broken precondition of a NUMA lookup on an empty set. */
             constexpr const char* K_EMPTY_SET_MESSAGE =
                 "The device set holds no device, so no NUMA node resolves to one.";
@@ -168,9 +207,12 @@ namespace SushiRuntime
                     slot.built.store(true, std::memory_order_release);
                 });
 
-                SR_LOG_INFO(K_DEVICE_LOG_CATEGORY, "Device: {} | NUMA: {} | Memory: {} MB | Compute units: {}",
-                            info.name, info.numa_node, info.memory_bytes / (1024 * 1024),
-                            info.compute_units);
+                SR_LOG_INFO(K_DEVICE_LOG_CATEGORY,
+                            "Device: {} | Backend: {} | Driver: {} | NUMA: {} | Memory: {} MB | "
+                            "Compute units: {}",
+                            info.name, backend_name(info.backend),
+                            driver_version_of(descriptor.device), info.numa_node,
+                            info.memory_bytes / (1024 * 1024), info.compute_units);
 
                 plain_offsets_.push_back(static_cast<std::uint8_t>(offset));
                 infos_.push_back(std::move(info));
@@ -221,12 +263,28 @@ namespace SushiRuntime
 
             const std::size_t offset = offset_for(index, flavour);
             LazyQueue& slot = slots_[index * K_FLAVOUR_COUNT + offset];
-            std::call_once(slot.once, [this, index, offset, &slot]()
+            std::call_once(slot.once, [this, index, offset, flavour, &slot]()
             {
                 const sycl::queue& plain = *plain_slot(index).queue;
                 const sycl::context context = plain.get_context();
 
+                const auto started = std::chrono::steady_clock::now();
                 slot.queue.emplace(make_queue(plain.get_device(), &context, flavour_of(offset)));
+                const double build_ms = std::chrono::duration<double, std::milli>(
+                                            std::chrono::steady_clock::now() - started)
+                                            .count();
+                const QueueFlavour served = flavour_of(offset);
+                SR_LOG_DEBUG(K_DEVICE_LOG_CATEGORY,
+                             "Device {} ({}): built a queue of flavour in_order={} profiling={} "
+                             "in {} ms on first use.",
+                             index, infos_[index].name, served.in_order, served.profiling,
+                             SushiLog::fixed(build_ms, 3));
+                if (served.in_order != flavour.in_order)
+                    SR_LOG_DEBUG(K_DEVICE_LOG_CATEGORY,
+                                 "Device {} ({}): an out-of-order queue was requested and an "
+                                 "in-order one is served, since the device's plain queue is "
+                                 "in order.",
+                                 index, infos_[index].name);
                 // Stored last: readers that skip call_once read only this flag.
                 slot.built.store(true, std::memory_order_release);
             });
@@ -268,6 +326,7 @@ namespace SushiRuntime
 
         Result<void> DeviceQueueSet::wait_all()
         {
+            SR_ZONE_FINE("wait.queues");
             return first_failure_of([](sycl::queue& built) { built.wait_and_throw(); });
         }
 

@@ -33,10 +33,12 @@
 
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/api/api_log_category.hpp>
 #include <SushiRuntime/api/data/buffer.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 
@@ -121,8 +123,10 @@ namespace SushiRuntime
                 return sycl::get_pointer_type(
                     address, context.devices().queue_or_numa_local(device, 0).get_context());
             }
-            catch (const sycl::exception&)
+            catch (const sycl::exception& error)
             {
+                SR_LOG_DEBUG(K_API_LOG_CATEGORY, "get_pointer_type threw for address {}: {}; the allocation kind is "
+                             "unknown.", address, error.what());
                 return sycl::usm::alloc::unknown;
             }
         }

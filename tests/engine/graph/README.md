@@ -102,3 +102,15 @@ The file tests ChainPlan and PendingEvent: an empty plan that does not chain unt
 | --- | --- |
 | `ADefaultPlanDoesNotChain` | A default plan does not chain and holds nothing. |
 | `APendingEventStartsWithUnknownWidths` | A pending event's widths start unknown. |
+
+## test_compiled_graph.cpp: the node table of a plan
+
+| Test | What it proves |
+| --- | --- |
+| `Small_CompiledGraph.CapturesOneTableRowPerRegistrationIndex` | The plan builds one row per registration index, with the node's name and operation. |
+| `Small_CompiledGraph.ASharedIndexKeepsItsMultiplicity` | Several nodes sharing one index make one row that counts them. |
+| `Small_CompiledGraph.CarriesTheCostOfTheFirstNode` | The first node of an index names the row and states its cost. |
+| `Small_CompiledGraph.AnIndexNoNodeRegisteredUnderHasNoRow` | An index no node registered under has no row, and the sentinel has none. |
+| `Small_CompiledGraph.ANodeWithNoDeviceWorkIsHostNative` | A node with no device work is marked host-native and a kernel node is not. |
+| `Small_CompiledGraph.AnEmptyPlanBuildsAnEmptyTable` | An empty plan builds an empty table rather than none. |
+| `Small_CompiledGraph.ACaptureAfterTheFirstLeavesTheEarlierTableIntact` | A second capture builds a fresh table and leaves the one a run still holds intact. |

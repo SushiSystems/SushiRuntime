@@ -37,6 +37,7 @@
 #include <SushiRuntime/api/graph/node_options.hpp>
 #include <SushiRuntime/core/determinism.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/node_cost.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
@@ -80,13 +81,15 @@ namespace SushiRuntime
              * @brief Copies the operation, placement, determinism, width and parameters of options.
              * @param owned_name The recorder's own copy of options.name, or null for none;
              *        it outlives every plan built from the recorder.
+             * @param owned_origin The recorder's own copy of options.origin, held the same way.
              * @pre parameters_refusal() returned nothing for options.
              */
-            NodeStamp(const NodeOptions& options, const char* owned_name) noexcept
-                : name(owned_name), operation(options.operation),
+            NodeStamp(const NodeOptions& options, const char* owned_name,
+                      const char* owned_origin = nullptr) noexcept
+                : name(owned_name), origin(owned_origin), operation(options.operation),
                   placement_class(options.placement_class),
                   placement_key(options.placement_key), determinism(options.determinism),
-                  width(options.width),
+                  cost(options.cost), width(options.width),
                   parameter_count(options.parameters.size())
             {
                 for (std::size_t i = 0; i < parameter_count; ++i)
@@ -95,6 +98,9 @@ namespace SushiRuntime
 
             /** @brief Label the recorder owns, or null when the caller gave none. */
             const char* name = nullptr;
+
+            /** @brief Origin the recorder owns, or null when the caller gave none. */
+            const char* origin = nullptr;
 
             /** @brief Operation the caller named; a default id names none. */
             OperationID operation;
@@ -107,6 +113,9 @@ namespace SushiRuntime
 
             /** @brief Determinism contract the caller stated; a default stamp states none. */
             Determinism determinism = Determinism::Unstated;
+
+            /** @brief Work per dispatch the caller stated; absent states none. */
+            std::optional<NodeCost> cost;
 
             /** @brief Launch width the caller stated, or K_WIDTH_UNKNOWN. */
             std::size_t width = K_WIDTH_UNKNOWN;

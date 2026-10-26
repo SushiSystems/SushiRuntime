@@ -39,6 +39,7 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/graph/graph_log_category.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/dependency_tracking/dependency_tracker.hpp>
@@ -103,6 +104,9 @@ namespace SushiRuntime
              * atomic and distinct regardless of who is calling.
              */
             std::atomic<std::uint32_t> registration_counter_{0};
+
+            /** @brief Counts the regions of added nodes that named no base address and so created no dependency. */
+            std::atomic<std::uint32_t> untracked_regions{0};
 
             /**
              * @brief Destroys the internal implementation.
@@ -241,7 +245,7 @@ namespace SushiRuntime
             node->work = std::move(work);
             node->sycl_deps = dependencies;
 
-            SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "Node added with {} manual dependencies.", dependencies.size());
+            SR_LOG_TRACE(K_GRAPH_LOG_CATEGORY, "Node added with {} manual dependencies.", dependencies.size());
 
             // O(1) Lock-Free insertion
             return impl_->push_node_lock_free(std::move(node), registration);
@@ -284,16 +288,26 @@ namespace SushiRuntime
 
             // Resolve USM dependencies for reads and writes
             for (const auto& r : read_access)
-                if (r.base) impl_->tracker.resolve(node.get(), r, false);
+            {
+                if (r.base)
+                    impl_->tracker.resolve(node.get(), r, false);
+                else
+                    impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);
+            }
 
             for (const auto& w : write_access)
-                if (w.base) impl_->tracker.resolve(node.get(), w, true);
+            {
+                if (w.base)
+                    impl_->tracker.resolve(node.get(), w, true);
+                else
+                    impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);
+            }
 
             // The regions stay on the node for queue routing (modules/engine/graph/README.md).
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
-            SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
+            SR_LOG_TRACE(K_GRAPH_LOG_CATEGORY, "Node added with automatic dependency tracking (R: {}, W: {}).", read_access.size(), write_access.size());
 
             // O(1) Lock-Free insertion
             return impl_->push_node_lock_free(std::move(node), registration);
@@ -350,16 +364,26 @@ namespace SushiRuntime
             
             // Resolve USM dependencies utilizing Lock-Free Access History
             for (const auto& r : read_access)
-                if (r.base) impl_->tracker.resolve(node.get(), r, false);
+            {
+                if (r.base)
+                    impl_->tracker.resolve(node.get(), r, false);
+                else
+                    impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);
+            }
 
             for (const auto& w : write_access)
-                if (w.base) impl_->tracker.resolve(node.get(), w, true);
+            {
+                if (w.base)
+                    impl_->tracker.resolve(node.get(), w, true);
+                else
+                    impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);
+            }
 
             // The regions stay on the node for queue routing (modules/engine/graph/README.md).
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
-            SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "Semantic Node '{}' (Type: {}) added (R: {}, W: {}).",
+            SR_LOG_TRACE(K_GRAPH_LOG_CATEGORY, "Semantic Node '{}' (Type: {}) added (R: {}, W: {}).",
                          metadata.name, static_cast<int>(metadata.task_type), 
                          read_access.size(), write_access.size());
             
@@ -449,16 +473,26 @@ namespace SushiRuntime
             node->sycl_deps            = dependencies;
 
             for (const auto& r : read_access)
-                if (r.base) impl_->tracker.resolve(node.get(), r, false);
+            {
+                if (r.base)
+                    impl_->tracker.resolve(node.get(), r, false);
+                else
+                    impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);
+            }
 
             for (const auto& w : write_access)
-                if (w.base) impl_->tracker.resolve(node.get(), w, true);
+            {
+                if (w.base)
+                    impl_->tracker.resolve(node.get(), w, true);
+                else
+                    impl_->untracked_regions.fetch_add(1, std::memory_order_relaxed);
+            }
 
             // The regions stay on the node for dependency identity (modules/engine/graph/README.md).
             node->io_reads_  = read_access;
             node->io_writes_ = write_access;
 
-            SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "Native CPU node added (R: {}, W: {}).",
+            SR_LOG_TRACE(K_GRAPH_LOG_CATEGORY, "Native CPU node added (R: {}, W: {}).",
                          read_access.size(), write_access.size());
 
             return impl_->push_node_lock_free(std::move(node), registration);
@@ -471,6 +505,8 @@ namespace SushiRuntime
          */
         Result<CompiledGraph> TaskGraph::compile()
         {
+            SR_ZONE("plan.compile");
+
             CompiledGraph graph;
             
             // Acquire the entire lifetime stack atomically
@@ -594,7 +630,16 @@ namespace SushiRuntime
             graph.sentinel = std::move(sentinel);
             impl_->tracker.reset(); // Safely clear the lock-free history
 
-            SR_LOG_INFO(K_GRAPH_LOG_CATEGORY, "DAG compilation completed successfully.");
+            SR_VALUE("graph.nodes", "nodes", static_cast<double>(graph.all_nodes.size()));
+            SR_VALUE("graph.roots", "nodes", static_cast<double>(graph.roots.size()));
+
+            // One line per compile for what the dependency tracker could not see (modules/engine/graph/README.md).
+            const std::uint32_t untracked = impl_->untracked_regions.exchange(0, std::memory_order_relaxed);
+            if (untracked != 0)
+                SR_LOG_DEBUG(K_GRAPH_LOG_CATEGORY, "{} regions named no base address, so they created no dependency.",
+                             untracked);
+
+            SR_LOG_TRACE(K_GRAPH_LOG_CATEGORY, "DAG compilation completed successfully.");
             return graph;
         }
 

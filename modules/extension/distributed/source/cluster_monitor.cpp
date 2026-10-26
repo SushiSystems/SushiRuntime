@@ -34,6 +34,7 @@
 
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
+#include <SushiRuntime/distributed/unsent_frame_log.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/frame_transport/frame_sending.hpp>
@@ -229,8 +230,8 @@ namespace SushiRuntime
             for (const PeerID peer : peers_)
             {
                 // A PING that is not queued costs one sample; liveness counts every frame.
-                const SendStatus sent = send_message(transport_, peer, ping, payload_);
-                static_cast<void>(sent);
+                Detail::log_unsent_frame("PING", peer,
+                                         send_message(transport_, peer, ping, payload_));
             }
         }
 
@@ -246,8 +247,8 @@ namespace SushiRuntime
             for (const PeerID peer : peers_)
             {
                 // close_peer() gives a queued control frame time to leave, so the worker reads why.
-                const SendStatus sent = send_message(transport_, peer, goodbye, payload_);
-                static_cast<void>(sent);
+                Detail::log_unsent_frame("GOODBYE", peer,
+                                         send_message(transport_, peer, goodbye, payload_));
                 transport_.close_peer(peer);
             }
 

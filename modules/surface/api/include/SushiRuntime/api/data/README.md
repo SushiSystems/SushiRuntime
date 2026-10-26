@@ -222,7 +222,8 @@ no kind is recorded with its device only, and is asked in that device's context.
 asked in the context of the device the caller states, which is what Interop::borrow() does for
 memory another API made. With no stated device the allocator's `owning_device()` scan picks the
 context, which is what the late-bound slot check does for an interior pointer. A
-`sycl::exception` from the query reads as `unknown`.
+`sycl::exception` from the query reads as `unknown`, and the function logs it at `DEBUG` under
+`sushiruntime.api` with the address, the device and the exception text.
 
 ## state.hpp
 

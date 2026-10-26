@@ -1,0 +1,199 @@
+/**************************************************************************/
+/* test_registration.cpp                                                  */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+/**************************************************************************/
+
+/**
+ * @file test_registration.cpp
+ * @brief Tests how the runtime registers its source and contributor, and how it adds and removes its observers.
+ * @see tests/surface/profiling/README.md
+ * @author Mustafa Garip
+ */
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#include <gtest/gtest.h>
+
+#include <SushiProfiler/json/json_reader.hpp>
+#include <SushiProfiler/registry/registry.hpp>
+#include <SushiProfiler/sites/name_table.hpp>
+#include <SushiProfiler/sources/source.hpp>
+#include <SushiProfiler/sources/source_context.hpp>
+
+#include <SushiRuntime/profiling/register_profiler_parts.hpp>
+#include <SushiRuntime/report/run_observer.hpp>
+#include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/test_runner/recording_observer.hpp>
+
+#include "session_pipeline.hpp"
+
+using namespace SushiRuntime;
+using SessionTests::SessionPipeline;
+using TestRunner::RecordingObserver;
+
+namespace
+{
+    /** @brief Holds what a source needs to begin outside a session. */
+    struct SourceHarness
+    {
+        SushiProfiler::NameTable names;                                  /**< The session's names. */
+        std::vector<std::string> tracks;                                 /**< The record's tracks. */
+        SushiProfiler::SourceContext context{names, tracks, 0};          /**< What begin() receives. */
+    };
+
+    /** @brief Makes the registered source of @p registry, which must name `sushiruntime.device`. */
+    std::unique_ptr<SushiProfiler::Source> make_source(const SushiProfiler::Registry& registry)
+    {
+        SushiProfiler::Made<SushiProfiler::Source> made =
+            registry.make_source("sushiruntime.device", *SushiProfiler::read_json("{}").value);
+        EXPECT_TRUE(made.error.empty()) << made.error;
+        return std::move(made.part);
+    }
+} // namespace
+
+/** @brief Tests that the registry refuses a second registration of the same source name. */
+TEST(Medium_RegisterProfilerParts, RefusesASecondRegistration)
+{
+    SessionPipeline pipeline;
+    SushiProfiler::Registry registry;
+
+    const RuntimeProfilerParts first = register_profiler_parts(registry, pipeline.runtime());
+    const RuntimeProfilerParts second = register_profiler_parts(registry, pipeline.runtime());
+
+    EXPECT_TRUE(first.is_registered());
+    EXPECT_FALSE(second.is_registered());
+    EXPECT_NE(make_source(registry), nullptr);
+}
+
+/** @brief Tests that the registered source is the one the registry knows by the runtime's source name. */
+TEST(Medium_RegisterProfilerParts, TheRegistryMakesTheDeviceSource)
+{
+    SessionPipeline pipeline;
+    SushiProfiler::Registry registry;
+    const RuntimeProfilerParts parts = register_profiler_parts(registry, pipeline.runtime());
+
+    const std::unique_ptr<SushiProfiler::Source> source = make_source(registry);
+
+    ASSERT_NE(source, nullptr);
+    EXPECT_EQ(source->name(), "sushiruntime.device");
+}
+
+/** @brief Tests that a session adds the observer when its source begins and removes it when it ends. */
+TEST(Medium_RegisterProfilerParts, ASessionAddsAndRemovesTheObserver)
+{
+    SessionPipeline pipeline;
+    SushiProfiler::Registry registry;
+    const RuntimeProfilerParts parts = register_profiler_parts(registry, pipeline.runtime());
+    const std::unique_ptr<SushiProfiler::Source> source = make_source(registry);
+    SourceHarness harness;
+
+    ASSERT_TRUE(pipeline.graph().run().has_value());
+    ASSERT_EQ(pipeline.graph().compile_count(), 1u) << "no session yet, so the plan records no timing";
+
+    ASSERT_TRUE(source->begin(harness.context).ok());
+    ASSERT_TRUE(pipeline.graph().run().has_value());
+    EXPECT_EQ(pipeline.graph().compile_count(), 2u) << "the session's observer turned device timing on, once";
+
+    source->end();
+    ASSERT_TRUE(pipeline.graph().run().has_value());
+    EXPECT_EQ(pipeline.graph().compile_count(), 3u) << "ending the session removed the last observer, once";
+}
+
+/** @brief Tests that a parts object that dies with its session still running removes its own observer. */
+TEST(Medium_RegisterProfilerParts, TheDestructorLeavesNoObserverBehind)
+{
+    SessionPipeline pipeline;
+    SushiProfiler::Registry registry;
+    SourceHarness harness;
+    std::unique_ptr<SushiProfiler::Source> source;
+    {
+        const RuntimeProfilerParts parts = register_profiler_parts(registry, pipeline.runtime());
+        source = make_source(registry);
+        ASSERT_TRUE(source->begin(harness.context).ok());
+        ASSERT_TRUE(pipeline.graph().run().has_value());
+        ASSERT_EQ(pipeline.graph().compile_count(), 1u);
+    }
+
+    // The parts are gone with their observer: the plan sees the last observer leave.
+    ASSERT_TRUE(pipeline.graph().run().has_value());
+    EXPECT_EQ(pipeline.graph().compile_count(), 2u);
+    ASSERT_TRUE(pipeline.graph().run().has_value());
+    EXPECT_EQ(pipeline.graph().compile_count(), 2u);
+}
+
+/** @brief Tests that the destructor removes only the observer it added, so another observer keeps its runs. */
+TEST(Medium_RegisterProfilerParts, TheDestructorRemovesItsOwnObserverOnly)
+{
+    SessionPipeline pipeline;
+    const auto other = std::make_shared<RecordingObserver>();
+    const RunObserverHandle other_handle = pipeline.runtime().add_run_observer(other);
+    SushiProfiler::Registry registry;
+    SourceHarness harness;
+    std::unique_ptr<SushiProfiler::Source> source;
+    {
+        const RuntimeProfilerParts parts = register_profiler_parts(registry, pipeline.runtime());
+        source = make_source(registry);
+        ASSERT_TRUE(source->begin(harness.context).ok());
+        ASSERT_TRUE(pipeline.graph().run().has_value());
+    }
+
+    ASSERT_TRUE(pipeline.graph().run().has_value());
+
+    EXPECT_EQ(other->count(), 2u) << "the other observer heard the run with the parts and the run after them";
+    EXPECT_FALSE(other->last().events.empty()) << "device timing stays on while the other observer remains";
+    EXPECT_EQ(pipeline.graph().compile_count(), 1u) << "an observer remained, so no plan was rebuilt";
+}
+
+/** @brief Tests that a second runtime may feed the same source before a session starts and not while one runs. */
+TEST(Medium_RegisterProfilerParts, AFurtherRuntimeAttachesBeforeASessionAndNotDuringOne)
+{
+    SessionPipeline first;
+    SessionPipeline second;
+    SushiProfiler::Registry registry;
+    RuntimeProfilerParts parts = register_profiler_parts(registry, first.runtime());
+    SourceHarness harness;
+
+    EXPECT_TRUE(parts.attach(second.runtime()));
+    const std::unique_ptr<SushiProfiler::Source> source = make_source(registry);
+    ASSERT_TRUE(source->begin(harness.context).ok());
+
+    SessionPipeline third;
+    EXPECT_FALSE(parts.attach(third.runtime())) << "a session is running";
+
+    ASSERT_TRUE(first.graph().run().has_value());
+    ASSERT_TRUE(second.graph().run().has_value());
+    EXPECT_EQ(first.graph().compile_count(), 1u);
+    EXPECT_EQ(second.graph().compile_count(), 1u) << "both runtimes record timing for the session";
+    source->end();
+}
+
+/** @brief Tests that parts whose registration was refused attach nothing. */
+TEST(Medium_RegisterProfilerParts, RefusedPartsAttachNothing)
+{
+    SessionPipeline first;
+    SessionPipeline other;
+    SushiProfiler::Registry registry;
+    const RuntimeProfilerParts accepted = register_profiler_parts(registry, first.runtime());
+    RuntimeProfilerParts refused = register_profiler_parts(registry, first.runtime());
+
+    EXPECT_FALSE(refused.attach(other.runtime()));
+    EXPECT_TRUE(accepted.is_registered());
+}

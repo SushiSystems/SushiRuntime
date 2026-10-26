@@ -60,11 +60,6 @@ namespace SushiRuntime
         return Internal::ContextAccess::context(context_).devices().queue(device.value());
     }
 
-    bool AdvancedControls::is_profiling_enabled() const noexcept
-    {
-        return Internal::ContextAccess::context(context_).settings().profiling;
-    }
-
     bool AdvancedControls::is_rebalancer_enabled() const
     {
         return Internal::ContextAccess::context(context_).execution_engine().rebalancer_enabled();

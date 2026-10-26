@@ -47,6 +47,7 @@
 #include <SushiRuntime/task/node.hpp>
 
 #include "dynamic_graph_plan_access.hpp"
+#include "run_recorder.hpp"
 
 using namespace SushiRuntime;
 
@@ -525,53 +526,57 @@ namespace DynamicGraphNodeEventsTests
         }
     } // namespace
 
-    /** @brief Tests that a graph that never requested profiling records nothing. */
+    /** @brief Tests that a graph of a runtime with no observer records nothing. */
     TEST(Medium_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
     {
         constexpr std::size_t N = 32;
 
         auto rt = Runtime::create().value();
         rt.set_rebalancer_enabled(false);
+        Testing::RunRecorder observed(rt);
+        observed.stop();
         auto buf = rt.buffer<int>(N).value();
         int* p = buf.data();
 
         auto world = rt.dynamic_graph();
-        EXPECT_FALSE(world.is_profiling_requested());
         world.region(0).add(N, Reads{}, Writes(buf),
                             [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
         auto report = world.run().value();
-        EXPECT_TRUE(report.node_events.empty());
+        EXPECT_TRUE(report.is_successful);
+        EXPECT_EQ(observed.count(), 0u);
     }
 
-    /** @brief Tests that a requested DynamicGraph produces records that match the renumbered index. */
+    /** @brief Tests that an observed DynamicGraph produces records that match the renumbered index. */
     TEST(Medium_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRenumberedIndex)
     {
         constexpr std::size_t N = 32;
 
         auto rt = Runtime::create().value();
         rt.set_rebalancer_enabled(false);
+        Testing::RunRecorder observed(rt);
         auto a = rt.buffer<int>(N).value();
         auto b = rt.buffer<int>(N).value();
         int* pa = a.data();
         int* pb = b.data();
 
         auto world = rt.dynamic_graph();
-        world.set_profiling(true);
         world.region(0).add(N, Reads{}, Writes(a),
                             [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("A");
         world.region(1).add(N, Reads{}, Writes(b),
                             [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("B");
 
-        auto report = world.run().value();
-        ASSERT_FALSE(report.node_events.empty())
-            << "a requested DynamicGraph must record device dispatches, not just stamp the flag";
+        world.run().value();
+        ASSERT_EQ(observed.count(), 1u);
+        const RunObservation observation = observed.last();
+        ASSERT_FALSE(observation.events.empty())
+            << "an observed DynamicGraph must record device dispatches, not just stamp the flag";
 
         const auto& plan = Detail::DynamicGraphNodeEventsTestAccess::plan(world);
         const std::uint32_t idx_a = registration_index_of(plan, "A");
         const std::uint32_t idx_b = registration_index_of(plan, "B");
 
-        for (const auto& rec : report.node_events)
+        for (const auto& rec : observation.events)
             EXPECT_TRUE(rec.node_index == idx_a || rec.node_index == idx_b)
                 << "record node_index " << rec.node_index << " matches neither renumbered index";
     }
@@ -583,6 +588,7 @@ namespace DynamicGraphNodeEventsTests
 
         auto rt = Runtime::create().value();
         rt.set_rebalancer_enabled(false);
+        Testing::RunRecorder observed(rt);
         auto a = rt.buffer<int>(N).value();
         auto b = rt.buffer<int>(N).value();
         auto c = rt.buffer<int>(N).value();
@@ -591,7 +597,6 @@ namespace DynamicGraphNodeEventsTests
         int* pc = c.data();
 
         auto world = rt.dynamic_graph();
-        world.set_profiling(true);
 
         // Region 5 is keyed above region 2, so its two calls land after region 2's one; see README.md.
         world.region(5).add(N, Reads{}, Writes(a),
@@ -620,13 +625,13 @@ namespace DynamicGraphNodeEventsTests
 
         auto rt = Runtime::create().value();
         rt.set_rebalancer_enabled(false);
+        Testing::RunRecorder observed(rt);
         auto a = rt.buffer<int>(N).value();
         auto b = rt.buffer<int>(N).value();
         int* pa = a.data();
         int* pb = b.data();
 
         auto world = rt.dynamic_graph();
-        world.set_profiling(true);
 
         world.region(0).add(N, Reads{}, Writes(a),
                             [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("kept");
@@ -648,8 +653,8 @@ namespace DynamicGraphNodeEventsTests
         EXPECT_EQ(idx_v2, 1u) << "re-adding region 1 must not resume from a stale counter";
     }
 
-    // Toggling the per-graph request recompiles exactly once, not once per run.
-    TEST(Medium_DynamicGraphNodeEvents, RequestToggleRecompilesOnce)
+    // Adding the first observer recomposes exactly once, not once per run.
+    TEST(Medium_DynamicGraphNodeEvents, AddingAnObserverRecomposesOnce)
     {
         constexpr std::size_t N = 8;
 
@@ -665,15 +670,16 @@ namespace DynamicGraphNodeEventsTests
         world.run().value();
         const std::size_t compiles_before = world.compose_count();
 
-        world.set_profiling(true);
+        Testing::RunRecorder observed(rt);
         world.run().value();
         EXPECT_EQ(world.compose_count(), compiles_before + 1)
-            << "the toggle must force exactly one recompose";
+            << "the first observer must force exactly one recompose";
+        EXPECT_EQ(observed.count(), 1u);
 
         const std::size_t compiles_after_toggle = world.compose_count();
         world.run().value();
         EXPECT_EQ(world.compose_count(), compiles_after_toggle)
-            << "an unmutated run after the toggle must not recompile again";
+            << "an unmutated run after the observer is added must not recompose again";
     }
 } // namespace DynamicGraphNodeEventsTests
 

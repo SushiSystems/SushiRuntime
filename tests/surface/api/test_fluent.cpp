@@ -89,7 +89,6 @@ namespace FluentApiTests
 
         EXPECT_EQ(report.total_tasks_executed, 2 * STEPS);
         EXPECT_TRUE(report.is_successful);
-        EXPECT_GE(report.total_duration_ms, 0.0);
     }
 
     /** @brief Tests that run_for() with a very short budget runs at least one step. */
@@ -133,7 +132,6 @@ namespace FluentApiTests
 
         EXPECT_GE(report.total_tasks_executed, 2u)
             << "run_for(50ms) should complete more than one step for a trivial kernel.";
-        EXPECT_GE(report.total_duration_ms, 0.0);
     }
 
     /** @brief Tests the add_untracked(kernel) overload whose callable takes a sycl::handler. */

@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <utility>
 
 #include <SushiRuntime/api/detail/node_description.hpp>
@@ -172,8 +173,16 @@ namespace SushiRuntime
             }
 
             using PlanCache::compile_count;
-            using StepDriver<Graph>::is_profiling_requested;
-            using StepDriver<Graph>::set_profiling;
+            using PlanCache::id;
+
+            /**
+             * @brief Names this graph in a profile, so spans of two graphs of one runtime are told apart.
+             *
+             * The next plan build copies the label; a changed label forces no rebuild. May be called before
+             * or between runs.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            void set_label(std::string label) { PlanCache::set_label(std::move(label)); }
 
         private:
             friend class Runtime;
@@ -190,25 +199,12 @@ namespace SushiRuntime
                 "Graph references a Buffer/State freed before the run.";
 
             explicit Graph(ContextHandle context)
-                : PlanCache(Detail::profiling_default(context)), context_(std::move(context)),
-                  recorder_(context_)
+                : context_(std::move(context)), recorder_(context_)
             {
             }
 
             /** @brief Returns the runtime whose engine runs this graph. */
             const ContextHandle& run_context() const noexcept { return context_; }
-
-            /** @brief Records the profiling request; a changed one rebuilds the plan. */
-            void request_profiling(bool requested) noexcept
-            {
-                PlanCache::set_profiling(requested);
-            }
-
-            /** @brief Returns whether the next plan requests per-node device timing. */
-            [[nodiscard]] bool profiling_request() const noexcept
-            {
-                return PlanCache::is_profiling_requested();
-            }
 
             /** @brief Returns whether any node has been recorded. */
             [[nodiscard]] bool has_work() const noexcept

@@ -69,6 +69,9 @@
 #include <SushiRuntime/probe_tasks/priority_tracking_task.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
+#include <SushiLog/log/log_level.hpp>
+#include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/test_runner/log_capture.hpp>
 
 
 /** @brief Tests which device queue the scheduler hands a graph node at dispatch. */
@@ -837,4 +840,192 @@ TEST(Medium_TaskScheduler, AbruptStopDrains)
 
     EXPECT_NO_THROW({ scheduler.stop(); })
         << "Abrupt stop() must drain without deadlock or throw.";
+}
+
+using namespace SushiRuntime;
+using SushiRuntime::Internal::Graph::Node;
+using SushiRuntime::Internal::Scheduler::TaskScheduler;
+using SushiRuntime::Internal::Scheduler::WorkerPoolSettings;
+
+namespace
+{
+    /** @brief Describes a machine with no core map, so no core has a NUMA node. */
+    class NoCoreMapTopology final : public Internal::Topology::TopologyProvider
+    {
+        public:
+            Result<std::vector<Internal::Topology::HardwareNode>> enumerate(const DeviceFilter&) override
+            {
+                return std::vector<Internal::Topology::HardwareNode>{};
+            }
+    };
+
+    /** @brief Reports one NUMA node at the local distance. */
+    class OneNodeDistance final : public Internal::Topology::NUMADistanceModel
+    {
+        public:
+            int distance(int, int) const override { return 10; }
+            int node_count() const override { return 1; }
+    };
+
+    /** @brief Returns one entry over the device SYCL selects by default. */
+    std::vector<Internal::Device::DeviceDescriptor> one_entry()
+    {
+        Internal::Device::DeviceDescriptor descriptor;
+        descriptor.device = sycl::device{sycl::default_selector_v};
+        descriptor.info.name = "default";
+        descriptor.info.backend = descriptor.device.get_backend();
+        descriptor.info.numa_node = 0;
+        return {descriptor};
+    }
+
+    /** @brief Owns what a scheduler is built on: a topology, one device entry and an allocator. */
+    class SchedulerParts
+    {
+        public:
+            SchedulerParts()
+                : topology_(NoCoreMapTopology(), std::make_shared<OneNodeDistance>()),
+                  devices_(one_entry(), false), memory_(devices_.plain_queues())
+            {
+            }
+
+            /** @brief Builds a scheduler of @p settings over the parts, without starting it. */
+            std::unique_ptr<TaskScheduler> make(const WorkerPoolSettings& settings)
+            {
+                return std::make_unique<TaskScheduler>(settings, topology_, devices_, memory_);
+            }
+
+        private:
+            Internal::Topology::TopologyView topology_; /**< One NUMA node and no core map. */
+            Internal::Device::DeviceQueueSet devices_;  /**< One entry on the default device. */
+            Internal::Memory::USMAllocator memory_;     /**< Allocator over the entry. */
+    };
+
+    /** @brief Builds a host node that counts how often its work runs. */
+    sushi_ptr<Node> counting_node(std::atomic<int>& ran)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->mode = Node::ExecutionMode::Host;
+        node->host_work = [&ran](sycl::queue&, const std::vector<sycl::event>&)
+        {
+            ran.fetch_add(1);
+            return sycl::event{};
+        };
+        return node;
+    }
+} // namespace
+
+/** @brief Tests that a request past the largest pool is cut to it, with a line saying so. */
+TEST(Medium_TaskScheduler, LogsAClampedWorkerCount)
+{
+    TestRunner::LogCapture capture;
+    SchedulerParts parts;
+
+    const auto scheduler = parts.make(WorkerPoolSettings{K_MAX_WORKER_THREADS + 5, 0, PinPolicy::Float});
+
+    EXPECT_EQ(scheduler->worker_count(), K_MAX_WORKER_THREADS);
+    const auto records = capture.records();
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_EQ(records[0].level, SushiLog::LogLevel::Warn);
+    EXPECT_EQ(records[0].module, "scheduler");
+    EXPECT_NE(records[0].message.find(std::to_string(K_MAX_WORKER_THREADS + 5)), std::string::npos)
+        << "the line names the requested count: " << records[0].message;
+    EXPECT_NE(records[0].message.find(std::to_string(K_MAX_WORKER_THREADS)), std::string::npos)
+        << "and the maximum: " << records[0].message;
+}
+
+/** @brief Tests that a request inside the limits logs nothing about the count. */
+TEST(Medium_TaskScheduler, AWorkerCountInsideTheLimitsLogsNoWarning)
+{
+    TestRunner::LogCapture capture;
+    SchedulerParts parts;
+
+    const auto scheduler = parts.make(WorkerPoolSettings{2, 0, PinPolicy::Float});
+
+    EXPECT_EQ(scheduler->worker_count(), 2u);
+    EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Warn), 0u);
+}
+
+/** @brief Tests that a pinned worker whose core the topology does not list is mapped to NUMA node 0, and says so. */
+TEST(Medium_TaskScheduler, LogsAWorkerWhoseCoreHasNoNumaNode)
+{
+    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Debug);
+    SchedulerParts parts;
+
+    const auto scheduler = parts.make(WorkerPoolSettings{2, 0, PinPolicy::Pin});
+
+    ASSERT_EQ(scheduler->worker_count(), 2u);
+    std::size_t lines = 0;
+    for (const TestRunner::CapturedRecord& record : capture.records())
+    {
+        if (record.level == SushiLog::LogLevel::Debug && record.module == "scheduler" &&
+            record.message.find("NUMA node 0") != std::string::npos)
+            ++lines;
+    }
+    EXPECT_EQ(lines, 2u) << "one line per pinned worker the core map does not cover";
+}
+
+/** @brief Tests that a floating pool has no core to map and logs no such line. */
+TEST(Medium_TaskScheduler, AFloatingPoolLogsNoCoreMapLine)
+{
+    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Debug);
+    SchedulerParts parts;
+
+    const auto scheduler = parts.make(WorkerPoolSettings{2, 0, PinPolicy::Float});
+
+    for (const TestRunner::CapturedRecord& record : capture.records())
+        EXPECT_EQ(record.message.find("NUMA node 0"), std::string::npos) << record.message;
+}
+
+/** @brief Tests that a cancelled run logs one INFO with the number of tasks it skipped. */
+TEST(Medium_TaskSchedulerCancel, LogsTheTasksASkippedRunLeftUnrun)
+{
+    SchedulerParts parts;
+    const auto scheduler = parts.make(WorkerPoolSettings{2, 0, PinPolicy::Float});
+    scheduler->start();
+    scheduler->arm_for_execution();
+    scheduler->request_cancellation();
+
+    std::atomic<int> ran{0};
+    std::vector<sushi_ptr<Node>> nodes;
+    for (int i = 0; i < 5; ++i)
+        nodes.push_back(counting_node(ran));
+
+    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
+    for (const sushi_ptr<Node>& node : nodes)
+        scheduler->submit(node.get());
+    scheduler->wait_quiescent();
+    scheduler->disarm();
+    scheduler->stop();
+
+    EXPECT_EQ(ran.load(), 0) << "a cancelled run executes no task";
+    bool logged = false;
+    for (const TestRunner::CapturedRecord& record : capture.records())
+    {
+        if (record.level == SushiLog::LogLevel::Info && record.module == "scheduler" &&
+            record.message.find("5 tasks were skipped") != std::string::npos)
+            logged = true;
+    }
+    EXPECT_TRUE(logged) << "the line names how many tasks the cancel left unrun";
+}
+
+/** @brief Tests that a run nobody cancelled logs no skip line. */
+TEST(Medium_TaskSchedulerCancel, ARunNobodyCancelledLogsNoSkipLine)
+{
+    SchedulerParts parts;
+    const auto scheduler = parts.make(WorkerPoolSettings{2, 0, PinPolicy::Float});
+    scheduler->start();
+    scheduler->arm_for_execution();
+
+    std::atomic<int> ran{0};
+    const sushi_ptr<Node> node = counting_node(ran);
+
+    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
+    scheduler->submit(node.get());
+    scheduler->wait_quiescent();
+    scheduler->disarm();
+    scheduler->stop();
+
+    EXPECT_EQ(ran.load(), 1);
+    for (const TestRunner::CapturedRecord& record : capture.records())
+        EXPECT_EQ(record.message.find("were skipped"), std::string::npos) << record.message;
 }

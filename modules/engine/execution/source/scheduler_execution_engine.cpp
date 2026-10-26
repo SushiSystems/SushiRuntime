@@ -40,6 +40,10 @@
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/profile/profile.hpp>
+#include <SushiRuntime/report/run_observer.hpp>
+#include <SushiRuntime/execution/dropped_dispatches.hpp>
+#include <SushiRuntime/execution/run_failures.hpp>
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -169,6 +173,37 @@ namespace SushiRuntime
             };
         } // namespace
 
+        namespace
+        {
+            /** @brief Empties @p observation but for the plan's table, for a run that records no timing. */
+            void clear_observation(Internal::Graph::CompiledGraph& graph, RunObservation& observation)
+            {
+                observation.events.clear();
+                observation.device_clocks.clear();
+                observation.drops = DropCounts{};
+                observation.table = graph.node_table;
+                observation.graph_id = graph.graph_id;
+            }
+
+            /**
+             * @brief Reads a plan's ledger into an observation and logs what the run lost.
+             * @param observation Gains the table, the records, the pairings and the drop counts.
+             */
+            void fill_observation(Internal::Graph::CompiledGraph& graph, RunObservation& observation)
+            {
+                observation.events.clear();
+                observation.device_clocks.clear();
+                observation.table = graph.node_table;
+                observation.graph_id = graph.graph_id;
+                graph.profiling_ledger.collect(observation.events);
+                graph.profiling_ledger.collect_pairings(observation.device_clocks);
+                observation.drops = graph.profiling_ledger.drops();
+
+                // One line per run for what the record lacks (modules/engine/execution/README.md).
+                log_dropped_dispatches(observation.drops);
+            }
+        } // namespace
+
         /**
          * @brief Owns the scheduler, completion gate and rebalancer (modules/engine/execution/README.md).
          */
@@ -179,6 +214,12 @@ namespace SushiRuntime
 
             /** @brief The context's device queues, asked for their asynchronous errors. */
             Internal::Device::DeviceQueueSet& devices;
+
+            /** @brief The context whose observers a completed run is reported to. */
+            RuntimeContext& context;
+
+            /** @brief Set by submit_observed(); the run's sentinel hands the observation over and clears it. */
+            std::atomic<bool> observe_on_completion{false};
 
             /** @brief Reusable per-step completion gate. */
             CompletionLatch completion;
@@ -207,7 +248,8 @@ namespace SushiRuntime
             Impl(RuntimeContext& context)
                 : scheduler(worker_pool_settings(context.settings()), context.topology(),
                             context.devices(), context.memory()),
-                  devices(context.devices())
+                  devices(context.devices()),
+                  context(context)
             {
                 scheduler.start();
 
@@ -345,7 +387,7 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Zeroes node and per-worker profiling accumulators before a run.
+         * @brief Zeroes the worker time and resets the event ledger before a run.
          */
         void SchedulerExecutionEngine::reset_profiling(Internal::Graph::CompiledGraph& graph, std::size_t expected_invocations)
         {
@@ -355,91 +397,43 @@ namespace SushiRuntime
 
             // reserve() folds in the last run's true per-row demand, so growth is outside the poller.
             graph.profiling_ledger.reserve(graph.profiling_multiplicities,
-                                           static_cast<std::uint32_t>(expected_invocations));
-            graph.profiling_ledger.set_run_start(
-                static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch()).count()));
+                                           static_cast<std::uint32_t>(expected_invocations),
+                                           impl_->devices.count());
         }
 
         /**
-         * @brief Reads the accumulators into a report's profiling breakdown.
+         * @brief Reads the ledger into an observation.
          */
         void SchedulerExecutionEngine::collect_profiling(Internal::Graph::CompiledGraph& graph,
-                                                RunReport& report) const
+                                                         RunObservation& observation) const
         {
-            // One capture path (F4): node_timings below is aggregated from these same records.
-            graph.profiling_ledger.collect(report);
-            report.clock = graph.profiling_ledger.pairing();
+            SR_ZONE_FINE("run.collect");
+            fill_observation(graph, observation);
+        }
 
-            const auto& host_native = graph.profiling_host_native;
-            const std::int64_t offset = static_cast<std::int64_t>(report.clock.steady_ns) -
-                                        static_cast<std::int64_t>(report.clock.event_ns);
-            for (auto& rec : report.node_events)
-            {
-                if (rec.node_index >= host_native.size() || !host_native[rec.node_index])
-                    continue;
-                auto convert = [offset](std::uint64_t steady_ns) noexcept -> std::uint64_t
-                {
-                    return static_cast<std::uint64_t>(static_cast<std::int64_t>(steady_ns) - offset);
-                };
-                rec.submit_ns = convert(rec.submit_ns);
-                rec.start_ns  = convert(rec.start_ns);
-                rec.end_ns    = convert(rec.end_ns);
-            }
-
-            // node_timings has one row per dispatched registration_index (modules/engine/execution/README.md).
-            auto& agg = graph.profiling_accumulators;
-            agg.assign(graph.profiling_multiplicities.size(), Internal::Graph::NodeTimingAccumulator{});
-            for (const auto& rec : report.node_events)
-            {
-                if (rec.node_index >= agg.size()) continue;
-                auto& a = agg[rec.node_index];
-                ++a.invocations;
-                const std::uint64_t dur = rec.end_ns > rec.start_ns ? rec.end_ns - rec.start_ns : 0;
-                if (rec.node_index < host_native.size() && host_native[rec.node_index])
-                    a.host_ns += dur;
-                else
-                    a.device_ns += dur;
-            }
-
-            // t.plan_index stays Node::plan_index; the first node sharing the index (F5) supplies it.
-            for (std::size_t idx = 0; idx < agg.size(); ++idx)
-            {
-                if (agg[idx].invocations == 0) continue;
-
-                NodeTiming t;
-                for (auto& n : graph.all_nodes)
-                {
-                    if (n->is_sentinel || n->registration_index != idx)
-                        continue;
-                    t.plan_index = n->plan_index;
-                    t.name = n->metadata.name;
-                    t.operation = n->metadata.op_id;
-                    break;
-                }
-                t.invocations = static_cast<std::size_t>(agg[idx].invocations);
-                t.device_ms   = agg[idx].device_ns / 1.0e6;
-                t.host_ms     = agg[idx].host_ns / 1.0e6;
-                report.node_timings.push_back(std::move(t));
-            }
-
-            double polling_ms_total = 0.0;
+        /**
+         * @brief Writes the workers' time of the run as values and starts their buckets again.
+         */
+        void SchedulerExecutionEngine::write_run_values() const
+        {
+            double busy_ms = 0.0;
+            double stealing_ms = 0.0;
+            double polling_ms = 0.0;
+            double idle_ms = 0.0;
             const std::size_t workers = impl_->scheduler.worker_count();
             for (std::size_t i = 0; i < workers; ++i)
             {
-                const auto s = impl_->scheduler.worker_times(static_cast<int>(i));
-                WorkerTiming w;
-                w.worker_id   = static_cast<int>(i);
-                w.busy_ms     = s.busy_ns / 1.0e6;
-                w.stealing_ms = s.stealing_ns / 1.0e6;
-                w.polling_ms  = s.polling_ns / 1.0e6;
-                w.idle_ms     = s.idle_ns / 1.0e6;
-                polling_ms_total += w.polling_ms;
-                report.worker_timings.push_back(w);
+                const auto split = impl_->scheduler.worker_times(static_cast<int>(i));
+                busy_ms     += split.busy_ns / 1.0e6;
+                stealing_ms += split.stealing_ns / 1.0e6;
+                polling_ms  += split.polling_ns / 1.0e6;
+                idle_ms     += split.idle_ns / 1.0e6;
             }
-
-            // Completion polling is scheduler overhead between kernels (modules/engine/execution/README.md).
-            report.scheduling_overhead_ms = polling_ms_total;
+            impl_->scheduler.reset_worker_times();
+            SR_VALUE("worker.busy", "ms", busy_ms);
+            SR_VALUE("worker.stealing", "ms", stealing_ms);
+            SR_VALUE("worker.polling", "ms", polling_ms);
+            SR_VALUE("worker.idle", "ms", idle_ms);
         }
 
         /**
@@ -496,6 +490,8 @@ namespace SushiRuntime
          */
         Result<void> SchedulerExecutionEngine::submit(Internal::Graph::CompiledGraph& graph)
         {
+            SR_ZONE("run.submit");
+
             if (impl_->is_shutdown.load(std::memory_order_acquire))
                 return make_error(Error{ErrorCode::InvalidState, "Execute called after shutdown."});
             if (graph.roots.empty())
@@ -514,7 +510,7 @@ namespace SushiRuntime
             // The guard clears the bit only on an early exit (modules/engine/execution/README.md).
             ScheduledRunRelease submit_guard(impl_->run_marker);
 
-            // DEBUG, not INFO: a run happens once per replayed step (modules/engine/execution/README.md).
+            // TRACE, not INFO: a run happens once per replayed step (modules/engine/execution/README.md).
             SR_LOG_TRACE(K_EXECUTION_LOG_CATEGORY, "Executing graph ({} root nodes).", graph.roots.size());
 
             // The sentinel's host_work is wired once per plan (modules/engine/execution/README.md).
@@ -526,10 +522,12 @@ namespace SushiRuntime
 
                 auto* latch     = &impl_->completion;
                 auto* sched_ptr = &impl_->scheduler;
+                Impl* const impl = impl_.get();
+                Internal::Graph::CompiledGraph* const plan = &graph;
                 // Fixed for the sentinel's lifetime; a changed request rewires a fresh one.
                 const bool profiling = graph.profiling;
                 graph.sentinel->host_work =
-                    [latch, sched_ptr, profiling]
+                    [latch, sched_ptr, profiling, impl, plan]
                     (sycl::queue&, const std::vector<sycl::event>& dependencies) -> sycl::event
                     {
                         // Deps are waited, then the latch is signalled (modules/engine/execution/README.md).
@@ -540,6 +538,18 @@ namespace SushiRuntime
 
                         // The outcome is read before re-arming clears it (modules/engine/execution/README.md).
                         std::optional<Error> failure = sched_ptr->run_error();
+
+                        // Every record of the run is written before its successors ran, so the ledger is whole here.
+                        if (impl->observe_on_completion.exchange(false, std::memory_order_acq_rel) && !failure)
+                        {
+                            RunObservation& observation = plan->observation;
+                            observation.layer = ExecutionLayer::Scheduler;
+                            if (profiling)
+                                fill_observation(*plan, observation);
+                            else
+                                clear_observation(*plan, observation);
+                            impl->context.notify_run(observation);
+                        }
 
                         // The pool stays armed through the drain tail (modules/engine/execution/README.md).
                         sched_ptr->arm_for_execution(profiling);
@@ -566,6 +576,18 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Starts a run and has its sentinel hand the observation over when the device work is done.
+         */
+        Result<void> SchedulerExecutionEngine::submit_observed(Internal::Graph::CompiledGraph& graph)
+        {
+            impl_->observe_on_completion.store(true, std::memory_order_release);
+            Result<void> submitted = submit(graph);
+            if (!submitted)
+                impl_->observe_on_completion.store(false, std::memory_order_release);
+            return submitted;
+        }
+
+        /**
          * @brief Waits for the submitted run, drains the pool, releases the engine.
          *
          * The blocking half of a run. The flag is released whatever the run returns, so a
@@ -574,33 +596,40 @@ namespace SushiRuntime
          */
         Result<void> SchedulerExecutionEngine::complete()
         {
+            SR_ZONE("run.wait");
+
             const ScheduledRunRelease release_guard(impl_->run_marker);
 
-            impl_->completion.wait();
+            {
+                SR_ZONE_FINE("run.wait.latch");
+                impl_->completion.wait();
+            }
 
             // The pool drains before the caller may destroy the graph (modules/engine/execution/README.md).
-            impl_->scheduler.wait_quiescent();
+            {
+                SR_ZONE_FINE("run.wait.quiesce");
+                impl_->scheduler.wait_quiescent();
+            }
 
             // The pool is disarmed here, under the submission guard (modules/engine/execution/README.md).
             impl_->scheduler.disarm();
 
             // The queues are drained of their asynchronous errors whether or not a task failed.
-            Result<void> raised = impl_->devices.raise_asynchronous_errors();
+            Result<void> raised;
+            {
+                SR_ZONE_FINE("run.wait.errors");
+                raised = impl_->devices.raise_asynchronous_errors();
+            }
 
             if (impl_->completion.error)
-            {
                 SR_LOG_ERROR(K_EXECUTION_LOG_CATEGORY, "Graph execution aborted due to a task error.");
-                return make_error(std::move(*impl_->completion.error));
-            }
-            if (!raised)
-            {
+            else if (!raised)
                 SR_LOG_ERROR(K_EXECUTION_LOG_CATEGORY, "Graph execution failed: a device queue reported an asynchronous "
                              "error.");
-                return raised;
-            }
+            else
+                SR_LOG_TRACE(K_EXECUTION_LOG_CATEGORY, "Graph execution completed."); // per step; see the note in submit()
 
-            SR_LOG_DEBUG(K_EXECUTION_LOG_CATEGORY, "Graph execution completed."); // per-step; see the DEBUG note above
-            return {};
+            return merge_run_failures(std::move(impl_->completion.error), std::move(raised));
         }
 
         /**

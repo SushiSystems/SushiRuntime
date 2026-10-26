@@ -59,6 +59,8 @@ Source: `tests/package/main.cpp`
 | Build or read the plan without running | `compile()`, `SushiRuntime::Graph::plan()`, `SushiRuntime::PlanView` |
 | Read devices, queues and counters | `SushiRuntime::AdvancedControls` |
 | Exchange memory with another API | `SushiRuntime::Interop` |
-| Read what a run did | `SushiRuntime::RunReport`, `SushiRuntime::NodeTiming`, `SushiRuntime::WorkerTiming` |
+| Read what a run did | `SushiRuntime::RunReport` |
+| Read the timing of a run | `SushiRuntime::Runtime::add_run_observer()`, `SushiRuntime::RunObserver`, `SushiRuntime::RunObservation` |
+| Put the runtime on a SushiProfiler timeline | `SushiRuntime::register_profiler_parts()` |
 | Handle a failure | `SushiRuntime::Result`, `SushiRuntime::Error`, `SushiRuntime::ErrorCode` |
 | Consume the library from another project | `docs/guides/INTEGRATION.md` |

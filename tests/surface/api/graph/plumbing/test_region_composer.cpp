@@ -42,6 +42,7 @@
 #include "dynamic_graph_plan_access.hpp"
 #include "hooked_copy_task.hpp"
 #include "refusing_fill.hpp"
+#include "run_recorder.hpp"
 
 using namespace SushiRuntime;
 
@@ -75,8 +76,8 @@ namespace BoundaryAccessTests
         int* cells = shared.data();
         int* sum = total.data();
 
+        Testing::RunRecorder observed(rt);
         auto world = rt.dynamic_graph();
-        world.set_profiling(true);
         world.region(1).add_host(Reads{}, Writes(shared.region({15, 5})),
                                  [cells]() { for (std::size_t i = 15; i < 20; ++i) cells[i] = 7; })
                        .name("w");
@@ -116,8 +117,8 @@ namespace BoundaryAccessTests
         int* cells = shared.data();
         int* sum = total.data();
 
+        Testing::RunRecorder observed(rt);
         auto world = rt.dynamic_graph();
-        world.set_profiling(true);
         world.region(1).add_host(Reads{}, Writes(shared.region({15, 5})),
                                  [cells]() { for (std::size_t i = 15; i < 20; ++i) cells[i] = 7; })
                        .name("w");
@@ -163,8 +164,8 @@ namespace BoundaryAccessTests
         int* first = early.data();
         int* second = late.data();
 
+        Testing::RunRecorder observed(rt);
         auto world = rt.dynamic_graph();
-        world.set_profiling(true);
         world.region(1).add_host(Reads(shared.region({0, 10})), Writes(early),
                                  [cells, first]() { first[0] = cells[0]; })
                        .name("r");
@@ -245,8 +246,8 @@ namespace RegionCommitTests
         int* pc = out_c.data();
         int* pd = own_d.data();
 
+        Testing::RunRecorder observed(rt);
         auto world = rt.dynamic_graph();
-        world.set_profiling(true);
         world.region(0).add_host(Reads{}, Writes(shared),
                                  [ps]() { for (std::size_t i = 0; i < K_ELEMENTS; ++i) ps[i] += 1; })
                        .name("a");

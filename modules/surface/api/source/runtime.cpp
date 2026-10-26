@@ -37,6 +37,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include <SushiRuntime/api/detail/assertion_logging.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
@@ -48,6 +49,8 @@
 #include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/machine/device_description.hpp>
 #include <SushiRuntime/machine/device_facts.hpp>
+#include <SushiRuntime/profile/profile.hpp>
+#include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/topology/host_identity.hpp>
 
 namespace SushiRuntime
@@ -59,7 +62,6 @@ namespace SushiRuntime
         settings_of(const RuntimeConfig& config) noexcept
         {
             Internal::Execution::RuntimeSettings settings;
-            settings.profiling = config.profiling;
             settings.worker_count = config.worker_count;
             settings.first_core = config.first_core;
             settings.pinning = config.pinning;
@@ -163,6 +165,7 @@ namespace SushiRuntime
 
     Result<ContextHandle> Runtime::create_context(const RuntimeConfig& config)
     {
+        Detail::install_fatal_logging();
         Result<std::shared_ptr<Internal::Execution::RuntimeContext>> context =
             Internal::Execution::RuntimeContext::create(config.devices, nullptr, nullptr,
                                                         settings_of(config));
@@ -215,8 +218,15 @@ namespace SushiRuntime
         return {};
     }
 
+    RunObserverHandle Runtime::add_run_observer(std::shared_ptr<RunObserver> observer) const
+    {
+        return Internal::Execution::observe_runs(Internal::ContextAccess::shared(context_),
+                                                 std::move(observer));
+    }
+
     Result<void> Runtime::wait() const
     {
+        SR_ZONE("wait.runtime");
         return Internal::ContextAccess::context(context_).devices().wait_all();
     }
 } // namespace SushiRuntime

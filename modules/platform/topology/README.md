@@ -138,6 +138,10 @@ The address of a GPU or accelerator is looked up in three steps.
 
 When none of them yields an address, NUMA affinity is estimated and a warning says so.
 
+A string that a source did return but that is not `domain:bus:device.function` in hex goes through
+`parse_pci_address()`, which returns nothing and logs one DEBUG with the string and the device
+name; the device is then left unmapped by PCI address like one with no source.
+
 ### hwloc_topology_provider.cpp
 
 `cpu_core_to_numa()` sizes its map by the highest OS cpu index, so `result[i]` is indexed by

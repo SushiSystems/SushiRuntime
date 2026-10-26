@@ -53,7 +53,7 @@
 int main(int argc, char** argv)
 {
     // Stream logs synchronously so they don't interleave with GTest output.
-    SR_LOGGER_SET_SYNC_MODE(true);
+    SushiLog::set_log_synchronous(true);
 
     ::testing::InitGoogleTest(&argc, argv);
 

@@ -37,6 +37,7 @@
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/memory/memory_log_category.hpp>
 
 namespace SushiRuntime
@@ -76,6 +77,32 @@ namespace SushiRuntime
                 return nullptr;
             }
 
+            /** @brief Returns the name of a USM kind as the refusal line prints it. */
+            const char* kind_name(USMKind kind) noexcept
+            {
+                switch (kind)
+                {
+                    case USMKind::Host:
+                        return "host";
+                    case USMKind::Shared:
+                        return "shared";
+                    case USMKind::Device:
+                        return "device";
+                }
+                return "unknown";
+            }
+
+            /** @brief Logs one WARN for a request SYCL answered with null. */
+            void log_refused_request(const USMRequest& request, const sycl::queue& queue)
+            {
+                SR_LOG_WARN(K_MEMORY_LOG_CATEGORY,
+                            "SYCL refused a {} USM allocation of {} bytes, alignment {}, on "
+                            "device {} ({}); returning null to the caller.",
+                            kind_name(request.kind), request.bytes, request.alignment,
+                            request.device_index,
+                            queue.get_device().get_info<sycl::info::device::name>());
+            }
+
             /** @brief Logs one ERROR for a release that threw; falls back to stderr. */
             void report_failed_release(void* address, const char* reason) noexcept
             {
@@ -100,12 +127,18 @@ namespace SushiRuntime
 
         void* USMAllocator::allocate(const USMRequest& request)
         {
+            SR_ZONE_FINE("memory.allocate");
+            SR_VALUE("memory.allocate_bytes", "bytes", static_cast<double>(request.bytes));
+
             const sycl::queue& queue = queue_at(request.device_index);
             void* const address = request.alignment == 0
                 ? allocate_unaligned(request.kind, request.bytes, queue)
                 : allocate_aligned(request.kind, request.alignment, request.bytes, queue);
             if (!address)
+            {
+                log_refused_request(request, queue);
                 return nullptr;
+            }
 
             registry_.record(address, request.device_index, request.bytes, request.kind);
             // A mark left by an adopted mapping that once sat at this address would leak it.
@@ -117,6 +150,8 @@ namespace SushiRuntime
         {
             if (!address)
                 return;
+
+            SR_ZONE_FINE("memory.release");
 
             // Counted before the load: zero read after a store means no call holds the old one.
             observer_calls_in_flight_.fetch_add(1, std::memory_order_seq_cst);

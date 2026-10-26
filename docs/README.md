@@ -26,6 +26,7 @@ one adapter module of your own, as [the integration guide](guides/INTEGRATION.md
 | [Distributed guide](guides/DISTRIBUTED_GUIDE.md) | Building and running the optional master and worker layer, and its limits |
 | [Distributed failures](guides/DISTRIBUTED_FAILURES.md) | What the distributed layer does when a worker, a link or the master fails |
 | [Placement guide](guides/PLACEMENT_GUIDE.md) | Placement classes, scopes and the placement rules that send work to a device or a machine |
+| [Profiling guide](guides/PROFILING_GUIDE.md) | Seeing where a run spent its time: observers, `register_profiler_parts()`, what is recorded and what it costs |
 | [FAQ](guides/FAQ.md) | The questions a newcomer asks, each answered from this manual |
 
 ## Reference
@@ -34,6 +35,7 @@ one adapter module of your own, as [the integration guide](guides/INTEGRATION.md
 | --- | --- |
 | [Changelog](reference/CHANGELOG.md) | What changed, by release |
 | [Glossary](reference/GLOSSARY.md) | The words these documents use |
+| [Profiler keys](reference/PROFILER_KEYS.md) | Every name the runtime writes into a SushiProfiler record: tracks, attributes, zones, values, counters and facts |
 | [Known issues](reference/KNOWN_ISSUES.md) | Defects that are recorded and not yet fixed |
 | [Security policy](../.github/SECURITY.md) | How to report a vulnerability, and what is in scope |
 | [Code of conduct](../.github/CODE_OF_CONDUCT.md) | The conduct expected of contributors |

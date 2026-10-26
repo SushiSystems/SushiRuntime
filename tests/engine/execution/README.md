@@ -152,26 +152,26 @@ unchanged for every existing consumer.
 
 ### `ProfilingQueueAddsThePropertyAndSharesTheContext`
 
-With `RuntimeSettings::profiling` off, which is the default, the plain queue carries no
+The plain queue carries no
 `enable_profiling` property and the profiling queue carries it once built. The two share one
 `sycl::context`, so USM allocated through the plain queue stays legally accessible from the
 profiling queue.
 
 ### `NoProfilingQueueExistsBeforeTheFirstRequest`
 
-Nothing is built before the first request. `RuntimeSettings::profiling` is off, so
+Nothing is built before the first request, so
 the `RuntimeContext` constructor must not have built the profiling queue of any device.
 
-### `SettingsProfilingBuildsEveryDeviceEagerly`
+### `UsingThePlainQueueBuildsNoProfilingQueue`
 
-`RuntimeSettings::profiling` asks the `RuntimeContext` constructor to build the profiling queue of
-every device eagerly, before any `run()` could have requested one.
+A context built with the default settings builds the plain queue of a device on request and no profiling
+queue on any device. The profiling flavour waits for the first run of a plan that records timing, which
+only an added `RunObserver` causes.
 
-### `SettingsProfilingReturnsThePlainQueueItself`
+### `TheProfilingFlavourIsNotThePlainQueue`
 
-With `RuntimeSettings::profiling` on, the plain queue already carries `enable_profiling`, so
-a request for the profiling flavour must return that same queue handle and not a second, duplicate
-one.
+The plain queue carries no `enable_profiling` property, so a request for the profiling flavour returns a
+second queue and never the plain queue handle.
 
 ### `USMFromThePlainQueueIsUsableOnTheProfilingQueue`
 
@@ -287,5 +287,26 @@ The file tests RuntimeSettings: the defaults and the pool settings it hands the 
 
 | Test | What it proves |
 | --- | --- |
-| `DefaultsAskForNothingExtra` | Checks the defaults: no profiling, one worker per core, pinned, no rebalancer. |
+| `DefaultsAskForNothingExtra` | Checks the defaults: one worker per core, pinned, no rebalancer. |
 | `ThePoolSettingsCarryThePoolFields` | The pool settings carry the three fields of the pool, unchanged. |
+
+## test_dropped_dispatches.cpp
+
+The one line a run logs for the dispatches it left out of its timing.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_DroppedDispatches.LogsNothingWhenNoneWasLost` | A run that lost nothing logs nothing. |
+| `Small_DroppedDispatches.LogsOneLineNamingEachCause` | A run that lost dispatches logs one WARN under the execution module. |
+| `Small_DroppedDispatches.ALossThatNamesNoNodeLeavesTheNodeOut` | A loss that names no node leaves the first node out of the line. |
+
+## test_run_failures.cpp
+
+How a run picks the failure it returns when a task and a device queue both failed.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_RunFailures.NeitherFailureSucceedsQuietly` | A run with neither failure succeeds and logs nothing. |
+| `Small_RunFailures.ATaskFailureAloneIsReturned` | A task failure alone is returned as it is and logs nothing. |
+| `Small_RunFailures.AQueueFailureAloneIsReturned` | The queue's failure alone is returned as it is. |
+| `Small_RunFailures.LogsTheQueueErrorADroppedTaskErrorHid` | With both failures the task failure is returned and the queue's message is logged. |

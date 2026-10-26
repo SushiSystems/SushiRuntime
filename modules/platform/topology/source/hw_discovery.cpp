@@ -138,6 +138,28 @@ namespace SushiRuntime
             }
         } // namespace
 
+        std::optional<PCIDomainAddress> parse_pci_address(const std::string& text,
+                                                          const std::string& device_name)
+        {
+            const std::regex pci_regex("([0-9a-fA-F]+):([0-9a-fA-F]+):([0-9a-fA-F]+)\\.([0-9a-fA-F]+)");
+            std::smatch match;
+            if (!std::regex_search(text, match, pci_regex) || match.size() != 5)
+            {
+                SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY,
+                             "PCI address text '{}' of device {} does not parse; the device stays "
+                             "unmapped by PCI address.",
+                             text, device_name);
+                return std::nullopt;
+            }
+
+            PCIDomainAddress address;
+            address.domain = static_cast<std::uint32_t>(std::stoul(match[1].str(), nullptr, 16));
+            address.bus = static_cast<std::uint32_t>(std::stoul(match[2].str(), nullptr, 16));
+            address.device = static_cast<std::uint32_t>(std::stoul(match[3].str(), nullptr, 16));
+            address.function = static_cast<std::uint32_t>(std::stoul(match[4].str(), nullptr, 16));
+            return address;
+        }
+
         /**
          * @brief Discovers the SYCL devices that pass config and returns them as hardware nodes.
          * @param config The filter configuration to use during the probe.
@@ -300,18 +322,13 @@ namespace SushiRuntime
 
                             if (!pci_str.empty())
                             {
-                                std::regex pci_regex("([0-9a-fA-F]+):([0-9a-fA-F]+):([0-9a-fA-F]+)\\.([0-9a-fA-F]+)");
-                                std::smatch match;
-                                if (std::regex_search(pci_str, match, pci_regex) && match.size() == 5)
+                                const std::optional<PCIDomainAddress> address =
+                                    parse_pci_address(pci_str, node.name);
+                                if (address.has_value())
                                 {
                                     // The node takes the address only once all four fields parsed.
-                                    PCIDomainAddress address;
-                                    address.domain = static_cast<std::uint32_t>(std::stoul(match[1].str(), nullptr, 16));
-                                    address.bus = static_cast<std::uint32_t>(std::stoul(match[2].str(), nullptr, 16));
-                                    address.device = static_cast<std::uint32_t>(std::stoul(match[3].str(), nullptr, 16));
-                                    address.function = static_cast<std::uint32_t>(std::stoul(match[4].str(), nullptr, 16));
                                     node.pci_address = address;
-                                    SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Device {} PCI: {}", node.name, describe(address));
+                                    SR_LOG_DEBUG(K_TOPOLOGY_LOG_CATEGORY, "Device {} PCI: {}", node.name, describe(*address));
                                 }
                             }
                         }

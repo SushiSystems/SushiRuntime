@@ -123,6 +123,13 @@ The test installs an observer whose `on_release` blocks, then releases an adopte
 thread, so one call is in flight. A third thread removes the observer. The test asserts that the removal
 has not returned after 200 ms, opens the observer, and asserts that the removal returns.
 
+### `Medium_UsmAllocatorFailure.LogsTheRefusedRequest`
+
+The test asks device 0 for twice its global memory, with an alignment of 64, under a `LogCapture` at
+`Warn`. It asserts the allocator returns null and logs exactly one `WARN` in the `memory` module
+whose message holds the byte count and the alignment. A SYCL runtime that throws for the request
+instead of returning null makes the test skip, since the refusal is then not made in this file.
+
 ## test_usm_registry.cpp
 
 ### `fake`

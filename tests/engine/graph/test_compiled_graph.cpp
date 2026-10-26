@@ -40,6 +40,11 @@
 #include <SushiRuntime/task/node_widths.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/task_work.hpp>
+#include <cstdint>
+#include <memory>
+#include <SushiRuntime/core/node_cost.hpp>
+#include <SushiRuntime/core/operation_id.hpp>
+#include <SushiRuntime/core/sushi_ptr.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
@@ -168,4 +173,145 @@ TEST(Small_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
     const Internal::Graph::NodeWidths widths = Internal::Graph::snapshot_widths(*graph.last_node_added());
     EXPECT_EQ(widths.launched, K_WIDTH_UNKNOWN);
     EXPECT_EQ(widths.live, K_WIDTH_UNKNOWN);
+}
+
+using namespace SushiRuntime;
+using namespace SushiRuntime::Internal::Graph;
+
+namespace
+{
+    /** @brief Builds a node registered under @p index with the label @p name. */
+    sushi_ptr<Node> node_of(std::uint32_t index, const char* name)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->registration_index = index;
+        node->metadata.name = name;
+        return node;
+    }
+} // namespace
+
+/** @brief Tests that the plan builds one row per registration index, with the node's name and operation. */
+TEST(Small_CompiledGraph, CapturesOneTableRowPerRegistrationIndex)
+{
+    CompiledGraph plan;
+    plan.all_nodes.push_back(node_of(0, "load"));
+    plan.all_nodes.push_back(node_of(1, "project"));
+    plan.all_nodes.push_back(node_of(2, "store"));
+    plan.all_nodes[1]->metadata.op_id = OperationID(0x1234u);
+
+    plan.capture_profiling_state();
+
+    ASSERT_NE(plan.node_table, nullptr);
+    ASSERT_EQ(plan.node_table->size(), 3u);
+    EXPECT_EQ(plan.node_table->find(0)->name, "load");
+    EXPECT_EQ(plan.node_table->find(1)->name, "project");
+    EXPECT_EQ(plan.node_table->find(1)->operation.value, 0x1234u);
+    EXPECT_EQ(plan.node_table->find(2)->name, "store");
+    EXPECT_FALSE(plan.node_table->find(0)->operation.is_named());
+}
+
+/** @brief Tests that several nodes sharing one index make one row that counts them. */
+TEST(Small_CompiledGraph, ASharedIndexKeepsItsMultiplicity)
+{
+    CompiledGraph plan;
+    plan.all_nodes.push_back(node_of(0, "first"));
+    plan.all_nodes.push_back(node_of(1, "tile"));
+    plan.all_nodes.push_back(node_of(1, "tile"));
+    plan.all_nodes.push_back(node_of(1, "tile"));
+
+    plan.capture_profiling_state();
+
+    ASSERT_EQ(plan.node_table->size(), 2u);
+    EXPECT_EQ(plan.node_table->find(0)->multiplicity, 1u);
+    EXPECT_EQ(plan.node_table->find(1)->multiplicity, 3u);
+    ASSERT_EQ(plan.profiling_multiplicities.size(), 2u);
+    EXPECT_EQ(plan.profiling_multiplicities[1], 3u) << "the ledger sizes its rows from the same count";
+}
+
+/** @brief Tests that the first node of an index names the row and states its cost. */
+TEST(Small_CompiledGraph, CarriesTheCostOfTheFirstNode)
+{
+    CompiledGraph plan;
+    plan.all_nodes.push_back(node_of(0, "gemm"));
+    plan.all_nodes.push_back(node_of(1, "copy"));
+    plan.all_nodes.push_back(node_of(2, "bias"));
+    plan.all_nodes[0]->metadata.cost = NodeCost{2048, 96, NodeDType::BF16};
+    plan.all_nodes[1]->metadata.cost = NodeCost{};
+
+    plan.capture_profiling_state();
+
+    const NodeTableRow* gemm = plan.node_table->find(0);
+    ASSERT_TRUE(gemm->cost.has_value());
+    EXPECT_EQ(gemm->cost->flops, 2048u);
+    EXPECT_EQ(gemm->cost->bytes, 96u);
+    EXPECT_EQ(gemm->cost->dtype, NodeDType::BF16);
+    const NodeTableRow* copy = plan.node_table->find(1);
+    ASSERT_TRUE(copy->cost.has_value()) << "a stated zero is a cost";
+    EXPECT_EQ(copy->cost->flops, 0u);
+    EXPECT_FALSE(plan.node_table->find(2)->cost.has_value()) << "a node that stated none has none";
+}
+
+/** @brief Tests that an index no node registered under has no row, and the sentinel has none. */
+TEST(Small_CompiledGraph, AnIndexNoNodeRegisteredUnderHasNoRow)
+{
+    CompiledGraph plan;
+    plan.all_nodes.push_back(node_of(0, "a"));
+    plan.all_nodes.push_back(node_of(2, "c"));
+    sushi_ptr<Node> sentinel = node_of(9, "sentinel");
+    sentinel->is_sentinel = true;
+    plan.all_nodes.push_back(sentinel);
+
+    plan.capture_profiling_state();
+
+    ASSERT_EQ(plan.node_table->size(), 2u);
+    EXPECT_EQ(plan.node_table->find(1), nullptr);
+    EXPECT_EQ(plan.node_table->find(9), nullptr) << "the sentinel is not a node of the caller's graph";
+}
+
+/** @brief Tests that a node with no device work is marked host-native and a kernel node is not. */
+TEST(Small_CompiledGraph, ANodeWithNoDeviceWorkIsHostNative)
+{
+    CompiledGraph plan;
+    sushi_ptr<Node> native = node_of(0, "native");
+    native->mode = Node::ExecutionMode::Host;
+    native->submits_device_work_ = false;
+    sushi_ptr<Node> kernel = node_of(1, "kernel");
+    sushi_ptr<Node> task = node_of(2, "task");
+    task->mode = Node::ExecutionMode::Host;
+    plan.all_nodes.push_back(native);
+    plan.all_nodes.push_back(kernel);
+    plan.all_nodes.push_back(task);
+
+    plan.capture_profiling_state();
+
+    EXPECT_TRUE(plan.node_table->find(0)->host_native);
+    EXPECT_FALSE(plan.node_table->find(1)->host_native);
+    EXPECT_FALSE(plan.node_table->find(2)->host_native) << "a host body that submits device work is not host-native";
+}
+
+/** @brief Tests that an empty plan builds an empty table rather than none. */
+TEST(Small_CompiledGraph, AnEmptyPlanBuildsAnEmptyTable)
+{
+    CompiledGraph plan;
+
+    plan.capture_profiling_state();
+
+    ASSERT_NE(plan.node_table, nullptr);
+    EXPECT_EQ(plan.node_table->size(), 0u);
+    EXPECT_TRUE(plan.profiling_multiplicities.empty());
+}
+
+/** @brief Tests that a second capture builds a fresh table and leaves the one a run still holds intact. */
+TEST(Small_CompiledGraph, ACaptureAfterTheFirstLeavesTheEarlierTableIntact)
+{
+    CompiledGraph plan;
+    plan.all_nodes.push_back(node_of(0, "a"));
+    plan.capture_profiling_state();
+    const std::shared_ptr<const NodeTable> held = plan.node_table;
+
+    plan.all_nodes.push_back(node_of(1, "b"));
+    plan.capture_profiling_state();
+
+    EXPECT_EQ(held->size(), 1u) << "an observation keeps the table of its own run";
+    EXPECT_EQ(plan.node_table->size(), 2u);
 }

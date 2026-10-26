@@ -34,6 +34,7 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/test_runner/log_capture.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 
@@ -114,4 +115,21 @@ TEST(Medium_HardwareDiscovery, LogicalIDsAreSequentialAndEveryDeviceIsNamed)
         EXPECT_EQ(nodes[i].logical_id, i) << "logical IDs are not sequential";
         EXPECT_FALSE(nodes[i].name.empty()) << "device " << i << " has no name";
     }
+}
+
+TEST(Small_HwDiscovery, LogsAPciAddressThatDoesNotParse)
+{
+    SushiRuntime::TestRunner::LogCapture capture(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
+                                                 SushiLog::LogLevel::Debug);
+
+    const auto parsed = parse_pci_address("0000:01:00.0", "gpu0");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->bus, 1u);
+    EXPECT_TRUE(capture.records().empty());
+
+    EXPECT_FALSE(parse_pci_address("no address here", "gpu0").has_value());
+    ASSERT_EQ(capture.count_at(SushiLog::LogLevel::Debug), 1u);
+    EXPECT_EQ(capture.count_in("topology"), 1u);
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Debug, "no address here"));
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Debug, "gpu0"));
 }

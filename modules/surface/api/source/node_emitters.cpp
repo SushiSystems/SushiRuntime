@@ -193,6 +193,7 @@ namespace SushiRuntime
         {
             if (stamp.name != nullptr)
                 node.metadata.name = stamp.name;
+            node.metadata.origin = stamp.origin;
             if (stamp.operation.is_named())
                 node.metadata.op_id = stamp.operation;
             if (stamp.placement_class.is_named())
@@ -201,6 +202,7 @@ namespace SushiRuntime
                 node.metadata.placement_key = stamp.placement_key;
             if (stamp.determinism != Determinism::Unstated)
                 node.metadata.determinism = stamp.determinism;
+            node.metadata.cost = stamp.cost;
             for (std::size_t i = 0; i < stamp.parameter_count; ++i)
                 node.metadata.set_param<std::uint64_t>(static_cast<int>(i), stamp.parameters[i]);
             if (stamp.width != ::SushiRuntime::K_WIDTH_UNKNOWN)

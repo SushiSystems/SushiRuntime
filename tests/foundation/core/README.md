@@ -340,3 +340,14 @@ The file tests PlacementClass: the whole-name hash, the prefix hashes, the liter
 | `SixSegmentNameKeepsFourPrefixes` | Prefixes past `K_MAX_PREFIX_DEPTH` are not kept. |
 | `HasPrefixMatchesStrictPrefixesOnly` | has_prefix() finds a prefix and never the whole name. |
 | `DefaultIsUnnamedAndEqualityComparesTheValue` | The default names nothing and equality compares the value. |
+
+## test_node_cost.cpp
+
+NodeCost and NodeDType, the work a caller states one dispatch of a node does.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_NodeCost.NamesItsDtype` | Each element type has its name and that an unstated one has none. |
+| `Small_NodeCost.ADefaultCostHoldsZerosAndNoDtype` | A default cost states no element type and holds zeros. |
+| `Small_NodeCost.EqualityComparesEveryField` | Equality compares every field, the dtype included. |
+| `Small_NodeCost.AnOptionalCostTellsAnUnstatedCostFromAStatedZero` | An optional cost tells an unstated cost from a stated zero. |

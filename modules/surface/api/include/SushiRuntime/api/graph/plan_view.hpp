@@ -35,6 +35,7 @@
 #include <vector>
 
 #include <SushiRuntime/core/determinism.hpp>
+#include <SushiRuntime/core/node_cost.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
@@ -56,6 +57,9 @@ namespace SushiRuntime
         /** @brief Operation the node names; a default id names none. */
         OperationID operation;
 
+        /** @brief The caller's own operation the node was recorded as part of; empty for none. */
+        std::string origin;
+
         /** @brief Placement class the node was recorded with; a default class names none. */
         PlacementClass placement_class;
 
@@ -64,6 +68,9 @@ namespace SushiRuntime
 
         /** @brief Determinism contract the node was recorded with; a default states none. */
         Determinism determinism = Determinism::Unstated;
+
+        /** @brief Work one dispatch of the node does, as the caller counted it; absent states none. */
+        std::optional<NodeCost> cost;
 
         /**
          * @brief Position of the rule that won for the node when the plan was compiled.

@@ -1,10 +1,10 @@
 # SushiRuntime adopts SushiProfiler, and logs where it is silent: analysis
 
-**Status:** Open — written 2026-10-26; analysis only, nothing built; section 8 holds the decisions.
+**Status:** Open — in progress; all code of PLAN.md is written and nothing is built; section 8 holds the decisions and the amendments.
 
-No `**Implements:**` or `**Designs:**` line yet: the repository has no design topic for profiling,
-and `check_design_topics.py` fails a line that names a topic that does not exist. Decision D22
-asks whether to open `docs/design/PROFILING/README.md`; the line follows its answer.
+**Implements:** PROFILING#P1, PROFILING#P2, PROFILING#P3, PROFILING#P4
+
+Decision D22 opened `docs/design/PROFILING/README.md`; its phases are the ones named above.
 
 Read on 2026-10-26: this repository on branch `feature/layered_execution`, SushiProfiler before
 its v0.1.0 tag (`bc86dc9`), SushiLog at `e39e190` (last tag v0.2.3; the runtime pins v0.2.2 in
@@ -559,11 +559,11 @@ choice that holds as the stack grows, with SushiAI's inference profile as the go
 | --- | --- | --- |
 | D1 | (a) A foundation module `profile`, the only includer of SushiProfiler below `surface`, holding `SR_PROFILE_LEVEL` and the `SR_ZONE` family; a surface module `profiling` holding the device source, the contributor and the registration function | One job per module, shaped as `log` is |
 | D2 | (a) SushiProfiler v0.2.0 ships a shared library; the runtime and every host link it | One collector per process; SushiProfiler's `docs/agent/2026_10_26_CLIENT_CONTRACT/SPEC.md` |
-| D3 | (a) A `RunObserver` interface declared in `report`; the context holds at most one; `run_steps` and `submit_step` hand it the report, the node table and the submit time | The runtime depends on its own abstraction, never on SushiProfiler or on a host remembering to pass reports |
+| D3 | (a) A `RunObserver` interface declared in `report`; a runtime fans a run out to any number of observers, added with `Runtime::add_run_observer`; the runtime hands it a `RunObservation` (layer, node table, records, per-device pairings, drop counts) on every run while it is attached, when the run's device work completes; no period is read | The runtime depends on its own abstraction, never on SushiProfiler or on a host remembering to pass reports |
 | D4 | (b) A `std::shared_ptr<const NodeTable>` built once per plan, shared by every report of it | Strings copied once per plan, not per run |
 | D5 | (a) `device_index` and `submit_thread`, 48 bytes | Both are known where the record is made; without them a span has no track and no launching zone |
 | D6 | (b) One pairing per device, claimed by that device's first kernel | A CPU and a GPU device do not share an event clock; one pairing would misplace every span of one of them |
-| D7 | (b) Device timing stays on from session start to stop; the window decides what the record keeps | No plan rebuild per window and no SushiProfiler G5; the switch without a rebuild (c) goes to the backlog |
+| D7 | (b) Device timing is on exactly while at least one observer is attached: adding the first is the request, and a plan built under the other answer is rebuilt once at its next run; the capture window decides only what the record keeps | No plan rebuild per window and no SushiProfiler G5; the switch without a rebuild (c) goes to the backlog |
 | D8 | `SR_PROFILE_LEVEL` 2 in every build type; `dispatch.*` at level 2; spin and steal sites at 3 | The launch gap per dispatch is the question SushiAI asks; PF-13 measures the closed-gate cost and lowers the default to 1 if it misses the budget |
 | D9 | (b) Remove `RunReport::worker_timings`, `node_timings` and `NodeTiming`, `scheduling_overhead_ms`, `total_duration_ms`, `graph_analysis_duration_ms` and the transfer byte fields; the buckets become profiler values and the stages zones (D24) | One profiling system: the owner asked that everything the profiler measures leave the runtime |
 | D10 | (a) The hash as an integer attribute; the node name carries the text | No new public table until a reader needs the operation's text apart from the node's |
@@ -574,16 +574,48 @@ choice that holds as the stack grows, with SushiAI's inference profile as the go
 | D15 | (a) Log the refusal where it is made; keep the behaviour | The public change belongs to RW-6's review |
 | D16 | (b) `Runtime::create` installs an assertion handler that logs FATAL | No new tier edge under `core` |
 | D17 | Deprecate `SR_LOGGER_SET_SYNC_MODE` for one release, then remove it | `api-stability` |
-| D18 | (c) The logging that needs no SushiLog change ships after the profiling tasks; the rest waits for SushiLog | SushiLog's backlog holds L1 to L7 |
+| D18 | (b) The runtime logs now, with local counters and its two hand-rolled throttles in place, shaped so SushiLog's log-once, rate limit and counter replace them when its RW-3 and RW-4 ship (LG-7) | The owner asked for all code before any build; SushiLog's backlog holds L1 to L7 |
 | D19 | (a) The local run path only | The distributed layer's timing is its own phase |
 | D20 | The build edits wait until the SYCL compile-time work's build closes | One build file edit at a time |
 | D21 | Yes, with this work's first build edit | The runtime runs on the released log library |
 | D22 | Open `docs/design/PROFILING/README.md` with this plan's phases | The work folder then carries `Implements` |
-| D24 | Timing leaves `RunReport` entirely. The runtime keeps only the capture nobody else can do: reading SYCL event timestamps, one record writer (PF-2), the per-device pairing, and the counters it alone sees. These reach the outside through `RunObserver` alone, and only while an observer that asks for timing is attached; `RunReport::node_events`, `RunReport::clock`, `RuntimeConfig::profiling` and `Graph::set_profiling` go. Device timing is on exactly while an observer is attached (D7). SushiBLAS's tests that read `node_events` install a test observer; SushiAI's trainer drops its `NodeTiming` totals for P5's zones | A second timing path in the report is a second profiler to keep true |
 | D23 | (a) Pin SushiProfiler v0.2.0, which closes G1, G3, G4, G6 and G8; G2 is answered by a `layer` span attribute | No reliance on an unwritten contract |
+| D24 | Timing leaves `RunReport` entirely. The runtime keeps only the capture nobody else can do: reading SYCL event timestamps, one record writer (PF-2), the per-device pairing, and the counters it alone sees. These reach the outside through `RunObserver` alone, and only while an observer that asks for timing is attached; `RunReport::node_events`, `RunReport::clock`, `RuntimeConfig::profiling` and `Graph::set_profiling` go. Device timing is on exactly while an observer is attached (D7). SushiBLAS's tests that read `node_events` install a test observer; SushiAI's trainer drops its `NodeTiming` totals for P5's zones | A second timing path in the report is a second profiler to keep true |
 
 The plan's own questions: tasks run one sonnet worker for the repository; the orchestrator builds
 after each stage; no task is written against a stub.
+
+### Amendments after review
+
+An independent review of the plan and the working tree produced these rulings of the orchestrator.
+Where one contradicts a row above, the amendment holds.
+
+| # | Amendment | Effect |
+| --- | --- | --- |
+| R1 | Timing leaves `RunReport` (D24) is its own task, TL-1; PF-11, PF-12 and DOC-1 follow D24 and the revised D9 | The plan names the removal as work, not as a side effect |
+| R2 | No period is read anywhere. The source places each span by its converted start against the `PeriodSpan`, drops an older one with `drop_late` and keeps a later one | The per-device pairing (D5, D6) is load-bearing: a span with no pairing has no start in the steady clock, so it has no period |
+| R3 | An observation is handed to the observer when the run's device work completes, where the poller or the chain's wait learns it, not at `finish_step` | A caller that waits late loses nothing; a run whose work itself finished after `linger_ms` is counted in the record's drops |
+| R4 | Attachment is the request, and any number of observers may attach (SushiEngine needs observations without a session; the profiler parts need them for `sushiruntime.device`). `[[nodiscard]] RunObserverHandle Runtime::add_run_observer(std::shared_ptr<RunObserver>)` adds one; the handle is move-only and removes its observer when destroyed or reset. There is no `wants_device_timing()`. The list is one immutable object behind one atomic shared pointer, copied on every add and remove, so a run reads one consistent list without a lock; device timing is on while the list is not empty | No run sees an observer without the timing it asked for; the first add and the last remove each cost exactly one plan rebuild |
+| R5 | `on_run` is called on every run while the observer is attached, on every attached observer | A run of a plan built before the attach still reports, with no records |
+| R6 | The source learns the runtime at registration, `register_profiler_parts(Registry&, const Runtime&)`; track names come from one public function, `device_track_name(const Runtime&, std::uint32_t)`, which the source uses too. A node table row carries `std::optional<NodeCost>` | No library rebuilds the track string; absent cost omits `flops`, `bytes` and `dtype`, a stated zero writes zero |
+| R7 | The worker bucket values are written on every run beside the run counters, not only while timing is on | A profile of an unobserved run still shows the buckets |
+| R8 | The asynchronous path carries the execution layer in `AsyncRunState` from `submit_step` | `finish_step` fills `RunReport::layer` without reading the engine |
+| R9 | `RunObservation` carries the run's drop counts; the source forwards them with `drop_late`, and the source queue's drop-oldest counts too | `drops.spans_dropped` of the record covers every dispatch the capture lost |
+| R10 | One ledger function fills a whole record; the scheduler, the poller and the chain call it, so `submit_thread` is assigned in one place | A new field is one edit |
+| R11 | `profile.hpp` pulls no `<mutex>` into its includers | The front stays light; a file that uses `SR_LOCK_WAIT` includes `<mutex>` itself |
+| R12 | The parts object holds its own handle, so its destructor removes its observer and only its own | A parts object that dies before its runtime leaves no dangling attachment |
+| R13 | The removals of D24 are breaking and made now, with no deprecation release (before 1.0, `api-stability` allows it); one changelog entry per removed member names its replacement | PLAN.md lists the migration step of each consumer |
+| R14 | Tests are written against `RunObservation`; the end-to-end test checks `submit_thread`, the cost attributes and `layer` | The proof covers what the profiler reads |
+| R15 | Graph label (additive). A span's node index is unique only within one plan, and one runtime runs several graphs, so `Graph::set_label(std::string)` (and `DynamicGraph::set_label`) names a graph; a changed label applies at the next plan build and forces none. `NodeTable` carries the `label`, copied once per plan, and the device source writes it as the name attribute `SushiProfiler::DeviceSpanKeys::K_GRAPH` when it is not empty, interned once per table | Spans of two graphs with equal node indices differ by `graph`; no header already sent out changes, since both are additions |
+| R16 | Origin (additive). `NodeOptions::origin` (`std::string_view`, empty by default) is copied at record time as `name` is, carried through `NodeStamp`, `TaskMetadata`, `PlanNode` and `NodeTableRow::origin`, and written as `K_ORIGIN` when it is not empty, interned once per row per table | A caller says which of its operations a node belongs to; no new include in `node_options.hpp` |
+| R17 | Graph identity (additive). A `RunObserver` is runtime-wide, so a per-graph consumer would see every graph's runs, and a label is not an identity. Every owner of plans (`Graph`, `DynamicGraph`, the plan cache and the region composer they derive from) reports `[[nodiscard]] std::uint64_t id() const noexcept`: taken at construction from one process-wide atomic counter that starts at 1, never reused, kept across a move (a moved-from owner reports 0). `RunObservation::graph_id` carries the id of the owner whose run it is, on the blocking and the asynchronous path, and `NodeTable::graph_id()` carries it for matching a table to its owner. The device source does not write it as an attribute, since the `graph` label covers the timeline | Two graphs on one runtime and one observer: each observation names its own graph |
+| R18 | Source name (additive). The public header `<SushiRuntime/profiling/source_names.hpp>` holds `inline constexpr std::string_view K_DEVICE_SOURCE_NAME = "sushiruntime.device";` and includes only `<string_view>`; the device source and `register_profiler_parts` use it, and so does SushiEngine | One spelling of the source name; the constant leaves `profile_keys.hpp`, where it was not public |
+| R19 | Configuration by a generated header. `SR_ENABLE_PROFILER` and `SR_PROFILE_LEVEL` are not compile definitions of every module target, since a level change would recompile the whole runtime. The build generates `<SushiRuntime/profile/profile_config.hpp>` from `modules/foundation/profile/profile_config.hpp.in` with `configure_file`; `profile.hpp` includes it and defines neither macro. SushiProfiler is a prebuilt package found with `find_package(SushiProfiler CONFIG REQUIRED)` under `SR_ENABLE_PROFILER`, not through `SUSHIPROFILER_DIR`. No SushiProfiler header reaches a header SushiBLAS or SushiAI include: `profile.hpp` is included from `.cpp` files and the profiling module only | A level change recompiles the files that use a zone and nothing else |
+
+Two requests of the consumers are in the same pass. A task body may hand over every event it submitted
+(`note_dispatch_event`), and the dispatch record then runs from the earliest start to the latest end and
+starts at the earliest submit. `NodeCost` carries `flops`, `bytes` and a `dtype`, and the source writes them as
+attributes when a cost is stated.
 
 ### The scope of this pass
 

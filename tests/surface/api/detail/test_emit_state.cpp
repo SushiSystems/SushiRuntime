@@ -39,6 +39,8 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
+
+#include "run_recorder.hpp"
 #include <SushiRuntime/api/detail/emit_dynamic.hpp>
 #include <SushiRuntime/api/detail/emit_state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
@@ -132,8 +134,8 @@ TEST(Medium_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWidth)
     auto loose = rt.buffer<Word>(K_WIDTH).value();
     Word* words = loose.data();
 
+    Testing::RunRecorder recorder(rt);
     auto graph = rt.graph();
-    graph.set_profiling(true);
     graph.add_rule(whole, [](std::size_t i, const Word* current, Word* next)
     {
         next[i] = current[i];
@@ -145,11 +147,12 @@ TEST(Medium_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWidth)
                       });
     graph.add_untracked(K_PREFIX + 1, [words](std::size_t i) { words[i] = 1u; });
 
-    const auto report = graph.run().value();
+    graph.run().value();
+    ASSERT_EQ(recorder.count(), 1u);
 
     // The three nodes share no region, so their events are compared sorted by width.
     std::vector<std::size_t> widths;
-    for (const auto& event : report.node_events)
+    for (const auto& event : recorder.last().events)
         widths.push_back(event.launched_width);
     std::sort(widths.begin(), widths.end());
     EXPECT_EQ(widths, (std::vector<std::size_t>{K_PREFIX, K_PREFIX + 1, K_WIDTH}));

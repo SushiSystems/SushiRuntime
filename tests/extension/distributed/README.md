@@ -523,3 +523,14 @@ machine.
 | Test | What it proves |
 | --- | --- |
 | `TheKernelRunsLocally` | A run with no cluster calls the registered kernel with the task's views. |
+
+## test_unsent_frame_log.cpp
+
+The file tests `Detail::log_unsent_frame`, which the cluster monitor calls for each `PING` and
+`GOODBYE`. The monitor's own thread is not run: a refusal inside it needs a worker the directory lists
+and the transport has lost.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_UnsentFrameLog.AQueuedFrameLogsNothing` | A frame the transport queued writes no record. |
+| `Small_UnsentFrameLog.ARefusedFrameLogsOneDebugLine` | A refused frame writes one `DEBUG` in `distributed` with the frame, the peer and the reason. |

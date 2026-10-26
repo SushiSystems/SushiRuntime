@@ -33,3 +33,15 @@ passes only when the write returns `Closed` with the OS error. The write after t
 | `BindInUseNamesPortAndCause` | A second listener binds the port of the first. The result must name the `bind` call, carry the OS error and its text, and `describe()` must print the port, so the log line of finding DIST-17 can be built from it. |
 | `LocalhostResolves` | The test resolves `localhost`, then connects by that name to a listener bound to `127.0.0.1`. Where the OS lists `::1` first, the connect is refused there and moves on to the next address. On Windows that refusal takes about two seconds. |
 | `Ipv6LoopbackConnects` | The test is reported as skipped, with the OS error, on a machine where `::1` cannot be bound. |
+
+## test_network_socket_log_category.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `TheCategoryIsNamedAfterTheModule` | `K_NETWORK_SOCKET_LOG_CATEGORY` names the module `network_socket` in the project `sushiruntime`, at compile time. |
+
+## test_socket_option_report.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `Medium_Socket.LogsAFailedNoDelayOption` | The OS does not refuse `TCP_NODELAY` on loopback, so the test calls `Detail::report_no_delay_failure` directly under a `LogCapture` and asserts one `WARN` in the `network_socket` module that names the peer and the option. The two call sites are not covered by a refusal of the real call. |

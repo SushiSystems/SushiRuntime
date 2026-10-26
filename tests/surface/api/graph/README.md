@@ -177,7 +177,7 @@ Boundary ordering on sub-ranges must still produce the right values. Two regions
 halves and a third reads the whole buffer, so the reader overlaps both writers and has to run after
 each of them.
 
-The file covers the per-graph profiling switch of `DynamicGraph` and its registration index, which
+The file covers how an added observer reaches a `DynamicGraph` and its registration index, which
 is dense and ordered by ascending region key and then by `add()` order at every recompose. The
 design is sections D, E (item 8) and F.6 of
 the g1 node event records design spec in the version history, built as task 6 of
@@ -187,9 +187,9 @@ The file reaches the plan through `dynamic_graph_plan_access.hpp`.
 
 | Test | What it proves |
 | --- | --- |
-| `registration_index_of` | `registration_index_of` returns the registration index of the one compiled node called `name`, which `find_plan_node` looks up. `plan.all_nodes` is populated only while the graph requests profiling (`publish_plan()` in `region_composer.hpp`), and every test in the file relies on that. |
-| `NotRequestedRecordsNothing` | A graph that never requested profiling records nothing, whatever the default of the runtime is. |
-| `RequestedGraphProducesRecordsMatchingRenumberedIndex` | A `DynamicGraph` that requested profiling must produce records; a correctly stamped flag is not enough. It needs its own call to `CompiledGraph::capture_profiling_state()`, because it has no `capture_base_state()` of its own that could make the call for it. |
+| `registration_index_of` | `registration_index_of` returns the registration index of the one compiled node called `name`, which `find_plan_node` looks up. `plan.all_nodes` is populated only while an observer is added to the runtime (`publish_plan()` in `region_composer.hpp`), and every test in the file relies on that. |
+| `NotRequestedRecordsNothing` | A graph of a runtime whose observer was removed hands out no observation. |
+| `RequestedGraphProducesRecordsMatchingRenumberedIndex` | A `DynamicGraph` of an observed runtime must produce records; a correctly stamped flag is not enough. It needs its own call to `CompiledGraph::capture_profiling_state()`, because it has no `capture_base_state()` of its own that could make the call for it. |
 
 ### `IndexDenseAndOrderedByRegionThenAddOrder`
 
@@ -266,19 +266,15 @@ execution order A, B, C. That gives an observation of identity which does not de
 dispatch order of the run ever disagreed, sorting by earliest submit would catch it, even though
 both would still read as {0, 1, 2} on their own.
 
-### `HostNodeLandsOnEventClock`
+### `HostNodeLandsAfterItsKernelOnTheSteadyClock`
 
-Item 6: the converted record of a native host node lands inside the event window of the run, within
-the `uncertainty_ns` of the pairing.
+Item 6: the record of a native host node is on the steady clock and carries `K_HOST_DEVICE_INDEX`. The
+kernel's record goes through its device's pairing, and the host record must not start before the kernel
+ended, within the `uncertainty_ns` of that pairing.
 
 The host node reads what the kernel writes. That chains it strictly behind the kernel's completion;
-the two are not independent roots. The window of the host record therefore sits inside the
-event-clock window of the run, not merely near it.
-
-The converted `submit_ns` and `start_ns` of a host record are identical, because the scheduler
-stamps the same raw steady time into both. Those of a device record rarely are. The test tells the
-two kinds apart by that difference and not by a stored flag, because `NodeEventRecord` stays field
-for field identical to the record the engine fills, as the global constraints of the design require.
+the two are not independent roots. The test tells a host record from a device record by its device
+index, which `NodeEventRecord` carries as its field.
 
 The chain guarantees that the host node is dispatched no earlier than the kernel's completion. The
 tolerance covers only the measurement uncertainty of the pairing, not scheduling jitter between
@@ -452,10 +448,10 @@ A replayed graph must not drift. Every step of a multi-step run recomputes the s
 the same input, so step 1 and step `STEPS` have to produce the same bytes. A drift would mean that
 per-step state of the plan had leaked into the arithmetic.
 
-The file covers the per-graph profiling switch: section B of
+The file covers how an added observer reaches the graphs of a runtime: section B of
 the g1 node event records design spec in the version history, built as task 4 of
-the g1 node event records plan spec in the version history. It checks that
-`set_profiling()` is independent across graphs, that the plan recompiles once, and that
+the g1 node event records plan spec in the version history. It checks that an observer turns timing
+on for every graph of its runtime, that the plan recompiles once, and that
 every device-dispatch branch the scheduler can route to a profiling queue does so.
 
 ### `NUMAFallbackBranchUsesProfilingQueue`
@@ -473,18 +469,19 @@ One branch is left: the NUMA fallback of `devices().queue_or_numa_local()`, take
 cannot force it safely. Reaching it needs a device kernel that dereferences a pointer the runtime
 never allocated, which is an illegal access on a real GPU backend.
 
-The file covers `RunReport` observability, section 5.5 of
-`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. Profiling is chosen at construction. With
-profiling off, the report carries no profiling breakdown. With profiling on, it carries timing per
-node and per worker. Explicit transfers between host and device are accounted in both cases.
+The file covers the observation of a run, section 5.5 of
+`docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. Device timing is on while an observer is added to the
+runtime. With none, a run hands out no observation. With one, the observation carries the node table
+and one record per dispatch. Explicit transfers between host and device are counted by the runtime in
+both cases.
 
 | Test | What it proves |
 | --- | --- |
 | `ProfilingOnCapturesPerNodeTiming` | Both kernels appear as distinct plan nodes, each dispatched once per step. The magnitudes of the device times depend on the backend and on noise, so the stable claim is structural: the per-node breakdown is present and correctly counted. |
 
-### `NamingTheLastNodeReachesNodeTiming`
+### `NamingTheLastNodeReachesTheNodeTable`
 
-Any node can be given a diagnostic name that reaches `RunReport::NodeTiming`. This is requirement R8
+Any node can be given a diagnostic name that reaches its row of the observation's `NodeTable`. This is requirement R8
 of `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS/README.md`. Without a name every node reports as
 "unnamed_task" whichever `add()` produced it, and a profile of a real graph is a list of identical
 labels.
@@ -501,8 +498,8 @@ The test sets the name with `name()`, which names the rule the verb before it re
 
 The file covers NodeOptions. The width a node states when it is recorded is the `launched_width`
 and the `live_width` of its node event records, and its name and operation are in its row of
-`report.node_timings`. Each node of a rule reads a region the node before it wrote, so
-`report.node_events` lands in recording order whichever layer ran it.
+the observation's node table. Each node of a rule reads a region the node before it wrote, so
+the observation's events land in recording order whichever layer ran it.
 
 | Test | What it proves |
 | --- | --- |
@@ -562,8 +559,8 @@ inside one `Recorder::rule()` scope.
 ### `AThreeNodeRuleIsOneRuleWithOneName`
 
 The acceptance case of the rule count. A graph whose only rule has three nodes reports `size() == 1`
-and `node_count() == 3`. The three nodes share one registration, so the report holds one
-`NodeTiming` row, which carries the name given by one `name()`, and `rule_registration(1)`
+and `node_count() == 3`. The three nodes share one registration, so the table holds one
+row, which carries the name given by one `name()`, and `rule_registration(1)`
 names no rule.
 
 | Test | What it proves |
@@ -620,7 +617,7 @@ neither rule is recorded. Both forms record with eight. A `static_assert` ties t
 
 A rule named `integrate` is followed by an extension that records nothing. The graph still holds
 one rule and one node, the recorder's generation is the one it had before the call, and the
-profiled run reports the node under `integrate`.
+observed run reports the node under `integrate`.
 
 The file covers `Recorder::scratch()`. Every case records `record_staged_rule`: a rule of two nodes
 in which the first writes `in[i] + 1` into scratch and the second writes twice that into `out`. A
@@ -793,3 +790,11 @@ The file tests Access: the regions it keeps in order and the observers of both s
 | --- | --- |
 | `RegionsKeepTheirOrder` | Regions given directly keep their order and carry no observer. |
 | `HandlesBringTheirObservers` | Handles given through Reads and Writes bring the observers of both. |
+
+## test_dispatch_events.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `Medium_DispatchEvents.ABodyHandingOverTwoEventsIsTimedAcrossBoth` (and `...OnTheChain`) | A body handing over two events is timed from the earliest start to the latest end, on the worker pool and on the in-order chain. |
+| `Medium_DispatchEvents.ABodyHandingOverNoneIsTimedAsBefore` (and `...OnTheChain`) | A body handing over nothing is timed by the event it returns. |
+| `Medium_DispatchEvents.HandingAnEventOverOutsideABodyDoesNothing` | Handing an event over outside any body does nothing. |

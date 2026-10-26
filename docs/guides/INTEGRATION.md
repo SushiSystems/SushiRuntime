@@ -92,6 +92,7 @@ links those instead, and sees only their headers and the headers of the modules 
 | `SushiRuntime::machine`, `SushiRuntime::region`, `SushiRuntime::report` | The machine, region and report types |
 | `SushiRuntime::interop`, `SushiRuntime::context` | The interop and context headers |
 | `SushiRuntime::api` | The surface: the runtime, graphs and kernels |
+| `SushiRuntime::profiling` | The runtime's SushiProfiler source and `register_profiler_parts()`; present when the library was built with `SR_ENABLE_PROFILER`; links `SushiProfiler::SushiProfiler` |
 | `SushiRuntime::transport`, `SushiRuntime::cluster_load`, `SushiRuntime::distributed` | The distributed layer |
 
 A module with compiled code links the shared library; a header-only one, such as `log`, does
@@ -125,7 +126,9 @@ A target does not inherit the library's warnings, `-Werror`, sanitizers or `-mar
 exported interface.
 
 The package sets two variables a consumer can read: `SushiRuntime_DETERMINISTIC_FP` and
-`SushiRuntime_DISTRIBUTED`.
+`SushiRuntime_DISTRIBUTED`. A consumer that links `SushiRuntime::profiling` links the same
+SushiProfiler library as the runtime, its shared library, so the process has one collector;
+[the profiling guide](PROFILING_GUIDE.md) says why.
 
 You supply:
 

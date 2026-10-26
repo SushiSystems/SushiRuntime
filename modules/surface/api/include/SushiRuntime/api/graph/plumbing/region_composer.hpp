@@ -32,8 +32,10 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include <set>
 
+#include <SushiRuntime/api/detail/graph_id.hpp>
 #include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/detail/plan.hpp>
 #include <SushiRuntime/api/graph/recorder.hpp>
@@ -80,6 +82,14 @@ namespace SushiRuntime
                 placement_changed(const ContextHandle& context) const noexcept;
 
                 /**
+                 * @brief Returns whether the plan was composed under another answer to the runtime's
+                 *        device timing request than the runtime gives now; false before the first commit.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
+                 */
+                [[nodiscard]] SUSHIRUNTIME_API bool
+                timing_changed(const ContextHandle& context) const noexcept;
+
+                /**
                  * @brief Re-arms the live in-degree of every node and of the sentinel, in
                  *        O(total nodes).
                  * @pre composed() is true.
@@ -113,10 +123,20 @@ namespace SushiRuntime
 
             protected:
                 /**
-                 * @brief Starts with no region and no plan.
-                 * @param profiling Whether the first plan requests per-node device timing.
+                 * @brief Names the graph for the profiler; the next commit copies the label into the plan's node table.
+                 *
+                 * Changing it forces no commit.
                  */
-                SUSHIRUNTIME_API explicit RegionComposer(bool profiling) noexcept;
+                void set_label(std::string label) { label_ = std::move(label); }
+
+                /**
+                 * @brief Returns the process-wide id of this graph, never 0 for a graph in use.
+                 * @return 0 after a move from this composer.
+                 */
+                [[nodiscard]] std::uint64_t id() const noexcept { return id_.value(); }
+
+                /** @brief Starts with no region and no plan. */
+                SUSHIRUNTIME_API RegionComposer() noexcept;
 
                 /**
                  * @brief Takes over another composer's regions and plan.
@@ -135,28 +155,6 @@ namespace SushiRuntime
 
                 /** @brief Frees every region's sub-graph and the plan. */
                 SUSHIRUNTIME_API ~RegionComposer();
-
-                /**
-                 * @brief Requests or withdraws per-node device timing.
-                 *
-                 * The next commit stamps the request into the plan; the same value changes
-                 * nothing.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
-                 */
-                void set_profiling(bool requested) noexcept
-                {
-                    profiling_requested_ = requested;
-                }
-
-                /**
-                 * @brief Returns whether the next plan requests per-node device timing.
-                 * @return The last value given to set_profiling(), or the value the composer
-                 *         was constructed with.
-                 */
-                [[nodiscard]] bool is_profiling_requested() const noexcept
-                {
-                    return profiling_requested_;
-                }
 
                 /** @brief Returns whether the stitched plan has a node to start from. */
                 [[nodiscard]] SUSHIRUNTIME_API bool has_roots() const noexcept;
@@ -177,8 +175,11 @@ namespace SushiRuntime
                 /** @brief The regions, the edges between them and the plan; null until a commit. */
                 std::unique_ptr<Detail::RegionComposerState> state_;
 
-                /** @brief Starts as the runtime's profiling setting; a commit stamps it in. */
-                bool profiling_requested_ = false;
+                /** @brief The graph's label; a commit copies it into the plan. */
+                std::string label_;
+
+                /** @brief The identity of this graph; a commit copies it into the plan. */
+                Detail::GraphId id_;
         };
     } // namespace Detail
 } // namespace SushiRuntime

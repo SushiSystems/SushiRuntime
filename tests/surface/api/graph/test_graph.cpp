@@ -51,6 +51,8 @@
 
 #include <SushiRuntime/engine_handles/plan_access.hpp>
 
+#include "run_recorder.hpp"
+
 namespace SushiRuntime
 {
     namespace Detail
@@ -185,7 +187,7 @@ namespace NodeEventRecordsTests
         }
     } // namespace
 
-    // E.1 - a graph that never asked for profiling must not leak any record.
+    // E.1 - a runtime with no observer must hand out no record.
     TEST(Medium_NodeEventRecords, ProfilingNotRequestedLeavesNodeEventsEmpty)
     {
         constexpr std::size_t N = 128;
@@ -194,14 +196,15 @@ namespace NodeEventRecordsTests
         auto buf = rt.buffer<int>(N).value();
         int* p = buf.data();
 
+        Testing::RunRecorder recorder(rt);
+        recorder.stop();
+
         auto g = rt.graph();
-        EXPECT_FALSE(g.is_profiling_requested());
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
         auto report = g.run().value();
-        EXPECT_TRUE(report.node_events.empty());
-        EXPECT_EQ(report.clock.event_ns, 0u);
-        EXPECT_EQ(report.clock.steady_ns, 0u);
+        EXPECT_TRUE(report.is_successful);
+        EXPECT_EQ(recorder.count(), 0u);
     }
 
     /**
@@ -220,17 +223,19 @@ namespace NodeEventRecordsTests
         int* pb = b.data();
         int* pc = c.data();
 
+        Testing::RunRecorder recorder(rt);
         auto g = rt.graph();
-        g.set_profiling(true);
         g.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] = static_cast<int>(i); });
         g.add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
         g.add(N, Reads{}, Writes(c), [pc](std::size_t i) { pc[i] = static_cast<int>(i); });
 
-        auto report = g.run(std::size_t{5}).value();
-        ASSERT_EQ(report.node_events.size(), 15u);
+        g.run(std::size_t{5}).value();
+        ASSERT_EQ(recorder.count(), 1u);
+        const RunObservation observation = recorder.last();
+        ASSERT_EQ(observation.events.size(), 15u);
 
         std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> invocations_by_node;
-        for (const auto& rec : report.node_events)
+        for (const auto& rec : observation.events)
         {
             EXPECT_LE(rec.submit_ns, rec.start_ns);
             EXPECT_LE(rec.start_ns, rec.end_ns);
@@ -263,13 +268,15 @@ namespace NodeEventRecordsTests
         int* pc = c.data();
 
         // The strict dependency chain forces the execution order A, B, C; see README.md.
+        Testing::RunRecorder recorder(rt);
         auto g = rt.graph();
-        g.set_profiling(true);
         g.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("A");
         g.add(N, Reads(a), Writes(b), [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; }).name("B");
         g.add(N, Reads(b), Writes(c), [pb, pc](std::size_t i) { pc[i] = pb[i] + 1; }).name("C");
 
-        auto report = g.run().value();
+        g.run().value();
+        ASSERT_EQ(recorder.count(), 1u);
+        const RunObservation observation = recorder.last();
 
         const auto& plan = Detail::NodeEventRecordsTestAccess::plan(g);
         const std::uint32_t idx_a = registration_index_of(plan, "A");
@@ -281,7 +288,7 @@ namespace NodeEventRecordsTests
         EXPECT_EQ(idx_c, 2u);
 
         std::unordered_map<std::uint32_t, std::uint64_t> earliest_submit;
-        for (const auto& rec : report.node_events)
+        for (const auto& rec : observation.events)
         {
             auto [it, inserted] = earliest_submit.try_emplace(rec.node_index, rec.submit_ns);
             if (!inserted) it->second = std::min(it->second, rec.submit_ns);
@@ -296,8 +303,11 @@ namespace NodeEventRecordsTests
             << "B's dependency chain must have it dispatch no later than C";
     }
 
-    /** @brief Tests that a host node's converted record lands inside the run's event window. */
-    TEST(Medium_NodeEventRecords, HostNodeLandsOnEventClock)
+    /**
+     * @brief Tests that a host node's record, on the steady clock, lands after the kernel it depends
+     *        on once the kernel's record goes through its device's pairing.
+     */
+    TEST(Medium_NodeEventRecords, HostNodeLandsAfterItsKernelOnTheSteadyClock)
     {
         constexpr std::size_t N = 64;
 
@@ -306,8 +316,8 @@ namespace NodeEventRecordsTests
         int* p = buf.data();
 
         // The host node reads what the kernel writes, so it runs after the kernel; see README.md.
+        Testing::RunRecorder recorder(rt);
         auto g = rt.graph();
-        g.set_profiling(true);
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); }).name("kernel");
         g.add_host(Reads(buf), Writes{}, [p]()
         {
@@ -316,26 +326,33 @@ namespace NodeEventRecordsTests
             (void)sink;
         });
 
-        auto report = g.run().value();
-        ASSERT_FALSE(report.node_events.empty());
+        g.run().value();
+        ASSERT_EQ(recorder.count(), 1u);
+        const RunObservation observation = recorder.last();
+        ASSERT_FALSE(observation.events.empty());
 
         const auto& plan = Detail::NodeEventRecordsTestAccess::plan(g);
         const std::uint32_t idx_kernel = registration_index_of(plan, "kernel");
 
-        // Only a host record has submit_ns equal to start_ns; see README.md.
+        // Only a host record carries the host device index.
         const NodeEventRecord* kernel_record = nullptr;
         const NodeEventRecord* host_record = nullptr;
-        for (const auto& rec : report.node_events)
+        for (const auto& rec : observation.events)
         {
             if (rec.node_index == idx_kernel) kernel_record = &rec;
-            else if (rec.submit_ns == rec.start_ns) host_record = &rec;
+            else if (rec.device_index == K_HOST_DEVICE_INDEX) host_record = &rec;
         }
 
-        ASSERT_NE(kernel_record, nullptr) << "no kernel record found among node_events";
-        ASSERT_NE(host_record, nullptr) << "no host record found among node_events";
+        ASSERT_NE(kernel_record, nullptr) << "no kernel record found among the events";
+        ASSERT_NE(host_record, nullptr) << "no host record found among the events";
+        const ClockPairing* pairing =
+            Testing::RunRecorder::pairing_of(observation, kernel_record->device_index);
+        ASSERT_NE(pairing, nullptr) << "the kernel's device has no pairing in the run";
 
         // The tolerance covers the clock pairing's measurement uncertainty only; see README.md.
-        EXPECT_GE(host_record->start_ns + report.clock.uncertainty_ns, kernel_record->end_ns)
+        const std::uint64_t kernel_end =
+            Testing::RunRecorder::steady_ns(observation, *kernel_record, kernel_record->end_ns);
+        EXPECT_GE(host_record->start_ns + pairing->uncertainty_ns, kernel_end)
             << "the host record must not land before the kernel it depends on completed";
         EXPECT_LE(host_record->start_ns, host_record->end_ns);
     }
@@ -907,19 +924,22 @@ namespace ChainLayerTests
         int* pa = a.data();
         int* pb = b.data();
 
+        Testing::RunRecorder recorder(rt);
         auto g = rt.graph();
-        g.set_profiling(true);
         g.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
         g.add(N, Reads(a), Writes(b), [pa, pb](std::size_t i) { pb[i] += pa[i]; });
 
         const auto report = g.run(STEPS).value();
+        ASSERT_EQ(recorder.count(), 1u);
+        const RunObservation observation = recorder.last();
 
         EXPECT_EQ(report.layer, ExecutionLayer::Chain)
             << "profiling must not move a chainable plan off layer 1";
-        ASSERT_EQ(report.node_events.size(), 2 * STEPS);
+        EXPECT_EQ(observation.layer, ExecutionLayer::Chain);
+        ASSERT_EQ(observation.events.size(), 2 * STEPS);
 
         std::vector<std::size_t> per_step(STEPS, 0);
-        for (const auto& rec : report.node_events)
+        for (const auto& rec : observation.events)
         {
             ASSERT_LT(rec.invocation, STEPS);
             ++per_step[rec.invocation];
@@ -928,9 +948,16 @@ namespace ChainLayerTests
         for (std::size_t s = 0; s < STEPS; ++s)
             EXPECT_EQ(per_step[s], 2u) << "step " << s;
 
-        ASSERT_EQ(report.node_timings.size(), 2u);
-        for (const auto& t : report.node_timings)
-            EXPECT_EQ(t.invocations, STEPS);
+        ASSERT_NE(observation.table, nullptr);
+        ASSERT_EQ(observation.table->size(), 2u);
+        for (const auto& row : observation.table->rows())
+        {
+            std::size_t dispatches = 0;
+            for (const auto& rec : observation.events)
+                if (rec.node_index == row.index)
+                    ++dispatches;
+            EXPECT_EQ(dispatches, STEPS) << "node " << row.index;
+        }
 
         // b[i] after k steps is 1 + 2 + ... + k.
         for (std::size_t i = 0; i < N; ++i)
@@ -1320,12 +1347,11 @@ namespace GraphProfilingSwitchTests
         }
     } // namespace
 
-    TEST(Medium_GraphProfilingSwitch, TwoGraphsIndependentSwitch)
+    TEST(Medium_GraphProfilingSwitch, TwoGraphsBothRecordWhileAnObserverIsAdded)
     {
         constexpr std::size_t N = 256;
 
-        auto rt = Runtime::create().value(); // RuntimeSettings::profiling defaults to false
-        ASSERT_FALSE(rt.advanced().is_profiling_enabled());
+        auto rt = Runtime::create().value(); // no observer, so no timing
         ASSERT_FALSE(any_profiling_queue_built(SushiRuntime::Internal::ContextAccess::context(rt)));
 
         auto a = rt.buffer<int>(N).value();
@@ -1333,32 +1359,31 @@ namespace GraphProfilingSwitchTests
         int* pa = a.data();
         int* pb = b.data();
 
-        auto requested = rt.graph();
-        requested.set_profiling(true);
-        EXPECT_TRUE(requested.is_profiling_requested());
-        requested.add(N, Reads{}, Writes(a),
-                      [pa](std::size_t i) { pa[i] = static_cast<int>(i); });
+        auto first = rt.graph();
+        first.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] = static_cast<int>(i); });
 
-        auto plain = rt.graph();
-        EXPECT_FALSE(plain.is_profiling_requested());
-        plain.add(N, Reads{}, Writes(b),
-                  [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
+        auto second = rt.graph();
+        second.add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
 
-        // A request alone, before any run, must not build a queue.
+        // Without an observer neither graph builds a profiling queue.
+        first.run().value();
+        second.run().value();
         EXPECT_FALSE(any_profiling_queue_built(SushiRuntime::Internal::ContextAccess::context(rt)));
 
-        auto rep_requested = requested.run().value();
-        EXPECT_FALSE(rep_requested.node_timings.empty())
-            << "the requested graph must collect device timing";
+        // Adding the observer turns timing on for both graphs of the runtime.
+        Testing::RunRecorder recorder(rt);
+        first.run().value();
+        ASSERT_EQ(recorder.count(), 1u);
+        EXPECT_FALSE(recorder.last().events.empty()) << "the first graph must collect device timing";
         EXPECT_TRUE(any_profiling_queue_built(SushiRuntime::Internal::ContextAccess::context(rt)))
-            << "running the requested graph must have built a profiling queue";
+            << "running a timed graph must have built a profiling queue";
 
-        auto rep_plain = plain.run().value();
-        EXPECT_TRUE(rep_plain.node_timings.empty())
-            << "the unrequested graph must carry no profiling info of its own";
+        second.run().value();
+        ASSERT_EQ(recorder.count(), 2u);
+        EXPECT_FALSE(recorder.last().events.empty()) << "the second graph must collect device timing too";
     }
 
-    TEST(Medium_GraphProfilingSwitch, ChangedRequestRecompilesOnceAndSwitches)
+    TEST(Medium_GraphProfilingSwitch, AddingAnObserverRecompilesOnceAndSwitches)
     {
         constexpr std::size_t N = 128;
 
@@ -1369,21 +1394,29 @@ namespace GraphProfilingSwitchTests
         auto g = rt.graph();
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
-        auto rep_off = g.run().value();
-        EXPECT_TRUE(rep_off.node_timings.empty());
+        g.run().value();
         const std::size_t compiles_after_first_run = g.compile_count();
         EXPECT_EQ(compiles_after_first_run, 1u);
 
-        g.set_profiling(true);
-        auto rep_on = g.run().value();
-        EXPECT_FALSE(rep_on.node_timings.empty());
+        Testing::RunRecorder recorder(rt);
+        g.run().value();
+        ASSERT_EQ(recorder.count(), 1u);
+        EXPECT_FALSE(recorder.last().events.empty());
         EXPECT_EQ(g.compile_count(), compiles_after_first_run + 1)
-            << "flipping the request must recompile exactly once";
+            << "the first observer must recompile exactly once";
 
-        // Running again with the same request recompiles zero further times.
-        auto rep_on_again = g.run().value();
-        EXPECT_FALSE(rep_on_again.node_timings.empty());
+        // Running again with the observer still added recompiles zero further times.
+        g.run().value();
+        ASSERT_EQ(recorder.count(), 2u);
+        EXPECT_FALSE(recorder.last().events.empty());
         EXPECT_EQ(g.compile_count(), compiles_after_first_run + 1);
+
+        // Removing the last observer recompiles once more and records nothing.
+        recorder.stop();
+        g.run().value();
+        EXPECT_EQ(recorder.count(), 2u);
+        EXPECT_EQ(g.compile_count(), compiles_after_first_run + 2)
+            << "the last removal must recompile exactly once";
     }
 
     /**
@@ -1394,41 +1427,33 @@ namespace GraphProfilingSwitchTests
     {
         constexpr std::size_t N = 256;
 
-        auto rt = Runtime::create().value(); // RuntimeSettings::profiling defaults to false
+        auto rt = Runtime::create().value(); // no observer until the recorder below
         auto buf = rt.buffer<int>(N).value();
         int* p = buf.data();
 
+        Testing::RunRecorder recorder(rt);
         auto g = rt.graph();
-        g.set_profiling(true);
         g.add(N, Reads{}, Writes{}, [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
-        auto rep = g.run().value();
-        EXPECT_FALSE(rep.node_timings.empty())
+        g.run().value();
+        ASSERT_EQ(recorder.count(), 1u);
+        EXPECT_FALSE(recorder.last().events.empty())
             << "the NUMA-fallback branch must still dispatch on a profiling queue";
         EXPECT_TRUE(any_profiling_queue_built(SushiRuntime::Internal::ContextAccess::context(rt)))
             << "reaching this branch under profiling must build a profiling queue";
     }
 } // namespace GraphProfilingSwitchTests
 
-/** @brief Tests the profiling breakdown, node names and transfer accounting a RunReport carries. */
+/** @brief Tests the node table, the node names and the transfer accounting around a run. */
 namespace ObservabilityTests
 {
-    namespace
-    {
-        RuntimeConfig profiling_config()
-        {
-            RuntimeConfig cfg;
-            cfg.profiling = true;
-            return cfg;
-        }
-    } // namespace
-
     TEST(Medium_Observability, ProfilingOffLeavesBreakdownEmpty)
     {
         constexpr std::size_t N = 256;
 
-        auto rt  = Runtime::create().value();                 // no profiling
-        EXPECT_FALSE(rt.advanced().is_profiling_enabled());
+        auto rt  = Runtime::create().value();                 // no observer
+        Testing::RunRecorder recorder(rt);
+        recorder.stop();
 
         auto buf = rt.buffer<int>(N).value();
         int* p = buf.data();
@@ -1437,8 +1462,8 @@ namespace ObservabilityTests
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
         auto rep = g.run(4).value();
 
-        EXPECT_TRUE(rep.node_timings.empty());
-        EXPECT_TRUE(rep.worker_timings.empty());
+        EXPECT_TRUE(rep.is_successful);
+        EXPECT_EQ(recorder.count(), 0u);
     }
 
     TEST(Medium_Observability, ProfilingOnCapturesPerNodeTiming)
@@ -1446,8 +1471,8 @@ namespace ObservabilityTests
         constexpr std::size_t N = 4096;
         constexpr std::size_t STEPS = 8;
 
-        auto rt = Runtime::create(profiling_config()).value();
-        ASSERT_TRUE(rt.advanced().is_profiling_enabled());
+        auto rt = Runtime::create().value();
+        Testing::RunRecorder recorder(rt);
 
         auto a = rt.buffer<float>(N).value();
         auto b = rt.buffer<float>(N).value();
@@ -1464,26 +1489,35 @@ namespace ObservabilityTests
         });
         g.add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] = static_cast<float>(i); });
 
-        auto rep = g.run(STEPS).value();
+        g.run(STEPS).value();
+        ASSERT_EQ(recorder.count(), 1u);
+        const RunObservation observation = recorder.last();
 
-        // Each kernel is one plan node per step, and only the counts are asserted; see README.md.
-        ASSERT_EQ(rep.node_timings.size(), 2u);
-        for (const auto& nt : rep.node_timings)
+        // Each kernel is one dispatch per step, and only the counts are asserted; see README.md.
+        ASSERT_NE(observation.table, nullptr);
+        ASSERT_EQ(observation.table->size(), 2u);
+        for (const auto& row : observation.table->rows())
         {
-            EXPECT_EQ(nt.invocations, STEPS) << "node#" << nt.plan_index;
-            EXPECT_GE(nt.device_ms, 0.0);
-            EXPECT_GE(nt.host_ms, 0.0);
+            std::size_t dispatches = 0;
+            for (const auto& rec : observation.events)
+            {
+                if (rec.node_index != row.index)
+                    continue;
+                ++dispatches;
+                EXPECT_LE(rec.start_ns, rec.end_ns) << "node " << row.index;
+            }
+            EXPECT_EQ(dispatches, STEPS) << "node " << row.index;
         }
     }
 
-    /** @brief Tests that a name given through name() reaches RunReport::NodeTiming. */
-    TEST(Medium_Observability, NamingTheLastNodeReachesNodeTiming)
+    /** @brief Tests that a name given through name() reaches the node table. */
+    TEST(Medium_Observability, NamingTheLastNodeReachesTheNodeTable)
     {
         constexpr std::size_t N = 512;
         constexpr std::size_t STEPS = 4;
 
-        auto rt = Runtime::create(profiling_config()).value();
-        ASSERT_TRUE(rt.advanced().is_profiling_enabled());
+        auto rt = Runtime::create().value();
+        Testing::RunRecorder recorder(rt);
 
         auto buf = rt.buffer<int>(N).value();
         int* p = buf.data();
@@ -1492,10 +1526,13 @@ namespace ObservabilityTests
         g.add(N, Reads{}, Writes(buf),
               [p](std::size_t i) { p[i] = static_cast<int>(i); }).name("seed");
 
-        auto rep = g.run(STEPS).value();
+        g.run(STEPS).value();
+        ASSERT_EQ(recorder.count(), 1u);
+        const RunObservation observation = recorder.last();
 
-        ASSERT_EQ(rep.node_timings.size(), 1u);
-        EXPECT_STREQ(rep.node_timings[0].name.c_str(), "seed");
+        ASSERT_NE(observation.table, nullptr);
+        ASSERT_EQ(observation.table->size(), 1u);
+        EXPECT_EQ(observation.table->rows()[0].name, "seed");
     }
 
     /** @brief Tests that every add() shape can be named, the two variadic ones included. */
@@ -1503,7 +1540,9 @@ namespace ObservabilityTests
     {
         constexpr std::size_t N = 256;
 
-        auto rt = Runtime::create(profiling_config()).value();
+        auto rt = Runtime::create().value();
+        Testing::RunRecorder recorder(rt);
+
         auto a = rt.buffer<float>(N).value();
         auto b = rt.buffer<float>(N).value();
         auto c = rt.buffer<float>(N).value();
@@ -1533,11 +1572,14 @@ namespace ObservabilityTests
         g.add_dynamic(sized([] { return N; }), N, Reads(a), Writes(b),
                       [pa, pb](std::size_t i) { pb[i] = pa[i]; }).name("dynamic");
 
-        auto rep = g.run().value();
+        g.run().value();
+        ASSERT_EQ(recorder.count(), 1u);
+        const RunObservation observation = recorder.last();
+        ASSERT_NE(observation.table, nullptr);
 
         std::vector<std::string> names;
-        for (const auto& nt : rep.node_timings)
-            names.push_back(nt.name);
+        for (const auto& row : observation.table->rows())
+            names.push_back(row.name);
 
         for (const char* expected : {"plain", "captured", "stateful", "host", "dynamic"})
             EXPECT_NE(std::find(names.begin(), names.end(), expected), names.end())
@@ -1549,42 +1591,44 @@ namespace ObservabilityTests
     {
         constexpr std::size_t N = 128;
 
-        auto rt = Runtime::create(profiling_config()).value();
+        auto rt = Runtime::create().value();
+        Testing::RunRecorder recorder(rt);
+
         auto buf = rt.buffer<int>(N).value();
         int* p = buf.data();
 
         auto g = rt.graph();
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
-        auto rep = g.run().value();
+        g.run().value();
+        ASSERT_EQ(recorder.count(), 1u);
+        const RunObservation observation = recorder.last();
 
-        ASSERT_EQ(rep.node_timings.size(), 1u);
-        EXPECT_STREQ(rep.node_timings[0].name.c_str(), "unnamed_task");
+        ASSERT_NE(observation.table, nullptr);
+        ASSERT_EQ(observation.table->size(), 1u);
+        EXPECT_EQ(observation.table->rows()[0].name, "unnamed_task");
     }
 
     TEST(Medium_Observability, ProfilingOnPopulatesWorkerSplit)
     {
         constexpr std::size_t N = 1024;
 
-        // The worker split describes the scheduler, so keep this plan off the chain.
-        RuntimeConfig config = profiling_config();
+        // The scheduler layer is what the observation names, so keep this plan off the chain.
+        RuntimeConfig config;
         config.force_scheduler = true;
         auto rt = Runtime::create(config).value();
+        Testing::RunRecorder recorder(rt);
         auto buf = rt.buffer<int>(N).value();
         int* p = buf.data();
 
         auto g = rt.graph();
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
         auto rep = g.run(16).value();
+        ASSERT_EQ(recorder.count(), 1u);
+        const RunObservation observation = recorder.last();
 
         EXPECT_EQ(rep.layer, ExecutionLayer::Scheduler);
-        ASSERT_FALSE(rep.worker_timings.empty());
-        EXPECT_GE(rep.scheduling_overhead_ms, 0.0);
-
-        // At least some time must be attributed somewhere across the workers.
-        double total = 0.0;
-        for (const auto& w : rep.worker_timings)
-            total += w.busy_ms + w.stealing_ms + w.polling_ms + w.idle_ms;
-        EXPECT_GT(total, 0.0);
+        EXPECT_EQ(observation.layer, ExecutionLayer::Scheduler);
+        EXPECT_EQ(observation.events.size(), 16u);
     }
 
     TEST(Medium_Observability, ExplicitTransfersAreAccounted)
@@ -1612,12 +1656,14 @@ namespace ObservabilityTests
         auto buf = rt.buffer<int>(N).value();
         std::vector<int> src(N, 3);
 
-        // The bytes a host node pushes during the run land in this run's window; see README.md.
+        // The bytes a host node pushes during the run land in the runtime's counters; see README.md.
+        const std::size_t h2d_before = rt.advanced().host_to_device_bytes();
+        const std::size_t d2h_before = rt.advanced().device_to_host_bytes();
         auto g = rt.graph();
         g.add_host([&buf, &src]() { buf.write_range({0, N}, src).value(); });
-        auto rep = g.run().value();
+        g.run().value();
 
-        EXPECT_EQ(rep.host_to_device_bytes, N * sizeof(int));
-        EXPECT_EQ(rep.device_to_host_bytes, 0u);
+        EXPECT_EQ(rt.advanced().host_to_device_bytes() - h2d_before, N * sizeof(int));
+        EXPECT_EQ(rt.advanced().device_to_host_bytes() - d2h_before, 0u);
     }
 } // namespace ObservabilityTests

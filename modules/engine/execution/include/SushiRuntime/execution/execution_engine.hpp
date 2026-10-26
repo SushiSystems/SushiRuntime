@@ -38,6 +38,7 @@
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/report/run_report.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
@@ -212,7 +213,7 @@ namespace SushiRuntime
             virtual WorkerPool worker_pool() const { return {}; }
 
             /**
-             * @brief Clears profiling accumulators before a profiled run; does nothing by default.
+             * @brief Clears the event ledger and the worker time before a run that records timing.
              * @param expected_invocations Per-node dispatch count the caller expects; sizes the
              *        ledger.
              * @see modules/engine/execution/README.md
@@ -221,13 +222,32 @@ namespace SushiRuntime
                                          std::size_t /*expected_invocations*/ = 1) {}
 
             /**
-             * @brief Fills a report's profiling breakdown after a profiled run.
+             * @brief Starts a run as submit() does and hands its observation to the context's observers
+             *        when the run's device work completes, on the thread that learns it.
              *
-             * Default no-op. @param graph The compiled plan read for timing.
-             * @param report The report whose profiling rows are populated.
+             * Default calls submit(), so an engine with no observation hands nothing over.
+             * @see modules/engine/execution/README.md
+             */
+            [[nodiscard]] virtual Result<void> submit_observed(Internal::Graph::CompiledGraph& graph)
+            {
+                return submit(graph);
+            }
+
+            /**
+             * @brief Writes the values only the engine sees, such as its workers' time, into the run's
+             *        period; does nothing by default. Called once per run, with or without an observer.
+             */
+            virtual void write_run_values() const {}
+
+            /**
+             * @brief Fills an observation with what a run that recorded timing captured.
+             *
+             * Default no-op. Takes the plan's records, device clock pairings, node table and drop counts.
+             * @param observation Its layer is set by the caller; the rest is filled here.
+             * @see modules/engine/execution/README.md
              */
             virtual void collect_profiling(Internal::Graph::CompiledGraph& /*graph*/,
-                                           RunReport& /*report*/) const {}
+                                           RunObservation& /*observation*/) const {}
 
             /**
              * @brief Reports whether a run handed to this engine has not been collected yet.

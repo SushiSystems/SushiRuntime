@@ -117,8 +117,8 @@ namespace
             expected_total += expected[i];
         }
 
-        std::printf("stencil: %zux%zu, %zu steps in %.3f ms (timing)\n", W, H, K_STEPS,
-                    report.total_duration_ms);
+        std::printf("stencil: %zux%zu, %zu steps, %zu tasks\n", W, H, K_STEPS,
+                    report.total_tasks_executed);
         std::printf("  total heat = %.1f  (expected %.1f)\n", total, expected_total);
         std::printf("  result: %s\n", is_correct ? "CORRECT" : "WRONG");
         return is_correct ? 0 : 1;

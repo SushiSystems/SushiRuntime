@@ -54,14 +54,13 @@ namespace ChainDispatchTests
         struct ChainMeasurement
         {
             RunStatistics wall_ns_per_node_step;     /**< Timed by this test around Graph::run(). */
-            RunStatistics reported_ns_per_node_step; /**< Derived from RunReport::total_duration_ms. */
             ExecutionLayer layer;              /**< Layer the plan ran on. */
         };
 
         /**
          * @brief Replays a chain of @p length trivial kernel nodes @p steps times per timed run.
          * @param force_scheduler True to keep the plan on the scheduler (layer 0).
-         * @return The per-node cost by both clocks, and the layer that ran.
+         * @return The per-node wall cost, and the layer that ran.
          */
         ChainMeasurement measure_chain(std::size_t length, std::size_t steps, bool force_scheduler)
         {
@@ -90,8 +89,6 @@ namespace ChainDispatchTests
             ExecutionLayer layer = g.run(std::size_t{1}).value().layer;
 
             const double node_steps = double(steps) * double(length);
-            std::vector<double> reported_samples;
-            reported_samples.reserve(SushiRuntime::Test::K_DEFAULT_RUN_COUNT);
 
             ChainMeasurement measurement;
             measurement.wall_ns_per_node_step = SushiRuntime::Test::measure([&]() -> double
@@ -101,11 +98,8 @@ namespace ChainDispatchTests
                 const auto t1 = std::chrono::steady_clock::now();
 
                 layer = report.layer;
-                reported_samples.push_back((report.total_duration_ms * 1e6) / node_steps);
                 return std::chrono::duration<double, std::nano>(t1 - t0).count() / node_steps;
             });
-            measurement.reported_ns_per_node_step =
-                SushiRuntime::Test::summarize(std::move(reported_samples));
             measurement.layer = layer;
 
             EXPECT_EQ(g.compile_count(), 1u);
@@ -138,8 +132,8 @@ namespace ChainDispatchTests
 
         std::printf("\n=== Chain dispatch cost (dependent-node chain, median of %zu runs) ===\n",
                     SushiRuntime::Test::K_DEFAULT_RUN_COUNT);
-        std::printf("  %8s | %9s | %12s | %14s | %14s\n",
-                    "length", "layer", "ms/step", "ns/(node*step)", "runtime clock");
+        std::printf("  %8s | %9s | %12s | %14s\n",
+                    "length", "layer", "ms/step", "ns/(node*step)");
         for (const auto& c : cases)
         {
             for (const bool force_scheduler : { true, false })
@@ -148,9 +142,9 @@ namespace ChainDispatchTests
                 const bool on_chain = m.layer == ExecutionLayer::Chain;
                 const double ms_per_step =
                     m.wall_ns_per_node_step.median * double(c.length) / 1e6;
-                std::printf("  %8zu | %9s | %12.5f | %14.1f | %14.1f\n",
+                std::printf("  %8zu | %9s | %12.5f | %14.1f\n",
                             c.length, on_chain ? "chain" : "scheduler", ms_per_step,
-                            m.wall_ns_per_node_step.median, m.reported_ns_per_node_step.median);
+                            m.wall_ns_per_node_step.median);
 
                 MeasurementLabel label;
                 label.benchmark    = "chain_dispatch";
@@ -182,12 +176,11 @@ namespace RootFanoutTests
         struct FanoutMeasurement
         {
             RunStatistics wall_ns_per_root_step;     /**< Timed by this test around Graph::run(). */
-            RunStatistics reported_ns_per_root_step; /**< Derived from RunReport::total_duration_ms. */
         };
 
         /**
          * @brief Replays a graph of @p roots independent tasks @p steps times per timed run.
-         * @return The per-root cost by both clocks.
+         * @return The per-root wall cost.
          */
         FanoutMeasurement measure_fanout(std::size_t roots, std::size_t steps)
         {
@@ -213,22 +206,17 @@ namespace RootFanoutTests
             g.run(std::size_t{1}).value();
 
             const double root_steps = double(steps) * double(roots);
-            std::vector<double> reported_samples;
-            reported_samples.reserve(SushiRuntime::Test::K_DEFAULT_RUN_COUNT);
 
             FanoutMeasurement measurement;
             measurement.wall_ns_per_root_step = SushiRuntime::Test::measure([&]() -> double
             {
                 const auto t0 = std::chrono::steady_clock::now();
-                const auto report = g.run(steps).value();
+                g.run(steps).value();
                 const auto t1 = std::chrono::steady_clock::now();
 
-                reported_samples.push_back((report.total_duration_ms * 1e6) / root_steps);
                 return std::chrono::duration<double, std::nano>(t1 - t0).count() / root_steps;
             });
             const std::size_t timed_runs = measurement.wall_ns_per_root_step.run_count;
-            measurement.reported_ns_per_root_step =
-                SushiRuntime::Test::summarize(std::move(reported_samples));
 
             EXPECT_EQ(g.compile_count(), 1u);
 
@@ -258,15 +246,14 @@ namespace RootFanoutTests
 
         std::printf("\n=== Root fan-out injection sweep (batched submit, median of %zu runs) ===\n",
                     SushiRuntime::Test::K_DEFAULT_RUN_COUNT);
-        std::printf("  %8s | %12s | %16s | %14s\n",
-                    "roots", "ms/step", "ns/(root*step)", "runtime clock");
+        std::printf("  %8s | %12s | %16s\n",
+                    "roots", "ms/step", "ns/(root*step)");
         for (const auto& c : cases)
         {
             const FanoutMeasurement m = measure_fanout(c.roots, c.steps);
             const double ms_per_step = m.wall_ns_per_root_step.median * double(c.roots) / 1e6;
-            std::printf("  %8zu | %12.5f | %16.1f | %14.1f\n",
-                        c.roots, ms_per_step, m.wall_ns_per_root_step.median,
-                        m.reported_ns_per_root_step.median);
+            std::printf("  %8zu | %12.5f | %16.1f\n",
+                        c.roots, ms_per_step, m.wall_ns_per_root_step.median);
 
             MeasurementLabel label;
             label.benchmark    = "root_fanout";

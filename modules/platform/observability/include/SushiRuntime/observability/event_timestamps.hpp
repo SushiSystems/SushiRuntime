@@ -28,7 +28,9 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <vector>
 #include <sycl/sycl.hpp>
 
 namespace SushiRuntime
@@ -77,6 +79,51 @@ namespace SushiRuntime
                 out.submit_ns  = start_ns;
                 out.has_submit = false;
             }
+            return true;
+        }
+
+        /**
+         * @brief Folds @p next into @p into: the earliest submit and start, the latest end.
+         *
+         * The submit reading is the backend's own only when both are.
+         */
+        inline void merge_timestamps(EventTimestamps& into, const EventTimestamps& next) noexcept
+        {
+            into.submit_ns  = std::min(into.submit_ns, next.submit_ns);
+            into.start_ns   = std::min(into.start_ns, next.start_ns);
+            into.end_ns     = std::max(into.end_ns, next.end_ns);
+            into.has_submit = into.has_submit && next.has_submit;
+        }
+
+        /**
+         * @brief Reads the timestamps of one dispatch, across every event its body handed over.
+         * @param returned The event the dispatch returned; read alone when @p handed_over is empty.
+         * @param handed_over The events the body handed over; the dispatch is timed across them.
+         * @param out Filled only when the function returns true.
+         * @return True when every event read.
+         * @see modules/platform/observability/README.md
+         */
+        inline bool read_dispatch_timestamps(const sycl::event& returned,
+                                             const std::vector<sycl::event>& handed_over,
+                                             EventTimestamps& out) noexcept
+        {
+            if (handed_over.empty())
+                return read_event_timestamps(returned, out);
+
+            EventTimestamps total;
+            bool first = true;
+            for (const sycl::event& event : handed_over)
+            {
+                EventTimestamps one;
+                if (!read_event_timestamps(event, one))
+                    return false;
+                if (first)
+                    total = one;
+                else
+                    merge_timestamps(total, one);
+                first = false;
+            }
+            out = total;
             return true;
         }
 

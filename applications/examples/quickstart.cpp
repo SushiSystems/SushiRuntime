@@ -66,8 +66,8 @@ namespace
             total += heat[i];
         const bool is_conserved = total > 0.999 && total < 1.001;
 
-        std::printf("quickstart: %zu steps in %.2f ms (timing); compiles = %zu\n", STEPS,
-                    report.total_duration_ms, sim.compile_count());
+        std::printf("quickstart: %zu steps, %zu tasks; compiles = %zu\n", STEPS,
+                    report.total_tasks_executed, sim.compile_count());
         std::printf("  total heat = %.2f  (expected 1.00)\n", total);
         std::printf("  result: %s\n", is_conserved ? "CORRECT" : "WRONG");
         return is_conserved ? 0 : 1;

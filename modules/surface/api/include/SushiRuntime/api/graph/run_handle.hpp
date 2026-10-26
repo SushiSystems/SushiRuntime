@@ -34,6 +34,7 @@
 #include <memory>
 #include <utility>
 
+#include <SushiRuntime/api/detail/dropped_outcome.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/report/run_report.hpp>
@@ -60,9 +61,8 @@ namespace SushiRuntime
             RunCounters before{};                      /**< Scheduler counters at submit. */
             std::size_t device_to_host_before = 0;     /**< Transfer counter at submit. */
             std::size_t host_to_device_before = 0;     /**< Transfer counter at submit. */
-            std::chrono::steady_clock::time_point started{}; /**< When the roots went in. */
-            double compile_ms = 0.0;                   /**< Time spent compiling, if it did. */
             std::size_t task_count = 0;                /**< Tasks this step dispatched. */
+            ExecutionLayer layer = ExecutionLayer::Scheduler; /**< Path that ran the step, set at submit. */
             std::uint32_t serial = 0;                  /**< Number the driver gave the step. */
         };
 
@@ -227,7 +227,9 @@ namespace SushiRuntime
                 if (owner_ == nullptr)
                     return;
                 RunReport dropped;
-                static_cast<void>(wait(dropped));
+                const Result<RunReport*, Error> outcome = wait(dropped);
+                if (!outcome)
+                    Detail::log_dropped_outcome(outcome.error(), "the destruction of a RunHandle");
             }
 
             /** @brief The graph that started the step; dereferenced only while owns_step(). */

@@ -38,16 +38,17 @@ A module is public or internal.
 | Tier | Module | Kind | Owns |
 | --- | --- | --- | --- |
 | foundation | [core](../../modules/foundation/core/README.md) | public | Assertions, `Error`, `Result`, `OperationID`, `span`, the intrusive pointer, the version |
-| foundation | [report](../../modules/foundation/report/README.md) | public | `RunReport` and the records it carries |
+| foundation | [report](../../modules/foundation/report/README.md) | public | `RunReport`, and `RunObserver`, `RunObservation` and the records and node table a run hands to its observers |
 | foundation | [region](../../modules/foundation/region/README.md) | public | `BufferRegion`, the byte window a node reads or writes, and the liveness token |
 | foundation | [log](../../modules/foundation/log/README.md) | public | The front over SushiLog: `K_SUSHIRUNTIME_LOG_PROJECT` and the `SR_LOG_*` macros |
+| foundation | [profile](../../modules/foundation/profile/README.md) | internal | The front over SushiProfiler: the compiled level and the `SR_ZONE` macros |
 | foundation | [machine](../../modules/foundation/machine/README.md) | public | `DeviceFilter`, `PinPolicy`, `DeviceDescription`, `WorkerPool`, `NodeFacts`, `DeviceFacts` |
 | foundation | [placement](../../modules/foundation/placement/README.md) | public | `PlacementRule` and `PlacementRules`: the placement rules a caller writes, their checks and their resolution |
 | foundation | [sycl](../../modules/foundation/sycl/README.md) | internal | The differences between SYCL toolchains, and the translation of a SYCL exception to an `Error` |
 | platform | [topology](../../modules/platform/topology/README.md) | internal | Hardware discovery, NUMA mapping, thread affinity |
 | platform | [memory](../../modules/platform/memory/README.md) | internal | The USM allocator and registry, epoch-based reclamation |
 | platform | [device](../../modules/platform/device/README.md) | internal | The device inventory and the SYCL queues of each device |
-| platform | [observability](../../modules/platform/observability/README.md) | internal | The profiling ledger, event timestamps, transfer counters |
+| platform | [observability](../../modules/platform/observability/README.md) | internal | The ledger of dispatch records, event timestamps, transfer counters |
 | engine | [task](../../modules/engine/task/README.md) | internal | The unit of work the scheduler dispatches, the graph node, the offload seam |
 | engine | [scheduler](../../modules/engine/scheduler/README.md) | internal | The work-stealing scheduler, the event poller, the rebalancer |
 | engine | [graph](../../modules/engine/graph/README.md) | internal | The task graph, the dependency tracker, the compiled plan |
@@ -57,6 +58,7 @@ A module is public or internal.
 | surface | [context](../../modules/surface/context/README.md) | public | `ContextHandle`, the share of a runtime's context every handle holds |
 | surface | [context_access](../../modules/surface/context_access/README.md) | internal | The way from a `ContextHandle` to the engine's context |
 | surface | [api](../../modules/surface/api/README.md) | public | `Runtime`, `Buffer`, `State`, `Graph`, `DynamicGraph`, `Recorder`, the vocabulary, the umbrella header |
+| surface | [profiling](../../modules/surface/profiling/README.md) | public, optional | The device source, the environment facts and `register_profiler_parts()`; built when `SR_ENABLE_PROFILER` is on |
 | extension | [distributed](../../modules/extension/distributed/README.md) | public, optional | The master and worker layer; built when `SR_ENABLE_DISTRIBUTED` is on |
 
 `tools/layering/check_layering.py` checks the same rules outside the build, and
@@ -89,7 +91,7 @@ No exception leaves the library.
 | Cause | Mechanism |
 | --- | --- |
 | Outside the program: no memory, a faulted kernel, a lost device | The call returns `Result<T>` holding an `Error{ErrorCode, message}` |
-| A recording the recorder refuses | The recorder keeps the `Error`; `refusal()` reads it, and `compile()` and every run verb return it |
+| A recording the recorder refuses | The recorder keeps the first `Error` and logs every refusal at `WARN`; `refusal()` reads it, and `compile()` and every run verb return it |
 | A rule the caller broke | `SR_VERIFY`, `SR_ASSERT` or `SR_FATAL` calls the assertion handler, which stops the process; `set_assertion_handler()` replaces it |
 
 Inside the library, a SYCL call and a caller's hook or host task can still throw. One function,
@@ -138,6 +140,12 @@ region, a region the runtime did not allocate, or regions of two devices. `run_a
 `RuntimeConfig::force_scheduler`.
 [The execution README](../../modules/engine/execution/README.md) has the classification and the
 order of a run; [the scheduler README](../../modules/engine/scheduler/README.md) has the pool.
+
+A runtime records no timing of its own in the report. The runtime writes its stages as zones, its
+workers' time as values and its task and byte counts as counters into a SushiProfiler record, and a
+program that adds a `RunObserver` with `Runtime::add_run_observer()` receives the device time of each
+dispatch. While an observer is added, the runtime's plans dispatch on queues that record timestamps.
+[The profiling guide](../guides/PROFILING_GUIDE.md) describes both paths.
 
 After each step every `State` advances: the field the step wrote becomes the field the next
 step reads. A failed run of one step advances nothing;
@@ -209,6 +217,8 @@ flags to these options.
 | `SR_AMD_ARCH` | none | AMD GPU ISAs, one (`gfx1030`) or a list (`gfx1030;gfx1100`) |
 | `SR_ENABLE_CUDA` | `OFF` | Legacy switch with the effect of `SR_GPU_BACKEND=cuda` |
 | `SR_ENABLE_DISTRIBUTED` | `OFF` | Builds the `distributed` module |
+| `SR_ENABLE_PROFILER` | `ON` | Builds the `profiling` module and compiles the zones in; with it `OFF` the macros expand to nothing and the library builds without SushiProfiler |
+| `SR_PROFILE_LEVEL` | `2` | The deepest zone level compiled in: 0 none, 1 stages, 2 fine zones, 3 per-element zones |
 | `SR_BUILD_TESTS` | `OFF` | Builds the test programs; `sr build` turns it on and `--no-test` leaves it off |
 | `SR_BUILD_BENCHMARKS` | `ON` | Builds the stress and performance programs; read only with `SR_BUILD_TESTS` |
 | `SR_BUILD_EXAMPLES` | `ON` at top level | Builds `applications/examples`; off when a parent project adds the tree |

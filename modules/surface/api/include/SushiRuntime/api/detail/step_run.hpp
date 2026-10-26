@@ -100,9 +100,6 @@ namespace SushiRuntime
             bool may_chain = false;                         /**< Whether the graph allows a chain. */
         };
 
-        /** @brief Returns whether a runtime asks every new graph for per-node device timing. */
-        [[nodiscard]] SUSHIRUNTIME_API bool profiling_default(const ContextHandle& context) noexcept;
-
         /** @brief Says whether a chained run may skip the host wait between steps. */
         enum class StepSync : std::uint8_t
         {
@@ -119,13 +116,12 @@ namespace SushiRuntime
         [[nodiscard]] SUSHIRUNTIME_API Result<void> run_steps(const StepTarget& target,
                                                               StepPredicate keep_going,
                                                               RunReport& report,
-                                                              double compile_ms,
                                                               std::size_t expected_invocations,
                                                               StepSync sync);
 
         /**
          * @brief Submits one step to the worker pool without waiting for it.
-         * @param state Receives what finish_step() needs; compile_ms and serial are kept.
+         * @param state Receives what finish_step() needs; serial is kept.
          * @return Nothing, or why the engine did not take the step.
          */
         [[nodiscard]] SUSHIRUNTIME_API Result<void> submit_step(const StepTarget& target,

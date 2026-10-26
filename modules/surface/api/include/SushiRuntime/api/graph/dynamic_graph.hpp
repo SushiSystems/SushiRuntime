@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <string>
 #include <set>
 #include <utility>
 #include <vector>
@@ -226,9 +227,15 @@ namespace SushiRuntime
              * holds across runs that only read the regions.
              */
             using RegionComposer::compose_count;
+            using RegionComposer::id;
 
-            using StepDriver<DynamicGraph>::is_profiling_requested;
-            using StepDriver<DynamicGraph>::set_profiling;
+            /**
+             * @brief Names this graph in a profile, so spans of two graphs of one runtime are told apart.
+             *
+             * The next composition copies the label; a changed label forces none.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            void set_label(std::string label) { RegionComposer::set_label(std::move(label)); }
 
         private:
             friend class Runtime;
@@ -245,30 +252,12 @@ namespace SushiRuntime
                 "DynamicGraph region references a Buffer/State freed before the run.";
 
             explicit DynamicGraph(ContextHandle context)
-                : RegionComposer(Detail::profiling_default(context)), context_(std::move(context))
+                : context_(std::move(context))
             {
             }
 
             /** @brief Returns the runtime whose engine runs this graph. */
             const ContextHandle& run_context() const noexcept { return context_; }
-
-            /**
-             * @brief Records the profiling request; a changed one rebuilds every region.
-             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
-             */
-            void request_profiling(bool requested) noexcept
-            {
-                if (requested == RegionComposer::is_profiling_requested())
-                    return;
-                RegionComposer::set_profiling(requested);
-                rebuild_every_region_ = true;
-            }
-
-            /** @brief Returns whether the next plan requests per-node device timing. */
-            [[nodiscard]] bool profiling_request() const noexcept
-            {
-                return RegionComposer::is_profiling_requested();
-            }
 
             /** @brief Returns a region's recorder without listing the region as written to. */
             [[nodiscard]] static const Recorder& recorded(const Region& region) noexcept
@@ -311,7 +300,7 @@ namespace SushiRuntime
             bool plan_is_stale()
             {
                 settle_changes();
-                if (placement_changed(context_))
+                if (placement_changed(context_) || timing_changed(context_))
                     rebuild_every_region_ = true;
                 return needs_commit();
             }

@@ -24,10 +24,17 @@ The words this repository's documents use. A term defined in code names the head
 | Region | One partition of a `DynamicGraph`, keyed by a `RegionKey`. It compiles on its own and is added or dropped between steps |
 | Chain | The in-order path that runs a chainable plan from the calling thread, without the scheduler |
 | Layer | Which path ran a step, reported in `RunReport::layer` (`ExecutionLayer`) |
-| Registration index | The number a task takes when it is added; the nodes of one `Recorder::rule()` scope share it. `RunReport::node_events` is numbered by it |
-| Node event record | `NodeEventRecord`: the submit, start and end times of one dispatch, collected when a graph requests profiling |
-| Clock pairing | `ClockPairing`: an event-clock reading and a steady-clock reading taken together at a run's first device submission; it places host and device records on one axis |
-| Profiling queue | A second queue per device, built on first use with profiling enabled, that a graph requesting profiling dispatches through |
+| Registration index | The number a task takes when it is added; the nodes of one `Recorder::rule()` scope share it. `NodeEventRecord::node_index` is numbered by it |
+| Node event record | `NodeEventRecord`: the submit, start and end times of one dispatch, with its device and submitting thread, collected while the runtime has an observer |
+| Clock pairing | `ClockPairing`: an event-clock reading and a steady-clock reading taken together at a device's first kernel submission in a run; one per device (`DeviceClock`), since two devices may not share an event clock |
+| Run observer | `RunObserver`: what `Runtime::add_run_observer()` adds; it receives a `RunObservation` for every finished run. Adding the first one turns device timing on |
+| Node table | `NodeTable`: one row per registration index of a plan, with the node's name, operation, optional cost and host-native flag; the plan builds it once |
+| Graph id, graph label | `Graph::id()` is a process-wide identity, 0 after a move; `Graph::set_label()` names the graph for a profile. A plan copies both into its node table and a `RunObservation` carries the id |
+| Node origin | `NodeOptions::origin`: the caller's own operation a node belongs to, written as the span attribute `origin` |
+| Node cost | `NodeCost`: the floating-point operations, bytes and element type a caller states one dispatch of a node does, in `NodeOptions::cost` |
+| Device source | The SushiProfiler source `sushiruntime.device`, which reports the runtime's dispatches as spans (`profiling` module) |
+| Zone | A timed scope the runtime writes into a SushiProfiler record, in the group `Runtime`; the names are in `docs/reference/PROFILER_KEYS.md` |
+| Profiling queue | A second queue per device, built on first use with profiling enabled, that a graph dispatches through while the runtime has an observer |
 | Offload | Sending one task to a remote worker through the optional distributed layer |
 | `OperationID` | A 32-bit FNV-1a hash of an operation's name, written with the `_op` literal. It is what crosses the wire in place of code (`core/operation_id.hpp`) |
 | Master, worker | The two roles of the distributed layer. The master owns the graph and the buffers; a worker runs the ops it registered |
@@ -78,7 +85,7 @@ The words this repository's documents use. A term defined in code names the head
 | WP-0 to WP-7 | The work packages of `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/` |
 | R1 to R9 | The requests of `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS/README.md` |
 | P0 to P3 | The phases of `docs/design/GRAPH_REPLAY/README.md` |
-| G1 | The gate that added node event records and the per-graph profiling switch; its design is in the version history |
+| G1 | The gate that added node event records; its design is in the version history |
 | L1 to L17 | The owner decisions locked in §0.1 of the simulation substrate plan |
 | Work folder | `docs/agent/<YYYY_MM_DD>_<WORK_NAME>/`, holding the `SPEC.md`, `PLAN.md` and `REPORT.md` of one piece of agent work |
 

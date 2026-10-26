@@ -30,6 +30,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <new>
 #include <string>
 
@@ -41,6 +42,7 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/observability/event_timestamps.hpp>
+#include <SushiRuntime/report/run_observer.hpp>
 
 using namespace SushiRuntime;
 
@@ -118,6 +120,32 @@ void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 namespace
 {
+    /**
+     * @brief Counts the runs it observes and keeps nothing, so it allocates nothing itself.
+     *
+     * Adding it turns device timing on, which is what a profiled run is.
+     */
+    class CountingObserver final : public RunObserver
+    {
+        public:
+            /** @brief Counts one run. */
+            void on_run(const RunObservation& observation) noexcept override
+            {
+                static_cast<void>(observation);
+                runs_.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            /** @brief Returns how many runs were observed. */
+            [[nodiscard]] std::size_t runs() const noexcept
+            {
+                return runs_.load(std::memory_order_relaxed);
+            }
+
+        private:
+            /** @brief The count. */
+            std::atomic<std::size_t> runs_{0};
+    };
+
     /**
      * @brief Runs the given number of ticks after a warm-up and returns the allocations the calling
      *        thread made.
@@ -369,8 +397,9 @@ TEST(Medium_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
     auto buf = rt.buffer<int>(N).value();
     int* p = buf.data();
 
+    auto observer = std::make_shared<CountingObserver>();
+    const RunObserverHandle handle = rt.add_run_observer(observer);
     auto g = rt.graph();
-    g.set_profiling(true);
     g.add(N, Reads{}, Writes(buf), kernel(p));
 
     const std::size_t reuse_short = allocations_for_reuse_ticks(g, K_TICKS);
@@ -405,8 +434,9 @@ TEST(Medium_SteadyStateAllocation, ProfiledReuseTicksDoNotAllocatePerTick)
     auto scheduled_rt  = Runtime::create(forced).value();
     auto scheduled_buf = scheduled_rt.buffer<int>(N).value();
 
+    auto scheduled_observer = std::make_shared<CountingObserver>();
+    const RunObserverHandle scheduled_handle = scheduled_rt.add_run_observer(scheduled_observer);
     auto sg = scheduled_rt.graph();
-    sg.set_profiling(true);
     sg.add(N, Reads{}, Writes(scheduled_buf), kernel(scheduled_buf.data()));
 
     const std::size_t scheduler_short = allocations_for_reuse_ticks(sg, K_TICKS);

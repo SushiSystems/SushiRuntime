@@ -110,32 +110,26 @@ namespace ProfilingQueueTests
                 << "requesting device 0 must not build device " << i << "'s queue";
     }
 
-    /** @brief Tests that RuntimeSettings::profiling builds every device's profiling queue eagerly. */
-    TEST(Medium_ProfilingQueue, SettingsProfilingBuildsEveryDeviceEagerly)
+    /** @brief Tests that using a device's plain queue builds no profiling queue on any device. */
+    TEST(Medium_ProfilingQueue, UsingThePlainQueueBuildsNoProfilingQueue)
     {
-        RuntimeSettings settings;
-        settings.profiling = true;
-        const auto context_owner = SushiRuntime::Test::make_context({}, nullptr, nullptr, settings);
+        const auto context_owner = SushiRuntime::Test::make_context();
         RuntimeContext& context = *context_owner;
+        (void)context.devices().queue(0);
 
         for (std::size_t i = 0; i < context.devices().count(); ++i)
-            EXPECT_TRUE(context.devices().has_profiling_queue(i))
-                << "device " << i << "'s profiling queue must exist before any request";
+            EXPECT_FALSE(context.devices().has_profiling_queue(i))
+                << "device " << i << "'s profiling queue must wait for the first observer's run";
     }
 
-    /**
-     * @brief Tests that the profiling flavour returns the plain queue itself when
-     *        RuntimeSettings::profiling is on.
-     */
-    TEST(Medium_ProfilingQueue, SettingsProfilingReturnsThePlainQueueItself)
+    /** @brief Tests that the profiling flavour is a queue of its own, apart from the plain one. */
+    TEST(Medium_ProfilingQueue, TheProfilingFlavourIsNotThePlainQueue)
     {
-        RuntimeSettings settings;
-        settings.profiling = true;
-        const auto context_owner = SushiRuntime::Test::make_context({}, nullptr, nullptr, settings);
+        const auto context_owner = SushiRuntime::Test::make_context();
         RuntimeContext& context = *context_owner;
 
-        EXPECT_TRUE(context.devices().queue(0) == context.devices().queue(0, K_PROFILING_FLAVOUR))
-            << "the profiling flavour must alias the already-profiling plain queue, not duplicate it";
+        EXPECT_FALSE(context.devices().queue(0) == context.devices().queue(0, K_PROFILING_FLAVOUR))
+            << "a plain queue records no timestamps, so the profiling flavour cannot alias it";
     }
 
     /**

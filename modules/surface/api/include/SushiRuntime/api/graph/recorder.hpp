@@ -973,14 +973,7 @@ namespace SushiRuntime
              * @brief Keeps a refusal when it is the first, and tells whether there was none.
              * @return True when refused is empty, so the recording may go on.
              */
-            bool admit(std::optional<Error> refused)
-            {
-                if (!refused)
-                    return true;
-                if (!refusal_)
-                    refusal_ = std::move(*refused);
-                return false;
-            }
+            SUSHIRUNTIME_API bool admit(std::optional<Error> refused);
 
             /**
              * @brief Keeps the error of a step of a recording that failed, as admit() does.

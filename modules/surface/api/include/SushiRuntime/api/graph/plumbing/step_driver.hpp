@@ -39,6 +39,7 @@
 #include <utility>
 
 #include <SushiRuntime/api/detail/before_step_hooks.hpp>
+#include <SushiRuntime/api/detail/dropped_outcome.hpp>
 #include <SushiRuntime/api/detail/callable_checks.hpp>
 #include <SushiRuntime/api/detail/step_machinery.hpp>
 #include <SushiRuntime/api/detail/step_run.hpp>
@@ -185,7 +186,7 @@ namespace SushiRuntime
                             "run_async(): the active execution engine cannot start a run without "
                             "blocking; call run()."));
 
-                    Result<void> built = build_plan_guarded(state.compile_ms);
+                    Result<void> built = build_plan_guarded();
                     if (!built)
                         return make_error(std::move(built.error()));
 
@@ -241,29 +242,7 @@ namespace SushiRuntime
                     if (std::optional<Error> refusal = entry_refusal())
                         return make_error(std::move(*refusal));
 
-                    double compile_ms = 0.0;
-                    return build_plan_guarded(compile_ms);
-                }
-
-                /**
-                 * @brief Requests or withdraws per-node device timing for this graph.
-                 * @return The graph, so that calls chain.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
-                 */
-                Owner& set_profiling(bool requested) noexcept
-                {
-                    owner().request_profiling(requested);
-                    return owner();
-                }
-
-                /**
-                 * @brief Returns whether this graph requests per-node device timing.
-                 * @return The last value given to set_profiling(), or RuntimeSettings::profiling
-                 *         when it was never called.
-                 */
-                [[nodiscard]] bool is_profiling_requested() const noexcept
-                {
-                    return owner().profiling_request();
+                    return build_plan_guarded();
                 }
 
             protected:
@@ -313,16 +292,21 @@ namespace SushiRuntime
                         return;
 
                     close_async_step();
-                    const Result<void> dropped = guarded(ErrorCode::KernelFailed, [this]()
+                    Result<void> completed;
+                    const Result<void> thrown = guarded(ErrorCode::KernelFailed, [this, &completed]()
                     {
                         // A step the engine failed advances no State.
-                        if (!Detail::complete_step(owner().run_context()))
+                        completed = Detail::complete_step(owner().run_context());
+                        if (!completed)
                             return;
                         const Detail::StepMachinery& steps = owner().run_steps();
                         if (!steps.take_fault())
                             steps.after_step();
                     });
-                    static_cast<void>(dropped);
+                    if (!completed)
+                        Detail::log_dropped_outcome(completed.error(), "the destruction of its graph");
+                    if (!thrown)
+                        Detail::log_dropped_outcome(thrown.error(), "the destruction of its graph");
                 }
 
             private:
@@ -496,52 +480,38 @@ namespace SushiRuntime
 
                 /**
                  * @brief Builds the plan if it is stale and prepares the graph for its first step.
-                 * @return Milliseconds the build took, zero when the plan was current, or the
-                 *         error the owner returned for a plan it could not build.
+                 * @return Nothing, or the error the owner returned for a plan it could not build.
                  */
-                Result<double> build_plan()
+                Result<void> build_plan()
                 {
-                    using clock = std::chrono::steady_clock;
                     Owner& self = owner();
-                    double compile_ms = 0.0;
                     if (self.plan_is_stale())
                     {
-                        const auto started = clock::now();
                         Result<void> rebuilt = self.rebuild_plan();
                         if (!rebuilt)
-                            return make_error(std::move(rebuilt.error()));
-                        compile_ms = std::chrono::duration<double, std::milli>(
-                            clock::now() - started).count();
+                            return rebuilt;
                     }
-                    Result<void> prepared = self.prepare_run();
-                    if (!prepared)
-                        return make_error(std::move(prepared.error()));
-                    return compile_ms;
+                    return self.prepare_run();
                 }
 
                 /**
                  * @brief Builds the plan and turns what the build throws or returns into an Error.
-                 * @param compile_ms Receives what build_plan() returned; unchanged on a failure.
                  * @return Nothing, or why the graph has no plan to run.
                  */
-                [[nodiscard]] Result<void> build_plan_guarded(double& compile_ms) noexcept
+                [[nodiscard]] Result<void> build_plan_guarded() noexcept
                 {
                     Result<void> refused;
                     Result<void> thrown =
-                        guarded(ErrorCode::CompileFailed, [this, &compile_ms, &refused]()
+                        guarded(ErrorCode::CompileFailed, [this, &refused]()
                     {
-                        Result<double> built = build_plan();
-                        if (built)
-                            compile_ms = *built;
-                        else
-                            refused = make_error(std::move(built.error()));
+                        refused = build_plan();
                     });
                     return first_failure(std::move(thrown), std::move(refused));
                 }
 
                 /**
                  * @brief Submits one step to the pool and marks it pending.
-                 * @param state Receives what the settling call needs; compile_ms is kept.
+                 * @param state Receives what the settling call needs.
                  * @return Nothing, or why the engine did not take the step; none is pending then.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
@@ -658,16 +628,14 @@ namespace SushiRuntime
                     if (std::optional<Error> refusal = entry_refusal())
                         return make_error(std::move(*refusal));
 
-                    double compile_ms = 0.0;
-                    Result<void> built = build_plan_guarded(compile_ms);
+                    Result<void> built = build_plan_guarded();
                     if (!built)
                         return make_error(std::move(built.error()));
 
                     Result<void> stepped;
                     Result<void> thrown = guarded(ErrorCode::KernelFailed, [&]()
                     {
-                        stepped = execute_steps(
-                            keep_going, report, compile_ms, expected_invocations, sync);
+                        stepped = execute_steps(keep_going, report, expected_invocations, sync);
                     });
                     Result<void> ran = first_failure(std::move(thrown), std::move(stepped));
                     if (!ran)
@@ -677,21 +645,18 @@ namespace SushiRuntime
 
                 /**
                  * @brief Runs the steps over the built plan and fills the report.
-                 * @param compile_ms What build_plan_guarded() stored for this run.
                  * @return Nothing, or the fault a step recorded; the report is not filled then.
                  * @throws Whatever a step throws; drive() maps it.
                  */
                 template <class KeepGoing>
-                Result<void> execute_steps(KeepGoing& keep_going,
-                                           RunReport& report,
-                                           double compile_ms, std::size_t expected_invocations,
+                Result<void> execute_steps(KeepGoing& keep_going, RunReport& report,
+                                           std::size_t expected_invocations,
                                            Detail::StepSync sync)
                 {
                     // The run counts as in flight before its cancellation is reset.
                     const InFlightMark in_flight(runs_in_flight_);
                     return Detail::run_steps(target(), Detail::StepPredicate(keep_going), report,
-                                             compile_ms, expected_invocations,
-                                             sync);
+                                             expected_invocations, sync);
                 }
 
                 /**

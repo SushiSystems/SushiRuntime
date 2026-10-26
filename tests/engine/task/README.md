@@ -154,3 +154,14 @@ The file tests TaskWork and HostWork: the two callables a node runs.
 | --- | --- |
 | `HostWorkRunsOnAQueue` | Host work runs on a queue and returns its event. |
 | `TaskWorkRunsInsideASubmit` | A command group runs inside a submit. |
+
+## test_dispatch_events.cpp
+
+DispatchEventScope, which collects the events a task body hands over.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_DispatchEventScope.CollectsOnlyWhileTheScopeIsOpen` | An event handed over inside a scope is collected, and one outside it is not. |
+| `Small_DispatchEventScope.NestedScopesRestoreTheOuterOne` | An inner scope collects its own events and the outer one is restored after it. |
+| `Small_DispatchEventScope.AScopeBelongsToItsThread` | A scope belongs to its thread: another thread's events do not reach it. |
+| `Small_DispatchEventScope.HandingOverWithNoScopeDoesNothing` | Handing over with no scope open does nothing and does not throw. |

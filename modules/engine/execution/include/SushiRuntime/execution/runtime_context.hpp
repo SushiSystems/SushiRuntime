@@ -38,6 +38,7 @@
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
+#include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
@@ -162,6 +163,29 @@ namespace SushiRuntime
                 [[nodiscard]] Internal::Graph::OffloadSink& offload_sink();
 
                 /**
+                 * @brief Adds an observer that receives every finished run.
+                 *
+                 * The first one turns device timing on, which rebuilds a plan once at its next run.
+                 * @param observer Not null; the context co-owns it until it is removed.
+                 * @return The id remove_run_observer() takes.
+                 * @see modules/engine/execution/README.md
+                 */
+                std::uint64_t add_run_observer(std::shared_ptr<RunObserver> observer);
+
+                /**
+                 * @brief Removes the observer an add_run_observer() call returned @p id for.
+                 *
+                 * The last one turns device timing off. An id that is not added changes nothing.
+                 */
+                void remove_run_observer(std::uint64_t id) noexcept;
+
+                /** @brief Returns whether any observer is added, which is when plans record device timing; any thread. */
+                [[nodiscard]] bool wants_device_timing() const noexcept;
+
+                /** @brief Hands @p observation to every added observer, in the order they were added; any thread. */
+                void notify_run(const RunObservation& observation) const noexcept;
+
+                /**
                  * @brief Installs the placement rules the next compile reads and counts the change.
                  * @param rules Null removes the rules. A plan compiled earlier keeps its own share.
                  * @return False, changing nothing, when a run is in flight; a run that starts
@@ -198,6 +222,16 @@ namespace SushiRuntime
                 /** @brief Pimpl handle for internal implementation details. */
                 sushi_ptr<Impl> impl_;
         };
+
+        /**
+         * @brief Adds @p observer to @p context and returns the handle that removes it.
+         *
+         * The handle holds the context weakly, so a handle that outlives the context removes nothing.
+         * @pre observer is not null.
+         * @see modules/engine/execution/README.md
+         */
+        [[nodiscard]] SUSHIRUNTIME_API RunObserverHandle
+        observe_runs(const std::shared_ptr<RuntimeContext>& context, std::shared_ptr<RunObserver> observer);
 
     } // namespace Execution
 } // namespace SushiRuntime

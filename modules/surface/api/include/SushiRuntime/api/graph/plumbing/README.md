@@ -8,7 +8,7 @@ path. [The page of api/graph](../README.md) has the classes a consumer names.
 | --- | --- |
 | `builder_surface.hpp` | BuilderSurface: add(), add_untracked(), add_task(), add_host(), extend(), name(), size(), node_count() and last_rule() |
 | `plan_cache.hpp` | PlanCache: the compiled plan of one recorder |
-| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), compile(), before_each_step(), cancel(), set_profiling() and the step loop |
+| `step_driver.hpp` | StepDriver: run(), run_for(), run_until(), run_async(), compile(), before_each_step(), cancel() and the step loop |
 | `region_composer.hpp` | RegionComposer: the cached sub-graph of each region and the stitched plan |
 
 ## builder_surface.hpp
@@ -245,7 +245,7 @@ names the rule before it.
 
 ### name
 
-Without a name a node reports as "unnamed_task" in RunReport::NodeTiming, which makes a profile of
+Without a name a node reports as "unnamed_task" in the plan's node table and in its spans, which makes a profile of
 a real graph a list of identical labels. Chaining name() onto any add() names the rule that call
 added:
 
@@ -266,15 +266,14 @@ name, and so does a null `const char*`.
 ### PlanCache
 
 PlanCache holds the plan compiled from one recorder. It is stale until the first build, after a
-change of the profiling request, whenever the recorder's generation() differs from the one the
+change of the runtime's device timing answer, whenever the recorder's generation() differs from the one the
 plan was built at, and whenever the context's placement generation differs from the one the plan was
 compiled under. stale() therefore takes the ContextHandle beside the recorder; it is defined in
 `source/plan_cache.cpp`, since the header cannot see the context. The plan and the list of its recorded nodes sit behind one pointer to
 `Detail::PlanCacheState`, which `source/plan_cache.cpp` defines; the pointer is null until the
 first build. compiled_plan() is protected because the test seams of the owning Graph read it; it
 returns a `Detail::Plan*`, which `engine_handles/plan_access.hpp` turns into the engine's type. It
-keeps one registration index per rule. compile_count() is its one public member; the profiling
-pair is protected, so the pair a Graph shows is StepDriver's. The source of a move has no plan, is stale, and counts zero
+keeps one registration index per rule. compile_count() is its one public member. The source of a move has no plan, is stale, and counts zero
 compiles.
 
 ### build
@@ -301,12 +300,21 @@ rearm() restores the cached plan's per-run state so it can run again. The schedu
 re-arms itself; rearm() resets the DAG-side state a previous run consumed, which
 CompiledGraph owns next to the Node definition.
 
-### set_profiling
+### Identity, label and rebuild reason
 
-set_profiling() stores the request. A value that differs from the stored one marks the plan dirty,
-and the next run recompiles with the new `CompiledGraph::profiling` flag stamped in. The value
-already stored changes nothing, so a frame loop that calls `set_profiling(true)` before every run
-compiles once. The setting is independent of every other graph on the same runtime.
+PlanCache holds the identity of its graph (`Detail::GraphId`, taken at construction and kept across a move)
+and the label `set_label()` stored. build() copies both into the plan, which puts them in the node table, and
+logs one `DEBUG` line with the reason for the build, from rebuild_reason(), the node count and the
+milliseconds. A changed label forces no rebuild. RegionComposer holds the same two and copies them when it
+publishes a plan.
+
+### Device timing
+
+PlanCache holds no request of its own. build() stamps `CompiledGraph::profiling` from whether the
+context has an observer, and stale() reports a plan built under the other answer as stale, so adding
+the first observer to the runtime or removing the last makes each graph rebuild its plan once at its
+next run. The answer is the runtime's, not the graph's, and is the same for every graph on it. build()
+is the stage zone `plan.build`, with the fine zones `plan.prepare` and `plan.classify` inside it.
 
 ### compiles_
 
@@ -329,13 +337,12 @@ flight that cancel() reads.
 | `run_context()` | The ContextHandle of the runtime whose engine runs the steps |
 | `has_work()`, `K_NOTHING_TO_RUN` | Whether anything is recorded, and the error text when nothing is |
 | `has_dangling_resource()`, `K_DANGLING_RESOURCE` | Whether a recorded handle was freed, and the error text |
-| `plan_is_stale()`, `rebuild_plan()` | Whether the plan must be built, and the build; only the build is timed as compile time |
+| `plan_is_stale()`, `rebuild_plan()` | Whether the plan must be built, and the build |
 | `prepare_run()` | What must happen after the build and before the first step |
 | `run_plan()`, `run_steps()` | The plan a step runs and the per-step hooks around it |
 | `rearm_plan()` | Restores the plan's per-run state before each step |
 | `may_chain()` | Whether the graph allows its steps to run as an in-order chain from the calling thread |
 | `node_count()` | The count a report multiplies by the steps run |
-| `request_profiling()`, `profiling_request()` | Stores and returns the profiling request behind set_profiling() |
 
 ### Run entries
 
@@ -444,8 +451,8 @@ while (running)
     simulation.run(report);
 ```
 
-It is identical to run() in every other respect. The steady state is allocation-free only with
-profiling off; a profiling run rebuilds its per-node labels by design.
+It is identical to run() in every other respect. The steady state is allocation-free; a run observed by an observer allocates the copy of its observation, which the observer
+decides how to keep.
 
 ### run_async
 
@@ -483,7 +490,7 @@ or submission failure mapped by guarded().
 ### run_async: pre-step order
 
 run_async() follows the same pre-step order as the synchronous driver: point the State views at
-their buffers, clear a previous run's cancellation, zero the profiling accumulators, then refresh
+their buffers, clear a previous run's cancellation, reset the ledger of a plan that records device timing, then refresh
 the late-bound controls. A different order would make an asynchronous step mean something subtly
 different from a synchronous one.
 
@@ -531,13 +538,14 @@ a cancel() sent before a run starts is not remembered. The count is one atomic t
 from any thread; a run entry adds to it once and takes it back once. A cancel() that races the end
 of its own run can still reach the engine after the next run on the runtime has started.
 
-### set_profiling
+### Observers
 
-set_profiling() asks for per-node device timing on this graph and returns the graph, so it chains
-with the calls around it. It is `noexcept` on both graph types and allocates nothing: the owner
-stores the request, and a request that changed makes the next run rebuild the plan with it; the
-value already stored rebuilds nothing. is_profiling_requested() reads the
-request back.
+A run entry hands its observation to the observers of the runtime. A blocking run hands it over at
+the end of the run, after the last step; a step started with run_async() hands it over when its device
+work completes, from the sentinel, and not when the caller waits. `AsyncRunState::layer` carries the
+path that ran the step, so `finish_step()` fills `RunReport::layer` without asking the engine. The
+stage zones of the entries are `run.steps`, `run.submit_step` and `run.finish_step`, and every run
+writes the counters `run.tasks`, `run.steals`, `transfer.h2d_bytes` and `transfer.d2h_bytes`.
 
 ### StepDriver: moves
 
@@ -556,7 +564,8 @@ move, so the step ends on an intact graph.
 ### end_pending_step
 
 end_pending_step() waits for a pending step, checks its faults, advances the States and drops the
-outcome. The move operations call it, and so do ~Graph() and ~DynamicGraph() as their first
+outcome. A step that failed is logged at `WARN` by `Detail::log_dropped_outcome()` first, naming the call, so
+the dropped outcome is not silent. The move operations call it, and so do ~Graph() and ~DynamicGraph() as their first
 statement. Destroying a graph whose step is pending is allowed and asserts nothing: the destructor
 returns once the step has run, so the kernels' writes are in the buffers. The call sits in the
 derived destructors because ~StepDriver() runs after the plan, the recorder and the regions are
@@ -630,10 +639,9 @@ sits behind one pointer to `Detail::RegionComposerState`, which `source/region_c
 defines and whose members the sections below describe. compiled_plan() is protected because the
 test seam of the owning DynamicGraph reads it.
 
-The composer owns the profiling request, as PlanCache does for a static graph: a constructor
-argument seeds it, the protected set_profiling() and is_profiling_requested() write and read it,
-and commit() reads it when it publishes the plan. A move copies it to the destination and leaves it
-on the source.
+The composer keeps what the runtime answered about device timing at its last commit: commit() reads it
+from the context and stamps it into the plan, and `timing_changed()` tells whether the runtime now
+answers otherwise. A move copies nothing of it, since the state moves whole.
 
 ### add_cross_edge
 
@@ -710,8 +718,9 @@ Both the old and the new nodes of a dirty region are alive between the two phase
 Building costs O(nodes of the dirty regions), and wiring costs O(boundary pins of the allocations
 those regions and the dropped ones touch). Two steps cover the whole graph at every commit:
 renumber_registration_indices() walks every node of every live region and allocates one map per
-region, and publish_plan() copies the root list, O(roots). When profiling is requested
-publish_plan() also lists every node again in `plan_.all_nodes`.
+region, and publish_plan() copies the root list, O(roots). When the plan records device timing
+publish_plan() also lists every node again in `plan_.all_nodes` and builds the node table. commit() is the
+stage zone `region.commit`.
 
 ### commit: undo before free
 

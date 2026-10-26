@@ -16,7 +16,8 @@ symbol or passage it explains, and that header's file block cites this page.
 | `recorder.hpp` | Recorder, Recorder::RuleScope and the placement scope Recorder::within() opens |
 | `access.hpp` | Access, what one node reads and writes |
 | `device_sized.hpp` | DeviceSized, a launch that reads its live width on the device |
-| `node_options.hpp` | NodeOptions: the width, the name, the operation, the parameters, the placement class and key, and the determinism of a node |
+| `node_options.hpp` | NodeOptions: the width, the name, the operation, the parameters, the placement class and key, the determinism and the cost of a node |
+| `dispatch_events.hpp` | `note_dispatch_event()`, which a host-work body calls for each event it submitted |
 | `plan_view.hpp` | PlanView and PlanNode: the copy of a plan that Graph::plan() returns |
 
 BuilderSurface, StepDriver, PlanCache, RegionComposer and RegionChangeLog are declared in
@@ -86,11 +87,13 @@ for (const SushiRuntime::PlanNode& node : plan->nodes)
 | Field | Holds |
 | --- | --- |
 | `rule` | Position of the rule that recorded the node, the value rule_registration() takes |
-| `name` | The label of the node's row in a RunReport |
+| `name` | The label of the node's row in the plan's `NodeTable` |
 | `operation` | The OperationID the node's NodeOptions named; a default id when it named none |
 | `placement_class` | The PlacementClass the node's NodeOptions named; a default class when it named none |
 | `placement_key` | The placement key the node's NodeOptions gave; none when it gave none |
 | `determinism` | The Determinism contract the node's NodeOptions stated; `Unstated` when it stated none |
+| `origin` | The caller's own operation the node's NodeOptions named; empty when it named none |
+| `cost` | The `NodeCost` the node's NodeOptions stated; absent when it stated none |
 | `placement_rule` | Position, in the set `Runtime::set_placement_rules()` took, of the rule that won for the node when the plan was compiled; none when no set was in force or no rule matched |
 | `predecessor_count` | How many nodes of the plan must finish before this one starts |
 | `reads`, `writes` | The `BufferRegion`s the node named, in the order it named them |
@@ -103,6 +106,22 @@ header.
 
 DynamicGraph has no plan(): its plan is stitched from regions, and a node there also waits on
 nodes of other regions.
+
+### id and set_label
+
+`id()` returns the process-wide identity of the graph, never 0 while the graph is in use and 0 after a move
+from it. It is the same on `DynamicGraph`. The plan copies it, so a `RunObservation` carries it as
+`graph_id` and the plan's `NodeTable` as `graph_id()`. `set_label(std::string)` names the graph for a
+profile: the next plan build copies the label into the node table, and the device source writes it as the
+span attribute `graph`, so the spans of two graphs of one runtime are told apart. A changed label forces no
+rebuild; it reaches the profile at the next build. Both are on `Graph` and `DynamicGraph`, and
+`PlanCache` and `RegionComposer` hold the label and the identity.
+
+### What a rebuild logs
+
+Each plan build logs one `DEBUG` line under `sushiruntime.api` with the reason, the node count and the
+milliseconds the build took. The reason is one of: the first build or a discarded plan, the recorder
+changed, the placement changed, the device timing request changed, or the plan was marked for a rebuild.
 
 ### Friends
 
@@ -197,7 +216,7 @@ Graph::clear() calls it and PlanCache::discard(), which frees the compiled plan 
 registration of every rule, so rule_registration() answers `K_NO_REGISTRATION` until the next
 build. The plan holds a copy of every task body, so the free also releases every operand and
 scratch block a body captured: a graph cleared to drop its recording holds none of it. The
-precondition is the recorder's: no step is pending. The profiling request, the compile count, the
+precondition is the recorder's: no step is pending. The compile count, the
 hooks and the recorder's generation stay. Region::clear() calls it through recorder(), which lists
 the region as written to; the region's part of the composed plan is freed by the next run's
 compose or with the graph.
@@ -231,6 +250,10 @@ rule records the node on device 0. A device the scope resolves is one the runtim
 passes the same `Detail::require_device()` check as an index. A scope has no handle, so it adds no
 liveness observer. A tracked verb takes no `On`: it runs where the first buffer it writes lives,
 and a buffer from `PlacementScope::buffer()` lives on the scope's device.
+
+Where the refusal is made, admit() logs it at `WARN` under `sushiruntime.api`, with the code and the message,
+saying that nothing was recorded and that the next run of the graph returns it. A later refusal is logged as
+well, and its line says that only the first is kept, so a refusal the graph will not report is not silent.
 
 The refusal stays until clear(), and a later refusal does not replace it. Every run entry of the
 owning graph returns it before anything else is checked and runs nothing; see entry_refusal. A
@@ -359,8 +382,10 @@ nothing.
 | Field | Lands | When it is not stated |
 | --- | --- | --- |
 | `width` | `launched_width` and `live_width` of the node's event records | The shape's own width, listed in `api/detail/README.md` |
-| `name` | `NodeTiming::name` of a profiled run | The name of the node's rule, or "unnamed_task" |
-| `operation` | `NodeTiming::operation`, and the engine's metadata of the node | No operation |
+| `name` | The `name` of the node's row in the plan's `NodeTable`, and so the name of its spans | The name of the node's rule, or "unnamed_task" |
+| `operation` | The `operation` of the node's row in the `NodeTable`, and the engine's metadata of the node | No operation |
+| `origin` | The `origin` of the node's row in the `NodeTable` and `PlanNode::origin`; the device source writes it as the span attribute `origin` | Empty: the spans carry no `origin` |
+| `cost` | An `std::optional<NodeCost>` in the node's metadata, `PlanNode::cost` and the node's row in the `NodeTable`; the device source writes it as the span attributes `flops`, `bytes` and `dtype` | Absent: the spans carry none of the three. A stated zero is written as zero |
 | `parameters` | The engine's metadata of the node | No parameter |
 | `placement_class` | The engine's metadata of the node, and `PlanNode::placement_class` | No class |
 | `placement_key` | The engine's metadata of the node, and `PlanNode::placement_key` | No key; 0 is a key |
@@ -381,6 +406,20 @@ NodeOptions is an aggregate, and every field has a default member initializer. `
 therefore states a width alone, also in a build that turns `-Wmissing-field-initializers` into an
 error; a caller that states a later field alone assigns it to a default-constructed object.
 
+## dispatch_events.hpp
+
+### note_dispatch_event
+
+A host-work body may submit several kernels and return one event, the one its successors wait on. The
+dispatch record is by default timed by the returned event, which covers only the last kernel. A body
+that wants the whole dispatch timed calls `note_dispatch_event(event)` once for every event it
+submitted; the record then starts at the earliest `command_submit` of them and runs from the earliest
+`command_start` to the latest `command_end`. The returned event must complete after every handed-over
+event. The function does nothing outside a body and while the runtime records no device timing, so a
+body may call it unconditionally. The returned event stays the one the scheduler polls for
+completion; a body that hands over nothing is timed by it, as a body with one kernel is. The collector is
+a thread-local scope the dispatcher opens (`modules/engine/task/README.md`).
+
 ## dynamic_graph.hpp
 
 ### DynamicGraph
@@ -398,7 +437,7 @@ a region boundary, where two regions share a buffer, live in a separate layer on
 own nodes are rebuilt and only the boundary edges of the allocations it shares are derived again.
 The second term covers the whole graph: every commit renumbers the registration index of every node
 of every live region, O(total nodes) with one map allocated per region, and copies the root list,
-O(roots). A graph that requests profiling also lists every node again.
+O(roots). A graph whose plan records device timing also lists every node again.
 
 Cross-region ordering follows ascending region key: for an allocation two regions share, the
 lower-keyed region is the producer. Read/read sharing stays parallel (no edge between two regions
@@ -456,18 +495,14 @@ before the first step. A graph that drops regions and never runs keeps every one
 Region::clear() frees the same scratch at once, so it keeps its precondition: no step started with
 run_async() on the owning graph is pending.
 
-### request_profiling
+### Device timing of a composed plan
 
-request_profiling() stores the request behind set_profiling() in the composer, which is its only
-owner: RegionComposer::set_profiling() keeps it and publish_plan() stamps it into the plan at the
-next commit. A value that differs from the stored one also sets a marker that makes the next build
-mark every live region dirty, so that commit renumbers every node's public registration index. The
-marking waits for the build because it allocates and the setter is `noexcept`. The value already
-stored changes nothing and composes nothing. The setting is independent of every other graph on the
-same runtime.
-
-RegionComposer's pair and StepDriver's pair have the same names, so DynamicGraph names StepDriver's
-with two using-declarations, as Graph does.
+A composed plan records device timing while the runtime has an observer. commit() reads the answer
+from the context when it publishes the plan, and `plan_is_stale()` also checks it through
+`timing_changed()`: a plan composed under the other answer marks every live region dirty, so the next
+commit rebuilds and renumbers every node's public registration index once. Adding the first observer
+costs one such commit and removing the last one more. The setting is the same for every graph on the
+runtime.
 
 ### refresh_updaters
 
@@ -644,6 +679,7 @@ reuses. finish_step sets the flag back on success.
 ### settle
 
 settle() finishes a step nobody waited for by calling wait() into a report it discards. A
-destructor may not throw, so the outcome, including a task exception, is dropped; that is the
+destructor may not throw, so the outcome, including a task exception, is dropped. A step that failed
+is logged at `WARN` by `Detail::log_dropped_outcome()` before it is dropped, naming the call. That is the
 documented cost of discarding a handle, and it is still far better than returning while workers
 hold pointers into the plan.

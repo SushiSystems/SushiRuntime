@@ -17,7 +17,7 @@ valid until the set is destroyed.
 
 ## What it depends on
 
-`core` (`export.hpp`, `error.hpp`, `logger.hpp`, `common.hpp` for `K_MAX_NUMA_NODES`), `sycl`
+`core` (`export.hpp`, `error.hpp`, `common.hpp` for `K_MAX_NUMA_NODES`), `log` (`logger.hpp`), `profile` (`profile.hpp`), `sycl`
 (`error_translation.hpp`, which every catch of the module goes through) and SYCL.
 It includes no header of `topology`, `execution`, `scheduler`, `graph`, `memory` or `api`. The
 caller turns whatever it discovered into descriptors; the module never asks the machine what
@@ -136,6 +136,24 @@ The destructor calls `wait_and_throw()` on every built queue. An asynchronous de
 surfaces there is logged as a WARN with the device index and name, and the destructor
 continues; a destructor that threw would terminate the process. The owner of the set must stop
 everything that submits work before it destroys the set.
+
+### What the set logs about queues
+
+The device line of the constructor is an INFO that names the device, its SYCL backend, its driver
+version (`unknown` when `sycl::info::device::driver_version` throws; a DEBUG line then gives the
+exception text), its NUMA node, memory and compute units.
+
+The first request for a flavour that no earlier call built logs one DEBUG with the device, the
+flavour and the milliseconds the build took. When the device's plain queue is in order and the
+request asked for an out-of-order queue, a second DEBUG says the in-order one is served. A later
+request for the same slot logs nothing.
+
+### What the set records
+
+`wait_all()` writes the fine zone `wait.queues` through the `profile` front, so a profile shows
+how long the runtime waited on its queues. The runtime builds the set with `profiling` false: a
+device's profiling queue is built lazily by flavour when the first run of a plan that records
+device timing asks for it, which is when an observer has been added to the runtime.
 
 ### What the set does not log
 

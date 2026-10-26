@@ -74,6 +74,8 @@ A private header of `source/`.
 ### fill_run_report
 
 fill_run_report() maps scheduler counters and device placement onto the public RunReport structure.
+The report holds the outcome, the task count, the NUMA and the distributed counts; no timing, which
+reaches an observer through the `RunObservation`, and the profiler through zones, values and counters.
 `before` and `after` are the scheduler execution metrics snapshotted before the run started and
 after it completed. It writes into a caller-owned report so a steady-state tick can hand back the
 same object every run: `report` is reset first, which keeps the vector storage the previous run
@@ -434,6 +436,15 @@ it, the plan classified as one, and the runtime was not told to force the schedu
 caller's hook registered the chain waits after every step, because a hook may write what a kernel
 reads.
 
+run_steps() is the stage zone `run.steps`. At its end it writes the counters `run.tasks`, `run.steals`,
+`transfer.h2d_bytes` and `transfer.d2h_bytes`, which only the runtime sees, and the engine's worker
+values; the explicit transfer bytes are the difference of the context's cumulative counters over the run.
+It then hands the run's observation to the runtime's observers when any is added: with the records, the
+pairings and the drop counts when the plan records device timing, and with the node table alone when it
+was built before the observer was added. A run that failed hands over nothing. A step that failed and that nobody waited for is logged by `log_dropped_outcome()`. An asynchronous step is
+different: `submit_step()` starts it through the engine's `submit_observed()`, so the sentinel hands the
+observation over when the step's device work completes, and `finish_step()` only fills the report.
+
 ## host_slot_check.hpp
 
 A private header of `source/`.
@@ -583,3 +594,35 @@ The headers of the surface call `Detail::translate_exceptions()` of `core/error_
 wherever a standard-library or SYCL call may throw: StepDriver::guarded(), Buffer::adopt(),
 State::allocate(), Graph::plan() and the vector a read_range() fills.
 `modules/foundation/core/README.md` describes the ladder.
+
+## dropped_outcome.hpp
+
+### log_dropped_outcome
+
+log_dropped_outcome() logs at `WARN`, under `sushiruntime.api`, the error of a step that failed and that
+nobody waited for, naming the call that settled it. A step that failed is returned to whoever waits for it;
+two places settle one nobody did, the destructor of a `RunHandle` and the destruction of a graph with a
+step pending, and each calls this function so the outcome is not dropped silently. A step that succeeded
+logs nothing.
+
+## graph_id.hpp
+
+### GraphId
+
+GraphId is the identity a graph, a dynamic graph or a plan owner reports from `id()`. It takes the next
+value of a process-wide counter that starts at 1, keeps it across a move, and leaves a moved-from value at
+0, which no graph in use has. The plan copies it into its node table and into every `RunObservation`, so an
+observer can tell the graphs of one runtime apart.
+
+## assertion_logging.hpp
+
+### install_fatal_logging
+
+`Runtime::create` calls `install_fatal_logging()` once per process. It installs an assertion handler
+that logs the failed check at `FATAL` under `sushiruntime.api`, with the condition, the message and
+the site, and then calls the handler that was installed before it, which by default writes the
+standard-error line and lets `fail_assertion()` abort. A check that fails before the first
+`Runtime::create`, and one in a test that builds no runtime, still writes to standard error only.
+`SushiLog` delivers a `FATAL` record on the calling thread after the queue is drained, so the record
+is out before the process ends.
+

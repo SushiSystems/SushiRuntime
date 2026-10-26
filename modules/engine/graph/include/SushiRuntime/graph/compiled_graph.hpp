@@ -29,10 +29,14 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <string>
 #include <vector>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/observability/profiling_ledger.hpp>
+#include <SushiRuntime/report/node_table.hpp>
+#include <SushiRuntime/report/run_observer.hpp>
 // CompiledGraph is exported, so Node must be complete here.
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/graph/chain_plan.hpp>
@@ -41,19 +45,6 @@ namespace SushiRuntime
 {
     namespace Internal::Graph
     {
-        /**
-         * @brief Holds one registration index's profiled totals for a single run.
-         */
-        struct NodeTimingAccumulator
-        {
-            /** @brief Counts the event records that carry this registration index. */
-            std::uint64_t invocations = 0;
-            /** @brief Sums the device-clock durations of those records, in nanoseconds. */
-            std::uint64_t device_ns = 0;
-            /** @brief Sums the native-host durations of those records, in nanoseconds. */
-            std::uint64_t host_ns = 0;
-        };
-
         /**
          * @brief Compiled representation of a task graph ready for execution.
          *
@@ -82,7 +73,7 @@ namespace SushiRuntime
             void capture_base_state();
 
             /**
-             * @brief Sizes profiling_multiplicities and profiling_host_native from all_nodes.
+             * @brief Sizes profiling_multiplicities and builds node_table from all_nodes.
              * @pre all_nodes carries its final registration indices for this compose.
              * @see modules/engine/execution/README.md
              */
@@ -103,10 +94,10 @@ namespace SushiRuntime
             /** @brief Sentinel's compiled in-degree baseline. */
             std::int32_t sentinel_in_degree = 0;
 
-            /** @brief Whether this plan dispatches its device nodes on the profiling queue. */
+            /** @brief Whether this plan dispatches its device nodes on the profiling queue, as the runtime's observer asked when it was built. */
             bool profiling = false;
 
-            /** @brief Per-run node event records and clock pairing, live only while profiling is on. */
+            /** @brief Per-run node event records and device clock pairings, live only while profiling is on. */
             Internal::Observability::ProfilingLedger profiling_ledger;
 
             /**
@@ -118,17 +109,25 @@ namespace SushiRuntime
             std::vector<std::uint32_t> profiling_multiplicities;
 
             /**
-             * @brief Per-registration-index native-host flag, computed once alongside
-             *        profiling_multiplicities.
+             * @brief Names and operations of the plan's nodes by registration index.
              *
-             * True where the index names a pure-CPU node whose event records are
-             * raw steady times needing conversion at collect, rather than an
-             * already-event-clock device record.
+             * Built once in capture_profiling_state() and shared with every observation of the
+             * plan's runs.
              */
-            std::vector<bool> profiling_host_native;
+            std::shared_ptr<const NodeTable> node_table;
 
-            /** @brief Keeps per-registration-index profiled totals, reset in place on each collect. */
-            std::vector<NodeTimingAccumulator> profiling_accumulators;
+            /** @brief Label of the graph at the time of the build; the table copies it in capture_profiling_state(). */
+            std::string label;
+
+            /** @brief Id of the graph that owns the plan, set before capture_base_state(); 0 when none. */
+            std::uint64_t graph_id = 0;
+
+            /**
+             * @brief The observation every run of the plan fills and hands to the observers.
+             *
+             * Cleared and refilled each run, so an observed run allocates nothing once its vectors have grown.
+             */
+            RunObservation observation;
 
             /** @brief Whether and how this plan runs as an in-order chain; set by the fluent Graph at build. */
             ChainPlan chain;

@@ -133,8 +133,8 @@ namespace
             if (alive[i]) ++alive_count; else ++culled_count;
         }
 
-        std::printf("game engine: %zu entities, %zu frames in %.2f ms (compiles = %zu)\n",
-                    N, K_STEPS, report.total_duration_ms, world.compile_count());
+        std::printf("game engine: %zu entities, %zu frames, %zu tasks (compiles = %zu)\n",
+                    N, K_STEPS, report.total_tasks_executed, world.compile_count());
         std::printf("  alive = %zu, culled = %zu\n", alive_count, culled_count);
         std::printf("  result: %s\n", ok ? "CORRECT" : "WRONG");
         return ok ? 0 : 1;

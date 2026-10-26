@@ -260,9 +260,36 @@ The file tests StepPredicate and the context queries of step_run.hpp.
 | `ThePredicateForwardsTheCount` | The predicate forwards the completed count to the wrapped callable. |
 | `AnIdleRuntimeHasNoRunInProgress` | An idle runtime has no run in progress, and cancelling it is harmless. |
 
+## test_assertion_logging.cpp
+
+The file tests `install_fatal_logging()`. The two death tests run a failing `SR_VERIFY` in a child
+process after the installation and read the child's standard error.
+
+| Test | What it proves |
+| --- | --- |
+| `Medium_AssertDeathTest.LogsTheFailedCheckAtFatal` | A `[FATAL]` record carries the condition and the message. |
+| `Medium_AssertDeathTest.TheDefaultHandlerStillWritesItsLineAfterTheLog` | The handler that was installed before still writes its line. |
+| `Small_AssertHandler.InstallingTwiceIsHarmless` | A second installation returns and changes nothing. |
+
 ## description_runner.hpp
 
 `run_description()` runs the work of a described node once on the runtime's first queue and waits:
 a command group is submitted, queue work is called with no dependency, and host work is called on
 the test's thread. `shared_integers()` allocates shared integers on that queue, so the memory and
 the work share one context. The emitter tests use both, so they need no graph and no plan.
+
+## test_graph_id.cpp
+
+GraphId, the process-wide identity of one owner of plans.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_GraphId.IdsAreNonZeroDistinctAndMovedFromReportsZero` | Identities are non-zero and distinct, and a moved-from one reports 0. |
+| `Small_GraphId.MoveAssignmentHandsTheIdentityOver` | Move assignment hands the identity over and leaves the source with none. |
+| `Small_GraphId.SeveralThreadsNeverTakeTheSameId` | The counter never repeats an id, even when several threads take them at once. |
+
+## test_dropped_outcome.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `Small_DroppedOutcome.LogsTheErrorAndWhereItWasDropped` | The WARN under `api` names the error, its message and the call that dropped the outcome. |

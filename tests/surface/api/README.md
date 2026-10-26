@@ -43,6 +43,13 @@ The headers below are shared by tests of this module only, so they sit in this f
 | `dynamic_graph_plan_access.hpp` | Reads the composed plan of a `DynamicGraph` and its boundary edges; see its section. |
 | `refusing_fill.hpp` | A host fill task whose copy throws on demand, to fail a plan build; see its section. |
 | `hooked_copy_task.hpp` | A host task whose next copy runs a hook the test arms, to act inside a plan build; see its section. |
+| `run_recorder.hpp` | Adds a recording observer to a runtime and reads the observations of its runs; see its section. |
+
+## test_api_log_category.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `TheCategoryIsNamedAfterTheModule` | `K_API_LOG_CATEGORY` names the module `api` in the project `sushiruntime`, at compile time. |
 
 ## test_fluent.cpp
 
@@ -68,7 +75,7 @@ default-constructed one.
 ### `RunReportFieldsAfterMultiStep`
 
 After a multi-step run, `total_tasks_executed` must equal the tasks per step times the steps, and
-`total_duration_ms` must not be negative.
+the report must be successful.
 
 ### `RunForRunsAtLeastOneStep`
 
@@ -401,3 +408,11 @@ header by name.
 empties it and calls the hook once. Recording moves the task and a plan build copies it, so a hook
 armed after recording runs inside the next build. `graph/plumbing/test_plan_cache.cpp` and
 `graph/plumbing/test_region_composer.cpp` include the header by name.
+
+## run_recorder.hpp
+
+`Testing::RunRecorder` adds a `TestRunner::RecordingObserver` to a `Runtime` and removes it when it is
+stopped or destroyed. Adding the observer turns device timing on, so every graph of the runtime records
+timing from its next run, and the recorder returns the `RunObservation` of each run: `count()`, `last()`
+and `runs()`. `pairing_of()` finds the `ClockPairing` of a device in an observation, and `steady_ns()`
+puts a record's time on the steady clock, which a host record already is on. The tests that check node events, names or widths read an observation through it.

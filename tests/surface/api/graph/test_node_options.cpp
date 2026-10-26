@@ -36,19 +36,21 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "run_recorder.hpp"
+
 using namespace SushiRuntime;
 
 namespace
 {
-    /** @brief Checks that the report holds one event per expected width, in recording order. */
-    void expect_widths(const RunReport& report,
+    /** @brief Checks that the observation holds one event per expected width, in recording order. */
+    void expect_widths(const RunObservation& observation,
                        const std::vector<std::uint32_t>& expected)
     {
-        ASSERT_EQ(report.node_events.size(), expected.size());
+        ASSERT_EQ(observation.events.size(), expected.size());
         for (std::size_t i = 0; i < expected.size(); ++i)
         {
-            EXPECT_EQ(report.node_events[i].launched_width, expected[i]) << "node " << i;
-            EXPECT_EQ(report.node_events[i].live_width, expected[i]) << "node " << i;
+            EXPECT_EQ(observation.events[i].launched_width, expected[i]) << "node " << i;
+            EXPECT_EQ(observation.events[i].live_width, expected[i]) << "node " << i;
         }
     }
 } // namespace
@@ -69,8 +71,8 @@ TEST(Medium_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
     std::uint32_t* c = copies.data();
     std::uint32_t* f = first.data();
 
+    Testing::RunRecorder observed(rt);
     auto g = rt.graph();
-    g.set_profiling(true);
     {
         Recorder& recorder = g.recorder();
         auto rule = recorder.rule();
@@ -82,9 +84,10 @@ TEST(Medium_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
                         NodeOptions{std::size_t{1}});
     }
 
-    const auto report = g.run().value();
+    g.run().value();
+    ASSERT_EQ(observed.count(), 1u);
 
-    expect_widths(report, {static_cast<std::uint32_t>(WIDE), 1u});
+    expect_widths(observed.last(), {static_cast<std::uint32_t>(WIDE), 1u});
     EXPECT_EQ(first[0], 1u);
 }
 
@@ -101,8 +104,8 @@ TEST(Medium_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidths)
 
     const LateCount count = LateCount::fixed(CAPACITY);
 
+    Testing::RunRecorder observed(rt);
     auto g = rt.graph();
-    g.set_profiling(true);
     {
         Recorder& recorder = g.recorder();
         std::uint32_t* live =
@@ -123,15 +126,16 @@ TEST(Medium_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidths)
                         NodeOptions{CAPACITY});
     }
 
-    const auto report = g.run().value();
+    g.run().value();
+    ASSERT_EQ(observed.count(), 1u);
 
-    expect_widths(report, {1u, static_cast<std::uint32_t>(CAPACITY)});
+    expect_widths(observed.last(), {1u, static_cast<std::uint32_t>(CAPACITY)});
     for (std::size_t t = 0; t < CAPACITY; ++t)
         EXPECT_EQ(out[t], 1u) << "item " << t;
     EXPECT_EQ(out[CAPACITY], 0u);
 }
 
-/** @brief Tests that a profiled run reports the name and the operation a node stated. */
+/** @brief Tests that an observed run reports the name and the operation a node stated. */
 TEST(Medium_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
 {
     constexpr std::size_t WIDE = 64;
@@ -142,8 +146,8 @@ TEST(Medium_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
         values[i] = static_cast<std::uint32_t>(i);
     std::uint32_t* v = values.data();
 
+    Testing::RunRecorder observed(rt);
     auto g = rt.graph();
-    g.set_profiling(true);
     {
         // The label and the parameters end with this scope, before the graph runs.
         const std::string label = "scale by three";
@@ -153,12 +157,15 @@ TEST(Medium_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
                             NodeOptions{WIDE, label, "options.scale"_op, parameters});
     }
 
-    const auto report = g.run().value();
+    g.run().value();
+    ASSERT_EQ(observed.count(), 1u);
+    const RunObservation observation = observed.last();
 
-    ASSERT_EQ(report.node_timings.size(), 1u);
-    EXPECT_EQ(report.node_timings[0].name, "scale by three");
-    EXPECT_TRUE(report.node_timings[0].operation == "options.scale"_op);
-    expect_widths(report, {static_cast<std::uint32_t>(WIDE)});
+    ASSERT_NE(observation.table, nullptr);
+    ASSERT_EQ(observation.table->size(), 1u);
+    EXPECT_EQ(observation.table->rows()[0].name, "scale by three");
+    EXPECT_TRUE(observation.table->rows()[0].operation == "options.scale"_op);
+    expect_widths(observation, {static_cast<std::uint32_t>(WIDE)});
     EXPECT_EQ(values[WIDE - 1], static_cast<std::uint32_t>(WIDE - 1) * 3u);
 }
 
@@ -176,19 +183,22 @@ TEST(Medium_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
     NodeOptions named;
     named.name = "own name";
 
+    Testing::RunRecorder observed(rt);
     auto g = rt.graph();
-    g.set_profiling(true);
     g.add(WIDE, Reads(), Writes(first), [a](std::size_t i) { a[i] = 1u; }, named)
         .name("rule name");
     g.add(WIDE, Reads(first), Writes(second), [a, b](std::size_t i) { b[i] = a[i]; })
         .name("rule name");
 
-    const auto report = g.run().value();
+    g.run().value();
+    ASSERT_EQ(observed.count(), 1u);
+    const RunObservation observation = observed.last();
 
-    ASSERT_EQ(report.node_timings.size(), 2u);
-    EXPECT_EQ(report.node_timings[0].name, "own name");
-    EXPECT_FALSE(report.node_timings[0].operation.is_named());
-    EXPECT_EQ(report.node_timings[1].name, "rule name");
+    ASSERT_NE(observation.table, nullptr);
+    ASSERT_EQ(observation.table->size(), 2u);
+    EXPECT_EQ(observation.table->rows()[0].name, "own name");
+    EXPECT_FALSE(observation.table->rows()[0].operation.is_named());
+    EXPECT_EQ(observation.table->rows()[1].name, "rule name");
 }
 
 /** @brief Tests that more parameters than a node carries are refused and record nothing. */

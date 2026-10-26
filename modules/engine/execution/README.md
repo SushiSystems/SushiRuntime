@@ -20,6 +20,10 @@ either: the chain runs host bodies one after another on the calling thread, whic
 work the scheduler runs at the same time, such as the distributed worker's batch of dispatches over
 disjoint buffers.
 
+classify_chain() keeps the first reason it refused the chain in `ChainPlan::not_chainable`, a string
+literal, and logs it once, at `DEBUG` under `sushiruntime.execution`, where the plan is classified, so a
+plan on the scheduler says why. A plan that can chain has none.
+
 With a coordinator installed, it acts on a node in two cases. The node is an offload candidate:
 `OffloadState::offloadable` is set, which only the coordinator's prepare() does, when the engine
 prepares the plan, for a node it has a worker and shared buffers for. Or the node runs locally and
@@ -36,8 +40,11 @@ like an unnamed one, and so is a node the installed coordinator keeps nothing fo
 
 One ChainRun lives for one run. Each submit_step() walks the plan's compiled order and submits every
 enabled node with no scheduler hand-off and no polling; the queue's order stands in for the DAG's
-edges. finish() is the run's single wait. With profiling on, every submission's event becomes a
-NodeEventRecord in the plan's ledger. The destructor drains the queue, so a failed run never
+edges. finish() is the run's single wait. With device timing on, every submission's event becomes a
+NodeEventRecord in the plan's ledger, through the ledger's `record()`, with the device the chain's
+queue belongs to and the profiler thread index of the submitting thread. The stage zones are
+`chain.submit_step` and `chain.wait`, and `chain.record_events` is the fine zone around the read
+of the events. The destructor drains the queue, so a failed run never
 leaves work in flight against a plan about to be destroyed. submit_step(), wait() and finish()
 return `Result<void>`: each runs its SYCL calls through `Internal::SYCL::translate_exceptions()`
 of `modules/foundation/sycl` and returns what was thrown as `KernelFailed`, or as
@@ -82,8 +89,8 @@ scheduler-internal fields.
 ### capture_profiling_state
 
 capture_profiling_state() is shared by capture_base_state() (the static Graph) and DynamicGraph's
-commit(). commit() has no compiled in-degree baseline of its own to capture but needs this sizing
-whenever it populates or repopulates all_nodes. It is safe to call only once all_nodes carries its
+commit(). commit() has no compiled in-degree baseline of its own to capture but needs this sizing,
+and the plan's node table, whenever it populates or repopulates all_nodes. It is safe to call only once all_nodes carries its
 final registration indices for this compose.
 
 ### ExecutionEngine::prepare
@@ -163,6 +170,14 @@ without worker threads and test doubles need not implement it.
 
 The default does nothing, so engines that gather no timing and test doubles need not implement it.
 
+### ExecutionEngine::submit_observed and write_run_values
+
+submit_observed() starts a run as submit() does and has the run's observation handed to the observers
+of the context when the run's device work completes, on the thread that learns it. The default
+calls submit(), so an engine with no observation hands nothing over. write_run_values() writes the
+values only the engine sees into the run's period, with or without an observer; the default does
+nothing.
+
 ### SchedulerExecutionEngine::execute
 
 SchedulerExecutionEngine::execute() injects all root nodes into the persistent scheduler, re-arms the running
@@ -183,19 +198,33 @@ set_rebalancer_enabled() is safe to call between runs.
 
 ### SchedulerExecutionEngine::reset_profiling
 
-SchedulerExecutionEngine::reset_profiling() zeroes every node's per-run timing in `graph` and the scheduler's
-per-worker time buckets, so the resulting report covers only the run about to start. The driver
-calls it only when profiling is on.
-
-It also resets the plan's event ledger, sizing it to `expected_invocations` per node or the previous
-run's high-water mark, whichever is larger, so capture never allocates once a shape has been seen.
+SchedulerExecutionEngine::reset_profiling() zeroes the scheduler's per-worker time buckets and resets
+the plan's event ledger, sizing it to `expected_invocations` per node or the previous run's
+high-water mark, whichever is larger, so capture never allocates once a shape has been seen. It
+sizes the ledger's pairing slots to the number of devices. The driver calls it only when the plan
+records device timing.
 
 ### collect_profiling
 
-collect_profiling() reads each node's accumulated device and host time and invocation count into
-`report.node_timings`, skipping nodes that never ran, and the per-worker time split into
-`report.worker_timings`. It derives scheduling_overhead_ms from the workers' completion-polling
-time.
+collect_profiling() fills the scratch `RunObservation` the plan keeps, cleared and refilled every run so an
+observed run allocates nothing once its vectors have grown, from the plan: the shared node table, the id of the graph that owns the plan, the ledger's
+records in node order, one `DeviceClock` per device whose pairing was read, and the drop counts of the
+run. The records are not converted: a device record stays on its device's event clock and a host
+record on the steady clock, and the pairings let an observer place the first on the second. When the
+ledger lost any dispatch it logs one `WARN` under `sushiruntime.execution` naming each cause and its
+count, and logs nothing when none was lost.
+
+### SchedulerExecutionEngine::submit_observed and write_run_values
+
+submit_observed() sets a flag the sentinel reads. When the sentinel runs, every record of the run is
+already written, since each node completes through the poller before its successors start and the
+sentinel follows every leaf. It fills an observation and hands it to the context's observers before it
+signals the latch, so a caller that waits late loses nothing, and a failed run hands over nothing. A
+plan that does not record timing hands over an observation with the table and no records.
+
+write_run_values() sums the workers' busy, stealing, polling and idle time and writes the sums as the
+values `worker.busy`, `worker.stealing`, `worker.polling` and `worker.idle`, then starts the buckets
+again so an unobserved run does not report an earlier run's time.
 
 ## runtime_context.hpp
 
@@ -267,6 +296,20 @@ precondition already excludes a run in flight.
 node the coordinator marks keeps that set in its `OffloadState::rules`, so plans compiled under two
 sets and run in turn each place their nodes by their own set.
 
+### add_run_observer, remove_run_observer and observe_runs
+
+The context keeps its observers as one immutable list behind one atomic shared pointer. Adding or
+removing copies the list under a mutex and publishes the copy, so a run reads one consistent list
+without a lock, and a run that is notifying while an observer is removed still holds the list it
+began with. `add_run_observer()` returns an id and `remove_run_observer()` takes it; the free function
+`observe_runs()` adds an observer and returns the `RunObserverHandle` that removes it, holding the
+context weakly so a handle that outlives the context removes nothing. `Runtime::add_run_observer()` and
+the parts object of the `profiling` module both go through it. `wants_device_timing()` is true while the
+list is not empty, which is what a plan reads when it is built and when it is checked for staleness; a
+plan built under the other answer is rebuilt once at its next run. `notify_run()` hands an observation
+to every observer, in the order they were added. The destructor empties the list after the engine is
+destroyed.
+
 ### set_machine_facts and machine_facts
 
 `Runtime::create()` hands the context the `NodeFacts` of its machine once, after it lists the
@@ -337,8 +380,9 @@ submission does. Unlike the scheduler, this path never keeps an inline host node
 `node_kind_is_chainable` in `chain_plan.cpp` admits only a KERNEL node or a HOST node that
 submits device work. An empty event here would be a rare, unexpected case, not the routine
 one the scheduler guards against. The event is therefore kept unconditionally.
-`record_events()` calls `read_event_timestamps()`, which already drops an empty or
-unreadable event, so no check per submission is needed.
+`record_events()` reads the timestamps through `read_dispatch_timestamps()`, across the events a body
+handed over when it handed over any; an unreadable event is counted in the ledger as a dropped
+dispatch.
 
 ### execution_engine.cpp
 
@@ -439,7 +483,8 @@ allocation-free latch. TRACE is compiled out in release, where `K_LOG_LEVEL_FLOO
 The sentinel's `host_work` is wired once. It captures only stable pointers, the engine's
 latch and scheduler, so the closure is built the first time a plan runs and reused for every
 later step. A recompile produces a fresh sentinel with an empty `host_work`, which wires
-again. The `profiling` flag it captures is fixed for the sentinel's lifetime.
+again. The `profiling` flag it captures is fixed for the sentinel's lifetime. It also captures the engine
+and the plan, for the observation of a run started with `submit_observed()`.
 
 The sentinel is the final node: the DAG dispatches it only once every predecessor's event
 has completed. It signals completion directly in C++, not through a SYCL host operation.
@@ -465,8 +510,8 @@ again, so the sentinel's call is not the next round's arming.
 
 The latch is reset, the scheduler armed, and only then are the roots submitted.
 
-The profiling ledger is wired before arming and is null when the plan does not request
-profiling.
+The profiling ledger is wired before arming and is null when the plan does not record device
+timing.
 
 The dispatch step is advanced in `submit()`, not inside `arm_for_execution()`. The sentinel
 also re-arms, to keep the pool spinning through the drain tail, and that call must not
@@ -513,12 +558,13 @@ pool still has bookkeeping to drain, which `complete()` waits for.
 from it. The ledger's `reserve()` folds in the last run's true demand per row, so growth
 happens outside the poller.
 
-`collect_profiling()` has one capture path:
-`node_timings` is aggregated from the same event records the ledger collected, one row per
-`registration_index` that was dispatched, indexed by that index directly and not through a
-hashed lookup. A row takes its name and its operation from the first node that
-carries the index. Completion polling is the scheduler's own overhead between kernels, and it is
-reported in `scheduling_overhead_ms`.
+`collect_profiling()` has one capture path: the ledger's records. The names and operations of the
+nodes are not read per run: the plan's node table holds them, built once.
+
+The run's stage zones are `run.submit`, `run.wait` with the fine children `run.wait.latch`,
+`run.wait.quiesce` and `run.wait.errors`, and the fine zone `run.collect` around the read of the
+ledger. complete() returns the failure through `merge_run_failures()`, which keeps a task failure and
+logs the queue's asynchronous error at `WARN` when both exist.
 
 #### Definitions that need the complete Node type
 
@@ -584,15 +630,15 @@ The set's destructor logs a late asynchronous device error and continues;
 
 FPGAs and custom accelerators often execute better in order or do not support out-of-order
 queues natively, so a device that is neither a CPU nor a GPU gets an in-order queue.
-Profiling is added on top when the context was built for it, so `RunReport` can read each
-kernel's device start and end timestamps. The two properties compose, and the FPGA case
-keeps its in-order guarantee.
+A profiling queue is built lazily, on the first run of a plan that records device timing, so a
+`RunObserver` can read each kernel's device start and end timestamps. The two properties compose, and
+the FPGA case keeps its in-order guarantee.
 
 The queues themselves, their lazy build and the NUMA rotation live in
 `Internal::Device::DeviceQueueSet`; `modules/platform/device/README.md` describes them. The context
 keeps no queue of its own. `devices().queue(i, {false, true})` asks the set for the flavour
 `{in_order = false, profiling = true}` and `devices().queue(i, {true, profiling})` for
-`{in_order = true, profiling}`.
+`{in_order = true, profiling}`. The context builds the set with plain queues only.
 
 `describe_device()` turns each `Internal::Topology::HardwareNode` into a `Internal::Device::DeviceDescriptor`, so
 the device module includes no topology header. A node whose `is_gpu` flag is set becomes

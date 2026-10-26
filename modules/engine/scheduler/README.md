@@ -46,7 +46,7 @@ run.
 
 ### set_profiling
 
-The scheduler sets the flag once when it arms a run, from the context's profiling choice. The re-arm
+The scheduler sets the flag once when it arms a run, from the plan's flag, which the runtime stamped from whether an observer is added. The re-arm
 at the end of a run happens on a worker thread (the sentinel's host_work), concurrently with other
 workers polling, so the flag is an atomic with release/acquire ordering and not a plain bool.
 
@@ -69,22 +69,25 @@ In AdaptiveCpp, and in some other SYCL implementations, get_info\<complete> migh
 implicit USM data migrations are fully visible. The event is already known to be complete, so wait()
 returns at once, but it guarantees that the SYCL runtime flushes memory visibility.
 
-### poll_events: stall drive
+### poll_events: stall drive and its count
 
 Some SYCL runtimes (AdaptiveCpp) use a lazy event model: command_execution_status never advances to
 complete through non-blocking polling, and only an explicit wait() drives the DAG. After a few
 consecutive polls with no progress, poll_events() blocks on the oldest pending event to force it
 forward and marks it ready, so it is reaped on the next pass however the runtime reports status. On
 runtimes whose status advances on its own (Intel), polling completes before the threshold, so the
-stall drive rarely fires and the hot path is unchanged.
+stall drive rarely fires and the hot path is unchanged. Each drive adds one to a relaxed counter,
+and `disarm()` logs the count of the run at `DEBUG` under `sushiruntime.scheduler` and clears it.
 
 ### poll_events: order of completion
 
 A completed entry goes through four steps in a fixed order.
 
-Profiling comes first. Every node passes through this point, so the per-node invocation count and
-the kernel device time are added here exactly once per dispatch. The step does nothing unless the
-run was armed for profiling.
+Profiling comes first. Every node passes through this point, so the dispatch's record is written
+here exactly once, through the ledger's `record()`. The step does nothing unless the run was
+armed for profiling. A dispatch that leaves no record is counted in the ledger under its cause: an
+unreadable event, or a kernel node that returned no event. A task that did not run, a sentinel and a
+native host node leave no event by design and are not counted.
 
 When an offload coordinator is installed, its on_local_completion() runs next for a graph node
 that executed, before the successors are released. A node the scheduler released without running it
@@ -108,7 +111,9 @@ with its task's name. The first failure of the pass is kept as a `KernelFailed` 
 after the backoff update, as a `std::optional<Error>` that is empty when nothing threw;
 dispatch_loop() records it in the RunOutcome. The wait on the oldest
 event after K_STALL_DRIVE_THRESHOLD idle polls goes the same way: an event whose wait throws
-there is reaped as not executed and its error is returned. Left in the list, the entry would be queried again on
+there is reaped as not executed and its error is returned. A second failure in the same pass goes
+through `keep_first_failure()`, which keeps the first and logs the second at `WARN` with both
+messages, so no failure is dropped silently. Left in the list, the entry would be queried again on
 every poll, and an event that throws each time would keep wait_quiescent() from returning.
 
 The translated call covers the status query and the wait of one entry. A pass in which nothing
@@ -120,9 +125,14 @@ failure, so a thief can dispatch it in that interval.
 ### accumulate_profiling
 
 poll_events() calls accumulate_profiling() before trigger_successors() and drop_inflight(). The zero
-transition in drop_inflight() is what wakes a waiting complete() into collect_profiling() (or a next
-reserve()), so every ledger read and write must finish in accumulate_profiling() first, not after
-either of those calls.
+transition in drop_inflight() is what wakes a waiting complete() (or a next reserve()), and a
+sentinel that hands an observation over reads the ledger once every leaf has been reaped, so every
+ledger read and write must finish in accumulate_profiling() first, not after either of those calls.
+The record carries the device index and the submitting thread that `execute_task()` captured in the
+`PolledEvent`, since the thread that reaps an event may not be the one that submitted it.
+
+A task body that hands its events over with `note_dispatch_event()` leaves them in
+`PolledEvent::handed_over`; the record then runs from the earliest start to the latest end of them.
 
 ### trigger_successors
 
@@ -443,7 +453,7 @@ submitted.
 `running` is one term of the idle wait predicate, so `arm_for_execution()`, `disarm()` and
 `stop()` change it under `pending_mutex`. `arm_for_execution()` also clears the previous
 round's failure and publishes the plan's profiling flag to the poller before workers run, so
-completion accumulates per-node timing under profiling and reads no timestamps otherwise.
+completion writes a record per dispatch under profiling and reads no timestamps otherwise.
 
 In `stop()` a lost wakeup is worse than a late start. The idle wait has no timeout, so a
 worker that missed the shutdown flag would never be woken again and the join would never
@@ -519,7 +529,13 @@ successors wait on its poll; it yields. Others yield for the first 100 spins and
 100 microseconds at a time.
 
 Stall-attribution timing is gated on `profiling_active_`, so a run without profiling takes
-no clock samples in this loop.
+no clock samples in this loop. The four buckets a worker adds to (busy, stealing, polling, idle)
+stay private to the scheduler; the engine sums them over the workers at the end of every run and
+writes the sums as the profiler values `worker.busy`, `worker.stealing`, `worker.polling` and
+`worker.idle`.
+
+A worker names itself `sr-worker-<id>` to the profiler at the top of `dispatch_loop()`, which
+registers its ring, so its first zone allocates nothing.
 
 ##### The offload branch
 
@@ -580,10 +596,28 @@ The downcast to `Internal::Graph::Node` goes through the virtual `is_graph_node(
 ##### Inline host tasks
 
 A pure-CPU host task needs no queue and runs inline. Under profiling its timing follows the run's
-plan flag, not the context-wide setting. The dispatch step is captured before the task runs, not
-read at reap, so a later round's step cannot land on the record. The steady-clock times are
-written raw and converted onto the run's event clock at `collect()`. A host node submits no
-dispatch, so its `launched_width` and `live_width` stay `K_WIDTH_UNKNOWN`.
+plan flag. The dispatch step is captured before the task runs, not read at reap, so a later
+round's step cannot land on the record. The steady-clock times are written as they are, with the
+device index `K_HOST_DEVICE_INDEX`: a host record is on the steady clock and needs no pairing. A
+host node submits no dispatch, so its `launched_width` and `live_width` stay `K_WIDTH_UNKNOWN`.
+
+##### Zones and logs of a dispatch
+
+`execute_task()` opens the fine zone `dispatch.task`; the inline host body is inside `dispatch.host`
+and a device or host-with-queue submission inside `dispatch.submit`. The search for a task to steal is
+the detail zone `worker.steal`. Each of the nine acquisitions of `pending_mutex` goes through
+`SR_LOCK_WAIT("lock.pending", ...)`, so a contended one writes a `lock.pending` zone and an
+uncontended one writes nothing. The park on the condition variable is not one of them: the worker is
+idle by design and the wait needs a `std::unique_lock`.
+
+A task skipped because the run is aborting or cancelled, and a node whose late-bound control is off,
+are counted, and `disarm()` logs them once per run: `INFO` with the count when the run was
+cancelled, `DEBUG` otherwise. The per-task `Executing task` line is at `TRACE`.
+
+An abort line names the error code and the message of what failed: a poll that threw or an event of
+the run that failed. A worker count above `K_MAX_WORKER_THREADS`, or a count that resolves to zero,
+is logged at `WARN` with the requested and applied numbers. A pinned worker whose core the topology
+does not list is mapped to NUMA node 0 and logged at `DEBUG` with the worker and the core.
 
 ##### Queue selection
 
@@ -637,7 +671,13 @@ co-location failure neither is cached, so each recurs on a later run.
 A task that is not a graph node has no placement. It takes
 `DeviceQueueSet::queue_or_numa_local()` for NUMA node 0, which rotates over the devices of
 that node and returns a queue. Every branch goes through `dispatch_queue()`, except that
-the rotation without profiling uses the returned queue and skips the index lookup.
+the rotation without profiling uses the returned queue and skips the index lookup. The device index
+of the dispatch is the node's cached queue index, or the one the scan found; with profiling on and no
+device found for the queue, the dispatch takes the unprofiled queue and the ledger counts a dropped
+dispatch for the cause "no queue".
+
+The first kernel submission to reach a device in a run claims that device's clock pairing and times
+its own `submit` call with the steady clock, so the pairing's uncertainty is the length of that call.
 
 `execute_host()` takes a vector of dependencies, so the rarer path of a HOST node that
 submits its own device work still allocates one. The kernel path calls `depends_on()` per

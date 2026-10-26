@@ -70,8 +70,8 @@ namespace
             total += heat[i];
         const bool is_conserved = total > 0.999 && total < 1.001;
 
-        std::printf("quickstart: %zu steps in %.2f ms (timing); compiles = %zu\n", STEPS,
-                    report.total_duration_ms, sim.compile_count());
+        std::printf("quickstart: %zu steps, %zu tasks; compiles = %zu\n", STEPS,
+                    report.total_tasks_executed, sim.compile_count());
         std::printf("  total heat = %.2f  (expected 1.00)\n", total);
         std::printf("  result: %s\n", is_conserved ? "CORRECT" : "WRONG");
         return is_conserved ? 0 : 1;
@@ -548,26 +548,35 @@ names: `SR_LOG_LEVEL=warn,distributed=debug`. A record shows its project and mod
 
 ## 9. Reading a run
 
-A run returns a `RunReport`. `total_tasks_executed`, `total_duration_ms` and `layer` are always
-filled. `node_timings` and `worker_timings` are filled when the runtime was created with
-`config.profiling = true`. `node_events`, one record per dispatch, is filled for a graph that
-called `set_profiling(true)`.
+A run returns a `RunReport`. `total_tasks_executed`, `cancelled` and `layer` are always filled, with the NUMA
+and distributed counts. The report holds no timing. Time reaches a program through the profiler, or through
+a `RunObserver` that the program adds to the runtime:
 
 ```cpp
-    EXPECT_EQ(rep.layer, ExecutionLayer::Scheduler);
-    ASSERT_FALSE(rep.worker_timings.empty());
-    EXPECT_GE(rep.scheduling_overhead_ms, 0.0);
+class Tally final : public SushiRuntime::RunObserver
+{
+    public:
+        void on_run(const SushiRuntime::RunObservation& observation) noexcept override
+        {
+            dispatches += observation.events.size();
+        }
 
-    // At least some time must be attributed somewhere across the workers.
-    double total = 0.0;
-    for (const auto& w : rep.worker_timings)
-        total += w.busy_ms + w.stealing_ms + w.polling_ms + w.idle_ms;
+        std::size_t dispatches = 0;
+};
+
+auto tally = std::make_shared<Tally>();
+SushiRuntime::RunObserverHandle handle = runtime.add_run_observer(tally);
 ```
 
-Source: `tests/surface/api/graph/test_graph.cpp`
+Source: not compiled
 
-A node without a name reports as `unnamed_task`.
-[The report README](../../modules/foundation/report/README.md) lists the fields.
+While an observer is added, the runtime's graphs record the device time of every dispatch, and each
+finished run hands the observer a `RunObservation`: the node table, one record per dispatch, one clock
+pairing per device and the count of dispatches the run lost. The handle removes the observer when it is
+destroyed. [The profiling guide](../guides/PROFILING_GUIDE.md) shows how a host puts the same data on a
+SushiProfiler timeline.
+
+A node without a name reports as `unnamed_task`. [The report README](../../modules/foundation/report/README.md) lists the fields.
 
 ## 10. Determinism
 

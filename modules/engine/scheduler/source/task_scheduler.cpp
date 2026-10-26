@@ -42,9 +42,12 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/profile/profile.hpp>
+#include <SushiRuntime/report/node_event_record.hpp>
 #include <SushiRuntime/scheduler/scheduler_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
+#include <SushiRuntime/task/dispatch_events.hpp>
 #include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/topology/affinity.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
@@ -101,8 +104,17 @@ namespace SushiRuntime
             if (machine_cores == 0) machine_cores = 1;
 
             size_t threads = pool.worker_count != 0 ? pool.worker_count : machine_cores;
-            if (threads > K_MAX_WORKER_THREADS) threads = K_MAX_WORKER_THREADS;
-            if (threads == 0) threads = 1;
+            if (threads > K_MAX_WORKER_THREADS)
+            {
+                SR_LOG_WARN(K_SCHEDULER_LOG_CATEGORY, "Worker count {} exceeds the maximum of {}; the pool runs {} workers.",
+                            threads, K_MAX_WORKER_THREADS, K_MAX_WORKER_THREADS);
+                threads = K_MAX_WORKER_THREADS;
+            }
+            if (threads == 0)
+            {
+                SR_LOG_WARN(K_SCHEDULER_LOG_CATEGORY, "Worker count resolved to 0; the pool runs 1 worker.");
+                threads = 1;
+            }
 
             num_workers_ = threads;
             pinning_ = pool.pinning;
@@ -158,6 +170,9 @@ namespace SushiRuntime
                     const size_t core = first_core_ + i;
                     if (core < core_to_numa.size())
                         worker_numa_[i] = core_to_numa[core];
+                    else
+                        SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "Worker {} is pinned to core {}, which the topology "
+                                     "does not list; it is assigned to NUMA node 0.", i, core);
                 }
             }
 
@@ -264,7 +279,7 @@ namespace SushiRuntime
 
             // The flag is one term of the idle wait predicate, so it is set under pending_mutex.
             {
-                std::lock_guard<std::mutex> lock(pending_mutex);
+                SR_LOCK_WAIT("lock.pending", pending_mutex);
                 running.store(true, std::memory_order_release);
             }
             pending_cv.notify_all();
@@ -282,8 +297,55 @@ namespace SushiRuntime
         {
             // The ledger pointer must not dangle past its owning CompiledGraph's lifetime.
             set_profiling_ledger(nullptr);
-            std::lock_guard<std::mutex> lock(pending_mutex);
+            log_run_tail();
+            SR_LOCK_WAIT("lock.pending", pending_mutex);
             running.store(false, std::memory_order_release);
+        }
+
+        /**
+         * @brief Logs the tasks the run skipped and the polls that waited on their oldest event.
+         */
+        void TaskScheduler::log_run_tail() noexcept
+        {
+            const std::uint64_t aborted = skipped_aborted_.exchange(0, std::memory_order_relaxed);
+            const std::uint64_t disabled = skipped_disabled_.exchange(0, std::memory_order_relaxed);
+            const std::uint64_t stall_drives = event_poller.take_stall_drives();
+
+            if (aborted != 0 && outcome_.is_cancelled())
+                SR_LOG_INFO(K_SCHEDULER_LOG_CATEGORY, "The run was cancelled; {} tasks were skipped without running.",
+                            aborted);
+            else if (aborted != 0)
+                SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "The run failed; {} tasks were skipped without running.",
+                             aborted);
+            if (disabled != 0)
+                SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "{} tasks were skipped because their control was off.",
+                             disabled);
+            if (stall_drives != 0)
+                SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "{} polls waited on their oldest event after stalling.",
+                             stall_drives);
+        }
+
+        /**
+         * @brief Logs the tasks the run skipped and the polls that waited on their oldest event.
+         */
+        void TaskScheduler::log_run_tail() noexcept
+        {
+            const std::uint64_t aborted = skipped_aborted_.exchange(0, std::memory_order_relaxed);
+            const std::uint64_t disabled = skipped_disabled_.exchange(0, std::memory_order_relaxed);
+            const std::uint64_t stall_drives = event_poller.take_stall_drives();
+
+            if (aborted != 0 && outcome_.is_cancelled())
+                SR_LOG_INFO(K_SCHEDULER_LOG_CATEGORY, "The run was cancelled; {} tasks were skipped without running.",
+                            aborted);
+            else if (aborted != 0)
+                SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "The run failed; {} tasks were skipped without running.",
+                             aborted);
+            if (disabled != 0)
+                SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "{} tasks were skipped because their control was off.",
+                             disabled);
+            if (stall_drives != 0)
+                SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "{} polls waited on their oldest event after stalling.",
+                             stall_drives);
         }
 
         /**
@@ -294,7 +356,7 @@ namespace SushiRuntime
         {
             // The flags change under pending_mutex (modules/engine/scheduler/README.md).
             {
-                std::lock_guard<std::mutex> lock(pending_mutex);
+                SR_LOCK_WAIT("lock.pending", pending_mutex);
                 shutdown_requested.store(true, std::memory_order_release);
                 running.store(false, std::memory_order_release);
             }
@@ -313,7 +375,7 @@ namespace SushiRuntime
             }
 
             // Release any submissions that never made it into execution.
-            std::lock_guard<std::mutex> lock(pending_mutex);
+            SR_LOCK_WAIT("lock.pending", pending_mutex);
             while (!pending_submissions.empty())
             {
                 Task* task = pending_submissions.front();
@@ -380,7 +442,7 @@ namespace SushiRuntime
             batch.clear();
 
             {
-                std::lock_guard<std::mutex> lock(pending_mutex);
+                SR_LOCK_WAIT("lock.pending", pending_mutex);
                 if (pending_submissions.empty()) return;
 
                 size_t grab_count = std::min(BATCH_SIZE, pending_submissions.size());
@@ -413,6 +475,9 @@ namespace SushiRuntime
                 SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "Dispatch loop thread_id {} out of bounds!", thread_id);
                 return;
             }
+
+            // The thread is registered first, so its first zone allocates nothing.
+            Internal::Profile::name_this_thread("sr-worker-" + std::to_string(thread_id));
 
             auto& my_queue = worker_queues[thread_id];
             EventPolling::ActiveEventList active_events;
@@ -482,19 +547,21 @@ namespace SushiRuntime
                     });
                     if (!poll_ran)
                     {
-                        SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "poll_events threw; aborting the current run.");
+                        SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "poll_events threw {}: {}; the current run is aborted.",
+                                     to_string(poll_ran.error().code), poll_ran.error().message);
                         outcome_.record(std::move(poll_ran.error()));
                     }
                     else if (polled)
                     {
-                        SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "An event of the current run failed; aborting the run.");
+                        SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "An event of the current run failed with {}: {}; the run is aborted.",
+                                     to_string(polled->code), polled->message);
                         outcome_.record(std::move(*polled));
                     }
 
                     // Only a priority submission takes the global mutex (modules/engine/scheduler/README.md).
                     if (priority_count_.load(std::memory_order_relaxed) > 0)
                     {
-                        std::lock_guard<std::mutex> lock(pending_mutex);
+                        SR_LOCK_WAIT("lock.pending", pending_mutex);
                         if (!priority_submissions.empty())
                         {
                             task = priority_submissions.top();
@@ -572,6 +639,8 @@ namespace SushiRuntime
         {
             if (!task) return;
 
+            SR_ZONE_FINE("dispatch.task");
+
             // An aborting run executes no more kernels (modules/engine/scheduler/README.md).
             if (outcome_.is_aborting())
             {
@@ -579,6 +648,7 @@ namespace SushiRuntime
                                    static_cast<SushiRuntime::Internal::Graph::Node*>(task)->is_sentinel;
                 if (!is_sentinel)
                 {
+                    skipped_aborted_.fetch_add(1, std::memory_order_relaxed);
                     events.push(skipped_event(task));
                     return;
                 }
@@ -591,6 +661,7 @@ namespace SushiRuntime
                 if (gnode->bindings_ &&
                     !gnode->bindings_->enabled.load(std::memory_order_relaxed))
                 {
+                    skipped_disabled_.fetch_add(1, std::memory_order_relaxed);
                     events.push(skipped_event(task));
                     return;
                 }
@@ -614,7 +685,7 @@ namespace SushiRuntime
 
             Result<void> ran = SYCL::translate_exceptions([&]()
             {
-                SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "Executing task: {}", task->name());
+                SR_LOG_TRACE(K_SCHEDULER_LOG_CATEGORY, "Executing task: {}", task->name());
                 
                 SushiRuntime::Internal::Graph::Node* node = nullptr;
 
@@ -632,7 +703,10 @@ namespace SushiRuntime
                         // Captured now, not read at reap, so a later round's step cannot land on this record.
                         const std::uint32_t step = current_dispatch_step_.load(std::memory_order_acquire);
                         const auto h0 = std::chrono::steady_clock::now();
-                        node->execute_native();
+                        {
+                            SR_ZONE_FINE("dispatch.host");
+                            node->execute_native();
+                        }
                         const auto h1 = std::chrono::steady_clock::now();
                         const std::uint64_t h0_ns = static_cast<std::uint64_t>(
                             std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -641,21 +715,15 @@ namespace SushiRuntime
                             std::chrono::duration_cast<std::chrono::nanoseconds>(
                                 h1.time_since_epoch()).count());
 
-                        // Raw steady times; converted onto the run's event clock at collect().
+                        // Raw steady times, on the host device; the observation carries them as they are.
                         if (auto* ledger = active_ledger_.load(std::memory_order_acquire))
                         {
-                            const std::uint32_t slot = ledger->claim_slot(node->registration_index);
-                            if (slot != Internal::Observability::ProfilingLedger::npos)
-                            {
-                                NodeEventRecord rec{};
-                                rec.node_index = node->registration_index;
-                                rec.invocation = step;
-                                // A host node submits no dispatch: launched_width and live_width stay K_WIDTH_UNKNOWN.
-                                rec.submit_ns  = h0_ns;
-                                rec.start_ns   = h0_ns;
-                                rec.end_ns     = h1_ns;
-                                ledger->write(node->registration_index, slot, rec);
-                            }
+                            // A host node submits no dispatch: the widths stay K_WIDTH_UNKNOWN and the device is the host.
+                            Internal::Observability::DispatchFacts facts;
+                            facts.node_index = node->registration_index;
+                            facts.invocation = step;
+                            facts.submit_thread = Internal::Profile::current_thread_index();
+                            ledger->record(facts, Internal::Observability::DispatchTimes{h0_ns, h0_ns, h1_ns});
                         }
                     }
                     else
@@ -679,11 +747,15 @@ namespace SushiRuntime
                 }
 
                 // Every branch resolves an index and funnels through dispatch_queue().
+                std::uint32_t dispatch_device = K_HOST_DEVICE_INDEX;
                 sycl::queue& queue = [&]() -> sycl::queue&
                 {
                     // The first dispatch of a node cached its placement in the block above.
                     if (node)
+                    {
+                        dispatch_device = static_cast<std::uint32_t>(node->cached_queue_index_);
                         return dispatch_queue(static_cast<std::size_t>(node->cached_queue_index_));
+                    }
 
                     sycl::queue& picked =
                         devices_.queue_or_numa_local(std::nullopt, K_TASK_NUMA_NODE);
@@ -693,10 +765,21 @@ namespace SushiRuntime
                         return picked;
 
                     const std::size_t idx = queue_device_index(picked);
-                    return idx != static_cast<std::size_t>(-1) ? dispatch_queue(idx) : picked;
+                    if (idx != static_cast<std::size_t>(-1))
+                    {
+                        dispatch_device = static_cast<std::uint32_t>(idx);
+                        return dispatch_queue(idx);
+                    }
+
+                    // The queue is not in the device set, so the dispatch has no profiling queue to time on.
+                    if (auto* ledger = active_ledger_.load(std::memory_order_acquire))
+                        ledger->note_drop(DropCause::NoQueue,
+                                          DropCounts::K_NO_NODE);
+                    return picked;
                 }();
 
                 sycl::event e;
+                std::vector<sycl::event> handed_over;
                 if (task->execution_mode() == Task::ExecutionMode::Host)
                 {
                     // execute_host() needs a vector; this path allocates (modules/engine/scheduler/README.md).
@@ -707,7 +790,17 @@ namespace SushiRuntime
                         for (const auto& ev : node->sycl_deps)
                             dependencies.push_back(ev);
                     }
-                    e = task->execute_host(queue, dependencies);
+                    SR_ZONE_FINE("dispatch.submit");
+                    if (profiling_active_.load(std::memory_order_acquire))
+                    {
+                        // A body that submits several kernels hands each event over (api/graph/dispatch_events.hpp).
+                        Internal::DispatchEvents::DispatchEventScope handing(handed_over);
+                        e = task->execute_host(queue, dependencies);
+                    }
+                    else
+                    {
+                        e = task->execute_host(queue, dependencies);
+                    }
                 }
                 else
                 {
@@ -717,21 +810,24 @@ namespace SushiRuntime
                     if (profiling_active_.load(std::memory_order_acquire))
                     {
                         if (auto* ledger = active_ledger_.load(std::memory_order_acquire))
-                            if (ledger->claim_pairing_owner(task))
+                            if (ledger->claim_pairing_owner(dispatch_device, task))
                             {
                                 pairing_ledger = ledger;
                                 pairing_t0 = std::chrono::steady_clock::now();
                             }
                     }
 
-                    e = queue.submit([&](sycl::handler& h)
                     {
-                        // depends_on() per event builds no heap vector (modules/engine/scheduler/README.md).
-                        if (node)
-                            for (const auto& ev : node->sycl_deps)
-                                h.depends_on(ev);
-                        task->execute(h);
-                    });
+                        SR_ZONE_FINE("dispatch.submit");
+                        e = queue.submit([&](sycl::handler& h)
+                        {
+                            // depends_on() per event builds no heap vector (modules/engine/scheduler/README.md).
+                            if (node)
+                                for (const auto& ev : node->sycl_deps)
+                                    h.depends_on(ev);
+                            task->execute(h);
+                        });
+                    }
 
                     if (pairing_ledger)
                     {
@@ -742,7 +838,7 @@ namespace SushiRuntime
                         const std::uint64_t uncertainty_ns = static_cast<std::uint64_t>(
                             std::chrono::duration_cast<std::chrono::nanoseconds>(
                                 pairing_t1 - pairing_t0).count());
-                        pairing_ledger->set_pairing_submit_window(steady_ns, uncertainty_ns);
+                        pairing_ledger->set_pairing_submit_window(dispatch_device, steady_ns, uncertainty_ns);
                     }
                 }
                 
@@ -759,6 +855,10 @@ namespace SushiRuntime
                 dispatched.has_event = !ready;
                 dispatched.step = current_dispatch_step_.load(std::memory_order_acquire);
                 dispatched.widths = widths;
+                dispatched.handed_over = std::move(handed_over);
+                dispatched.device_index = dispatch_device;
+                if (profiling_active_.load(std::memory_order_acquire))
+                    dispatched.submit_thread = Internal::Profile::current_thread_index();
                 events.push(dispatched);
             });
             if (!ran)
@@ -805,6 +905,8 @@ namespace SushiRuntime
         {
             if (th_id < 0 || static_cast<size_t>(th_id) >= num_workers_)
                 return nullptr;
+
+            SR_ZONE_DETAIL("worker.steal");
 
             const std::vector<int>& order = victim_order_[th_id];
             const int total = static_cast<int>(order.size());
@@ -866,7 +968,7 @@ namespace SushiRuntime
 
             // External submissions use the injector, not a worker deque (modules/engine/scheduler/README.md).
             {
-                std::lock_guard<std::mutex> lock(pending_mutex);
+                SR_LOCK_WAIT("lock.pending", pending_mutex);
                 if (task->priority() > 0)
                 {
                     priority_submissions.push(task);
@@ -893,7 +995,7 @@ namespace SushiRuntime
             size_t normal_added = 0;
             size_t priority_added = 0;
             {
-                std::lock_guard<std::mutex> lock(pending_mutex);
+                SR_LOCK_WAIT("lock.pending", pending_mutex);
                 for (Internal::Graph::Node* node : roots)
                 {
                     if (!node) continue;
@@ -988,7 +1090,7 @@ namespace SushiRuntime
             if (!rescued_tasks.empty()) 
             {
                 {
-                    std::lock_guard<std::mutex> lock(pending_mutex);
+                    SR_LOCK_WAIT("lock.pending", pending_mutex);
                     for (Task* t : rescued_tasks)
                     {
                         priority_submissions.push(t);

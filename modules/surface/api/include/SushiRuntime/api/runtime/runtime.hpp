@@ -55,6 +55,9 @@
 
 namespace SushiRuntime
 {
+    class RunObserver;
+    class RunObserverHandle;
+
     /**
      * @brief Builds a runtime and hands out the graphs, buffers and views that use it.
      *
@@ -212,6 +215,16 @@ namespace SushiRuntime
              * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
              */
             [[nodiscard]] SUSHIRUNTIME_API Result<void> clear_placement_rules() const;
+
+            /**
+             * @brief Adds an observer that receives every finished run; the first add turns device timing on.
+             * @param observer Not null; shared until the handle removes it. The caller includes
+             *        <SushiRuntime/report/run_observer.hpp>.
+             * @return The handle that removes it when destroyed or reset; it removes nothing after the runtime.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] SUSHIRUNTIME_API RunObserverHandle
+            add_run_observer(std::shared_ptr<RunObserver> observer) const;
 
             /** @brief Returns the facade that exchanges this runtime's memory with Vulkan. */
             [[nodiscard]] Interop interop() const noexcept { return Interop(context_); }

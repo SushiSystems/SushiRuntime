@@ -177,7 +177,15 @@ outlived the allocator, and live_count() is how a teardown check finds it.
 A device index that names no device is a caller's mistake and stops the process through
 `SR_VERIFY`; the message carries the index and the device count. An allocation SYCL
 cannot satisfy returns null and records nothing, because running out of device memory is a
-condition a caller can handle.
+condition a caller can handle. The allocator logs one WARN for it, under `sushiruntime.memory`,
+with the kind, the bytes, the alignment and the device index and name; the status the caller
+builds from the null does not log again.
+
+### What the allocator records
+
+`allocate()` writes the fine zone `memory.allocate` and the value `memory.allocate_bytes` with the
+size of the request; `release()` writes the fine zone `memory.release`. Both go through the
+`profile` front, so they cost an empty object when the profiler is compiled out.
 
 ### release
 

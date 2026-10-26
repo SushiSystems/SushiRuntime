@@ -32,6 +32,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/observability/event_timestamps.hpp>
+#include <vector>
 
 using namespace SushiRuntime::Internal::Observability;
 
@@ -65,4 +66,78 @@ TEST(Medium_EventTimestamps, AnUnprofiledEventReadsNothing)
     times.start_ns = 7;
     EXPECT_FALSE(read_event_timestamps(sycl::event(), times));
     EXPECT_EQ(times.start_ns, 7u);
+}
+
+using namespace SushiRuntime::Internal::Observability;
+
+namespace
+{
+    /** @brief Builds timestamps with a backend submit reading. */
+    EventTimestamps stamps(std::uint64_t submit, std::uint64_t start, std::uint64_t end, bool has_submit = true)
+    {
+        EventTimestamps value;
+        value.submit_ns = submit;
+        value.start_ns = start;
+        value.end_ns = end;
+        value.has_submit = has_submit;
+        return value;
+    }
+} // namespace
+
+/** @brief Tests that two events fold into the earliest submit and start and the latest end. */
+TEST(Small_EventTimestamps, MergesEventsIntoOneSpan)
+{
+    EventTimestamps total = stamps(100, 110, 150);
+    merge_timestamps(total, stamps(90, 130, 200));
+
+    EXPECT_EQ(total.submit_ns, 90u);
+    EXPECT_EQ(total.start_ns, 110u);
+    EXPECT_EQ(total.end_ns, 200u);
+    EXPECT_TRUE(total.has_submit);
+}
+
+/** @brief Tests that the merge covers both events whichever one is merged into the other. */
+TEST(Small_EventTimestamps, TheMergeDoesNotDependOnTheOrder)
+{
+    EventTimestamps forward = stamps(100, 110, 150);
+    merge_timestamps(forward, stamps(90, 130, 200));
+    EventTimestamps backward = stamps(90, 130, 200);
+    merge_timestamps(backward, stamps(100, 110, 150));
+
+    EXPECT_EQ(forward.submit_ns, backward.submit_ns);
+    EXPECT_EQ(forward.start_ns, backward.start_ns);
+    EXPECT_EQ(forward.end_ns, backward.end_ns);
+}
+
+/** @brief Tests that the submit reading counts as the backend's own only when every event had one. */
+TEST(Small_EventTimestamps, TheSubmitIsTheBackendsOnlyWhenEveryEventHadOne)
+{
+    EventTimestamps total = stamps(100, 110, 150, true);
+    merge_timestamps(total, stamps(120, 120, 160, false));
+
+    EXPECT_FALSE(total.has_submit);
+}
+
+/** @brief Tests that merging one event into itself changes nothing. */
+TEST(Small_EventTimestamps, MergingAnEventIntoItselfChangesNothing)
+{
+    EventTimestamps total = stamps(10, 20, 30);
+    merge_timestamps(total, stamps(10, 20, 30));
+
+    EXPECT_EQ(total.submit_ns, 10u);
+    EXPECT_EQ(total.start_ns, 20u);
+    EXPECT_EQ(total.end_ns, 30u);
+}
+
+/** @brief Tests that an event that cannot be read fails the dispatch whether it is returned or handed over. */
+TEST(Small_EventTimestamps, AnUnreadableEventFailsTheDispatch)
+{
+    EventTimestamps out = stamps(1, 2, 3);
+    const std::vector<sycl::event> none;
+    const std::vector<sycl::event> handed{sycl::event{}, sycl::event{}};
+
+    // A default event comes from no queue built with profiling, so reading its times throws and is reported.
+    EXPECT_FALSE(read_dispatch_timestamps(sycl::event{}, none, out));
+    EXPECT_FALSE(read_dispatch_timestamps(sycl::event{}, handed, out));
+    EXPECT_EQ(out.submit_ns, 1u) << "a failed read leaves the output as it was";
 }

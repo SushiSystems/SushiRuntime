@@ -368,7 +368,6 @@ TEST(Medium_RuntimeEntry, DefaultConfigCreates)
     constexpr std::size_t COUNT = 64;
 
     const Runtime rt = Runtime::create().value();
-    EXPECT_FALSE(rt.advanced().is_profiling_enabled());
     EXPECT_FALSE(rt.advanced().is_rebalancer_enabled());
 
     auto values = rt.buffer<int>(COUNT).value();
@@ -390,7 +389,6 @@ TEST(Medium_RuntimeEntry, EveryFieldReachesTheRuntime)
     RuntimeConfig config;
     config.worker_count = 1;
     config.pinning = PinPolicy::Float;
-    config.profiling = true;
     config.rebalancer = true;
     config.force_scheduler = true;
 
@@ -401,7 +399,6 @@ TEST(Medium_RuntimeEntry, EveryFieldReachesTheRuntime)
 
     EXPECT_EQ(view.worker_pool().count, 1u);
     EXPECT_EQ(view.worker_pool().pinning, PinPolicy::Float);
-    EXPECT_TRUE(view.is_profiling_enabled());
     EXPECT_TRUE(view.is_rebalancer_enabled());
     EXPECT_TRUE(settings.force_scheduler);
 

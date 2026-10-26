@@ -33,7 +33,9 @@
 #include <vector>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
+#include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/execution/chain_plan.hpp>
@@ -200,6 +202,15 @@ namespace SushiRuntime
             std::size_t node_count = 0;
             int device = -1;
 
+            // The first reason is kept and logged once, where the plan is classified.
+            const auto refuse = [](const char* reason)
+            {
+                SR_LOG_DEBUG(K_EXECUTION_LOG_CATEGORY, "The plan runs on the scheduler, not as a chain: {}.", reason);
+                Internal::Graph::ChainPlan plan;
+                plan.not_chainable = reason;
+                return plan;
+            };
+
             for (const auto& owned : graph.all_nodes)
             {
                 const Internal::Graph::Node* node = owned.get();
@@ -208,21 +219,28 @@ namespace SushiRuntime
                 ++node_count;
 
                 if (!node_kind_is_chainable(*node, has_coordinator))
-                    return {};
+                    return refuse(node->execution_mode() == Internal::Scheduler::Task::ExecutionMode::Kernel ||
+                                          node->submits_device_work()
+                                      ? "an installed offload coordinator acts on a node"
+                                      : "a node is native host work");
 
                 const int index = chained_queue_index(*node, context);
-                if (index < 0 || (device >= 0 && index != device))
-                    return {};
+                if (index < 0)
+                    return refuse("a node has no USM region on one known device, or its placement was refused");
+                if (device >= 0 && index != device)
+                    return refuse("the nodes' regions live on two devices");
                 device = index;
             }
 
             if (node_count == 0)
-                return {};
+                return refuse("the plan holds no node");
 
             Internal::Graph::ChainPlan plan;
             plan.order = topological_order(graph);
-            if (plan.order.size() != node_count || orders_unordered_host_work(plan.order))
-                return {};
+            if (plan.order.size() != node_count)
+                return refuse("the plan has no complete topological order");
+            if (orders_unordered_host_work(plan.order))
+                return refuse("a chain would order host work the dependencies leave unordered");
 
             plan.chainable = true;
             plan.queue_index = static_cast<std::size_t>(device);

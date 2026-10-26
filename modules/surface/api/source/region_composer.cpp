@@ -42,6 +42,7 @@
 #include <vector>
 
 #include <SushiRuntime/context_access/context_access.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
@@ -73,7 +74,6 @@ namespace SushiRuntime
                 /**
                  * @brief Rebuilds the changed regions, re-wires them and renumbers every node.
                  * @param recorder_of Called as recorder_of(key); null when the region is gone.
-                 * @param profiling   Whether the plan requests per-node device timing.
                  * @param runtime     Read once at the start for its placement record and facts.
                  * @pre A commit that threw is repeated with the dirty and dropped keys it had.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
@@ -81,8 +81,11 @@ namespace SushiRuntime
                 [[nodiscard]] Result<void>
                 commit(const std::set<RegionKey>& dirty, const std::set<RegionKey>& dropped,
                        const std::function<const Recorder*(RegionKey)>& recorder_of,
-                       bool profiling, Internal::Execution::RuntimeContext& runtime)
+                       const std::string& label, std::uint64_t graph_id,
+                       Internal::Execution::RuntimeContext& runtime)
                 {
+                    label_ = label;
+                    graph_id_ = graph_id;
                     const bool everything = recompose_everything_;
                     std::set<RegionKey> rebuilt(dirty.begin(), dirty.end());
                     if (everything)
@@ -108,7 +111,7 @@ namespace SushiRuntime
                         built.emplace(k, std::move(state));
                     }
                     prepare_offload(built, placement->rules, runtime);
-                    profiling_requested_ = profiling;
+                    profiling_requested_ = runtime.wants_device_timing();
 
                     std::set<RegionKey> retired(rebuilt);
                     retired.insert(dropped.begin(), dropped.end());
@@ -142,6 +145,12 @@ namespace SushiRuntime
                 [[nodiscard]] bool placement_changed(std::uint64_t generation) const noexcept
                 {
                     return committed_once_ && generation != placement_->generation;
+                }
+
+                /** @brief Returns whether the plan was composed under another device timing answer than @p wanted. */
+                [[nodiscard]] bool timing_changed(bool wanted) const noexcept
+                {
+                    return committed_once_ && wanted != profiling_requested_;
                 }
 
                 /**
@@ -380,6 +389,8 @@ namespace SushiRuntime
                     plan_.roots.assign(roots_.begin(), roots_.end());
                     plan_.sentinel = sentinel_;
                     plan_.profiling = profiling;
+                    plan_.label = label_;
+                    plan_.graph_id = graph_id_;
                     plan_.all_nodes.clear();
                     if (profiling)
                         for (auto& kv : states_)
@@ -657,7 +668,13 @@ namespace SushiRuntime
                 /** @brief Set by a commit that threw after it changed a region. */
                 bool recompose_everything_ = false;
 
-                /** @brief The request of the commit in progress; stamped into the plan. */
+                /** @brief The graph's label at the last commit; stamped into the plan. */
+                std::string label_;
+
+                /** @brief The graph's id at the last commit; stamped into the plan. */
+                std::uint64_t graph_id_ = 0;
+
+                /** @brief The runtime's device timing answer at the last commit; stamped into the plan. */
                 bool profiling_requested_ = false;
 
                 /**
@@ -668,12 +685,11 @@ namespace SushiRuntime
                     placement_;
         };
 
-        RegionComposer::RegionComposer(bool profiling) noexcept : profiling_requested_(profiling)
-        {
-        }
+        RegionComposer::RegionComposer() noexcept = default;
 
         RegionComposer::RegionComposer(RegionComposer&& other) noexcept
-            : state_(std::move(other.state_)), profiling_requested_(other.profiling_requested_)
+            : state_(std::move(other.state_)), label_(std::move(other.label_)),
+              id_(std::move(other.id_))
         {
         }
 
@@ -682,7 +698,8 @@ namespace SushiRuntime
             if (this != &other)
             {
                 state_ = std::move(other.state_);
-                profiling_requested_ = other.profiling_requested_;
+                label_ = std::move(other.label_);
+                id_ = std::move(other.id_);
             }
             return *this;
         }
@@ -694,10 +711,12 @@ namespace SushiRuntime
             const std::function<const Recorder*(RegionKey)>& recorder_of,
             const ContextHandle& context)
         {
+            SR_ZONE("region.commit");
+
             // A composer that never composed, or was moved from, holds no state yet.
             if (state_ == nullptr)
                 state_ = std::make_unique<Detail::RegionComposerState>();
-            return state_->commit(dirty, dropped, recorder_of, profiling_requested_,
+            return state_->commit(dirty, dropped, recorder_of, label_, id_.value(),
                                   Internal::ContextAccess::context(context));
         }
 
@@ -706,6 +725,13 @@ namespace SushiRuntime
             return state_ != nullptr &&
                    state_->placement_changed(
                        Internal::ContextAccess::context(context).placement()->generation);
+        }
+
+        bool RegionComposer::timing_changed(const ContextHandle& context) const noexcept
+        {
+            return state_ != nullptr &&
+                   state_->timing_changed(
+                       Internal::ContextAccess::context(context).wants_device_timing());
         }
 
         void RegionComposer::rearm() noexcept

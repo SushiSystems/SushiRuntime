@@ -45,14 +45,6 @@ namespace SushiRuntime
         struct RuntimeSettings
         {
             /**
-             * @brief Build queues with profiling so RunReport carries device timing.
-             *
-             * Fixed at construction, because the SYCL queues are built once.
-             * Off by default; with it off, no timestamps are read.
-             */
-            bool profiling = false;
-
-            /**
              * @brief Sets how many worker threads run; 0 means one per logical core.
              * @see modules/engine/execution/README.md
              */

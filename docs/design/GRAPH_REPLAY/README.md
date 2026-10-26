@@ -89,9 +89,9 @@ hand-off, no polling and one wait at the end of the run. Every step of `run(step
 back to back; the single wait closes the last step. The scheduler path stays as it is for every
 plan that is not chainable.
 
-A run without profiling submits through `sycl::ext::oneapi::experimental::submit`, which returns
+A run that records no device timing submits through `sycl::ext::oneapi::experimental::submit`, which returns
 no event, so the queue tracks none for the nodes in flight; the queue's order carries the
-dependency a returned event would, and the run's single wait closes it. A profiling run keeps its
+dependency a returned event would, and the run's single wait closes it. A run that records device timing, which is a run while the runtime has an observer, keeps its
 per-node events, because the ledger reads their timestamps.
 
 ### Layer 2: record and replay
@@ -131,7 +131,7 @@ must not read device results, which is today's rule for a host-provided count.
 
 A replayed step yields one event, not one per node, so G1's per-dispatch `NodeEventRecord`s
 (the g1 node event records design spec in the version history) cannot come from layer 2. A
-graph with profiling requested runs on layer 1, whose per-node events on an in-order queue are
+plan that records device timing runs on layer 1, whose per-node events on an in-order queue are
 real. `RunReport` states which layer ran, so a measurement never mixes them silently.
 Determinism does not change: layers 1 and 2 submit in the compiled topological order, which is one
 valid order of the same DAG, and every primitive's result is already defined to be order-free

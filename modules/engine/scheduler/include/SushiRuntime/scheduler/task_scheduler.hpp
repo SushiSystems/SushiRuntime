@@ -251,6 +251,18 @@ namespace SushiRuntime
                 /** @brief The armed round's event ledger, or null when it does not profile. */
                 std::atomic<Internal::Observability::ProfilingLedger*> active_ledger_{nullptr};
 
+                /** @brief Tasks the run skipped because it was aborting or cancelled, since the last take. */
+                std::atomic<std::uint64_t> skipped_aborted_{0};
+
+                /** @brief Tasks the run skipped because their late-bound control was off, since the last take. */
+                std::atomic<std::uint64_t> skipped_disabled_{0};
+
+                /**
+                 * @brief Logs and clears what the finished run left unrun and how often a poll
+                 *        had to wait on its oldest event.
+                 */
+                void log_run_tail() noexcept;
+
                 /** @brief Counter arm_for_execution() draws the next round's step from. */
                 std::atomic<std::uint32_t> next_dispatch_step_{0};
                 /** @brief This round's step, captured into each event a worker dispatches this round. */

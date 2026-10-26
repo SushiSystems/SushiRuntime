@@ -29,7 +29,11 @@
 
 #include <atomic>
 #include <csignal>
+#include <cerrno>
 #include <cstdlib>
+
+#include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/process_environment/process_environment_log_category.hpp>
 
 namespace SushiRuntime
 {
@@ -58,6 +62,13 @@ namespace SushiRuntime
 
             static_assert(std::atomic<bool>::is_always_lock_free,
                           "the stop flag is written from a signal handler");
+
+            /** @brief Installs through the C runtime's signal(); the default installer. */
+            StopSignal::Handler install_with_c_runtime(int signal_number,
+                                                       StopSignal::Handler handler)
+            {
+                return std::signal(signal_number, handler);
+            }
         } // namespace
 
         extern "C"
@@ -73,14 +84,27 @@ namespace SushiRuntime
             }
         }
 
-        StopSignal::StopSignal() noexcept
+        StopSignal::StopSignal() noexcept : StopSignal(&install_with_c_runtime)
+        {
+        }
+
+        StopSignal::StopSignal(SignalInstaller install_signal) noexcept
         {
             static_assert(K_STOP_SIGNAL_COUNT <= K_MAXIMUM_SIGNALS,
                           "previous_ has a slot for every stop signal");
 
             stop_requested.store(false);
             for (std::size_t index = 0; index < K_STOP_SIGNAL_COUNT; ++index)
-                previous_[index] = std::signal(K_STOP_SIGNALS[index], handle_stop_signal);
+            {
+                previous_[index] = install_signal(K_STOP_SIGNALS[index], handle_stop_signal);
+                if (previous_[index] == SIG_ERR)
+                {
+                    SR_LOG_WARN(K_PROCESS_ENVIRONMENT_LOG_CATEGORY,
+                                "signal {} could not be installed (errno {}); no handler is set "
+                                "for it and the worker will not stop on it.",
+                                K_STOP_SIGNALS[index], errno);
+                }
+            }
         }
 
         StopSignal::~StopSignal()

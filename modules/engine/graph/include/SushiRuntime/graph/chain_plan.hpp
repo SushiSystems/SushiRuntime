@@ -51,6 +51,8 @@ namespace SushiRuntime
             std::uint32_t step;         /**< Step index the node was submitted in. */
             sycl::event event;          /**< The submission's event. */
             Internal::Graph::NodeWidths widths{}; /**< Node's widths, snapshotted at submit. */
+            std::uint32_t submit_thread = 0;      /**< Profiler thread index of the submitting thread; 0 when unknown. */
+            std::vector<sycl::event> handed_over; /**< The events the node's body handed over, when it handed over any. */
         };
 
         /**
@@ -64,6 +66,7 @@ namespace SushiRuntime
         struct ChainPlan
         {
             bool chainable = false;               /**< Whether the chain path may run this plan. */
+            const char* not_chainable = nullptr;  /**< Why the plan is not chainable, a string literal; null when it is. */
             std::size_t queue_index = 0;          /**< Device whose in-order queue the chain submits to. */
             std::vector<Internal::Graph::Node*> order;      /**< Every node except the sentinel, in a topological order. */
 

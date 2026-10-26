@@ -22,7 +22,7 @@ between two handles, such as a graph and the buffers recorded in it; `api/graph/
 ### RuntimeConfig
 
 `RuntimeConfig` is the one argument of `Runtime::create()`. It holds the device filter (`devices`)
-and the co-tenancy contract: worker count, core placement, pinning policy, profiling, the background
+and the co-tenancy contract: worker count, core placement, pinning policy, the background
 rebalancer and the forced scheduler path. `node_name` and `labels` describe the machine to
 `topology()`. A runtime inside a game shares the machine with a render
 thread, an audio callback and asset I/O, so every default is chosen for a tenant and not for an
@@ -46,7 +46,7 @@ the same types, so a value passes to it without a conversion.
 ### AdvancedControls
 
 `AdvancedControls` is the supported way to reach the few internal facts a caller needs (the device
-list, the queue of a device, profiling and rebalancer state, the worker pool, the number of live
+list, the queue of a device, the rebalancer state, the worker pool, the number of live
 allocations, cumulative transfer bytes) without the whole `RuntimeContext`. `Runtime::advanced()` returns it and nothing else can
 construct it. It shares ownership of the context like every other handle; see Lifetime. The
 surface gives no way to the `RuntimeContext` itself. Its members are defined in
@@ -221,6 +221,19 @@ auto lanes = runtime.buffer<float>(count, SushiRuntime::DeviceIndex{0},
 `state()` is for data a stepped graph reads as "current" and writes as "next"; the runtime swaps the
 two each step. It validates its `DeviceIndex` as `buffer()` does.
 
+### add_run_observer
+
+`Runtime::add_run_observer()` adds an observer that receives the capture of every finished run of the
+runtime and returns a `RunObserverHandle`; the handle removes the observer when it is destroyed or
+reset. Any number of observers may be added and each receives every run, in the order added. While at
+least one is added, the runtime's graphs record device timing: adding the first rebuilds each graph's
+plan once at its next run, and so does removing the last. The runtime shares ownership of the observer
+until the handle removes it, and a handle that outlives the runtime removes nothing. The header
+forward-declares `RunObserver` and `RunObserverHandle`; a caller includes
+`SushiRuntime/report/run_observer.hpp`. An observer's `on_run()` runs on the thread that learned the
+run finished and must not start a run or add or remove an observer. The `profiling` module's
+`register_profiler_parts()` is the host's way to put the observations on a SushiProfiler timeline.
+
 ### set_rebalancer_enabled
 
 The rebalancer is off unless `RuntimeConfig::rebalancer` asked for it. Running it trades run-to-run
@@ -229,6 +242,8 @@ heartbeat. That is worth it for long batch work and wrong for a simulation frame
 `set_rebalancer_enabled()` is safe to call between runs.
 
 ### wait
+
+The call is the stage zone `wait.runtime`.
 
 `wait()` blocks until every device queue of the runtime is idle: the queues the graphs ran on and
 any work a caller submitted through `advanced().queue()`. A blocking run has already waited for

@@ -7,7 +7,7 @@ It depends on the C++ standard library and on no other module of the repository.
 
 ## Public entry points
 
-The seventeen public headers under `include/SushiRuntime/core/`:
+The eighteen public headers under `include/SushiRuntime/core/`:
 
 | Header | What it declares |
 | --- | --- |
@@ -20,6 +20,7 @@ The seventeen public headers under `include/SushiRuntime/core/`:
 | `error.hpp` | `ErrorCode`, its `to_string` overload and `Error` |
 | `error_translation.hpp` | `Detail::translate_exceptions`, which calls a function and returns what it throws as an `Error` |
 | `export.hpp` | `SUSHIRUNTIME_API`, `SR_API` and `SR_TYPE_API`, the symbol visibility macros |
+| `node_cost.hpp` | `NodeCost`, the floating-point operations, bytes and `NodeDType` a caller states one dispatch of a node does, `NodeDType` and `dtype_name()` |
 | `operation_id.hpp` | `OperationID`, the 32-bit FNV-1a hash of an operation's name, and the `_op` literal in `Literals` |
 | `placement_class.hpp` | `PlacementClass`, the 32-bit FNV-1a hash of a dotted class name with the hash of each of its prefixes, and the `_class` literal in `Literals` |
 | `ref_counted.hpp` | `RefCounted`, the intrusive reference count that `sushi_ptr` manages |
@@ -31,6 +32,17 @@ The seventeen public headers under `include/SushiRuntime/core/`:
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
+
+## node_cost.hpp
+
+### NodeCost
+
+`NodeCost` carries what a caller counts of one dispatch of a node: `flops`, `bytes` and a
+`NodeDType` (`f32`, `f16`, `bf16`, `i8`, or unstated). A caller states it as an
+`std::optional<NodeCost>` in `NodeOptions::cost`. Absent means the caller stated nothing; a
+stated cost may hold zeros, since a data-movement node does no floating-point work and moves real
+bytes. The runtime carries the figures to the node table of the plan and computes nothing from
+them. `dtype_name()` returns the spelling a record carries, or null for an unstated type.
 
 ## allocation.hpp
 
@@ -62,7 +74,9 @@ and the line, and passes it to `fail_assertion()`. The message expression is eva
 does not keep the process alive. The default handler writes one line to standard error.
 `set_assertion_handler()` installs another, such as one that writes to the consumer's log, and
 returns the one it replaced; a null argument restores the default. The handler is one atomic
-pointer for the whole process.
+pointer for the whole process. `Runtime::create` installs a handler that logs the failure at
+`FATAL` through SushiLog and then calls the one it replaced (`api/detail/assertion_logging.hpp`);
+`core` itself depends on no logger.
 
 ## bit.hpp
 

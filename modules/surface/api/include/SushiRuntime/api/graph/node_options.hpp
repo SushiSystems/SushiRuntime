@@ -34,6 +34,7 @@
 #include <string_view>
 
 #include <SushiRuntime/core/determinism.hpp>
+#include <SushiRuntime/core/node_cost.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
 #include <SushiRuntime/core/span.hpp>
@@ -59,6 +60,9 @@ namespace SushiRuntime
         /** @brief Operation the node performs; a default id names none. */
         OperationID operation = {};
 
+        /** @brief The caller's own operation the node belongs to, for a profile to name; copied when the node is recorded; empty states none. */
+        std::string_view origin = {};
+
         /**
          * @brief Scalars carried with the node, at most K_MAX_PARAMETERS; copied when the
          *        node is recorded.
@@ -74,5 +78,8 @@ namespace SushiRuntime
 
         /** @brief Determinism contract the result carries; a default states none. */
         Determinism determinism = Determinism::Unstated;
+
+        /** @brief Work one dispatch of the node does, as the caller counts it; absent states none. */
+        std::optional<NodeCost> cost = {};
     };
 } // namespace SushiRuntime

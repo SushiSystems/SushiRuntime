@@ -270,6 +270,7 @@ lifetime.
 | `offload_coordination/rule_placement.hpp` | `RulePlacement` | the decision for a node that has a winning rule; the master's own facts | pool worker |
 | `offload_coordination/offload_dispatcher.hpp` | `OffloadDispatcher` | `prepare`, `try_offload`, local and remote settlement of a node | compiling thread, pool worker |
 | `cluster_monitor.hpp` | `ClusterMonitor` | the monitor thread | its own thread |
+| `distributed/unsent_frame_log.hpp` | `Detail::log_unsent_frame()`, `Detail::send_status_text()` | the DEBUG line of a `PING` or `GOODBYE` the transport did not queue | monitor thread |
 | `ping_clock.hpp` | `make_ping_token()`, `ping_round_trip_micros()` | the clock a `PING` token is read from and measured on | monitor thread, reader thread |
 | `offload_coordination/task_resubmission.hpp` | `resubmit_tasks()`, `reoffer_nodes()` | the one sequence that returns a taken task to the scheduler, and the one that offers held nodes again and forgets the first offer of each node the sink refuses | monitor, reader, the thread in `stop()` |
 | `distributed_coordinator.hpp` | `DistributedCoordinator` | the bricks above, the router, start and stop order | every thread of the seam |

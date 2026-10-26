@@ -21,7 +21,7 @@ symbol or passage it explains, and that header's file block cites this page.
 
 The module depends on `core`, `report`, `region`, `log`, `machine`, `interop` and `context`, the
 other public modules, through its headers. Its sources depend on `sycl`, `memory`, `device`,
-`observability`, `task`, `graph`, `execution`, `memory_exchange`, `context_access`, and the internal
+`observability`, `profile`, `task`, `graph`, `execution`, `profile`, `memory_exchange`, `context_access`, and the internal
 modules `engine_handles`, `region_boundary` and `topology`, whose `host_identity.hpp` names the
 machine.
 
@@ -34,7 +34,7 @@ type of the engine is compiled into the library, from `source/`.
 | --- | --- |
 | `plan_access.hpp` | The conversion between `Detail::Plan` and the engine's compiled graph |
 | `late_controls_access.hpp` | The conversion between `Detail::LateControls` and the engine's late bindings |
-| `runtime.cpp` | `Runtime`: building the context, the rebalancer switch and the wait |
+| `runtime.cpp` | `Runtime`: building the context, the rebalancer switch, the wait and `add_run_observer()` |
 | `advanced_controls.cpp` | `AdvancedControls`: every answer it reads from the context |
 | `buffer.cpp` | The allocation of a `Buffer` and its window copies |
 | `interop.cpp` | `Interop`: the capabilities, the host export and the device import |
@@ -43,7 +43,10 @@ type of the engine is compiled into the library, from `source/`.
 | `late_window.cpp` | The per-step controls of a late-bound node: creation, update and read |
 | `plan_cache.cpp` | `PlanCache`: the build and the compiled plan of one recorder |
 | `region_composer.cpp` | `RegionComposer`: the sub-graph of each region and the stitched plan |
-| `step_run.cpp` | The scheduler loop, the chain loop and the report of a run |
+| `step_run.cpp` | The scheduler loop, the chain loop, the report of a run, its counters and the hand-over of its observation |
+| `graph_id.cpp` | The process-wide counter `GraphId` draws from |
+| `dispatch_events.cpp` | `note_dispatch_event()`, which a task body calls for each event it submitted |
+| `assertion_logging.cpp` | The assertion handler `Runtime::create()` installs, which logs a failed check at `FATAL` |
 
 A recording verb is a template. It wraps the caller's kernel once in the `std::function` the
 engine runs and fills a `Detail::NodeDescription` (detail/README.md); `Recorder::record()` stores

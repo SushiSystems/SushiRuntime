@@ -117,9 +117,10 @@ namespace SushiRuntime
                 /**
                  * @brief Submits one node's device work to the queue.
                  * @param node The node to submit.
+                 * @param handed_over Receives the events a host body handed over for its timing.
                  * @return The submission's event, or an empty event when host work submitted nothing.
                  */
-                sycl::event submit_node(Internal::Graph::Node& node);
+                sycl::event submit_node(Internal::Graph::Node& node, std::vector<sycl::event>& handed_over);
 
                 /**
                  * @brief Submits one node's device work without keeping an event for it.

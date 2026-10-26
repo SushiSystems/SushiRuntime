@@ -77,9 +77,6 @@ namespace SushiRuntime
              */
             [[nodiscard]] SUSHIRUNTIME_API sycl::queue& queue(DeviceIndex device) const;
 
-            /** @brief Returns whether the queues were built to record device timing. */
-            [[nodiscard]] SUSHIRUNTIME_API bool is_profiling_enabled() const noexcept;
-
             /** @brief Returns whether the background thermal rebalancer is running. */
             [[nodiscard]] SUSHIRUNTIME_API bool is_rebalancer_enabled() const;
 

@@ -24,7 +24,6 @@ SushiLog release; the CLI hands its checkout to CMake as `SUSHILOG_DIR`.
 | `SR_LOG_TRACE`, `SR_LOG_DEBUG`, `SR_LOG_INFO` | Log one record in a category; each `{}` takes the next argument |
 | `SR_LOG_WARN`, `SR_LOG_ERROR` | The same, at the two levels that report a fallback or a failure |
 | `SR_LOG_FATAL` | Logs after every queued record and flushes; the caller then ends the process |
-| `SR_LOGGER_SET_SYNC_MODE(mode)` | Calls `SushiLog::set_log_synchronous` |
 
 `log_gate.hpp`:
 

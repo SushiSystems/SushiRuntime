@@ -70,6 +70,11 @@ A null model or a null inner provider stops the process, and the line names the 
 The matrix has three rows and its second row has two entries. The line carries the row index,
 the length of that row and the number of rows.
 
+### `Small_HwDiscovery.LogsAPciAddressThatDoesNotParse`
+
+`parse_pci_address` reads `0000:01:00.0` into its four fields and logs nothing. A string that holds no
+address returns nothing and logs one `DEBUG` in the `topology` module with the string and the device name.
+
 ## test_hwloc_topology_provider.cpp
 
 The file tests HwlocTopologyProvider and HwlocDistanceModel against the machine the test runs on.

@@ -35,6 +35,7 @@
 #include <cstddef>
 
 #include <SushiRuntime/core/determinism.hpp>
+#include <SushiRuntime/core/node_cost.hpp>
 #include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/core/placement_class.hpp>
 
@@ -64,6 +65,7 @@ namespace SushiRuntime
         struct TaskMetadata 
         {
             const char* name = "unnamed_task"; /**< Profiler identifier. */
+            const char* origin = nullptr;      /**< The caller's own operation the node belongs to; null for none. */
             TaskType task_type = TaskType::None;
             OperationID op_id = OperationID();
 
@@ -75,6 +77,9 @@ namespace SushiRuntime
 
             /** @brief Determinism contract the recorder stated; a default class states none. */
             Determinism determinism = Determinism::Unstated;
+
+            /** @brief Work one dispatch does, as the caller counted it; absent states none. */
+            std::optional<NodeCost> cost = std::nullopt;
 
             /**
              * @brief Position of the placement rule that won for this node at compile time.

@@ -33,6 +33,16 @@
 
 #include <SushiRuntime/scheduler/event_polling.hpp>
 #include <SushiRuntime/task/task.hpp>
+#include <atomic>
+#include <cstddef>
+#include <future>
+#include <optional>
+#include <string>
+#include <thread>
+#include <sycl/sycl.hpp>
+#include <SushiLog/log/log_level.hpp>
+#include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/test_runner/log_capture.hpp>
 
 using SushiRuntime::Internal::Scheduler::EventPolling;
 using SushiRuntime::Internal::Scheduler::Task;
@@ -131,4 +141,117 @@ TEST(Small_EventPolling, RemoveAtEdgeCases)
     list.remove_at(1); // remove the tail itself
     EXPECT_EQ(list.size(), 1u);
     EXPECT_EQ(untag(list[0].task), 10u);
+}
+
+using namespace SushiRuntime;
+using SushiRuntime::Internal::Scheduler::EventPolling;
+using SushiRuntime::Internal::Scheduler::Task;
+
+namespace
+{
+    /** @brief A queue that takes no successor, since the polled tasks have none. */
+    struct NoSuccessors
+    {
+        /** @brief Never called: the polled entries name no task. */
+        void push(Task*) {}
+    };
+
+    /** @brief Bounds the polls a test makes, so a defect fails the test and does not hang it. */
+    constexpr std::size_t K_MAX_POLLS = 5'000'000;
+} // namespace
+
+/** @brief Tests that the first failure of a poll is kept and a later one is logged, not returned. */
+TEST(Small_EventPolling, KeepsTheFirstFailureAndLogsTheSecond)
+{
+    TestRunner::LogCapture capture;
+    std::optional<Error> first;
+
+    EventPolling::keep_first_failure(first, Error{ErrorCode::KernelFailed, "the first"});
+    EXPECT_TRUE(capture.records().empty()) << "the first failure is kept without a line";
+
+    EventPolling::keep_first_failure(first, Error{ErrorCode::KernelFailed, "the second"});
+
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(first->message, "the first") << "a later failure must not replace the first";
+    const auto records = capture.records();
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_EQ(records[0].level, SushiLog::LogLevel::Warn);
+    EXPECT_EQ(records[0].module, "scheduler");
+    EXPECT_NE(records[0].message.find("the second"), std::string::npos) << records[0].message;
+    EXPECT_NE(records[0].message.find("the first"), std::string::npos) << records[0].message;
+}
+
+/** @brief Tests that a third failure is logged too and the first stays. */
+TEST(Small_EventPolling, EveryLaterFailureIsLoggedAndTheFirstStays)
+{
+    TestRunner::LogCapture capture;
+    std::optional<Error> first;
+
+    EventPolling::keep_first_failure(first, Error{ErrorCode::KernelFailed, "a"});
+    EventPolling::keep_first_failure(first, Error{ErrorCode::KernelFailed, "b"});
+    EventPolling::keep_first_failure(first, Error{ErrorCode::KernelFailed, "c"});
+
+    EXPECT_EQ(first->message, "a");
+    EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Warn), 2u);
+}
+
+/** @brief Tests that a poll that stalls waits on its oldest event once and counts it. */
+TEST(Medium_EventPolling, CountsAStallDrive)
+{
+    sycl::queue queue{sycl::cpu_selector_v};
+    EventPolling poller;
+    EventPolling::ActiveEventList list;
+    NoSuccessors successors;
+
+    std::promise<void> gate;
+    std::shared_future<void> opened = gate.get_future().share();
+    const sycl::event pending = queue.submit([&opened](sycl::handler& handler)
+    {
+        handler.host_task([opened]() { opened.wait(); });
+    });
+    EventPolling::PolledEvent entry;
+    entry.event = pending;
+    entry.task = nullptr;
+    entry.ready = false;
+    entry.has_event = true;
+    list.push(entry);
+
+    // The poll that stalls counts itself before it waits, so the helper opens the gate once it sees the count.
+    std::thread release([&poller, &gate]()
+    {
+        while (poller.stall_drives() == 0)
+            std::this_thread::yield();
+        gate.set_value();
+    });
+
+    std::size_t polls = 0;
+    while (!list.is_empty() && polls < K_MAX_POLLS)
+    {
+        static_cast<void>(poller.poll_events(list, successors));
+        ++polls;
+    }
+    release.join();
+    queue.wait();
+
+    EXPECT_TRUE(list.is_empty()) << "the event completed and was reaped";
+    EXPECT_EQ(poller.take_stall_drives(), 1u);
+    EXPECT_EQ(poller.take_stall_drives(), 0u) << "taking the count starts it again";
+}
+
+/** @brief Tests that a poll that finds progress counts no stall drive. */
+TEST(Medium_EventPolling, AnEventThatCompletesIsNotAStallDrive)
+{
+    EventPolling poller;
+    EventPolling::ActiveEventList list;
+    NoSuccessors successors;
+    EventPolling::PolledEvent entry;
+    entry.task = nullptr;
+    entry.ready = true;
+    entry.has_event = false;
+    list.push(entry);
+
+    static_cast<void>(poller.poll_events(list, successors));
+
+    EXPECT_TRUE(list.is_empty());
+    EXPECT_EQ(poller.stall_drives(), 0u);
 }

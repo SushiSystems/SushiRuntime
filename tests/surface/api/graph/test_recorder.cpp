@@ -45,6 +45,8 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
+
+#include "run_recorder.hpp"
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
@@ -133,11 +135,13 @@ namespace RecorderSemanticsTests
                                 [words](std::size_t i) { words[i] += 1u; });
         }
 
-        /** @brief Counts the node timing rows of report that carry name. */
-        std::size_t rows_named(const RunReport& report, const std::string& name)
+        /** @brief Counts the node table rows of observation that carry name. */
+        std::size_t rows_named(const RunObservation& observation, const std::string& name)
         {
             std::size_t rows = 0;
-            for (const NodeTiming& row : report.node_timings)
+            if (observation.table == nullptr)
+                return rows;
+            for (const NodeTableRow& row : observation.table->rows())
                 rows += row.name == name ? 1u : 0u;
             return rows;
         }
@@ -234,11 +238,11 @@ namespace RecorderSemanticsTests
     TEST(Medium_RecorderSemantics, AThreeNodeRuleIsOneRuleWithOneName)
     {
         auto rt = Runtime::create().value();
+        Testing::RunRecorder observed(rt);
         auto values = zeroed(rt);
         auto graph = rt.graph();
         record_three_node_rule(graph.recorder(), values);
         graph.name("pipeline");
-        graph.set_profiling(true);
 
         EXPECT_EQ(graph.size(), 1u);
         EXPECT_EQ(graph.node_count(), K_RULE_NODES);
@@ -247,9 +251,12 @@ namespace RecorderSemanticsTests
         RunReport report;
         graph.run(1, report).value();
 
-        // The nodes of a rule share one registration, and the report holds one row per registration.
-        ASSERT_EQ(report.node_timings.size(), 1u);
-        EXPECT_EQ(rows_named(report, "pipeline"), 1u) << "the rule's row must carry the rule's name";
+        // The nodes of a rule share one registration, and the table holds one row per registration.
+        ASSERT_EQ(observed.count(), 1u);
+        const RunObservation observation = observed.last();
+        ASSERT_NE(observation.table, nullptr);
+        ASSERT_EQ(observation.table->size(), 1u);
+        EXPECT_EQ(rows_named(observation, "pipeline"), 1u) << "the rule's row must carry the rule's name";
         EXPECT_NE(graph.rule_registration(0), Graph::K_NO_REGISTRATION);
         EXPECT_EQ(graph.rule_registration(1), Graph::K_NO_REGISTRATION)
             << "the graph holds one rule, so position 1 names none";
@@ -259,10 +266,10 @@ namespace RecorderSemanticsTests
     TEST(Medium_RecorderSemantics, ARegionRuleReportsItsRegistrationAndName)
     {
         auto rt = Runtime::create().value();
+        Testing::RunRecorder observed(rt);
         auto first = zeroed(rt);
         auto second = zeroed(rt);
         auto world = rt.dynamic_graph();
-        world.set_profiling(true);
         add_increment(world.region(K_CELL), first, 1u);
         record_three_node_rule(world.region(K_CELL + 1).recorder(), second);
         world.region(K_CELL + 1).name("pipeline");
@@ -274,7 +281,8 @@ namespace RecorderSemanticsTests
         RunReport report;
         world.run(1, report).value();
 
-        EXPECT_EQ(rows_named(report, "pipeline"), 1u);
+        ASSERT_EQ(observed.count(), 1u);
+        EXPECT_EQ(rows_named(observed.last(), "pipeline"), 1u);
         EXPECT_EQ(world.rule_registration(K_CELL, 0), 0u);
         EXPECT_EQ(world.rule_registration(K_CELL + 1, 0), 1u)
             << "the three nodes of the second region's rule share the index after the first";
@@ -285,6 +293,7 @@ namespace RecorderSemanticsTests
     TEST(Medium_RecorderSemantics, NameLastOwnsItsText)
     {
         auto rt = Runtime::create().value();
+        Testing::RunRecorder observed(rt);
         auto values = zeroed(rt);
         auto graph = rt.graph();
         add_increment(graph, values, 1u);
@@ -296,36 +305,44 @@ namespace RecorderSemanticsTests
         add_increment(graph, values, 1u);
         graph.name(std::string("a label that is ") + "replaced by the next call");
         graph.name(std::string("integrate_") + std::to_string(K_CELL));
-        graph.set_profiling(true);
 
         RunReport report;
         graph.run(1, report).value();
 
-        ASSERT_EQ(report.node_timings.size(), 2u);
-        EXPECT_EQ(rows_named(report, "integrate_velocities_of_the_seventh_cell"), 1u)
+        ASSERT_EQ(observed.count(), 1u);
+        const RunObservation observation = observed.last();
+        ASSERT_NE(observation.table, nullptr);
+        ASSERT_EQ(observation.table->size(), 2u);
+        EXPECT_EQ(rows_named(observation, "integrate_velocities_of_the_seventh_cell"), 1u)
             << "the name must survive the string it was read from";
-        EXPECT_EQ(rows_named(report, "integrate_7"), 1u)
+        EXPECT_EQ(rows_named(observation, "integrate_7"), 1u)
             << "a temporary must be a valid argument, and the last name given wins";
     }
 
     TEST(Medium_RecorderSemantics, ANullOrEmptyNameLeavesTheDefault)
     {
         auto rt = Runtime::create().value();
+        Testing::RunRecorder observed(rt);
         auto values = zeroed(rt);
         auto graph = rt.graph();
         add_increment(graph, values, 1u);
-        graph.set_profiling(true);
         RunReport unnamed;
         graph.run(1, unnamed).value();
-        ASSERT_EQ(unnamed.node_timings.size(), 1u);
+        ASSERT_EQ(observed.count(), 1u);
+        const RunObservation first = observed.last();
+        ASSERT_NE(first.table, nullptr);
+        ASSERT_EQ(first.table->size(), 1u);
 
         const char* absent = nullptr;
         graph.name("named").name(absent);
         RunReport report;
         graph.run(1, report).value();
 
-        ASSERT_EQ(report.node_timings.size(), 1u);
-        EXPECT_EQ(report.node_timings[0].name, unnamed.node_timings[0].name);
+        ASSERT_EQ(observed.count(), 2u);
+        const RunObservation second = observed.last();
+        ASSERT_NE(second.table, nullptr);
+        ASSERT_EQ(second.table->size(), 1u);
+        EXPECT_EQ(second.table->rows()[0].name, first.table->rows()[0].name);
     }
 
     TEST(Medium_RecorderSemantics, MovedFromGraphIsEmpty)
@@ -641,13 +658,13 @@ namespace RecorderSemanticsTests
     TEST(Medium_RecorderSemantics, AnExtensionThatRecordsNothingAddsNoRule)
     {
         auto rt = Runtime::create().value();
+        Testing::RunRecorder observed(rt);
         auto values = zeroed(rt);
         auto graph = rt.graph();
         add_increment(graph, values, 1u);
         graph.name("integrate");
         const std::uint64_t recorded = graph.recorder().generation();
         graph.extend([](Recorder&) {});
-        graph.set_profiling(true);
 
         RunReport report;
         graph.run(1, report).value();
@@ -655,7 +672,8 @@ namespace RecorderSemanticsTests
         EXPECT_EQ(graph.size(), 1u);
         EXPECT_EQ(graph.node_count(), 1u);
         EXPECT_EQ(graph.recorder().generation(), recorded) << "nothing recorded, nothing to rebuild";
-        EXPECT_EQ(rows_named(report, "integrate"), 1u) << "the first rule must keep its name";
+        ASSERT_EQ(observed.count(), 1u);
+        EXPECT_EQ(rows_named(observed.last(), "integrate"), 1u) << "the first rule must keep its name";
         EXPECT_NE(graph.rule_registration(0), Graph::K_NO_REGISTRATION);
         EXPECT_EQ(values[0], 1u);
     }
@@ -1229,7 +1247,6 @@ namespace RuleRegistrationTests
 
             record_grouped_rule(r.graph.recorder(), r.first, r.second, r.third);
             r.grouped = r.graph.last_rule();
-            r.graph.set_profiling(true);
             return r;
         }
     } // namespace
@@ -1249,6 +1266,7 @@ namespace RuleRegistrationTests
     TEST(Medium_RuleRegistration, ARuleScopeTakesOneIndexOfItsOwn)
     {
         auto rt = Runtime::create().value();
+        Testing::RunRecorder observed(rt);
         Recorded r = record(rt);
         RunReport report;
         r.graph.run(1, report).value();
@@ -1271,7 +1289,8 @@ namespace RuleRegistrationTests
             << "a position past the last rule names no rule";
 
         std::size_t reported = 0;
-        for (const NodeEventRecord& event : report.node_events)
+        ASSERT_EQ(observed.count(), 1u);
+        for (const NodeEventRecord& event : observed.last().events)
             reported += event.node_index == shared ? 1u : 0u;
         EXPECT_EQ(reported, K_RULE_NODES) << "every node of the rule scope must report its one index";
     }
@@ -1279,17 +1298,20 @@ namespace RuleRegistrationTests
     TEST(Medium_RuleRegistration, EveryNodeEventNamesARecordedRule)
     {
         auto rt = Runtime::create().value();
+        Testing::RunRecorder observed(rt);
         Recorded r = record(rt);
         RunReport report;
         r.graph.run(1, report).value();
         ASSERT_TRUE(report.is_successful);
-        ASSERT_FALSE(report.node_events.empty()) << "profiling was requested, so events must exist";
+        ASSERT_EQ(observed.count(), 1u);
+        const RunObservation observation = observed.last();
+        ASSERT_FALSE(observation.events.empty()) << "an observer is added, so events must exist";
 
         std::set<std::uint32_t> recorded;
         for (std::size_t rule = 0; rule < r.graph.size(); ++rule)
             recorded.insert(r.graph.rule_registration(rule));
 
-        for (const NodeEventRecord& event : report.node_events)
+        for (const NodeEventRecord& event : observation.events)
             EXPECT_EQ(recorded.count(event.node_index), 1u)
                 << "node event " << event.node_index << " matches no rule the caller recorded";
     }
@@ -1299,15 +1321,18 @@ namespace RuleRegistrationTests
         constexpr std::size_t STEPS = 4;
 
         auto rt = Runtime::create().value();
+        Testing::RunRecorder observed(rt);
         Recorded r = record(rt);
         RunReport report;
         r.graph.run(STEPS, report).value();
         ASSERT_TRUE(report.is_successful);
-        ASSERT_EQ(report.node_events.size(), (K_PLAIN_RULES + K_RULE_NODES) * STEPS);
+        ASSERT_EQ(observed.count(), 1u);
+        const RunObservation observation = observed.last();
+        ASSERT_EQ(observation.events.size(), (K_PLAIN_RULES + K_RULE_NODES) * STEPS);
 
         const std::uint32_t shared = r.graph.rule_registration(r.grouped);
         std::vector<std::size_t> per_invocation(STEPS, 0);
-        for (const NodeEventRecord& event : report.node_events)
+        for (const NodeEventRecord& event : observation.events)
         {
             if (event.node_index != shared)
                 continue;
@@ -1340,8 +1365,8 @@ namespace RuleRegistrationTests
         NodeOptions copy_options;
         copy_options.width = K_COPY_MARK;
 
+        Testing::RunRecorder observed(rt);
         auto graph = rt.graph();
-        graph.set_profiling(true);
         Recorder& recorder = graph.recorder();
 
         const std::size_t scale = recorder.kernel(K_WIDTH, Access(Reads(words), Writes(words)),
@@ -1361,11 +1386,13 @@ namespace RuleRegistrationTests
         EXPECT_EQ(idle, copy) << "the nodes of one scope belong to one rule";
         EXPECT_NE(scale, copy);
 
-        const auto report = graph.run().value();
+        graph.run().value();
+        ASSERT_EQ(observed.count(), 1u);
+        const RunObservation observation = observed.last();
 
         std::uint32_t scale_index = Graph::K_NO_REGISTRATION;
         std::uint32_t copy_index = Graph::K_NO_REGISTRATION;
-        for (const NodeEventRecord& event : report.node_events)
+        for (const NodeEventRecord& event : observation.events)
         {
             if (event.launched_width == K_SCALE_MARK)
                 scale_index = event.node_index;

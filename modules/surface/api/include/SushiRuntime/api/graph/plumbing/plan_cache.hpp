@@ -31,8 +31,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
+#include <SushiRuntime/api/detail/graph_id.hpp>
 #include <SushiRuntime/api/detail/node_description.hpp>
 #include <SushiRuntime/api/detail/plan.hpp>
 #include <SushiRuntime/api/graph/plan_view.hpp>
@@ -43,6 +45,8 @@
 
 namespace SushiRuntime
 {
+    namespace Internal::Execution { class RuntimeContext; }
+
     namespace Detail
     {
         struct PlanCacheState;
@@ -62,12 +66,23 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] std::size_t compile_count() const noexcept { return compiles_; }
 
+                /**
+                 * @brief Returns the process-wide id of this graph, never 0 for a graph in use.
+                 * @return 0 after a move from this cache.
+                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
+                 */
+                [[nodiscard]] std::uint64_t id() const noexcept { return id_.value(); }
+
             protected:
                 /**
-                 * @brief Starts with no plan built.
-                 * @param profiling Whether the first plan requests per-node device timing.
+                 * @brief Names the graph for the profiler; the next build copies the label into the plan's node table.
+                 *
+                 * Changing it forces no rebuild.
                  */
-                SUSHIRUNTIME_API explicit PlanCache(bool profiling) noexcept;
+                void set_label(std::string label) { label_ = std::move(label); }
+
+                /** @brief Starts with no plan built. */
+                SUSHIRUNTIME_API PlanCache() noexcept;
 
                 /**
                  * @brief Takes over another cache's plan.
@@ -88,31 +103,6 @@ namespace SushiRuntime
                 SUSHIRUNTIME_API ~PlanCache();
 
                 /**
-                 * @brief Requests or withdraws per-node device timing.
-                 *
-                 * A value that differs from the stored one marks the plan stale; the same value
-                 * changes nothing.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
-                 */
-                void set_profiling(bool requested) noexcept
-                {
-                    if (requested == profiling_requested_)
-                        return;
-                    profiling_requested_ = requested;
-                    dirty_ = true;
-                }
-
-                /**
-                 * @brief Returns whether the next plan requests per-node device timing.
-                 * @return The last value given to set_profiling(), or the value the cache was
-                 *         constructed with.
-                 */
-                [[nodiscard]] bool is_profiling_requested() const noexcept
-                {
-                    return profiling_requested_;
-                }
-
-                /**
                  * @brief Frees the plan and everything its task bodies captured, and forgets the
                  *        registration of every rule.
                  * @pre No step that runs the plan is pending.
@@ -121,8 +111,8 @@ namespace SushiRuntime
                 SUSHIRUNTIME_API void discard() noexcept;
 
                 /**
-                 * @brief Returns whether the plan is missing or older than what recorder holds
-                 *        or than the context's placement record.
+                 * @brief Returns whether the plan is missing or older than what recorder holds,
+                 *        than the context's placement record or than its device timing request.
                  * @param context The runtime whose rule set the plan was compiled under.
                  * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
                  */
@@ -177,6 +167,10 @@ namespace SushiRuntime
                 [[nodiscard]] SUSHIRUNTIME_API const Plan* compiled_plan() const noexcept;
 
             private:
+                /** @brief Names why the next build() happens, for its log line; a string literal. */
+                [[nodiscard]] const char* rebuild_reason(const Recorder& recorder,
+                                                         Internal::Execution::RuntimeContext& runtime) const noexcept;
+
                 /**
                  * @brief Moves other's plan and counters here and leaves other with none.
                  * @param other Cache to empty; its profiling request is copied, not cleared.
@@ -195,11 +189,14 @@ namespace SushiRuntime
                 /** @brief Counts how many times the backing graph has been compiled. */
                 std::size_t compiles_ = 0;
 
-                /** @brief Set until the first build, and by a change of the profiling request. */
+                /** @brief Set until the first build, and after a discard. */
                 bool dirty_ = true;
 
-                /** @brief Starts as the runtime's profiling setting; a build stamps it in. */
-                bool profiling_requested_ = false;
+                /** @brief The graph's label; a build copies it into the plan. */
+                std::string label_;
+
+                /** @brief The identity of this graph; a build copies it into the plan. */
+                Detail::GraphId id_;
         };
     } // namespace Detail
 } // namespace SushiRuntime

@@ -47,11 +47,27 @@ namespace SushiRuntime
         class SUSHIRUNTIME_API StopSignal final
         {
             public:
+                /** @brief Names a handler as the C runtime stores it. */
+                using Handler = void (*)(int);
+
+                /** @brief Names a function that installs a handler and returns the old one. */
+                using SignalInstaller = Handler (*)(int, Handler);
+
                 /**
                  * @brief Clears the flag and installs the handler for SIGINT, SIGTERM and,
-                 *        where the platform defines it, SIGBREAK.
+                 *        where the platform defines it, SIGBREAK, through the C runtime's
+                 *        signal().
+                 *
+                 * A signal the C runtime refuses is logged at WARN and left without a handler.
                  */
                 StopSignal() noexcept;
+
+                /**
+                 * @brief Does what the default constructor does, installing through
+                 *        @p install_signal.
+                 * @param install_signal Returns SIG_ERR for a signal it could not install.
+                 */
+                explicit StopSignal(SignalInstaller install_signal) noexcept;
 
                 /** @brief Puts back the handlers that were installed before. */
                 ~StopSignal();
@@ -72,9 +88,6 @@ namespace SushiRuntime
                 void request() noexcept;
 
             private:
-                /** @brief Names a handler as the C runtime stores it. */
-                using Handler = void (*)(int);
-
                 /** @brief Counts the signals a platform can have a stop handler for. */
                 static constexpr std::size_t K_MAXIMUM_SIGNALS = 3;
 

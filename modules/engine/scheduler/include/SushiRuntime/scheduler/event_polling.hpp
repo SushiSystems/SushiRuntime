@@ -90,6 +90,15 @@ namespace SushiRuntime
 
                     /** @brief The dispatched node's widths, snapshotted where the event is armed. */
                     SushiRuntime::Internal::Graph::NodeWidths widths{};
+
+                    /** @brief The events the task's body handed over, when it handed over any. */
+                    std::vector<sycl::event> handed_over;
+
+                    /** @brief Device whose queue the dispatch went to, or K_HOST_DEVICE_INDEX. */
+                    std::uint32_t device_index = K_HOST_DEVICE_INDEX;
+
+                    /** @brief Profiler thread index of the thread that submitted the dispatch; 0 when unknown. */
+                    std::uint32_t submit_thread = 0;
                 };
 
                 /**
@@ -253,12 +262,41 @@ namespace SushiRuntime
                 std::atomic<bool> profiling_{false};
                 /** @brief The armed round's event ledger, or null when it does not profile. */
                 std::atomic<Internal::Observability::ProfilingLedger*> ledger_{nullptr};
+                /** @brief Counts polls that waited on their oldest event, across workers. */
+                std::atomic<std::uint64_t> stall_drives_{0};
                 /** @brief Maximum value for the backoff counter. */
                 static constexpr size_t K_MAX_BACKOFF = 64;
                 /** @brief No-progress polls before forcing a blocking wait. */
                 static constexpr size_t K_STALL_DRIVE_THRESHOLD = 32;
 
             public:
+                /**
+                 * @brief Keeps @p first when it holds a failure and logs @p next as the one dropped;
+                 *        otherwise stores @p next in it.
+                 */
+                static void keep_first_failure(std::optional<Error>& first, Error next)
+                {
+                    if (!first)
+                    {
+                        first = std::move(next);
+                        return;
+                    }
+                    SR_LOG_WARN(K_SCHEDULER_LOG_CATEGORY, "A second event failed in the same poll: {}; the poll "
+                                "returns the first failure, '{}'.", next.message, first->message);
+                }
+
+                /** @brief Returns how many stalled polls waited on their oldest event since the last take. */
+                [[nodiscard]] std::uint64_t stall_drives() const noexcept
+                {
+                    return stall_drives_.load(std::memory_order_relaxed);
+                }
+
+                /** @brief Returns the stalled-poll count and starts it again from zero. */
+                std::uint64_t take_stall_drives() noexcept
+                {
+                    return stall_drives_.exchange(0, std::memory_order_relaxed);
+                }
+
                 /**
                  * @brief Checks for completed events and triggers successors.
                  *
@@ -309,8 +347,7 @@ namespace SushiRuntime
                         });
                         if (!polled)
                         {
-                            if (!first_failure)
-                                first_failure = std::move(polled.error());
+                            keep_first_failure(first_failure, std::move(polled.error()));
                             done = reap_failed(entry);
                         }
 
@@ -353,6 +390,7 @@ namespace SushiRuntime
                         // After K_STALL_DRIVE_THRESHOLD idle polls the oldest event is waited on.
                         if (++stall_polls_ >= K_STALL_DRIVE_THRESHOLD && !active_events.is_empty())
                         {
+                            stall_drives_.fetch_add(1, std::memory_order_relaxed);
                             auto& oldest = active_events[0];
                             if (oldest.has_event)
                             {
@@ -360,7 +398,7 @@ namespace SushiRuntime
                                     [&oldest]() { oldest.event.wait(); });
                                 if (!waited)
                                 {
-                                    first_failure = std::move(waited.error());
+                                    keep_first_failure(first_failure, std::move(waited.error()));
                                     reap_failed(oldest);
                                 }
                             }
@@ -388,6 +426,8 @@ namespace SushiRuntime
 
                 /**
                  * @brief Writes this dispatch's event record before the completion is published.
+                 *
+                 * A dispatch that leaves no record is counted in the ledger under its cause.
                  * @see modules/engine/scheduler/README.md
                  */
                 void accumulate_profiling(const PolledEvent& pe) noexcept
@@ -395,37 +435,45 @@ namespace SushiRuntime
                     if (!pe.task)
                         return;
 
+                    Internal::Observability::ProfilingLedger* ledger =
+                        ledger_.load(std::memory_order_acquire);
+                    if (ledger == nullptr)
+                        return;
+
+                    auto* node = pe.task->is_graph_node()
+                        ? static_cast<SushiRuntime::Internal::Graph::Node*>(pe.task) : nullptr;
+
                     Internal::Observability::EventTimestamps times;
-                    const bool have_start_end = pe.has_event && Internal::Observability::read_event_timestamps(pe.event, times);
-
-                    if (have_start_end)
+                    const bool have_start_end = pe.has_event && Internal::Observability::read_dispatch_timestamps(pe.event, pe.handed_over, times);
+                    if (!have_start_end)
                     {
-                        if (Internal::Observability::ProfilingLedger* ledger =
-                                ledger_.load(std::memory_order_acquire))
+                        // A task that did not run, a sentinel and a native host node leave no event by design.
+                        if (node != nullptr && pe.executed && !node->is_sentinel)
                         {
-                            if (times.has_submit && ledger->is_pairing_owner(pe.task))
-                                ledger->set_pairing_event_ns(times.submit_ns);
-
-                            if (pe.task->is_graph_node())
-                            {
-                                auto* node = static_cast<SushiRuntime::Internal::Graph::Node*>(pe.task);
-                                const std::uint32_t slot = ledger->claim_slot(node->registration_index);
-                                if (slot != Internal::Observability::ProfilingLedger::npos)
-                                {
-                                    NodeEventRecord rec{};
-                                    rec.node_index = node->registration_index;
-                                    rec.invocation = pe.step;
-                                    rec.launched_width = pe.widths.launched;
-                                    rec.live_width     = pe.widths.live;
-                                    rec.submit_ns  = times.submit_ns;
-                                    rec.start_ns   = times.start_ns;
-                                    rec.end_ns     = times.end_ns;
-                                    ledger->write(node->registration_index, slot, rec);
-                                }
-                            }
+                            if (pe.has_event)
+                                ledger->note_drop(DropCause::UnreadableEvent,
+                                                  node->registration_index);
+                            else if (node->execution_mode() == SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Kernel)
+                                ledger->note_drop(DropCause::NoEvent,
+                                                  node->registration_index);
                         }
+                        return;
                     }
 
+                    if (times.has_submit && ledger->is_pairing_owner(pe.device_index, pe.task))
+                        ledger->set_pairing_event_ns(pe.device_index, times.submit_ns);
+
+                    if (node == nullptr)
+                        return;
+
+                    Internal::Observability::DispatchFacts facts;
+                    facts.node_index = node->registration_index;
+                    facts.invocation = pe.step;
+                    facts.launched_width = pe.widths.launched;
+                    facts.live_width = pe.widths.live;
+                    facts.device_index = pe.device_index;
+                    facts.submit_thread = pe.submit_thread;
+                    ledger->record(facts, Internal::Observability::DispatchTimes{times.submit_ns, times.start_ns, times.end_ns});
                 }
 
                 /**

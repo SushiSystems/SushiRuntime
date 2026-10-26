@@ -108,6 +108,13 @@ trades run-to-run reproducibility for throughput on long batch work. See
 SushiBLAS for reductions that fold in a fixed order, so a sum gives the same bits at any
 worker count.
 
+## How do I see where a run spent its time?
+
+A `RunReport` holds no timing. A program that adds a `RunObserver` with `Runtime::add_run_observer()`
+receives the device time of every dispatch, and a host that links SushiProfiler registers the runtime
+with `register_profiler_parts()` and reads the same dispatches as spans beside the runtime's own zones.
+[The profiling guide](PROFILING_GUIDE.md) shows both and says what timing costs.
+
 ## Can it spread work across several machines?
 
 Yes, through an optional master-worker layer that offloads individual tasks to remote workers

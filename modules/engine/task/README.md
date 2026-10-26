@@ -40,7 +40,26 @@ fields it stores behind `OffloadState::payload`.
 | `offload_sink.hpp` | `Internal::Graph::OffloadSink`, through which a coordinator returns nodes to the scheduler |
 | `offload_coordinator.hpp` | `Internal::Graph::OffloadCoordinator`, the seam an offload layer implements |
 | `node_widths.hpp` | `Internal::Graph::NodeWidths`, `Internal::Graph::snapshot_widths` (defined in `modules/engine/task/source/node_widths.cpp`) |
+| `dispatch_events.hpp` | `Internal::DispatchEvents::DispatchEventScope`, the thread-local scope that collects the events a task body hands over |
 | `node_placement.hpp` | `Internal::Graph::K_DEFAULT_PLACEMENT`, `Internal::Graph::placement_of` (defined in `modules/engine/task/source/node_placement.cpp`), the device a node runs on |
+
+## Metadata of a node
+
+`TaskMetadata` carries the label (`name`), the operation, the placement class and key, the
+determinism contract and an optional `NodeCost`. The cost is absent unless the recorder stated one;
+the graph module copies it into the plan's node table.
+
+## The events a body hands over
+
+A host-work body that submits several kernels returns one event, which the successors wait on, and
+hands each kernel's event to the dispatcher with `note_dispatch_event()` (declared in
+`modules/surface/api/include/SushiRuntime/api/graph/dispatch_events.hpp`). The dispatcher opens a
+`DispatchEventScope` around the body only while the plan records device timing; the scope collects
+into a vector on the calling thread, and `note()` does nothing when no scope is open. Scopes nest and
+restore the outer one. The pointer is a `thread_local` inside an inline function, so every module of
+the library sees one instance. The returned event must complete after every handed-over event, since
+the dispatch is timed across the handed-over ones and completes with the returned one. The body
+signature and `execute_host()` are unchanged.
 
 ## Placement rule order
 

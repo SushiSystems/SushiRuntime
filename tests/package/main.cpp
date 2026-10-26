@@ -76,9 +76,8 @@ int main()
         return 1;
     }
 
-    std::printf("OK: SushiRuntime %s ran %zu tasks in %.3f ms\n",
+    std::printf("OK: SushiRuntime %s ran %zu tasks\n",
                 SushiRuntime::runtime_version_string(),
-                report.total_tasks_executed,
-                report.total_duration_ms);
+                report.total_tasks_executed);
     return 0;
 }

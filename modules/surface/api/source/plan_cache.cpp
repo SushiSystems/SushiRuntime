@@ -28,6 +28,7 @@
 
 #include <SushiRuntime/api/graph/plumbing/plan_cache.hpp>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -35,6 +36,7 @@
 #include <utility>
 #include <vector>
 
+#include <SushiRuntime/api/api_log_category.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -43,6 +45,8 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
+#include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 #include <SushiRuntime/engine_handles/plan_access.hpp>
@@ -77,12 +81,9 @@ namespace SushiRuntime
                 placement;
         };
 
-        PlanCache::PlanCache(bool profiling) noexcept : profiling_requested_(profiling)
-        {
-        }
+        PlanCache::PlanCache() noexcept = default;
 
         PlanCache::PlanCache(PlanCache&& other) noexcept
-            : profiling_requested_(other.profiling_requested_)
         {
             take(other);
         }
@@ -100,8 +101,12 @@ namespace SushiRuntime
         {
             using Internal::Graph::TaskGraph;
 
+            SR_ZONE("plan.build");
+
             Internal::Execution::RuntimeContext& runtime =
                 Internal::ContextAccess::context(context);
+            const auto build_started = std::chrono::steady_clock::now();
+            const char* const reason = rebuild_reason(recorder, runtime);
             auto built = std::make_unique<Detail::PlanCacheState>();
             TaskGraph backing_graph;
             std::vector<std::uint32_t> registrations(recorder.rule_count(),
@@ -134,23 +139,51 @@ namespace SushiRuntime
             if (!compiled)
                 return make_error(std::move(compiled.error()));
             built->plan = std::move(*compiled);
-            runtime.execution_engine().prepare(built->plan, built->placement->rules);
-            built->plan.profiling = profiling_requested_;
-            built->plan.capture_base_state();
-            built->plan.chain = Internal::Execution::classify_chain(built->plan, runtime);
+            {
+                SR_ZONE_FINE("plan.prepare");
+                runtime.execution_engine().prepare(built->plan, built->placement->rules);
+                built->plan.profiling = runtime.wants_device_timing();
+                built->plan.label = label_;
+                built->plan.graph_id = id_.value();
+                built->plan.capture_base_state();
+            }
+            {
+                SR_ZONE_FINE("plan.classify");
+                built->plan.chain = Internal::Execution::classify_chain(built->plan, runtime);
+            }
             state_ = std::move(built);
             registrations_ = std::move(registrations);
             dirty_ = false;
             built_generation_ = recorder.generation();
             ++compiles_;
+            SR_LOG_DEBUG(K_API_LOG_CATEGORY, "Plan built ({}): {} nodes in {} ms.", reason,
+                         state_->plan.all_nodes.size(),
+                         std::chrono::duration<double, std::milli>(
+                             std::chrono::steady_clock::now() - build_started).count());
             return {};
+        }
+
+        const char* PlanCache::rebuild_reason(const Recorder& recorder,
+                                              Internal::Execution::RuntimeContext& runtime) const noexcept
+        {
+            if (state_ == nullptr)
+                return "first build, or the plan was discarded";
+            if (built_generation_ != recorder.generation())
+                return "the recorder changed";
+            if (state_->placement->generation != runtime.placement()->generation)
+                return "the placement changed";
+            if (state_->plan.profiling != runtime.wants_device_timing())
+                return "the device timing request changed";
+            return "the plan was marked for a rebuild";
         }
 
         bool PlanCache::stale(const Recorder& recorder, const ContextHandle& context) const noexcept
         {
-            return state_ == nullptr || dirty_ || built_generation_ != recorder.generation() ||
-                   state_->placement->generation !=
-                       Internal::ContextAccess::context(context).placement()->generation;
+            if (state_ == nullptr || dirty_ || built_generation_ != recorder.generation())
+                return true;
+            Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
+            return state_->placement->generation != runtime.placement()->generation ||
+                   state_->plan.profiling != runtime.wants_device_timing();
         }
 
         void PlanCache::rearm() noexcept
@@ -171,10 +204,13 @@ namespace SushiRuntime
                 described.rule = recorded.rule;
                 if (node.metadata.name != nullptr)
                     described.name = node.metadata.name;
+                if (node.metadata.origin != nullptr)
+                    described.origin = node.metadata.origin;
                 described.operation = node.metadata.op_id;
                 described.placement_class = node.metadata.placement_class;
                 described.placement_key = node.metadata.placement_key;
                 described.determinism = node.metadata.determinism;
+                described.cost = node.metadata.cost;
                 if (node.metadata.placement_rule)
                     described.placement_rule = *node.metadata.placement_rule;
                 described.predecessor_count =
@@ -211,7 +247,8 @@ namespace SushiRuntime
             built_generation_ = std::exchange(other.built_generation_, 0);
             compiles_ = std::exchange(other.compiles_, 0);
             dirty_ = std::exchange(other.dirty_, true);
-            profiling_requested_ = other.profiling_requested_;
+            label_ = std::exchange(other.label_, {});
+            id_ = std::move(other.id_);
         }
     } // namespace Detail
 } // namespace SushiRuntime

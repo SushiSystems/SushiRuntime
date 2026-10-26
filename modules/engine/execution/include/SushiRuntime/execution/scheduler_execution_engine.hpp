@@ -147,20 +147,26 @@ namespace SushiRuntime
             WorkerPool worker_pool() const override;
 
             /**
-             * @brief Clears all profiling accumulators and resets the event ledger before a
-             *        profiled run.
+             * @brief Clears the worker time and resets the event ledger before a run that
+             *        records timing.
              * @param expected_invocations Per-node dispatch count this run expects.
              * @see modules/engine/execution/README.md
              */
             void reset_profiling(Internal::Graph::CompiledGraph& graph, std::size_t expected_invocations) override;
 
+            /** @brief Starts a run and hands its observation over when its sentinel completes. */
+            [[nodiscard]] Result<void> submit_observed(Internal::Graph::CompiledGraph& graph) override;
+
+            /** @brief Writes the workers' time of the run as the values worker.busy, .stealing, .polling and .idle. */
+            void write_run_values() const override;
+
             /**
-             * @brief Fills a report's profiling breakdown after a profiled run.
-             * @param report The report to populate; left untouched for nodes that did not run.
+             * @brief Fills an observation with what the run captured.
+             * @param observation Its layer is read; the table, records and pairings are written.
              * @see modules/engine/execution/README.md
              */
             void collect_profiling(Internal::Graph::CompiledGraph& graph,
-                                   RunReport& report) const override;
+                                   RunObservation& observation) const override;
 
             /**
              * @brief Reports whether a scheduled or a chained run is in progress on this engine.

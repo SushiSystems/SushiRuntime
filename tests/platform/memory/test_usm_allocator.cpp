@@ -55,6 +55,7 @@
 #include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/device_probe/device_probe.hpp>
+#include <SushiRuntime/test_runner/log_capture.hpp>
 
 using SushiRuntime::Internal::Memory::USMAllocator;
 using SushiRuntime::Internal::Memory::USMKind;
@@ -605,4 +606,45 @@ TEST_F(Medium_UsmAllocator, SetReleaseObserverWaitsForAnObserverCallInFlight)
     remover.join();
     releaser.join();
     EXPECT_TRUE(removal_returned.load());
+}
+
+TEST(Medium_UsmAllocatorFailure, LogsTheRefusedRequest)
+{
+    if (!SushiRuntime::Test::has_any_sycl_device())
+        GTEST_SKIP() << "SYCL reports no device.";
+
+    const sycl::device device = sycl::device::get_devices().front();
+    std::optional<USMKind> kind;
+    for (const USMKind candidate : K_ALL_KINDS)
+    {
+        if (supports(device, candidate))
+        {
+            kind = candidate;
+            break;
+        }
+    }
+    if (!kind.has_value())
+        GTEST_SKIP() << "SYCL device 0 supports no USM kind.";
+
+    USMAllocator allocator(std::vector<sycl::queue>{sycl::queue(device)});
+    const std::size_t past_the_memory =
+        static_cast<std::size_t>(device.get_info<sycl::info::device::global_mem_size>()) * 2;
+
+    SushiRuntime::TestRunner::LogCapture capture;
+    void* address = &allocator;
+    try
+    {
+        address = allocator.allocate(USMRequest{*kind, past_the_memory, 64, 0});
+    }
+    catch (const sycl::exception&)
+    {
+        GTEST_SKIP() << "This SYCL runtime throws for an oversized request instead of "
+                        "returning null; the refusal is not logged where it is thrown.";
+    }
+
+    EXPECT_EQ(address, nullptr);
+    EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Warn), 1u);
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Warn, std::to_string(past_the_memory)));
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Warn, "alignment 64"));
+    EXPECT_EQ(capture.count_in("memory"), 1u);
 }

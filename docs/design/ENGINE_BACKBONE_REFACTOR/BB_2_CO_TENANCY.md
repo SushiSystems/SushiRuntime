@@ -12,7 +12,6 @@ There is no knob for any of it: `RuntimeConfig` has exactly one field.
 ```cpp
 struct RuntimeConfig
 {
-    bool profiling = false;
     std::size_t worker_count = 0;      // 0 = all cores (today's behavior)
     std::size_t first_core   = 0;      // pin workers to [first_core, first_core + count)
     PinPolicy   pinning      = PinPolicy::Pin;   // Pin | Float

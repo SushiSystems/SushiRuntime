@@ -28,12 +28,14 @@
 
 #include <SushiRuntime/api/detail/step_run.hpp>
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <utility>
 
+#include <SushiRuntime/api/api_log_category.hpp>
+#include <SushiRuntime/api/detail/dropped_outcome.hpp>
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -42,7 +44,10 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/observability/transfer_counters.hpp>
+#include <SushiRuntime/profile/profile.hpp>
+#include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/report/run_report.hpp>
 
 #include <SushiRuntime/engine_handles/plan_access.hpp>
@@ -79,6 +84,48 @@ namespace SushiRuntime
                 metrics.tasks_completed = counters.tasks_completed;
                 metrics.tasks_offloaded = counters.tasks_offloaded;
                 return metrics;
+            }
+
+            /**
+             * @brief Writes the counts only the runtime sees as profiler counters, into the run's period.
+             * @param before The scheduler counters at the start of the run.
+             * @param after The scheduler counters at its end.
+             */
+            void write_run_counters(const ExecutionMetrics& before, const ExecutionMetrics& after,
+                                    std::size_t tasks, std::size_t host_to_device,
+                                    std::size_t device_to_host)
+            {
+                const std::size_t steals = (after.local_steals - before.local_steals) +
+                                           (after.remote_steals - before.remote_steals);
+                SR_COUNTER("run.tasks", "tasks", Add, static_cast<double>(tasks));
+                SR_COUNTER("run.steals", "tasks", Add, static_cast<double>(steals));
+                SR_COUNTER("transfer.h2d_bytes", "bytes", Add, static_cast<double>(host_to_device));
+                SR_COUNTER("transfer.d2h_bytes", "bytes", Add, static_cast<double>(device_to_host));
+            }
+
+            /**
+             * @brief Hands what a blocking run captured to every observer added to the runtime.
+             * @param layer The path that ran the plan.
+             */
+            void observe_run(RuntimeContext& context, ExecutionEngine& engine, CompiledGraph& plan,
+                             ExecutionLayer layer)
+            {
+                if (!context.wants_device_timing())
+                    return;
+                RunObservation& observation = plan.observation;
+                observation.layer = layer;
+                if (plan.profiling)
+                    engine.collect_profiling(plan, observation);
+                else
+                {
+                    observation.events.clear();
+                    observation.device_clocks.clear();
+                    observation.drops = DropCounts{};
+                    observation.table = plan.node_table;
+                    observation.graph_id = plan.graph_id;
+                }
+                observation.graph_id = plan.graph_id;
+                context.notify_run(observation);
             }
 
             /**
@@ -177,16 +224,11 @@ namespace SushiRuntime
             }
         } // namespace
 
-        bool profiling_default(const ContextHandle& context) noexcept
-        {
-            return Internal::ContextAccess::context(context).settings().profiling;
-        }
-
         Result<void> run_steps(const StepTarget& target, StepPredicate keep_going,
-                               RunReport& report, double compile_ms,
-                               std::size_t expected_invocations, StepSync sync)
+                               RunReport& report, std::size_t expected_invocations,
+                               StepSync sync)
         {
-            using clock = std::chrono::steady_clock;
+            SR_ZONE("run.steps");
 
             CompiledGraph& plan = *engine_plan(target.plan);
             const StepMachinery& steps = *target.steps;
@@ -201,7 +243,7 @@ namespace SushiRuntime
             ExecutionEngine& engine = context.execution_engine();
             engine.reset_cancellation();
 
-            // Profiling accumulators are cleared only when the plan requests profiling.
+            // The ledger and the worker time are cleared only when the plan records timing.
             const bool profiling = plan.profiling;
             if (profiling)
                 engine.reset_profiling(plan, expected_invocations);
@@ -210,7 +252,6 @@ namespace SushiRuntime
             const Internal::Observability::TransferCounters& transfers = context.transfers();
             const std::size_t d2h_before = transfers.device_to_host();
             const std::size_t h2d_before = transfers.host_to_device();
-            const auto t0 = clock::now();
 
             // A hook may write what a kernel reads, so each step ends before the next hook.
             const StepSync hooked_sync = target.hooks->empty() ? sync : StepSync::EveryStep;
@@ -223,27 +264,26 @@ namespace SushiRuntime
                 return make_error(stepped.error());
             const std::size_t executed = *stepped;
 
-            const auto t1 = clock::now();
             const ExecutionMetrics after = engine.metrics();
 
             const std::size_t total_tasks = target.node_count * executed;
-            fill_run_report(report, context, before, after, total_tasks, compile_ms,
-                            std::chrono::duration<double, std::milli>(t1 - t0).count());
+            fill_run_report(report, context, before, after, total_tasks);
             report.cancelled = engine.is_cancelled();
             report.layer = chained ? ExecutionLayer::Chain : ExecutionLayer::Scheduler;
 
             // Only explicit transfers are counted; implicit USM migration is not.
-            report.device_to_host_bytes = transfers.device_to_host() - d2h_before;
-            report.host_to_device_bytes = transfers.host_to_device() - h2d_before;
+            write_run_counters(before, after, total_tasks, transfers.host_to_device() - h2d_before,
+                               transfers.device_to_host() - d2h_before);
 
-            // Per-node and per-worker timing, only when profiling is on.
-            if (profiling)
-                engine.collect_profiling(plan, report);
+            engine.write_run_values();
+            observe_run(context, engine, plan, report.layer);
             return {};
         }
 
         Result<void> submit_step(const StepTarget& target, AsyncRunState& state)
         {
+            SR_ZONE("run.submit_step");
+
             RuntimeContext& context = Internal::ContextAccess::context(*target.context);
             ExecutionEngine& engine = context.execution_engine();
             CompiledGraph& plan = *engine_plan(target.plan);
@@ -266,14 +306,17 @@ namespace SushiRuntime
             target.hooks->run(0);
             steps.before_step();
             target.rearm(target.owner);
-            state.started = std::chrono::steady_clock::now();
-            return engine.submit(plan);
+
+            // The engine hands the observation over when the step's device work completes, not when it is waited for.
+            state.layer = ExecutionLayer::Scheduler;
+            return engine.submit_observed(plan);
         }
 
         Result<void> finish_step(const StepTarget& target, const AsyncRunState& state,
                                  RunReport& report)
         {
-            const auto finished = std::chrono::steady_clock::now();
+            SR_ZONE("run.finish_step");
+
             RuntimeContext& context = Internal::ContextAccess::context(*target.context);
             ExecutionEngine& engine = context.execution_engine();
             const StepMachinery& steps = *target.steps;
@@ -283,22 +326,25 @@ namespace SushiRuntime
                 return make_error(std::move(*fault));
             steps.after_step();
 
+            const ExecutionMetrics before = metrics_of(state.before);
             const ExecutionMetrics after = engine.metrics();
-            fill_run_report(report, context, metrics_of(state.before), after, state.task_count,
-                            state.compile_ms,
-                            std::chrono::duration<double, std::milli>(
-                                finished - state.started).count());
+            fill_run_report(report, context, before, after, state.task_count);
 
             report.cancelled = engine.is_cancelled();
             const Internal::Observability::TransferCounters& transfers = context.transfers();
-            report.device_to_host_bytes =
-                transfers.device_to_host() - state.device_to_host_before;
-            report.host_to_device_bytes =
-                transfers.host_to_device() - state.host_to_device_before;
+            write_run_counters(before, after, state.task_count,
+                               transfers.host_to_device() - state.host_to_device_before,
+                               transfers.device_to_host() - state.device_to_host_before);
 
-            if (plan.profiling)
-                engine.collect_profiling(plan, report);
+            report.layer = state.layer;
+            engine.write_run_values();
             return {};
+        }
+
+        void log_dropped_outcome(const Error& error, const char* where)
+        {
+            SR_LOG_WARN(K_API_LOG_CATEGORY, "A step nobody waited for failed with {}: {}; its outcome is dropped at {}.",
+                        to_string(error.code), error.message, where);
         }
 
         Result<void> complete_step(const ContextHandle& context)

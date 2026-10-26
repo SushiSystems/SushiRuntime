@@ -26,6 +26,7 @@
  */
 
 #include <SushiRuntime/network_socket/socket.hpp>
+#include <SushiRuntime/network_socket/socket_option_report.hpp>
 
 #include <algorithm>
 #include <cerrno>
@@ -366,7 +367,8 @@ namespace SushiRuntime
                 }
 
                 // A frame is written whole, so Nagle's delay only adds latency.
-                (void)set_option(descriptor, IPPROTO_TCP, TCP_NODELAY, 1);
+                if (!set_option(descriptor, IPPROTO_TCP, TCP_NODELAY, 1))
+                    Detail::report_no_delay_failure(text, errno);
                 connected = descriptor;
                 return SocketResult();
             }
@@ -693,7 +695,8 @@ namespace SushiRuntime
                                               local_.to_string());
                 }
 
-                (void)set_option(descriptor, IPPROTO_TCP, TCP_NODELAY, 1);
+                if (!set_option(descriptor, IPPROTO_TCP, TCP_NODELAY, 1))
+                    Detail::report_no_delay_failure("a client of " + local_.to_string(), errno);
                 accepted = Socket(static_cast<NativeSocketHandle>(descriptor));
                 return SocketResult();
             }

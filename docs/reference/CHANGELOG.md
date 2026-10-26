@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+- 2026-10-26 — cli: Made `sr build` take SushiLog as a built package and pass its config folder to CMake (`library_packages.py`).
+- 2026-10-26 — cli: Put the run-time folders of the packages first on the search path of `build`, `test`, `bench` and `run` (`project.py`).
+- 2026-10-26 — cli: Added `sr build --build-dir` and `--lean`, and `sr package --build-dir` (`cli.py`).
+- 2026-10-26 — cli: Made `sr` honour `SUSHISTACK_CXX` over its configured compiler (`config.py`).
+- 2026-10-26 — deps: Named the CLI `sr` in `[module] cli` of the dependency fragment (`sushistack.deps.toml`).
+- 2026-10-26 — api: Logged every refused recording call at `WARN`, and the later ones as not kept, instead of dropping them silently (`recorder.cpp`).
+- 2026-10-26 — api: Logged the failed outcome of a step nobody waited for, when a `RunHandle` or a graph is destroyed (`dropped_outcome.hpp`).
+- 2026-10-26 — api: Logged the reason, node count and build time of every plan build at `DEBUG` (`plan_cache.cpp`).
+- 2026-10-26 — api: Logged a `sycl::exception` from the USM kind query at `DEBUG` (`context_memory.hpp`).
+- 2026-10-26 — execution: Kept the first reason a plan cannot chain in `ChainPlan::not_chainable` and logged it once per plan (`chain_plan.hpp`, `chain_plan.cpp`).
+- 2026-10-26 — api: Added `Graph::set_label()` and `DynamicGraph::set_label()`, which name a graph in a profile as the span attribute `graph` (`graph.hpp`).
+- 2026-10-26 — report: Added `NodeTable::label()`, the graph label a plan's table copies at build (`node_table.hpp`).
+- 2026-10-26 — api: Added `NodeOptions::origin`, carried to `NodeTableRow::origin` and written as the span attribute `origin` (`node_options.hpp`, `node_table.hpp`).
+- 2026-10-26 — api: Added `Graph::id()`, `DynamicGraph::id()`, `RunObservation::graph_id` and `NodeTable::graph_id()`, a process-wide identity of each graph (`graph_id.hpp`).
+- 2026-10-26 — graph: Made each plan keep one scratch `RunObservation` that every run refills, so an observed run allocates nothing once warm (`compiled_graph.hpp`).
+- 2026-10-26 — report: Breaking change: Removed `RunReport::node_events` and `RunReport::clock`; a `RunObserver` receives the events and the device clocks of a `RunObservation` (`run_observer.hpp`).
+- 2026-10-26 — report: Breaking change: Removed `RunReport::node_timings` and `NodeTiming`; the device spans of the profiler source `sushiruntime.device` carry each node's time (`run_report.hpp`).
+- 2026-10-26 — report: Breaking change: Removed `RunReport::worker_timings`, `WorkerTiming` and `scheduling_overhead_ms`; the profiler values named `worker.*` replace them.
+- 2026-10-26 — report: Breaking change: Removed `RunReport::total_duration_ms` and `graph_analysis_duration_ms`; the zones `run.steps` and `plan.build` replace them (`run_report.hpp`).
+- 2026-10-26 — report: Breaking change: Removed `RunReport::host_to_device_bytes` and `device_to_host_bytes`; the counters `transfer.h2d_bytes` and `transfer.d2h_bytes` replace them.
+- 2026-10-26 — api: Breaking change: Removed `RuntimeConfig::profiling` and `AdvancedControls::is_profiling_enabled()`; adding an observer to the runtime requests device timing (`runtime_config.hpp`, `advanced_controls.hpp`).
+- 2026-10-26 — api: Breaking change: Removed `Graph::set_profiling()`, `is_profiling_requested()` and their `DynamicGraph` twins; a plan records device timing while the runtime has an observer (`graph.hpp`, `dynamic_graph.hpp`).
+- 2026-10-26 — report: Breaking change: Grew `NodeEventRecord` to 48 bytes with `device_index` and `submit_thread` appended (`node_event_record.hpp`).
+- 2026-10-26 — report: Breaking change: Moved `ClockPairing` out of `run_report.hpp` into `clock_pairing.hpp`.
+- 2026-10-26 — report: Added `RunObserver`, `RunObservation` and the move-only `RunObserverHandle`, the only way a run's timing leaves the runtime (`run_observer.hpp`).
+- 2026-10-26 — api: Added `Runtime::add_run_observer()`, which fans every run out to any number of observers and turns device timing on while one is added (`runtime.hpp`).
+- 2026-10-26 — report: Added `NodeTable` and `NodeTableRow`, built once per plan with each node's name, operation, optional cost and host-native flag (`node_table.hpp`).
+- 2026-10-26 — report: Added `DeviceClock`, one clock pairing per device in a run, in place of one pairing per run (`clock_pairing.hpp`, `run_observer.hpp`).
+- 2026-10-26 — report: Added `DropCause` and `DropCounts`, which a `RunObservation` carries for the dispatches a run lost (`drop_counts.hpp`).
+- 2026-10-26 — core: Added `NodeCost` and `NodeDType` (`node_cost.hpp`).
+- 2026-10-26 — api: Added `NodeOptions::cost` and `PlanNode::cost`, optional values that reach the node table (`node_options.hpp`, `plan_view.hpp`).
+- 2026-10-26 — api: Added `note_dispatch_event()`, which a host-work body calls for each kernel event it submitted so the dispatch is timed across all of them (`dispatch_events.hpp`).
+- 2026-10-26 — profile: Added the profile module with the macros `SR_ZONE`, `SR_VALUE`, `SR_COUNTER` and `SR_LOCK_WAIT` (`profile.hpp`).
+- 2026-10-26 — profile: Added the options `SR_ENABLE_PROFILER` and `SR_PROFILE_LEVEL`, written by the build into the generated `profile_config.hpp` (`profile_gate.hpp`).
+- 2026-10-26 — profiling: Added `register_profiler_parts()` and `RuntimeProfilerParts`, which register the source `sushiruntime.device` and the runtime's environment facts with a SushiProfiler registry (`register_profiler_parts.hpp`).
+- 2026-10-26 — profiling: Added `K_DEVICE_SOURCE_NAME`, the name the device source is registered under (`source_names.hpp`).
+- 2026-10-26 — profiling: Added `device_track_name()` and `host_track_name()`, the one place the device source's track names are built (`device_track_name.hpp`).
+- 2026-10-26 — profiling: Added the device source, which places each span in the period holding its converted start, and the environment contributor (`device_source.hpp`, `runtime_environment.hpp`).
+- 2026-10-26 — execution: Added the zones, values and counters of the plan build, the run, the chain, the dispatch, allocation and queue waits, and a lock-wait zone on the scheduler's submission mutex (`step_run.cpp`, `task_scheduler.cpp`).
+- 2026-10-26 — execution: Made an asynchronous step hand its observation over when its device work completes, so a caller that waits late loses nothing (`scheduler_execution_engine.cpp`).
+- 2026-10-26 — observability: Fixed a full ledger row asserting in debug and dropping silently in release; both count the dropped dispatch by cause (`profiling_ledger.hpp`).
+- 2026-10-26 — scheduler: Fixed a second failed event in one poll replacing the first; the first is kept and the second logged at `WARN` (`event_polling.hpp`).
+- 2026-10-26 — scheduler: Logged a clamped worker count, a pinned worker with no NUMA node, the cause of an abort, and the tasks a cancelled run left unrun (`task_scheduler.cpp`).
+- 2026-10-26 — execution: Logged the queue error a task failure hid and, once per run, the dispatches a run left out of its timing (`run_failures.hpp`, `dropped_dispatches.hpp`).
+- 2026-10-26 — graph: Moved the per-node, per-dispatch and per-compile log lines to `TRACE`, and logged the regions that named no base once per compile (`task_graph.cpp`).
+- 2026-10-26 — log: Breaking change: Removed `SR_LOGGER_SET_SYNC_MODE`; call `SushiLog::set_log_synchronous()` (`logger.hpp`).
+- 2026-10-26 — api: Added the log category `sushiruntime.api`, and an assertion handler `Runtime::create()` installs that logs a failed check at `FATAL` (`api_log_category.hpp`, `assertion_logging.hpp`).
+- 2026-10-26 — process_environment: Added the log category `sushiruntime.process_environment`, and made `StopSignal` take a signal installer and log a handler the C runtime refused (`stop_signal.hpp`).
+- 2026-10-26 — network_socket: Added the log category `sushiruntime.network_socket`, and logged a refused `TCP_NODELAY` option once per connection (`socket_option_report.hpp`).
+- 2026-10-26 — distributed: Logged a PING or GOODBYE frame that was not queued (`unsent_frame_log.hpp`).
+- 2026-10-26 — topology: Added `parse_pci_address()`, which logs a PCI address that does not parse instead of leaving the device unmapped silently (`hw_discovery.hpp`).
+- 2026-10-26 — memory: Logged a refused USM allocation with its kind, size, alignment and device (`usm_allocator.cpp`).
+- 2026-10-26 — device: Named the SYCL backend and the driver in the device line, and logged the build of a lazily built queue flavour (`device_queue_set.cpp`).
+- 2026-10-26 — test_runner: Added `LogCapture` and `RecordingObserver`, the helpers a test reads the runtime's log and its observations with (`log_capture.hpp`, `recording_observer.hpp`).
 - 2026-10-26 — deps: Upgraded sushicore to 0.9.5 and moved the Sushi library pins to `[sushisystems.<name>]` tables (`cli/sushistack.deps.toml`).
 - 2026-10-26 — sycl: Dropped `<sycl/sycl.hpp>` from `sycl_compat.hpp`, whose templates take the handler as a parameter (`sycl_compat.hpp`).
 - 2026-10-26 — execution: Dropped the unused `<sycl/sycl.hpp>` from three headers (`execution_engine.hpp`, `runtime_context.hpp`, `scheduler_execution_engine.hpp`).
