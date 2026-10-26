@@ -565,7 +565,7 @@ choice that holds as the stack grows, with SushiAI's inference profile as the go
 | D6 | (b) One pairing per device, claimed by that device's first kernel | A CPU and a GPU device do not share an event clock; one pairing would misplace every span of one of them |
 | D7 | (b) Device timing stays on from session start to stop; the window decides what the record keeps | No plan rebuild per window and no SushiProfiler G5; the switch without a rebuild (c) goes to the backlog |
 | D8 | `SR_PROFILE_LEVEL` 2 in every build type; `dispatch.*` at level 2; spin and steal sites at 3 | The launch gap per dispatch is the question SushiAI asks; PF-13 measures the closed-gate cost and lowers the default to 1 if it misses the budget |
-| D9 | (a) Keep the buckets; emit their per-run sums as values | No public member breaks |
+| D9 | (b) Remove `RunReport::worker_timings`, `node_timings` and `NodeTiming`, `scheduling_overhead_ms`, `total_duration_ms`, `graph_analysis_duration_ms` and the transfer byte fields; the buckets become profiler values and the stages zones (D24) | One profiling system: the owner asked that everything the profiler measures leave the runtime |
 | D10 | (a) The hash as an integer attribute; the node name carries the text | No new public table until a reader needs the operation's text apart from the node's |
 | D11 | (a) One `sushiruntime.device` source fed by every runtime; tracks named by runtime node and device | The registry holds one source per name; layered execution's several runtimes land on one timeline |
 | D12 | (a) `register_profiler_parts(SushiProfiler::Registry&, const Runtime&)` returning an owning handle | The pattern SushiProfiler v0.2.0 fixes for every library |
@@ -579,6 +579,7 @@ choice that holds as the stack grows, with SushiAI's inference profile as the go
 | D20 | The build edits wait until the SYCL compile-time work's build closes | One build file edit at a time |
 | D21 | Yes, with this work's first build edit | The runtime runs on the released log library |
 | D22 | Open `docs/design/PROFILING/README.md` with this plan's phases | The work folder then carries `Implements` |
+| D24 | Timing leaves `RunReport` entirely. The runtime keeps only the capture nobody else can do: reading SYCL event timestamps, one record writer (PF-2), the per-device pairing, and the counters it alone sees. These reach the outside through `RunObserver` alone, and only while an observer that asks for timing is attached; `RunReport::node_events`, `RunReport::clock`, `RuntimeConfig::profiling` and `Graph::set_profiling` go. Device timing is on exactly while an observer is attached (D7). SushiBLAS's tests that read `node_events` install a test observer; SushiAI's trainer drops its `NodeTiming` totals for P5's zones | A second timing path in the report is a second profiler to keep true |
 | D23 | (a) Pin SushiProfiler v0.2.0, which closes G1, G3, G4, G6 and G8; G2 is answered by a `layer` span attribute | No reliance on an unwritten contract |
 
 The plan's own questions: tasks run one sonnet worker for the repository; the orchestrator builds
