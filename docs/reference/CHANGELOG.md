@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- 2026-10-26 — deps: Upgraded sushicore to 0.9.3 and moved the Sushi library pins to `[sushisystems.<name>]` tables (`cli/sushistack.deps.toml`).
+- 2026-10-26 — deps: Upgraded sushicore to 0.9.5 and moved the Sushi library pins to `[sushisystems.<name>]` tables (`cli/sushistack.deps.toml`).
 - 2026-10-26 — sycl: Dropped `<sycl/sycl.hpp>` from `sycl_compat.hpp`, whose templates take the handler as a parameter (`sycl_compat.hpp`).
 - 2026-10-26 — execution: Dropped the unused `<sycl/sycl.hpp>` from three headers (`execution_engine.hpp`, `runtime_context.hpp`, `scheduler_execution_engine.hpp`).
 - 2026-10-26 — api: Dropped the unused `<sycl/sycl.hpp>` from four headers, so the buffer, state, interop and vocabulary headers compile without SYCL (`buffer.hpp`, `state.hpp`, `runtime.hpp`, `step_driver.hpp`).
