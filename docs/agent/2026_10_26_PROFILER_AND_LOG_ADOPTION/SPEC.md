@@ -586,7 +586,6 @@ after each stage; no task is written against a stub.
 
 ### The scope of this pass
 
-To reach SushiAI's inference profile soonest, this pass builds PF-0 to PF-9, PF-14, PF-15 and
-DOC-1, with E4 and E5's drop count kept in the one record writer of PF-2 as a report field.
-PF-10, PF-11, PF-12, PF-13 and every LG task wait for a second pass, recorded in
-`docs/design/REMAINING_WORK.md` when DOC-1 opens the design topic.
+The owner then asked for all of the code to be written before any build. This pass writes every
+task of `PLAN.md`; the logging tasks that need a SushiLog feature (LG-7) use local counters and
+throttles now, and move to SushiLog's when its RW-3 and RW-4 ship. Every build runs at the end.
