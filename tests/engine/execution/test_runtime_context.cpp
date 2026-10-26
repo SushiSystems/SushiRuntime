@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -46,6 +47,7 @@
 #include <SushiRuntime/execution/runtime_settings.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
+#include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
@@ -774,3 +776,92 @@ namespace OffloadSeamShutdownTests
         EXPECT_EQ(coordinator->stop_calls(), 2);
     }
 } // namespace OffloadSeamShutdownTests
+
+namespace RunObserverGateTests
+{
+    /** @brief Whether the test's gate is open. */
+    std::atomic<bool> g_gate_open{false};
+
+    /** @brief The gate an observer of the tests is added behind. */
+    bool test_gate() noexcept
+    {
+        return g_gate_open.load(std::memory_order_relaxed);
+    }
+
+    /** @brief Counts the runs it hears. */
+    class CountingObserver final : public SushiRuntime::RunObserver
+    {
+        public:
+            void on_run(const SushiRuntime::RunObservation&) noexcept override
+            {
+                ++runs;
+            }
+
+            std::atomic<int> runs{0}; /**< Runs heard so far. */
+    };
+
+    /** @brief Tests that an observer with no gate always wants device timing. */
+    TEST(Medium_RuntimeContextObservers, AnUngatedObserverAlwaysWantsTiming)
+    {
+        const auto context_owner = SushiRuntime::Test::make_context();
+        auto& context = *context_owner;
+        EXPECT_FALSE(context.wants_device_timing());
+
+        const auto observer = std::make_shared<CountingObserver>();
+        const std::uint64_t id = context.add_run_observer(observer);
+        EXPECT_TRUE(context.wants_device_timing());
+
+        context.remove_run_observer(id);
+        EXPECT_FALSE(context.wants_device_timing());
+    }
+
+    /** @brief Tests that a gated observer asks for timing only while its gate is open. */
+    TEST(Medium_RuntimeContextObservers, AGatedObserverWantsTimingOnlyWhileItsGateIsOpen)
+    {
+        const auto context_owner = SushiRuntime::Test::make_context();
+        auto& context = *context_owner;
+        const auto observer = std::make_shared<CountingObserver>();
+        const std::uint64_t id = context.add_run_observer(observer, &test_gate);
+
+        g_gate_open.store(false);
+        EXPECT_FALSE(context.wants_device_timing()) << "a closed gate costs no device timing";
+        g_gate_open.store(true);
+        EXPECT_TRUE(context.wants_device_timing());
+
+        // An ungated observer keeps timing on whatever the gate says.
+        g_gate_open.store(false);
+        const auto other = std::make_shared<CountingObserver>();
+        const std::uint64_t other_id = context.add_run_observer(other);
+        EXPECT_TRUE(context.wants_device_timing());
+
+        context.remove_run_observer(other_id);
+        context.remove_run_observer(id);
+        g_gate_open.store(false);
+    }
+
+    /** @brief Tests that a delivery waits for the gate of its observer and skips a closed one. */
+    TEST(Medium_RuntimeContextObservers, ADeliveryToAGatedObserverWaitsForItsGate)
+    {
+        const auto context_owner = SushiRuntime::Test::make_context();
+        auto& context = *context_owner;
+        const auto gated = std::make_shared<CountingObserver>();
+        const auto open = std::make_shared<CountingObserver>();
+        const std::uint64_t gated_id = context.add_run_observer(gated, &test_gate);
+        const std::uint64_t open_id = context.add_run_observer(open);
+
+        const SushiRuntime::RunObservation observation;
+        g_gate_open.store(false);
+        context.notify_run(observation);
+        EXPECT_EQ(gated->runs.load(), 0);
+        EXPECT_EQ(open->runs.load(), 1);
+
+        g_gate_open.store(true);
+        context.notify_run(observation);
+        EXPECT_EQ(gated->runs.load(), 1);
+        EXPECT_EQ(open->runs.load(), 2);
+
+        context.remove_run_observer(gated_id);
+        context.remove_run_observer(open_id);
+        g_gate_open.store(false);
+    }
+} // namespace RunObserverGateTests

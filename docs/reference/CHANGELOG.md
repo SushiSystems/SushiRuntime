@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-26 — profiling: Added `DeviceSource::max_delay_ns()`, 2000 ms, so a span that finishes within it is placed in its period and not dropped late (`device_source.hpp`).
+- 2026-10-26 — execution: Added the optional gate of `RuntimeContext::add_run_observer()`, so a paused profiler session costs no device timing (`runtime_context.hpp`).
 - 2026-10-26 — cmake: Found SushiLog with `find_package(SushiLog CONFIG REQUIRED)` and no `add_subdirectory` fallback (`Dependencies.cmake`).
 - 2026-10-26 — cmake: Found SushiProfiler with `find_package(SushiProfiler CONFIG REQUIRED)` under `SR_ENABLE_PROFILER` (`Dependencies.cmake`).
 - 2026-10-26 — cmake: Added the options `SR_ENABLE_PROFILER` and `SR_PROFILE_LEVEL` (`SushiRuntimeOptions.cmake`).

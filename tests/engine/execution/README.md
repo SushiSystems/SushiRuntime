@@ -207,6 +207,17 @@ The stop count is 1 after `shutdown()` and the probe has run, which only a live 
 count is 2 after the context is destroyed: the destructor stops the coordinator again, which
 `OffloadCoordinator::stop()` allows.
 
+### Gated observers
+
+`Medium_RuntimeContextObservers` covers the optional gate of an observer, with a test gate the test opens and
+closes.
+
+| Test | What it proves |
+| --- | --- |
+| `Medium_RuntimeContextObservers.AnUngatedObserverAlwaysWantsTiming` | A context with no observer wants no timing, one with an ungated observer wants it, and removing that observer ends it. |
+| `Medium_RuntimeContextObservers.AGatedObserverWantsTimingOnlyWhileItsGateIsOpen` | A closed gate costs no device timing, an open one asks for it, and an ungated observer keeps timing on whatever the gate says. |
+| `Medium_RuntimeContextObservers.ADeliveryToAGatedObserverWaitsForItsGate` | A delivery skips an observer whose gate is closed and reaches it once the gate opens, while an ungated observer receives both. |
+
 ## test_scheduler_execution_engine.cpp
 
 CPU work and GPU work dispatched through independent per-device queues must run concurrently and

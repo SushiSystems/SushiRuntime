@@ -54,6 +54,9 @@ namespace SushiRuntime
 
     namespace Internal::Execution
     {
+        /** @brief Answers whether an observer wants device timing for a run armed now; must not throw. */
+        using TimingGate = bool (*)() noexcept;
+
         /**
          * @brief Builds the topology view, the device queues and the USM allocator, and owns
          *        the execution engine that runs on them.
@@ -163,23 +166,23 @@ namespace SushiRuntime
                 [[nodiscard]] Internal::Graph::OffloadSink& offload_sink();
 
                 /**
-                 * @brief Adds an observer that receives every finished run.
-                 *
-                 * The first one turns device timing on, which rebuilds a plan once at its next run.
+                 * @brief Adds an observer that receives every finished run; a run is timed while one is added.
                  * @param observer Not null; the context co-owns it until it is removed.
+                 * @param gate Whether it wants timing now; null for always. A closed gate skips its deliveries.
                  * @return The id remove_run_observer() takes.
                  * @see modules/engine/execution/README.md
                  */
-                std::uint64_t add_run_observer(std::shared_ptr<RunObserver> observer);
+                std::uint64_t add_run_observer(std::shared_ptr<RunObserver> observer,
+                                               TimingGate gate = nullptr);
 
                 /**
                  * @brief Removes the observer an add_run_observer() call returned @p id for.
                  *
-                 * The last one turns device timing off. An id that is not added changes nothing.
+                 * An id that is not added changes nothing.
                  */
                 void remove_run_observer(std::uint64_t id) noexcept;
 
-                /** @brief Returns whether any observer is added, which is when plans record device timing; any thread. */
+                /** @brief Returns whether a run armed now is timed: an ungated observer is added or a gate is open; any thread. */
                 [[nodiscard]] bool wants_device_timing() const noexcept;
 
                 /** @brief Hands @p observation to every added observer, in the order they were added; any thread. */
@@ -224,14 +227,15 @@ namespace SushiRuntime
         };
 
         /**
-         * @brief Adds @p observer to @p context and returns the handle that removes it.
+         * @brief Adds @p observer, behind @p gate when it has one, and returns the handle that removes it.
          *
          * The handle holds the context weakly, so a handle that outlives the context removes nothing.
          * @pre observer is not null.
          * @see modules/engine/execution/README.md
          */
         [[nodiscard]] SUSHIRUNTIME_API RunObserverHandle
-        observe_runs(const std::shared_ptr<RuntimeContext>& context, std::shared_ptr<RunObserver> observer);
+        observe_runs(const std::shared_ptr<RuntimeContext>& context, std::shared_ptr<RunObserver> observer,
+                     TimingGate gate = nullptr);
 
     } // namespace Execution
 } // namespace SushiRuntime

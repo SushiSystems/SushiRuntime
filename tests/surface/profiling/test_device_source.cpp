@@ -533,3 +533,25 @@ TEST(Small_DeviceSourceStart, TheSourceIsNamedSushiruntimeDevice)
 
     EXPECT_EQ(source.name(), "sushiruntime.device");
 }
+
+/** @brief Tests that the source reports a bounded delay the profiler accepts, and that a test may state its own. */
+TEST_F(Small_DeviceSource, ReportsItsMaxDelayBelowTheProfilersLimit)
+{
+    constexpr std::uint64_t K_PROFILER_LIMIT_NS = 60'000ULL * 1'000'000ULL;
+    EXPECT_EQ(source_.max_delay_ns(), DeviceSource::K_MAX_DELAY_NS);
+    EXPECT_GT(source_.max_delay_ns(), 0U);
+    EXPECT_LE(source_.max_delay_ns(), K_PROFILER_LIMIT_NS);
+
+    DeviceSource short_delay(queue_, {RuntimeTracks{"node", {"gpu0"}}}, nullptr, 5'000'000ULL);
+    EXPECT_EQ(short_delay.max_delay_ns(), 5'000'000ULL);
+}
+
+/** @brief Tests that a span arriving after its period closed is dropped late, and counted once. */
+TEST_F(Small_DeviceSource, ASpanPastTheDelayIsStillCountedLate)
+{
+    push(observation_of({device_record()}, {row_of(0, "late")}));
+    // The span starts at steady 2020, before the period [5000, 6000) the session now collects.
+    collect(5000, 6000);
+    EXPECT_EQ(table_.size(), 0U);
+    EXPECT_EQ(sink_.late(), 1U);
+}

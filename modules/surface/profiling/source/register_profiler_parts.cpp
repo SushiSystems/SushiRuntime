@@ -35,6 +35,8 @@
 #include <utility>
 #include <vector>
 
+#include <SushiProfiler/collector/collector.hpp>
+
 #include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
@@ -51,6 +53,12 @@ namespace SushiRuntime
 {
     namespace
     {
+        /** @brief Answers whether the profiler's session wants its sources to measure; a paused one does not. */
+        bool sources_wanted() noexcept
+        {
+            return SushiProfiler::Collector::sources_wanted();
+        }
+
         /** @brief The observations the source holds before the oldest is dropped. */
         constexpr std::size_t K_RUN_QUEUE_CAPACITY = 64;
     } // namespace
@@ -103,7 +111,8 @@ namespace SushiRuntime
             const std::lock_guard<std::mutex> lock(mutex);
             for (Attached& attached : runtimes)
                 if (!attached.handle)
-                    attached.handle = Internal::Execution::observe_runs(attached.context, attached.feed);
+                    attached.handle = Internal::Execution::observe_runs(attached.context, attached.feed,
+                                                                        &sources_wanted);
             session_running.store(true, std::memory_order_release);
             return {};
         }

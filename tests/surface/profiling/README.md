@@ -21,7 +21,7 @@ returns the record; `record_periods_without_source()` does the same with no sour
 
 A session test marks periods around blocking runs, so every span of a run is queued before the period closes and the consumer's
 `linger_ms` of 0 loses nothing. The one test that waits for the consumer thread is
-`AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDrops`, which gives it a bounded time to collect a closed period.
+`AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDrops`, which holds a step's work for 2.5 s, past the 2 s maximum delay the source asks the consumer to keep a period open.
 
 ## test_register_profiler_parts/observed_pipeline.hpp
 
@@ -96,6 +96,8 @@ DeviceSource over SushiProfiler's own SourceContext, SpanSink and SpanTable, wit
 | `Small_DeviceSource.PutsAHostNodeOnTheHostTrack` | A host node goes on the runtime's host track on the steady clock, with no uncertainty. |
 | `Small_DeviceSource.ASpanOfALaterPeriodWaitsForIt` | A span that starts in a later period waits for it. |
 | `Small_DeviceSource.ASpanOfAClosedPeriodIsDroppedLate` | A span that started before the period is dropped late and not added. |
+| `Small_DeviceSource.ReportsItsMaxDelayBelowTheProfilersLimit` | The source reports a maximum delay of 2000 ms, below the profiler's limit of 60 000 ms. |
+| `Small_DeviceSource.ASpanPastTheDelayIsStillCountedLate` | A span that arrives after the delay is dropped late and counted, as before. |
 | `Small_DeviceSource.ForwardsTheDropsOfARun` | The drops a run carries reach the sink as late spans. |
 | `Small_DeviceSource.ARunWithNoDropsForwardsNone` | A run with no drops forwards none. |
 | `Small_DeviceSource.AMissingPairingDropsTheSpan` | A record of a device with no pairing is dropped and counted. |
@@ -111,6 +113,8 @@ DeviceSource over SushiProfiler's own SourceContext, SpanSink and SpanTable, wit
 | `Small_DeviceSource.EndStopsTheDeliveryAndDropsWhatWasNeverCollected` | Begin() starts the delivery and end() stops it and drops what was never collected. |
 | `Small_DeviceSourceStart.BeginFailsWhenTheAttachmentRefuses` | A source whose delivery cannot start reports why and does not begin. |
 | `Small_DeviceSourceStart.TheSourceIsNamedSushiruntimeDevice` | The name the registry knows the source by. |
+| `Small_DeviceSource.ReportsItsMaxDelayBelowTheProfilersLimit` | The source reports a bounded delay the profiler accepts, and that a test may state its own. |
+| `Small_DeviceSource.ASpanPastTheDelayIsStillCountedLate` | A span arriving after its period closed is dropped late, and counted once. |
 
 
 ## test_runtime_environment.cpp
@@ -220,7 +224,8 @@ A SushiProfiler session over a runtime end to end: its zones, its device spans a
 | `Medium_RuntimeSession.ARunOnTheChainPathNamesTheChainLayer` | A plan that runs as a chain names the chain layer. |
 | `Medium_RuntimeSession.TheRecordStatesTheDevicesAndTheBuild` | The record states the runtime's devices, its drivers and the build of the library. |
 | `Medium_RuntimeSession.ARunAsyncStepWaitedForLateStillLandsInItsPeriod` | A run_async step waited for after its period closed still lands in the period it ran in. |
-| `Medium_RuntimeSession.AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDrops` | A step whose own work finishes after its period closed and lingered is counted in the drops. |
+| `Medium_RuntimeSession.ASpanThatFinishesWithinTheMaxDelayLandsInItsPeriodAndIsNotLate` | A step finishing after its period ended, within the source's maximum delay, lands in its period and is not late. |
+| `Medium_RuntimeSession.AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDrops` | A step whose own work finishes after its period closed and the maximum delay passed is counted in the drops. |
 | `Medium_RuntimeSession.AnInferenceShapedGraphOnTheCpuDeviceRecordsEveryNode` | An inference-shaped graph on the CPU device records every node of every pass. |
 
 
@@ -252,6 +257,7 @@ Device timing follows the observers a session adds, and the capture window decid
 | `Medium_DeviceTimingWindow.SpansExistOnlyForTheRecordedPeriods` | With a window of one warm-up and two active periods the record holds spans for exactly those three. |
 | `Medium_DeviceTimingWindow.CostsNoRebuild` | A session costs no plan rebuild, when it starts, in its window or when it ends. |
 | `Medium_DeviceTimingWindow.ARecordMadeWithoutTheSourceHoldsNoDeviceSpans` | A runtime with no session records no device spans in a record made without its source. |
+| `Medium_DeviceTimingWindow.APausedSessionCostsNoDeviceTiming` | Pausing the session stops the parts' device timing, leaves an ungated observer timed, and resuming starts it again. |
 
 
 ## test_register_profiler_parts/test_plan_zones.cpp

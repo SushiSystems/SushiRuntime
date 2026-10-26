@@ -65,9 +65,15 @@ namespace SushiRuntime
         } // namespace
 
         DeviceSource::DeviceSource(RunQueue& queue, std::vector<RuntimeTracks> runtimes,
-                                   FeedAttachment* attachment)
-            : queue_(queue), runtimes_(std::move(runtimes)), attachment_(attachment)
+                                   FeedAttachment* attachment, std::uint64_t max_delay_ns)
+            : queue_(queue), runtimes_(std::move(runtimes)), attachment_(attachment),
+              max_delay_ns_(max_delay_ns)
         {
+        }
+
+        std::uint64_t DeviceSource::max_delay_ns() const noexcept
+        {
+            return max_delay_ns_;
         }
 
         std::string_view DeviceSource::name() const noexcept

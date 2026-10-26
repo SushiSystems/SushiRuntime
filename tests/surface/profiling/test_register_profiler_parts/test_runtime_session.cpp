@@ -316,7 +316,45 @@ TEST(Medium_RuntimeSession, ARunAsyncStepWaitedForLateStillLandsInItsPeriod)
     EXPECT_EQ(record.drops.spans_dropped, 0u) << "work that finished in time loses nothing to a late wait";
 }
 
-/** @brief Tests that a step whose own work finishes after its period closed and lingered is counted in the drops. */
+/** @brief Tests that a step finishing after its period ended, within the source's maximum delay, lands in its period and is not late. */
+TEST(Medium_RuntimeSession, ASpanThatFinishesWithinTheMaxDelayLandsInItsPeriodAndIsNotLate)
+{
+    SessionPipeline pipeline;
+    std::atomic<bool> gate{false};
+    std::atomic<bool> entered{false};
+    pipeline.graph().add_host(Reads{}, Writes{}, [&gate, &entered]()
+    {
+        entered.store(true, std::memory_order_release);
+        while (!gate.load(std::memory_order_acquire))
+            std::this_thread::yield();
+    });
+
+    const RunRecord record = record_periods(
+        pipeline.runtime(), 0, 3,
+        [&pipeline, &gate, &entered](std::uint32_t iteration, SushiProfiler::PeriodTimeline& timeline)
+        {
+            if (iteration != 0)
+            {
+                gate.store(true, std::memory_order_release);
+                EXPECT_TRUE(pipeline.graph().run().has_value());
+                return;
+            }
+            auto step = pipeline.graph().run_async().value();
+            // The host node starts inside the first period, then the period ends while the node is still held.
+            while (!entered.load(std::memory_order_acquire))
+                std::this_thread::yield();
+            timeline.mark();
+            gate.store(true, std::memory_order_release);
+            EXPECT_TRUE(step.wait().has_value());
+        });
+
+    // The step ended well inside the two seconds the source asks the consumer to keep a period open.
+    ASSERT_GE(record.periods.size(), 1u);
+    EXPECT_GE(record.periods[0].spans.size(), 1u) << "the held node's span is in the period it started in";
+    EXPECT_EQ(record.drops.spans_dropped, 0u) << "work inside the maximum delay is never late";
+}
+
+/** @brief Tests that a step whose own work finishes after its period closed and the maximum delay passed is counted in the drops. */
 TEST(Medium_RuntimeSession, AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDrops)
 {
     SessionPipeline pipeline;
@@ -330,21 +368,20 @@ TEST(Medium_RuntimeSession, AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDr
 
     const RunRecord record = record_periods(
         pipeline.runtime(), 0, 3,
-        [&pipeline, &gate, &nodes](std::uint32_t period, SushiProfiler::PeriodTimeline& timeline)
+        [&pipeline, &gate, &nodes](std::uint32_t iteration, SushiProfiler::PeriodTimeline& timeline)
         {
-            if (period != 0)
+            if (iteration != 0)
             {
                 gate.store(true, std::memory_order_release);
                 EXPECT_TRUE(pipeline.graph().run().has_value());
                 return;
             }
-            // A host node of the step blocks until the periods after it have closed.
-            gate.store(false, std::memory_order_release);
+            // A host node of the step blocks until the first period has ended and the source's two-second delay has passed.
             auto step = pipeline.graph().run_async().value();
             timeline.mark();
             timeline.mark();
-            // The consumer collects a closed period on its own thread; give it a bounded time to do so.
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+            // The consumer holds a closed period open for the source's maximum delay, 2 s, then collects it on its own thread.
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
             while (std::chrono::steady_clock::now() < deadline)
                 std::this_thread::yield();
             gate.store(true, std::memory_order_release);

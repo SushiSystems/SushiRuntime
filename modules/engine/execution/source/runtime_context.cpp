@@ -249,6 +249,7 @@ namespace SushiRuntime
             {
                 std::uint64_t id = 0;                   /**< What add_run_observer() returned. */
                 std::shared_ptr<RunObserver> observer;  /**< The observer; never null. */
+                TimingGate gate = nullptr;              /**< Whether it wants timing now; null for always. */
             };
 
             /** @brief The observers in the order they were added. */
@@ -381,13 +382,13 @@ namespace SushiRuntime
                            });
         }
 
-        std::uint64_t RuntimeContext::add_run_observer(std::shared_ptr<RunObserver> observer)
+        std::uint64_t RuntimeContext::add_run_observer(std::shared_ptr<RunObserver> observer, TimingGate gate)
         {
             const std::lock_guard<std::mutex> lock(impl_->observers_mutex);
             const std::shared_ptr<const Impl::ObserverList> current = std::atomic_load(&impl_->observers);
             auto next = std::make_shared<Impl::ObserverList>(*current);
             const std::uint64_t id = impl_->next_observer_id++;
-            next->push_back(Impl::ObserverEntry{id, std::move(observer)});
+            next->push_back(Impl::ObserverEntry{id, std::move(observer), gate});
             std::atomic_store(&impl_->observers, std::shared_ptr<const Impl::ObserverList>(std::move(next)));
             return id;
         }
@@ -414,14 +415,19 @@ namespace SushiRuntime
 
         bool RuntimeContext::wants_device_timing() const noexcept
         {
-            return !std::atomic_load(&impl_->observers)->empty();
+            const std::shared_ptr<const Impl::ObserverList> current = std::atomic_load(&impl_->observers);
+            for (const Impl::ObserverEntry& entry : *current)
+                if (entry.gate == nullptr || entry.gate())
+                    return true;
+            return false;
         }
 
         void RuntimeContext::notify_run(const RunObservation& observation) const noexcept
         {
             const std::shared_ptr<const Impl::ObserverList> current = std::atomic_load(&impl_->observers);
             for (const Impl::ObserverEntry& entry : *current)
-                entry.observer->on_run(observation);
+                if (entry.gate == nullptr || entry.gate())
+                    entry.observer->on_run(observation);
         }
 
         Internal::Graph::OffloadCoordinator* RuntimeContext::offload() const noexcept
@@ -471,10 +477,10 @@ namespace SushiRuntime
         }
 
         RunObserverHandle observe_runs(const std::shared_ptr<RuntimeContext>& context,
-                                       std::shared_ptr<RunObserver> observer)
+                                       std::shared_ptr<RunObserver> observer, TimingGate gate)
         {
             SR_VERIFY(observer != nullptr, "observe_runs(): the observer is null.");
-            const std::uint64_t id = context->add_run_observer(std::move(observer));
+            const std::uint64_t id = context->add_run_observer(std::move(observer), gate);
             return RunObserverHandle([removable = std::weak_ptr<RuntimeContext>(context), id]()
             {
                 if (const std::shared_ptr<RuntimeContext> held = removable.lock())

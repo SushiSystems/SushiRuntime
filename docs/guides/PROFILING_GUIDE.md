@@ -96,7 +96,8 @@ on a worker thread. A span carries the node's name, the thread that submitted it
 `flops`, `bytes` and `dtype` for a node whose caller stated a cost. `device_track_name()` returns the track name for a runtime and a device index, so a
 library that states a fact keyed by a track builds no string of its own.
 
-A span goes in the period whose span holds its start. The runtime reads no period, so a span whose device has no
+A span goes in the period whose span holds its start, and the source asks the session to hold a closed period
+open for up to 2 seconds, so a span that finishes within that delay still lands in its period. The runtime reads no period, so a span whose device has no
 clock pairing has no start and is counted as dropped. So is a span that arrives after its period closed, and a
 dispatch the run lost. The record's dropped spans count all of them, so a profile with no drops is complete.
 
@@ -112,6 +113,7 @@ runtime; the overhead benchmark has not run yet (RW-69 in [the backlog](../desig
 | A zone compiled in, a session recording | Under 25 ns |
 | Device timing | A queue that records timestamps, three timestamp reads per dispatch, a snapshot of the node's widths and a record per dispatch; two steady clock reads per host node |
 | An untimed run | One load and a branch |
+| A paused or closed profiler session | No device timing: the profiler parts add their observers behind the profiler's gate, so the runtime does not time its runs while nothing records |
 | Idle memory | The plan's node table, one row per registration index with its name, and after a timed run the ledger at its high-water size, 48 bytes per recorded dispatch |
 
 Device timing is chosen per run and is on while at least one observer is added. No plan is rebuilt when an

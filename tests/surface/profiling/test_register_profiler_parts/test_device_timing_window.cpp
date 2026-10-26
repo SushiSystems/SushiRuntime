@@ -28,13 +28,16 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include <SushiProfiler/record/run_record.hpp>
 
+#include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/test_runner/recording_observer.hpp>
 
 #include "session_pipeline.hpp"
 
@@ -109,4 +112,38 @@ TEST(Medium_DeviceTimingWindow, ARecordMadeWithoutTheSourceHoldsNoDeviceSpans)
     for (const PeriodRecord& period : record.periods)
         EXPECT_EQ(period.spans.size(), 0u);
     EXPECT_EQ(pipeline.graph().compile_count(), 1u) << "no observer, so no rebuild for timing";
+}
+
+/** @brief Tests that pausing the session stops the parts' device timing, leaves an ungated observer timed, and resuming starts it again. */
+TEST(Medium_DeviceTimingWindow, APausedSessionCostsNoDeviceTiming)
+{
+    SessionPipeline pipeline;
+    SushiProfiler::Registry registry;
+    SushiRuntime::RuntimeProfilerParts parts = SushiRuntime::register_profiler_parts(registry, pipeline.runtime());
+    const auto ungated = std::make_shared<TestRunner::RecordingObserver>();
+    const RunObserverHandle ungated_handle = pipeline.runtime().add_run_observer(ungated);
+
+    SushiProfiler::SessionStart start = SushiProfiler::Session::start(session_config(0, 3), registry);
+    ASSERT_TRUE(start.ok()) << start.error;
+    SushiProfiler::PeriodTimeline& timeline = start.session->timeline("run.step");
+
+    timeline.mark();
+    ASSERT_TRUE(start.session->pause());
+    ASSERT_TRUE(pipeline.graph().run().has_value());
+    timeline.mark();
+    ASSERT_TRUE(start.session->resume());
+    ASSERT_TRUE(pipeline.graph().run().has_value());
+    timeline.mark();
+    ASSERT_TRUE(pipeline.graph().run().has_value());
+    timeline.mark();
+    const RunRecord record = std::move(start.session->stop().record);
+
+    ASSERT_EQ(ungated->count(), 3u);
+    for (const RunObservation& observation : ungated->runs())
+        EXPECT_EQ(observation.events.size(), 3u) << "the ungated observer is timed, paused or not";
+    EXPECT_EQ(pipeline.graph().compile_count(), 1u) << "pausing and resuming rebuild nothing";
+    ASSERT_EQ(record.periods.size(), 3u);
+    EXPECT_EQ(record.periods[0].spans.size(), 0u) << "no device span reaches a paused session";
+    EXPECT_EQ(record.periods[1].spans.size(), 3u) << "the run after the resume is timed for the session";
+    EXPECT_EQ(record.periods[2].spans.size(), 3u);
 }

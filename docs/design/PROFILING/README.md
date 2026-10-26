@@ -35,6 +35,7 @@ the outside through a `RunObserver` and through the profiler's zones, values and
 - An observer receives a `RunObservation`: the layer, the shared node table, the records, one pairing per device and the drop counts. A device record stays on its device's event clock and a host record on the steady clock.
 - No period is read in the runtime. The source places each span by its converted start against the period the session hands it, which makes the per-device pairing load-bearing.
 - A run hands its observation over when its device work completes, so a caller that waits late loses nothing.
+- The profiler parts add their observers behind the profiler's gate, so a session that is paused or not open costs no device timing; an observer added through `Runtime::add_run_observer()` always wants timing.
 - Zones sit in exported sources only, never in header templates a consumer compiles. The level is compiled: `SR_PROFILE_LEVEL` 2 by default, with the spin and steal sites at 3.
 - The removal is breaking and made at once, before 1.0, with no deprecation release. A changelog entry names each removed member and its replacement.
 - Where the runtime recovers, falls back or drops a status it logs, under its own category per module, once and with the values. A counter that SushiLog does not yet offer is local to the runtime.
@@ -68,7 +69,7 @@ has been reaped and before the latch signals.
 carries the track of its device, the node's name, the thread that submitted it and the pairing's uncertainty. Its
 attributes are SushiProfiler's `DeviceSpanKeys` plus the name attribute `layer`. The track name comes from
 `device_track_name()`, which a library that states a fact keyed by the track uses too. Older spans are dropped as
-late and counted; the queue and a run's own drops are counted with them.
+late and counted; the queue and a run's own drops are counted with them. The source asks the session to hold a closed period open for 2 seconds, so a span that finishes within that delay is placed, not dropped.
 
 ### Zones, values and counters
 

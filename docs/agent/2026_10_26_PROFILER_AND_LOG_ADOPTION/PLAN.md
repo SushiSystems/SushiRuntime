@@ -77,6 +77,7 @@ this plan.
 | PF-16 | Graph label and node origin (R15, R16) | tests list |
 | PF-17 | Graph identity (R17) | tests list |
 | PF-18 | The source name header (R18) | tests list |
+| PF-19 | The live session: max delay and paused timing (R21) | tests list |
 | LG-7 | Use SushiLog's throttles; move the per-element lines to `TRACE` | yes (pin) |
 | DOC-1 | The manual, the design topic, the changelog, the backlog | no |
 
@@ -460,6 +461,19 @@ Additive: one public header, and the constant leaves `profile_keys.hpp`.
 - **Build:** one `sr build`, then `sr run sr_profiling_tests -- --gtest_filter='*SourceNames*'`.
 - **Tests:** `Small_SourceNames.TheDeviceSourceIsNamedSushiruntimeDevice`, `Medium_SourceNames.TheSourceTheRegistryMakesCarriesThatName`.
 
+### PF-19 The live session: max delay and paused timing (R21)
+
+Additive: the gate belongs to the internal `observe_runs`, and `Runtime::add_run_observer` is unchanged.
+
+- **Files:** `modules/surface/profiling/include/SushiRuntime/profiling/device_source.hpp` and `source/device_source.cpp` (`max_delay_ns()`, a constant of 2 000 ms below the profiler's 60 000 ms limit, with a constructor argument so a test states its own);
+  `modules/engine/execution/include/SushiRuntime/execution/runtime_context.hpp` and `source/runtime_context.cpp` (an observer may carry a gate, a plain function returning whether it wants timing now; `wants_device_timing()` is true when any ungated observer
+  is added or any gate is open; `notify_run` skips an observer whose gate is closed); `source/register_profiler_parts.cpp` adds its feeds with the gate `Collector::sources_wanted`; the READMEs, `PROFILER_KEYS.md` and the changelog.
+- **Acceptance:** the source reports its delay and the session holds a period that long; a span that finishes within it lands in its period and none is counted late; a paused session runs the graph with no device timing and no records, and a resumed one times
+  the next run; an ungated observer always wants timing.
+- **Build:** one `sr build`, then `sr run sr_profiling_tests` and `sr_execution_tests` with the filters below.
+- **Tests:** `Small_DeviceSource.ReportsItsMaxDelayBelowTheProfilersLimit`, `Small_DeviceSource.ASpanPastTheDelayIsStillCountedLate`, `Medium_RuntimeContextObservers.AnUngatedObserverAlwaysWantsTiming`, `Medium_RuntimeContextObservers.AGatedObserverWantsTimingOnlyWhileItsGateIsOpen`, `Medium_RuntimeContextObservers.ADeliveryToAGatedObserverWaitsForItsGate`,
+  `Medium_RuntimeSession.ASpanThatFinishesWithinTheMaxDelayLandsInItsPeriodAndIsNotLate`, `Medium_DeviceTimingWindow.APausedSessionCostsNoDeviceTiming`.
+
 ## Stage 6: closing
 
 ### LG-7 Use SushiLog's throttles; the per-element lines to `TRACE`
@@ -507,6 +521,8 @@ Choices the rulings did not cover, taken SOLID-first and then by what rebuilds l
 | Each `CompiledGraph` keeps one scratch `RunObservation` that every run clears and refills | A run that observes must not allocate per tick; the observer already receives a const reference |
 | `profile_config.hpp.in` guards each macro with `#ifndef`, so a test unit may state its own level before the include | The gate tests compile one call at four levels; `profile.hpp` itself has no default, as R19 asks |
 | The id counter lives in `source/graph_id.cpp`, behind an exported function | One counter per process even when a host loads the library through another image |
+| The gate is a plain function pointer, `bool (*)() noexcept`, held per observer in the context | A relaxed load per observer per run, no allocation, and `RunObserver` and `add_run_observer` keep their frozen shape |
+| The source reports 2 000 ms | A step of a frame loop finishes within a few frames of its period; a longer bound holds periods open for nothing, and the profiler refuses above 60 000 ms |
 | A timed run is chosen when the run is armed, and the node table is always built | The plan then needs no rebuild when an observer comes or goes, and the table costs one string per registration index |
 | `set_label` stores the label on the plan cache and the composer, and the table copies it at build | A label change then rebuilds nothing, as R15 asks |
 | The worker bucket values are read and reset by `write_run_values()` | An unobserved run must not report the buckets of an earlier observed one |

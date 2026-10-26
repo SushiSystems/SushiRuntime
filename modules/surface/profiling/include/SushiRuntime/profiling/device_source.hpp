@@ -90,9 +90,14 @@ namespace SushiRuntime
                  * @param attachment Started by begin() and stopped by end(); null for none. Outlives the source.
                  */
                 DeviceSource(RunQueue& queue, std::vector<RuntimeTracks> runtimes,
-                             FeedAttachment* attachment = nullptr);
+                             FeedAttachment* attachment = nullptr,
+                             std::uint64_t max_delay_ns = K_MAX_DELAY_NS);
+
+                /** @brief The longest a run's device work may finish after its period ends: 2 000 ms. */
+                static constexpr std::uint64_t K_MAX_DELAY_NS = 2'000'000'000ULL;
 
                 [[nodiscard]] std::string_view name() const noexcept override;
+                [[nodiscard]] std::uint64_t max_delay_ns() const noexcept override;
                 [[nodiscard]] SushiProfiler::SourceStatus begin(SushiProfiler::SourceContext& context) override;
                 void collect(const SushiProfiler::PeriodSpan& period, SushiProfiler::SpanSink& sink) override;
                 void end() override;
@@ -153,6 +158,9 @@ namespace SushiRuntime
 
                 /** @brief Starts and stops the delivery around a session; may be null. */
                 FeedAttachment* attachment_;
+
+                /** @brief What max_delay_ns() reports. */
+                std::uint64_t max_delay_ns_;
 
                 /** @brief The context of the running session; null outside one. */
                 SushiProfiler::SourceContext* context_ = nullptr;

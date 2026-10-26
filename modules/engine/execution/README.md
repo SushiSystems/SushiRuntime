@@ -305,14 +305,25 @@ without a lock, and a run that is notifying while an observer is removed still h
 began with. `add_run_observer()` returns an id and `remove_run_observer()` takes it; the free function
 `observe_runs()` adds an observer and returns the `RunObserverHandle` that removes it, holding the
 context weakly so a handle that outlives the context removes nothing. `Runtime::add_run_observer()` and
-the parts object of the `profiling` module both go through it. `wants_device_timing()` is true while the
-list is not empty. Device timing is a per-run choice and not a property of the plan: each run reads the
+the parts object of the `profiling` module both go through it. `wants_device_timing()` is true while an
+ungated observer is added or a gate is open. Device timing is a per-run choice and not a property of the plan: each run reads the
 answer once when it is armed, and `CompiledGraph::profiling` holds that armed value for the run. Adding or
 removing an observer rebuilds no plan. The run that starts after `add_run_observer()` is timed and carries
 records; an observer added while a run is in flight receives that run with no records and the next one with
 records. `notify_run()` hands an observation
-to every observer, in the order they were added. The destructor empties the list after the engine is
+to every observer whose gate is open, in the order they were added. The destructor empties the list after the engine is
 destroyed.
+
+#### Gated observers
+
+`add_run_observer()` and `observe_runs()` take an optional `TimingGate`, a pointer to a function that
+answers whether the observer wants timing now; null means always, which is what the public
+`Runtime::add_run_observer()` passes. wants_device_timing() is true while an ungated observer is added or
+the gate of any gated one is open, and notify_run() skips an observer whose gate is closed. The answer is
+still read once, when a run is armed. The profiler parts add their observers behind the gate
+`Collector::sources_wanted`, so a session that is paused, or not open, costs the runtime no device timing.
+A gate is read again when an observation is delivered: one that has closed since the run was armed receives
+nothing.
 
 ### set_machine_facts and machine_facts
 

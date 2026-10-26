@@ -55,7 +55,9 @@ tracks name the runtime's node and the device, so two runtimes land on one timel
 
 When a session begins, the source adds one observer to each attached runtime; when it ends, and in
 the destructor of the parts object, the observers are removed, each through the handle it was added
-with and only the ones this object added. While an observer is added every run of the runtime is timed, chosen per run when it is armed, so no plan is
+with and only the ones this object added. The observers are added behind the profiler's `Collector::sources_wanted` gate, so a session that is paused or not
+recording costs the runtime no device timing, and a runtime with an observer of another owner keeps timing on
+for it. While a gate is open or an ungated observer is added every run of the runtime is timed, chosen per run when it is armed, so no plan is
 rebuilt when the session begins or ends: the run that starts after `begin()` carries records, and a run
 already in flight reaches the source with none. A runtime that already has an observer of another owner keeps it; every observer
 receives every run. The parts object keeps the context of each runtime alive until it is destroyed.
@@ -87,6 +89,12 @@ the period whose span holds its converted start: an older one is dropped with `d
 waits for its period. The per-device pairing is therefore what places a span: a device record with no
 pairing in its observation has no start on the steady clock, so it is dropped late and counted. A run
 whose work finished after the period's linger is counted in the same way.
+
+The source reports `max_delay_ns()`, 2000 ms (`DeviceSource::K_MAX_DELAY_NS`, below the profiler's limit of
+60 000 ms), so the consumer holds a closed period open that long for the source's late work. A span that
+finishes within the delay is placed in its period and not dropped late. `drop_late` still counts a span that
+arrives after the delay, a span with no pairing, the dispatches a run lost, and the records the source queue
+dropped when it was full.
 
 ### What is counted as dropped
 
