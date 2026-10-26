@@ -95,8 +95,12 @@ TEST(Large_RuntimeSession, SpansOnTheGpuHaveAPairingUncertaintyBelowTheirDuratio
             }
         }
         EXPECT_GT(uncertainty, 0u) << "a device span carries the uncertainty of its pairing";
+        // The warm-up run's first submit includes the driver's compilation (SPEC, current state 7).
+        if (period.warmup)
+            continue;
         EXPECT_LT(uncertainty, longest) << "the longest kernel of period " << period.index << " outlasts the submit call";
     }
+    EXPECT_FALSE(record.periods.back().warmup) << "the active periods are the ones compared";
 }
 
 /** @brief Tests that with two devices each gets its own track and its spans are all placed. */

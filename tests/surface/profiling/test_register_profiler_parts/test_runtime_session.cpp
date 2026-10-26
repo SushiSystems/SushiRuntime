@@ -359,8 +359,10 @@ TEST(Medium_RuntimeSession, AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDr
 {
     SessionPipeline pipeline;
     std::atomic<bool> gate{false};
-    pipeline.graph().add_host(Reads{}, Writes{}, [&gate]()
+    std::atomic<bool> entered{false};
+    pipeline.graph().add_host(Reads{}, Writes{}, [&gate, &entered]()
     {
+        entered.store(true, std::memory_order_release);
         while (!gate.load(std::memory_order_acquire))
             std::this_thread::yield();
     });
@@ -368,7 +370,7 @@ TEST(Medium_RuntimeSession, AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDr
 
     const RunRecord record = record_periods(
         pipeline.runtime(), 0, 3,
-        [&pipeline, &gate, &nodes](std::uint32_t iteration, SushiProfiler::PeriodTimeline& timeline)
+        [&pipeline, &gate, &entered, &nodes](std::uint32_t iteration, SushiProfiler::PeriodTimeline& timeline)
         {
             if (iteration != 0)
             {
@@ -378,6 +380,9 @@ TEST(Medium_RuntimeSession, AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDr
             }
             // A host node of the step blocks until the first period has ended and the source's two-second delay has passed.
             auto step = pipeline.graph().run_async().value();
+            // The held node must start inside the first period, or its span opens in a later one and is never late.
+            while (!entered.load(std::memory_order_acquire))
+                std::this_thread::yield();
             timeline.mark();
             timeline.mark();
             // The consumer holds a closed period open for the source's maximum delay, 2 s, then collects it on its own thread.

@@ -528,6 +528,8 @@ Choices the rulings did not cover, taken SOLID-first and then by what rebuilds l
 | The worker bucket values are read and reset by `write_run_values()` | An unobserved run must not report the buckets of an earlier observed one |
 | The value `graph.nodes` counts the recorded nodes, not the completion sentinel | The sentinel is held in `CompiledGraph::sentinel`, apart from `all_nodes`; the build-pass test expected it counted and was corrected to the code, and `PROFILER_KEYS.md` now says so |
 | A test that drives `DeviceSource` outside a session opens `Collector::want_sources` itself, and a test that needs the chain's `chain.record_events` adds an observer | Since R21 the parts' observer is gated on the session's gate and only an added observer makes a run timed; the tests now set up what a session would |
+| The GPU test compares the pairing uncertainty with the longest kernel in the active periods only; the warm-up period still carries one | Measured on the RTX 3080 Ti: the warm-up run's first submit takes 0.68 to 0.74 ms against kernels of 0.17 to 0.21 ms, the driver compilation that current state 7 left unverified; the active periods pass |
+| The linger test waits until its held host node has started before it marks the first period | Without the wait the node could start after the marks, so its span opened in a later period and was never late; the test asserted what it did not set up |
 
 ## Breaking changes and migration
 
