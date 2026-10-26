@@ -31,7 +31,7 @@ the outside through a `RunObserver` and through the profiler's zones, values and
 
 - One foundation module, `profile`, is the only code below the surface tier that includes SushiProfiler. A surface module, `profiling`, holds the device source, the environment contributor and the registration function.
 - SushiProfiler is linked as its shared library by the runtime and by every host, so a process has one collector.
-- A runtime fans a run out to any number of observers. Adding the first one is the request for device timing and removing the last withdraws it; each costs one plan rebuild.
+- A runtime fans a run out to any number of observers. Device timing is chosen per run: a run is timed while at least one observer is added, and no plan is rebuilt when one is added or removed.
 - An observer receives a `RunObservation`: the layer, the shared node table, the records, one pairing per device and the drop counts. A device record stays on its device's event clock and a host record on the steady clock.
 - No period is read in the runtime. The source places each span by its converted start against the period the session hands it, which makes the per-device pairing load-bearing.
 - A run hands its observation over when its device work completes, so a caller that waits late loses nothing.
@@ -109,6 +109,5 @@ per-dispatch lines are at `TRACE`.
 
 ## Open questions
 
-- The switch of device timing without a plan rebuild, so a capture window can toggle it per period. It needs the scheduler's sentinel to read the flag per run (RW-68).
 - The cost of a run with the gate closed at level 2 is the profiler's budget until the benchmark has run; the default level drops to 1 if it misses (RW-69).
 - The distributed layer has no zones or flows; its timing is its own phase (RW-70).

@@ -34,11 +34,11 @@ report handed to `run(RunReport&)` every tick stops allocating after the first r
 
 ## run_observer.hpp
 
-A runtime keeps any number of `RunObserver`s, added with `Runtime::add_run_observer()`. A runtime records
-device timing while it has at least one. `on_run()` receives one `RunObservation` for every run that finished
+A runtime keeps any number of `RunObserver`s, added with `Runtime::add_run_observer()`. Every run of a runtime is
+timed while it has at least one, chosen per run when the run is armed. `on_run()` receives one `RunObservation` for every run that finished
 without a fault while the observer is added, on the thread that learned the run finished: the thread that
-ended a blocking run, or the worker that reaped the last node of an asynchronous step. A run of a plan built
-before the observer was added reports with no records. `on_run()` must not throw, start a run, or add or remove an
+ended a blocking run, or the worker that reaped the last node of an asynchronous step. A run that was already armed
+when the observer was added reports with no records, and no plan is rebuilt. `on_run()` must not throw, start a run, or add or remove an
 observer.
 
 `RunObserverHandle` is move-only and removes the observer it stands for when it is destroyed or `reset()`. It

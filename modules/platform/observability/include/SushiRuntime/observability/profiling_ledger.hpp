@@ -36,7 +36,10 @@
 #include <memory>
 #include <utility>
 #include <vector>
-#include <SushiRuntime/report/node_event.hpp>
+#include <SushiRuntime/report/clock_pairing.hpp>
+#include <SushiRuntime/report/dispatch_width.hpp>
+#include <SushiRuntime/report/drop_counts.hpp>
+#include <SushiRuntime/report/node_event_record.hpp>
 
 namespace SushiRuntime
 {

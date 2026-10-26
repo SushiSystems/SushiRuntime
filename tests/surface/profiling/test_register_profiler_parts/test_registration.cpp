@@ -26,6 +26,7 @@
  * @author Mustafa Garip
  */
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -34,9 +35,11 @@
 
 #include <SushiProfiler/json/json_reader.hpp>
 #include <SushiProfiler/registry/registry.hpp>
+#include <SushiProfiler/record/span_table.hpp>
 #include <SushiProfiler/sites/name_table.hpp>
 #include <SushiProfiler/sources/source.hpp>
 #include <SushiProfiler/sources/source_context.hpp>
+#include <SushiProfiler/sources/span_sink.hpp>
 
 #include <SushiRuntime/profiling/register_profiler_parts.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
@@ -104,39 +107,28 @@ TEST(Medium_RegisterProfilerParts, ASessionAddsAndRemovesTheObserver)
     const RuntimeProfilerParts parts = register_profiler_parts(registry, pipeline.runtime());
     const std::unique_ptr<SushiProfiler::Source> source = make_source(registry);
     SourceHarness harness;
+    SushiProfiler::SpanTable table;
+    SushiProfiler::SpanSink sink(table, harness.names, harness.tracks);
+    const SushiProfiler::PeriodSpan everything{0, 0, ~std::uint64_t{0}};
 
     ASSERT_TRUE(pipeline.graph().run().has_value());
-    ASSERT_EQ(pipeline.graph().compile_count(), 1u) << "no session yet, so the plan records no timing";
+    ASSERT_EQ(pipeline.graph().compile_count(), 1u);
 
     ASSERT_TRUE(source->begin(harness.context).ok());
     ASSERT_TRUE(pipeline.graph().run().has_value());
-    EXPECT_EQ(pipeline.graph().compile_count(), 2u) << "the session's observer turned device timing on, once";
+    source->collect(everything, sink);
+    EXPECT_EQ(table.size(), 3u) << "the session's observer was added, so the run reached the source with its records";
+    EXPECT_EQ(pipeline.graph().compile_count(), 1u) << "and no plan was rebuilt for it";
 
     source->end();
     ASSERT_TRUE(pipeline.graph().run().has_value());
-    EXPECT_EQ(pipeline.graph().compile_count(), 3u) << "ending the session removed the last observer, once";
-}
-
-/** @brief Tests that a parts object that dies with its session still running removes its own observer. */
-TEST(Medium_RegisterProfilerParts, TheDestructorLeavesNoObserverBehind)
-{
-    SessionPipeline pipeline;
-    SushiProfiler::Registry registry;
-    SourceHarness harness;
-    std::unique_ptr<SushiProfiler::Source> source;
-    {
-        const RuntimeProfilerParts parts = register_profiler_parts(registry, pipeline.runtime());
-        source = make_source(registry);
-        ASSERT_TRUE(source->begin(harness.context).ok());
-        ASSERT_TRUE(pipeline.graph().run().has_value());
-        ASSERT_EQ(pipeline.graph().compile_count(), 1u);
-    }
-
-    // The parts are gone with their observer: the plan sees the last observer leave.
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-    EXPECT_EQ(pipeline.graph().compile_count(), 2u);
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-    EXPECT_EQ(pipeline.graph().compile_count(), 2u);
+    ASSERT_TRUE(source->begin(harness.context).ok());
+    SushiProfiler::SpanTable after;
+    SushiProfiler::SpanSink after_sink(after, harness.names, harness.tracks);
+    source->collect(everything, after_sink);
+    EXPECT_EQ(after.size(), 0u) << "ending the session removed the observer, so the run after it reached nothing";
+    EXPECT_EQ(pipeline.graph().compile_count(), 1u);
+    source->end();
 }
 
 /** @brief Tests that the destructor removes only the observer it added, so another observer keeps its runs. */

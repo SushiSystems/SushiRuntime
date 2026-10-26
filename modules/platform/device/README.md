@@ -152,8 +152,8 @@ request for the same slot logs nothing.
 
 `wait_all()` writes the fine zone `wait.queues` through the `profile` front, so a profile shows
 how long the runtime waited on its queues. The runtime builds the set with `profiling` false: a
-device's profiling queue is built lazily by flavour when the first run of a plan that records
-device timing asks for it, which is when an observer has been added to the runtime.
+device's profiling queue is built lazily by flavour when the first timed run asks for it, which is the
+first run after an observer is added to the runtime.
 
 ### What the set does not log
 

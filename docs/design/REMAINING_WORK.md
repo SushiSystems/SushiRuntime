@@ -86,15 +86,6 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
   packages are checked against the tree
 - Source: `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/README.md`
 
-### RW-68 Switch device timing on and off without a plan rebuild
-- State: open
-- Done when: a run reads the timing flag per run, so adding or removing an observer rebuilds no plan, and
-  a test shows `compile_count()` unchanged across both
-- Source: `docs/design/PROFILING/README.md`
-
-The sentinel's host work captures the flag when it is first wired, and a plan is stale when its flag
-differs from the runtime's answer. Reading the flag per run removes both costs.
-
 ### RW-69 Measure the closed-gate cost of the runtime's zones
 - State: unmeasured
 - Done when: `tests/engine/execution/benchmark_scheduler_execution_engine.cpp` has printed the time of

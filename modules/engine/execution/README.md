@@ -201,8 +201,9 @@ set_rebalancer_enabled() is safe to call between runs.
 SchedulerExecutionEngine::reset_profiling() zeroes the scheduler's per-worker time buckets and resets
 the plan's event ledger, sizing it to `expected_invocations` per node or the previous run's
 high-water mark, whichever is larger, so capture never allocates once a shape has been seen. It
-sizes the ledger's pairing slots to the number of devices. The driver calls it only when the plan
-records device timing.
+sizes the ledger's pairing slots to the number of devices. The driver calls it only for a run that is
+timed. A plan that was never timed holds no ledger rows; after a timed run the ledger stays at its high-water
+size, 48 bytes per recorded dispatch, and an untimed run costs one load and a branch.
 
 ### collect_profiling
 
@@ -305,8 +306,11 @@ began with. `add_run_observer()` returns an id and `remove_run_observer()` takes
 `observe_runs()` adds an observer and returns the `RunObserverHandle` that removes it, holding the
 context weakly so a handle that outlives the context removes nothing. `Runtime::add_run_observer()` and
 the parts object of the `profiling` module both go through it. `wants_device_timing()` is true while the
-list is not empty, which is what a plan reads when it is built and when it is checked for staleness; a
-plan built under the other answer is rebuilt once at its next run. `notify_run()` hands an observation
+list is not empty. Device timing is a per-run choice and not a property of the plan: each run reads the
+answer once when it is armed, and `CompiledGraph::profiling` holds that armed value for the run. Adding or
+removing an observer rebuilds no plan. The run that starts after `add_run_observer()` is timed and carries
+records; an observer added while a run is in flight receives that run with no records and the next one with
+records. `notify_run()` hands an observation
 to every observer, in the order they were added. The destructor empties the list after the engine is
 destroyed.
 
@@ -483,7 +487,7 @@ allocation-free latch. TRACE is compiled out in release, where `K_LOG_LEVEL_FLOO
 The sentinel's `host_work` is wired once. It captures only stable pointers, the engine's
 latch and scheduler, so the closure is built the first time a plan runs and reused for every
 later step. A recompile produces a fresh sentinel with an empty `host_work`, which wires
-again. The `profiling` flag it captures is fixed for the sentinel's lifetime. It also captures the engine
+again. The run's armed timing flag is read from the plan when the sentinel fires. It also captures the engine
 and the plan, for the observation of a run started with `submit_observed()`.
 
 The sentinel is the final node: the DAG dispatches it only once every predecessor's event
@@ -630,7 +634,7 @@ The set's destructor logs a late asynchronous device error and continues;
 
 FPGAs and custom accelerators often execute better in order or do not support out-of-order
 queues natively, so a device that is neither a CPU nor a GPU gets an in-order queue.
-A profiling queue is built lazily, on the first run of a plan that records device timing, so a
+A profiling queue is built lazily, on the first timed run, so a
 `RunObserver` can read each kernel's device start and end timestamps. The two properties compose, and
 the FPGA case keeps its in-order guarantee.
 

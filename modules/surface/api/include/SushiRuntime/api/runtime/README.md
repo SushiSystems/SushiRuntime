@@ -226,8 +226,9 @@ two each step. It validates its `DeviceIndex` as `buffer()` does.
 `Runtime::add_run_observer()` adds an observer that receives the capture of every finished run of the
 runtime and returns a `RunObserverHandle`; the handle removes the observer when it is destroyed or
 reset. Any number of observers may be added and each receives every run, in the order added. While at
-least one is added, the runtime's graphs record device timing: adding the first rebuilds each graph's
-plan once at its next run, and so does removing the last. The runtime shares ownership of the observer
+least one is added, every run is timed. The choice is made per run, when the run is armed, so no plan is
+rebuilt when an observer is added or removed: the run that starts after the call carries records, and a run
+already in flight reaches the observer with none. The runtime shares ownership of the observer
 until the handle removes it, and a handle that outlives the runtime removes nothing. The header
 forward-declares `RunObserver` and `RunObserverHandle`; a caller includes
 `SushiRuntime/report/run_observer.hpp`. An observer's `on_run()` runs on the thread that learned the

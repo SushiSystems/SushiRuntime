@@ -27,7 +27,7 @@ The words this repository's documents use. A term defined in code names the head
 | Registration index | The number a task takes when it is added; the nodes of one `Recorder::rule()` scope share it. `NodeEventRecord::node_index` is numbered by it |
 | Node event record | `NodeEventRecord`: the submit, start and end times of one dispatch, with its device and submitting thread, collected while the runtime has an observer |
 | Clock pairing | `ClockPairing`: an event-clock reading and a steady-clock reading taken together at a device's first kernel submission in a run; one per device (`DeviceClock`), since two devices may not share an event clock |
-| Run observer | `RunObserver`: what `Runtime::add_run_observer()` adds; it receives a `RunObservation` for every finished run. Adding the first one turns device timing on |
+| Run observer | `RunObserver`: what `Runtime::add_run_observer()` adds; it receives a `RunObservation` for every finished run. While one is added, every run is timed; no plan is rebuilt when it is added or removed |
 | Node table | `NodeTable`: one row per registration index of a plan, with the node's name, operation, optional cost and host-native flag; the plan builds it once |
 | Graph id, graph label | `Graph::id()` is a process-wide identity, 0 after a move; `Graph::set_label()` names the graph for a profile. A plan copies both into its node table and a `RunObservation` carries the id |
 | Node origin | `NodeOptions::origin`: the caller's own operation a node belongs to, written as the span attribute `origin` |

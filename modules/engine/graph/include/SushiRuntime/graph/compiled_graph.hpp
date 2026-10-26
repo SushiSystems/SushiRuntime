@@ -94,7 +94,7 @@ namespace SushiRuntime
             /** @brief Sentinel's compiled in-degree baseline. */
             std::int32_t sentinel_in_degree = 0;
 
-            /** @brief Whether this plan dispatches its device nodes on the profiling queue, as the runtime's observer asked when it was built. */
+            /** @brief Whether the run in progress is timed: its device nodes use the profiling queue. Set when a run is armed. */
             bool profiling = false;
 
             /** @brief Per-run node event records and device clock pairings, live only while profiling is on. */

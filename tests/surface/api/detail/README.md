@@ -287,9 +287,3 @@ GraphId, the process-wide identity of one owner of plans.
 | `Small_GraphId.IdsAreNonZeroDistinctAndMovedFromReportsZero` | Identities are non-zero and distinct, and a moved-from one reports 0. |
 | `Small_GraphId.MoveAssignmentHandsTheIdentityOver` | Move assignment hands the identity over and leaves the source with none. |
 | `Small_GraphId.SeveralThreadsNeverTakeTheSameId` | The counter never repeats an id, even when several threads take them at once. |
-
-## test_dropped_outcome.cpp
-
-| Test | What it proves |
-| --- | --- |
-| `Small_DroppedOutcome.LogsTheErrorAndWhereItWasDropped` | The WARN under `api` names the error, its message and the call that dropped the outcome. |

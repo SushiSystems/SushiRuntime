@@ -1383,7 +1383,7 @@ namespace GraphProfilingSwitchTests
         EXPECT_FALSE(recorder.last().events.empty()) << "the second graph must collect device timing too";
     }
 
-    TEST(Medium_GraphProfilingSwitch, AddingAnObserverRecompilesOnceAndSwitches)
+    TEST(Medium_GraphProfilingSwitch, AddingAnObserverRecompilesNothingAndSwitches)
     {
         constexpr std::size_t N = 128;
 
@@ -1398,25 +1398,25 @@ namespace GraphProfilingSwitchTests
         const std::size_t compiles_after_first_run = g.compile_count();
         EXPECT_EQ(compiles_after_first_run, 1u);
 
+        // A plan built before the observer gives full records on its first run after the add.
         Testing::RunRecorder recorder(rt);
         g.run().value();
         ASSERT_EQ(recorder.count(), 1u);
         EXPECT_FALSE(recorder.last().events.empty());
-        EXPECT_EQ(g.compile_count(), compiles_after_first_run + 1)
-            << "the first observer must recompile exactly once";
+        EXPECT_EQ(g.compile_count(), compiles_after_first_run)
+            << "adding an observer must not recompile the plan";
 
-        // Running again with the observer still added recompiles zero further times.
         g.run().value();
         ASSERT_EQ(recorder.count(), 2u);
         EXPECT_FALSE(recorder.last().events.empty());
-        EXPECT_EQ(g.compile_count(), compiles_after_first_run + 1);
+        EXPECT_EQ(g.compile_count(), compiles_after_first_run);
 
-        // Removing the last observer recompiles once more and records nothing.
+        // Removing the last observer recompiles nothing and records nothing.
         recorder.stop();
         g.run().value();
         EXPECT_EQ(recorder.count(), 2u);
-        EXPECT_EQ(g.compile_count(), compiles_after_first_run + 2)
-            << "the last removal must recompile exactly once";
+        EXPECT_EQ(g.compile_count(), compiles_after_first_run)
+            << "removing the last observer must not recompile the plan";
     }
 
     /**

@@ -451,7 +451,7 @@ per-step state of the plan had leaked into the arithmetic.
 The file covers how an added observer reaches the graphs of a runtime: section B of
 the g1 node event records design spec in the version history, built as task 4 of
 the g1 node event records plan spec in the version history. It checks that an observer turns timing
-on for every graph of its runtime, that the plan recompiles once, and that
+on for every graph of its runtime, that no plan recompiles, and that
 every device-dispatch branch the scheduler can route to a profiling queue does so.
 
 ### `NUMAFallbackBranchUsesProfilingQueue`
@@ -793,8 +793,12 @@ The file tests Access: the regions it keeps in order and the observers of both s
 
 ## test_dispatch_events.cpp
 
+A task body which submits several kernels is timed across every event it hands over.
+
 | Test | What it proves |
 | --- | --- |
-| `Medium_DispatchEvents.ABodyHandingOverTwoEventsIsTimedAcrossBoth` (and `...OnTheChain`) | A body handing over two events is timed from the earliest start to the latest end, on the worker pool and on the in-order chain. |
-| `Medium_DispatchEvents.ABodyHandingOverNoneIsTimedAsBefore` (and `...OnTheChain`) | A body handing over nothing is timed by the event it returns. |
+| `Medium_DispatchEvents.ABodyHandingOverTwoEventsIsTimedAcrossBoth` | On the worker pool a body handing over two events is timed from the earliest start to the latest end. |
+| `Medium_DispatchEvents.ABodyHandingOverTwoEventsIsTimedAcrossBothOnTheChain` | The same on the in-order chain path. |
+| `Medium_DispatchEvents.ABodyHandingOverNoneIsTimedAsBefore` | A body handing over nothing is timed by the event it returns, as before. |
+| `Medium_DispatchEvents.ABodyHandingOverNoneIsTimedAsBeforeOnTheChain` | The same on the in-order chain path. |
 | `Medium_DispatchEvents.HandingAnEventOverOutsideABodyDoesNothing` | Handing an event over outside any body does nothing. |

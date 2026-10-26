@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-26 — execution: Made device timing a per-run choice read when the run is armed, so adding or removing an observer rebuilds no plan (`runtime_context.hpp`, `step_run.cpp`).
 - 2026-10-26 — cli: Made `sr build` take SushiLog as a built package and pass its config folder to CMake (`library_packages.py`).
 - 2026-10-26 — cli: Put the run-time folders of the packages first on the search path of `build`, `test`, `bench` and `run` (`project.py`).
 - 2026-10-26 — cli: Added `sr build --build-dir` and `--lean`, and `sr package --build-dir` (`cli.py`).
@@ -22,12 +23,12 @@
 - 2026-10-26 — report: Breaking change: Removed `RunReport::worker_timings`, `WorkerTiming` and `scheduling_overhead_ms`; the profiler values named `worker.*` replace them.
 - 2026-10-26 — report: Breaking change: Removed `RunReport::total_duration_ms` and `graph_analysis_duration_ms`; the zones `run.steps` and `plan.build` replace them (`run_report.hpp`).
 - 2026-10-26 — report: Breaking change: Removed `RunReport::host_to_device_bytes` and `device_to_host_bytes`; the counters `transfer.h2d_bytes` and `transfer.d2h_bytes` replace them.
-- 2026-10-26 — api: Breaking change: Removed `RuntimeConfig::profiling` and `AdvancedControls::is_profiling_enabled()`; adding an observer to the runtime requests device timing (`runtime_config.hpp`, `advanced_controls.hpp`).
-- 2026-10-26 — api: Breaking change: Removed `Graph::set_profiling()`, `is_profiling_requested()` and their `DynamicGraph` twins; a plan records device timing while the runtime has an observer (`graph.hpp`, `dynamic_graph.hpp`).
+- 2026-10-26 — api: Breaking change: Removed `RuntimeConfig::profiling` and `AdvancedControls::is_profiling_enabled()`; a run is timed while the runtime has an observer (`runtime_config.hpp`, `advanced_controls.hpp`).
+- 2026-10-26 — api: Breaking change: Removed `Graph::set_profiling()`, `is_profiling_requested()` and their `DynamicGraph` twins; a run is timed while the runtime has an observer (`graph.hpp`, `dynamic_graph.hpp`).
 - 2026-10-26 — report: Breaking change: Grew `NodeEventRecord` to 48 bytes with `device_index` and `submit_thread` appended (`node_event_record.hpp`).
 - 2026-10-26 — report: Breaking change: Moved `ClockPairing` out of `run_report.hpp` into `clock_pairing.hpp`.
 - 2026-10-26 — report: Added `RunObserver`, `RunObservation` and the move-only `RunObserverHandle`, the only way a run's timing leaves the runtime (`run_observer.hpp`).
-- 2026-10-26 — api: Added `Runtime::add_run_observer()`, which fans every run out to any number of observers and turns device timing on while one is added (`runtime.hpp`).
+- 2026-10-26 — api: Added `Runtime::add_run_observer()`, which fans every run out to any number of observers; every run is timed while one is added (`runtime.hpp`).
 - 2026-10-26 — report: Added `NodeTable` and `NodeTableRow`, built once per plan with each node's name, operation, optional cost and host-native flag (`node_table.hpp`).
 - 2026-10-26 — report: Added `DeviceClock`, one clock pairing per device in a run, in place of one pairing per run (`clock_pairing.hpp`, `run_observer.hpp`).
 - 2026-10-26 — report: Added `DropCause` and `DropCounts`, which a `RunObservation` carries for the dispatches a run lost (`drop_counts.hpp`).

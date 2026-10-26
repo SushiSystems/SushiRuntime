@@ -29,13 +29,6 @@ A session test marks periods around blocking runs, so every span of a run is que
 with no session.
 
 
-## test_source_names.cpp
-
-| Test | What it checks |
-| --- | --- |
-| `Small_SourceNames.TheDeviceSourceIsNamedSushiruntimeDevice` | `K_DEVICE_SOURCE_NAME` spells `sushiruntime.device`. |
-| `Medium_SourceNames.TheSourceTheRegistryMakesCarriesThatName` | The source the registry makes under that name reports it. |
-
 ## test_run_queue.cpp
 
 RunQueue, the bounded hand-over of observations from the runs' threads to the consumer.
@@ -150,7 +143,6 @@ How the runtime registers its source and contributor, and how it adds and remove
 | `Medium_RegisterProfilerParts.RefusesASecondRegistration` | The registry refuses a second registration of the same source name. |
 | `Medium_RegisterProfilerParts.TheRegistryMakesTheDeviceSource` | The registered source is the one the registry knows by the runtime's source name. |
 | `Medium_RegisterProfilerParts.ASessionAddsAndRemovesTheObserver` | A session adds the observer when its source begins and removes it when it ends. |
-| `Medium_RegisterProfilerParts.TheDestructorLeavesNoObserverBehind` | A parts object that dies with its session still running removes its own observer. |
 | `Medium_RegisterProfilerParts.TheDestructorRemovesItsOwnObserverOnly` | The destructor removes only the observer it added, so another observer keeps its runs. |
 | `Medium_RegisterProfilerParts.AFurtherRuntimeAttachesBeforeASessionAndNotDuringOne` | A second runtime may feed the same source before a session starts and not while one runs. |
 | `Medium_RegisterProfilerParts.RefusedPartsAttachNothing` | Parts whose registration was refused attach nothing. |
@@ -171,9 +163,10 @@ The observers a runtime fans its finished runs out to, and the device timing the
 | `Medium_RunObserver.AnObserverHearsOnlyItsOwnRuntime` | An observer of one runtime is not called by the runs of another. |
 | `Medium_RunObserver.SeesAnAsyncStepWhenItsWorkFinishesNotWhenItIsWaitedFor` | An async step is observed when its device work finishes, not when it is waited for. |
 | `Medium_RunObserver.AnAsyncStepWithNoObserverStillCompletes` | An async step of a runtime with no observer reports to nobody and still completes. |
-| `Medium_RunObserver.SeesARunOfAPlanBuiltBeforeTheAddWithNoRecords` | A plan built before an observer was added reports with no records until it is rebuilt. |
-| `Medium_RunObserver.TheFirstAddCostsExactlyOneRebuild` | The first observer added costs exactly one plan rebuild. |
-| `Medium_RunObserver.TheLastRemoveCostsExactlyOneRebuild` | Removing the last observer costs exactly one plan rebuild and removing another costs none. |
+| `Medium_RunObserver.TheFirstRunAfterAnAddOfAPlanBuiltBeforeCarriesRecords` | The first run after an add carries full records even though its plan was built before the add. |
+| `Medium_RunObserver.AddingAnObserverCostsNoRebuild` | Adding an observer costs no plan rebuild, for the first observer and for later ones. |
+| `Medium_RunObserver.RemovingTheLastObserverCostsNoRebuild` | Removing the last observer costs no plan rebuild and the runs after it are untimed. |
+| `Medium_RunObserver.AnObserverAddedMidRunTimesTheNextRunNotTheCurrentOne` | An observer added while a step is in flight gets that step with no records and times the next run. |
 | `Medium_RunObserver.ARunWithNoObserverMakesNoObservation` | A graph run with no observer attached records no device timing and reports to nobody. |
 | `Medium_RunObserver.ARunOnTheChainPathCarriesTheChainLayer` | A run on the chain path is observed with the chain layer and its records. |
 | `Medium_RunObserver.AMultiStepRunIsOneObservationWithEveryStep` | A multi-step run is one observation holding every step's records. |
@@ -257,7 +250,7 @@ Device timing follows the observers a session adds, and the capture window decid
 | Test | What it proves |
 | --- | --- |
 | `Medium_DeviceTimingWindow.SpansExistOnlyForTheRecordedPeriods` | With a window of one warm-up and two active periods the record holds spans for exactly those three. |
-| `Medium_DeviceTimingWindow.CountsTheRebuildsItCosts` | A session costs one plan rebuild when it starts and one when it ends, and the window costs none. |
+| `Medium_DeviceTimingWindow.CostsNoRebuild` | A session costs no plan rebuild, when it starts, in its window or when it ends. |
 | `Medium_DeviceTimingWindow.ARecordMadeWithoutTheSourceHoldsNoDeviceSpans` | A runtime with no session records no device spans in a record made without its source. |
 
 

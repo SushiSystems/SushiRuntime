@@ -130,10 +130,10 @@ TEST(Medium_PlanCache, CompilesOnlyWhenTheGraphChanges)
     graph.run().value();
     EXPECT_EQ(graph.compile_count(), 2u);
 
-    // The first observer asks for device timing, which rebuilds the plan once.
+    // An observer asks for device timing per run, so it rebuilds nothing.
     Testing::RunRecorder recorder(runtime);
     graph.run().value();
-    EXPECT_EQ(graph.compile_count(), 3u);
+    EXPECT_EQ(graph.compile_count(), 2u);
 }
 
 /** @brief Tests that a rule change made while a plan compiles makes the next run compile again. */

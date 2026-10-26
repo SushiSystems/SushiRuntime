@@ -121,7 +121,7 @@ rebuild; it reaches the profile at the next build. Both are on `Graph` and `Dyna
 
 Each plan build logs one `DEBUG` line under `sushiruntime.api` with the reason, the node count and the
 milliseconds the build took. The reason is one of: the first build or a discarded plan, the recorder
-changed, the placement changed, the device timing request changed, or the plan was marked for a rebuild.
+changed, the placement changed, or the plan was marked for a rebuild.
 
 ### Friends
 
@@ -437,7 +437,7 @@ a region boundary, where two regions share a buffer, live in a separate layer on
 own nodes are rebuilt and only the boundary edges of the allocations it shares are derived again.
 The second term covers the whole graph: every commit renumbers the registration index of every node
 of every live region, O(total nodes) with one map allocated per region, and copies the root list,
-O(roots). A graph whose plan records device timing also lists every node again.
+O(roots). Every composed plan also lists every node again and carries the node table.
 
 Cross-region ordering follows ascending region key: for an allocation two regions share, the
 lower-keyed region is the producer. Read/read sharing stays parallel (no edge between two regions
@@ -497,12 +497,9 @@ run_async() on the owning graph is pending.
 
 ### Device timing of a composed plan
 
-A composed plan records device timing while the runtime has an observer. commit() reads the answer
-from the context when it publishes the plan, and `plan_is_stale()` also checks it through
-`timing_changed()`: a plan composed under the other answer marks every live region dirty, so the next
-commit rebuilds and renumbers every node's public registration index once. Adding the first observer
-costs one such commit and removing the last one more. The setting is the same for every graph on the
-runtime.
+A composed plan carries its node table whether or not the runtime has an observer, and each run decides
+whether it is timed. Adding or removing an observer marks no region dirty and composes nothing, so
+`compose_count()` is unchanged.
 
 ### refresh_updaters
 

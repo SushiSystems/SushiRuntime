@@ -243,9 +243,9 @@ namespace SushiRuntime
             ExecutionEngine& engine = context.execution_engine();
             engine.reset_cancellation();
 
-            // The ledger and the worker time are cleared only when the plan records timing.
-            const bool profiling = plan.profiling;
-            if (profiling)
+            // The run is timed when an observer is added as it starts; the plan needs no rebuild for it.
+            plan.profiling = context.wants_device_timing();
+            if (plan.profiling)
                 engine.reset_profiling(plan, expected_invocations);
 
             const ExecutionMetrics before = engine.metrics();
@@ -294,6 +294,7 @@ namespace SushiRuntime
 
             steps.resync();
             engine.reset_cancellation();
+            plan.profiling = context.wants_device_timing();
             if (plan.profiling)
                 engine.reset_profiling(plan);
 

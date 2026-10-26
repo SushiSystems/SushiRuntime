@@ -111,7 +111,6 @@ namespace SushiRuntime
                         built.emplace(k, std::move(state));
                     }
                     prepare_offload(built, placement->rules, runtime);
-                    profiling_requested_ = runtime.wants_device_timing();
 
                     std::set<RegionKey> retired(rebuilt);
                     retired.insert(dropped.begin(), dropped.end());
@@ -145,12 +144,6 @@ namespace SushiRuntime
                 [[nodiscard]] bool placement_changed(std::uint64_t generation) const noexcept
                 {
                     return committed_once_ && generation != placement_->generation;
-                }
-
-                /** @brief Returns whether the plan was composed under another device timing answer than @p wanted. */
-                [[nodiscard]] bool timing_changed(bool wanted) const noexcept
-                {
-                    return committed_once_ && wanted != profiling_requested_;
                 }
 
                 /**
@@ -385,21 +378,18 @@ namespace SushiRuntime
                  */
                 void publish_plan()
                 {
-                    const bool profiling = profiling_requested_;
                     plan_.roots.assign(roots_.begin(), roots_.end());
                     plan_.sentinel = sentinel_;
-                    plan_.profiling = profiling;
                     plan_.label = label_;
                     plan_.graph_id = graph_id_;
                     plan_.all_nodes.clear();
-                    if (profiling)
-                        for (auto& kv : states_)
-                            for (auto& np : kv.second.nodes)
-                                plan_.all_nodes.push_back(np);
+                    for (auto& kv : states_)
+                        for (auto& np : kv.second.nodes)
+                            plan_.all_nodes.push_back(np);
 
+                    // Every plan carries its node table, so a run that is timed needs no rebuild.
                     renumber_registration_indices();
-                    if (profiling)
-                        plan_.capture_profiling_state();
+                    plan_.capture_profiling_state();
                 }
 
                 /**
@@ -674,9 +664,6 @@ namespace SushiRuntime
                 /** @brief The graph's id at the last commit; stamped into the plan. */
                 std::uint64_t graph_id_ = 0;
 
-                /** @brief The runtime's device timing answer at the last commit; stamped into the plan. */
-                bool profiling_requested_ = false;
-
                 /**
                  * @brief The placement record the last commit stamped under; its rules are the
                  *        set the plan's nodes index. Null before the first commit.
@@ -725,13 +712,6 @@ namespace SushiRuntime
             return state_ != nullptr &&
                    state_->placement_changed(
                        Internal::ContextAccess::context(context).placement()->generation);
-        }
-
-        bool RegionComposer::timing_changed(const ContextHandle& context) const noexcept
-        {
-            return state_ != nullptr &&
-                   state_->timing_changed(
-                       Internal::ContextAccess::context(context).wants_device_timing());
         }
 
         void RegionComposer::rearm() noexcept

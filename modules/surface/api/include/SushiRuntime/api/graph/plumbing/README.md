@@ -265,8 +265,7 @@ name, and so does a null `const char*`.
 
 ### PlanCache
 
-PlanCache holds the plan compiled from one recorder. It is stale until the first build, after a
-change of the runtime's device timing answer, whenever the recorder's generation() differs from the one the
+PlanCache holds the plan compiled from one recorder. It is stale until the first build, whenever the recorder's generation() differs from the one the
 plan was built at, and whenever the context's placement generation differs from the one the plan was
 compiled under. stale() therefore takes the ContextHandle beside the recorder; it is defined in
 `source/plan_cache.cpp`, since the header cannot see the context. The plan and the list of its recorded nodes sit behind one pointer to
@@ -310,11 +309,11 @@ publishes a plan.
 
 ### Device timing
 
-PlanCache holds no request of its own. build() stamps `CompiledGraph::profiling` from whether the
-context has an observer, and stale() reports a plan built under the other answer as stale, so adding
-the first observer to the runtime or removing the last makes each graph rebuild its plan once at its
-next run. The answer is the runtime's, not the graph's, and is the same for every graph on it. build()
-is the stage zone `plan.build`, with the fine zones `plan.prepare` and `plan.classify` inside it.
+A plan does not depend on whether the runtime has an observer. build() always captures the node table, and
+each run decides whether it is timed: it reads the runtime's answer once when it is armed and
+`CompiledGraph::profiling` holds that value. Adding or removing an observer therefore rebuilds no plan and
+makes none stale. build() is the stage zone `plan.build`, with the fine zones `plan.prepare` and
+`plan.classify` inside it.
 
 ### compiles_
 
@@ -639,9 +638,8 @@ sits behind one pointer to `Detail::RegionComposerState`, which `source/region_c
 defines and whose members the sections below describe. compiled_plan() is protected because the
 test seam of the owning DynamicGraph reads it.
 
-The composer keeps what the runtime answered about device timing at its last commit: commit() reads it
-from the context and stamps it into the plan, and `timing_changed()` tells whether the runtime now
-answers otherwise. A move copies nothing of it, since the state moves whole.
+The composer keeps no answer about device timing. Every plan it publishes lists its nodes and carries the
+node table, and each run decides whether it is timed, as a static graph's does.
 
 ### add_cross_edge
 
@@ -718,8 +716,7 @@ Both the old and the new nodes of a dirty region are alive between the two phase
 Building costs O(nodes of the dirty regions), and wiring costs O(boundary pins of the allocations
 those regions and the dropped ones touch). Two steps cover the whole graph at every commit:
 renumber_registration_indices() walks every node of every live region and allocates one map per
-region, and publish_plan() copies the root list, O(roots). When the plan records device timing
-publish_plan() also lists every node again in `plan_.all_nodes` and builds the node table. commit() is the
+region, and publish_plan() copies the root list, O(roots). publish_plan() also lists every node again in `plan_.all_nodes` and builds the node table. commit() is the
 stage zone `region.commit`.
 
 ### commit: undo before free

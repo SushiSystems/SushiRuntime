@@ -440,8 +440,8 @@ run_steps() is the stage zone `run.steps`. At its end it writes the counters `ru
 `transfer.h2d_bytes` and `transfer.d2h_bytes`, which only the runtime sees, and the engine's worker
 values; the explicit transfer bytes are the difference of the context's cumulative counters over the run.
 It then hands the run's observation to the runtime's observers when any is added: with the records, the
-pairings and the drop counts when the plan records device timing, and with the node table alone when it
-was built before the observer was added. A run that failed hands over nothing. A step that failed and that nobody waited for is logged by `log_dropped_outcome()`. An asynchronous step is
+pairings and the drop counts when the run was timed, and with the node table alone when the observer was
+added after the run was armed. Each run reads the runtime's answer once, when it is armed. A run that failed hands over nothing. A step that failed and that nobody waited for is logged by `log_dropped_outcome()`. An asynchronous step is
 different: `submit_step()` starts it through the engine's `submit_observed()`, so the sentinel hands the
 observation over when the step's device work completes, and `finish_step()` only fills the report.
 

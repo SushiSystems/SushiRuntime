@@ -190,19 +190,18 @@ and so must a second `wait()` on the handle once the step has been waited for.
 `Runtime::add_run_observer()` returns a handle that stands for the observer. A graph run while it is
 added reaches the observer once, and a run after `reset()` does not.
 
-### `ASecondObserverRebuildsNothing`
+### `AnObserverRebuildsNothing`
 
-The first observer added to the runtime rebuilds a `Graph` plan once, a second observer rebuilds
-nothing, removing one of two rebuilds nothing, and removing the last rebuilds once more. The
-`DynamicGraph` reads the same on `compose_count()`: one, two after the first observer, two with the
-same observer, three after the removal.
+Adding the first observer, a second, removing one and removing the last must leave `Graph::compile_count()`
+at one and `DynamicGraph::compose_count()` at one: device timing is chosen per run, not per plan. Each
+observer receives every run while it is added.
 
-### `AnObserverOnADynamicGraphComposesOnceAndTimesItsNodes`
+### `AnObserverOnADynamicGraphComposesNothingAndTimesItsNodes`
 
 A `DynamicGraph` with one kernel runs four times: with no observer, after one is added, again with
-nothing changed, and after it is removed. The observer must see no run, a run with records, a run
-with records and no run, and `compose_count()` must read one, two, two and three, so the answer the
-runtime gives reaches the plan at the commit after each change and at no other.
+nothing changed, and after it is removed. The plan built before the observer must give records on its
+first run after the add, the observer must see no run after the removal, and `compose_count()` must read
+one throughout.
 
 ### `MovingAGraphWithAPendingStepEndsTheStep`
 

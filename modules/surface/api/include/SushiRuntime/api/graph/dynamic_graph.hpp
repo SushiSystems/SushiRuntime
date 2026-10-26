@@ -300,7 +300,7 @@ namespace SushiRuntime
             bool plan_is_stale()
             {
                 settle_changes();
-                if (placement_changed(context_) || timing_changed(context_))
+                if (placement_changed(context_))
                     rebuild_every_region_ = true;
                 return needs_commit();
             }

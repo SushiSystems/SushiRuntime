@@ -128,7 +128,7 @@ tests are not rewritten here.
 - **Tests:** in `tests/surface/api/graph/test_recorder.cpp`, `Medium_RecorderRefusal.LogsTheFirstRefusalAndNamesTheDroppedOnes`
   (A1); in `tests/surface/api/graph/test_run_handle.cpp`, `Medium_RunHandleDrop.LogsTheOutcomeOfAFailedUnwaitedStep` (A2);
   in `tests/surface/api/graph/test_graph.cpp`, `Medium_GraphDestruction.LogsTheOutcomeOfAFailedPendingStep` (A3) and
-  `Medium_GraphRebuild.LogsTheReasonOfEachRebuild` (A4, four reasons); new `tests/surface/api/test_api_log_category.cpp`,
+  `Medium_GraphRebuild.LogsTheReasonOfEachRebuild` (A4, three reasons); new `tests/surface/api/test_api_log_category.cpp`,
   `Small_ApiLogCategory.TheCategoryIsNamedAfterTheModule` (as `tests/engine/scheduler/test_scheduler_log_category.cpp`).
   A5 needs a `sycl::exception` out of `get_pointer_type`; if none can be provoked on the CPU device the test is not written and the
   report says A5 is untested, with the reason.
@@ -294,15 +294,14 @@ It follows `PF-4` because both edit `collect_profiling`; the counted drop goes i
 
 - **Files:** `RunObserver`, `RunObservation` and `RunObserverHandle` are declared in `PF-3`; `modules/engine/execution/.../runtime_context.hpp` and `source/runtime_context.cpp` keep the observers as one immutable list behind one
   atomic shared pointer, copied on every add and remove, and release the list before the engine on destruction; `modules/surface/api/include/SushiRuntime/api/runtime/runtime.hpp` and `source/runtime.cpp`
-  (`Runtime::add_run_observer`, which returns the move-only `RunObserverHandle`); `plan_cache.cpp` and `region_composer.cpp` stamp `plan.profiling` from the list (non-empty) and report a plan built under the other answer as
-  stale; `step_run.cpp` hands the observation of a blocking run to every observer at the end of the run, and the engine hands that of an asynchronous step over when the step's device work completes (the sentinel), so no
+  (`Runtime::add_run_observer`, which returns the move-only `RunObserverHandle`); `a run reads `wants_device_timing()` once when it is armed and stores the answer in `CompiledGraph::profiling` (R20), so no plan is stale for timing; `step_run.cpp` hands the observation of a blocking run to every observer at the end of the run, and the engine hands that of an asynchronous step over when the step's device work completes (the sentinel), so no
   period is read and a caller that waits late loses nothing.
-- **Acceptance:** every observer added to a runtime is called once per finished run with that run's observation, for a blocking run and for a `run_async` step whose caller waits after the period moved on; adding the first
-  observer and removing the last each cost one plan rebuild.
+- **Acceptance:** every observer added to a runtime is called once per finished run with that run's observation, for a blocking run and for a `run_async` step whose caller waits after the period moved on; adding and removing an observer cost no plan rebuild,
+  and the first run after an add is timed and carries records.
 - **Build:** one `sr build`, then `sr run sr_api_tests -- --gtest_filter='*RunObserver*'`.
 - **Tests:** `Medium_RunObserver.SeesEachBlockingRunOnce`, `Medium_RunObserver.TwoObserversBothReceiveEveryRun`, `Medium_RunObserver.RemovingOneLeavesTheOther`,
-  `Medium_RunObserver.SeesAnAsyncStepWhenItsWorkFinishesNotWhenItIsWaitedFor`, `Medium_RunObserver.SeesARunOfAPlanBuiltBeforeTheAddWithNoRecords`, `Medium_RunObserver.TheFirstAddCostsExactlyOneRebuild`,
-  `Medium_RunObserver.TheLastRemoveCostsExactlyOneRebuild`, `Medium_RunObserver.IsNotCalledAfterItsHandleIsReset`;
+  `Medium_RunObserver.SeesAnAsyncStepWhenItsWorkFinishesNotWhenItIsWaitedFor`, `Medium_RunObserver.TheFirstRunAfterAnAddOfAPlanBuiltBeforeCarriesRecords`, `Medium_RunObserver.AddingAnObserverCostsNoRebuild`,
+  `Medium_RunObserver.RemovingTheLastObserverCostsNoRebuild`, `Medium_RunObserver.AnObserverAddedMidRunTimesTheNextRunNotTheCurrentOne`, `Medium_RunObserver.IsNotCalledAfterItsHandleIsReset`;
   `tests/engine/execution/test_runtime_context.cpp`: `Small_RuntimeContext.RemovesEveryObserverBeforeItsOwnerGoes`.
 
 ### PF-6 The device source
@@ -384,15 +383,15 @@ It follows `PF-4` because both edit `collect_profiling`; the counted drop goes i
 - **Build:** one `sr build`, then `sr run sr_api_tests` and `sr_memory_tests` with the filters below.
 - **Tests:** `Medium_RunCounters.TransferBytesMatchTheExplicitCopies`, `Medium_RunCounters.WorkerBucketSumsAreWrittenOnEveryRun`, `Small_UsmAllocatorZones.AnAllocationWritesAZoneAndItsSize`.
 
-### PF-12 Device timing follows the observers (D7)
+### PF-12 Device timing is a per-run choice (D7, R20)
 
-- **Files:** none beyond `PF-5`: the plan cache and the region composer compare the plan's flag with the attachment, so the runtime requests timing exactly while an observer is attached. The switch without a
-  rebuild stays in the backlog.
-- **Acceptance:** with an observer attached for one warm-up and two active periods, the record holds device spans for exactly the periods the capture window kept, the plan was rebuilt once at the attach and once at the detach.
+- **Files:** `CompiledGraph::profiling` becomes the armed value of the run in progress. `step_run.cpp` reads `wants_device_timing()` once per blocking run and per asynchronous step and stores it; the sentinel reads the armed value when it
+  runs instead of capturing it at wiring; `chain_run.cpp` takes the profiling flavour from it; `plan_cache.cpp`, `region_composer.cpp` and `dynamic_graph.hpp` drop the timing term from staleness and from `rebuild_reason`, and the composer lists
+  its nodes and captures the node table unconditionally. A timed run differs in one thing, the queue: the profiling-enabled flavour of the device's queue, built on first use. The plan holds the node table when idle and, after a timed run, the ledger at its
+  high-water size; an untimed run costs one load and a branch.
+- **Acceptance:** with an observer attached for one warm-up and two active periods, the record holds device spans for exactly the periods the capture window kept, and no plan was rebuilt.
 - **Build:** one `sr build`, then `sr run sr_profiling_tests -- --gtest_filter='*Window*'`.
-- **Tests:** `Medium_DeviceTimingWindow.SpansExistOnlyForTheRecordedPeriods`, `Medium_DeviceTimingWindow.CountsTheRebuildsItCosts` (reads `compile_count()`).
-
-## Stage 5: measurement and the proof
+- **Tests:** `Medium_DeviceTimingWindow.SpansExistOnlyForTheRecordedPeriods`, `Medium_DeviceTimingWindow.CostsNoRebuild` (reads `compile_count()`).
 
 ### PF-13 The overhead benchmark
 
@@ -508,6 +507,7 @@ Choices the rulings did not cover, taken SOLID-first and then by what rebuilds l
 | Each `CompiledGraph` keeps one scratch `RunObservation` that every run clears and refills | A run that observes must not allocate per tick; the observer already receives a const reference |
 | `profile_config.hpp.in` guards each macro with `#ifndef`, so a test unit may state its own level before the include | The gate tests compile one call at four levels; `profile.hpp` itself has no default, as R19 asks |
 | The id counter lives in `source/graph_id.cpp`, behind an exported function | One counter per process even when a host loads the library through another image |
+| A timed run is chosen when the run is armed, and the node table is always built | The plan then needs no rebuild when an observer comes or goes, and the table costs one string per registration index |
 | `set_label` stores the label on the plan cache and the composer, and the table copies it at build | A label change then rebuilds nothing, as R15 asks |
 | The worker bucket values are read and reset by `write_run_values()` | An unobserved run must not report the buckets of an earlier observed one |
 

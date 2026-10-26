@@ -476,8 +476,8 @@ TEST(Medium_RunDriver, AddRunObserverReturnsAHandleThatRemovesIt)
     EXPECT_EQ(observer->count(), 1u) << "a removed observer saw a run";
 }
 
-/** @brief Tests that only the first observer and the last removal rebuild a plan. */
-TEST(Medium_RunDriver, ASecondObserverRebuildsNothing)
+/** @brief Tests that adding and removing observers rebuilds no plan, and each observer sees every run. */
+TEST(Medium_RunDriver, AnObserverRebuildsNothing)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -492,21 +492,23 @@ TEST(Medium_RunDriver, ASecondObserverRebuildsNothing)
     auto second = std::make_shared<TestRunner::RecordingObserver>();
     RunObserverHandle first_handle = rt.add_run_observer(first);
     g.run().value();
-    EXPECT_EQ(g.compile_count(), 2u) << "the first observer must rebuild the plan";
+    EXPECT_EQ(g.compile_count(), 1u) << "the first observer rebuilt the plan";
 
     RunObserverHandle second_handle = rt.add_run_observer(second);
     g.run().value();
-    EXPECT_EQ(g.compile_count(), 2u) << "a second observer rebuilt the Graph again";
+    EXPECT_EQ(g.compile_count(), 1u) << "a second observer rebuilt the Graph";
     EXPECT_EQ(first->count(), 2u);
     EXPECT_EQ(second->count(), 1u);
 
     first_handle.reset();
     g.run().value();
-    EXPECT_EQ(g.compile_count(), 2u) << "removing one of two observers rebuilt the Graph";
+    EXPECT_EQ(g.compile_count(), 1u) << "removing one of two observers rebuilt the Graph";
+    EXPECT_EQ(first->count(), 2u);
+    EXPECT_EQ(second->count(), 2u);
 
     second_handle.reset();
     g.run().value();
-    EXPECT_EQ(g.compile_count(), 3u) << "the last removal must rebuild the plan";
+    EXPECT_EQ(g.compile_count(), 1u) << "removing the last observer rebuilt the plan";
 
     auto world = rt.dynamic_graph();
     world.region(0).add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
@@ -514,16 +516,14 @@ TEST(Medium_RunDriver, ASecondObserverRebuildsNothing)
     EXPECT_EQ(world.compose_count(), 1u);
     RunObserverHandle again = rt.add_run_observer(first);
     world.run().value();
-    EXPECT_EQ(world.compose_count(), 2u) << "the first observer must compose the plan again";
-    world.run().value();
-    EXPECT_EQ(world.compose_count(), 2u) << "the same observer composed the DynamicGraph again";
+    EXPECT_EQ(world.compose_count(), 1u) << "an observer composed the DynamicGraph again";
     again.reset();
     world.run().value();
-    EXPECT_EQ(world.compose_count(), 3u) << "the last removal must compose the plan again";
+    EXPECT_EQ(world.compose_count(), 1u) << "the last removal composed the plan again";
 }
 
-/** @brief Tests that adding an observer to a DynamicGraph composes once and times its nodes. */
-TEST(Medium_RunDriver, AnObserverOnADynamicGraphComposesOnceAndTimesItsNodes)
+/** @brief Tests that an observer on a DynamicGraph composes nothing and times the very next run. */
+TEST(Medium_RunDriver, AnObserverOnADynamicGraphComposesNothingAndTimesItsNodes)
 {
     auto rt  = Runtime::create().value();
     auto buf = rt.buffer<int>(N).value();
@@ -539,18 +539,18 @@ TEST(Medium_RunDriver, AnObserverOnADynamicGraphComposesOnceAndTimesItsNodes)
     Testing::RunRecorder recorder(rt);
     world.run().value();
     ASSERT_EQ(recorder.count(), 1u);
-    EXPECT_FALSE(recorder.last().events.empty()) << "the observer did not reach the plan";
-    EXPECT_EQ(world.compose_count(), 2u);
+    EXPECT_FALSE(recorder.last().events.empty()) << "the plan built before the observer gave no records";
+    EXPECT_EQ(world.compose_count(), 1u);
 
     world.run().value();
     ASSERT_EQ(recorder.count(), 2u);
     EXPECT_FALSE(recorder.last().events.empty());
-    EXPECT_EQ(world.compose_count(), 2u) << "a run with the observer unchanged composed again";
+    EXPECT_EQ(world.compose_count(), 1u);
 
     recorder.stop();
     world.run().value();
-    EXPECT_EQ(recorder.count(), 2u) << "the removal did not reach the plan";
-    EXPECT_EQ(world.compose_count(), 3u);
+    EXPECT_EQ(recorder.count(), 2u) << "the removal did not reach the runs";
+    EXPECT_EQ(world.compose_count(), 1u);
 }
 
 /** @brief Tests that moving a graph with a pending step ends the step and frees both sides. */

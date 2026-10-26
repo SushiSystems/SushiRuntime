@@ -46,7 +46,7 @@ run.
 
 ### set_profiling
 
-The scheduler sets the flag once when it arms a run, from the plan's flag, which the runtime stamped from whether an observer is added. The re-arm
+The scheduler sets the flag once when it arms a run, from the plan's flag, which the run set from whether an observer was added when it was armed. The re-arm
 at the end of a run happens on a worker thread (the sentinel's host_work), concurrently with other
 workers polling, so the flag is an atomic with release/acquire ordering and not a plain bool.
 

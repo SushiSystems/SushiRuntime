@@ -55,9 +55,9 @@ tracks name the runtime's node and the device, so two runtimes land on one timel
 
 When a session begins, the source adds one observer to each attached runtime; when it ends, and in
 the destructor of the parts object, the observers are removed, each through the handle it was added
-with and only the ones this object added. While an observer is added the runtime's graphs record
-device timing, so a graph rebuilds its plan once at its next run after the session begins and once
-after it ends. A runtime that already has an observer of another owner keeps it; every observer
+with and only the ones this object added. While an observer is added every run of the runtime is timed, chosen per run when it is armed, so no plan is
+rebuilt when the session begins or ends: the run that starts after `begin()` carries records, and a run
+already in flight reaches the source with none. A runtime that already has an observer of another owner keeps it; every observer
 receives every run. The parts object keeps the context of each runtime alive until it is destroyed.
 
 ## What the source writes

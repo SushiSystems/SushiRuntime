@@ -344,9 +344,9 @@ allocates nothing once its vectors have grown.
 
 A `ChainPlan` also holds `not_chainable`, the first reason a plan could not run as a chain, a string literal that is null when it can.
 
-A `CompiledGraph` also holds `profiling`, which says the plan dispatches its device nodes on the
-profiling queues. It is stamped when the plan is built, from whether the runtime has an observer,
-and a plan built under the other answer is stale.
+A `CompiledGraph` also holds `profiling`, which says the run in flight dispatches its device nodes on the
+profiling queues. Each run sets it once, when the run is armed, from whether the runtime has an observer,
+so it is a per-run value and not a property of the plan: no plan goes stale when an observer is added or removed.
 
 ## Implementation
 

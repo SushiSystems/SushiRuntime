@@ -142,7 +142,6 @@ namespace SushiRuntime
             {
                 SR_ZONE_FINE("plan.prepare");
                 runtime.execution_engine().prepare(built->plan, built->placement->rules);
-                built->plan.profiling = runtime.wants_device_timing();
                 built->plan.label = label_;
                 built->plan.graph_id = id_.value();
                 built->plan.capture_base_state();
@@ -172,8 +171,6 @@ namespace SushiRuntime
                 return "the recorder changed";
             if (state_->placement->generation != runtime.placement()->generation)
                 return "the placement changed";
-            if (state_->plan.profiling != runtime.wants_device_timing())
-                return "the device timing request changed";
             return "the plan was marked for a rebuild";
         }
 
@@ -182,8 +179,7 @@ namespace SushiRuntime
             if (state_ == nullptr || dirty_ || built_generation_ != recorder.generation())
                 return true;
             Internal::Execution::RuntimeContext& runtime = Internal::ContextAccess::context(context);
-            return state_->placement->generation != runtime.placement()->generation ||
-                   state_->plan.profiling != runtime.wants_device_timing();
+            return state_->placement->generation != runtime.placement()->generation;
         }
 
         void PlanCache::rearm() noexcept

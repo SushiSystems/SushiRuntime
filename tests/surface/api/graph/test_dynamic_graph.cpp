@@ -653,8 +653,8 @@ namespace DynamicGraphNodeEventsTests
         EXPECT_EQ(idx_v2, 1u) << "re-adding region 1 must not resume from a stale counter";
     }
 
-    // Adding the first observer recomposes exactly once, not once per run.
-    TEST(Medium_DynamicGraphNodeEvents, AddingAnObserverRecomposesOnce)
+    // Adding an observer recomposes nothing: timing is chosen per run, not per plan.
+    TEST(Medium_DynamicGraphNodeEvents, AddingAnObserverRecomposesNothing)
     {
         constexpr std::size_t N = 8;
 
@@ -672,14 +672,14 @@ namespace DynamicGraphNodeEventsTests
 
         Testing::RunRecorder observed(rt);
         world.run().value();
-        EXPECT_EQ(world.compose_count(), compiles_before + 1)
-            << "the first observer must force exactly one recompose";
+        EXPECT_EQ(world.compose_count(), compiles_before)
+            << "the first observer must not recompose the plan";
         EXPECT_EQ(observed.count(), 1u);
 
         const std::size_t compiles_after_toggle = world.compose_count();
         world.run().value();
         EXPECT_EQ(world.compose_count(), compiles_after_toggle)
-            << "an unmutated run after the observer is added must not recompose again";
+            << "an unmutated run with the observer added must not recompose";
     }
 } // namespace DynamicGraphNodeEventsTests
 

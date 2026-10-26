@@ -82,14 +82,6 @@ namespace SushiRuntime
                 placement_changed(const ContextHandle& context) const noexcept;
 
                 /**
-                 * @brief Returns whether the plan was composed under another answer to the runtime's
-                 *        device timing request than the runtime gives now; false before the first commit.
-                 * @see modules/surface/api/include/SushiRuntime/api/graph/plumbing/README.md
-                 */
-                [[nodiscard]] SUSHIRUNTIME_API bool
-                timing_changed(const ContextHandle& context) const noexcept;
-
-                /**
                  * @brief Re-arms the live in-degree of every node and of the sentinel, in
                  *        O(total nodes).
                  * @pre composed() is true.

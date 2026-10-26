@@ -326,29 +326,6 @@ namespace SushiRuntime
         }
 
         /**
-         * @brief Logs the tasks the run skipped and the polls that waited on their oldest event.
-         */
-        void TaskScheduler::log_run_tail() noexcept
-        {
-            const std::uint64_t aborted = skipped_aborted_.exchange(0, std::memory_order_relaxed);
-            const std::uint64_t disabled = skipped_disabled_.exchange(0, std::memory_order_relaxed);
-            const std::uint64_t stall_drives = event_poller.take_stall_drives();
-
-            if (aborted != 0 && outcome_.is_cancelled())
-                SR_LOG_INFO(K_SCHEDULER_LOG_CATEGORY, "The run was cancelled; {} tasks were skipped without running.",
-                            aborted);
-            else if (aborted != 0)
-                SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "The run failed; {} tasks were skipped without running.",
-                             aborted);
-            if (disabled != 0)
-                SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "{} tasks were skipped because their control was off.",
-                             disabled);
-            if (stall_drives != 0)
-                SR_LOG_DEBUG(K_SCHEDULER_LOG_CATEGORY, "{} polls waited on their oldest event after stalling.",
-                             stall_drives);
-        }
-
-        /**
          * @brief Stops the task scheduler.
          * Signals workers to drain remaining tasks and exit, then joins threads.
          */

@@ -72,12 +72,12 @@ TEST(Medium_DeviceTimingWindow, SpansExistOnlyForTheRecordedPeriods)
     EXPECT_EQ(spans, 9u) << "three nodes in each of the three recorded periods, none from the periods after the window";
 }
 
-/** @brief Tests that a session costs one plan rebuild when it starts and one when it ends, and the window costs none. */
-TEST(Medium_DeviceTimingWindow, CountsTheRebuildsItCosts)
+/** @brief Tests that a session costs no plan rebuild, when it starts, in its window or when it ends. */
+TEST(Medium_DeviceTimingWindow, CostsNoRebuild)
 {
     SessionPipeline pipeline;
     ASSERT_TRUE(pipeline.graph().run().has_value());
-    ASSERT_EQ(pipeline.graph().compile_count(), 1u) << "built before any session, without timing";
+    ASSERT_EQ(pipeline.graph().compile_count(), 1u) << "built before any session, with no observer";
 
     std::vector<std::size_t> counts;
     const RunRecord record = record_periods(
@@ -89,12 +89,13 @@ TEST(Medium_DeviceTimingWindow, CountsTheRebuildsItCosts)
         });
 
     ASSERT_EQ(counts.size(), 3u);
-    EXPECT_EQ(counts[0], 2u) << "the session's observer turned timing on: one rebuild";
-    EXPECT_EQ(counts[1], 2u) << "a warm-up and an active period are the same plan";
-    EXPECT_EQ(counts[2], 2u);
+    for (const std::size_t count : counts)
+        EXPECT_EQ(count, 1u) << "the session's observer turned timing on for each run, with no rebuild";
     ASSERT_TRUE(pipeline.graph().run().has_value());
-    EXPECT_EQ(pipeline.graph().compile_count(), 3u) << "the session ended and removed the observer: one more rebuild";
-    EXPECT_EQ(record.periods.size(), 3u);
+    EXPECT_EQ(pipeline.graph().compile_count(), 1u) << "the session ended and removed the observer, with no rebuild";
+    ASSERT_EQ(record.periods.size(), 3u);
+    for (const PeriodRecord& period : record.periods)
+        EXPECT_EQ(period.spans.size(), 3u) << "the run after the add was timed, though its plan was built before";
 }
 
 /** @brief Tests that a runtime with no session records no device spans in a record made without its source. */

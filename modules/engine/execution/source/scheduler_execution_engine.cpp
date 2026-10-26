@@ -524,10 +524,8 @@ namespace SushiRuntime
                 auto* sched_ptr = &impl_->scheduler;
                 Impl* const impl = impl_.get();
                 Internal::Graph::CompiledGraph* const plan = &graph;
-                // Fixed for the sentinel's lifetime; a changed request rewires a fresh one.
-                const bool profiling = graph.profiling;
                 graph.sentinel->host_work =
-                    [latch, sched_ptr, profiling, impl, plan]
+                    [latch, sched_ptr, impl, plan]
                     (sycl::queue&, const std::vector<sycl::event>& dependencies) -> sycl::event
                     {
                         // Deps are waited, then the latch is signalled (modules/engine/execution/README.md).
@@ -535,6 +533,9 @@ namespace SushiRuntime
                         for (auto e : dependencies)
                             if (e != no_event)
                                 e.wait();
+
+                        // The run's own answer, stored when it was armed, so a plan needs no rewiring for timing.
+                        const bool profiling = plan->profiling;
 
                         // The outcome is read before re-arming clears it (modules/engine/execution/README.md).
                         std::optional<Error> failure = sched_ptr->run_error();

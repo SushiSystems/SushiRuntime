@@ -111,11 +111,14 @@ runtime; the overhead benchmark has not run yet (RW-69 in [the backlog](../desig
 | A zone compiled in, no session recording | One relaxed load and a branch, under 2 ns |
 | A zone compiled in, a session recording | Under 25 ns |
 | Device timing | A queue that records timestamps, three timestamp reads per dispatch, a snapshot of the node's widths and a record per dispatch; two steady clock reads per host node |
-| Adding the first observer, removing the last | Each plan rebuilds once at its next run |
+| An untimed run | One load and a branch |
+| Idle memory | The plan's node table, one row per registration index with its name, and after a timed run the ledger at its high-water size, 48 bytes per recorded dispatch |
 
-Device timing is on exactly while at least one observer is added. A run of a plan built before the observer was
-added still notifies, with no records, until the plan is rebuilt at its next run. The observer also pays for the
-copy it makes of an observation, which it decides how to keep.
+Device timing is chosen per run and is on while at least one observer is added. No plan is rebuilt when an
+observer is added or removed: the run that starts after `add_run_observer()` is timed and carries records, and
+a run already in flight when the observer is added reaches it with no records. The only thing that differs in
+a timed run is the queue, the device's profiling-enabled flavour, built on first use. The observer also pays
+for the copy it makes of an observation, which it decides how to keep.
 
 The first run after an observer is added builds the device's profiling queue, and the first submit of a process may
 include driver compilation. Neither is recorded, and their size is not measured.
