@@ -93,7 +93,8 @@ def toolchain(
            "sr build --type debug --clean  # Rebuild from an empty tree\n"
            "sr build --no-cuda  # Portable CPU/OpenCL path\n"
            "sr build --jobs 8  # Compile with eight parallel jobs\n"
-           "sr build --distributed --no-test",
+           "sr build --distributed --no-test\n"
+           "sr build --build-dir build/pkg-x --lean  # What a consumer's package build runs",
 )
 def build(
     type: BuildType = typer.Option(
@@ -117,10 +118,17 @@ def build(
         None, "--jobs", "-j", min=1,
         help="Parallel compile jobs. When omitted the build tool decides, and "
              "CMAKE_BUILD_PARALLEL_LEVEL is honoured."),
+    build_dir: Optional[str] = typer.Option(
+        None, "--build-dir", metavar="PATH",
+        help="Build in this tree, below the checkout, instead of build/ or build-asan/."),
+    lean: bool = typer.Option(
+        False, "--lean",
+        help="Build no tests, examples or benchmarks; what a package build of the runtime uses."),
 ):
     """Configure and build the project."""
     raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean, force,
-                                       tests=not no_test, jobs=jobs))
+                                       tests=not no_test, jobs=jobs, lean=lean,
+                                       build_dir=build_dir))
 
 
 @app.command(
@@ -212,9 +220,13 @@ def run(
     rich_help_panel=K_PROJECT,
     epilog="sr package\n"
            "sr package --prefix build/dist --no-archive  # Install only, no CPack\n"
+           "sr package --build-dir build/pkg-x --prefix ../staging --no-archive --force\n"
            "sr package --prefix ../staging --force  # Clear a directory sr did not stage",
 )
 def package(
+    build_dir: Optional[str] = typer.Option(
+        None, "--build-dir", metavar="PATH",
+        help="The built tree to install from, below the checkout. Defaults to build."),
     prefix: Optional[str] = typer.Option(
         None, "--prefix",
         help="Where to install; the directory is emptied first. Defaults to build/dist."),
@@ -232,7 +244,8 @@ def package(
     only works because this machine already has the SYCL runtime installed.
     """
     raise typer.Exit(
-        packaging_svc.package(prefix=prefix, archive=not no_archive, force=force))
+        packaging_svc.package(prefix=prefix, archive=not no_archive, force=force,
+                              build_dir=build_dir))
 
 
 @app.command(

@@ -23,11 +23,12 @@ from pathlib import Path
 from sushicore import cmake_cache
 from sushicore.cmake_driver import CMakeDriver
 from sushicore.proc import Runner
+from sushicore.provision.sushi_packages import PackageError
 
 from .. import console
 from ..config import Config, PROFILE, find_project_root, load_config
 from ..env import load_build_env
-from . import discovery
+from . import discovery, library_packages
 from .install_hint import toolchain_install_command
 
 # The ASan tree is separate from build/, CUDA off, Release and UBSan too; see cli/README.md.
@@ -101,7 +102,10 @@ def thread_sanitizer_applies(is_windows: bool, build_type: BuildType) -> bool:
     return build_type in (BuildType.debug, BuildType.relwithdebinfo)
 
 
-def _build_dir(root: Path, asan: bool) -> Path:
+def _build_dir(root: Path, asan: bool, requested: str | None = None) -> Path:
+    """Return the tree of this build: *requested* below *root* when given, else the default one."""
+    if requested:
+        return root / requested
     return root / ("build-asan" if asan else "build")
 
 
@@ -137,6 +141,18 @@ def _neutralize_runtime_ld(cfg: Config, env: dict[str, str]) -> None:
         env.pop("LD_LIBRARY_PATH", None)
 
 
+def _run_environment(cfg: Config, build_dir: Path) -> dict[str, str]:
+    """Return the environment a binary of *build_dir* runs under.
+
+    It is the build environment with the oneAPI library path repaired, and the run-time
+    folders of the library packages the tree linked first on the search path.
+    """
+    env = load_build_env(cfg, build_dir)
+    _neutralize_runtime_ld(cfg, env)
+    library_packages.prepend_run_dirs(cfg, env, library_packages.read_run_dirs(build_dir))
+    return env
+
+
 def _flags_fingerprint() -> str:
     """A short digest of every compiler-flag constant this module can pass.
 
@@ -159,7 +175,7 @@ def _flags_fingerprint() -> str:
 
 def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
                      tests: bool, toolchain: str, cxx: str,
-                     sushi_definitions: tuple[str, ...] = ()) -> str:
+                     sushi_definitions: tuple[str, ...] = (), lean: bool = False) -> str:
     """A stable key of every configure-affecting knob.
 
     A single-config generator (Ninja) bakes the build type into the cache, so a
@@ -178,11 +194,14 @@ def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
     type, and the only warning was a printed hint on a branch a developer
     selecting a not-yet-installed toolchain never reaches.
 
-    ``sushi_definitions`` are the ``-D<NAME>_DIR`` of the pinned Sushi libraries: a pin
-    moved to another checkout has to reach the cache the same way.
+    ``sushi_definitions`` are the ``-D<Package>_DIR`` of the library packages and the
+    ``-D<NAME>_DIR`` of any pin that is not one: a pin moved to another checkout, or a package
+    in another folder, has to reach the cache the same way. ``lean`` leaves out the examples
+    and the benchmarks as well as the tests.
     """
     return (f"{dist}|{build_type}|{gpu_backend}|{'ON' if tests else 'OFF'}"
-            f"|{toolchain}|{cxx}|{'|'.join(sushi_definitions)}|{_flags_fingerprint()}")
+            f"|{toolchain}|{cxx}|{'|'.join(sushi_definitions)}|{_flags_fingerprint()}"
+            f"{'|lean' if lean else ''}")
 
 
 def _stamp_differs(build_dir: Path, stamp_key: str) -> bool:
@@ -392,25 +411,54 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
     return args
 
 
+#: What `--lean` turns off besides the tests: the example programs and the benchmarks.
+_LEAN_ARGS = ("-DSR_BUILD_EXAMPLES=OFF", "-DSR_BUILD_BENCHMARKS=OFF")
+
+
+def _package_compiler(cfg: Config, force: bool, env: dict[str, str],
+                      asan: bool) -> tuple[str, str] | None:
+    """Return the (cc, cxx) this build compiles with, or None after printing why it cannot.
+
+    The library packages are built with the same C++ compiler, so it is settled before they are.
+    Windows names one compiler per toolchain and checks that it is installed; Linux resolves
+    the pair against the PATH of *env*.
+    """
+    if cfg.is_windows:
+        if _check_windows_compiler(cfg, env) != 0:
+            return None
+        return "", cfg.resolved_windows_compiler()
+    return _resolve_compiler(cfg, force, env, asan=asan)
+
+
 def build(build_type: BuildType, distributed: bool = False,
           no_cuda: bool = False, clean: bool = False, force: bool = False,
-          tests: bool = True, jobs: int | None = None) -> int:
+          tests: bool = True, jobs: int | None = None, lean: bool = False,
+          build_dir: str | None = None) -> int:
+    """Configure and build the project.
+
+    Args:
+        lean: Builds no tests, examples or benchmarks; what a library package is built as.
+        build_dir: The tree to build in, below the project root; the default tree when None.
+    """
     console.header("Project Build")
     root = find_project_root()
     cfg = load_config()
     asan = build_type == BuildType.asan
     dist = "ON" if distributed else "OFF"
     cmake_build_type = _CMAKE_BUILD_TYPE[build_type]
-    build_dir = _build_dir(root, asan)
+    tree = _build_dir(root, asan, build_dir)
+    tests = tests and not lean
 
     if clean:
-        clean_tree(root, asan)
+        _DRIVER.clean_tree(tree)
 
     if distributed:
         console.info("Distributed master-worker layer: ON")
     if asan:
         console.info("AddressSanitizer: ON (isolated build-asan tree, CUDA OFF)")
     console.info(f"Tests: {'ON' if tests else 'OFF'}")
+    if lean:
+        console.info("Lean: no tests, examples or benchmarks")
 
     # cmake/gpu/DetectGpu selects the GPU backend on every platform; see cli/README.md.
     if no_cuda or asan:
@@ -421,45 +469,55 @@ def build(build_type: BuildType, distributed: bool = False,
     if thread_sanitizer_applies(cfg.is_windows, build_type):
         console.info(f"ThreadSanitizer: ON (--type {build_type.value})")
 
-    env = load_build_env(cfg, build_dir)
+    env = load_build_env(cfg, tree)
 
-    sushi_definitions = tuple(cfg.sushi_definitions(root))
+    compilers = _package_compiler(cfg, force, env, asan)
+    if compilers is None:
+        return 1
+    cc, cxx = compilers
+    try:
+        packages = library_packages.resolve(
+            cfg, root, build_type.value, cxx, console.info, console.warn)
+    except PackageError as error:
+        console.error(str(error))
+        return 1
+    run_dirs = packages.run_dirs(cfg.platform)
+    library_packages.record_run_dirs(tree, run_dirs)
+    library_packages.prepend_run_dirs(cfg, env, run_dirs)
+
+    sushi_definitions = tuple(library_packages.configure_arguments(cfg, root, packages))
     stamp_key = _configure_stamp(dist, cmake_build_type, gpu_backend, tests,
-                                 cfg.toolchain, cfg.cxx, sushi_definitions)
-    if _DRIVER.needs_configure(build_dir, cfg.generator, root=root) or \
-            _stamp_differs(build_dir, stamp_key):
+                                 cfg.toolchain, cfg.cxx, sushi_definitions, lean)
+    if _DRIVER.needs_configure(tree, cfg.generator, root=root) or             _stamp_differs(tree, stamp_key):
         console.info(f"Configuring CMake... (type={build_type.value}, "
                      f"distributed={dist}, gpu={gpu_backend}, tests={'ON' if tests else 'OFF'})")
-        if build_dir.is_dir():
-            shutil.rmtree(build_dir, ignore_errors=True)
+        if tree.is_dir():
+            shutil.rmtree(tree, ignore_errors=True)
         if cfg.is_windows:
-            if (rc := _check_windows_compiler(cfg, env)) != 0:
-                return rc
             if asan and (rc := _check_sanitizer_runtime(cfg)) != 0:
                 return rc
-            args = _configure_args_windows(cfg, build_dir, cmake_build_type,
+            args = _configure_args_windows(cfg, tree, cmake_build_type,
                                            gpu_backend, dist, asan, tests)
         else:
-            resolved = _resolve_compiler(cfg, force, env, asan=asan)
-            if resolved is None:
-                return 1
-            cc, cxx = resolved
-            args = _configure_args_linux(cfg, build_dir, cmake_build_type,
+            args = _configure_args_linux(cfg, tree, cmake_build_type,
                                          gpu_backend, dist, asan, tests, cc, cxx)
             # A benchmark replaces operator new, which TSan's runtime defines as well.
             if thread_sanitizer_applies(cfg.is_windows, build_type):
                 args.append(f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}")
-        # Each pinned Sushi library reaches CMake as <NAME>_DIR; CMake never downloads.
+        if lean:
+            args += _LEAN_ARGS
+        # Each library package reaches CMake as <Package>_DIR; CMake never downloads.
         args += list(sushi_definitions)
         rc = _DRIVER.configure(args, cwd=root, env=env)
         if rc != 0:
             console.error("CMake configure failed.")
             return rc
-        build_dir.mkdir(parents=True, exist_ok=True)
-        (build_dir / STAMP_NAME).write_text(stamp_key)
+        tree.mkdir(parents=True, exist_ok=True)
+        (tree / STAMP_NAME).write_text(stamp_key)
+        library_packages.record_run_dirs(tree, run_dirs)
 
     console.info("Building...")
-    rc = _DRIVER.compile(cfg, build_dir, cwd=root, env=env, config=cmake_build_type, jobs=jobs)
+    rc = _DRIVER.compile(cfg, tree, cwd=root, env=env, config=cmake_build_type, jobs=jobs)
     if rc == 0:
         console.success("Build completed successfully!")
     else:
@@ -486,9 +544,8 @@ def test(label: Label | None, distributed: bool = False, filter: str | None = No
     if distributed:
         console.info("Note: distributed tests only exist if built with --distributed.")
 
-    env = load_build_env(cfg, build_dir)
     # ctest spawns the test binaries, so it needs the same LD_LIBRARY_PATH repair as `run`.
-    _neutralize_runtime_ld(cfg, env)
+    env = _run_environment(cfg, build_dir)
     # An inherited CUDA_LAUNCH_BLOCKING=1 serializes every kernel and breaks the overlap tests.
     env.pop("CUDA_LAUNCH_BLOCKING", None)
     # A module's tests carry its folder name as a label, whatever their size.
@@ -517,8 +574,7 @@ def bench(distributed: bool = False, filter: str | None = None) -> int:
     if distributed:
         console.info("Note: distributed benchmarks only exist if built with --distributed.")
 
-    env = load_build_env(cfg, build_dir)
-    _neutralize_runtime_ld(cfg, env)
+    env = _run_environment(cfg, build_dir)
     env.pop("CUDA_LAUNCH_BLOCKING", None)
     forwarded = [f"--gtest_filter={filter}"] if filter else []
     failed = 0
@@ -544,10 +600,9 @@ def run(target: str | None = None, sort: bool = False,
         console.error(f"{build_dir.name}/ not found. Run `sr build` first.")
         return 1
 
-    env = load_build_env(cfg, build_dir)
+    env = _run_environment(cfg, build_dir)
     # An inherited CUDA_LAUNCH_BLOCKING=1 serializes every kernel and breaks the overlap tests.
     env.pop("CUDA_LAUNCH_BLOCKING", None)
-    _neutralize_runtime_ld(cfg, env)
     # ASan binaries are built CUDA-off, so the run is pinned to the OpenCL CPU device.
     if asan:
         env.setdefault("ONEAPI_DEVICE_SELECTOR", "opencl:cpu")

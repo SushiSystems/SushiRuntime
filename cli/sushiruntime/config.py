@@ -10,6 +10,7 @@ See cli/README.md.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,6 +65,9 @@ find_project_root = _MODULE.find_project_root
 config_dir = _MODULE.config_dir
 
 
+# The compiler a consumer's package build hands the library CLI; it outranks the configured one.
+K_STACK_CXX_ENV = "SUSHISTACK_CXX"
+
 # TOOLCHAINS must match SR_SYCL_TOOLCHAIN in CMakeLists.txt.
 TOOLCHAINS = ("intel-llvm", "adaptivecpp", "oneapi")
 
@@ -95,6 +99,9 @@ class Config(StackConfig):
     # An empty cc or cxx is derived from the toolchain through TOOLCHAIN_COMPILERS.
     cc: str = ""
 
+    # The compiler SUSHISTACK_CXX names; empty outside a package build. It outranks `cxx`.
+    stack_cxx: str = ""
+
     # Run defaults
     target_bin: str = "sr_api_tests"
 
@@ -102,11 +109,12 @@ class Config(StackConfig):
         """Return (cc, cxx), deriving them from the toolchain when not pinned.
 
         An explicit cc/cxx in the config always wins; otherwise the pair is
-        taken from TOOLCHAIN_COMPILERS so selecting a toolchain is sufficient.
+        taken from TOOLCHAIN_COMPILERS so selecting a toolchain is sufficient. The compiler
+        ``SUSHISTACK_CXX`` names outranks the configured ``cxx``.
         """
         default_cc, default_cxx = TOOLCHAIN_COMPILERS.get(
             self.toolchain, TOOLCHAIN_COMPILERS["intel-llvm"])
-        return (self.cc or default_cc, self.cxx or default_cxx)
+        return (self.cc or default_cc, self.stack_cxx or self.cxx or default_cxx)
 
     def resolved_llvm_root(self) -> str:
         """Return the intel/llvm bundle root to build with, or '' when none is present.
@@ -138,6 +146,8 @@ class Config(StackConfig):
         adaptivecpp -> acpp. Falls back to a bare command name when the path is
         not configured so PATH resolution still has a chance.
         """
+        if self.stack_cxx:
+            return self.expand(self.stack_cxx)
         if self.toolchain == "oneapi":
             return self.expand(self.icx_compiler) or "icx-cl"
         if self.toolchain == "adaptivecpp":
@@ -154,6 +164,7 @@ def load_config() -> Config:
     config.local.toml (written by ``hub``) -> repo config.local.toml -> env.
     """
     cfg = _MODULE.load(Config)
+    cfg.stack_cxx = os.environ.get(K_STACK_CXX_ENV, "")
     # Guard against a stale/typo'd toolchain leaking through from config or env.
     if cfg.toolchain not in TOOLCHAINS:
         cfg.toolchain = "intel-llvm"

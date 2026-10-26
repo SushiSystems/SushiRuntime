@@ -42,7 +42,7 @@ def driver(monkeypatch, tmp_path) -> FakeDriver:
     monkeypatch.setattr(project, "_DRIVER", fake)
     monkeypatch.setattr(project, "console", quiet)
     monkeypatch.setattr(project, "find_project_root", lambda: tmp_path)
-    monkeypatch.setattr(project, "load_config", SimpleNamespace)
+    monkeypatch.setattr(project, "load_config", lambda: SimpleNamespace(is_windows=False))
     monkeypatch.setattr(project, "load_build_env", lambda cfg, build_dir: {})
     monkeypatch.setattr(project, "_neutralize_runtime_ld", lambda cfg, env: None)
     monkeypatch.setattr(project.cmake_cache, "is_stale", lambda build_dir, root: False)

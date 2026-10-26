@@ -65,6 +65,9 @@ check_cmd     = ["nvcc", "--version"]
 
 [module]
 depends_on = ["sushilog"]
+# The CLI sushicore runs to build and package this library for a consumer: `sr build --lean`,
+# then `sr package --no-archive`.
+cli = "sr"
 
 # SushiLog, the one logger of the process. sushicore resolves it as SUSHILOG_DIR, the sibling
 # ../sushilog, or the copy `sr setup` fetches at this tag, and the CLI hands it to CMake.

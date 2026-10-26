@@ -241,6 +241,22 @@ the configure stamp, so a tree configured with other flags there is configured a
 an inherited `CUDA_LAUNCH_BLOCKING`: a stray `CUDA_LAUNCH_BLOCKING=1` serializes every kernel
 and silently breaks the async overlap tests.
 
+## sushiruntime/services/library_packages.py
+
+`sr` links SushiLog as a built package and never compiles it. Before the configure,
+`build` asks `cfg.sushi_packages` for the packages of its closure, with the compiler the build
+uses, and passes `-D<Package>_DIR` for each to CMake; no `-D<NAME>_DIR` reaches CMake for a
+packaged library. A library CLI's `--type` has no `asan`, so an `asan` build links release
+packages. The runtime passes no option to a library.
+
+The run-time folders of the packages go first on `PATH` (Windows) or `LD_LIBRARY_PATH` (Linux)
+for the build, and `build` records them in `.sushiruntime_package_dirs.json` in the tree, so
+`test`, `bench` and `run` put the same folders on the path without resolving again.
+
+`build --build-dir <path> --lean` and `package --build-dir <path>` are the contract a consumer's
+package build runs. `--lean` builds no tests, examples or benchmarks. `SUSHISTACK_CXX` names the
+compiler that outranks the configured one, on both platforms.
+
 ## sushiruntime/services/select.py
 
 When the chosen toolchain is not installed, `sr toolchain` names the exact profile to install.

@@ -35,31 +35,33 @@ def _cpack(cfg: Config) -> str:
     return str(candidate) if candidate.is_file() else "cpack"
 
 
-def package(prefix: str | None = None, archive: bool = True, force: bool = False) -> int:
+def package(prefix: str | None = None, archive: bool = True, force: bool = False,
+            build_dir: str | None = None) -> int:
     """Install the built tree to a prefix and archive it.
 
     :param prefix: Where to install. Defaults to build/dist under the project root.
     :param archive: Whether to run CPack over the configured generators.
     :param force: Whether a prefix holding files this command did not stage is cleared.
+    :param build_dir: The built tree to install from, below the project root. Defaults to build.
     :return: 0 when every requested step succeeded, non-zero on the first failure.
     """
     console.header("Project Package")
     root = find_project_root()
     cfg = load_config()
-    build_dir = _build_dir(root, asan=False)
+    built = _build_dir(root, asan=False, requested=build_dir)
 
-    if not (build_dir / "CMakeCache.txt").is_file():
-        console.error(f"No configured build tree at {build_dir}. Run `sr build` first.")
+    if not (built / "CMakeCache.txt").is_file():
+        console.error(f"No configured build tree at {built}. Run `sr build` first.")
         return 1
 
     default_stage = root / "build" / "dist"
     stage = Path(cfg.expand(prefix)).resolve() if prefix else default_stage
     tree = StageTree(stage)
-    rules = StageRules(project_root=root, home=Path.home(), build_dir=build_dir,
+    rules = StageRules(project_root=root, home=Path.home(), build_dir=built,
                        default_stage=default_stage)
     try:
         tree.check(rules, force=force)
-        env = load_build_env(cfg, build_dir)
+        env = load_build_env(cfg, built)
         if stage.is_dir():
             console.info(f"Clearing previous stage tree at {stage}")
         tree.reset()
@@ -68,17 +70,17 @@ def package(prefix: str | None = None, archive: bool = True, force: bool = False
         return 1
 
     console.info(f"Installing to {stage}")
-    rc = _RUNNER.run([_DRIVER.cmake(cfg), "--install", str(build_dir), "--prefix", str(stage)],
+    rc = _RUNNER.run([_DRIVER.cmake(cfg), "--install", str(built), "--prefix", str(stage)],
                      root, env)
     if rc != 0:
         console.error("cmake --install failed.")
         return rc
 
     if archive:
-        cpack_config = build_dir / "CPackConfig.cmake"
+        cpack_config = built / "CPackConfig.cmake"
         if cpack_config.is_file():
             console.info("Building the archive...")
-            rc = _RUNNER.run([_cpack(cfg), "--config", str(cpack_config)], build_dir, env)
+            rc = _RUNNER.run([_cpack(cfg), "--config", str(cpack_config)], built, env)
             if rc != 0:
                 console.error("CPack failed.")
                 return rc

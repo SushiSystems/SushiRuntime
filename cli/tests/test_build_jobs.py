@@ -40,11 +40,14 @@ class FakeDriver:
 def driver(monkeypatch, tmp_path) -> FakeDriver:
     """Returns a fake driver installed in the build service, with its surroundings stubbed."""
     fake = FakeDriver()
-    config = SimpleNamespace(is_windows=False, toolchain="intel-llvm", cxx="clang++", generator="Ninja",
-                             sushi_definitions=lambda root: [])
+    packages = SimpleNamespace(definitions=lambda: [], run_dirs=lambda platform: [])
+    config = SimpleNamespace(is_windows=False, platform="linux", toolchain="intel-llvm",
+                             cxx="clang++", generator="Ninja",
+                             sushi_definitions=lambda root, packaged: [],
+                             sushi_packages=lambda *arguments, **options: packages)
     quiet = SimpleNamespace(**{
         name: lambda *arguments, **options: None
-        for name in ("header", "info", "success", "error")
+        for name in ("header", "info", "success", "error", "warn")
     })
     monkeypatch.setattr(project, "_DRIVER", fake)
     monkeypatch.setattr(project, "console", quiet)
@@ -52,6 +55,8 @@ def driver(monkeypatch, tmp_path) -> FakeDriver:
     monkeypatch.setattr(project, "load_config", lambda: config)
     monkeypatch.setattr(project, "load_build_env", lambda cfg, build_dir: {})
     monkeypatch.setattr(project, "_stamp_differs", lambda build_dir, key: False)
+    monkeypatch.setattr(project, "_resolve_compiler",
+                        lambda *arguments, **options: ("clang", "clang++"))
     return fake
 
 
