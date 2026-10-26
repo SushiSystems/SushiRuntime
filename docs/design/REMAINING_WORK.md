@@ -1,6 +1,6 @@
 # Remaining work
 
-Next id: RW-67
+Next id: RW-68
 
 ## Decisions waiting for the owner
 
@@ -35,6 +35,11 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
   `pre-clean-main` are each kept or deleted by the owner
 
 ## Correctness
+
+### RW-67 Make `StateStopsOnAWindowPastTheEnd` pass under parallel test jobs
+- State: open
+- Done when: the cause of KI-17 is found, the test passes ten runs of the medium label at four
+  jobs, and it leaves `SR_QUARANTINED_TESTS`
 
 ### RW-7 Detect a `Buffer` moved after it was recorded
 - State: open

@@ -1,6 +1,6 @@
 # Known issues
 
-Next id: KI-17
+Next id: KI-18
 
 ## Runtime
 
@@ -79,6 +79,16 @@ Next id: KI-17
   says
 - Workaround: run the cluster on a trusted network
 - Fix: RW-18
+
+### KI-17 `StateStopsOnAWindowPastTheEnd` fails under four parallel test jobs
+- Origin: own
+- Where: `tests/surface/api/data/test_buffer.cpp`
+- Cause: not yet known; the death test passes three runs of three alone and fails once in a run of 615 medium tests at four jobs
+- Recognise: `sr test` at four jobs reports `Medium_DataHandlesDeathTest.StateStopsOnAWindowPastTheEnd` failed
+- Workaround: the test is quarantined; run it alone
+- Fix: RW-67
+- Owner: Mustafa Garip
+- Fix by: 2026-11-09
 
 ## Build and command line
 

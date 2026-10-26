@@ -18,7 +18,9 @@
 
 # Suite.Case names of the intermittent tests, each with its entry in
 # docs/reference/KNOWN_ISSUES.md.
-set(SR_QUARANTINED_TESTS "")
+set(SR_QUARANTINED_TESTS
+    Medium_DataHandlesDeathTest.StateStopsOnAWindowPastTheEnd
+)
 
 if(NOT SR_BUILD_TESTS)
     function(sushiruntime_add_test_program)
