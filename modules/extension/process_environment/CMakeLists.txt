@@ -9,4 +9,4 @@ sushiruntime_add_module(
     SOURCES
         environment.cpp
         stop_signal.cpp
-    DEPENDS core)
+    DEPENDS core log)

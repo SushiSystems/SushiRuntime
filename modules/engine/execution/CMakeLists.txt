@@ -24,4 +24,4 @@ sushiruntime_add_module(
         graph
         report
         machine
-    PRIVATE_DEPENDS log sycl placement)
+    PRIVATE_DEPENDS log sycl placement profile)

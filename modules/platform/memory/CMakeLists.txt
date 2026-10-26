@@ -8,4 +8,5 @@ sushiruntime_add_module(
     NAME memory TIER platform INTERNAL
     SYCL
     SOURCES usm_allocator.cpp
-    DEPENDS core log)
+    DEPENDS core log
+    PRIVATE_DEPENDS profile)

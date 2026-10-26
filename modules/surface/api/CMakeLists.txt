@@ -9,8 +9,11 @@ sushiruntime_add_module(
     SYCL
     SOURCES
         advanced_controls.cpp
+        assertion_logging.cpp
         buffer.cpp
+        dispatch_events.cpp
         emit_dynamic.cpp
+        graph_id.cpp
         interop.cpp
         late_window.cpp
         node_emitters.cpp
@@ -24,6 +27,7 @@ sushiruntime_add_module(
     DEPENDS
         core
         report
+        log
         region
         machine
         placement
@@ -41,4 +45,5 @@ sushiruntime_add_module(
         context_access
         engine_handles
         region_boundary
-        topology)
+        topology
+        profile)

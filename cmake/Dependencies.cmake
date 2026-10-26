@@ -28,21 +28,15 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(HWLOC REQUIRED IMPORTED_TARGET hwloc)
 message(STATUS "Found hwloc: ${HWLOC_INCLUDEDIR}")
 
-# SushiLog, the one logger of the process, exposed as SushiLog::SushiLog. The CLI resolves its
-# pin in cli/sushistack.deps.toml and passes SUSHILOG_DIR: a checkout is built in this tree, an
-# install prefix is found as a package. Nothing is downloaded here.
-if(NOT TARGET SushiLog::SushiLog)
-    if(SUSHILOG_DIR AND EXISTS "${SUSHILOG_DIR}/CMakeLists.txt")
-        set(SL_BUILD_TESTS OFF)
-        add_subdirectory("${SUSHILOG_DIR}" "${PROJECT_BINARY_DIR}/sushilog")
-    else()
-        find_package(SushiLog CONFIG HINTS "${SUSHILOG_DIR}")
-    endif()
+# SushiLog, the one logger of the process. The CLI builds or reuses its package and passes
+# SushiLog_DIR; nothing is built in this tree and nothing is downloaded.
+find_package(SushiLog CONFIG REQUIRED)
+message(STATUS "Found SushiLog ${SushiLog_VERSION}: ${SushiLog_DIR}")
+
+# SushiProfiler, the stack's profiler, exposed as SushiProfiler::SushiProfiler. The CLI builds
+# or reuses its package and passes SushiProfiler_DIR; it is needed only when the runtime
+# reports to it.
+if(SR_ENABLE_PROFILER)
+    find_package(SushiProfiler CONFIG REQUIRED)
+    message(STATUS "Found SushiProfiler ${SushiProfiler_VERSION}: ${SushiProfiler_DIR}")
 endif()
-if(NOT TARGET SushiLog::SushiLog)
-    message(FATAL_ERROR
-        "SushiLog was not found (SUSHILOG_DIR='${SUSHILOG_DIR}'). Run `sr setup`, which "
-        "fetches the version cli/sushistack.deps.toml pins, or set SUSHILOG_DIR to a SushiLog "
-        "checkout or install prefix.")
-endif()
-message(STATUS "Found SushiLog: ${SUSHILOG_DIR}")

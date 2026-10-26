@@ -20,20 +20,12 @@ include(CMakeFindDependencyMacro)
 # The public log headers include SushiLog, and the library links it.
 find_dependency(SushiLog CONFIG)
 
-# The package does not provide SYCL. The runtime's kernels are header templates a
-# consumer instantiates in its own translation units, so the consumer's compiler is a
-# SYCL compiler it configured itself.
-#
-# IntelSYCL::SYCL_CXX is a find_package(IntelSYCL) target on the "oneapi" toolchain
-# only. On the intel-llvm and AdaptiveCpp toolchains the -fsycl flags are applied
-# directly, and the target is the empty interface library declared below, as in
-# cmake/Sycl.cmake.
-if(NOT TARGET IntelSYCL::SYCL_CXX)
-    find_package(IntelSYCL QUIET)
-endif()
-if(NOT TARGET IntelSYCL::SYCL_CXX)
-    add_library(IntelSYCL::SYCL_CXX INTERFACE IMPORTED)
-endif()
+# The package does not provide a SYCL compiler. The runtime's kernels are header templates a
+# consumer instantiates in its own translation units, so the consumer's compiler is a SYCL
+# compiler it configured itself. This file states which toolchain the library was built for
+# and gives the consumer the add_sycl_to_target() command and IntelSYCL::SYCL_CXX target of
+# that toolchain.
+include("${CMAKE_CURRENT_LIST_DIR}/SushiRuntimeSycl.cmake")
 
 include("${CMAKE_CURRENT_LIST_DIR}/SushiRuntimeTargets.cmake")
 

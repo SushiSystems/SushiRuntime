@@ -126,16 +126,18 @@ A target does not inherit the library's warnings, `-Werror`, sanitizers or `-mar
 exported interface.
 
 The package sets two variables a consumer can read: `SushiRuntime_DETERMINISTIC_FP` and
-`SushiRuntime_DISTRIBUTED`. A consumer that links `SushiRuntime::profiling` links the same
+`SushiRuntime_DISTRIBUTED`. A third, `SushiRuntime_SYCL_TOOLCHAIN`, names the SYCL toolchain the
+library was built for: `intel-llvm`, `adaptivecpp` or `oneapi`. A consumer that links `SushiRuntime::profiling` links the same
 SushiProfiler library as the runtime, its shared library, so the process has one collector;
 [the profiling guide](PROFILING_GUIDE.md) says why.
 
 You supply:
 
-- **A SYCL compiler.** The package uses the target `IntelSYCL::SYCL_CXX` when your project
-  already defined it and otherwise calls `find_package(IntelSYCL QUIET)`. When neither gives
-  the target, the package defines an empty one, so a project on another SYCL toolchain
-  configures that toolchain itself.
+- **A SYCL compiler for the toolchain the library was built for.** The package sets
+  `SushiRuntime_SYCL_TOOLCHAIN` and gives the target `IntelSYCL::SYCL_CXX` and the command
+  `add_sycl_to_target()` of that toolchain: it calls `find_package(AdaptiveCpp)` or
+  `find_package(IntelSYCL)` for those two, and defines an empty target and command for
+  `intel-llvm`. The compiler itself is yours to configure.
 - **C++17 or later.**
 - **The shared library on the loader path at run time**, with what your SYCL implementation
   needs beside it.
@@ -311,8 +313,9 @@ is `ON` in the package you consumed and that your build adds no fast-math flag. 
 `Medium_Determinism` in `tests/surface/api/graph/test_graph.cpp` make the same check
 in this repository.
 
-**`find_package` does not find `IntelSYCL`.** Configure your SYCL toolchain before
-`find_package(SushiRuntime)`, or add your oneAPI installation to `CMAKE_PREFIX_PATH`.
+**`find_package` does not find `IntelSYCL` or `AdaptiveCpp`.** The package asks for the one
+`SushiRuntime_SYCL_TOOLCHAIN` names, so configure that toolchain before
+`find_package(SushiRuntime)`, or add its installation to `CMAKE_PREFIX_PATH`.
 
 **The process stops in `Runtime::create()` with a message naming two versions.** The loader
 found a shared library of another release. See §5.

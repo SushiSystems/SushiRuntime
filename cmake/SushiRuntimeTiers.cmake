@@ -21,6 +21,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
     report          foundation
     region          foundation
     log             foundation
+    profile         foundation
     machine         foundation
     placement       foundation
     sycl            foundation
@@ -49,6 +50,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
     context         surface
     context_access  surface
     api             surface
+    profiling       surface
     transport       extension
     wire            extension
     link_security   extension
@@ -69,6 +71,7 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     placement       core
     placement       machine
     test_runner     log
+    test_runner     report
     dependency_tracking task
     work_stealing   task
     topology        numa_lookup
@@ -91,6 +94,8 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     api             memory_exchange
     api             context
     api             context_access
+    profiling       api
+    profiling       context_access
     wire            transport
     network_socket  transport
     frame_transport transport
@@ -118,6 +123,7 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
 
 # Module, then the option that switches it on. A module not listed is always built.
 set(SUSHIRUNTIME_OPTIONAL_MODULES
+    profiling       SR_ENABLE_PROFILER
     test_runner     SR_BUILD_TESTS
     measurement     SR_BUILD_TESTS
     thread_barrier  SR_BUILD_TESTS

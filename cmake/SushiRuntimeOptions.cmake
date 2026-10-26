@@ -24,6 +24,19 @@ option(SR_BUILD_BENCHMARKS
     "Build the stress and performance programs; read only with SR_BUILD_TESTS" ON)
 option(SR_BUILD_EXAMPLES "Build applications/examples" ${SR_IS_TOP_LEVEL})
 
+# What the runtime reports to SushiProfiler (modules/foundation/profile). The settings reach
+# the code through the generated profile_config.hpp and no compile definition, so a change of
+# the level rebuilds the files that use a zone and no others.
+option(SR_ENABLE_PROFILER "Report zones, values and device spans to SushiProfiler" ON)
+set(SR_PROFILE_LEVEL 2 CACHE STRING
+    "Deepest zone level compiled in: 0 none, 1 stages, 2 fine zones, 3 per-element zones")
+set_property(CACHE SR_PROFILE_LEVEL PROPERTY STRINGS 0 1 2 3)
+if(NOT SR_PROFILE_LEVEL MATCHES "^[0-3]$")
+    message(FATAL_ERROR
+        "SR_PROFILE_LEVEL='${SR_PROFILE_LEVEL}' is not a zone level. Use 0 (none), 1 (stages), "
+        "2 (fine zones) or 3 (per-element zones).")
+endif()
+
 # How it is compiled (Determinism.cmake, Optimization.cmake).
 option(SR_DETERMINISTIC_FP
     "Compile under the reproducible floating-point contract: no fast-math, no FMA contraction"

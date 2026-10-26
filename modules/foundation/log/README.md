@@ -7,7 +7,9 @@ naming the runtime's project. The module is header-only and its headers are inst
 
 It depends on the C++ standard library and on SushiLog (`SushiLog::SushiLog`), which its headers
 include, so every consumer of the library links it too. `cli/sushistack.deps.toml` pins the
-SushiLog release; the CLI hands its checkout to CMake as `SUSHILOG_DIR`.
+SushiLog release; the CLI builds or reuses that release as a package, hands its folder to CMake as
+`SushiLog_DIR`, and the build finds it with `find_package(SushiLog CONFIG REQUIRED)`. No SushiLog
+source is built in this tree.
 
 ## Public entry points
 

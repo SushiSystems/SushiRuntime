@@ -52,13 +52,18 @@ if(WIN32)
     if(CMAKE_CONFIGURATION_TYPES)
         set(SR_TEST_OUTPUT_DIR "${PROJECT_BINARY_DIR}/tests/$<CONFIG>")
     endif()
+    set(sr_profiler_dll "")
+    if(SR_ENABLE_PROFILER)
+        set(sr_profiler_dll "$<TARGET_FILE:SushiProfiler::SushiProfiler>")
+    endif()
     add_custom_target(sushiruntime_tests_runtime_dll
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SR_TEST_OUTPUT_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:sushiruntime>
             $<TARGET_FILE:SushiLog::SushiLog>
+            ${sr_profiler_dll}
             "${SR_TEST_OUTPUT_DIR}"
-        COMMENT "Staging sushiruntime.dll and sushilog.dll next to the test binaries")
+        COMMENT "Staging the runtime and its package DLLs next to the test binaries")
     add_dependencies(sushiruntime_tests_runtime_dll sushiruntime)
 endif()
 

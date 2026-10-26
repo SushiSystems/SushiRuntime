@@ -9,11 +9,13 @@ sushiruntime_add_module_tests(
     SOURCES
         data/test_buffer.cpp
         data/test_state.cpp
+        detail/test_assertion_logging.cpp
         detail/test_before_step_hooks.cpp
         detail/test_callable_checks.cpp
         detail/test_callable_traits.cpp
         detail/test_device_fault.cpp
         detail/test_device_pass.cpp
+        detail/test_dropped_outcome.cpp
         detail/test_emit_captured.cpp
         detail/test_emit_device_sized.cpp
         detail/test_emit_dynamic.cpp
@@ -24,6 +26,7 @@ sushiruntime_add_module_tests(
         detail/test_emit_task.cpp
         detail/test_emit_tracked.cpp
         detail/test_emit_untracked.cpp
+        detail/test_graph_id.cpp
         detail/test_handle_access.cpp
         detail/test_late_controls.cpp
         detail/test_late_count_resolution.cpp
@@ -40,6 +43,7 @@ sushiruntime_add_module_tests(
         graph/plumbing/test_step_driver.cpp
         graph/test_access.cpp
         graph/test_device_sized.cpp
+        graph/test_dispatch_events.cpp
         graph/test_dynamic_graph.cpp
         graph/test_graph.cpp
         graph/test_node_options.cpp
@@ -56,6 +60,7 @@ sushiruntime_add_module_tests(
         runtime/test_placement_scope.cpp
         runtime/test_runtime.cpp
         runtime/test_runtime_config.cpp
+        test_api_log_category.cpp
         test_fluent.cpp
         vocabulary/test_captures.cpp
         vocabulary/test_coupled.cpp
@@ -84,6 +89,7 @@ sushiruntime_add_module_tests(
         graph/plumbing/test_plan_cache.cpp
         graph/plumbing/test_step_driver.cpp
         graph/test_device_sized.cpp
+        graph/test_dispatch_events.cpp
         graph/test_dynamic_graph.cpp
         graph/test_graph.cpp
         graph/test_node_options.cpp

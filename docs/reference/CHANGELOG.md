@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- 2026-10-26 — cmake: Found SushiLog with `find_package(SushiLog CONFIG REQUIRED)` and no `add_subdirectory` fallback (`Dependencies.cmake`).
+- 2026-10-26 — cmake: Found SushiProfiler with `find_package(SushiProfiler CONFIG REQUIRED)` under `SR_ENABLE_PROFILER` (`Dependencies.cmake`).
+- 2026-10-26 — cmake: Added the options `SR_ENABLE_PROFILER` and `SR_PROFILE_LEVEL` (`SushiRuntimeOptions.cmake`).
+- 2026-10-26 — cmake: Added the `profile` foundation module, which generates `profile_config.hpp` from the two options.
+- 2026-10-26 — cmake: Added the optional `profiling` surface module (`SushiRuntimeTiers.cmake`).
+- 2026-10-26 — cmake: Registered the sources and tests of the profiler adoption in the module and test lists.
+- 2026-10-26 — cmake: Linked SushiLog in `process_environment` and `network_socket` (`CMakeLists.txt`).
+- 2026-10-26 — cmake: Staged the SushiProfiler DLL beside the test programs and the examples on Windows (`SushiRuntimeTests.cmake`).
+- 2026-10-26 — cmake: Installed `SushiRuntimeSycl.cmake`, which sets `SushiRuntime_SYCL_TOOLCHAIN` and gives that toolchain's `add_sycl_to_target()` (`SushiRuntimeSycl.cmake.in`).
+- 2026-10-26 — cmake: Included `SushiRuntimeSycl.cmake` from the package config in place of its `IntelSYCL` blocks (`SushiRuntimeConfig.cmake.in`).
+- 2026-10-26 — deps: Pinned SushiLog v0.2.3 and added SushiProfiler v0.2.0, at the head of its main branch until the tag exists (`sushistack.deps.toml`).
+- 2026-10-26 — deps: Pinned sushicore 0.9.6 (`pyproject.toml`).
 - 2026-10-26 — execution: Made device timing a per-run choice read when the run is armed, so adding or removing an observer rebuilds no plan (`runtime_context.hpp`, `step_run.cpp`).
 - 2026-10-26 — cli: Made `sr build` take SushiLog as a built package and pass its config folder to CMake (`library_packages.py`).
 - 2026-10-26 — cli: Put the run-time folders of the packages first on the search path of `build`, `test`, `bench` and `run` (`project.py`).

@@ -9,5 +9,5 @@ sushiruntime_add_module(
     SOURCES
         socket_posix.cpp
         socket_windows.cpp
-    DEPENDS core transport
+    DEPENDS core log transport
     EXTERNAL "$<$<PLATFORM_ID:Windows>:ws2_32>")

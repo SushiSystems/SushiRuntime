@@ -1,0 +1,60 @@
+# SushiRuntimeSycl.cmake
+# SushiRuntime - https://github.com/SushiSystems/SushiRuntime
+# Copyright (c) 2026-present Mustafa Garip & Sushi Systems
+# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
+# Commercial use requires a licence from Sushi Systems.
+
+# SushiRuntimeSycl.cmake -- the SYCL toolchain the installed library was built for.
+#
+# Generated from cmake/SushiRuntimeSycl.cmake.in and installed beside SushiRuntimeConfig.cmake,
+# which includes it. A consumer reads SushiRuntime_SYCL_TOOLCHAIN to pick its own device
+# passes, and gets the add_sycl_to_target() command and the IntelSYCL::SYCL_CXX target of
+# that toolchain, as cmake/Sycl.cmake gives them inside this repository. The package does not
+# provide the compiler: the consumer configured one that builds for this toolchain.
+
+set(SushiRuntime_SYCL_TOOLCHAIN "@SR_SYCL_TOOLCHAIN@")
+
+if(SushiRuntime_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
+    # find_package(AdaptiveCpp) provides add_sycl_to_target(); the link target is a stub.
+    find_package(AdaptiveCpp REQUIRED)
+    if(NOT TARGET IntelSYCL::SYCL_CXX)
+        add_library(IntelSYCL::SYCL_CXX INTERFACE IMPORTED GLOBAL)
+    endif()
+
+elseif(SushiRuntime_SYCL_TOOLCHAIN STREQUAL "oneapi")
+    # find_package(IntelSYCL) provides add_sycl_to_target() and IntelSYCL::SYCL_CXX. The target
+    # is global so a subdirectory of the consumer can link it.
+    if(NOT TARGET IntelSYCL::SYCL_CXX)
+        find_package(IntelSYCL REQUIRED)
+    endif()
+    if(NOT TARGET IntelSYCL::SYCL_CXX)
+        message(FATAL_ERROR "find_package(IntelSYCL) did not define IntelSYCL::SYCL_CXX")
+    endif()
+    set_target_properties(IntelSYCL::SYCL_CXX PROPERTIES IMPORTED_GLOBAL TRUE)
+
+elseif(SushiRuntime_SYCL_TOOLCHAIN STREQUAL "intel-llvm")
+    # intel/llvm: clang++ -fsycl applies the flags, so the target is an empty interface
+    # library and add_sycl_to_target() does nothing.
+    if(NOT TARGET IntelSYCL::SYCL_CXX)
+        add_library(IntelSYCL::SYCL_CXX INTERFACE IMPORTED GLOBAL)
+    endif()
+    # <sycl/sycl.hpp> lives beside the compiler; a unit compiled without -fsycl finds it
+    # through the target, whose include directories are system ones because it is imported.
+    get_filename_component(_sr_sycl_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(_sr_sycl_root "${_sr_sycl_bin}" DIRECTORY)
+    if(EXISTS "${_sr_sycl_root}/include/sycl/sycl.hpp")
+        set_property(TARGET IntelSYCL::SYCL_CXX APPEND PROPERTY
+            INTERFACE_INCLUDE_DIRECTORIES "${_sr_sycl_root}/include")
+    endif()
+    unset(_sr_sycl_bin)
+    unset(_sr_sycl_root)
+    if(NOT COMMAND add_sycl_to_target)
+        function(add_sycl_to_target)
+        endfunction()
+    endif()
+
+else()
+    message(FATAL_ERROR
+        "SushiRuntime was built for the unknown SYCL toolchain "
+        "'${SushiRuntime_SYCL_TOOLCHAIN}'. It knows intel-llvm, adaptivecpp and oneapi.")
+endif()

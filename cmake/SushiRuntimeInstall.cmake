@@ -59,6 +59,12 @@ function(sushiruntime_install_package)
         INSTALL_DESTINATION "${SR_INSTALL_CMAKEDIR}"
     )
 
+    # The SYCL toolchain the library was built for, as a file the package config includes.
+    configure_file(
+        "${SR_CMAKE_DIR}/SushiRuntimeSycl.cmake.in"
+        "${PROJECT_BINARY_DIR}/SushiRuntimeSycl.cmake"
+        @ONLY)
+
     # SameMinorVersion: the project is pre-1.0 and its API is not frozen, so a
     # consumer asking for 0.2 must not be handed 0.3. Revisit at the v1.0.0 freeze,
     # where SameMajorVersion becomes the honest compatibility statement.
@@ -71,6 +77,7 @@ function(sushiruntime_install_package)
     install(FILES
         "${PROJECT_BINARY_DIR}/SushiRuntimeConfig.cmake"
         "${PROJECT_BINARY_DIR}/SushiRuntimeConfigVersion.cmake"
+        "${PROJECT_BINARY_DIR}/SushiRuntimeSycl.cmake"
         DESTINATION "${SR_INSTALL_CMAKEDIR}"
     )
 

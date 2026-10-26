@@ -9,4 +9,4 @@ sushiruntime_add_module(
     SYCL
     SOURCES device_queue_set.cpp
     DEPENDS core log machine
-    PRIVATE_DEPENDS sycl)
+    PRIVATE_DEPENDS sycl profile)

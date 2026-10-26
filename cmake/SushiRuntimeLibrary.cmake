@@ -47,6 +47,11 @@ function(sushiruntime_compose_library)
         target_include_directories(sushiruntime_internal_headers INTERFACE "${include_root}")
     endforeach()
     target_link_libraries(sushiruntime_internal_headers INTERFACE sushiruntime_umbrella)
+    # The profile module's configuration header is generated into the build tree, so its
+    # include directory is not among the source roots above.
+    if(TARGET sushiruntime_module_profile)
+        target_link_libraries(sushiruntime_internal_headers INTERFACE sushiruntime_module_profile)
+    endif()
 
     sushiruntime_apply_build_policy(sushiruntime)
     sushiruntime_apply_sycl(sushiruntime)
