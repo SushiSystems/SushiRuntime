@@ -1,6 +1,6 @@
 # SYCL compile time: device passes only where a kernel is instantiated
 
-**Status:** Open — written 2026-10-26; S1 to S5 are committed and syntax-checked, nothing is built, and section 6 waits for the owner.
+**Status:** Open — written 2026-10-26; S1 to S5 are committed and built on 2026-10-26 (small 280 of 280, medium 614 of 615: `Medium_DataHandlesDeathTest.StateStopsOnAWindowPastTheEnd` failed once under four jobs and passed three runs alone), and section 6 waits for the owner.
 
 ## 1. Goal
 
