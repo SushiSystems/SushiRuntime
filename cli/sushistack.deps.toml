@@ -76,8 +76,8 @@ version = "v0.2.3"
 commit  = "5f714a7bca6cad1a49e9a6133e75f0f791dba551"
 
 # SushiProfiler, the stack's profiler. sushicore resolves it the same way and the CLI hands the
-# package to CMake as SushiProfiler_DIR. The tag v0.2.0 is cut after its build; until then the
+# package to CMake as SushiProfiler_DIR. The tag v0.3.0 is cut after its build; until then the
 # commit is the head of its main branch.
 [sushisystems.sushiprofiler]
-version = "v0.2.0"
-commit  = "f303075857f444a4edd89cfaae598d0847b8899b"
+version = "v0.3.0"
+commit  = "c099165b5106f3004972c98e7adbc8f2f66329f3"

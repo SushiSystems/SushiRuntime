@@ -27,6 +27,9 @@ K_LOG_LIB = "/store/sushilog/abc/prefix/lib"
 class FakePackages:
     """Stands in for a resolved package set of one library, SushiLog."""
 
+    #: The closure libraries a filter skipped; this set skips none.
+    left_out: tuple[str, ...] = ()
+
     def names(self) -> list[str]:
         """Returns the library names."""
         return ["sushilog"]
