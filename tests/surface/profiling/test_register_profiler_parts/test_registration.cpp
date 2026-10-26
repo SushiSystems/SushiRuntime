@@ -33,6 +33,7 @@
 
 #include <gtest/gtest.h>
 
+#include <SushiProfiler/collector/collector.hpp>
 #include <SushiProfiler/json/json_reader.hpp>
 #include <SushiProfiler/registry/registry.hpp>
 #include <SushiProfiler/record/span_table.hpp>
@@ -60,6 +61,15 @@ namespace
         SushiProfiler::NameTable names;                                  /**< The session's names. */
         std::vector<std::string> tracks;                                 /**< The record's tracks. */
         SushiProfiler::SourceContext context{names, tracks, 0};          /**< What begin() receives. */
+    };
+
+    /** @brief Opens the sources' gate as a running session does, and closes it when it leaves scope. */
+    struct WantedSources
+    {
+        WantedSources() noexcept { SushiProfiler::Collector::want_sources(true); }
+        ~WantedSources() { SushiProfiler::Collector::want_sources(false); }
+        WantedSources(const WantedSources&) = delete;
+        WantedSources& operator=(const WantedSources&) = delete;
     };
 
     /** @brief Makes the registered source of @p registry, which must name `sushiruntime.device`. */
@@ -110,6 +120,7 @@ TEST(Medium_RegisterProfilerParts, ASessionAddsAndRemovesTheObserver)
     SushiProfiler::SpanTable table;
     SushiProfiler::SpanSink sink(table, harness.names, harness.tracks);
     const SushiProfiler::PeriodSpan everything{0, 0, ~std::uint64_t{0}};
+    const WantedSources wanted;
 
     ASSERT_TRUE(pipeline.graph().run().has_value());
     ASSERT_EQ(pipeline.graph().compile_count(), 1u);

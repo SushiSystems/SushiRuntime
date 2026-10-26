@@ -99,7 +99,7 @@ TEST(Medium_RunOverheadBenchmark, PrintsTheCostOfOneRunInEachState)
     warm(graph);
 
     SushiProfiler::Collector::instance().close();
-    const RunStatistics closed = Test::measure([&graph]() { return nanoseconds_per_run(graph); }, K_SAMPLES);
+    const RunStatistics closed = SushiRuntime::Test::measure([&graph]() { return nanoseconds_per_run(graph); }, K_SAMPLES);
 
     RunStatistics open;
     {
@@ -109,7 +109,7 @@ TEST(Medium_RunOverheadBenchmark, PrintsTheCostOfOneRunInEachState)
         SushiProfiler::SessionStart start = SushiProfiler::Session::start(config, registry);
         ASSERT_TRUE(start.ok()) << start.error;
         start.session->timeline("run.step").mark();
-        open = Test::measure([&graph]() { return nanoseconds_per_run(graph); }, K_SAMPLES);
+        open = SushiRuntime::Test::measure([&graph]() { return nanoseconds_per_run(graph); }, K_SAMPLES);
         start.session->timeline("run.step").mark();
         static_cast<void>(start.session->stop());
     }
@@ -119,7 +119,7 @@ TEST(Medium_RunOverheadBenchmark, PrintsTheCostOfOneRunInEachState)
         const auto observer = std::make_shared<TestRunner::RecordingObserver>();
         const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
         warm(graph);
-        observed = Test::measure([&graph]() { return nanoseconds_per_run(graph); }, K_SAMPLES);
+        observed = SushiRuntime::Test::measure([&graph]() { return nanoseconds_per_run(graph); }, K_SAMPLES);
     }
 
     RunStatistics both;
@@ -130,13 +130,13 @@ TEST(Medium_RunOverheadBenchmark, PrintsTheCostOfOneRunInEachState)
         ASSERT_TRUE(start.ok()) << start.error;
         start.session->timeline("run.step").mark();
         warm(graph);
-        both = Test::measure([&graph]() { return nanoseconds_per_run(graph); }, K_SAMPLES);
+        both = SushiRuntime::Test::measure([&graph]() { return nanoseconds_per_run(graph); }, K_SAMPLES);
         start.session->timeline("run.step").mark();
         static_cast<void>(start.session->stop());
     }
 
     std::printf("\n=== Profiler cost of one run of 3 nodes (%zu runs a sample, median of %zu samples, %s build) ===\n",
-                K_RUNS_PER_SAMPLE, K_SAMPLES, Test::build_type());
+                K_RUNS_PER_SAMPLE, K_SAMPLES, SushiRuntime::Test::build_type());
     std::printf("  %-34s | %10s | %10s | %10s | %9s\n", "state (ns per run)", "median", "min", "max", "vs closed");
     print_row("gate closed", closed, closed.median);
     print_row("gate open, zones and values", open, closed.median);

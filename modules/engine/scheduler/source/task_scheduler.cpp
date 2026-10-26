@@ -707,7 +707,10 @@ namespace SushiRuntime
                     {
                         node->execute_native();
                     }
-                    events.push({sycl::event{}, task, true});
+                    EventPolling::PolledEvent host_done;
+                    host_done.task = task;
+                    host_done.ready = true;
+                    events.push(host_done);
                     return;
                 }
 

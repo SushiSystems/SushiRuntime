@@ -74,7 +74,7 @@ is compiled out. Level 1 is a stage, level 2 a fine zone and level 3 an element-
 
 | Name | Kind | Unit | Written |
 | --- | --- | --- | --- |
-| `graph.nodes` | value | nodes | At the end of every compile |
+| `graph.nodes` | value | nodes | At the end of every compile; the recorded nodes, without the completion sentinel |
 | `graph.roots` | value | nodes | At the end of every compile |
 | `memory.allocate_bytes` | value | bytes | With every allocation |
 | `worker.busy` | value | ms | At the end of every run: the workers' time inside task execution |

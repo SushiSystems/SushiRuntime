@@ -92,7 +92,7 @@ namespace SushiRuntime
                     SushiRuntime::Internal::Graph::NodeWidths widths{};
 
                     /** @brief The events the task's body handed over, when it handed over any. */
-                    std::vector<sycl::event> handed_over;
+                    std::vector<sycl::event> handed_over{};
 
                     /** @brief Device whose queue the dispatch went to, or K_HOST_DEVICE_INDEX. */
                     std::uint32_t device_index = K_HOST_DEVICE_INDEX;

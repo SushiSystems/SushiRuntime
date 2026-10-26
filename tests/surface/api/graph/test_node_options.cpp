@@ -154,7 +154,7 @@ TEST(Medium_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
         const std::array<std::uint64_t, 2> parameters{3u, WIDE};
         g.recorder().kernel(WIDE, Access(Reads(values), Writes(values)),
                             [v](std::size_t i) { v[i] *= 3u; },
-                            NodeOptions{WIDE, label, "options.scale"_op, parameters});
+                            NodeOptions{WIDE, label, "options.scale"_op, {}, parameters});
     }
 
     g.run().value();

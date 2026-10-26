@@ -46,14 +46,14 @@ namespace
 TEST(Medium_AssertDeathTest, LogsTheFailedCheckAtFatal)
 {
     EXPECT_DEATH(fail_a_check_with_logging_installed(),
-                 "\[FATAL\].*1 \+ 1 == 3 failed: the sum holds");
+                 "\\[FATAL\\].*1 \\+ 1 == 3 failed: the sum holds");
 }
 
 /** @brief Tests that the handler installed before the logging one still runs after it. */
 TEST(Medium_AssertDeathTest, TheDefaultHandlerStillWritesItsLineAfterTheLog)
 {
     EXPECT_DEATH(fail_a_check_with_logging_installed(),
-                 "SushiRuntime: 1 \+ 1 == 3 failed: the sum holds");
+                 "SushiRuntime: 1 \\+ 1 == 3 failed: the sum holds");
 }
 
 /** @brief Tests that a second installation changes nothing and does not stop the process. */

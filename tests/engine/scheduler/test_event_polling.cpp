@@ -54,6 +54,15 @@ namespace
 
     /** @brief Recovers the id that tag() encoded. */
     std::uintptr_t untag(Task* t) { return reinterpret_cast<std::uintptr_t>(t); }
+
+    /** @brief Builds an event-less entry for @p task, marked ready or not. */
+    EventPolling::PolledEvent polled(Task* task, bool ready)
+    {
+        EventPolling::PolledEvent entry;
+        entry.task = task;
+        entry.ready = ready;
+        return entry;
+    }
 }
 
 /**
@@ -65,7 +74,7 @@ TEST(Small_EventPolling, PushNeverDropsBeyondInlineCapacity)
     constexpr std::uintptr_t N = 100000; // far beyond K_INLINE_CAP (256)
 
     for (std::uintptr_t i = 1; i <= N; ++i)
-        list.push({sycl::event{}, tag(i), true});
+        list.push(polled(tag(i), true));
 
     ASSERT_EQ(list.size(), N);
     EXPECT_FALSE(list.is_empty());
@@ -89,7 +98,7 @@ TEST(Small_EventPolling, RemoveAtDrainsEveryEventExactlyOnce)
     constexpr std::uintptr_t N = 5000; // spans inline buffer and spill
 
     for (std::uintptr_t i = 1; i <= N; ++i)
-        list.push({sycl::event{}, tag(i), false});
+        list.push(polled(tag(i), false));
 
     std::set<std::uintptr_t> seen;
     // Removing index 0 relocates the tail into the front on every step; see README.md.
@@ -115,7 +124,7 @@ TEST(Small_EventPolling, RemoveAcrossInlineSpillBoundary)
     const std::uintptr_t N = EventPolling::ActiveEventList::K_INLINE_CAP + 1;
 
     for (std::uintptr_t i = 1; i <= N; ++i)
-        list.push({sycl::event{}, tag(i), true});
+        list.push(polled(tag(i), true));
 
     ASSERT_EQ(list.size(), N);
 
@@ -132,8 +141,8 @@ TEST(Small_EventPolling, RemoveAcrossInlineSpillBoundary)
 TEST(Small_EventPolling, RemoveAtEdgeCases)
 {
     EventPolling::ActiveEventList list;
-    list.push({sycl::event{}, tag(10), true});
-    list.push({sycl::event{}, tag(20), true});
+    list.push(polled(tag(10), true));
+    list.push(polled(tag(20), true));
 
     list.remove_at(99); // out of range
     EXPECT_EQ(list.size(), 2u);

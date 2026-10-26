@@ -321,7 +321,6 @@ namespace SushiRuntime
             RuntimeContext& context = Internal::ContextAccess::context(*target.context);
             ExecutionEngine& engine = context.execution_engine();
             const StepMachinery& steps = *target.steps;
-            CompiledGraph& plan = *engine_plan(target.plan);
 
             if (std::optional<Error> fault = steps.take_fault())
                 return make_error(std::move(*fault));

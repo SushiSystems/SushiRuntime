@@ -27,16 +27,20 @@
  */
 
 #include <cstddef>
+#include <memory>
 #include <string>
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/test_runner/recording_observer.hpp>
 
 #include "session_pipeline.hpp"
 
 using namespace SushiRuntime;
 using namespace SessionTests;
+using TestRunner::RecordingObserver;
 using SushiProfiler::PeriodRecord;
 using SushiProfiler::RunRecord;
 
@@ -124,6 +128,8 @@ TEST(Medium_RunZones, TheStealZoneIsAbsentBelowLevelThree)
 TEST(Medium_RunZones, TheChainPathWritesItsOwnZones)
 {
     SessionPipeline pipeline(SessionPipeline::chain_config());
+    // The events are read only while a run is timed, and an added observer is what wants the timing (R20, R21).
+    const RunObserverHandle observer = pipeline.runtime().add_run_observer(std::make_shared<RecordingObserver>());
 
     const RunRecord record = record_two_runs(pipeline);
 

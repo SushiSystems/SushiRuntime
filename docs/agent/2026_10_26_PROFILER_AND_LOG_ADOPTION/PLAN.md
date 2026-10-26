@@ -526,6 +526,8 @@ Choices the rulings did not cover, taken SOLID-first and then by what rebuilds l
 | A timed run is chosen when the run is armed, and the node table is always built | The plan then needs no rebuild when an observer comes or goes, and the table costs one string per registration index |
 | `set_label` stores the label on the plan cache and the composer, and the table copies it at build | A label change then rebuilds nothing, as R15 asks |
 | The worker bucket values are read and reset by `write_run_values()` | An unobserved run must not report the buckets of an earlier observed one |
+| The value `graph.nodes` counts the recorded nodes, not the completion sentinel | The sentinel is held in `CompiledGraph::sentinel`, apart from `all_nodes`; the build-pass test expected it counted and was corrected to the code, and `PROFILER_KEYS.md` now says so |
+| A test that drives `DeviceSource` outside a session opens `Collector::want_sources` itself, and a test that needs the chain's `chain.record_events` adds an observer | Since R21 the parts' observer is gated on the session's gate and only an added observer makes a run timed; the tests now set up what a session would |
 
 ## Breaking changes and migration
 

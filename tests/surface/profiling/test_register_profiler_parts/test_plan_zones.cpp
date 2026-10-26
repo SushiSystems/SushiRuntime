@@ -94,7 +94,7 @@ TEST(Medium_PlanZones, ABuildWritesTheNodeAndRootCountsAsValues)
     const auto nodes = sample_total(record, "graph.nodes");
     const auto roots = sample_total(record, "graph.roots");
     EXPECT_EQ(nodes.second, 1u) << "one build";
-    EXPECT_EQ(nodes.first, 3.0 + 1.0) << "three nodes and the completion sentinel";
+    EXPECT_EQ(nodes.first, 3.0) << "the three recorded nodes; the completion sentinel is held apart and not counted";
     EXPECT_EQ(roots.first, 1.0) << "the load node is the only root";
 }
 
