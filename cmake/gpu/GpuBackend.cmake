@@ -247,6 +247,15 @@ macro(sushiruntime_gpu_finalize)
                 -fsycl-targets=${_sr_targets} ${SR_GPU_CLANG_OPTIONS})
             target_link_options(sushiruntime_gpu_offload INTERFACE
                 -fsycl-targets=${_sr_targets} ${SR_GPU_CLANG_OPTIONS})
+            # An ahead-of-time device lowers fp32 division and sqrt to approximations unless
+            # told otherwise, so a Bitwise kernel would round apart from its host pass. The
+            # device code is generated at link, so the link carries the options too.
+            if(SR_DETERMINISTIC_FP)
+                target_compile_options(sushiruntime_gpu_offload INTERFACE
+                    -foffload-fp32-prec-div -foffload-fp32-prec-sqrt)
+                target_link_options(sushiruntime_gpu_offload INTERFACE
+                    -foffload-fp32-prec-div -foffload-fp32-prec-sqrt)
+            endif()
             message(STATUS "GPU backend: SYCL targets = ${_sr_targets}")
         else()
             # Only spir64 => JIT default; emit nothing (CPU/Intel-GPU/Windows path).

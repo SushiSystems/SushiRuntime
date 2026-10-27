@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-27 — cmake: Required correctly rounded fp32 division and square root on an ahead-of-time device under `SR_DETERMINISTIC_FP`, so a CUDA kernel rounds as its host pass does (`GpuBackend.cmake`).
 - 2026-10-27 — scheduler: Let a task body claim its device's clock pairing as a kernel does, so a plan of task bodies alone keeps its device spans (`task_scheduler.cpp`, `chain_run.cpp`, `profiling_ledger.hpp`).
 - 2026-10-27 — cmake: Made the staged runtime library lists plain variables, so a change to them reaches a build tree configured before it (`SushiRuntimeRedistributables.cmake`).
 - 2026-10-27 — cmake: Staged `ur_adapter_cuda` with the package, so an installed runtime finds the CUDA device and does not fall back to the OpenCL CPU device (`SushiRuntimeRedistributables.cmake`).

@@ -247,6 +247,12 @@ Under an MSVC-style driver that is not `cl.exe`, `/fp:precise` does not turn con
 `cmake/Determinism.cmake` probes `-ffp-contract=off` and then `/Qfp-contract=off`, adds the one
 the driver accepts and warns when it accepts neither.
 
+An ahead-of-time device target lowers fp32 division and square root to approximations by
+default, so a `Bitwise` kernel would round apart from the host pass it is checked against. Under
+`SR_DETERMINISTIC_FP`, `SushiRuntime::gpu_offload` adds `-foffload-fp32-prec-div` and
+`-foffload-fp32-prec-sqrt` to its compile and link options; the link carries them because the
+device code is generated there.
+
 The tests named `Medium_Determinism` in `tests/surface/api/graph/test_graph.cpp` check the
 result.
 
