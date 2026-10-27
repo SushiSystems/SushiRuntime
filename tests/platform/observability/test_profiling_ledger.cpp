@@ -26,6 +26,7 @@
  * @author Mustafa Garip
  */
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <utility>

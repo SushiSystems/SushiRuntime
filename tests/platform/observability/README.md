@@ -83,77 +83,13 @@ The file tests TransferCounters' starting values, per-counter adds and concurren
 | `Small_ProfilingLedger.ACleanRunLosesNothing` | A ledger that recorded nothing reports no drop. |
 | `Small_ProfilingLedger.AMovedLedgerCarriesItsPairings` | A moved ledger keeps its pairings and a moved-from one starts with none. |
 
-## test_event_timestamps.cpp: merging the events of a body
+## test_pairing_claim.cpp
+
+How one dispatch claims its device's clock pairing, keeps it or gives it back.
 
 | Test | What it proves |
 | --- | --- |
-| `Small_EventTimestamps.MergesEventsIntoOneSpan` | Two events fold into the earliest submit and start and the latest end. |
-| `Small_EventTimestamps.TheMergeDoesNotDependOnTheOrder` | The merge covers both events whichever one is merged into the other. |
-| `Small_EventTimestamps.TheSubmitIsTheBackendsOnlyWhenEveryEventHadOne` | The submit reading counts as the backend's own only when every event had one. |
-| `Small_EventTimestamps.MergingAnEventIntoItselfChangesNothing` | Merging one event into itself changes nothing. |
-| `Small_EventTimestamps.AnUnreadableEventFailsTheDispatch` | An event that cannot be read fails the dispatch whether it is returned or handed over. |
-
-## test_profiling_ledger.cpp: the record writer, the pairings and the drops
-
-| Test | What it proves |
-| --- | --- |
-| `Small_ProfilingLedger.RecordFillsEveryField` | Record() fills every field of the record it stores. |
-| `Small_ProfilingLedger.ARecordWithNoDeviceNamesTheHost` | A host record keeps the host device and unknown widths by default. |
-| `Small_ProfilingLedger.KeepsOnePairingPerDevice` | Each device claims its own pairing and only a device that read its event reports one. |
-| `Small_ProfilingLedger.AReserveClearsThePairings` | The next reserve() clears the claims, so a run starts with no pairing. |
-| `Small_ProfilingLedger.CountsADispatchThatFoundItsRowFull` | A dispatch that finds its row full is counted, not stored. |
-| `Small_ProfilingLedger.CountsARecordForANodePastTheRows` | A record for a node past the ledger is counted under its own cause. |
-| `Small_ProfilingLedger.OverflowBehavesTheSameInDebugAndRelease` | An overflow never aborts, so debug and release builds behave the same. |
-| `Small_ProfilingLedger.NoteDropCountsEachCauseApart` | The other drop causes are counted by note_drop(), each under its own count. |
-| `Small_ProfilingLedger.ACleanRunLosesNothing` | A ledger that recorded nothing reports no drop. |
-| `Small_ProfilingLedger.AMovedLedgerCarriesItsPairings` | A moved ledger keeps its pairings and a moved-from one starts with none. |
-
-## test_event_timestamps.cpp: merging the events of a body
-
-| Test | What it proves |
-| --- | --- |
-| `Small_EventTimestamps.MergesEventsIntoOneSpan` | Two events fold into the earliest submit and start and the latest end. |
-| `Small_EventTimestamps.TheMergeDoesNotDependOnTheOrder` | The merge covers both events whichever one is merged into the other. |
-| `Small_EventTimestamps.TheSubmitIsTheBackendsOnlyWhenEveryEventHadOne` | The submit reading counts as the backend's own only when every event had one. |
-| `Small_EventTimestamps.MergingAnEventIntoItselfChangesNothing` | Merging one event into itself changes nothing. |
-| `Small_EventTimestamps.AnUnreadableEventFailsTheDispatch` | An event that cannot be read fails the dispatch whether it is returned or handed over. |
-
-## test_profiling_ledger.cpp: the record writer, the pairings and the drops
-
-| Test | What it proves |
-| --- | --- |
-| `Small_ProfilingLedger.RecordFillsEveryField` | Record() fills every field of the record it stores. |
-| `Small_ProfilingLedger.ARecordWithNoDeviceNamesTheHost` | A host record keeps the host device and unknown widths by default. |
-| `Small_ProfilingLedger.KeepsOnePairingPerDevice` | Each device claims its own pairing and only a device that read its event reports one. |
-| `Small_ProfilingLedger.AReserveClearsThePairings` | The next reserve() clears the claims, so a run starts with no pairing. |
-| `Small_ProfilingLedger.CountsADispatchThatFoundItsRowFull` | A dispatch that finds its row full is counted, not stored. |
-| `Small_ProfilingLedger.CountsARecordForANodePastTheRows` | A record for a node past the ledger is counted under its own cause. |
-| `Small_ProfilingLedger.OverflowBehavesTheSameInDebugAndRelease` | An overflow never aborts, so debug and release builds behave the same. |
-| `Small_ProfilingLedger.NoteDropCountsEachCauseApart` | The other drop causes are counted by note_drop(), each under its own count. |
-| `Small_ProfilingLedger.ACleanRunLosesNothing` | A ledger that recorded nothing reports no drop. |
-| `Small_ProfilingLedger.AMovedLedgerCarriesItsPairings` | A moved ledger keeps its pairings and a moved-from one starts with none. |
-
-## test_event_timestamps.cpp: merging the events of a body
-
-| Test | What it proves |
-| --- | --- |
-| `Small_EventTimestamps.MergesEventsIntoOneSpan` | Two events fold into the earliest submit and start and the latest end. |
-| `Small_EventTimestamps.TheMergeDoesNotDependOnTheOrder` | The merge covers both events whichever one is merged into the other. |
-| `Small_EventTimestamps.TheSubmitIsTheBackendsOnlyWhenEveryEventHadOne` | The submit reading counts as the backend's own only when every event had one. |
-| `Small_EventTimestamps.MergingAnEventIntoItselfChangesNothing` | Merging one event into itself changes nothing. |
-| `Small_EventTimestamps.AnUnreadableEventFailsTheDispatch` | An event that cannot be read fails the dispatch whether it is returned or handed over. |
-
-## test_profiling_ledger.cpp: the record writer, the pairings and the drops
-
-| Test | What it proves |
-| --- | --- |
-| `Small_ProfilingLedger.RecordFillsEveryField` | Record() fills every field of the record it stores. |
-| `Small_ProfilingLedger.ARecordWithNoDeviceNamesTheHost` | A host record keeps the host device and unknown widths by default. |
-| `Small_ProfilingLedger.KeepsOnePairingPerDevice` | Each device claims its own pairing and only a device that read its event reports one. |
-| `Small_ProfilingLedger.AReserveClearsThePairings` | The next reserve() clears the claims, so a run starts with no pairing. |
-| `Small_ProfilingLedger.CountsADispatchThatFoundItsRowFull` | A dispatch that finds its row full is counted, not stored. |
-| `Small_ProfilingLedger.CountsARecordForANodePastTheRows` | A record for a node past the ledger is counted under its own cause. |
-| `Small_ProfilingLedger.OverflowBehavesTheSameInDebugAndRelease` | An overflow never aborts, so debug and release builds behave the same. |
-| `Small_ProfilingLedger.NoteDropCountsEachCauseApart` | The other drop causes are counted by note_drop(), each under its own count. |
-| `Small_ProfilingLedger.ACleanRunLosesNothing` | A ledger that recorded nothing reports no drop. |
-| `Small_ProfilingLedger.AMovedLedgerCarriesItsPairings` | A moved ledger keeps its pairings and a moved-from one starts with none. |
+| `Small_PairingClaim.ASubmittedClaimKeepsThePairing` | A claim that submitted records a window, so the device's pairing is kept once its event is read. |
+| `Small_PairingClaim.AClaimThatSubmittedNothingIsGivenUp` | A claim that submitted nothing is given up, so the next dispatch claims the device. |
+| `Small_PairingClaim.ALosingClaimChangesNothing` | A claim with no ledger or on a held device leaves the ledger as it was. |
+| `Small_PairingClaim.SteadyNsCountsNanosecondsSinceTheEpoch` | steady_ns() counts the nanoseconds of a time point since the steady clock's epoch. |

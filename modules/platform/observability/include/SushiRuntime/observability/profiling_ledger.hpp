@@ -258,6 +258,21 @@ namespace SushiRuntime
                     expected, task, std::memory_order_acq_rel, std::memory_order_relaxed);
             }
 
+            /**
+             * @brief Gives up @p device's claim when @p task holds it, so a later submission can claim it.
+             *
+             * A task body that submitted nothing has no event to pair; keeping its claim would leave
+             * the device with no pairing for the run.
+             */
+            void release_pairing_owner(std::uint32_t device, const void* task) noexcept
+            {
+                if (device >= device_count_)
+                    return;
+                const void* expected = task;
+                pairings_[device].owner.compare_exchange_strong(
+                    expected, nullptr, std::memory_order_acq_rel, std::memory_order_relaxed);
+            }
+
             /** @brief Whether task is the pairing-owning submission of @p device. */
             bool is_pairing_owner(std::uint32_t device, const void* task) const noexcept
             {

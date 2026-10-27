@@ -188,6 +188,8 @@ What a run's observation holds: the node table, the records, the pairings and th
 | `Medium_CollectProfiling.CarriesNoDropWhenNoneWasLost` | A run that lost no dispatch carries zero drops and logs nothing. |
 | `Medium_CollectProfiling.CarriesTheDropCountsOfTheRun` | A run longer than its ledger was sized for carries the drops and logs one WARN. |
 | `Medium_CollectProfiling.TheRunAfterAnOverflowLosesNothing` | The run after an overflow sizes its ledger for the demand and loses nothing. |
+| `Medium_CollectProfiling.TaskBodiesOnTheWorkerPoolClaimTheirDevicesPairing` | A plan of task bodies alone, run on the worker pool, pairs the device its records name. |
+| `Medium_CollectProfiling.TaskBodiesOnTheChainClaimTheirDevicesPairing` | A plan of task bodies alone, run as a chain, pairs the device its records name. |
 
 
 ## test_register_profiler_parts/test_graph_identity.cpp

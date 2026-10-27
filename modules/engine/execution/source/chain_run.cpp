@@ -25,7 +25,6 @@
  * @author Mustafa Garip
  */
 
-#include <chrono>
 #include <utility>
 #include <vector>
 #include <sycl/sycl.hpp>
@@ -36,6 +35,8 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/observability/event_timestamps.hpp>
+#include <SushiRuntime/observability/pairing_claim.hpp>
+#include <SushiRuntime/observability/profiling_ledger.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/node_event_record.hpp>
@@ -56,17 +57,6 @@ namespace SushiRuntime
     {
         namespace
         {
-            /**
-             * @brief Converts a steady-clock time point to nanoseconds since its epoch.
-             * @param t The time point.
-             * @return Nanoseconds since the steady clock's epoch.
-             */
-            std::uint64_t steady_ns(std::chrono::steady_clock::time_point t) noexcept
-            {
-                return static_cast<std::uint64_t>(
-                    std::chrono::duration_cast<std::chrono::nanoseconds>(t.time_since_epoch()).count());
-            }
-
             /**
              * @brief Submits a command group and drops the event.
              *
@@ -261,20 +251,16 @@ namespace SushiRuntime
         {
             Internal::Observability::ProfilingLedger& ledger = graph_.profiling_ledger;
             const Internal::Scheduler::Task* task = &node;
-            const bool is_kernel = node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Kernel;
             const std::uint32_t device = static_cast<std::uint32_t>(graph_.chain.queue_index);
-            const bool owns_pairing = is_kernel && !pairing_claimed_ && ledger.claim_pairing_owner(device, task);
-            if (is_kernel)
-                pairing_claimed_ = true;
+            // A task body submits device work as a kernel node does, so the first node of either kind claims.
+            Internal::Observability::PairingClaim claim(pairing_claimed_ ? nullptr : &ledger, device, task);
+            pairing_claimed_ = true;
 
             std::vector<sycl::event> handed_over;
-            const auto t0 = std::chrono::steady_clock::now();
             sycl::event event = submit_node(node, handed_over);
-            if (owns_pairing)
-            {
-                const auto t1 = std::chrono::steady_clock::now();
-                ledger.set_pairing_submit_window(device, steady_ns(t0), steady_ns(t1) - steady_ns(t0));
-            }
+            // A body that submitted nothing has no event to pair, so the next node claims instead.
+            if (claim.settle(!(event == sycl::event{}) || !handed_over.empty()))
+                pairing_claimed_ = false;
 
             graph_.chain.pending_events.push_back(
                 Internal::Graph::PendingEvent{&node, step, std::move(event), Internal::Graph::snapshot_widths(node),

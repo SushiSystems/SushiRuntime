@@ -53,9 +53,13 @@ index and event-clock times.
 
 ### Clock pairings
 
-The first kernel to reach a device in a run claims that device's pairing with a compare-exchange.
+The first device submission to reach a device in a run, a kernel or a task body, claims that
+device's pairing with a compare-exchange. release_pairing_owner() gives a claim back when the
+submission turned out to submit nothing. `PairingClaim` (`pairing_claim.hpp`) is the one way a
+dispatch claims: it claims, times the submit call with `steady_ns()`, and on `settle()` records that
+window or gives the claim back. The scheduler and the chain run both use it.
 The claim is per device, since two devices may not share an event clock. collect_pairings() appends a
-`DeviceClock` for each device whose owner's event timestamps were read; a device that ran no kernel,
+`DeviceClock` for each device whose owner's event timestamps were read; a device that ran no device submission,
 or whose owner's event could not be read, has none, and its spans cannot be placed on the steady
 clock.
 

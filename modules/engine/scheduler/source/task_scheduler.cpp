@@ -42,6 +42,8 @@
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/observability/pairing_claim.hpp>
+#include <SushiRuntime/observability/profiling_ledger.hpp>
 #include <SushiRuntime/profile/profile.hpp>
 #include <SushiRuntime/report/node_event_record.hpp>
 #include <SushiRuntime/scheduler/scheduler_log_category.hpp>
@@ -773,9 +775,16 @@ namespace SushiRuntime
                     SR_ZONE_FINE("dispatch.submit");
                     if (profiling_active_.load(std::memory_order_acquire))
                     {
-                        // A body that submits several kernels hands each event over (api/graph/dispatch_events.hpp).
-                        Internal::DispatchEvents::DispatchEventScope handing(handed_over);
-                        e = task->execute_host(queue, dependencies);
+                        // A task body submits device work as a kernel does, so it may claim the pairing too.
+                        Internal::Observability::PairingClaim claim(
+                            node && !node->is_sentinel ? active_ledger_.load(std::memory_order_acquire) : nullptr,
+                            dispatch_device, task);
+                        {
+                            // A body that submits several kernels hands each event over (api/graph/dispatch_events.hpp).
+                            Internal::DispatchEvents::DispatchEventScope handing(handed_over);
+                            e = task->execute_host(queue, dependencies);
+                        }
+                        claim.settle(!(e == sycl::event{}) || !handed_over.empty());
                     }
                     else
                     {
@@ -785,18 +794,10 @@ namespace SushiRuntime
                 else
                 {
                     // The first device submission to reach here claims the run's clock pairing.
-                    Internal::Observability::ProfilingLedger* pairing_ledger = nullptr;
-                    std::chrono::steady_clock::time_point pairing_t0;
-                    if (profiling_active_.load(std::memory_order_acquire))
-                    {
-                        if (auto* ledger = active_ledger_.load(std::memory_order_acquire))
-                            if (ledger->claim_pairing_owner(dispatch_device, task))
-                            {
-                                pairing_ledger = ledger;
-                                pairing_t0 = std::chrono::steady_clock::now();
-                            }
-                    }
-
+                    Internal::Observability::PairingClaim claim(
+                        profiling_active_.load(std::memory_order_acquire) ? active_ledger_.load(std::memory_order_acquire)
+                                                                          : nullptr,
+                        dispatch_device, task);
                     {
                         SR_ZONE_FINE("dispatch.submit");
                         e = queue.submit([&](sycl::handler& h)
@@ -808,18 +809,7 @@ namespace SushiRuntime
                             task->execute(h);
                         });
                     }
-
-                    if (pairing_ledger)
-                    {
-                        const auto pairing_t1 = std::chrono::steady_clock::now();
-                        const std::uint64_t steady_ns = static_cast<std::uint64_t>(
-                            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                pairing_t0.time_since_epoch()).count());
-                        const std::uint64_t uncertainty_ns = static_cast<std::uint64_t>(
-                            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                pairing_t1 - pairing_t0).count());
-                        pairing_ledger->set_pairing_submit_window(dispatch_device, steady_ns, uncertainty_ns);
-                    }
+                    claim.settle(true);
                 }
                 
                 // An empty event is pushed as ready, never dropped (modules/engine/scheduler/README.md).

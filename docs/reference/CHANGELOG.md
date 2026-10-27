@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-27 — scheduler: Let a task body claim its device's clock pairing as a kernel does, so a plan of task bodies alone keeps its device spans (`task_scheduler.cpp`, `chain_run.cpp`, `profiling_ledger.hpp`).
 - 2026-10-27 — cmake: Made the staged runtime library lists plain variables, so a change to them reaches a build tree configured before it (`SushiRuntimeRedistributables.cmake`).
 - 2026-10-27 — cmake: Staged `ur_adapter_cuda` with the package, so an installed runtime finds the CUDA device and does not fall back to the OpenCL CPU device (`SushiRuntimeRedistributables.cmake`).
 - 2026-10-26 — profiling: Added `DeviceSource::max_delay_ns()`, 2000 ms, so a span that finishes within it is placed in its period and not dropped late (`device_source.hpp`).

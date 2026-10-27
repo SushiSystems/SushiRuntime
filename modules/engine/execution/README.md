@@ -390,8 +390,9 @@ The in-order queue carries the ordering a returned event would, and the run wait
 
 #### submit_profiled
 
-The run's first kernel submission claims the clock pairing, as the scheduler's first device
-submission does. Unlike the scheduler, this path never keeps an inline host node:
+The run's first submission, a KERNEL node or a task body, claims the clock pairing, as the
+scheduler's first device submission does. A body that submitted nothing gives the claim back, so
+the next node claims. Unlike the scheduler, this path never keeps an inline host node:
 `node_kind_is_chainable` in `chain_plan.cpp` admits only a KERNEL node or a HOST node that
 submits device work. An empty event here would be a rare, unexpected case, not the routine
 one the scheduler guards against. The event is therefore kept unconditionally.

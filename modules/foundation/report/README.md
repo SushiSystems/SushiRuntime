@@ -51,7 +51,7 @@ holds the runtime weakly, so a handle that outlives its runtime removes nothing.
 | `layer` | Path that submitted the run's device work |
 | `table` | The plan's `NodeTable`, shared by every run of the plan |
 | `events` | One `NodeEventRecord` per dispatch |
-| `device_clocks` | One `ClockPairing` per device that ran a kernel of the run |
+| `device_clocks` | One `ClockPairing` per device that ran a kernel or a task body of the run |
 | `drops` | The `DropCounts` of the run |
 | `graph_id` | The id of the graph that owns the run's plan; 0 when none is known |
 

@@ -8,6 +8,7 @@ sushiruntime_add_module_tests(
     MODULE observability
     SOURCES
         test_event_timestamps.cpp
+        test_pairing_claim.cpp
         test_profiling_ledger.cpp
         test_transfer_counters.cpp
     DEVICE_SOURCES

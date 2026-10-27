@@ -31,8 +31,10 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
+#include <sycl/sycl.hpp>
 
 #include <SushiLog/log/log_level.hpp>
 
@@ -187,4 +189,71 @@ TEST(Medium_CollectProfiling, TheRunAfterAnOverflowLosesNothing)
     ASSERT_EQ(observer->count(), 2u);
     EXPECT_FALSE(observer->last().drops.any()) << "the ledger grew to the demand it saw";
     EXPECT_EQ(observer->last().events.size(), 18u);
+}
+
+namespace
+{
+    /** @brief Runs two task nodes, each submitting its own kernel, once under @p config; returns what the observer saw. */
+    RunObservation observe_task_bodies(const RuntimeConfig& config)
+    {
+        constexpr std::size_t K_ELEMENTS = 256;
+        auto runtime = Runtime::create(config).value();
+        auto first = runtime.buffer<float>(K_ELEMENTS).value();
+        auto second = runtime.buffer<float>(K_ELEMENTS).value();
+        float* a = first.data();
+        float* b = second.data();
+        auto graph = runtime.graph();
+        graph.add_task(Reads{}, Writes(first),
+                       [a](sycl::queue& queue, const std::vector<sycl::event>& after)
+                       {
+                           return queue.parallel_for(sycl::range<1>(K_ELEMENTS), after,
+                                                     [a](sycl::id<1> i) { a[i] = static_cast<float>(i[0]); });
+                       });
+        graph.add_task(Reads(first), Writes(second),
+                       [a, b](sycl::queue& queue, const std::vector<sycl::event>& after)
+                       {
+                           return queue.parallel_for(sycl::range<1>(K_ELEMENTS), after,
+                                                     [a, b](sycl::id<1> i) { b[i] = a[i] + 1.0f; });
+                       });
+
+        const auto observer = std::make_shared<RecordingObserver>();
+        const RunObserverHandle handle = runtime.add_run_observer(observer);
+        EXPECT_TRUE(graph.run().has_value());
+        EXPECT_EQ(observer->count(), 1u);
+        return observer->count() == 1 ? observer->last() : RunObservation{};
+    }
+
+    /** @brief Expects every device record of @p observation to have its device's pairing. */
+    void expect_every_device_record_paired(const RunObservation& observation)
+    {
+        ASSERT_EQ(observation.events.size(), 2u);
+        for (const NodeEventRecord& record : observation.events)
+        {
+            ASSERT_NE(record.device_index, K_HOST_DEVICE_INDEX) << "a task body submits on a device queue";
+            bool paired = false;
+            for (const DeviceClock& clock : observation.device_clocks)
+                if (clock.device_index == record.device_index)
+                    paired = true;
+            EXPECT_TRUE(paired) << "device " << record.device_index << " has no pairing, so a profiler drops the record";
+        }
+    }
+} // namespace
+
+/** @brief Tests that a plan of task bodies alone, run on the worker pool, pairs the device its records name. */
+TEST(Medium_CollectProfiling, TaskBodiesOnTheWorkerPoolClaimTheirDevicesPairing)
+{
+    const RunObservation observation = observe_task_bodies(ObservedPipeline::scheduler_config());
+
+    EXPECT_EQ(observation.layer, ExecutionLayer::Scheduler);
+    expect_every_device_record_paired(observation);
+}
+
+/** @brief Tests that a plan of task bodies alone, run as a chain, pairs the device its records name. */
+TEST(Medium_CollectProfiling, TaskBodiesOnTheChainClaimTheirDevicesPairing)
+{
+    const RunObservation observation = observe_task_bodies(ObservedPipeline::chain_config());
+
+    if (observation.layer != ExecutionLayer::Chain)
+        GTEST_SKIP() << "this device's plan does not classify as a chain";
+    expect_every_device_record_paired(observation);
 }
