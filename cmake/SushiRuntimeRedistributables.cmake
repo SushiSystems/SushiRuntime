@@ -56,6 +56,7 @@ set(SUSHIRUNTIME_RUNTIME_LIBRARY_PATTERNS
 set(SUSHIRUNTIME_OPTIONAL_RUNTIME_LIBRARIES
     ur_loader
     ur_adapter_opencl
+    ur_adapter_cuda
     ur_adapter_level_zero
     ur_adapter_level_zero_v2
     ur_win_proxy_loader
