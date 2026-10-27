@@ -23,12 +23,13 @@ function(sushiruntime_install_package)
 
     get_property(module_targets GLOBAL PROPERTY SUSHIRUNTIME_EXPORTED_MODULE_TARGETS)
 
-    # The export set carries the library, the umbrella, one target per public module and
-    # the floating-point contract they link. CMake refuses to export a target whose
-    # interface names a target no export set contains, so sushiruntime_deterministic_fp
-    # is in the set.
+    # The export set carries the library, the umbrella, one target per public module, the
+    # floating-point contract they link and the device targets this build compiled its kernels
+    # for. CMake refuses to export a target whose interface names a target no export set
+    # contains, so sushiruntime_deterministic_fp is in the set; SushiRuntime::gpu_offload is
+    # there so a consumer's kernels reach the same devices as the runtime's.
     install(TARGETS sushiruntime sushiruntime_umbrella ${module_targets}
-        sushiruntime_deterministic_fp
+        sushiruntime_deterministic_fp sushiruntime_gpu_offload
         EXPORT SushiRuntimeTargets
         LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
         ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"

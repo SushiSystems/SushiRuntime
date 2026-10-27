@@ -228,6 +228,7 @@ macro(sushiruntime_gpu_finalize)
     if(NOT TARGET sushiruntime_gpu_offload)
         add_library(sushiruntime_gpu_offload INTERFACE)
         add_library(SushiRuntime::gpu_offload ALIAS sushiruntime_gpu_offload)
+        set_target_properties(sushiruntime_gpu_offload PROPERTIES EXPORT_NAME gpu_offload)
     endif()
 
     if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
