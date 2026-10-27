@@ -28,13 +28,15 @@ set(SUSHIRUNTIME_REDIST_COMPONENT "sushiruntime_redist"
 # here: the UR adapters are dlopen'd by sycl8 at device-discovery time and appear
 # in no import table, and hwloc arrives as PkgConfig::HWLOC, a pkg-config-derived
 # target carrying link flags and a search path but no IMPORTED_LOCATION.
+# The three lists below are plain variables, not cache entries, so that a change to them
+# reaches a build tree that was configured before it; a cache entry keeps its first value.
+#
 # Libraries an installed consumer cannot start without. These are the direct
 # imports of sushiruntime.dll, minus what the target graph can already resolve:
 # hwloc arrives as PkgConfig::HWLOC, a pkg-config-derived target carrying link
 # flags and a search path but no IMPORTED_LOCATION.
 set(SUSHIRUNTIME_REQUIRED_RUNTIME_LIBRARIES
-    hwloc-15
-    CACHE STRING "Runtime libraries the installed package cannot start without")
+    hwloc-15)
 
 # The SYCL runtime, also a direct import, but its major version is part of the
 # file name — sycl8.dll on one bundle, sycl9.dll on the next — so it is matched
@@ -43,8 +45,7 @@ set(SUSHIRUNTIME_REQUIRED_RUNTIME_LIBRARIES
 # except the packaging oracle. The patterns deliberately do not match the debug
 # variants (sycl9d.dll).
 set(SUSHIRUNTIME_RUNTIME_LIBRARY_PATTERNS
-    "sycl.dll" "sycl[0-9].dll" "sycl[0-9][0-9].dll"
-    CACHE STRING "Filename patterns for the versioned SYCL runtime")
+    "sycl.dll" "sycl[0-9].dll" "sycl[0-9][0-9].dll")
 
 # Unified Runtime adapters. The SYCL runtime dlopen's these by name at device
 # discovery, so they appear in no import table, and a bundle ships only the ones
@@ -59,8 +60,7 @@ set(SUSHIRUNTIME_OPTIONAL_RUNTIME_LIBRARIES
     ur_adapter_cuda
     ur_adapter_level_zero
     ur_adapter_level_zero_v2
-    ur_win_proxy_loader
-    CACHE STRING "Runtime libraries staged when present, skipped when not")
+    ur_win_proxy_loader)
 
 # Where to look for them: beside the SYCL compiler, and in the vcpkg tree. Both
 # are derived rather than configured, so a machine that can build the runtime can
