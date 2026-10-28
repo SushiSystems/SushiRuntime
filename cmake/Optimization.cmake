@@ -38,6 +38,13 @@ else()
     endif()
 endif()
 
+# Debug host code carries line tables only: stack traces keep their files and lines at a fraction of
+# full debug information's compile memory, object size and link time. The later flag overrides -g.
+if(NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    target_compile_options(sushiruntime_perf INTERFACE
+        "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CXX>>:-gline-tables-only>")
+endif()
+
 if(SR_NATIVE_ARCH)
     message(STATUS "SR_NATIVE_ARCH=ON — binaries target this machine's ISA and are not portable.")
 endif()

@@ -28,8 +28,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/setup-oneapi
       - uses: ./.github/actions/setup-sr
-      - name: sr build --distributed --no-cuda
-        run: sr build --distributed --no-cuda
+      - name: sr build --type release --distributed --no-cuda
+        run: sr build --type release --distributed --no-cuda
       - name: sr bench
         run: sr bench
 

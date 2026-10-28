@@ -29,7 +29,7 @@ from .services import docker as docker_svc
 from .services import packaging as packaging_svc
 from .services import project as project_svc
 from .services import select as select_svc
-from .services.project import BuildType, DistributedRole, Label
+from .services.project import K_BENCH_TYPE, K_DEFAULT_TYPE, BuildType, DistributedRole, Label
 
 K_DISTRIBUTION = "sushiruntime-cli"
 K_TOOLCHAIN = "Toolchain"
@@ -50,6 +50,18 @@ app = typer.Typer(
 )
 
 register_root_options(app, distribution=K_DISTRIBUTION)
+
+
+def _tree_type(name: BuildType, asan: bool) -> BuildType:
+    """Returns the sanitizer build type when `--asan` is given, else *name*."""
+    return BuildType.asan if asan else name
+
+
+def _tree_option(default: BuildType, what: str) -> BuildType:
+    """Returns the `--type` option of a command that finds the tree of a build type."""
+    return typer.Option(
+        default, "--type", case_sensitive=False,
+        help=f"Build type of the tree {what}. Each type has its own tree under build/.")
 
 
 def _group(help_text: str) -> typer.Typer:
@@ -90,16 +102,19 @@ def toolchain(
     "build",
     rich_help_panel=K_PROJECT,
     epilog="sr build\n"
-           "sr build --type debug --clean  # Rebuild from an empty tree\n"
+           "sr build --type release  # The Release tree, build/default-release\n"
+           "sr build --clean  # Rebuild the Debug tree from empty\n"
            "sr build --no-cuda  # Portable CPU/OpenCL path\n"
            "sr build --jobs 8  # Compile with eight parallel jobs\n"
+           "sr build --report  # Time and memory per kind of build edge\n"
            "sr build --distributed --no-test\n"
            "sr build --build-dir build/pkg-x --lean  # What a consumer's package build runs",
 )
 def build(
     type: BuildType = typer.Option(
-        BuildType.release, "--type", "-t", case_sensitive=False,
-        help="Build type. 'asan' uses an isolated build-asan tree (CUDA off)."),
+        K_DEFAULT_TYPE, "--type", "-t", case_sensitive=False,
+        help="Build type; each type has its own tree under build/. "
+             "'asan' uses an isolated build/asan-release tree (CUDA off)."),
     distributed: bool = typer.Option(
         False, "--distributed", help="Enable the master-worker distributed layer."),
     no_cuda: bool = typer.Option(
@@ -116,19 +131,23 @@ def build(
         help="Skip compiling the test suite (SR_BUILD_TESTS=OFF). Tests are built by default."),
     jobs: Optional[int] = typer.Option(
         None, "--jobs", "-j", min=1,
-        help="Parallel compile jobs. When omitted the build tool decides, and "
+        help="Parallel compile jobs. When omitted the hardware threads are used, and "
              "CMAKE_BUILD_PARALLEL_LEVEL is honoured."),
     build_dir: Optional[str] = typer.Option(
         None, "--build-dir", metavar="PATH",
-        help="Build in this tree, below the checkout, instead of build/ or build-asan/."),
+        help="Build in this tree, below the checkout, instead of the tree of the build type."),
     lean: bool = typer.Option(
         False, "--lean",
         help="Build no tests, examples or benchmarks; what a package build of the runtime uses."),
+    report: bool = typer.Option(
+        False, "--report",
+        help="Print the time and the peak memory of each kind of build edge, and the lowest "
+             "free memory. Writes build_report.json into the tree."),
 ):
     """Configure and build the project."""
     raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean, force,
                                        tests=not no_test, jobs=jobs, lean=lean,
-                                       build_dir=build_dir))
+                                       build_dir=build_dir, report=report))
 
 
 @app.command(
@@ -152,8 +171,9 @@ def test(
     module: Optional[str] = typer.Option(
         None, "--module", "-m",
         help="Run the tests of one module (its folder name); replaces --label."),
+    type: BuildType = _tree_option(K_DEFAULT_TYPE, "the tests run from"),
     asan: bool = typer.Option(
-        False, "--asan", help="Run the build-asan tree instead of build."),
+        False, "--asan", help="Run the build/asan-release tree; the same as --type asan."),
     repeat: int = typer.Option(
         0, "--repeat", "-r", min=0,
         help="Re-run each test up to N times, stopping on the first failure "
@@ -168,7 +188,8 @@ def test(
     For GTest-level knobs (shuffle, break-on-failure) run the binary directly:
     sr run sr_api_tests -- --gtest_shuffle --gtest_break_on_failure
     """
-    raise typer.Exit(project_svc.test(label, distributed, filter, asan, repeat, module, jobs))
+    raise typer.Exit(project_svc.test(
+        label, distributed, filter, _tree_type(type, asan), repeat, module, jobs))
 
 
 @app.command(
@@ -182,9 +203,10 @@ def bench(
         False, "--distributed", help="Run against a distributed-enabled build."),
     filter: Optional[str] = typer.Option(
         None, "--filter", "-f", help="--gtest_filter passed to every benchmark program."),
+    type: BuildType = _tree_option(K_BENCH_TYPE, "the benchmarks run from"),
 ):
     """Run every benchmark program the build produced."""
-    raise typer.Exit(project_svc.bench(distributed, filter))
+    raise typer.Exit(project_svc.bench(distributed, filter, type))
 
 
 @app.command(
@@ -204,14 +226,16 @@ def run(
     distributed: Optional[DistributedRole] = typer.Option(
         None, "--distributed", metavar="ROLE", case_sensitive=False,
         help="Forward a role (master|worker) to the application."),
+    type: BuildType = _tree_option(K_DEFAULT_TYPE, "the executable is run from"),
     asan: bool = typer.Option(
-        False, "--asan", help="Run binaries from the build-asan tree."),
+        False, "--asan",
+        help="Run binaries from the build/asan-release tree; the same as --type asan."),
 ):
     """Run a built executable. Args after `--` are forwarded to it."""
     role = distributed.value if distributed else None
     raise typer.Exit(
         project_svc.run(target=target, sort=sort, distributed_role=role,
-                        asan=asan, app_args=list(ctx.args))
+                        build_type=_tree_type(type, asan), app_args=list(ctx.args))
     )
 
 
@@ -226,7 +250,8 @@ def run(
 def package(
     build_dir: Optional[str] = typer.Option(
         None, "--build-dir", metavar="PATH",
-        help="The built tree to install from, below the checkout. Defaults to build."),
+        help="The built tree to install from, below the checkout. Defaults to the tree of --type."),
+    type: BuildType = _tree_option(K_DEFAULT_TYPE, "that is installed"),
     prefix: Optional[str] = typer.Option(
         None, "--prefix",
         help="Where to install; the directory is emptied first. Defaults to build/dist."),
@@ -245,7 +270,7 @@ def package(
     """
     raise typer.Exit(
         packaging_svc.package(prefix=prefix, archive=not no_archive, force=force,
-                              build_dir=build_dir))
+                              build_dir=build_dir, build_type=type))
 
 
 @app.command(
@@ -254,7 +279,7 @@ def package(
     epilog="sr clean",
 )
 def clean():
-    """Remove the build/ and build-asan/ trees."""
+    """Remove the build tree of every build type, the sanitizer tree included."""
     raise typer.Exit(project_svc.clean())
 
 
@@ -343,16 +368,18 @@ register_diagnostic_commands(
     rich_help_panel=K_DIAGNOSTICS,
     epilog="sr env\n"
            "sr env --all  # Every variable, not just the build-relevant ones\n"
-           "sr env --asan  # The build-asan tree's environment",
+           "sr env --type release  # The Release tree's environment\n"
+           "sr env --asan  # The build/asan-release tree's environment",
 )
 def env(
     all: bool = typer.Option(
         False, "--all", "-a", help="Show every variable, not just build-relevant ones."),
+    type: BuildType = _tree_option(K_DEFAULT_TYPE, "whose environment is printed"),
     asan: bool = typer.Option(
-        False, "--asan", help="Inspect the build-asan tree's environment."),
+        False, "--asan", help="Inspect the build/asan-release tree's environment."),
 ):
     """Print the environment cmake/ctest/run subprocesses execute under."""
-    raise typer.Exit(diag_svc.env_dump(show_all=all, asan=asan))
+    raise typer.Exit(diag_svc.env_dump(show_all=all, build_type=_tree_type(type, asan)))
 
 
 register_provision_commands(app, ModuleProvision(

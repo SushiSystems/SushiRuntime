@@ -39,9 +39,9 @@ class _Console:
 def checkout(tmp_path, monkeypatch):
     """Returns a configured checkout beside its owner's home; commands are recorded, not run."""
     root = tmp_path / "work" / "repo"
-    (root / "build").mkdir(parents=True)
+    (root / "build" / "default-debug").mkdir(parents=True)
     (tmp_path / "home").mkdir()
-    (root / "build" / "CMakeCache.txt").write_text("", encoding="utf-8")
+    (root / "build" / "default-debug" / "CMakeCache.txt").write_text("", encoding="utf-8")
     commands: list[list[str]] = []
     recorder = _Console()
     monkeypatch.setattr(packaging, "find_project_root", lambda: root)
@@ -81,7 +81,7 @@ def test_package_refuses_a_protected_prefix_even_with_force(checkout, monkeypatc
     root, commands, recorder = checkout
     monkeypatch.chdir(root)
     assert packaging.package(prefix=prefix, archive=False, force=True) == 1
-    assert (root / "build" / "CMakeCache.txt").is_file()
+    assert (root / "build" / "default-debug" / "CMakeCache.txt").is_file()
     assert commands == []
     assert len(recorder.errors) == 1 and reason in recorder.errors[0]
 
@@ -94,7 +94,8 @@ def test_package_with_force_clears_a_foreign_directory_and_marks_it(checkout, tm
     (foreign / "old.txt").write_text("stale", encoding="utf-8")
     assert packaging.package(prefix=str(foreign), archive=False, force=True) == 0
     assert [entry.name for entry in foreign.iterdir()] == [K_STAGE_MARKER]
-    assert commands[0][1:] == ["--install", str(root / "build"), "--prefix", str(foreign)]
+    assert commands[0][1:] == ["--install", str(root / "build" / "default-debug"),
+                               "--prefix", str(foreign)]
 
 
 def test_package_clears_its_default_stage_without_force(checkout):

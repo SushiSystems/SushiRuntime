@@ -50,9 +50,9 @@ toolchain paths of one machine are kept (`cli/config.local.toml`).
 ## 3. Building and testing a change
 
 ```bash
-sr build                  # Release
-sr build --type debug     # Debug
-sr build --type asan      # AddressSanitizer, in the build-asan/ tree
+sr build                  # Debug, in build/default-debug
+sr build --type release   # Release, in build/default-release
+sr build --type asan      # AddressSanitizer, in the build/asan-release tree
 sr build --distributed    # also compile the distributed module
 
 sr test                           # small, medium and large

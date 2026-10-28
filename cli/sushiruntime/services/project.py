@@ -20,8 +20,10 @@ import re
 import shutil
 from pathlib import Path
 
-from sushicore import cmake_cache
+from sushicore import build_admission, build_report, cmake_cache
+from sushicore.build_tree import K_DEFAULT_BUILD_TYPE, refuse_another_build_type, tree_dir
 from sushicore.cmake_driver import CMakeDriver
+from sushicore.errors import SushiCoreError
 from sushicore.proc import Runner
 from sushicore.provision.sushi_packages import PackageError
 
@@ -31,7 +33,7 @@ from ..env import load_build_env
 from . import discovery, library_packages
 from .install_hint import toolchain_install_command
 
-# The ASan tree is separate from build/, CUDA off, Release and UBSan too; see cli/README.md.
+# The ASan tree is its own tree, CUDA off, Release and UBSan too; see cli/README.md.
 ASAN_FLAGS = ("-fsanitize=address,undefined -fno-sanitize-recover=undefined "
               "-fno-omit-frame-pointer -g -O1")
 
@@ -57,6 +59,17 @@ class BuildType(str, enum.Enum):
     debug = "debug"
     relwithdebinfo = "relwithdebinfo"
     asan = "asan"
+
+
+#: The build type of `sr build`, `test`, `run` and `package` when none is named.
+K_DEFAULT_TYPE = BuildType(K_DEFAULT_BUILD_TYPE.lower())
+
+#: The build type of `sr bench`: a benchmark measures the build that ships.
+K_BENCH_TYPE = BuildType.release
+
+#: The name of the tree of every build type but the sanitizer one, and of the sanitizer tree.
+K_DEFAULT_TREE = "default"
+K_SANITIZER_TREE = "asan"
 
 
 class DistributedRole(str, enum.Enum):
@@ -89,6 +102,17 @@ _CMAKE_BUILD_TYPE = {
 }
 
 
+def build_tree(root: Path, build_type: BuildType, requested: str | None = None) -> Path:
+    """Return the tree of *build_type*: *requested* below *root* when given, else its own.
+
+    The tree is `build/default-<type>`; the sanitizer tree is `build/asan-release`.
+    """
+    if requested:
+        return root / requested
+    name = K_SANITIZER_TREE if build_type == BuildType.asan else K_DEFAULT_TREE
+    return tree_dir(root, name, _CMAKE_BUILD_TYPE[build_type])
+
+
 def thread_sanitizer_applies(is_windows: bool, build_type: BuildType) -> bool:
     """Report whether cmake/Sanitizers.cmake wires ThreadSanitizer into this build.
 
@@ -100,13 +124,6 @@ def thread_sanitizer_applies(is_windows: bool, build_type: BuildType) -> bool:
     if is_windows:
         return False
     return build_type in (BuildType.debug, BuildType.relwithdebinfo)
-
-
-def _build_dir(root: Path, asan: bool, requested: str | None = None) -> Path:
-    """Return the tree of this build: *requested* below *root* when given, else the default one."""
-    if requested:
-        return root / requested
-    return root / ("build-asan" if asan else "build")
 
 
 _RUNNER = Runner(console, PROFILE.program)
@@ -173,14 +190,12 @@ def _flags_fingerprint() -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
 
 
-def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
+def _configure_stamp(dist: str, gpu_backend: str,
                      tests: bool, toolchain: str, cxx: str,
                      sushi_definitions: tuple[str, ...] = (), lean: bool = False) -> str:
-    """A stable key of every configure-affecting knob.
+    """A stable key of every configure-affecting knob but the build type.
 
-    A single-config generator (Ninja) bakes the build type into the cache, so a
-    stamp that tracked only ``dist`` let ``-t release`` then ``-t debug`` reuse
-    the tree and silently hand back a Release binary. Keying on the full tuple
+    The build type picks the tree, so it is not part of the key. Keying on the full tuple
     forces a reconfigure whenever any of these change — including the flag
     constants themselves, via _flags_fingerprint().
 
@@ -199,7 +214,7 @@ def _configure_stamp(dist: str, build_type: str, gpu_backend: str,
     in another folder, has to reach the cache the same way. ``lean`` leaves out the examples
     and the benchmarks as well as the tests.
     """
-    return (f"{dist}|{build_type}|{gpu_backend}|{'ON' if tests else 'OFF'}"
+    return (f"{dist}|{gpu_backend}|{'ON' if tests else 'OFF'}"
             f"|{toolchain}|{cxx}|{'|'.join(sushi_definitions)}|{_flags_fingerprint()}"
             f"{'|lean' if lean else ''}")
 
@@ -430,15 +445,31 @@ def _package_compiler(cfg: Config, force: bool, env: dict[str, str],
     return _resolve_compiler(cfg, force, env, asan=asan)
 
 
+def _launcher_arguments(cfg: Config, tree: Path) -> list[str]:
+    """Return the `-D` arguments that put every compile and link of *tree* behind the gate."""
+    cache = build_admission.compiler_cache(cfg.ccache_exe)
+    return [f"-D{entry}" for entry in build_admission.launcher_defines(tree, cache)]
+
+
+def _print_report(tree: Path, offset: int) -> None:
+    """Print the build that appended to the ninja log of *tree* from *offset*, and write it down."""
+    report = build_report.of_build(tree, offset, build_admission.state_dir(tree))
+    for line in report.lines():
+        console.info(line)
+    console.info(f"Report: {report.write(tree)}")
+
+
 def build(build_type: BuildType, distributed: bool = False,
           no_cuda: bool = False, clean: bool = False, force: bool = False,
           tests: bool = True, jobs: int | None = None, lean: bool = False,
-          build_dir: str | None = None) -> int:
+          build_dir: str | None = None, report: bool = False) -> int:
     """Configure and build the project.
 
     Args:
+        jobs: Parallel compile jobs; the hardware threads when None.
         lean: Builds no tests, examples or benchmarks; what a library package is built as.
-        build_dir: The tree to build in, below the project root; the default tree when None.
+        build_dir: The tree to build in, below the project root; the tree of the type when None.
+        report: Prints what each kind of build edge cost and writes `build_report.json`.
     """
     console.header("Project Build")
     root = find_project_root()
@@ -446,16 +477,23 @@ def build(build_type: BuildType, distributed: bool = False,
     asan = build_type == BuildType.asan
     dist = "ON" if distributed else "OFF"
     cmake_build_type = _CMAKE_BUILD_TYPE[build_type]
-    tree = _build_dir(root, asan, build_dir)
+    tree = build_tree(root, build_type, build_dir)
     tests = tests and not lean
 
     if clean:
         _DRIVER.clean_tree(tree)
 
+    try:
+        refuse_another_build_type(tree, cmake_build_type)
+        build_admission.refuse_a_stopped_gate(tree)
+    except SushiCoreError as error:
+        console.error(str(error))
+        return 1
+
     if distributed:
         console.info("Distributed master-worker layer: ON")
     if asan:
-        console.info("AddressSanitizer: ON (isolated build-asan tree, CUDA OFF)")
+        console.info(f"AddressSanitizer: ON (isolated {tree.name} tree, CUDA OFF)")
     console.info(f"Tests: {'ON' if tests else 'OFF'}")
     if lean:
         console.info("Lean: no tests, examples or benchmarks")
@@ -486,9 +524,9 @@ def build(build_type: BuildType, distributed: bool = False,
     library_packages.prepend_run_dirs(cfg, env, run_dirs)
 
     sushi_definitions = tuple(library_packages.configure_arguments(cfg, root, packages))
-    stamp_key = _configure_stamp(dist, cmake_build_type, gpu_backend, tests,
+    stamp_key = _configure_stamp(dist, gpu_backend, tests,
                                  cfg.toolchain, cfg.cxx, sushi_definitions, lean)
-    if _DRIVER.needs_configure(tree, cfg.generator, root=root) or             _stamp_differs(tree, stamp_key):
+    if _DRIVER.needs_configure(tree, cfg.generator, root=root) or _stamp_differs(tree, stamp_key):
         console.info(f"Configuring CMake... (type={build_type.value}, "
                      f"distributed={dist}, gpu={gpu_backend}, tests={'ON' if tests else 'OFF'})")
         if tree.is_dir():
@@ -508,6 +546,7 @@ def build(build_type: BuildType, distributed: bool = False,
             args += _LEAN_ARGS
         # Each library package reaches CMake as <Package>_DIR; CMake never downloads.
         args += list(sushi_definitions)
+        args += _launcher_arguments(cfg, tree)
         rc = _DRIVER.configure(args, cwd=root, env=env)
         if rc != 0:
             console.error("CMake configure failed.")
@@ -517,7 +556,11 @@ def build(build_type: BuildType, distributed: bool = False,
         library_packages.record_run_dirs(tree, run_dirs)
 
     console.info("Building...")
-    rc = _DRIVER.compile(cfg, tree, cwd=root, env=env, config=cmake_build_type, jobs=jobs)
+    offset = build_report.ninja_log_offset(tree)
+    rc = _DRIVER.compile(cfg, tree, cwd=root, env=env, config=cmake_build_type,
+                         jobs=jobs or build_admission.hardware_threads())
+    if report:
+        _print_report(tree, offset)
     if rc == 0:
         console.success("Build completed successfully!")
     else:
@@ -526,12 +569,12 @@ def build(build_type: BuildType, distributed: bool = False,
 
 
 def test(label: Label | None, distributed: bool = False, filter: str | None = None,
-         asan: bool = False, repeat: int = 0, module: str | None = None,
+         build_type: BuildType = K_DEFAULT_TYPE, repeat: int = 0, module: str | None = None,
          jobs: int | None = None) -> int:
     console.header("Project Test")
     root = find_project_root()
     cfg = load_config()
-    build_dir = _build_dir(root, asan)
+    build_dir = build_tree(root, build_type)
     if not build_dir.is_dir():
         console.error(f"{build_dir.name}/ not found. Run `sr build` first.")
         return 1
@@ -561,11 +604,12 @@ def test(label: Label | None, distributed: bool = False, filter: str | None = No
         filter=filter, repeat=repeat, jobs=jobs)
 
 
-def bench(distributed: bool = False, filter: str | None = None) -> int:
+def bench(distributed: bool = False, filter: str | None = None,
+          build_type: BuildType = K_BENCH_TYPE) -> int:
     console.header("Project Bench")
     root = find_project_root()
     cfg = load_config()
-    build_dir = _build_dir(root, False)
+    build_dir = build_tree(root, build_type)
     programs = sorted(p for p in (build_dir / "tests").glob("sr_*_benchmarks*")
                       if p.is_file() and p.suffix in ("", ".exe"))
     if not programs:
@@ -590,12 +634,12 @@ def bench(distributed: bool = False, filter: str | None = None) -> int:
 
 
 def run(target: str | None = None, sort: bool = False,
-        distributed_role: str | None = None, asan: bool = False,
+        distributed_role: str | None = None, build_type: BuildType = K_DEFAULT_TYPE,
         app_args: list[str] | None = None) -> int:
     console.header("Project Run")
     root = find_project_root()
     cfg = load_config()
-    build_dir = _build_dir(root, asan)
+    build_dir = build_tree(root, build_type)
     if not build_dir.is_dir():
         console.error(f"{build_dir.name}/ not found. Run `sr build` first.")
         return 1
@@ -604,7 +648,7 @@ def run(target: str | None = None, sort: bool = False,
     # An inherited CUDA_LAUNCH_BLOCKING=1 serializes every kernel and breaks the overlap tests.
     env.pop("CUDA_LAUNCH_BLOCKING", None)
     # ASan binaries are built CUDA-off, so the run is pinned to the OpenCL CPU device.
-    if asan:
+    if build_type == BuildType.asan:
         env.setdefault("ONEAPI_DEVICE_SELECTOR", "opencl:cpu")
         env.setdefault("ASAN_OPTIONS", "detect_leaks=0:abort_on_error=1")
         console.info(f"ASan run: device={env['ONEAPI_DEVICE_SELECTOR']}")
@@ -622,15 +666,15 @@ def run(target: str | None = None, sort: bool = False,
     return _RUNNER.run([str(exe), *forwarded], root, env)
 
 
-def clean_tree(root: Path, asan: bool = False) -> None:
-    _DRIVER.clean_tree(_build_dir(root, asan))
+def clean_tree(root: Path, build_type: BuildType = K_DEFAULT_TYPE) -> None:
+    _DRIVER.clean_tree(build_tree(root, build_type))
 
 
 def clean() -> int:
     console.header("Project Clean")
     root = find_project_root()
-    clean_tree(root, asan=False)
-    clean_tree(root, asan=True)
+    for build_type in BuildType:
+        clean_tree(root, build_type)
     return 0
 
 
@@ -639,7 +683,7 @@ def docs() -> int:
     console.header("Doxygen Generation")
     root = find_project_root()
     cfg = load_config()
-    env = load_build_env(cfg, _build_dir(root, False))
+    env = load_build_env(cfg, build_tree(root, K_DEFAULT_TYPE))
     doxyfile = root / ".config" / "doxygen" / "Doxyfile"
     (root / _API_SITE_DIR).mkdir(parents=True, exist_ok=True)
     return _DRIVER.doxygen(cfg, doxyfile, root, env, install_hint=_DOXYGEN_HINT)

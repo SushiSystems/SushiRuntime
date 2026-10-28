@@ -34,7 +34,7 @@ class FakeDriver:
 def driver(monkeypatch, tmp_path) -> FakeDriver:
     """Returns a fake driver installed in the test service over an existing build folder."""
     fake = FakeDriver()
-    (tmp_path / "build").mkdir()
+    (tmp_path / "build" / "default-debug").mkdir(parents=True)
     quiet = SimpleNamespace(**{
         name: lambda *arguments, **options: None
         for name in ("header", "info", "success", "error")

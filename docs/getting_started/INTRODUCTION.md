@@ -18,7 +18,7 @@ git clone https://github.com/SushiSystems/SushiRuntime.git
 cd SushiRuntime
 hub install-cli sushiruntime      # or, without hub: pipx install ./cli
 sr setup                          # hwloc and a SYCL toolchain
-sr build                          # a release build in build/
+sr build                          # a Debug build in build/default-debug
 sr test
 ```
 

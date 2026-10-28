@@ -17,6 +17,7 @@ from sushicore.diag import Diagnostics
 from .. import config as config_module
 from .. import console
 from ..config import PROFILE
+from .project import K_DEFAULT_TYPE, BuildType, build_tree
 
 
 def _build_env(cfg, build_dir: Path):
@@ -38,13 +39,13 @@ DIAGNOSTICS = Diagnostics(
 )
 
 
-def env_dump(show_all: bool = False, asan: bool = False) -> int:
-    """Print the build environment, optionally that of the sanitizer tree.
+def env_dump(show_all: bool = False, build_type: BuildType = K_DEFAULT_TYPE) -> int:
+    """Print the build environment of the tree of *build_type*.
 
-    SushiRuntime configures ASan into a separate ``build-asan`` tree so a
+    Each build type has its own tree, and ASan its own ``asan-release`` one, so a
     sanitized build never shares object files with the ordinary one; asking
     which environment a build ran under therefore has to say *which* build.
     """
     root = config_module.find_project_root()
-    build_dir = root / ("build-asan" if asan else "build")
+    build_dir = build_tree(root, build_type)
     return DIAGNOSTICS.env_dump(show_all=show_all, build_dir=build_dir)

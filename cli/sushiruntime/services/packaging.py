@@ -15,7 +15,7 @@ from pathlib import Path
 from .. import console
 from ..config import Config, find_project_root, load_config
 from ..env import load_build_env
-from .project import _build_dir, _DRIVER, _RUNNER
+from .project import _DRIVER, _RUNNER, K_DEFAULT_TYPE, BuildType, build_tree
 from .stage_tree import StageRules, StageTree, StageTreeError
 
 
@@ -36,19 +36,21 @@ def _cpack(cfg: Config) -> str:
 
 
 def package(prefix: str | None = None, archive: bool = True, force: bool = False,
-            build_dir: str | None = None) -> int:
+            build_dir: str | None = None, build_type: BuildType = K_DEFAULT_TYPE) -> int:
     """Install the built tree to a prefix and archive it.
 
     :param prefix: Where to install. Defaults to build/dist under the project root.
     :param archive: Whether to run CPack over the configured generators.
     :param force: Whether a prefix holding files this command did not stage is cleared.
-    :param build_dir: The built tree to install from, below the project root. Defaults to build.
+    :param build_dir: The built tree to install from, below the project root. Defaults to the
+        tree of *build_type*.
+    :param build_type: The build type whose tree is installed when no *build_dir* is given.
     :return: 0 when every requested step succeeded, non-zero on the first failure.
     """
     console.header("Project Package")
     root = find_project_root()
     cfg = load_config()
-    built = _build_dir(root, asan=False, requested=build_dir)
+    built = build_tree(root, build_type, build_dir)
 
     if not (built / "CMakeCache.txt").is_file():
         console.error(f"No configured build tree at {built}. Run `sr build` first.")

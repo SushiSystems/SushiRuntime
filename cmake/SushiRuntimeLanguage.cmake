@@ -22,6 +22,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# --- C runtime (MSVC ABI) ---
+# Every build type takes the release C runtime, so a Debug tree needs no debug build of its dependencies.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+# A Debug tree links the Release build of an imported package, which shares that runtime.
+set(CMAKE_MAP_IMPORTED_CONFIG_DEBUG Release RelWithDebInfo MinSizeRel "")
+# The MSVC STL's container layout depends on this; libstdc++ and libc++ never read it.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
+    add_compile_definitions("$<$<COMPILE_LANGUAGE:CXX>:_ITERATOR_DEBUG_LEVEL=0>")
+endif()
+
 if(SR_ENABLE_DISTRIBUTED)
     message(STATUS "Distributed layer enabled (master-worker offload).")
 endif()

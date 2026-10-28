@@ -58,8 +58,9 @@ class StageRules:
             return "the project root"
         if root.is_relative_to(path):
             return "an ancestor of the project root"
-        if path == self.build_dir.resolve():
-            return "the build tree being packaged"
+        built = self.build_dir.resolve()
+        if path == built or built.is_relative_to(path):
+            return "the build tree being packaged or a folder that holds it"
         return None
 
 

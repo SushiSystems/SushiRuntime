@@ -261,14 +261,14 @@ jobs:
         with:
           path: .ccache
           key: ccache-linux-icpx-tsan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
-      - name: sr test --label small
+      - name: sr test --type relwithdebinfo --label small
         env:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1
-        run: sr test --label small
-      - name: sr test --label medium
+        run: sr test --type relwithdebinfo --label small
+      - name: sr test --type relwithdebinfo --label medium
         env:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1
-        run: sr test --label medium
+        run: sr test --type relwithdebinfo --label medium
 
   downstream:
     name: SushiBLAS against this commit

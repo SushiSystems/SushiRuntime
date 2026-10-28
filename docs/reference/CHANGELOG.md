@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 2026-10-28 — cli: Breaking change: Made the build, test, run, package and env commands default to Debug, and gave each build type its own tree, `build/default-<type>` (`project.py`).
+- 2026-10-28 — cli: Ran every `sr build` behind the memory gate with the hardware threads as the job count, and added `sr build --report` and `--type` on the tree commands (`cli.py`).
+- 2026-10-28 — cli: Made `sr package` refuse a prefix that holds the tree it installs from (`stage_tree.py`).
+- 2026-10-28 — cmake: Linked every build type against the release C runtime and mapped a Debug link to the Release build of imported packages (`SushiRuntimeLanguage.cmake`).
+- 2026-10-28 — cmake: Gave Debug host code line tables only and kept device code at `-O3` in every build type (`SushiRuntimeSyclTarget.cmake`).
 - 2026-10-27 — cmake: Required correctly rounded fp32 division and square root on an ahead-of-time device under `SR_DETERMINISTIC_FP`, so a CUDA kernel rounds as its host pass does (`GpuBackend.cmake`).
 - 2026-10-27 — scheduler: Let a task body claim its device's clock pairing as a kernel does, so a plan of task bodies alone keeps its device spans (`task_scheduler.cpp`, `chain_run.cpp`, `profiling_ledger.hpp`).
 - 2026-10-27 — cmake: Made the staged runtime library lists plain variables, so a change to them reaches a build tree configured before it (`SushiRuntimeRedistributables.cmake`).

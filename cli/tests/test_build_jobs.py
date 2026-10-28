@@ -42,7 +42,7 @@ def driver(monkeypatch, tmp_path) -> FakeDriver:
     fake = FakeDriver()
     packages = SimpleNamespace(definitions=lambda: [], run_dirs=lambda platform: [])
     config = SimpleNamespace(is_windows=False, platform="linux", toolchain="intel-llvm",
-                             cxx="clang++", generator="Ninja",
+                             cxx="clang++", generator="Ninja", ccache_exe="",
                              sushi_definitions=lambda root, packaged: [],
                              sushi_packages=lambda *arguments, **options: packages)
     quiet = SimpleNamespace(**{
@@ -66,10 +66,11 @@ def test_build_passes_jobs_to_the_compile_call(driver):
     assert [call["jobs"] for call in driver.compiles] == [6]
 
 
-def test_build_leaves_jobs_unset_when_none_is_given(driver):
-    """Without a job count the driver gets None and adds no --parallel."""
+def test_build_uses_the_hardware_threads_when_no_jobs_are_given(driver, monkeypatch):
+    """Without a job count the driver gets the job count the memory gate is sized for."""
+    monkeypatch.setattr(project.build_admission, "hardware_threads", lambda: 11)
     assert project.build(BuildType.release) == 0
-    assert [call["jobs"] for call in driver.compiles] == [None]
+    assert [call["jobs"] for call in driver.compiles] == [11]
 
 
 @pytest.mark.parametrize("arguments, expected", [

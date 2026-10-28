@@ -179,7 +179,8 @@ def test_the_package_command_takes_the_tree_and_no_archive(monkeypatch):
     result = CliRunner().invoke(cli.app, ["package", "--build-dir", "build/pkg-x", "--prefix",
                                           "out", "--no-archive", "--force"])
     assert result.exit_code == 0
-    assert seen == [{"prefix": "out", "archive": False, "force": True, "build_dir": "build/pkg-x"}]
+    assert seen == [{"prefix": "out", "archive": False, "force": True, "build_dir": "build/pkg-x",
+                     "build_type": BuildType.debug}]
 
 
 def test_stack_cxx_outranks_the_configured_compiler():

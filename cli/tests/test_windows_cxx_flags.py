@@ -62,7 +62,7 @@ def test_an_asan_configure_states_the_asan_flags_only():
 
 def test_the_base_flags_are_part_of_the_configure_stamp(monkeypatch):
     """A change to BASE_CXX_FLAGS configures an existing tree again."""
-    before = project._configure_stamp("OFF", "Release", "auto", True, "intel-llvm", "")
+    before = project._configure_stamp("OFF", "auto", True, "intel-llvm", "")
     monkeypatch.setattr(project, "BASE_CXX_FLAGS", "-fsycl")
-    after = project._configure_stamp("OFF", "Release", "auto", True, "intel-llvm", "")
+    after = project._configure_stamp("OFF", "auto", True, "intel-llvm", "")
     assert before != after

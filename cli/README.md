@@ -112,10 +112,25 @@ directory and then builds and runs a consumer against it with nothing else on `P
 
 ## sushiruntime/services/project.py
 
+### The trees
+
+Each build type has its own tree, `build/default-<type>`: `default-debug`, `default-release` and
+`default-relwithdebinfo`. The type picks the tree, so switching type recompiles nothing, and the
+configure stamp does not hold the type. A configure that would give a tree another type than the
+one cached in it is refused by `sushicore.build_tree.refuse_another_build_type`. Debug is the
+default for `build`, `test`, `run`, `package` and `env`; `bench` defaults to Release. `--type`
+picks another tree, and `--build-dir` names a tree outright.
+
+Every configure passes the compile and link launchers of the memory gate
+(`sushicore.build_admission.launcher_defines`), through ccache when `ccache_exe` or `PATH` has it.
+The compile gets `--parallel` with the hardware threads unless `--jobs` is given, and a stop
+file in `build/build_gate/` makes the build refuse to start. `sr build --report` prints the time
+and the peak memory of each kind of build edge, and writes `build_report.json` into the tree.
+
 ### The ASan tree
 
-AddressSanitizer builds go to an isolated `build-asan` tree, kept apart from the CUDA `build/`
-so that neither clobbers the other. ASan forces CUDA off, because the CUDA Unified Runtime
+AddressSanitizer builds go to an isolated `build/asan-release` tree, kept apart from the CUDA
+trees so that neither clobbers the other. ASan forces CUDA off, because the CUDA Unified Runtime
 adapter's `urVirtualMemReserve` collides with the virtual address range ASan reserves. The
 tree stays a Release build so that the automatic TSan block for Debug and RelWithDebInfo in
 `CMakeLists.txt` never fires; TSan and ASan cannot coexist. For the same reason `sr run --asan`

@@ -113,27 +113,38 @@ environment variable `SR_SYCL_TOOLCHAIN` overrides the recorded choice for one c
 Configures when needed and builds the library and its test programs.
 
 ```bash
-sr build                  # Release build (the default)
-sr build --type debug     # Debug build
-sr build --type asan      # AddressSanitizer, in a separate build-asan/ tree, CUDA off
+sr build                  # Debug build (the default), in build/default-debug
+sr build --type release   # Release build, in build/default-release
+sr build --type asan      # AddressSanitizer, in the separate build/asan-release tree, CUDA off
 sr build --distributed    # also compile the distributed module
 sr build --no-cuda        # build the CPU/OpenCL path instead of detecting accelerators
 sr build --no-test        # skip the test programs (SR_BUILD_TESTS=OFF)
 sr build --clean          # delete the build tree first
 sr build --jobs 8         # compile with eight parallel jobs
+sr build --report         # print the time and peak memory of each kind of build edge
 sr build --force          # fall back to clang++/clang when the selected toolchain's
                           # compiler is missing
 ```
 
-`--type` (`-t`) takes `release`, `debug`, `relwithdebinfo` or `asan`. The `asan` type builds
-into `build-asan/` with CUDA off, so it does not touch `build/`.
+`--type` (`-t`) takes `debug`, `release`, `relwithdebinfo` or `asan`. Each type builds in its
+own tree, `build/default-<type>`, so switching type recompiles nothing; the `asan` type builds
+into `build/asan-release` with CUDA off. A configure that would give a tree another type than
+the one cached in it is refused. `test`, `run`, `package` and `env` take `--type` too and
+default to Debug; `bench` defaults to Release.
 
-`--jobs N` (`-j N`) passes `--parallel N` to the compile step. Without it the build tool picks
-the job count, and `CMAKE_BUILD_PARALLEL_LEVEL` applies when set.
+`--jobs N` (`-j N`) passes `--parallel N` to the compile step. Without it the job count is the
+hardware threads, and `CMAKE_BUILD_PARALLEL_LEVEL` applies when set. Every compile and link
+runs behind a memory gate that admits it when its measured peak fits in the free memory;
+creating `build/build_gate/stop` makes the gate refuse every edge until the file is deleted.
+
+`--report` prints, per kind of build edge, the count, the total and longest time and the peak
+memory, then the lowest free memory of the run and the slowest edges. It writes the same into
+`build_report.json` in the tree.
 
 The ASan tree leaves the benchmark programs out. They replace the global `operator new` and
 `operator delete` to count allocations, which AddressSanitizer also replaces; on Windows the
-two collide at link time. Run benchmarks from `build/`.
+two collide at link time. Run benchmarks from a Release tree: `sr build --type release`, then
+`sr bench`.
 
 AddressSanitizer on Windows needs an intel/llvm bundle that ships compiler-rt. When
 `lib/clang/<version>/lib/windows/clang_rt.asan_dynamic-x86_64.lib` is missing from the
@@ -174,7 +185,8 @@ CMake project.
 
 ```bash
 sr test --filter 'Steal.*'                       # only tests whose name matches the regex
-sr test --asan                                   # run the build-asan/ tree instead of build/
+sr test --type release                           # run the Release tree instead of the Debug one
+sr test --asan                                   # run the build/asan-release tree (--type asan)
 sr test --distributed                            # run against a build made with --distributed
 sr test --module scheduler                       # the tests of one module, whatever their size
 sr test --repeat 50                              # re-run each test up to 50 times, stop on the first failure
@@ -190,7 +202,8 @@ option after `--`.
 
 ## `sr bench`
 
-Runs every `sr_<module>_benchmarks` program in `build/tests/`, one after another. A benchmark
+Runs every `sr_<module>_benchmarks` program in `build/default-release/tests/`, one after another.
+`--type` picks another tree. A benchmark
 measures and is not a test, so CTest does not register these programs.
 
 ```bash
@@ -227,12 +240,13 @@ sr run sr_distributed_worker -- --master 127.0.0.1:5555
 
 `--distributed ROLE` appends `--distributed=<role>` to the program's arguments, for a program
 that reads its role from that flag. It accepts `master` and `worker`; any other value stops the
-command with exit code 2 before the program starts. `--asan` runs programs from `build-asan/`.
+command with exit code 2 before the program starts. `--type` picks the tree the program runs
+from, Debug by default, and `--asan` runs programs from `build/asan-release/`.
 
 ## `sr clean` and `sr docs`
 
 ```bash
-sr clean       # remove the build/ and build-asan/ trees
+sr clean       # remove the tree of every build type, the ASan tree included
 sr docs        # build the API reference into build/docs/api-site/html
 sr docs bundle --release 1.0.0   # pack the manual and the reference for docs.sushisystems.io
 ```
@@ -253,7 +267,8 @@ does not exist. The archive's layout and the keys of `docs/publish.toml` are in
 
 ## `sr package`
 
-Installs the built `build/` tree to a prefix and runs CPack over it.
+Installs a built tree to a prefix and runs CPack over it: the tree of `--type` (Debug by
+default), or the one `--build-dir` names.
 
 ```bash
 sr package                       # install to build/dist, then archive
@@ -266,7 +281,8 @@ The prefix is emptied before the install, so a file the current build does not p
 stay from an earlier run. `sr package` therefore limits what it empties:
 
 - It never stages into a filesystem root, the home directory, the project root, a directory
-  above the project root, or the `build/` tree. `--force` does not change this.
+  above the project root, or the build tree being packaged or the folder that holds it.
+  `--force` does not change this.
 - A `--prefix` that does not exist, or is empty, is used as it is.
 - A `--prefix` that holds files is emptied only when `sr package` staged it before, which the
   `.sr-stage` file it writes into every stage tree tells. Any other directory with files needs
@@ -308,7 +324,8 @@ sr config         # print the resolved configuration and the source of each valu
 
 sr env            # print the environment cmake, ctest and run subprocesses get
 sr env --all      # every variable, not only the build-relevant ones (-a)
-sr env --asan     # the environment of the build-asan/ tree
+sr env --type release   # the environment of the Release tree
+sr env --asan     # the environment of the build/asan-release tree
 ```
 
 ## `sr setup`, `sr doctor`, `sr link` and `sr unlink`

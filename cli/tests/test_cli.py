@@ -21,6 +21,7 @@ from typer.testing import CliRunner
 from sushiruntime import cli, console
 from sushiruntime.cli import app
 from sushiruntime.services import diag, project
+from sushiruntime.services.project import BuildType
 
 pytestmark = pytest.mark.medium
 
@@ -117,11 +118,12 @@ def test_config_runs_the_diagnostics_object(monkeypatch):
 @pytest.mark.parametrize("flag", ["--all", "-a"])
 def test_env_keeps_its_own_asan_flag(flag, monkeypatch):
     """`sr env` passes --all and --asan to the runtime's own environment report."""
-    seen: list[tuple[bool, bool]] = []
+    seen: list[tuple[bool, BuildType | None]] = []
     monkeypatch.setattr(
-        diag, "env_dump", lambda show_all=False, asan=False: seen.append((show_all, asan)) or 0)
+        diag, "env_dump",
+        lambda show_all=False, build_type=None: seen.append((show_all, build_type)) or 0)
     assert CliRunner().invoke(app, ["env", flag, "--asan"]).exit_code == 0
-    assert seen == [(True, True)]
+    assert seen == [(True, BuildType.asan)]
 
 
 def test_run_forwards_a_known_role(monkeypatch):
