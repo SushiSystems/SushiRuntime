@@ -126,10 +126,10 @@ sr build --force          # fall back to clang++/clang when the selected toolcha
                           # compiler is missing
 ```
 
-`--type` (`-t`) takes `debug`, `release`, `relwithdebinfo` or `asan`. Each type builds in its
-own tree, `build/default-<type>`, so switching type recompiles nothing; the `asan` type builds
-into `build/asan-release` with CUDA off. A configure that would give a tree another type than
-the one cached in it is refused. `test`, `run`, `package` and `env` take `--type` too and
+`--type` (`-t`) takes `debug`, `release`, `relwithdebinfo`, `asan` or `tsan`. Each type builds
+in its own tree, `build/default-<type>`, so switching type recompiles nothing; the `asan` type
+builds into `build/asan-release` with CUDA off, and `tsan` into `build/tsan-relwithdebinfo` on
+Linux. A configure that would give a tree another type than the one cached in it is refused. `test`, `run`, `package` and `env` take `--type` too and
 default to Debug; `bench` defaults to Release.
 
 `--jobs N` (`-j N`) passes `--parallel N` to the compile step. Without it the job count is the
@@ -161,8 +161,8 @@ there:
 - It passes `-fsanitize-address-use-after-return=never`, so use-after-return detection is off
   on Windows. With it on, a `throw` from inside a `catch` handler faults in the MSVC unwinder.
 
-ThreadSanitizer is added to Debug and RelWithDebInfo builds outside Windows; see
-`cmake/Sanitizers.cmake`.
+ThreadSanitizer is built only by `--type tsan` outside Windows, which passes
+`-DSR_THREAD_SANITIZER=ON`; no other type implies it. See `cmake/Sanitizers.cmake`.
 
 ## `sr test`
 

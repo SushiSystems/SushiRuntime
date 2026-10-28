@@ -114,7 +114,8 @@ def build(
     type: BuildType = typer.Option(
         K_DEFAULT_TYPE, "--type", "-t", case_sensitive=False,
         help="Build type; each type has its own tree under build/. "
-             "'asan' uses an isolated build/asan-release tree (CUDA off)."),
+             "'asan' uses an isolated build/asan-release tree (CUDA off); 'tsan' builds "
+             "ThreadSanitizer into build/tsan-relwithdebinfo."),
     distributed: bool = typer.Option(
         False, "--distributed", help="Enable the master-worker distributed layer."),
     no_cuda: bool = typer.Option(

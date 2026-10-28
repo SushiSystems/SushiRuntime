@@ -98,6 +98,7 @@ def test_the_default_build_type_is_debug():
     (BuildType.release, "default-release"),
     (BuildType.relwithdebinfo, "default-relwithdebinfo"),
     (BuildType.asan, "asan-release"),
+    (BuildType.tsan, "tsan-relwithdebinfo"),
 ])
 def test_each_build_type_has_its_own_tree(build_type, folder, tmp_path):
     """The tree of a build type is build/<name>-<type>, and ASan keeps its own name."""
@@ -180,6 +181,23 @@ def test_the_configure_carries_both_launcher_entries(build):
     assert len(compile_entries) == 1 and len(link_entries) == 1
     assert "build_gate.py" in compile_entries[0]
     assert compile_entries[0].split("=", 1)[1] == link_entries[0].split("=", 1)[1]
+
+
+@pytest.mark.parametrize("build_type", [BuildType.debug, BuildType.relwithdebinfo,
+                                         BuildType.release, BuildType.asan])
+def test_no_build_type_but_tsan_asks_for_thread_sanitizer(build, build_type):
+    """ThreadSanitizer is never implied by Debug or RelWithDebInfo."""
+    assert project.build(build_type) == 0
+    assert project.K_THREAD_SANITIZER_OPTION not in build.driver.configures[0]
+
+
+def test_the_tsan_type_asks_for_thread_sanitizer_in_its_own_tree(build):
+    """`--type tsan` configures RelWithDebInfo with the option, in build/tsan-relwithdebinfo."""
+    assert project.build(BuildType.tsan) == 0
+    arguments = build.driver.configures[0]
+    assert project.K_THREAD_SANITIZER_OPTION in arguments
+    assert "-DCMAKE_BUILD_TYPE=RelWithDebInfo" in arguments
+    assert build.driver.compiles[0][0] == build.root / "build" / "tsan-relwithdebinfo"
 
 
 def test_the_compile_gets_the_hardware_threads_without_jobs(build, monkeypatch):

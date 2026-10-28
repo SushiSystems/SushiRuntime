@@ -132,8 +132,7 @@ and the peak memory of each kind of build edge, and writes `build_report.json` i
 AddressSanitizer builds go to an isolated `build/asan-release` tree, kept apart from the CUDA
 trees so that neither clobbers the other. ASan forces CUDA off, because the CUDA Unified Runtime
 adapter's `urVirtualMemReserve` collides with the virtual address range ASan reserves. The
-tree stays a Release build so that the automatic TSan block for Debug and RelWithDebInfo in
-`CMakeLists.txt` never fires; TSan and ASan cannot coexist. For the same reason `sr run --asan`
+tree stays a Release build and never sets `SR_THREAD_SANITIZER`; TSan and ASan cannot coexist. For the same reason `sr run --asan`
 pins the run to the OpenCL CPU device, so the SYCL runtime never loads the CUDA adapter.
 
 On Linux the tree carries UndefinedBehaviorSanitizer as well, with
@@ -261,8 +260,8 @@ and silently breaks the async overlap tests.
 `sr` links SushiLog as a built package and never compiles it. Before the configure,
 `build` asks `cfg.sushi_packages` for the packages of its closure, with the compiler the build
 uses, and passes `-D<Package>_DIR` for each to CMake; no `-D<NAME>_DIR` reaches CMake for a
-packaged library. A library CLI's `--type` has no `asan`, so an `asan` build links release
-packages. The runtime passes no option to a library.
+packaged library. The packages take the build type sushicore's `package_build_type`
+names: release for every type but `relwithdebinfo`. The runtime passes no option to a library.
 
 The run-time folders of the packages go first on `PATH` (Windows) or `LD_LIBRARY_PATH` (Linux)
 for the build, and `build` records them in `.sushiruntime_package_dirs.json` in the tree, so

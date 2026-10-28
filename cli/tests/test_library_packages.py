@@ -99,7 +99,7 @@ def consumer(monkeypatch, tmp_path):
 def test_build_asks_for_the_closure_with_its_own_compiler(consumer):
     """The configure resolves the packages of the closure with the compiler it builds with."""
     assert project.build(BuildType.debug) == 0
-    assert consumer.asked == [{"root": consumer.root, "build_type": "debug", "options": {},
+    assert consumer.asked == [{"root": consumer.root, "build_type": "release", "options": {},
                                "compiler": "clang++"}]
 
 

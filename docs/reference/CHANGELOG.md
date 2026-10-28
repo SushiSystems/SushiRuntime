@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-28 — cmake: Breaking change: Made ThreadSanitizer opt-in through `SR_THREAD_SANITIZER`, set only by the new `sr build --type tsan`; Debug and RelWithDebInfo no longer imply it (`Sanitizers.cmake`).
+- 2026-10-28 — cli: Took the build type of the library packages from sushicore's `package_build_type`, so a Debug build links Release packages (`library_packages.py`).
+- 2026-10-28 — ci: Ran the ThreadSanitizer job as `--type tsan` and dropped the ccache launcher variables, since the memory gate finds ccache on `PATH` (`.github/workflows/ci.yml`).
 - 2026-10-28 — cli: Breaking change: Made the build, test, run, package and env commands default to Debug, and gave each build type its own tree, `build/default-<type>` (`project.py`).
 - 2026-10-28 — cli: Ran every `sr build` behind the memory gate with the hardware threads as the job count, and added `sr build --report` and `--type` on the tree commands (`cli.py`).
 - 2026-10-28 — cli: Made `sr package` refuse a prefix that holds the tree it installs from (`stage_tree.py`).

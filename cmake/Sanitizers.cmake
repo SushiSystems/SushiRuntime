@@ -7,10 +7,11 @@
 # Sanitizers.cmake — the project's sanitizer policy as a target.
 #
 # Single responsibility: define an INTERFACE target `sushiruntime_sanitizers`. On the
-# clang/gcc (non-MSVC) toolchains a Debug or RelWithDebInfo build automatically
-# gets ThreadSanitizer, matching the previous global behavior. AddressSanitizer is
-# NOT wired here: it is injected explicitly by the CLI (`sr build --type asan`) via
-# CMAKE_CXX_FLAGS into an isolated build tree, and TSan and ASan cannot coexist.
+# clang/gcc (non-MSVC) toolchains SR_THREAD_SANITIZER adds ThreadSanitizer; no build type
+# implies it, and the CLI sets it for its isolated tree only (`sr build --type tsan`).
+# AddressSanitizer is NOT wired here: it is injected explicitly by the CLI
+# (`sr build --type asan`) via CMAKE_CXX_FLAGS into an isolated build tree, and TSan and
+# ASan cannot coexist.
 #
 # The target always exists (possibly empty) so the root can link it
 # unconditionally; when no sanitizer applies it contributes nothing.
@@ -21,7 +22,7 @@ add_library(sushiruntime_sanitizers INTERFACE)
 # (not "IntelLLVM"), so the Windows exclusion below must match on "Clang"
 # generally, not a toolchain-specific id.
 if(NOT (MSVC OR (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")))
-    if(CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
+    if(SR_THREAD_SANITIZER)
         # The SYCL device pass is left uninstrumented: the device ThreadSanitizer of the SYCL
         # runtime cannot reserve its shadow memory beside the host one and aborts. The opt-out is
         # spelled -Xsycl-target-frontend because ccache drops -Xarch_device and its argument.

@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
+from sushicore.build_tree import package_build_type
 from sushicore.provision.sushi_packages import PackageSet, RunDirs
 from sushicore.provision.sushi_packages import configure_arguments  # noqa: F401  (callers take it from here)
 
@@ -20,19 +21,6 @@ from ..config import Config
 
 #: The file of a build tree that names the run-time folders of the packages it linked.
 K_RUN_DIRS_FILE = ".sushiruntime_package_dirs.json"
-
-#: The library packages are built as release when the consumer builds with a sanitizer.
-K_SANITIZER_BUILD = "asan"
-K_PACKAGE_BUILD_FOR_SANITIZER = "release"
-
-
-def package_build_type(build_type: str) -> str:
-    """Return the build type the library packages are built in for a consumer's *build_type*.
-
-    A library CLI's ``--type`` does not take ``asan``, so a sanitizer build of the consumer links
-    release packages.
-    """
-    return K_PACKAGE_BUILD_FOR_SANITIZER if build_type == K_SANITIZER_BUILD else build_type
 
 
 def resolve(cfg: Config, root: Path, build_type: str, compiler: str,

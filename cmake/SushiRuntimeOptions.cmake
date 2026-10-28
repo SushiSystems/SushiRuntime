@@ -37,7 +37,10 @@ if(NOT SR_PROFILE_LEVEL MATCHES "^[0-3]$")
         "2 (fine zones) or 3 (per-element zones).")
 endif()
 
-# How it is compiled (Determinism.cmake, Optimization.cmake).
+# How it is compiled (Determinism.cmake, Optimization.cmake, Sanitizers.cmake).
+option(SR_THREAD_SANITIZER
+    "Build with ThreadSanitizer, off Windows; set by the CLI's tsan tree, never implied by a build type"
+    OFF)
 option(SR_DETERMINISTIC_FP
     "Compile under the reproducible floating-point contract: no fast-math, no FMA contraction"
     ON)

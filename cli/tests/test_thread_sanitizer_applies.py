@@ -20,13 +20,16 @@ from sushiruntime.services.project import BuildType, thread_sanitizer_applies
 pytestmark = pytest.mark.small
 
 
-def test_windows_relwithdebinfo_never_gets_tsan():
+def test_windows_never_gets_tsan():
     assert thread_sanitizer_applies(True, BuildType.relwithdebinfo) is False
+    assert thread_sanitizer_applies(True, BuildType.tsan) is False
 
 
-def test_linux_debug_gets_tsan():
-    assert thread_sanitizer_applies(False, BuildType.debug) is True
+def test_linux_tsan_type_gets_tsan():
+    assert thread_sanitizer_applies(False, BuildType.tsan) is True
 
 
-def test_linux_release_does_not_get_tsan():
-    assert thread_sanitizer_applies(False, BuildType.release) is False
+@pytest.mark.parametrize("build_type", [BuildType.debug, BuildType.relwithdebinfo,
+                                         BuildType.release, BuildType.asan])
+def test_no_other_linux_type_implies_tsan(build_type):
+    assert thread_sanitizer_applies(False, build_type) is False

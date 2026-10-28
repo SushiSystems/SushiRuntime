@@ -235,7 +235,7 @@ Four INTERFACE targets carry the compile settings. `cmake/BuildPolicy.cmake` com
 | --- | --- | --- |
 | `sushiruntime_warnings` | `-Wall -Wextra -Werror -pedantic`, or `/W4 /permissive-` | No |
 | `sushiruntime_perf` | `-ftls-model=initial-exec`; `-march=native` or `/arch:AVX2` under `SR_NATIVE_ARCH` | No |
-| `sushiruntime_sanitizers` | ThreadSanitizer in Debug and RelWithDebInfo builds, outside Windows | No |
+| `sushiruntime_sanitizers` | ThreadSanitizer when `SR_THREAD_SANITIZER` is ON (the CLI's `tsan` tree), outside Windows | No |
 | `sushiruntime_deterministic_fp` | `-ffp-contract=off -fno-fast-math`, or `/fp:precise` | Yes, through the installed package |
 
 The kernels are templates a consumer's translation units compile, so a replay is byte-equal

@@ -59,6 +59,7 @@ class BuildType(str, enum.Enum):
     debug = "debug"
     relwithdebinfo = "relwithdebinfo"
     asan = "asan"
+    tsan = "tsan"
 
 
 #: The build type of `sr build`, `test`, `run` and `package` when none is named.
@@ -67,9 +68,18 @@ K_DEFAULT_TYPE = BuildType(K_DEFAULT_BUILD_TYPE.lower())
 #: The build type of `sr bench`: a benchmark measures the build that ships.
 K_BENCH_TYPE = BuildType.release
 
-#: The name of the tree of every build type but the sanitizer one, and of the sanitizer tree.
+#: The name of the tree of every build type but the sanitizer ones, and of each sanitizer tree.
 K_DEFAULT_TREE = "default"
 K_SANITIZER_TREE = "asan"
+K_THREAD_SANITIZER_TREE = "tsan"
+
+#: The CMake option that wires ThreadSanitizer in (cmake/Sanitizers.cmake); only `--type tsan` sets it.
+K_THREAD_SANITIZER_OPTION = "-DSR_THREAD_SANITIZER=ON"
+
+_TREE_NAME = {
+    BuildType.asan: K_SANITIZER_TREE,
+    BuildType.tsan: K_THREAD_SANITIZER_TREE,
+}
 
 
 class DistributedRole(str, enum.Enum):
@@ -99,17 +109,19 @@ _CMAKE_BUILD_TYPE = {
     BuildType.debug: "Debug",
     BuildType.relwithdebinfo: "RelWithDebInfo",
     BuildType.asan: "Release",  # ASan stays Release; flags injected manually
+    BuildType.tsan: "RelWithDebInfo",  # TSan needs the symbols to name a race
 }
 
 
 def build_tree(root: Path, build_type: BuildType, requested: str | None = None) -> Path:
     """Return the tree of *build_type*: *requested* below *root* when given, else its own.
 
-    The tree is `build/default-<type>`; the sanitizer tree is `build/asan-release`.
+    The tree is `build/default-<type>`; the sanitizer trees are `build/asan-release` and
+    `build/tsan-relwithdebinfo`.
     """
     if requested:
         return root / requested
-    name = K_SANITIZER_TREE if build_type == BuildType.asan else K_DEFAULT_TREE
+    name = _TREE_NAME.get(build_type, K_DEFAULT_TREE)
     return tree_dir(root, name, _CMAKE_BUILD_TYPE[build_type])
 
 
@@ -118,12 +130,12 @@ def thread_sanitizer_applies(is_windows: bool, build_type: BuildType) -> bool:
 
     Mirrors that file's `if(NOT (MSVC OR (WIN32 AND Clang)))` guard: every Windows
     toolchain this CLI configures is either MSVC or the Clang-based intel/llvm
-    driver, so the guard excludes Windows outright regardless of toolchain, and
-    TSan only ever attaches to a Debug or RelWithDebInfo build on another platform.
+    driver, so the guard excludes Windows outright regardless of toolchain. Elsewhere
+    only `--type tsan` sets the option; no other build type implies it.
     """
     if is_windows:
         return False
-    return build_type in (BuildType.debug, BuildType.relwithdebinfo)
+    return build_type == BuildType.tsan
 
 
 _RUNNER = Runner(console, PROFILE.program)
@@ -504,8 +516,11 @@ def build(build_type: BuildType, distributed: bool = False,
     else:
         gpu_backend = "auto"
 
+    if build_type == BuildType.tsan and not thread_sanitizer_applies(cfg.is_windows, build_type):
+        console.error("--type tsan: ThreadSanitizer is not built on Windows.")
+        return 1
     if thread_sanitizer_applies(cfg.is_windows, build_type):
-        console.info(f"ThreadSanitizer: ON (--type {build_type.value})")
+        console.info(f"ThreadSanitizer: ON (isolated {tree.name} tree)")
 
     env = load_build_env(cfg, tree)
 
@@ -541,7 +556,7 @@ def build(build_type: BuildType, distributed: bool = False,
                                          gpu_backend, dist, asan, tests, cc, cxx)
             # A benchmark replaces operator new, which TSan's runtime defines as well.
             if thread_sanitizer_applies(cfg.is_windows, build_type):
-                args.append(f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}")
+                args += [K_THREAD_SANITIZER_OPTION, f"-DSR_BUILD_BENCHMARKS={ASAN_BENCHMARKS}"]
         if lean:
             args += _LEAN_ARGS
         # Each library package reaches CMake as <Package>_DIR; CMake never downloads.

@@ -26,8 +26,6 @@ env:
   SR_SYCL_TOOLCHAIN: oneapi
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_MAXSIZE: 2G
-  CMAKE_C_COMPILER_LAUNCHER: ccache
-  CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
 jobs:
   checks:
@@ -253,22 +251,22 @@ jobs:
           restore-keys: ccache-linux-icpx-tsan-
       # The SYCL runtime, oneTBB and the OpenCL CPU device are not instrumented, so TSan reports
       # races inside their own thread pools; this option keeps it to the code built here.
-      - name: sr build --type relwithdebinfo --distributed
-        run: sr build --type relwithdebinfo --distributed
+      - name: sr build --type tsan --distributed
+        run: sr build --type tsan --distributed
       # Saved even when a later step fails or times out, so the next run starts warm.
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: always()
         with:
           path: .ccache
           key: ccache-linux-icpx-tsan-${{ hashFiles('**/CMakeLists.txt', 'cmake/**', 'cli/sushiruntime/services/project.py') }}-${{ github.sha }}
-      - name: sr test --type relwithdebinfo --label small
+      - name: sr test --type tsan --label small
         env:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1
-        run: sr test --type relwithdebinfo --label small
-      - name: sr test --type relwithdebinfo --label medium
+        run: sr test --type tsan --label small
+      - name: sr test --type tsan --label medium
         env:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1
-        run: sr test --type relwithdebinfo --label medium
+        run: sr test --type tsan --label medium
 
   downstream:
     name: SushiBLAS against this commit
