@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 from sushicore.proc import Runner
+from sushicore.provision.package_install import CapturedRun
 from typer.testing import CliRunner
 
 from sushiruntime.cli import app
@@ -20,15 +21,20 @@ pytestmark = pytest.mark.medium
 
 
 class _Console:
-    """Records the error lines a service prints and ignores the rest."""
+    """Records the error and information lines a service prints and ignores the rest."""
 
     def __init__(self) -> None:
         """Starts with no recorded line."""
         self.errors: list[str] = []
+        self.infos: list[str] = []
 
     def error(self, message: str) -> None:
         """Records one error line."""
         self.errors.append(message)
+
+    def info(self, message: str) -> None:
+        """Records one information line."""
+        self.infos.append(message)
 
     def __getattr__(self, name: str):
         """Returns a printer that prints nothing, for every other console call."""
@@ -52,7 +58,30 @@ def checkout(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setattr(
         Runner, "run", lambda self, cmd, cwd, env=None: commands.append(list(cmd)) or 0)
+    monkeypatch.setattr(
+        packaging, "_capture",
+        lambda cmd, cwd, env=None: commands.append(list(cmd)) or CapturedRun(0, ""))
     return root, commands, recorder
+
+
+def test_package_prints_one_line_for_the_install(checkout, monkeypatch):
+    """cmake's per-file lines are held back and one summary names the stage."""
+    root, _, recorder = checkout
+    monkeypatch.setattr(packaging, "_capture",
+                        lambda cmd, cwd, env=None: CapturedRun(0, "-- Installing: nowhere\n"))
+    assert packaging.package(archive=False) == 0
+    assert recorder.infos[-2:] == [
+        f"Installed 0 files, 0 up to date, into {root / 'build' / 'dist'}",
+        "Run `sr test --label package` to check it actually works."]
+
+
+def test_package_shows_cmakes_output_when_the_install_fails(checkout, monkeypatch):
+    """A failed install exits with cmake's code and its output in one error."""
+    _, _, recorder = checkout
+    monkeypatch.setattr(packaging, "_capture",
+                        lambda cmd, cwd, env=None: CapturedRun(2, "CMake Error: no install rules"))
+    assert packaging.package(archive=False) == 2
+    assert recorder.errors == ["cmake --install exited 2:\nCMake Error: no install rules"]
 
 
 def test_package_refuses_a_foreign_directory_with_one_error_line(checkout, tmp_path):

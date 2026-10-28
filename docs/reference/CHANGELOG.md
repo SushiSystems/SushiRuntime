@@ -2,7 +2,9 @@
 
 ## Unreleased
 
+- 2026-10-29 — cli: Fixed `sr package` printing every line of `cmake --install`; it prints one line counting the files through sushicore 0.10.3, and cmake's output only on a failure (`packaging.py`).
 - 2026-10-29 — cli: Fixed the command-list tests that the `backlog` and `design` groups broke; sushicore's groups are checked by name only (`test_cli.py`, `test_help_screen.py`).
+
 ## v0.5.0 — 2026-10-29
 
 - 2026-10-29 — cli: Asked for sushicore 0.10.2 and registered its `backlog` and `design` command groups beside `docs` (`cli.py`).

@@ -12,11 +12,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from sushicore.provision.package_install import capture_command, install_summary
+
 from .. import console
 from ..config import Config, find_project_root, load_config
 from ..env import load_build_env
 from .project import _DRIVER, _RUNNER, K_DEFAULT_TYPE, BuildType, build_tree
 from .stage_tree import StageRules, StageTree, StageTreeError
+
+#: Runs the install with its output held back; replaced in tests.
+_capture = capture_command
 
 
 def _cpack(cfg: Config) -> str:
@@ -71,12 +76,13 @@ def package(prefix: str | None = None, archive: bool = True, force: bool = False
         console.error(str(error))
         return 1
 
-    console.info(f"Installing to {stage}")
-    rc = _RUNNER.run([_DRIVER.cmake(cfg), "--install", str(built), "--prefix", str(stage)],
-                     root, env)
-    if rc != 0:
-        console.error("cmake --install failed.")
-        return rc
+    install = [_DRIVER.cmake(cfg), "--install", str(built), "--prefix", str(stage)]
+    console.command(" ".join(install))
+    result = _capture(install, root, env)
+    if result.code != 0:
+        console.error(f"cmake --install exited {result.code}:\n{result.output.rstrip()}")
+        return result.code
+    console.info(install_summary(result.output, stage))
 
     if archive:
         cpack_config = built / "CPackConfig.cmake"
