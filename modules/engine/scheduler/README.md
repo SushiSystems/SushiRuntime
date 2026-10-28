@@ -8,6 +8,10 @@ symbol or passage it explains, and that header's file block cites this page.
 
 ## event_polling.hpp
 
+### Header and source
+
+`source/event_polling.cpp` holds every member that is not a template or a per-event inline member.
+
 ### PolledEvent::ready
 
 A host task whose execute_host() runs inline returns an empty event, so there is nothing to wait on.
@@ -178,6 +182,22 @@ to compute a rate over an interval.
 migrate_tasks(from_worker_id, count) names no destination, because no implementation picks one: the
 tasks go where any worker can take them.
 
+## dispatch_record.hpp
+
+### dispatched_event
+
+execute_task() reads the profiling flag and the task's execution mode once per dispatch and passes
+them to the functions of this header. completed_host_event() builds the ready event of a host node
+that ran inline. For a submitted task it calls three more. claims_pairing()
+decides whether the dispatch may claim its device's clock pairing: with profiling on, a kernel
+always may and a host body only for a node that is not the sentinel. submitted_device_work() tells
+the `PairingClaim` whether to keep the claim: a host body that returned an empty event and handed
+none over gives it back. dispatched_event() builds the `EventPolling::PolledEvent` the worker
+pushes; under profiling it snapshots the node's widths and records the submitting thread.
+
+`run_host_node()` (`source/host_node_run.cpp`) runs and times a host node that submits no device
+work; `select_dispatch_queue()` (`source/dispatch_queue_selection.cpp`) picks the queue and device.
+
 ## failure_naming.hpp
 
 ### name_failure
@@ -319,12 +339,6 @@ the run's final nodes. Returning from execute() then destroys the CompiledGraph 
 still touch its nodes: a use-after-free the TSan lane catches in Node::~Node. inflight_ is
 incremented at submit() and at successor push and decremented after each poll release, so it reaches
 zero only once every node has been fully finalized. wait_quiescent() blocks the caller on that.
-
-### queue_device_index
-
-queue_device_index() serves one caller: the NUMA rotation, DeviceQueueSet::queue_or_numa_local(),
-which only a task that is not a graph node takes, returns a queue and not an index. On a profiled
-round the scan finds that queue's device so the dispatch still goes through dispatch_queue().
 
 ### arm_for_execution
 
@@ -670,8 +684,10 @@ co-location failure neither is cached, so each recurs on a later run.
 
 A task that is not a graph node has no placement. It takes
 `DeviceQueueSet::queue_or_numa_local()` for NUMA node 0, which rotates over the devices of
-that node and returns a queue. Every branch goes through `dispatch_queue()`, except that
-the rotation without profiling uses the returned queue and skips the index lookup. The device index
+that node and returns a queue. `select_dispatch_queue()` (`source/dispatch_queue_selection.cpp`)
+takes the profiling queue of the device under profiling and the plain one otherwise. The rotation
+without profiling uses the returned queue and skips the index lookup; with profiling, a scan of the
+device set finds the device behind the returned queue. The device index
 of the dispatch is the node's cached queue index, or the one the scan found; with profiling on and no
 device found for the queue, the dispatch takes the unprofiled queue and the ledger counts a dropped
 dispatch for the cause "no queue".

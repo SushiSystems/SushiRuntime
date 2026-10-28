@@ -6,6 +6,18 @@ with the rest; `sr run sr_scheduler_tests -- --gtest_filter='<pattern>'` runs on
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 
+## test_dispatch_record.cpp
+
+The file tests the pairing-claim policy and the polled events of a dispatch, without a device.
+
+| Test | What it proves |
+| --- | --- |
+| `NothingClaimsWithoutProfiling` | Nothing claims a pairing with profiling off. |
+| `AHostBodyClaimsOnlyForARealNode` | A kernel claims; a host body claims only for a node that is not the sentinel. |
+| `AnEmptyHostBodySubmittedNothing` | A host body with an empty event and no handed-over event submitted nothing. |
+| `AnInlineHostNodeIsReady` | A host node that ran inline is pushed ready and holds no event. |
+| `AnEmptyEventIsReadyAndUnprofiled` | An empty event is pushed ready, with no profiling fields when profiling is off. |
+
 ## test_event_polling.cpp
 
 `ActiveEventList` must never drop an in-flight event. A dropped event leaves the successors of a
@@ -186,7 +198,7 @@ The file tests describe_task() and name_failure(): a task by name, a node by nam
 
 | Test | What it proves |
 | --- | --- |
-| `ATaskIsDescribedByItsName` | Names itself and does nothing else. */ class NamedTask final : public Task { public: const char* name() const noexcept override { return "copy"; } std::optional<sushi_ptr<Task>> split() override { return std::nullopt; } bool is_splittable() const override { return false; } }; } /** @brief Tests that a plain task is described by its name. |
+| `ATaskIsDescribedByItsName` | A plain task is described by its name. |
 | `ANodeIsDescribedByNameAndIndex` | A node is described by its name and its registration index. |
 | `AFailureKeepsItsCodeAndNamesTheTask` | A named failure keeps the code and puts the task before the cause. |
 

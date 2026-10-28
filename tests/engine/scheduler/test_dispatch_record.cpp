@@ -1,0 +1,91 @@
+/**************************************************************************/
+/* test_dispatch_record.cpp                                               */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the PolyForm Noncommercial License 1.0.0 (the           */
+/* "License"); you may not use this file except in compliance with the    */
+/* License. You may obtain a copy of the License at                       */
+/*                                                                        */
+/*     https://polyformproject.org/licenses/noncommercial/1.0.0           */
+/*                                                                        */
+/* Noncommercial use is free. Commercial use requires a separate licence  */
+/* from Sushi Systems; see COMMERCIAL.md. The software is provided        */
+/* "as is", without warranty of any kind.                                 */
+
+/**
+ * @file test_dispatch_record.cpp
+ * @brief Tests the pairing-claim policy and the polled events of a dispatch, without a device.
+ * @see tests/engine/scheduler/README.md
+ * @author Mustafa Garip
+ */
+
+#include <vector>
+
+#include <gtest/gtest.h>
+#include <sycl/sycl.hpp>
+
+#include <SushiRuntime/task/node.hpp>
+
+#include <SushiRuntime/scheduler/dispatch_record.hpp>
+
+using namespace SushiRuntime;
+using namespace SushiRuntime::Internal::Scheduler;
+
+/** @brief Tests that nothing claims a pairing with profiling off. */
+TEST(Small_DispatchRecord, NothingClaimsWithoutProfiling)
+{
+    Internal::Graph::Node node;
+    EXPECT_FALSE(claims_pairing(false, false, &node));
+}
+
+/** @brief Tests that a kernel claims, a host body claims only for a node that is not the sentinel. */
+TEST(Small_DispatchRecord, AHostBodyClaimsOnlyForARealNode)
+{
+    Internal::Graph::Node node;
+    EXPECT_TRUE(claims_pairing(true, false, &node));
+    EXPECT_TRUE(claims_pairing(true, false, nullptr));
+    EXPECT_TRUE(claims_pairing(true, true, &node));
+    EXPECT_FALSE(claims_pairing(true, true, nullptr));
+    node.is_sentinel = true;
+    EXPECT_FALSE(claims_pairing(true, true, &node));
+}
+
+/** @brief Tests that a host body with an empty event and no handed-over event submitted nothing. */
+TEST(Small_DispatchRecord, AnEmptyHostBodySubmittedNothing)
+{
+    EXPECT_TRUE(submitted_device_work(false, sycl::event{}, {}));
+    EXPECT_FALSE(submitted_device_work(true, sycl::event{}, {}));
+    EXPECT_TRUE(submitted_device_work(true, sycl::event{}, std::vector<sycl::event>{sycl::event{}}));
+}
+
+/** @brief Tests that a host node that ran inline is pushed ready and holds no event. */
+TEST(Small_DispatchRecord, AnInlineHostNodeIsReady)
+{
+    Internal::Graph::Node node;
+    const EventPolling::PolledEvent pe = completed_host_event(&node);
+    EXPECT_TRUE(pe.ready);
+    EXPECT_FALSE(pe.has_event);
+    EXPECT_EQ(pe.task, &node);
+    EXPECT_EQ(pe.device_index, K_HOST_DEVICE_INDEX);
+}
+
+/** @brief Tests that an empty event is pushed ready, with no profiling fields when profiling is off. */
+TEST(Small_DispatchRecord, AnEmptyEventIsReadyAndUnprofiled)
+{
+    Internal::Graph::Node node;
+    const EventPolling::PolledEvent pe =
+        dispatched_event(sycl::event{}, &node, &node, false, 3, 1, {sycl::event{}});
+    EXPECT_TRUE(pe.ready);
+    EXPECT_FALSE(pe.has_event);
+    EXPECT_EQ(pe.task, &node);
+    EXPECT_EQ(pe.step, 3u);
+    EXPECT_EQ(pe.device_index, 1u);
+    EXPECT_EQ(pe.handed_over.size(), 1u);
+    EXPECT_EQ(pe.submit_thread, 0u);
+}

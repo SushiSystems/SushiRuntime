@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-28 — scheduler: Moved the members of `EventPolling` that are not templates into `event_polling.cpp`, which takes the logger, ledger and offload includes off the header.
+- 2026-10-28 — scheduler: Split `execute_task()` into the host-node run, the queue choice, the pairing claim and the polled event, reading the profiling flag once (`dispatch_record.hpp`).
 - 2026-10-28 — task: Added `submit_task()` and `submit_task_discarding()`, the one submission path `ChainRun` and `TaskScheduler` now share (`task_submission.hpp`).
 - 2026-10-28 — cmake: Made the package config find the consumer's CUDA toolkit for `SushiRuntime::gpu_offload`, which no longer exports the build machine's `--cuda-path` (`SushiRuntimeConfig.cmake.in`).
 - 2026-10-28 — build: Fixed device units failing under -Werror by giving the device -O3 as one `-Xarch_device` flag, since the driver reports the per-triple spelling unused while applying it (`SushiRuntimeSyclTarget.cmake`).

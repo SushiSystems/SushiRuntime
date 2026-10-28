@@ -7,6 +7,7 @@
 sushiruntime_add_module_tests(
     MODULE scheduler
     SOURCES
+        test_dispatch_record.cpp
         test_event_polling.cpp
         test_failure_naming.cpp
         test_offload_gate.cpp

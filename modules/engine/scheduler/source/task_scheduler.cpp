@@ -54,17 +54,18 @@
 #include <SushiRuntime/topology/affinity.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 #include "dispatch_placement.hpp"
+#include "dispatch_queue_selection.hpp"
+#include "host_node_run.hpp"
+#include <SushiRuntime/scheduler/dispatch_record.hpp>
 #include <SushiRuntime/work_stealing/work_stealing_deque.hpp>
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
-#include <SushiRuntime/task/node_widths.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
 
@@ -233,28 +234,6 @@ namespace SushiRuntime
             {
                 workers[i] = std::thread([this, i] { dispatch_loop(static_cast<int>(i)); });
             }
-        }
-
-        /**
-         * @brief Picks which of a device's two queues a dispatch uses.
-         */
-        sycl::queue& TaskScheduler::dispatch_queue(std::size_t index)
-        {
-            return profiling_active_.load(std::memory_order_acquire)
-                       ? devices_.queue(index, Internal::Device::QueueFlavour{false, true})
-                       : devices_.queue(index);
-        }
-
-        /**
-         * @brief Finds the device index behind an already-selected queue.
-         */
-        std::size_t TaskScheduler::queue_device_index(sycl::queue& queue) const
-        {
-            const std::size_t n = devices_.count();
-            for (std::size_t i = 0; i < n; ++i)
-                if (devices_.queue(i) == queue)
-                    return i;
-            return static_cast<std::size_t>(-1);
         }
 
         /**
@@ -672,47 +651,18 @@ namespace SushiRuntime
                 if (task->is_graph_node())
                     node = static_cast<SushiRuntime::Internal::Graph::Node*>(task);
 
-                // A pure-CPU host task needs no queue and runs inline (see design spec §0).
-                if (node && node->execution_mode() == Task::ExecutionMode::Host &&
-                    !node->submits_device_work())
-                {
-                    // Timing follows this run's plan flag, not the context-wide setting.
-                    if (profiling_active_.load(std::memory_order_acquire))
-                    {
-                        // Captured now, not read at reap, so a later round's step cannot land on this record.
-                        const std::uint32_t step = current_dispatch_step_.load(std::memory_order_acquire);
-                        const auto h0 = std::chrono::steady_clock::now();
-                        {
-                            SR_ZONE_FINE("dispatch.host");
-                            node->execute_native();
-                        }
-                        const auto h1 = std::chrono::steady_clock::now();
-                        const std::uint64_t h0_ns = static_cast<std::uint64_t>(
-                            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                h0.time_since_epoch()).count());
-                        const std::uint64_t h1_ns = static_cast<std::uint64_t>(
-                            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                h1.time_since_epoch()).count());
+                // Timing follows this run's plan flag, not the context-wide setting; read once per dispatch.
+                const bool profiling = profiling_active_.load(std::memory_order_acquire);
+                const bool host = task->execution_mode() == Task::ExecutionMode::Host;
 
-                        // Raw steady times, on the host device; the observation carries them as they are.
-                        if (auto* ledger = active_ledger_.load(std::memory_order_acquire))
-                        {
-                            // A host node submits no dispatch: the widths stay K_WIDTH_UNKNOWN and the device is the host.
-                            Internal::Observability::DispatchFacts facts;
-                            facts.node_index = node->registration_index;
-                            facts.invocation = step;
-                            facts.submit_thread = Internal::Profile::current_thread_index();
-                            ledger->record(facts, Internal::Observability::DispatchTimes{h0_ns, h0_ns, h1_ns});
-                        }
-                    }
-                    else
-                    {
-                        node->execute_native();
-                    }
-                    EventPolling::PolledEvent host_done;
-                    host_done.task = task;
-                    host_done.ready = true;
-                    events.push(host_done);
+                // A pure-CPU host task needs no queue and runs inline (see design spec §0).
+                if (node && host && !node->submits_device_work())
+                {
+                    // The step is captured now, not read at reap, so a later round's step cannot land on this record.
+                    const std::uint32_t step =
+                        profiling ? current_dispatch_step_.load(std::memory_order_acquire) : 0;
+                    run_host_node(*node, profiling, step, active_ledger_);
+                    events.push(completed_host_event(task));
                     return;
                 }
 
@@ -728,74 +678,35 @@ namespace SushiRuntime
                     }
                 }
 
-                // Every branch resolves an index and funnels through dispatch_queue().
-                std::uint32_t dispatch_device = K_HOST_DEVICE_INDEX;
-                sycl::queue& queue = [&]() -> sycl::queue&
-                {
-                    // The first dispatch of a node cached its placement in the block above.
-                    if (node)
-                    {
-                        dispatch_device = static_cast<std::uint32_t>(node->cached_queue_index_);
-                        return dispatch_queue(static_cast<std::size_t>(node->cached_queue_index_));
-                    }
+                const DispatchQueueSelection selection =
+                    select_dispatch_queue(devices_, node, profiling, K_TASK_NUMA_NODE);
+                const std::uint32_t dispatch_device = selection.device_index;
+                sycl::queue& queue = *selection.queue;
 
-                    sycl::queue& picked =
-                        devices_.queue_or_numa_local(std::nullopt, K_TASK_NUMA_NODE);
-
-                    // Skips the index lookup entirely on the default (non-profiled) path.
-                    if (!profiling_active_.load(std::memory_order_acquire))
-                        return picked;
-
-                    const std::size_t idx = queue_device_index(picked);
-                    if (idx != static_cast<std::size_t>(-1))
-                    {
-                        dispatch_device = static_cast<std::uint32_t>(idx);
-                        return dispatch_queue(idx);
-                    }
-
-                    // The queue is not in the device set, so the dispatch has no profiling queue to time on.
+                // The queue is not in the device set, so the dispatch has no profiling queue to time on.
+                if (selection.unmatched)
                     if (auto* ledger = active_ledger_.load(std::memory_order_acquire))
-                        ledger->note_drop(DropCause::NoQueue,
-                                          DropCounts::K_NO_NODE);
-                    return picked;
-                }();
+                        ledger->note_drop(DropCause::NoQueue, DropCounts::K_NO_NODE);
 
-                // A host body claims the run's clock pairing only for a real node; a kernel always may.
-                const bool host = task->execution_mode() == Task::ExecutionMode::Host;
-                const bool profiling = profiling_active_.load(std::memory_order_acquire);
-                Internal::Observability::ProfilingLedger* claimant = nullptr;
-                if (profiling && (!host || (node && !node->is_sentinel)))
-                    claimant = active_ledger_.load(std::memory_order_acquire);
-                Internal::Observability::PairingClaim claim(claimant, dispatch_device, task);
+                Internal::Observability::PairingClaim claim(
+                    claims_pairing(profiling, host, node) ? active_ledger_.load(std::memory_order_acquire)
+                                                           : nullptr,
+                    dispatch_device, task);
 
+                // Handed-over events are collected only for the ledger (modules/engine/scheduler/README.md).
                 sycl::event e;
                 std::vector<sycl::event> handed_over;
                 {
                     SR_ZONE_FINE("dispatch.submit");
-                    // Handed-over events are collected only for the ledger (modules/engine/scheduler/README.md).
                     e = Internal::Graph::submit_task(queue, *task, node ? &node->sycl_deps : nullptr,
                                                      (profiling && host) ? &handed_over : nullptr);
                 }
-                claim.settle(!host || !(e == sycl::event{}) || !handed_over.empty());
+                claim.settle(submitted_device_work(host, e, handed_over));
 
                 // An empty event is pushed as ready, never dropped (modules/engine/scheduler/README.md).
-                const bool ready = (e == sycl::event{});
-                const SushiRuntime::Internal::Graph::NodeWidths widths =
-                    (node && profiling_active_.load(std::memory_order_acquire))
-                        ? SushiRuntime::Internal::Graph::snapshot_widths(*node)
-                        : SushiRuntime::Internal::Graph::NodeWidths{};
-                EventPolling::PolledEvent dispatched;
-                dispatched.event = e;
-                dispatched.task = task;
-                dispatched.ready = ready;
-                dispatched.has_event = !ready;
-                dispatched.step = current_dispatch_step_.load(std::memory_order_acquire);
-                dispatched.widths = widths;
-                dispatched.handed_over = std::move(handed_over);
-                dispatched.device_index = dispatch_device;
-                if (profiling_active_.load(std::memory_order_acquire))
-                    dispatched.submit_thread = Internal::Profile::current_thread_index();
-                events.push(dispatched);
+                events.push(dispatched_event(e, task, node, profiling,
+                                             current_dispatch_step_.load(std::memory_order_acquire),
+                                             dispatch_device, std::move(handed_over)));
             });
             if (!ran)
                 abort_run(name_failure(*task, ran.error()));

@@ -304,21 +304,6 @@ namespace SushiRuntime
                 /** @brief Checks whether there are pending submissions left in the injector queue. */
                 bool has_pending_submissions();
 
-                /**
-                 * @brief Picks which of a device's two queues a dispatch uses.
-                 * @param index Device index in the queue set.
-                 * @return The profiling queue when the round's plan requested
-                 *         profiling, the plain queue otherwise.
-                 */
-                sycl::queue& dispatch_queue(std::size_t index);
-
-                /**
-                 * @brief Finds the device index behind an already-selected queue.
-                 * @param queue A plain queue of this scheduler's queue set.
-                 * @return Its device index, or SIZE_MAX if none matches.
-                 * @see modules/engine/scheduler/README.md
-                 */
-                std::size_t queue_device_index(sycl::queue& queue) const;
 
             public:
                 /**

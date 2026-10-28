@@ -30,36 +30,34 @@
 
 #include <algorithm>
 #include <atomic>
-#include <condition_variable>
-#include <mutex>
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <thread>
 #include <utility>
 #include <vector>
 #include <sycl/sycl.hpp>
-#include <SushiRuntime/scheduler/quiescence_latch.hpp>
-#include <SushiRuntime/task/task.hpp>
-#include <SushiRuntime/task/ready_sink.hpp>
-#include <SushiRuntime/observability/event_timestamps.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
-#include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/scheduler/scheduler_log_category.hpp>
+#include <SushiRuntime/report/node_event_record.hpp>
+#include <SushiRuntime/scheduler/quiescence_latch.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
-#include <SushiRuntime/observability/profiling_ledger.hpp>
-#include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_widths.hpp>
-#include <SushiRuntime/task/offload_coordinator.hpp>
+#include <SushiRuntime/task/ready_sink.hpp>
+#include <SushiRuntime/task/task.hpp>
 
 namespace SushiRuntime
 {
+    namespace Internal::Graph { class OffloadCoordinator; }
+    namespace Internal::Observability { class ProfilingLedger; }
+
     namespace Internal::Scheduler
     {
         /**
          * @brief Polls hardware events in a lock-free manner.
          */
-        class EventPolling 
+        class SUSHIRUNTIME_API EventPolling
         {
             public:
                 /** @brief Structure to link a SYCL event with a graph node or task. */
@@ -182,35 +180,26 @@ namespace SushiRuntime
                  * @pre No worker is polling.
                  * @param offload Not owned; null for none.
                  */
-                void set_offload_coordinator(Internal::Graph::OffloadCoordinator* offload) noexcept
-                {
-                    offload_ = offload;
-                }
+                void set_offload_coordinator(Internal::Graph::OffloadCoordinator* offload) noexcept;
 
                 /**
                  * @brief Turns per-node kernel timing capture on or off.
                  * @see modules/engine/scheduler/README.md
                  */
-                void set_profiling(bool on) noexcept { profiling_.store(on, std::memory_order_release); }
+                void set_profiling(bool on) noexcept;
 
                 /**
                  * @brief Wires the plan's event ledger for the round about to run.
                  * @param ledger The plan's ledger, or null when it does not profile.
                  */
-                void set_ledger(Internal::Observability::ProfilingLedger* ledger) noexcept
-                {
-                    ledger_.store(ledger, std::memory_order_release);
-                }
+                void set_ledger(Internal::Observability::ProfilingLedger* ledger) noexcept;
 
                 /**
                  * @brief Wires the scheduler's run-quiescence latch into the poller.
                  * @param latch Owned by the scheduler and outlives the poller; null unwires it.
                  * @see modules/engine/scheduler/README.md
                  */
-                void set_inflight_tracker(QuiescenceLatch* latch) noexcept
-                {
-                    quiescence_ = latch;
-                }
+                void set_inflight_tracker(QuiescenceLatch* latch) noexcept;
 
             private:
                 /**
@@ -218,16 +207,7 @@ namespace SushiRuntime
                  *        ready, eventless and not executed.
                  * @return True, the value the entry's done flag takes.
                  */
-                static bool reap_failed(PolledEvent& entry)
-                {
-                    SR_LOG_ERROR(K_SCHEDULER_LOG_CATEGORY, "Polling the event of task '{}' threw; the task is reaped "
-                                 "as not executed and its successors are released.",
-                                 entry.task ? entry.task->name() : "<none>");
-                    entry.ready = true;
-                    entry.has_event = false;
-                    entry.executed = false;
-                    return true;
-                }
+                static bool reap_failed(PolledEvent& entry);
 
                 /**
                  * @brief Records one newly-ready task that will later be reaped here.
@@ -274,28 +254,13 @@ namespace SushiRuntime
                  * @brief Keeps @p first when it holds a failure and logs @p next as the one dropped;
                  *        otherwise stores @p next in it.
                  */
-                static void keep_first_failure(std::optional<Error>& first, Error next)
-                {
-                    if (!first)
-                    {
-                        first = std::move(next);
-                        return;
-                    }
-                    SR_LOG_WARN(K_SCHEDULER_LOG_CATEGORY, "A second event failed in the same poll: {}; the poll "
-                                "returns the first failure, '{}'.", next.message, first->message);
-                }
+                static void keep_first_failure(std::optional<Error>& first, Error next);
 
                 /** @brief Returns how many stalled polls waited on their oldest event since the last take. */
-                [[nodiscard]] std::uint64_t stall_drives() const noexcept
-                {
-                    return stall_drives_.load(std::memory_order_relaxed);
-                }
+                [[nodiscard]] std::uint64_t stall_drives() const noexcept;
 
                 /** @brief Returns the stalled-poll count and starts it again from zero. */
-                std::uint64_t take_stall_drives() noexcept
-                {
-                    return stall_drives_.exchange(0, std::memory_order_relaxed);
-                }
+                std::uint64_t take_stall_drives() noexcept;
 
                 /**
                  * @brief Checks for completed events and triggers successors.
@@ -418,11 +383,7 @@ namespace SushiRuntime
                  * @pre offload_ is not null.
                  * @param task The reaped task; null or a non-graph task is not reported.
                  */
-                void report_local_completion(SushiRuntime::Internal::Scheduler::Task* task) noexcept
-                {
-                    if (task && task->is_graph_node())
-                        offload_->on_local_completion(*static_cast<Internal::Graph::Node*>(task));
-                }
+                void report_local_completion(SushiRuntime::Internal::Scheduler::Task* task) noexcept;
 
                 /**
                  * @brief Writes this dispatch's event record before the completion is published.
@@ -430,51 +391,7 @@ namespace SushiRuntime
                  * A dispatch that leaves no record is counted in the ledger under its cause.
                  * @see modules/engine/scheduler/README.md
                  */
-                void accumulate_profiling(const PolledEvent& pe) noexcept
-                {
-                    if (!pe.task)
-                        return;
-
-                    Internal::Observability::ProfilingLedger* ledger =
-                        ledger_.load(std::memory_order_acquire);
-                    if (ledger == nullptr)
-                        return;
-
-                    auto* node = pe.task->is_graph_node()
-                        ? static_cast<SushiRuntime::Internal::Graph::Node*>(pe.task) : nullptr;
-
-                    Internal::Observability::EventTimestamps times;
-                    const bool have_start_end = pe.has_event && Internal::Observability::read_dispatch_timestamps(pe.event, pe.handed_over, times);
-                    if (!have_start_end)
-                    {
-                        // A task that did not run, a sentinel and a native host node leave no event by design.
-                        if (node != nullptr && pe.executed && !node->is_sentinel)
-                        {
-                            if (pe.has_event)
-                                ledger->note_drop(DropCause::UnreadableEvent,
-                                                  node->registration_index);
-                            else if (node->execution_mode() == SushiRuntime::Internal::Scheduler::Task::ExecutionMode::Kernel)
-                                ledger->note_drop(DropCause::NoEvent,
-                                                  node->registration_index);
-                        }
-                        return;
-                    }
-
-                    if (times.has_submit && ledger->is_pairing_owner(pe.device_index, pe.task))
-                        ledger->set_pairing_event_ns(pe.device_index, times.submit_ns);
-
-                    if (node == nullptr)
-                        return;
-
-                    Internal::Observability::DispatchFacts facts;
-                    facts.node_index = node->registration_index;
-                    facts.invocation = pe.step;
-                    facts.launched_width = pe.widths.launched;
-                    facts.live_width = pe.widths.live;
-                    facts.device_index = pe.device_index;
-                    facts.submit_thread = pe.submit_thread;
-                    ledger->record(facts, Internal::Observability::DispatchTimes{times.submit_ns, times.start_ns, times.end_ns});
-                }
+                void accumulate_profiling(const PolledEvent& pe) noexcept;
 
                 /**
                  * @brief Makes runnable every successor a finished task freed.
