@@ -175,7 +175,7 @@ def set_toolchain(toolchain: str) -> Path:
     """Persist the selected SYCL toolchain into config.local.toml.
 
     Writes a top-level ``[tool] toolchain = "..."`` key, preserving any existing
-    ``[tool.<platform>]`` tables written by `hub install`. Returns the
+    ``[tool.<platform>]`` tables written by `sr setup`. Returns the
     path that was written.
     """
     if toolchain not in TOOLCHAINS:
@@ -186,6 +186,6 @@ def set_toolchain(toolchain: str) -> Path:
         {"toolchain": toolchain},
         [
             "# Managed by the SushiRuntime CLI. `sr toolchain` writes the toolchain key;",
-            "# `hub install` writes the [tool.<platform>] tool paths.",
+            "# `sr setup` writes the [tool.<platform>] tool paths.",
         ],
     )
