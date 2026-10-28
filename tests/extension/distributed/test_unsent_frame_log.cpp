@@ -40,7 +40,7 @@ TEST(Small_UnsentFrameLog, AQueuedFrameLogsNothing)
 {
     TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Debug);
 
-    Detail::log_unsent_frame("PING", PeerID{7}, SendStatus::Queued);
+    Distributed::Detail::log_unsent_frame("PING", PeerID{7}, SendStatus::Queued);
 
     EXPECT_TRUE(capture.records().empty());
 }
@@ -50,7 +50,7 @@ TEST(Small_UnsentFrameLog, ARefusedFrameLogsOneDebugLine)
 {
     TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Debug);
 
-    Detail::log_unsent_frame("GOODBYE", PeerID{7}, SendStatus::UnknownPeer);
+    Distributed::Detail::log_unsent_frame("GOODBYE", PeerID{7}, SendStatus::UnknownPeer);
 
     ASSERT_EQ(capture.count_at(SushiLog::LogLevel::Debug), 1u);
     EXPECT_EQ(capture.count_in("distributed"), 1u);
