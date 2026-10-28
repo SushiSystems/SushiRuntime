@@ -701,7 +701,7 @@ namespace SushiRuntime
                     e = Internal::Graph::submit_task(queue, *task, node ? &node->sycl_deps : nullptr,
                                                      (profiling && host) ? &handed_over : nullptr);
                 }
-                const bool submitted = submitted_device_work(host, e, handed_over);
+                const bool submitted = submitted_device_work(host, profiling, e, handed_over);
                 claim.settle(submitted);
 
                 // A submission that reached no device is pushed as ready, never dropped (modules/engine/scheduler/README.md).

@@ -20,7 +20,7 @@
 
 /**
  * @file test_dispatch_record.cpp
- * @brief Tests the pairing-claim policy and the polled events of a dispatch, without a device.
+ * @brief Tests the pairing-claim policy and the polled events of a dispatch, one test on a profiling queue.
  * @see tests/engine/scheduler/README.md
  * @author Mustafa Garip
  */
@@ -63,9 +63,9 @@ TEST(Small_DispatchRecord, AHostBodyClaimsOnlyForARealNode)
  */
 TEST(Small_DispatchRecord, AnEmptyHostBodySubmittedNothing)
 {
-    EXPECT_TRUE(submitted_device_work(false, sycl::event{}, {}));
-    EXPECT_FALSE(submitted_device_work(true, sycl::event{}, {}));
-    EXPECT_TRUE(submitted_device_work(true, sycl::event{}, std::vector<sycl::event>{sycl::event{}}));
+    EXPECT_TRUE(submitted_device_work(false, true, sycl::event{}, {}));
+    EXPECT_FALSE(submitted_device_work(true, true, sycl::event{}, {}));
+    EXPECT_TRUE(submitted_device_work(true, true, sycl::event{}, std::vector<sycl::event>{sycl::event{}}));
 }
 
 /** @brief Tests that a host node that ran inline is pushed ready and holds no event. */
@@ -101,4 +101,18 @@ TEST(Small_DispatchRecord, ASubmissionThatReachedADeviceWaitsOnItsEvent)
     const EventPolling::PolledEvent pe = dispatched_event(sycl::event{}, true, &node, &node, false, 0, 0, {});
     EXPECT_FALSE(pe.ready);
     EXPECT_TRUE(pe.has_event);
+}
+
+/** @brief Tests that a real event already complete still counts as submitted under profiling.
+ *
+ * Work this short can finish before the status is read; without its timestamps the run would lose
+ * its pairing claim and its device span.
+ */
+TEST(Medium_DispatchRecord, ACompleteProfiledEventStillCountsAsSubmitted)
+{
+    sycl::queue queue{sycl::property::queue::enable_profiling{}};
+    sycl::event event = queue.submit([](sycl::handler& h) { h.host_task([]() {}); });
+    event.wait();
+    EXPECT_TRUE(submitted_device_work(true, true, event, {}));
+    EXPECT_FALSE(submitted_device_work(true, false, event, {})) << "with profiling off a complete event is no work";
 }

@@ -206,7 +206,7 @@ namespace SushiRuntime
             sycl::event event = submit_node(node, handed_over);
             // A body that submitted nothing has no event to pair, so the next node claims instead.
             const bool host = node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Host;
-            if (claim.settle(Internal::Scheduler::submitted_device_work(host, event, handed_over)))
+            if (claim.settle(Internal::Scheduler::submitted_device_work(host, true, event, handed_over)))
                 pairing_claimed_ = false;
 
             graph_.chain.pending_events.push_back(

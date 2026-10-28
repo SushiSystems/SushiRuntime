@@ -45,17 +45,41 @@ namespace SushiRuntime
             return !host || (node && !node->is_sentinel);
         }
 
+        namespace
+        {
+            /**
+             * @brief Tells whether @p event carries profiling timestamps, which a default event never does.
+             * @param event A complete event.
+             * @return True when its command_end can be read.
+             */
+            bool has_profiling_info(const sycl::event& event)
+            {
+                try
+                {
+                    static_cast<void>(event.get_profiling_info<sycl::info::event_profiling::command_end>());
+                    return true;
+                }
+                catch (const sycl::exception&)
+                {
+                    return false;
+                }
+            }
+        } // namespace
+
         /**
          * @brief Tells whether a submission reached a device, which keeps a pairing claim.
          */
-        bool submitted_device_work(bool host, const sycl::event& event,
+        bool submitted_device_work(bool host, bool profiling, const sycl::event& event,
                                    const std::vector<sycl::event>& handed_over)
         {
             if (!host || !handed_over.empty())
                 return true;
             // A default event compares unequal to another under DPC++, so its complete status identifies it.
-            return event.get_info<sycl::info::event::command_execution_status>()
-                != sycl::info::event_command_status::complete;
+            if (event.get_info<sycl::info::event::command_execution_status>()
+                != sycl::info::event_command_status::complete)
+                return true;
+            // A real event that completed before this read still has timestamps under profiling.
+            return profiling && has_profiling_info(event);
         }
 
         /**

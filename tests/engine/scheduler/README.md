@@ -8,7 +8,7 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_dispatch_record.cpp
 
-The file tests the pairing-claim policy and the polled events of a dispatch, without a device.
+The file tests the pairing-claim policy and the polled events of a dispatch; only the Medium test needs a queue.
 
 | Test | What it proves |
 | --- | --- |
@@ -18,6 +18,7 @@ The file tests the pairing-claim policy and the polled events of a dispatch, wit
 | `AnInlineHostNodeIsReady` | A host node that ran inline is pushed ready and holds no event. |
 | `ASubmissionThatReachedNoDeviceIsReadyAndUnprofiled` | A submission that reached no device is pushed ready, with no profiling fields when profiling is off. |
 | `ASubmissionThatReachedADeviceWaitsOnItsEvent` | A submission that reached a device is pushed with its event, not ready. |
+| `Medium_DispatchRecord.ACompleteProfiledEventStillCountsAsSubmitted` | A host-task event from a profiling queue that completed before the read still counts as submitted; with profiling off it does not. |
 
 ## test_event_polling.cpp
 

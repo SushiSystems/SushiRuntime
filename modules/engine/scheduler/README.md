@@ -192,9 +192,9 @@ that ran inline. For a submitted task it calls three more. claims_pairing()
 decides whether the dispatch may claim its device's clock pairing: with profiling on, a kernel
 always may and a host body only for a node that is not the sentinel. submitted_device_work() tells
 the `PairingClaim` whether to keep the claim: a host body that hands none over and returns a complete
-event (not `== sycl::event{}`, never true in DPC++) gives it back, pushed ready and untimed.
-dispatched_event() takes that answer and builds the `EventPolling::PolledEvent` the worker pushes;
-under profiling it snapshots the node's widths and records the submitting thread.
+event (not `== sycl::event{}`, never true in DPC++) gives it back; under profiling a complete event
+whose timestamps read is still work, so a fast kernel keeps its claim and span. dispatched_event()
+takes that answer, builds the polled event and under profiling snapshots widths and thread.
 
 `run_host_node()` (`source/host_node_run.cpp`) runs and times a host node that submits no device
 work; `select_dispatch_queue()` (`source/dispatch_queue_selection.cpp`) picks the queue and device.

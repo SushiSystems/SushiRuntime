@@ -54,12 +54,13 @@ namespace SushiRuntime
         /**
          * @brief Tells whether a submission reached a device, which keeps a pairing claim.
          * @param host Whether the submitted task runs as a host body.
+         * @param profiling The run's profiling flag.
          * @param event The event the submission returned.
          * @param handed_over The events the task body handed over.
-         * @return True for a kernel, or for a host body that handed over an event or returned one that
-         *         had not completed; a body that ran inline returns a complete event and hands none over.
+         * @return True for a kernel, a handed-over event, or an incomplete or timestamped event.
          */
-        [[nodiscard]] SUSHIRUNTIME_API bool submitted_device_work(bool host, const sycl::event& event,
+        [[nodiscard]] SUSHIRUNTIME_API bool submitted_device_work(bool host, bool profiling,
+                                                                  const sycl::event& event,
                                                                   const std::vector<sycl::event>& handed_over);
 
         /**
