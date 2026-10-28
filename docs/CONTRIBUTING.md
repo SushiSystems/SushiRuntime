@@ -11,21 +11,11 @@ lists the modules, which of them are public, and how a run moves through them.
 
 ## 1. Getting set up
 
-On an empty machine, SushiStack's installer installs `hub` and runs `hub install`:
-
-```bash
-curl -fsSL https://sushisystems.io/install.sh | bash
-```
-
-```powershell
-irm https://sushisystems.io/install.ps1 | iex
-```
-
 With only this checkout, install the CLI and let it install what `cli/sushistack.deps.toml`
-declares:
+declares; [`INSTALL.md`](getting_started/INSTALL.md) gives this route and the SushiHub route:
 
 ```bash
-hub install-cli sushiruntime
+pip install -e ./cli
 sr setup
 sr build
 sr test

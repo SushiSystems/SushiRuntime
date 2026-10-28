@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-28 — docs: Wrote the standalone and SushiHub routes side by side in `INSTALL.md`, the README and the guides, and corrected the `sushicore` pin and source (`INSTALL.md`).
+- 2026-10-28 — cmake: Removed the `SUSHISTACK_HOME` search for vcpkg, since `sr build` hands `VCPKG_ROOT` itself (`SushiRuntimeVcpkg.cmake`).
 - 2026-10-28 — scheduler: Moved the members of `EventPolling` that are not templates into `event_polling.cpp`, which takes the logger, ledger and offload includes off the header.
 - 2026-10-28 — scheduler: Split `execute_task()` into the host-node run, the queue choice, the pairing claim and the polled event, reading the profiling flag once (`dispatch_record.hpp`).
 - 2026-10-28 — task: Added `submit_task()` and `submit_task_discarding()`, the one submission path `ChainRun` and `TaskScheduler` now share (`task_submission.hpp`).

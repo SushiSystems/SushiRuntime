@@ -9,6 +9,7 @@ one adapter module of your own, as [the integration guide](guides/INTEGRATION.md
 
 | Document | Holds |
 | --- | --- |
+| [Install](getting_started/INSTALL.md) | The two ways to install, standalone and with SushiHub, and what each needs |
 | [Introduction](getting_started/INTRODUCTION.md) | The build, a first program and each part of the public interface |
 
 ## Architecture

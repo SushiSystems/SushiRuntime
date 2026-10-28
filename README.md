@@ -29,19 +29,21 @@ Source: `applications/examples/quickstart.cpp`
 
 ## Build
 
-On a machine with nothing installed, the first line installs Python, Git and `hub`, the
-SushiStack CLI; on Windows run `irm https://sushisystems.io/install.ps1 | iex` in PowerShell
-instead.
+Standalone, with Git, Python 3.11 and CMake:
 
 ```bash
-curl -fsSL https://sushisystems.io/install.sh | bash
 git clone https://github.com/SushiSystems/SushiRuntime.git
 cd SushiRuntime
-hub install-cli sushiruntime      # or, without hub: pipx install ./cli
-sr setup                          # hwloc and a SYCL toolchain
+pip install -e ./cli
+sr setup                          # hwloc, a SYCL toolchain, SushiLog and SushiProfiler
 sr build
 sr test
 ```
+
+With SushiHub: `hub add sushiruntime` and `hub install-cli sushiruntime`, or
+`hub link sushiruntime <path>` for a checkout you already have.
+[`docs/getting_started/INSTALL.md`](docs/getting_started/INSTALL.md) has the prerequisites for
+both.
 
 Every build and test in this repository goes through `sr`.
 [The CLI guide](docs/guides/CLI_GUIDE.md) lists the requirements and every command, and

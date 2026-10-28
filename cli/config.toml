@@ -37,7 +37,7 @@ target_bin = "sr_api_tests.exe"
 # cmake_exe    = "C:/Users/<you>/scoop/shims/cmake.exe"
 # ctest_exe    = "C:/Users/<you>/scoop/shims/ctest.exe"
 # rc_exe       = "C:/Program Files (x86)/Windows Kits/10/bin/<ver>/x64/rc.exe"
-# SYCL toolchains installed by `hub install` (intel-llvm is the default):
+# SYCL toolchains installed by `sr setup` or `hub install` (intel-llvm is the default):
 #   llvm_root  = intel/llvm bundle root holding bin/clang++.exe (intel-llvm)
 #   acpp_exe   = AdaptiveCpp's acpp launcher (adaptivecpp)
 # llvm_root    = "<SUSHISTACK_HOME>/dependencies/toolchains/llvm-sycl"

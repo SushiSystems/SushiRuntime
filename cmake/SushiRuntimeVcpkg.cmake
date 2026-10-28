@@ -13,8 +13,10 @@
 # Discovery order (first hit wins, and a caller-supplied value is never
 # overwritten):
 #   1. VCPKG_ROOT env var
-#   2. the shared SushiStack workspace tree ($SUSHISTACK_HOME/dependencies/vcpkg)
-#   3. C:/vcpkg — only if it actually exists
+#   2. C:/vcpkg — only if it actually exists
+#
+# `sr build` passes -DVCPKG_ROOT itself, from the vcpkg tree `sr setup` found, so a workspace
+# layout is read by the CLI and not here.
 
 if(NOT WIN32)
     return()
@@ -22,9 +24,6 @@ endif()
 
 if((NOT DEFINED VCPKG_ROOT OR VCPKG_ROOT STREQUAL "") AND DEFINED ENV{VCPKG_ROOT})
     set(VCPKG_ROOT "$ENV{VCPKG_ROOT}" CACHE PATH "Path to vcpkg root")
-elseif((NOT DEFINED VCPKG_ROOT OR VCPKG_ROOT STREQUAL "") AND DEFINED ENV{SUSHISTACK_HOME}
-       AND EXISTS "$ENV{SUSHISTACK_HOME}/dependencies/vcpkg")
-    set(VCPKG_ROOT "$ENV{SUSHISTACK_HOME}/dependencies/vcpkg" CACHE PATH "Path to vcpkg root (workspace)")
 elseif((NOT DEFINED VCPKG_ROOT OR VCPKG_ROOT STREQUAL "") AND EXISTS "C:/vcpkg")
     set(VCPKG_ROOT "C:/vcpkg" CACHE PATH "Path to vcpkg root (fallback)")
 endif()

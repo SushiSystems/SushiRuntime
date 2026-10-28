@@ -13,17 +13,15 @@ own.
 ## 1. Build
 
 ```bash
-curl -fsSL https://sushisystems.io/install.sh | bash
 git clone https://github.com/SushiSystems/SushiRuntime.git
 cd SushiRuntime
-hub install-cli sushiruntime      # or, without hub: pipx install ./cli
-sr setup                          # hwloc and a SYCL toolchain
+pip install -e ./cli
+sr setup                          # hwloc, a SYCL toolchain, SushiLog and SushiProfiler
 sr build                          # a Debug build in build/default-debug
 sr test
 ```
 
-The first line installs Python, Git and `hub`, the SushiStack CLI; on Windows run
-`irm https://sushisystems.io/install.ps1 | iex` in PowerShell instead. [The CLI guide](../guides/CLI_GUIDE.md#requirements) lists the requirements and every command.
+[`INSTALL.md`](INSTALL.md) gives this route and the SushiHub route side by side. [The CLI guide](../guides/CLI_GUIDE.md#requirements) lists the requirements and every command.
 
 ## 2. A first program
 

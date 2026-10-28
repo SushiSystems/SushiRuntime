@@ -21,7 +21,7 @@ code. Every component below is fetched or installed at build time.
 | typer | `sr` command line; `cli/pyproject.toml` | https://pypi.org/project/typer/ | `>=0.12`; 0.26.7 was read | MIT; read from the installed package metadata |
 | rich | `sr` command line; `cli/pyproject.toml` | https://pypi.org/project/rich/ | `>=13.0`; 15.0.0 was read | MIT; read from the installed package metadata |
 | tomli | `sr` command line on Python below 3.11; `cli/pyproject.toml` | https://github.com/hukkin/tomli | `>=2.0` | MIT, Copyright (c) 2021 Taneli Hukkinen; read from upstream `LICENSE` on `master` |
-| sushicore | `sr` command line; `cli/pyproject.toml` | https://github.com/SushiSystems/SushiCore | `>=0.7.0` | A Sushi Systems package under its own licence |
+| sushicore | `sr` command line; `cli/pyproject.toml` | https://github.com/SushiSystems/SushiCore | `==0.9.7` | A Sushi Systems package under its own licence |
 
 The Python packages those four pull in were not read.
 

@@ -22,18 +22,8 @@ For a first build, read [the introduction](../getting_started/INTRODUCTION.md).
 declares. [SushiStack](https://sushisystems.io) (the `hub` CLI) does the same for several
 checkouts at once.
 
-On a machine with nothing installed, SushiStack's bootstrap script installs Python, Git and
-`hub`, then runs `hub install`:
-
-```bash
-curl -fsSL https://sushisystems.io/install.sh | bash
-```
-
-```powershell
-irm https://sushisystems.io/install.ps1 | iex
-```
-
-In PowerShell `curl` is an alias for `Invoke-WebRequest`, so use `irm` there.
+Neither way needs the other. [`INSTALL.md`](../getting_started/INSTALL.md) gives the standalone
+route and the SushiHub route in order.
 
 ## Installing the CLI
 
@@ -41,14 +31,10 @@ The CLI is a Python package in `cli/`. It installs two names for one command: `s
 `sushiruntime`. The examples below use `sr`.
 
 ```bash
-hub install-cli sushiruntime      # always an editable install
-```
-
-`hub` is the SushiStack CLI and installs through pipx. To install the package yourself:
-
-```bash
 pipx install ./cli               # or:  pip install ./cli   (inside a venv/conda env)
 ```
+
+With SushiHub, `hub install-cli sushiruntime` does the same as an editable install.
 
 To remove it:
 
@@ -62,8 +48,8 @@ pipx uninstall sushiruntime-cli
 - `cli/config.local.toml` is ignored by git and holds one machine's absolute paths: the oneAPI
   and Visual Studio roots, the vcpkg location, the compiler executables.
 
-`sr setup` writes `config.local.toml`. `hub install` does the same for every checkout of a
-SushiStack workspace. To set paths by hand, copy the commented Windows block of `config.toml`;
+`sr setup` writes `config.local.toml`; with SushiHub, `hub install` writes it for every
+checkout of a workspace. To set paths by hand, copy the commented Windows block of `config.toml`;
 both files use the same `[tool.<platform>]` sections.
 
 `sr config` prints the resolved values and the source of each.

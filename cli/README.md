@@ -2,7 +2,7 @@
 
 The `sr` command line interface. `sushiruntime/` parses commands and holds this repository's
 build policy; the generic machinery (config loading, console, process runner, CMake driver)
-comes from sushicore, which ships in the SushiStack repository. `tests/` is the pytest suite:
+comes from sushicore, its own repository and a PyPI package. `tests/` is the pytest suite:
 `cd cli && python -m pytest -q`.
 
 ## sushiruntime/config.py
