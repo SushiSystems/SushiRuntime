@@ -29,6 +29,8 @@ K_VISIBLE = [
     "bench", "build", "clean", "config", "container build", "container run", "docs", "docs bundle",
     "doctor", "env", "link", "package", "run", "setup", "test", "toolchain", "unlink",
 ]
+#: The groups sushicore adds whole; their commands are sushicore's to list, so only the group is checked.
+K_SUSHICORE_GROUPS = ("backlog", "design")
 K_GIT = (
     "git", "-c", "user.name=tests", "-c", "user.email=tests@example.invalid",
     "-c", "commit.gpgsign=false",
@@ -100,7 +102,9 @@ def test_describe_lists_every_visible_command():
     """--describe names the program and each command a user can run."""
     document = _described()
     assert document["program"] == "sr"
-    assert [command["name"] for command in document["commands"]] == K_VISIBLE
+    names = [command["name"] for command in document["commands"]]
+    assert [name for name in names if name.split()[0] not in K_SUSHICORE_GROUPS] == K_VISIBLE
+    assert {name.split()[0] for name in names} >= set(K_SUSHICORE_GROUPS)
 
 
 def test_describe_leaves_the_hidden_spellings_out():

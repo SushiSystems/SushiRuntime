@@ -21,7 +21,7 @@ pytestmark = pytest.mark.medium
 
 K_GROUPS = {
     "Toolchain": ["toolchain"],
-    "Project": ["build", "test", "bench", "run", "package", "clean", "docs"],
+    "Project": ["build", "test", "bench", "run", "package", "clean", "docs", "backlog", "design"],
     "Diagnostics": ["config", "env", "setup", "doctor", "link", "unlink"],
     "Container": ["container"],
 }
@@ -76,7 +76,8 @@ def test_no_command_is_listed_under_a_group_it_does_not_belong_to():
 
 @pytest.mark.parametrize(
     "command",
-    [name for names in K_GROUPS.values() for name in names if name != "container"],
+    [name for names in K_GROUPS.values() for name in names
+     if name not in ("container", "backlog", "design")],
 )
 def test_a_command_help_carries_examples(command):
     out = _run(command, "--help")
