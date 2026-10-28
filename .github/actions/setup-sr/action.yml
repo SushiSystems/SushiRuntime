@@ -18,7 +18,7 @@ runs:
         python - <<'EOF'
         import pathlib, subprocess, tomllib
         root = pathlib.Path.cwd()
-        pins = tomllib.loads((root / "cli/sushistack.deps.toml").read_text()).get("sushi", {})
+        pins = tomllib.loads((root / "cli/sushistack.deps.toml").read_text()).get("sushisystems", {})
         for name, pin in pins.items():
             target = root.parent / name
             if not target.is_dir():

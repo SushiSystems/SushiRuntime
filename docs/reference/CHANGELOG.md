@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-29 — ci: Cloned the Sushi libraries from the `[sushisystems.*]` pins, which the clone steps still read as `[sushi.*]`, and installed the CLI before the checkers so they find sushicore (`.github/actions/setup-sr/action.yml`).
+- 2026-10-29 — cli: Imported `configure_arguments` from sushicore where the build calls it (`services/project.py`).
 - 2026-10-29 — cli: Fixed `sr package` printing every line of `cmake --install`; it prints one line counting the files through sushicore 0.10.3, and cmake's output only on a failure (`packaging.py`).
 - 2026-10-29 — cli: Fixed the command-list tests that the `backlog` and `design` groups broke; sushicore's groups are checked by name only (`test_cli.py`, `test_help_screen.py`).
 
