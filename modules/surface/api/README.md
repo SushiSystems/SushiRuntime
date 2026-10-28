@@ -165,5 +165,5 @@ writes beside it: `core/assert.hpp`, `core/error.hpp`, `core/operation_id.hpp`,
 ## Designs
 
 <!-- designs:begin -->
-- [PHYSICS_SUBSTRATE_REQUIREMENTS](../../../docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS/README.md): Labels follow the substrate plan: **BLOCKER** (incorrect results or an unusable shape at the target scale), **STRUCTURAL** (works, but is built on an assumption the target violates),...
+- [LAYERED_EXECUTION](../../../docs/design/LAYERED_EXECUTION/README.md): What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs without writing it into their code: a placement vocabulary on every node, a description of...
 <!-- designs:end -->

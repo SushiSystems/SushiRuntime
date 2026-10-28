@@ -122,7 +122,7 @@ alternates between two device-less nodes still advances one step per call. The c
 `thread_local` and therefore shared by every set in the process.
 
 The rotation spreads tasks that name no buffer over the devices of a node. It is also the cause
-of the first entry in `docs/reference/KNOWN_ISSUES.md`: a kernel that captured USM of one
+of the first entry in `docs/backlog/README.md`: a kernel that captured USM of one
 device can be submitted to another. The two functions are separate so that a caller who needs a
 stable device, such as an allocator, uses `device_for_numa`.
 

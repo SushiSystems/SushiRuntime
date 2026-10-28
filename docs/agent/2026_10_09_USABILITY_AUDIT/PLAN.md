@@ -152,7 +152,7 @@ layer on.
 
 The third skip is `Integration_LayerEquivalence.UntrackedOffsetLaunchesMatchAcrossLayers`, which
 found a defect: an untracked kernel can be routed to a device that does not own its buffers. It
-is recorded in `docs/reference/KNOWN_ISSUES.md` and `docs/design/REMAINING_WORK.md` and is fixed
+is recorded in `docs/backlog/README.md` and `docs/backlog/README.md` and is fixed
 in phase C with the routing of region-less tasks.
 
 Two things the workers' reports did not survive. A6 rebuilt the failing task's exception by

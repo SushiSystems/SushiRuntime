@@ -124,7 +124,7 @@ BB-6  continuous behind BB-0 (item 5 sort after adoption; item 4 decision before
 BB-7  after BB-1 + BB-2 (overlap needs both halves)
 BB-8  decision + docs now; spikes whenever a desktop lull allows
 v1.0.0 freeze: after BB-4 + BB-3 land and BB-6 items 4/6 are decided — the freeze list in
-docs/design/REMAINING_WORK.md gains exactly those entries.
+docs/backlog/README.md gains exactly those entries.
 ```
 
 The dependency worth stating twice: **v1.0.0 must not be tagged before BB-3 and BB-4.** A frozen
@@ -154,7 +154,7 @@ Every package lands with the test that would fail without it, per house rule.
 
 The request register lives in the engine (`sushiengine/docs/slop/physics_system.md` §18, to be
 corrected under BB-0). The runtime-side histories are
-[`PHYSICS_SUBSTRATE_REQUIREMENTS.md`](../PHYSICS_SUBSTRATE_REQUIREMENTS/README.md) and
+[`PHYSICS_SUBSTRATE_REQUIREMENTS.md`](../LAYERED_EXECUTION/PHYSICS_SUBSTRATE_REQUIREMENTS.md) and
 the physics substrate implementation document in the version history. The long-horizon substrate program is
 [`SIMULATION_ENGINE_SUBSTRATE_PLAN.md`](../SIMULATION_ENGINE_SUBSTRATE_PLAN/README.md), whose WP-4
 (reductions, delivered) and WP-5 (multi-device, long horizon) this plan slots around, and WP-7

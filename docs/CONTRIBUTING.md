@@ -135,7 +135,7 @@ A change that makes a sentence of the manual false corrects that sentence in the
 - **A document goes where the tree says.** A manual page goes in `getting_started/`,
   `architecture/`, `guides/` or `reference/`. Intent with an open phase goes in `design/`, with
   a status line and a row in [`design/README.md`](design/README.md). Open work goes in
-  [`design/REMAINING_WORK.md`](design/REMAINING_WORK.md), the only backlog. What an agent writes
+  [`backlog/README.md`](backlog/README.md), the only backlog. What an agent writes
   while it works goes in its folder under `agent/`. Finished material moves to `archive/` and is
   not edited there. [`DOCUMENTATION_STYLE_GUIDE.md`](DOCUMENTATION_STYLE_GUIDE.md) says how a
   page is written.
@@ -151,7 +151,7 @@ A change that makes a sentence of the manual false corrects that sentence in the
 - **The checkers pass before a commit that touches `docs/`.** Run
   `python tools/documentation/check_docs_layout.py .` and
   `python tools/documentation/check_changelog.py .`. Both print nothing when the tree is in
-  shape. [`KNOWN_ISSUES.md`](reference/KNOWN_ISSUES.md) lists the defects that stay open.
+  shape. [`KNOWN_ISSUES.md`](backlog/README.md) lists the defects that stay open.
 
 ## 6. Commits and branches
 

@@ -120,4 +120,4 @@ passed, 0 tests failed out of 1023", with the three skips listed under Evidence.
   session. The tests here follow its behaviour. It is also on local `main` as `51af947`, and
   that commit is not pushed.
 - The three split candidates and the three test-folder helpers listed in
-  `docs/design/REMAINING_WORK.md` are not part of this work.
+  `docs/backlog/README.md` are not part of this work.

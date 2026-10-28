@@ -442,9 +442,9 @@ Abbreviations in the Current column: `I/` = `include/SushiRuntime/`, `TF/` = `te
 | the scan and counting sort plan spec in the version history | `=` | stays | |
 | `docs/design/ENGINE_BACKBONE_REFACTOR/README.md` | `=` | stays | |
 | `docs/design/GRAPH_REPLAY/README.md` | `=` | stays | |
-| `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS/README.md` | `=` | stays | |
+| `docs/design/LAYERED_EXECUTION/PHYSICS_SUBSTRATE_REQUIREMENTS.md` | `=` | stays | |
 | `docs/design/README.md` | `=` | stays | |
-| `docs/design/REMAINING_WORK.md` | `=` | stays | |
+| `docs/backlog/README.md` | `=` | stays | |
 | `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/README.md` | `=` | stays | |
 | `docs/getting_started/INTRODUCTION.md` | `=` | stays | |
 | `docs/guides/CLI_GUIDE.md` | `=` | stays | |
@@ -455,7 +455,7 @@ Abbreviations in the Current column: `I/` = `include/SushiRuntime/`, `TF/` = `te
 | `docs/reference/API_MAINPAGE.md` | `=` | stays | |
 | `docs/reference/CHANGELOG.md` | `=` | stays | |
 | `docs/reference/GLOSSARY.md` | `=` | stays | |
-| `docs/reference/KNOWN_ISSUES.md` | `=` | stays | |
+| `docs/backlog/README.md` | `=` | stays | |
 
 **cli** (37), all `stays`
 
@@ -669,7 +669,7 @@ The three private headers get no forwarder: a forwarder into `source/` defeats t
 | `.github/workflows/ci.yml:114` | `doxygen Doxyfile` |
 | `Doxyfile:6` | its own comment names `doxygen Doxyfile` |
 | `Doxyfile:29-36` | `INPUT` and `USE_MDFILE_AS_MAINPAGE` are relative to the working directory, which stays the root, so they keep working; but `INPUT` line 33 names `include/SushiRuntime/api`, which becomes `modules/surface/api/include/SushiRuntime/api` |
-| prose | `docs/CONTRIBUTING.md:274`, `docs/guides/CLI_GUIDE.md:252`, `docs/DOCUMENTATION_STYLE_GUIDE.md:31`, `docs/reference/KNOWN_ISSUES.md:26,29`, `docs/design/REMAINING_WORK.md:102,135`, `README.md:552` |
+| prose | `docs/CONTRIBUTING.md:274`, `docs/guides/CLI_GUIDE.md:252`, `docs/DOCUMENTATION_STYLE_GUIDE.md:31`, `docs/backlog/README.md:26,29`, `docs/backlog/README.md:102,135`, `README.md:552` |
 
 `Dockerfile` to `.config/docker/Dockerfile`:
 
@@ -683,7 +683,7 @@ The three private headers get no forwarder: a forwarder into `source/` defeats t
 
 No workflow under `.github/` names the Dockerfile. `cli/build/` holds stale untracked copies that also name both files.
 
-`SECURITY.md` and `CODE_OF_CONDUCT.md` to `.github/`: `docs/README.md:34-35`, `docs/CONTRIBUTING.md:426,432,436`, `docs/guides/DISTRIBUTED_GUIDE.md:369,381`, `docs/guides/FAQ.md:178`, `docs/reference/KNOWN_ISSUES.md:20`, `docs/publish.toml:7-8` (publishes both from `reference/`), `docs/design/REMAINING_WORK.md:111`. `.github/ISSUE_TEMPLATE/bug_report.yml:10` names the file without a path.
+`SECURITY.md` and `CODE_OF_CONDUCT.md` to `.github/`: `docs/README.md:34-35`, `docs/CONTRIBUTING.md:426,432,436`, `docs/guides/DISTRIBUTED_GUIDE.md:369,381`, `docs/guides/FAQ.md:178`, `docs/backlog/README.md:20`, `docs/publish.toml:7-8` (publishes both from `reference/`), `docs/backlog/README.md:111`. `.github/ISSUE_TEMPLATE/bug_report.yml:10` names the file without a path.
 
 Other path-bearing sites I met while grepping, not a complete list: `CMakeLists.txt:75,82` (version literal read from `include/SushiRuntime/version.hpp`), `CMakeLists.txt:91` (`add_subdirectory(examples)`), `tests/CMakeLists.txt:95-168,215,227-246` (every test path), `cli/sushiruntime/env.py:131` (`tests/lsan_suppressions.txt`), `tools/packaging/verify_installed_package.py:24` (`tests/package`, unchanged).
 
@@ -2986,7 +2986,7 @@ A `Task` that is not a graph node keeps NUMA-local placement without rotation: `
 
 Mechanics. `TaskGraph::add_node` returns `Node&` (CORE-13) and `Node` gets `place_on(std::size_t device)`; a region-less node defaults to 0. One function, `placement_of(const Node&, const Memory::UsmAllocator&)`, in the task module, answers for both the scheduler (`task_scheduler.cpp:789-808`, whose fallback branch goes away for nodes) and `classify_chain` (`chain_plan.cpp:69`). The second use makes a graph with untracked kernels chainable when all placements agree, which changes `RunReport::layer` for such graphs; if the owner prefers to leave the chain rule alone for now, C3 limits the function to the scheduler and nothing else in this section changes.
 
-The test. `tests/integration/test_layer_equivalence.cpp:735-737` loses its `GTEST_SKIP`. Its body does not change: I did not read `run_untracked_launches`, but the skip comment and the known-issues entry say its buffers come from the default device. One test is added beside it: on a machine with more than one device, a buffer on `DeviceIndex{1}` and `add_untracked(n, On(buffer), fn)` give the host reference's bytes under both layers; on one device it runs with `DeviceIndex{0}`. `docs/reference/KNOWN_ISSUES.md:10` and `docs/design/REMAINING_WORK.md:15-22` lose their entries in the same task.
+The test. `tests/integration/test_layer_equivalence.cpp:735-737` loses its `GTEST_SKIP`. Its body does not change: I did not read `run_untracked_launches`, but the skip comment and the known-issues entry say its buffers come from the default device. One test is added beside it: on a machine with more than one device, a buffer on `DeviceIndex{1}` and `add_untracked(n, On(buffer), fn)` give the host reference's bytes under both layers; on one device it runs with `DeviceIndex{0}`. `docs/backlog/README.md:10` and `docs/backlog/README.md:15-22` lose their entries in the same task.
 
 ### 5. Task list
 
@@ -3407,7 +3407,7 @@ Files in one wave are disjoint. "Outside" marks work beyond `M/`.
 | T15 Applications and benchmark. **Outside**: the demo and the benchmark call the API that changed | the demo worker `main` is under 20 lines | C `applications/examples/distributed_demo.cpp`; N `applications/examples/distributed_worker.cpp`; C `tests/benchmark/benchmark_distributed_offload.cpp` | T5 | 4 |
 | **Build and run the distributed tests after wave 4.** This is the first build that can be green since T5: T5 changes `ITransport` under the old coordinator and agent, so waves 2 and 3 end with the build red. Workers in those waves have only `clang -fsyntax-only`. | | | | |
 | T16 Registered-kernel fallback (DIST-08). **Outside** only if Q8 chooses the fluent form, which edits `modules/surface/api/.../graph/graph.hpp` | one e2e test adds an op with no lambda and passes with and without a worker | N `inc/registered_task.hpp`, `src/registered_task.cpp`; C `tests/test_distributed_e2e.cpp` | Q8, T11 | 5 |
-| T17 Documentation (DIST-24). **Outside**: `docs/` | each line listed in DIST-24 is corrected; the protocol version table exists | C `docs/guides/DISTRIBUTED_GUIDE.md`, `M/README.md`, `M/tests/README.md`, `applications/examples/README.md`, `docs/reference/KNOWN_ISSUES.md`, changelog | T11, T12 | 5 |
+| T17 Documentation (DIST-24). **Outside**: `docs/` | each line listed in DIST-24 is corrected; the protocol version table exists | C `docs/guides/DISTRIBUTED_GUIDE.md`, `M/README.md`, `M/tests/README.md`, `applications/examples/README.md`, `docs/backlog/README.md`, changelog | T11, T12 | 5 |
 | **Build and run everything after wave 5.** | | | | |
 
 For the orchestrator's `SOURCES` list in `M/CMakeLists.txt` (`:11-18` today), the new `.cpp` files are: `wire_frame`, `wire_messages`, `sha256`, `hmac_sha256`, `handshake`, `shared_secret`, `endpoint`, `socket_posix`, `socket_windows`, `outbox`, `peer_connection`, `pending_tasks`, `worker_directory`, `buffer_exchange`, `offload_dispatcher`, `cluster_monitor`, `worker_buffer_cache`, `dispatch_deduplicator`, `master_link`, `dispatch_executor`, `stop_signal`, `worker_main`, and `registered_task` in wave 5.

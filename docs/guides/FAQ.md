@@ -155,7 +155,7 @@ manual states today:
   It is meant for a trusted LAN.
 - A distributed worker runs one kernel at a time, on the device its dispatch names.
 
-[Known issues](../reference/KNOWN_ISSUES.md) lists the recorded defects that are not yet fixed,
+[Known issues](../backlog/README.md) lists the recorded defects that are not yet fixed,
 and §12 of [the distributed guide](DISTRIBUTED_GUIDE.md) lists that layer's limits.
 
 ## How is SushiRuntime licensed?
@@ -173,7 +173,7 @@ listed in [`NOTICE.md`](../../NOTICE.md).
 
 ## Where do I report a problem?
 
-Check [known issues](../reference/KNOWN_ISSUES.md) first. For anything that is not sensitive,
+Check [known issues](../backlog/README.md) first. For anything that is not sensitive,
 open a GitHub issue or Discussion.
 
 Do not open a public issue for a security problem. Email mustafagarip@sushisystems.io, or use

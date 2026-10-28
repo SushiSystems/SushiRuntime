@@ -2,7 +2,7 @@
 
 **Status:** Open — R1 to R12, R14 and R15 built and not yet compiled or run; R13 waits on the owner's machines
 **About:** What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs without writing it into their code: a placement vocabulary on every node, a description of...
-**Modules:** modules/engine/scheduler, modules/engine/task
+**Modules:** `modules/engine/scheduler`, `modules/engine/task`, `modules/surface/api`
 
 ## Problem
 
@@ -292,6 +292,15 @@ the task's own commit.
 | R13 | Measure the TCP transport between two of the owner's machines: 4 MiB, 64 MiB and 256 MiB, throughput and latency; restore the offload benchmark under `applications/probes/`. Done when: the guide holds the measured numbers with the two machines named; RW-21 and RW-22 close. Waits on R10. | planned |
 | R14 | Worker-to-worker links and a ring all-reduce. Done when: designed only if SushiAI's five-machine measurement shows the master's link bounds the step (RW-14). Waits on SushiAI phase A7. | planned |
 | R15 | A node's determinism class: `NodeOptions::determinism` (`Unstated`, `Bitwise`, `Tolerant`, `Cosmetic`), kept in the node and reported by `PlanNode`; the runtime carries it and decides nothing by it. Ruled by the owner on 2026-10-24, for SushiBLAS's `IndexOps` and SushiEngine's nodes. Done when: a test records a node with `Bitwise` and one without and reads `Bitwise` and `Unstated` back from the plan. | building |
+| PHYSICS_SUBSTRATE_REQUIREMENTS-R1 | Device-driven iteration count | built |
+| PHYSICS_SUBSTRATE_REQUIREMENTS-R2 | Fixed-order deterministic reductions | built |
+| PHYSICS_SUBSTRATE_REQUIREMENTS-R3 | Sub-range ordering at the region boundary | built |
+| PHYSICS_SUBSTRATE_REQUIREMENTS-R4 | Asynchronous step | built |
+| PHYSICS_SUBSTRATE_REQUIREMENTS-R5 | Dependency tracking on every overload | built |
+| PHYSICS_SUBSTRATE_REQUIREMENTS-R6 | Late-bound base offset | built |
+| PHYSICS_SUBSTRATE_REQUIREMENTS-R7 | `ThreadLocalMagazine` teardown | built |
+| PHYSICS_SUBSTRATE_REQUIREMENTS-R8 | A node label on the ordinary `add()` overloads | built |
+| PHYSICS_SUBSTRATE_REQUIREMENTS-R9 | A multi-colour (or persistent-kernel) dispatch node | planned |
 
 R13 is a measurement and comes after the labels and the rules, as the owner ordered on
 2026-10-20: it is taken once the placement it is measured under exists.

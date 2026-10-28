@@ -1,9 +1,5 @@
 # What a physics engine needs from SushiRuntime
 
-**Status:** Open — R1 to R8 are built; R9, the multi-colour dispatch node, is open
-**About:** Labels follow the substrate plan: **BLOCKER** (incorrect results or an unusable shape at the target scale), **STRUCTURAL** (works, but is built on an assumption the target violates),...
-**Modules:** modules/engine/scheduler, modules/surface/api
-
 The reductions, the prefix scan and the counting sort this document names are SushiBLAS's;
 [the design map](../README.md#names-that-left-the-runtime) says how to read them.
 
@@ -320,23 +316,9 @@ Option B (document it) leaves a correctness guarantee resting on a reviewer noti
 
 ## Phases
 
-| Id | Phase | State |
-| --- | --- | --- |
-| R1 | Device-driven iteration count | built |
-| R2 | Fixed-order deterministic reductions | built |
-| R3 | Sub-range ordering at the region boundary | built |
-| R4 | Asynchronous step | built |
-| R5 | Dependency tracking on every overload | built |
-| R6 | Late-bound base offset | built |
-| R7 | `ThreadLocalMagazine` teardown | built |
-| R8 | A node label on the ordinary `add()` overloads | built |
-| R9 | A multi-colour (or persistent-kernel) dispatch node | planned |
 
 ### Work
 
-<!-- work:begin -->
-No open work.
-<!-- work:end -->
 
 ## Open questions
 

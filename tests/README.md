@@ -48,7 +48,7 @@ program.
 | `Large_` | `large` | A real GPU; the test skips when none is present | 900 seconds |
 
 An intermittent test is quarantined by naming it in `SR_QUARANTINED_TESTS` in
-`cmake/SushiRuntimeTests.cmake`, with an entry in `docs/reference/KNOWN_ISSUES.md`. It keeps its
+`cmake/SushiRuntimeTests.cmake`, with an entry in `docs/backlog/README.md`. It keeps its
 size and gains the label `quarantined`.
 
 `sr test --label <label>` runs one label; `sr test` with no label runs the three sizes. Every run
