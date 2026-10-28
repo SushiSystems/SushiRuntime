@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-29 — cli: Asked for sushicore 0.10.2 and registered its `backlog` and `design` command groups beside `docs` (`cli.py`).
 - 2026-10-28 — scheduler: Counted a complete host-body event that carries timestamps as device work under profiling, so a fast kernel keeps its pairing claim (`dispatch_record.cpp`).
 - 2026-10-28 — task: Fixed events handed over from outside the library DLL being lost, by defining the scope's `thread_local` once out of line (`dispatch_events.cpp`).
 - 2026-10-28 — scheduler: Recognised a host body that submitted nothing by its complete event, not by `== sycl::event{}`, which DPC++ never finds true (`dispatch_record.cpp`, `chain_run.cpp`).
