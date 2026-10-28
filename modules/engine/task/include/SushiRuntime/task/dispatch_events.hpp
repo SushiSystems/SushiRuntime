@@ -30,6 +30,7 @@
 
 #include <vector>
 #include <sycl/sycl.hpp>
+#include <SushiRuntime/core/export.hpp>
 
 namespace SushiRuntime
 {
@@ -72,11 +73,7 @@ namespace SushiRuntime
 
             private:
                 /** @brief Returns the slot that holds this thread's open sink. */
-                static std::vector<sycl::event>*& current() noexcept
-                {
-                    static thread_local std::vector<sycl::event>* sink = nullptr;
-                    return sink;
-                }
+                SUSHIRUNTIME_API static std::vector<sycl::event>*& current() noexcept;
 
                 /** @brief The sink that was open when this scope started. */
                 std::vector<sycl::event>* previous_;

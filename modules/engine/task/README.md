@@ -57,8 +57,9 @@ hands each kernel's event to the dispatcher with `note_dispatch_event()` (declar
 `modules/surface/api/include/SushiRuntime/api/graph/dispatch_events.hpp`). The dispatcher opens a
 `DispatchEventScope` around the body only while the plan records device timing; the scope collects
 into a vector on the calling thread, and `note()` does nothing when no scope is open. Scopes nest and
-restore the outer one. The pointer is a `thread_local` inside an inline function, so every module of
-the library sees one instance. The returned event must complete after every handed-over event, since
+restore the outer one. The pointer is a `thread_local` defined once in `source/dispatch_events.cpp` and
+exported, so the library and every program linked to it see one instance; an inline definition
+would give each DLL its own. The returned event must complete after every handed-over event, since
 the dispatch is timed across the handed-over ones and completes with the returned one. The body
 signature and `execute_host()` are unchanged.
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-28 — task: Fixed events handed over from outside the library DLL being lost, by defining the scope's `thread_local` once out of line (`dispatch_events.cpp`).
 - 2026-10-28 — scheduler: Recognised a host body that submitted nothing by its complete event, not by `== sycl::event{}`, which DPC++ never finds true (`dispatch_record.cpp`, `chain_run.cpp`).
 - 2026-10-28 — scheduler: Made `dispatched_event()` take the answer of `submitted_device_work()` instead of comparing the event again (`dispatch_record.hpp`).
 - 2026-10-28 — cmake: Breaking change: Linked one test program per tier, `sr_<tier>_tests`, from each module's `sr_<module>_test_objects`, one device link per tier; `sr run` runs `sr_surface_tests` (`SushiRuntimeTests.cmake`).
