@@ -36,12 +36,12 @@
 /** @brief Expands to the major version of the headers being compiled against. */
 #define SUSHIRUNTIME_VERSION_MAJOR 0
 /** @brief Expands to the minor version of the headers being compiled against. */
-#define SUSHIRUNTIME_VERSION_MINOR 4
+#define SUSHIRUNTIME_VERSION_MINOR 5
 /** @brief Expands to the patch version of the headers being compiled against. */
 #define SUSHIRUNTIME_VERSION_PATCH 0
 
 /** @brief Expands to the dotted version of the headers being compiled against, as a literal. */
-#define SUSHIRUNTIME_VERSION_STRING "0.4.0"
+#define SUSHIRUNTIME_VERSION_STRING "0.5.0"
 
 /**
  * @brief Encodes a major, minor and patch version as one integer.
