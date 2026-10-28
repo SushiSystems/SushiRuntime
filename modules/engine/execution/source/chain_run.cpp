@@ -28,10 +28,6 @@
 #include <utility>
 #include <vector>
 #include <sycl/sycl.hpp>
-#if __has_include(<sycl/ext/oneapi/experimental/enqueue_functions.hpp>)
-#include <sycl/ext/oneapi/experimental/enqueue_functions.hpp>
-#define SR_HAS_ENQUEUE_FUNCTIONS 1
-#endif
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
 #include <SushiRuntime/observability/event_timestamps.hpp>
@@ -43,11 +39,11 @@
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
-#include <SushiRuntime/task/dispatch_events.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_widths.hpp>
+#include <SushiRuntime/task/task_submission.hpp>
 #include <SushiRuntime/execution/chain_run.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 
@@ -55,26 +51,6 @@ namespace SushiRuntime
 {
     namespace Internal::Execution
     {
-        namespace
-        {
-            /**
-             * @brief Submits a command group and drops the event.
-             *
-             * Uses the enqueue-functions extension, which builds no event, when the compiler has it.
-             * @param queue The queue to submit to.
-             * @param group The command group.
-             */
-            template <typename Group>
-            void submit_without_event(sycl::queue& queue, Group&& group)
-            {
-#if defined(SR_HAS_ENQUEUE_FUNCTIONS)
-                sycl::ext::oneapi::experimental::submit(queue, std::forward<Group>(group));
-#else
-                static_cast<void>(queue.submit(std::forward<Group>(group)));
-#endif
-            }
-        } // namespace
-
         /**
          * @brief Binds the run to the plan's device queue of the right flavour.
          */
@@ -198,23 +174,7 @@ namespace SushiRuntime
          */
         sycl::event ChainRun::submit_node(Internal::Graph::Node& node, std::vector<sycl::event>& handed_over)
         {
-            if (node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Host)
-            {
-                std::vector<sycl::event> dependencies;
-                dependencies.reserve(node.sycl_deps.size());
-                for (const auto& ev : node.sycl_deps)
-                    dependencies.push_back(ev);
-                // A body that submits several kernels hands each event over (api/graph/dispatch_events.hpp).
-                Internal::DispatchEvents::DispatchEventScope handing(handed_over);
-                return node.execute_host(queue_, dependencies);
-            }
-
-            return queue_.submit([&node](sycl::handler& h)
-            {
-                for (const auto& ev : node.sycl_deps)
-                    h.depends_on(ev);
-                node.execute(h);
-            });
+            return Internal::Graph::submit_task(queue_, node, &node.sycl_deps, &handed_over);
         }
 
         /**
@@ -226,22 +186,7 @@ namespace SushiRuntime
          */
         void ChainRun::submit_node_discarding(Internal::Graph::Node& node)
         {
-            if (node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Host)
-            {
-                std::vector<sycl::event> dependencies;
-                dependencies.reserve(node.sycl_deps.size());
-                for (const auto& ev : node.sycl_deps)
-                    dependencies.push_back(ev);
-                node.execute_host(queue_, dependencies);
-                return;
-            }
-
-            submit_without_event(queue_, [&node](sycl::handler& h)
-            {
-                for (const auto& ev : node.sycl_deps)
-                    h.depends_on(ev);
-                node.execute(h);
-            });
+            Internal::Graph::submit_task_discarding(queue_, node, &node.sycl_deps);
         }
 
         /**

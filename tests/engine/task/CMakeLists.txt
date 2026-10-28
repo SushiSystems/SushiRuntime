@@ -20,5 +20,8 @@ sushiruntime_add_module_tests(
         test_region_link.cpp
         test_small_event_vector.cpp
         test_task.cpp
+        test_task_submission.cpp
         test_task_types.cpp
-        test_task_work.cpp)
+        test_task_work.cpp
+    DEVICE_SOURCES
+        test_task_submission.cpp)

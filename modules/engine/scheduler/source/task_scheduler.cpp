@@ -49,8 +49,8 @@
 #include <SushiRuntime/scheduler/scheduler_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
 #include <SushiRuntime/sycl/sycl_compat.hpp>
-#include <SushiRuntime/task/dispatch_events.hpp>
 #include <SushiRuntime/task/task.hpp>
+#include <SushiRuntime/task/task_submission.hpp>
 #include <SushiRuntime/topology/affinity.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
@@ -760,58 +760,24 @@ namespace SushiRuntime
                     return picked;
                 }();
 
+                // A host body claims the run's clock pairing only for a real node; a kernel always may.
+                const bool host = task->execution_mode() == Task::ExecutionMode::Host;
+                const bool profiling = profiling_active_.load(std::memory_order_acquire);
+                Internal::Observability::ProfilingLedger* claimant = nullptr;
+                if (profiling && (!host || (node && !node->is_sentinel)))
+                    claimant = active_ledger_.load(std::memory_order_acquire);
+                Internal::Observability::PairingClaim claim(claimant, dispatch_device, task);
+
                 sycl::event e;
                 std::vector<sycl::event> handed_over;
-                if (task->execution_mode() == Task::ExecutionMode::Host)
                 {
-                    // execute_host() needs a vector; this path allocates (modules/engine/scheduler/README.md).
-                    std::vector<sycl::event> dependencies;
-                    if (node)
-                    {
-                        dependencies.reserve(node->sycl_deps.size());
-                        for (const auto& ev : node->sycl_deps)
-                            dependencies.push_back(ev);
-                    }
                     SR_ZONE_FINE("dispatch.submit");
-                    if (profiling_active_.load(std::memory_order_acquire))
-                    {
-                        // A task body submits device work as a kernel does, so it may claim the pairing too.
-                        Internal::Observability::PairingClaim claim(
-                            node && !node->is_sentinel ? active_ledger_.load(std::memory_order_acquire) : nullptr,
-                            dispatch_device, task);
-                        {
-                            // A body that submits several kernels hands each event over (api/graph/dispatch_events.hpp).
-                            Internal::DispatchEvents::DispatchEventScope handing(handed_over);
-                            e = task->execute_host(queue, dependencies);
-                        }
-                        claim.settle(!(e == sycl::event{}) || !handed_over.empty());
-                    }
-                    else
-                    {
-                        e = task->execute_host(queue, dependencies);
-                    }
+                    // Handed-over events are collected only for the ledger (modules/engine/scheduler/README.md).
+                    e = Internal::Graph::submit_task(queue, *task, node ? &node->sycl_deps : nullptr,
+                                                     (profiling && host) ? &handed_over : nullptr);
                 }
-                else
-                {
-                    // The first device submission to reach here claims the run's clock pairing.
-                    Internal::Observability::PairingClaim claim(
-                        profiling_active_.load(std::memory_order_acquire) ? active_ledger_.load(std::memory_order_acquire)
-                                                                          : nullptr,
-                        dispatch_device, task);
-                    {
-                        SR_ZONE_FINE("dispatch.submit");
-                        e = queue.submit([&](sycl::handler& h)
-                        {
-                            // depends_on() per event builds no heap vector (modules/engine/scheduler/README.md).
-                            if (node)
-                                for (const auto& ev : node->sycl_deps)
-                                    h.depends_on(ev);
-                            task->execute(h);
-                        });
-                    }
-                    claim.settle(true);
-                }
-                
+                claim.settle(!host || !(e == sycl::event{}) || !handed_over.empty());
+
                 // An empty event is pushed as ready, never dropped (modules/engine/scheduler/README.md).
                 const bool ready = (e == sycl::event{});
                 const SushiRuntime::Internal::Graph::NodeWidths widths =

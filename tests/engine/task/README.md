@@ -146,6 +146,17 @@ The file tests Task: the defaults a subclass inherits and the two members it mus
 | --- | --- |
 | `ASubclassInheritsTheDefaults` | Writes the two pure members and nothing else. */ class PlainTask final : public Task { public: std::optional<sushi_ptr<Task>> split() override { return std::nullopt; } bool is_splittable() const override { return false; } }; } /** @brief Tests the defaults: a kernel task, unnamed, priority 0, device work, not a graph node. |
 
+## test_task_submission.cpp
+
+The file covers `submit_task()` and `submit_task_discarding()` on a queue of the default device.
+
+| Test | What it proves |
+| --- | --- |
+| `AHostTaskGetsItsDependenciesAndHandsItsEventOver` | A host task receives every dependency as a vector, and the event its body hands over lands in the sink. |
+| `ANullSinkCollectsNothing` | A null sink opens no scope, so the enclosing scope still collects. |
+| `AKernelTaskReturnsAnEvent` | A kernel task runs its command group once, returns an event and hands nothing over. |
+| `TheDiscardingPathRunsEitherKind` | The discarding path runs a host task and a kernel task once each. |
+
 ## test_task_work.cpp
 
 The file tests TaskWork and HostWork: the two callables a node runs.
