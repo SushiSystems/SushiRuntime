@@ -53,20 +53,9 @@ function(sushiruntime_sycl_device_options out_compile out_link)
     endif()
     if(SR_SYCL_TOOLCHAIN STREQUAL "intel-llvm" OR SR_SYCL_TOOLCHAIN STREQUAL "oneapi")
         # Device code compiles at -O3 in every build type; Debug takes only the host code to -O0.
-        # One -Xsycl-target-frontend per target triple, as the driver refuses the bare spelling
-        # for more than one target and matches a GPU alias only by its triple.
-        string(REGEX MATCH "-fsycl-targets=[^;]*" targets "${compile}")
-        string(REPLACE "-fsycl-targets=" "" targets "${targets}")
-        string(REPLACE "," ";" targets "${targets}")
-        foreach(target IN LISTS targets)
-            if(target MATCHES "^nvidia_gpu_")
-                set(target nvptx64-nvidia-cuda)
-            elseif(target MATCHES "^amd_gpu_")
-                set(target amdgcn-amd-amdhsa)
-            endif()
-            list(APPEND compile "SHELL:-Xsycl-target-frontend=${target} -O3")
-        endforeach()
-        list(REMOVE_DUPLICATES compile)
+        # -Xarch_device reaches the frontend of every device target. The per-triple
+        # -Xsycl-target-frontend spelling reaches it too, but the driver reports it unused.
+        list(APPEND compile "SHELL:-Xarch_device -O3")
         list(APPEND link -O3)
     endif()
     set(${out_compile} "${compile}" PARENT_SCOPE)
