@@ -8,6 +8,7 @@ behind the memory gate."""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -150,6 +151,22 @@ def test_a_build_configures_and_compiles_in_the_tree_of_its_type(build):
     assert project.build(BuildType.release) == 0
     assert build.driver.compiles[0][0] == build.root / "build" / "default-release"
     assert str(build.root / "build" / "default-release") in build.driver.configures[0]
+
+
+def test_the_packages_get_the_compiler_the_build_path_finds(build, monkeypatch, tmp_path):
+    """A compiler only setvars put on the build PATH reaches sushicore as its full path."""
+    bin_dir = tmp_path / "oneapi" / "bin"
+    bin_dir.mkdir(parents=True)
+    compiler = bin_dir / ("clang++.exe" if os.name == "nt" else "clang++")
+    compiler.write_text("", encoding="utf-8")
+    compiler.chmod(0o755)
+    monkeypatch.setattr(project, "load_build_env", lambda cfg, tree: {"PATH": str(bin_dir)})
+    seen = []
+    packages = SimpleNamespace(definitions=lambda: [], run_dirs=lambda platform: [])
+    monkeypatch.setattr(project.library_packages, "resolve",
+                        lambda cfg, root, build_type, cxx, *a: seen.append(cxx) or packages)
+    assert project.build(BuildType.release) == 0
+    assert Path(seen[0]).parent == bin_dir
 
 
 def test_a_tree_of_another_build_type_is_refused(build):

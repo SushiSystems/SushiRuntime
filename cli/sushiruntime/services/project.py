@@ -457,6 +457,15 @@ def _package_compiler(cfg: Config, force: bool, env: dict[str, str],
     return _resolve_compiler(cfg, force, env, asan=asan)
 
 
+def _on_build_path(compiler: str, env: dict[str, str]) -> str:
+    """Return *compiler* as the PATH of *env* finds it, or unchanged when that PATH lacks it.
+
+    sushicore probes the compiler of a library package from this process, whose PATH need not
+    hold what setvars added to *env*, so a bare name is handed over as its full path.
+    """
+    return shutil.which(compiler, path=env.get("PATH")) or compiler
+
+
 def _launcher_arguments(cfg: Config, tree: Path) -> list[str]:
     """Return the `-D` arguments that put every compile and link of *tree* behind the gate."""
     cache = build_admission.compiler_cache(cfg.ccache_exe)
@@ -530,7 +539,7 @@ def build(build_type: BuildType, distributed: bool = False,
     cc, cxx = compilers
     try:
         packages = library_packages.resolve(
-            cfg, root, build_type.value, cxx, console.info, console.warn)
+            cfg, root, build_type.value, _on_build_path(cxx, env), console.info, console.warn)
     except PackageError as error:
         console.error(str(error))
         return 1
