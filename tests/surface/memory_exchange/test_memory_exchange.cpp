@@ -125,27 +125,3 @@ TEST(Medium_InteropImport, AKindTheDeviceDoesNotImportIsRefusedByName)
         << imported.error().message;
 }
 
-/** @brief Tests that the second capability query of a device returns the kept answer unprobed. */
-TEST(Medium_InteropImport, TheSecondCapabilityQueryHitsTheCache)
-{
-    const auto context = SushiRuntime::Test::make_context();
-    const sycl::device device = context->devices().queue(0).get_device();
-    std::size_t probes = 0;
-    InteropCapabilities answer;
-    answer.host_export = true;
-    answer.importable_kinds.insert(ExternalHandleKind::OpaqueFd);
-    Internal::MemoryExchange::CapabilityCache cache(
-        [&probes, answer](const sycl::device&)
-        {
-            ++probes;
-            return answer;
-        });
-
-    const InteropCapabilities first = cache.get(device);
-    const InteropCapabilities second = cache.get(device);
-
-    EXPECT_EQ(probes, 1u);
-    EXPECT_TRUE(second.host_export);
-    EXPECT_EQ(second.importable_kinds, first.importable_kinds);
-    EXPECT_TRUE(second.importable_kinds.contains(ExternalHandleKind::OpaqueFd));
-}

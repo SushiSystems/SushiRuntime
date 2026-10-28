@@ -8,16 +8,11 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_interop_capabilities.cpp
 
-The file covers the default values of the interop vocabulary and `ExternalHandleKindSet`.
+The file covers the default values of the interop vocabulary.
 
 ### `DefaultCapabilitiesOfferNothing`
 
 Default `InteropCapabilities` offer no host export, no import, no UUID and no importable kind.
-
-### `AKindSetHoldsExactlyTheKindsInserted`
-
-An `ExternalHandleKindSet` holds the kind inserted and no other, and is empty again once that kind is
-erased.
 
 ### `ADefaultDescriptorStatesNoHandleKind`
 
@@ -39,3 +34,16 @@ The file tests ExternalMemoryDescriptor: an unspecified handle of no bytes by de
 | Test | What it proves |
 | --- | --- |
 | `DefaultsNameNoHandle` | Checks the defaults of a descriptor and the three handle kinds. |
+
+## test_external_handle_kind_set.cpp
+
+The file tests `ExternalHandleKindSet`, one bit per handle kind.
+
+| Test | What it proves |
+| --- | --- |
+| `ADefaultSetIsEmpty` | A default set holds no kind. |
+| `AKindSetHoldsExactlyTheKindsInserted` | A set holds the kind inserted and no other, and is empty again once that kind is erased. |
+| `InsertAndEraseAreIdempotent` | A second insert keeps one member; erasing a kind the set does not hold changes nothing. |
+| `EraseRemovesOnlyItsKind` | Erasing one kind leaves the others. |
+| `SetsCompareByMembers` | Two sets are equal exactly when they hold the same kinds. |
+| `WorksAtCompileTime` | Insert and contains work in a constant expression. |
