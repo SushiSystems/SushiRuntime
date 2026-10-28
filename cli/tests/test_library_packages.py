@@ -11,6 +11,7 @@ import os
 from types import SimpleNamespace
 
 import pytest
+from sushicore.provision.sushi_packages import configure_arguments
 from typer.testing import CliRunner
 
 from sushiruntime import cli, config
@@ -131,7 +132,7 @@ def test_the_definitions_skip_a_packaged_pin(tmp_path, monkeypatch):
     (tmp_path / "cli" / "sushistack.deps.toml").write_text(fragment, encoding="utf-8")
     cfg = Config(platform="linux")
     monkeypatch.setattr(cfg, "resolve_sushi", lambda root, name: SimpleNamespace(path=tmp_path))
-    assert library_packages.configure_arguments(cfg, tmp_path, FakePackages()) == [
+    assert configure_arguments(cfg, tmp_path, FakePackages()) == [
         f"-DSushiLog_DIR={K_LOG_DIR}"]
 
 

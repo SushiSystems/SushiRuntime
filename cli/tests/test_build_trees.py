@@ -81,7 +81,7 @@ def build(monkeypatch, tmp_path):
     monkeypatch.setattr(project, "load_config", lambda: cfg)
     monkeypatch.setattr(project, "load_build_env", lambda cfg, tree: {})
     monkeypatch.setattr(project, "_resolve_compiler", lambda *a, **k: ("clang", "clang++"))
-    monkeypatch.setattr(project.library_packages, "configure_arguments", lambda *a: [])
+    monkeypatch.setattr(project, "configure_arguments", lambda *a: [])
     monkeypatch.setattr(project.library_packages, "record_run_dirs", lambda *a: None)
     monkeypatch.setattr(project.library_packages, "prepend_run_dirs", lambda *a: None)
     return SimpleNamespace(driver=driver, console=console, root=tmp_path)

@@ -25,7 +25,7 @@ from sushicore.build_tree import K_DEFAULT_BUILD_TYPE, refuse_another_build_type
 from sushicore.cmake_driver import CMakeDriver
 from sushicore.errors import SushiCoreError
 from sushicore.proc import Runner
-from sushicore.provision.sushi_packages import PackageError
+from sushicore.provision.sushi_packages import PackageError, configure_arguments
 
 from .. import console
 from ..config import Config, PROFILE, find_project_root, load_config
@@ -538,7 +538,7 @@ def build(build_type: BuildType, distributed: bool = False,
     library_packages.record_run_dirs(tree, run_dirs)
     library_packages.prepend_run_dirs(cfg, env, run_dirs)
 
-    sushi_definitions = tuple(library_packages.configure_arguments(cfg, root, packages))
+    sushi_definitions = tuple(configure_arguments(cfg, root, packages))
     stamp_key = _configure_stamp(dist, gpu_backend, tests,
                                  cfg.toolchain, cfg.cxx, sushi_definitions, lean)
     if _DRIVER.needs_configure(tree, cfg.generator, root=root) or _stamp_differs(tree, stamp_key):
