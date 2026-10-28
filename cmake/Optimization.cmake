@@ -40,7 +40,7 @@ endif()
 
 # Debug host code carries line tables only: stack traces keep their files and lines at a fraction of
 # full debug information's compile memory, object size and link time. The later flag overrides -g.
-if(NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     target_compile_options(sushiruntime_perf INTERFACE
         "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CXX>>:-gline-tables-only>")
 endif()
