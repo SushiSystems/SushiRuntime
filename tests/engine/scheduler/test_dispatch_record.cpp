@@ -56,7 +56,11 @@ TEST(Small_DispatchRecord, AHostBodyClaimsOnlyForARealNode)
     EXPECT_FALSE(claims_pairing(true, true, &node));
 }
 
-/** @brief Tests that a host body with an empty event and no handed-over event submitted nothing. */
+/** @brief Tests that a host body returning a default event and handing none over submitted nothing.
+ *
+ * Two default events need not compare equal (DPC++ gives each its own impl), so the rule must not
+ * compare with one.
+ */
 TEST(Small_DispatchRecord, AnEmptyHostBodySubmittedNothing)
 {
     EXPECT_TRUE(submitted_device_work(false, sycl::event{}, {}));
@@ -75,12 +79,12 @@ TEST(Small_DispatchRecord, AnInlineHostNodeIsReady)
     EXPECT_EQ(pe.device_index, K_HOST_DEVICE_INDEX);
 }
 
-/** @brief Tests that an empty event is pushed ready, with no profiling fields when profiling is off. */
-TEST(Small_DispatchRecord, AnEmptyEventIsReadyAndUnprofiled)
+/** @brief Tests that a submission that reached no device is pushed ready, unprofiled with profiling off. */
+TEST(Small_DispatchRecord, ASubmissionThatReachedNoDeviceIsReadyAndUnprofiled)
 {
     Internal::Graph::Node node;
     const EventPolling::PolledEvent pe =
-        dispatched_event(sycl::event{}, &node, &node, false, 3, 1, {sycl::event{}});
+        dispatched_event(sycl::event{}, false, &node, &node, false, 3, 1, {sycl::event{}});
     EXPECT_TRUE(pe.ready);
     EXPECT_FALSE(pe.has_event);
     EXPECT_EQ(pe.task, &node);
@@ -88,4 +92,13 @@ TEST(Small_DispatchRecord, AnEmptyEventIsReadyAndUnprofiled)
     EXPECT_EQ(pe.device_index, 1u);
     EXPECT_EQ(pe.handed_over.size(), 1u);
     EXPECT_EQ(pe.submit_thread, 0u);
+}
+
+/** @brief Tests that a submission that reached a device is pushed waiting on its event. */
+TEST(Small_DispatchRecord, ASubmissionThatReachedADeviceWaitsOnItsEvent)
+{
+    Internal::Graph::Node node;
+    const EventPolling::PolledEvent pe = dispatched_event(sycl::event{}, true, &node, &node, false, 0, 0, {});
+    EXPECT_FALSE(pe.ready);
+    EXPECT_TRUE(pe.has_event);
 }

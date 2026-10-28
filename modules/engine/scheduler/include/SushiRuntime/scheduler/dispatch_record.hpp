@@ -56,7 +56,8 @@ namespace SushiRuntime
          * @param host Whether the submitted task runs as a host body.
          * @param event The event the submission returned.
          * @param handed_over The events the task body handed over.
-         * @return True for a kernel, or for a host body that returned or handed over an event.
+         * @return True for a kernel, or for a host body that handed over an event or returned one that
+         *         had not completed; a body that ran inline returns a complete event and hands none over.
          */
         [[nodiscard]] SUSHIRUNTIME_API bool submitted_device_work(bool host, const sycl::event& event,
                                                                   const std::vector<sycl::event>& handed_over);
@@ -69,13 +70,14 @@ namespace SushiRuntime
 
         /**
          * @brief Builds the event a worker pushes to EventPolling after a submission.
-         * @param event The submission's event; an empty one is pushed as ready.
+         * @param event The submission's event.
+         * @param submitted What submitted_device_work() said of the submission; false pushes it as ready.
          * @param node The task as a graph node, or nullptr; its widths are snapshotted under profiling.
          * @param handed_over The events the task body handed over, moved into the result.
          * @return The polled event; under profiling it carries the widths and the submitting thread.
          */
         [[nodiscard]] SUSHIRUNTIME_API EventPolling::PolledEvent
-        dispatched_event(const sycl::event& event, Task* task, const Internal::Graph::Node* node,
+        dispatched_event(const sycl::event& event, bool submitted, Task* task, const Internal::Graph::Node* node,
                          bool profiling, std::uint32_t step, std::uint32_t device_index,
                          std::vector<sycl::event> handed_over);
 

@@ -133,7 +133,6 @@ TEST(Medium_TaskSubmission, AKernelTaskReturnsAnEvent)
     std::vector<sycl::event> handed_over;
 
     sycl::event event = Internal::Graph::submit_task(queue, *task, &dependencies, &handed_over);
-    EXPECT_FALSE(event == sycl::event{});
     event.wait();
     EXPECT_EQ(task->runs, 1);
     EXPECT_TRUE(handed_over.empty()) << "a kernel task handed an event over";

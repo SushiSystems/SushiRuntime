@@ -701,10 +701,11 @@ namespace SushiRuntime
                     e = Internal::Graph::submit_task(queue, *task, node ? &node->sycl_deps : nullptr,
                                                      (profiling && host) ? &handed_over : nullptr);
                 }
-                claim.settle(submitted_device_work(host, e, handed_over));
+                const bool submitted = submitted_device_work(host, e, handed_over);
+                claim.settle(submitted);
 
-                // An empty event is pushed as ready, never dropped (modules/engine/scheduler/README.md).
-                events.push(dispatched_event(e, task, node, profiling,
+                // A submission that reached no device is pushed as ready, never dropped (modules/engine/scheduler/README.md).
+                events.push(dispatched_event(e, submitted, task, node, profiling,
                                              current_dispatch_step_.load(std::memory_order_acquire),
                                              dispatch_device, std::move(handed_over)));
             });

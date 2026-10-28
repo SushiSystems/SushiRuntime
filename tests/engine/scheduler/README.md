@@ -14,9 +14,10 @@ The file tests the pairing-claim policy and the polled events of a dispatch, wit
 | --- | --- |
 | `NothingClaimsWithoutProfiling` | Nothing claims a pairing with profiling off. |
 | `AHostBodyClaimsOnlyForARealNode` | A kernel claims; a host body claims only for a node that is not the sentinel. |
-| `AnEmptyHostBodySubmittedNothing` | A host body with an empty event and no handed-over event submitted nothing. |
+| `AnEmptyHostBodySubmittedNothing` | A host body that returns a default event and hands none over submitted nothing; the rule does not compare with `sycl::event{}`, which DPC++ never finds equal. |
 | `AnInlineHostNodeIsReady` | A host node that ran inline is pushed ready and holds no event. |
-| `AnEmptyEventIsReadyAndUnprofiled` | An empty event is pushed ready, with no profiling fields when profiling is off. |
+| `ASubmissionThatReachedNoDeviceIsReadyAndUnprofiled` | A submission that reached no device is pushed ready, with no profiling fields when profiling is off. |
+| `ASubmissionThatReachedADeviceWaitsOnItsEvent` | A submission that reached a device is pushed with its event, not ready. |
 
 ## test_event_polling.cpp
 

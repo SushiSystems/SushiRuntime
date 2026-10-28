@@ -51,7 +51,11 @@ namespace SushiRuntime
         bool submitted_device_work(bool host, const sycl::event& event,
                                    const std::vector<sycl::event>& handed_over)
         {
-            return !host || !(event == sycl::event{}) || !handed_over.empty();
+            if (!host || !handed_over.empty())
+                return true;
+            // A default event compares unequal to another under DPC++, so its complete status identifies it.
+            return event.get_info<sycl::info::event::command_execution_status>()
+                != sycl::info::event_command_status::complete;
         }
 
         /**
@@ -68,12 +72,12 @@ namespace SushiRuntime
         /**
          * @brief Builds the event a worker pushes to EventPolling after a submission.
          */
-        EventPolling::PolledEvent dispatched_event(const sycl::event& event, Task* task,
+        EventPolling::PolledEvent dispatched_event(const sycl::event& event, bool submitted, Task* task,
                                                    const Internal::Graph::Node* node, bool profiling,
                                                    std::uint32_t step, std::uint32_t device_index,
                                                    std::vector<sycl::event> handed_over)
         {
-            const bool ready = (event == sycl::event{});
+            const bool ready = !submitted;
             EventPolling::PolledEvent dispatched;
             dispatched.event = event;
             dispatched.task = task;

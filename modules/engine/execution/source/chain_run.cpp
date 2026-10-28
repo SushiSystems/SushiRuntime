@@ -38,6 +38,7 @@
 #include <SushiRuntime/report/node_event_record.hpp>
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
+#include <SushiRuntime/scheduler/dispatch_record.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
@@ -204,7 +205,8 @@ namespace SushiRuntime
             std::vector<sycl::event> handed_over;
             sycl::event event = submit_node(node, handed_over);
             // A body that submitted nothing has no event to pair, so the next node claims instead.
-            if (claim.settle(!(event == sycl::event{}) || !handed_over.empty()))
+            const bool host = node.execution_mode() == Internal::Scheduler::Task::ExecutionMode::Host;
+            if (claim.settle(Internal::Scheduler::submitted_device_work(host, event, handed_over)))
                 pairing_claimed_ = false;
 
             graph_.chain.pending_events.push_back(

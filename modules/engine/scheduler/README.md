@@ -14,7 +14,7 @@ symbol or passage it explains, and that header's file block cites this page.
 
 ### PolledEvent::ready
 
-A host task whose execute_host() runs inline returns an empty event, so there is nothing to wait on.
+A host task whose execute_host() runs inline returns a default event, which is complete: nothing to wait on.
 The scheduler still routes it through the poller, to trigger successors and release uniformly, but
 flags it ready so completion is not gated on a SYCL event status query. This also sidesteps
 toolchains (AdaptiveCpp) whose host operations are not observable through command_execution_status.
@@ -191,9 +191,10 @@ them to the functions of this header. completed_host_event() builds the ready ev
 that ran inline. For a submitted task it calls three more. claims_pairing()
 decides whether the dispatch may claim its device's clock pairing: with profiling on, a kernel
 always may and a host body only for a node that is not the sentinel. submitted_device_work() tells
-the `PairingClaim` whether to keep the claim: a host body that returned an empty event and handed
-none over gives it back. dispatched_event() builds the `EventPolling::PolledEvent` the worker
-pushes; under profiling it snapshots the node's widths and records the submitting thread.
+the `PairingClaim` whether to keep the claim: a host body that hands none over and returns a complete
+event (not `== sycl::event{}`, never true in DPC++) gives it back, pushed ready and untimed.
+dispatched_event() takes that answer and builds the `EventPolling::PolledEvent` the worker pushes;
+under profiling it snapshots the node's widths and records the submitting thread.
 
 `run_host_node()` (`source/host_node_run.cpp`) runs and times a host node that submits no device
 work; `select_dispatch_queue()` (`source/dispatch_queue_selection.cpp`) picks the queue and device.
@@ -710,8 +711,7 @@ The first device submission to reach either path claims the run's clock pairing.
 
 ##### The event pushed to the poller
 
-An empty event means the host work already ran inline, in a synchronous `execute_host`, and
-there is nothing to wait on. It is routed through the poller flagged ready, so successors
+A host body that hands no event over and returns a complete one ran inline, and there is nothing to wait on. It is routed through the poller flagged ready, so successors
 fire and the task is released like any other, without a fabricated barrier event.
 
 `push()` never drops: the list spills to the heap past its inline capacity. Dropping an
