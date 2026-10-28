@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-28 — cmake: Breaking change: Linked one test program per tier, `sr_<tier>_tests`, from each module's `sr_<module>_test_objects`, one device link per tier; `sr run` runs `sr_surface_tests` (`SushiRuntimeTests.cmake`).
+- 2026-10-28 — tests: Renamed `Medium_RuntimeContextOffloadSeam` and `Medium_MemoryExchangeImport`, which shared a suite name with another module of their tier (`test_runtime_context.cpp`).
 - 2026-10-28 — docs: Wrote the standalone and SushiHub routes side by side in `INSTALL.md`, the README and the guides, and corrected the `sushicore` pin and source (`INSTALL.md`).
 - 2026-10-28 — cmake: Removed the `SUSHISTACK_HOME` search for vcpkg, since `sr build` hands `VCPKG_ROOT` itself (`SushiRuntimeVcpkg.cmake`).
 - 2026-10-28 — scheduler: Moved the members of `EventPolling` that are not templates into `event_polling.cpp`, which takes the logger, ledger and offload includes off the header.

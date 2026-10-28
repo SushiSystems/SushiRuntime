@@ -1,8 +1,8 @@
 # frame_transport tests
 
 The tests of the `frame_transport` module, mirroring `modules/extension/frame_transport/`.
-`tests/extension/frame_transport/CMakeLists.txt` builds them into `sr_frame_transport_tests`. `sr
-test` runs them with the rest; `sr run sr_frame_transport_tests -- --gtest_filter='<pattern>'` runs
+`tests/extension/frame_transport/CMakeLists.txt` builds them into `sr_frame_transport_test_objects`, linked into `sr_extension_tests`. `sr
+test` runs them with the rest; `sr run sr_extension_tests -- --gtest_filter='<pattern>'` runs
 one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.

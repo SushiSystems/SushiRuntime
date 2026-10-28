@@ -1,6 +1,6 @@
 # api tests: graph
 
-The tests of `Graph`, `DynamicGraph`, `Region`, `Recorder`, `PlanView` and `RunHandle`. They are part of `sr_api_tests`;
+The tests of `Graph`, `DynamicGraph`, `Region`, `Recorder`, `PlanView` and `RunHandle`. They are part of `sr_surface_tests`;
 [the page of the module's tests](../README.md) says how to run them.
 
 ## benchmark_dynamic_graph.cpp

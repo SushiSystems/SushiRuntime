@@ -1,9 +1,9 @@
 # distributed tests
 
 The tests of the `distributed` module, mirroring `modules/extension/distributed/`.
-`tests/extension/distributed/CMakeLists.txt` builds them into `sr_distributed_tests` and
+`tests/extension/distributed/CMakeLists.txt` builds them into `sr_distributed_test_objects`, linked into `sr_extension_tests` and
 `sr_distributed_benchmarks`, built under `SR_BUILD_BENCHMARKS`. `sr test` runs them with the rest;
-`sr run sr_distributed_tests -- --gtest_filter='<pattern>'` runs one program alone.
+`sr run sr_extension_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
 A benchmark prints its figures and asserts correctness and forward progress; it asserts a
 speed only where its section says so.

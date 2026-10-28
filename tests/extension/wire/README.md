@@ -1,8 +1,8 @@
 # wire tests
 
 The tests of the `wire` module, mirroring `modules/extension/wire/`.
-`tests/extension/wire/CMakeLists.txt` builds them into `sr_wire_tests`. `sr test` runs them with the
-rest; `sr run sr_wire_tests -- --gtest_filter='<pattern>'` runs one program alone.
+`tests/extension/wire/CMakeLists.txt` builds them into `sr_wire_test_objects`, linked into `sr_extension_tests`. `sr test` runs them with the
+rest; `sr run sr_extension_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 

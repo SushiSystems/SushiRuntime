@@ -79,7 +79,7 @@ to the device count and clears the pairings and the drop counts.
 
 ## Tests
 
-`tests/platform/observability/` builds `sr_observability_tests`.
+`tests/platform/observability/` builds `sr_observability_test_objects`, linked into `sr_platform_tests`.
 
 ## Designs
 

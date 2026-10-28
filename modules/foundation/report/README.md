@@ -86,7 +86,7 @@ one lost. A run that lost none has all counts zero.
 
 ## Tests
 
-`tests/foundation/report/` builds `sr_report_tests`.
+`tests/foundation/report/` builds `sr_report_test_objects`, linked into `sr_foundation_tests`.
 
 ## Designs
 

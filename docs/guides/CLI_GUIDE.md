@@ -200,11 +200,11 @@ sr bench --filter 'Stress_*'     # passed to each program as --gtest_filter
 ## `sr run`
 
 Runs a built executable. With no target it runs the default of the configuration,
-`sr_api_tests`.
+`sr_surface_tests`.
 
 ```bash
 sr run                              # run the default target
-sr run sr_api_tests                 # run a program by name
+sr run sr_surface_tests                 # run a program by name
 sr run --sort                       # pick from the list of executables
 ```
 
@@ -214,7 +214,7 @@ Everything after `--` goes to the program:
 
 ```bash
 sr run sr_execution_benchmarks -- --gtest_filter='Performance_GraphCompileBench.*'
-sr run sr_api_tests -- --gtest_shuffle --gtest_break_on_failure
+sr run sr_surface_tests -- --gtest_shuffle --gtest_break_on_failure
 ```
 
 The two programs of the distributed demo take their own flags the same way:

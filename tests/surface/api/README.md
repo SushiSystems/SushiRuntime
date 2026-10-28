@@ -1,8 +1,9 @@
 # api tests
 
 The tests of the `api` module, mirroring `modules/surface/api/`. `tests/surface/api/CMakeLists.txt`
-builds them into `sr_api_tests` and `sr_api_benchmarks`, built under `SR_BUILD_BENCHMARKS`.
-`sr test` runs them with the rest; `sr run sr_api_tests -- --gtest_filter='<pattern>'` runs one
+builds them into `sr_api_test_objects`, linked into `sr_surface_tests`, and into `sr_api_benchmarks` under
+`SR_BUILD_BENCHMARKS`.
+`sr test` runs them with the rest; `sr run sr_surface_tests -- --gtest_filter='<pattern>'` runs one
 program alone.
 
 `test_sushiruntime.cpp` builds its own program, `sr_api_allocation_tests`. Its test replaces

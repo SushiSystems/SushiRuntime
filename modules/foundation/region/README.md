@@ -59,4 +59,4 @@ dependency hot path.
 
 ## Tests
 
-`tests/foundation/region/` builds `sr_region_tests`.
+`tests/foundation/region/` builds `sr_region_test_objects`, linked into `sr_foundation_tests`.

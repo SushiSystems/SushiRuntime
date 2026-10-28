@@ -1,8 +1,8 @@
 # engine_handles tests
 
 The tests of the `engine_handles` module, mirroring `modules/surface/engine_handles/`.
-`tests/surface/engine_handles/CMakeLists.txt` builds them into `sr_engine_handles_tests`. `sr test`
-runs them with the rest; `sr run sr_engine_handles_tests -- --gtest_filter='<pattern>'` runs one
+`tests/surface/engine_handles/CMakeLists.txt` builds them into `sr_engine_handles_test_objects`, linked into `sr_surface_tests`. `sr test`
+runs them with the rest; `sr run sr_surface_tests -- --gtest_filter='<pattern>'` runs one
 program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.

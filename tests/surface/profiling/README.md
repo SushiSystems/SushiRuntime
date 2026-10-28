@@ -1,8 +1,8 @@
 # profiling tests
 
 The tests of the `profiling` module, mirroring `modules/surface/profiling/`. The module's test list builds them into
-`sr_profiling_tests` and the benchmark into its own program. `sr test` runs them with the rest;
-`sr run sr_profiling_tests -- --gtest_filter='<pattern>'` runs one program alone. The tests link SushiProfiler.
+`sr_surface_tests` and the benchmark into its own program. `sr test` runs them with the rest;
+`sr run sr_surface_tests -- --gtest_filter='<pattern>'` runs one program alone. The tests link SushiProfiler.
 
 `register_profiler_parts.hpp` is the one door a host uses, so every test that drives the runtime through a profiler session, an observer
 or a zone is an aspect of it and lives in the folder `test_register_profiler_parts/`, one file per aspect. That includes the tests of the

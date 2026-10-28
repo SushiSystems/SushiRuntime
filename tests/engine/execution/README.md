@@ -1,9 +1,9 @@
 # execution tests
 
 The tests of the `execution` module, mirroring `modules/engine/execution/`.
-`tests/engine/execution/CMakeLists.txt` builds them into `sr_execution_tests` and
+`tests/engine/execution/CMakeLists.txt` builds them into `sr_execution_test_objects`, linked into `sr_engine_tests` and
 `sr_execution_benchmarks`, built under `SR_BUILD_BENCHMARKS`. `sr test` runs them with the rest;
-`sr run sr_execution_tests -- --gtest_filter='<pattern>'` runs one program alone.
+`sr run sr_engine_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
 A benchmark prints its figures and asserts correctness and forward progress; it asserts a
 speed only where its section says so.

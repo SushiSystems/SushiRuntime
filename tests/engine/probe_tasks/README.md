@@ -1,8 +1,8 @@
 # probe_tasks tests
 
 The tests of the `probe_tasks` module, mirroring `modules/engine/probe_tasks/`.
-`tests/engine/probe_tasks/CMakeLists.txt` builds them into `sr_probe_tasks_tests`. `sr test` runs
-them with the rest; `sr run sr_probe_tasks_tests -- --gtest_filter='<pattern>'` runs one program
+`tests/engine/probe_tasks/CMakeLists.txt` builds them into `sr_probe_tasks_test_objects`, linked into `sr_engine_tests`. `sr test` runs
+them with the rest; `sr run sr_engine_tests -- --gtest_filter='<pattern>'` runs one program
 alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.

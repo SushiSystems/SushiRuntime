@@ -1,8 +1,8 @@
 # link_security tests
 
 The tests of the `link_security` module, mirroring `modules/extension/link_security/`.
-`tests/extension/link_security/CMakeLists.txt` builds them into `sr_link_security_tests`. `sr test`
-runs them with the rest; `sr run sr_link_security_tests -- --gtest_filter='<pattern>'` runs one
+`tests/extension/link_security/CMakeLists.txt` builds them into `sr_link_security_test_objects`, linked into `sr_extension_tests`. `sr test`
+runs them with the rest; `sr run sr_extension_tests -- --gtest_filter='<pattern>'` runs one
 program alone.
 
 The tests need no hardware and no network. They pin the two primitives the protocol v4

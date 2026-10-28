@@ -1,8 +1,8 @@
 # pending_tasks tests
 
 The tests of the `pending_tasks` module, mirroring `modules/extension/pending_tasks/`.
-`tests/extension/pending_tasks/CMakeLists.txt` builds them into `sr_pending_tasks_tests`. `sr test`
-runs them with the rest; `sr run sr_pending_tasks_tests -- --gtest_filter='<pattern>'` runs one
+`tests/extension/pending_tasks/CMakeLists.txt` builds them into `sr_pending_tasks_test_objects`, linked into `sr_extension_tests`. `sr test`
+runs them with the rest; `sr run sr_extension_tests -- --gtest_filter='<pattern>'` runs one
 program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.

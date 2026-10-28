@@ -187,7 +187,7 @@ def test(
     """Run the tests via CTest labels.
 
     For GTest-level knobs (shuffle, break-on-failure) run the binary directly:
-    sr run sr_api_tests -- --gtest_shuffle --gtest_break_on_failure
+    sr run sr_surface_tests -- --gtest_shuffle --gtest_break_on_failure
     """
     raise typer.Exit(project_svc.test(
         label, distributed, filter, _tree_type(type, asan), repeat, module, jobs))

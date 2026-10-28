@@ -90,7 +90,7 @@ TEST(Medium_MemoryExchange, AnImportWithNoKindIsRefused)
 }
 
 /** @brief Tests that a kind device 0 does not import is refused before SYCL sees it, by name. */
-TEST(Medium_InteropImport, AKindTheDeviceDoesNotImportIsRefusedByName)
+TEST(Medium_MemoryExchangeImport, AKindTheDeviceDoesNotImportIsRefusedByName)
 {
     const auto context = SushiRuntime::Test::make_context();
     Internal::MemoryExchange::CapabilityCache cache;

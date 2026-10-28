@@ -1,9 +1,9 @@
 # memory tests
 
 The tests of the `memory` module, mirroring `modules/platform/memory/`.
-`tests/platform/memory/CMakeLists.txt` builds them into `sr_memory_tests` and
+`tests/platform/memory/CMakeLists.txt` builds them into `sr_memory_test_objects`, linked into `sr_platform_tests` and
 `sr_memory_benchmarks`, built under `SR_BUILD_BENCHMARKS`. `sr test` runs them with the rest;
-`sr run sr_memory_tests -- --gtest_filter='<pattern>'` runs one program alone.
+`sr run sr_platform_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
 A benchmark prints its figures and asserts correctness and forward progress; it asserts a
 speed only where its section says so.

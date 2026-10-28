@@ -1,8 +1,8 @@
 # numa_lookup tests
 
 The tests of the `numa_lookup` module, mirroring `modules/platform/numa_lookup/`.
-`tests/platform/numa_lookup/CMakeLists.txt` builds them into `sr_numa_lookup_tests`. `sr test` runs
-them with the rest; `sr run sr_numa_lookup_tests -- --gtest_filter='<pattern>'` runs one program
+`tests/platform/numa_lookup/CMakeLists.txt` builds them into `sr_numa_lookup_test_objects`, linked into `sr_platform_tests`. `sr test` runs
+them with the rest; `sr run sr_platform_tests -- --gtest_filter='<pattern>'` runs one program
 alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.

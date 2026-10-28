@@ -1,6 +1,6 @@
 # api tests: runtime
 
-The tests of `Runtime`, its configuration, its errors and its logging controls. They are part of `sr_api_tests`;
+The tests of `Runtime`, its configuration, its errors and its logging controls. They are part of `sr_surface_tests`;
 [the page of the module's tests](../README.md) says how to run them.
 
 ## test_advanced_controls.cpp

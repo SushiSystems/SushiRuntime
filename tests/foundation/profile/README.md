@@ -1,8 +1,8 @@
 # profile tests
 
 The tests of the `profile` module, mirroring `modules/foundation/profile/`.
-The test list of the module builds them into `sr_profile_tests`. `sr test` runs them
-with the rest; `sr run sr_profile_tests -- --gtest_filter='<pattern>'` runs one program alone.
+The test list of the module builds them into `sr_profile_test_objects`, linked into `sr_foundation_tests`. `sr test` runs them
+with the rest; `sr run sr_foundation_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 The tests link SushiProfiler, which the module itself exposes to the runtime's other modules.

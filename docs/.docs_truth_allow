@@ -1,4 +1,5 @@
-sr_[a-z_]+_tests # test programs the build names sr_<module>_tests in cmake/SushiRuntimeTests.cmake
+sr_[a-z_]+_tests # test programs the build names sr_<tier>_tests in cmake/SushiRuntimeTests.cmake
+sr_[a-z_]+_test_objects # object libraries the build names sr_<module>_test_objects in cmake/SushiRuntimeTests.cmake
 TaskRecorder|RecordedGraph # classes of SushiBLAS, named as an example of an adapter
 sycl/.* # headers of the SYCL toolchain, not of this repository
 llvm-sycl/include/sycl/handler\.hpp # file of the intel/llvm bundle, cited for where SYCL allocates

@@ -1,6 +1,6 @@
 # api tests: vocabulary
 
-The tests of `Dynamic` and `LateCount`, the late-bound words of `api/vocabulary/`. They are part of `sr_api_tests`;
+The tests of `Dynamic` and `LateCount`, the late-bound words of `api/vocabulary/`. They are part of `sr_surface_tests`;
 [the page of the module's tests](../README.md) says how to run them.
 
 ## test_dynamic.cpp

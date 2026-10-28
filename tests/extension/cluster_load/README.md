@@ -1,8 +1,8 @@
 # cluster_load tests
 
 The tests of the `cluster_load` module, mirroring `modules/extension/cluster_load/`.
-`tests/extension/cluster_load/CMakeLists.txt` builds them into `sr_cluster_load_tests`. `sr test`
-runs them with the rest; `sr run sr_cluster_load_tests -- --gtest_filter='<pattern>'` runs one
+`tests/extension/cluster_load/CMakeLists.txt` builds them into `sr_cluster_load_test_objects`, linked into `sr_extension_tests`. `sr test`
+runs them with the rest; `sr run sr_extension_tests -- --gtest_filter='<pattern>'` runs one
 program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.

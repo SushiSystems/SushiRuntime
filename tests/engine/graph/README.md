@@ -1,8 +1,8 @@
 # graph tests
 
 The tests of the `graph` module, mirroring `modules/engine/graph/`.
-`tests/engine/graph/CMakeLists.txt` builds them into `sr_graph_tests`. `sr test` runs them with the
-rest; `sr run sr_graph_tests -- --gtest_filter='<pattern>'` runs one program alone.
+`tests/engine/graph/CMakeLists.txt` builds them into `sr_graph_test_objects`, linked into `sr_engine_tests`. `sr test` runs them with the
+rest; `sr run sr_engine_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 

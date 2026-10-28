@@ -1,8 +1,8 @@
 # buffer_exchange tests
 
 The tests of the `buffer_exchange` module, mirroring `modules/extension/buffer_exchange/`.
-`tests/extension/buffer_exchange/CMakeLists.txt` builds them into `sr_buffer_exchange_tests`. `sr
-test` runs them with the rest; `sr run sr_buffer_exchange_tests -- --gtest_filter='<pattern>'` runs
+`tests/extension/buffer_exchange/CMakeLists.txt` builds them into `sr_buffer_exchange_test_objects`, linked into `sr_extension_tests`. `sr
+test` runs them with the rest; `sr run sr_extension_tests -- --gtest_filter='<pattern>'` runs
 one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.

@@ -1,8 +1,8 @@
 # interop tests
 
 The tests of the `interop` module, mirroring `modules/surface/interop/`.
-`tests/surface/interop/CMakeLists.txt` builds them into `sr_interop_tests`. `sr test` runs them with
-the rest; `sr run sr_interop_tests -- --gtest_filter='<pattern>'` runs one program alone.
+`tests/surface/interop/CMakeLists.txt` builds them into `sr_interop_test_objects`, linked into `sr_surface_tests`. `sr test` runs them with
+the rest; `sr run sr_surface_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 

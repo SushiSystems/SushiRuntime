@@ -1,8 +1,8 @@
 # network_socket tests
 
 The tests of the `network_socket` module, mirroring `modules/extension/network_socket/`.
-`tests/extension/network_socket/CMakeLists.txt` builds them into `sr_network_socket_tests`. `sr
-test` runs them with the rest; `sr run sr_network_socket_tests -- --gtest_filter='<pattern>'` runs
+`tests/extension/network_socket/CMakeLists.txt` builds them into `sr_network_socket_test_objects`, linked into `sr_extension_tests`. `sr
+test` runs them with the rest; `sr run sr_extension_tests -- --gtest_filter='<pattern>'` runs
 one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.

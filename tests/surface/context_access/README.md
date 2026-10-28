@@ -1,8 +1,8 @@
 # context_access tests
 
 The tests of the `context_access` module, mirroring `modules/surface/context_access/`.
-`tests/surface/context_access/CMakeLists.txt` builds them into `sr_context_access_tests`. `sr test`
-runs them with the rest; `sr run sr_context_access_tests -- --gtest_filter='<pattern>'` runs one
+`tests/surface/context_access/CMakeLists.txt` builds them into `sr_context_access_test_objects`, linked into `sr_surface_tests`. `sr test`
+runs them with the rest; `sr run sr_surface_tests -- --gtest_filter='<pattern>'` runs one
 program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.

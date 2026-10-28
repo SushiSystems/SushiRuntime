@@ -60,4 +60,4 @@ a device that is not a GPU. `device_import` is true only when the set holds a ki
 
 ## Tests
 
-`tests/surface/interop/` builds `sr_interop_tests`.
+`tests/surface/interop/` builds `sr_interop_test_objects`, linked into `sr_surface_tests`.

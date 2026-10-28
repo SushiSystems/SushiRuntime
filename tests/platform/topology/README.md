@@ -1,8 +1,8 @@
 # topology tests
 
 The tests of the `topology` module, mirroring `modules/platform/topology/`.
-`tests/platform/topology/CMakeLists.txt` builds them into `sr_topology_tests`. `sr test` runs them
-with the rest; `sr run sr_topology_tests -- --gtest_filter='<pattern>'` runs one program alone.
+`tests/platform/topology/CMakeLists.txt` builds them into `sr_topology_test_objects`, linked into `sr_platform_tests`. `sr test` runs them
+with the rest; `sr run sr_platform_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 

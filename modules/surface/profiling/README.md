@@ -133,7 +133,7 @@ the pairing's two readings taken beside each other; a time before the steady clo
 
 ## Tests
 
-`tests/surface/profiling/` builds `sr_profiling_tests`; its `README.md` describes it.
+`tests/surface/profiling/` builds `sr_profiling_test_objects`, linked into `sr_surface_tests`; its `README.md` describes it.
 
 ## Designs
 

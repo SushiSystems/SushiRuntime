@@ -7,8 +7,8 @@
 cmake_minimum_required(VERSION 3.22) # gtest_discover_tests(TEST_FILTER ...)
 
 # The tree mirrors modules/: the tests of a module sit in tests/<tier>/<module>/, whose
-# CMakeLists.txt builds sr_<module>_tests and, under SR_BUILD_BENCHMARKS,
-# sr_<module>_benchmarks. A folder is added only when its module is switched on.
+# CMakeLists.txt builds the object library sr_<module>_test_objects, linked into
+# sr_<tier>_tests, and, under SR_BUILD_BENCHMARKS, sr_<module>_benchmarks. A folder is added only when its module is switched on.
 # cmake/SushiRuntimeTests.cmake holds the function every program is built with.
 #
 #   Package.*   package/, through tools/packaging
@@ -19,6 +19,8 @@ foreach(module_folder IN LISTS module_folders)
         add_subdirectory("${module_folder}")
     endif()
 endforeach()
+# Every module folder has recorded its test objects; each tier links them into one program.
+sushiruntime_add_tier_test_programs()
 
 # Whether an installed SushiRuntime is usable from outside its own tree. Its own label,
 # because it installs, configures a second CMake project, compiles it and runs it.

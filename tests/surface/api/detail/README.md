@@ -1,6 +1,6 @@
 # api tests: detail
 
-The tests of the callable traits, the node emitters and the fault record of `api/detail/`. They are part of `sr_api_tests`;
+The tests of the callable traits, the node emitters and the fault record of `api/detail/`. They are part of `sr_surface_tests`;
 [the page of the module's tests](../README.md) says how to run them.
 
 ## test_callable_traits.cpp

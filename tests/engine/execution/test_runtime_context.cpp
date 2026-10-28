@@ -755,7 +755,7 @@ namespace OffloadSeamShutdownTests
     /**
      * @brief shutdown() stops the installed coordinator while the worker pool still runs.
      */
-    TEST(Medium_OffloadSeam, ShutdownStopsCoordinatorBeforeEngine)
+    TEST(Medium_RuntimeContextOffloadSeam, ShutdownStopsCoordinatorBeforeEngine)
     {
         const std::shared_ptr<PoolProbingCoordinator> coordinator =
             std::make_shared<PoolProbingCoordinator>();

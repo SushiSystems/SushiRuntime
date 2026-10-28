@@ -1,8 +1,8 @@
 # context tests
 
 The tests of the `context` module, mirroring `modules/surface/context/`.
-`tests/surface/context/CMakeLists.txt` builds them into `sr_context_tests`. `sr test` runs them with
-the rest; `sr run sr_context_tests -- --gtest_filter='<pattern>'` runs one program alone.
+`tests/surface/context/CMakeLists.txt` builds them into `sr_context_test_objects`, linked into `sr_surface_tests`. `sr test` runs them with
+the rest; `sr run sr_surface_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 

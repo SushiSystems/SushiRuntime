@@ -1,8 +1,8 @@
 # runtime_assembly tests
 
 The tests of the `runtime_assembly` module, mirroring `modules/engine/runtime_assembly/`.
-`tests/engine/runtime_assembly/CMakeLists.txt` builds them into `sr_runtime_assembly_tests`. `sr
-test` runs them with the rest; `sr run sr_runtime_assembly_tests -- --gtest_filter='<pattern>'` runs
+`tests/engine/runtime_assembly/CMakeLists.txt` builds them into `sr_runtime_assembly_test_objects`, linked into `sr_engine_tests`. `sr
+test` runs them with the rest; `sr run sr_engine_tests -- --gtest_filter='<pattern>'` runs
 one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.

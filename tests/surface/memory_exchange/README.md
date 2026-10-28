@@ -1,8 +1,8 @@
 # memory_exchange tests
 
 The tests of the `memory_exchange` module, mirroring `modules/surface/memory_exchange/`.
-`tests/surface/memory_exchange/CMakeLists.txt` builds them into `sr_memory_exchange_tests`. `sr
-test` runs them with the rest; `sr run sr_memory_exchange_tests -- --gtest_filter='<pattern>'` runs
+`tests/surface/memory_exchange/CMakeLists.txt` builds them into `sr_memory_exchange_test_objects`, linked into `sr_surface_tests`. `sr
+test` runs them with the rest; `sr run sr_surface_tests -- --gtest_filter='<pattern>'` runs
 one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
@@ -10,7 +10,7 @@ A section is named after a test file, and a subsection after the test, helper or
 ## test_memory_exchange.cpp
 
 The file tests the memory exchange: capabilities, a host export, and an import that names no
-mechanism, each through a `CapabilityCache` of its own, and in the suite `Medium_InteropImport`, a kind the device does not import and the
+mechanism, each through a `CapabilityCache` of its own, and in the suite `Medium_MemoryExchangeImport`, a kind the device does not import and the
 capability cache.
 
 | Test | What it proves |

@@ -1,8 +1,8 @@
 # sycl tests
 
 The tests of the `sycl` module, mirroring `modules/foundation/sycl/`.
-`tests/foundation/sycl/CMakeLists.txt` builds them into `sr_sycl_tests`. `sr test` runs them with
-the rest; `sr run sr_sycl_tests -- --gtest_filter='<pattern>'` runs one program alone.
+`tests/foundation/sycl/CMakeLists.txt` builds them into `sr_sycl_test_objects`, linked into `sr_foundation_tests`. `sr test` runs them with
+the rest; `sr run sr_foundation_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 

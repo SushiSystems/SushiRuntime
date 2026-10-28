@@ -46,7 +46,7 @@ sushiruntime_add_module_tests(
         test_register_profiler_parts/test_usm_allocator_zones.cpp)
 
 # The tests include SushiProfiler headers and read its records.
-target_link_libraries(sr_profiling_tests PRIVATE SushiProfiler::SushiProfiler)
+target_link_libraries(sr_profiling_test_objects PRIVATE SushiProfiler::SushiProfiler)
 if(TARGET sr_profiling_benchmarks)
     target_link_libraries(sr_profiling_benchmarks PRIVATE SushiProfiler::SushiProfiler)
 endif()

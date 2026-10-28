@@ -1,6 +1,6 @@
 # api tests: graph/plumbing
 
-The tests of the builder surface, the region composer and the step driver. They are part of `sr_api_tests`;
+The tests of the builder surface, the region composer and the step driver. They are part of `sr_surface_tests`;
 [the page of the module's tests](../../README.md) says how to run them.
 
 ## test_builder_surface.cpp

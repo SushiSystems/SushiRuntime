@@ -1,8 +1,8 @@
 # region_boundary tests
 
 The tests of the `region_boundary` module, mirroring `modules/engine/region_boundary/`.
-`tests/engine/region_boundary/CMakeLists.txt` builds them into `sr_region_boundary_tests`. `sr test`
-runs them with the rest; `sr run sr_region_boundary_tests -- --gtest_filter='<pattern>'` runs one
+`tests/engine/region_boundary/CMakeLists.txt` builds them into `sr_region_boundary_test_objects`, linked into `sr_engine_tests`. `sr test`
+runs them with the rest; `sr run sr_engine_tests -- --gtest_filter='<pattern>'` runs one
 program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.

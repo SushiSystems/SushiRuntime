@@ -54,7 +54,7 @@ includes `<mutex>`; the header does not.
 
 ## Tests
 
-`tests/foundation/profile/` builds `sr_profile_tests`; its `README.md` describes it.
+`tests/foundation/profile/` builds `sr_profile_test_objects`, linked into `sr_foundation_tests`; its `README.md` describes it.
 
 ## Designs
 

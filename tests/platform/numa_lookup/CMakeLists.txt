@@ -10,6 +10,6 @@ sushiruntime_add_module_tests(
         test_numa_lookup.cpp)
 
 # test_numa_lookup.cpp builds its own hwloc topologies to check the lookup against.
-if(TARGET sr_numa_lookup_tests)
-    target_link_libraries(sr_numa_lookup_tests PRIVATE PkgConfig::HWLOC)
+if(TARGET sr_numa_lookup_test_objects)
+    target_link_libraries(sr_numa_lookup_test_objects PRIVATE PkgConfig::HWLOC)
 endif()

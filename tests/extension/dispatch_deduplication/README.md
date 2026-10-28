@@ -2,8 +2,8 @@
 
 The tests of the `dispatch_deduplication` module, mirroring
 `modules/extension/dispatch_deduplication/`. `tests/extension/dispatch_deduplication/CMakeLists.txt`
-builds them into `sr_dispatch_deduplication_tests`. `sr test` runs them with the rest; `sr run
-sr_dispatch_deduplication_tests -- --gtest_filter='<pattern>'` runs one program alone.
+builds them into `sr_dispatch_deduplication_test_objects`, linked into `sr_extension_tests`. `sr test` runs them with the rest; `sr run
+sr_extension_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 

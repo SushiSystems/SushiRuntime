@@ -1,8 +1,8 @@
 # test_runner tests
 
 The tests of the `test_runner` module, mirroring `modules/foundation/test_runner/`.
-The folder's CMake file builds them into `sr_test_runner_tests`.
-`sr run sr_test_runner_tests -- --gtest_filter='<pattern>'` runs them alone.
+The folder's CMake file builds them into `sr_test_runner_test_objects`, linked into `sr_foundation_tests`.
+`sr run sr_foundation_tests -- --gtest_filter='<pattern>'` runs them alone.
 
 ## test_log_capture.cpp
 
