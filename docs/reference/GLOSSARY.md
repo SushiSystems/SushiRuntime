@@ -83,7 +83,7 @@ The words this repository's documents use. A term defined in code names the head
 | --- | --- |
 | BB-0 to BB-8 | The work packages of `docs/design/ENGINE_BACKBONE_REFACTOR/` |
 | WP-0 to WP-7 | The work packages of `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/` |
-| R1 to R9 | The requests of `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS/README.md` |
+| R1 to R9 | The requests of `docs/design/LAYERED_EXECUTION/PHYSICS_SUBSTRATE_REQUIREMENTS.md` |
 | P0 to P3 | The phases of `docs/design/GRAPH_REPLAY/README.md` |
 | G1 | The gate that added node event records; its design is in the version history |
 | L1 to L17 | The owner decisions locked in §0.1 of the simulation substrate plan |

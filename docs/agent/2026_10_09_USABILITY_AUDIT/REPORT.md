@@ -9,7 +9,7 @@ file and line. Nobody ran a build, a test, a benchmark or `sr`. Three auditors r
 ran the Python checkers under `tools/`. A cost claim without a measurement is marked as a
 hypothesis in its finding and names the benchmark that would settle it.
 
-Findings already in `docs/design/REMAINING_WORK.md` or in the audit of 2026-10-05 are cited as
+Findings already in `docs/backlog/README.md` or in the audit of 2026-10-05 are cited as
 "already known" and not counted.
 
 | Dimension | Prefix | High | Medium | Low |
@@ -443,7 +443,7 @@ Headers the umbrella adds over `fluent.hpp`: `version.hpp`, `core/event_timestam
 
 #### Already known, not repeated as findings
 
-- No non-throwing `Runtime::try_create`: backlog `docs/design/REMAINING_WORK.md`, "Backbone, BB-5 to BB-8".
+- No non-throwing `Runtime::try_create`: backlog `docs/backlog/README.md`, "Backbone, BB-5 to BB-8".
 - A `Buffer`/`State` moved after `Graph::add` dangles silently: backlog, "Correctness".
 - Host read of `Residency::Shared` during a run on Windows CUDA: backlog, "Correctness".
 - Doxygen conformance sweep over `include/SushiRuntime/`: backlog, "Before the v1.0.0 freeze" (API-18 lists only the entries on this surface).
@@ -630,7 +630,7 @@ Read-only. Nothing in the repository was written. Every performance finding is a
 
 #### What was read
 
-Read in full: `src/scheduler/scheduler.cpp`, `include/SushiRuntime/scheduler/{task_scheduler,event_polling,task,work_stealing_deque,ready_sink,workload_coordinator,thermal_proxy_strategy}.hpp`, `include/SushiRuntime/graph/{node,dependency_tracker,late_bindings,task_types}.hpp`, `src/graph/{task_graph,dependency_tracker}.cpp`, `include/SushiRuntime/memory/epoch_reclamation.hpp`, `include/SushiRuntime/core/{logger,ref_counted,common}.hpp`, the seven module READMEs in scope, `docs/design/REMAINING_WORK.md`, and the "Code shape" findings C1, C2, C11, C12, C13, C17, C18, C24, C26 of the prior audit.
+Read in full: `src/scheduler/scheduler.cpp`, `include/SushiRuntime/scheduler/{task_scheduler,event_polling,task,work_stealing_deque,ready_sink,workload_coordinator,thermal_proxy_strategy}.hpp`, `include/SushiRuntime/graph/{node,dependency_tracker,late_bindings,task_types}.hpp`, `src/graph/{task_graph,dependency_tracker}.cpp`, `include/SushiRuntime/memory/epoch_reclamation.hpp`, `include/SushiRuntime/core/{logger,ref_counted,common}.hpp`, the seven module READMEs in scope, `docs/backlog/README.md`, and the "Code shape" findings C1, C2, C11, C12, C13, C17, C18, C24, C26 of the prior audit.
 
 #### Build the numbers refer to
 
@@ -972,7 +972,7 @@ Not called from `api/` at all: `get_queue`, `profiling_queue`, `has_profiling_qu
 
 **Benchmarks present:** `test_chain_dispatch_perf`, `test_scheduler_dispatch_perf`, `test_root_fanout_perf`, `test_wide_fanout_perf`, `test_profiling_queue_perf`, `test_graph_compile_perf`, `test_recompose_churn_perf`, `test_async_overlap_perf`, `test_dynamic_graph_perf`, two steal benches, `test_distributed_offload_perf`. Only `test_profiling_queue_perf.cpp` mentions profiling, and it measures a raw queue, not a profiled chain run.
 
-**Already known, not repeated below:** RuntimeContext carries seven responsibilities (prior audit C3, `REPORT.md:976`); memory and interop include upward (C8, `:1016`); swallowed `catch (...)` at `hw_discovery.cpp:149` and `interop.cpp:112, 151` (`:1042`); logger has no categories (`:1058`); `execution_engine.hpp` holds interface and implementation (`:1090`); `-1` sentinels in `context_index_for_ptr` and `chain_plan.cpp` (`:1106`); `Runtime::try_create` is BB-5b in `docs/design/REMAINING_WORK.md:27`.
+**Already known, not repeated below:** RuntimeContext carries seven responsibilities (prior audit C3, `REPORT.md:976`); memory and interop include upward (C8, `:1016`); swallowed `catch (...)` at `hw_discovery.cpp:149` and `interop.cpp:112, 151` (`:1042`); logger has no categories (`:1058`); `execution_engine.hpp` holds interface and implementation (`:1090`); `-1` sentinels in `context_index_for_ptr` and `chain_plan.cpp` (`:1106`); `Runtime::try_create` is BB-5b in `docs/backlog/README.md:27`.
 
 ### Findings
 
@@ -1142,14 +1142,14 @@ Not called from `api/` at all: `get_queue`, `profiling_queue`, `has_profiling_qu
 
 #### EXEC-25. The backlog says the module folders have no README
 - Severity low. Category documentation.
-- Evidence: `docs/design/REMAINING_WORK.md:104-106` says none of the nine folders under `include/SushiRuntime/` carries a `README.md`. `include/SushiRuntime/execution/README.md`, `include/SushiRuntime/topology/README.md` and `include/SushiRuntime/api/README.md` exist. In my scope only `include/SushiRuntime/interop/` lacks one.
+- Evidence: `docs/backlog/README.md:104-106` says none of the nine folders under `include/SushiRuntime/` carries a `README.md`. `include/SushiRuntime/execution/README.md`, `include/SushiRuntime/topology/README.md` and `include/SushiRuntime/api/README.md` exist. In my scope only `include/SushiRuntime/interop/` lacks one.
 - Change: narrow the backlog line to the folders that still lack one.
 - Breaks API: no. Effort S.
 
 ### Not checked
 
 - Nothing was built, run or measured. Every performance item is a reading of the code.
-- `docs/CONTRIBUTING.md` and `docs/architecture/ARCHITECTURE.md` were not read whole; I read ARCHITECTURE §6 (lines 566-590) and grepped both. `docs/design/REMAINING_WORK.md` was read whole. The prior audit was grepped, not read.
+- `docs/CONTRIBUTING.md` and `docs/architecture/ARCHITECTURE.md` were not read whole; I read ARCHITECTURE §6 (lines 566-590) and grepped both. `docs/backlog/README.md` was read whole. The prior audit was grepped, not read.
 - Not opened: `include/SushiRuntime/topology/hwloc_topology_provider.hpp`, `remapping_topology_provider.hpp`, `matrix_distance_model.hpp`; the first 28 lines (licence and `@file`) of most files; `memory/usm_registry.hpp` and `graph/node.hpp` beyond grep hits; `core/sycl_compat.hpp` beyond three lines.
 - `hw_discovery.hpp`, the interop headers and the topology headers were read with blank lines stripped, so findings on them cite symbols, not line numbers.
 - The scheduler side of dispatch (`src/scheduler/scheduler.cpp`) is outside my scope; I read lines 684-696 only, to confirm the caller of `get_numa_local_queue`.
@@ -1454,7 +1454,7 @@ All nine are in the audit report (link syntax quoted in prose) or in the frozen 
 | D4 changelog entry shape | Closed | `check_changelog.py` prints nothing; the long form is the v0.3.0 long form document in the version history |
 | D5 CONTRIBUTING on versioning | Closed | `docs/CONTRIBUTING.md:229-235` states the one-line rule |
 | D6 two licence texts | Closed | `docs/LICENSE` is gone; `README.md:593` names PolyForm Noncommercial and links the root `LICENSE` |
-| D7 backlog in `docs/slop/TODO.md` | Closed, new defect | `docs/design/REMAINING_WORK.md` exists; four of its items are stale (DOCS-08) |
+| D7 backlog in `docs/slop/TODO.md` | Closed, new defect | `docs/backlog/README.md` exists; four of its items are stale (DOCS-08) |
 | D8 `docs/slop/`, `docs/superpowers/` | Closed in `docs/`, open in source | Both folders are under the archive or `docs/design/`. Old paths remain at `cmake/SushiRuntimeInstall.cmake:21`, `cmake/SushiRuntimeConfig.cmake.in:16`, `tests/package/CMakeLists.txt:28`, `Doxyfile:4,24` |
 | D9 changelog scope and order | Closed | Entries carry scope, newest first (`CHANGELOG.md:5-12`) |
 | D10 status lines | Closed, weak | All four design documents have `**Status:**` on line 2. Two say "not re-checked against the tree on 2026-10-05" |
@@ -1630,7 +1630,7 @@ Change: move the two community files to `.github/` and drop their rows from `doc
 
 **DOCS-21, low, S. `docs/publish.toml` publishes pages whose links leave the bundle.**
 Evidence: `sections = ["getting_started", "guides", "architecture", "reference"]`; INTRODUCTION, CLI_GUIDE and FAQ link `../../README.md` (seven links), which is outside those sections. `CLI_GUIDE.md:261-262` says the bundle packs "the files they link to", so the 593-line README ships as a satellite page. KNOWN_ISSUES and CHANGELOG are published as they are, internal rows included.
-Change: after DOCS-02 and DOCS-03 the manual no longer needs to link the README. Decide whether `reference/KNOWN_ISSUES.md` is public.
+Change: after DOCS-02 and DOCS-03 the manual no longer needs to link the README. Decide whether `backlog/README.md` is public.
 
 **DOCS-22, low, S. Two entries missing from the changelog since v0.3.0.**
 Evidence: D20, still open at `REMAINING_WORK.md:109-111`. Also, the working copy carries an uncommitted changelog line dated 2026-10-09 with the matching `runtime.hpp` edit (`git diff --stat`: 2 files, 8 insertions).
@@ -2025,7 +2025,7 @@ Panels: Toolchain, Project, Diagnostics, Container. Console scripts `sr` and `su
 | C23 | `env --all` has no `-a` | Closed | `cli.py:307` |
 | C24 | Guide calls docs/README the top-level README | Closed | root `README.md` exists; `CLI_GUIDE.md:375` links it |
 
-`docs/reference/KNOWN_ISSUES.md:26` (CI installs sushicore from `./.sushistack/sushicore`) is stale: `ci.yml:87` now runs `pip install -e ./cli`. Line 27 (`|| true`) is still true (`ci.yml:92`). `docs/design/REMAINING_WORK.md:128-130` ("runs none of the checkers, has no release workflow") is stale on both counts.
+`docs/backlog/README.md:26` (CI installs sushicore from `./.sushistack/sushicore`) is stale: `ci.yml:87` now runs `pip install -e ./cli`. Line 27 (`|| true`) is still true (`ci.yml:92`). `docs/backlog/README.md:128-130` ("runs none of the checkers, has no release workflow") is stale on both counts.
 
 ### Findings
 
@@ -2377,7 +2377,7 @@ Effort: S for the pattern, M for the CI lane.
 
 #### TEST-16 [medium] [benchmark] The one allocation gate is failing on Linux and blind to worker threads
 
-Evidence: `docs/reference/KNOWN_ISSUES.md:12` records `ProfiledReuseTicksDoNotAllocatePerTick` failing on CI since 2026-10-05 (already known). Beyond that: `test_steady_state_allocation.cpp:67-75` counts only when `g_counting_this_thread` is set, a `thread_local`, so allocations made on scheduler workers during a tick are never counted. The assertions are ratios (`scheduler_long < 4 * scheduler_short`, lines 258 and 362), so a path that allocates a constant 3 times per node per tick passes. `test_recompose_churn_perf.cpp:60-78` carries a second, differently built `operator new` replacement with a process-wide gate.
+Evidence: `docs/backlog/README.md:12` records `ProfiledReuseTicksDoNotAllocatePerTick` failing on CI since 2026-10-05 (already known). Beyond that: `test_steady_state_allocation.cpp:67-75` counts only when `g_counting_this_thread` is set, a `thread_local`, so allocations made on scheduler workers during a tick are never counted. The assertions are ratios (`scheduler_long < 4 * scheduler_short`, lines 258 and 362), so a path that allocates a constant 3 times per node per tick passes. `test_recompose_churn_perf.cpp:60-78` carries a second, differently built `operator new` replacement with a process-wide gate.
 
 Change: one allocation counter in `tests/common` with both modes (calling thread, whole process), used by both files. Add a reported figure "allocations per node per tick, all threads" for the scheduler layer; that is the number an optimisation of the per-node path has to move.
 
@@ -2468,7 +2468,7 @@ Effort: S each.
 - Known only by test names and grep counts: the remaining 30 integration files and 20 unit files. The per-test split of "algorithm" against "orchestration" in TEST-18 is from test names and file headers, not from reading every body.
 - `tests/functional/integration/README.md` (1,614 lines) and `unit/README.md` (462 lines): headings counted (39 and 20 sections), prose not read. `tests/functional/README.md`, `regression/README.md` and `common/README.md` were read.
 - The coverage table is include- and symbol-based. It shows that a test names a symbol, not that the test asserts anything about it. Overload-level coverage of the 18 `Graph::add` forms was not traced.
-- `docs/CONTRIBUTING.md`, `docs/architecture/ARCHITECTURE.md` and `docs/design/REMAINING_WORK.md` were grepped for test, benchmark and sanitizer items and not read whole. `KNOWN_ISSUES.md` was read whole. The prior audit report was grepped; C20, C21 and C26 were read in full.
+- `docs/CONTRIBUTING.md`, `docs/architecture/ARCHITECTURE.md` and `docs/backlog/README.md` were grepped for test, benchmark and sanitizer items and not read whole. `KNOWN_ISSUES.md` was read whole. The prior audit report was grepped; C20, C21 and C26 were read in full.
 - `cli/tests/` (the Python tests of `sr`) is outside this scope and was not opened.
 - Whether `leak:libintelocl` hides a real SushiRuntime leak (TEST-15) needs an ASan run to settle.
 - The cost of one process per test case (TEST-12) is not measured.

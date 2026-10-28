@@ -262,7 +262,7 @@ both cases.
 ### `NamingTheLastNodeReachesTheNodeTable`
 
 Any node can be given a diagnostic name that reaches its row of the observation's `NodeTable`. This is requirement R8
-of `docs/design/PHYSICS_SUBSTRATE_REQUIREMENTS/README.md`. Without a name every node reports as
+of `docs/design/LAYERED_EXECUTION/PHYSICS_SUBSTRATE_REQUIREMENTS.md`. Without a name every node reports as
 "unnamed_task" whichever `add()` produced it, and a profile of a real graph is a list of identical
 labels.
 

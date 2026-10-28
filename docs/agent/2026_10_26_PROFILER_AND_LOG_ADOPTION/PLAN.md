@@ -490,7 +490,7 @@ Additive: the gate belongs to the internal `observe_runs`, and `Runtime::add_run
 ### DOC-1 The manual, the design topic, the changelog, the backlog
 
 - **Files:** `docs/design/PROFILING/README.md` per D22 with the phases `P1` (capture and observer), `P2` (device source and registration), `P3` (the runtime's zones) and `P4` (logging adoption), and the `docs/design/README.md` map;
-  `docs/design/REMAINING_WORK.md` (what this pass leaves: the switch of device timing without a rebuild, the budget misses of `PF-13`, the distributed layer's timing, the typed deferred refusal of `Recorder`, the removal
+  `docs/backlog/README.md` (what this pass leaves: the switch of device timing without a rebuild, the budget misses of `PF-13`, the distributed layer's timing, the typed deferred refusal of `Recorder`, the removal
   of `SR_LOGGER_SET_SYNC_MODE`, the use of SushiLog's throttles); `docs/reference/CHANGELOG.md` (one entry per removed member naming its replacement, one per added public name, `!` on the commit subject the orchestrator writes);
   `docs/reference/PROFILER_KEYS.md`; the manual pages that name a changed or removed member (`git grep -n` of every name over `*.md`), `docs/.docs_truth_allow` for the names the source cannot hold; this folder's status and `**Implements:**` line.
 - **Acceptance:** `tools/documentation/check_docs_layout.py`, `check_changelog.py`, `check_docs_truth.py`, `check_design_topics.py` and `tools/logs/check_logging.py` pass on the tree, and every renamed or added public name

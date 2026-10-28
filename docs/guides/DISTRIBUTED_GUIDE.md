@@ -459,7 +459,7 @@ every worker from one commit; `--version` on a worker prints the version it spea
 | Same layout on both ends | Frame fields are little-endian on every machine, but buffer bytes cross as they lie in memory, so master and worker must agree on the byte order and layout of your element types |
 
 Defects that are recorded and not yet fixed are in
-[`KNOWN_ISSUES.md`](../reference/KNOWN_ISSUES.md).
+[`KNOWN_ISSUES.md`](../backlog/README.md).
 
 ## 13. Troubleshooting
 

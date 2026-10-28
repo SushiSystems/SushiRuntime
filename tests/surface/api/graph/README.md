@@ -440,7 +440,7 @@ Recorder and records device tasks with `Recorder::task`.
 `record_device_task` records one `Recorder::task` node whose body is a `parallel_for` on the queue
 it is given, named and given its width through NodeOptions. The tasks are device kernels, not host
 tasks, because a host access to a `Residency::Shared` buffer while a kernel runs on the same GPU
-faults on Windows with CUDA; see `docs/reference/KNOWN_ISSUES.md`.
+faults on Windows with CUDA; see `docs/backlog/README.md`.
 
 | Test | What it proves |
 | --- | --- |

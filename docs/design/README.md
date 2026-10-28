@@ -10,12 +10,11 @@ One document per topic. Look the topic up here before writing; extend the docume
 | [ENGINE_BACKBONE_REFACTOR](ENGINE_BACKBONE_REFACTOR/README.md) | Open | The runtime's simulation core is already the right machine: dependency-inferred DAG, compile-once replay, late-bound sizes and bases, fixed-order deterministic reductions, interval-exact... |
 | [GRAPH_REPLAY](GRAPH_REPLAY/README.md) | Open | SushiEngine's matter device solver is launch-bound on the device. |
 | [LAYERED_EXECUTION](LAYERED_EXECUTION/README.md) | Open | What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs without writing it into their code: a placement vocabulary on every node, a description of... |
-| [PHYSICS_SUBSTRATE_REQUIREMENTS](PHYSICS_SUBSTRATE_REQUIREMENTS/README.md) | Open | Labels follow the substrate plan: **BLOCKER** (incorrect results or an unusable shape at the target scale), **STRUCTURAL** (works, but is built on an assumption the target violates),... |
 | [PROFILING](PROFILING/README.md) | Open | How SushiRuntime reports its own time to SushiProfiler and to any observer, and which timing leaves its public report. |
 | [SIMULATION_ENGINE_SUBSTRATE_PLAN](SIMULATION_ENGINE_SUBSTRATE_PLAN/README.md) | Open | SushiRuntime as a simulation and game-engine substrate. |
 <!-- topics:end -->
 
-The backlog is [`REMAINING_WORK.md`](REMAINING_WORK.md).
+The backlog is [`REMAINING_WORK.md`](../backlog/README.md).
 
 ## Names that left the runtime
 

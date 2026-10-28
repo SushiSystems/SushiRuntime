@@ -104,7 +104,7 @@ dispatch the run lost. The record's dropped spans count all of them, so a profil
 ## What it costs
 
 The numbers below are the profiler's budgets and arithmetic on what the runtime does, not measurements of this
-runtime; the overhead benchmark has not run yet (RW-69 in [the backlog](../design/REMAINING_WORK.md)).
+runtime; the overhead benchmark has not run yet (RW-69 in [the backlog](../backlog/README.md)).
 
 | Case | Cost |
 | --- | --- |

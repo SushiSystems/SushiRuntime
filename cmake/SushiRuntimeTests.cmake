@@ -18,8 +18,8 @@
 # and gains the quarantined label, which leaves it out of every gating run.
 # `sr test --label <size>` selects one label.
 
-# Suite.Case names of the intermittent tests, each with its entry in
-# docs/reference/KNOWN_ISSUES.md.
+# Suite.Case names of the intermittent tests, each with its known issue
+# in docs/backlog/.
 set(SR_QUARANTINED_TESTS
     Medium_DataHandlesDeathTest.StateStopsOnAWindowPastTheEnd
 )

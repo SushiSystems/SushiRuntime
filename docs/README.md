@@ -37,7 +37,7 @@ one adapter module of your own, as [the integration guide](guides/INTEGRATION.md
 | [Changelog](reference/CHANGELOG.md) | What changed, by release |
 | [Glossary](reference/GLOSSARY.md) | The words these documents use |
 | [Profiler keys](reference/PROFILER_KEYS.md) | Every name the runtime writes into a SushiProfiler record: tracks, attributes, zones, values, counters and facts |
-| [Known issues](reference/KNOWN_ISSUES.md) | Defects that are recorded and not yet fixed |
+| [Known issues](backlog/README.md) | Defects that are recorded and not yet fixed |
 | [Security policy](../.github/SECURITY.md) | How to report a vulnerability, and what is in scope |
 | [Code of conduct](../.github/CODE_OF_CONDUCT.md) | The conduct expected of contributors |
 | [API main page](reference/API_MAINPAGE.md) | The front page of the Doxygen site that `sr docs` builds |
@@ -55,7 +55,7 @@ one adapter module of your own, as [the integration guide](guides/INTEGRATION.md
 | Document | Holds |
 | --- | --- |
 | [Design map](design/README.md) | Which design document covers which topic, with its status |
-| [Remaining work](design/REMAINING_WORK.md) | The backlog |
+| [Remaining work](backlog/README.md) | The backlog |
 
 Agent work folders are under `agent/`. Finished material is under `archive/` and is not edited:
 the archived changelog sections in `archive/changelog/`, the closed plans and reviews in

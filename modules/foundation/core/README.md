@@ -84,7 +84,7 @@ pointer for the whole process. `Runtime::create` installs a handler that logs th
 
 bit.hpp holds bit helpers that stand in for C++20 \<bit> (std::popcount and std::countr_zero) on the
 C++17 baseline. The std:: versions come back when the standard is raised;
-docs/design/REMAINING_WORK.md lists that under "C++ standard migration".
+docs/backlog/README.md lists that under "C++ standard migration".
 
 ## common.hpp
 

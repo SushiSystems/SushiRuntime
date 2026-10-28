@@ -55,8 +55,8 @@ installed package.
 SushiRuntime is at 0.4.0, below 1.0.0, so a MINOR release may break its public interface. The
 graph, the scheduler, the memory tiers and the hardware discovery work on the three supported
 SYCL toolchains. Offload to other machines is optional (`sr build --distributed`) and has the
-limits that [`KNOWN_ISSUES.md`](docs/reference/KNOWN_ISSUES.md) lists. What is left is in
-[`REMAINING_WORK.md`](docs/design/REMAINING_WORK.md).
+limits that [`KNOWN_ISSUES.md`](docs/backlog/README.md) lists. What is left is in
+[`REMAINING_WORK.md`](docs/backlog/README.md).
 
 ## Documentation
 
