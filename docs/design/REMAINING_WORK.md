@@ -41,11 +41,6 @@ QC-59 (no `Dynamic` overload); QC-63 (`dynamic_graph.hpp` includes `runtime.hpp`
 - Done when: the cause of KI-17 is found, the test passes ten runs of the medium label at four
   jobs, and it leaves `SR_QUARANTINED_TESTS`
 
-### RW-74 Make `SushiRuntime::gpu_offload` relocatable
-- State: open
-- Done when: the exported device options name no path of the machine that built the package
-  (`--cuda-path` today), and a consumer on another machine finds its CUDA toolkit itself
-
 ### RW-7 Detect a `Buffer` moved after it was recorded
 - State: open
 - Done when: the liveness guard reports a recorded `Buffer` that moved (finding H4 of

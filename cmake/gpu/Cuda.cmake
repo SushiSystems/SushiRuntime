@@ -94,9 +94,10 @@ else()
     foreach(_sr_arch IN LISTS SR_CUDA_ARCH)
         sushiruntime_gpu_add_clang_triple("nvidia_gpu_sm_${_sr_arch}")
     endforeach()
+    set(SR_GPU_NVIDIA TRUE)
     # The located root is passed only where it holds libdevice, so an apt layout keeps
-    # the driver's own detection.
+    # the driver's own detection. GpuBackend.cmake keeps it out of the exported options.
     if(SR_CUDA_TOOLKIT_ROOT AND EXISTS "${SR_CUDA_TOOLKIT_ROOT}/nvvm/libdevice")
-        sushiruntime_gpu_add_clang_option("--cuda-path=${SR_CUDA_TOOLKIT_ROOT}")
+        set(SR_GPU_CUDA_PATH "${SR_CUDA_TOOLKIT_ROOT}")
     endif()
 endif()

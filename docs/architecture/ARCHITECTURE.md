@@ -266,6 +266,10 @@ result.
   `cmake/gpu/Rocm.cmake` asks `rocm_agent_enumerator`.
 - When the probe finds no device, a backend that `auto` selected falls back to the CPU path
   with a warning, and a backend the caller named fails the configure step.
+- A build for NVIDIA targets passes `--cuda-path` to its own units only. The installed
+  `SushiRuntimeConfig.cmake` finds the consumer's CUDA toolkit with `find_package(CUDAToolkit)`,
+  adds its root to `SushiRuntime::gpu_offload`, and fails `find_package(SushiRuntime)` when no
+  toolkit is found. `CUDAToolkit_ROOT` or `CUDA_PATH` points the search elsewhere.
 
 ## 8. Invariants
 

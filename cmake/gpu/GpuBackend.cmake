@@ -22,7 +22,12 @@
 # same scope, so their appends are visible here at finalize time):
 #   SR_GPU_CLANG_TRIPLES  seeded with spir64 (JIT CPU + Intel GPU, always valid on
 #                         the clang toolchains); accelerators append their triple.
-#   SR_GPU_CLANG_OPTIONS  extra driver flags: -Xsycl-target-backend ... and toolkit paths.
+#   SR_GPU_CLANG_OPTIONS  extra driver flags such as -Xsycl-target-backend ...; never a
+#                         path of this machine, since the options are exported.
+#   SR_GPU_NVIDIA         TRUE once an NVIDIA triple was added; the package config then
+#                         finds the consumer's CUDA toolkit at find_package time.
+#   SR_GPU_CUDA_PATH      the CUDA root this build passes as --cuda-path, or empty. It
+#                         reaches the options through $<BUILD_INTERFACE:> only.
 #   SR_GPU_ACPP_TARGETS   seeded with generic; accelerators append their target.
 #   SR_GPU_OFFLOAD_ADDED  TRUE once a real accelerator triple was added — gates
 #                         whether the clang path emits -fsycl-targets at all (with
@@ -31,6 +36,8 @@
 
 set(SR_GPU_CLANG_TRIPLES "spir64")
 set(SR_GPU_CLANG_OPTIONS "")
+set(SR_GPU_NVIDIA FALSE)
+set(SR_GPU_CUDA_PATH "")
 set(SR_GPU_ACPP_TARGETS "generic")
 set(SR_GPU_OFFLOAD_ADDED FALSE)
 
@@ -255,6 +262,14 @@ macro(sushiruntime_gpu_finalize)
                     -foffload-fp32-prec-div -foffload-fp32-prec-sqrt)
                 target_link_options(sushiruntime_gpu_offload INTERFACE
                     -foffload-fp32-prec-div -foffload-fp32-prec-sqrt)
+            endif()
+            # The build machine's CUDA root stays out of the export set; the installed
+            # SushiRuntimeConfig.cmake adds the consumer's own root (RW-74).
+            if(SR_GPU_CUDA_PATH)
+                target_compile_options(sushiruntime_gpu_offload INTERFACE
+                    "$<BUILD_INTERFACE:--cuda-path=${SR_GPU_CUDA_PATH}>")
+                target_link_options(sushiruntime_gpu_offload INTERFACE
+                    "$<BUILD_INTERFACE:--cuda-path=${SR_GPU_CUDA_PATH}>")
             endif()
             message(STATUS "GPU backend: SYCL targets = ${_sr_targets}")
         else()

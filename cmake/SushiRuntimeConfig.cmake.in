@@ -29,6 +29,26 @@ include("${CMAKE_CURRENT_LIST_DIR}/SushiRuntimeSycl.cmake")
 
 include("${CMAKE_CURRENT_LIST_DIR}/SushiRuntimeTargets.cmake")
 
+# The exported options name no CUDA path; the consumer's toolkit supplies it.
+set(SushiRuntime_NVIDIA "@SR_GPU_NVIDIA@")
+if(SushiRuntime_NVIDIA AND TARGET SushiRuntime::gpu_offload)
+    find_package(CUDAToolkit QUIET)
+    if(NOT CUDAToolkit_FOUND)
+        set(SushiRuntime_FOUND FALSE)
+        set(SushiRuntime_NOT_FOUND_MESSAGE
+            "SushiRuntime was built for NVIDIA targets and needs a CUDA toolkit, but none was "
+            "found. Install one, or set CUDAToolkit_ROOT or the CUDA_PATH environment variable "
+            "to its root.")
+        return()
+    endif()
+    if(EXISTS "${CUDAToolkit_LIBRARY_ROOT}/nvvm/libdevice")
+        target_compile_options(SushiRuntime::gpu_offload INTERFACE
+            "--cuda-path=${CUDAToolkit_LIBRARY_ROOT}")
+        target_link_options(SushiRuntime::gpu_offload INTERFACE
+            "--cuda-path=${CUDAToolkit_LIBRARY_ROOT}")
+    endif()
+endif()
+
 # Whether the distributed master-worker layer is compiled into this build, that is,
 # whether <SushiRuntime/distributed/cluster.hpp> has a library behind it. The exported
 # target defines SR_DISTRIBUTED when it is; no header reads the definition, so it

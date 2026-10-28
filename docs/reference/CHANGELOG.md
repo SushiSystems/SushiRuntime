@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-28 — cmake: Made the package config find the consumer's CUDA toolkit for `SushiRuntime::gpu_offload`, which no longer exports the build machine's `--cuda-path` (`SushiRuntimeConfig.cmake.in`).
 - 2026-10-28 — build: Fixed device units failing under -Werror by giving the device -O3 as one `-Xarch_device` flag, since the driver reports the per-triple spelling unused while applying it (`SushiRuntimeSyclTarget.cmake`).
 - 2026-10-28 — cmake: Breaking change: Made ThreadSanitizer opt-in through `SR_THREAD_SANITIZER`, set only by the new `sr build --type tsan`; Debug and RelWithDebInfo no longer imply it (`Sanitizers.cmake`).
 - 2026-10-28 — cli: Took the build type of the library packages from sushicore's `package_build_type`, so a Debug build links Release packages (`library_packages.py`).
