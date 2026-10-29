@@ -40,9 +40,16 @@ endif()
 
 # Debug host code carries line tables only: stack traces keep their files and lines at a fraction of
 # full debug information's compile memory, object size and link time. The later flag overrides -g.
+# The intel/llvm driver also runs a spir64 device pass, which rejects the flag, so it goes to the
+# host pass alone.
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    if(SR_SYCL_TOOLCHAIN STREQUAL "intel-llvm")
+        set(sr_line_tables "SHELL:-Xarch_host -gline-tables-only")
+    else()
+        set(sr_line_tables "-gline-tables-only")
+    endif()
     target_compile_options(sushiruntime_perf INTERFACE
-        "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CXX>>:-gline-tables-only>")
+        "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CXX>>:${sr_line_tables}>")
 endif()
 
 if(SR_NATIVE_ARCH)

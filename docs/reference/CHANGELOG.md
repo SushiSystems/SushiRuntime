@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-29 — build: Gave the Debug line tables to the host pass alone under intel/llvm, whose spir64 device pass rejects the flag, and let a Debug tree link an imported package built as `None`, such as Ubuntu's GTest (`cmake/Optimization.cmake`, `cmake/SushiRuntimeLanguage.cmake`).
 - 2026-10-29 — deps: Moved the SushiProfiler pin to v0.4.1, whose CLI installs against sushicore 0.10 (`cli/sushistack.deps.toml`).
 - 2026-10-29 — ci: Installed the CLI of every pinned Sushi library beside its clone, since a library package is built by that library's own CLI (`.github/actions/setup-sr/action.yml`).
 - 2026-10-29 — deps: Moved the SushiLog pin to v0.3.0, the first tag a consumer can build as a package (`cli/sushistack.deps.toml`).
