@@ -49,10 +49,13 @@ TEST(Small_DiffusionBackend, AUniformFieldStaysUniform)
     ASSERT_TRUE(created.is_ok()) << created.message;
 
     const std::vector<float> initial(64, 3.0f);
-    ASSERT_TRUE(allocate_field(*backend, initial, 0.1f).is_ok());
-    ASSERT_TRUE(advance(*backend, 10).is_ok());
+    const Status allocated = allocate_field(*backend, initial, 0.1f);
+    ASSERT_TRUE(allocated.is_ok()) << allocated.message;
+    const Status advanced = advance(*backend, 10);
+    ASSERT_TRUE(advanced.is_ok()) << advanced.message;
     std::vector<float> values;
-    ASSERT_TRUE(read_field(*backend, values).is_ok());
+    const Status read = read_field(*backend, values);
+    ASSERT_TRUE(read.is_ok()) << read.message;
     ASSERT_EQ(values.size(), initial.size());
     for (std::size_t index = 0; index < values.size(); ++index)
         EXPECT_NEAR(values[index], 3.0f, K_TOLERANCE) << "at " << index;
