@@ -1,5 +1,5 @@
 name: Set up sr
-description: Installs Python, the sr CLI from cli/, the pinned Sushi libraries and, on Linux, ccache.
+description: Installs Python, the sr CLI from cli/, the pinned Sushi libraries with their CLIs and, on Linux, ccache.
 runs:
   using: composite
   steps:
@@ -16,7 +16,7 @@ runs:
       shell: bash
       run: |
         python - <<'EOF'
-        import pathlib, subprocess, tomllib
+        import pathlib, subprocess, sys, tomllib
         root = pathlib.Path.cwd()
         pins = tomllib.loads((root / "cli/sushistack.deps.toml").read_text()).get("sushisystems", {})
         for name, pin in pins.items():
@@ -29,6 +29,8 @@ runs:
                                   capture_output=True, text=True).stdout.strip()
             if head != pin["commit"]:
                 raise SystemExit(f"{name} is at {head}; cli/sushistack.deps.toml pins {pin['commit']}")
+            # A library package is built by that library's own CLI.
+            subprocess.run([sys.executable, "-m", "pip", "install", str(target / "cli")], check=True)
         EOF
     - name: sudo apt-get install -y ccache
       if: runner.os == 'Linux'

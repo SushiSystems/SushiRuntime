@@ -92,7 +92,7 @@ def consumer(monkeypatch, tmp_path):
     monkeypatch.setattr(project, "console", quiet)
     monkeypatch.setattr(project, "find_project_root", lambda: tmp_path)
     monkeypatch.setattr(project, "load_config", lambda: cfg)
-    monkeypatch.setattr(project, "load_build_env", lambda cfg, tree: {})
+    monkeypatch.setattr(project, "load_build_env", lambda cfg, tree: {"PATH": ""})
     monkeypatch.setattr(project, "_resolve_compiler", lambda *a, **k: ("clang", "clang++"))
     return SimpleNamespace(driver=driver, asked=asked, root=tmp_path, cfg=cfg)
 
