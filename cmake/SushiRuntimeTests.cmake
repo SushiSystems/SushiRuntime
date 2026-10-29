@@ -61,7 +61,10 @@ set(SR_TEST_OUTPUT_DIR "${PROJECT_BINARY_DIR}/tests")
 
 # sushiruntime.dll staged beside the test programs, once, by a target they all depend
 # on. A POST_BUILD copy per program races in a parallel build: several links finish
-# together and Windows reports a sharing violation on the file they all write.
+# together and Windows reports a sharing violation on the file they all write. The
+# GTest and hwloc DLLs are staged here too, from the configuration each one links:
+# vcpkg's own deployment copies debug/bin into a Debug tree, which links GTest's
+# Release build (cmake/SushiRuntimeLanguage.cmake), and gtest.dll then crashes on load.
 if(WIN32)
     if(CMAKE_CONFIGURATION_TYPES)
         set(SR_TEST_OUTPUT_DIR "${PROJECT_BINARY_DIR}/tests/$<CONFIG>")
@@ -70,12 +73,17 @@ if(WIN32)
     if(SR_ENABLE_PROFILER)
         set(sr_profiler_dll "$<TARGET_FILE:SushiProfiler::SushiProfiler>")
     endif()
+    # hwloc links through pkg-config, from debug/lib in a Debug tree and lib otherwise.
+    set(sr_vcpkg_bin
+        "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}$<$<CONFIG:Debug>:/debug>/bin")
     add_custom_target(sushiruntime_tests_runtime_dll
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SR_TEST_OUTPUT_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:sushiruntime>
             $<TARGET_FILE:SushiLog::SushiLog>
             ${sr_profiler_dll}
+            $<TARGET_FILE:GTest::gtest>
+            "${sr_vcpkg_bin}/hwloc-15.dll"
             "${SR_TEST_OUTPUT_DIR}"
         COMMENT "Staging the runtime and its package DLLs next to the test binaries")
     add_dependencies(sushiruntime_tests_runtime_dll sushiruntime)
@@ -94,6 +102,8 @@ function(sushiruntime_add_test_program)
         message(FATAL_ERROR "sushiruntime_add_test_program(): NAME and SOURCES are required.")
     endif()
 
+    # The staging target above deploys the DLLs; vcpkg's per-program copy would undo it.
+    set(VCPKG_APPLOCAL_DEPS OFF)
     add_executable(${ARG_NAME} ${ARG_SOURCES})
     sushiruntime_apply_build_policy(${ARG_NAME})
     get_property(test_objects GLOBAL PROPERTY SUSHIRUNTIME_TEST_OBJECT_TARGETS)
@@ -305,6 +315,8 @@ function(sushiruntime_add_tier_test_programs)
     get_property(tiers GLOBAL PROPERTY SR_TEST_TIERS)
     list(REMOVE_DUPLICATES tiers)
     get_property(test_objects GLOBAL PROPERTY SUSHIRUNTIME_TEST_OBJECT_TARGETS)
+    # The staging target deploys the DLLs; vcpkg's per-program copy would undo it.
+    set(VCPKG_APPLOCAL_DEPS OFF)
     foreach(tier IN LISTS tiers)
         get_property(objects GLOBAL PROPERTY SR_TEST_OBJECTS_${tier})
         set(program sr_${tier}_tests)

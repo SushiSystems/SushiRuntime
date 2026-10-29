@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-29 — tests: Fixed every Windows Debug test program crashing on load; the tree stages the Release gtest.dll it links instead of the Debug one vcpkg copied (`cmake/SushiRuntimeTests.cmake`).
 - 2026-10-29 — tests: Quarantined five medium tests under AdaptiveCpp, whose CPU backend fails them, as KI-18 to KI-22 with RW-75 to fix them (`cmake/SushiRuntimeTests.cmake`).
 - 2026-10-29 — scheduler: Fixed two scheduler tests failing to compile under AdaptiveCpp, whose handler has no `host_task`; they enqueue through `Detail::enqueue_host_task` (`test_dispatch_record.cpp`, `test_event_polling.cpp`).
 - 2026-10-29 — ci: Built SushiBLAS against this commit with icpx, the compiler the oneAPI jobs use, so its SushiRuntime package finds IntelSYCL (`.github/workflows/ci.yml`).
