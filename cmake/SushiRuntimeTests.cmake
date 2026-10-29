@@ -23,6 +23,16 @@
 set(SR_QUARANTINED_TESTS
     Medium_DataHandlesDeathTest.StateStopsOnAWindowPastTheEnd
 )
+# The tests AdaptiveCpp's CPU backend fails, KI-18 to KI-22 in docs/backlog/CORRECTNESS.md.
+if(SR_SYCL_TOOLCHAIN STREQUAL "adaptivecpp")
+    list(APPEND SR_QUARANTINED_TESTS
+        Medium_UsmAllocatorFailure.LogsTheRefusedRequest
+        Medium_MemoryExchangeImport.AKindTheDeviceDoesNotImportIsRefusedByName
+        Medium_PlacementScopeDevice.AKindOrMemoryNoDeviceHasIsAbsent
+        Medium_RuntimeSession.ResolvesEverySubmitThreadToAnEnclosingZone
+        Medium_InteropBorrow.ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAllocate
+    )
+endif()
 
 if(NOT SR_BUILD_TESTS)
     function(sushiruntime_add_test_program)

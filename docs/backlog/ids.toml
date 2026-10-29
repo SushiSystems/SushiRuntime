@@ -1,7 +1,7 @@
 [work]
-next = 75
+next = 77
 closed = "2-3,42,68,74"
 
 [issue]
-next = 18
+next = 23
 closed = "5,7,12,16"
