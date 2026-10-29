@@ -52,7 +52,7 @@ installed package.
 
 ## Status
 
-SushiRuntime is at 0.5.0, below 1.0.0, so a MINOR release may break its public interface. The
+SushiRuntime is at 0.5.1, below 1.0.0, so a MINOR release may break its public interface. The
 graph, the scheduler, the memory tiers and the hardware discovery work on the three supported
 SYCL toolchains. Offload to other machines is optional (`sr build --distributed`) and has the
 limits that [`KNOWN_ISSUES.md`](docs/backlog/README.md) lists. What is left is in

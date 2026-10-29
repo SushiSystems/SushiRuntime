@@ -7,7 +7,7 @@
 
 PROJECT_NAME           = "SushiRuntime"
 PROJECT_BRIEF          = "Orchestration runtime — fluent C++ API reference"
-PROJECT_NUMBER         = "v0.5.0"
+PROJECT_NUMBER         = "v0.5.1"
 
 OUTPUT_DIRECTORY       = build/docs/api-site
 HTML_OUTPUT            = html
