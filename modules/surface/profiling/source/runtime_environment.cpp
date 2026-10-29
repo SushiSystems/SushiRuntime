@@ -29,7 +29,6 @@
 #include <SushiRuntime/profiling/runtime_environment.hpp>
 
 #include <cstddef>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -70,11 +69,32 @@ namespace SushiRuntime
             }
 
             /** @brief Returns the spelling of a SYCL backend. */
-            std::string backend_name(sycl::backend backend)
+            const char* backend_name(sycl::backend backend) noexcept
             {
-                std::ostringstream text;
-                text << backend;
-                return text.str();
+                switch (backend)
+                {
+#if defined(SYCL_IMPLEMENTATION_ACPP)
+                    case sycl::backend::ocl:
+                        return "opencl";
+                    case sycl::backend::level_zero:
+                        return "level_zero";
+                    case sycl::backend::cuda:
+                        return "cuda";
+                    case sycl::backend::hip:
+                        return "hip";
+#else
+                    case sycl::backend::opencl:
+                        return "opencl";
+                    case sycl::backend::ext_oneapi_level_zero:
+                        return "level_zero";
+                    case sycl::backend::ext_oneapi_cuda:
+                        return "cuda";
+                    case sycl::backend::ext_oneapi_hip:
+                        return "hip";
+#endif
+                    default:
+                        return "other";
+                }
             }
 
             /** @brief Returns the driver version the device reports, or "unknown" when it does not answer. */
