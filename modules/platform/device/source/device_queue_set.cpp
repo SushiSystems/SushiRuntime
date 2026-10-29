@@ -125,6 +125,16 @@ namespace SushiRuntime
             {
                 switch (backend)
                 {
+#if defined(SYCL_IMPLEMENTATION_ACPP)
+                    case sycl::backend::ocl:
+                        return "opencl";
+                    case sycl::backend::level_zero:
+                        return "level_zero";
+                    case sycl::backend::cuda:
+                        return "cuda";
+                    case sycl::backend::hip:
+                        return "hip";
+#else
                     case sycl::backend::opencl:
                         return "opencl";
                     case sycl::backend::ext_oneapi_level_zero:
@@ -133,6 +143,7 @@ namespace SushiRuntime
                         return "cuda";
                     case sycl::backend::ext_oneapi_hip:
                         return "hip";
+#endif
                     default:
                         return "other";
                 }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-10-29 — ci: Built SushiBLAS against this commit with icpx, the compiler the oneAPI jobs use, so its SushiRuntime package finds IntelSYCL (`.github/workflows/ci.yml`).
+- 2026-10-29 — device: Fixed the device line failing to compile under AdaptiveCpp, whose backends carry other names than DPC++'s (`device_queue_set.cpp`).
 - 2026-10-29 — build: Gave the Debug line tables to the host pass alone under intel/llvm, whose spir64 device pass rejects the flag (`cmake/Optimization.cmake`).
 - 2026-10-29 — build: Let a Debug tree link an imported package built as `None`, such as Ubuntu's GTest (`cmake/SushiRuntimeLanguage.cmake`).
 - 2026-10-29 — deps: Moved the SushiProfiler pin to v0.4.1, whose CLI installs against sushicore 0.10 (`cli/sushistack.deps.toml`).

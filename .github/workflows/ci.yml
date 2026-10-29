@@ -322,8 +322,8 @@ jobs:
         working-directory: sushiblas
         shell: bash
         env:
-          # oneAPI's clang++ takes -fsycl and has a sibling clang for the C slot; icpx has none.
-          SB_CXX: /opt/intel/oneapi/compiler/latest/bin/compiler/clang++
+          # sushicore gives the icx beside icpx to the C slot of every package build.
+          SB_CXX: icpx
           SB_USE_VCPKG: "false"
         run: source /opt/intel/oneapi/setvars.sh --force > /dev/null && sb build
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
