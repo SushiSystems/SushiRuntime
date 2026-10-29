@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-29 — scheduler: Fixed two scheduler tests failing to compile under AdaptiveCpp, whose handler has no `host_task`; they enqueue through `Detail::enqueue_host_task` (`test_dispatch_record.cpp`, `test_event_polling.cpp`).
 - 2026-10-29 — ci: Built SushiBLAS against this commit with icpx, the compiler the oneAPI jobs use, so its SushiRuntime package finds IntelSYCL (`.github/workflows/ci.yml`).
 - 2026-10-29 — device: Fixed the device line failing to compile under AdaptiveCpp, whose backends carry other names than DPC++'s (`device_queue_set.cpp`, `runtime_environment.cpp`).
 - 2026-10-29 — build: Gave the Debug line tables to the host pass alone under intel/llvm, whose spir64 device pass rejects the flag (`cmake/Optimization.cmake`).

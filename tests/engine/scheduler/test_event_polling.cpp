@@ -42,6 +42,7 @@
 #include <sycl/sycl.hpp>
 #include <SushiLog/log/log_level.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/test_runner/log_capture.hpp>
 
 using SushiRuntime::Internal::Scheduler::EventPolling;
@@ -216,7 +217,7 @@ TEST(Medium_EventPolling, CountsAStallDrive)
     std::shared_future<void> opened = gate.get_future().share();
     const sycl::event pending = queue.submit([&opened](sycl::handler& handler)
     {
-        handler.host_task([opened]() { opened.wait(); });
+        SushiRuntime::Detail::enqueue_host_task(handler, [opened]() { opened.wait(); });
     });
     EventPolling::PolledEvent entry;
     entry.event = pending;

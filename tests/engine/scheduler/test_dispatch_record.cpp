@@ -30,6 +30,7 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/task/node.hpp>
 
 #include <SushiRuntime/scheduler/dispatch_record.hpp>
@@ -111,7 +112,8 @@ TEST(Small_DispatchRecord, ASubmissionThatReachedADeviceWaitsOnItsEvent)
 TEST(Medium_DispatchRecord, ACompleteProfiledEventStillCountsAsSubmitted)
 {
     sycl::queue queue{sycl::property::queue::enable_profiling{}};
-    sycl::event event = queue.submit([](sycl::handler& h) { h.host_task([]() {}); });
+    sycl::event event = queue.submit(
+        [](sycl::handler& h) { SushiRuntime::Detail::enqueue_host_task(h, []() {}); });
     event.wait();
     EXPECT_TRUE(submitted_device_work(true, true, event, {}));
     EXPECT_FALSE(submitted_device_work(true, false, event, {})) << "with profiling off a complete event is no work";
