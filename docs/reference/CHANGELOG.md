@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- 2026-10-29 — deps: Moved the SushiProfiler pin to v0.4.0, whose CLI installs against sushicore 0.10 (`cli/sushistack.deps.toml`).
+- 2026-10-29 — deps: Moved the SushiProfiler pin to v0.4.1, whose CLI installs against sushicore 0.10 (`cli/sushistack.deps.toml`).
 - 2026-10-29 — ci: Installed the CLI of every pinned Sushi library beside its clone, since a library package is built by that library's own CLI (`.github/actions/setup-sr/action.yml`).
 - 2026-10-29 — deps: Moved the SushiLog pin to v0.3.0, the first tag a consumer can build as a package (`cli/sushistack.deps.toml`).
 - 2026-10-29 — cli: Handed the library packages the compiler as the build environment's PATH finds it, so a oneAPI `icpx` that only setvars puts on the PATH no longer stops `sr build` (`services/project.py`).
