@@ -42,6 +42,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/node_cost.hpp>
 #include <SushiRuntime/profiling/run_queue.hpp>
+#include <SushiRuntime/profiling/span_loss_tally.hpp>
 #include <SushiRuntime/report/node_table.hpp>
 
 namespace SushiRuntime
@@ -173,6 +174,9 @@ namespace SushiRuntime
 
                 /** @brief Spans converted and not yet placed, in arrival order. */
                 std::vector<PendingSpan> pending_;
+
+                /** @brief The spans lost since the last log line, by cause. */
+                SpanLossTally losses_;
 
                 /** @brief The interned attribute keys, valid after begin(). */
                 struct Keys

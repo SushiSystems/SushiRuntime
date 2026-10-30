@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <utility>
 
 #include <SushiProfiler/record/device_span_keys.hpp>
@@ -162,6 +163,7 @@ namespace SushiRuntime
 
                 const RunObservation& observation = run.observation;
                 sink.drop_late(observation.drops.total());
+                losses_.add(observation.drops);
 
                 const std::uint32_t layer = observation.layer == ExecutionLayer::Chain
                     ? keys_.layer_chain : keys_.layer_scheduler;
@@ -181,6 +183,7 @@ namespace SushiRuntime
                         {
                             // Without its device's pairing a span has no start on the steady clock, so no period.
                             sink.drop_late(1U);
+                            losses_.add(SpanLoss::NoPairing, 1U);
                             continue;
                         }
                         span.queued_steady_ns = to_steady_ns(*pairing, record.submit_ns);
@@ -266,20 +269,34 @@ namespace SushiRuntime
         void DeviceSource::collect(const SushiProfiler::PeriodSpan& period, SushiProfiler::SpanSink& sink)
         {
             ingest(sink);
-            sink.drop_late(queue_.take_overflow());
+            const std::uint64_t overflow = queue_.take_overflow();
+            sink.drop_late(overflow);
+            losses_.add(SpanLoss::QueueOverflow, overflow);
 
             // A span goes in the period whose steady span holds its start; an older one is late, a later one waits.
+            const std::uint64_t refused_before = sink.refused();
             std::vector<PendingSpan> waiting;
             for (const PendingSpan& span : pending_)
             {
                 if (span.start_steady_ns >= period.end_steady_ns)
+                {
                     waiting.push_back(span);
+                }
                 else if (span.start_steady_ns < period.start_steady_ns)
+                {
                     sink.drop_late(1U);
+                    losses_.add(SpanLoss::OlderThanPeriod, 1U);
+                }
                 else
+                {
                     write(span, sink);
+                }
             }
             pending_ = std::move(waiting);
+            losses_.add(SpanLoss::Refused, sink.refused() - refused_before);
+
+            if (const std::optional<std::string> report = losses_.take_report(period.end_steady_ns))
+                SR_LOG_WARN(K_PROFILING_LOG_CATEGORY, "Device spans not kept since the last report: {}.", *report);
         }
 
         void DeviceSource::end()

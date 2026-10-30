@@ -29,6 +29,17 @@ A session test marks periods around blocking runs, so every span of a run is que
 with no session.
 
 
+## test_span_loss_tally.cpp
+
+SpanLossTally, the count of lost device spans by cause and its throttled report.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_SpanLossTally.NamesEachCauseWithItsCountInOneLine` | A report names each cause with spans lost, a run's drop counts included, and leaves out a cause with none. |
+| `Small_SpanLossTally.SaysNothingWhenNoSpanWasLost` | No report comes when nothing was lost. |
+| `Small_SpanLossTally.ReportsAtMostOncePerIntervalAndStartsAgainAfterEach` | A second report waits 5 s of periods, carries what was held, and none of what the first one said. |
+
+
 ## test_run_queue.cpp
 
 RunQueue, the bounded hand-over of observations from the runs' threads to the consumer.

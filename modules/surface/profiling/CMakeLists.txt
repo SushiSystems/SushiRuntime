@@ -13,6 +13,7 @@ sushiruntime_add_module(
         register_profiler_parts.cpp
         run_queue.cpp
         runtime_environment.cpp
+        span_loss_tally.cpp
     DEPENDS
         core
         api

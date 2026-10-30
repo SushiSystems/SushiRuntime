@@ -104,6 +104,11 @@ full, and the device records with no pairing. The queue holds 64 observations; a
 oldest, so memory stays bounded when no session collects. Observations and spans still waiting when
 the session ends are discarded, and a `DEBUG` line gives the counts.
 
+The record keeps one total, so the source also counts each loss by cause in a `SpanLossTally`
+(`span_loss_tally.hpp`): the five causes of `DropCause`, no clock pairing, queue overflow, a span older
+than the period it arrived in, and a span the period's table refused. When any span was lost, a
+`WARN` line names the counts since the last one, at most once per 5 s of collected periods.
+
 ### Track names
 
 `device_track_name()` returns `<node>/<device index>/<device name>`, and `host_track_name()` returns
