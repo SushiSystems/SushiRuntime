@@ -21,12 +21,24 @@ from ..config import Config
 #: The file of a build tree that names the run-time folders of the packages it linked.
 K_RUN_DIRS_FILE = ".sushiruntime_package_dirs.json"
 
+#: The build type whose tree is ThreadSanitizer-instrumented.
+K_THREAD_TYPE = "tsan"
+
+#: The package build type of a ThreadSanitizer tree; TSan needs the symbols to name a race.
+K_THREAD_PACKAGE_TYPE = "relwithdebinfo"
+
+#: The libraries a ThreadSanitizer tree links, each built with ``--sanitize thread``.
+K_THREAD_LIBRARIES = ("sushilog", "sushiprofiler")
+
 
 def resolve(cfg: Config, root: Path, build_type: str, compiler: str,
             report: Callable[[str], None], warn: Callable[[str], None]) -> PackageSet:
     """Return a built package of every library the runtime links, building a missing one.
 
-    The runtime passes no option to a library, so a library builds as its CLI defaults.
+    The runtime passes no option to a library, so a library builds as its CLI defaults, except
+    for a ``tsan`` tree: TSan cannot see a synchronisation edge that runs inside an
+    uninstrumented library, so SushiLog and SushiProfiler are built with ``--sanitize thread``
+    as RelWithDebInfo packages.
 
     Args:
         cfg: The resolved configuration.
@@ -40,7 +52,11 @@ def resolve(cfg: Config, root: Path, build_type: str, compiler: str,
         sushicore.provision.sushi_packages.PackageError: A package cannot be chosen.
     """
     options: Mapping[str, tuple[str, ...]] = {}
-    return cfg.sushi_packages(root, package_build_type(build_type), options,
+    package_type = package_build_type(build_type)
+    if build_type == K_THREAD_TYPE:
+        package_type = K_THREAD_PACKAGE_TYPE
+        options = {name: ("--sanitize", "thread") for name in K_THREAD_LIBRARIES}
+    return cfg.sushi_packages(root, package_type, options,
                               report=report, warn=warn, compiler=compiler)
 
 

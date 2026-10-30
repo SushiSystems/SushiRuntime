@@ -110,6 +110,14 @@ def test_an_asan_build_links_release_packages(consumer):
     assert consumer.asked[0]["build_type"] == "release"
 
 
+def test_a_tsan_build_links_thread_sanitized_log_and_profiler_packages(consumer):
+    """TSan cannot follow a synchronisation edge through an uninstrumented library."""
+    assert project.build(BuildType.tsan) == 0
+    assert consumer.asked[0]["build_type"] == "relwithdebinfo"
+    assert consumer.asked[0]["options"] == {"sushilog": ("--sanitize", "thread"),
+                                            "sushiprofiler": ("--sanitize", "thread")}
+
+
 def test_the_configure_passes_the_package_and_no_checkout_directory(consumer):
     """Each package reaches CMake as -D<Package>_DIR and no -DSUSHILOG_DIR is passed."""
     assert project.build(BuildType.release) == 0

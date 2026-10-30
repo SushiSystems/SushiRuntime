@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-10-30 — cli: Made `sr build --type tsan` link SushiLog and SushiProfiler packages built with `--sanitize thread`, as RelWithDebInfo packages; it linked Release ones (`library_packages.py`).
 ## v0.5.1 — 2026-10-30
 
 - 2026-10-29 — ci: Gave the sanitizer job 90 minutes and the SushiBLAS job 150; both ran out of time building their packages (`.github/workflows/ci.yml`).
