@@ -13,7 +13,6 @@
 # Discovery order (first hit wins, and a caller-supplied value is never
 # overwritten):
 #   1. VCPKG_ROOT env var
-#   2. C:/vcpkg — only if it actually exists
 #
 # `sr build` passes -DVCPKG_ROOT itself, from the vcpkg tree `sr setup` found, so a workspace
 # layout is read by the CLI and not here.
@@ -24,8 +23,6 @@ endif()
 
 if((NOT DEFINED VCPKG_ROOT OR VCPKG_ROOT STREQUAL "") AND DEFINED ENV{VCPKG_ROOT})
     set(VCPKG_ROOT "$ENV{VCPKG_ROOT}" CACHE PATH "Path to vcpkg root")
-elseif((NOT DEFINED VCPKG_ROOT OR VCPKG_ROOT STREQUAL "") AND EXISTS "C:/vcpkg")
-    set(VCPKG_ROOT "C:/vcpkg" CACHE PATH "Path to vcpkg root (fallback)")
 endif()
 
 if(VCPKG_ROOT AND (NOT DEFINED CMAKE_TOOLCHAIN_FILE OR CMAKE_TOOLCHAIN_FILE STREQUAL ""))
