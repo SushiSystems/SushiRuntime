@@ -61,3 +61,10 @@ K_MODULE_MANIFEST = 'sushi-module.toml'
 K_MODULE_DEPENDENCY_FILE = 'cli/sushistack.deps.toml'
 K_MODULE_HEADINGS = ('## Standalone', '## With SushiHub')
 K_MODULE_WORKSPACE_READ = '\\bhub (?:install|add|link|doctor|status|pin)\\b|SUSHISTACK_HOME|\\.sushistack\\b|workspace\\.toml'
+
+# The time limits of the testing skill, read by tools/testing/test_budget.py.
+K_TEST_TIMES: dict[str, float] = {
+    "small_test_s": 0.1,
+    "medium_test_s": 5,
+    "pre_merge_s": 600,
+}

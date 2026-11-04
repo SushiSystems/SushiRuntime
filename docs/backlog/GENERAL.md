@@ -9,6 +9,7 @@
 | RW-5 | P2 | decision | Choose the install path for `sr` under WSL | a WSL shell has a documented way to install and run `sr` |  |  | 2026-10-19 |
 | RW-6 | P2 | decision | Rule on the public-surface reshapes of the API review | the owner has ruled on each reshape, each a breaking change of its own |  |  | 2026-10-19 |
 | RW-57 | P2 | decision | Decide what goes of the leftovers in git and on disk | the two stash entries of 2026-06-20, `.superpowers/` and the unmerged branch `pre-clean-main` are each kept or deleted by the owner |  |  | 2026-10-19 |
+| RW-80 | P2 | open | Clear the known findings of the shared checkers | tools/known_findings.toml holds no entry and tools/check_all.py is clean without it |  | `tools/check_all.py` | 2026-11-05 |
 
 ## Known issues
 

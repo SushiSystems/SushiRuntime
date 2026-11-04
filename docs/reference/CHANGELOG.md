@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-05 — tools: Took the shared checkers of 2026-11-05 with a baseline of the findings they meet, which RW-80 clears.
 - 2026-10-30 — build: Fixed a `tsan` build failing under `-Werror` on every unit compiled without `-fsycl`, which has no device pass for the TSan opt-out to apply to (`cmake/Sanitizers.cmake`).
 - 2026-10-30 — cli: Made `sr build --type tsan` link SushiLog and SushiProfiler packages built with `--sanitize thread`, as RelWithDebInfo packages; it linked Release ones (`library_packages.py`).
 ## v0.5.1 — 2026-10-30
