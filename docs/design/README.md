@@ -8,6 +8,7 @@ One document per topic. Look the topic up here before writing; extend the docume
 | Topic | State | About |
 | --- | --- | --- |
 | [ENGINE_BACKBONE_REFACTOR](ENGINE_BACKBONE_REFACTOR/README.md) | Open | The runtime's simulation core is already the right machine: dependency-inferred DAG, compile-once replay, late-bound sizes and bases, fixed-order deterministic reductions, interval-exact... |
+| [GLOBAL_HANDLE](GLOBAL_HANDLE/README.md) | Open | One identity for every buffer on every device and machine, resolved by the runtime, with the copies between devices planned as graph nodes. |
 | [GRAPH_REPLAY](GRAPH_REPLAY/README.md) | Open | SushiEngine's matter device solver is launch-bound on the device. |
 | [LAYERED_EXECUTION](LAYERED_EXECUTION/README.md) | Open | What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs without writing it into their code: a placement vocabulary on every node, a description of... |
 | [PROFILING](PROFILING/README.md) | Open | How SushiRuntime reports its own time to SushiProfiler and to any observer, and which timing leaves its public report. |

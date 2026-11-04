@@ -90,8 +90,8 @@ Made on 2026-10-19.
 
 ### Out of scope
 
-- Moving data between two devices or two machines on the caller's behalf. A copy is a node the
-  caller records.
+- Moving data between two devices or two machines on the caller's behalf. The planned copies
+  belong to [GLOBAL_HANDLE](../GLOBAL_HANDLE/README.md), which owns that decision.
 - A rule file format. Each application reads its own.
 - Encryption of frames after the handshake (RW-18). Rules change nothing in the trust model.
 
@@ -204,8 +204,9 @@ device on one machine, `LeastLoadedOffloadPolicy` across machines.
 
 On one machine the rules decide where data lives, and the existing rule that a tracked node runs
 where its first write lives does the rest. A scope's buffer lands on the device its rule names.
-An untracked verb takes `On(scope)`. A node whose buffers sit on two devices is refused as today:
-moving data between two devices is a node the caller records, never a copy the runtime inserts.
+An untracked verb takes `On(scope)`. Placement here chooses the device a node runs on; how a
+buffer that lives elsewhere reaches that device is [GLOBAL_HANDLE](../GLOBAL_HANDLE/README.md)
+phase H3.
 
 A rule whose device is absent on this machine, such as device 1 on a one-device machine, follows
 its `if_absent`.

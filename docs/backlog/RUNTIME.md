@@ -4,6 +4,7 @@
 
 | ID | Pri | State | Title | Done when | Blocked by | Source | Opened |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| RW-79 | P2 | open | Build the global handle design, phases H0 to H9 | every phase of docs/design/GLOBAL_HANDLE/README.md is built and the topic is closed |  | `docs/design/GLOBAL_HANDLE/README.md` | 2026-11-04 |
 
 ## Known issues
 
@@ -19,3 +20,5 @@
 | KI-10 | own | An op recorded on a dynamic-graph region always runs on the master | record the op on a `Graph` | RW-24 |  | 2026-10-19 |
 | KI-11 | own | Frames between master and worker are not protected after the handshake | run the cluster on a trusted network | RW-18 |  | 2026-10-19 |
 | KI-17 | own | `StateStopsOnAWindowPastTheEnd` fails under four parallel test jobs | the test is quarantined; run it alone | RW-67 |  | 2026-10-26 |
+| KI-23 | own | Boundary successor order follows buffer addresses, so submission order varies by run | none; results stay byte-equal, only order and traces differ | none, a stable buffer id is designed in the global handle topic | `modules/surface/api/source/region_composer.cpp` | 2026-11-01 |
+| KI-25 | own | DeviceIndex follows enumeration order and one card may appear under two backends | set the SYCL device selector to one backend per card | none, a stable device key is designed in the global handle topic | `modules/platform/topology/source/hw_discovery.cpp` | 2026-11-01 |

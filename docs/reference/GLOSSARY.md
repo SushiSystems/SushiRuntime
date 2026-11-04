@@ -85,6 +85,7 @@ The words this repository's documents use. A term defined in code names the head
 | WP-0 to WP-7 | The work packages of `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/` |
 | R1 to R9 | The requests of `docs/design/LAYERED_EXECUTION/PHYSICS_SUBSTRATE_REQUIREMENTS.md` |
 | P0 to P3 | The phases of `docs/design/GRAPH_REPLAY/README.md` |
+| H0 to H9 | The phases of `docs/design/GLOBAL_HANDLE/README.md` |
 | G1 | The gate that added node event records; its design is in the version history |
 | L1 to L17 | The owner decisions locked in §0.1 of the simulation substrate plan |
 | Work folder | `docs/agent/<YYYY_MM_DD>_<WORK_NAME>/`, holding the `SPEC.md`, `PLAN.md` and `REPORT.md` of one piece of agent work |
@@ -93,5 +94,7 @@ The words this repository's documents use. A term defined in code names the head
 
 A topic is a module or a subject that spans modules, and it has one design document.
 The list is generated in `docs/design/README.md`.
+
+**GLOBAL_HANDLE**: One identity for every buffer on every device and machine, resolved by the runtime, with the copies between devices planned as graph nodes. See [the design](../design/GLOBAL_HANDLE/README.md).
 
 **LAYERED_EXECUTION**: What SushiRuntime adds so that SushiBLAS, SushiAI and SushiEngine can say where their work runs without writing it into their code: a placement vocabulary on every node, a description of... See [the design](../design/LAYERED_EXECUTION/README.md).
