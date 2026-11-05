@@ -1,0 +1,50 @@
+# Test review: plan
+
+**Status:** Open — not started; the owner chooses inline or parallel
+
+Applies the verdicts of `REPORT.md`, in hierarchy order: the shared helpers, adapters and seams the
+rewrites need come first, then the defects the review found, then each module's tests. A module job
+applies every record of its module: rewrite, resize, split, merge and delete as the record says, and
+writes each add. Nothing in a module job changes production code except a seam a job above built.
+
+## Jobs
+
+| Job | Files | Waits on | Status |
+| --- | --- | --- | --- |
+| T1 | `tests/support/tolerance.hpp` copied from SushiSkills, and a `testing::Environment` fixture base that holds the one runtime and device of the program |  | todo |
+| T2 | In-memory adapters beside their ports: `TopologyProvider`, the offload ports, `TelemetryProvider`, `TaskMigrator`, `RebalanceStrategy`, `Task`, `AllocationOwner`, `RunObserver` (moving `RecordingObserver`), `USMReleaseObserver`, `FeedAttachment`, `CapabilityCache::Probe` |  | todo |
+| T3 | `InProcessTransport` beside the `Transport` port | owner decision 1 | todo |
+| T4 | `Performance_` and `Stress_` suites moved to the benchmark runner |  | todo |
+| T5 | The defects of this report, each with a test that fails first, and the pages corrected | owner decision 4 | todo |
+| T6 | The CLI tests on sushicore's in-memory runner and console | sushicore T1 | todo |
+| T7 | `tools/testing/check_test_additions.py`, `tools/tests/test_check_test_additions.py` deleted |  | todo |
+| M1 | the tests of `applications` (2 files): 2 rewrite, 1 split | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M2 | the tests of `cli` (20 files): 60 rewrite, 20 resize, 1 split, 5 merge, 7 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M3 | the tests of `engine` (52 files): 106 rewrite, 17 resize, 25 split, 7 merge, 21 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M4 | the tests of `extension` (49 files): 142 rewrite, 66 resize, 43 split, 13 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M5 | the tests of `foundation` (54 files): 44 rewrite, 27 resize, 22 split, 5 merge, 28 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M6 | the tests of `platform` (27 files): 49 rewrite, 18 resize, 12 split, 18 merge, 11 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M7 | the tests of `surface/api` (64 files): 248 rewrite, 73 resize, 80 split, 15 merge, 26 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M8 | the tests of `surface/context` (3 files): 3 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M9 | the tests of `surface/context_access` (1 file): 5 rewrite | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M10 | the tests of `surface/engine_handles` (2 files): 2 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M11 | the tests of `surface/interop` (4 files): 3 rewrite, 1 split, 5 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M12 | the tests of `surface/memory_exchange` (3 files): 5 rewrite, 1 resize, 2 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M13 | the tests of `surface/profiling` (23 files): 66 rewrite, 10 resize, 9 split, 11 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M14 | the tests of `tools` (5 files): 2 rewrite, 10 resize, 1 split, 18 merge, 5 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+
+## Acceptance
+
+- **T1.** No test body builds a runtime or device, and no comparison spells a tolerance literal. Build: the repository's test command over the touched tests.
+- **T2.** Each keeps its port's promise with no device or thread. Build: the repository's test command over each module.
+- **T3.** The transport tests use it from the port's module. Build: the repository's test command over transport and distributed.
+- **T4.** No benchmark sits in the test tree. Build: the repository's test command and its benchmark command.
+- **T5.** Every defect above is fixed or has a backlog entry; each README says what the code does. Build: the repository's test command and `python tools/check_all.py .`
+- **T6.** No CLI test patches the repository's own functions. Build: the CLI tests.
+- **T7.** Neither file exists and the checkers pass. Build: `python tools/check_all.py .`
+- **M jobs.** Every record of the module is applied: no test the report deletes remains, every kept and
+  new test passes at the size its label states, and the module's tests pass through the project's own
+  test command. Build: that command over the module.
+
+The owner chooses inline or parallel mode. SushiBLAS and SushiAI build on this repository's fixture base
+and adapters; their plans wait on T1 and T2.
