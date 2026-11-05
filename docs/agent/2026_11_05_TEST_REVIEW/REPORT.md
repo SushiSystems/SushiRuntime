@@ -48,14 +48,16 @@ checkers' tests.
 - `tools/tests/test_test_budget_settings.py` skips here, since the repository has no `skills/` folder, so
   its promise is checked nowhere; it also defines `read_budget` and `differences` in the test file.
 
-## The owner's decisions waiting
+## Decisions
 
-1. Moving `InProcessTransport` beside the `Transport` port: a module boundary.
-2. Whether `Allocation`, `translate_exceptions`, `require_same_release` and `is_log_enabled` are public,
-   and whether the bridge promises under `Detail::` get tests, at which tier.
-3. `register_profiler_parts` takes a concrete `Runtime`; a seam changes the public surface.
-4. `K_ALL_KEYS`: wire it in or drop it.
-5. Death tests: medium until the owner rules (the testing skill gives them no size).
+The owner delegated these decisions on 2026-11-05. Each ruling below is final for the plan; its reason follows it.
+
+1. `InProcessTransport` moves beside the `Transport` port, into `modules/extension/transport`. A port's in-memory adapter belongs with the port, and `distributed` keeps its dependency on the port only.
+2. A name is public when code outside its module calls it, and internal otherwise. The job decides `Allocation`, `translate_exceptions`, `require_same_release` and `is_log_enabled` by a search for callers. The bridge promises under `Detail::` are tested through the public bridge, at medium.
+3. `register_profiler_parts` takes the registration interface it uses in place of a concrete `Runtime`. Every seam is added as a parameter or overload whose default keeps today's behaviour, so existing callers compile unchanged and the change is a minor version. A value passed in is preferred to a reset of process-wide state.
+4. `K_ALL_KEYS` is deleted, with its test. Nothing reads it.
+5. Death tests are medium: each one starts a child process. The testing skill records this.
+6. The size timeouts follow the testing skill: 1 s, 10 s and 120 s. The skill is the one home of these numbers; a measurement on the owner's machine changes the skill, not a repository.
 
 ## Dispatches
 

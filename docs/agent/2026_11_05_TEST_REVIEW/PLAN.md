@@ -13,9 +13,9 @@ writes each add. Nothing in a module job changes production code except a seam a
 | --- | --- | --- | --- |
 | T1 | `tests/support/tolerance.hpp` copied from SushiSkills, and a `testing::Environment` fixture base that holds the one runtime and device of the program |  | todo |
 | T2 | In-memory adapters beside their ports: `TopologyProvider`, the offload ports, `TelemetryProvider`, `TaskMigrator`, `RebalanceStrategy`, `Task`, `AllocationOwner`, `RunObserver` (moving `RecordingObserver`), `USMReleaseObserver`, `FeedAttachment`, `CapabilityCache::Probe` |  | todo |
-| T3 | `InProcessTransport` beside the `Transport` port | owner decision 1 | todo |
+| T3 | `InProcessTransport` beside the `Transport` port |  | todo |
 | T4 | `Performance_` and `Stress_` suites moved to the benchmark runner |  | todo |
-| T5 | The defects of this report, each with a test that fails first, and the pages corrected | owner decision 4 | todo |
+| T5 | The defects of this report, each with a test that fails first, and the pages corrected |  | todo |
 | T6 | The CLI tests on sushicore's in-memory runner and console | sushicore T1 | todo |
 | T7 | `tools/testing/check_test_additions.py`, `tools/tests/test_check_test_additions.py` deleted |  | todo |
 | M1 | the tests of `applications` (2 files): 2 rewrite, 1 split | T1, T2, T3, T4, T5, T6, T7 | todo |
