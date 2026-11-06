@@ -24,6 +24,13 @@ The code the tests of several modules share is in internal modules that only the
 `device_probe` and `usm_guard` sit in the foundation tier, and `probe_tasks` and
 `runtime_assembly` in the engine tier. Their READMEs are in `modules/<tier>/<module>/`.
 
+`tests/support/` holds the headers every test may include as `"support/<name>.hpp"`.
+`tolerance.hpp` is copied from SushiSkills and derives a floating-point tolerance from a rounding
+bound, so no comparison spells one. `runtime_environment.hpp` registers one `testing::Environment`
+per program that makes the runtime and the device queue on first use and releases them after the
+last test; a medium test that needs either derives its fixture from `TestSupport::RuntimeTest` and
+never builds its own.
+
 One function, `sushiruntime_add_test_program` in `cmake/SushiRuntimeTests.cmake`, builds every
 program, so each is linked, placed and registered the same way.
 

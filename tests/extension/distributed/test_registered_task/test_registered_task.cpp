@@ -43,14 +43,23 @@
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/registered_task.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
+/**
+ * @brief Runs the registered-task tests on the program's one runtime.
+ */
+class Medium_RegisteredTask : public TestSupport::RuntimeTest
+{
+};
+
 /** @brief Tests that a run with no cluster calls the registered kernel with the task's views. */
-TEST(Medium_RegisteredTask, TheKernelRunsLocally)
+TEST_F(Medium_RegisteredTask, TheKernelRunsLocally)
 {
     constexpr std::size_t K_COUNT = 8;
-    auto runtime = Runtime::create().value();
+    Runtime& runtime = RuntimeTest::runtime();
     auto in = runtime.buffer<float>(K_COUNT).value();
     auto out = runtime.buffer<float>(K_COUNT).value();
     for (std::size_t index = 0; index < K_COUNT; ++index)

@@ -25,3 +25,10 @@ rule = "rule_unsized_python_test"
 path = "tools/tests/test_tier_table.py"
 count = 1
 backlog = "RW-80"
+
+[[finding]]
+checker = "testing/check_test_mirror.py"
+rule = "rule_mirror_folders"
+path = "tests/support"
+count = 1
+backlog = "KI-26"

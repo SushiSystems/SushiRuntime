@@ -108,6 +108,8 @@ function(sushiruntime_add_test_program)
     get_property(test_objects GLOBAL PROPERTY SUSHIRUNTIME_TEST_OBJECT_TARGETS)
     target_link_libraries(${ARG_NAME} PRIVATE
         ${test_objects} GTest::gtest sushiruntime_internal_headers)
+    # tests/ is an include root, so a test reaches the shared helpers as "support/<name>.hpp".
+    target_include_directories(${ARG_NAME} PRIVATE "${PROJECT_SOURCE_DIR}/tests")
     set_target_properties(${ARG_NAME} PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
@@ -273,6 +275,8 @@ function(sushiruntime_add_test_objects)
     get_property(test_objects GLOBAL PROPERTY SUSHIRUNTIME_TEST_OBJECT_TARGETS)
     target_link_libraries(${ARG_NAME} PRIVATE
         ${test_objects} GTest::gtest sushiruntime_internal_headers)
+    # tests/ is an include root, so a test reaches the shared helpers as "support/<name>.hpp".
+    target_include_directories(${ARG_NAME} PRIVATE "${PROJECT_SOURCE_DIR}/tests")
     set_target_properties(${ARG_NAME} PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON)

@@ -14,3 +14,4 @@
 
 | ID | Origin | Symptom | Workaround | Fix | Source | Opened |
 | --- | --- | --- | --- | --- | --- | --- |
+| KI-26 | own | check_test_mirror refuses tests/support, the shared test helper folder | a known finding in tools/known_findings.toml | none, the checker is copied from SushiSkills, where the fix belongs | `tools/testing/check_test_mirror.py` | 2026-11-06 |

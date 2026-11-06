@@ -11,7 +11,7 @@ writes each add. Nothing in a module job changes production code except a seam a
 
 | Job | Files | Waits on | Status |
 | --- | --- | --- | --- |
-| T1 | `tests/support/tolerance.hpp` copied from SushiSkills, and a `testing::Environment` fixture base that holds the one runtime and device of the program |  | todo |
+| T1 | `tests/support/tolerance.hpp` copied from SushiSkills, and a `testing::Environment` fixture base that holds the one runtime and device of the program |  | done: helpers in place; test bodies move onto them in the M jobs |
 | T2 | In-memory adapters beside their ports: `TopologyProvider`, the offload ports, `TelemetryProvider`, `TaskMigrator`, `RebalanceStrategy`, `Task`, `AllocationOwner`, `RunObserver` (moving `RecordingObserver`), `USMReleaseObserver`, `FeedAttachment`, `CapabilityCache::Probe` |  | todo |
 | T3 | `InProcessTransport` beside the `Transport` port |  | todo |
 | T4 | `Performance_` and `Stress_` suites moved to the benchmark runner |  | todo |
