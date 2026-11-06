@@ -5,17 +5,9 @@ The tests of the `memory` module, mirroring `modules/platform/memory/`.
 `sr_memory_benchmarks`, built under `SR_BUILD_BENCHMARKS`. `sr test` runs them with the rest;
 `sr run sr_platform_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
-A benchmark prints its figures and asserts correctness and forward progress; it asserts a
-speed only where its section says so.
+A benchmark is a `Benchmark_` suite; this module has none now.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
-
-## benchmark_epoch_reclamation.cpp
-
-A high-churn stress test for epoch-based reclamation. Many threads enter and leave critical
-sections and retire objects, while threads spawn and exit to exercise the orphan handoff.
-Every retired object must be destroyed once, and most must be reclaimed. Under ASan and TSan
-the same run surfaces races and use-after-free.
 
 ## test_epoch_reclamation.cpp
 
@@ -93,6 +85,18 @@ reclamation is deferred, so a tail of retired objects outlives the test and is f
 one. A raw stack pointer would then be written after the frame is gone, which is a
 stack-use-after-return. The `shared_ptr` keeps the counter alive as long as any `Tracked` refers to
 it.
+
+### `Large_EpochStress`
+
+Two high-churn stress tests for epoch-based reclamation, moved here from a benchmark file that
+measured nothing. `HighChurnNoLeak` has eight threads retire 20 000 objects each, then drains on the
+main thread; most of the objects must be reclaimed and the live count must not go negative.
+`ThreadSpawnExitHandoff` runs 64 short-lived threads that retire 1000 objects each and exit, while a
+drainer thread keeps advancing the epochs; the exits force the orphan handoff, and some of the
+objects must be reclaimed. The helpers `retire_objects`, `retire_from_threads`,
+`retire_from_short_lived_threads` and `BackgroundDrainer` build the load, so the test bodies hold no
+loop. Under ASan and TSan the same run surfaces races and use-after-free. The counters are
+`shared_ptr`-owned for the reason `OrphanedNodesReclaimed` gives.
 
 ## test_usm_allocator.cpp
 
@@ -190,7 +194,7 @@ address.
 
 | Test | What it proves |
 | --- | --- |
-| `HearsEachReleaseWithItsAddress` | Records the address of each release it is told of. */ class RecordingObserver final : public USMReleaseObserver { public: void on_release(void* address) noexcept override { released.push_back(address); } /** @brief Holds the addresses in the order they were released. */ std::vector<void*> released; }; } /** @brief Tests that the observer hears the release of the address the allocator gave. |
+| `HearsEachReleaseWithItsAddress` | Tests that the observer hears the release of the address the allocator gave. |
 
 ## test_usm_request.cpp
 

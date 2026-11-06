@@ -1669,3 +1669,101 @@ namespace ObservabilityTests
         EXPECT_EQ(rt.advanced().device_to_host_bytes() - d2h_before, 0u);
     }
 } // namespace ObservabilityTests
+
+/** @brief Tests that a replayed chain and a replayed fan-out of roots run every node of every step. */
+namespace GraphReplayTests
+{
+    namespace
+    {
+        constexpr std::size_t K_CHAIN_LENGTH = 16;
+        constexpr std::size_t K_ROOTS        = 16;
+        constexpr std::size_t K_REPLAYS      = 5;
+
+        /**
+         * @brief Replays a chain of dependent kernels; node i writes buffer i + 1 as buffer i plus one.
+         * @param force_scheduler True to keep the plan on the scheduler instead of the chain layer.
+         * @return The value of the last buffer after one compiling run and K_REPLAYS replays.
+         */
+        int settle_chain(bool force_scheduler)
+        {
+            RuntimeConfig config;
+            config.force_scheduler = force_scheduler;
+            auto rt = Runtime::create(config).value();
+            rt.set_rebalancer_enabled(false);
+
+            std::vector<Buffer<int>> bufs;
+            bufs.reserve(K_CHAIN_LENGTH + 1);
+            for (std::size_t i = 0; i <= K_CHAIN_LENGTH; ++i)
+                bufs.push_back(rt.buffer<int>(1).value());
+            bufs[0][0] = 0;
+
+            auto g = rt.graph();
+            for (std::size_t i = 0; i < K_CHAIN_LENGTH; ++i)
+            {
+                const int* in = bufs[i].data();
+                int* out      = bufs[i + 1].data();
+                g.add(std::size_t{1}, Reads(bufs[i]), Writes(bufs[i + 1]),
+                      [in, out](std::size_t) { out[0] = in[0] + 1; });
+            }
+
+            g.run(std::size_t{1}).value();
+            g.run(K_REPLAYS).value();
+            return bufs[K_CHAIN_LENGTH][0];
+        }
+
+        /**
+         * @brief Replays a graph of independent roots and counts those that missed a step.
+         *
+         * Each root adds one to its own buffer per step, so after one compiling run and
+         * K_REPLAYS replays every buffer holds one more than K_REPLAYS.
+         *
+         * @return The number of roots whose buffer does not hold that count.
+         */
+        std::size_t count_roots_that_missed_a_step()
+        {
+            auto rt = Runtime::create().value();
+            rt.set_rebalancer_enabled(false);
+
+            std::vector<Buffer<int>> bufs;
+            bufs.reserve(K_ROOTS);
+            for (std::size_t r = 0; r < K_ROOTS; ++r)
+                bufs.push_back(rt.buffer<int>(1).value());
+            for (auto& b : bufs)
+                b[0] = 0;
+
+            auto g = rt.graph();
+            for (std::size_t r = 0; r < K_ROOTS; ++r)
+            {
+                int* p = bufs[r].data();
+                g.add(1, Reads{}, Writes(bufs[r]), [p](std::size_t) { p[0] += 1; });
+            }
+
+            g.run(std::size_t{1}).value();
+            g.run(K_REPLAYS).value();
+
+            std::size_t missed = 0;
+            for (auto& b : bufs)
+                if (b[0] != static_cast<int>(1 + K_REPLAYS))
+                    ++missed;
+            return missed;
+        }
+    } // namespace
+
+    /** @brief Tests that a chain kept on the scheduler settles to its length after replays. */
+    TEST(Medium_GraphReplay, AChainOnTheSchedulerSettlesToItsLength)
+    {
+        EXPECT_EQ(settle_chain(true), static_cast<int>(K_CHAIN_LENGTH));
+    }
+
+    /** @brief Tests that a chain allowed onto the chain layer settles to its length after replays. */
+    TEST(Medium_GraphReplay, AChainOnTheChainLayerSettlesToItsLength)
+    {
+        EXPECT_EQ(settle_chain(false), static_cast<int>(K_CHAIN_LENGTH));
+    }
+
+    /** @brief Tests that every independent root runs on every step of a replay. */
+    TEST(Medium_GraphReplay, EveryIndependentRootRunsOnEveryStep)
+    {
+        EXPECT_EQ(count_roots_that_missed_a_step(), 0u);
+    }
+} // namespace GraphReplayTests

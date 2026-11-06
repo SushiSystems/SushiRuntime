@@ -336,8 +336,10 @@ The zones and values the USM allocator writes for an allocation and a release.
 
 ## benchmark_run_overhead.cpp
 
-Measures what the profiler costs one run of a graph with the gate closed, open and observed.
+Measures what the profiler costs one run of a graph with the gate closed, open and observed. The
+suite is a `Benchmark_` suite, run by `sr bench`; it prints a table and passes or fails nothing about
+the figures.
 
-| Test | What it proves |
+| Benchmark | What it measures |
 | --- | --- |
-| `Medium_RunOverheadBenchmark.PrintsTheCostOfOneRunInEachState` | Measures the per-run cost of the zones at the level this library was compiled at, for four states. |
+| `Benchmark_RunOverhead.CostOfOneRunInEachState` | The per-run cost of the zones at the level this library was compiled at, for four states. |

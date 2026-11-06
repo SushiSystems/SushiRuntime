@@ -12,6 +12,4 @@ sushiruntime_add_module_tests(
         test_usm_allocator.cpp
         test_usm_registry.cpp
         test_usm_release_observer.cpp
-        test_usm_request.cpp
-    BENCHMARK_SOURCES
-        benchmark_epoch_reclamation.cpp)
+        test_usm_request.cpp)

@@ -382,3 +382,168 @@ TEST(Medium_EpochReclamation, OrphanedNodesReclaimed)
     EXPECT_GT(destroyed->load(), 0)
         << "Orphaned nodes from an exited thread were not reclaimed (leak regression).";
 }
+
+/** @brief Tests epoch reclamation under sustained churn and thread turnover, at scale. */
+namespace EpochStressTests
+{
+    namespace
+    {
+        /**
+         * @brief Counts object lifecycles for one stress run.
+         *
+         * Counters are heap-owned by shared_ptr: reclamation is deferred, so a tail of retired
+         * objects outlives the test and is freed later. Raw pointers to stack atomics would then
+         * be written after the frame is gone.
+         */
+        struct Counters
+        {
+            std::atomic<long> live{0};       // net live (constructed - destroyed)
+            std::atomic<long> destroyed{0};
+        };
+        using CountersPtr = std::shared_ptr<Counters>;
+
+        /**
+         * @brief Creates the counters of one stress run.
+         * @return A shared pointer to zeroed counters.
+         */
+        CountersPtr make_counters()
+        {
+            return std::make_shared<Counters>();
+        }
+
+        /** @brief Counts itself in the live count while it exists and in the destroyed count after. */
+        struct CountedObject
+        {
+            CountersPtr counters;
+            explicit CountedObject(CountersPtr shared) : counters(std::move(shared))
+            {
+                counters->live.fetch_add(1, std::memory_order_relaxed);
+            }
+            ~CountedObject()
+            {
+                counters->live.fetch_sub(1, std::memory_order_relaxed);
+                counters->destroyed.fetch_add(1, std::memory_order_relaxed);
+            }
+        };
+
+        /**
+         * @brief Retires @p count counted objects on the calling thread, one guard each.
+         * @param counters Counters the objects report to.
+         * @param count Number of objects to retire.
+         */
+        void retire_objects(const CountersPtr& counters, int count)
+        {
+            for (int i = 0; i < count; ++i)
+            {
+                EpochGuard guard;
+                EpochManager::instance().retire(new CountedObject(counters));
+            }
+        }
+
+        /**
+         * @brief Retires objects from several threads at once and joins them.
+         * @param counters Counters the objects report to.
+         * @param threads Number of threads.
+         * @param per_thread Number of objects each thread retires.
+         */
+        void retire_from_threads(const CountersPtr& counters, int threads, int per_thread)
+        {
+            std::vector<std::thread> workers;
+            for (int t = 0; t < threads; ++t)
+                workers.emplace_back([counters, per_thread]() { retire_objects(counters, per_thread); });
+            for (auto& worker : workers)
+                worker.join();
+        }
+
+        /**
+         * @brief Runs one short-lived thread per round, each retiring objects and exiting.
+         * @param counters Counters the objects report to.
+         * @param rounds Number of threads to run, one after the other.
+         * @param per_round Number of objects each thread retires.
+         */
+        void retire_from_short_lived_threads(const CountersPtr& counters, int rounds, int per_round)
+        {
+            for (int r = 0; r < rounds; ++r)
+            {
+                std::thread shortlived([counters, per_round]() { retire_objects(counters, per_round); });
+                shortlived.join();
+            }
+        }
+
+        /** @brief Keeps retiring on a thread of its own, which advances the epochs, until it is stopped. */
+        class BackgroundDrainer final
+        {
+            public:
+                /** @brief Starts the thread, which retires objects that report to @p counters. */
+                explicit BackgroundDrainer(CountersPtr counters)
+                    : thread_([this, counters]()
+                      {
+                          while (running_.load(std::memory_order_relaxed))
+                              retire_objects(counters, 1);
+                      })
+                {
+                }
+
+                /** @brief Stops and joins the thread. */
+                ~BackgroundDrainer()
+                {
+                    running_.store(false, std::memory_order_relaxed);
+                    thread_.join();
+                }
+
+                BackgroundDrainer(const BackgroundDrainer&) = delete;
+                BackgroundDrainer& operator=(const BackgroundDrainer&) = delete;
+
+            private:
+                /// @brief Cleared to stop the thread.
+                std::atomic<bool> running_{true};
+
+                /// @brief The thread; declared last, so every other member exists when it starts.
+                std::thread thread_;
+        };
+    } // namespace
+
+    /**
+     * @brief Tests that sustained multi-thread churn reclaims most retired objects.
+     *
+     * After all threads join and the main thread drains, the destroyed count must dominate and
+     * the live count must not go negative.
+     */
+    TEST(Large_EpochStress, HighChurnNoLeak)
+    {
+        constexpr int K_THREADS    = 8;
+        constexpr int K_PER_THREAD = 20'000;
+        constexpr int K_DRAIN      = 4096;
+
+        CountersPtr counters = make_counters();
+        retire_from_threads(counters, K_THREADS, K_PER_THREAD);
+        retire_objects(make_counters(), K_DRAIN);
+
+        const long total = static_cast<long>(K_THREADS) * K_PER_THREAD;
+        EXPECT_GT(counters->destroyed.load(), total / 2)
+            << "Most retired objects should have been reclaimed.";
+        EXPECT_GE(counters->live.load(), 0) << "Negative live count indicates a double-free.";
+    }
+
+    /**
+     * @brief Tests orphan handoff by repeatedly spawning short-lived threads.
+     *
+     * Short-lived threads retire and exit, forcing the orphan handoff on every join while a
+     * drainer keeps advancing epochs.
+     */
+    TEST(Large_EpochStress, ThreadSpawnExitHandoff)
+    {
+        constexpr int K_ROUNDS    = 64;
+        constexpr int K_PER_ROUND = 1000;
+
+        CountersPtr counters = make_counters();
+        {
+            BackgroundDrainer drainer(make_counters());
+            retire_from_short_lived_threads(counters, K_ROUNDS, K_PER_ROUND);
+        }
+
+        EXPECT_GT(counters->destroyed.load(), 0)
+            << "Short-lived threads' orphaned retirees were never reclaimed.";
+        EXPECT_GE(counters->live.load(), 0) << "Negative live count indicates a double-free.";
+    }
+} // namespace EpochStressTests

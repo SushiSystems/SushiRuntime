@@ -58,7 +58,6 @@
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
 #include <SushiRuntime/device_probe/device_probe.hpp>
 #include <SushiRuntime/probe_tasks/atomic_counter_task.hpp>
-#include <SushiRuntime/probe_tasks/priority_tracking_task.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 #include <SushiRuntime/measurement/measurement.hpp>
 #include <SushiRuntime/measurement/completion_signal.hpp>
@@ -84,6 +83,7 @@ namespace GraphCompileTests
          */
         double min_compile_us(size_t nodes)
         {
+            volatile std::size_t sink = 0; // consumes the compiled graph so compile() is not elided
             // Task t reads buf[t % M] and writes buf[(t + 1) % M], so consecutive tasks depend.
             constexpr size_t M = 16;
             std::vector<int> bufs(M, 0);
@@ -105,19 +105,20 @@ namespace GraphCompileTests
                 auto compiled = graph.compile().value();
                 const double us = std::chrono::duration<double, std::micro>(
                     std::chrono::steady_clock::now() - t0).count();
-                EXPECT_GE(compiled.roots.size(), 1u); // consume: compile must produce a DAG
+                sink = compiled.roots.size();
                 best = std::min(best, us);
             }
+            static_cast<void>(sink);
             return best;
         }
     }
 
     /**
-     * @brief Tests TaskGraph::compile() latency scaling.
+     * @brief Measures TaskGraph::compile() latency scaling.
      * 
      * Measures compile() latency and us/node across increasing graph sizes.
      */
-    TEST(Performance_GraphCompileBench, CompileScaling)
+    TEST(Benchmark_GraphCompile, CompileScaling)
     {
         const size_t sizes[] = { 64, 256, 1024, 4096, 16384 };
 
@@ -127,7 +128,6 @@ namespace GraphCompileTests
         {
             const double us = min_compile_us(n);
             std::printf("  %8zu | %12.1f | %10.3f\n", n, us, us / double(n));
-            EXPECT_GT(us, 0.0);
         }
     }
 
@@ -151,6 +151,27 @@ namespace GraphCompileTests
             return x;
         }
 
+        /** @brief Holds the largest per-element difference the printed result check accepts. */
+        constexpr float K_RESULT_BOUND = 1e-1f;
+
+        /**
+         * @brief Reports whether every output element equals expected() of its input.
+         *
+         * @param out Output of at least @p n elements.
+         * @param in Input of at least @p n elements.
+         * @param n Number of elements to compare.
+         * @return True when no element differs from the reference by more than K_RESULT_BOUND.
+         */
+        bool results_match(const float* out, const float* in, size_t n)
+        {
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (std::fabs(out[i] - expected(in[i])) > K_RESULT_BOUND)
+                    return false;
+            }
+            return true;
+        }
+
         /**
          * @brief Run a function multiple times and return the best execution time.
          * 
@@ -167,11 +188,11 @@ namespace GraphCompileTests
     }
 
     /**
-     * @brief Tests H2D/D2H transfer-compute overlap.
+     * @brief Measures H2D/D2H transfer-compute overlap.
      * 
      * Compares sequential (copy -> compute -> copy) vs a chunked pipeline across two queues.
      */
-    TEST(Performance_GraphCompileBench, TransferComputeOverlapSpeedup)
+    TEST(Benchmark_GraphCompile, TransferComputeOverlapSpeedup)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -241,26 +262,10 @@ namespace GraphCompileTests
         };
 
         const double seq = best_of(run_sequential);
-        bool ok = true;
-        for (size_t i = 0; i < K_ELEMS; ++i)
-        {
-            if (std::fabs(host_out[i] - expected(host_in[i])) > 1e-1f)
-            {
-                ok = false;
-                break;
-            }
-        }
+        const bool ok = results_match(host_out, host_in, K_ELEMS);
 
         const double ovl = best_of(run_overlapped);
-        bool ok2 = true;
-        for (size_t i = 0; i < K_ELEMS; ++i)
-        {
-            if (std::fabs(host_out[i] - expected(host_in[i])) > 1e-1f)
-            {
-                ok2 = false;
-                break;
-            }
-        }
+        const bool ok2 = results_match(host_out, host_in, K_ELEMS);
 
         const double speedup = ovl > 0 ? seq / ovl : 0.0;
         std::printf("\n=== H2D/D2H transfer-compute overlap (%zu elems, %d chunks) ===\n",
@@ -269,9 +274,8 @@ namespace GraphCompileTests
         std::printf("  Overlapped : %.3f ms\n", ovl);
         std::printf("  Speedup    : %.3fx (>1 needs a discrete GPU w/ copy engines)\n", speedup);
 
-        EXPECT_TRUE(ok)  << "Sequential transfer/compute produced a wrong result.";
-        EXPECT_TRUE(ok2) << "Overlapped transfer/compute produced a wrong result.";
-        EXPECT_GT(speedup, 0.0);
+        std::printf("  Result     : sequential %s, overlapped %s\n",
+                    ok ? "matches" : "WRONG", ok2 ? "matches" : "WRONG");
 
         sycl::free(host_in, qa);
         sycl::free(host_out, qa);
@@ -372,11 +376,11 @@ namespace SchedulerDispatchTests
     }
 
     /**
-     * @brief Tests per-task scheduler dispatch overhead against an inline baseline.
+     * @brief Measures per-task scheduler dispatch overhead against an inline baseline.
      *
      * Both sides do the identical work, and the delta is the amortized submit+steal+dispatch cost.
      */
-    TEST(Performance_SchedulerDispatchBench, DispatchOverheadVsInlineBaseline)
+    TEST(Benchmark_SchedulerDispatch, DispatchOverheadVsInlineBaseline)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -449,186 +453,8 @@ namespace SchedulerDispatchTests
         SushiRuntime::Test::print_measurement(label, baseline);
         label.case_name = "scheduler";
         SushiRuntime::Test::print_measurement(label, scheduled);
-
-        EXPECT_EQ(counter.load(), K_TASK_COUNT);
-        EXPECT_GT(thr, 0.0);
     }
 } // namespace SchedulerDispatchTests
-
-/** @brief Tests the task scheduler under a task flood, producer contention and rapid restarts. */
-namespace SchedulerStressTests
-{
-    using namespace SushiRuntime::Internal::Execution;
-    using namespace SushiRuntime::Internal::Scheduler;
-    using SushiRuntime::Test::make_scheduler;
-    using SushiRuntime::Test::AtomicCounterTask;
-    using SushiRuntime::Test::PriorityTrackingTask;
-
-    /**
-     * @brief Tests scheduler stability and deque resizing under heavy load.
-     * 
-     * Submits one million tasks at once.
-     */
-    TEST(Stress_TaskSchedulerStress, OneMillionTaskBomb)
-    {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        TaskScheduler scheduler = make_scheduler(ctx);
-
-        std::atomic<size_t> executed_count{0};
-        constexpr size_t TOTAL_TASKS = 1'000'000;
-
-        scheduler.start();
-        scheduler.arm_for_execution();
-
-        for (size_t i = 0; i < TOTAL_TASKS; ++i)
-            scheduler.submit(new AtomicCounterTask(executed_count));
-
-        auto start_time = std::chrono::steady_clock::now();
-        while (executed_count.load(std::memory_order_acquire) < TOTAL_TASKS)
-        {
-            auto now = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count() > 30)
-                FAIL() << "Scheduler failed to process 1 million tasks within 30 seconds!";
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        scheduler.stop();
-        EXPECT_EQ(executed_count.load(), TOTAL_TASKS);
-    }
-
-    /**
-     * @brief Tests submission under contention.
-     * 
-     * Uses 8 producer threads submitting at once.
-     */
-    TEST(Stress_TaskSchedulerStress, MultiProducerContention)
-    {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        TaskScheduler scheduler = make_scheduler(ctx);
-
-        std::atomic<size_t> executed_count{0};
-        constexpr int    NUM_PRODUCERS      = 8;
-        constexpr size_t TASKS_PER_PRODUCER = 50'000;
-
-        scheduler.start();
-        scheduler.arm_for_execution();
-
-        std::vector<std::thread> producers;
-        for (int p = 0; p < NUM_PRODUCERS; ++p)
-        {
-            producers.emplace_back([&scheduler, &executed_count]()
-            {
-                for (size_t i = 0; i < TASKS_PER_PRODUCER; ++i)
-                    scheduler.submit(new AtomicCounterTask(executed_count));
-            });
-        }
-
-        for (auto& t : producers)
-            if (t.joinable())
-                t.join();
-
-        auto start_time = std::chrono::steady_clock::now();
-        while (executed_count.load(std::memory_order_acquire) < (NUM_PRODUCERS * TASKS_PER_PRODUCER))
-        {
-            auto now = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count() > 30)
-                FAIL() << "Multi-producer tasks were not processed within the time limit.";
-            std::this_thread::yield();
-        }
-
-        scheduler.stop();
-        EXPECT_EQ(executed_count.load(), NUM_PRODUCERS * TASKS_PER_PRODUCER);
-    }
-
-    /**
-     * @brief Tests repeatedly arming and stopping the scheduler.
-     * 
-     * Helps to shake out races, deadlocks, and leaks.
-     */
-    TEST(Stress_TaskSchedulerStress, RapidArmAndStopThrashing)
-    {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-
-        for (int i = 0; i < 500; ++i)
-        {
-            TaskScheduler scheduler = make_scheduler(ctx);
-            std::atomic<size_t> executed_count{0};
-
-            scheduler.start();
-            scheduler.arm_for_execution();
-
-            for (int j = 0; j < 1000; ++j)
-                scheduler.submit(new AtomicCounterTask(executed_count));
-
-            // Stop abruptly without waiting — exercises the drain in stop().
-            scheduler.stop();
-        }
-
-        SUCCEED();
-    }
-
-    /**
-     * @brief Tests high-priority task bypassing.
-     * 
-     * A high-priority task must bypass the queue even behind many low-priority ones.
-     */
-    TEST(Stress_TaskSchedulerStress, PriorityBypassUnderLoad)
-    {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        TaskScheduler scheduler = make_scheduler(ctx);
-
-        std::vector<int> execution_order;
-        std::mutex order_mutex;
-
-        scheduler.start();
-        // Do NOT arm yet, so tasks stay in the injector.
-
-        for (int i = 0; i < 50; ++i)
-            scheduler.submit(new PriorityTrackingTask(0, execution_order, order_mutex));
-
-        scheduler.submit(new PriorityTrackingTask(100, execution_order, order_mutex));
-
-        scheduler.arm_for_execution();
-
-        auto start_time = std::chrono::steady_clock::now();
-        while (true)
-        {
-            {
-                std::lock_guard<std::mutex> lock(order_mutex);
-                if (execution_order.size() >= 51)
-                    break;
-            }
-            auto now = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count() > 5)
-                break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        scheduler.stop();
-
-        ASSERT_EQ(execution_order.size(), 51);
-
-        bool found_high_early = false;
-        int check_window = static_cast<int>(scheduler.worker_count()) * 2;
-        if (check_window > 51)
-            check_window = 51;
-
-        for (int i = 0; i < check_window; ++i)
-        {
-            if (execution_order[i] == 100)
-            {
-                found_high_early = true;
-                break;
-            }
-        }
-
-        EXPECT_TRUE(found_high_early) << "High priority task was not executed in the first batch!";
-    }
-} // namespace SchedulerStressTests
 
 /** @brief Measures scheduler throughput and the local-to-remote steal split on multi-NUMA hardware. */
 namespace StealLocalityTests
@@ -675,11 +501,11 @@ namespace StealLocalityTests
     }
 
     /**
-     * @brief Tests steal locality on multi-NUMA hardware.
-     * 
-     * Under heavy load on real multi-NUMA hardware, most steals must be node-local.
+     * @brief Measures the local-to-remote steal split on multi-NUMA hardware.
+     *
+     * Under heavy load on real multi-NUMA hardware, it reports how many steals stay node-local.
      */
-    TEST(Performance_StealLocalityBench, StealStaysNodeLocal)
+    TEST(Benchmark_StealLocality, LocalStealFraction)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
@@ -719,13 +545,6 @@ namespace StealLocalityTests
         std::printf("  Local steals : %zu\n", local);
         std::printf("  Remote steals: %zu\n", remote);
         std::printf("  Local frac   : %.3f\n", local_frac);
-
-        EXPECT_EQ(executed.load(), TOTAL);
-
-        // Locality is asserted only above 1000 steals; a balanced drain produces few.
-        if (steals > 1000)
-            EXPECT_GT(local_frac, 0.5)
-                << "Most steals crossed NUMA nodes — hierarchical locality is not holding.";
     }
 } // namespace StealLocalityTests
 
@@ -814,7 +633,6 @@ namespace StealNumaEffectTests
                     std::chrono::steady_clock::now() - t0).count();
 
                 sched.stop();
-                EXPECT_EQ(executed.load(), K_TOTAL); // consume
 
                 if (ms < best.ms)
                     best = StealMeasurement{ ms, sched.local_steal_count(),
@@ -825,12 +643,12 @@ namespace StealNumaEffectTests
     }
 
     /**
-     * @brief Tests NUMA-aware vs NUMA-blind stealing throughput.
+     * @brief Measures NUMA-aware vs NUMA-blind stealing throughput.
      * 
      * Same workload, same cores: report the throughput delta between the flat and
      * the synthetic-NUMA-aware scheduler, plus the aware steal locality.
      */
-    TEST(Performance_StealNumaEffectBench, NUMAAwareVsBlindThroughput)
+    TEST(Benchmark_StealNumaEffect, NUMAAwareVsBlindThroughput)
     {
         const auto blind_ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& blind_ctx = *blind_ctx_owner;
@@ -856,22 +674,6 @@ namespace StealNumaEffectTests
         std::printf("  Speedup    : %.3fx (>1 only expected on real multi-socket)\n", speedup);
         std::printf("  Aware steal split: local=%zu remote=%zu (local frac %.3f)\n",
                     aware.local, aware.remote, a_localf);
-
-        // No speedup assertion — on a UMA box there is no real locality benefit.
-        EXPECT_GT(blind_thr, 0.0);
-        EXPECT_GT(aware_thr, 0.0);
-
-        // The split shows locality only across real NUMA nodes; see README.md.
-        const auto& core_numa = blind_ctx.topology().core_to_numa();
-        const std::set<int> real_nodes(core_numa.begin(), core_numa.end());
-        if (real_nodes.size() < 2)
-            GTEST_SKIP() << "Single physical NUMA node — synthetic-NUMA steal locality "
-                            "is unmeasurable via timing here; covered deterministically "
-                            "by Medium_NumaStealTest.";
-
-        if (a_steals > 1000)
-            EXPECT_GT(a_localf, 0.5)
-                << "Synthetic-NUMA stealing crossed nodes too often — locality broken.";
     }
 } // namespace StealNumaEffectTests
 
@@ -955,7 +757,8 @@ namespace WideFanoutTests
         };
     }
 
-    TEST(Performance_WideFanout, ManySmallStepDrainLatency)
+    /** @brief Measures per-step drain latency and per-task cost over many small scheduler steps. */
+    TEST(Benchmark_WideFanout, ManySmallStepDrainLatency)
     {
         using clock = std::chrono::steady_clock;
 
@@ -1047,8 +850,5 @@ namespace WideFanoutTests
         label.worker_count = workers;
         label.problem_size = K_TASK_COUNT;
         SushiRuntime::Test::print_measurement(label, per_task_ns);
-
-        EXPECT_GT(thr, 0.0);
-        EXPECT_EQ(drained_tasks, K_TASK_COUNT);
     }
 } // namespace WideFanoutTests

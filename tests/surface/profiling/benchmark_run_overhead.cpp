@@ -94,7 +94,7 @@ namespace
  * Observed and open: a session with the device source. The level is a build setting; run the program from a build
  * at each level to compare them.
  */
-TEST(Medium_RunOverheadBenchmark, PrintsTheCostOfOneRunInEachState)
+TEST(Benchmark_RunOverhead, CostOfOneRunInEachState)
 {
     SessionTests::SessionPipeline pipeline;
     Graph& graph = pipeline.graph();
@@ -144,9 +144,4 @@ TEST(Medium_RunOverheadBenchmark, PrintsTheCostOfOneRunInEachState)
     print_row("gate open, zones and values", open, closed.median);
     print_row("observer added, device timing", observed, closed.median);
     print_row("session with the device source", both, closed.median);
-
-    EXPECT_GT(closed.median, 0.0);
-    EXPECT_GT(open.median, 0.0);
-    EXPECT_GT(observed.median, 0.0);
-    EXPECT_GT(both.median, 0.0);
 }

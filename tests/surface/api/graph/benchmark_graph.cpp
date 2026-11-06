@@ -104,21 +104,17 @@ namespace ChainDispatchTests
             });
             measurement.layer = layer;
 
-            EXPECT_EQ(g.compile_count(), 1u);
-            EXPECT_EQ(bufs[length][0], static_cast<int>(length))
-                << "chain of length " << length << " did not settle to the expected value";
-
             return measurement;
         }
     }
 
     /**
-     * @brief Tests Graph::run() per-node wall cost over a chain of dependent kernel nodes.
+     * @brief Measures Graph::run() per-node wall cost over a chain of dependent kernel nodes.
      *
      * Sweeps the chain length and reports ms/step and ns/node, the baseline the
      * graph-replay design's layers are measured against (design spec §0, §G).
      */
-    TEST(Performance_ChainDispatch, PerNodeCostVsChainLength)
+    TEST(Benchmark_ChainDispatch, PerNodeCostVsChainLength)
     {
         // Fewer steps at large K keeps the sweep quick while still amortizing setup.
         struct Case { std::size_t length; std::size_t steps; };
@@ -155,8 +151,6 @@ namespace ChainDispatchTests
                 label.worker_count = workers;
                 label.problem_size = c.length;
                 SushiRuntime::Test::print_measurement(label, m.wall_ns_per_node_step);
-
-                EXPECT_GT(ms_per_step, 0.0);
             }
         }
         std::printf("  -> scheduler rows are layer 0, chain rows layer 1 (design spec §C);\n"
@@ -218,21 +212,13 @@ namespace RootFanoutTests
 
                 return std::chrono::duration<double, std::nano>(t1 - t0).count() / root_steps;
             });
-            const std::size_t timed_runs = measurement.wall_ns_per_root_step.run_count;
-
-            EXPECT_EQ(g.compile_count(), 1u);
-
-            // Every root ran once in the compiling run and `steps` times in each timed run.
-            const std::size_t expected_runs = 1 + timed_runs * steps;
-            for (std::size_t r = 0; r < roots; ++r)
-                EXPECT_EQ(bufs[r][0], static_cast<int>(expected_runs))
-                    << "root " << r << " did not run every step";
 
             return measurement;
         }
     }
 
-    TEST(Performance_RootFanout, InjectionCostVsRootCount)
+    /** @brief Measures the per-step and per-root injection cost across root counts. */
+    TEST(Benchmark_RootFanout, InjectionCostVsRootCount)
     {
         // Keep step*root work bounded so the sweep stays quick; fewer steps at high R.
         struct Case { std::size_t roots; std::size_t steps; };
@@ -264,8 +250,6 @@ namespace RootFanoutTests
             label.worker_count = workers;
             label.problem_size = c.roots;
             SushiRuntime::Test::print_measurement(label, m.wall_ns_per_root_step);
-
-            EXPECT_GT(ms_per_step, 0.0);
         }
         std::printf("  -> the per-step injection cost is now one lock + one wake for the\n"
                     "     whole root set; ns/(root*step) trending down as R grows means the\n"

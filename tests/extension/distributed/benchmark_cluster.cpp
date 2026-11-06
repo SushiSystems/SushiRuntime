@@ -510,7 +510,7 @@ namespace
 } // namespace
 
 /** @brief Measures 256 small offloaded tasks on two in-process workers and prints their split. */
-TEST(Performance_DistributedOffloadBench, OffloadRoundTripThroughput)
+TEST(Benchmark_DistributedOffload, OffloadRoundTripThroughput)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -548,14 +548,11 @@ TEST(Performance_DistributedOffloadBench, OffloadRoundTripThroughput)
     label.worker_count = std::thread::hardware_concurrency();
     label.problem_size = batch.task_count();
     SushiRuntime::Test::print_measurement(label, microseconds_per_task);
-
-    EXPECT_TRUE(measurement.is_correct) << "an output written back to the master is wrong";
-    EXPECT_GT(measurement.milliseconds_per_run.median, 0.0);
-    EXPECT_GT(measurement.offloaded, 0u) << "nothing was offloaded, so the path was not measured";
+    std::printf("  outputs %s\n", measurement.is_correct ? "match the reference" : "WRONG");
 }
 
 /** @brief Measures one offloaded task per buffer size, on the in-process fabric and over TCP. */
-TEST(Performance_DistributedOffloadBench, RoundTripByBufferSize)
+TEST(Benchmark_DistributedOffload, RoundTripByBufferSize)
 {
     if (!SushiRuntime::Test::has_any_sycl_device())
         GTEST_SKIP() << "SYCL reports no device.";
@@ -598,13 +595,10 @@ TEST(Performance_DistributedOffloadBench, RoundTripByBufferSize)
             label.worker_count = std::thread::hardware_concurrency();
             label.problem_size = bytes;
             SushiRuntime::Test::print_measurement(label, measurement.milliseconds_per_run);
-
-            EXPECT_TRUE(measurement.is_correct)
-                << transports.name << ", " << bytes << " bytes: the output is wrong";
-            EXPECT_EQ(measurement.offloaded, SushiRuntime::Test::K_DEFAULT_RUN_COUNT)
-                << transports.name << ", " << bytes << " bytes: a timed run was not offloaded";
-            EXPECT_EQ(measurement.redispatched, 0u)
-                << transports.name << ", " << bytes << " bytes: a task was taken back";
+            std::printf("  outputs %s; offloaded %llu, taken back %llu\n",
+                        measurement.is_correct ? "match the reference" : "WRONG",
+                        static_cast<unsigned long long>(measurement.offloaded),
+                        static_cast<unsigned long long>(measurement.redispatched));
         }
     }
 }

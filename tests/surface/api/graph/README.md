@@ -5,20 +5,20 @@ The tests of `Graph`, `DynamicGraph`, `Region`, `Recorder`, `PlanView` and `RunH
 
 ## benchmark_dynamic_graph.cpp
 
-A scale probe for the dynamic region graph: 256 regions stream in, 16 of them mutate between
-steps, and the world keeps running correctly. The test asserts the composition contract at
-scale, one recompose per mutation and not one per region, and reports the streaming cost. It asserts no recompose speedup and guards
-correctness and scale.
+The file holds two `Benchmark_` suites, run by `sr bench`. They print figures and pass or fail
+nothing.
 
-The final check rebuilds the expected count per cell. Every region ran the initial step plus
-one step per run, and a mutated region gained one more increment on each run from the one that
-streamed its second task in.
+`Benchmark_DynamicGraph.ManyRegionsStreamingMutations` times the first composing run of a world of
+256 regions, then streams 16 mutations into it between runs, and records the first run's time as a
+property. That each mutation recomposes once, and that every region keeps the count its runs give
+it, are held by `EachOfSeveralStreamedMutationsRecomposesOnce` and
+`EveryRegionKeepsItsRunCountAfterStreamedMutations` in `test_dynamic_graph.cpp`, on 32 regions.
 
-The gate benchmark for the "allocation-per-node churn on the recompose path" theme, audit
-Tier B. The substrate commits work proportional to the changed region every step: a dirty
-region is rebuilt, and each rebuilt node pays a `Node` allocation, two IO-region vectors, an
-`AccessNode` per access, event constructors and build list nodes. The benchmark isolates that
-cost in two ways.
+`Benchmark_RecomposeChurn.AllocationsAndTimePerCommit` is the gate benchmark for the
+"allocation-per-node churn on the recompose path" theme, audit Tier B. The substrate commits work
+proportional to the changed region every step: a dirty region is rebuilt, and each rebuilt node pays
+a `Node` allocation, two IO-region vectors, an `AccessNode` per access, event constructors and build
+list nodes. The suite isolates that cost in two ways.
 
 Commit wall time is the portable headline. A commit is one `region().add()` that marks a
 region dirty and one `run(1)` that recomposes and steps. Compared with a `run(1)` that has no
@@ -30,26 +30,18 @@ libsushiruntime too. On a Windows DLL build it counts only allocations on the ex
 side, from headers and templates, so trust the wall-time delta there and the allocation count
 on the CI lane.
 
-The counter is off by default and during every other test, so the process-wide replacement
-costs one relaxed load per allocation outside the measured windows. One replacement serves the
-whole benchmark binary and routes everything through `malloc` and `free`. This replacement is
-also why an AddressSanitizer build leaves the benchmark suite out; see `cli/README.md`.
+The counter is off by default and outside the measured windows, so the process-wide replacement
+costs one relaxed load per allocation. One replacement serves the whole benchmark binary and
+routes everything through `malloc` and `free`. This replacement is also why an AddressSanitizer
+build leaves the benchmark suite out; see `cli/README.md`.
 
-The test asserts correctness and the composition contract, one recompose per mutation, and
-never a speed or allocation threshold. The numbers are reported for the owner to compare
-across the B2 changes. If the recompose allocations or milliseconds dominate, the node,
-`AccessNode` and event churn is the target. If the pure-replay step already allocates heavily,
-the effort belongs in steady-state execution.
-
-The closing loop is a smoke check. Every region ran the warm step, the replay-baseline steps
-and one step per commit, and a mutated region gained an extra increment on and after the
-commit that streamed its second task in. The test asserts forward progress and the composition
-contract and does not rebuild the exact count per cell, which the `Medium_DynamicGraph`
-tests own. A nonzero value that is uniform across a region is enough here.
+The numbers are reported for the owner to compare across the B2 changes. If the recompose
+allocations or milliseconds dominate, the node, `AccessNode` and event churn is the target. If the
+pure-replay step already allocates heavily, the effort belongs in steady-state execution.
 
 ## benchmark_graph.cpp
 
-This is the baseline for the graph-replay design, `docs/design/GRAPH_REPLAY/README.md`, sections 0 and
+`Benchmark_ChainDispatch` is the baseline for the graph-replay design, `docs/design/GRAPH_REPLAY/README.md`, sections 0 and
 G (P0). Node i reads buffer i and writes buffer i+1, so every node depends on the one before it
 and the scheduler cannot dispatch two nodes at once. The run therefore pays the scheduler's
 whole per-node dispatch path, which is dependency resolution, submit, poll and the hand-off to
@@ -57,7 +49,7 @@ the successor, with no fan-out to hide it behind. The benchmark sweeps the chain
 reports milliseconds per node. Layer 0, which removes the per-node allocation in
 `SmallEventVector::to_vector()`, and the later layers are measured against that number.
 
-The gate benchmark for the batched root injector, audit ds-1. Each replayed step re-injects
+`Benchmark_RootFanout` is the gate benchmark for the batched root injector, audit ds-1. Each replayed step re-injects
 every root node. `submit_batch` takes a step's whole root set in one lock acquisition, one
 `inflight_` increment and one wake burst, so the injection cost per step does not grow with
 root fan-out.
@@ -66,7 +58,9 @@ The benchmark builds R independent roots, each writing its own buffer, replays a
 of steps, and sweeps R. It reports milliseconds per step and the amortized cost per root and
 step. Injection is O(1) per step whatever R is, so as R grows the per-root cost should fall
 towards the cost of executing and completing one task, and should not stay pinned to a lock
-and a notify per root. Correctness and forward progress are asserted; speed is not.
+and a notify per root. Neither suite asserts anything. That a dependent chain settles to its
+length and that every independent root runs on every step are held by the `Medium_GraphReplay`
+tests at the end of `test_graph.cpp`.
 
 ## test_device_sized.cpp
 
@@ -110,6 +104,8 @@ never recomposes.
 | Test | What it proves |
 | --- | --- |
 | `IndependentRegionsRunAndComposeOnce` | Two independent regions each own a buffer and increment it once per step. Over several steps both buffers advance, and a run that mutates nothing composes the combined plan exactly once. |
+| `EachOfSeveralStreamedMutationsRecomposesOnce` | A world of 32 regions composes once, then eight runs each follow one more task streamed into a region; the compose count rises by exactly one per run. |
+| `EveryRegionKeepsItsRunCountAfterStreamedMutations` | After the same eight streamed runs, every region holds one count per run plus one per run after its own second task joined. |
 | `Regression_ARuleChangeReplacesARegionsNodeWithoutARecord` | A task recorded once in region 0, inside the scope a rule matches: a `Fail` rule for an absent device fails the run with `InvalidArgument` naming `"ruled"`, a `Local` set given before the next run lets it run on device 0 with no re-record, an unchanged set composes nothing more, and on a machine with two devices a rule for device 1 moves the task there. |
 
 ### `CrossRegionDependencyOrders`

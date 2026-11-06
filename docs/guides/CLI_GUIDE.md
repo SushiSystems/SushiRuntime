@@ -194,7 +194,7 @@ measures and is not a test, so CTest does not register these programs.
 
 ```bash
 sr bench                         # every benchmark program
-sr bench --filter 'Stress_*'     # passed to each program as --gtest_filter
+sr bench --filter 'Benchmark_Steal*'  # passed to each program as --gtest_filter
 ```
 
 ## `sr run`
@@ -213,7 +213,7 @@ The name is matched exactly first, then as a substring.
 Everything after `--` goes to the program:
 
 ```bash
-sr run sr_execution_benchmarks -- --gtest_filter='Performance_GraphCompileBench.*'
+sr run sr_execution_benchmarks -- --gtest_filter='Benchmark_GraphCompile.*'
 sr run sr_surface_tests -- --gtest_shuffle --gtest_break_on_failure
 ```
 

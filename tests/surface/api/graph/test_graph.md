@@ -273,3 +273,13 @@ The test sets the name with `name()`, which names the rule the verb before it re
 | `EveryAddShapeCanBeNamed` | The test names a node of every launch shape: counted, captured, a State rule, host work and a dynamic kernel. |
 | `UnnamedNodeStillReportsTheDefaultLabel` | A node added without a name keeps the documented default label, so a call site without a label is still visible in the report. |
 | `TransferBytesAttributedToTheRunWindow` | A host node pushes data during the run. The bytes must land in the window of that run, not before it. |
+
+## `Medium_GraphReplay`
+
+Replay tests moved here from the benchmark file, each on a small graph.
+
+| Test | What it proves |
+| --- | --- |
+| `AChainOnTheSchedulerSettlesToItsLength` | A chain of 16 dependent kernels kept on the work-stealing path, run once and then replayed five times, leaves its length in the last buffer. |
+| `AChainOnTheChainLayerSettlesToItsLength` | The same chain allowed onto the chain layer settles to the same value. |
+| `EveryIndependentRootRunsOnEveryStep` | Sixteen independent roots, each adding one to its own buffer, hold one more than the replay count after a compiling run and five replays. |

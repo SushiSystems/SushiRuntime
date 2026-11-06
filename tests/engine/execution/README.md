@@ -5,8 +5,9 @@ The tests of the `execution` module, mirroring `modules/engine/execution/`.
 `sr_execution_benchmarks`, built under `SR_BUILD_BENCHMARKS`. `sr test` runs them with the rest;
 `sr run sr_engine_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
-A benchmark prints its figures and asserts correctness and forward progress; it asserts a
-speed only where its section says so.
+A benchmark is a `Benchmark_` suite. It prints its figures and passes or fails nothing about
+speed or correctness; `sr bench` runs it. The correctness promises live in the sized tests of
+`test_*.cpp`.
 
 Three design documents are cited by path in the sections that came from the integration tests:
 
@@ -42,56 +43,50 @@ noise from the timing.
 iteration. A linear body would let the compiler collapse the loop, and the kernel would stop
 scaling with `iters`.
 
-The two thresholds are fractions of the serial time. An overlap time under 0.75 of the serial
-time is healthy concurrency: the bar leaves slack for dispatch overhead and contention, and a
-run that serializes, at about 1.0x, still fails it. An overlap time at or above 0.95 of the
-serial time means no overlap at all and fails on every host. That second check also catches
-`CUDA_LAUNCH_BLOCKING=1`, under which every launch runs synchronously.
+The suite is `Benchmark_AsyncOverlap`. It prints the speedup and sets no bar. A speedup near
+1.0x means the work serialized; `CUDA_LAUNCH_BLOCKING=1` makes every launch synchronous and
+shows up that way. Under WSL2 the CUDA backend adds dispatch latency, which lowers the figure
+even while the devices overlap.
 
-A run that lands between the two bars is skipped on WSL2 and nowhere else. The CUDA backend
-under WSL2 adds dispatch latency and exposes no PCI topology, which inflates the overlap wall
-time enough to miss the 0.75 bar on a Pascal card even while the devices overlap. The result
-is inconclusive there, and bare-metal CI still enforces the bar. `running_under_wsl` exists to
-relax the check on that host, not to remove it.
+The suite `Benchmark_ProfilingQueue` is the one named above. Its equal-result check is held by
+`Medium_ProfilingQueue.USMFromThePlainQueueIsUsableOnTheProfilingQueue` in `test_runtime_context.cpp`.
 
 ## benchmark_scheduler_execution_engine.cpp
 
 The file closes two gaps: how `TaskGraph::compile()` scales with graph size, and whether
-overlapping host-to-device and device-to-host transfers with compute helps. Both tests do
-identical work on each side and verify the result. They print figures and assert only that the
-run made progress, because real overlap needs a discrete GPU with copy engines.
+overlapping host-to-device and device-to-host transfers with compute helps. Both live in
+`Benchmark_GraphCompile`. The transfer test does identical work on each side and prints whether
+each result matches the host reference. It sets no bar, because real overlap needs a discrete GPU
+with copy engines. That a compiled graph has roots is held by the `Medium_TaskGraphTest` tests of
+`test_scheduler_execution_engine.cpp`.
 
 `min_compile_us` uses a rolling set of 16 buffers so that consecutive tasks form real
 dependencies, which is what exercises the dependency tracker.
 
-The benchmark measures dispatch overhead per task. Both sides do the same work, one relaxed
-atomic increment, so the only difference is the path: inline in a tight loop, which is the
-floor, or wrapped in a task and run through the work-stealing scheduler. The delta is the
-amortized cost of submit, steal and dispatch. The test reports it and asserts correctness and
-forward progress, not speed.
+`Benchmark_SchedulerDispatch` measures dispatch overhead per task. Both sides do the same work,
+one relaxed atomic increment, so the only difference is the path: inline in a tight loop, which
+is the floor, or wrapped in a task and run through the work-stealing scheduler. The delta is the
+amortized cost of submit, steal and dispatch. It reports the delta and sets no bar. That the
+scheduler runs every task it is given is held by `Medium_SchedulerIntegration.ExecutesExactlySubmitted`
+in `tests/engine/scheduler/test_task_scheduler.cpp`.
 
-A real-hardware benchmark for NUMA-aware hierarchical stealing. It drives the scheduler with a
-large batch of host tasks and reports throughput and the split between local and remote
-steals. Locality exists only across real NUMA nodes, so the test skips on a single-node
-machine or under WSL; `Medium_NumaStealTest` holds the logic check.
+`Benchmark_StealLocality` is a real-hardware benchmark for NUMA-aware hierarchical stealing. It
+drives the scheduler with a large batch of host tasks and reports throughput and the split
+between local and remote steals. Locality exists only across real NUMA nodes, so it skips on a
+single-node machine; `Medium_NumaStealTest` holds the logic check.
 
-Locality is asserted only above 1000 steals. Below that the ratio means little, and a
-perfectly balanced drain can legitimately produce few steals.
-
-The benchmark compares NUMA-aware with NUMA-blind stealing on the same hardware. One workload
-runs once on the real, flat topology and once on a synthetic two-node topology, and the test
-reports both throughputs and the aware side's steal split. On a UMA machine, single socket or
-WSL, there is no real speedup to claim, so it asserts correctness and that the aware path
-keeps steals node-local.
+`Benchmark_StealNumaEffect` compares NUMA-aware with NUMA-blind stealing on the same hardware.
+One workload runs once on the real, flat topology and once on a synthetic two-node topology, and
+the suite reports both throughputs and the aware side's steal split. On a UMA machine, single
+socket or WSL, there is no real speedup to claim.
 
 The steal split is gathered while the workload is timed, so it reflects locality only when the
 cores sit on separate NUMA nodes. On a single-socket machine the two synthetic nodes share one
 set of cores, and OpenMP and runtime worker threads contending for them drag the local
-fraction below the 0.5 bar with every toolchain; 0.46 to 0.48 was observed.
-`Medium_NumaStealTest` verifies the locality ordering deterministically, so the assertion made
-during timing fires only on real multi-socket hardware.
+fraction down; 0.46 to 0.48 was observed. `Medium_NumaStealTest` verifies the locality
+ordering deterministically.
 
-The gate benchmark for the deque-steal fast path, audit steal-1, and the global quiescence
+`Benchmark_WideFanout` is the gate benchmark for the deque-steal fast path, audit steal-1, and the global quiescence
 counter, audit sched-1. It profiles them in the substrate's characteristic shape: many small
 steps, not one long sustained stream. Each step submits a modest batch of independent tasks
 and drains to quiescence. The tail of every step is where workers spin idle, stealing from
@@ -100,10 +95,12 @@ empty peers, and steal-1 removes a `std::memory_order_seq_cst` fence from each e
 
 The benchmark reports drain latency per step and nanoseconds per task. That isolates the fixed
 overhead per step that dominates the substrate, and complements the single sustained stream of
-`Performance_SchedulerDispatchBench`. Attributing steal-1's fence removal and sched-1's line
+`Benchmark_SchedulerDispatch`. Attributing steal-1's fence removal and sched-1's line
 contention in full needs hardware counters, `perf stat` and `perf c2c`. This benchmark is the
-portable guard on throughput and latency, and the harness those counters attach to. It asserts
-correctness and forward progress only.
+portable measure of throughput and latency, and the harness those counters attach to. That a
+scheduler armed once runs every task of each step it is handed is held by
+`Medium_SchedulerSteps.EachStepRunsAllOfItsTasksOnTheArmedScheduler` in
+`test_scheduler_execution_engine.cpp`.
 
 ## test_execution_engine.cpp
 
@@ -222,7 +219,7 @@ closes.
 
 CPU work and GPU work dispatched through independent per-device queues must run concurrently and
 without a race. These tests assert correctness only. The benchmark suite measures the speedup from
-the overlap (`AsyncOverlapBench`).
+the overlap (`Benchmark_AsyncOverlap`).
 
 ### `CPUGPUConcurrentVectorAdd`
 
@@ -272,6 +269,19 @@ between two executions. One kernel reads a word and writes it plus one. The plan
 once and replayed eight times; before each replay the host writes the word, and the output must
 follow. One case holds the word in Shared USM and one in Host USM, each on every device queue of
 the context.
+
+### `Medium_SchedulerSteps`
+
+One scheduler is armed once and handed three steps of 32 counter tasks. After each step drains,
+the counter holds the tasks of every step so far. The step waits on the scheduler's quiescence
+latch, not on a clock.
+
+### `Large_TaskSchedulerStress`
+
+Four scale tests moved here from the benchmark file, since they measure nothing: one million
+tasks submitted at once, eight producer threads submitting together, 500 rounds of arming and
+stopping a scheduler with tasks in flight, and a high-priority task submitted behind 50 low-priority
+ones. They wait with a wall-clock budget; the rewrite of those waits is a separate job.
 
 ## test_chain_plan.cpp
 

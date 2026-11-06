@@ -515,6 +515,138 @@ namespace DynamicGraphTests
     }
 } // namespace DynamicGraphTests
 
+/** @brief Tests that a wide dynamic graph recomposes once per streamed mutation and keeps its counts. */
+namespace WideDynamicGraphTests
+{
+    namespace
+    {
+        constexpr std::size_t K_CELLS     = 4;   // elements per region
+        constexpr std::size_t K_REGIONS   = 32;  // regions in the world
+        constexpr std::size_t K_MUTATIONS = 8;   // runs, each after one more task streamed in
+
+        /**
+         * @brief Names the region that mutation @p m streams a second task into.
+         * @param m Index of the mutation.
+         * @return Index of the region the mutation touches.
+         */
+        std::size_t mutated_region(std::size_t m)
+        {
+            return (m * 7 + 3) % K_REGIONS;
+        }
+
+        /**
+         * @brief Makes one zeroed buffer per region.
+         * @param rt Runtime the buffers belong to.
+         * @return The buffers, indexed by region.
+         */
+        std::vector<Buffer<int>> make_zeroed_buffers(Runtime& rt)
+        {
+            std::vector<Buffer<int>> bufs;
+            bufs.reserve(K_REGIONS);
+            for (std::size_t r = 0; r < K_REGIONS; ++r)
+                bufs.push_back(rt.buffer<int>(K_CELLS).value());
+            for (auto& buf : bufs)
+                for (std::size_t i = 0; i < K_CELLS; ++i)
+                    buf[i] = 0;
+            return bufs;
+        }
+
+        /**
+         * @brief Adds to region @p r a task that increments every cell of its buffer.
+         * @param world Graph that owns the region.
+         * @param bufs Buffers indexed by region.
+         * @param r Region to add the task to.
+         */
+        void add_increment(DynamicGraph& world, std::vector<Buffer<int>>& bufs, std::size_t r)
+        {
+            int* p = bufs[r].data();
+            world.region(r).add(K_CELLS, Reads{}, Writes(bufs[r]),
+                                [p](std::size_t i) { p[i] += 1; });
+        }
+
+        /**
+         * @brief Gives every region its first task and runs the world once.
+         * @param world Graph to fill.
+         * @param bufs Buffers indexed by region.
+         */
+        void compose_the_world_once(DynamicGraph& world, std::vector<Buffer<int>>& bufs)
+        {
+            for (std::size_t r = 0; r < K_REGIONS; ++r)
+                add_increment(world, bufs, r);
+            world.run(1).value();
+        }
+
+        /**
+         * @brief Streams one task into a region and runs one step, K_MUTATIONS times.
+         * @param world Graph that has composed once.
+         * @param bufs Buffers indexed by region.
+         * @return The number of runs after which the compose count was not one above the last.
+         */
+        std::size_t stream_mutations(DynamicGraph& world, std::vector<Buffer<int>>& bufs)
+        {
+            std::size_t wrong = 0;
+            for (std::size_t m = 0; m < K_MUTATIONS; ++m)
+            {
+                add_increment(world, bufs, mutated_region(m));
+                world.run(1).value();
+                if (world.compose_count() != 2u + m)
+                    ++wrong;
+            }
+            return wrong;
+        }
+
+        /**
+         * @brief Counts the regions whose cells differ from the count their runs give them.
+         * @param bufs Buffers indexed by region.
+         * @return The number of regions with a wrong cell.
+         */
+        std::size_t count_regions_off_their_run_count(std::vector<Buffer<int>>& bufs)
+        {
+            std::size_t off = 0;
+            for (std::size_t r = 0; r < K_REGIONS; ++r)
+            {
+                std::size_t extra = 0;
+                for (std::size_t m = 0; m < K_MUTATIONS; ++m)
+                    if (mutated_region(m) == r)
+                        extra += K_MUTATIONS - m;
+                const int expected = static_cast<int>(1 + K_MUTATIONS + extra);
+                for (std::size_t i = 0; i < K_CELLS; ++i)
+                    if (bufs[r][i] != expected)
+                    {
+                        ++off;
+                        break;
+                    }
+            }
+            return off;
+        }
+    } // namespace
+
+    /** @brief Tests that each of several streamed mutations recomposes the world exactly once. */
+    TEST(Medium_DynamicGraph, EachOfSeveralStreamedMutationsRecomposesOnce)
+    {
+        auto rt = Runtime::create().value();
+        rt.set_rebalancer_enabled(false);
+        auto bufs = make_zeroed_buffers(rt);
+        auto world = rt.dynamic_graph();
+        compose_the_world_once(world, bufs);
+
+        EXPECT_EQ(stream_mutations(world, bufs), 0u);
+    }
+
+    /** @brief Tests that after streamed mutations every region holds the count its runs give it. */
+    TEST(Medium_DynamicGraph, EveryRegionKeepsItsRunCountAfterStreamedMutations)
+    {
+        auto rt = Runtime::create().value();
+        rt.set_rebalancer_enabled(false);
+        auto bufs = make_zeroed_buffers(rt);
+        auto world = rt.dynamic_graph();
+        compose_the_world_once(world, bufs);
+        stream_mutations(world, bufs);
+
+        EXPECT_EQ(count_regions_off_their_run_count(bufs), 0u);
+    }
+} // namespace WideDynamicGraphTests
+
 /** @brief Tests DynamicGraph's per-graph profiling switch and its dense registration index. */
 namespace DynamicGraphNodeEventsTests
 {

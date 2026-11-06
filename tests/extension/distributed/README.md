@@ -5,8 +5,8 @@ The tests of the `distributed` module, mirroring `modules/extension/distributed/
 `sr_distributed_benchmarks`, built under `SR_BUILD_BENCHMARKS`. `sr test` runs them with the rest;
 `sr run sr_extension_tests -- --gtest_filter='<pattern>'` runs one program alone.
 
-A benchmark prints its figures and asserts correctness and forward progress; it asserts a
-speed only where its section says so.
+A benchmark is a `Benchmark_` suite. It prints its figures and passes or fails nothing; `sr bench`
+runs it. The correctness promises live in the sized tests of `test_*.cpp`.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 
@@ -33,19 +33,22 @@ rewritten and bumped, so a worker pulls them again instead of reading its cache.
 region is the `run()` call alone: the refill, the graph build and the check of the outputs stay
 outside it.
 
-`OffloadRoundTripThroughput` runs 256 independent tasks of 256 floats each on two workers over
+`Benchmark_DistributedOffload.OffloadRoundTripThroughput` runs 256 independent tasks of 256 floats each on two workers over
 the in-process fabric. It prints milliseconds per run, microseconds per task, tasks per second,
 the dispatches offloaded and taken back in the timed runs, and the kernels each worker has run
-since it started, which is the split the policy made. It asserts that every output is right and
-that at least one dispatch was offloaded.
+since it started, which is the split the policy made. It also prints whether every output matched
+the reference.
 
-`RoundTripByBufferSize` runs one task with one input and one output of 64 KiB, 4 MiB and 64 MiB,
+`Benchmark_DistributedOffload.RoundTripByBufferSize` runs one task with one input and one output of 64 KiB, 4 MiB and 64 MiB,
 first over the in-process fabric and then over TCP on a loopback port the OS chooses, with one
 worker. It prints milliseconds per round trip and MiB per second, counting the input going out
-and the output coming back. It asserts that every output is right, that each of the five timed
-runs was offloaded and that no task was taken back.
+and the output coming back. It prints, for each case, whether the outputs matched and how many
+dispatches were offloaded and taken back.
 
-Neither test asserts a speed.
+Neither suite sets a bar. That an offloaded task writes the right output, over the in-process
+fabric and over TCP, and that a registered task is offloaded, are held by
+`Medium_DistributedE2ETest.OffloadVectorAddRoundTrip`, `OffloadOverTCPLoopback`,
+`FanOutAcrossTwoWorkers` and `RegisteredTaskRunsWithAndWithoutAWorker` in `test_distributed.cpp`.
 
 ## test_distributed.cpp
 
