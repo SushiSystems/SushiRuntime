@@ -98,28 +98,41 @@ TEST(Medium_ChainPlan, KernelsOnOneDeviceChainInOrder)
     context->memory().release(value);
 }
 
-/** @brief Tests that a host node, and a node on memory no device owns, keep the plan off the chain. */
-TEST(Medium_ChainPlan, AHostNodeOrForeignMemoryKeepsThePlanOff)
+/** @brief Tests that a host node keeps the plan off the chain. */
+TEST(Medium_ChainPlan, AHostNodeKeepsThePlanOff)
 {
     const auto context = SushiRuntime::Test::make_context();
-    TaskGraph host_graph;
-    Node& host = host_graph.add_node(TaskWork());
+    TaskGraph graph;
+    Node& host = graph.add_node(TaskWork());
     host.mode = Internal::Scheduler::Task::ExecutionMode::Host;
     host.submits_device_work_ = false;
-    CompiledGraph host_plan = host_graph.compile().value();
-    host_plan.capture_base_state();
-    EXPECT_FALSE(classify_chain(host_plan, *context).chainable);
+    CompiledGraph plan = graph.compile().value();
+    plan.capture_base_state();
 
+    EXPECT_FALSE(classify_chain(plan, *context).chainable);
+}
+
+/** @brief Tests that a node on memory no device owns keeps the plan off the chain. */
+TEST(Medium_ChainPlan, ForeignMemoryKeepsThePlanOff)
+{
+    const auto context = SushiRuntime::Test::make_context();
     int foreign = 0;
     const std::vector<BufferRegion> region{BufferRegion(&foreign)};
-    TaskGraph foreign_graph;
-    foreign_graph.add_node(add_one(&foreign), region, region);
-    CompiledGraph foreign_plan = foreign_graph.compile().value();
-    foreign_plan.capture_base_state();
-    EXPECT_FALSE(classify_chain(foreign_plan, *context).chainable);
+    TaskGraph graph;
+    graph.add_node(add_one(&foreign), region, region);
+    CompiledGraph plan = graph.compile().value();
+    plan.capture_base_state();
 
-    TaskGraph empty_graph;
-    CompiledGraph empty_plan = empty_graph.compile().value();
-    empty_plan.capture_base_state();
-    EXPECT_FALSE(classify_chain(empty_plan, *context).chainable) << "an empty plan chained";
+    EXPECT_FALSE(classify_chain(plan, *context).chainable);
+}
+
+/** @brief Tests that an empty plan is not chainable. */
+TEST(Medium_ChainPlan, AnEmptyPlanIsNotChainable)
+{
+    const auto context = SushiRuntime::Test::make_context();
+    TaskGraph graph;
+    CompiledGraph plan = graph.compile().value();
+    plan.capture_base_state();
+
+    EXPECT_FALSE(classify_chain(plan, *context).chainable);
 }

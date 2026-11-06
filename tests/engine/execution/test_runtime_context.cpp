@@ -32,6 +32,11 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <functional>
+#include <numeric>
+#include <string>
+#include <tuple>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -44,6 +49,7 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/device/queue_flavour.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
@@ -75,6 +81,48 @@ namespace ProfilingQueueTests
     {
         /** @brief Names the out-of-order profiling queue of a device. */
         constexpr Internal::Device::QueueFlavour K_PROFILING_FLAVOUR{false, true};
+
+        /** @brief Lists, per device, whether its profiling queue has been built. */
+        std::vector<bool> profiling_queue_flags(const Internal::Device::DeviceQueueSet& devices)
+        {
+            std::vector<bool> flags;
+            for (std::size_t i = 0; i < devices.count(); ++i)
+                flags.push_back(devices.has_profiling_queue(i));
+            return flags;
+        }
+
+        /** @brief Returns the flags of @p count devices of which only device 0 is built. */
+        std::vector<bool> only_device_zero(std::size_t count)
+        {
+            std::vector<bool> flags(count, false);
+            flags[0] = true;
+            return flags;
+        }
+
+        /** @brief One action on a fresh context and whether it builds the profiling queue of device 0. */
+        struct LazyBuildRow
+        {
+            const char* action;                                      /**< Names the action. */
+            void (*act)(Internal::Device::DeviceQueueSet& devices);  /**< Runs the action. */
+            bool builds_device_zero;                                 /**< Whether the action builds device 0's queue. */
+        };
+
+        /** @brief Does nothing to the context. */
+        void ask_nothing(Internal::Device::DeviceQueueSet&)
+        {
+        }
+
+        /** @brief Asks for the plain queue of device 0. */
+        void ask_for_the_plain_queue(Internal::Device::DeviceQueueSet& devices)
+        {
+            static_cast<void>(devices.queue(0));
+        }
+
+        /** @brief Asks for the profiling queue of device 0. */
+        void ask_for_the_profiling_queue(Internal::Device::DeviceQueueSet& devices)
+        {
+            static_cast<void>(devices.queue(0, K_PROFILING_FLAVOUR));
+        }
     } // namespace
 
     /**
@@ -96,34 +144,27 @@ namespace ProfilingQueueTests
             << "the two queues must share one context so USM stays legal on either";
     }
 
-    /** @brief Tests that no profiling queue exists before the first request. */
-    TEST(Medium_ProfilingQueue, NoProfilingQueueExistsBeforeTheFirstRequest)
+    /** @brief Tests that a profiling queue is built only when asked for, and only on the device asked. */
+    TEST(Medium_ProfilingQueue, AProfilingQueueIsBuiltOnlyWhenItIsAskedFor)
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
+        const LazyBuildRow rows[] = {
+            {"no request", &ask_nothing, false},
+            {"the plain queue", &ask_for_the_plain_queue, false},
+            {"the profiling queue of device 0", &ask_for_the_profiling_queue, true},
+        };
 
-        for (std::size_t i = 0; i < context.devices().count(); ++i)
-            EXPECT_FALSE(context.devices().has_profiling_queue(i))
-                << "device " << i << " must not have a profiling queue yet";
+        for (const LazyBuildRow& row : rows)
+        {
+            const auto context_owner = SushiRuntime::Test::make_context();
+            Internal::Device::DeviceQueueSet& devices = (*context_owner).devices();
+            const std::size_t count = devices.count();
 
-        (void)context.devices().queue(0, K_PROFILING_FLAVOUR);
+            row.act(devices);
 
-        EXPECT_TRUE(context.devices().has_profiling_queue(0));
-        for (std::size_t i = 1; i < context.devices().count(); ++i)
-            EXPECT_FALSE(context.devices().has_profiling_queue(i))
-                << "requesting device 0 must not build device " << i << "'s queue";
-    }
-
-    /** @brief Tests that using a device's plain queue builds no profiling queue on any device. */
-    TEST(Medium_ProfilingQueue, UsingThePlainQueueBuildsNoProfilingQueue)
-    {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
-        (void)context.devices().queue(0);
-
-        for (std::size_t i = 0; i < context.devices().count(); ++i)
-            EXPECT_FALSE(context.devices().has_profiling_queue(i))
-                << "device " << i << "'s profiling queue must wait for the first observer's run";
+            EXPECT_EQ(profiling_queue_flags(devices),
+                      row.builds_device_zero ? only_device_zero(count) : std::vector<bool>(count, false))
+                << row.action;
+        }
     }
 
     /** @brief Tests that the profiling flavour is a queue of its own, apart from the plain one. */
@@ -152,8 +193,10 @@ namespace ProfilingQueueTests
         USMShared<int> usm(plain, N);
         ASSERT_TRUE(usm);
         int* data = usm.get();
-        for (std::size_t i = 0; i < N; ++i)
-            data[i] = static_cast<int>(i);
+        std::iota(data, data + N, 0);
+        std::vector<int> doubled(N);
+        std::iota(doubled.begin(), doubled.end(), 0);
+        std::transform(doubled.begin(), doubled.end(), doubled.begin(), [](int value) { return value * 2; });
 
         profiling.submit([&](sycl::handler& h)
         {
@@ -163,9 +206,8 @@ namespace ProfilingQueueTests
             });
         }).wait_and_throw();
 
-        for (std::size_t i = 0; i < N; ++i)
-            EXPECT_EQ(data[i], static_cast<int>(i) * 2)
-                << "element " << i << " was not doubled by the profiling queue's kernel";
+        EXPECT_EQ(std::vector<int>(data, data + N), doubled)
+            << "the profiling queue's kernel did not double every element";
     }
 } // namespace ProfilingQueueTests
 
@@ -208,143 +250,178 @@ namespace TopologyTests
                 sycl::free(probe, queue);
             return honoured;
         }
+
+        /** @brief Holds a context for the tests of the allocator that run on it. */
+        class ContextFixture : public ::testing::Test
+        {
+            protected:
+                /** @brief Builds the context. */
+                void SetUp() override
+                {
+                    context_owner_ = SushiRuntime::Test::make_context();
+                }
+
+                /** @brief Returns the context. */
+                RuntimeContext& context() { return *context_owner_; }
+
+            private:
+                std::shared_ptr<RuntimeContext> context_owner_; /**< The context of the test. */
+        };
+
+        /** @brief Names a USM kind and an alignment in the byte count, for the parameter tables. */
+        using AlignedRequest = std::tuple<Internal::Memory::USMKind, std::size_t, std::size_t>;
     } // namespace
 
-    /**
-     * @brief Verifies that requesting a queue for an invalid NUMA ID falls back safely instead of
-     *        crashing.
-     *
-     * Requests a queue with a non-existent NUMA ID and validates that the returned fallback queue functions normally.
-     */
-    TEST(Medium_RuntimeContext, InvalidNUMAFallbackQueue)
+    /** @brief Fixture of the tests that run a queue for an id no node has. */
+    class Medium_InvalidNUMAQueue : public ContextFixture, public ::testing::WithParamInterface<int>
     {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
+    };
 
-        constexpr int INVALID_NUMA_ID = 999;
+    /** @brief Tests that a queue for an id no node has runs a host task. */
+    TEST_P(Medium_InvalidNUMAQueue, RunsAHostTask)
+    {
+        std::atomic<bool> ran{false};
 
-        EXPECT_NO_THROW({
-            sycl::queue& fallback_queue =
-                ctx.devices().queue_or_numa_local(std::nullopt, INVALID_NUMA_ID);
+        sycl::queue& fallback_queue = context().devices().queue_or_numa_local(std::nullopt, GetParam());
+        fallback_queue.submit([&ran](sycl::handler& h)
+        {
+            SushiRuntime::Detail::enqueue_host_task(h, [&ran]() { ran.store(true); });
+        }).wait();
 
-            // Confirm the returned queue is usable with a dummy host task.
-            auto event = fallback_queue.submit([](sycl::handler& h)
-            {
-                SushiRuntime::Detail::enqueue_host_task(h, []() {});
-            });
-            event.wait();
-        }) << "Context crashed when an invalid NUMA ID was requested.";
+        EXPECT_TRUE(ran.load()) << "the fallback queue did not run the host task";
     }
 
+    INSTANTIATE_TEST_SUITE_P(Rows, Medium_InvalidNUMAQueue, ::testing::Values(999, -5));
+
+    /** @brief Fixture of the tests that allocate on an id no node has. */
+    class Medium_InvalidNUMAAllocation : public ContextFixture
+    {
+    };
+
     /**
-     * @brief Verifies that an out-of-range NUMA ID falls back to a usable node.
+     * @brief Tests that an allocation on an out-of-range NUMA ID falls back to a usable node.
      *
      * A negative id is what a caller gets from a topology that reported no NUMA
      * information, so it has to resolve to something rather than index out of
-     * bounds. Allocating and freeing through it proves the fallback queue is a real
-     * one and that the pointer's owner was recorded against it.
+     * bounds. The pointer's owner is recorded against the fallback device.
      */
-    TEST(Medium_RuntimeContext, InvalidNUMAFallsBackToAUsableNode)
+    TEST_F(Medium_InvalidNUMAAllocation, AnAllocationOnAnInvalidNUMAFallsBackAndIsRecorded)
     {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
+        constexpr int INVALID_NUMA_ID = -5;
 
-        constexpr int INVALID_NUMA_ID = -5; // negative edge case
-
-        EXPECT_NO_THROW({
-            (void)ctx.devices().queue_or_numa_local(std::nullopt, INVALID_NUMA_ID);
-        }) << "Context crashed when asked for a queue on a negative NUMA ID.";
-
-        void* ptr = nullptr;
-        EXPECT_NO_THROW({
-            ptr = ctx.memory().allocate({Internal::Memory::USMKind::Shared, 128, 0,
-                                         ctx.devices().device_for_numa(INVALID_NUMA_ID)});
-        }) << "Allocation on a negative NUMA ID threw instead of falling back.";
+        void* const ptr = context().memory().allocate({Internal::Memory::USMKind::Shared, 128, 0,
+                                                       context().devices().device_for_numa(INVALID_NUMA_ID)});
 
         ASSERT_NE(ptr, nullptr) << "Fallback allocation returned null.";
-        EXPECT_TRUE(ctx.memory().device_of(ptr).has_value())
+        EXPECT_TRUE(context().memory().device_of(ptr).has_value())
             << "The fallback allocation was not recorded against any device.";
+        context().memory().release(ptr);
+    }
 
-        ctx.memory().release(ptr);
-        EXPECT_FALSE(ctx.memory().device_of(ptr).has_value())
+    /** @brief Tests that releasing a fallback allocation clears the record of its owner. */
+    TEST_F(Medium_InvalidNUMAAllocation, ReleasingAFallbackAllocationClearsItsOwner)
+    {
+        constexpr int INVALID_NUMA_ID = -5;
+        void* const ptr = context().memory().allocate({Internal::Memory::USMKind::Shared, 128, 0,
+                                                       context().devices().device_for_numa(INVALID_NUMA_ID)});
+        ASSERT_NE(ptr, nullptr);
+
+        context().memory().release(ptr);
+
+        EXPECT_FALSE(context().memory().device_of(ptr).has_value())
             << "Freeing left the pointer's owner recorded.";
     }
 
-    /** @brief Tests that the live count follows each allocation, free and forgotten record. */
-    TEST(Medium_RuntimeContext, LiveUSMCountFollowsAllocateFreeAndForget)
+    /** @brief Fixture of the tests that read the live USM count. */
+    class Medium_LiveUSMCount : public ContextFixture
     {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        const std::size_t baseline = ctx.memory().live_count();
+    };
 
-        void* shared = ctx.memory().allocate(
-            {Internal::Memory::USMKind::Shared, 128, 0, ctx.devices().device_for_numa(0)});
-        void* device = ctx.memory().allocate(
-            {Internal::Memory::USMKind::Device, 128, 0, ctx.devices().device_for_numa(0)});
+    /** @brief Tests that the live count follows each allocation and release. */
+    TEST_F(Medium_LiveUSMCount, FollowsAllocateAndRelease)
+    {
+        const std::size_t baseline = context().memory().live_count();
+
+        void* shared = context().memory().allocate(
+            {Internal::Memory::USMKind::Shared, 128, 0, context().devices().device_for_numa(0)});
+        void* device = context().memory().allocate(
+            {Internal::Memory::USMKind::Device, 128, 0, context().devices().device_for_numa(0)});
         ASSERT_NE(shared, nullptr);
         ASSERT_NE(device, nullptr);
-        EXPECT_EQ(ctx.memory().live_count(), baseline + 2);
+        EXPECT_EQ(context().memory().live_count(), baseline + 2);
 
-        ctx.memory().release(shared);
-        EXPECT_EQ(ctx.memory().live_count(), baseline + 1);
+        context().memory().release(shared);
+        EXPECT_EQ(context().memory().live_count(), baseline + 1);
 
-        ctx.memory().release(device);
-        EXPECT_EQ(ctx.memory().live_count(), baseline);
+        context().memory().release(device);
+        EXPECT_EQ(context().memory().live_count(), baseline);
+    }
 
+    /** @brief Tests that the live count follows an adopted record and its forgetting. */
+    TEST_F(Medium_LiveUSMCount, FollowsAdoptAndForget)
+    {
+        const std::size_t baseline = context().memory().live_count();
         int external = 0;
-        ctx.memory().adopt(&external, 0, sizeof(external), std::nullopt);
-        EXPECT_EQ(ctx.memory().live_count(), baseline + 1);
-        ctx.memory().forget(&external);
-        EXPECT_EQ(ctx.memory().live_count(), baseline);
+
+        context().memory().adopt(&external, 0, sizeof(external), std::nullopt);
+        EXPECT_EQ(context().memory().live_count(), baseline + 1);
+
+        context().memory().forget(&external);
+        EXPECT_EQ(context().memory().live_count(), baseline);
     }
 
-    /** @brief Tests that every aligned allocation returns an address on the requested alignment. */
-    TEST(Medium_RuntimeContext, AlignedAllocationsStartOnTheAlignment)
+    /** @brief Fixture of the aligned allocation rows: a kind, an alignment and a byte count. */
+    class Medium_AlignedAllocation : public ContextFixture, public ::testing::WithParamInterface<AlignedRequest>
     {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-
-        for (const Internal::Memory::USMKind kind : K_ALIGNED_KINDS)
-        {
-            for (const std::size_t alignment : {std::size_t{64}, std::size_t{128}})
+        protected:
+            /** @brief Skips a shared request on a toolchain that does not honour its alignment. */
+            void SetUp() override
             {
-                if (kind == Internal::Memory::USMKind::Shared
-                    && !shared_allocation_honours(ctx.devices().queue(0), alignment))
-                {
-                    RecordProperty("shared_alignment_not_honoured", std::to_string(alignment));
-                    continue;
-                }
-                for (const std::size_t bytes : {std::size_t{1}, std::size_t{100}, std::size_t{4096}})
-                {
-                    void* ptr = ctx.memory().allocate({kind, bytes, alignment, 0});
-                    ASSERT_NE(ptr, nullptr) << bytes << " bytes at alignment " << alignment;
-                    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(ptr) % alignment, 0u)
-                        << bytes << " bytes at alignment " << alignment;
-                    ctx.memory().release(ptr);
-                }
+                ContextFixture::SetUp();
+                if (std::get<0>(GetParam()) == Internal::Memory::USMKind::Shared
+                    && !shared_allocation_honours(context().devices().queue(0), std::get<1>(GetParam())))
+                    GTEST_SKIP() << "the toolchain's aligned shared allocation ignores alignment "
+                                 << std::get<1>(GetParam());
             }
-        }
-    }
+    };
 
-    /** @brief Tests that an aligned allocation is recorded once and dropped by release(). */
-    TEST(Medium_RuntimeContext, AlignedAllocationsAreRecordedAndFreed)
+    /** @brief Tests that the address starts on the requested alignment. */
+    TEST_P(Medium_AlignedAllocation, StartsOnTheAlignment)
     {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        const std::size_t baseline = ctx.memory().live_count();
+        const auto [kind, alignment, bytes] = GetParam();
 
-        std::array<void*, K_ALIGNED_KIND_COUNT> pointers = {};
-        for (std::size_t i = 0; i < K_ALIGNED_KINDS.size(); ++i)
-        {
-            pointers[i] = ctx.memory().allocate({K_ALIGNED_KINDS[i], 256, 128, 0});
-            EXPECT_NE(pointers[i], nullptr);
-            EXPECT_EQ(ctx.memory().live_count(), baseline + i + 1);
-        }
+        void* const ptr = context().memory().allocate({kind, bytes, alignment, 0});
 
-        for (void* ptr : pointers)
-            ctx.memory().release(ptr);
-        EXPECT_EQ(ctx.memory().live_count(), baseline);
+        ASSERT_NE(ptr, nullptr);
+        EXPECT_EQ(reinterpret_cast<std::uintptr_t>(ptr) % alignment, 0u);
+        context().memory().release(ptr);
     }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Rows, Medium_AlignedAllocation,
+        ::testing::Combine(::testing::ValuesIn(K_ALIGNED_KINDS), ::testing::Values(std::size_t{64}, std::size_t{128}),
+                           ::testing::Values(std::size_t{1}, std::size_t{100}, std::size_t{4096})));
+
+    /** @brief Fixture of the rows that allocate one aligned block of a kind. */
+    class Medium_AlignedRecording : public ContextFixture,
+                                    public ::testing::WithParamInterface<Internal::Memory::USMKind>
+    {
+    };
+
+    /** @brief Tests that the block is recorded once and dropped by release(). */
+    TEST_P(Medium_AlignedRecording, IsRecordedOnceAndDroppedByRelease)
+    {
+        const std::size_t baseline = context().memory().live_count();
+
+        void* const ptr = context().memory().allocate({GetParam(), 256, 128, 0});
+
+        ASSERT_NE(ptr, nullptr);
+        EXPECT_EQ(context().memory().live_count(), baseline + 1);
+        context().memory().release(ptr);
+        EXPECT_EQ(context().memory().live_count(), baseline);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(Rows, Medium_AlignedRecording, ::testing::ValuesIn(K_ALIGNED_KINDS));
 
     /** @brief Tests that an aligned allocation on a device index past the last one stops. */
     TEST(Medium_RuntimeContextDeathTest, AnAlignedAllocationOnAMissingDeviceStops)
@@ -411,15 +488,51 @@ namespace NvidiaTopologyTests
     }
 
     /**
+     * @brief Returns the queue of the first CUDA device of @p context, in the order of the SYCL device list.
+     *
+     * @return The queue, or nullptr when the context holds no CUDA device.
+     */
+    static sycl::queue* cuda_queue(RuntimeContext& context)
+    {
+        const auto devices = sycl::device::get_devices(sycl::info::device_type::all);
+        for (std::size_t i = 0; i < devices.size(); ++i)
+        {
+            const std::string platform = devices[i].get_platform().get_info<sycl::info::platform::name>();
+            if (platform.find("CUDA") != std::string::npos || platform.find("cuda") != std::string::npos)
+                return &context.devices().queue(i);
+        }
+        return nullptr;
+    }
+
+    /** @brief Tells whether the process runs under WSL, which declares itself in WSL_DISTRO_NAME; never true on Windows. */
+    static bool running_under_wsl()
+    {
+#if defined(_WIN32)
+        return false;
+#else
+        return std::getenv("WSL_DISTRO_NAME") != nullptr;
+#endif
+    }
+
+    /** @brief Fixture of the tests that need a CUDA device; they skip where the machine has none. */
+    class Large_RuntimeContextNvidia : public ::testing::Test
+    {
+        protected:
+            /** @brief Skips the test on a machine without a CUDA-capable GPU. */
+            void SetUp() override
+            {
+                if (!cuda_device_available())
+                    GTEST_SKIP() << "No CUDA-capable GPU found.";
+            }
+    };
+
+    /**
      * @brief Verifies that an NVIDIA GPU is discovered when CUDA is active.
      *
      * Probes all devices using HardwareDiscovery and asserts that an NVIDIA GPU is found.
      */
-    TEST(Large_RuntimeContextNvidia, NvidiaGPUDiscovered)
+    TEST_F(Large_RuntimeContextNvidia, NvidiaGPUDiscovered)
     {
-        if (!cuda_device_available())
-            GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
-
         HardwareDiscovery discovery;
         DeviceFilter config;
         config.include_cpu = true;
@@ -436,77 +549,46 @@ namespace NvidiaTopologyTests
     /**
      * @brief Verifies that a discovered NVIDIA GPU is assigned a valid NUMA node ID.
      *
-     * Maps NUMA distances for the discovered nodes and asserts that the NVIDIA GPU has a valid ID, skipping if running in WSL without ACPI passthrough.
+     * Maps NUMA distances for the discovered nodes and asserts that the NVIDIA GPU has a valid ID.
+     * Under WSL, which gives hwloc no PCI devices, the mapping cannot resolve and the test skips.
      */
-    TEST(Large_RuntimeContextNvidia, NvidiaGPUHasNUMAMapping)
+    TEST_F(Large_RuntimeContextNvidia, NvidiaGPUHasNUMAMapping)
     {
-        if (!cuda_device_available())
-            GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
+        if (running_under_wsl())
+            GTEST_SKIP() << "WSL gives hwloc no PCI devices, so the GPU maps to the fallback node.";
 
         HardwareDiscovery discovery;
         DeviceFilter config;
         config.include_gpu = true;
-
         auto nodes = discovery.probe_all_devices(config).value();
-        const HardwareNode* nvidia = find_nvidia_node(nodes);
-        ASSERT_NE(nvidia, nullptr);
+        ASSERT_NE(find_nvidia_node(nodes), nullptr);
 
         NUMAMapper mapper;
         mapper.map_distances(nodes); // mutates nodes in-place, filling numa_node_id
 
         const HardwareNode* mapped_nvidia = find_nvidia_node(nodes);
         ASSERT_NE(mapped_nvidia, nullptr);
-
-        // -1 means "could not map" — acceptable in WSL without full ACPI passthrough.
-        if (mapped_nvidia->numa_node_id == -1)
-        {
-            GTEST_SKIP() << "GTX 1060 found but hwloc could not resolve NUMA node "
-                            "(expected in WSL without PCIe ACPI passthrough). "
-                            "NUMA affinity will use fallback (node 0).";
-        }
-
-        EXPECT_GE(mapped_nvidia->numa_node_id, 0)
-            << "GTX 1060 must be assigned to a valid NUMA node.";
+        EXPECT_GE(mapped_nvidia->numa_node_id, 0) << "The NVIDIA GPU must be assigned to a valid NUMA node.";
     }
 
     /**
      * @brief Verifies that the RuntimeContext exposes a functional CUDA-backed SYCL queue.
      *
-     * Identifies a CUDA platform queue and executes a trivial host_task to ensure it does not throw an exception.
+     * Runs a trivial host_task on the CUDA queue and asserts that it ran.
      */
-    TEST(Large_RuntimeContextNvidia, RuntimeContextExposesNvidiaQueue)
+    TEST_F(Large_RuntimeContextNvidia, RuntimeContextExposesNvidiaQueue)
     {
-        if (!cuda_device_available())
-            GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
-
         const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
+        sycl::queue* const queue = cuda_queue(*ctx_owner);
+        ASSERT_NE(queue, nullptr) << "RuntimeContext found no CUDA-backed queue.";
+        std::atomic<bool> ran{false};
 
-        // Queues are exposed by index in the same order as the SYCL device list.
-        auto all_devs = sycl::device::get_devices(sycl::info::device_type::all);
-        bool found_cuda_queue = false;
-        for (size_t i = 0; i < all_devs.size(); ++i)
+        queue->submit([&ran](sycl::handler& h)
         {
-            std::string pname = all_devs[i].get_platform().get_info<sycl::info::platform::name>();
-            if (pname.find("CUDA") == std::string::npos && pname.find("cuda") == std::string::npos)
-                continue;
+            SushiRuntime::Detail::enqueue_host_task(h, [&ran] { ran.store(true); });
+        }).wait();
 
-            found_cuda_queue = true;
-            sycl::queue& q = ctx.devices().queue(i);
-
-            EXPECT_NO_THROW({
-                auto ev = q.submit([](sycl::handler& h)
-                {
-                    SushiRuntime::Detail::enqueue_host_task(h, [] {});
-                });
-                ev.wait();
-            }) << "CUDA-backed SYCL queue threw during host_task submission.";
-
-            break;
-        }
-
-        if (!found_cuda_queue)
-            GTEST_SKIP() << "RuntimeContext found no CUDA-backed queue.";
+        EXPECT_TRUE(ran.load());
     }
 
     /**
@@ -514,66 +596,36 @@ namespace NvidiaTopologyTests
      *
      * Allocates USM shared memory, submits a parallel_for kernel on the CUDA queue, and verifies the addition results.
      */
-    TEST(Large_RuntimeContextNvidia, NvidiaGPUVectorAdd)
+    TEST_F(Large_RuntimeContextNvidia, NvidiaGPUVectorAdd)
     {
-        if (!cuda_device_available())
-            GTEST_SKIP() << "No CUDA-capable GPU found — skipping NVIDIA topology tests.";
-
+        constexpr std::size_t N = 4096;
         const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        sycl::queue* cuda_q = nullptr;
-        auto all_devs = sycl::device::get_devices(sycl::info::device_type::all);
-        for (size_t i = 0; i < all_devs.size(); ++i)
-        {
-            std::string pname = all_devs[i].get_platform().get_info<sycl::info::platform::name>();
-            if (pname.find("CUDA") != std::string::npos || pname.find("cuda") != std::string::npos)
-            {
-                cuda_q = &ctx.devices().queue(i);
-                break;
-            }
-        }
-        if (!cuda_q)
-            GTEST_SKIP() << "No CUDA-backed queue in RuntimeContext.";
-
-        constexpr size_t N = 4096;
+        sycl::queue* const cuda_q = cuda_queue(*ctx_owner);
+        ASSERT_NE(cuda_q, nullptr) << "No CUDA-backed queue in RuntimeContext.";
         USMShared<float> usm_A(*cuda_q, N);
         USMShared<float> usm_B(*cuda_q, N);
         USMShared<float> usm_C(*cuda_q, N);
         ASSERT_TRUE(usm_A);
         ASSERT_TRUE(usm_B);
         ASSERT_TRUE(usm_C);
-
         float* A = usm_A.get();
         float* B = usm_B.get();
         float* C = usm_C.get();
+        std::iota(A, A + N, 0.f);
+        std::transform(A, A + N, B, [](float value) { return value * 2.f; });
+        std::fill(C, C + N, 0.f);
+        std::vector<float> expected(N);
+        std::transform(A, A + N, B, expected.begin(), std::plus<float>());
 
-        for (size_t i = 0; i < N; ++i)
-        {
-            A[i] = float(i);
-            B[i] = float(i) * 2.f;
-            C[i] = 0.f;
-        }
-
-        auto ev = cuda_q->submit([&](sycl::handler& h)
+        cuda_q->submit([&](sycl::handler& h)
         {
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> idx)
             {
                 C[idx] = A[idx] + B[idx];
             });
-        });
-        ev.wait();
+        }).wait();
 
-        bool ok = true;
-        for (size_t i = 0; i < N; ++i)
-        {
-            float expected = float(i) + float(i) * 2.f;
-            if (C[i] != expected)
-            {
-                ok = false;
-                break;
-            }
-        }
-        EXPECT_TRUE(ok) << "GTX 1060 vector addition produced wrong results.";
+        EXPECT_EQ(std::vector<float>(C, C + N), expected) << "The vector addition produced wrong results.";
     }
 } // namespace NvidiaTopologyTests
 
@@ -603,12 +655,12 @@ namespace TopologyAbstractionTests
         EXPECT_EQ(ctx.topology().numa_distance(0, 1), 21);
     }
 
-    /**
-     * @brief Verifies end-to-end functionality of synthetic NUMA nodes providing usable queues.
-     *
-     * Injects a remapping provider and tests that queues obtained for synthetic NUMA IDs can successfully submit host tasks.
-     */
-    TEST(Medium_RuntimeContextTopology, RuntimeContextRoutesQueuesViaSyntheticNUMA)
+    /** @brief Fixture of the rows that route a queue through one synthetic NUMA node. */
+    class Medium_RuntimeContextSyntheticNUMA : public ::testing::TestWithParam<int>
+    {
+    };
+
+    TEST_P(Medium_RuntimeContextSyntheticNUMA, RoutesAQueueThatRunsAHostTask)
     {
         constexpr int FAKE_NODES = 2;
 
@@ -617,26 +669,26 @@ namespace TopologyAbstractionTests
         auto distance = std::make_shared<MatrixDistanceModel>(
             std::vector<std::vector<int>>{{10, 21},
                                           {21, 10}});
-
         const auto ctx_owner = SushiRuntime::Test::make_context({}, provider, distance);
-        RuntimeContext& ctx = *ctx_owner;
+        std::atomic<bool> ran{false};
 
-        for (int numa = 0; numa < FAKE_NODES; ++numa)
+        sycl::queue& q = (*ctx_owner).devices().queue_or_numa_local(std::nullopt, GetParam());
+        q.submit([&ran](sycl::handler& h)
         {
-            EXPECT_NO_THROW({
-                sycl::queue& q = ctx.devices().queue_or_numa_local(std::nullopt, numa);
-                auto ev = q.submit([](sycl::handler& h) { SushiRuntime::Detail::enqueue_host_task(h, [] {}); });
-                ev.wait();
-            }) << "Synthetic NUMA node " << numa << " produced no working queue.";
-        }
+            SushiRuntime::Detail::enqueue_host_task(h, [&ran] { ran.store(true); });
+        }).wait();
+
+        EXPECT_TRUE(ran.load()) << "Synthetic NUMA node " << GetParam() << " produced no working queue.";
     }
+
+    INSTANTIATE_TEST_SUITE_P(Rows, Medium_RuntimeContextSyntheticNUMA, ::testing::Values(0, 1));
 
     /**
      * @brief Verifies that a GPU node carrying no PCI address is placed on the fallback NUMA node.
      *
      * Builds a node by hand, leaves its PCI address empty and asserts NUMAMapper puts it on node 0.
      */
-    TEST(Medium_RuntimeContextTopology, GPUWithoutPCIAddressTakesFallbackNUMANode)
+    TEST(Small_RuntimeContextTopology, GPUWithoutPCIAddressTakesFallbackNUMANode)
     {
         HardwareNode gpu;
         gpu.name = "synthetic GPU without a PCI address";
@@ -802,68 +854,89 @@ namespace RunObserverGateTests
             std::atomic<int> runs{0}; /**< Runs heard so far. */
     };
 
-    /** @brief Tests that an observer with no gate always wants device timing. */
-    TEST(Medium_RuntimeContextObservers, AnUngatedObserverAlwaysWantsTiming)
+    /** @brief Fixture of the observer tests: a context, and a gate that starts closed and is left closed. */
+    class Medium_RuntimeContextObservers : public ::testing::Test
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        auto& context = *context_owner;
-        EXPECT_FALSE(context.wants_device_timing());
+        protected:
+            /** @brief Builds the context and closes the gate. */
+            void SetUp() override
+            {
+                context_owner_ = SushiRuntime::Test::make_context();
+                g_gate_open.store(false);
+            }
+
+            /** @brief Closes the gate, so no later test starts with it open. */
+            void TearDown() override
+            {
+                g_gate_open.store(false);
+            }
+
+            /** @brief Returns the context. */
+            SushiRuntime::Internal::Execution::RuntimeContext& context() { return *context_owner_; }
+
+        private:
+            std::shared_ptr<SushiRuntime::Internal::Execution::RuntimeContext> context_owner_; /**< The test's context. */
+    };
+
+    /** @brief Tests that an observer with no gate always wants device timing. */
+    TEST_F(Medium_RuntimeContextObservers, AnUngatedObserverAlwaysWantsTiming)
+    {
+        EXPECT_FALSE(context().wants_device_timing());
 
         const auto observer = std::make_shared<CountingObserver>();
-        const std::uint64_t id = context.add_run_observer(observer);
-        EXPECT_TRUE(context.wants_device_timing());
+        const std::uint64_t id = context().add_run_observer(observer);
+        EXPECT_TRUE(context().wants_device_timing());
 
-        context.remove_run_observer(id);
-        EXPECT_FALSE(context.wants_device_timing());
+        context().remove_run_observer(id);
+        EXPECT_FALSE(context().wants_device_timing());
     }
 
     /** @brief Tests that a gated observer asks for timing only while its gate is open. */
-    TEST(Medium_RuntimeContextObservers, AGatedObserverWantsTimingOnlyWhileItsGateIsOpen)
+    TEST_F(Medium_RuntimeContextObservers, AGatedObserverWantsTimingOnlyWhileItsGateIsOpen)
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        auto& context = *context_owner;
         const auto observer = std::make_shared<CountingObserver>();
-        const std::uint64_t id = context.add_run_observer(observer, &test_gate);
+        const std::uint64_t id = context().add_run_observer(observer, &test_gate);
 
-        g_gate_open.store(false);
-        EXPECT_FALSE(context.wants_device_timing()) << "a closed gate costs no device timing";
+        EXPECT_FALSE(context().wants_device_timing()) << "a closed gate costs no device timing";
         g_gate_open.store(true);
-        EXPECT_TRUE(context.wants_device_timing());
+        EXPECT_TRUE(context().wants_device_timing());
 
-        // An ungated observer keeps timing on whatever the gate says.
-        g_gate_open.store(false);
-        const auto other = std::make_shared<CountingObserver>();
-        const std::uint64_t other_id = context.add_run_observer(other);
-        EXPECT_TRUE(context.wants_device_timing());
+        context().remove_run_observer(id);
+    }
 
-        context.remove_run_observer(other_id);
-        context.remove_run_observer(id);
-        g_gate_open.store(false);
+    /** @brief Tests that an ungated observer keeps timing on whatever the gate of another observer says. */
+    TEST_F(Medium_RuntimeContextObservers, AnUngatedObserverKeepsTimingOnWhateverTheGateSays)
+    {
+        const auto gated = std::make_shared<CountingObserver>();
+        const auto ungated = std::make_shared<CountingObserver>();
+        const std::uint64_t gated_id = context().add_run_observer(gated, &test_gate);
+        const std::uint64_t ungated_id = context().add_run_observer(ungated);
+
+        EXPECT_TRUE(context().wants_device_timing());
+
+        context().remove_run_observer(ungated_id);
+        context().remove_run_observer(gated_id);
     }
 
     /** @brief Tests that a delivery waits for the gate of its observer and skips a closed one. */
-    TEST(Medium_RuntimeContextObservers, ADeliveryToAGatedObserverWaitsForItsGate)
+    TEST_F(Medium_RuntimeContextObservers, ADeliveryToAGatedObserverWaitsForItsGate)
     {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        auto& context = *context_owner;
         const auto gated = std::make_shared<CountingObserver>();
         const auto open = std::make_shared<CountingObserver>();
-        const std::uint64_t gated_id = context.add_run_observer(gated, &test_gate);
-        const std::uint64_t open_id = context.add_run_observer(open);
+        const std::uint64_t gated_id = context().add_run_observer(gated, &test_gate);
+        const std::uint64_t open_id = context().add_run_observer(open);
 
         const SushiRuntime::RunObservation observation;
-        g_gate_open.store(false);
-        context.notify_run(observation);
+        context().notify_run(observation);
         EXPECT_EQ(gated->runs.load(), 0);
         EXPECT_EQ(open->runs.load(), 1);
 
         g_gate_open.store(true);
-        context.notify_run(observation);
+        context().notify_run(observation);
         EXPECT_EQ(gated->runs.load(), 1);
         EXPECT_EQ(open->runs.load(), 2);
 
-        context.remove_run_observer(gated_id);
-        context.remove_run_observer(open_id);
-        g_gate_open.store(false);
+        context().remove_run_observer(gated_id);
+        context().remove_run_observer(open_id);
     }
 } // namespace RunObserverGateTests

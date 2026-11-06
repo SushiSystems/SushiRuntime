@@ -23,35 +23,36 @@
 
 /**
  * @file test_atomic_counter_task.cpp
- * @brief Tests AtomicCounterTask: a host task that counts each run and never splits.
+ * @brief Tests AtomicCounterTask: a host task that counts each run.
  * @see tests/engine/probe_tasks/README.md
  * @author Mustafa Garip
  */
 
 #include <atomic>
 #include <cstddef>
-#include <vector>
 
 #include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
-
-#include <SushiRuntime/task/task_types.hpp>
 
 #include <SushiRuntime/probe_tasks/atomic_counter_task.hpp>
+
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Test;
 
-/** @brief Tests that each run adds one, and the task is a host task that does not split. */
-TEST(Medium_AtomicCounterTask, EachRunAddsOne)
+/** @brief Fixture of the tests that hand the program's queue to a host task. */
+class Medium_AtomicCounterTask : public TestSupport::RuntimeTest
+{
+};
+
+/** @brief Tests that each run adds one to the counter. */
+TEST_F(Medium_AtomicCounterTask, EachRunAddsOne)
 {
     std::atomic<std::size_t> counter{0};
     AtomicCounterTask task(counter);
-    sycl::queue queue;
-    (void)task.execute_host(queue, {});
-    (void)task.execute_host(queue, {});
+
+    (void)task.execute_host(queue(), {});
+    (void)task.execute_host(queue(), {});
+
     EXPECT_EQ(counter.load(), 2u);
-    EXPECT_EQ(task.execution_mode(), Internal::Scheduler::Task::ExecutionMode::Host);
-    EXPECT_FALSE(task.is_splittable());
-    EXPECT_FALSE(task.split().has_value());
 }

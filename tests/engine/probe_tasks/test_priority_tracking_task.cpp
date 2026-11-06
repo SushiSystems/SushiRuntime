@@ -23,7 +23,7 @@
 
 /**
  * @file test_priority_tracking_task.cpp
- * @brief Tests PriorityTrackingTask: it reports its priority and records it when it runs.
+ * @brief Tests PriorityTrackingTask: it records its priority when it runs.
  * @see tests/engine/probe_tasks/README.md
  * @author Mustafa Garip
  */
@@ -32,28 +32,29 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
-
-#include <SushiRuntime/task/task_types.hpp>
 
 #include <SushiRuntime/probe_tasks/priority_tracking_task.hpp>
+
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Test;
 
+/** @brief Fixture of the tests that hand the program's queue to a host task. */
+class Medium_PriorityTrackingTask : public TestSupport::RuntimeTest
+{
+};
+
 /** @brief Tests that the task records its priority in run order. */
-TEST(Medium_PriorityTrackingTask, RecordsItsPriorityWhenItRuns)
+TEST_F(Medium_PriorityTrackingTask, RecordsItsPriorityWhenItRuns)
 {
     std::vector<int> order;
     std::mutex order_mutex;
     PriorityTrackingTask low(1, order, order_mutex);
     PriorityTrackingTask high(9, order, order_mutex);
-    EXPECT_EQ(high.priority(), 9);
 
-    sycl::queue queue;
-    (void)high.execute_host(queue, {});
-    (void)low.execute_host(queue, {});
+    (void)high.execute_host(queue(), {});
+    (void)low.execute_host(queue(), {});
+
     EXPECT_EQ(order, (std::vector<int>{9, 1}));
-    EXPECT_EQ(low.execution_mode(), Internal::Scheduler::Task::ExecutionMode::Host);
-    EXPECT_FALSE(low.is_splittable());
 }

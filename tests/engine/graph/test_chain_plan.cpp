@@ -23,28 +23,32 @@
 
 /**
  * @file test_chain_plan.cpp
- * @brief Tests ChainPlan and PendingEvent: an empty plan that does not chain until classified.
+ * @brief Tests ChainPlan and PendingEvent: a compiled plan that does not chain until classified.
  * @see tests/engine/graph/README.md
  * @author Mustafa Garip
  */
 
 #include <gtest/gtest.h>
+#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/report/dispatch_width.hpp>
 
 #include <SushiRuntime/graph/chain_plan.hpp>
+#include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/graph/task_graph.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
 
-/** @brief Tests that a default plan does not chain and holds nothing. */
-TEST(Small_ChainPlanShape, ADefaultPlanDoesNotChain)
+/** @brief Tests that a compiled plan no classification has run on does not chain. */
+TEST(Small_ChainPlanShape, AnUnclassifiedCompiledPlanDoesNotChain)
 {
-    const ChainPlan plan;
-    EXPECT_FALSE(plan.chainable);
-    EXPECT_EQ(plan.queue_index, 0u);
-    EXPECT_TRUE(plan.order.empty());
-    EXPECT_TRUE(plan.pending_events.empty());
+    TaskGraph graph;
+    graph.add_node([](sycl::handler&) {});
+
+    const CompiledGraph plan = graph.compile().value();
+
+    EXPECT_FALSE(plan.chain.chainable);
 }
 
 /** @brief Tests that a pending event's widths start unknown. */

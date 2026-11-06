@@ -9,11 +9,12 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_atomic_counter_task.cpp
 
-The file tests AtomicCounterTask: a host task that counts each run and never splits.
+The file tests AtomicCounterTask: a host task that counts each run. The program's queue comes from
+`tests/support/runtime_environment.hpp`, so the test makes none.
 
 | Test | What it proves |
 | --- | --- |
-| `EachRunAddsOne` | Each run adds one, and the task is a host task that does not split. |
+| `Medium_AtomicCounterTask.EachRunAddsOne` | Each run adds one to the counter. |
 
 ## test_order_recorder.cpp
 
@@ -21,12 +22,12 @@ The file tests make_order_recorder(): the callable appends its id under the mute
 
 | Test | What it proves |
 | --- | --- |
-| `AppendsItsIdWhenCalled` | Each recorder appends its own id, in the order they are called. |
+| `Medium_OrderRecorder.AppendsItsIdWhenCalled` | Each recorder appends its own id, in the order they are called. |
 
 ## test_priority_tracking_task.cpp
 
-The file tests PriorityTrackingTask: it reports its priority and records it when it runs.
+The file tests PriorityTrackingTask: it records its priority when it runs.
 
 | Test | What it proves |
 | --- | --- |
-| `RecordsItsPriorityWhenItRuns` | The task records its priority in run order. |
+| `Medium_PriorityTrackingTask.RecordsItsPriorityWhenItRuns` | The task records its priority in run order. |

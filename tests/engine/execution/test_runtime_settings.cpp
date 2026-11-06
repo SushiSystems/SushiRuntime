@@ -23,7 +23,7 @@
 
 /**
  * @file test_runtime_settings.cpp
- * @brief Tests RuntimeSettings: the defaults and the pool settings it hands the scheduler.
+ * @brief Tests RuntimeSettings: the pool settings it hands the scheduler.
  * @see tests/engine/execution/README.md
  * @author Mustafa Garip
  */
@@ -38,25 +38,26 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Execution;
 
-/** @brief Tests the defaults: one worker per core, pinned, no rebalancer. */
-TEST(Medium_RuntimeSettings, DefaultsAskForNothingExtra)
+/** @brief Tests that settings nobody touched ask the pool for one worker per core, from core 0, pinned. */
+TEST(Small_RuntimeSettings, UntouchedSettingsAskThePoolForOneWorkerPerCorePinned)
 {
-    const RuntimeSettings settings;
-    EXPECT_EQ(settings.worker_count, 0u);
-    EXPECT_EQ(settings.first_core, 0u);
-    EXPECT_EQ(settings.pinning, PinPolicy::Pin);
-    EXPECT_FALSE(settings.rebalancer);
-    EXPECT_FALSE(settings.force_scheduler);
+    const Internal::Scheduler::WorkerPoolSettings pool = worker_pool_settings(RuntimeSettings{});
+
+    EXPECT_EQ(pool.worker_count, 0u);
+    EXPECT_EQ(pool.first_core, 0u);
+    EXPECT_EQ(pool.pinning, PinPolicy::Pin);
 }
 
 /** @brief Tests that the pool settings carry the three fields of the pool, unchanged. */
-TEST(Medium_RuntimeSettings, ThePoolSettingsCarryThePoolFields)
+TEST(Small_RuntimeSettings, ThePoolSettingsCarryThePoolFields)
 {
     RuntimeSettings settings;
     settings.worker_count = 6;
     settings.first_core = 2;
     settings.pinning = PinPolicy::Float;
+
     const Internal::Scheduler::WorkerPoolSettings pool = worker_pool_settings(settings);
+
     EXPECT_EQ(pool.worker_count, 6u);
     EXPECT_EQ(pool.first_core, 2u);
     EXPECT_EQ(pool.pinning, PinPolicy::Float);

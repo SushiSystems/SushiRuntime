@@ -32,23 +32,30 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/probe_tasks/order_recorder.hpp>
+
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Test;
 
+/** @brief Fixture of the tests that hand the program's queue to a host callable. */
+class Medium_OrderRecorder : public TestSupport::RuntimeTest
+{
+};
+
 /** @brief Tests that each recorder appends its own id, in the order they are called. */
-TEST(Medium_OrderRecorder, AppendsItsIdWhenCalled)
+TEST_F(Medium_OrderRecorder, AppendsItsIdWhenCalled)
 {
     std::vector<int> order;
     std::mutex order_mutex;
     auto first = make_order_recorder(1, order, order_mutex);
     auto second = make_order_recorder(2, order, order_mutex);
-    sycl::queue queue;
-    (void)second(queue, {});
-    (void)first(queue, {});
-    (void)second(queue, {});
+
+    (void)second(queue(), {});
+    (void)first(queue(), {});
+    (void)second(queue(), {});
+
     EXPECT_EQ(order, (std::vector<int>{2, 1, 2}));
 }

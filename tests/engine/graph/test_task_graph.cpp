@@ -31,9 +31,9 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -97,6 +97,33 @@ namespace TaskGraphTests
             return compiled.error();
         }
 
+        /** @brief Two integers and the region lists that read the first and write the second. */
+        struct Buffers
+        {
+            int source = 0;
+            int target = 0;
+
+            /** @brief Returns the region list that reads the source. */
+            std::vector<BufferRegion> reads() { return {BufferRegion(&source)}; }
+
+            /** @brief Returns the region list that writes the target. */
+            std::vector<BufferRegion> writes() { return {BufferRegion(&target)}; }
+        };
+
+        /** @brief Returns the metadata every task-kind test gives its tasks. */
+        TaskMetadata named_metadata()
+        {
+            TaskMetadata metadata;
+            metadata.name = "semantic";
+            return metadata;
+        }
+
+        /** @brief Returns fresh late bindings. */
+        std::shared_ptr<SushiRuntime::Internal::Graph::LateBindings> late_bindings()
+        {
+            return std::make_shared<SushiRuntime::Internal::Graph::LateBindings>();
+        }
+
         /** @brief Tells whether @p text holds @p part. */
         bool contains(const std::string& text, const std::string& part)
         {
@@ -104,61 +131,104 @@ namespace TaskGraphTests
         }
     } // namespace
 
-    TEST(Medium_TaskGraph, EveryAddReturnsTheNodeItAdded)
+    /** @brief Tests that every add call returns the node last_node_added() reports, and no two calls share one. */
+    TEST(Small_TaskGraph, EveryAddReturnsTheNodeItAdded)
     {
-        int source = 0;
-        int target = 0;
-        const std::vector<BufferRegion> reads{BufferRegion(&source)};
-        const std::vector<BufferRegion> writes{BufferRegion(&target)};
-        TaskMetadata metadata;
-        metadata.name = "semantic";
-
+        Buffers buffers;
+        const TaskMetadata metadata = named_metadata();
         TaskGraph graph;
 
-        Node& manual = graph.add_node(idle_work());
+        const Node& manual = graph.add_node(idle_work());
         EXPECT_EQ(&manual, graph.last_node_added());
-        EXPECT_TRUE(manual.io_reads_.empty());
-
-        Node& tracked = graph.add_node(idle_work(), reads, writes);
+        const Node& tracked = graph.add_node(idle_work(), buffers.reads(), buffers.writes());
         EXPECT_EQ(&tracked, graph.last_node_added());
-        EXPECT_EQ(tracked.io_writes_.size(), 1u);
-
-        const auto bindings = std::make_shared<SushiRuntime::Internal::Graph::LateBindings>();
-        Node& late = graph.add_node(idle_work(), reads, writes, bindings);
+        const Node& late = graph.add_node(idle_work(), buffers.reads(), buffers.writes(), late_bindings());
         EXPECT_EQ(&late, graph.last_node_added());
-        EXPECT_EQ(late.bindings_, bindings);
-
-        Node& device_task = graph.add_task(metadata, reads, writes, idle_work(), idle_host_work());
+        const Node& device_task =
+            graph.add_task(metadata, buffers.reads(), buffers.writes(), idle_work(), idle_host_work());
         EXPECT_EQ(&device_task, graph.last_node_added());
-        EXPECT_EQ(device_task.execution_mode(), Node::ExecutionMode::Kernel);
-
-        Node& host_task = graph.add_task(metadata, reads, writes, idle_host_work());
+        const Node& host_task = graph.add_task(metadata, buffers.reads(), buffers.writes(), idle_host_work());
         EXPECT_EQ(&host_task, graph.last_node_added());
-        EXPECT_EQ(host_task.execution_mode(), Node::ExecutionMode::Host);
-
-        const auto live_reads = std::make_shared<std::vector<void*>>(1, &source);
-        const auto live_writes = std::make_shared<std::vector<void*>>(1, &target);
-        Node& dynamic = graph.add_task(metadata, reads, writes, idle_host_work());
+        const Node& dynamic = graph.add_task(metadata, buffers.reads(), buffers.writes(), idle_host_work());
         EXPECT_EQ(&dynamic, graph.last_node_added());
-        EXPECT_EQ(dynamic.offload_state(), nullptr);
+        const Node& native = graph.add_native(buffers.reads(), buffers.writes(), [] {});
+        EXPECT_EQ(&native, graph.last_node_added());
+
+        const std::set<const Node*> distinct{&manual, &tracked, &late, &device_task, &host_task, &dynamic, &native};
+        EXPECT_EQ(distinct.size(), 7u) << "two add calls share a node";
+    }
+
+    /** @brief Tests that a node added with regions carries them, and one added without carries none. */
+    TEST(Small_TaskGraph, AddedRegionsLandOnTheNode)
+    {
+        Buffers buffers;
+        TaskGraph graph;
+
+        const Node& manual = graph.add_node(idle_work());
+        const Node& tracked = graph.add_node(idle_work(), buffers.reads(), buffers.writes());
+
+        EXPECT_TRUE(manual.io_reads_.empty());
+        EXPECT_EQ(tracked.io_writes_.size(), 1u);
+    }
+
+    /** @brief Tests that the late bindings given to an add call are the ones the node holds. */
+    TEST(Small_TaskGraph, LateBindingsLandOnTheNode)
+    {
+        Buffers buffers;
+        const auto bindings = late_bindings();
+        TaskGraph graph;
+
+        const Node& late = graph.add_node(idle_work(), buffers.reads(), buffers.writes(), bindings);
+
+        EXPECT_EQ(late.bindings_, bindings);
+    }
+
+    /** @brief Tests that a task with device work runs as a kernel and a task with only host work as a host body. */
+    TEST(Small_TaskGraph, TheExecutionModeFollowsTheTaskKind)
+    {
+        Buffers buffers;
+        const TaskMetadata metadata = named_metadata();
+        TaskGraph graph;
+
+        const Node& device_task =
+            graph.add_task(metadata, buffers.reads(), buffers.writes(), idle_work(), idle_host_work());
+        const Node& host_task = graph.add_task(metadata, buffers.reads(), buffers.writes(), idle_host_work());
+
+        EXPECT_EQ(device_task.execution_mode(), Node::ExecutionMode::Kernel);
+        EXPECT_EQ(host_task.execution_mode(), Node::ExecutionMode::Host);
+    }
+
+    /** @brief Tests that live io set on a task node lands in its offload state, which a fresh node lacks. */
+    TEST(Small_TaskGraph, LiveIoLandsInTheOffloadState)
+    {
+        Buffers buffers;
+        const auto live_reads = std::make_shared<std::vector<void*>>(1, &buffers.source);
+        const auto live_writes = std::make_shared<std::vector<void*>>(1, &buffers.target);
+        TaskGraph graph;
+        Node& dynamic = graph.add_task(named_metadata(), buffers.reads(), buffers.writes(), idle_host_work());
+        ASSERT_EQ(dynamic.offload_state(), nullptr);
+
         dynamic.set_live_io(live_reads, live_writes);
+
         ASSERT_NE(dynamic.offload_state(), nullptr);
         EXPECT_EQ(dynamic.offload_state()->live_reads, live_reads);
         EXPECT_EQ(dynamic.offload_state()->live_writes, live_writes);
         EXPECT_FALSE(dynamic.offload_state()->offloadable);
-
-        Node& native = graph.add_native(reads, writes, [] {});
-        EXPECT_EQ(&native, graph.last_node_added());
-        EXPECT_FALSE(native.submits_device_work());
-
-        const Node* const added[] = {&manual, &tracked, &late, &device_task,
-                                     &host_task, &dynamic, &native};
-        for (std::size_t i = 0; i < std::size(added); ++i)
-            for (std::size_t j = i + 1; j < std::size(added); ++j)
-                EXPECT_NE(added[i], added[j]) << "calls " << i << " and " << j << " share a node";
     }
 
-    TEST(Medium_TaskGraph, AReturnedNodeTakesItsRegistrationAndConfiguration)
+    /** @brief Tests that a native node submits no device work. */
+    TEST(Small_TaskGraph, ANativeNodeSubmitsNoDeviceWork)
+    {
+        Buffers buffers;
+        TaskGraph graph;
+
+        const Node& native = graph.add_native(buffers.reads(), buffers.writes(), [] {});
+
+        EXPECT_FALSE(native.submits_device_work());
+    }
+
+    /** @brief Tests that a reserved registration is stamped on the node, and a node added without one draws its own. */
+    TEST(Small_TaskGraph, AReturnedNodeTakesItsRegistration)
     {
         TaskGraph graph;
 
@@ -168,14 +238,6 @@ namespace TaskGraphTests
 
         Node& drawn = graph.add_node(idle_work());
         EXPECT_EQ(drawn.registration_index, graph.last_node_added()->registration_index);
-
-        // The node is configured through the reference, with no "last node" call.
-        drawn.metadata.name = "configured";
-        drawn.baked_width = 128;
-        drawn.place_on(1);
-        EXPECT_EQ(graph.last_node_added()->baked_width, 128u);
-        EXPECT_STREQ(graph.last_node_added()->name(), "configured");
-        EXPECT_EQ(graph.last_node_added()->stated_placement(), std::optional<std::size_t>(1));
     }
 
     TEST(Medium_TaskGraphDeathTest, ARegistrationTheGraphNeverIssuedStops)
@@ -225,24 +287,33 @@ namespace TaskGraphTests
                      pattern);
     }
 
-    TEST(Medium_TaskGraph, AReservedRegistrationIsAcceptedTwice)
+    /** @brief Tests that a reserved registration may be given to two nodes. */
+    TEST(Small_TaskGraph, AReservedRegistrationIsAcceptedTwice)
     {
         TaskGraph graph;
         const std::uint32_t reserved = graph.reserve_registration();
 
         Node& first = graph.add_node(idle_work(), {}, reserved);
         Node& second = graph.add_node(idle_work(), {}, reserved);
+
         EXPECT_EQ(first.registration_index, reserved);
         EXPECT_EQ(second.registration_index, reserved);
+    }
 
-        // An index a node drew is issued too, so a later node may share it.
+    /** @brief Tests that an index a node drew may be given to a later node. */
+    TEST(Small_TaskGraph, AnIndexANodeDrewMayBeShared)
+    {
+        TaskGraph graph;
+        const std::uint32_t reserved = graph.reserve_registration();
+
         Node& drawn = graph.add_node(idle_work());
         Node& sharing = graph.add_node(idle_work(), {}, drawn.registration_index);
+
         EXPECT_EQ(sharing.registration_index, drawn.registration_index);
         EXPECT_NE(drawn.registration_index, reserved);
     }
 
-    TEST(Medium_TaskGraph, TheCompiledPlanOwnsTheReturnedNodes)
+    TEST(Small_TaskGraph, TheCompiledPlanOwnsTheReturnedNodes)
     {
         TaskGraph graph;
         Node& first = graph.add_node(idle_work());

@@ -28,12 +28,16 @@
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <future>
+#include <memory>
 #include <mutex>
+#include <numeric>
 #include <thread>
 #include <vector>
 
@@ -55,8 +59,49 @@
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
+#include <SushiRuntime/sycl/sycl_compat.hpp>
+
+#include "support/tolerance.hpp"
 
 using namespace SushiRuntime;
+
+namespace
+{
+    /** @brief Returns the @p count floats at @p data as a vector. */
+    std::vector<float> floats_of(const float* data, std::size_t count)
+    {
+        return std::vector<float>(data, data + count);
+    }
+
+    /** @brief Returns @p count floats whose element i is @p make(i). */
+    std::vector<float> floats_from(std::size_t count, const std::function<float(std::size_t)>& make)
+    {
+        std::vector<float> values(count);
+        for (std::size_t i = 0; i < count; ++i)
+            values[i] = make(i);
+        return values;
+    }
+
+    /**
+     * @brief Tells whether every element of @p got is within the rounding bound of its element in @p want.
+     *
+     * @param operations The number of rounded operations on the longest path to one element.
+     * @return A success, or a failure naming the first element out of bound.
+     */
+    ::testing::AssertionResult within_rounding(const std::vector<float>& got, const std::vector<float>& want,
+                                               std::size_t operations)
+    {
+        if (got.size() != want.size())
+            return ::testing::AssertionFailure() << "got " << got.size() << " elements, expected " << want.size();
+        for (std::size_t i = 0; i < got.size(); ++i)
+        {
+            const TestSupport::ErrorRatio measured = TestSupport::measure_relative_error<float>(got[i], want[i], operations);
+            if (!measured.is_within())
+                return ::testing::AssertionFailure() << "element " << i << ": " << measured.describe();
+        }
+        return ::testing::AssertionSuccess();
+    }
+} // namespace
 
 /** @brief Tests that CPU and GPU work on per-device queues runs concurrently and race-free. */
 namespace AsyncExecutionTests
@@ -96,28 +141,44 @@ namespace AsyncExecutionTests
         }
     }
 
-    /**
-     * @brief Tests concurrent execution of vector-add on CPU and GPU.
-     *
-     * Submits independent workloads to CPU and GPU queues back-to-back without waiting in between, and verifies both produce correct results.
-     */
-    TEST(Large_AsyncExecutionTest, CPUGPUConcurrentVectorAdd)
+    /** @brief Fixture of the tests that need a CPU and a GPU queue of the context; they skip on a machine without both. */
+    class Large_AsyncExecutionTest : public ::testing::Test
     {
-        size_t cpu_idx = 0;
-        size_t gpu_idx = 0;
-        if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))
-            GTEST_SKIP() << "Need both a CPU and a GPU SYCL device for concurrency test.";
+        protected:
+            /** @brief Builds the context and finds the two queues, or skips. */
+            void SetUp() override
+            {
+                size_t cpu_idx = 0;
+                size_t gpu_idx = 0;
+                if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))
+                    GTEST_SKIP() << "Need both a CPU and a GPU SYCL device.";
+                context_owner_ = SushiRuntime::Test::make_context();
+                gpu_ = &context_owner_->devices().queue(gpu_idx);
+                cpu_ = &context_owner_->devices().queue(cpu_idx);
+            }
 
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
-        sycl::queue& gpu_q = context.devices().queue(gpu_idx);
-        sycl::queue& cpu_q = context.devices().queue(cpu_idx);
+            /** @brief Returns the GPU queue. */
+            sycl::queue& gpu_queue() { return *gpu_; }
 
-        ASSERT_TRUE(gpu_q.get_device().is_gpu());
-        ASSERT_TRUE(cpu_q.get_device().is_cpu());
+            /** @brief Returns the CPU queue. */
+            sycl::queue& cpu_queue() { return *cpu_; }
 
+        private:
+            std::shared_ptr<RuntimeContext> context_owner_; /**< The context of the test. */
+            sycl::queue* gpu_ = nullptr;                    /**< The GPU queue of the context. */
+            sycl::queue* cpu_ = nullptr;                    /**< The CPU queue of the context. */
+    };
+
+    /**
+     * @brief Tests that vector-add on a CPU queue and on a GPU queue, submitted back-to-back, both produce their sums.
+     *
+     * Neither submit waits on the other, so the two devices run in parallel; see README.md.
+     */
+    TEST_F(Large_AsyncExecutionTest, CPUAndGPUVectorAddsBothProduceTheirSums)
+    {
         constexpr size_t N = 1u << 16;
-
+        sycl::queue& gpu_q = gpu_queue();
+        sycl::queue& cpu_q = cpu_queue();
         USMShared<float> g_a(gpu_q, N), g_b(gpu_q, N), g_c(gpu_q, N);
         USMShared<float> c_a(cpu_q, N), c_b(cpu_q, N), c_c(cpu_q, N);
         ASSERT_TRUE(g_a);
@@ -126,111 +187,57 @@ namespace AsyncExecutionTests
         ASSERT_TRUE(c_a);
         ASSERT_TRUE(c_b);
         ASSERT_TRUE(c_c);
-
-        for (size_t i = 0; i < N; ++i)
-        {
-            g_a[i] = float(i);
-            g_b[i] = float(i) * 2.f;
-            g_c[i] = 0.f;
-            c_a[i] = float(i) + 1.f;
-            c_b[i] = float(i) * 3.f;
-            c_c[i] = 0.f;
-        }
-
         float* ga = g_a.get();
         float* gb = g_b.get();
         float* gc = g_c.get();
         float* ca = c_a.get();
         float* cb = c_b.get();
         float* cc = c_c.get();
+        std::iota(ga, ga + N, 0.f);
+        std::transform(ga, ga + N, gb, [](float value) { return value * 2.f; });
+        std::fill(gc, gc + N, 0.f);
+        std::iota(ca, ca + N, 1.f);
+        std::transform(ga, ga + N, cb, [](float value) { return value * 3.f; });
+        std::fill(cc, cc + N, 0.f);
 
-        // Neither submit waits on the other, so the two devices run in parallel; see README.md.
         sycl::event gpu_ev = gpu_q.submit([&](sycl::handler& h)
         {
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { gc[i] = ga[i] + gb[i]; });
         });
-
         sycl::event cpu_ev = cpu_q.submit([&](sycl::handler& h)
         {
             h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i) { cc[i] = ca[i] + cb[i]; });
         });
-
         cpu_ev.wait_and_throw();
         gpu_ev.wait_and_throw();
 
-        bool gpu_ok = true;
-        bool cpu_ok = true;
-        for (size_t i = 0; i < N; ++i)
-        {
-            if (gc[i] != float(i) + float(i) * 2.f)
-            {
-                gpu_ok = false;
-                break;
-            }
-        }
-        for (size_t i = 0; i < N; ++i)
-        {
-            if (cc[i] != (float(i) + 1.f) + float(i) * 3.f)
-            {
-                cpu_ok = false;
-                break;
-            }
-        }
-
-        EXPECT_TRUE(gpu_ok) << "GPU half of concurrent execution produced wrong results.";
-        EXPECT_TRUE(cpu_ok) << "CPU half of concurrent execution produced wrong results.";
+        EXPECT_EQ(floats_of(gc, N), floats_from(N, [](size_t i) { return float(i) + float(i) * 2.f; }))
+            << "GPU half of the concurrent execution produced wrong results.";
+        EXPECT_EQ(floats_of(cc, N), floats_from(N, [](size_t i) { return (float(i) + 1.f) + float(i) * 3.f; }))
+            << "CPU half of the concurrent execution produced wrong results.";
     }
 
     /**
      * @brief Verifies that asynchronous GPU dispatch does not block the host.
      *
-     * Submits a heavy kernel to the GPU queue and asserts that it remains in-flight immediately after the submit call returns.
+     * Submits a host task that waits on a gate to the GPU queue. The task cannot finish before the gate opens,
+     * so an event that is not complete when submit returns shows that submit did not wait for it.
      */
-    TEST(Large_AsyncExecutionTest, AsyncDispatchDoesNotBlock)
+    TEST_F(Large_AsyncExecutionTest, AsyncDispatchDoesNotBlock)
     {
-        size_t cpu_idx = 0;
-        size_t gpu_idx = 0;
-        if (!find_cpu_gpu_indices(cpu_idx, gpu_idx))
-            GTEST_SKIP() << "Need a GPU SYCL device for async dispatch test.";
+        std::promise<void> gate;
+        const std::shared_future<void> opened = gate.get_future().share();
 
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
-        sycl::queue& gpu_q = context.devices().queue(gpu_idx);
-
-        constexpr size_t N = 1u << 20;
-        USMShared<float> in(gpu_q, N), out(gpu_q, N);
-        ASSERT_TRUE(in);
-        ASSERT_TRUE(out);
-        for (size_t i = 0; i < N; ++i)
-            in[i] = float(i % 97);
-        float* pin  = in.get();
-        float* pout = out.get();
-
-        using status_t = sycl::info::event_command_status;
-
-        bool observed_inflight = false;
-        for (int attempt = 0; attempt < 5 && !observed_inflight; ++attempt)
+        sycl::event ev = gpu_queue().submit([opened](sycl::handler& h)
         {
-            sycl::event ev = gpu_q.submit([&](sycl::handler& h)
-            {
-                h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
-                {
-                    float acc = pin[i];
-                    // Heavy per-item loop so the host can observe it still running.
-                    for (int k = 0; k < 4096; ++k)
-                        acc = acc * 1.0000001f + 0.5f;
-                    pout[i] = acc;
-                });
-            });
+            SushiRuntime::Detail::enqueue_host_task(h, [opened] { opened.wait(); });
+        });
+        const bool in_flight = ev.get_info<sycl::info::event::command_execution_status>()
+                               != sycl::info::event_command_status::complete;
+        gate.set_value();
+        ev.wait_and_throw();
 
-            if (ev.get_info<sycl::info::event::command_execution_status>() != status_t::complete)
-                observed_inflight = true;
-
-            ev.wait_and_throw();
-        }
-
-        EXPECT_TRUE(observed_inflight)
-            << "GPU submit appears to block until completion — no async dispatch observed.";
+        EXPECT_TRUE(in_flight) << "GPU submit returned only after the task completed.";
     }
 } // namespace AsyncExecutionTests
 
@@ -329,27 +336,12 @@ namespace DevicePipelineTests
         context.execution_engine().execute(std::move(compiled)).value();
         context.devices().wait_all().value();
 
-        bool ok = true;
-        for (size_t i = 0; i < N; ++i)
-        {
-            const float fi = float(i);
-            if (std::abs(b[i] - (fi * 2.0f)) > 1e-3f)
-            {
-                ok = false;
-                break;
-            }
-            if (std::abs(c[i] - (fi + 1.0f)) > 1e-3f)
-            {
-                ok = false;
-                break;
-            }
-            if (std::abs(d[i] - (3.0f * fi + 1.0f)) > 1e-3f)
-            {
-                ok = false;
-                break;
-            }
-        }
-        EXPECT_TRUE(ok) << "Engine-driven device-kernel diamond produced incorrect results.";
+        EXPECT_TRUE(within_rounding(floats_of(b, N), floats_from(N, [](size_t i) { return float(i) * 2.0f; }), 2))
+            << "Buffer B of the device-kernel diamond is wrong.";
+        EXPECT_TRUE(within_rounding(floats_of(c, N), floats_from(N, [](size_t i) { return float(i) + 1.0f; }), 2))
+            << "Buffer C of the device-kernel diamond is wrong.";
+        EXPECT_TRUE(within_rounding(floats_of(d, N), floats_from(N, [](size_t i) { return 3.0f * float(i) + 1.0f; }), 4))
+            << "Buffer D of the device-kernel diamond is wrong.";
     }
 } // namespace DevicePipelineTests
 
@@ -359,6 +351,109 @@ namespace HeterogeneousPipelineTests
     using namespace SushiRuntime::Internal::Execution;
     using namespace SushiRuntime::Internal::Graph;
     using SushiRuntime::Test::USMShared;
+
+    namespace
+    {
+        constexpr int    K_CHAINS = 16;
+        constexpr size_t N      = 2048;
+        constexpr float  K_SCALE  = 3.0f;
+        constexpr float  K_BIAS   = 5.0f;
+
+        /** @brief Adds an init, scale and bias chain of device kernels on @p dq over @p data. */
+        void add_device_chain(TaskGraph& graph, sycl::queue* dq, float* data, int c)
+        {
+            TaskMetadata meta_init{"chain_init_dev"};
+            graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(data)},
+                [data, c, dq](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+                {
+                    return dq->submit([&](sycl::handler& h)
+                    {
+                        h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
+                        {
+                            data[i] = float(i) + float(c);
+                        });
+                    });
+                });
+
+            TaskMetadata meta_scale{"chain_scale_dev"};
+            graph.add_task(meta_scale, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
+                [data, dq](sycl::queue&, const std::vector<sycl::event>& dependencies) -> sycl::event
+                {
+                    return dq->submit([&](sycl::handler& h)
+                    {
+                        h.depends_on(dependencies);
+                        h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
+                        {
+                            data[i] = data[i] * K_SCALE;
+                        });
+                    });
+                });
+
+            TaskMetadata meta_bias{"chain_bias_dev"};
+            graph.add_task(meta_bias, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
+                [data, dq](sycl::queue&, const std::vector<sycl::event>& dependencies) -> sycl::event
+                {
+                    return dq->submit([&](sycl::handler& h)
+                    {
+                        h.depends_on(dependencies);
+                        h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
+                        {
+                            data[i] = data[i] + K_BIAS;
+                        });
+                    });
+                });
+        }
+
+        /** @brief Adds an init, scale and bias chain of host tasks over @p data. */
+        void add_host_chain(TaskGraph& graph, float* data, int c)
+        {
+            TaskMetadata meta_init{"chain_init_host"};
+            graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(data)},
+                [data, c](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+                {
+                    std::iota(data, data + N, float(c));
+                    return {};
+                });
+
+            TaskMetadata meta_scale{"chain_scale_host"};
+            graph.add_task(meta_scale, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
+                [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+                {
+                    std::transform(data, data + N, data, [](float value) { return value * K_SCALE; });
+                    return {};
+                });
+
+            TaskMetadata meta_bias{"chain_bias_host"};
+            graph.add_task(meta_bias, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
+                [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
+                {
+                    std::transform(data, data + N, data, [](float value) { return value + K_BIAS; });
+                    return {};
+                });
+        }
+
+        /** @brief Returns the queues of the context that sit on a CPU or a GPU, from its deduplicated set. */
+        std::vector<sycl::queue*> cpu_and_gpu_queues(RuntimeContext& context)
+        {
+            std::vector<sycl::queue*> queues;
+            for (size_t i = 0; i < context.devices().count(); ++i)
+            {
+                sycl::queue& queue = context.devices().queue(i);
+                if (queue.get_device().is_gpu() || queue.get_device().is_cpu())
+                    queues.push_back(&queue);
+            }
+            return queues;
+        }
+
+        /** @brief Returns the values of every chain, one after the other: chain c holds (i + c) * K_SCALE + K_BIAS. */
+        std::vector<float> expected_chains()
+        {
+            return floats_from(K_CHAINS * N, [](size_t k)
+            {
+                return (float(k % N) + float(k / N)) * K_SCALE + K_BIAS;
+            });
+        }
+    } // namespace
 
     /**
      * @brief Tests concurrent execution of multiple heterogeneous pipelines.
@@ -370,133 +465,33 @@ namespace HeterogeneousPipelineTests
         const auto context_owner = SushiRuntime::Test::make_context();
         RuntimeContext& context = *context_owner;
         TaskGraph graph;
-
-        constexpr int    CHAINS = 16;
-        constexpr size_t N      = 2048;
-        constexpr float  SCALE  = 3.0f;
-        constexpr float  BIAS   = 5.0f;
-
-        // Queues come from the context's deduplicated set, which get_devices() can exceed; see README.md.
-        std::vector<sycl::queue*> device_queues;
-        for (size_t i = 0; i < context.devices().count(); ++i)
-        {
-            sycl::queue& queue = context.devices().queue(i);
-            if (queue.get_device().is_gpu() || queue.get_device().is_cpu())
-                device_queues.push_back(&queue);
-        }
+        const std::vector<sycl::queue*> device_queues = cpu_and_gpu_queues(context);
         ASSERT_FALSE(device_queues.empty()) << "No CPU/GPU device queues available.";
 
         // Pin each chain to one device queue so its buffer and kernels share a context.
         std::vector<USMShared<float>> buffers;
-        buffers.reserve(CHAINS);
-        for (int c = 0; c < CHAINS; ++c)
+        buffers.reserve(K_CHAINS);
+        for (int c = 0; c < K_CHAINS; ++c)
         {
             sycl::queue& dq = *device_queues[static_cast<size_t>(c) % device_queues.size()];
             buffers.emplace_back(dq, N);
             ASSERT_TRUE(buffers.back()) << "USM allocation failed for chain " << c;
-        }
-
-        for (int c = 0; c < CHAINS; ++c)
-        {
-            float* data = buffers[c].get();
-            sycl::queue* dq = device_queues[static_cast<size_t>(c) % device_queues.size()];
-            const bool on_gpu = dq->get_device().is_gpu();
-
-            if (on_gpu)
-            {
-                TaskMetadata meta_init{"chain_init_dev"};
-                graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(data)},
-                    [data, c, dq](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
-                    {
-                        return dq->submit([&](sycl::handler& h)
-                        {
-                            h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
-                            {
-                                data[i] = float(i) + float(c);
-                            });
-                        });
-                    });
-
-                TaskMetadata meta_scale{"chain_scale_dev"};
-                graph.add_task(meta_scale, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
-                    [data, dq](sycl::queue&,
-                               const std::vector<sycl::event>& dependencies) -> sycl::event
-                    {
-                        return dq->submit([&](sycl::handler& h)
-                        {
-                            h.depends_on(dependencies);
-                            h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
-                            {
-                                data[i] = data[i] * SCALE;
-                            });
-                        });
-                    });
-
-                TaskMetadata meta_bias{"chain_bias_dev"};
-                graph.add_task(meta_bias, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
-                    [data, dq](sycl::queue&,
-                               const std::vector<sycl::event>& dependencies) -> sycl::event
-                    {
-                        return dq->submit([&](sycl::handler& h)
-                        {
-                            h.depends_on(dependencies);
-                            h.parallel_for(sycl::range<1>(N), [=](sycl::id<1> i)
-                            {
-                                data[i] = data[i] + BIAS;
-                            });
-                        });
-                    });
-            }
+            sycl::queue* const chain_queue = &dq;
+            if (dq.get_device().is_gpu())
+                add_device_chain(graph, chain_queue, buffers.back().get(), c);
             else
-            {
-                TaskMetadata meta_init{"chain_init_host"};
-                graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(data)},
-                    [data, c](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
-                    {
-                        for (size_t i = 0; i < N; ++i)
-                            data[i] = float(i) + float(c);
-                        return {};
-                    });
-
-                TaskMetadata meta_scale{"chain_scale_host"};
-                graph.add_task(meta_scale, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
-                    [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
-                    {
-                        for (size_t i = 0; i < N; ++i)
-                            data[i] = data[i] * SCALE;
-                        return {};
-                    });
-
-                TaskMetadata meta_bias{"chain_bias_host"};
-                graph.add_task(meta_bias, {SushiRuntime::BufferRegion(data)}, {SushiRuntime::BufferRegion(data)},
-                    [data](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
-                    {
-                        for (size_t i = 0; i < N; ++i)
-                            data[i] = data[i] + BIAS;
-                        return {};
-                    });
-            }
+                add_host_chain(graph, buffers.back().get(), c);
         }
 
         auto compiled = graph.compile().value();
         context.execution_engine().execute(std::move(compiled)).value();
         context.devices().wait_all().value();
 
-        for (int c = 0; c < CHAINS; ++c)
-        {
-            const float* data = buffers[c].get();
-            bool ok = true;
-            for (size_t i = 0; i < N; ++i)
-            {
-                const float expected = (float(i) + float(c)) * SCALE + BIAS;
-                if (std::abs(data[i] - expected) > 1e-3f)
-                {
-                    ok = false;
-                    break;
-                }
-            }
-            EXPECT_TRUE(ok) << "Chain " << c << " produced incorrect results.";
-        }
+        std::vector<float> got;
+        got.reserve(K_CHAINS * N);
+        for (const USMShared<float>& buffer : buffers)
+            got.insert(got.end(), buffer.get(), buffer.get() + N);
+        EXPECT_TRUE(within_rounding(got, expected_chains(), 4));
     }
 } // namespace HeterogeneousPipelineTests
 
@@ -537,12 +532,9 @@ namespace SYCLExecutionTests
         TaskMetadata meta_init{"Init_Vectors"};
         auto init_work = [A, B, C](sycl::queue&, const std::vector<sycl::event>&) -> sycl::event
         {
-            for (size_t i = 0; i < VECTOR_SIZE; ++i)
-            {
-                A[i] = static_cast<float>(i);
-                B[i] = static_cast<float>(i * 2);
-                C[i] = 0.0f;
-            }
+            std::iota(A, A + VECTOR_SIZE, 0.0f);
+            std::transform(A, A + VECTOR_SIZE, B, [](float value) { return value * 2.0f; });
+            std::fill(C, C + VECTOR_SIZE, 0.0f);
             return {};
         };
         graph.add_task(meta_init, {}, {SushiRuntime::BufferRegion(A), SushiRuntime::BufferRegion(B), SushiRuntime::BufferRegion(C)}, init_work);
@@ -565,18 +557,9 @@ namespace SYCLExecutionTests
         auto compiled = graph.compile().value();
         context.execution_engine().execute(std::move(compiled)).value();
 
-        bool passed = true;
-        for (size_t i = 0; i < VECTOR_SIZE; ++i)
-        {
-            float expected = static_cast<float>(i) + static_cast<float>(i * 2);
-            if (C[i] != expected)
-            {
-                passed = false;
-                break;
-            }
-        }
-
-        EXPECT_TRUE(passed) << "Vector addition kernel produced incorrect results!";
+        EXPECT_EQ(floats_of(C, VECTOR_SIZE),
+                  floats_from(VECTOR_SIZE, [](size_t i) { return static_cast<float>(i) + static_cast<float>(i * 2); }))
+            << "Vector addition kernel produced incorrect results!";
     }
 
     /**
@@ -641,7 +624,7 @@ namespace SYCLExecutionTests
         double expected = static_cast<double>(SCALE) *
                           (static_cast<double>(N - 1) * static_cast<double>(N) / 2.0);
 
-        EXPECT_NEAR(*sum, expected, expected * 1e-6)
+        EXPECT_TRUE(TestSupport::is_within(TestSupport::measure_sum_error<double>(*sum, expected, expected, N)))
             << "Multi-stage pipeline produced an incorrect reduction.";
 
         context.memory().release(data);
@@ -741,23 +724,29 @@ namespace ReplayHostWriteTests
                     << "device " << device << ", replay " << value;
             }
         }
+
+        /** @brief Replays the increment plan on every device of @p context with an input of @p input_kind. */
+        void replay_on_every_device(RuntimeContext& context, USMKind input_kind)
+        {
+            for (std::size_t device = 0; device < context.devices().count(); ++device)
+                replay_around_host_writes(context, input_kind, device);
+        }
     } // namespace
 
-    TEST(Medium_ReplayHostWrite, AReplayReadsASharedWordTheHostWrote)
+    /** @brief Fixture of the rows that replay a plan over an input word of one USM kind. */
+    class Medium_ReplayHostWrite : public ::testing::TestWithParam<USMKind>
+    {
+    };
+
+    /** @brief Tests that a replay reads the word of the row's kind the host wrote since the last execution. */
+    TEST_P(Medium_ReplayHostWrite, AReplayReadsTheWordTheHostWrote)
     {
         const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
-        for (std::size_t device = 0; device < context.devices().count(); ++device)
-            replay_around_host_writes(context, USMKind::Shared, device);
+
+        replay_on_every_device(*context_owner, GetParam());
     }
 
-    TEST(Medium_ReplayHostWrite, AReplayReadsAHostWordTheHostWrote)
-    {
-        const auto context_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& context = *context_owner;
-        for (std::size_t device = 0; device < context.devices().count(); ++device)
-            replay_around_host_writes(context, USMKind::Host, device);
-    }
+    INSTANTIATE_TEST_SUITE_P(Rows, Medium_ReplayHostWrite, ::testing::Values(USMKind::Shared, USMKind::Host));
 } // namespace ReplayHostWriteTests
 
 /** @brief Tests TaskGraph ordering for a sequential dependency, independent roots and a diamond. */
@@ -951,9 +940,33 @@ namespace SchedulerStressTests
     using SushiRuntime::Test::AtomicCounterTask;
     using SushiRuntime::Test::PriorityTrackingTask;
 
+    namespace
+    {
+        /** @brief Holds how many times the arm and stop cycle runs. */
+        constexpr int K_CYCLES = 500;
+
+        /** @brief Holds how many tasks each cycle submits before it stops abruptly. */
+        constexpr std::size_t K_TASKS_PER_CYCLE = 1000;
+
+        /** @brief Arms a fresh scheduler, submits the cycle's tasks, stops it at once and returns how many ran. */
+        std::size_t executed_in_one_cycle(RuntimeContext& context)
+        {
+            TaskScheduler scheduler = make_scheduler(context);
+            std::atomic<size_t> executed_count{0};
+
+            scheduler.start();
+            scheduler.arm_for_execution();
+            for (std::size_t j = 0; j < K_TASKS_PER_CYCLE; ++j)
+                scheduler.submit(new AtomicCounterTask(executed_count));
+            scheduler.stop();
+
+            return executed_count.load();
+        }
+    } // namespace
+
     /**
      * @brief Tests scheduler stability and deque resizing under heavy load.
-     * 
+     *
      * Submits one million tasks at once.
      */
     TEST(Large_TaskSchedulerStress, OneMillionTaskBomb)
@@ -967,26 +980,17 @@ namespace SchedulerStressTests
 
         scheduler.start();
         scheduler.arm_for_execution();
-
         for (size_t i = 0; i < TOTAL_TASKS; ++i)
             scheduler.submit(new AtomicCounterTask(executed_count));
 
-        auto start_time = std::chrono::steady_clock::now();
-        while (executed_count.load(std::memory_order_acquire) < TOTAL_TASKS)
-        {
-            auto now = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count() > 30)
-                FAIL() << "Scheduler failed to process 1 million tasks within 30 seconds!";
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
+        scheduler.wait_quiescent();
         scheduler.stop();
         EXPECT_EQ(executed_count.load(), TOTAL_TASKS);
     }
 
     /**
      * @brief Tests submission under contention.
-     * 
+     *
      * Uses 8 producer threads submitting at once.
      */
     TEST(Large_TaskSchedulerStress, MultiProducerContention)
@@ -1011,55 +1015,34 @@ namespace SchedulerStressTests
                     scheduler.submit(new AtomicCounterTask(executed_count));
             });
         }
-
         for (auto& t : producers)
-            if (t.joinable())
-                t.join();
+            t.join();
 
-        auto start_time = std::chrono::steady_clock::now();
-        while (executed_count.load(std::memory_order_acquire) < (NUM_PRODUCERS * TASKS_PER_PRODUCER))
-        {
-            auto now = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count() > 30)
-                FAIL() << "Multi-producer tasks were not processed within the time limit.";
-            std::this_thread::yield();
-        }
-
+        scheduler.wait_quiescent();
         scheduler.stop();
         EXPECT_EQ(executed_count.load(), NUM_PRODUCERS * TASKS_PER_PRODUCER);
     }
 
     /**
      * @brief Tests repeatedly arming and stopping the scheduler.
-     * 
-     * Helps to shake out races, deadlocks, and leaks.
+     *
+     * Helps to shake out races, deadlocks, and leaks. Each cycle stops right after its submits, and
+     * stop() drains, so every cycle runs all of its tasks.
      */
     TEST(Large_TaskSchedulerStress, RapidArmAndStopThrashing)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
+        std::vector<std::size_t> executed(K_CYCLES);
 
-        for (int i = 0; i < 500; ++i)
-        {
-            TaskScheduler scheduler = make_scheduler(ctx);
-            std::atomic<size_t> executed_count{0};
+        std::generate(executed.begin(), executed.end(), [&ctx] { return executed_in_one_cycle(ctx); });
 
-            scheduler.start();
-            scheduler.arm_for_execution();
-
-            for (int j = 0; j < 1000; ++j)
-                scheduler.submit(new AtomicCounterTask(executed_count));
-
-            // Stop abruptly without waiting — exercises the drain in stop().
-            scheduler.stop();
-        }
-
-        SUCCEED();
+        EXPECT_EQ(executed, std::vector<std::size_t>(K_CYCLES, K_TASKS_PER_CYCLE));
     }
 
     /**
      * @brief Tests high-priority task bypassing.
-     * 
+     *
      * A high-priority task must bypass the queue even behind many low-priority ones.
      */
     TEST(Large_TaskSchedulerStress, PriorityBypassUnderLoad)
@@ -1073,46 +1056,18 @@ namespace SchedulerStressTests
 
         scheduler.start();
         // Do NOT arm yet, so tasks stay in the injector.
-
         for (int i = 0; i < 50; ++i)
             scheduler.submit(new PriorityTrackingTask(0, execution_order, order_mutex));
-
         scheduler.submit(new PriorityTrackingTask(100, execution_order, order_mutex));
-
         scheduler.arm_for_execution();
 
-        auto start_time = std::chrono::steady_clock::now();
-        while (true)
-        {
-            {
-                std::lock_guard<std::mutex> lock(order_mutex);
-                if (execution_order.size() >= 51)
-                    break;
-            }
-            auto now = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count() > 5)
-                break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
+        scheduler.wait_quiescent();
         scheduler.stop();
 
-        ASSERT_EQ(execution_order.size(), 51);
-
-        bool found_high_early = false;
-        int check_window = static_cast<int>(scheduler.worker_count()) * 2;
-        if (check_window > 51)
-            check_window = 51;
-
-        for (int i = 0; i < check_window; ++i)
-        {
-            if (execution_order[i] == 100)
-            {
-                found_high_early = true;
-                break;
-            }
-        }
-
-        EXPECT_TRUE(found_high_early) << "High priority task was not executed in the first batch!";
+        ASSERT_EQ(execution_order.size(), 51u);
+        const std::size_t window = std::min<std::size_t>(scheduler.worker_count() * 2, execution_order.size());
+        const auto first_batch_end = execution_order.begin() + static_cast<std::ptrdiff_t>(window);
+        EXPECT_NE(std::find(execution_order.begin(), first_batch_end, 100), first_batch_end)
+            << "High priority task was not executed in the first batch!";
     }
 } // namespace SchedulerStressTests

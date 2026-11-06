@@ -6,7 +6,7 @@
 sushiruntime_add_module_tests(
     MODULE graph
     SOURCES
+        compile_graph_log_category.cpp
         test_chain_plan.cpp
         test_compiled_graph.cpp
-        test_graph_log_category.cpp
         test_task_graph.cpp)

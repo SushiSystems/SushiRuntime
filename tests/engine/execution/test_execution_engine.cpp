@@ -31,6 +31,8 @@
 #include <atomic>
 #include <cstddef>
 #include <future>
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -148,17 +150,11 @@ namespace
     }
 } // namespace
 
-TEST(Medium_RunInProgress, TheInterfaceDefaultReportsNoRun)
+/** @brief Tests that an engine that implements only the pure members reports no run in progress. */
+TEST(Small_RunInProgress, TheInterfaceDefaultReportsNoRun)
 {
     const MinimalEngine engine;
     EXPECT_FALSE(engine.run_in_progress());
-}
-
-TEST(Medium_RunInProgress, AFreshEngineReportsNoRun)
-{
-    const auto context_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& context = *context_owner;
-    EXPECT_FALSE(context.execution_engine().run_in_progress());
 }
 
 TEST(Medium_RunInProgress, ABlockingRunIsInProgressUntilExecuteReturns)
@@ -200,7 +196,8 @@ TEST(Medium_RunInProgress, AnAsynchronousRunIsInProgressUntilCompleteReturns)
     EXPECT_FALSE(engine.run_in_progress());
 }
 
-TEST(Medium_RunInProgress, ARunWhoseTaskThrowsReturnsKernelFailedAndLeavesNoRunInProgress)
+/** @brief Tests that a blocking run whose task throws returns KernelFailed and leaves no run in progress. */
+TEST(Medium_RunInProgress, ABlockingRunWhoseTaskThrowsReturnsKernelFailed)
 {
     const auto context_owner = SushiRuntime::Test::make_context();
     RuntimeContext& context = *context_owner;
@@ -208,78 +205,118 @@ TEST(Medium_RunInProgress, ARunWhoseTaskThrowsReturnsKernelFailedAndLeavesNoRunI
 
     CompiledGraph blocking = compile_host_task([] { throw std::runtime_error("probe failure"); });
     const SushiRuntime::Result<void> blocked = engine.execute(blocking);
+
     ASSERT_FALSE(blocked.has_value());
     EXPECT_EQ(blocked.error().code, SushiRuntime::ErrorCode::KernelFailed);
     EXPECT_NE(blocked.error().message.find("probe failure"), std::string::npos)
         << blocked.error().message;
     EXPECT_FALSE(engine.run_in_progress());
+}
 
+/** @brief Tests that an asynchronous run whose task throws returns KernelFailed from complete(). */
+TEST(Medium_RunInProgress, AnAsynchronousRunWhoseTaskThrowsReturnsKernelFailedFromComplete)
+{
+    const auto context_owner = SushiRuntime::Test::make_context();
+    RuntimeContext& context = *context_owner;
+    ExecutionEngine& engine = context.execution_engine();
     CompiledGraph asynchronous =
         compile_host_task([] { throw std::runtime_error("probe failure"); });
     engine.submit(asynchronous).value();
-    EXPECT_TRUE(engine.run_in_progress());
+
     const SushiRuntime::Result<void> completed = engine.complete();
+
     ASSERT_FALSE(completed.has_value());
     EXPECT_EQ(completed.error().code, SushiRuntime::ErrorCode::KernelFailed);
     EXPECT_FALSE(engine.run_in_progress());
 }
 
-TEST(Medium_RunInProgress, AChainedRunIsInProgressUntilFinishReturnsOrItIsDestroyed)
+/** @brief Fixture of the tests that run a one-kernel plan the classification chains. */
+class Medium_ChainedRunInProgress : public ::testing::Test
 {
-    constexpr std::size_t COUNT = 64;
+    protected:
+        static constexpr std::size_t K_COUNT = 64;
 
-    const auto context_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& context = *context_owner;
-    ExecutionEngine& engine = context.execution_engine();
-    const DeviceFloats floats(context, COUNT);
-    ASSERT_NE(floats.data(), nullptr);
+        /** @brief Builds the context, the array and the chained plan; the plan must be chainable. */
+        void SetUp() override
+        {
+            context_owner_ = SushiRuntime::Test::make_context();
+            floats_.emplace(*context_owner_, K_COUNT);
+            ASSERT_NE(floats_->data(), nullptr);
+            plan_ = compile_chain_candidate(*context_owner_, floats_->data(), K_COUNT);
+            ASSERT_TRUE(plan_.chain.chainable) << "classify_chain() left the one-kernel plan on the scheduler.";
+        }
 
-    CompiledGraph plan = compile_chain_candidate(context, floats.data(), COUNT);
-    if (!plan.chain.chainable)
-        GTEST_SKIP() << "classify_chain() left the one-kernel plan on the scheduler.";
+        /** @brief Returns the context of the test. */
+        RuntimeContext& context() { return *context_owner_; }
 
+        /** @brief Returns the engine of the context. */
+        ExecutionEngine& engine() { return context_owner_->execution_engine(); }
+
+        /** @brief Returns the array the plan fills. */
+        float* data() { return floats_->data(); }
+
+        /** @brief Returns the chained plan. */
+        CompiledGraph& plan() { return plan_; }
+
+    private:
+        std::shared_ptr<RuntimeContext> context_owner_; /**< The context the array and the plan belong to. */
+        std::optional<DeviceFloats> floats_;            /**< The array the plan's kernel fills. */
+        CompiledGraph plan_;                            /**< The chained plan. */
+};
+
+/** @brief Tests that a chained run is in progress from its creation until finish() returns. */
+TEST_F(Medium_ChainedRunInProgress, AChainedRunIsInProgressUntilFinishReturns)
+{
     {
-        ChainRun finished(context, plan);
-        EXPECT_TRUE(engine.run_in_progress());
+        ChainRun finished(context(), plan());
+        EXPECT_TRUE(engine().run_in_progress());
         finished.submit_step(0).value();
-        EXPECT_TRUE(engine.run_in_progress());
+        EXPECT_TRUE(engine().run_in_progress());
         finished.finish().value();
-        EXPECT_FALSE(engine.run_in_progress()) << "finish() returned and the run still shows";
+        EXPECT_FALSE(engine().run_in_progress()) << "finish() returned and the run still shows";
     }
-    EXPECT_FALSE(engine.run_in_progress());
-    EXPECT_EQ(floats.data()[COUNT - 1], 1.0f);
 
-    {
-        const ChainRun abandoned(context, plan);
-        EXPECT_TRUE(engine.run_in_progress());
-    }
-    EXPECT_FALSE(engine.run_in_progress()) << "the destructor left the run showing";
+    EXPECT_FALSE(engine().run_in_progress());
+    EXPECT_EQ(data()[K_COUNT - 1], 1.0f);
 }
 
-TEST(Medium_RunInProgress, AScheduledRunInsideAChainedRunLeavesTheChainedRunShowing)
+/** @brief Tests that destroying a chained run that never finished clears the mark. */
+TEST_F(Medium_ChainedRunInProgress, AnAbandonedChainedRunLeavesNothingShowing)
 {
-    constexpr std::size_t COUNT = 64;
+    {
+        const ChainRun abandoned(context(), plan());
+        EXPECT_TRUE(engine().run_in_progress());
+    }
 
-    const auto context_owner = SushiRuntime::Test::make_context();
-    RuntimeContext& context = *context_owner;
-    ExecutionEngine& engine = context.execution_engine();
-    const DeviceFloats floats(context, COUNT);
-    ASSERT_NE(floats.data(), nullptr);
+    EXPECT_FALSE(engine().run_in_progress()) << "the destructor left the run showing";
+}
 
-    CompiledGraph chained = compile_chain_candidate(context, floats.data(), COUNT);
-    if (!chained.chain.chainable)
-        GTEST_SKIP() << "classify_chain() left the one-kernel plan on the scheduler.";
-
+/** @brief Tests that a scheduled run inside a chained run leaves the chained run showing. */
+TEST_F(Medium_ChainedRunInProgress, AScheduledRunInsideAChainedRunLeavesTheChainedRunShowing)
+{
     CompiledGraph scheduled = compile_host_task([] {});
     {
-        ChainRun outer(context, chained);
-        engine.execute(scheduled).value();
-        EXPECT_TRUE(engine.run_in_progress())
-            << "the scheduled run's end cleared the chained run's mark";
+        ChainRun outer(context(), plan());
 
-        const ChainRun inner(context, chained);
+        engine().execute(scheduled).value();
+
+        EXPECT_TRUE(engine().run_in_progress())
+            << "the scheduled run's end cleared the chained run's mark";
         outer.finish().value();
-        EXPECT_TRUE(engine.run_in_progress()) << "one chained run's end cleared the other's";
     }
-    EXPECT_FALSE(engine.run_in_progress());
+    EXPECT_FALSE(engine().run_in_progress());
+}
+
+/** @brief Tests that the end of one chained run does not clear the mark of another that is still open. */
+TEST_F(Medium_ChainedRunInProgress, OneChainedRunsEndLeavesTheOtherShowing)
+{
+    {
+        ChainRun outer(context(), plan());
+        const ChainRun inner(context(), plan());
+
+        outer.finish().value();
+
+        EXPECT_TRUE(engine().run_in_progress()) << "one chained run's end cleared the other's";
+    }
+    EXPECT_FALSE(engine().run_in_progress());
 }

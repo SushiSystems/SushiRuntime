@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_execution_log_category.cpp                                        */
+/* compile_graph_log_category.cpp                                         */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -19,27 +19,12 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
-/**************************************************************************/
 
 /**
- * @file test_execution_log_category.cpp
- * @brief Tests K_EXECUTION_LOG_CATEGORY: the name its records carry.
- * @see tests/engine/execution/README.md
+ * @file compile_graph_log_category.cpp
+ * @brief Compiles graph_log_category.hpp on its own, so the header carries every include it needs.
+ * @see tests/engine/graph/README.md
  * @author Mustafa Garip
  */
 
-#include <SushiRuntime/execution/execution_log_category.hpp>
-
-#include <gtest/gtest.h>
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the category is the module's folder in the runtime's project. */
-TEST(Small_ExecutionLogCategory, TheCategoryIsNamedAfterTheModule)
-{
-    static_assert(K_EXECUTION_LOG_CATEGORY.module() == "execution",
-                  "the folder name of the module");
-    static_assert(K_EXECUTION_LOG_CATEGORY.project().name() == "sushiruntime",
-                  "the project of the runtime");
-    SUCCEED();
-}
+#include <SushiRuntime/graph/graph_log_category.hpp>

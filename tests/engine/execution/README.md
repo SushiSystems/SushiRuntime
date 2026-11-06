@@ -17,6 +17,12 @@ Three design documents are cited by path in the sections that came from the inte
 - `docs/design/ENGINE_BACKBONE_REFACTOR/`, the backbone items BB-0 to BB-8.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
+Test prefixes and the device fixture follow `tests/engine/scheduler/README.md`.
+
+## compile_execution_log_category.cpp
+
+The file includes `execution_log_category.hpp` alone, so the header carries every include it needs.
+The header holds one constant, which has no behaviour of its own to test.
 
 ## benchmark_runtime_context.cpp
 
@@ -56,7 +62,8 @@ The suite `Benchmark_ProfilingQueue` is the one named above. Its equal-result ch
 The file closes two gaps: how `TaskGraph::compile()` scales with graph size, and whether
 overlapping host-to-device and device-to-host transfers with compute helps. Both live in
 `Benchmark_GraphCompile`. The transfer test does identical work on each side and prints whether
-each result matches the host reference. It sets no bar, because real overlap needs a discrete GPU
+each result matches the host reference, within the rounding bound `tests/support/tolerance.hpp`
+derives from the `expected()` recurrence. It sets no bar, because real overlap needs a discrete GPU
 with copy engines. That a compiled graph has roots is held by the `Medium_TaskGraphTest` tests of
 `test_scheduler_execution_engine.cpp`.
 
@@ -104,15 +111,15 @@ scheduler armed once runs every task of each step it is handed is held by
 
 ## test_execution_engine.cpp
 
-The file covers `ExecutionEngine::run_in_progress()`: false on an engine that ran nothing, true
+The file covers `ExecutionEngine::run_in_progress()`: false on the interface default, true
 while a run is in flight, false once the run has been collected, whether it succeeded or threw.
 No test reads a clock. Where a run must still be in flight at the check, its host task waits on a
 `std::promise` the test fulfils afterwards.
 
 ### `MinimalEngine`
 
-An engine that implements only the two pure members. `TheInterfaceDefaultReportsNoRun` reads the
-interface's default through it.
+An engine that implements only the two pure members. `Small_RunInProgress.TheInterfaceDefaultReportsNoRun`
+reads the interface's default through it.
 
 ### `ABlockingRunIsInProgressUntilExecuteReturns`
 
@@ -124,19 +131,20 @@ The run's one host task asks the engine and stores the answer, which must be tru
 The answer is true between `submit()` and `complete()` and false after. The task cannot finish
 before the first check, because it waits on the gate.
 
-### `ARunWhoseTaskThrowsReturnsKernelFailedAndLeavesNoRunInProgress`
+### `ABlockingRunWhoseTaskThrowsReturnsKernelFailed` and `AnAsynchronousRunWhoseTaskThrowsReturnsKernelFailedFromComplete`
 
-A task that throws ends a blocking run and an asynchronous one; `execute()` and `complete()`
-return `KernelFailed`, with the task's text in the message, and the answer is false after each.
+A task that throws ends a blocking run and an asynchronous one. `execute()` and `complete()` return
+`KernelFailed`, `execute()` with the task's text in the message, and the answer is false after each.
 
-### `compile_chain_candidate` and the chained tests
+### `Medium_ChainedRunInProgress`
 
-`compile_chain_candidate` compiles one kernel over shared USM that the context allocated on device
-0 and classifies the plan. Where `classify_chain()` leaves it on the scheduler the two chained
-tests are skipped. `AChainedRunIsInProgressUntilFinishReturnsOrItIsDestroyed` checks both ends of a
-`ChainRun`: `finish()`, and the destructor of a run that never finished.
-`AScheduledRunInsideAChainedRunLeavesTheChainedRunShowing` runs a scheduled graph and ends a second
-`ChainRun` while the first is alive; the answer stays true until the last one is gone.
+The fixture compiles one kernel over shared USM that the context allocated on device 0 and classifies
+the plan; the plan must come out chainable, and a plan left on the scheduler fails the test.
+`AChainedRunIsInProgressUntilFinishReturns` and `AnAbandonedChainedRunLeavesNothingShowing` check the
+two ends of a `ChainRun`: `finish()`, and the destructor of a run that never finished.
+`AScheduledRunInsideAChainedRunLeavesTheChainedRunShowing` runs a scheduled graph inside a chained
+run, and `OneChainedRunsEndLeavesTheOtherShowing` ends one `ChainRun` while a second is alive; the
+answer stays true until the last one is gone.
 
 ## test_runtime_context.cpp
 
@@ -154,16 +162,11 @@ The plain queue carries no
 `sycl::context`, so USM allocated through the plain queue stays legally accessible from the
 profiling queue.
 
-### `NoProfilingQueueExistsBeforeTheFirstRequest`
+### `AProfilingQueueIsBuiltOnlyWhenItIsAskedFor`
 
-Nothing is built before the first request, so
-the `RuntimeContext` constructor must not have built the profiling queue of any device.
-
-### `UsingThePlainQueueBuildsNoProfilingQueue`
-
-A context built with the default settings builds the plain queue of a device on request and no profiling
-queue on any device. The profiling flavour waits for the first run of a plan that records timing, which
-only an added `RunObserver` causes.
+One row per action on a fresh context: no request, the plain queue of device 0, and the profiling
+queue of device 0. Only the last builds a profiling queue, and only on device 0. The profiling flavour
+waits for the first run of a plan that records timing, which only an added `RunObserver` causes.
 
 ### `TheProfilingFlavourIsNotThePlainQueue`
 
@@ -175,12 +178,17 @@ second queue and never the plain queue handle.
 A kernel dispatched on the profiling queue correctly dereferences a USM allocation made through the
 context of the plain queue. The shared context is usable, not only reported.
 
-`Medium_RuntimeContext` covers the queue a NUMA ID routes to and the USM records of `memory()`. The
-invalid-NUMA fallbacks check that the context degrades without failing on bad input. Discovery and
-NUMA mapping alone are tested in `tests/platform/topology/`.
+`Medium_InvalidNUMAQueue` and `Medium_InvalidNUMAAllocation` cover the queue a NUMA ID routes to and the
+USM records of `memory()`: the context degrades without failing on an id no node has. The queue test runs
+one row for 999 and one for -5. `Medium_LiveUSMCount` follows the live count through allocate and release,
+and through adopt and forget. `Medium_AlignedAllocation` is one row per kind, alignment and byte count;
+a shared row skips where the toolchain's aligned shared allocation ignores the alignment, which the
+fixture probes before the body runs. `Medium_AlignedRecording` is one row per kind. Discovery and NUMA
+mapping alone are tested in `tests/platform/topology/`.
 
-The file validates that an NVIDIA GPU is discovered through the CUDA SYCL
-backend and mapped to a NUMA node by hwloc. The tests skip when there is no CUDA device.
+`Large_RuntimeContextNvidia` validates that an NVIDIA GPU is discovered through the CUDA SYCL backend and
+mapped to a NUMA node by hwloc. Its fixture skips when there is no CUDA device. The NUMA mapping test
+skips only under WSL, which gives hwloc no PCI devices and shows itself in `WSL_DISTRO_NAME`; on Windows it never skips.
 
 The file validates the injectable topology abstraction, `TopologyProvider` and
 `NUMADistanceModel`. It exercises multi-NUMA logic deterministically on single-node hardware, which
@@ -207,12 +215,13 @@ count is 2 after the context is destroyed: the destructor stops the coordinator 
 ### Gated observers
 
 `Medium_RuntimeContextObservers` covers the optional gate of an observer, with a test gate the test opens and
-closes.
+closes. The fixture closes the gate before and after each test, so no test starts with it open.
 
 | Test | What it proves |
 | --- | --- |
 | `Medium_RuntimeContextObservers.AnUngatedObserverAlwaysWantsTiming` | A context with no observer wants no timing, one with an ungated observer wants it, and removing that observer ends it. |
-| `Medium_RuntimeContextObservers.AGatedObserverWantsTimingOnlyWhileItsGateIsOpen` | A closed gate costs no device timing, an open one asks for it, and an ungated observer keeps timing on whatever the gate says. |
+| `Medium_RuntimeContextObservers.AGatedObserverWantsTimingOnlyWhileItsGateIsOpen` | A closed gate costs no device timing and an open one asks for it. |
+| `Medium_RuntimeContextObservers.AnUngatedObserverKeepsTimingOnWhateverTheGateSays` | With a gated and an ungated observer added, the context wants timing while the gate is closed. |
 | `Medium_RuntimeContextObservers.ADeliveryToAGatedObserverWaitsForItsGate` | A delivery skips an observer whose gate is closed and reaches it once the gate opens, while an ungated observer receives both. |
 
 ## test_scheduler_execution_engine.cpp
@@ -221,10 +230,15 @@ CPU work and GPU work dispatched through independent per-device queues must run 
 without a race. These tests assert correctness only. The benchmark suite measures the speedup from
 the overlap (`Benchmark_AsyncOverlap`).
 
-### `CPUGPUConcurrentVectorAdd`
+### `CPUAndGPUVectorAddsBothProduceTheirSums`
 
-The test submits to the GPU queue and then to the CPU queue without waiting on the GPU. Both submits
-return immediately, and the two devices proceed in parallel.
+The test submits to the GPU queue and then to the CPU queue without waiting on the GPU, and each half
+must produce its sum. The fixture `Large_AsyncExecutionTest` skips on a machine without both devices.
+
+### `AsyncDispatchDoesNotBlock`
+
+A host task that waits on a gate goes to the GPU queue. It cannot finish before the gate opens, so an
+event that is not complete when `submit()` returns shows that `submit()` did not wait for it.
 
 The file exercises the device-kernel path. `add_node(TaskWork, reads, writes)` hands the engine a
 raw `void(sycl::handler&)` body, so the engine owns the submission, the queue choice and the event
@@ -267,8 +281,8 @@ index 0 fixes the device.
 The file pins the rule `CompiledGraph::rearm` states: a replayed plan reads what the host wrote
 between two executions. One kernel reads a word and writes it plus one. The plan is compiled
 once and replayed eight times; before each replay the host writes the word, and the output must
-follow. One case holds the word in Shared USM and one in Host USM, each on every device queue of
-the context.
+follow. `Medium_ReplayHostWrite` has one row for a word in Shared USM and one for a word in Host USM, each
+replayed on every device queue of the context.
 
 ### `Medium_SchedulerSteps`
 
@@ -281,7 +295,8 @@ latch, not on a clock.
 Four scale tests moved here from the benchmark file, since they measure nothing: one million
 tasks submitted at once, eight producer threads submitting together, 500 rounds of arming and
 stopping a scheduler with tasks in flight, and a high-priority task submitted behind 50 low-priority
-ones. They wait with a wall-clock budget; the rewrite of those waits is a separate job.
+ones. The first two and the last wait on `wait_quiescent()`, not on a clock. The rounds test asserts
+that every round ran all 1000 of its tasks, since `stop()` drains.
 
 ## test_chain_plan.cpp
 
@@ -290,8 +305,10 @@ chain.
 
 | Test | What it proves |
 | --- | --- |
-| `KernelsOnOneDeviceChainInOrder` | Returns work that adds one to an integer on the device. */ TaskWork add_one(int* value) { return [value](sycl::handler& handler) { handler.single_task([value] { *value += 1; }); }; } /** @brief Allocates one shared integer of the context on device 0, set to 0. */ int* shared_integer(RuntimeContext& context) { Internal::Memory::USMRequest request; request.kind = Internal::Memory::USMKind::Shared; request.bytes = sizeof(int); int* const value = static_cast<int*>(context.memory().allocate(request)); if (value != nullptr) *value = 0; return value; } } /** @brief Tests that two kernels on one device's memory chain in order. |
-| `AHostNodeOrForeignMemoryKeepsThePlanOff` | A host node, and a node on memory no device owns, keep the plan off the chain. |
+| `Medium_ChainPlan.KernelsOnOneDeviceChainInOrder` | Two kernels on one device's memory chain in order. |
+| `Medium_ChainPlan.AHostNodeKeepsThePlanOff` | A host node keeps the plan off the chain. |
+| `Medium_ChainPlan.ForeignMemoryKeepsThePlanOff` | A node on memory no device owns keeps the plan off the chain. |
+| `Medium_ChainPlan.AnEmptyPlanIsNotChainable` | An empty plan is not chainable. |
 
 ## test_chain_run.cpp
 
@@ -299,17 +316,17 @@ The file tests ChainRun: each step submits the whole chain in order, and finish(
 
 | Test | What it proves |
 | --- | --- |
-| `EachStepRunsTheWholeChain` | Returns work that adds one to an integer on the device. */ TaskWork add_one(int* value) { return [value](sycl::handler& handler) { handler.single_task([value] { *value += 1; }); }; } /** @brief Allocates one shared integer of the context on device 0, set to 0. */ int* shared_integer(RuntimeContext& context) { Internal::Memory::USMRequest request; request.kind = Internal::Memory::USMKind::Shared; request.bytes = sizeof(int); int* const value = static_cast<int*>(context.memory().allocate(request)); if (value != nullptr) *value = 0; return value; } } /** @brief Tests that two steps of a two-node chain add four, in submission order. |
-| `WaitReturnsAfterTheStep` | Wait() returns once the submitted step is done. |
+| `Medium_ChainRun.EachStepRunsTheWholeChain` | Each step runs its add-one node before its times-three node: two steps give 3, then 12, which no other order gives. |
+| `Medium_ChainRun.WaitReturnsAfterTheStep` | wait() returns once the submitted step is done. |
 
 ## test_runtime_settings.cpp
 
-The file tests RuntimeSettings: the defaults and the pool settings it hands the scheduler.
+The file tests RuntimeSettings: the pool settings it hands the scheduler.
 
 | Test | What it proves |
 | --- | --- |
-| `DefaultsAskForNothingExtra` | Checks the defaults: one worker per core, pinned, no rebalancer. |
-| `ThePoolSettingsCarryThePoolFields` | The pool settings carry the three fields of the pool, unchanged. |
+| `Small_RuntimeSettings.UntouchedSettingsAskThePoolForOneWorkerPerCorePinned` | Settings nobody touched ask the pool for one worker per core, from core 0, pinned. |
+| `Small_RuntimeSettings.ThePoolSettingsCarryThePoolFields` | The pool settings carry the three fields of the pool, unchanged. |
 
 ## test_dropped_dispatches.cpp
 
@@ -327,7 +344,8 @@ How a run picks the failure it returns when a task and a device queue both faile
 
 | Test | What it proves |
 | --- | --- |
-| `Small_RunFailures.NeitherFailureSucceedsQuietly` | A run with neither failure succeeds and logs nothing. |
-| `Small_RunFailures.ATaskFailureAloneIsReturned` | A task failure alone is returned as it is and logs nothing. |
+| `Small_RunFailures.NeitherFailureSucceeds` | A run with neither failure succeeds. |
+| `Small_RunFailures.ATaskFailureAloneIsReturned` | A task failure alone is returned as it is. |
 | `Small_RunFailures.AQueueFailureAloneIsReturned` | The queue's failure alone is returned as it is. |
-| `Small_RunFailures.LogsTheQueueErrorADroppedTaskErrorHid` | With both failures the task failure is returned and the queue's message is logged. |
+| `Small_RunFailures.TheTaskFailureWinsOverTheQueuesFailure` | With both failures the task failure is the one returned. |
+| `Small_RunFailures.LogsTheQueueErrorADroppedTaskErrorHid` | With both failures the queue's message is logged at WARN with the task failure's. |

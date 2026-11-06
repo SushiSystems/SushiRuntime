@@ -63,6 +63,8 @@
 #include <SushiRuntime/measurement/completion_signal.hpp>
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
 
+#include "support/tolerance.hpp"
+
 using namespace SushiRuntime;
 
 /** @brief Measures how TaskGraph::compile() scales and what overlapping transfers with compute saves. */
@@ -151,8 +153,8 @@ namespace GraphCompileTests
             return x;
         }
 
-        /** @brief Holds the largest per-element difference the printed result check accepts. */
-        constexpr float K_RESULT_BOUND = 1e-1f;
+        /** @brief Counts the rounded operations of expected(): one multiply and one add per step, on each side. */
+        constexpr std::size_t K_ROUNDED_OPERATIONS = 4 * K_INNER;
 
         /**
          * @brief Reports whether every output element equals expected() of its input.
@@ -160,16 +162,15 @@ namespace GraphCompileTests
          * @param out Output of at least @p n elements.
          * @param in Input of at least @p n elements.
          * @param n Number of elements to compare.
-         * @return True when no element differs from the reference by more than K_RESULT_BOUND.
+         * @return True when every element is within the rounding bound of the reference.
          */
         bool results_match(const float* out, const float* in, size_t n)
         {
-            for (size_t i = 0; i < n; ++i)
+            return std::equal(out, out + n, in, [](float computed, float input)
             {
-                if (std::fabs(out[i] - expected(in[i])) > K_RESULT_BOUND)
-                    return false;
-            }
-            return true;
+                return TestSupport::is_within(
+                    TestSupport::measure_relative_error<float>(computed, expected(input), K_ROUNDED_OPERATIONS));
+            });
         }
 
         /**
@@ -246,8 +247,6 @@ namespace GraphCompileTests
             for (int c = 0; c < K_CHUNKS; ++c)
             {
                 const size_t off = size_t(c) * chunk;
-                if (off >= K_ELEMS)
-                    break;
                 const size_t n = std::min(chunk, K_ELEMS - off);
                 sycl::queue& q = (c & 1) ? qb : qa;
                 auto e1 = q.memcpy(d + off, host_in + off, n * sizeof(float));

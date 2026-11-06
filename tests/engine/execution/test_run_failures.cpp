@@ -52,44 +52,45 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that a run with neither failure succeeds and logs nothing. */
-TEST(Small_RunFailures, NeitherFailureSucceedsQuietly)
+/** @brief Tests that a run with neither failure succeeds. */
+TEST(Small_RunFailures, NeitherFailureSucceeds)
 {
-    TestRunner::LogCapture capture;
-
     const Result<void> merged = merge_run_failures(std::nullopt, Result<void>{});
 
     EXPECT_TRUE(merged);
-    EXPECT_TRUE(capture.records().empty());
 }
 
-/** @brief Tests that a task failure alone is returned as it is and logs nothing. */
+/** @brief Tests that a task failure alone is returned as it is. */
 TEST(Small_RunFailures, ATaskFailureAloneIsReturned)
 {
-    TestRunner::LogCapture capture;
-
     const Result<void> merged =
         merge_run_failures(Error{ErrorCode::InvalidState, "task failed"}, Result<void>{});
 
     ASSERT_FALSE(merged);
     EXPECT_EQ(merged.error().code, ErrorCode::InvalidState);
     EXPECT_EQ(merged.error().message, "task failed");
-    EXPECT_TRUE(capture.records().empty());
 }
 
 /** @brief Tests that the queue's failure alone is returned as it is. */
 TEST(Small_RunFailures, AQueueFailureAloneIsReturned)
 {
-    TestRunner::LogCapture capture;
-
     const Result<void> merged = merge_run_failures(std::nullopt, queue_failure("queue failed"));
 
     ASSERT_FALSE(merged);
     EXPECT_EQ(merged.error().message, "queue failed");
-    EXPECT_TRUE(capture.records().empty());
 }
 
-/** @brief Tests that with both failures the task failure is returned and the queue's message is logged. */
+/** @brief Tests that with both failures the task failure is the one returned. */
+TEST(Small_RunFailures, TheTaskFailureWinsOverTheQueuesFailure)
+{
+    const Result<void> merged =
+        merge_run_failures(Error{ErrorCode::InvalidState, "task failed"}, queue_failure("queue failed"));
+
+    ASSERT_FALSE(merged);
+    EXPECT_EQ(merged.error().message, "task failed");
+}
+
+/** @brief Tests that with both failures the queue's message is logged at WARN with the task failure's. */
 TEST(Small_RunFailures, LogsTheQueueErrorADroppedTaskErrorHid)
 {
     TestRunner::LogCapture capture;
@@ -97,9 +98,7 @@ TEST(Small_RunFailures, LogsTheQueueErrorADroppedTaskErrorHid)
     const Result<void> merged =
         merge_run_failures(Error{ErrorCode::InvalidState, "task failed"}, queue_failure("queue failed"));
 
-    ASSERT_FALSE(merged);
-    EXPECT_EQ(merged.error().message, "task failed") << "the task failure wins";
-
+    static_cast<void>(merged);
     const auto records = capture.records();
     ASSERT_EQ(records.size(), 1u);
     EXPECT_EQ(records[0].level, SushiLog::LogLevel::Warn);

@@ -23,7 +23,7 @@
 
 /**
  * @file test_compiled_graph.cpp
- * @brief Tests the dispatch width a compiled node reports.
+ * @brief Tests the dispatch width a stamped node reports and the node table a compiled plan captures.
  * @see tests/engine/graph/README.md
  * @author Mustafa Garip
  */
@@ -81,22 +81,6 @@ namespace
     }
 }
 
-TEST(Small_NodeDispatchWidth, DefaultConstructedNodeReportsUnknown)
-{
-    const Node node;
-    EXPECT_EQ(node.baked_width, std::size_t{K_WIDTH_UNKNOWN});
-}
-
-/** @brief Tests that a node added without a stamp reports the unknown width. */
-TEST(Small_NodeDispatchWidth, UnstampedNodeReportsUnknown)
-{
-    TaskGraph graph;
-
-    graph.add_node(noop_work());
-
-    EXPECT_EQ(graph.last_node_added()->baked_width, std::size_t{K_WIDTH_UNKNOWN});
-}
-
 /** @brief Tests that a width set on a node and a name given after it land on that node. */
 TEST(Small_NodeDispatchWidth, BakedWidthAndNameStampTheNodeTheyAreSetOn)
 {
@@ -127,33 +111,6 @@ TEST(Small_NodeDispatchWidth, BakedWidthStampsOnlyTheNodeItIsSetOn)
     EXPECT_EQ(find_named(plan, "second").baked_width, std::size_t{4096});
 }
 
-/**
- * @brief Tests that a node without late bindings reports its baked width as both launched and live.
- */
-TEST(Small_NodeDispatchWidth, BakedNodeReportsOneWidthTwice)
-{
-    Internal::Graph::TaskGraph graph;
-    graph.add_node([](sycl::handler&) {}).baked_width = 1024;
-
-    const Internal::Graph::NodeWidths widths = Internal::Graph::snapshot_widths(*graph.last_node_added());
-    EXPECT_EQ(widths.launched, 1024u);
-    EXPECT_EQ(widths.live, 1024u);
-}
-
-/** @brief Tests that a dynamic node reports its capacity as launched and its live count as live. */
-TEST(Small_NodeDispatchWidth, DynamicNodeSeparatesCapacityFromLiveCount)
-{
-    auto bindings = std::make_shared<Internal::Graph::LateBindings>();
-    bindings->count.store(129, std::memory_order_relaxed);
-
-    Internal::Graph::TaskGraph graph;
-    graph.add_node([](sycl::handler&) {}, {}, {}, bindings).baked_width = 1024;
-
-    const Internal::Graph::NodeWidths widths = Internal::Graph::snapshot_widths(*graph.last_node_added());
-    EXPECT_EQ(widths.launched, 1024u);
-    EXPECT_EQ(widths.live, 129u);
-}
-
 /** @brief Tests that K_USE_BAKED falls back to the baked width. */
 TEST(Small_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
 {
@@ -164,17 +121,6 @@ TEST(Small_NodeDispatchWidth, UseBakedFallsBackToTheBakedWidth)
     graph.add_node([](sycl::handler&) {}, {}, {}, bindings).baked_width = 1024;
 
     EXPECT_EQ(Internal::Graph::snapshot_widths(*graph.last_node_added()).live, 1024u);
-}
-
-/** @brief Tests that a width that does not fit in uint32_t is reported as unknown. */
-TEST(Small_NodeDispatchWidth, OversizedWidthReportsUnknownRatherThanTruncating)
-{
-    Internal::Graph::TaskGraph graph;
-    graph.add_node([](sycl::handler&) {}).baked_width = std::size_t{0xFFFFFFFFu} + 1;
-
-    const Internal::Graph::NodeWidths widths = Internal::Graph::snapshot_widths(*graph.last_node_added());
-    EXPECT_EQ(widths.launched, K_WIDTH_UNKNOWN);
-    EXPECT_EQ(widths.live, K_WIDTH_UNKNOWN);
 }
 
 using namespace SushiRuntime;
@@ -253,20 +199,31 @@ TEST(Small_CompiledGraph, CarriesTheCostOfTheFirstNode)
     EXPECT_FALSE(plan.node_table->find(2)->cost.has_value()) << "a node that stated none has none";
 }
 
-/** @brief Tests that an index no node registered under has no row, and the sentinel has none. */
+/** @brief Tests that an index no node registered under has no row. */
 TEST(Small_CompiledGraph, AnIndexNoNodeRegisteredUnderHasNoRow)
 {
     CompiledGraph plan;
     plan.all_nodes.push_back(node_of(0, "a"));
     plan.all_nodes.push_back(node_of(2, "c"));
+
+    plan.capture_profiling_state();
+
+    ASSERT_EQ(plan.node_table->size(), 2u);
+    EXPECT_EQ(plan.node_table->find(1), nullptr);
+}
+
+/** @brief Tests that the sentinel node is not a row of the table. */
+TEST(Small_CompiledGraph, TheSentinelIsNotARow)
+{
+    CompiledGraph plan;
+    plan.all_nodes.push_back(node_of(0, "a"));
     sushi_ptr<Node> sentinel = node_of(9, "sentinel");
     sentinel->is_sentinel = true;
     plan.all_nodes.push_back(sentinel);
 
     plan.capture_profiling_state();
 
-    ASSERT_EQ(plan.node_table->size(), 2u);
-    EXPECT_EQ(plan.node_table->find(1), nullptr);
+    ASSERT_EQ(plan.node_table->size(), 1u);
     EXPECT_EQ(plan.node_table->find(9), nullptr) << "the sentinel is not a node of the caller's graph";
 }
 

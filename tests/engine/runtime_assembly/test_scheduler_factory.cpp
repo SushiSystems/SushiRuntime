@@ -29,10 +29,8 @@
  */
 
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <memory>
-#include <thread>
 
 #include <gtest/gtest.h>
 
@@ -59,9 +57,7 @@ TEST(Medium_SchedulerFactory, TheSchedulerRunsWhatItIsGiven)
     for (std::size_t index = 0; index < K_TASKS; ++index)
         scheduler.submit(new AtomicCounterTask(executed));
 
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    while (executed.load() < K_TASKS && std::chrono::steady_clock::now() < deadline)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    scheduler.wait_quiescent();
     scheduler.stop();
     EXPECT_EQ(executed.load(), K_TASKS);
 }
