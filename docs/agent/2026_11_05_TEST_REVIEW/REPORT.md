@@ -89,6 +89,8 @@ dispatch: J16 M13 surface/profiling — sonnet medium, 1 round, passed (resizes 
 dispatch: J16 M3 engine scheduler, task, work_stealing — sonnet medium, 1 round, passed (seams to RW-100, RW-102), rung 1
 dispatch: J16 M5 foundation — sonnet medium, 1 round, passed (one upward include fixed by the lead; seams to RW-101), rung 1
 dispatch: J16 M3 engine rest — sonnet medium, 1 round, passed (skipped model-routing note; seams to RW-102), rung 1
+dispatch: J16 M6 platform — sonnet medium, 1 round, passed with a rule gap (skipped humanizer, documentation and the backlog commands; READMEs reviewed by the lead; seams to RW-103), rung 1
+dispatch: J16 M4 extension distributed — sonnet medium, 1 round, partial (stand-in rewrites to RW-104), rung 1
 
 ## Totals
 
