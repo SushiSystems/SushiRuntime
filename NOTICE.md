@@ -49,4 +49,5 @@ Apache License 2.0 as `docs/LICENSE`; `v0.3.0` is also a release on the private 
 repository, with no assets. The commits from `0597255` (2026-09-19) up to the licence change
 carried the Apache License 2.0 with LLVM exceptions and were never tagged. Anyone who received
 one of those states holds it under the licence it carried. The tag `v0.4.0` and the commits after it up to the move to Apache carry the PolyForm Noncommercial
-License 1.0.0 as `LICENSE`; the commits from that move on carry the Apache License 2.0.
+License 1.0.0 as `LICENSE`; from 2026-11-06 on, those states are also licensed under the Apache
+License 2.0, and the commits from that date carry it as `LICENSE`.
