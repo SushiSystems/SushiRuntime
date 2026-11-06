@@ -420,6 +420,22 @@ TEST(Medium_RuntimeEntry, AMovedRuntimeKeepsItsContext)
     EXPECT_EQ(&SushiRuntime::Internal::ContextAccess::context(second), context);
 }
 
+/**
+ * @brief Tests that a handle a Runtime hands out reaches the Runtime's own context: a setting
+ *        changed on the Runtime is read back through the handle, both ways.
+ */
+TEST(Medium_RuntimeEntry, AHandleItHandsOutReachesItsOwnContext)
+{
+    const Runtime rt = Runtime::create().value();
+    const AdvancedControls controls = rt.advanced();
+
+    rt.set_rebalancer_enabled(false);
+    EXPECT_FALSE(controls.is_rebalancer_enabled());
+
+    rt.set_rebalancer_enabled(true);
+    EXPECT_TRUE(controls.is_rebalancer_enabled());
+}
+
 /** @brief Tests that a caller waits for device work and copies through the device's queue. */
 TEST(Medium_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
 {

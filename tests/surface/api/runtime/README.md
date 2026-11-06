@@ -107,6 +107,12 @@ runtime; `Medium_CoTenancy` reads `first_core` back on a machine with cores to
 reserve. The api struct is mapped to the engine's settings by hand in one function, so a field that
 function forgets would otherwise keep its default silently.
 
+### `AHandleItHandsOutReachesItsOwnContext`
+
+A setting changed on the Runtime is read back through the `AdvancedControls` it handed out, both
+ways, so the handle shares the Runtime's own context. This is the public test of
+`ContextHandleAccess::handle_of`.
+
 ### `AMovedRuntimeKeepsItsContext`
 
 A move hands the context over and does not build a second one.

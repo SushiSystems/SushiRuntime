@@ -22,10 +22,5 @@ The file has no test. It holds one compile-time check, at file scope, that the s
 `Detail::Context` by shared pointer while the name has no definition. A run of the test program
 does not list it.
 
-## test_context_handle_access.cpp
-
-The file tests `ContextHandleAccess::handle_of`: the handle an owner holds.
-
-| Test | What it proves |
-| --- | --- |
-| `HandleOfReturnsTheOwnersHandle` | Handle_of() returns the owner's handle itself, not a copy. |
+`ContextHandleAccess::handle_of` has no test here: it is tested through its public owner, in
+`tests/surface/api/runtime/test_runtime.cpp`, `AHandleItHandsOutReachesItsOwnContext`.
