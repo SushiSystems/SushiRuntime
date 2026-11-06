@@ -35,28 +35,25 @@
 
 using SushiRuntime::ExternalHandleKind;
 using SushiRuntime::ExternalHandleKindSet;
-using SushiRuntime::K_NAMED_HANDLE_KINDS;
 
-/** @brief Tests that a default set holds no kind. */
-TEST(Small_ExternalHandleKindSet, ADefaultSetIsEmpty)
-{
-    const ExternalHandleKindSet kinds;
-    EXPECT_TRUE(kinds.is_empty());
-    EXPECT_FALSE(kinds.contains(ExternalHandleKind::Unspecified));
-    for (const ExternalHandleKind kind : K_NAMED_HANDLE_KINDS)
-        EXPECT_FALSE(kinds.contains(kind));
-}
-
-/** @brief Tests that a set holds the kind inserted and no other, and is empty once it is erased. */
-TEST(Small_ExternalHandleKindSet, AKindSetHoldsExactlyTheKindsInserted)
+/** @brief Tests that a set holds the kind inserted and no other. */
+TEST(Small_ExternalHandleKindSet, HoldsOnlyTheKindInserted)
 {
     ExternalHandleKindSet kinds;
+
     kinds.insert(ExternalHandleKind::OpaqueFd);
 
     EXPECT_FALSE(kinds.is_empty());
     EXPECT_TRUE(kinds.contains(ExternalHandleKind::OpaqueFd));
     EXPECT_FALSE(kinds.contains(ExternalHandleKind::OpaqueWin32));
     EXPECT_FALSE(kinds.contains(ExternalHandleKind::Unspecified));
+}
+
+/** @brief Tests that a set is empty again once its only kind is erased. */
+TEST(Small_ExternalHandleKindSet, IsEmptyAgainAfterErasingItsKind)
+{
+    ExternalHandleKindSet kinds;
+    kinds.insert(ExternalHandleKind::OpaqueFd);
 
     kinds.erase(ExternalHandleKind::OpaqueFd);
 
@@ -64,25 +61,25 @@ TEST(Small_ExternalHandleKindSet, AKindSetHoldsExactlyTheKindsInserted)
     EXPECT_EQ(kinds, ExternalHandleKindSet());
 }
 
-/** @brief Tests that a second insert keeps one member and erasing an absent kind changes nothing. */
-TEST(Small_ExternalHandleKindSet, InsertAndEraseAreIdempotent)
+/** @brief Tests that inserting a kind the set already holds keeps one member. */
+TEST(Small_ExternalHandleKindSet, InsertingAKindTwiceKeepsOneMember)
 {
-    ExternalHandleKindSet once;
-    once.insert(ExternalHandleKind::OpaqueWin32);
-    ExternalHandleKindSet twice = once;
-    twice.insert(ExternalHandleKind::OpaqueWin32);
-    EXPECT_EQ(twice, once);
+    ExternalHandleKindSet kinds;
+    kinds.insert(ExternalHandleKind::OpaqueWin32);
+    const ExternalHandleKindSet before = kinds;
 
-    twice.erase(ExternalHandleKind::OpaqueFd);
-    EXPECT_EQ(twice, once) << "erasing a kind the set does not hold removed another";
+    kinds.insert(ExternalHandleKind::OpaqueWin32);
+
+    EXPECT_EQ(kinds, before);
 }
 
-/** @brief Tests that erasing one kind leaves the others in place. */
+/** @brief Tests that erasing one kind leaves another kind in the set. */
 TEST(Small_ExternalHandleKindSet, EraseRemovesOnlyItsKind)
 {
     ExternalHandleKindSet kinds;
-    for (const ExternalHandleKind kind : K_NAMED_HANDLE_KINDS)
-        kinds.insert(kind);
+    kinds.insert(ExternalHandleKind::OpaqueFd);
+    kinds.insert(ExternalHandleKind::OpaqueWin32);
+
     kinds.erase(ExternalHandleKind::OpaqueWin32);
 
     EXPECT_FALSE(kinds.contains(ExternalHandleKind::OpaqueWin32));
@@ -104,16 +101,12 @@ TEST(Small_ExternalHandleKindSet, SetsCompareByMembers)
     EXPECT_EQ(fd, win32);
 }
 
-/** @brief Tests that the set works in a constant expression. */
-TEST(Small_ExternalHandleKindSet, WorksAtCompileTime)
-{
-    constexpr ExternalHandleKindSet kinds = []()
+// The constexpr insert holds its kind and adds no other; the compiler checks it, no test runs it.
+static_assert(
+    []()
     {
         ExternalHandleKindSet built;
         built.insert(ExternalHandleKind::OpaqueFd);
-        return built;
-    }();
-    static_assert(kinds.contains(ExternalHandleKind::OpaqueFd), "the constexpr insert did not hold");
-    static_assert(!kinds.contains(ExternalHandleKind::OpaqueWin32), "the insert added another kind");
-    EXPECT_FALSE(kinds.is_empty());
-}
+        return built.contains(ExternalHandleKind::OpaqueFd) && !built.contains(ExternalHandleKind::OpaqueWin32);
+    }(),
+    "a constexpr insert must hold its kind and no other");

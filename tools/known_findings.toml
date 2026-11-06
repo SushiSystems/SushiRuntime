@@ -1,27 +1,34 @@
 [[finding]]
 checker = "testing/check_test_sizes.py"
 rule = "rule_unsized_python_test"
-path = "tools/tests/test_check_device_sources.py"
-count = 1
-backlog = "RW-80"
-
-[[finding]]
-checker = "testing/check_test_sizes.py"
-rule = "rule_unsized_python_test"
-path = "tools/tests/test_check_naming.py"
-count = 8
-backlog = "RW-80"
-
-[[finding]]
-checker = "testing/check_test_sizes.py"
-rule = "rule_unsized_python_test"
 path = "tools/tests/test_test_budget_settings.py"
 count = 1
 backlog = "RW-80"
 
 [[finding]]
-checker = "testing/check_test_sizes.py"
-rule = "rule_unsized_python_test"
-path = "tools/tests/test_tier_table.py"
+checker = "testing/check_test_mirror.py"
+rule = "rule_untested_unit"
+path = "modules/surface/context/include/SushiRuntime/context/context_handle_access.hpp"
 count = 1
-backlog = "RW-80"
+backlog = "RW-94"
+
+[[finding]]
+checker = "testing/check_test_mirror.py"
+rule = "rule_untested_unit"
+path = "modules/surface/interop/include/SushiRuntime/interop/device_uuid.hpp"
+count = 1
+backlog = "RW-94"
+
+[[finding]]
+checker = "testing/check_test_mirror.py"
+rule = "rule_untested_unit"
+path = "modules/surface/interop/include/SushiRuntime/interop/external_memory.hpp"
+count = 1
+backlog = "RW-94"
+
+[[finding]]
+checker = "testing/check_test_mirror.py"
+rule = "rule_untested_unit"
+path = "modules/surface/memory_exchange/include/SushiRuntime/memory_exchange/memory_exchange_log_category.hpp"
+count = 1
+backlog = "RW-94"

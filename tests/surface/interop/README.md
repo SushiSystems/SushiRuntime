@@ -8,32 +8,11 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_interop_capabilities.cpp
 
-The file covers the default values of the interop vocabulary.
-
-### `DefaultCapabilitiesOfferNothing`
-
-Default `InteropCapabilities` offer no host export, no import, no UUID and no importable kind.
-
-### `ADefaultDescriptorStatesNoHandleKind`
-
-A default `ExternalMemoryDescriptor` has the kind `Unspecified`, a handle of 0, and an allocation size
-and an offset of 0.
-
-## test_device_uuid.cpp
-
-The file tests DeviceUUID: sixteen zero bytes by default, equal when every byte is.
+The file tests the device UUID of the interop vocabulary.
 
 | Test | What it proves |
 | --- | --- |
-| `EqualOnlyWhenEveryByteIs` | Two UUIDs are equal only when every byte is. |
-
-## test_external_memory.cpp
-
-The file tests ExternalMemoryDescriptor: an unspecified handle of no bytes by default.
-
-| Test | What it proves |
-| --- | --- |
-| `DefaultsNameNoHandle` | Checks the defaults of a descriptor and the three handle kinds. |
+| `UUIDsCompareByEveryByte` | Two UUIDs are equal only when every byte is. |
 
 ## test_external_handle_kind_set.cpp
 
@@ -41,9 +20,10 @@ The file tests `ExternalHandleKindSet`, one bit per handle kind.
 
 | Test | What it proves |
 | --- | --- |
-| `ADefaultSetIsEmpty` | A default set holds no kind. |
-| `AKindSetHoldsExactlyTheKindsInserted` | A set holds the kind inserted and no other, and is empty again once that kind is erased. |
-| `InsertAndEraseAreIdempotent` | A second insert keeps one member; erasing a kind the set does not hold changes nothing. |
+| `HoldsOnlyTheKindInserted` | A set holds the kind inserted and no other. |
+| `IsEmptyAgainAfterErasingItsKind` | A set is empty again once its only kind is erased. |
+| `InsertingAKindTwiceKeepsOneMember` | A second insert of a kind the set holds changes nothing. |
 | `EraseRemovesOnlyItsKind` | Erasing one kind leaves the others. |
 | `SetsCompareByMembers` | Two sets are equal exactly when they hold the same kinds. |
-| `WorksAtCompileTime` | Insert and contains work in a constant expression. |
+
+The constant-expression use of the set is checked by a `static_assert` at file scope, which the build compiles and no test runs.

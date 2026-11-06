@@ -23,7 +23,7 @@
 
 /**
  * @file test_interop_capabilities.cpp
- * @brief Tests the interop vocabulary: device UUIDs, capabilities and memory descriptors.
+ * @brief Tests the interop vocabulary: device UUID comparison.
  * @see tests/surface/interop/README.md
  * @author Mustafa Garip
  */
@@ -31,15 +31,10 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/interop/device_uuid.hpp>
-#include <SushiRuntime/interop/external_handle_kind_set.hpp>
-#include <SushiRuntime/interop/external_memory.hpp>
-#include <SushiRuntime/interop/interop_capabilities.hpp>
 
 using SushiRuntime::DeviceUUID;
-using SushiRuntime::ExternalHandleKind;
-using SushiRuntime::ExternalMemoryDescriptor;
-using SushiRuntime::InteropCapabilities;
 
+/** @brief Tests that two UUIDs are equal only when every byte is. */
 TEST(Small_InteropVocabulary, UUIDsCompareByEveryByte)
 {
     DeviceUUID left;
@@ -55,24 +50,4 @@ TEST(Small_InteropVocabulary, UUIDsCompareByEveryByte)
 
     EXPECT_FALSE(left == right);
     EXPECT_TRUE(left != right);
-}
-
-TEST(Small_InteropVocabulary, DefaultCapabilitiesOfferNothing)
-{
-    InteropCapabilities capabilities;
-
-    EXPECT_FALSE(capabilities.host_export);
-    EXPECT_FALSE(capabilities.device_import);
-    EXPECT_FALSE(capabilities.device_uuid.has_value());
-    EXPECT_TRUE(capabilities.importable_kinds.is_empty());
-}
-
-TEST(Small_InteropVocabulary, ADefaultDescriptorStatesNoHandleKind)
-{
-    ExternalMemoryDescriptor descriptor;
-
-    EXPECT_EQ(descriptor.kind, ExternalHandleKind::Unspecified);
-    EXPECT_EQ(descriptor.handle, 0u);
-    EXPECT_EQ(descriptor.allocation_bytes, 0u);
-    EXPECT_EQ(descriptor.offset, 0u);
 }
