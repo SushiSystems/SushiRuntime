@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -39,6 +40,7 @@
 #include <SushiProfiler/environment/record_facts.hpp>
 #include <SushiProfiler/registry/registry.hpp>
 
+#include <SushiRuntime/profiling/in_memory_profiled_runtime.hpp>
 #include <SushiRuntime/profiling/register_profiler_parts.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
@@ -79,8 +81,29 @@ namespace
             expect_device_stated(environment, prefix, device);
     }
 
+    /** @brief Registers @p runtime with a fresh registry and returns the facts its contributors state. */
+    SushiProfiler::RecordFacts facts_stated_by(const std::shared_ptr<ProfiledRuntime>& runtime)
+    {
+        SushiProfiler::Registry registry;
+        const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime);
+        EXPECT_TRUE(parts.is_registered());
+        return SushiProfiler::gather_facts(registry.contributors());
+    }
+
+    /** @brief One state of the rebalancer and how the record spells it. */
+    struct RebalancerRow
+    {
+        bool enabled;        /**< Whether the runtime reports the rebalancer on. */
+        const char* stated;  /**< The spelling of the fact. */
+    };
+
     /** @brief Fixture of the tests that read the facts the runtime of the program states. */
     class Medium_RuntimeEnvironment : public TestSupport::RuntimeTest
+    {
+    };
+
+    /** @brief Fixture of the tests that state the facts of a runtime held as plain values. */
+    class Small_RuntimeEnvironmentRebalancer : public ::testing::TestWithParam<RebalancerRow>
     {
     };
 } // namespace
@@ -112,27 +135,58 @@ TEST_F(Medium_RuntimeEnvironment, StatesEveryDeviceOfTheRuntime)
     expect_every_device_stated(environment, "sushiruntime." + runtime().topology().name + ".", devices);
 }
 
-/** @brief Tests that the runtime states its version, its workers and the rebalancer. */
-TEST_F(Medium_RuntimeEnvironment, StatesTheVersionAndTheWorkers)
+/** @brief Tests that the runtime states its version and its worker count under its node's name. */
+TEST(Small_RuntimeEnvironmentFacts, StatesTheVersionAndTheWorkers)
 {
-    SushiProfiler::Registry registry;
-    const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime());
+    auto runtime = std::make_shared<InMemoryProfiledRuntime>("alpha");
+    runtime->set_workers(6, false);
 
-    const auto environment = facts_of(SushiProfiler::gather_facts(registry.contributors()).environment);
+    const auto environment = facts_of(facts_stated_by(runtime).environment);
 
     EXPECT_EQ(environment.at("sushiruntime.version"), SUSHIRUNTIME_VERSION_STRING);
-    const std::string prefix = "sushiruntime." + runtime().topology().name + ".";
-    EXPECT_EQ(environment.at(prefix + "workers"), std::to_string(runtime().advanced().worker_pool().count));
-    EXPECT_EQ(environment.at(prefix + "rebalancer"), "off");
+    EXPECT_EQ(environment.at("sushiruntime.alpha.workers"), "6");
+}
+
+/** @brief Tests that the runtime spells the state of its rebalancer on or off. */
+TEST_P(Small_RuntimeEnvironmentRebalancer, StatesTheRebalancer)
+{
+    auto runtime = std::make_shared<InMemoryProfiledRuntime>("alpha");
+    runtime->set_workers(1, GetParam().enabled);
+
+    const auto environment = facts_of(facts_stated_by(runtime).environment);
+
+    EXPECT_EQ(environment.at("sushiruntime.alpha.rebalancer"), GetParam().stated);
+}
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_RuntimeEnvironmentRebalancer,
+                         ::testing::Values(RebalancerRow{false, "off"}, RebalancerRow{true, "on"}));
+
+/** @brief Tests that a device the runtime reports is stated with its description and its driver. */
+TEST(Small_RuntimeEnvironmentFacts, StatesADeviceWithItsDriver)
+{
+    auto runtime = std::make_shared<InMemoryProfiledRuntime>("alpha");
+    DeviceDescription device;
+    device.index = 0;
+    device.name = "Test GPU";
+    device.kind = DeviceKind::GPU;
+    device.memory_bytes = 8192;
+    device.compute_units = 12;
+    runtime->add_device(device, "1.2.3");
+
+    const auto environment = facts_of(facts_stated_by(runtime).environment);
+
+    EXPECT_EQ(environment.at("sushiruntime.alpha.devices"), "1");
+    EXPECT_EQ(environment.at("sushiruntime.alpha.device.0.name"), "Test GPU");
+    EXPECT_EQ(environment.at("sushiruntime.alpha.device.0.kind"), "gpu");
+    EXPECT_EQ(environment.at("sushiruntime.alpha.device.0.driver"), "1.2.3");
+    EXPECT_EQ(environment.at("sushiruntime.alpha.device.0.memory_bytes"), "8192");
+    EXPECT_EQ(environment.at("sushiruntime.alpha.device.0.compute_units"), "12");
 }
 
 /** @brief Tests that the library's own build type is a build fact, so two records of different builds do not compare. */
-TEST_F(Medium_RuntimeEnvironment, StatesTheBuildTypeAsABuildFact)
+TEST(Small_RuntimeEnvironmentFacts, StatesTheBuildTypeAsABuildFact)
 {
-    SushiProfiler::Registry registry;
-    const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime());
-
-    const auto build = facts_of(SushiProfiler::gather_facts(registry.contributors()).build);
+    const auto build = facts_of(facts_stated_by(std::make_shared<InMemoryProfiledRuntime>()).build);
 
     const std::string build_type = build.at("sushiruntime.build_type");
     EXPECT_TRUE(build_type == "release" || build_type == "debug") << build_type;

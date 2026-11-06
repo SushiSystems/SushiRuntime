@@ -14,6 +14,8 @@ also use `execution`, `context_access`, `device` and `sycl`.
 | Header | Holds |
 | --- | --- |
 | `register_profiler_parts.hpp` | `RuntimeProfilerParts` and `register_profiler_parts()`: what a host calls to register the runtime |
+| `profiled_runtime.hpp` | `ProfiledRuntime`, what the registration reads of one runtime, and `profiled_runtime_of()`, which wraps a `Runtime` in it |
+| `in_memory_profiled_runtime.hpp` | `InMemoryProfiledRuntime`, the `ProfiledRuntime` that answers with stored values |
 | `source_names.hpp` | `K_DEVICE_SOURCE_NAME` (`sushiruntime.device`), the name the source is registered under; it includes only `<string_view>` |
 | `device_track_name.hpp` | `device_track_name()` and `host_track_name()`: the track names the source writes |
 | `device_source.hpp` | `DeviceSource`, the `SushiProfiler::Source`, and `FeedAttachment` |
@@ -23,7 +25,7 @@ also use `execution`, `context_access`, `device` and `sycl`.
 | `runtime_environment.hpp` | `RuntimeEnvironment`, the environment contributor |
 | `profiling_log_category.hpp` | `K_PROFILING_LOG_CATEGORY` |
 
-The first two are what a host or another library uses. The others are declared in
+The first four are what a host or another library uses. The others are declared in
 `SushiRuntime::Internal::Profiling` and belong to the module; they are in `include/` so a test reaches
 them.
 
@@ -38,7 +40,10 @@ SushiRuntime::RuntimeProfilerParts parts = SushiRuntime::register_profiler_parts
 
 Source: not compiled
 
-`register_profiler_parts()` follows the pattern of SushiProfiler's client library guide. The parts
+`register_profiler_parts()` follows the pattern of SushiProfiler's client library guide. It has a second form,
+`register_profiler_parts(registry, std::shared_ptr<ProfiledRuntime>)`, and the `Runtime` form wraps its runtime with
+`profiled_runtime_of()` and forwards to it, as the `RuntimeProfilerParts` constructor and `attach()` do. A host that
+has no `Runtime`, such as a test of the registration, passes an `InMemoryProfiledRuntime`. The parts
 object owns what the registry only refers to: the queue the source reads and the contributor. It is
 neither copyable nor movable, and the host keeps it alive until every session started with the
 registry has stopped. The registry refuses a source name twice; then `is_registered()` is false and
@@ -48,7 +53,8 @@ The runtime and the host link the same SushiProfiler target, the shared library.
 static target would record into a collector the host's session never drains.
 
 One source serves every runtime of the process. `RuntimeProfilerParts::attach()` adds a further
-runtime to the same source before a session starts, and returns false while a session runs. The
+runtime to the same source before a session starts, and returns false while a session runs; it too takes a `Runtime`
+or a `ProfiledRuntime`. The
 tracks name the runtime's node and the device, so two runtimes land on one timeline.
 
 ## What a session does to the runtime
@@ -112,15 +118,16 @@ than the period it arrived in, and a span the period's table refused. When any s
 ### Track names
 
 `device_track_name()` returns `<node>/<device index>/<device name>`, and `host_track_name()` returns
-`<node>/host`. The node is the machine's name in `NodeFacts`. Both overloads of
+`<node>/host`. The node is the machine's name in `NodeFacts`. Every overload of
 `device_track_name()` build the string in one place, which the source uses too, so a library that
 states a fact keyed by a track calls the function and never rebuilds the name. A device index the
-runtime does not have names a device `device`.
+runtime does not have names a device `device`. A third overload takes the node name, the device index and a
+`std::vector<DeviceDescription>`, and applies the same fallback; the `Runtime` overload forwards to it.
 
 ## The environment contributor
 
 `RuntimeEnvironment` sets these facts when a session starts, compiled inside the runtime library so
-the build facts are the library's own and not the host's:
+the build facts are the library's own and not the host's. It reads each runtime through `ProfiledRuntime`:
 
 | Fact | Holds |
 | --- | --- |
@@ -135,6 +142,24 @@ the build facts are the library's own and not the host's:
 `to_steady_ns(pairing, event_ns)` moves a reading of a device's event clock onto the steady clock by
 the pairing's two readings taken beside each other; a time before the steady clock's origin is 0.
 `saturate_uncertainty()` clamps the pairing's 64-bit uncertainty to the 32 bits a span carries.
+
+## profiled_runtime.hpp
+
+### ProfiledRuntime
+
+ProfiledRuntime is the port through which `RuntimeProfilerParts` and `RuntimeEnvironment` read one runtime:
+its node name, its devices, the driver of a device, the worker count, the rebalancer state, and
+`observe_runs()`, which adds a `RunObserver` behind the profiler's gate and returns the handle that removes
+it. `profiled_runtime_of(runtime)` returns the adapter over a `Runtime`; it shares ownership of the runtime's
+context, and its `driver_of()` reads `unknown` when the backend does not answer.
+
+## in_memory_profiled_runtime.hpp
+
+### InMemoryProfiledRuntime
+
+InMemoryProfiledRuntime is the `ProfiledRuntime` that drives no device. A test adds devices with
+`add_device()` (each with its driver), sets the workers and the rebalancer with `set_workers()`, and reads
+how many observers are added with `observer_count()`. A device with no stored driver reads `unknown`.
 
 ## in_memory_feed_attachment.hpp
 

@@ -39,11 +39,7 @@
 
 #include <SushiProfiler/collector/collector.hpp>
 
-#include <SushiRuntime/context_access/context_access.hpp>
-#include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/machine/device_description.hpp>
-#include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/profiling/device_source.hpp>
 #include <SushiRuntime/profiling/run_feed.hpp>
 #include <SushiRuntime/profiling/run_queue.hpp>
@@ -73,21 +69,21 @@ namespace SushiRuntime
         /** @brief Names one runtime the source is fed from. */
         struct Attached
         {
-            std::shared_ptr<Internal::Execution::RuntimeContext> context; /**< The runtime's context. */
-            std::shared_ptr<Internal::Profiling::RunFeed> feed;           /**< Queues the runtime's runs. */
-            RunObserverHandle handle;                                    /**< Removes the feed while a session runs. */
+            std::shared_ptr<ProfiledRuntime> runtime;           /**< What the profiler reads of the runtime. */
+            std::shared_ptr<Internal::Profiling::RunFeed> feed; /**< Queues the runtime's runs. */
+            RunObserverHandle handle;                           /**< Removes the feed while a session runs. */
         };
 
-        Impl() : environment(contexts) {}
+        Impl() : environment(profiled) {}
 
         /** @brief Adds @p runtime as the next source index. */
-        void add(const Runtime& runtime)
+        void add(std::shared_ptr<ProfiledRuntime> runtime)
         {
             Attached attached;
-            attached.context = Internal::ContextAccess::shared(runtime);
+            attached.runtime = std::move(runtime);
             attached.feed = std::make_shared<Internal::Profiling::RunFeed>(
                 queue, static_cast<std::uint32_t>(runtimes.size()));
-            contexts.push_back(attached.context);
+            profiled.push_back(attached.runtime);
             runtimes.push_back(std::move(attached));
         }
 
@@ -99,9 +95,8 @@ namespace SushiRuntime
             for (const Attached& attached : runtimes)
             {
                 Internal::Profiling::RuntimeTracks one;
-                const NodeFacts* node = attached.context->machine_facts();
-                one.node = node != nullptr ? node->name : std::string("node");
-                for (const DeviceDescription& device : attached.context->devices().devices())
+                one.node = attached.runtime->node_name();
+                for (const DeviceDescription& device : attached.runtime->devices())
                     one.device_names.push_back(device.name);
                 named.push_back(std::move(one));
             }
@@ -113,8 +108,7 @@ namespace SushiRuntime
             const std::lock_guard<std::mutex> lock(mutex);
             for (Attached& attached : runtimes)
                 if (!attached.handle)
-                    attached.handle = Internal::Execution::observe_runs(attached.context, attached.feed,
-                                                                        &sources_wanted);
+                    attached.handle = attached.runtime->observe_runs(attached.feed, &sources_wanted);
             session_running.store(true, std::memory_order_release);
             return {};
         }
@@ -134,8 +128,8 @@ namespace SushiRuntime
         /** @brief The runtimes, in the order they were added; their feeds are tagged with the position. */
         std::vector<Attached> runtimes;
 
-        /** @brief The same contexts, for the contributor. */
-        std::vector<std::shared_ptr<Internal::Execution::RuntimeContext>> contexts;
+        /** @brief The same runtimes, for the contributor. */
+        std::vector<std::shared_ptr<ProfiledRuntime>> profiled;
 
         /** @brief States the facts of the runtimes. */
         Internal::Profiling::RuntimeEnvironment environment;
@@ -151,9 +145,15 @@ namespace SushiRuntime
     };
 
     RuntimeProfilerParts::RuntimeProfilerParts(SushiProfiler::Registry& registry, const Runtime& runtime)
+        : RuntimeProfilerParts(registry, profiled_runtime_of(runtime))
+    {
+    }
+
+    RuntimeProfilerParts::RuntimeProfilerParts(SushiProfiler::Registry& registry,
+                                               std::shared_ptr<ProfiledRuntime> runtime)
         : impl_(std::make_unique<Impl>())
     {
-        impl_->add(runtime);
+        impl_->add(std::move(runtime));
 
         Impl* const impl = impl_.get();
         const auto make_source = [impl](const SushiProfiler::JsonValue& settings)
@@ -173,10 +173,15 @@ namespace SushiRuntime
 
     bool RuntimeProfilerParts::attach(const Runtime& runtime)
     {
+        return attach(profiled_runtime_of(runtime));
+    }
+
+    bool RuntimeProfilerParts::attach(std::shared_ptr<ProfiledRuntime> runtime)
+    {
         const std::lock_guard<std::mutex> lock(impl_->mutex);
         if (!impl_->registered || impl_->session_running.load(std::memory_order_acquire))
             return false;
-        impl_->add(runtime);
+        impl_->add(std::move(runtime));
         return true;
     }
 
@@ -188,5 +193,11 @@ namespace SushiRuntime
     RuntimeProfilerParts register_profiler_parts(SushiProfiler::Registry& registry, const Runtime& runtime)
     {
         return RuntimeProfilerParts(registry, runtime);
+    }
+
+    RuntimeProfilerParts register_profiler_parts(SushiProfiler::Registry& registry,
+                                                 std::shared_ptr<ProfiledRuntime> runtime)
+    {
+        return RuntimeProfilerParts(registry, std::move(runtime));
     }
 } // namespace SushiRuntime

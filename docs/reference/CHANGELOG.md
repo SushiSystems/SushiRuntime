@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-07 — profiling: Gave `register_profiler_parts()` a form that takes a `ProfiledRuntime`, the port the registration reads a runtime through; the `Runtime` form forwards to it (RW-98, `profiled_runtime.hpp`).
+- 2026-11-07 — profiling: Gave `device_track_name()` a form that takes a device list, and ran the environment facts small on `InMemoryProfiledRuntime` (RW-99, `device_track_name.hpp`).
 - 2026-11-07 — tools: Gave the naming, device-source and tier-table checkers a text-taking function beside each file reader, so their tests run small on text; the two tier-table tests of the real CMake file stay medium (RW-95).
 - 2026-11-07 — memory_exchange: Moved the import refusal into `descriptor_refusal()` and `device_refusal()`, pure functions its rows test small with no device; one medium import test keeps the wiring (RW-89, `descriptor_refusal.hpp`).
 - 2026-11-07 — tests: Dropped the test of the empty `ExternalHandleKindSet` default, trivial code the testing skill leaves untested (RW-91).

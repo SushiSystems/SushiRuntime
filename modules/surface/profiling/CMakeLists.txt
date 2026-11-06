@@ -9,6 +9,7 @@ sushiruntime_add_module(
     SOURCES
         device_source.cpp
         device_track_name.cpp
+        profiled_runtime.cpp
         register_profiler_parts.cpp
         run_queue.cpp
         runtime_environment.cpp
@@ -18,9 +19,9 @@ sushiruntime_add_module(
         api
         report
         log
+        machine
     PRIVATE_DEPENDS
         profile
-        machine
         execution
         context_access
         device

@@ -35,13 +35,10 @@
 
 #include <SushiProfiler/environment/environment_contributor.hpp>
 
+#include <SushiRuntime/profiling/profiled_runtime.hpp>
+
 namespace SushiRuntime
 {
-    namespace Internal::Execution
-    {
-        class RuntimeContext;
-    } // namespace Execution
-
     namespace Internal::Profiling
     {
         /**
@@ -56,15 +53,14 @@ namespace SushiRuntime
         {
             public:
                 /** @brief Builds a contributor over @p runtimes, which outlives it and may grow between sessions. */
-                explicit RuntimeEnvironment(
-                    const std::vector<std::shared_ptr<Execution::RuntimeContext>>& runtimes) noexcept;
+                explicit RuntimeEnvironment(const std::vector<std::shared_ptr<ProfiledRuntime>>& runtimes) noexcept;
 
                 /** @brief Sets the facts of every runtime in @p facts. */
                 void contribute(SushiProfiler::RecordFacts& facts) const override;
 
             private:
                 /** @brief The runtimes whose facts are stated. */
-                const std::vector<std::shared_ptr<Execution::RuntimeContext>>& runtimes_;
+                const std::vector<std::shared_ptr<ProfiledRuntime>>& runtimes_;
         };
     } // namespace Profiling
 } // namespace SushiRuntime

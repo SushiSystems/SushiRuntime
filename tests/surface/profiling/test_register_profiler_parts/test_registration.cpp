@@ -45,6 +45,7 @@
 #include <SushiProfiler/sources/source_context.hpp>
 #include <SushiProfiler/sources/span_sink.hpp>
 
+#include <SushiRuntime/profiling/in_memory_profiled_runtime.hpp>
 #include <SushiRuntime/profiling/register_profiler_parts.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
@@ -86,13 +87,13 @@ namespace
 } // namespace
 
 /** @brief Tests that the registry refuses a second registration of the same source name. */
-TEST(Medium_RegisterProfilerParts, RefusesASecondRegistration)
+TEST(Small_RegisterProfilerParts, RefusesASecondRegistration)
 {
-    SessionPipeline pipeline;
+    const std::shared_ptr<ProfiledRuntime> runtime = std::make_shared<InMemoryProfiledRuntime>();
     SushiProfiler::Registry registry;
 
-    const RuntimeProfilerParts first = register_profiler_parts(registry, pipeline.runtime());
-    const RuntimeProfilerParts second = register_profiler_parts(registry, pipeline.runtime());
+    const RuntimeProfilerParts first = register_profiler_parts(registry, runtime);
+    const RuntimeProfilerParts second = register_profiler_parts(registry, runtime);
 
     EXPECT_TRUE(first.is_registered());
     EXPECT_FALSE(second.is_registered());
@@ -101,11 +102,11 @@ TEST(Medium_RegisterProfilerParts, RefusesASecondRegistration)
 }
 
 /** @brief Tests that the registered source is the one the registry knows by the runtime's source name. */
-TEST(Medium_RegisterProfilerParts, TheRegistryMakesTheDeviceSource)
+TEST(Small_RegisterProfilerParts, TheRegistryMakesTheDeviceSource)
 {
-    SessionPipeline pipeline;
+    const std::shared_ptr<ProfiledRuntime> runtime = std::make_shared<InMemoryProfiledRuntime>();
     SushiProfiler::Registry registry;
-    const RuntimeProfilerParts parts = register_profiler_parts(registry, pipeline.runtime());
+    const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime);
 
     const std::unique_ptr<SushiProfiler::Source> source = make_source(registry);
 

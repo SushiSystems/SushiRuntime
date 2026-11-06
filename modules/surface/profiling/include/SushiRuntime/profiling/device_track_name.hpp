@@ -33,9 +33,11 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/machine/device_description.hpp>
 
 namespace SushiRuntime
 {
@@ -49,6 +51,17 @@ namespace SushiRuntime
      */
     [[nodiscard]] SUSHIRUNTIME_API std::string device_track_name(const Runtime& runtime,
                                                                  std::uint32_t device_index);
+
+    /**
+     * @brief Returns the track of device @p device_index among @p devices on node @p node_name.
+     *
+     * A device index @p devices does not hold names a device called "device". The Runtime overload
+     * above forwards here with its own node and devices.
+     * @see modules/surface/profiling/README.md
+     */
+    [[nodiscard]] SUSHIRUNTIME_API std::string device_track_name(std::string_view node_name,
+                                                                 std::uint32_t device_index,
+                                                                 const std::vector<DeviceDescription>& devices);
 
     /**
      * @brief Returns the track of a device from the three parts it is built of.

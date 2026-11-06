@@ -7,10 +7,12 @@ sushiruntime_add_module_tests(
     MODULE profiling
     SOURCES
         compile_source_names.cpp
+        compile_in_memory_profiled_runtime.cpp
         test_clock_conversion.cpp
         test_device_source.cpp
         test_device_track_name.cpp
         test_in_memory_feed_attachment.cpp
+        test_profiled_runtime.cpp
         test_profiling_log_category.cpp
         test_register_profiler_parts/test_collect_profiling.cpp
         test_register_profiler_parts/test_device_timing_window.cpp

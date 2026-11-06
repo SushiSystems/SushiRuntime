@@ -30,6 +30,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -103,4 +104,23 @@ TEST_F(Medium_DeviceTrackName, TheRuntimeOverloadAgreesWithThePartsOverload)
 TEST_F(Medium_DeviceTrackName, AnIndexTheRuntimeLacksNamesAGenericDevice)
 {
     EXPECT_EQ(device_track_name(runtime(), 99), device_track_name(runtime().topology().name, 99, "device"));
+}
+
+/** @brief Tests that a device the list holds is named by its own name. */
+TEST(Small_DeviceTrackName, ADeviceTheListHoldsIsNamedByItsName)
+{
+    DeviceDescription device;
+    device.name = "cpu";
+
+    EXPECT_EQ(device_track_name("node", 0, std::vector<DeviceDescription>{device}), "node/0/cpu");
+}
+
+/** @brief Tests that an index the list lacks names a device called "device". */
+TEST(Small_DeviceTrackName, AnIndexTheListLacksNamesAGenericDevice)
+{
+    DeviceDescription device;
+    device.name = "cpu";
+
+    EXPECT_EQ(device_track_name("node", 1, std::vector<DeviceDescription>{device}), "node/1/device");
+    EXPECT_EQ(device_track_name("node", 0, std::vector<DeviceDescription>{}), "node/0/device");
 }

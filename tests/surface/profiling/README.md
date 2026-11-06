@@ -90,6 +90,8 @@ The functions that name the tracks of the device source.
 | `Small_DeviceTrackName.TwoNodesWithTheSameDeviceGetDifferentTracks` | Two nodes with the same device get different tracks. |
 | `Small_DeviceTrackName.TheHostTrackNamesTheNode` | The host track names the node. |
 | `Small_DeviceTrackName.TheHostTrackDiffersFromADeviceTrack` | The host track is not the track of a device called host, whatever its index. |
+| `Small_DeviceTrackName.ADeviceTheListHoldsIsNamedByItsName` | A device the list holds is named by its own name. |
+| `Small_DeviceTrackName.AnIndexTheListLacksNamesAGenericDevice` | An index the list lacks names a device called "device". |
 | `Medium_DeviceTrackName.TheRuntimeOverloadAgreesWithThePartsOverload` | The runtime overload builds the same string from the runtime's own node and device. |
 | `Medium_DeviceTrackName.AnIndexTheRuntimeLacksNamesAGenericDevice` | An index the runtime does not have names a device called "device". |
 
@@ -147,9 +149,31 @@ The facts the runtime states about its machine, its devices and its build.
 | --- | --- |
 | `Medium_RuntimeEnvironment.StatesTheNumberOfDevices` | The record states how many devices the runtime drives. |
 | `Medium_RuntimeEnvironment.StatesEveryDeviceOfTheRuntime` | The record states every device the runtime drives with its class, backend and driver. |
-| `Medium_RuntimeEnvironment.StatesTheVersionAndTheWorkers` | The runtime states its version, its workers and the rebalancer. |
-| `Medium_RuntimeEnvironment.StatesTheBuildTypeAsABuildFact` | The library's own build type is a build fact, so two records of different builds do not compare. |
+| `Small_RuntimeEnvironmentFacts.StatesTheVersionAndTheWorkers` | The runtime states its version and its worker count under its node's name. |
+| `Small_RuntimeEnvironmentRebalancer.StatesTheRebalancer` | The runtime spells the state of its rebalancer on or off. |
+| `Small_RuntimeEnvironmentFacts.StatesADeviceWithItsDriver` | A device the runtime reports is stated with its description and its driver. |
+| `Small_RuntimeEnvironmentFacts.StatesTheBuildTypeAsABuildFact` | The library's own build type is a build fact, so two records of different builds do not compare. |
 | `Medium_RuntimeEnvironment.ABuildFactIsNotAnEnvironmentFact` | A build fact is not stated as an environment fact. |
+
+
+## compile_in_memory_profiled_runtime.cpp
+
+Compiles `in_memory_profiled_runtime.hpp` on its own; the adapter's behaviour is tested in
+`test_profiled_runtime.cpp`.
+
+## test_profiled_runtime.cpp
+
+The `ProfiledRuntime` contract, held by the in-memory adapter small and by the adapter over the program's runtime at medium.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_InMemoryProfiledRuntime.KeepsEachDeviceAtItsIndexWithItsDriver` | The in-memory runtime keeps its devices at their indices with their drivers. |
+| `Small_InMemoryProfiledRuntime.ADeviceWithNoStoredDriverReadsUnknown` | A driver nobody set reads "unknown". |
+| `Small_InMemoryProfiledRuntime.AResetHandleRemovesOnlyItsObserver` | A reset handle takes its observer out and leaves the others. |
+| `Small_InMemoryProfiledRuntime.AnObserverIsStoodForByAHandle` | The in-memory runtime hands out a handle that stands for its observer. |
+| `Medium_ContextProfiledRuntime.KeepsEachDeviceAtItsIndexWithItsDriver` | The runtime adapter keeps its devices at their indices with a driver each. |
+| `Medium_ContextProfiledRuntime.StatesWhatTheRuntimeStates` | The runtime adapter states the node, the devices and the workers the runtime states. |
+| `Medium_ContextProfiledRuntime.AnObserverIsStoodForByAHandle` | The runtime adapter hands out a handle that stands for its observer. |
 
 
 ## test_profiling_log_category.cpp
@@ -167,8 +191,8 @@ How the runtime registers its source and contributor, and how it adds and remove
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_RegisterProfilerParts.RefusesASecondRegistration` | The registry refuses a second registration of the same source name. |
-| `Medium_RegisterProfilerParts.TheRegistryMakesTheDeviceSource` | The registered source is the one the registry knows by the runtime's source name. |
+| `Small_RegisterProfilerParts.RefusesASecondRegistration` | The registry refuses a second registration of the same source name. |
+| `Small_RegisterProfilerParts.TheRegistryMakesTheDeviceSource` | The registered source is the one the registry knows by the runtime's source name. |
 | `Medium_RegisterProfilerParts.ASessionAddsTheObserverWhenItsSourceBegins` | A session adds the observer when its source begins, so a run reaches the source with its records. |
 | `Medium_RegisterProfilerParts.ASessionRemovesTheObserverWhenItsSourceEnds` | A session removes the observer when its source ends, so a run after it reaches nothing. |
 | `Medium_RegisterProfilerParts.TheDestructorRemovesItsOwnObserverOnly` | The destructor removes only the observer it added, so another observer keeps its runs. |

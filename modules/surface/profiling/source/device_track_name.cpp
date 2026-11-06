@@ -40,10 +40,15 @@ namespace SushiRuntime
 {
     std::string device_track_name(const Runtime& runtime, std::uint32_t device_index)
     {
-        const std::vector<DeviceDescription>& devices = runtime.advanced().devices();
+        return device_track_name(runtime.topology().name, device_index, runtime.advanced().devices());
+    }
+
+    std::string device_track_name(std::string_view node_name, std::uint32_t device_index,
+                                  const std::vector<DeviceDescription>& devices)
+    {
         const std::string_view device_name = device_index < devices.size()
             ? std::string_view(devices[device_index].name) : std::string_view("device");
-        return device_track_name(runtime.topology().name, device_index, device_name);
+        return device_track_name(node_name, device_index, device_name);
     }
 
     std::string device_track_name(std::string_view node_name, std::uint32_t device_index,

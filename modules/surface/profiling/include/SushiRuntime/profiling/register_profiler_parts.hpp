@@ -36,6 +36,7 @@
 
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/profiling/profiled_runtime.hpp>
 
 namespace SushiRuntime
 {
@@ -57,6 +58,15 @@ namespace SushiRuntime
              */
             SUSHIRUNTIME_API RuntimeProfilerParts(SushiProfiler::Registry& registry, const Runtime& runtime);
 
+            /**
+             * @brief Registers the source and the contributor for @p runtime, which it reads through the interface.
+             *
+             * The form above wraps its Runtime with profiled_runtime_of() and forwards here.
+             * @pre runtime is not null.
+             */
+            SUSHIRUNTIME_API RuntimeProfilerParts(SushiProfiler::Registry& registry,
+                                                  std::shared_ptr<ProfiledRuntime> runtime);
+
             RuntimeProfilerParts(const RuntimeProfilerParts&) = delete;
             RuntimeProfilerParts& operator=(const RuntimeProfilerParts&) = delete;
             RuntimeProfilerParts(RuntimeProfilerParts&&) = delete;
@@ -70,6 +80,9 @@ namespace SushiRuntime
              * @return False, adding nothing, while a session runs or when the registration was refused.
              */
             SUSHIRUNTIME_API bool attach(const Runtime& runtime);
+
+            /** @brief Feeds the same source from a further runtime read through the interface; forwarded to by the form above. */
+            SUSHIRUNTIME_API bool attach(std::shared_ptr<ProfiledRuntime> runtime);
 
             /** @brief Returns whether the registry accepted the source. */
             [[nodiscard]] SUSHIRUNTIME_API bool is_registered() const noexcept;
@@ -90,4 +103,13 @@ namespace SushiRuntime
      */
     [[nodiscard]] SUSHIRUNTIME_API RuntimeProfilerParts register_profiler_parts(
         SushiProfiler::Registry& registry, const Runtime& runtime);
+
+    /**
+     * @brief Registers the source and contributor of @p runtime, read through the interface, with @p registry.
+     *
+     * The form above wraps its Runtime with profiled_runtime_of() and forwards here.
+     * @see modules/surface/profiling/README.md
+     */
+    [[nodiscard]] SUSHIRUNTIME_API RuntimeProfilerParts register_profiler_parts(
+        SushiProfiler::Registry& registry, std::shared_ptr<ProfiledRuntime> runtime);
 } // namespace SushiRuntime
