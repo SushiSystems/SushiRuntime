@@ -30,30 +30,33 @@
 
 #pragma once
 
+#include <cstddef>
+#include <memory>
 #include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
+#include <SushiRuntime/api/detail/emit_dynamic.hpp>
 #include <SushiRuntime/api/detail/node_description.hpp>
-#include <SushiRuntime/context_access/context_access.hpp>
-#include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
+#include <SushiRuntime/api/detail/step_machinery.hpp>
+#include <SushiRuntime/api/vocabulary/dynamic.hpp>
 
 namespace SushiRuntime
 {
     namespace Testing
     {
         /** @brief Returns the runtime's first device queue, on whose context its memory lives. */
-        inline sycl::queue& queue_of(Runtime& runtime)
+        inline sycl::queue& queue_of(const Runtime& runtime)
         {
-            return Internal::ContextAccess::context(runtime).devices().queue(0);
+            return runtime.advanced().queue(DeviceIndex{0});
         }
 
         /** @brief Runs the work of a described node once on the runtime's first queue and waits. */
-        inline void run_description(Runtime& runtime, const Detail::NodeDescription& description)
+        inline void run_description(const Runtime& runtime, const Detail::NodeDescription& description)
         {
             sycl::queue& queue = queue_of(runtime);
             std::visit(
@@ -70,13 +73,20 @@ namespace SushiRuntime
                 description.work);
         }
 
-        /** @brief Allocates count shared integers of the runtime's queue, each set to value. */
-        inline int* shared_integers(Runtime& runtime, std::size_t count, int value)
+        /**
+         * @brief Builds the controls of a late-bound node for @p dynamic and applies the first step's hooks.
+         * @return Controls whose count and base are the values the providers of @p dynamic returned.
+         */
+        inline std::shared_ptr<Detail::LateControls> bound_controls(Dynamic dynamic)
         {
-            int* const data = sycl::malloc_shared<int>(count, queue_of(runtime));
-            for (std::size_t index = 0; data != nullptr && index < count; ++index)
-                data[index] = value;
-            return data;
+            std::vector<BufferRegion> reads;
+            std::vector<LivenessObserver> lives;
+            std::shared_ptr<Detail::LateControls> controls =
+                Detail::make_late_bindings(dynamic, reads, lives);
+            Detail::StepMachinery machinery;
+            machinery.register_binding_updater(controls, std::move(dynamic));
+            machinery.before_step();
+            return controls;
         }
     } // namespace Testing
 } // namespace SushiRuntime

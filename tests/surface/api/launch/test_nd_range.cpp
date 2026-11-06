@@ -39,11 +39,17 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that the count is the global size and the SYCL range keeps both sizes. */
+/** @brief Tests that the count is the product of the global sizes. */
 TEST(Small_NdRange, CountIsTheGlobalSize)
 {
     const NdRange<2> range(sycl::range<2>(8, 4), sycl::range<2>(4, 2));
     EXPECT_EQ(range.count(), 32u);
+}
+
+/** @brief Tests that the SYCL range keeps both the global and the local sizes. */
+TEST(Small_NdRange, ToNdRangeKeepsTheGlobalAndLocalSizes)
+{
+    const NdRange<2> range(sycl::range<2>(8, 4), sycl::range<2>(4, 2));
     const sycl::nd_range<2> nd = range.to_nd_range();
     EXPECT_EQ(nd.get_global_range(), (sycl::range<2>(8, 4)));
     EXPECT_EQ(nd.get_local_range(), (sycl::range<2>(4, 2)));

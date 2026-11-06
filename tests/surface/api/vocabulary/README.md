@@ -1,82 +1,56 @@
 # api tests: vocabulary
 
-The tests of `Dynamic` and `LateCount`, the late-bound words of `api/vocabulary/`. They are part of `sr_surface_tests`;
-[the page of the module's tests](../README.md) says how to run them.
+The tests of `Dynamic` and `LateCount`, the late-bound words of `api/vocabulary/`, and of the small
+words the fluent calls take: `In`, `Out`, `InOut`, `Coupled`, `Reads`, `Writes` and `On`. They are part
+of `sr_surface_tests`; [the page of the module's tests](../README.md) says how to run them.
+
+Each medium test takes the program's runtime from `TestSupport::RuntimeTest`. A death test row that
+names a slot takes its three buffers from `TestSupport::make_slot_buffers`, one device-resident, one
+shared and one host-resident.
+
+## test_captures.cpp, test_coupled.cpp, test_dependencies.cpp, test_placement.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `Medium_Captures.EachCaptureNamesItsBuffer` | `In` and `Out` point at the buffer they name, `In` carries its data address as its key, and `In` observes the buffer. The `reads` and `writes` flags of `In`, `Out` and `InOut` are `static_assert` lines at the top of the file. |
+| `Medium_Coupled.NamesTheStatesItWasGiven` | `Coupled` refers to the states it was given, in order. The deduction of its element types is a `static_assert` at the top of the file. |
+| `Small_Dependencies.ARegionIsItsOwnKeyAndHasNoObserver` | `Reads` over a `BufferRegion` keeps the region as its key and watches nothing. |
+| `Medium_Dependencies.ABufferReadsAndWritesTheSameKey` | A buffer reads and writes one key, the address of its data. |
+| `Medium_Dependencies.AStateReadsCurrentAndWritesNext` | A state reads its current field and writes its next field. |
+| `Medium_Dependencies.ATypedHandleIsObserved` | A buffer passed to `Reads` is observed, so a graph can tell when it is destroyed. |
+| `Medium_Dependencies.ReadsAndWritesCollectOneKeyEach` | `Reads` collects one key per handle, in argument order. |
+| `Medium_Placement.ABufferNamesItsDevice` | `On` over a buffer names the device of the buffer and observes it. |
 
 ## test_dynamic.cpp
 
 The file covers the persistent-graph, late-binding path, work package WP-1 of
 `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. A graph whose live size or per-step participation
 changes between steps must be compiled exactly once and replayed, never recompiled. Each test
-asserts the numerical result and `Graph::compile_count() == 1`.
+asserts the numerical result against a vector built on the host, and where the plan changes between
+runs, `Graph::compile_count() == 1`.
 
-### `DynamicSizePerElement`
+### `Medium_LateBindings`
 
-`sized()` shrinks the iteration range to a live prefix on each step. Driving the live count from 1
-to `CAP` over `CAP` successive `run(1)` calls increments `buf[i]` exactly on the steps where `i` is
-inside the live range, so `buf[i] == CAP - i`. The plan must compile once and follow the changing
-size on replay.
+| Test | What it proves |
+| --- | --- |
+| `DynamicSizePerElement` | `sized()` shrinks the iteration range to a live prefix on each step. Driving the live count from 1 to `CAP` over `CAP` runs increments `buf[i]` exactly on the steps where `i` is inside the live range, so `buf[i] == CAP - i`, with one compile. |
+| `EnableTogglePerElement` | `when()` gates whether the node runs at all. Toggling the predicate over ten steps runs the increment only on the five enabled steps. |
+| `DisabledNodeStillReleasesSuccessors` | A disabled step must release its successors so that the rest of the graph still runs. Upstream writes the gate buffer and downstream reads it, so the tracker orders downstream after upstream; downstream advances on every step. |
+| `DynamicSizeState` | `sized()` works on a stepped `State`: the live prefix grows on each step while the graph is compiled once, and the first two cells accumulate one increment per step. |
+| `ComposedWhenAndSized` | `when()` and `sized()` compose. Element 0 is incremented once per step that is both enabled and in range. |
+| `BaseOffsetIteratesASlice` | Rows of four windows: `based_at()` with `sized()` runs exactly the window, and the callable receives absolute indices. Graph colouring has this shape: each colour is a contiguous slice of one constraint buffer. |
+| `MovingTheWindowDoesNotRecompile` | Moving the window between two runs leaves `compile_count()` at one. |
+| `BaseAndSizeBothFromTheDevice` | `based_at_device()` and `sized_from_device()` take the offset and the length from slots a predecessor wrote; the slot is registered as a read, so the producer is ordered first without the caller naming it. |
+| `ALaterWindowThatFitsRunsAfterOnePastTheCapacityFailed` | A window that runs off the end of the capacity fails the run, and the next run with a window that fits succeeds. That the failure is `InvalidGraph` and names what the window asked for is held by `Small_LateWindow.AWindowPastTheCapacityIsAFault`. |
 
-### `EnableTogglePerElement`
+### `Medium_LateBindingsDeathTest`
 
-`when()` gates whether the node runs at all. Toggling the predicate over ten steps runs the
-increment only on the enabled steps, so each element ends at the count of enabled steps, with a
-single compile.
+Rows of nine calls, each of which stops the process at the call site and not in the middle of a run:
+`based_at_device` on a device-resident buffer, on a shared buffer and on an index past the slot;
+`sized_from_device` on the same three; and the member `Dynamic::sized_from_device` on a device-resident
+and a shared buffer, and the member `Dynamic::based_at_device` on an index past the slot.
 
-### `DisabledNodeStillReleasesSuccessors`
-
-A disabled step must release its successors so that the rest of the graph still runs. A downstream
-task that always runs should advance on every step whatever the enable state of the upstream node,
-which proves that an instantly completed node drains the DAG.
-
-Upstream writes the gate buffer. Downstream reads the gate buffer and writes the sink, so the
-tracker orders downstream after upstream on the gate buffer.
-
-### `DynamicSizeState`
-
-`sized()` works on a stepped `State`: the live prefix grows on each step while the graph is compiled
-once. Cells that are active on every step accumulate one increment per step, which is what a
-single-threaded reference loop would produce for that prefix.
-
-### `ComposedWhenAndSized`
-
-`when()` and `sized()` compose. The node runs only while enabled, and when it runs it iterates the
-live count. Over the run an element is incremented once per step that is both enabled and in range,
-still with a single compile.
-
-### `BaseOffsetIteratesASlice`
-
-`based_at()` moves where a late-bound node starts, without a recompile. Graph colouring has this
-shape: each colour is a contiguous slice of one constraint buffer, and every slice shifts as
-constraints are added or removed. The callable still receives absolute indices, so a kernel written
-without knowledge of bases stays correct.
-
-### `BaseWithoutASizeRunsToTheEnd`
-
-A base with no size runs from the base to the end of the capacity, not over the whole buffer. The
-sentinel means "the rest", and with an offset the rest starts at the offset.
-
-### `BaseAndSizeBothFromTheDevice`
-
-`based_at_device()` takes the offset from a slot a predecessor wrote, so a colouring pass that
-computes the start and the length of a slice on the device can hand over both in the same way. The
-slot is registered as a read, so the producer is ordered first without the caller naming it.
-
-### `WindowPastCapacityFailsTheRun`
-
-A window that runs off the end of the capacity fails the run and names what it asked for. Clamping
-would silently drop the tail of a colour, the kind of failure `sized()` and `based_at()` exist to
-rule out.
-
-### `BasedAtDeviceStopsOnAnUnreadableSlot`
-
-`based_at_device` stops the process on a slot it could not read at dispatch, and it does so at the
-call site, not in the middle of a run.
-
-### `TheMemberSetterStopsOnASharedSlot`
-
-`Dynamic::sized_from_device` on a named Dynamic stops the process on a slot inside `Shared` memory
-where it is called, as the free builder does.
+### `sized_from_device`
 
 The file covers `sized_from_device`: a task whose iteration size is a count that a predecessor
 kernel produced within the same step.
@@ -87,209 +61,59 @@ manifolds. None of those numbers exists when the step boundary polls the host-si
 providers. Without `sized_from_device` the choices are a readback in the middle of the step or a
 dispatch at the worst case on every tick.
 
-### `ConsumerIteratesTheCountTheProducerJustWrote`
+| Test | What it proves |
+| --- | --- |
+| `Medium_DeviceCountProducer.ConsumerIteratesTheCountTheProducerJustWrote` | Rows of five multipliers (5, 200, 1, 0 and 1000, times 3). A producer kernel writes a count it computed on the device, and a consumer sized from that count iterates exactly that many elements in one `run()`, with one compile. The counter is registered as a read of the consuming task, so the consumer is ordered after the producer though the caller named neither; without that edge it would read the count before it was written. |
+| `Medium_DeviceCount.ChangingTheDeviceCountKeepsOneCompile` | A count the host writes between two runs leaves `compile_count()` at one. |
+| `Medium_DeviceCount.ChainedProducerCountsInOneComposition` | A three-stage chain: the output count of each stage is the iteration size of the next, all in one `run()` with one compilation. |
+| `Medium_DeviceCountWhen.AnEnabledStepRunsTheLiveCount`, `ADisabledStepRunsNoElement`, `AStepEnabledAgainRunsTheLiveCount` | `when()` still composes with a size driven by the device. A disabled step runs nothing, whatever the counter says, and the step enabled again runs the count. |
+| `Medium_DeviceCount.CountOverCapacityFailsTheRun`, `ACleanGraphRunsAfterACountOverCapacityFailedARun` | A count larger than the compiled capacity fails the run. Truncating would silently drop work. A clean graph on the same runtime then runs. |
+| `Medium_DeviceCount.ReadsTheCountAtTheGivenIndex` | A count is read from the element the index names, not from element zero. |
+| `Medium_DeviceCount.AcceptsABaseSlotAtTheGivenIndex` | A base is read from the element the index names, and the node runs from there to the end of the capacity. |
 
-A producer kernel writes a count, and a consumer sized from that count iterates exactly that many
-elements, in one `run()`. The consumer must see the count this step wrote, not the count of the
-previous step and not the capacity.
+### Slot liveness
 
-The producer computes the count on the device. The test reads it through a pointer, so the host
-cannot have supplied it.
+A graph watches the buffer a `Dynamic` reads its count or base from.
 
-### `CounterIsRegisteredAsAReadAutomatically`
-
-The caller does not have to remember the edge between producer and consumer. The counter is
-registered as a read of the consuming task, so the consumer is ordered after the producer even
-though the caller named neither in `Reads()`. Without that edge the consumer could read the count
-before it was written and would iterate a stale value, 0 on the first step.
-
-### `ChainedProducerCountsInOneComposition`
-
-A three-stage chain is the real shape: the output count of each stage is the iteration size of the
-next, all in one `run()` with one compilation.
-
-### `WhenComposesWithDeviceSize`
-
-`when()` still composes with a size driven by the device. A disabled step runs nothing, whatever the
-counter says.
-
-### `CountOverCapacityFailsTheRun`
-
-A count larger than the compiled capacity fails the run with a message that names both numbers.
-Truncating would silently drop work, which is the failure `sized_from_device` exists to remove.
-
-### `ACounterThatIsNotHostResidentStops`
-
-A counter the host cannot read at every moment of a run stops the call that names it, before any
-run starts. `Device` memory is never host-addressable, and `Shared` memory is managed memory
-the host may not touch while a kernel runs on some backends.
-
-### `ReadsTheCountAtTheGivenIndex`
-
-A caller with one plan array per device names an element of the array by index. The consumer must
-read that element: element 5 holds 3, and exactly three elements run.
-
-### `AcceptsABaseSlotAtTheGivenIndex`
-
-`based_at_device` reads its slot exactly as `sized_from_device` does, through the same check, so a
-base slot at a non-zero index is accepted at `add()`.
-
-### `MemberSettersStopOnASlotThatIsNotHostResident`
-
-The members `Dynamic::sized_from_device` and `Dynamic::based_at_device` take the `Buffer` and check
-it as the free builders do. A device-resident slot and an index one past the buffer stop the process
-where the member is called, and each message names the call. The members take no bare pointer,
-so no test hands them an interior pointer, a device address or a stack address.
-
-The file covers the liveness of the buffer a `Dynamic` reads a device value from. `host_slot`
-allocates the one-word `Residency::Host` buffer.
-
-### `ADestroyedCountBufferRefusesTheRun`, `ADestroyedBaseBufferRefusesTheRun`
-
-A graph records a rule with `sized_from_device(counter)` or `based_at_device(base)` and runs once.
-The buffer is then destroyed and the next `run()` returns `DanglingResource`. The count case
-also checks that the recorder watches two allocations, the target and the counter.
-
-### `ADestroyedCountBufferRefusesAStateRule`
-
-The same refusal for `add(sized_from_device(counter), state, kernel)`, whose observers the recorder
-gathers in a different member.
+| Test | What it proves |
+| --- | --- |
+| `Medium_DeviceSlotLiveness.ADestroyedSlotBufferRefusesTheRun` | Rows of the count buffer of a task, the base buffer of a task and the count buffer of a State rule: once the buffer is destroyed, the next run is refused with `DanglingResource`. |
+| `Medium_DeviceSlotRecorder.TheRecorderWatchesTheTargetAndTheCounter` | A dynamic task over a target and a counter makes the recorder watch two allocations. |
 
 ## test_late_count.cpp
 
-The file covers where `Recorder::resolve()` takes the live value of a `LateCount` from and when it
-reads it. Every case records `record_live_count_copy`, a resolver whose fill copies the live count
-into a buffer the test reads back.
+The file covers `LateCount`, a run count resolved once per step from exactly one source, and what
+`LateCount` and `Dynamic` let a caller write.
 
-### `FixedResolvesToItsCount`
+A set of `static_assert` lines at the top state the shape of the two types: a `LateCount` is built by
+a factory only, copies, and has no assignable capacity; a `Dynamic` moves, does not copy, and has no
+public control and no raw-pointer size setter.
 
-A `LateCount::fixed` count has no live source, so the live count is the count it was built with.
+### Where `Recorder::resolve()` takes a live value from
 
-### `ChangingHostCountKeepsOneCompile`
-
-A host count that changes between runs, zero included, must not force a recompile. The capacity
-fixes the plan and only the live value varies.
-
-### `HostCountAboveCapacityFailsTheRunWithInvalidGraph`
-
-A provider that returns 101 for a capacity of 100 makes the run return `InvalidGraph` with both
-numbers in the message, as an out-of-window `based_at()` does. The fill runs with the count
-resolved to zero, so the output holds 0. The provider then returns 100, and the same graph runs and writes 100: a fault
-driven by run-time data fails one run and nothing else.
-
-### `DeviceSlotResolvesFromHostResidentBuffer`
-
-A `Residency::Host` device slot resolves to the value written into it, exactly as
-`sized_from_device()` reads its own slot.
-
-### `DeviceCountAboveCapacityFailsTheRunOnBothLayers`
-
-A device count above the capacity fails the run on a default runtime and on one that forces the
-scheduler. A second graph with a count that fits then runs clean on the same runtime.
-
-### `ANonHostDeviceSlotStopsAtConstruction`
-
-A device slot that is not `Residency::Host` stops `LateCount::from_device`, before a recorder sees
-the count.
-
-### `ResolverSeesTheCountItsPredecessorJustWrote`
-
-A count sourced from the device must be read when the resolver is dispatched, after its producer,
-and not polled at the step boundary. A resolver that dropped the device slot from its reads would
-still compile and run, but it would report the count of the previous run. A producer node writes a
-fresh count into a `Residency::Host` slot on every run and the test expects that count in the same
-run.
-
-The producer reads its next count from a buffer and not from a host stack variable, because the
-kernel may run on the device, which cannot reach the stack frame of the test.
-
-The file covers what `LateCount` and `Dynamic` let a caller write and which arguments stop the
-process when they are built. Eight `static_assert` lines at the top state the shape: a `LateCount` has no default
-constructor and no assignable `capacity`, it copies, and its `Provider` is `Dynamic::CountProvider`;
-a `Dynamic` has no public `when_pred`, no setter that takes a bare pointer, and moves without
-copying. A field made public again, or a raw-pointer overload added back, fails the compile.
-
-### `record_live_count_copy`, `count_elements_run`
-
-`record_live_count_copy` records a resolver whose fill copies the live count into a buffer the test
-reads back. `count_elements_run` adds one late-bound task that sets `marks[i]` to one, runs it once
-and returns how many elements were set.
-
-### `FromDeviceStopsOnAnIndexPastTheSlot`
-
-`LateCount::from_device(64, slot, slot.size())` on a slot of three elements stops the process
-where it is called, and the line holds the call, `index 3` and `3 elements`. The last valid
-index is accepted.
-
-### `FromDeviceStopsOnASlotThatIsNotHostResident`
-
-A `Device` slot and a `Shared` slot both stop the call, and the line names `Residency::Host`.
-
-### `FromHostStopsOnAnEmptyProvider`
-
-An empty provider would read as a fixed count, which `fixed()` already spells, so `from_host`
-stops the process.
-
-### `EveryFactoryStopsOnACapacityPastAUint32`
-
-A capacity one above the largest uint32 stops all three factories, and the largest uint32 itself
-is accepted. The test is skipped where `std::size_t` is no wider than a uint32.
-
-### `CapacityReportsThePlanSize`
-
-`capacity()` returns the first argument of each factory.
-
-### `ARecordedCopyKeepsTheHostProvider`
-
-A count is built, copied and recorded inside a scope that then ends. Two runs with two different
-live values must both reach the fill: the recorded copy shares the provider and does not point into
-the destroyed original.
-
-### `FromDeviceReadsTheWordAtItsIndex`
-
-Element 2 of a four-word slot holds 77 and the others hold 5. A count built with index 2 resolves
-to 77.
-
-### `TheSizeSourceSetLastWins`
-
-A device slot holds 3 and a host provider returns 5. `sized_from_device(counter).sized(host)` runs
-five elements and `sized(host).sized_from_device(counter)` runs three.
-### `MembersChainOnANamedDynamic`
-
-`when`, `sized` and `based_at` chain on a named `Dynamic`, which then moves into `add()`. Elements
-10 to 13 run once, and a second run with the predicate false runs none.
-
-## test_captures.cpp
-
-The file tests In, Out and InOut: the pointer, the key and the observer each capture holds.
+`record_live_count_copy` records the resolver of one late count; its fill copies the live value to
+`out[0]`. The cases that a count below its capacity, and a fixed count, resolve to themselves are held
+small by `HostCountsResolveOnTheHost` in `tests/surface/api/detail/test_late_count_resolution.cpp`.
 
 | Test | What it proves |
 | --- | --- |
-| `EachCaptureNamesItsBuffer` | In reads, Out writes, and both point at the buffer they name. |
-| `InOutReadsAndWrites` | InOut both reads and writes. |
+| `Medium_LateCount.ChangingHostCountKeepsOneCompile` | A host count that changes over three runs leaves `compile_count()` at one. |
+| `Medium_LateCount.HostCountAboveCapacityFailsTheRunWithInvalidGraph` | The run fails with `InvalidGraph` and a message that names the live count and the capacity. That the count then reaches the fill as zero is held by `AHostCountAboveTheCapacityResolvesToZero`. |
+| `Medium_LateCount.ARunGoesOnOnceTheHostCountFitsAgain` | The same graph runs once the provider returns a count that fits. |
+| `Medium_LateCount.DeviceSlotResolvesFromHostResidentBuffer` | A `Residency::Host` device slot resolves to the value written there. |
+| `Medium_LateCountLayers.DeviceCountAboveCapacityFailsTheRun`, `ALaterGraphRunsCleanAfterAFailedRun` | Rows of the chain and of a runtime forced onto the scheduler: a device count above its capacity fails the run, and a later graph with a count inside the capacity runs clean. |
+| `Medium_LateCountProducer.ResolverSeesTheCountItsPredecessorJustWrote` | Rows of two counts in turn (300 then 700, 700 then 0). The resolver reads the count its own step's producer wrote, so a changed count takes effect the same run and not one run late. A device kernel cannot reach the test's frame, so the producer's next count is in a buffer. |
 
-## test_coupled.cpp
-
-The file tests Coupled: the state written and the states read, in argument order.
-
-| Test | What it proves |
-| --- | --- |
-| `NamesTheStatesItWasGiven` | Coupled refers to the states it was given, in order. |
-
-## test_dependencies.cpp
-
-The file tests the dependency keys: a buffer's data, a state's two fields, and a region as given.
+### What a caller can build
 
 | Test | What it proves |
 | --- | --- |
-| `KeysFollowTheHandle` | A buffer reads and writes one key, and a state reads current and writes next. |
-| `ReadsAndWritesCollectOneKeyEach` | Reads and Writes collect one key per handle, in order. |
-
-## test_placement.cpp
-
-The file tests On: a device by index, or the device of the handle it names.
-
-| Test | What it proves |
-| --- | --- |
-| `AnIndexNamesItsDevice` | An index names that device and observes nothing. |
-| `ABufferNamesItsDevice` | A buffer names its own device and is observed. |
+| `Medium_LateCountDeathTest.ASlotThatCannotBeReadStopsTheCallThatNamesIt` | Rows of `from_device` on a device-resident buffer, on a shared buffer and on an index one past the slot. The residency rows ask for `Residency::Host`; the index row names the buffer's size. |
+| `Medium_LateCount.FromDeviceAcceptsTheLastIndexOfItsSlot` | The last index of the slot is accepted and the capacity is the one given. |
+| `Medium_LateCountEmptyProviderDeathTest.FromHostStopsOnAnEmptyProvider` | `from_host` stops on a provider that holds no callable. It needs no device. |
+| `Medium_LateCountCapacityDeathTest.AFactoryStopsOnACapacityPastAUint32` | Rows of `fixed`, `from_host` and `from_device` over a capacity a uint32 live-count word cannot hold. The fixture skips on a target whose `size_t` is as narrow as a uint32. |
+| `Small_LateCount.FixedAcceptsTheLargestCapacityAUint32Holds` | The largest capacity a uint32 holds is accepted. |
+| `Medium_LateBoundVocabulary.ARecordedCopyKeepsTheHostProvider` | A recorded copy still polls the provider after the original is destroyed, on every step. |
+| `Medium_LateBoundVocabulary.FromDeviceReadsTheWordAtItsIndex` | `from_device` reads the word its index names, not the first word. |
+| `Medium_LateBoundVocabulary.ASizeSetAfterADeviceSizeWins`, `ADeviceSizeSetAfterASizeWins` | The size source set last decides the live size, whichever kind it is. |
+| `Medium_LateBoundVocabulary.MembersChainOnANamedDynamic`, `ADisabledNamedDynamicRunsNoElement` | The members chain on a named `Dynamic` and carry `when()`, `sized()` and `based_at()`; a `Dynamic` disabled through `when()` runs no element. |

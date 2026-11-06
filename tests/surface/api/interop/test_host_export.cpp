@@ -31,111 +31,136 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <optional>
+#include <vector>
 
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/context_access/context_access.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
+
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
-/**
- * @brief An exported host region is aligned and rounded to the requested alignment.
- */
-TEST(Medium_InteropHostExport, AlignsAndRoundsTheRegion)
+namespace
 {
-    auto runtime = Runtime::create().value();
-    auto shared = runtime.interop().export_host<std::uint32_t>(1000, DeviceIndex{0}, 4096).value();
+    /** @brief Returns the multiples of three below 3 * @p count, the values a kernel writes by index. */
+    std::vector<std::uint32_t> multiples_of_three(std::size_t count)
+    {
+        std::vector<std::uint32_t> values = TestSupport::ramp<std::uint32_t>(count);
+        for (std::uint32_t& value : values)
+            value *= 3u;
+        return values;
+    }
+} // namespace
+
+/** @brief Fixture of the host export tests, which run on the program's runtime. */
+class Medium_InteropHostExport : public TestSupport::RuntimeTest
+{
+};
+
+/** @brief Fixture of the host export tests that stop the process. */
+class Medium_InteropHostExportDeathTest : public TestSupport::RuntimeTest
+{
+};
+
+/** @brief Fixture of the import test that needs a device without the import extension. */
+class Medium_InteropImportRefusal : public TestSupport::RuntimeTest
+{
+    protected:
+        /** @brief Skips the test when device 0 imports external memory, since there is no refusal to see. */
+        void SetUp() override
+        {
+            if (runtime().interop().capabilities(DeviceIndex{0}).value().device_import)
+                GTEST_SKIP() << "device 0 imports external memory; this case covers the refusal only";
+        }
+};
+
+/** @brief Tests that an exported host region is aligned and rounded to the requested alignment. */
+TEST_F(Medium_InteropHostExport, AlignsAndRoundsTheRegion)
+{
+    auto shared = runtime().interop().export_host<std::uint32_t>(1000, DeviceIndex{0}, 4096).value();
     EXPECT_EQ(reinterpret_cast<std::uintptr_t>(shared.address()) % 4096u, 0u);
     EXPECT_EQ(shared.bytes % 4096u, 0u);
     EXPECT_GE(shared.bytes, 1000u * sizeof(std::uint32_t));
     EXPECT_EQ(static_cast<void*>(shared.buffer.data()), shared.address());
 }
 
-/**
- * @brief The USM registry routes the exported address back to its owning device.
- */
-TEST(Medium_InteropHostExport, TheRegistryRoutesTheExportedAddress)
+/** @brief Tests that a range written to an exported buffer reads back, routed to the device that owns it. */
+TEST_F(Medium_InteropHostExport, ARangeWrittenToAnExportReadsBack)
 {
-    auto runtime = Runtime::create().value();
-    auto shared = runtime.interop().export_host<float>(16, DeviceIndex{0}, 4096).value();
-    Internal::Memory::USMAllocator& memory =
-        Internal::ContextAccess::context(runtime).memory();
-    EXPECT_EQ(memory.device_of(shared.address()), std::optional<std::size_t>(0));
+    auto shared = runtime().interop().export_host<float>(16, DeviceIndex{0}, 4096).value();
+    const std::vector<float> written = TestSupport::ramp<float>(16, 0.5f);
+
+    ASSERT_TRUE(shared.buffer.write_range(ElementRange{0, 16}, span<const float>(written)));
+    const auto read = shared.buffer.read_range(ElementRange{0, 16});
+
+    ASSERT_TRUE(read);
+    EXPECT_EQ(*read, written);
 }
 
-/**
- * @brief A kernel writing through the exported buffer is visible from the host.
- */
-TEST(Medium_InteropHostExport, AKernelWritesWhatTheHostReads)
+/** @brief Tests that a kernel writing through the exported buffer is visible from the host. */
+TEST_F(Medium_InteropHostExport, AKernelWritesWhatTheHostReads)
 {
-    auto runtime = Runtime::create().value();
-    auto shared = runtime.interop().export_host<std::uint32_t>(257, DeviceIndex{0}, 4096).value();
+    auto shared = runtime().interop().export_host<std::uint32_t>(257, DeviceIndex{0}, 4096).value();
     std::uint32_t* out = shared.buffer.data();
-    runtime.graph()
+
+    runtime().graph()
         .add(257, Reads(), Writes(shared.buffer),
              [out](std::size_t i) { out[i] = static_cast<std::uint32_t>(i * 3u); })
         .run().value();
-    for (std::size_t i = 0; i < 257; ++i)
-        ASSERT_EQ(shared.buffer[i], i * 3u);
+
+    EXPECT_EQ(TestSupport::contents(shared.buffer), multiples_of_three(257));
 }
 
-/**
- * @brief Importing on a queue without the bindless extension returns Unsupported.
- */
-TEST(Medium_InteropHostExport, ImportOnAQueueWithoutTheExtensionReturnsUnsupported)
+/** @brief Tests that importing on a device without the import extension returns Unsupported. */
+TEST_F(Medium_InteropImportRefusal, ImportOnADeviceWithoutTheExtensionReturnsUnsupported)
 {
-    auto runtime = Runtime::create().value();
-    auto interop = runtime.interop();
-    if (interop.capabilities(DeviceIndex{0}).value().device_import)
-        GTEST_SKIP() << "device 0 imports external memory; this case covers the refusal only";
     ExternalMemoryDescriptor descriptor;
-    const auto imported = interop.import_device<float>(descriptor, 4, DeviceIndex{0});
+
+    const auto imported = runtime().interop().import_device<float>(descriptor, 4, DeviceIndex{0});
+
     ASSERT_FALSE(imported.has_value()) << "import_device returned on a device without import";
     EXPECT_EQ(imported.error().code, ErrorCode::Unsupported);
 }
 
-/**
- * @brief An alignment that is not a power of two stops the process.
- */
-TEST(Medium_InteropHostExportDeathTest, AnAlignmentThatIsNotAPowerOfTwoStops)
+/** @brief Tests that an alignment that is not a power of two stops the process. */
+TEST_F(Medium_InteropHostExportDeathTest, AnAlignmentThatIsNotAPowerOfTwoStops)
 {
-    auto runtime = Runtime::create().value();
-
     EXPECT_DEATH(
-        static_cast<void>(runtime.interop().export_host<float>(16, DeviceIndex{0}, 4097)),
+        static_cast<void>(runtime().interop().export_host<float>(16, DeviceIndex{0}, 4097)),
         "export_host: alignment 4097 is not a power of two");
 }
 
-/**
- * @brief A byte size that overflows when rounded up to the alignment stops the process.
- */
-TEST(Medium_InteropHostExportDeathTest, ASizeThatOverflowsWhenRoundedStops)
+/** @brief Tests that a byte size that overflows when rounded up to the alignment stops the process. */
+TEST_F(Medium_InteropHostExportDeathTest, ASizeThatOverflowsWhenRoundedStops)
 {
-    auto runtime = Runtime::create().value();
     const std::size_t most = std::numeric_limits<std::size_t>::max();
 
     EXPECT_DEATH(
-        static_cast<void>(runtime.interop().export_host<std::uint8_t>(most, DeviceIndex{0}, 4096)),
+        static_cast<void>(runtime().interop().export_host<std::uint8_t>(most, DeviceIndex{0}, 4096)),
         "bytes overflow std::size_t when rounded up to the alignment of 4096");
 }
 
-/**
- * @brief An export no device can hold returns AllocationFailed and leaves the runtime usable.
- */
-TEST(Medium_InteropHostExport, AnExportNoDeviceCanSatisfyReturnsAllocationFailed)
+/** @brief Tests that an export no device can hold returns AllocationFailed. */
+TEST_F(Medium_InteropHostExport, AnExportNoDeviceCanSatisfyReturnsAllocationFailed)
 {
-    auto runtime = Runtime::create().value();
     // Half the address space in bytes: it rounds without overflow and no device has the room.
     const std::size_t count = std::numeric_limits<std::size_t>::max() / 2;
 
-    const auto refused = runtime.interop().export_host<std::uint8_t>(count, DeviceIndex{0}, 4096);
+    const auto refused = runtime().interop().export_host<std::uint8_t>(count, DeviceIndex{0}, 4096);
+
     ASSERT_FALSE(refused.has_value());
     EXPECT_EQ(refused.error().code, ErrorCode::AllocationFailed);
+}
 
-    const auto exported = runtime.interop().export_host<float>(16, DeviceIndex{0}, 4096);
+/** @brief Tests that an export that failed for want of room leaves the runtime able to export again. */
+TEST_F(Medium_InteropHostExport, AnExportAfterAFailedOneSucceeds)
+{
+    const std::size_t count = std::numeric_limits<std::size_t>::max() / 2;
+    static_cast<void>(runtime().interop().export_host<std::uint8_t>(count, DeviceIndex{0}, 4096));
+
+    const auto exported = runtime().interop().export_host<float>(16, DeviceIndex{0}, 4096);
+
     EXPECT_TRUE(exported.has_value());
 }

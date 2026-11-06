@@ -32,688 +32,711 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
+#include "support/slot_buffers.hpp"
+
 using namespace SushiRuntime;
 
-/** @brief Tests that a graph whose live size, base or participation changes per step compiles once. */
-namespace LateBindingsTests
+namespace
 {
-    /** @brief Tests that sized() shrinks the iteration range to a live prefix each step. */
-    TEST(Medium_LateBindings, DynamicSizePerElement)
+    /** @brief Returns @p capacity elements that hold i + @p shift for i in [@p base, @p base + @p count) and -1 elsewhere. */
+    std::vector<int> absolute_window(std::size_t capacity, std::size_t base, std::size_t count, int shift)
     {
-        constexpr std::size_t CAP = 8;
-
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(CAP).value();
-        for (std::size_t i = 0; i < CAP; ++i)
-            buf[i] = 0;
-
-        int* p = buf.data();
-
-        std::size_t live = 0;
-        auto g = rt.graph();
-        g.add_dynamic(sized([&] { return live; }),
-                      CAP, Reads{}, Writes(buf),
-                      [p](std::size_t i) { p[i] += 1; });
-
-        for (std::size_t k = 1; k <= CAP; ++k)
-        {
-            live = k;
-            g.run().value();
-        }
-
-        EXPECT_EQ(g.compile_count(), 1u) << "size changes must not recompile.";
-        for (std::size_t i = 0; i < CAP; ++i)
-            ASSERT_EQ(buf[i], static_cast<int>(CAP - i)) << "at i=" << i;
+        std::vector<int> values(capacity, -1);
+        for (std::size_t i = base; i < base + count && i < capacity; ++i)
+            values[i] = static_cast<int>(i) + shift;
+        return values;
     }
 
-    /** @brief Tests that when() runs the node only on the enabled steps. */
-    TEST(Medium_LateBindings, EnableTogglePerElement)
+    /** @brief Runs @p graph once for each live size from 1 to @p capacity, setting @p live before each run. */
+    void run_with_each_live_size(Graph& graph, std::size_t& live, std::size_t capacity)
     {
-        constexpr std::size_t N     = 16;
-        constexpr std::size_t STEPS = 10;
+        for (std::size_t size = 1; size <= capacity; ++size)
+        {
+            live = size;
+            graph.run().value();
+        }
+    }
 
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
-        for (std::size_t i = 0; i < N; ++i)
-            buf[i] = 0;
-
-        int* p = buf.data();
-
-        bool on = true;
-        auto g = rt.graph();
-        g.add_dynamic(when([&] { return on; }),
-                      N, Reads{}, Writes(buf),
-                      [p](std::size_t i) { p[i] += 1; });
-
+    /** @brief Runs @p graph @p steps times, enabled on the even steps only, and returns how many steps were enabled. */
+    std::size_t run_enabled_on_even_steps(Graph& graph, bool& on, std::size_t steps)
+    {
         std::size_t enabled_steps = 0;
-        for (std::size_t k = 0; k < STEPS; ++k)
+        for (std::size_t k = 0; k < steps; ++k)
         {
-            on = (k % 2 == 0);          // enabled on even steps only
-            if (on) ++enabled_steps;
-            g.run().value();
+            on = (k % 2 == 0);
+            enabled_steps += on ? 1u : 0u;
+            graph.run().value();
         }
-
-        EXPECT_EQ(g.compile_count(), 1u) << "enable toggles must not recompile.";
-        for (std::size_t i = 0; i < N; ++i)
-            ASSERT_EQ(buf[i], static_cast<int>(enabled_steps)) << "at i=" << i;
+        return enabled_steps;
     }
 
-    /** @brief Tests that a disabled node still releases its successors. */
-    TEST(Medium_LateBindings, DisabledNodeStillReleasesSuccessors)
+    /** @brief Runs @p graph for @p steps steps with a live prefix of 2, 4, 6, ... cells. */
+    void run_with_a_growing_prefix(Graph& graph, std::size_t& live, std::size_t steps)
     {
-        constexpr std::size_t N     = 8;
-        constexpr std::size_t STEPS = 6;
-
-        auto rt   = Runtime::create().value();
-        auto gate = rt.buffer<int>(N).value();   // written by the toggled upstream node
-        auto sink = rt.buffer<int>(N).value();   // written by the always-on downstream node
-        for (std::size_t i = 0; i < N; ++i) { gate[i] = 0; sink[i] = 0; }
-
-        int* gp = gate.data();
-        int* sp = sink.data();
-
-        bool on = false;
-        auto g = rt.graph();
-        // Downstream reads the gate buffer upstream writes, so it is ordered after; see README.md.
-        g.add_dynamic(when([&] { return on; }),
-                      N, Reads{}, Writes(gate),
-                      [gp](std::size_t i) { gp[i] += 1; });
-        g.add(N, Reads(gate), Writes(sink),
-              [sp](std::size_t i) { sp[i] += 1; });
-
-        for (std::size_t k = 0; k < STEPS; ++k)
-            g.run().value();                     // upstream stays disabled the whole run
-
-        EXPECT_EQ(g.compile_count(), 1u);
-        for (std::size_t i = 0; i < N; ++i)
-        {
-            ASSERT_EQ(gate[i], 0) << "disabled upstream must not run, at i=" << i;
-            ASSERT_EQ(sink[i], static_cast<int>(STEPS))
-                << "downstream must run every step, at i=" << i;
-        }
-    }
-
-    /** @brief Tests that sized() on a stepped State follows a live prefix that grows each step. */
-    TEST(Medium_LateBindings, DynamicSizeState)
-    {
-        constexpr std::size_t CAP   = 8;
-        constexpr std::size_t STEPS = 4;
-
-        auto rt    = Runtime::create().value();
-        auto field = rt.state<int>(CAP).value();
-        for (std::size_t i = 0; i < CAP; ++i)
-            field[i] = 0;
-
-        std::size_t live = 0;
-        auto g = rt.graph();
-        g.add_dynamic(sized([&] { return live; }), field,
-                      [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
-
-        // Grow the active prefix 2,4,6,8; the first two cells are active every step.
-        for (std::size_t k = 0; k < STEPS; ++k)
+        for (std::size_t k = 0; k < steps; ++k)
         {
             live = 2 * (k + 1);
-            g.run().value();
+            graph.run().value();
         }
-
-        EXPECT_EQ(g.compile_count(), 1u) << "state size changes must not recompile.";
-        EXPECT_EQ(field[0], static_cast<int>(STEPS));
-        EXPECT_EQ(field[1], static_cast<int>(STEPS));
-    }
-
-    /** @brief Tests that when() and sized() compose on one node. */
-    TEST(Medium_LateBindings, ComposedWhenAndSized)
-    {
-        constexpr std::size_t CAP   = 4;
-        constexpr std::size_t STEPS = 8;
-
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(CAP).value();
-        for (std::size_t i = 0; i < CAP; ++i)
-            buf[i] = 0;
-
-        int* p = buf.data();
-
-        bool on = true;
-        std::size_t live = CAP;
-        auto g = rt.graph();
-        g.add_dynamic(when([&] { return on; }).sized([&] { return live; }),
-                      CAP, Reads{}, Writes(buf),
-                      [p](std::size_t i) { p[i] += 1; });
-
-        int expected0 = 0;               // increments seen by element 0
-        for (std::size_t k = 0; k < STEPS; ++k)
-        {
-            on   = (k % 3 != 0);         // disabled every third step
-            live = (k % 2 == 0) ? CAP : 2;
-            if (on && live > 0) ++expected0;   // element 0 is in range whenever live > 0
-            g.run().value();
-        }
-
-        EXPECT_EQ(g.compile_count(), 1u);
-        EXPECT_EQ(buf[0], expected0);
-    }
-
-    /** @brief Tests that based_at() moves where a late-bound node starts without recompiling. */
-    TEST(Medium_LateBindings, BaseOffsetIteratesASlice)
-    {
-        constexpr std::size_t CAPACITY = 64;
-
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(CAPACITY).value();
-        int* p = buf.data();
-
-        std::size_t base = 0;
-        std::size_t count = 0;
-
-        auto g = rt.graph();
-        g.add_dynamic(based_at([&base] { return base; })
-                  .sized([&count] { return count; }),
-                      CAPACITY, Reads{}, Writes(buf),
-                      [p](std::size_t i) { p[i] = static_cast<int>(i) + 1000; });
-
-        const std::size_t starts[] = { 0, 8, 40, 63 };
-        const std::size_t lengths[] = { 4, 16, 20, 1 };
-
-        for (std::size_t round = 0; round < 4; ++round)
-        {
-            for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = -1;
-            base = starts[round];
-            count = lengths[round];
-
-            g.run().value();
-
-            for (std::size_t i = 0; i < CAPACITY; ++i)
-            {
-                const bool inside = (i >= base && i < base + count);
-                if (inside)
-                    ASSERT_EQ(buf[i], static_cast<int>(i) + 1000)
-                        << "round " << round << ", element " << i
-                        << " should have run with its absolute index";
-                else
-                    ASSERT_EQ(buf[i], -1)
-                        << "round " << round << ", element " << i
-                        << " is outside the window but ran";
-            }
-        }
-
-        EXPECT_EQ(g.compile_count(), 1u) << "moving the window must not recompile";
-    }
-
-    /** @brief Tests that a base without a size runs from the base to the end of the capacity. */
-    TEST(Medium_LateBindings, BaseWithoutASizeRunsToTheEnd)
-    {
-        constexpr std::size_t CAPACITY = 32;
-        constexpr std::size_t BASE = 12;
-
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(CAPACITY).value();
-        int* p = buf.data();
-        for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = 0;
-
-        auto g = rt.graph();
-        g.add_dynamic(based_at([] { return BASE; }),
-                      CAPACITY, Reads{}, Writes(buf),
-                      [p](std::size_t i) { p[i] = 1; });
-        g.run().value();
-
-        for (std::size_t i = 0; i < BASE; ++i)
-            ASSERT_EQ(buf[i], 0) << "at i=" << i;
-        for (std::size_t i = BASE; i < CAPACITY; ++i)
-            ASSERT_EQ(buf[i], 1) << "at i=" << i;
     }
 
     /**
-     * @brief Tests that based_at_device() and sized_from_device() take both values from slots a
-     *        predecessor wrote.
+     * @brief Runs @p graph for @p steps steps, disabled every third step and live 2 on the odd steps and @p capacity on the even ones.
+     * @return How many increments element 0 should have seen: the steps that were enabled and live.
      */
-    TEST(Medium_LateBindings, BaseAndSizeBothFromTheDevice)
+    int run_composed(Graph& graph, bool& on, std::size_t& live, std::size_t capacity, std::size_t steps)
     {
-        constexpr std::size_t CAPACITY = 128;
-
-        auto rt     = Runtime::create().value();
-        // slice[0] is the base and slice[1] the count.
-        auto slice  = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host).value();
-        auto buf    = rt.buffer<int>(CAPACITY).value();
-
-        std::uint32_t* s = slice.data();
-        int* p = buf.data();
-        for (std::size_t i = 0; i < CAPACITY; ++i) p[i] = -1;
-
-        auto g = rt.graph();
-        g.add(std::size_t{1}, Reads{}, Writes(slice),
-              [s](std::size_t) { s[0] = 30u; s[1] = 25u; });
-        g.add_dynamic(based_at_device(slice, 0).sized_from_device(slice, 1),
-                      CAPACITY, Reads{}, Writes(buf),
-                      [p](std::size_t i) { p[i] = static_cast<int>(i); });
-        g.run().value();
-
-        for (std::size_t i = 0; i < CAPACITY; ++i)
+        int expected = 0;
+        for (std::size_t k = 0; k < steps; ++k)
         {
-            const bool inside = (i >= 30 && i < 55);
-            if (inside)
-                ASSERT_EQ(buf[i], static_cast<int>(i)) << "at i=" << i;
-            else
-                ASSERT_EQ(buf[i], -1) << "at i=" << i;
+            on = (k % 3 != 0);
+            live = (k % 2 == 0) ? capacity : 2;
+            expected += (on && live > 0) ? 1 : 0;
+            graph.run().value();
         }
+        return expected;
     }
+} // namespace
 
-    /** @brief Tests that a window past the capacity fails the run and names what it asked for. */
-    TEST(Medium_LateBindings, WindowPastCapacityFailsTheRun)
-    {
-        constexpr std::size_t CAPACITY = 16;
-
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(CAPACITY).value();
-        int* p = buf.data();
-
-        std::size_t base = 10;
-
-        auto g = rt.graph();
-        g.add_dynamic(based_at([&base] { return base; }).sized([] { return std::size_t{10}; }),
-                      CAPACITY, Reads{}, Writes(buf),
-                      [p](std::size_t i) { p[i] = 1; });
-
-        const auto failed = g.run();
-        ASSERT_FALSE(failed.has_value()) << "10 elements from index 10 does not fit 16";
-        EXPECT_EQ(failed.error().code, ErrorCode::InvalidGraph);
-
-        // A window that does fit runs normally: the rejection wedged nothing.
-        base = 6;
-        EXPECT_TRUE(g.run().has_value());
-    }
-
-    /** @brief Tests that based_at_device stops on an unreadable slot at the call site. */
-    TEST(Medium_LateBindingsDeathTest, BasedAtDeviceStopsOnAnUnreadableSlot)
-    {
-        auto rt = Runtime::create().value();
-        auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device).value();
-        auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared).value();
-        auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host).value();
-
-        EXPECT_DEATH(static_cast<void>(based_at_device(resident)),
-                     "based_at_device: the buffer is Residency::Device");
-        EXPECT_DEATH(static_cast<void>(based_at_device(shared)),
-                     "based_at_device: the buffer is Residency::Shared");
-        EXPECT_DEATH(static_cast<void>(based_at_device(host, 7)),
-                     "based_at_device: index 7 is out of range");
-        static_cast<void>(based_at_device(host, 1));
-    }
-
-    /** @brief Tests that the member sized_from_device stops on a Shared slot where it is called. */
-    TEST(Medium_LateBindingsDeathTest, TheMemberSetterStopsOnASharedSlot)
-    {
-        auto rt     = Runtime::create().value();
-        auto shared = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Shared).value();
-
-        Dynamic dyn;
-        EXPECT_DEATH(static_cast<void>(dyn.sized_from_device(shared, 1)),
-                     "sized_from_device: the buffer is Residency::Shared");
-    }
-} // namespace LateBindingsTests
-
-/** @brief Tests sized_from_device, which sizes a task from a count written earlier in the step. */
-namespace DeviceCountTests
+/** @brief Fixture of the late-binding tests, which run on the program's runtime. */
+class Medium_LateBindings : public TestSupport::RuntimeTest
 {
-    /** @brief Tests that a consumer iterates exactly the count the producer wrote in the same run(). */
-    TEST(Medium_DeviceCount, ConsumerIteratesTheCountTheProducerJustWrote)
-    {
-        constexpr std::size_t CAPACITY = 4096;
+};
 
-        auto rt      = Runtime::create().value();
-        auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
-        auto marks   = rt.buffer<int>(CAPACITY).value();
+/** @brief Tests that sized() shrinks the iteration range to a live prefix each step. */
+TEST_F(Medium_LateBindings, DynamicSizePerElement)
+{
+    constexpr std::size_t CAP = 8;
+    auto buf = runtime().buffer<int>(CAP).value();
+    TestSupport::fill_with(buf, 0);
+    int* p = buf.data();
+    std::size_t live = 0;
+    auto g = runtime().graph();
+    g.add_dynamic(sized([&] { return live; }), CAP, Reads{}, Writes(buf),
+                  [p](std::size_t i) { p[i] += 1; });
 
-        std::uint32_t* c = counter.data();
-        int* m = marks.data();
+    run_with_each_live_size(g, live, CAP);
 
-        // The producer reads the count through a pointer, so the device computes it; see README.md.
-        auto wanted = rt.buffer<std::uint32_t>(1).value();
-        std::uint32_t* w = wanted.data();
+    EXPECT_EQ(g.compile_count(), 1u) << "size changes must not recompile.";
+    std::vector<int> expected = TestSupport::ramp<int>(CAP);
+    for (int& value : expected)
+        value = static_cast<int>(CAP) - value;
+    EXPECT_EQ(TestSupport::contents(buf), expected);
+}
 
-        counter[0] = 0;
-        for (std::size_t i = 0; i < CAPACITY; ++i)
-            marks[i] = -1;
+/** @brief Tests that when() runs the node only on the enabled steps. */
+TEST_F(Medium_LateBindings, EnableTogglePerElement)
+{
+    constexpr std::size_t N     = 16;
+    constexpr std::size_t STEPS = 10;
+    auto buf = runtime().buffer<int>(N).value();
+    TestSupport::fill_with(buf, 0);
+    int* p = buf.data();
+    bool on = true;
+    auto g = runtime().graph();
+    g.add_dynamic(when([&] { return on; }), N, Reads{}, Writes(buf),
+                  [p](std::size_t i) { p[i] += 1; });
 
-        auto g = rt.graph();
+    const std::size_t enabled_steps = run_enabled_on_even_steps(g, on, STEPS);
 
-        // Producer: derive the count on the device from data the kernel reads.
-        g.add(std::size_t{1}, Reads(wanted), Writes(counter),
-              [c, w](std::size_t) { c[0] = w[0] * 3u; });
+    EXPECT_EQ(g.compile_count(), 1u) << "enable toggles must not recompile.";
+    EXPECT_EQ(TestSupport::contents(buf), std::vector<int>(N, static_cast<int>(enabled_steps)));
+}
 
-        // Consumer: iterate exactly that many elements.
-        g.add_dynamic(sized_from_device(counter), CAPACITY, Reads(), Writes(marks),
-                      [m](std::size_t i) { m[i] = static_cast<int>(i); });
+/** @brief Tests that a disabled node still releases its successors. */
+TEST_F(Medium_LateBindings, DisabledNodeStillReleasesSuccessors)
+{
+    constexpr std::size_t N     = 8;
+    constexpr std::size_t STEPS = 6;
+    auto gate = runtime().buffer<int>(N).value();   // written by the toggled upstream node
+    auto sink = runtime().buffer<int>(N).value();   // written by the always-on downstream node
+    TestSupport::fill_with(gate, 0);
+    TestSupport::fill_with(sink, 0);
+    int* gp = gate.data();
+    int* sp = sink.data();
+    bool on = false;
+    auto g = runtime().graph();
+    // Downstream reads the gate buffer upstream writes, so it is ordered after; see README.md.
+    g.add_dynamic(when([&] { return on; }), N, Reads{}, Writes(gate), [gp](std::size_t i) { gp[i] += 1; });
+    g.add(N, Reads(gate), Writes(sink), [sp](std::size_t i) { sp[i] += 1; });
 
-        const std::uint32_t multipliers[] = { 5, 200, 1, 0, 1000 };
-        for (std::uint32_t multiplier : multipliers)
+    g.run(STEPS).value();                       // upstream stays disabled the whole run
+
+    EXPECT_EQ(g.compile_count(), 1u);
+    EXPECT_EQ(TestSupport::contents(gate), std::vector<int>(N, 0)) << "disabled upstream must not run";
+    EXPECT_EQ(TestSupport::contents(sink), std::vector<int>(N, static_cast<int>(STEPS)))
+        << "downstream must run every step";
+}
+
+/** @brief Tests that sized() on a stepped State follows a live prefix that grows each step. */
+TEST_F(Medium_LateBindings, DynamicSizeState)
+{
+    constexpr std::size_t CAP   = 8;
+    constexpr std::size_t STEPS = 4;
+    auto field = runtime().state<int>(CAP).value();
+    TestSupport::fill_with(field, 0);
+    std::size_t live = 0;
+    auto g = runtime().graph();
+    g.add_dynamic(sized([&] { return live; }), field,
+                  [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
+
+    // Grow the active prefix 2,4,6,8; the first two cells are active every step.
+    run_with_a_growing_prefix(g, live, STEPS);
+
+    EXPECT_EQ(g.compile_count(), 1u) << "state size changes must not recompile.";
+    EXPECT_EQ(field[0], static_cast<int>(STEPS));
+    EXPECT_EQ(field[1], static_cast<int>(STEPS));
+}
+
+/** @brief Tests that when() and sized() compose on one node. */
+TEST_F(Medium_LateBindings, ComposedWhenAndSized)
+{
+    constexpr std::size_t CAP   = 4;
+    constexpr std::size_t STEPS = 8;
+    auto buf = runtime().buffer<int>(CAP).value();
+    TestSupport::fill_with(buf, 0);
+    int* p = buf.data();
+    bool on = true;
+    std::size_t live = CAP;
+    auto g = runtime().graph();
+    g.add_dynamic(when([&] { return on; }).sized([&] { return live; }), CAP, Reads{}, Writes(buf),
+                  [p](std::size_t i) { p[i] += 1; });
+
+    const int expected_first = run_composed(g, on, live, CAP, STEPS);
+
+    EXPECT_EQ(g.compile_count(), 1u);
+    EXPECT_EQ(buf[0], expected_first);
+}
+
+/** @brief Holds one window of the slice test: where it starts and how long it is. */
+struct SliceWindow
+{
+    std::size_t base;  /**< First element the node runs. */
+    std::size_t count; /**< How many elements it runs. */
+};
+
+/** @brief Fixture of the slice tests; the parameter is the window. */
+class Medium_LateBindingsSlice : public TestSupport::RuntimeTest,
+                                 public ::testing::WithParamInterface<SliceWindow>
+{
+};
+
+/** @brief Tests that based_at() with sized() runs exactly the window, passing absolute indices. */
+TEST_P(Medium_LateBindingsSlice, BaseOffsetIteratesASlice)
+{
+    constexpr std::size_t CAPACITY = 64;
+    auto buf = runtime().buffer<int>(CAPACITY).value();
+    TestSupport::fill_with(buf, -1);
+    int* p = buf.data();
+    const SliceWindow window = GetParam();
+    auto g = runtime().graph();
+    g.add_dynamic(based_at([window] { return window.base; }).sized([window] { return window.count; }),
+                  CAPACITY, Reads{}, Writes(buf),
+                  [p](std::size_t i) { p[i] = static_cast<int>(i) + 1000; });
+
+    g.run().value();
+
+    EXPECT_EQ(TestSupport::contents(buf), absolute_window(CAPACITY, window.base, window.count, 1000));
+}
+
+INSTANTIATE_TEST_SUITE_P(Windows, Medium_LateBindingsSlice,
+                         ::testing::Values(SliceWindow{0, 4}, SliceWindow{8, 16}, SliceWindow{40, 20},
+                                           SliceWindow{63, 1}));
+
+/** @brief Tests that moving the window between runs does not recompile. */
+TEST_F(Medium_LateBindings, MovingTheWindowDoesNotRecompile)
+{
+    constexpr std::size_t CAPACITY = 64;
+    auto buf = runtime().buffer<int>(CAPACITY).value();
+    int* p = buf.data();
+    std::size_t base = 0;
+    std::size_t count = 4;
+    auto g = runtime().graph();
+    g.add_dynamic(based_at([&base] { return base; }).sized([&count] { return count; }),
+                  CAPACITY, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
+    g.run().value();
+    base = 8;
+    count = 16;
+
+    g.run().value();
+
+    EXPECT_EQ(g.compile_count(), 1u) << "moving the window must not recompile";
+}
+
+/**
+ * @brief Tests that based_at_device() and sized_from_device() take both values from slots a
+ *        predecessor wrote.
+ */
+TEST_F(Medium_LateBindings, BaseAndSizeBothFromTheDevice)
+{
+    constexpr std::size_t CAPACITY = 128;
+    // slice[0] is the base and slice[1] the count.
+    auto slice = runtime().buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host).value();
+    auto buf   = runtime().buffer<int>(CAPACITY).value();
+    std::uint32_t* s = slice.data();
+    int* p = buf.data();
+    TestSupport::fill_with(buf, -1);
+    auto g = runtime().graph();
+    g.add(std::size_t{1}, Reads{}, Writes(slice), [s](std::size_t) { s[0] = 30u; s[1] = 25u; });
+    g.add_dynamic(based_at_device(slice, 0).sized_from_device(slice, 1), CAPACITY, Reads{}, Writes(buf),
+                  [p](std::size_t i) { p[i] = static_cast<int>(i); });
+
+    g.run().value();
+
+    EXPECT_EQ(TestSupport::contents(buf), absolute_window(CAPACITY, 30, 25, 0));
+}
+
+/** @brief Tests that a window that fits runs after a run whose window ran past the capacity failed. */
+TEST_F(Medium_LateBindings, ALaterWindowThatFitsRunsAfterOnePastTheCapacityFailed)
+{
+    constexpr std::size_t CAPACITY = 16;
+    auto buf = runtime().buffer<int>(CAPACITY).value();
+    int* p = buf.data();
+    std::size_t base = 10;
+    auto g = runtime().graph();
+    g.add_dynamic(based_at([&base] { return base; }).sized([] { return std::size_t{10}; }),
+                  CAPACITY, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = 1; });
+    static_cast<void>(g.run());     // 10 elements from index 10 does not fit 16
+    base = 6;
+
+    EXPECT_TRUE(g.run().has_value());
+}
+
+/** @brief Holds one call that must stop the process because a slot cannot be read, and the text the stop names. */
+struct StoppedSlotCall
+{
+    const char* name;                              /**< Names the row. */
+    void (*call)(const TestSupport::SlotBuffers&); /**< Makes the call that stops. */
+    const char* pattern;                           /**< What the stop message must match. */
+};
+
+/** @brief Fixture of the slot death tests; the parameter is the call. */
+class Medium_LateBindingsDeathTest : public TestSupport::RuntimeTest,
+                                     public ::testing::WithParamInterface<StoppedSlotCall>
+{
+    protected:
+        /** @brief Allocates one buffer of each residency. */
+        void SetUp() override { slots_.emplace(TestSupport::make_slot_buffers(runtime())); }
+
+        /** @brief Drops the buffers. */
+        void TearDown() override { slots_.reset(); }
+
+        /** @brief Returns the buffers of this test. */
+        const TestSupport::SlotBuffers& slots() const { return *slots_; }
+
+    private:
+        /** @brief The buffers of this test. */
+        std::optional<TestSupport::SlotBuffers> slots_;
+};
+
+/** @brief Tests that a call that names a slot the host cannot read stops the process at the call. */
+TEST_P(Medium_LateBindingsDeathTest, ASlotTheHostCannotReadStopsTheCallThatNamesIt)
+{
+    EXPECT_DEATH(GetParam().call(slots()), GetParam().pattern);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Calls, Medium_LateBindingsDeathTest,
+    ::testing::Values(
+        StoppedSlotCall{"BasedAtDeviceOnADeviceBuffer",
+                        [](const TestSupport::SlotBuffers& s) { static_cast<void>(based_at_device(s.device)); },
+                        "based_at_device: the buffer is Residency::Device"},
+        StoppedSlotCall{"BasedAtDeviceOnASharedBuffer",
+                        [](const TestSupport::SlotBuffers& s) { static_cast<void>(based_at_device(s.shared)); },
+                        "based_at_device: the buffer is Residency::Shared"},
+        StoppedSlotCall{"BasedAtDeviceOnAnIndexPastTheSlot",
+                        [](const TestSupport::SlotBuffers& s) { static_cast<void>(based_at_device(s.host, 7)); },
+                        "based_at_device: index 7 is out of range"},
+        StoppedSlotCall{"SizedFromDeviceOnADeviceBuffer",
+                        [](const TestSupport::SlotBuffers& s) { static_cast<void>(sized_from_device(s.device)); },
+                        "sized_from_device: the buffer is Residency::Device.*Residency::Host"},
+        StoppedSlotCall{"SizedFromDeviceOnASharedBuffer",
+                        [](const TestSupport::SlotBuffers& s) { static_cast<void>(sized_from_device(s.shared)); },
+                        "sized_from_device: the buffer is Residency::Shared.*Residency::Host"},
+        StoppedSlotCall{"SizedFromDeviceOnAnIndexPastTheSlot",
+                        [](const TestSupport::SlotBuffers& s) { static_cast<void>(sized_from_device(s.host, 5)); },
+                        "sized_from_device: index 5 is out of range"},
+        StoppedSlotCall{"TheMemberSizedFromDeviceOnADeviceBuffer",
+                        [](const TestSupport::SlotBuffers& s)
+                        {
+                            Dynamic dyn;
+                            static_cast<void>(dyn.sized_from_device(s.device, 1));
+                        },
+                        "sized_from_device: the buffer is Residency::Device"},
+        StoppedSlotCall{"TheMemberSizedFromDeviceOnASharedBuffer",
+                        [](const TestSupport::SlotBuffers& s)
+                        {
+                            Dynamic dyn;
+                            static_cast<void>(dyn.sized_from_device(s.shared, 1));
+                        },
+                        "sized_from_device: the buffer is Residency::Shared"},
+        StoppedSlotCall{"TheMemberBasedAtDeviceOnAnIndexPastTheSlot",
+                        [](const TestSupport::SlotBuffers& s)
+                        {
+                            Dynamic dyn;
+                            static_cast<void>(dyn.based_at_device(s.host, 4));
+                        },
+                        "based_at_device: index 4 is out of range"}),
+    [](const ::testing::TestParamInfo<StoppedSlotCall>& info) { return std::string(info.param.name); });
+
+/** @brief Fixture of the device count tests, which run on the program's runtime. */
+class Medium_DeviceCount : public TestSupport::RuntimeTest
+{
+};
+
+/** @brief Holds one multiplier of the count a producer writes. */
+struct CountMultiplier
+{
+    std::uint32_t multiplier; /**< The producer writes three times this. */
+};
+
+/** @brief Fixture of the producer-consumer tests; the parameter is the multiplier. */
+class Medium_DeviceCountProducer : public TestSupport::RuntimeTest,
+                                   public ::testing::WithParamInterface<CountMultiplier>
+{
+};
+
+/** @brief Tests that a consumer iterates exactly the count the producer wrote in the same run(). */
+TEST_P(Medium_DeviceCountProducer, ConsumerIteratesTheCountTheProducerJustWrote)
+{
+    constexpr std::size_t CAPACITY = 4096;
+    auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto marks   = runtime().buffer<int>(CAPACITY).value();
+    // The producer reads its input through a pointer, so the device computes the count.
+    auto wanted  = runtime().buffer<std::uint32_t>(1).value();
+    std::uint32_t* c = counter.data();
+    std::uint32_t* w = wanted.data();
+    int* m = marks.data();
+    counter[0] = 0;
+    wanted[0] = GetParam().multiplier;
+    TestSupport::fill_with(marks, -1);
+    auto g = runtime().graph();
+    // Producer: derive the count on the device from data the kernel reads.
+    g.add(std::size_t{1}, Reads(wanted), Writes(counter),
+          [c, w](std::size_t) { c[0] = w[0] * 3u; });
+
+    // Consumer: iterate exactly that many elements.
+    g.add_dynamic(sized_from_device(counter), CAPACITY, Reads(), Writes(marks),
+                  [m](std::size_t i) { m[i] = static_cast<int>(i); });
+
+    g.run().value();
+
+    EXPECT_EQ(counter[0], GetParam().multiplier * 3u);
+    EXPECT_EQ(TestSupport::contents(marks),
+              absolute_window(CAPACITY, 0, static_cast<std::size_t>(GetParam().multiplier) * 3u, 0));
+    EXPECT_EQ(g.compile_count(), 1u) << "a device-driven count must not force a recompile";
+}
+
+INSTANTIATE_TEST_SUITE_P(Multipliers, Medium_DeviceCountProducer,
+                         ::testing::Values(CountMultiplier{5}, CountMultiplier{200}, CountMultiplier{1},
+                                           CountMultiplier{0}, CountMultiplier{1000}));
+
+/** @brief Tests that a count that changes between runs does not recompile. */
+TEST_F(Medium_DeviceCount, ChangingTheDeviceCountKeepsOneCompile)
+{
+    constexpr std::size_t CAPACITY = 64;
+    auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto out     = runtime().buffer<int>(CAPACITY).value();
+    int* o = out.data();
+    auto g = runtime().graph();
+    g.add_dynamic(sized_from_device(counter), CAPACITY, Reads(), Writes(out), [o](std::size_t i) { o[i] = 1; });
+    counter[0] = 10;
+    g.run().value();
+    counter[0] = 40;
+
+    g.run().value();
+
+    EXPECT_EQ(g.compile_count(), 1u);
+}
+
+/** @brief Tests a three-stage chain where each stage's output count sizes the next stage. */
+TEST_F(Medium_DeviceCount, ChainedProducerCountsInOneComposition)
+{
+    constexpr std::size_t CAPACITY = 1024;
+    auto first  = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto second = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto stage1 = runtime().buffer<int>(CAPACITY).value();
+    auto stage2 = runtime().buffer<int>(CAPACITY).value();
+    std::uint32_t* c1 = first.data();
+    std::uint32_t* c2 = second.data();
+    int* s1 = stage1.data();
+    int* s2 = stage2.data();
+    first[0] = 0;
+    second[0] = 0;
+    TestSupport::fill_with(stage1, 0);
+    TestSupport::fill_with(stage2, 0);
+    auto g = runtime().graph();
+    // Stage 0: pick a first-level count on the device.
+    g.add(std::size_t{1}, Reads(), Writes(first), [c1](std::size_t) { c1[0] = 700u; });
+    // Stage 1: iterate it, and produce the next count from how much it did.
+    g.add_dynamic(sized_from_device(first), CAPACITY, Reads(), Writes(stage1),
+                  [s1](std::size_t i) { s1[i] = 1; });
+    g.add(std::size_t{1}, Reads(first), Writes(second), [c1, c2](std::size_t) { c2[0] = c1[0] / 2u; });
+    // Stage 2: iterate the second count.
+    g.add_dynamic(sized_from_device(second), CAPACITY, Reads(), Writes(stage2),
+                  [s2](std::size_t i) { s2[i] = 1; });
+
+    g.run().value();
+
+    EXPECT_EQ(TestSupport::contents(stage1), TestSupport::window_of(CAPACITY, 0, 700, 1, 0));
+    EXPECT_EQ(TestSupport::contents(stage2), TestSupport::window_of(CAPACITY, 0, 350, 1, 0));
+    EXPECT_EQ(g.compile_count(), 1u);
+}
+
+/** @brief Fixture of the when() with device size tests: a producer writes 100 and the consumer adds one per live element. */
+class Medium_DeviceCountWhen : public TestSupport::RuntimeTest
+{
+    protected:
+        /** @brief Records the producer and the consumer gated by enabled_. */
+        void SetUp() override
         {
-            wanted[0] = multiplier;
-            for (std::size_t i = 0; i < CAPACITY; ++i)
-                marks[i] = -1;
-
-            g.run().value();
-
-            const std::size_t expected = static_cast<std::size_t>(multiplier) * 3u;
-            ASSERT_EQ(counter[0], multiplier * 3u);
-
-            for (std::size_t i = 0; i < expected; ++i)
-                ASSERT_EQ(marks[i], static_cast<int>(i))
-                    << "element " << i << " should have run for count " << expected;
-            for (std::size_t i = expected; i < CAPACITY; ++i)
-                ASSERT_EQ(marks[i], -1)
-                    << "element " << i << " ran past the live count " << expected;
+            counter_.emplace(runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value());
+            out_.emplace(runtime().buffer<int>(K_CAPACITY).value());
+            std::uint32_t* c = counter_->data();
+            int* o = out_->data();
+            (*counter_)[0] = 0;
+            TestSupport::fill_with(*out_, 0);
+            graph_.emplace(runtime().graph());
+            graph_->add(std::size_t{1}, Reads(), Writes(*counter_), [c](std::size_t) { c[0] = 100u; });
+            graph_->add_dynamic(sized_from_device(*counter_).when([this] { return enabled_; }), K_CAPACITY,
+                                Reads(), Writes(*out_), [o](std::size_t i) { o[i] += 1; });
         }
 
-        EXPECT_EQ(g.compile_count(), 1u)
-            << "a device-driven count must not force a recompile";
-    }
-
-    /** @brief Tests that the counter is registered as a read of the consuming task. */
-    TEST(Medium_DeviceCount, CounterIsRegisteredAsAReadAutomatically)
-    {
-        constexpr std::size_t CAPACITY = 512;
-        constexpr std::uint32_t LIVE = 300;
-
-        auto rt      = Runtime::create().value();
-        auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
-        auto out     = rt.buffer<int>(CAPACITY).value();
-
-        std::uint32_t* c = counter.data();
-        int* o = out.data();
-
-        counter[0] = 0;
-        for (std::size_t i = 0; i < CAPACITY; ++i)
-            out[i] = 0;
-
-        auto g = rt.graph();
-        g.add(std::size_t{1}, Reads(), Writes(counter),
-              [c](std::size_t) { c[0] = LIVE; });
-        g.add_dynamic(sized_from_device(counter), CAPACITY, Reads(), Writes(out),
-                      [o](std::size_t i) { o[i] = 1; });
-
-        g.run().value();
-
-        int ran = 0;
-        for (std::size_t i = 0; i < CAPACITY; ++i)
-            ran += out[i];
-        EXPECT_EQ(ran, static_cast<int>(LIVE))
-            << "the consumer did not observe the count written this step";
-    }
-
-    /** @brief Tests a three-stage chain where each stage's output count sizes the next stage. */
-    TEST(Medium_DeviceCount, ChainedProducerCountsInOneComposition)
-    {
-        constexpr std::size_t CAPACITY = 1024;
-
-        auto rt     = Runtime::create().value();
-        auto first  = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
-        auto second = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
-        auto stage1 = rt.buffer<int>(CAPACITY).value();
-        auto stage2 = rt.buffer<int>(CAPACITY).value();
-
-        std::uint32_t* c1 = first.data();
-        std::uint32_t* c2 = second.data();
-        int* s1 = stage1.data();
-        int* s2 = stage2.data();
-
-        first[0] = 0;
-        second[0] = 0;
-
-        auto g = rt.graph();
-
-        // Stage 0: pick a first-level count on the device.
-        g.add(std::size_t{1}, Reads(), Writes(first), [c1](std::size_t) { c1[0] = 700u; });
-
-        // Stage 1: iterate it, and produce the next count from how much it did.
-        g.add_dynamic(sized_from_device(first), CAPACITY, Reads(), Writes(stage1),
-                      [s1](std::size_t i) { s1[i] = 1; });
-        g.add(std::size_t{1}, Reads(first), Writes(second),
-              [c1, c2](std::size_t) { c2[0] = c1[0] / 2u; });
-
-        // Stage 2: iterate the second count.
-        g.add_dynamic(sized_from_device(second), CAPACITY, Reads(), Writes(stage2),
-                      [s2](std::size_t i) { s2[i] = 1; });
-
-        for (std::size_t i = 0; i < CAPACITY; ++i) { stage1[i] = 0; stage2[i] = 0; }
-        g.run().value();
-
-        int ran1 = 0, ran2 = 0;
-        for (std::size_t i = 0; i < CAPACITY; ++i) { ran1 += stage1[i]; ran2 += stage2[i]; }
-
-        EXPECT_EQ(ran1, 700);
-        EXPECT_EQ(ran2, 350);
-        EXPECT_EQ(g.compile_count(), 1u);
-    }
-
-    /** @brief Tests that a disabled when() step runs nothing whatever the counter says. */
-    TEST(Medium_DeviceCount, WhenComposesWithDeviceSize)
-    {
-        constexpr std::size_t CAPACITY = 256;
-
-        auto rt      = Runtime::create().value();
-        auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
-        auto out     = rt.buffer<int>(CAPACITY).value();
-
-        std::uint32_t* c = counter.data();
-        int* o = out.data();
-        counter[0] = 0;
-
-        bool enabled = true;
-
-        auto g = rt.graph();
-        g.add(std::size_t{1}, Reads(), Writes(counter), [c](std::size_t) { c[0] = 100u; });
-        g.add_dynamic(sized_from_device(counter)
-                  .when([&enabled] { return enabled; }),
-                      CAPACITY, Reads(), Writes(out),
-                      [o](std::size_t i) { o[i] += 1; });
-
-        for (std::size_t i = 0; i < CAPACITY; ++i) o[i] = 0;
-
-        g.run().value();
-        EXPECT_EQ(out[0], 1);
-
-        enabled = false;
-        g.run().value();
-        EXPECT_EQ(out[0], 1) << "a disabled step must run no elements";
-
-        enabled = true;
-        g.run().value();
-        EXPECT_EQ(out[0], 2);
-    }
-
-    /**
-     * @brief Tests that a count above the compiled capacity fails the run with a message naming both
-     *        numbers.
-     */
-    TEST(Medium_DeviceCount, CountOverCapacityFailsTheRun)
-    {
-        constexpr std::size_t CAPACITY = 64;
-
-        auto rt      = Runtime::create().value();
-        auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
-        auto out     = rt.buffer<int>(CAPACITY).value();
-
-        std::uint32_t* c = counter.data();
-        int* o = out.data();
-
-        auto g = rt.graph();
-        g.add(std::size_t{1}, Reads(), Writes(counter),
-              [c](std::size_t) { c[0] = static_cast<std::uint32_t>(CAPACITY) + 1u; });
-        g.add_dynamic(sized_from_device(counter), CAPACITY, Reads(), Writes(out),
-                      [o](std::size_t i) { o[i] = 1; });
-
-        EXPECT_FALSE(g.run().has_value());
-
-        // The runtime survives it: the pool is re-armable and a clean graph still runs.
-        auto clean = rt.graph();
-        clean.add(CAPACITY, Reads(), Writes(out), [o](std::size_t i) { o[i] = 7; });
-        clean.run().value();
-        EXPECT_EQ(out[0], 7);
-    }
-
-    /** @brief Tests that a counter the host cannot read stops the call that names it. */
-    TEST(Medium_DeviceCountDeathTest, ACounterThatIsNotHostResidentStops)
-    {
-        auto rt = Runtime::create().value();
-        auto resident = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device).value();
-        auto shared   = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared).value();
-        auto host     = rt.buffer<std::uint32_t>(2, DeviceIndex{0}, Residency::Host).value();
-
-        EXPECT_DEATH(static_cast<void>(sized_from_device(resident)),
-                     "sized_from_device: the buffer is Residency::Device.*Residency::Host");
-        EXPECT_DEATH(static_cast<void>(sized_from_device(shared)),
-                     "sized_from_device: the buffer is Residency::Shared.*Residency::Host");
-        EXPECT_DEATH(static_cast<void>(sized_from_device(host, 5)),
-                     "sized_from_device: index 5 is out of range");
-        static_cast<void>(sized_from_device(host, 1));
-    }
-
-    /** @brief Tests that a count is read from the element the index names, not from element zero. */
-    TEST(Medium_DeviceCount, ReadsTheCountAtTheGivenIndex)
-    {
-        constexpr std::size_t CAPACITY = 16;
-        constexpr std::size_t SLOT     = 5;
-
-        auto rt   = Runtime::create().value();
-        auto plan = rt.buffer<std::uint32_t>(8, DeviceIndex{0}, Residency::Host).value();
-        auto out  = rt.buffer<int>(CAPACITY).value();
-
-        for (std::size_t i = 0; i < CAPACITY; ++i)
-            out[i] = -1;
-        plan[SLOT] = 3;
-
-        int* o = out.data();
-
-        auto g = rt.graph();
-        ASSERT_NO_THROW(g.add_dynamic(sized_from_device(plan, SLOT),
-                                      CAPACITY, Reads(), Writes(out),
-                                      [o](std::size_t i) { o[i] = static_cast<int>(i); }));
-        g.run().value();
-
-        for (std::size_t i = 0; i < 3; ++i)
-            ASSERT_EQ(out[i], static_cast<int>(i)) << "element " << i;
-        for (std::size_t i = 3; i < CAPACITY; ++i)
-            ASSERT_EQ(out[i], -1) << "element " << i << " ran past the live count";
-    }
-
-    /** @brief Tests that add() accepts a based_at_device slot at a non-zero index. */
-    TEST(Medium_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
-    {
-        constexpr std::size_t CAPACITY = 16;
-        constexpr std::size_t SLOT     = 3;
-
-        auto rt   = Runtime::create().value();
-        auto plan = rt.buffer<std::uint32_t>(8, DeviceIndex{0}, Residency::Host).value();
-        auto out  = rt.buffer<int>(CAPACITY).value();
-
-        plan[SLOT] = 4;
-
-        auto g = rt.graph();
-        EXPECT_NO_THROW(g.add_dynamic(based_at_device(plan, SLOT),
-                                      CAPACITY, Reads(), Writes(out),
-                                      [](std::size_t) {}));
-    }
-
-    /** @brief Tests that the member setters check their slot as the free builders do. */
-    TEST(Medium_DeviceCountDeathTest, MemberSettersStopOnASlotThatIsNotHostResident)
-    {
-        auto rt       = Runtime::create().value();
-        auto resident = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Device).value();
-        auto host     = rt.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
-
-        Dynamic dyn;
-        EXPECT_DEATH(static_cast<void>(dyn.sized_from_device(resident, 1)),
-                     "sized_from_device: the buffer is Residency::Device");
-        EXPECT_DEATH(static_cast<void>(dyn.based_at_device(host, 4)),
-                     "based_at_device: index 4 is out of range");
-    }
-} // namespace DeviceCountTests
-
-/** @brief Tests that a graph watches the buffer a Dynamic reads its count or base from. */
-namespace DeviceSlotLivenessTests
-{
-    namespace
-    {
-        /** @brief Names the element type of every handle here. */
-        using Word = std::uint32_t;
-
-        constexpr std::size_t K_WIDTH = 64;
-        constexpr Word K_LIVE = 24;
-
-        /** @brief Allocates a one-word Residency::Host buffer that holds value. */
-        Buffer<Word> host_slot(Runtime& rt, Word value)
+        /** @brief Drops the graph before the buffers it records. */
+        void TearDown() override
         {
-            auto slot = rt.buffer<Word>(1, DeviceIndex{0}, Residency::Host).value();
+            graph_.reset();
+            out_.reset();
+            counter_.reset();
+        }
+
+        /** @brief Runs the graph once with the consumer enabled or not. */
+        void run_once(bool enabled)
+        {
+            enabled_ = enabled;
+            graph_->run().value();
+        }
+
+        /** @brief How many elements the consumer can run. */
+        static constexpr std::size_t K_CAPACITY = 256;
+
+        /** @brief Whether the consumer is enabled. */
+        bool enabled_ = true;
+
+        /** @brief The count the producer writes. */
+        std::optional<Buffer<std::uint32_t>> counter_;
+
+        /** @brief The buffer the consumer increments. */
+        std::optional<Buffer<int>> out_;
+
+        /** @brief The recorded graph. */
+        std::optional<Graph> graph_;
+};
+
+/** @brief Tests that an enabled step runs the live count. */
+TEST_F(Medium_DeviceCountWhen, AnEnabledStepRunsTheLiveCount)
+{
+    run_once(true);
+
+    EXPECT_EQ(TestSupport::contents(*out_), TestSupport::window_of(K_CAPACITY, 0, 100, 1, 0));
+}
+
+/** @brief Tests that a disabled step runs no element whatever the counter says. */
+TEST_F(Medium_DeviceCountWhen, ADisabledStepRunsNoElement)
+{
+    run_once(false);
+
+    EXPECT_EQ(TestSupport::contents(*out_), std::vector<int>(K_CAPACITY, 0));
+}
+
+/** @brief Tests that a step enabled again after a disabled one runs the live count again. */
+TEST_F(Medium_DeviceCountWhen, AStepEnabledAgainRunsTheLiveCount)
+{
+    run_once(true);
+    run_once(false);
+
+    run_once(true);
+
+    EXPECT_EQ(TestSupport::contents(*out_), TestSupport::window_of(K_CAPACITY, 0, 100, 2, 0));
+}
+
+/** @brief Tests that a count above the compiled capacity fails the run. */
+TEST_F(Medium_DeviceCount, CountOverCapacityFailsTheRun)
+{
+    constexpr std::size_t CAPACITY = 64;
+    auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto out     = runtime().buffer<int>(CAPACITY).value();
+    std::uint32_t* c = counter.data();
+    int* o = out.data();
+    auto g = runtime().graph();
+    g.add(std::size_t{1}, Reads(), Writes(counter),
+          [c](std::size_t) { c[0] = static_cast<std::uint32_t>(CAPACITY) + 1u; });
+    g.add_dynamic(sized_from_device(counter), CAPACITY, Reads(), Writes(out), [o](std::size_t i) { o[i] = 1; });
+
+    EXPECT_FALSE(g.run().has_value());
+}
+
+/** @brief Tests that a clean graph runs on the same runtime after a run failed for a count over the capacity. */
+TEST_F(Medium_DeviceCount, ACleanGraphRunsAfterACountOverCapacityFailedARun)
+{
+    constexpr std::size_t CAPACITY = 64;
+    auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto out     = runtime().buffer<int>(CAPACITY).value();
+    std::uint32_t* c = counter.data();
+    int* o = out.data();
+    auto g = runtime().graph();
+    g.add(std::size_t{1}, Reads(), Writes(counter),
+          [c](std::size_t) { c[0] = static_cast<std::uint32_t>(CAPACITY) + 1u; });
+    g.add_dynamic(sized_from_device(counter), CAPACITY, Reads(), Writes(out), [o](std::size_t i) { o[i] = 1; });
+    static_cast<void>(g.run());
+    auto clean = runtime().graph();
+    clean.add(CAPACITY, Reads(), Writes(out), [o](std::size_t i) { o[i] = 7; });
+
+    clean.run().value();
+
+    EXPECT_EQ(TestSupport::contents(out), std::vector<int>(CAPACITY, 7));
+}
+
+/** @brief Tests that a count is read from the element the index names, not from element zero. */
+TEST_F(Medium_DeviceCount, ReadsTheCountAtTheGivenIndex)
+{
+    constexpr std::size_t CAPACITY = 16;
+    constexpr std::size_t SLOT     = 5;
+    auto plan = runtime().buffer<std::uint32_t>(8, DeviceIndex{0}, Residency::Host).value();
+    auto out  = runtime().buffer<int>(CAPACITY).value();
+    TestSupport::fill_with(out, -1);
+    plan[SLOT] = 3;
+    int* o = out.data();
+    auto g = runtime().graph();
+    g.add_dynamic(sized_from_device(plan, SLOT), CAPACITY, Reads(), Writes(out),
+                  [o](std::size_t i) { o[i] = static_cast<int>(i); });
+
+    g.run().value();
+
+    EXPECT_EQ(TestSupport::contents(out), absolute_window(CAPACITY, 0, 3, 0));
+}
+
+/** @brief Tests that a base is read from the element the index names, and the node runs from there to the end. */
+TEST_F(Medium_DeviceCount, AcceptsABaseSlotAtTheGivenIndex)
+{
+    constexpr std::size_t CAPACITY = 16;
+    constexpr std::size_t SLOT     = 3;
+    auto plan = runtime().buffer<std::uint32_t>(8, DeviceIndex{0}, Residency::Host).value();
+    auto out  = runtime().buffer<int>(CAPACITY).value();
+    TestSupport::fill_with(out, -1);
+    plan[SLOT] = 4;
+    int* o = out.data();
+    auto g = runtime().graph();
+    g.add_dynamic(based_at_device(plan, SLOT), CAPACITY, Reads(), Writes(out),
+                  [o](std::size_t i) { o[i] = static_cast<int>(i); });
+
+    g.run().value();
+
+    EXPECT_EQ(TestSupport::contents(out), absolute_window(CAPACITY, 4, CAPACITY - 4, 0));
+}
+
+namespace
+{
+    /** @brief Names the element type of every handle of the slot liveness tests. */
+    using Word = std::uint32_t;
+} // namespace
+
+/** @brief Names which buffer of a recorded Dynamic the liveness test destroys. */
+enum class WatchedSlot : std::uint8_t
+{
+    CountOfATask, /**< The buffer sized_from_device() of a task reads. */
+    BaseOfATask,  /**< The buffer based_at_device() of a task reads. */
+    CountOfAState /**< The buffer sized_from_device() of a State rule reads. */
+};
+
+/** @brief Fixture of the slot liveness tests; the parameter names the slot. */
+class Medium_DeviceSlotLiveness : public TestSupport::RuntimeTest,
+                                  public ::testing::WithParamInterface<WatchedSlot>
+{
+    protected:
+        /** @brief Width of the target of every recorded node. */
+        static constexpr std::size_t K_WIDTH = 64;
+
+        /** @brief Allocates a one-word Residency::Host buffer that holds @p value. */
+        Buffer<Word> host_slot(Word value)
+        {
+            auto slot = runtime().buffer<Word>(1, DeviceIndex{0}, Residency::Host).value();
             slot[0] = value;
             return slot;
         }
-    } // namespace
 
-    /** @brief Tests that a run is refused once the buffer of sized_from_device() is destroyed. */
-    TEST(Medium_DeviceSlotLiveness, ADestroyedCountBufferRefusesTheRun)
-    {
-        auto rt = Runtime::create().value();
-        auto target = rt.buffer<Word>(K_WIDTH).value();
-        std::optional<Buffer<Word>> counter(host_slot(rt, K_LIVE));
-        Word* words = target.data();
+        /** @brief Records into @p graph a node that reads @p slot as the row says. */
+        void record_reading(Graph& graph, Buffer<Word>& target, State<Word>& field, Buffer<Word>& slot)
+        {
+            Word* words = target.data();
+            if (GetParam() == WatchedSlot::BaseOfATask)
+                graph.add_dynamic(based_at_device(slot), K_WIDTH, Reads(), Writes(target),
+                                  [words](std::size_t i) { words[i] = 1u; });
+            else if (GetParam() == WatchedSlot::CountOfATask)
+                graph.add_dynamic(sized_from_device(slot, 0), K_WIDTH, Reads(), Writes(target),
+                                  [words](std::size_t i) { words[i] = 1u; });
+            else
+                graph.add_dynamic(sized_from_device(slot), field,
+                                  [](std::size_t i, const Word* current, Word* next) { next[i] = current[i]; });
+        }
+};
 
-        auto graph = rt.graph();
-        graph.add_dynamic(sized_from_device(*counter, 0), K_WIDTH, Reads(), Writes(target),
-                          [words](std::size_t i) { words[i] = 1u; });
-        EXPECT_EQ(graph.recorder().watched_allocation_count(), 2u)
-            << "the target and the counter are both watched";
-        ASSERT_TRUE(graph.run());
+/** @brief Tests that a run is refused with DanglingResource once the slot buffer is destroyed. */
+TEST_P(Medium_DeviceSlotLiveness, ADestroyedSlotBufferRefusesTheRun)
+{
+    auto target = runtime().buffer<Word>(K_WIDTH).value();
+    auto field = runtime().state<Word>(K_WIDTH).value();
+    std::optional<Buffer<Word>> slot(host_slot(24));
+    auto graph = runtime().graph();
+    record_reading(graph, target, field, *slot);
+    ASSERT_TRUE(graph.run());
+    slot.reset();
 
-        counter.reset();
+    auto refused = graph.run();
 
-        EXPECT_TRUE(graph.recorder().has_dangling_resource());
-        auto refused = graph.run();
-        ASSERT_FALSE(refused);
-        EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
-    }
+    ASSERT_FALSE(refused);
+    EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
+}
 
-    /** @brief Tests that a run is refused once the buffer of based_at_device() is destroyed. */
-    TEST(Medium_DeviceSlotLiveness, ADestroyedBaseBufferRefusesTheRun)
-    {
-        auto rt = Runtime::create().value();
-        auto target = rt.buffer<Word>(K_WIDTH).value();
-        std::optional<Buffer<Word>> base(host_slot(rt, 0u));
-        Word* words = target.data();
+INSTANTIATE_TEST_SUITE_P(Slots, Medium_DeviceSlotLiveness,
+                         ::testing::Values(WatchedSlot::CountOfATask, WatchedSlot::BaseOfATask,
+                                           WatchedSlot::CountOfAState),
+                         [](const ::testing::TestParamInfo<WatchedSlot>& info)
+                         {
+                             switch (info.param)
+                             {
+                                 case WatchedSlot::CountOfATask:  return std::string("CountOfATask");
+                                 case WatchedSlot::BaseOfATask:   return std::string("BaseOfATask");
+                                 case WatchedSlot::CountOfAState: return std::string("CountOfAState");
+                             }
+                             return std::string("Unknown");
+                         });
 
-        auto graph = rt.graph();
-        graph.add_dynamic(based_at_device(*base), K_WIDTH, Reads(), Writes(target),
-                          [words](std::size_t i) { words[i] = 1u; });
-        ASSERT_TRUE(graph.run());
+/** @brief Fixture of the recorder test, which runs on the program's runtime. */
+class Medium_DeviceSlotRecorder : public TestSupport::RuntimeTest
+{
+};
 
-        base.reset();
+/** @brief Tests that the recorder watches the target and the counter of a dynamic task. */
+TEST_F(Medium_DeviceSlotRecorder, TheRecorderWatchesTheTargetAndTheCounter)
+{
+    constexpr std::size_t K_WIDTH = 64;
+    auto target = runtime().buffer<Word>(K_WIDTH).value();
+    auto counter = runtime().buffer<Word>(1, DeviceIndex{0}, Residency::Host).value();
+    counter[0] = 24;
+    Word* words = target.data();
+    auto graph = runtime().graph();
 
-        auto refused = graph.run();
-        ASSERT_FALSE(refused);
-        EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
-    }
+    graph.add_dynamic(sized_from_device(counter, 0), K_WIDTH, Reads(), Writes(target),
+                      [words](std::size_t i) { words[i] = 1u; });
 
-    /** @brief Tests that a late-bound State rule watches its count buffer as well as its State. */
-    TEST(Medium_DeviceSlotLiveness, ADestroyedCountBufferRefusesAStateRule)
-    {
-        auto rt = Runtime::create().value();
-        auto field = rt.state<Word>(K_WIDTH).value();
-        std::optional<Buffer<Word>> counter(host_slot(rt, K_LIVE));
-
-        auto graph = rt.graph();
-        graph.add_dynamic(sized_from_device(*counter), field,
-                          [](std::size_t i, const Word* current, Word* next) { next[i] = current[i]; });
-        ASSERT_TRUE(graph.run());
-
-        counter.reset();
-
-        auto refused = graph.run();
-        ASSERT_FALSE(refused);
-        EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
-    }
-} // namespace DeviceSlotLivenessTests
+    EXPECT_EQ(graph.recorder().watched_allocation_count(), 2u);
+}

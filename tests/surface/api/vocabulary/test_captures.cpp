@@ -37,27 +37,30 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/vocabulary/captures.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 
-/** @brief Tests that In reads, Out writes, and both point at the buffer they name. */
-TEST(Medium_Captures, EachCaptureNamesItsBuffer)
+static_assert(In<int>::reads && !In<int>::writes, "In reads only");
+static_assert(Out<int>::writes && !Out<int>::reads, "Out writes only");
+static_assert(InOut<float>::reads && InOut<float>::writes, "InOut reads and writes");
+
+/** @brief Fixture of the capture tests, which allocate on the program's runtime. */
+class Medium_Captures : public TestSupport::RuntimeTest
 {
-    auto runtime = Runtime::create().value();
-    auto in = runtime.buffer<int>(4).value();
-    auto out = runtime.buffer<int>(4).value();
+};
+
+/** @brief Tests that In and Out point at the buffer they name and In observes it. */
+TEST_F(Medium_Captures, EachCaptureNamesItsBuffer)
+{
+    auto in = runtime().buffer<int>(4).value();
+    auto out = runtime().buffer<int>(4).value();
+
     const In<int> read(in);
     const Out<int> written(out);
-    static_assert(In<int>::reads && !In<int>::writes, "In reads only");
-    static_assert(Out<int>::writes && !Out<int>::reads, "Out writes only");
+
     EXPECT_EQ(read.ptr, in.data());
     EXPECT_EQ(read.key, static_cast<void*>(in.data()));
     EXPECT_EQ(written.ptr, out.data());
     EXPECT_FALSE(read.life.expired());
-}
-
-/** @brief Tests that InOut both reads and writes. */
-TEST(Medium_Captures, InOutReadsAndWrites)
-{
-    static_assert(InOut<float>::reads && InOut<float>::writes, "InOut reads and writes");
-    SUCCEED();
 }

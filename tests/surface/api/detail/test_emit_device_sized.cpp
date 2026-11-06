@@ -39,30 +39,37 @@
 #include <SushiRuntime/api/detail/emit_device_sized.hpp>
 
 #include "description_runner.hpp"
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
+/** @brief Fixture of the device-sized test, which runs a description on the program's runtime. */
+class Medium_EmitDeviceSized : public TestSupport::RuntimeTest
+{
+};
+
 /** @brief Tests that only the indices below the device-written live width run. */
-TEST(Medium_EmitDeviceSized, OnlyTheLiveIndicesRun)
+TEST_F(Medium_EmitDeviceSized, OnlyTheLiveIndicesRun)
 {
     constexpr std::size_t K_CAPACITY = 8;
-    auto runtime = Runtime::create().value();
-    int* const data = Testing::shared_integers(runtime, K_CAPACITY, 0);
-    std::uint32_t* const live = sycl::malloc_shared<std::uint32_t>(2, Testing::queue_of(runtime));
-    ASSERT_NE(data, nullptr);
-    ASSERT_NE(live, nullptr);
-    live[0] = 3;
+    constexpr std::size_t K_LIVE = 3;
+    auto data = runtime().buffer<int>(K_CAPACITY).value();
+    auto live = runtime().buffer<std::uint32_t>(2).value();
+    TestSupport::fill_with(data, 0);
+    live[0] = K_LIVE;
     live[1] = 0;
     DeviceSized launch;
     launch.capacity = K_CAPACITY;
-    launch.live_width = live;
-    launch.live_words = live;
+    launch.live_width = live.data();
+    launch.live_words = live.data();
+    int* const words = data.data();
     const Detail::NodeDescription description = Detail::device_sized_node(
-        {}, {BufferRegion(data)}, launch, [data](std::size_t index) { data[index] = 1; }, K_CAPACITY);
+        {}, {BufferRegion(words)}, launch, [words](std::size_t index) { words[index] = 1; },
+        K_CAPACITY);
+
+    Testing::run_description(runtime(), description);
+
     EXPECT_EQ(description.width, K_CAPACITY);
-    Testing::run_description(runtime, description);
-    for (std::size_t index = 0; index < K_CAPACITY; ++index)
-        EXPECT_EQ(data[index], index < 3 ? 1 : 0) << "at " << index;
-    sycl::free(live, Testing::queue_of(runtime));
-    sycl::free(data, Testing::queue_of(runtime));
+    EXPECT_EQ(TestSupport::contents(data), TestSupport::window_of<int>(K_CAPACITY, 0, K_LIVE, 1, 0));
 }

@@ -19,6 +19,7 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
+/**************************************************************************/
 
 /**
  * @file test_placement_scope.cpp
@@ -40,55 +41,97 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 
 static_assert(std::is_nothrow_copy_constructible_v<PlacementScope>,
               "a PlacementScope is a value that copies without throwing");
 
-/** @brief Tests that the accessors return the class and the key the scope was built with. */
-TEST(Small_PlacementScope, AccessorsReturnTheClassAndTheKeyItWasBuiltWith)
+namespace
 {
-    const PlacementScope scope("sushiai.replica"_class, 5u);
+    /** @brief Holds the class every rule of this file matches. */
+    constexpr const char* K_CLASS = "device.test";
 
-    EXPECT_EQ(scope.placement_class(), "sushiai.replica"_class);
-    ASSERT_TRUE(scope.placement_key().has_value());
-    EXPECT_EQ(*scope.placement_key(), 5u);
+    /** @brief Returns a rule set of one rule that sends K_CLASS to a target. */
+    PlacementRules rules_of(const PlacementTarget& target, AbsentPolicy if_absent,
+                            const char* name = "send")
+    {
+        PlacementRule rule;
+        rule.name = name;
+        rule.match.placement_class = K_CLASS;
+        rule.target = target;
+        rule.if_absent = if_absent;
+        PlacementRules rules;
+        EXPECT_TRUE(rules.add(std::move(rule)));
+        return rules;
+    }
+
+    /** @brief Returns a target that names the device at an index and no machine. */
+    PlacementTarget device_at(std::size_t index)
+    {
+        PlacementTarget target;
+        target.device_index = index;
+        return target;
+    }
+
+    /** @brief Returns the policy that falls back to device 0 at once. */
+    AbsentPolicy local()
+    {
+        return AbsentPolicy{AbsentAction::Local, std::chrono::milliseconds{0}};
+    }
+
+    /** @brief Returns the policy that refuses. */
+    AbsentPolicy fail()
+    {
+        return AbsentPolicy{AbsentAction::Fail, std::chrono::milliseconds{0}};
+    }
+
+    /** @brief Returns the policy that waits for the target for at most a bound. */
+    AbsentPolicy wait_for(std::chrono::milliseconds bound)
+    {
+        return AbsentPolicy{AbsentAction::Wait, bound};
+    }
+
+    /** @brief Returns the index one past the last device, which no machine has. */
+    std::size_t absent_index(const Runtime& runtime)
+    {
+        return runtime.advanced().device_count();
+    }
+} // namespace
+
+/** @brief Tests that a scope built without a runtime gives device 0. */
+TEST(Small_PlacementScope, AScopeWithoutARuntimeGivesDeviceZero)
+{
+    const PlacementScope scope("device.test"_class, std::nullopt);
+
+    const Result<DeviceIndex> device = scope.device();
+
+    ASSERT_TRUE(device);
+    EXPECT_EQ(device->value(), 0u);
 }
 
-/** @brief Tests that a scope built without a key reports none. */
-TEST(Small_PlacementScope, ANoneKeyStaysNone)
+/** @brief Tests that a scope built without a runtime refuses a buffer with InvalidState. */
+TEST(Small_PlacementScope, AScopeWithoutARuntimeRefusesABuffer)
 {
-    const PlacementScope scope("sushiai.replica"_class, std::nullopt);
+    const PlacementScope scope("device.test"_class, std::nullopt);
 
-    EXPECT_FALSE(scope.placement_key().has_value());
+    const Result<Buffer<int>> buffer = scope.buffer<int>(4);
+
+    ASSERT_FALSE(buffer);
+    EXPECT_EQ(buffer.error().code, ErrorCode::InvalidState);
 }
 
-/** @brief Tests that a key of 0 is kept as 0 and is not read as none. */
-TEST(Small_PlacementScope, AKeyOfZeroIsKeptAsZero)
+/** @brief Fixture of the scope tests that build a scope from the program's runtime. */
+class Medium_RuntimePlacementScope : public TestSupport::RuntimeTest
 {
-    const PlacementScope scope("sushiengine.physics"_class, 0u);
-
-    ASSERT_TRUE(scope.placement_key().has_value());
-    EXPECT_EQ(*scope.placement_key(), 0u);
-}
-
-/** @brief Tests that a copy reports what the original reports. */
-TEST(Small_PlacementScope, ACopyReportsTheSameClassAndKey)
-{
-    const PlacementScope original("sushiengine.physics"_class, 9u);
-    const PlacementScope copy = original;
-
-    EXPECT_EQ(copy.placement_class(), original.placement_class());
-    EXPECT_EQ(copy.placement_key(), original.placement_key());
-}
+};
 
 /** @brief Tests that the string and the class overloads build the same class for one name. */
-TEST(Medium_RuntimePlacementScope, TheStringAndClassOverloadsGiveEqualClasses)
+TEST_F(Medium_RuntimePlacementScope, TheStringAndClassOverloadsGiveEqualClasses)
 {
-    auto rt = Runtime::create().value();
-
-    const PlacementScope from_string = rt.placement_scope("sushiai.replica", 2u);
-    const PlacementScope from_class = rt.placement_scope("sushiai.replica"_class, 2u);
+    const PlacementScope from_string = runtime().placement_scope("sushiai.replica", 2u);
+    const PlacementScope from_class = runtime().placement_scope("sushiai.replica"_class, 2u);
 
     EXPECT_EQ(from_string.placement_class(), from_class.placement_class());
     EXPECT_TRUE(from_string.placement_class().is_named());
@@ -96,14 +139,12 @@ TEST(Medium_RuntimePlacementScope, TheStringAndClassOverloadsGiveEqualClasses)
 }
 
 /** @brief Tests that a key of 0 survives both overloads and a missing key stays none. */
-TEST(Medium_RuntimePlacementScope, BothOverloadsKeepAKeyOfZeroAndANoneKey)
+TEST_F(Medium_RuntimePlacementScope, BothOverloadsKeepAKeyOfZeroAndANoneKey)
 {
-    auto rt = Runtime::create().value();
-
-    const PlacementScope zero_string = rt.placement_scope("a.b", 0u);
-    const PlacementScope zero_class = rt.placement_scope("a.b"_class, 0u);
-    const PlacementScope none_string = rt.placement_scope("a.b");
-    const PlacementScope none_class = rt.placement_scope("a.b"_class);
+    const PlacementScope zero_string = runtime().placement_scope("a.b", 0u);
+    const PlacementScope zero_class = runtime().placement_scope("a.b"_class, 0u);
+    const PlacementScope none_string = runtime().placement_scope("a.b");
+    const PlacementScope none_class = runtime().placement_scope("a.b"_class);
 
     ASSERT_TRUE(zero_string.placement_key().has_value());
     EXPECT_EQ(*zero_string.placement_key(), 0u);
@@ -114,298 +155,263 @@ TEST(Medium_RuntimePlacementScope, BothOverloadsKeepAKeyOfZeroAndANoneKey)
 }
 
 /** @brief Tests that a name of a single segment builds a class too. */
-TEST(Medium_RuntimePlacementScope, ANameWithoutADotIsAClass)
+TEST_F(Medium_RuntimePlacementScope, ANameWithoutADotIsAClass)
 {
-    auto rt = Runtime::create().value();
-
-    EXPECT_EQ(rt.placement_scope("physics").placement_class(), "physics"_class);
+    EXPECT_EQ(runtime().placement_scope("physics").placement_class(), "physics"_class);
 }
 
-/** @brief Tests that each malformed class name stops the process. */
-TEST(Medium_RuntimePlacementScope, AMalformedNameStopsTheProcess)
+/** @brief Fixture of the death test of a malformed class name; the parameter is the name. */
+class Medium_RuntimePlacementScopeDeathTest : public TestSupport::RuntimeTest,
+                                              public ::testing::WithParamInterface<const char*>
 {
-    auto rt = Runtime::create().value();
+};
 
-    EXPECT_DEATH(static_cast<void>(rt.placement_scope("")), "placement_scope");
-    EXPECT_DEATH(static_cast<void>(rt.placement_scope(".a")), "placement_scope");
-    EXPECT_DEATH(static_cast<void>(rt.placement_scope("a.")), "placement_scope");
-    EXPECT_DEATH(static_cast<void>(rt.placement_scope("a..b")), "placement_scope");
+/** @brief Tests that a malformed class name stops the process. */
+TEST_P(Medium_RuntimePlacementScopeDeathTest, AMalformedNameStopsTheProcess)
+{
+    EXPECT_DEATH(static_cast<void>(runtime().placement_scope(GetParam())), "placement_scope");
 }
 
-namespace PlacementScopeDeviceTests
+INSTANTIATE_TEST_SUITE_P(Names, Medium_RuntimePlacementScopeDeathTest,
+                         ::testing::Values("", ".a", "a.", "a..b"));
+
+/** @brief Fixture of the tests of the device a scope resolves to; each runs with no rules in force. */
+class Medium_PlacementScopeDevice : public TestSupport::RuntimeTest
 {
-    namespace
-    {
-        /** @brief Holds the class every rule of this file matches. */
-        constexpr const char* K_CLASS = "device.test";
+    protected:
+        /** @brief Clears the rules the program's runtime may hold from an earlier test. */
+        void SetUp() override { static_cast<void>(runtime().clear_placement_rules()); }
 
-        /** @brief Returns a rule set of one rule that sends K_CLASS to a target. */
-        PlacementRules rules_of(const PlacementTarget& target, AbsentPolicy if_absent,
-                                const char* name = "send")
+        /** @brief Clears the rules this test set, so the next test starts without them. */
+        void TearDown() override { static_cast<void>(runtime().clear_placement_rules()); }
+};
+
+/** @brief Tests that a scope no rule exists for gives device 0. */
+TEST_F(Medium_PlacementScopeDevice, ANoRuleScopeGivesDeviceZero)
+{
+    const PlacementScope scope = runtime().placement_scope("other.class");
+
+    EXPECT_EQ(scope.device()->value(), 0u);
+}
+
+/** @brief Tests that a scope whose class no rule names gives device 0 whatever the rules say. */
+TEST_F(Medium_PlacementScopeDevice, ARuleForAnotherClassLeavesDeviceZero)
+{
+    const PlacementScope scope = runtime().placement_scope("other.class");
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(absent_index(runtime())), fail())));
+
+    EXPECT_EQ(scope.device()->value(), 0u);
+}
+
+/** @brief Holds one target a machine can always satisfy, as a function of the runtime it is built for. */
+struct PresentTarget
+{
+    const char* name;                              /**< Names the row. */
+    PlacementTarget (*build)(const Runtime&);      /**< Builds the target. */
+};
+
+/** @brief Fixture of the tests of a rule whose target this machine has; the parameter is the row. */
+class Medium_PlacementScopePresentTarget : public Medium_PlacementScopeDevice,
+                                           public ::testing::WithParamInterface<PresentTarget>
+{
+};
+
+/** @brief Tests that a rule with no device part, or a device this machine has, gives device 0. */
+TEST_P(Medium_PlacementScopePresentTarget, ARuleWithAPresentTargetGivesDeviceZero)
+{
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(GetParam().build(runtime()), fail())));
+
+    EXPECT_EQ(runtime().placement_scope(K_CLASS).device()->value(), 0u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Targets, Medium_PlacementScopePresentTarget,
+    ::testing::Values(
+        PresentTarget{"ThisMachineWithNoDevicePart",
+                      [](const Runtime& r)
+                      {
+                          PlacementTarget target;
+                          target.machine_name = r.topology().name;
+                          return target;
+                      }},
+        PresentTarget{"DeviceZero", [](const Runtime&) { return device_at(0); }},
+        PresentTarget{"TheKindOfDeviceZero",
+                      [](const Runtime& r)
+                      {
+                          PlacementTarget target;
+                          target.device_kind = r.topology().devices.front().kind;
+                          return target;
+                      }},
+        PresentTarget{"AtLeastOneByteOfMemory",
+                      [](const Runtime&)
+                      {
+                          PlacementTarget target;
+                          target.device_min_memory = 1;
+                          return target;
+                      }}),
+    [](const ::testing::TestParamInfo<PresentTarget>& info) { return std::string(info.param.name); });
+
+/** @brief Tests that Local gives device 0 when the rule's device is absent. */
+TEST_F(Medium_PlacementScopeDevice, LocalGivesDeviceZeroForAnAbsentDevice)
+{
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(absent_index(runtime())), local())));
+
+    const Result<DeviceIndex> device = runtime().placement_scope(K_CLASS).device();
+
+    ASSERT_TRUE(device);
+    EXPECT_EQ(device->value(), 0u);
+}
+
+/** @brief Tests that Fail names the rule and the device in an InvalidArgument error. */
+TEST_F(Medium_PlacementScopeDevice, FailNamesTheRuleAndTheDevice)
+{
+    const std::size_t absent = absent_index(runtime());
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(absent), fail(), "pin-physics")));
+
+    const Result<DeviceIndex> device = runtime().placement_scope(K_CLASS).device();
+
+    ASSERT_FALSE(device);
+    EXPECT_EQ(device.error().code, ErrorCode::InvalidArgument);
+    EXPECT_NE(device.error().message.find("\"pin-physics\""), std::string::npos)
+        << device.error().message;
+    EXPECT_NE(device.error().message.find("device index " + std::to_string(absent)),
+              std::string::npos)
+        << device.error().message;
+}
+
+/** @brief Tests that Wait gives device 0, since a local device never appears. */
+TEST_F(Medium_PlacementScopeDevice, WaitGivesDeviceZeroForAnAbsentDevice)
+{
+    constexpr std::chrono::milliseconds K_BOUND{std::chrono::minutes(10)};
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(absent_index(runtime())),
+                                                       wait_for(K_BOUND))));
+
+    const Result<DeviceIndex> device = runtime().placement_scope(K_CLASS).device();
+
+    ASSERT_TRUE(device);
+    EXPECT_EQ(device->value(), 0u);
+}
+
+/** @brief Tests that a machine name another machine carries makes the target absent and Fail names it. */
+TEST_F(Medium_PlacementScopeDevice, AnotherMachinesNameMakesTheTargetAbsent)
+{
+    PlacementTarget other_name = device_at(0);
+    other_name.machine_name = runtime().topology().name + "-elsewhere";
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(other_name, fail())));
+
+    const Result<DeviceIndex> device = runtime().placement_scope(K_CLASS).device();
+
+    ASSERT_FALSE(device);
+    EXPECT_EQ(device.error().code, ErrorCode::InvalidArgument);
+    EXPECT_NE(device.error().message.find(other_name.machine_name), std::string::npos);
+}
+
+/** @brief Tests that a label this machine lacks makes the target absent. */
+TEST_F(Medium_PlacementScopeDevice, ALabelNoMachineCarriesMakesTheTargetAbsent)
+{
+    PlacementTarget other_label = device_at(0);
+    other_label.machine_label = NodeLabel{"zone", "nowhere"};
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(other_label, fail())));
+
+    EXPECT_FALSE(runtime().placement_scope(K_CLASS).device());
+}
+
+/** @brief Tests that Local falls back to device 0 when the machine is another one. */
+TEST_F(Medium_PlacementScopeDevice, LocalFallsBackWhenTheMachineIsAnotherOne)
+{
+    PlacementTarget other_name = device_at(0);
+    other_name.machine_name = runtime().topology().name + "-elsewhere";
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(other_name, local())));
+
+    EXPECT_EQ(runtime().placement_scope(K_CLASS).device()->value(), 0u);
+}
+
+/** @brief Tests that a label the machine carries makes the target present. */
+TEST(Medium_PlacementScopeLabel, ALabelTheMachineCarriesMakesTheTargetPresent)
+{
+    RuntimeConfig config;
+    config.labels = {NodeLabel{"zone", "lab"}};
+    auto labelled = Runtime::create(config).value();
+    PlacementTarget target = device_at(0);
+    target.machine_label = NodeLabel{"zone", "lab"};
+    ASSERT_TRUE(labelled.set_placement_rules(rules_of(target, fail())));
+
+    EXPECT_EQ(labelled.placement_scope(K_CLASS).device()->value(), 0u);
+}
+
+/** @brief Tests that a scope opened before a refusing rule set follows it. */
+TEST_F(Medium_PlacementScopeDevice, AScopeOpenedBeforeARefusingSetIsRefusedByIt)
+{
+    const PlacementScope scope = runtime().placement_scope(K_CLASS);
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(absent_index(runtime())), fail())));
+
+    EXPECT_FALSE(scope.device());
+}
+
+/** @brief Tests that a scope opened before the rules are cleared follows the cleared set. */
+TEST_F(Medium_PlacementScopeDevice, AScopeOpenedBeforeTheRulesAreClearedIsNoLongerRefused)
+{
+    const PlacementScope scope = runtime().placement_scope(K_CLASS);
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(absent_index(runtime())), fail())));
+    ASSERT_TRUE(runtime().clear_placement_rules());
+
+    EXPECT_TRUE(scope.device());
+}
+
+/** @brief Tests that a scope's buffer lands on device 0 under Local. */
+TEST_F(Medium_PlacementScopeDevice, LocalPlacesTheBufferOnDeviceZero)
+{
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(absent_index(runtime())), local())));
+
+    const Result<Buffer<int>> buffer = runtime().placement_scope(K_CLASS).buffer<int>(16);
+
+    ASSERT_TRUE(buffer);
+    EXPECT_EQ(buffer->device_index().value(), 0u);
+    EXPECT_EQ(buffer->size(), 16u);
+}
+
+/** @brief Tests that Fail refuses the buffer with the error of device(). */
+TEST_F(Medium_PlacementScopeDevice, FailRefusesTheBuffer)
+{
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(absent_index(runtime())), fail())));
+
+    const Result<Buffer<int>> buffer = runtime().placement_scope(K_CLASS).buffer<int>(16);
+
+    ASSERT_FALSE(buffer);
+    EXPECT_EQ(buffer.error().code, ErrorCode::InvalidArgument);
+}
+
+/** @brief Tests that a refused buffer allocates nothing. */
+TEST_F(Medium_PlacementScopeDevice, FailAllocatesNothing)
+{
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(absent_index(runtime())), fail())));
+    const std::size_t before = runtime().advanced().live_allocation_count();
+
+    static_cast<void>(runtime().placement_scope(K_CLASS).buffer<int>(16));
+
+    EXPECT_EQ(runtime().advanced().live_allocation_count(), before);
+}
+
+/** @brief Fixture of the tests that place a buffer on device 1, which the machine must have. */
+class Medium_PlacementScopeSecondDevice : public Medium_PlacementScopeDevice
+{
+    protected:
+        /** @brief Skips the test on a machine with one device. */
+        void SetUp() override
         {
-            PlacementRule rule;
-            rule.name = name;
-            rule.match.placement_class = K_CLASS;
-            rule.target = target;
-            rule.if_absent = if_absent;
-            PlacementRules rules;
-            EXPECT_TRUE(rules.add(std::move(rule)));
-            return rules;
+            Medium_PlacementScopeDevice::SetUp();
+            if (runtime().advanced().device_count() < 2)
+                GTEST_SKIP() << "needs a second device for the rule's target";
         }
+};
 
-        /** @brief Returns a target that names the device at an index and no machine. */
-        PlacementTarget device_at(std::size_t index)
-        {
-            PlacementTarget target;
-            target.device_index = index;
-            return target;
-        }
+/** @brief Tests that a scope's buffer lands on device 1 when the rule names it. */
+TEST_F(Medium_PlacementScopeSecondDevice, ABufferLandsOnTheDeviceTheRuleNames)
+{
+    ASSERT_TRUE(runtime().set_placement_rules(rules_of(device_at(1), fail())));
 
-        /** @brief Returns the policy that falls back to device 0 at once. */
-        AbsentPolicy local()
-        {
-            return AbsentPolicy{AbsentAction::Local, std::chrono::milliseconds{0}};
-        }
+    const Result<Buffer<int>> buffer = runtime().placement_scope(K_CLASS).buffer<int>(16);
 
-        /** @brief Returns the policy that refuses. */
-        AbsentPolicy fail()
-        {
-            return AbsentPolicy{AbsentAction::Fail, std::chrono::milliseconds{0}};
-        }
-
-        /** @brief Returns the policy that waits for the target for at most a bound. */
-        AbsentPolicy wait_for(std::chrono::milliseconds bound)
-        {
-            return AbsentPolicy{AbsentAction::Wait, bound};
-        }
-
-        /** @brief Returns the index one past the last device, which no machine has. */
-        std::size_t absent_index(const Runtime& runtime)
-        {
-            return runtime.advanced().device_count();
-        }
-    } // namespace
-
-    /** @brief Tests that a scope built without a runtime gives device 0 and refuses a buffer. */
-    TEST(Medium_PlacementScopeDevice, AScopeWithoutARuntimeGivesDeviceZeroAndNoBuffer)
-    {
-        const PlacementScope scope("device.test"_class, std::nullopt);
-
-        const Result<DeviceIndex> device = scope.device();
-        ASSERT_TRUE(device);
-        EXPECT_EQ(device->value(), 0u);
-        const Result<Buffer<int>> buffer = scope.buffer<int>(4);
-        ASSERT_FALSE(buffer);
-        EXPECT_EQ(buffer.error().code, ErrorCode::InvalidState);
-    }
-
-    /** @brief Tests that a scope no rule matches gives device 0, with no rules and with others. */
-    TEST(Medium_PlacementScopeDevice, ANoRuleScopeGivesDeviceZero)
-    {
-        auto rt = Runtime::create().value();
-        const PlacementScope scope = rt.placement_scope("other.class");
-
-        EXPECT_EQ(scope.device()->value(), 0u) << "no rules in force";
-
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(device_at(absent_index(rt)), fail())));
-        EXPECT_EQ(scope.device()->value(), 0u) << "the rule names another class";
-    }
-
-    /** @brief Tests that a rule with no device part, or a device this machine has, is followed. */
-    TEST(Medium_PlacementScopeDevice, ARuleWithAPresentDeviceGivesThatDevice)
-    {
-        auto rt = Runtime::create().value();
-        const PlacementScope scope = rt.placement_scope(K_CLASS);
-
-        PlacementTarget machine_only;
-        machine_only.machine_name = rt.topology().name;
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(machine_only, fail())));
-        EXPECT_EQ(scope.device()->value(), 0u) << "this machine, no device part";
-
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(device_at(0), fail())));
-        EXPECT_EQ(scope.device()->value(), 0u);
-
-        PlacementTarget by_kind;
-        by_kind.device_kind = rt.topology().devices.front().kind;
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(by_kind, fail())));
-        EXPECT_EQ(scope.device()->value(), 0u) << "the first device of device 0's kind";
-
-        PlacementTarget by_memory;
-        by_memory.device_min_memory = 1;
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(by_memory, fail())));
-        EXPECT_EQ(scope.device()->value(), 0u) << "the first device with at least one byte";
-    }
-
-    /** @brief Tests that Local gives device 0 when the rule's device is absent. */
-    TEST(Medium_PlacementScopeDevice, LocalGivesDeviceZeroForAnAbsentDevice)
-    {
-        auto rt = Runtime::create().value();
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(device_at(absent_index(rt)), local())));
-
-        const Result<DeviceIndex> device = rt.placement_scope(K_CLASS).device();
-
-        ASSERT_TRUE(device);
-        EXPECT_EQ(device->value(), 0u);
-    }
-
-    /** @brief Tests that Fail names the rule and the device in an InvalidArgument error. */
-    TEST(Medium_PlacementScopeDevice, FailNamesTheRuleAndTheDevice)
-    {
-        auto rt = Runtime::create().value();
-        const std::size_t absent = absent_index(rt);
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(device_at(absent), fail(), "pin-physics")));
-
-        const Result<DeviceIndex> device = rt.placement_scope(K_CLASS).device();
-
-        ASSERT_FALSE(device);
-        EXPECT_EQ(device.error().code, ErrorCode::InvalidArgument);
-        EXPECT_NE(device.error().message.find("\"pin-physics\""), std::string::npos)
-            << device.error().message;
-        EXPECT_NE(device.error().message.find("device index " + std::to_string(absent)),
-                  std::string::npos)
-            << device.error().message;
-    }
-
-    /** @brief Tests that an unnamed rule is named by its position in the Fail error. */
-    TEST(Medium_PlacementScopeDevice, FailNamesAnUnnamedRuleByItsPosition)
-    {
-        auto rt = Runtime::create().value();
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(device_at(absent_index(rt)), fail(), "")));
-
-        const Result<DeviceIndex> device = rt.placement_scope(K_CLASS).device();
-
-        ASSERT_FALSE(device);
-        EXPECT_NE(device.error().message.find("at position 0"), std::string::npos)
-            << device.error().message;
-    }
-
-    /** @brief Tests that Wait gives device 0 at once, since a local device never appears. */
-    TEST(Medium_PlacementScopeDevice, Regression_WaitGivesDeviceZeroWithoutWaiting)
-    {
-        // Longer than a medium test may run, so a call that waits fails the test.
-        constexpr std::chrono::milliseconds K_BOUND{std::chrono::minutes(10)};
-        auto rt = Runtime::create().value();
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(device_at(absent_index(rt)),
-                                                    wait_for(K_BOUND))));
-        const PlacementScope scope = rt.placement_scope(K_CLASS);
-
-        const auto start = std::chrono::steady_clock::now();
-        const Result<DeviceIndex> device = scope.device();
-        const auto elapsed = std::chrono::steady_clock::now() - start;
-
-        ASSERT_TRUE(device);
-        EXPECT_EQ(device->value(), 0u);
-        EXPECT_LT(elapsed, K_BOUND);
-    }
-
-    /** @brief Tests that a machine another name or label names makes the target absent here. */
-    TEST(Medium_PlacementScopeDevice, AnotherMachineMakesTheTargetAbsent)
-    {
-        auto rt = Runtime::create().value();
-        const PlacementScope scope = rt.placement_scope(K_CLASS);
-
-        PlacementTarget other_name = device_at(0);
-        other_name.machine_name = rt.topology().name + "-elsewhere";
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(other_name, fail())));
-        const Result<DeviceIndex> by_name = scope.device();
-        ASSERT_FALSE(by_name);
-        EXPECT_EQ(by_name.error().code, ErrorCode::InvalidArgument);
-        EXPECT_NE(by_name.error().message.find(other_name.machine_name), std::string::npos);
-
-        PlacementTarget other_label = device_at(0);
-        other_label.machine_label = NodeLabel{"zone", "nowhere"};
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(other_label, fail())));
-        EXPECT_FALSE(scope.device());
-
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(other_name, local())));
-        EXPECT_EQ(scope.device()->value(), 0u);
-    }
-
-    /** @brief Tests that a label this machine carries makes the target present. */
-    TEST(Medium_PlacementScopeDevice, ALabelTheMachineCarriesMakesTheTargetPresent)
-    {
-        RuntimeConfig config;
-        config.labels = {NodeLabel{"zone", "lab"}};
-        auto rt = Runtime::create(config).value();
-        PlacementTarget target = device_at(0);
-        target.machine_label = NodeLabel{"zone", "lab"};
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(target, fail())));
-
-        EXPECT_EQ(rt.placement_scope(K_CLASS).device()->value(), 0u);
-    }
-
-    /** @brief Tests that a device of a kind this machine lacks, or too much memory, is absent. */
-    TEST(Medium_PlacementScopeDevice, AKindOrMemoryNoDeviceHasIsAbsent)
-    {
-        auto rt = Runtime::create().value();
-        const PlacementScope scope = rt.placement_scope(K_CLASS);
-
-        PlacementTarget huge;
-        huge.device_min_memory = std::numeric_limits<std::uint64_t>::max();
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(huge, fail())));
-        EXPECT_FALSE(scope.device());
-
-        bool has_accelerator = false;
-        for (const DeviceFacts& facts : rt.topology().devices)
-            has_accelerator = has_accelerator || facts.kind == DeviceKind::Accelerator;
-        if (has_accelerator)
-            GTEST_SKIP() << "this machine has an accelerator, so the kind is not absent";
-        PlacementTarget accelerator;
-        accelerator.device_kind = DeviceKind::Accelerator;
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(accelerator, fail())));
-        EXPECT_FALSE(scope.device());
-    }
-
-    /** @brief Tests that a scope opened before set_placement_rules() follows the new set. */
-    TEST(Medium_PlacementScopeDevice, AScopeOpenedBeforeTheRulesFollowsTheNewSet)
-    {
-        auto rt = Runtime::create().value();
-        const PlacementScope scope = rt.placement_scope(K_CLASS);
-        ASSERT_TRUE(scope.device());
-
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(device_at(absent_index(rt)), fail())));
-        EXPECT_FALSE(scope.device()) << "the new set refuses";
-
-        ASSERT_TRUE(rt.clear_placement_rules());
-        EXPECT_TRUE(scope.device()) << "the cleared set leaves nothing to refuse";
-    }
-
-    /** @brief Tests that a scope's buffer lands on device 0 under Local. */
-    TEST(Medium_PlacementScopeDevice, LocalPlacesTheBufferOnDeviceZero)
-    {
-        auto rt = Runtime::create().value();
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(device_at(absent_index(rt)), local())));
-
-        const Result<Buffer<int>> buffer = rt.placement_scope(K_CLASS).buffer<int>(16);
-
-        ASSERT_TRUE(buffer);
-        EXPECT_EQ(buffer->device_index().value(), 0u);
-        EXPECT_EQ(buffer->size(), 16u);
-    }
-
-    /** @brief Tests that Fail returns the error of device() and allocates nothing. */
-    TEST(Medium_PlacementScopeDevice, FailRefusesTheBuffer)
-    {
-        auto rt = Runtime::create().value();
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(device_at(absent_index(rt)), fail())));
-
-        const Result<Buffer<int>> buffer = rt.placement_scope(K_CLASS).buffer<int>(16);
-
-        ASSERT_FALSE(buffer);
-        EXPECT_EQ(buffer.error().code, ErrorCode::InvalidArgument);
-    }
-
-    /** @brief Tests that a scope's buffer lands on device 1 on a machine that has one. */
-    TEST(Medium_PlacementScopeDevice, ABufferLandsOnTheDeviceTheRuleNames)
-    {
-        auto rt = Runtime::create().value();
-        if (rt.advanced().device_count() < 2)
-            GTEST_SKIP() << "needs a second device for the rule's target";
-        ASSERT_TRUE(rt.set_placement_rules(rules_of(device_at(1), fail())));
-
-        const Result<Buffer<int>> buffer = rt.placement_scope(K_CLASS).buffer<int>(16);
-
-        ASSERT_TRUE(buffer);
-        EXPECT_EQ(buffer->device_index().value(), 1u);
-    }
-} // namespace PlacementScopeDeviceTests
+    ASSERT_TRUE(buffer);
+    EXPECT_EQ(buffer->device_index().value(), 1u);
+}

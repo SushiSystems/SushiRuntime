@@ -15,5 +15,6 @@ The file tests NdRange: the global count, the SYCL range it builds and at().
 
 | Test | What it proves |
 | --- | --- |
-| `CountIsTheGlobalSize` | The count is the global size and the SYCL range keeps both sizes. |
+| `CountIsTheGlobalSize` | The count is the product of the global sizes. |
+| `ToNdRangeKeepsTheGlobalAndLocalSizes` | The SYCL range keeps both the global and the local sizes. |
 | `AtMovesTheOrigin` | At() keeps both sizes and moves the origin. |

@@ -37,30 +37,35 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/emit_dynamic.hpp>
-#include <SushiRuntime/engine_handles/late_controls_access.hpp>
-#include <SushiRuntime/task/late_bindings.hpp>
 
 #include "description_runner.hpp"
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
+/** @brief Fixture of the dynamic-node test, which runs a description on the program's runtime. */
+class Medium_EmitDynamic : public TestSupport::RuntimeTest
+{
+};
+
 /** @brief Tests that the kernel runs over the live count and keeps its bindings. */
-TEST(Medium_EmitDynamic, TheKernelRunsOverTheLiveCount)
+TEST_F(Medium_EmitDynamic, TheKernelRunsOverTheLiveCount)
 {
     constexpr std::size_t K_CAPACITY = 8;
-    auto runtime = Runtime::create().value();
-    int* const data = Testing::shared_integers(runtime, K_CAPACITY, 0);
-    ASSERT_NE(data, nullptr);
-    auto bindings = std::make_shared<Internal::Graph::LateBindings>();
-    bindings->count.store(5);
-    const std::shared_ptr<Detail::LateControls> controls = Detail::surface_controls(bindings);
+    constexpr std::size_t K_LIVE = 5;
+    auto data = runtime().buffer<int>(K_CAPACITY).value();
+    TestSupport::fill_with(data, 0);
+    int* const words = data.data();
+    const std::shared_ptr<Detail::LateControls> controls =
+        Testing::bound_controls(sized([] { return K_LIVE; }));
     const Detail::NodeDescription description = Detail::dynamic_node(
-        controls, nullptr, {}, {BufferRegion(data)}, K_CAPACITY,
-        [data](std::size_t index) { data[index] = 1; }, K_CAPACITY);
+        controls, nullptr, {}, {BufferRegion(words)}, K_CAPACITY,
+        [words](std::size_t index) { words[index] = 1; }, K_CAPACITY);
+
+    Testing::run_description(runtime(), description);
+
     EXPECT_EQ(description.kind, Detail::NodeKind::Dynamic);
     EXPECT_EQ(description.bindings, controls);
-    Testing::run_description(runtime, description);
-    for (std::size_t index = 0; index < K_CAPACITY; ++index)
-        EXPECT_EQ(data[index], index < 5 ? 1 : 0) << "at " << index;
-    sycl::free(data, Testing::queue_of(runtime));
+    EXPECT_EQ(TestSupport::contents(data), TestSupport::window_of<int>(K_CAPACITY, 0, K_LIVE, 1, 0));
 }

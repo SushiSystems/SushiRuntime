@@ -28,38 +28,47 @@
  * @author Mustafa Garip
  */
 
-#include <cstddef>
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
 
-#include "description_runner.hpp"
+#include "support/adopted_handles.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Tests that a buffer's key is its data and its liveness ends with it. */
-TEST(Medium_HandleAccess, ABufferKeyIsItsData)
+/** @brief Tests that a buffer's key is its data. */
+TEST(Small_HandleAccess, ABufferKeyIsItsData)
 {
-    auto runtime = Runtime::create().value();
+    std::vector<void*> releases;
+    auto buffer = TestSupport::adopted_buffer<int>(1, 4, releases);
+
+    EXPECT_EQ(Detail::HandleAccess::key(buffer), static_cast<void*>(buffer.data()));
+    EXPECT_EQ(Detail::HandleAccess::key(buffer), TestSupport::made_up_address(1));
+}
+
+/** @brief Tests that a buffer's liveness ends with the buffer. */
+TEST(Small_HandleAccess, ABufferLivenessEndsWithIt)
+{
+    std::vector<void*> releases;
     LivenessObserver life;
     {
-        auto buffer = runtime.buffer<int>(4).value();
-        EXPECT_EQ(Detail::HandleAccess::key(buffer), static_cast<void*>(buffer.data()));
+        auto buffer = TestSupport::adopted_buffer<int>(1, 4, releases);
         life = Detail::HandleAccess::liveness(buffer);
         EXPECT_FALSE(life.expired());
     }
+
     EXPECT_TRUE(life.expired()) << "a destroyed buffer still reported itself alive";
 }
 
 /** @brief Tests that a state reads its current field and writes its next one. */
-TEST(Medium_HandleAccess, AStateReadsCurrentAndWritesNext)
+TEST(Small_HandleAccess, AStateReadsCurrentAndWritesNext)
 {
-    auto runtime = Runtime::create().value();
-    auto state = runtime.state<int>(4).value();
-    EXPECT_EQ(Detail::HandleAccess::read_key(state), static_cast<void*>(state.current()));
-    EXPECT_EQ(Detail::HandleAccess::write_key(state), static_cast<void*>(state.next()));
+    std::vector<void*> releases;
+    auto state = TestSupport::adopted_state<int>(2, 3, 4, releases);
+
+    EXPECT_EQ(Detail::HandleAccess::read_key(state), TestSupport::made_up_address(2));
+    EXPECT_EQ(Detail::HandleAccess::write_key(state), TestSupport::made_up_address(3));
 }

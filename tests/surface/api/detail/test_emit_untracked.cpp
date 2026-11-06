@@ -38,36 +38,50 @@
 #include <SushiRuntime/api/detail/emit_untracked.hpp>
 
 #include "description_runner.hpp"
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Tests that an untracked launch names its device and touches no region. */
-TEST(Medium_EmitUntracked, AnUntrackedLaunchNamesItsDevice)
+/** @brief Fixture of the test that runs an untracked description on the program's runtime. */
+class Medium_EmitUntracked : public TestSupport::RuntimeTest
 {
-    auto runtime = Runtime::create().value();
-    int* const data = Testing::shared_integers(runtime, 4, 0);
-    ASSERT_NE(data, nullptr);
-    const Detail::NodeDescription description =
-        Detail::untracked_launch_node(std::size_t{4}, 0, [data](std::size_t index) { data[index] = 1; });
+};
+
+/** @brief Tests that an untracked launch names its device and touches no region. */
+TEST_F(Medium_EmitUntracked, AnUntrackedLaunchNamesItsDevice)
+{
+    auto data = runtime().buffer<int>(4).value();
+    TestSupport::fill_with(data, 0);
+    int* const words = data.data();
+    const Detail::NodeDescription description = Detail::untracked_launch_node(
+        std::size_t{4}, 0, [words](std::size_t index) { words[index] = 1; });
+
+    Testing::run_description(runtime(), description);
+
     EXPECT_EQ(description.kind, Detail::NodeKind::Untracked);
     EXPECT_EQ(description.device, 0u);
     EXPECT_EQ(description.width, 4u);
     EXPECT_TRUE(description.reads.empty());
     EXPECT_TRUE(description.writes.empty());
-    Testing::run_description(runtime, description);
-    for (std::size_t index = 0; index < 4; ++index)
-        EXPECT_EQ(data[index], 1);
-    sycl::free(data, Testing::queue_of(runtime));
+    EXPECT_EQ(TestSupport::contents(data), std::vector<int>(4, 1));
 }
 
-/** @brief Tests the range and the raw forms: the width of the range, none for the raw. */
-TEST(Medium_EmitUntracked, RangeAndRawForms)
+/** @brief Tests that an untracked range description states the width and the device it was given. */
+TEST(Small_EmitUntracked, ARangeFormStatesItsWidthAndDevice)
 {
     const Detail::NodeDescription range = Detail::untracked_range_node(
         8, 2, [](std::size_t, std::size_t, sycl::handler&) {});
+
     EXPECT_EQ(range.width, 8u);
     EXPECT_EQ(range.device, 2u);
+}
+
+/** @brief Tests that an untracked raw description is untracked and states the device it was given. */
+TEST(Small_EmitUntracked, ARawFormIsUntrackedOnItsDevice)
+{
     const Detail::NodeDescription raw = Detail::untracked_raw_node(1, [](sycl::handler&) {});
+
     EXPECT_EQ(raw.kind, Detail::NodeKind::Untracked);
     EXPECT_EQ(raw.device, 1u);
 }

@@ -29,6 +29,7 @@
  */
 
 #include <cstddef>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -38,28 +39,55 @@
 #include <SushiRuntime/api/detail/emit_task.hpp>
 
 #include "description_runner.hpp"
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Tests the fields of the description and that its work runs on the queue. */
-TEST(Medium_EmitTask, ATaskNodeRunsOnTheQueue)
+namespace
 {
-    auto runtime = Runtime::create().value();
-    int* const value = Testing::shared_integers(runtime, 1, 0);
-    ASSERT_NE(value, nullptr);
-    const Detail::NodeDescription description = Detail::task_node(
-        {}, {BufferRegion(value)},
-        [value](sycl::queue& queue, const std::vector<sycl::event>& dependencies)
+    /** @brief Returns the work of a task that stores 7 in @p value on the queue it is handed. */
+    Detail::QueueWork store_seven(int* value)
+    {
+        return [value](sycl::queue& queue, const std::vector<sycl::event>& dependencies)
         {
             return queue.submit([&](sycl::handler& handler)
             {
                 handler.depends_on(dependencies);
                 handler.single_task([value] { *value = 7; });
             });
-        }, 1);
+        };
+    }
+} // namespace
+
+/** @brief Tests the kind, the written region and the work type of a task description. */
+TEST(Small_EmitTask, ATaskNodeDescribesItsKindWriteAndWork)
+{
+    int target = 0;
+
+    const Detail::NodeDescription description =
+        Detail::task_node({}, {BufferRegion(&target)}, store_seven(&target), 1);
+
     EXPECT_EQ(description.kind, Detail::NodeKind::Task);
+    ASSERT_EQ(description.writes.size(), 1u);
+    EXPECT_EQ(description.writes[0].base, &target);
     EXPECT_TRUE(std::holds_alternative<Detail::QueueWork>(description.work));
-    Testing::run_description(runtime, description);
-    EXPECT_EQ(*value, 7);
-    sycl::free(value, Testing::queue_of(runtime));
+}
+
+/** @brief Fixture of the test that runs a task description on the program's runtime. */
+class Medium_EmitTask : public TestSupport::RuntimeTest
+{
+};
+
+/** @brief Tests that the work of a task description runs on the queue it is handed. */
+TEST_F(Medium_EmitTask, ATaskNodeRunsOnTheQueue)
+{
+    auto value = runtime().buffer<int>(1).value();
+    TestSupport::fill_with(value, 0);
+    const Detail::NodeDescription description =
+        Detail::task_node({}, {BufferRegion(value.data())}, store_seven(value.data()), 1);
+
+    Testing::run_description(runtime(), description);
+
+    EXPECT_EQ(TestSupport::contents(value), std::vector<int>{7});
 }

@@ -23,7 +23,7 @@
 
 /**
  * @file test_placement.cpp
- * @brief Tests On: a device by index, or the device of the handle it names.
+ * @brief Tests On: the device of the handle it names.
  * @see tests/surface/api/vocabulary/README.md
  * @author Mustafa Garip
  */
@@ -37,22 +37,22 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/vocabulary/placement.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 
-/** @brief Tests that an index names that device and observes nothing. */
-TEST(Medium_Placement, AnIndexNamesItsDevice)
+/** @brief Fixture of the On test, which allocates on the program's runtime. */
+class Medium_Placement : public TestSupport::RuntimeTest
 {
-    const On placement(DeviceIndex{0});
-    EXPECT_EQ(placement.device, DeviceIndex{0});
-    EXPECT_TRUE(placement.life.expired());
-}
+};
 
 /** @brief Tests that a buffer names its own device and is observed. */
-TEST(Medium_Placement, ABufferNamesItsDevice)
+TEST_F(Medium_Placement, ABufferNamesItsDevice)
 {
-    auto runtime = Runtime::create().value();
-    auto buffer = runtime.buffer<int>(4).value();
+    auto buffer = runtime().buffer<int>(4).value();
+
     const On placement(buffer);
+
     EXPECT_EQ(placement.device, buffer.device_index());
     EXPECT_FALSE(placement.life.expired());
 }

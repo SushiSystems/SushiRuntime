@@ -32,25 +32,20 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <tuple>
-#include <type_traits>
-#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
-
-#include "run_recorder.hpp"
 #include <SushiRuntime/api/detail/emit_dynamic.hpp>
 #include <SushiRuntime/api/detail/emit_state.hpp>
 #include <SushiRuntime/api/detail/handle_access.hpp>
-#include <SushiRuntime/context_access/context_access.hpp>
-#include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/task/late_bindings.hpp>
-#include <SushiRuntime/engine_handles/late_controls_access.hpp>
+
+#include "description_runner.hpp"
+#include "run_recorder.hpp"
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -65,7 +60,7 @@ namespace
     constexpr Word K_CANARY = 0xDEADBEEFu;
 
     /** @brief Allocates a State whose current field holds index plus K_SEED and next K_CANARY. */
-    State<Word> seeded_state(Runtime& rt, std::size_t count = K_WIDTH)
+    State<Word> seeded_state(const Runtime& rt, std::size_t count = K_WIDTH)
     {
         auto state = rt.state<Word>(count).value();
         for (std::size_t i = 0; i < count; ++i)
@@ -82,54 +77,86 @@ namespace
         return Detail::HandleAccess::view(state);
     }
 
-    /** @brief Runs the work of a described node once on the runtime's first queue. */
-    void run_once(Runtime& rt, const Detail::NodeDescription& description)
+    /** @brief Returns the first count words of the current field of @p state. */
+    std::vector<Word> current_words(const State<Word>& state, std::size_t count = K_WIDTH)
     {
-        sycl::queue& queue = Internal::ContextAccess::context(rt).devices().queue(0);
-        std::visit(
-            [&queue](const auto& work)
-            {
-                using Work = std::decay_t<decltype(work)>;
-                if constexpr (std::is_same_v<Work, Detail::CommandGroupWork>)
-                    queue.submit(work).wait();
-                else if constexpr (std::is_same_v<Work, Detail::QueueWork>)
-                    work(queue, std::vector<sycl::event>{}).wait();
-                else
-                    work();
-            },
-            description.work);
+        return std::vector<Word>(state.current(), state.current() + count);
     }
+
+    /** @brief Returns the whole next field of @p state. */
+    std::vector<Word> next_words(const State<Word>& state)
+    {
+        return std::vector<Word>(state.next(), state.next() + state.size());
+    }
+
+    /** @brief Returns the words index plus K_SEED, each multiplied by @p factor. */
+    std::vector<Word> seed_words_times(Word factor)
+    {
+        std::vector<Word> words = TestSupport::ramp<Word>(K_WIDTH, K_SEED);
+        for (Word& word : words)
+            word *= factor;
+        return words;
+    }
+
+    /** @brief Returns seed + seed * seed at every index: out + left * right, all three seeded alike. */
+    std::vector<Word> seed_plus_square_words()
+    {
+        std::vector<Word> words = TestSupport::ramp<Word>(K_WIDTH, K_SEED);
+        for (Word& word : words)
+            word += word * word;
+        return words;
+    }
+
+    /** @brief Returns the next field after a rule that adds one to the first @p live words. */
+    std::vector<Word> next_after_increment_of(std::size_t live)
+    {
+        std::vector<Word> words(K_WIDTH, K_CANARY);
+        for (std::size_t i = 0; i < live; ++i)
+            words[i] = static_cast<Word>(i) + K_SEED + 1u;
+        return words;
+    }
+
+    /** @brief Returns the launched widths of the events of @p observation, sorted. */
+    std::vector<std::size_t> sorted_launched_widths(const RunObservation& observation)
+    {
+        std::vector<std::size_t> widths;
+        for (const auto& event : observation.events)
+            widths.push_back(event.launched_width);
+        std::sort(widths.begin(), widths.end());
+        return widths;
+    }
+
+    /** @brief Fixture of the tests that build state nodes on the program's runtime. */
+    class Medium_StateEmitters : public TestSupport::RuntimeTest
+    {
+    };
 } // namespace
 
 /** @brief Tests that a coupled rule with const inputs computes from both States it reads. */
-TEST(Medium_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
+TEST_F(Medium_StateEmitters, ACoupledRuleReadsItsInputsThroughConstPointers)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto out = seeded_state(rt);
     auto left = seeded_state(rt);
     auto right = seeded_state(rt);
-
     auto graph = rt.graph();
     graph.add_coupled(Coupled(out, left, right),
                       [](std::size_t i, const Word* current, Word* next, const Word* a, const Word* b)
                       {
-                  next[i] = current[i] + a[i] * b[i];
+                          next[i] = current[i] + a[i] * b[i];
                       });
+
     graph.run().value();
 
-    for (std::size_t i = 0; i < K_WIDTH; ++i)
-    {
-        const Word seed = static_cast<Word>(i) + K_SEED;
-        ASSERT_EQ(out.current()[i], seed + seed * seed) << "at i=" << i;
-        ASSERT_EQ(left.current()[i], seed) << "at i=" << i;
-        ASSERT_EQ(right.current()[i], seed) << "at i=" << i;
-    }
+    EXPECT_EQ(current_words(out), seed_plus_square_words());
+    EXPECT_EQ(current_words(left), seed_words_times(1u));
+    EXPECT_EQ(current_words(right), seed_words_times(1u));
 }
 
 /** @brief Tests that State, coupled and untracked nodes report the width of their launch. */
-TEST(Medium_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWidth)
+TEST_F(Medium_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWidth)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto whole = seeded_state(rt);
     auto prefix = seeded_state(rt);
     auto input = seeded_state(rt);
@@ -145,45 +172,38 @@ TEST(Medium_StateEmitters, StateCoupledAndUntrackedNodesReportTheirLaunchWidth)
     graph.add_coupled(K_PREFIX, Coupled(prefix, input),
                       [](std::size_t i, const Word* current, Word* next, const Word* other)
                       {
-                  next[i] = current[i] + other[i];
+                          next[i] = current[i] + other[i];
                       });
     graph.add_untracked(K_PREFIX + 1, [words](std::size_t i) { words[i] = 1u; });
 
     graph.run().value();
-    ASSERT_EQ(recorder.count(), 1u);
 
+    ASSERT_EQ(recorder.count(), 1u);
     // The three nodes share no region, so their events are compared sorted by width.
-    std::vector<std::size_t> widths;
-    for (const auto& event : recorder.last().events)
-        widths.push_back(event.launched_width);
-    std::sort(widths.begin(), widths.end());
-    EXPECT_EQ(widths, (std::vector<std::size_t>{K_PREFIX, K_PREFIX + 1, K_WIDTH}));
+    EXPECT_EQ(sorted_launched_widths(recorder.last()),
+              (std::vector<std::size_t>{K_PREFIX, K_PREFIX + 1, K_WIDTH}));
 }
 
 /** @brief Tests the State emitter over a launch, added outside a recorder. */
-TEST(Medium_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
+TEST_F(Medium_StateEmitters, AStateNodeBuiltFromItsViewRunsTheRule)
 {
-    auto rt = Runtime::create().value();
-    auto field = seeded_state(rt);
+    auto field = seeded_state(runtime());
     const Detail::NodeDescription described = Detail::state_launch_node(
         view_of(field), K_PREFIX, [](std::size_t i, const Word* current, Word* next)
         {
             next[i] = current[i] + 1u;
         });
 
-    run_once(rt, described);
+    Testing::run_description(runtime(), described);
 
-    for (std::size_t i = 0; i < K_WIDTH; ++i)
-        ASSERT_EQ(field.next()[i], i < K_PREFIX ? static_cast<Word>(i) + K_SEED + 1u : K_CANARY)
-            << "at i=" << i;
+    EXPECT_EQ(next_words(field), next_after_increment_of(K_PREFIX));
 }
 
 /** @brief Tests the coupled emitter over a launch, added outside a recorder. */
-TEST(Medium_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
+TEST_F(Medium_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
 {
-    auto rt = Runtime::create().value();
-    auto out = seeded_state(rt);
-    auto input = seeded_state(rt);
+    auto out = seeded_state(runtime());
+    auto input = seeded_state(runtime());
     const Detail::NodeDescription described = Detail::coupled_launch_node(
         view_of(out), std::make_tuple(view_of(input)), out.size(),
         [](std::size_t i, const Word* current, Word* next, const Word* other)
@@ -191,27 +211,21 @@ TEST(Medium_StateEmitters, ACoupledNodeBuiltFromItsViewsRunsTheRule)
             next[i] = current[i] + 2u * other[i];
         });
 
-    run_once(rt, described);
+    Testing::run_description(runtime(), described);
 
-    for (std::size_t i = 0; i < K_WIDTH; ++i)
-        ASSERT_EQ(out.next()[i], 3u * (static_cast<Word>(i) + K_SEED)) << "at i=" << i;
+    EXPECT_EQ(next_words(out), seed_words_times(3u));
 }
 
 /** @brief Tests the late-bound State emitter, added outside a recorder. */
-TEST(Medium_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow)
+TEST_F(Medium_StateEmitters, ADynamicStateNodeBuiltFromItsViewRunsTheLiveWindow)
 {
-    auto rt = Runtime::create().value();
-    auto field = seeded_state(rt);
-    auto bindings = std::make_shared<Internal::Graph::LateBindings>();
-    bindings->count.store(K_PREFIX);
+    auto field = seeded_state(runtime());
     const Detail::NodeDescription described = Detail::dynamic_state_node(
-        view_of(field), field.size(), Detail::surface_controls(bindings), nullptr,
-        std::vector<BufferRegion>{},
+        view_of(field), field.size(), Testing::bound_controls(sized([] { return K_PREFIX; })),
+        nullptr, std::vector<BufferRegion>{},
         [](std::size_t i, const Word* current, Word* next) { next[i] = current[i] + 1u; });
 
-    run_once(rt, described);
+    Testing::run_description(runtime(), described);
 
-    for (std::size_t i = 0; i < K_WIDTH; ++i)
-        ASSERT_EQ(field.next()[i], i < K_PREFIX ? static_cast<Word>(i) + K_SEED + 1u : K_CANARY)
-            << "at i=" << i;
+    EXPECT_EQ(next_words(field), next_after_increment_of(K_PREFIX));
 }

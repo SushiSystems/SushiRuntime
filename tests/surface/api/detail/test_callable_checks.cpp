@@ -29,15 +29,12 @@
  */
 
 #include <cstddef>
-#include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/callable_checks.hpp>
-
-#include "description_runner.hpp"
 
 using namespace SushiRuntime;
 
@@ -47,10 +44,10 @@ TEST(Small_CallableChecks, EachLaunchTakesItsIndex)
     const auto by_count = [](std::size_t) {};
     const auto by_id = [](sycl::id<2>) {};
     const auto by_item = [](sycl::nd_item<1>) {};
-    static_assert(Detail::is_launch_kernel_v<std::size_t, decltype(by_count)>, "a count takes size_t");
-    static_assert(!Detail::is_launch_kernel_v<std::size_t, decltype(by_id)>, "a count does not take an id");
-    static_assert(Detail::is_launch_kernel_v<Extent<2>, decltype(by_id)>, "an extent takes an id");
-    static_assert(Detail::is_launch_kernel_v<NdRange<1>, decltype(by_item)>, "a range takes an nd_item");
-    static_assert(Detail::accepts_kernel<std::size_t, decltype(by_count)>(), "accepted");
-    SUCCEED();
+
+    EXPECT_TRUE((Detail::is_launch_kernel_v<std::size_t, decltype(by_count)>));
+    EXPECT_FALSE((Detail::is_launch_kernel_v<std::size_t, decltype(by_id)>));
+    EXPECT_TRUE((Detail::is_launch_kernel_v<Extent<2>, decltype(by_id)>));
+    EXPECT_TRUE((Detail::is_launch_kernel_v<NdRange<1>, decltype(by_item)>));
+    EXPECT_TRUE((Detail::accepts_kernel<std::size_t, decltype(by_count)>()));
 }

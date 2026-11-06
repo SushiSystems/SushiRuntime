@@ -34,27 +34,36 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
 
-#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/before_step_hooks.hpp>
-
-#include "description_runner.hpp"
 
 using namespace SushiRuntime;
 
 /** @brief Tests that every hook runs once per call, in the order added, with the count. */
-TEST(Medium_BeforeStepHooks, HooksRunInOrderWithTheCount)
+TEST(Small_BeforeStepHooks, HooksRunInOrderWithTheCount)
 {
     std::vector<std::size_t> seen;
     std::array<char, 256> large{};
     Detail::BeforeStepHooks hooks;
     hooks.add([&seen](std::size_t steps) { seen.push_back(steps); });
     hooks.add([&seen, large](std::size_t steps) { seen.push_back(steps + 100 + large[0]); });
+
     hooks.run(3);
+
     EXPECT_EQ(seen, (std::vector<std::size_t>{3, 103}));
+}
+
+/** @brief Tests that a moved BeforeStepHooks runs the hooks it was handed. */
+TEST(Small_BeforeStepHooks, AMovedObjectKeepsItsHooks)
+{
+    std::vector<std::size_t> seen;
+    std::array<char, 256> large{};
+    Detail::BeforeStepHooks hooks;
+    hooks.add([&seen](std::size_t steps) { seen.push_back(steps); });
+    hooks.add([&seen, large](std::size_t steps) { seen.push_back(steps + 100 + large[0]); });
 
     Detail::BeforeStepHooks moved(std::move(hooks));
     moved.run(4);
-    EXPECT_EQ(seen.size(), 4u);
+
+    EXPECT_EQ(seen, (std::vector<std::size_t>{4, 104}));
 }

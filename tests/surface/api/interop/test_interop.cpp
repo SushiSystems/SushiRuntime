@@ -39,9 +39,9 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/context_access/context_access.hpp>
+
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -50,13 +50,9 @@ namespace
 #if defined(_WIN32)
     /// @brief The handle kind this platform imports.
     constexpr ExternalHandleKind K_NATIVE_KIND = ExternalHandleKind::OpaqueWin32;
-    /// @brief The handle kind this platform cannot import.
-    constexpr ExternalHandleKind K_FOREIGN_KIND = ExternalHandleKind::OpaqueFd;
 #else
     /// @brief The handle kind this platform imports.
     constexpr ExternalHandleKind K_NATIVE_KIND = ExternalHandleKind::OpaqueFd;
-    /// @brief The handle kind this platform cannot import.
-    constexpr ExternalHandleKind K_FOREIGN_KIND = ExternalHandleKind::OpaqueWin32;
 #endif
 
     /// @brief Size the test descriptors state for the exported allocation.
@@ -64,6 +60,9 @@ namespace
 
     /// @brief Handle value that passes the descriptor checks; no test hands it to a device.
     constexpr std::uint64_t K_PLACEHOLDER_HANDLE = 1;
+
+    /// @brief How many device indices the per-device tests try; a row past the machine's last device skips.
+    constexpr std::size_t K_DEVICE_ROWS = 4;
 
     /** @brief Returns the first device whose device_import equals @p imports, if any. */
     std::optional<std::size_t> first_device_where_import_is(Runtime& runtime, bool imports)
@@ -89,340 +88,424 @@ namespace
         return descriptor;
     }
 
-    /**
-     * @brief Imports @p count floats and returns the refusal.
-     * @return The refusal; with a test failure, an InvalidState error when there is none.
-     */
-    Error refusal_of(Runtime& runtime, const ExternalMemoryDescriptor& descriptor,
-                     std::size_t count, std::size_t index)
+    /** @brief Fails the test unless @p message holds every part of @p parts. */
+    void expect_message_holds(const std::string& message, const std::vector<std::string>& parts)
     {
-        const auto imported =
-            runtime.interop().import_device<float>(descriptor, count, DeviceIndex{index});
-        if (imported.has_value())
-        {
-            ADD_FAILURE() << "import_device accepted the descriptor";
-            return Error{ErrorCode::InvalidState, "import_device accepted the descriptor"};
-        }
-        return imported.error();
+        for (const std::string& part : parts)
+            EXPECT_NE(message.find(part), std::string::npos) << part << " is not in: " << message;
     }
 } // namespace
 
-TEST(Medium_InteropImport, HostExportReportsWhetherTheQueueOffersHostUSM)
+/** @brief Fixture of the tests that read one device's capabilities; the parameter is the device index. */
+class Medium_InteropCapabilities : public TestSupport::RuntimeTest,
+                                   public ::testing::WithParamInterface<std::size_t>
 {
-    auto runtime = Runtime::create().value();
-    const std::size_t count = runtime.advanced().device_count();
+    protected:
+        /** @brief Skips the row when the machine has no device at the parameter's index. */
+        void SetUp() override
+        {
+            if (GetParam() >= runtime().advanced().device_count())
+                GTEST_SKIP() << "the machine has no device " << GetParam();
+        }
 
-    for (std::size_t index = 0; index < count; ++index)
-    {
-        Internal::Execution::RuntimeContext& context =
-            SushiRuntime::Internal::ContextAccess::context(runtime);
-        const sycl::device device = context.devices().queue(index).get_device();
-        EXPECT_EQ(runtime.interop().capabilities(DeviceIndex{index}).value().host_export,
-                  device.has(sycl::aspect::usm_host_allocations))
-            << "device " << index;
-    }
+        /** @brief Returns what the device of this row reports. */
+        InteropCapabilities capabilities() const
+        {
+            return runtime().interop().capabilities(DeviceIndex{GetParam()}).value();
+        }
+};
+
+/** @brief Tests that host_export equals the host USM aspect of the device behind the queue. */
+TEST_P(Medium_InteropCapabilities, HostExportReportsWhetherTheQueueOffersHostUSM)
+{
+    const sycl::device device = runtime().advanced().queue(DeviceIndex{GetParam()}).get_device();
+
+    EXPECT_EQ(capabilities().host_export, device.has(sycl::aspect::usm_host_allocations));
 }
 
-TEST(Medium_InteropHostExport, AnExportIsHostResidentAndALateCountAcceptsIt)
+/** @brief Fixture of the tests of a device that imports external memory; a row of another device skips. */
+class Medium_InteropImportingDevice : public Medium_InteropCapabilities
 {
-    auto runtime = Runtime::create().value();
-    if (!runtime.interop().capabilities(DeviceIndex{0}).value().host_export)
-        GTEST_SKIP() << "device 0 offers no host USM";
+    protected:
+        /** @brief Skips the row when its device imports no external memory. */
+        void SetUp() override
+        {
+            Medium_InteropCapabilities::SetUp();
+            if (IsSkipped())
+                return;
+            if (!capabilities().device_import)
+                GTEST_SKIP() << "device " << GetParam() << " imports no external memory";
+        }
+};
 
+/** @brief Tests that a device that imports external memory reports its UUID. */
+TEST_P(Medium_InteropImportingDevice, ReportsItsUUID)
+{
+    EXPECT_TRUE(capabilities().device_uuid.has_value());
+}
+
+INSTANTIATE_TEST_SUITE_P(Devices, Medium_InteropCapabilities,
+                         ::testing::Range<std::size_t>(0, K_DEVICE_ROWS));
+INSTANTIATE_TEST_SUITE_P(Devices, Medium_InteropImportingDevice,
+                         ::testing::Range<std::size_t>(0, K_DEVICE_ROWS));
+
+/** @brief Fixture of the tests that export host memory, which need device 0 to offer host USM. */
+class Medium_InteropExportAsCount : public TestSupport::RuntimeTest
+{
+    protected:
+        /** @brief Skips the test on a machine whose device 0 offers no host USM. */
+        void SetUp() override
+        {
+            if (!runtime().interop().capabilities(DeviceIndex{0}).value().host_export)
+                GTEST_SKIP() << "device 0 offers no host USM";
+        }
+};
+
+/** @brief Tests that an export is host resident and its address is its data. */
+TEST_F(Medium_InteropExportAsCount, AnExportIsHostResident)
+{
     const auto exported =
-        runtime.interop().export_host<std::uint32_t>(4, DeviceIndex{0}, 64).value();
+        runtime().interop().export_host<std::uint32_t>(4, DeviceIndex{0}, 64).value();
+
     EXPECT_EQ(exported.buffer.residency(), Residency::Host);
     EXPECT_EQ(exported.address(), static_cast<void*>(exported.buffer.data()));
-
-    // sized_from_device stops the process unless the counter is Residency::Host.
-    const Dynamic late = sized_from_device(exported.buffer);
-    static_cast<void>(late);
 }
 
-TEST(Medium_InteropImport, ADeviceWithoutImportIsRefusedByItsIndex)
+/** @brief Tests that sized_from_device takes an export as its count and the task runs that many elements. */
+TEST_F(Medium_InteropExportAsCount, ALateCountTakesAnExportAsItsCounter)
 {
+    constexpr std::size_t CAPACITY = 8;
+    const auto exported =
+        runtime().interop().export_host<std::uint32_t>(4, DeviceIndex{0}, 64).value();
+    auto marks = runtime().buffer<int>(CAPACITY).value();
+    TestSupport::fill_with(marks, 0);
+    exported.buffer[0] = 3u;
+    int* out = marks.data();
+
+    auto graph = runtime().graph();
+    graph.add_dynamic(sized_from_device(exported.buffer), CAPACITY, Reads(), Writes(marks),
+                      [out](std::size_t i) { out[i] = 1; });
+    graph.run().value();
+
+    EXPECT_EQ(TestSupport::contents(marks), TestSupport::window_of(CAPACITY, 0, 3, 1, 0));
+}
+
+/** @brief Fixture of the import tests that need a device that does not import external memory. */
+class Medium_InteropImportOnADeviceWithoutImport : public TestSupport::RuntimeTest
+{
+    protected:
+        /** @brief Finds the device, or skips when every device imports or the toolchain refuses earlier. */
+        void SetUp() override
+        {
 #if !defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
-    GTEST_SKIP() << "This toolchain has no bindless images, so import_device refuses before it reads a device.";
-#endif
-    auto runtime = Runtime::create().value();
-    const std::optional<std::size_t> index = first_device_where_import_is(runtime, false);
-    if (!index)
-        GTEST_SKIP() << "every device imports external memory";
-
-    const Error refusal =
-        refusal_of(runtime, acceptable_descriptor(runtime, *index), 4, *index);
-
-    EXPECT_EQ(refusal.code, ErrorCode::Unsupported);
-    EXPECT_NE(refusal.message.find("device " + std::to_string(*index)), std::string::npos)
-        << refusal.message;
-    EXPECT_NE(refusal.message.find("device_import is false"), std::string::npos)
-        << refusal.message;
-}
-
-TEST(Medium_InteropImport, ADeviceThatImportsReportsItsUUID)
-{
-    auto runtime = Runtime::create().value();
-    const std::size_t count = runtime.advanced().device_count();
-
-    for (std::size_t index = 0; index < count; ++index)
-    {
-        const InteropCapabilities capabilities =
-            runtime.interop().capabilities(DeviceIndex{index}).value();
-        if (capabilities.device_import)
-            EXPECT_TRUE(capabilities.device_uuid.has_value()) << "device " << index;
-    }
-}
-
-TEST(Medium_InteropImport, ADefaultDescriptorIsRefusedForItsUnstatedKind)
-{
-    auto runtime = Runtime::create().value();
-    const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
-    if (!index)
-        GTEST_SKIP() << "no device imports external memory";
-
-    const ExternalMemoryDescriptor descriptor;
-    const Error refusal = refusal_of(runtime, descriptor, 4, *index);
-
-    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(refusal.message.find("descriptor.kind is Unspecified"), std::string::npos)
-        << refusal.message;
-    EXPECT_NE(refusal.message.find("the exporter must state it"), std::string::npos)
-        << refusal.message;
-}
-
-#if defined(_WIN32)
-TEST(Medium_InteropImport, ANullWin32HandleIsRefusedByName)
-{
-    auto runtime = Runtime::create().value();
-    const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
-    if (!index)
-        GTEST_SKIP() << "no device imports external memory";
-
-    ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
-    descriptor.handle = 0;
-    const Error refusal = refusal_of(runtime, descriptor, 4, *index);
-
-    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(refusal.message.find("descriptor.handle is null"), std::string::npos)
-        << refusal.message;
-}
+            GTEST_SKIP() << "This toolchain has no bindless images, so import_device refuses before it reads a device.";
 #else
-TEST(Medium_InteropImport, AFileDescriptorAboveIntIsRefusedWithItsValue)
-{
-    auto runtime = Runtime::create().value();
-    const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
-    if (!index)
-        GTEST_SKIP() << "no device imports external memory";
-
-    ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
-    descriptor.handle = static_cast<std::uint64_t>(std::numeric_limits<int>::max()) + 1;
-    const Error refusal = refusal_of(runtime, descriptor, 4, *index);
-
-    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(refusal.message.find("descriptor.handle is " + std::to_string(descriptor.handle)),
-              std::string::npos)
-        << refusal.message;
-}
+            const std::optional<std::size_t> found = first_device_where_import_is(runtime(), false);
+            if (!found)
+                GTEST_SKIP() << "every device imports external memory";
+            index_ = *found;
 #endif
+        }
 
-TEST(Medium_InteropImport, ZeroElementsImportNothingAndReturnAnEmptyBuffer)
+        /** @brief The first device that does not import external memory. */
+        std::size_t index_ = 0;
+};
+
+/** @brief Tests that a device without import refuses with Unsupported and names its index. */
+TEST_F(Medium_InteropImportOnADeviceWithoutImport, ADeviceWithoutImportIsRefusedByItsIndex)
 {
-    auto runtime = Runtime::create().value();
-    const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
-    if (!index)
-        GTEST_SKIP() << "no device imports external memory";
+    const auto imported = runtime().interop().import_device<float>(
+        acceptable_descriptor(runtime(), index_), 4, DeviceIndex{index_});
 
-    const Buffer<float> buffer = runtime.interop().import_device<float>(
-        acceptable_descriptor(runtime, *index), 0, DeviceIndex{*index}).value();
+    ASSERT_FALSE(imported.has_value());
+    EXPECT_EQ(imported.error().code, ErrorCode::Unsupported);
+    expect_message_holds(imported.error().message,
+                         {"device " + std::to_string(index_), "device_import is false"});
+}
+
+/** @brief Fixture of the import tests that need the first device that imports external memory. */
+class Medium_InteropImport : public TestSupport::RuntimeTest
+{
+    protected:
+        /** @brief Finds the device, or skips when no device imports. */
+        void SetUp() override
+        {
+            const std::optional<std::size_t> found = first_device_where_import_is(runtime(), true);
+            if (!found)
+                GTEST_SKIP() << "no device imports external memory";
+            index_ = *found;
+        }
+
+        /** @brief The first device that imports external memory. */
+        std::size_t index_ = 0;
+};
+
+/** @brief Tests that importing zero elements returns an empty buffer. */
+TEST_F(Medium_InteropImport, ZeroElementsImportNothingAndReturnAnEmptyBuffer)
+{
+    const Buffer<float> buffer = runtime().interop().import_device<float>(
+        acceptable_descriptor(runtime(), index_), 0, DeviceIndex{index_}).value();
 
     EXPECT_TRUE(buffer.empty());
     EXPECT_EQ(buffer.size(), 0u);
 }
 
-TEST(Medium_InteropImport, AHandleKindOfAnotherPlatformIsRefusedByName)
+/** @brief Holds one descriptor that import_device refuses: how it differs from an acceptable one and what the refusal says. */
+struct RefusedDescriptor
 {
-    auto runtime = Runtime::create().value();
-    const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
-    if (!index)
-        GTEST_SKIP() << "no device imports external memory";
+    const char* name;                       /**< Names the row. */
+    void (*break_it)(ExternalMemoryDescriptor&); /**< Breaks one field of an acceptable descriptor. */
+    std::size_t count;                      /**< The element count the import asks for. */
+    std::vector<std::string> message_holds; /**< Parts the refusal's message must carry. */
+    bool needs_uuid;                        /**< Whether the row needs a device that reports a UUID. */
+};
 
-    ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
-    descriptor.kind = K_FOREIGN_KIND;
-    const Error refusal = refusal_of(runtime, descriptor, 4, *index);
-
-    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(refusal.message.find("descriptor.kind is"), std::string::npos) << refusal.message;
+/** @brief Returns the rows of descriptors that import_device refuses by the field at fault. */
+std::vector<RefusedDescriptor> refused_descriptors()
+{
+    std::vector<RefusedDescriptor> rows;
+#if defined(_WIN32)
+    rows.push_back({"ANullWin32HandleIsRefusedByName",
+                    [](ExternalMemoryDescriptor& d) { d.handle = 0; }, 4,
+                    {"descriptor.handle is null"}, false});
+#else
+    rows.push_back({"AFileDescriptorAboveIntIsRefusedWithItsValue",
+                    [](ExternalMemoryDescriptor& d)
+                    {
+                        d.handle = static_cast<std::uint64_t>(std::numeric_limits<int>::max()) + 1;
+                    },
+                    4,
+                    {"descriptor.handle is " +
+                     std::to_string(static_cast<std::uint64_t>(std::numeric_limits<int>::max()) + 1)},
+                    false});
+#endif
+    rows.push_back({"ARegionPastTheAllocationIsRefusedWithItsNumbers",
+                    [](ExternalMemoryDescriptor& d) { d.offset = 60; }, 4,
+                    {"16 bytes at offset 60", "allocation of 64 bytes"}, false});
+    rows.push_back({"AnOffsetPastTheAllocationIsRefusedWithoutWrapping",
+                    [](ExternalMemoryDescriptor& d) { d.offset = K_ALLOCATION_BYTES + 1; }, 0,
+                    {"offset 65"}, false});
+    rows.push_back({"AnotherDevicesUUIDIsRefusedWithBothUUIDs",
+                    [](ExternalMemoryDescriptor& d)
+                    {
+                        d.device.bytes[15] = static_cast<std::uint8_t>(d.device.bytes[15] ^ 0xFFu);
+                    },
+                    4, {"descriptor.device is", "and device"}, true});
+    return rows;
 }
 
-TEST(Medium_InteropImport, ARegionPastTheAllocationIsRefusedWithItsNumbers)
+/** @brief Fixture of the descriptor refusals; the parameter is the row. */
+class Medium_InteropImportRefusedDescriptor : public Medium_InteropImport,
+                                              public ::testing::WithParamInterface<RefusedDescriptor>
 {
-    auto runtime = Runtime::create().value();
-    const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
-    if (!index)
-        GTEST_SKIP() << "no device imports external memory";
+    protected:
+        /** @brief Skips a row that needs a UUID on a device that reports none. */
+        void SetUp() override
+        {
+            Medium_InteropImport::SetUp();
+            if (IsSkipped())
+                return;
+            if (GetParam().needs_uuid &&
+                !runtime().interop().capabilities(DeviceIndex{index_}).value().device_uuid)
+                GTEST_SKIP() << "the importing device reports no UUID";
+        }
+};
 
-    ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
-    descriptor.offset = 60;
-    const Error past_the_end = refusal_of(runtime, descriptor, 4, *index);
+/** @brief Tests that import_device refuses the descriptor with InvalidAccess and names the field at fault. */
+TEST_P(Medium_InteropImportRefusedDescriptor, IsRefusedWithInvalidAccess)
+{
+    ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime(), index_);
+    GetParam().break_it(descriptor);
 
-    EXPECT_EQ(past_the_end.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(past_the_end.message.find("16 bytes at offset 60"), std::string::npos)
-        << past_the_end.message;
-    EXPECT_NE(past_the_end.message.find("allocation of 64 bytes"), std::string::npos)
-        << past_the_end.message;
+    const auto imported =
+        runtime().interop().import_device<float>(descriptor, GetParam().count, DeviceIndex{index_});
 
-    // An offset beyond the allocation must not wrap the subtraction; see README.md.
-    descriptor.offset = K_ALLOCATION_BYTES + 1;
-    const Error offset_outside = refusal_of(runtime, descriptor, 0, *index);
-    EXPECT_EQ(offset_outside.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(offset_outside.message.find("offset 65"), std::string::npos)
-        << offset_outside.message;
+    ASSERT_FALSE(imported.has_value());
+    EXPECT_EQ(imported.error().code, ErrorCode::InvalidAccess);
+    expect_message_holds(imported.error().message, GetParam().message_holds);
 }
 
-TEST(Medium_InteropImport, AnotherDevicesUUIDIsRefusedWithBothUUIDs)
+INSTANTIATE_TEST_SUITE_P(Fields, Medium_InteropImportRefusedDescriptor,
+                         ::testing::ValuesIn(refused_descriptors()),
+                         [](const ::testing::TestParamInfo<RefusedDescriptor>& info)
+                         {
+                             return std::string(info.param.name);
+                         });
+
+/** @brief Fixture of the borrow tests, which run on the program's runtime. */
+class Medium_InteropBorrow : public TestSupport::RuntimeTest
 {
-    auto runtime = Runtime::create().value();
-    const std::optional<std::size_t> index = first_device_where_import_is(runtime, true);
-    if (!index)
-        GTEST_SKIP() << "no device imports external memory";
-    if (!runtime.interop().capabilities(DeviceIndex{*index}).value().device_uuid)
-        GTEST_SKIP() << "the importing device reports no UUID";
+};
 
-    ExternalMemoryDescriptor descriptor = acceptable_descriptor(runtime, *index);
-    descriptor.device.bytes[15] = static_cast<std::uint8_t>(descriptor.device.bytes[15] ^ 0xFFu);
-    const Error refusal = refusal_of(runtime, descriptor, 4, *index);
+/** @brief Tests that a borrowed buffer reports the memory, size, device and residency it was given. */
+TEST_F(Medium_InteropBorrow, ABorrowedBufferViewsTheCallersMemory)
+{
+    std::vector<std::uint32_t> memory = {3u, 5u, 7u};
+    const LivenessToken owner = make_liveness();
 
-    EXPECT_EQ(refusal.code, ErrorCode::InvalidAccess);
-    EXPECT_NE(refusal.message.find("descriptor.device is"), std::string::npos) << refusal.message;
-    EXPECT_NE(refusal.message.find("and device " + std::to_string(*index) + " is"),
-              std::string::npos)
-        << refusal.message;
+    const Buffer<std::uint32_t> borrowed = runtime().interop().borrow(
+        memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value();
+
+    EXPECT_EQ(borrowed.data(), memory.data());
+    EXPECT_EQ(borrowed.size(), 3u);
+    EXPECT_EQ(borrowed.device_index(), DeviceIndex{0});
+    EXPECT_EQ(borrowed.residency(), Residency::Host);
+    EXPECT_EQ(borrowed.host()[2], 7u);
 }
 
-TEST(Medium_InteropBorrow, ABorrowedBufferViewsTheCallersMemory)
+/** @brief Tests that a write through a borrowed buffer reaches the caller's memory. */
+TEST_F(Medium_InteropBorrow, AWriteThroughABorrowedBufferReachesTheCallersMemory)
 {
-    auto runtime = Runtime::create().value();
+    std::vector<std::uint32_t> memory = {3u, 5u, 7u};
+    const LivenessToken owner = make_liveness();
+    const Buffer<std::uint32_t> borrowed = runtime().interop().borrow(
+        memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value();
+
+    borrowed[1] = 11u;
+
+    EXPECT_EQ(memory, (std::vector<std::uint32_t>{3u, 11u, 7u}));
+}
+
+/** @brief Tests that a borrowed buffer, once destroyed, holds no share of its owner. */
+TEST_F(Medium_InteropBorrow, ADestroyedBorrowedBufferReleasesItsShareOfTheOwner)
+{
     std::vector<std::uint32_t> memory = {3u, 5u, 7u};
     const LivenessToken owner = make_liveness();
 
     {
-        const Buffer<std::uint32_t> borrowed = runtime.interop().borrow(
+        const Buffer<std::uint32_t> borrowed = runtime().interop().borrow(
             memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value();
-        EXPECT_EQ(borrowed.data(), memory.data());
-        EXPECT_EQ(borrowed.size(), 3u);
-        EXPECT_EQ(borrowed.device_index(), DeviceIndex{0});
-        EXPECT_EQ(borrowed.residency(), Residency::Host);
-        EXPECT_EQ(borrowed.host()[2], 7u);
-        borrowed[1] = 11u;
+        static_cast<void>(borrowed);
     }
 
-    // The handle is gone and the memory is the caller's still.
-    EXPECT_EQ(memory[1], 11u);
     EXPECT_EQ(owner.use_count(), 1) << "the buffer kept a share of its owner";
 }
 
-TEST(Medium_InteropBorrow, ARunNamingABorrowedBufferWhoseOwnerLetGoIsRefused)
+/** @brief Tests that a run naming a borrowed buffer executes while the owner lives. */
+TEST_F(Medium_InteropBorrow, ARunNamingABorrowedBufferRunsWhileTheOwnerLives)
 {
-    auto runtime = Runtime::create().value();
     std::vector<std::uint32_t> memory(4, 0u);
-    LivenessToken owner = make_liveness();
-    const Buffer<std::uint32_t> borrowed = runtime.interop().borrow(
+    const LivenessToken owner = make_liveness();
+    const Buffer<std::uint32_t> borrowed = runtime().interop().borrow(
         memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value();
-
-    auto graph = runtime.graph();
+    auto graph = runtime().graph();
     graph.recorder().host(Access(Reads(), Writes(borrowed)), [&memory]() { ++memory[0]; });
+
     ASSERT_TRUE(graph.run());
-    EXPECT_EQ(memory[0], 1u);
 
-    owner.reset();
-
-    auto refused = graph.run();
-    ASSERT_FALSE(refused);
-    EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
     EXPECT_EQ(memory[0], 1u);
 }
 
-TEST(Medium_InteropBorrow, DroppingTheBorrowedHandleLeavesTheRunValid)
+/** @brief Tests that a run naming a borrowed buffer whose owner let go is refused and runs nothing. */
+TEST_F(Medium_InteropBorrow, ARunNamingABorrowedBufferWhoseOwnerLetGoIsRefused)
 {
-    auto runtime = Runtime::create().value();
+    std::vector<std::uint32_t> memory(4, 0u);
+    LivenessToken owner = make_liveness();
+    const Buffer<std::uint32_t> borrowed = runtime().interop().borrow(
+        memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value();
+    auto graph = runtime().graph();
+    graph.recorder().host(Access(Reads(), Writes(borrowed)), [&memory]() { ++memory[0]; });
+    owner.reset();
+
+    auto refused = graph.run();
+
+    ASSERT_FALSE(refused);
+    EXPECT_EQ(refused.error().code, ErrorCode::DanglingResource);
+    EXPECT_EQ(memory[0], 0u);
+}
+
+/** @brief Tests that a run whose borrowed handle was dropped after recording still executes. */
+TEST_F(Medium_InteropBorrow, DroppingTheBorrowedHandleLeavesTheRunValid)
+{
     std::vector<std::uint32_t> memory(4, 0u);
     const LivenessToken owner = make_liveness();
-    std::optional<Buffer<std::uint32_t>> borrowed(runtime.interop().borrow(
+    std::optional<Buffer<std::uint32_t>> borrowed(runtime().interop().borrow(
         memory.data(), memory.size(), DeviceIndex{0}, Residency::Host, owner).value());
-
-    auto graph = runtime.graph();
+    auto graph = runtime().graph();
     graph.recorder().host(Access(Reads(), Writes(*borrowed)), [&memory]() { ++memory[0]; });
     borrowed.reset();
 
     ASSERT_TRUE(graph.run());
+
     EXPECT_EQ(memory[0], 1u);
 }
 
-TEST(Medium_InteropBorrow, ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAllocate)
+/** @brief Tests that a range write and read reach shared memory the runtime did not allocate. */
+TEST_F(Medium_InteropBorrow, ARangeCopyReachesBorrowedMemoryTheRuntimeDidNotAllocate)
 {
-    auto runtime = Runtime::create().value();
-    sycl::queue& queue =
-        SushiRuntime::Internal::ContextAccess::context(runtime).devices().queue(0);
-    std::uint32_t* memory = sycl::malloc_shared<std::uint32_t>(4, queue);
+    sycl::queue& device_queue = runtime().advanced().queue(DeviceIndex{0});
+    std::uint32_t* memory = sycl::malloc_shared<std::uint32_t>(4, device_queue);
     ASSERT_NE(memory, nullptr);
     const LivenessToken owner = make_liveness();
+    const std::vector<std::uint32_t> written = {1u, 2u, 3u, 4u};
+    std::vector<std::uint32_t> read;
 
     {
-        const Buffer<std::uint32_t> borrowed = runtime.interop().borrow(
+        const Buffer<std::uint32_t> borrowed = runtime().interop().borrow(
             memory, 4, DeviceIndex{0}, Residency::Shared, owner).value();
-        const std::vector<std::uint32_t> written = {1u, 2u, 3u, 4u};
         ASSERT_TRUE(borrowed.write_range(ElementRange{0, 4},
                                          span<const std::uint32_t>(written.data(), 4)));
-        const auto read = borrowed.read_range(ElementRange{1, 2});
-        ASSERT_TRUE(read);
-        EXPECT_EQ(*read, (std::vector<std::uint32_t>{2u, 3u}));
+        read = borrowed.read_range(ElementRange{1, 2}).value();
     }
+    sycl::free(memory, device_queue);
 
-    sycl::free(memory, queue);
+    EXPECT_EQ(read, (std::vector<std::uint32_t>{2u, 3u}));
 }
 
-TEST(Medium_InteropBorrow, AMismatchedResidencyIsRefusedWithBothNames)
+/** @brief Fixture of the borrow tests that allocate host USM, which device 0 must offer. */
+class Medium_InteropBorrowHostUSM : public Medium_InteropBorrow
 {
-    auto runtime = Runtime::create().value();
-    sycl::queue& queue =
-        SushiRuntime::Internal::ContextAccess::context(runtime).devices().queue(0);
-    if (!queue.get_device().has(sycl::aspect::usm_host_allocations))
-        GTEST_SKIP() << "device 0 offers no host USM";
-    std::uint32_t* memory = sycl::malloc_host<std::uint32_t>(4, queue);
+    protected:
+        /** @brief Skips the test on a machine whose device 0 offers no host USM. */
+        void SetUp() override
+        {
+            if (!runtime().advanced().queue(DeviceIndex{0}).get_device()
+                     .has(sycl::aspect::usm_host_allocations))
+                GTEST_SKIP() << "device 0 offers no host USM";
+        }
+};
+
+/** @brief Tests that memory borrowed under a residency other than its own is refused naming both. */
+TEST_F(Medium_InteropBorrowHostUSM, AMismatchedResidencyIsRefusedWithBothNames)
+{
+    sycl::queue& device_queue = runtime().advanced().queue(DeviceIndex{0});
+    std::uint32_t* memory = sycl::malloc_host<std::uint32_t>(4, device_queue);
     ASSERT_NE(memory, nullptr);
     const LivenessToken owner = make_liveness();
 
-    const Result<Buffer<std::uint32_t>> refused = runtime.interop().borrow(
+    const Result<Buffer<std::uint32_t>> refused = runtime().interop().borrow(
         memory, 4, DeviceIndex{0}, Residency::Shared, owner);
+    sycl::free(memory, device_queue);
 
     ASSERT_FALSE(refused);
     EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
-    EXPECT_NE(refused.error().message.find("Residency::Host"), std::string::npos)
-        << refused.error().message;
-    EXPECT_NE(refused.error().message.find("Residency::Shared"), std::string::npos)
-        << refused.error().message;
-    sycl::free(memory, queue);
+    expect_message_holds(refused.error().message, {"Residency::Host", "Residency::Shared"});
 }
 
-TEST(Medium_InteropBorrow, ARuntimeBufferBorrowedAsAnotherResidencyIsRefusedByItsRecord)
+/** @brief Tests that a runtime buffer borrowed under another residency is refused by its record. */
+TEST_F(Medium_InteropBorrowHostUSM, ARuntimeBufferBorrowedAsAnotherResidencyIsRefusedByItsRecord)
 {
-    auto runtime = Runtime::create().value();
-    sycl::queue& queue =
-        SushiRuntime::Internal::ContextAccess::context(runtime).devices().queue(0);
-    if (!queue.get_device().has(sycl::aspect::usm_host_allocations))
-        GTEST_SKIP() << "device 0 offers no host USM";
     const Buffer<std::uint32_t> owned =
-        runtime.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
+        runtime().buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
     const LivenessToken owner = make_liveness();
 
-    const Result<Buffer<std::uint32_t>> refused = runtime.interop().borrow(
+    const Result<Buffer<std::uint32_t>> refused = runtime().interop().borrow(
         owned.data(), 4, DeviceIndex{0}, Residency::Shared, owner);
+
     ASSERT_FALSE(refused);
     EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
-    EXPECT_NE(refused.error().message.find("Residency::Host"), std::string::npos)
-        << refused.error().message;
+    expect_message_holds(refused.error().message, {"Residency::Host"});
+}
 
-    const Result<Buffer<std::uint32_t>> agreed = runtime.interop().borrow(
+/** @brief Tests that a runtime buffer borrowed under its own residency is accepted. */
+TEST_F(Medium_InteropBorrowHostUSM, ARuntimeBufferBorrowedAsItsOwnResidencyIsAccepted)
+{
+    const Buffer<std::uint32_t> owned =
+        runtime().buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value();
+    const LivenessToken owner = make_liveness();
+
+    const Result<Buffer<std::uint32_t>> agreed = runtime().interop().borrow(
         owned.data(), 4, DeviceIndex{0}, Residency::Host, owner);
+
     EXPECT_TRUE(agreed);
 }

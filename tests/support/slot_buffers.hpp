@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_node_spec.cpp                                                     */
+/* slot_buffers.hpp                                                       */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,30 +22,44 @@
 /**************************************************************************/
 
 /**
- * @file test_node_spec.cpp
- * @brief Tests NodeSpec: it holds the description it was built from and an empty stamp.
- * @see tests/surface/api/detail/README.md
+ * @file slot_buffers.hpp
+ * @brief Holds one device-resident, one shared and one host-resident counter buffer, the three residencies a late-bound slot is checked against.
+ * @see tests/README.md
  * @author Mustafa Garip
  */
 
-#include <utility>
+#pragma once
 
-#include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
+#include <cstdint>
 
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/api/detail/node_spec.hpp>
 
-#include "description_runner.hpp"
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the spec keeps the description and starts with a default stamp. */
-TEST(Small_NodeSpec, KeepsItsDescription)
+namespace TestSupport
 {
-    Detail::NodeDescription description;
-    description.width = 7;
-    const Detail::NodeSpec spec(std::move(description));
-    EXPECT_EQ(spec.description.width, 7u);
-    EXPECT_EQ(spec.stamp.width, K_WIDTH_UNKNOWN);
+
+/**
+ * @brief Holds one counter buffer of each residency, so a test can name a slot a late-bound word refuses or accepts.
+ */
+struct SlotBuffers
+{
+    SushiRuntime::Buffer<std::uint32_t> device; /**< One element in device memory, which the host cannot read. */
+    SushiRuntime::Buffer<std::uint32_t> shared; /**< One element in shared memory, which a run may move. */
+    SushiRuntime::Buffer<std::uint32_t> host;   /**< Four elements in host memory, the only residency a slot may have. */
+};
+
+/**
+ * @brief Allocates a SlotBuffers on device 0 of @p runtime.
+ * @param runtime The runtime to allocate from.
+ * @return One buffer of each residency.
+ */
+[[nodiscard]] inline SlotBuffers make_slot_buffers(SushiRuntime::Runtime& runtime)
+{
+    using SushiRuntime::DeviceIndex;
+    using SushiRuntime::Residency;
+    return SlotBuffers{
+        runtime.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Device).value(),
+        runtime.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Shared).value(),
+        runtime.buffer<std::uint32_t>(4, DeviceIndex{0}, Residency::Host).value()};
 }
+
+} // namespace TestSupport

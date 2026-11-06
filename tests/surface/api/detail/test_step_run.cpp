@@ -23,41 +23,76 @@
 
 /**
  * @file test_step_run.cpp
- * @brief Tests StepPredicate and the context queries of step_run.hpp.
+ * @brief Tests the run entries the step_run.hpp calls serve: the stop test and the idle runtime.
  * @see tests/surface/api/detail/README.md
  * @author Mustafa Garip
  */
 
 #include <cstddef>
-#include <vector>
 
 #include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/api/detail/step_run.hpp>
-#include <SushiRuntime/context/context_handle_access.hpp>
 
-#include "description_runner.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Tests that the predicate forwards the completed count to the wrapped callable. */
-TEST(Medium_StepRun, ThePredicateForwardsTheCount)
+/** @brief Fixture of the tests that run graphs of the program's runtime to a stop test or a cancel. */
+class Medium_StepRun : public TestSupport::RuntimeTest
 {
-    std::size_t limit = 3;
-    auto keep_going = [&limit](std::size_t completed) { return completed < limit; };
-    const Detail::StepPredicate predicate(keep_going);
-    EXPECT_TRUE(predicate(2));
-    EXPECT_FALSE(predicate(3));
+};
+
+/** @brief Tests that run_until takes a step for each time its stop test answers false. */
+TEST_F(Medium_StepRun, RunUntilStepsOncePerFalseAnswerOfItsStopTest)
+{
+    const Runtime& rt = runtime();
+    auto steps = rt.buffer<int>(1).value();
+    int* const counter = steps.data();
+    counter[0] = 0;
+    auto graph = rt.graph();
+    graph.add_host(Reads{}, Writes(steps), [counter]() { counter[0] += 1; });
+    int asked = 0;
+    const auto after_two_steps = [&asked]() { return ++asked > 2; };
+
+    graph.run_until(after_two_steps).value();
+
+    EXPECT_EQ(counter[0], 2);
 }
 
-/** @brief Tests that an idle runtime has no run in progress, and cancelling it is harmless. */
-TEST(Medium_StepRun, AnIdleRuntimeHasNoRunInProgress)
+/** @brief Tests that a graph runs after another graph's run has returned. */
+TEST_F(Medium_StepRun, AGraphRunsAfterAnotherGraphsRunHasReturned)
 {
-    auto runtime = Runtime::create().value();
-    const ContextHandle& context = Detail::ContextHandleAccess::handle_of(runtime);
-    EXPECT_FALSE(Detail::run_in_progress(context));
-    Detail::cancel_run(context);
-    EXPECT_FALSE(Detail::run_in_progress(context));
+    const Runtime& rt = runtime();
+    auto marks = rt.buffer<int>(2).value();
+    int* const words = marks.data();
+    words[0] = 0;
+    words[1] = 0;
+    auto first = rt.graph();
+    first.add_host(Reads{}, Writes(marks), [words]() { words[0] = 1; });
+    auto second = rt.graph();
+    second.add_host(Reads{}, Writes(marks), [words]() { words[1] = 1; });
+    first.run().value();
+
+    const auto outcome = second.run();
+
+    EXPECT_TRUE(outcome.has_value());
+    EXPECT_EQ(words[1], 1);
+}
+
+/** @brief Tests that cancelling a graph that has no step pending leaves its next run untouched. */
+TEST_F(Medium_StepRun, CancellingAGraphWithNoStepPendingChangesNothing)
+{
+    const Runtime& rt = runtime();
+    auto mark = rt.buffer<int>(1).value();
+    int* const word = mark.data();
+    word[0] = 0;
+    auto graph = rt.graph();
+    graph.add_host(Reads{}, Writes(mark), [word]() { word[0] = 1; });
+
+    graph.cancel();
+    const auto outcome = graph.run();
+
+    ASSERT_TRUE(outcome.has_value());
+    EXPECT_EQ(word[0], 1);
 }

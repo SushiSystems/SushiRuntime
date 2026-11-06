@@ -23,59 +23,71 @@
 
 /**
  * @file test_node_stamp.cpp
- * @brief Tests NodeStamp and parameters_refusal(): what a stamp copies and the parameter limit.
+ * @brief Tests that a node accepts parameters up to the limit and refuses one past it.
  * @see tests/surface/api/detail/README.md
  * @author Mustafa Garip
  */
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
-#include <optional>
+#include <string>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/api/detail/node_stamp.hpp>
 
-#include "description_runner.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Tests that a stamp copies the operation, placement, determinism, width and parameters. */
-TEST(Small_NodeStamp, CopiesWhatTheOptionsState)
+namespace
 {
-    const std::uint64_t parameters[3] = {1, 2, 3};
+    /** @brief Elements the node of every row launches over. */
+    constexpr std::size_t K_WIDTH = 8;
+
+    /** @brief Names a row: how many parameters the node states and what the graph does with it. */
+    struct ParameterRow
+    {
+        const char* name;            /**< The row's name in a report. */
+        std::size_t count;           /**< Parameters stated in the options. */
+        bool refused;                /**< Whether the graph refuses the add. */
+        std::size_t recorded_nodes;  /**< Nodes the graph holds afterwards. */
+    };
+
+    /** @brief Returns the name a row carries in a report. */
+    std::string row_name(const ::testing::TestParamInfo<ParameterRow>& info)
+    {
+        return info.param.name;
+    }
+} // namespace
+
+/** @brief Fixture of the rows that add a node stating parameters to a graph of the program's runtime. */
+class Medium_NodeParameterLimit : public TestSupport::RuntimeTest,
+                                  public ::testing::WithParamInterface<ParameterRow>
+{
+};
+
+/** @brief Tests that parameters up to the limit are accepted and one past it is refused. */
+TEST_P(Medium_NodeParameterLimit, ParametersUpToTheLimitAreAcceptedAndOnePastIsRefused)
+{
+    const Runtime& rt = runtime();
+    auto values = rt.buffer<std::uint32_t>(K_WIDTH).value();
+    std::uint32_t* words = values.data();
+    const std::array<std::uint64_t, NodeOptions::K_MAX_PARAMETERS + 1> parameters{};
     NodeOptions options;
-    options.operation = OperationID(42);
-    options.width = 12;
-    options.placement_class = "sushiai.replica"_class;
-    options.placement_key = 0;
-    options.determinism = Determinism::Bitwise;
-    options.parameters = span<const std::uint64_t>(parameters, 3);
-    const Detail::NodeStamp stamp(options, "named");
-    EXPECT_STREQ(stamp.name, "named");
-    EXPECT_EQ(stamp.operation, OperationID(42));
-    EXPECT_EQ(stamp.placement_class, "sushiai.replica"_class);
-    ASSERT_TRUE(stamp.placement_key.has_value());
-    EXPECT_EQ(*stamp.placement_key, 0u);
-    EXPECT_EQ(stamp.determinism, Determinism::Bitwise);
-    EXPECT_EQ(stamp.width, 12u);
-    EXPECT_EQ(stamp.parameter_count, 3u);
-    EXPECT_EQ(Detail::NodeStamp().width, K_WIDTH_UNKNOWN);
-    EXPECT_FALSE(Detail::NodeStamp().placement_class.is_named());
-    EXPECT_FALSE(Detail::NodeStamp().placement_key.has_value());
-    EXPECT_EQ(Detail::NodeStamp().determinism, Determinism::Unstated);
+    options.parameters = span<const std::uint64_t>(parameters.data(), GetParam().count);
+    auto graph = rt.graph();
+
+    graph.add(K_WIDTH, Reads(), Writes(values), [words](std::size_t i) { words[i] = 0u; }, options);
+
+    EXPECT_EQ(graph.refusal() != nullptr, GetParam().refused);
+    EXPECT_EQ(graph.size(), GetParam().recorded_nodes);
 }
 
-/** @brief Tests that parameters within the limit pass and one past it is refused. */
-TEST(Small_NodeStamp, OneParameterPastTheLimitIsRefused)
-{
-    const std::uint64_t parameters[Detail::K_MAX_NODE_PARAMETERS + 1] = {};
-    NodeOptions options;
-    options.parameters = span<const std::uint64_t>(parameters, Detail::K_MAX_NODE_PARAMETERS);
-    EXPECT_FALSE(Detail::parameters_refusal(options, 0).has_value());
-    options.parameters = span<const std::uint64_t>(parameters, Detail::K_MAX_NODE_PARAMETERS + 1);
-    const std::optional<Error> refusal = Detail::parameters_refusal(options, 0);
-    ASSERT_TRUE(refusal.has_value());
-    EXPECT_EQ(refusal->code, ErrorCode::InvalidGraph);
-}
+INSTANTIATE_TEST_SUITE_P(
+    Rows, Medium_NodeParameterLimit,
+    ::testing::Values(ParameterRow{"AtTheLimit", NodeOptions::K_MAX_PARAMETERS, false, 1},
+                      ParameterRow{"OnePastTheLimit", NodeOptions::K_MAX_PARAMETERS + 1, true, 0}),
+    row_name);

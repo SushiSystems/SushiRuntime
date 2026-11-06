@@ -236,7 +236,7 @@ and the value of the operation.
 | Test | What it proves |
 | --- | --- |
 | `ANodeNameReplacesTheNameOfItsRule` | Two rules carry the same rule name, and the node of the first states a name of its own. The first row reports the node's name and no operation, the second the rule's name. |
-| `ARefusedAddRecordsNoNode` | An add with nine parameters leaves a kept refusal with the code `InvalidGraph` and the graph holds no rule afterwards. The limit as a unit is held by `OneParameterPastTheLimitIsRefused` in `detail/test_node_stamp.cpp`. |
+| `ARefusedAddRecordsNoNode` | An add with nine parameters leaves a kept refusal with the code `InvalidGraph` and the graph holds no rule afterwards. The limit as a unit is held by `ParametersUpToTheLimitAreAcceptedAndOnePastIsRefused` in `detail/test_node_stamp.cpp`. |
 
 ## test_plan_view.cpp
 
@@ -343,7 +343,7 @@ second node into a rule the recorder has already dropped.
 `NodeOptions` is refused with `InvalidGraph` (`NineParametersAreRefusedAndRecordNothing`): the
 message holds `9 parameters` and `at most 8`, and the rule is not recorded. The same entry records
 with eight (`EightParametersAreKept`). The graph is not run. The limit as a unit is held by
-`OneParameterPastTheLimitIsRefused` in `detail/test_node_stamp.cpp`.
+`ParametersUpToTheLimitAreAcceptedAndOnePastIsRefused` in `detail/test_node_stamp.cpp`.
 
 ### `AnExtensionThatRecordsNothingAddsNoRule`
 

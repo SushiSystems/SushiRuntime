@@ -39,26 +39,31 @@
 #include <SushiRuntime/api/detail/emit_captured.hpp>
 
 #include "description_runner.hpp"
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
+/** @brief Fixture of the captured-node test, which runs a description on the program's runtime. */
+class Medium_EmitCaptured : public TestSupport::RuntimeTest
+{
+};
+
 /** @brief Tests that the kernel reads one capture and writes the other at each index. */
-TEST(Medium_EmitCaptured, TheKernelReceivesEachPointer)
+TEST_F(Medium_EmitCaptured, TheKernelReceivesEachPointer)
 {
     constexpr std::size_t K_COUNT = 8;
-    auto runtime = Runtime::create().value();
-    int* const in = Testing::shared_integers(runtime, K_COUNT, 5);
-    int* const out = Testing::shared_integers(runtime, K_COUNT, 0);
-    ASSERT_NE(in, nullptr);
-    ASSERT_NE(out, nullptr);
+    auto in = runtime().buffer<int>(K_COUNT).value();
+    auto out = runtime().buffer<int>(K_COUNT).value();
+    TestSupport::fill_with(in, 5);
+    TestSupport::fill_with(out, 0);
     const Detail::NodeDescription description = Detail::captured_node(
-        {BufferRegion(in)}, {BufferRegion(out)}, K_COUNT,
-        std::make_tuple(static_cast<const int*>(in), out),
+        {BufferRegion(in.data())}, {BufferRegion(out.data())}, K_COUNT,
+        std::make_tuple(static_cast<const int*>(in.data()), out.data()),
         [](std::size_t index, const int* source, int* target) { target[index] = source[index] * 2; });
+
+    Testing::run_description(runtime(), description);
+
     EXPECT_EQ(description.width, K_COUNT);
-    Testing::run_description(runtime, description);
-    for (std::size_t index = 0; index < K_COUNT; ++index)
-        EXPECT_EQ(out[index], 10);
-    sycl::free(in, Testing::queue_of(runtime));
-    sycl::free(out, Testing::queue_of(runtime));
+    EXPECT_EQ(TestSupport::contents(out), std::vector<int>(K_COUNT, 10));
 }

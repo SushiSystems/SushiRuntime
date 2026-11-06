@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_node_description.cpp                                              */
+/* compile_plan.cpp                                                       */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,34 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_node_description.cpp
- * @brief Tests NodeDescription: a kernel of unknown width placed on no device, with no regions or bindings.
+ * @file compile_plan.cpp
+ * @brief Compiles plan.hpp on its own, so the header carries every include it needs.
  * @see tests/surface/api/detail/README.md
  * @author Mustafa Garip
  */
 
-#include <cstddef>
-#include <vector>
-
-#include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
-
-#include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/api/detail/node_description.hpp>
-
-#include "description_runner.hpp"
-
-using namespace SushiRuntime;
-
-/** @brief Tests the defaults of a description. */
-TEST(Small_NodeDescription, DefaultsDescribeAnEmptyKernel)
-{
-    const Detail::NodeDescription description;
-    EXPECT_EQ(description.kind, Detail::NodeKind::Kernel);
-    EXPECT_EQ(description.width, K_WIDTH_UNKNOWN);
-    EXPECT_FALSE(description.device.has_value());
-    EXPECT_TRUE(description.reads.empty());
-    EXPECT_TRUE(description.writes.empty());
-    EXPECT_EQ(description.bindings, nullptr);
-    EXPECT_FALSE(static_cast<bool>(description.state_access));
-}
+#include <SushiRuntime/api/detail/plan.hpp>

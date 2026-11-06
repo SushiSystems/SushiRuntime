@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_plan.cpp                                                          */
+/* compile_node_spec.cpp                                                  */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,28 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_plan.cpp
- * @brief Tests Detail::Plan: an opaque name the surface holds only by pointer.
+ * @file compile_node_spec.cpp
+ * @brief Compiles node_spec.hpp on its own, so the header carries every include it needs.
  * @see tests/surface/api/detail/README.md
  * @author Mustafa Garip
  */
 
-#include <type_traits>
-
-#include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
-
-#include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/api/detail/plan.hpp>
-
-#include "description_runner.hpp"
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the name is a class type held by pointer. */
-TEST(Small_Plan, IsHeldByPointerOnly)
-{
-    const Detail::Plan* plan = nullptr;
-    static_assert(std::is_class_v<Detail::Plan>, "the name is a class type");
-    EXPECT_EQ(plan, nullptr);
-}
+#include <SushiRuntime/api/detail/node_spec.hpp>

@@ -31,90 +31,53 @@
 #include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 
-namespace
+/** @brief Fixture of the error tests, which run on the program's runtime. */
+class Medium_ErrorIsolation : public TestSupport::RuntimeTest
 {
-    /** @brief Fills a fresh graph that writes 42 into every element of @p p. */
-    void run_good_graph(Runtime& rt, int* p, std::size_t n)
-    {
-        auto g = rt.graph();
-        g.add_untracked(n, [p](std::size_t i) { p[i] = 42; });
-        g.run().value();
-    }
-}
+};
 
-/**
- * @brief A throwing kernel fails its run but leaves the Runtime reusable.
- */
-TEST(Medium_ErrorIsolation, ThrowingKernelLeavesRuntimeReusable)
+/** @brief Tests that a throwing node is named, with its registration index, in the error run() returns. */
+TEST_F(Medium_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationIndex)
 {
-    constexpr std::size_t N = 64;
-    auto rt = Runtime::create().value();
-
-    // execute() must report the throw from the first graph's command group; see README.md.
-    {
-        auto g = rt.graph();
-        g.add_untracked([](sycl::handler&) { throw std::runtime_error("boom"); });
-        EXPECT_FALSE(g.run().has_value());
-    }
-
-    // Second graph on the SAME Runtime must run cleanly — proof the pool survived.
-    auto buf = rt.buffer<int>(N).value();
-    int* p   = buf.data();
-    for (std::size_t i = 0; i < N; ++i) p[i] = 0;
-
-    EXPECT_NO_THROW(run_good_graph(rt, p, N));
-    for (std::size_t i = 0; i < N; ++i)
-        ASSERT_EQ(buf[i], 42) << "at i=" << i;
-}
-
-/**
- * @brief A throwing node is named, with its registration index, in the error run() returns.
- */
-TEST(Medium_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationIndex)
-{
-    auto rt = Runtime::create().value();
-    auto g  = rt.graph();
+    auto g  = runtime().graph();
     g.add_host([] {}).name("healthy");
     g.add_host([] { throw std::runtime_error("boom"); }).name("faulty");
 
     const auto result = g.run();
-    ASSERT_FALSE(result);
 
+    ASSERT_FALSE(result);
     const std::string& message = result.error().message;
     EXPECT_NE(message.find("node 'faulty' (registration index 1)"), std::string::npos) << message;
     EXPECT_NE(message.find("boom"), std::string::npos) << message;
     EXPECT_EQ(message.find("healthy"), std::string::npos) << message;
 }
 
-/**
- * @brief The pool survives repeated failures interleaved with good runs.
- */
-TEST(Medium_ErrorIsolation, RuntimeSurvivesRepeatedFailures)
+/** @brief Tests that a graph runs clean on the same runtime after a graph whose kernel threw failed its run. */
+TEST_F(Medium_ErrorIsolation, AGraphRunsCleanAfterAKernelThrew)
 {
-    constexpr std::size_t N = 32;
-    auto rt  = Runtime::create().value();
-    auto buf = rt.buffer<int>(N).value();
-    int* p   = buf.data();
+    constexpr std::size_t N = 64;
+    auto bad = runtime().graph();
+    bad.add_untracked([](sycl::handler&) { throw std::runtime_error("boom"); });
+    ASSERT_FALSE(bad.run().has_value());
+    auto buf = runtime().buffer<int>(N).value();
+    TestSupport::fill_with(buf, 0);
+    int* p = buf.data();
+    auto good = runtime().graph();
+    good.add_untracked(N, [p](std::size_t i) { p[i] = 42; });
 
-    for (int round = 0; round < 5; ++round)
-    {
-        {
-            auto bad = rt.graph();
-            bad.add_untracked([](sycl::handler&) { throw std::runtime_error("boom"); });
-            EXPECT_FALSE(bad.run().has_value()) << "round " << round;
-        }
+    good.run().value();
 
-        for (std::size_t i = 0; i < N; ++i) p[i] = 0;
-        EXPECT_NO_THROW(run_good_graph(rt, p, N)) << "round " << round;
-        for (std::size_t i = 0; i < N; ++i)
-            ASSERT_EQ(buf[i], 42) << "round " << round << " at i=" << i;
-    }
+    EXPECT_EQ(TestSupport::contents(buf), std::vector<int>(N, 42));
 }

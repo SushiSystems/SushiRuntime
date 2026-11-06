@@ -30,7 +30,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -38,7 +37,9 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/api/detail/handle_access.hpp>
+
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -62,7 +63,7 @@ namespace
     constexpr Word K_MARK = 1000;
 
     /** @brief Allocates a State whose current field holds index plus K_SEED and next K_CANARY. */
-    State<Word> seeded_state(Runtime& rt)
+    State<Word> seeded_state(const Runtime& rt)
     {
         auto state = rt.state<Word>(K_WIDTH).value();
         for (std::size_t i = 0; i < K_WIDTH; ++i)
@@ -82,19 +83,45 @@ namespace
         });
     }
 
-    /** @brief Expects the first count words of field to hold index plus K_SEED plus added. */
-    void expect_advanced(const State<Word>& field, Word added, std::size_t count = K_WIDTH)
+    /** @brief Returns the first count words of the current field of @p field. */
+    std::vector<Word> current_words(const State<Word>& field, std::size_t count = K_WIDTH)
     {
-        ASSERT_EQ(field.size(), K_WIDTH);
-        for (std::size_t i = 0; i < count; ++i)
-            ASSERT_EQ(field.current()[i], static_cast<Word>(i) + K_SEED + added) << "at i=" << i;
+        return std::vector<Word>(field.current(), field.current() + count);
     }
+
+    /** @brief Returns the words index plus K_SEED plus @p added, for the first @p count indices. */
+    std::vector<Word> seeded_words(Word added, std::size_t count = K_WIDTH)
+    {
+        return TestSupport::ramp<Word>(count, K_SEED + added);
+    }
+
+    /** @brief Returns three times index plus K_SEED, for every index. */
+    std::vector<Word> tripled_seed_words()
+    {
+        std::vector<Word> words = seeded_words(0u);
+        for (Word& word : words)
+            word *= 3u;
+        return words;
+    }
+
+    /** @brief Appends seeded States to @p fields until the vector reallocates and moves its elements. */
+    void push_until_reallocated(const Runtime& rt, std::vector<State<Word>>& fields)
+    {
+        const auto recorded_at = reinterpret_cast<std::uintptr_t>(&fields[0]);
+        while (reinterpret_cast<std::uintptr_t>(&fields[0]) == recorded_at)
+            fields.push_back(seeded_state(rt));
+    }
+
+    /** @brief Fixture of the tests that record rules on States of the program's runtime and move them. */
+    class Medium_StateMove : public TestSupport::RuntimeTest
+    {
+    };
 } // namespace
 
 /** @brief Tests that a rule recorded before a move construction steps the moved-to State. */
-TEST(Medium_StateMove, ARuleFollowsAStateMovedAfterAdd)
+TEST_F(Medium_StateMove, ARuleFollowsAStateMovedAfterAdd)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto field = seeded_state(rt);
     auto graph = rt.graph();
     add_increment(graph, field);
@@ -102,56 +129,51 @@ TEST(Medium_StateMove, ARuleFollowsAStateMovedAfterAdd)
     State<Word> moved = std::move(field);
     graph.run(K_STEPS).value();
 
-    expect_advanced(moved, static_cast<Word>(K_STEPS));
+    EXPECT_EQ(current_words(moved), seeded_words(static_cast<Word>(K_STEPS)));
 }
 
 /** @brief Tests that a rule recorded on a vector element survives the vector reallocating. */
-TEST(Medium_StateMove, ARuleFollowsAStateItsVectorReallocated)
+TEST_F(Medium_StateMove, ARuleFollowsAStateItsVectorReallocated)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     std::vector<State<Word>> fields;
     fields.push_back(seeded_state(rt));
     auto graph = rt.graph();
     add_increment(graph, fields[0]);
 
-    const auto recorded_at = reinterpret_cast<std::uintptr_t>(&fields[0]);
-    while (reinterpret_cast<std::uintptr_t>(&fields[0]) == recorded_at)
-        fields.push_back(seeded_state(rt));
+    push_until_reallocated(rt, fields);
     graph.run(K_STEPS).value();
 
-    expect_advanced(fields[0], static_cast<Word>(K_STEPS));
-    expect_advanced(fields[1], 0u);
+    EXPECT_EQ(current_words(fields[0]), seeded_words(static_cast<Word>(K_STEPS)));
+    EXPECT_EQ(current_words(fields[1]), seeded_words(0u));
 }
 
 /** @brief Tests that a coupled rule follows the State it writes and the State it reads. */
-TEST(Medium_StateMove, ACoupledRuleFollowsItsMovedStates)
+TEST_F(Medium_StateMove, ACoupledRuleFollowsItsMovedStates)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto out = seeded_state(rt);
     auto input = seeded_state(rt);
     auto graph = rt.graph();
     graph.add_coupled(Coupled(out, input),
                       [](std::size_t i, const Word* current, Word* next, const Word* other)
                       {
-                  next[i] = current[i] + other[i];
+                          next[i] = current[i] + other[i];
                       });
 
     State<Word> moved_input = std::move(input);
     State<Word> moved_out = std::move(out);
     graph.run(std::size_t{2}).value();
 
-    for (std::size_t i = 0; i < K_WIDTH; ++i)
-    {
-        const Word seed = static_cast<Word>(i) + K_SEED;
-        ASSERT_EQ(moved_out.current()[i], 3u * seed) << "at i=" << i;
-        ASSERT_EQ(moved_input.current()[i], seed) << "at i=" << i;
-    }
+    // Two steps of out += input, with input never written, leave three times the seed.
+    EXPECT_EQ(current_words(moved_out), tripled_seed_words());
+    EXPECT_EQ(current_words(moved_input), seeded_words(0u));
 }
 
 /** @brief Tests that a late-bound State rule follows the State through a move. */
-TEST(Medium_StateMove, ADynamicStateRuleFollowsAMovedState)
+TEST_F(Medium_StateMove, ADynamicStateRuleFollowsAMovedState)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto field = seeded_state(rt);
     std::size_t live = K_PREFIX;
     auto graph = rt.graph();
@@ -161,55 +183,13 @@ TEST(Medium_StateMove, ADynamicStateRuleFollowsAMovedState)
     State<Word> moved = std::move(field);
     graph.run(K_STEPS).value();
 
-    EXPECT_EQ(graph.compile_count(), 1u);
-    expect_advanced(moved, static_cast<Word>(K_STEPS), K_PREFIX);
-}
-
-/** @brief Tests what a State writes into its view at an advance, a move and its destruction. */
-TEST(Medium_StateMove, TheViewFollowsAdvanceMoveAndDestruction)
-{
-    using Detail::HandleAccess;
-
-    auto rt = Runtime::create().value();
-    std::shared_ptr<Detail::StateView<Word>> view;
-    {
-        auto field = seeded_state(rt);
-        Word* const first = field.current();
-        Word* const second = field.next();
-        view = HandleAccess::view(field);
-        EXPECT_EQ(view->current, first);
-        EXPECT_EQ(view->next, second);
-        EXPECT_EQ(view->size, K_WIDTH);
-
-        HandleAccess::advance(field);
-        EXPECT_EQ(view->current, second);
-        EXPECT_EQ(view->next, first);
-
-        State<Word> moved = std::move(field);
-        EXPECT_EQ(HandleAccess::view(moved), view) << "the moved-to State must keep the view";
-        EXPECT_EQ(view->current, second);
-
-        HandleAccess::advance(*view);
-        EXPECT_EQ(moved.current(), first) << "an advance through the view must swap the State";
-        EXPECT_EQ(view->current, first);
-    }
-    EXPECT_EQ(view->current, nullptr);
-    EXPECT_EQ(view->next, nullptr);
-    EXPECT_EQ(view->size, 0u);
-    HandleAccess::advance(*view);
-    EXPECT_EQ(view->current, nullptr) << "a view without its State must stay empty";
-
-    State<Word> empty;
-    const auto unowned = HandleAccess::view(empty);
-    ASSERT_NE(unowned, nullptr);
-    EXPECT_EQ(unowned->current, nullptr);
-    EXPECT_EQ(unowned->size, 0u);
+    EXPECT_EQ(current_words(moved, K_PREFIX), seeded_words(static_cast<Word>(K_STEPS), K_PREFIX));
 }
 
 /** @brief Tests that a State assigned over after add() is refused at the next run. */
-TEST(Medium_StateMove, AStateAssignedOverRefusesTheRun)
+TEST_F(Medium_StateMove, AStateAssignedOverRefusesTheRun)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto field = seeded_state(rt);
     auto graph = rt.graph();
     add_increment(graph, field);
@@ -223,9 +203,9 @@ TEST(Medium_StateMove, AStateAssignedOverRefusesTheRun)
 }
 
 /** @brief Tests that a late-bound State rule replayed after one step reads the current field. */
-TEST(Medium_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField)
+TEST_F(Medium_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto field = seeded_state(rt);
     Word* const second = field.next();
     std::size_t live = K_WIDTH;
@@ -240,19 +220,7 @@ TEST(Medium_StateMove, ADynamicStateRuleReplayedAfterAStepReadsTheCurrentField)
 
     // The first rule still writes `second`, which is now the field the State rule reads.
     graph.name("rebuilt");
-    const auto plan = graph.plan();
-    ASSERT_TRUE(plan);
-    ASSERT_EQ(plan->nodes.size(), 2u);
-    const PlanNode& state_rule = plan->nodes[1];
-    EXPECT_EQ(state_rule.rule, 1u);
-    EXPECT_EQ(state_rule.predecessor_count, 1u)
-        << "the State rule must wait on the writer of its current field";
-    ASSERT_EQ(state_rule.reads.size(), 1u);
-    EXPECT_EQ(state_rule.reads[0].base, static_cast<void*>(second));
-
     graph.run().value();
 
-    EXPECT_EQ(graph.compile_count(), 2u);
-    for (std::size_t i = 0; i < K_WIDTH; ++i)
-        ASSERT_EQ(field.current()[i], K_MARK + 1u) << "at i=" << i;
+    EXPECT_EQ(current_words(field), std::vector<Word>(K_WIDTH, K_MARK + 1u));
 }

@@ -3,6 +3,10 @@
 The tests of `Buffer` and `State`, the handles of `api/data/`. They are part of `sr_surface_tests`;
 [the page of the module's tests](../README.md) says how to run them.
 
+Every test that allocates a handle takes the program's runtime from `TestSupport::RuntimeTest`. The
+tests of an adopting `Buffer` build it over a made-up address with `tests/support/adopted_handles.hpp`
+and run small. The tests that stop the process are death tests and run medium.
+
 ## test_buffer.cpp
 
 The file covers what `Buffer` and `State` promise alike: what a range call does with a window, what
@@ -15,58 +19,60 @@ the file needs no cluster and no more devices than that file.
 
 `window_pattern` returns the pattern of the line a range call writes when it stops: the call,
 `offset <n>, count <n>` and `size <n>`. `expect_every_range_call_stops` runs `read_range`,
-`write_range` and `region` of one handle as death tests against it, which is how the Buffer test
-and the State test stay the same test. The tests that stop the process are in the suite
-`Medium_DataHandlesDeathTest`.
+`write_range` and `region` of one handle as death tests against it. `expect_buffer_range_calls_stop`
+and `expect_state_range_calls_stop` allocate the handle, so one row table serves the Buffer and the
+State.
 
-### `BufferStopsOnAWindowPastTheEnd`, `StateStopsOnAWindowPastTheEnd`
+### `Medium_DataHandleWindowDeathTest.StopsOnAWindowThatDoesNotFit`
 
-A window `{size, 1}` starts one past the end, and `{size - 2, 5}` starts inside and runs over. All
-three range calls stop the process for both, and the line holds the offset, the count and the
+One row per handle and window. A window `{size, 1}` starts one past the end, and `{size - 2, 5}`
+starts inside and runs over, for a Buffer and for a State. An offset or a count near the largest
+`std::size_t` makes `offset + count` wrap to a small number; the Buffer rows with those windows stop
+all the same. Each row stops all three range calls, and the line holds the offset, the count and the
 size.
 
-### `WindowWhoseEndWrapsStops`
+### `EmptyWindowAtTheEndOfABufferIsAccepted`, `EmptyWindowAtTheEndOfAStateIsAccepted`
 
-An offset or a count near the largest `std::size_t` makes `offset + count` wrap to a small number.
-The call stops all the same.
-
-### `EmptyWindowAtTheEndIsAccepted`
-
-A window `{size, 0}` is valid on a Buffer and on a State: `read_range` returns an empty vector,
-`write_range` accepts an empty span with a null pointer, and `region` returns a zero-length region
-at the end.
+A window `{size, 0}` is valid: `read_range` returns an empty vector, `write_range` accepts an empty
+span with a null pointer, and `region` returns a zero-length region at the end.
 
 ### `FittingWindowRoundTrips`
 
 The last five elements are written and read back, and the element before the window keeps its
 value.
 
-### `NullOrShortSourceWithACountStops`
+### `ANullSourceWithACountStopsABuffer`, `ANullSourceWithACountStopsAState`, `AShortSourceStops`
 
 `write_range` with a count of four stops the process for a null source, on a Buffer and on a
-State, and for a source of two elements.
+State, and for a Buffer source of two elements.
 
 ### `OverflowingElementCountStopsBeforeAllocating`
 
 The count is chosen so that `count * sizeof(double)` wraps to eight bytes, a size any allocator
 grants. `Runtime::buffer` and `Runtime::state` stop the process with the count in the message.
 
-### `StateAndBufferAnswerTheSharedQueriesAlike`
+### `StateAndBufferReportTheSameMetadata`, `StateRegionNamesAWindowOfTheCurrentField`
 
 `device_index`, `size`, `empty`, `residency` and `is_host_accessible` return the same on a State and
-on a Buffer allocated alike, and `State::region` names a window of the current field.
+on a Buffer allocated alike. `State::region` names a window of the current field: its base, its byte
+offset and its byte length.
 
-### `TriviallyCopyableStructRoundTrips`
+### `TriviallyCopyableStructRoundTripsThroughABuffer`, `TriviallyCopyableStructRoundTripsThroughAState`
 
 A struct of two floats instantiates `Buffer` and `State`, and a window written with `write_range`
-reads back equal through `read_range`. The negative case, a `T` that is not trivially copyable, is
-a compile error from the `static_assert` in `Buffer`, so no test can run it.
+reads back equal through `read_range`. The values are dyadic and the copy moves bits, so the
+comparison is exact. The negative case, a `T` that is not trivially copyable, is a compile error
+from the `static_assert` in `Buffer`, so no test can run it.
 
-### `HostOnADeviceResidentHandleStops`, `IndexingADeviceResidentHandleStops`
+### `Medium_DataHandleResidencyDeathTest.HostOnADeviceResidentHandleStops`
 
-`host()` on a device-resident Buffer or State stops the process, and the line names
-`Buffer::host` or `State::host`. `operator[]` is checked with `SR_ASSERT`, so its test is compiled
-only where `SR_ENABLE_ASSERTIONS` is 1.
+One row for a Buffer and one for a State: `host()` on a device-resident handle stops the process,
+and the line names `Buffer::host` or `State::host`.
+
+### `IndexingADeviceResidentHandleStops`
+
+`operator[]` on a device-resident Buffer or State stops the process. It is checked with `SR_ASSERT`,
+so the test is compiled only where `SR_ENABLE_ASSERTIONS` is 1.
 
 ### `DeviceIndexThatNamesNoDeviceStops`
 
@@ -74,12 +80,12 @@ only where `SR_ENABLE_ASSERTIONS` is 1.
 line names `Runtime::buffer` or `Runtime::state`, the index, the device count and
 `advanced().devices()`.
 
-### `AlignedAllocationStartsOnAMultipleOfTheAlignment`
+### `Medium_DataHandlesAlignment.AlignedAllocationStartsOnAMultipleOfTheAlignment`
 
-`buffer()` and `state()` are asked for 37 floats aligned to 128 bytes in each of the three
-residencies. Where the device returns memory, the buffer's address and both fields of the state
-must be multiples of 128. A residency that returns `AllocationFailed` is not checked, and the test
-fails when none could be.
+One row per residency. `buffer()` and `state()` are asked for 37 floats aligned to 128 bytes. The
+buffer's address and both fields of the state must be multiples of 128. The fixture skips a row
+whose residency the device does not offer, and the `Shared` row where the toolchain's aligned shared
+allocation ignores the alignment; the run reports those rows as skipped.
 
 ### `AlignmentThatIsNotAPowerOfTwoStops`
 
@@ -94,8 +100,16 @@ against shared USM.
 
 ### `BufferRoundTrip`
 
-A device-resident buffer reports its residency and is not host-accessible. A host seed, a kernel and
-a host readback round-trip correctly without the host ever indexing the allocation.
+A host seed, a kernel that doubles each element and a host readback round-trip correctly through a
+device-resident buffer without the host ever indexing the allocation.
+
+### `ABufferAllocatedOnTheDeviceIsNotHostAccessible`
+
+A buffer allocated with `Residency::Device` reports that residency and is not host-accessible.
+
+### `ReadRangeOfADeviceBufferReturnsOnlyTheWindow`
+
+`read_range` pulls a window of a device-resident buffer without copying the whole buffer.
 
 ### `StateStepsResident`
 
@@ -103,33 +117,38 @@ A device-resident `State` steps with the fluent `add_rule(state, kernel)` rule a
 through its range API. The field stays resident across all steps, and only the windowed readback
 touches the host.
 
-### `SharedDefaultUnchanged`
+### `DirectHostIndexingOfASharedBufferIsSeenByReadRange`
 
-Shared residency stays the default and is host-addressable. Its range API works alongside direct
-indexing, so existing code is unaffected.
+The host writes a shared buffer by direct indexing and `read_range` returns what it wrote.
 
 ### `HostSpanIndexesSharedBuffer`
 
 `host()` is the branch-free bulk access to shared USM: one residency check, then unchecked indexing
 over the whole buffer.
 
-### `HostOnADeviceBufferStops`
-
-A device-resident buffer is not host-addressable, and `host()` on one stops the process in every
-build.
-
 ### `HostBufferIsWrittenByAKernelAndReadOnTheHost`
 
 A host-resident buffer is host-addressable, a kernel on its device writes it, and the host reads the
 result by direct indexing.
 
+### `Small_Buffer.AdoptingConstructorExposesTheAdoptedAddress`, `DestructionReleasesTheAdoptedAllocationOnce`, `MovingAnAdoptedBufferReleasesTheAllocationOnce`
+
+A `Buffer` adopts a block at a made-up address whose owner is a `RecordingAllocationOwner`. It
+exposes that address, releases it once when destroyed, and a moved-to `Buffer` takes the address and
+releases it once while the moved-from one is empty.
+
+### `Medium_BufferDeathTest.AdoptingATooSmallAllocationStops`, `AdoptingACountThatOverflowsItsByteSizeStops`
+
+Adopting a block of 4 bytes for 4 elements of 4 bytes stops the process, and so does a count whose
+byte size overflows `std::size_t`. The lines name the adoption and the count.
+
 ## test_state.cpp
 
-The file covers a State that moves after `add()` recorded a rule on it, and the view a State shares
-with the graphs that record it. `seeded_state` fills the current field with the index plus `K_SEED`
-and the next field with `K_CANARY`, `add_increment` records `next = current + 1` over the whole
-field, and `expect_advanced` compares the current field with the seed plus a number of steps.
-Three `static_assert` lines state that a State moves without throwing and does not copy.
+The file covers a State that moves after `add()` recorded a rule on it. `seeded_state` fills the
+current field with the index plus `K_SEED` and the next field with `K_CANARY`, `add_increment`
+records `next = current + 1` over the whole field, and `current_words` and `seeded_words` compare
+the current field with the seed plus a number of steps. Three `static_assert` lines state that a
+State moves without throwing and does not copy.
 
 ### `ARuleFollowsAStateMovedAfterAdd`
 
@@ -139,8 +158,8 @@ here.
 
 ### `ARuleFollowsAStateItsVectorReallocated`
 
-The rule is recorded on element 0 of a `std::vector<State>`, and States are pushed until the
-address of element 0 changes. Three steps then advance element 0 and leave element 1 as seeded.
+The rule is recorded on element 0 of a `std::vector<State>`, and `push_until_reallocated` pushes
+States until the address of element 0 changes. Three steps then advance element 0 and leave element 1 as seeded.
 
 ### `ACoupledRuleFollowsItsMovedStates`
 
@@ -149,16 +168,7 @@ the seed in the State written and the seed in the State read.
 
 ### `ADynamicStateRuleFollowsAMovedState`
 
-`add_dynamic(sized(...), state, kernel)` is recorded and the State moved. Three steps advance the live prefix
-on one compiled plan.
-
-### `TheViewFollowsAdvanceMoveAndDestruction`
-
-The case reads the view through `HandleAccess::view()`. It holds the State's two field pointers and
-its size; an advance swaps the pointers; the moved-to State returns the same view object, and an
-advance through that view swaps the moved-to State. After the State is destroyed the view holds
-null pointers and a size of zero, and an advance through it does nothing. A default-constructed
-State yields an empty view and not a null pointer.
+`add_dynamic(sized(...), state, kernel)` is recorded and the State moved. Three steps advance the live prefix.
 
 ### `AStateAssignedOverRefusesTheRun`
 
@@ -174,8 +184,6 @@ current one.
 
 The graph holds a kernel that writes `K_MARK` into the State's second field, named with
 `Writes(state)`, and then the late-bound rule `next = current + 1`. After one step the second field
-is current. The test renames the rule, which makes the plan stale, and reads `graph.plan()`: the
-rule's node must read the second field and have one predecessor, the writer of that field. It then
-runs a second step and expects `K_MARK + 1` everywhere and two compiles in all.
-The predecessor count is the deterministic check; the values depend on the order only when the scheduler
-runs the two unordered nodes the other way round.
+is current. The test renames the graph, which makes the plan stale, and runs a second step: every
+element must hold `K_MARK + 1`. The values depend on the order only when the scheduler runs the two
+unordered nodes the other way round, which the rebuilt plan must not allow.

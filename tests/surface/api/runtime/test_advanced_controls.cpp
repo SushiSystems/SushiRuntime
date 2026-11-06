@@ -34,52 +34,63 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 
-TEST(Medium_PerfControls, RebalancerIsOffUnlessRequested)
+/** @brief Fixture of the rebalancer tests on the program's runtime, which gives the rebalancer back off. */
+class Medium_PerfControls : public TestSupport::RuntimeTest
 {
-    auto rt = Runtime::create().value();
-    EXPECT_FALSE(rt.advanced().is_rebalancer_enabled())
-        << "the rebalancer must not run unless RuntimeConfig asked for it";
+    protected:
+        /** @brief Turns the rebalancer off, so the next test finds the default. */
+        void TearDown() override { runtime().set_rebalancer_enabled(false); }
+};
 
+/** @brief Tests that a runtime built with no config does not run the rebalancer. */
+TEST_F(Medium_PerfControls, RebalancerIsOffByDefault)
+{
+    EXPECT_FALSE(runtime().advanced().is_rebalancer_enabled())
+        << "the rebalancer must not run unless RuntimeConfig asked for it";
+}
+
+/** @brief Tests that RuntimeConfig::rebalancer starts the rebalancer. */
+TEST_F(Medium_PerfControls, RebalancerIsOnWhenRequested)
+{
     RuntimeConfig config;
     config.rebalancer = true;
+
     auto throughput = Runtime::create(config).value();
+
     EXPECT_TRUE(throughput.advanced().is_rebalancer_enabled())
         << "RuntimeConfig::rebalancer must start the coordinator";
 }
 
-TEST(Medium_PerfControls, RebalancerToggleKeepsExecutionCorrect)
+/** @brief Fixture of the run tests; the parameter is whether the rebalancer is on during the run. */
+class Medium_PerfControlsRun : public Medium_PerfControls,
+                               public ::testing::WithParamInterface<bool>
+{
+};
+
+/** @brief Tests that a run gives the same result with the rebalancer off and on. */
+TEST_P(Medium_PerfControlsRun, RebalancerToggleKeepsExecutionCorrect)
 {
     constexpr std::size_t N = 128;
-
-    auto rt = Runtime::create().value();
-
-    auto buf = rt.buffer<int>(N).value();
-    for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
+    auto buf = runtime().buffer<int>(N).value();
+    TestSupport::fill_with(buf, 0);
     int* p = buf.data();
+    auto g = runtime().graph();
+    g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
+    runtime().set_rebalancer_enabled(GetParam());
 
-    auto g = rt.graph();
-    g.add(N, Reads{}, Writes(buf),
-          [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
-
-    // Off (the default): a run produces correct results with no background thread.
-    EXPECT_FALSE(rt.advanced().is_rebalancer_enabled());
     g.run().value();
-    for (std::size_t i = 0; i < N; ++i)
-        ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer off, at i=" << i;
 
-    // Enabled after construction: still correct, and the flag reflects the change.
-    rt.set_rebalancer_enabled(true);
-    EXPECT_TRUE(rt.advanced().is_rebalancer_enabled());
-    g.run().value();
-    for (std::size_t i = 0; i < N; ++i)
-        ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer on, at i=" << i;
-
-    // And back off again, so the transition is exercised in both directions.
-    rt.set_rebalancer_enabled(false);
-    EXPECT_FALSE(rt.advanced().is_rebalancer_enabled());
-    g.run().value();
-    for (std::size_t i = 0; i < N; ++i)
-        ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "rebalancer off again, at i=" << i;
+    EXPECT_EQ(runtime().advanced().is_rebalancer_enabled(), GetParam());
+    EXPECT_EQ(TestSupport::contents(buf), TestSupport::ramp<int>(N, 1));
 }
+
+INSTANTIATE_TEST_SUITE_P(Rebalancer, Medium_PerfControlsRun, ::testing::Values(false, true),
+                         [](const ::testing::TestParamInfo<bool>& info)
+                         {
+                             return info.param ? "On" : "Off";
+                         });

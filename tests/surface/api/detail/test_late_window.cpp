@@ -39,8 +39,6 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/device_fault.hpp>
 #include <SushiRuntime/api/detail/late_window.hpp>
-#include <SushiRuntime/engine_handles/late_controls_access.hpp>
-#include <SushiRuntime/task/late_bindings.hpp>
 
 #include "description_runner.hpp"
 
@@ -83,15 +81,22 @@ TEST(Small_LateWindow, AWindowPastTheCapacityIsAFault)
     EXPECT_EQ(fault[3], 8u);
 }
 
-/** @brief Tests that the window read from bindings carries the count and the base set on them. */
-TEST(Small_LateWindow, TheWindowIsReadFromTheBindings)
+/** @brief Tests that controls whose Dynamic states no count read as the rest of the capacity. */
+TEST(Small_LateWindow, AnUnboundWindowReadsAsTheRestOfTheCapacity)
 {
-    auto bindings = std::make_shared<Internal::Graph::LateBindings>();
-    const auto controls = Detail::surface_controls(bindings);
+    const auto controls = Testing::bound_controls(Dynamic());
+
     EXPECT_TRUE(Detail::read_late_window(controls.get()).rest_of_capacity);
-    bindings->count.store(4);
-    bindings->base.store(1);
+}
+
+/** @brief Tests that the window read from the controls carries the count and the base the Dynamic gave. */
+TEST(Small_LateWindow, ABoundWindowCarriesTheCountAndTheBaseItWasGiven)
+{
+    const auto controls =
+        Testing::bound_controls(sized([] { return std::size_t{4}; }).based_at([] { return std::size_t{1}; }));
+
     const Detail::LateWindow window = Detail::read_late_window(controls.get());
+
     EXPECT_FALSE(window.rest_of_capacity);
     EXPECT_EQ(window.count, 4u);
     EXPECT_EQ(window.base, 1u);

@@ -41,164 +41,61 @@ The headers below are shared by tests of this module only, so they sit in this f
 
 | Header | What it does |
 | --- | --- |
-| `dynamic_graph_plan_access.hpp` | Reads the composed plan of a `DynamicGraph` and its boundary edges; see its section. |
 | `refusing_fill.hpp` | A host fill task whose copy throws on demand, to fail a plan build; see its section. |
 | `hooked_copy_task.hpp` | A host task whose next copy runs a hook the test arms, to act inside a plan build; see its section. |
 | `run_recorder.hpp` | Adds a recording observer to a runtime and reads the observations of its runs; see its section. |
 
-## test_api_log_category.cpp
+## compile_api_log_category.cpp
 
-| Test | What it proves |
-| --- | --- |
-| `TheCategoryIsNamedAfterTheModule` | `K_API_LOG_CATEGORY` names the module `api` in the project `sushiruntime`, at compile time. |
+The file includes `api_log_category.hpp` and nothing else, so the header carries every include it
+needs. The build compiles it and the test runner lists nothing from it. The category has no promise
+a test could break: its name and project are constants.
 
 ## test_fluent.cpp
 
-The file covers the parts of the fluent API that the `Medium_FluentLifecycle` tests do not exercise:
+The file covers the fluent surface the other files of this folder reach only in passing. Every test
+runs on the program's runtime, fills its buffers through `TestSupport::fill_with` and compares the
+whole result with a vector, so no body loops.
 
-- `run_for(duration)`
-- the success path of `run()` and the fields of `RunReport`
-- the `add(kernel)` overload that takes a raw `sycl::handler`
-- the `add(n, kernel)` range kernel overload
-- the pointer-tracked `add(reads, writes, n, kernel)` overload
-- `Reads` and `Writes` over `Buffer::region()`, which track a sub-region
-- a standalone `Buffer<T>` allocation used in a graph
-- `Graph::size()`
-- the `Runtime::advanced()` accessor against the context behind the runtime
-- `run(0)`
+| Test | What it proves |
+| --- | --- |
+| `RunReportFieldsAfterMultiStep` | After a multi-step run, `total_tasks_executed` is the tasks per step times the steps and the report is successful. |
+| `RunForRunsAtLeastOneStep` | `run_for` with a zero budget still runs one step. The multi-step case needs a clock; RW-111 holds it. |
+| `RunZeroStepsIsNoOp` | `run(0)` returns at once, reports no work and leaves the state as it was. |
+| `RawHandlerKernelAdd` | `add_untracked(kernel)` takes a function that receives `sycl::handler&` directly. |
+| `RangeKernelAdd` | `add_untracked(n, kernel)` takes a function that receives `(begin, end, sycl::handler&)` and sees `begin = 0`, `end = N`. |
+| `PointerTrackedAddOrdering` | `add(reads, writes, n, kernel)` over `BufferRegion` keys orders a writer before the reader that squares its values. |
+| `TrackedRangeKernelOrdering` | The tracked range-kernel overload, which drives the handler itself, is ordered after the writer by its declared `Reads` and `Writes`. |
+| `TrackedRawKernelOrdering` | The tracked raw-kernel overload, which owns the whole command group, is ordered after the writer. |
+| `TrackedNdRangeOrdering` | The tracked `NdRange` overload keeps dependency tracking, gets an `nd_item` and covers the whole global range. |
+| `SubRegionDisjointWritesThenWholeRead` | Writers of the two halves of one buffer stay unordered, and a whole-buffer reader runs after both: sub-region identity end to end. |
+| `BufferAllocateUseAndReadBack` | A standalone `Buffer<T>` seeded on the host is used through its data pointer in a task and read back. |
+| `BufferMoveLeavesSenderEmpty` | A moved-from `Buffer` is empty and the receiver holds the allocation. |
+| `GraphSizeTracksAdds` | Rows of zero, one and two `add_rule` calls: `Graph::size()` equals the number made. |
 
-### `TryRunSuccessPath`
+### Multidimensional, variadic, wrapper and captured forms
 
-`run()` on a non-empty graph must return a successful result with `total_tasks_executed` filled
-in. The test proves that the non-throwing path returns a valid `RunReport` and not a
-default-constructed one.
+| Test | What it proves |
+| --- | --- |
+| `Extent2DPerElementMap` | `add_untracked(Extent<2>, kernel)` sees a `sycl::id<2>` that covers the whole box and writes a row-major index. |
+| `NdRange2DTiledKernel` | `add_untracked(NdRange<2>, kernel)` runs a tiled kernel in the work-group model; each item writes its global linear index. |
+| `State2DSteppedUpdate` | `add_rule(Extent<2>, state, kernel)` adds the row index to every cell each step, so row y holds `S*y` after S steps. |
+| `VariadicCoupledThreeInputs` | `add_coupled(Coupled(out, a, b), kernel)` computes `next = cur + a + b` from the data of the previous step. |
+| `ReadsWritesWrappersOrdering` | `Reads` and `Writes` wrappers order a writer before a dependent reader as the raw key vectors do. |
+| `InOutCapturedArguments` | `add(Extent, In, Out, kernel)` hands the kernel raw pointers and registers the dependency in one step. |
+| `InteriorOnlyHaloUpdate` | An interior-only `Extent` with an origin leaves the one-cell border untouched. |
 
-### `RunReportFieldsAfterMultiStep`
+### State replay, run_until, coupled fields, recompilation and errors
 
-After a multi-step run, `total_tasks_executed` must equal the tasks per step times the steps, and
-the report must be successful.
-
-### `RunForRunsAtLeastOneStep`
-
-`run_for(duration)` must run at least one step and then stop. The budget is very short so that the
-test does not wait; the test validates the one-step guarantee.
-
-### `RunForRunsMultipleStepsWithinBudget`
-
-With a real budget, `run_for` should complete several steps and the report must reflect them. The
-test measures steady-state throughput, not a cold start.
-
-The kernel is warmed before the timing starts. The first dispatch pays for JIT compilation and for
-queue and device setup once, and that alone can exceed the 50 ms budget. `run_for` fixes the
-deadline before its first step, so an unwarmed kernel overshoots and stops after a single step. In
-steady state this trivial kernel costs less than a millisecond, so a warmed run fits many steps.
-
-### `RawHandlerKernelAdd`
-
-`add_untracked(kernel)` takes a function that receives `sycl::handler&` directly, the raw kernel
-overload. The kernel must run and produce the expected values.
-
-### `RangeKernelAdd`
-
-`add_untracked(n, kernel)` takes a function that receives `(begin, end, sycl::handler&)`, the range
-kernel overload. The function must see `begin = 0` and `end = N` and launch its own work.
-
-### `PointerTrackedAddOrdering`
-
-`add(reads, writes, n, kernel)` is the overload with explicit dependency vectors. Two tasks share one
-buffer: a writer, then a reader that squares the values. The dependency tracker must order them
-correctly without a `State`.
-
-### `TrackedRangeKernelOrdering`
-
-The tracked range-kernel overload runs the writer and squarer pair of `PointerTrackedAddOrdering`,
-but the second task drives the handler itself. The declared `Reads` and `Writes` must still order it
-after the writer. An untracked overload would let the square race the write.
-
-### `TrackedRawKernelOrdering`
-
-With the tracked raw-kernel overload the reader owns the whole command group, and its declared
-regions still order it after the writer.
-
-### `TrackedNdRangeOrdering`
-
-With the tracked `NdRange` overload a tiled work-group kernel keeps dependency tracking and still
-gets an `nd_item`. The kernel is ordered after the writer, and the `nd_item` indexing must cover the
-whole global range.
-
-### `SubRegionDisjointWritesThenWholeRead`
-
-Two writers touch disjoint halves of one buffer, so the tracker leaves them unordered. A
-whole-buffer reader then overlaps both and must run after each. The test proves sub-region identity
-end to end through the fluent layer: disjoint slices are independent, and an overlapping access
-still orders. An identity based on the base pointer would either serialize the halves or let the
-reader observe an unwritten half.
-
-### `BufferAllocateUseAndReadBack`
-
-A standalone `Buffer<T>` is allocated, seeded on the host, used in a graph task through
-`Reads` and `Writes` on its data pointer and read back. The test verifies the lifecycle of owning USM.
-
-### `GraphSizeTracksAdds`
-
-`Graph::size()` tracks the number of `add()` calls made so far, also after a mutation that triggers
-a recompilation.
-
-### `ContextAccessorIsConsistent`
-
-`Internal::ContextAccess::context()` must return the `RuntimeContext` the fluent `Runtime` wraps,
-and `advanced()` must read through to it. The test verifies both by comparing device counts.
-
-### `RunZeroStepsIsNoOp`
-
-`run(0)` is documented as zero steps. It must return immediately, and the `RunReport` should show no
-work done.
-
-The file covers the hardened fluent surface:
-
-- `add_untracked(Extent<2>, kernel)`, a multidimensional per-element map
-- `add_untracked(NdRange<2>, kernel)`, a tiled work-group kernel
-- `add_rule(Extent<2>, state, kernel)`, a multidimensional stepped stencil
-- `add(out, in0, in1, kernel)`, a variadic coupled update that reads three fields
-- `add(Reads, Writes, n, kernel)`, the handle-based dependency wrappers
-- `add(Extent, In/Out, kernel)`, buffer arguments captured automatically
-- `add_rule(Extent with offset, state, kernel)`, an interior-only (halo) update
-
-### `Extent2DPerElementMap`
-
-With `add_untracked(Extent<2>, kernel)` the kernel sees a `sycl::id<2>` that covers the whole box and
-writes a row-major linear index, which proves 2-D iteration and indexing.
-
-### `NdRange2DTiledKernel`
-
-`add_untracked(NdRange<2>, kernel)` runs a tiled kernel in the work-group model. Each item writes its
-global linear index, and a correct result proves that `nd_item` indexing works.
-
-### `State2DSteppedUpdate`
-
-`add_rule(Extent<2>, state, kernel)` is a multidimensional stepped update. Each step adds the row index to
-every cell, so after S steps a cell in row y holds `S*y`.
-
-### `VariadicCoupledThreeInputs`
-
-`add(out, in0, in1, kernel)` is a coupled update that reads three fields, `out` and two others: `next =
-cur + a + b`. All reads see data of the previous step (Jacobi).
-
-### `ReadsWritesWrappersOrdering`
-
-With `add(Reads, Writes, n, kernel)` the dependency wrappers must order a writer before a dependent
-reader exactly as the raw `void*` vectors do.
-
-### `InOutCapturedArguments`
-
-With `add(Extent, In/Out, kernel)` the captured buffer arguments give the kernel raw pointers and
-register the dependency in one step. The kernel computes `dst = src * 2`.
-
-### `InteriorOnlyHaloUpdate`
-
-With `add(Reads, Writes, Extent-with-offset, kernel)` an interior-only update must leave the one-cell
-border, the halo, untouched, which proves sub-range iteration. The test uses an in-place `Buffer` so
-that the border keeps its initial value deterministically.
+| Test | What it proves |
+| --- | --- |
+| `StateReplayIncrement` | One rule replayed 64 times double-buffers: every cell holds 64 and the report counts 64 tasks. |
+| `ReplayAcrossCalls` | A second `run()` resets the node state the first consumed: 10 steps then 5 give 15. |
+| `RunUntilStopsOnCondition` | `run_until` checks its condition before each step against the state the previous step produced and stops at 20. |
+| `CoupledFieldsAreJacobi` | Both rules of a coupled pair read the previous step's data, so `v` is 10 and `u` is 45 after 10 steps. |
+| `MutationRecompiles` | Adding a rule recompiles the plan; the state of the first rule continues and the new one starts from its seed. |
+| `EmptyGraphIsInvalid` | Running an empty graph returns `InvalidGraph` and throws nothing. |
+| `DanglingResourceIsReported` | A graph that outlives a `Buffer` it recorded returns `DanglingResource` instead of dispatching against released memory. |
 
 ## test_sushiruntime.cpp
 
@@ -212,59 +109,42 @@ is a replacement global `operator new`, gated by a thread-local flag so that it 
 thread that drives the run. Worker threads allocate for reasons of their own (event lists, SYCL
 submissions), and their noise would drown the signal.
 
-The assertion is deliberately not "zero", and on Windows it cannot be. SushiRuntime is a shared
-library, so the replacement `operator new` of this file sees only allocations made by code compiled
-into the test executable, never by code compiled into the DLL. The command-group functions handed to
-`sycl::handler::parallel_for` are templates, instantiated where they are written. They are inline in
-`SushiRuntime/api/graph/graph.hpp`, so their object code lands in whichever translation unit
-includes that header. SYCL's own `StoreLambda()` allocates the stored kernel object on the heap on
-every submission (`llvm-sycl/include/sycl/handler.hpp`, `MHostKernel.reset(new
-Detail::HostKernel<...>(...))`). The scheduler runs that submission from a worker thread, so the
-thread-local flag of the counter never sees it. The chain runs it synchronously from the calling
-thread (`modules/engine/execution/source/chain_run.cpp`, `ChainRun::submit_node()`), so the counter does see it. The
-chain could never allocate nothing per tick once SYCL's kernel storage is inline. The rule the test
-holds is that the chain adds no more allocation than SYCL's own submission of the same kernel
-already costs on the same thread, and the baseline measures that cost directly.
+The assertion is deliberately not "zero", and on Windows the counter cannot see the library at all.
+SushiRuntime is a shared library, so the replacement `operator new` of this file sees only
+allocations made by code compiled into the test executable, never by code compiled into the DLL.
+The command-group functions handed to `sycl::handler::parallel_for` are templates, instantiated
+where they are written, and SYCL's own `StoreLambda()` allocates the stored kernel object on the heap
+on every submission. The scheduler runs that submission from a worker thread, so the thread-local
+flag never sees it. The chain runs it synchronously from the calling thread
+(`modules/engine/execution/source/chain_run.cpp`, `ChainRun::submit_node()`), so the counter does see
+it, and the chain can never allocate nothing per tick.
 
-The file asserts three relative claims, the last of them twice:
+The file asserts three claims about the public surface:
 
-1. The counter can see the path it measures. Where it sees the library, the value-returning `run()`
-   costs at least one more allocation per tick than the reuse form, and the extra allocation is the
-   `RunReport`. On Windows it does not see the library, and the claim is the narrower one under
-   "What the counter sees on Windows".
-2. The per-tick growth of the reuse form, measured as the count for four times the ticks minus the
-   count for one times the ticks, is no more than the per-tick growth of a plain `sycl::queue` that
-   submits the identical kernel, in order, on the same device and context from the same thread. What
-   the chain adds beyond bare SYCL is the runtime's own cost, and that cost must not scale.
-3. On a run forced onto the scheduler (`RuntimeSettings::force_scheduler`), the count does not scale
-   with the ticks, for the plain run and for the profiled one. The submission runs on a worker
-   thread, so the counter cannot see it, and the count stays flat because it stays zero.
+1. The value-returning `run()` costs at least one more allocation per tick than the reuse form, and
+   the extra allocation is the `RunReport`. Observing it also proves that the counter reaches the
+   run path and not only the test's own code.
+2. On a run forced onto the scheduler, the count for four times the ticks stays below four times the
+   count for one, for the plain run and for the profiled one. The submission runs on a worker thread,
+   so the count stays flat because it stays zero.
+3. On the asynchronous path, `run_async()` waited into one report the caller owns is amortised the
+   same way.
 
-The raw per-tick figures for the chain, the baseline and the forced scheduler are recorded as test
-properties, so every number is visible even where it cannot be asserted.
+The claim that the chain adds no more allocation per tick than bare SYCL's own submission of the
+same kernel on the same queue is not tested. Its baseline needs the in-order flavour of the device
+queue, which `advanced().queue()` does not hand out, and the event timestamps the profiled form
+reads; RW-113 holds it.
 
-### What the counter sees on Windows
+### The counter on Windows
 
-`K_COUNTER_SEES_THE_LIBRARY` is false on Windows and true elsewhere. A Windows DLL binds its own
-`operator new`, so an allocation made by code compiled into `sushiruntime.dll` never reaches the
-replacement in this file. On Linux the replacement is program-wide and covers the shared library.
+`K_COUNTER_SEES_THE_LIBRARY` is false on Windows and true elsewhere. Every test of
+`Medium_SteadyStateReuse` skips where it is false, since a count of zero would pass each claim
+vacuously. On Windows only `TheCounterObservesTheCallingThread` runs. RW-43 holds proving the
+library's allocations there.
 
 The step loop and the report builder are library code: `run_steps()` of
 `modules/surface/api/source/step_run.cpp` calls `fill_run_report()` of `run_report_builder.hpp`,
-whose `numa_statistics.push_back()` is the one allocation a fresh `RunReport` costs per tick. The
-value form and the reuse form therefore count the same on Windows, 128 allocations over 64 ticks
-each on the development machine, and the comparison between them proves nothing there.
-
-What the counter still sees on Windows is the kernel submission. The command-group templates of
-`graph.hpp` are instantiated in the test executable, and the chain calls them on the calling
-thread. The Windows form of claim 1 is that bare SYCL costs at least one counted allocation per
-tick and that the chain's count is no lower than bare SYCL's for the same kernel. A counter that
-did not reach the run path would count nothing for the chain.
-
-On Windows the suite therefore proves that the code the executable instantiates on the run path
-adds no allocation that scales beyond SYCL's own. It does not prove that the library's step loop,
-chain or report builder allocate nothing per tick: an allocation added there passes unseen. Only a
-build whose counter sees the library covers those.
+whose `numa_statistics.push_back()` is the one allocation a fresh `RunReport` costs per tick.
 
 ### Sanitizer detection
 
@@ -272,22 +152,16 @@ The preprocessor block detects a build whose sanitizer runtime owns the allocato
 spellings for each sanitizer, because Clang and IntelLLVM do not agree on which they define: the
 `__has_feature` form is native to Clang, the `__SANITIZE_*` macros are the predefined GCC-style
 ones, and a toolchain may offer only one of them. A guard that tested a single spelling, and only
-for AddressSanitizer, let the ThreadSanitizer lane through. `modules/foundation/test_runner/source/test_main.cpp` uses the
-same idiom for `SR_TSAN_BUILD`.
-
-### `SkippedUnderSanitizer`
+for AddressSanitizer, let the ThreadSanitizer lane through.
+`modules/foundation/test_runner/source/test_main.cpp` uses the same idiom for `SR_TSAN_BUILD`.
 
 AddressSanitizer and ThreadSanitizer each replace `operator new` and `operator delete` themselves:
 ASan to place its redzones and track ownership, TSan to attach its own bookkeeping. A second
 replacement in this translation unit measures nothing. It is a duplicate definition of the same
 symbols and fails at link, on Windows against ASan and on Linux against `libclang_rt.tsan_cxx.a`.
-
-The suite is skipped under a sanitizer, not adapted. Counting could be kept alive by installing
-allocator hooks in place of the replaced `operator new`, but the numbers would then include the
-sanitizer's own allocations, and the suite asserts on exact steady-state counts. A test that runs
-while it measures something other than what it claims is worse than a test that reports it was
-skipped. The target stays in the sanitizer lanes, where it still compiles, links and runs, so the
-cost of the guard stays visible.
+Under a sanitizer the file therefore defines no test and no replacement; the target still compiles,
+links and runs in the sanitizer lanes, so the cost of the guard stays visible. Counting could be
+kept alive by allocator hooks, but the numbers would then include the sanitizer's own allocations.
 
 ### Counter state
 
@@ -303,92 +177,27 @@ replaced form can be freed by a different allocator. The over-aligned forms, whi
 keeps that pairing intact as well. The cost is that aligned allocations are not counted, and the run
 path makes none.
 
-### `allocations_for_reuse_ticks`
+### The measuring helpers
 
-`allocations_for_reuse_ticks` runs `ticks` steps and returns how many allocations the calling thread
-made. The graph is warmed first, so that compilation and the capacity growth of the first run fall
-outside the measured window. The question is what a tick costs in steady state, not what the first
-one costs.
+`allocations_for_reuse_ticks`, `allocations_for_value_ticks` and `allocations_for_async_ticks` run
+the graph for a warm-up first, so that compilation and the capacity growth of the first run fall
+outside the measured window, and return how many allocations the calling thread made over `ticks`
+more runs. The question is what a tick costs in steady state, not what the first one costs.
+`is_amortised` says whether the count for four times the ticks stayed below four times the count for
+one.
 
-### `allocations_for_baseline_ticks`
+### Tests
 
-`allocations_for_baseline_ticks` returns what bare SYCL costs, on the calling thread, to submit the
-same per-element kernel `ticks` times, in order, on `queue`. The cost of the chain is judged against
-this figure. `queue` must be an in-order queue on the device of the plan, so the function measures
-the submission path that `parallel_for` in `graph.hpp` takes, without the chain's dependency waits
-and event ledger around it. It is warmed as `allocations_for_reuse_ticks` is, for the same reason:
-the one-time cost of the first submission is not the steady state.
+| Test | What it proves |
+| --- | --- |
+| `TheCounterObservesTheCallingThread` | A single vector allocation on the counting thread moves the counter. The counter must see what it measures before a claim made with it means anything. |
+| `ARunIntoAReusedReportSavesAnAllocationPerTick` | Claim 1. |
+| `ASchedulerForcedRunDoesNotAllocatePerTick` | Claim 2, for the plain run. |
+| `AProfiledSchedulerForcedRunDoesNotAllocatePerTick` | Claim 2, with a run observer added: the event ledger of a profiled run allocates only for a new shape, never on a later run that replays it. |
+| `AnAsyncWaitIntoAReusedReportIsAmortised` | Claim 3. |
 
-### `TheCounterObservesTheCallingThread`
-
-The counter must be able to see what it measures before a claim made with it means anything. A
-single vector allocation cannot be missed.
-
-### `ReuseTicksDoNotAllocatePerTick`
-
-The baseline uses the device, the context and the in-order queue that the chain submits to
-(the in-order flavour of `Internal::Execution::RuntimeContext::devices()`). It therefore measures what SYCL's
-own submission of the identical kernel costs on the calling thread, with none of the chain's
-bookkeeping around it.
-
-The test makes the three claims in order:
-
-1. The value form builds a fresh report on every tick, and the reuse form refills one the caller
-   owns. Where the counter sees the library the difference is at least one allocation per tick,
-   and observing it proves that the counter reaches the run path and not only the test's own code.
-   On Windows the test asserts the two comparisons with bare SYCL that "What the counter sees on
-   Windows" describes. The property `counter_sees_the_library` records which form ran.
-2. The per-tick growth of the chain must not exceed the per-tick growth of bare SYCL submitting the
-   same kernel on the same queue. Growth beyond that is the runtime's allocation, not SYCL's, and it
-   is the only part the chain controls.
-3. The scheduler runs the same kernel from a worker thread, so the counter cannot see any of it. The
-   count does not scale because it stays zero.
-
-The test skips on AdaptiveCpp. The CI run on its toolchain missed claims 1 and 2 by a few
-allocations: the value form cost 454 against 456 for the reuse form plus one per tick, and the chain
-grew by 1171 against bare SYCL's 1164. Whether that is the toolchain's own variation or an extra
-allocation on the chain's path is not settled. The skip stays until a second run or a read of the
-path settles it.
-
-### `AsyncWaitIntoAReusedReportIsAmortised`
-
-The test makes the same claim on the asynchronous path, which is the one an overlapped frame loop
-uses: submit, do unrelated work, settle into a report the loop owns.
-
-### `ProfiledReuseTicksDoNotAllocatePerTick`
-
-The event ledger of a profiled run allocates only for a new shape, never on a later run that replays
-the same shape. This is item 3 of section E in
-the g1 node event records design spec in the version history.
-
-The baseline uses the profiling flavour of the in-order queue the chain submits to, and reads each
-event's timestamps after the wait as the ledger does, so it carries the cost of profiling as well.
-On some SYCL backends reading a timestamp allocates, and a baseline that left the event unread
-would grow by less than the chain on every tick.
-
-The test skips on AdaptiveCpp for the reason `ReuseTicksDoNotAllocatePerTick` does. Its CI run
-missed the growth claim by 2 allocations over 192 ticks (1174 against bare SYCL's 1172); the other
-test missed it by 7 in an earlier run, while this one passed in that run. Two samples cannot tell
-a small constant allocation on the chain's path from variation, so the cause stays open.
-
-## dynamic_graph_plan_access.hpp
-
-The header is the seam the tests use to read the composed plan of a `DynamicGraph`, which has no
-public accessor. `graph/test_dynamic_graph.cpp` and `graph/plumbing/test_region_composer.cpp` include it by
-name.
-
-### `DynamicGraphNodeEventsTestAccess`
-
-`DynamicGraphNodeEventsTestAccess` is the friend `dynamic_graph.hpp` names, used only by tests to
-reach `DynamicGraph::plan_`. It mirrors `NodeEventRecordsTestAccess` on `Graph`.
-
-### `find_plan_node`, `has_boundary_edge`, `boundary_in_degree`
-
-`find_plan_node` returns the one node of `plan.all_nodes` that carries a name and fails the test
-when none or several do; the list is filled only while the graph requests profiling.
-`has_boundary_edge` reports whether `from` lists `to` among its cross-region successors, and
-`boundary_in_degree` returns how many cross-region edges end at a node. With them a test asserts an
-edge of the boundary layer directly and needs no timing.
+The reuse tests skip on AdaptiveCpp, whose submission allocates a different number of times per call,
+so the counts they compare are not stable there.
 
 ## refusing_fill.hpp
 

@@ -104,6 +104,9 @@ dispatch: J16 M4 extension distributed — sonnet medium, 1 round, partial (stan
 dispatch: J16 M4 extension rest — sonnet medium, 1 round, partial (worker_directory and dispatcher left; adapters to RW-105, RW-106), rung 1
 dispatch: J16 M4 worker_directory — sonnet medium, 1 round, passed (skipped cpp-code-style, source-comments and documentation skills; reviewed by the lead), rung 1
 dispatch: J16 M7 api graph — sonnet medium, 1 round, passed with a rule gap (skipped testing, cpp-code-style, source-comments and documentation skills and the backlog commands; reviewed by the lead; internal-only promises to RW-107), rung 1
+dispatch: J16 M7 api data and detail — sonnet medium, 1 round, passed (seams to RW-108, RW-109; wrote two files in /tmp, removed by the lead), rung 1
+dispatch: J16 M7 api rest — sonnet medium, 1 round, passed (seams and dropped promises to RW-110 to RW-114), rung 1
+dispatch: J16 RW-95 tools text seams — haiku high, 1 round, passed, rung 1
 
 ## Totals
 

@@ -3,14 +3,25 @@
 The tests of `Runtime`, its configuration, its errors and its logging controls. They are part of `sr_surface_tests`;
 [the page of the module's tests](../README.md) says how to run them.
 
+Each medium test takes the program's runtime from the fixture base `TestSupport::RuntimeTest`. A test
+makes a runtime of its own only where the configuration it passes to `Runtime::create()` is the
+promise, or where the test destroys or moves the runtime. A test that sets state on the shared
+runtime, such as the rebalancer or the placement rules, puts it back in `SetUp` or `TearDown`.
+
 ## test_advanced_controls.cpp
 
-The file covers the rebalancer control: the rebalancer is off unless requested, execution is correct
-in both states, and the engine reports the flag faithfully.
+The file covers the rebalancer control: the rebalancer is off unless requested, and a run gives the
+same result with it off and on.
 
 The default is the assertion that matters. The background thermal rebalancer migrates tasks between
 workers on a 5 ms heartbeat. That changes which worker folds which tile and puts a periodic wakeup
 under every frame, a throughput trade that gains a simulation frame nothing.
+
+| Test | What it proves |
+| --- | --- |
+| `RebalancerIsOffByDefault` | The program's runtime, built with no config, does not run the rebalancer. |
+| `RebalancerIsOnWhenRequested` | `RuntimeConfig::rebalancer` starts it. |
+| `RebalancerToggleKeepsExecutionCorrect` | Rows of off and on: the flag `set_rebalancer_enabled()` set is the one `is_rebalancer_enabled()` reports, and the same graph gives the same result. |
 
 ## test_errors.cpp
 
@@ -19,30 +30,35 @@ surfaces the error to the caller, and a fresh graph on the same `Runtime` must s
 correct results afterwards. The defect this file guards against latched `shutdown_requested` on a
 single throw and left the pool dead for good.
 
-### `ThrowingKernelLeavesRuntimeReusable`
-
-The command-group function of the first graph throws, so `run()` must return the error to the
-caller and not hang.
+| Test | What it proves |
+| --- | --- |
+| `ThrowingNodeIsReportedByNameAndRegistrationIndex` | The error of `run()` names the throwing node and its registration index and holds the exception text, and it does not name a healthy node. |
+| `AGraphRunsCleanAfterAKernelThrew` | The command-group function of the first graph throws, so `run()` returns the error and does not hang; a second graph on the same runtime then writes its output. |
 
 ## test_placement_scope.cpp
 
 The file covers `PlacementScope`, the two overloads of `Runtime::placement_scope()` and the device
-a scope resolves to. The tests of the value need no device; the others create a `Runtime`. The
-device tests send a class to `advanced().device_count()`, one past the last device, which no machine
-has, so the absent-device cases run on any machine; the two tests that need a second device skip
-when `advanced().device_count()` is below 2.
+a scope resolves to. The device tests send a class to `advanced().device_count()`, one past the last
+device, which no machine has, so the absent-device cases run on any machine. The shared runtime holds
+the rules, so the fixture clears them before and after each test. The rules of a runtime built with
+labels need a runtime of their own.
 
 | Test | What it proves |
 | --- | --- |
-| `AccessorsReturnTheClassAndTheKeyItWasBuiltWith`, `ANoneKeyStaysNone`, `AKeyOfZeroIsKeptAsZero`, `ACopyReportsTheSameClassAndKey` | The accessors return what the constructor took. A key of 0 stays 0 and is not read as none, and a copy reports what the original reports. |
+| `AScopeWithoutARuntimeGivesDeviceZero`, `AScopeWithoutARuntimeRefusesABuffer` | A scope built from a class and a key has no rules to read: `device()` gives 0 and `buffer()` returns `InvalidState`. |
 | `TheStringAndClassOverloadsGiveEqualClasses`, `BothOverloadsKeepAKeyOfZeroAndANoneKey`, `ANameWithoutADotIsAClass` | The string and the `PlacementClass` overloads build equal classes for one name and keep a key of 0 and a none key. A name with no dot is a class. |
-| `AMalformedNameStopsTheProcess` | An empty name, a name that starts or ends with `.` and a name with two `.` in a row each stop the process. |
-| `AScopeWithoutARuntimeGivesDeviceZeroAndNoBuffer` | A scope built from a class and a key has no rules to read: `device()` gives 0 and `buffer()` returns `InvalidState`. |
-| `ANoRuleScopeGivesDeviceZero`, `ARuleWithAPresentDeviceGivesThatDevice` | No rule, or a rule for another class, gives device 0. A rule with a machine and no device part, an index, a kind and a least memory the machine has each give the device they name. |
-| `LocalGivesDeviceZeroForAnAbsentDevice`, `FailNamesTheRuleAndTheDevice`, `FailNamesAnUnnamedRuleByItsPosition`, `Regression_WaitGivesDeviceZeroWithoutWaiting` | A rule for an absent device gives device 0 under `Local`, an `InvalidArgument` that holds the rule's name (or `at position 0`) and `device index N` under `Fail`, and device 0 under `Wait` within less than its 10 minute bound, measured with `std::chrono::steady_clock`, since a local device never appears. |
-| `AnotherMachineMakesTheTargetAbsent`, `ALabelTheMachineCarriesMakesTheTargetPresent`, `AKindOrMemoryNoDeviceHasIsAbsent` | A machine name or label that is not this machine's makes the target absent, and a label it carries makes it present. A least memory above every device, and a kind the machine lacks, are absent. The kind case skips on a machine with an accelerator. |
-| `AScopeOpenedBeforeTheRulesFollowsTheNewSet` | A scope made before `set_placement_rules()` is refused by a `Fail` set and accepted again after `clear_placement_rules()`. |
-| `LocalPlacesTheBufferOnDeviceZero`, `FailRefusesTheBuffer`, `ABufferLandsOnTheDeviceTheRuleNames` | `buffer<T>()` allocates on device 0 under `Local`, returns the error of `device()` under `Fail`, and allocates on device 1 when a rule names it (skipped below two devices). |
+| `AMalformedNameStopsTheProcess` | Rows of an empty name, a name that starts or ends with `.` and a name with two `.` in a row: each stops the process. |
+| `ANoRuleScopeGivesDeviceZero`, `ARuleForAnotherClassLeavesDeviceZero` | No rule, or a rule for another class, gives device 0. |
+| `ARuleWithAPresentTargetGivesDeviceZero` | Rows of a machine with no device part, an index, a kind and a least memory the machine has: each gives device 0. |
+| `LocalGivesDeviceZeroForAnAbsentDevice`, `FailNamesTheRuleAndTheDevice`, `WaitGivesDeviceZeroForAnAbsentDevice` | A rule for an absent device gives device 0 under `Local`, an `InvalidArgument` that holds the rule's name and `device index N` under `Fail`, and device 0 under `Wait`, since a local device never appears. The `Wait` test reads no clock. |
+| `AnotherMachinesNameMakesTheTargetAbsent`, `ALabelNoMachineCarriesMakesTheTargetAbsent`, `LocalFallsBackWhenTheMachineIsAnotherOne` | A machine name or label that is not this machine's makes the target absent, and `Local` falls back to device 0. How a machine part and a device part match is held by `tests/foundation/placement/test_placement_target_matching.cpp`. |
+| `ALabelTheMachineCarriesMakesTheTargetPresent` | A label the runtime's config gave makes the target present. |
+| `AScopeOpenedBeforeARefusingSetIsRefusedByIt`, `AScopeOpenedBeforeTheRulesAreClearedIsNoLongerRefused` | A scope made before `set_placement_rules()` is refused by a `Fail` set, and accepted again after `clear_placement_rules()`. |
+| `LocalPlacesTheBufferOnDeviceZero`, `FailRefusesTheBuffer`, `FailAllocatesNothing`, `ABufferLandsOnTheDeviceTheRuleNames` | `buffer<T>()` allocates on device 0 under `Local`, returns the error of `device()` and allocates nothing under `Fail`, and allocates on device 1 when a rule names it (skipped below two devices). |
+
+The resolution of a rule against the machine facts is decided on values and could run small. It sits in
+`modules/surface/api/source/local_rule_device.hpp` and an anonymous function of `placement_scope.cpp`,
+neither of which a test reaches; RW-110 holds moving it.
 
 ## test_runtime.cpp
 
@@ -50,93 +66,51 @@ The file covers `Runtime::create()`, `RuntimeConfig` and the `AdvancedControls` 
 `static_assert` lines at the top state that a `Runtime` moves without throwing and does not copy, so
 a copy constructor that returns fails the compile and not a test.
 
-### `OneStructConfiguresAndTheViewOutlivesTheRuntime`
+| Test | What it proves |
+| --- | --- |
+| `TheWorkerCountOfTheConfigReachesThePool`, `ThePinningPolicyOfTheConfigReachesThePool` | A `RuntimeConfig` with `worker_count` 2, and one with `pinning` `Float`, give a pool with that count and that policy. The rebalancer reaches the runtime in `RebalancerIsOnWhenRequested`; `force_scheduler` has no public reader, and RW-114 holds it. |
+| `TheViewOutlivesTheRuntime` | A view taken while the `Runtime` lives answers with the same device count after the `Runtime` is destroyed. A view that held a reference would read a destroyed context, which AddressSanitizer reports. |
+| `DevicesListsOneEntryPerDevice`, `EntryNamesTheDeviceBehindItsQueue` | `devices()` holds one entry per device, and rows of entry `i` carry the name of the SYCL device behind the queue of `DeviceIndex{i}`. |
+| `ABufferLandsOnTheFirstDevice` | A buffer allocated with no `DeviceIndex` is on the first entry of `devices()`. |
+| `TopologyNamesTheMachineAsTheConfigDoes`, `TopologyReportsTheOperatingSystem`, `TopologyListsTheRuntimesDevices`, `TopologyCarriesTheConfiguredLabelsInOrder` | `topology()` reports the name and labels the config gave, in order, the operating system the test was built for, and one `DeviceFacts` per entry of `advanced().devices()` with the same kind, name and memory. |
+| `TopologyNamesTheMachineByItsHostNameWhenTheConfigGivesNone`, `TopologyCarriesNoLabelWhenTheConfigGivesNone` | A config with no `node_name` gives the name the operating system reports for the host, read with `GetComputerNameExA` or `gethostname`; a config with no labels gives an empty list. |
+| `CreateRefusesALabelKeyThatBreaksARule` | Rows of an empty key, a key holding `=` and a repeated key: `create()` returns `ErrorCode::InvalidArgument` with a message that names `RuntimeConfig::labels` and the position or the key of the label. |
+| `AMovedRuntimeKeepsTheContextItsViewsShare` | A view taken before a move sees a change made on the moved-to `Runtime`. |
+| `AHandleItHandsOutReachesItsOwnContext` | A setting changed on the Runtime is read back through the `AdvancedControls` it handed out, both ways, so the handle shares the Runtime's own context. This is the public test of `ContextHandleAccess::handle_of`. |
+| `ACallerWaitsAndCopiesThroughTheDeviceQueue` | A kernel submitted on the queue `advanced().queue()` returns is finished when `Runtime::wait()` returns, and a `memcpy` through the same queue brings the values to a host vector. |
+| `AQueueOfAnUnknownDeviceStops` | `advanced().queue()` asked for the device after the last one stops the process. |
+| `ABufferNoDeviceCanHoldReturnsAllocationFailed`, `AStateNoDeviceCanHoldReturnsAllocationFailed`, `AFailedAllocationLeavesTheRuntimeUsable` | `buffer()` and `state()` asked for half the address space in bytes return `AllocationFailed`, the buffer's message holds the element count, and a buffer of 16 bytes is granted afterwards. The memory module has no seam that makes an allocation fail. |
+| `ABufferAddsOneLiveAllocation`, `AStateAddsTwoLiveAllocations`, `FreeingABufferAndAStateReturnsTheLiveAllocationCount` | `advanced().live_allocation_count()` rises by one for a buffer and by two for a state, and is back at its first value when both leave their scope. |
 
-One `RuntimeConfig` with `worker_count` 2 must produce a pool of two workers. The view is taken
-while the `Runtime` lives and questioned again after the `Runtime` is destroyed: it shares ownership
-of the context, so it must give the same device count. A view that held a reference would read a
-destroyed context here, which AddressSanitizer reports.
+### Placement rules
 
-### `DevicesListsEveryDeviceInOrder`
+`Medium_RuntimePlacementRules` runs on the shared runtime and clears the rules before and after each
+test. One graph holds a node of class `sushiai.replica` with key 0 and a node with no class.
 
-`devices()` must hold one entry per device, and entry `i` must describe the device `DeviceIndex{i}`
-selects. The test compares each entry's name with the name the SYCL device behind queue `i` reports,
-then allocates a buffer with no `DeviceIndex` and asks the allocator which device owns it: that is
-entry 0.
+| Test | What it proves |
+| --- | --- |
+| `ARunWithNoRulesReportsNoWinner` | With no rules the plan reports no winner for either node. |
+| `ANodeWithNoClassMatchesNoRuleThatStatesOne` | After a set with one exact rule, the plan reports rule 0 for the first node and none for the second. |
+| `ANewRuleSetRecompilesThePlan` | The run after `set_placement_rules()` rebuilds the plan. |
+| `ASecondCompileReportsTheWinnerOfTheNewRules` | After a set that adds a prefix rule `sushiai.*` of higher priority, the plan reports rule 1. |
+| `AnUnchangedRuleSetDoesNotRebuildThePlan` | A run with the same rules leaves `compile_count()` where it was. |
+| `ClearingTheRulesReportsNoWinner` | `clear_placement_rules()` makes the next plan report none. |
+| `SettingTheRulesDuringARunIsRefusedAsInvalidState`, `ClearingTheRulesDuringARunIsRefusedAsInvalidState`, `TheRulesCanBeChangedOnceTheRunEnded` | A host node blocks on a flag while `run_async()` is in flight; `set_placement_rules()` and `clear_placement_rules()` called then each return `ErrorCode::InvalidState`, the first with a message that says to wait, and both succeed after the run ends. The node waits on the flag, not on a deadline. |
+| `Regression_ARuleChangeRacingARunStartNeverLandsInsideTheRun` | A writer thread alternates a refusing set and a cleared set while 2000 runs start and two threads read a scope. A host node asks a scope for its device twice, a yield apart, and the answers never differ: a change is refused while a run is in flight. |
 
-### `TopologyReportsTheLocalMachine`
+### Logging
 
-`topology()` must report the name and labels the config gave, in order, the operating system the test
-was built for, and one `DeviceFacts` per entry of `advanced().devices()` with the same kind, name and
-memory. The test compares against that inventory and never against a fixed device count.
+The last tests of the file cover what a program sees of the logger when it creates a `Runtime`.
+They are here and not in the `log` module because the lines they look for are logged by
+`device` and `topology` while `Runtime::create()` runs.
 
-### `TopologyNamesTheMachineByItsHostNameWhenTheConfigGivesNone`
+`Medium_LoggingDefaults` puts the logger in synchronous mode with a sink that keeps the records it
+receives, and afterwards restores the default sink and the level the process had.
 
-A config with no `node_name` must produce a non-empty name, and a config with no labels an empty list.
-
-### `CreateRefusesALabelKeyThatBreaksARule`
-
-An empty key, a key holding `=` and a repeated key must each make `create()` return
-`ErrorCode::InvalidArgument`, with a message that names `RuntimeConfig::labels` and the position or
-the key of the label.
-
-### `ASecondCompileReportsTheWinnerOfTheNewRules`
-
-One graph holds a node of class `sushiai.replica` with key 0 and a node with no class. With no rules
-the plan reports no winner for either. After a set with one exact rule, the next run rebuilds the
-plan and reports rule 0 for the first node and none for the second. After a set that adds a prefix
-rule `sushiai.*` of higher priority, the next run rebuilds again and reports rule 1. A run with the
-same rules does not rebuild, and `clear_placement_rules()` makes the next plan report none.
-
-### `ChangingTheRulesDuringARunIsRefusedAsInvalidState`
-
-A host node blocks on a flag while `run_async()` is in flight. `set_placement_rules()` and
-`clear_placement_rules()` called then must each return `ErrorCode::InvalidState`, the first with a
-message that says to wait. After the run ends, both calls succeed.
-
-### `DefaultConfigCreates`
-
-`create()` with no argument must yield a runtime with profiling and the rebalancer off that runs a
-graph. Every factory is called through a `const Runtime`, so a factory that lost its `const` fails
-the compile.
-
-### `EveryFieldReachesTheRuntime`
-
-Each field of `RuntimeConfig` but `first_core` is set away from its default and read back from the
-runtime; `Medium_CoTenancy` reads `first_core` back on a machine with cores to
-reserve. The api struct is mapped to the engine's settings by hand in one function, so a field that
-function forgets would otherwise keep its default silently.
-
-### `AHandleItHandsOutReachesItsOwnContext`
-
-A setting changed on the Runtime is read back through the `AdvancedControls` it handed out, both
-ways, so the handle shares the Runtime's own context. This is the public test of
-`ContextHandleAccess::handle_of`.
-
-### `AMovedRuntimeKeepsItsContext`
-
-A move hands the context over and does not build a second one.
-
-### `ACallerWaitsAndCopiesThroughTheDeviceQueue`
-
-The test submits a kernel on the queue `advanced().queue()` returns and does not wait for its
-event. `Runtime::wait()` returns once the kernel has written the buffer, and a `memcpy` through
-the same queue brings the values to a host vector. The test names no type of `Internal::`.
-
-### `AQueueOfAnUnknownDeviceStops`
-
-`advanced().queue()` asked for the device after the last one stops the process.
-
-### `ARequestNoDeviceCanSatisfyReturnsAllocationFailed`
-
-`buffer()` and `state()` are asked for half the address space in bytes, which no device has; the
-memory module has no seam that makes an allocation fail. Both return `AllocationFailed`, the
-buffer's message holds the element count, and a buffer of 16 bytes is granted afterwards.
-
-### `LiveAllocationCountFollowsABuffer`
-
-`advanced().live_allocation_count()` is read before anything is allocated. A buffer raises it by
-one and a state by two more. When both leave their scope the count is back at its first value.
+| Test | What it proves |
+| --- | --- |
+| `CreateIsSilentAtTheDefaultLevel` | At `Warn` no record reaches the sink while a default `Runtime` is created and destroyed. The test sets `Warn` itself, since `SR_LOG_LEVEL` in the environment of the test run would otherwise decide the level. |
+| `DeviceLineArrivesThroughTheSinkAtInfo` | At `Info` the sink receives the `Device: ...` line of `device_queue_set.cpp` at level `Info`, which shows the sink sees what `Runtime::create()` logs. |
 
 ### `AThreadOutlivingTheRuntimeTearsDownCleanly`
 
@@ -148,43 +122,11 @@ The risk is thread-local state that outlives what it points into. Epoch reclamat
 thread, and a thread that reaches its exit-time destructors after the `Runtime` is gone must not
 touch freed memory.
 
-The thread allocates and frees, so that its exit-time destructors have touched the per-thread
-bookkeeping of the runtime. It runs those destructors when the test joins it. Reaching the statement
-after the join without a fault is the assertion: under AddressSanitizer it is a use-after-free
-check, and without AddressSanitizer the defect still crashes often enough to fail the test. The
-`SUCCEED()` after the join records that the test got there on purpose.
-
-### What a default Runtime logs
-
-The last tests of the file cover what a program sees of the logger when it creates a `Runtime`.
-They are here and not in the `log` module because the lines they look for are logged by
-`device` and `topology` while `Runtime::create()` runs.
-
-### `Medium_LoggingDefaults`
-
-The fixture puts the logger in synchronous mode with the default sink, and afterwards restores the
-default sink and the level the process had. Synchronous mode also waits for records that earlier
-tests of the program queued, so none of them lands inside a capture.
-
-### `capture_streams_around_create`
-
-The helper creates and destroys a default `Runtime` between GoogleTest's `CaptureStdout` and
-`CaptureStderr`, which redirect the two file descriptors. The streams are captured this way and not
-through a sink because the claim is about what reaches the terminal, including anything written
-past the logger.
-
-### `CreateIsSilentAtTheDefaultLevel`
-
-At `Warn` both streams are empty. The test sets `Warn` itself, since `SR_LOG_LEVEL` in the
-environment of the test run would otherwise decide the level. Every start-up line of a healthy
-machine is `Info`; a machine on which start-up warns fails this test, and the captured text is in
-the failure message.
-
-### `DeviceLineArrivesThroughTheSinkAtInfo`
-
-At `Info` with a sink installed, the sink receives the `Device: ...` line of
-`device_queue_set.cpp` at level `Info`, and both streams stay empty because the sink replaced the
-default.
+The thread allocates and fills a buffer, so that its exit-time destructors have touched the
+per-thread bookkeeping of the runtime. It runs those destructors when the test joins it. The thread
+sets a flag after the `Runtime` is gone and the test asserts the flag; under AddressSanitizer a
+use-after-free is also a failure, and without it the defect still crashes often enough to fail the
+test. The test builds its own `Runtime` since it destroys it.
 
 ## test_runtime_config.cpp
 
@@ -196,91 +138,29 @@ thread runs on. A host has to be able to keep some cores for itself. These tests
 mechanism that allows it (a worker count, a core range, and the option not to pin at all) and check
 that a narrower pool still executes correctly.
 
-### `NamesNoMachineAndCarriesNoLabelByDefault`
+| Test | What it proves |
+| --- | --- |
+| `DefaultsToOneWorkerPerCoreFromCoreZero` | The default is the sole-tenant behaviour: one worker per logical core, starting at core 0. A silent change to the default would move the performance profile of every existing consumer. |
+| `ReservesTheCoresTheHostAskedFor` | A host that wants cores 0 to `reserved - 1` for its own threads asks for a pool that starts past them. Both the count and the placement must be exactly what the host requested. The test skips below four cores. |
+| `ASingleWorkerStillExecutesTheWholeGraph` | A pool much smaller than the machine still runs everything correctly. |
+| `FloatPolicyRunsUnpinned` | The `Float` policy leaves placement to the operating system: the pool is the requested size and no worker is bound. That is the right choice inside a container whose CPU allowance is enforced by quota and not by affinity. |
+| `AnOutOfRangeCoreRangeIsClampedNotIgnored` | A core range that runs off the end of the machine is clamped. The operating system's affinity calls accept an out-of-range mask and then do not bind, so without the clamp the runtime would report a reservation it never made. |
 
-A default `RuntimeConfig` has an empty `node_name` and no label. The test needs no device.
+The pool shape is decided on the core count and the config. It sits in `RuntimeContext` and the
+worker pool, which no test calls with a count of its own; RW-110 holds a seam for it.
 
-### `expect_runs_correctly`
+### The device filter
 
-`expect_runs_correctly` runs a small graph and checks every element, which proves that a
-configuration executes and does more than construct.
-
-### `DefaultsToOneWorkerPerCoreFromCoreZero`
-
-The default is the sole-tenant behaviour: one worker per logical core, starting at core 0. A silent
-change to the default would move the performance profile of every existing consumer.
-
-### `ReservesTheCoresTheHostAskedFor`
-
-A host that wants cores 0 to `reserved - 1` for its own threads asks for a pool that starts past
-them. Both the count and the placement must be exactly what the host requested, because a runtime
-that quietly took more cores would defeat the reservation.
-
-### `ASingleWorkerStillExecutesTheWholeGraph`
-
-A pool much smaller than the machine still runs everything correctly. The graph does not depend on
-there being a worker per core.
-
-### `FloatPolicyRunsUnpinned`
-
-The `Float` policy leaves placement to the operating system. The pool is still the requested size,
-but no worker is bound. That is the right choice inside a container whose CPU allowance is enforced
-by quota and not by affinity.
-
-### `AnOutOfRangeCoreRangeIsClampedNotIgnored`
-
-A core range that runs off the end of the machine is clamped, not obeyed. The operating system's
-affinity calls accept an out-of-range mask and then do not bind, so without the clamp the runtime
-would report a reservation it never made.
-
-The file covers what the hardware filter selects and how it fails.
-
-Both properties move a failure earlier. A double-precision kernel on a device without
+Both filter properties move a failure earlier. A double-precision kernel on a device without
 `sycl::aspect::fp64` fails inside the driver at launch, with a message that names neither the device
 nor the aspect; `require_fp64` moves that failure to discovery. A filter that matches nothing would
 otherwise surface as "Queue index out of bounds" from the first allocator call, which is the first
 thing a player on a machine with no SYCL device would see.
 
-### `any_device_has_fp64`
-
-`any_device_has_fp64` returns true when at least one SYCL device on the lane reports fp64. The
-result decides whether a `require_fp64` runtime is expected to construct or to fail on that lane.
-
-### `RequireFp64AdmitsOnlyFp64Devices`
-
-Every device the filter admits reports fp64. The test asserts this against the discovery layer
-directly, so the property is checked on the list and not inferred from a count that a deduplication
-step could also explain.
-
-### `RequireFp64StillConstructsOnAConformingLane`
-
-The filter does not reject the whole machine: a lane that has an fp64 device still builds a runtime
-with `require_fp64` set. The CPU lanes this suite runs on (POCL and the Intel OpenCL CPU runtime)
-all report fp64, so this is the branch the test normally takes.
-
-On a lane with no conforming device the failure must still be the `Unsupported` error
-`Runtime::create()` returns, and not a driver error from inside a kernel launch.
-
-### `AnEmptyFilterFailsWithUnsupported`
-
-A filter that admits nothing fails at construction with a code a caller can branch on. A machine
-with no SYCL device at all has the same shape, which is why the error carries `ErrorCode::Unsupported`
-and not a bare out-of-bounds message from the first queue lookup.
-
-The message must name the filter, so the reader can tell a machine that has nothing from a filter
-that excluded everything.
-
-### `DefaultFilterIsUnaffected`
-
-The default filter admits everything, so the empty-filter check leaves the common path alone: a
-plain `Runtime::create()` still finds the devices of the lane.
-
-The file covers what a caller reads when the library refuses a request. It is here and not in a
-module because the refusal it uses is raised by `RuntimeContext` and returned through `Runtime`.
-
-### `AFilterThatExcludesEveryDeviceReturnsUnsupported`
-
-A filter that admits no device class makes `Runtime::create()` return `ErrorCode::Unsupported` with
-a message, and no exception leaves the call. Topology returns an empty list for that filter and
-`RuntimeContext` turns the empty list into the failure; `Medium_DeviceSelection` checks that
-the message names the filter.
+| Test | What it proves |
+| --- | --- |
+| `ARuntimeWithNoConfigDrivesADeviceOfEveryClassTheMachineHas` | Rows of CPU, GPU and accelerator: a runtime made with the default `DeviceFilter`, which accepts every class, lists a device of each class the machine has. A row for a class the machine lacks skips. |
+| `RequireFp64AdmitsOnlyFp64Devices` | Rows of device index: every device a `require_fp64` runtime drives reports fp64 on the queue behind it. The fixture skips on a lane with no fp64 device. |
+| `StillConstructsOnAConformingLane` | A lane that has an fp64 device still builds a runtime with `require_fp64` set. The CPU lanes this suite runs on all report fp64. |
+| `IsRefusedWithUnsupported` | On a lane with no fp64 device, `Runtime::create()` returns `Unsupported` and not a driver error from inside a kernel launch. The fixture skips where a device reports fp64. |
+| `AnEmptyFilterFailsWithUnsupported` | A filter that admits nothing fails at construction with `ErrorCode::Unsupported`, and the message names the filter, so the reader can tell a machine that has nothing from a filter that excluded everything. |

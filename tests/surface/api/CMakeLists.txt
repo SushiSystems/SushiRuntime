@@ -6,8 +6,14 @@
 sushiruntime_add_module_tests(
     MODULE api
     SOURCES
+        compile_api_log_category.cpp
         data/test_buffer.cpp
         data/test_state.cpp
+        detail/compile_late_controls.cpp
+        detail/compile_node_description.cpp
+        detail/compile_node_spec.cpp
+        detail/compile_plan.cpp
+        detail/compile_step_machinery.cpp
         detail/test_assertion_logging.cpp
         detail/test_before_step_hooks.cpp
         detail/test_callable_checks.cpp
@@ -27,14 +33,9 @@ sushiruntime_add_module_tests(
         detail/test_emit_untracked.cpp
         detail/test_graph_id.cpp
         detail/test_handle_access.cpp
-        detail/test_late_controls.cpp
         detail/test_late_count_resolution.cpp
         detail/test_late_window.cpp
-        detail/test_node_description.cpp
-        detail/test_node_spec.cpp
         detail/test_node_stamp.cpp
-        detail/test_plan.cpp
-        detail/test_step_machinery.cpp
         detail/test_step_run.cpp
         graph/plumbing/test_builder_surface.cpp
         graph/plumbing/test_plan_cache.cpp
@@ -59,7 +60,6 @@ sushiruntime_add_module_tests(
         runtime/test_placement_scope.cpp
         runtime/test_runtime.cpp
         runtime/test_runtime_config.cpp
-        test_api_log_category.cpp
         test_fluent.cpp
         vocabulary/test_captures.cpp
         vocabulary/test_coupled.cpp
@@ -82,6 +82,7 @@ sushiruntime_add_module_tests(
         detail/test_emit_task.cpp
         detail/test_emit_tracked.cpp
         detail/test_emit_untracked.cpp
+        detail/test_node_stamp.cpp
         graph/benchmark_dynamic_graph.cpp
         graph/benchmark_graph.cpp
         graph/plumbing/test_builder_surface.cpp
@@ -97,6 +98,7 @@ sushiruntime_add_module_tests(
         graph/test_region.cpp
         graph/test_run_handle.cpp
         interop/test_host_export.cpp
+        interop/test_interop.cpp
         runtime/test_advanced_controls.cpp
         runtime/test_errors.cpp
         runtime/test_runtime.cpp

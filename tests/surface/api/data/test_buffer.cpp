@@ -32,10 +32,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
-#include <numeric>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -44,8 +41,10 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/data/buffer.hpp>
-#include <SushiRuntime/context_access/context_access.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
+
+#include "support/adopted_handles.hpp"
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -64,10 +63,9 @@ namespace DataHandlesTests
          * Several allocations are live at once, so a heap that happens to hand out one aligned
          * address does not pass the probe.
          */
-        bool shared_allocation_honours(Runtime& runtime, std::size_t alignment)
+        bool shared_allocation_honours(const Runtime& runtime, std::size_t alignment)
         {
-            sycl::queue& queue =
-                SushiRuntime::Internal::ContextAccess::context(runtime).devices().queue(0);
+            sycl::queue& queue = runtime.advanced().queue(DeviceIndex{0});
             constexpr std::size_t K_PROBES = 8;
             std::array<void*, K_PROBES> probes{};
             bool honoured = true;
@@ -106,13 +104,27 @@ namespace DataHandlesTests
                          window_pattern(name + "::region", range, handle.size()));
         }
 
+        /** @brief Expects every range call of a Buffer allocated here to stop on @p range. */
+        void expect_buffer_range_calls_stop(const Runtime& runtime, ElementRange range)
+        {
+            const auto buffer = runtime.buffer<int>(K_SIZE).value();
+            expect_every_range_call_stops(buffer, "Buffer", range);
+        }
+
+        /** @brief Expects every range call of a State allocated here to stop on @p range. */
+        void expect_state_range_calls_stop(const Runtime& runtime, ElementRange range)
+        {
+            const auto field = runtime.state<int>(K_SIZE).value();
+            expect_every_range_call_stops(field, "State", range);
+        }
+
         /** @brief Expects a handle to accept a zero-length window at its end. */
         template <class Handle>
         void expect_empty_window_at_the_end_accepted(const Handle& handle)
         {
             const ElementRange at_end{handle.size(), 0};
             EXPECT_TRUE(handle.read_range(at_end).value().empty());
-            EXPECT_NO_THROW(handle.write_range(at_end, span<const int>()).value());
+            EXPECT_TRUE(handle.write_range(at_end, span<const int>()).has_value());
             const BufferRegion region = handle.region(at_end);
             EXPECT_EQ(region.offset, handle.size() * sizeof(int));
             EXPECT_EQ(region.length, 0u);
@@ -124,248 +136,322 @@ namespace DataHandlesTests
             float x;
             float y;
         };
+
+        /** @brief Compares two pairs by value; the test values are dyadic, so equality is exact. */
+        bool operator==(const Pair& left, const Pair& right)
+        {
+            return left.x == right.x && left.y == right.y;
+        }
+
+        /** @brief Names a window row: the handle it is read through and the window it names. */
+        struct WindowRow
+        {
+            const char* name;                                    /**< The row's name in a report. */
+            void (*expect_stops)(const Runtime&, ElementRange);  /**< Reads the window through a handle. */
+            ElementRange range;                                  /**< The window that does not fit. */
+        };
+
+        /** @brief Returns the name a window row carries in a report. */
+        std::string window_row_name(const ::testing::TestParamInfo<WindowRow>& info)
+        {
+            return info.param.name;
+        }
+
+        /** @brief Names a handle row: the handle kind and the check made through it. */
+        struct HandleRow
+        {
+            const char* name;                      /**< The row's name in a report. */
+            void (*expect_stops)(const Runtime&);  /**< Calls host() on a device-resident handle of the kind. */
+        };
+
+        /** @brief Returns the name a handle row carries in a report. */
+        std::string handle_row_name(const ::testing::TestParamInfo<HandleRow>& info)
+        {
+            return info.param.name;
+        }
+
+        /** @brief Expects host() on a device-resident Buffer to stop and to name the Buffer. */
+        void expect_buffer_host_stops(const Runtime& runtime)
+        {
+            const auto buffer = runtime.buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
+            EXPECT_DEATH(static_cast<void>(buffer.host()), "Buffer::host: a device-resident buffer");
+        }
+
+        /** @brief Expects host() on a device-resident State to stop and to name the State. */
+        void expect_state_host_stops(const Runtime& runtime)
+        {
+            const auto field = runtime.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
+            EXPECT_DEATH(static_cast<void>(field.host()), "State::host: a device-resident buffer");
+        }
+
+        /** @brief Names an allocation row: the residency an aligned allocation is asked for. */
+        struct ResidencyRow
+        {
+            const char* name;     /**< The row's name in a report. */
+            Residency residency;  /**< The residency of the allocation. */
+        };
+
+        /** @brief Returns the name a residency row carries in a report. */
+        std::string residency_row_name(const ::testing::TestParamInfo<ResidencyRow>& info)
+        {
+            return info.param.name;
+        }
     } // namespace
 
-    /**
-     * @brief Tests that every range call of a Buffer stops on a window one past its end.
-     */
-    TEST(Medium_DataHandlesDeathTest, BufferStopsOnAWindowPastTheEnd)
+    /** @brief Fixture of the range tests that allocate handles on the program's runtime. */
+    class Medium_DataHandles : public TestSupport::RuntimeTest
     {
-        auto rt = Runtime::create().value();
-        const auto buf = rt.buffer<int>(K_SIZE).value();
+    };
 
-        expect_every_range_call_stops(buf, "Buffer", {K_SIZE, 1});
-        expect_every_range_call_stops(buf, "Buffer", {K_SIZE - 2, 5});
+    /** @brief Fixture of the death tests that allocate handles on the program's runtime. */
+    class Medium_DataHandlesDeathTest : public TestSupport::RuntimeTest
+    {
+    };
+
+    /** @brief Fixture of the rows that read a window no handle holds. */
+    class Medium_DataHandleWindowDeathTest : public TestSupport::RuntimeTest,
+                                             public ::testing::WithParamInterface<WindowRow>
+    {
+    };
+
+    /** @brief Fixture of the rows that call host() on a device-resident handle. */
+    class Medium_DataHandleResidencyDeathTest : public TestSupport::RuntimeTest,
+                                                public ::testing::WithParamInterface<HandleRow>
+    {
+    };
+
+    /**
+     * @brief Fixture of the rows that allocate aligned handles; a residency the device does not
+     *        offer, or a shared heap that ignores the alignment, skips the row.
+     */
+    class Medium_DataHandlesAlignment : public TestSupport::RuntimeTest,
+                                        public ::testing::WithParamInterface<ResidencyRow>
+    {
+        protected:
+            /** @brief Alignment, in bytes, every row asks for. */
+            static constexpr std::size_t K_ALIGNMENT = 128;
+
+            /** @brief Skips the row when the device cannot honour it. */
+            void SetUp() override
+            {
+                if (GetParam().residency == Residency::Shared &&
+                    !shared_allocation_honours(runtime(), K_ALIGNMENT))
+                    GTEST_SKIP() << "the toolchain's shared allocation ignores an alignment of "
+                                 << K_ALIGNMENT;
+                if (!runtime().buffer<float>(K_SIZE, DeviceIndex{0}, GetParam().residency, K_ALIGNMENT))
+                    GTEST_SKIP() << "the device does not offer "
+                                 << residency_name(GetParam().residency);
+            }
+    };
+
+    /** @brief Tests that every range call stops on a window that does not fit the handle. */
+    TEST_P(Medium_DataHandleWindowDeathTest, StopsOnAWindowThatDoesNotFit)
+    {
+        GetParam().expect_stops(runtime(), GetParam().range);
     }
 
-    /**
-     * @brief Tests that every range call of a State stops on a window one past its end.
-     */
-    TEST(Medium_DataHandlesDeathTest, StateStopsOnAWindowPastTheEnd)
-    {
-        auto rt = Runtime::create().value();
-        const auto field = rt.state<int>(K_SIZE).value();
+    INSTANTIATE_TEST_SUITE_P(
+        Rows, Medium_DataHandleWindowDeathTest,
+        ::testing::Values(
+            WindowRow{"BufferOnePastTheEnd", expect_buffer_range_calls_stop, {K_SIZE, 1}},
+            WindowRow{"BufferStartsInsideAndRunsOver", expect_buffer_range_calls_stop,
+                      {K_SIZE - 2, 5}},
+            WindowRow{"StateOnePastTheEnd", expect_state_range_calls_stop, {K_SIZE, 1}},
+            WindowRow{"StateStartsInsideAndRunsOver", expect_state_range_calls_stop,
+                      {K_SIZE - 2, 5}},
+            WindowRow{"BufferOffsetNearTheLargestSize", expect_buffer_range_calls_stop,
+                      {std::numeric_limits<std::size_t>::max(), 2}},
+            WindowRow{"BufferCountNearTheLargestSize", expect_buffer_range_calls_stop,
+                      {2, std::numeric_limits<std::size_t>::max()}}),
+        window_row_name);
 
-        expect_every_range_call_stops(field, "State", {K_SIZE, 1});
-        expect_every_range_call_stops(field, "State", {K_SIZE - 2, 5});
+    /** @brief Tests that a zero-length window at the end of a Buffer is accepted. */
+    TEST_F(Medium_DataHandles, EmptyWindowAtTheEndOfABufferIsAccepted)
+    {
+        const auto buffer = runtime().buffer<int>(K_SIZE).value();
+
+        expect_empty_window_at_the_end_accepted(buffer);
     }
 
-    /**
-     * @brief Tests that a window whose offset plus count wraps around stops the call, not wraps.
-     */
-    TEST(Medium_DataHandlesDeathTest, WindowWhoseEndWrapsStops)
+    /** @brief Tests that a zero-length window at the end of a State is accepted. */
+    TEST_F(Medium_DataHandles, EmptyWindowAtTheEndOfAStateIsAccepted)
     {
-        auto rt = Runtime::create().value();
-        const auto buf = rt.buffer<int>(K_SIZE).value();
+        const auto field = runtime().state<int>(K_SIZE).value();
 
-        const std::size_t most = std::numeric_limits<std::size_t>::max();
-        expect_every_range_call_stops(buf, "Buffer", {most, 2});
-        expect_every_range_call_stops(buf, "Buffer", {2, most});
-    }
-
-    /**
-     * @brief Tests that a zero-length window at the end of a Buffer or a State is accepted.
-     */
-    TEST(Medium_DataHandles, EmptyWindowAtTheEndIsAccepted)
-    {
-        auto rt = Runtime::create().value();
-        const auto buf = rt.buffer<int>(K_SIZE).value();
-        const auto field = rt.state<int>(K_SIZE).value();
-
-        expect_empty_window_at_the_end_accepted(buf);
         expect_empty_window_at_the_end_accepted(field);
     }
 
-    /**
-     * @brief Tests that a window which fits round-trips through write_range and read_range.
-     */
-    TEST(Medium_DataHandles, FittingWindowRoundTrips)
+    /** @brief Tests that a window which fits round-trips through write_range and read_range. */
+    TEST_F(Medium_DataHandles, FittingWindowRoundTrips)
     {
-        auto rt = Runtime::create().value();
-        const auto buf = rt.buffer<int>(K_SIZE).value();
-        for (int& element : buf.host())
-            element = 0;
+        const auto buffer = runtime().buffer<int>(K_SIZE).value();
+        TestSupport::fill_with(buffer, 0);
 
         const std::vector<int> source{11, 12, 13, 14, 15};
-        buf.write_range({K_SIZE - 5, 5}, source).value();
+        buffer.write_range({K_SIZE - 5, 5}, source).value();
 
-        EXPECT_EQ(buf.read_range({K_SIZE - 5, 5}).value(), source);
-        EXPECT_EQ(buf[K_SIZE - 6], 0);
+        EXPECT_EQ(buffer.read_range({K_SIZE - 5, 5}).value(), source);
+        EXPECT_EQ(buffer[K_SIZE - 6], 0);
     }
 
-    /**
-     * @brief Tests that write_range stops on a null source and a short source for a non-empty window.
-     */
-    TEST(Medium_DataHandlesDeathTest, NullOrShortSourceWithACountStops)
+    /** @brief Tests that write_range stops on a null source for a non-empty window of a Buffer. */
+    TEST_F(Medium_DataHandlesDeathTest, ANullSourceWithACountStopsABuffer)
     {
-        auto rt = Runtime::create().value();
-        const auto buf = rt.buffer<int>(K_SIZE).value();
-        const auto field = rt.state<int>(K_SIZE).value();
-        const std::vector<int> two(2, 1);
+        const auto buffer = runtime().buffer<int>(K_SIZE).value();
 
-        EXPECT_DEATH(static_cast<void>(buf.write_range({0, 4}, span<const int>())),
+        EXPECT_DEATH(static_cast<void>(buffer.write_range({0, 4}, span<const int>())),
                      "Buffer::write_range: the source is null for a window of count 4");
+    }
+
+    /** @brief Tests that write_range stops on a null source for a non-empty window of a State. */
+    TEST_F(Medium_DataHandlesDeathTest, ANullSourceWithACountStopsAState)
+    {
+        const auto field = runtime().state<int>(K_SIZE).value();
+
         EXPECT_DEATH(static_cast<void>(field.write_range({0, 4}, span<const int>())),
                      "State::write_range: the source is null");
-        EXPECT_DEATH(static_cast<void>(buf.write_range({0, 4}, two)),
+    }
+
+    /** @brief Tests that write_range stops on a source shorter than the window. */
+    TEST_F(Medium_DataHandlesDeathTest, AShortSourceStops)
+    {
+        const auto buffer = runtime().buffer<int>(K_SIZE).value();
+        const std::vector<int> two(2, 1);
+
+        EXPECT_DEATH(static_cast<void>(buffer.write_range({0, 4}, two)),
                      "the source holds 2 elements for a window of count 4");
     }
 
-    /**
-     * @brief Tests that an element count whose byte size overflows stops before any allocation.
-     */
-    TEST(Medium_DataHandlesDeathTest, OverflowingElementCountStopsBeforeAllocating)
+    /** @brief Tests that an element count whose byte size overflows stops before any allocation. */
+    TEST_F(Medium_DataHandlesDeathTest, OverflowingElementCountStopsBeforeAllocating)
     {
-        auto rt = Runtime::create().value();
         // The byte size of this count wraps to 8, which an unchecked allocation would grant.
         const std::size_t count = std::numeric_limits<std::size_t>::max() / sizeof(double) + 2;
         const std::string pattern = "Buffer allocation: " + std::to_string(count) + " elements";
 
-        EXPECT_DEATH(static_cast<void>(rt.buffer<double>(count)), pattern);
-        EXPECT_DEATH(static_cast<void>(rt.state<double>(count)), pattern);
+        EXPECT_DEATH(static_cast<void>(runtime().buffer<double>(count)), pattern);
+        EXPECT_DEATH(static_cast<void>(runtime().state<double>(count)), pattern);
     }
 
-    /**
-     * @brief Tests that a State and a Buffer answer the queries they share alike.
-     */
-    TEST(Medium_DataHandles, StateAndBufferAnswerTheSharedQueriesAlike)
+    /** @brief Tests that a State and a Buffer allocated alike report the same metadata. */
+    TEST_F(Medium_DataHandles, StateAndBufferReportTheSameMetadata)
     {
-        auto rt = Runtime::create().value();
-        const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}).value();
-        const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}).value();
+        const auto buffer = runtime().buffer<int>(K_SIZE, DeviceIndex{0}).value();
+        const auto field = runtime().state<int>(K_SIZE, DeviceIndex{0}).value();
 
-        EXPECT_EQ(field.device_index(), DeviceIndex{0});
-        EXPECT_EQ(field.device_index(), buf.device_index());
-        EXPECT_EQ(field.size(), buf.size());
-        EXPECT_EQ(field.empty(), buf.empty());
-        EXPECT_EQ(field.residency(), buf.residency());
-        EXPECT_EQ(field.is_host_accessible(), buf.is_host_accessible());
+        EXPECT_EQ(field.device_index(), buffer.device_index());
+        EXPECT_EQ(field.size(), buffer.size());
+        EXPECT_EQ(field.empty(), buffer.empty());
+        EXPECT_EQ(field.residency(), buffer.residency());
+        EXPECT_EQ(field.is_host_accessible(), buffer.is_host_accessible());
+    }
+
+    /** @brief Tests that State::region names a byte window of the current field. */
+    TEST_F(Medium_DataHandles, StateRegionNamesAWindowOfTheCurrentField)
+    {
+        const auto field = runtime().state<int>(K_SIZE, DeviceIndex{0}).value();
 
         const BufferRegion window = field.region({4, 8});
+
         EXPECT_EQ(window.base, static_cast<void*>(field.current()));
         EXPECT_EQ(window.offset, 4 * sizeof(int));
         EXPECT_EQ(window.length, 8 * sizeof(int));
     }
 
-    /**
-     * @brief Tests that a trivially copyable struct instantiates Buffer and State and round-trips.
-     */
-    TEST(Medium_DataHandles, TriviallyCopyableStructRoundTrips)
+    /** @brief Tests that a trivially copyable struct instantiates Buffer and round-trips. */
+    TEST_F(Medium_DataHandles, TriviallyCopyableStructRoundTripsThroughABuffer)
     {
-        EXPECT_TRUE(std::is_trivially_copyable<Pair>::value);
-
-        auto rt = Runtime::create().value();
-        const auto buf = rt.buffer<Pair>(2).value();
-        const auto field = rt.state<Pair>(2).value();
+        const auto buffer = runtime().buffer<Pair>(2).value();
         const std::vector<Pair> source{{1.5f, -2.0f}, {3.25f, 4.0f}};
-        buf.write_range({0, 2}, source).value();
+
+        buffer.write_range({0, 2}, source).value();
+
+        // The copy moves bits and the values are dyadic, so equality is the oracle.
+        EXPECT_EQ(buffer.read_range({0, 2}).value(), source);
+    }
+
+    /** @brief Tests that a trivially copyable struct instantiates State and round-trips. */
+    TEST_F(Medium_DataHandles, TriviallyCopyableStructRoundTripsThroughAState)
+    {
+        const auto field = runtime().state<Pair>(2).value();
+        const std::vector<Pair> source{{1.5f, -2.0f}, {3.25f, 4.0f}};
+
         field.write_range({0, 2}, source).value();
 
-        // A round trip copies bits, so the absolute tolerance only bounds the comparison.
-        constexpr float K_TOLERANCE = 1e-6f;
-        const std::vector<Pair> from_buffer = buf.read_range({0, 2}).value();
-        const std::vector<Pair> from_state = field.read_range({0, 2}).value();
-        ASSERT_EQ(from_buffer.size(), source.size());
-        ASSERT_EQ(from_state.size(), source.size());
-        for (std::size_t i = 0; i < source.size(); ++i)
-        {
-            EXPECT_NEAR(from_buffer[i].x, source[i].x, K_TOLERANCE) << "at i=" << i;
-            EXPECT_NEAR(from_buffer[i].y, source[i].y, K_TOLERANCE) << "at i=" << i;
-            EXPECT_NEAR(from_state[i].x, source[i].x, K_TOLERANCE) << "at i=" << i;
-            EXPECT_NEAR(from_state[i].y, source[i].y, K_TOLERANCE) << "at i=" << i;
-        }
+        EXPECT_EQ(field.read_range({0, 2}).value(), source);
     }
 
-    /**
-     * @brief Tests that host() on a device-resident handle stops and names the handle.
-     */
-    TEST(Medium_DataHandlesDeathTest, HostOnADeviceResidentHandleStops)
+    /** @brief Tests that host() on a device-resident Buffer or State stops and names the handle. */
+    TEST_P(Medium_DataHandleResidencyDeathTest, HostOnADeviceResidentHandleStops)
     {
-        auto rt = Runtime::create().value();
-        const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
-        const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
-
-        EXPECT_DEATH(static_cast<void>(buf.host()), "Buffer::host: a device-resident buffer");
-        EXPECT_DEATH(static_cast<void>(field.host()), "State::host: a device-resident buffer");
+        GetParam().expect_stops(runtime());
     }
+
+    INSTANTIATE_TEST_SUITE_P(Rows, Medium_DataHandleResidencyDeathTest,
+                             ::testing::Values(HandleRow{"Buffer", expect_buffer_host_stops},
+                                               HandleRow{"State", expect_state_host_stops}),
+                             handle_row_name);
 
     #if SR_ENABLE_ASSERTIONS
-    /**
-     * @brief Tests that operator[] on a device-resident handle stops where SR_ASSERT is checked.
-     */
-    TEST(Medium_DataHandlesDeathTest, IndexingADeviceResidentHandleStops)
+    /** @brief Tests that operator[] on a device-resident handle stops where SR_ASSERT is checked. */
+    TEST_F(Medium_DataHandlesDeathTest, IndexingADeviceResidentHandleStops)
     {
-        auto rt = Runtime::create().value();
-        const auto buf = rt.buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
-        const auto field = rt.state<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
+        const auto buffer =
+            runtime().buffer<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
+        const auto field = runtime().state<int>(K_SIZE, DeviceIndex{0}, Residency::Device).value();
 
-        EXPECT_DEATH(static_cast<void>(buf[0]), "Buffer::operator.*a device-resident buffer");
+        EXPECT_DEATH(static_cast<void>(buffer[0]), "Buffer::operator.*a device-resident buffer");
         EXPECT_DEATH(static_cast<void>(field[0]), "State::operator.*a device-resident state");
     }
     #endif
 
-    /**
-     * @brief Tests that buffer() and state() stop on a device index that names no device.
-     */
-    TEST(Medium_DataHandlesDeathTest, DeviceIndexThatNamesNoDeviceStops)
+    /** @brief Tests that buffer() and state() stop on a device index that names no device. */
+    TEST_F(Medium_DataHandlesDeathTest, DeviceIndexThatNamesNoDeviceStops)
     {
-        auto rt = Runtime::create().value();
-        const std::size_t count = rt.advanced().device_count();
+        const std::size_t count = runtime().advanced().device_count();
         const DeviceIndex past_the_end{count};
         const std::string detail = ": device index " + std::to_string(count) +
                                    " names no device; the runtime drives " +
                                    std::to_string(count) + " devices, and advanced";
 
-        EXPECT_DEATH(static_cast<void>(rt.buffer<float>(8, past_the_end)),
+        EXPECT_DEATH(static_cast<void>(runtime().buffer<float>(8, past_the_end)),
                      "Runtime::buffer" + detail);
-        EXPECT_DEATH(static_cast<void>(rt.state<float>(8, past_the_end)),
+        EXPECT_DEATH(static_cast<void>(runtime().state<float>(8, past_the_end)),
                      "Runtime::state" + detail);
     }
 
-    /**
-     * @brief Tests that an aligned buffer and an aligned state start on a multiple of the alignment,
-     *        for each residency the device offers.
-     */
-    TEST(Medium_DataHandles, AlignedAllocationStartsOnAMultipleOfTheAlignment)
+    /** @brief Tests that an aligned buffer and an aligned state start on a multiple of the alignment. */
+    TEST_P(Medium_DataHandlesAlignment, AlignedAllocationStartsOnAMultipleOfTheAlignment)
     {
-        constexpr std::size_t K_ALIGNMENT = 128;
         const auto is_aligned = [](const float* address)
         {
             return reinterpret_cast<std::uintptr_t>(address) % K_ALIGNMENT == 0u;
         };
 
-        auto rt = Runtime::create().value();
-        std::size_t residencies_checked = 0;
-        for (const Residency residency : {Residency::Shared, Residency::Host, Residency::Device})
-        {
-            SCOPED_TRACE(residency_name(residency));
-            if (residency == Residency::Shared && !shared_allocation_honours(rt, K_ALIGNMENT))
-            {
-                RecordProperty("shared_alignment_not_honoured", std::to_string(K_ALIGNMENT));
-                continue;
-            }
-            const auto buf = rt.buffer<float>(K_SIZE, DeviceIndex{0}, residency, K_ALIGNMENT);
-            const auto field = rt.state<float>(K_SIZE, DeviceIndex{0}, residency, K_ALIGNMENT);
-            // A residency the device does not offer returns AllocationFailed and is not checked.
-            if (!buf || !field)
-                continue;
+        const auto buffer =
+            runtime().buffer<float>(K_SIZE, DeviceIndex{0}, GetParam().residency, K_ALIGNMENT).value();
+        const auto field =
+            runtime().state<float>(K_SIZE, DeviceIndex{0}, GetParam().residency, K_ALIGNMENT).value();
 
-            ++residencies_checked;
-            EXPECT_TRUE(is_aligned(buf->data()));
-            EXPECT_TRUE(is_aligned(field->current()));
-            EXPECT_TRUE(is_aligned(field->next()));
-        }
-        EXPECT_GT(residencies_checked, 0u) << "the device offered no residency to check";
+        EXPECT_TRUE(is_aligned(buffer.data()));
+        EXPECT_TRUE(is_aligned(field.current()));
+        EXPECT_TRUE(is_aligned(field.next()));
     }
 
-    /** @brief Tests that buffer() and state() stop on an alignment that is not a power of two. */
-    TEST(Medium_DataHandlesDeathTest, AlignmentThatIsNotAPowerOfTwoStops)
-    {
-        auto rt = Runtime::create().value();
+    INSTANTIATE_TEST_SUITE_P(Rows, Medium_DataHandlesAlignment,
+                             ::testing::Values(ResidencyRow{"Shared", Residency::Shared},
+                                               ResidencyRow{"Host", Residency::Host},
+                                               ResidencyRow{"Device", Residency::Device}),
+                             residency_row_name);
 
-        EXPECT_DEATH(static_cast<void>(rt.buffer<float>(K_SIZE, DeviceIndex{0}, Residency::Shared, 48)),
+    /** @brief Tests that buffer() and state() stop on an alignment that is not a power of two. */
+    TEST_F(Medium_DataHandlesDeathTest, AlignmentThatIsNotAPowerOfTwoStops)
+    {
+        EXPECT_DEATH(static_cast<void>(
+                         runtime().buffer<float>(K_SIZE, DeviceIndex{0}, Residency::Shared, 48)),
                      "Runtime::buffer: alignment 48 is not a power of two");
-        EXPECT_DEATH(static_cast<void>(rt.state<float>(K_SIZE, DeviceIndex{0}, Residency::Shared, 48)),
+        EXPECT_DEATH(static_cast<void>(
+                         runtime().state<float>(K_SIZE, DeviceIndex{0}, Residency::Shared, 48)),
                      "Runtime::state: alignment 48 is not a power of two");
     }
 } // namespace DataHandlesTests
@@ -373,21 +459,30 @@ namespace DataHandlesTests
 /** @brief Tests buffers and States allocated with Residency::Device, Shared and Host. */
 namespace DeviceResidentTests
 {
-    /**
-     * @brief Tests that a device-resident buffer round-trips a host seed, a kernel and a host readback.
-     */
-    TEST(Medium_DeviceResident, BufferRoundTrip)
+    namespace
+    {
+        /** @brief Returns @p values, each multiplied by @p factor. */
+        std::vector<int> scaled(std::vector<int> values, int factor)
+        {
+            for (int& value : values)
+                value *= factor;
+            return values;
+        }
+    } // namespace
+
+    /** @brief Fixture of the tests that allocate with a residency on the program's runtime. */
+    class Medium_DeviceResident : public TestSupport::RuntimeTest
+    {
+    };
+
+    /** @brief Tests that a device-resident buffer round-trips a host seed, a kernel and a host readback. */
+    TEST_F(Medium_DeviceResident, BufferRoundTrip)
     {
         constexpr std::size_t N = 128;
 
-        auto rt  = Runtime::create().value();
+        const Runtime& rt = runtime();
         auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device).value();
-
-        EXPECT_EQ(buf.residency(), Residency::Device);
-        EXPECT_FALSE(buf.is_host_accessible());
-
-        std::vector<int> seed(N);
-        std::iota(seed.begin(), seed.end(), 0);     // 0,1,2,...
+        const std::vector<int> seed = TestSupport::ramp<int>(N);
         buf.write_range({0, N}, seed).value();
 
         int* p = buf.data();
@@ -395,246 +490,155 @@ namespace DeviceResidentTests
         g.add(N, Reads(buf), Writes(buf), [p](std::size_t i) { p[i] *= 2; });
         g.run().value();
 
-        const std::vector<int> out = buf.read_range({0, N}).value();
-        ASSERT_EQ(out.size(), N);
-        for (std::size_t i = 0; i < N; ++i)
-            ASSERT_EQ(out[i], static_cast<int>(i) * 2) << "at i=" << i;
+        EXPECT_EQ(buf.read_range({0, N}).value(), scaled(seed, 2));
     }
 
-    // read_range can pull a window without copying the whole field.
-    TEST(Medium_DeviceResident, SelectiveReadback)
+    /** @brief Tests that a buffer allocated on the device reports Device residency and no host access. */
+    TEST_F(Medium_DeviceResident, ABufferAllocatedOnTheDeviceIsNotHostAccessible)
+    {
+        const auto buf = runtime().buffer<int>(16, DeviceIndex{0}, Residency::Device).value();
+
+        EXPECT_EQ(buf.residency(), Residency::Device);
+        EXPECT_FALSE(buf.is_host_accessible());
+    }
+
+    /** @brief Tests that read_range returns only the window asked for of a device-resident buffer. */
+    TEST_F(Medium_DeviceResident, ReadRangeOfADeviceBufferReturnsOnlyTheWindow)
     {
         constexpr std::size_t N = 64;
 
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device).value();
+        auto buf = runtime().buffer<int>(N, DeviceIndex{0}, Residency::Device).value();
+        buf.write_range({0, N}, TestSupport::ramp<int>(N, 100)).value();
 
-        std::vector<int> seed(N);
-        std::iota(seed.begin(), seed.end(), 100);   // 100,101,...
-        buf.write_range({0, N}, seed).value();
-
-        const std::vector<int> window = buf.read_range({8, 4}).value();
-        ASSERT_EQ(window.size(), 4u);
-        for (std::size_t k = 0; k < 4; ++k)
-            EXPECT_EQ(window[k], static_cast<int>(108 + k));
+        EXPECT_EQ(buf.read_range({8, 4}).value(), TestSupport::ramp<int>(4, 108));
     }
 
-    /**
-     * @brief Tests that a device-resident State steps and is seeded and read back through its range
-     *        API.
-     */
-    TEST(Medium_DeviceResident, StateStepsResident)
+    /** @brief Tests that a device-resident State steps and reads back through its range API. */
+    TEST_F(Medium_DeviceResident, StateStepsResident)
     {
         constexpr std::size_t N     = 96;
         constexpr std::size_t STEPS = 5;
 
-        auto rt    = Runtime::create().value();
+        const Runtime& rt = runtime();
         auto field = rt.state<int>(N, DeviceIndex{0}, Residency::Device).value();
-
-        EXPECT_EQ(field.residency(), Residency::Device);
-        EXPECT_FALSE(field.is_host_accessible());
-
-        std::vector<int> seed(N, 0);
-        field.write_range({0, N}, seed).value();
+        field.write_range({0, N}, std::vector<int>(N, 0)).value();
 
         auto g = rt.graph();
         g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
         g.run(STEPS).value();
 
-        const std::vector<int> out = field.read_range({0, N}).value();
-        ASSERT_EQ(out.size(), N);
-        for (std::size_t i = 0; i < N; ++i)
-            ASSERT_EQ(out[i], static_cast<int>(STEPS)) << "at i=" << i;
+        EXPECT_EQ(field.read_range({0, N}).value(), std::vector<int>(N, static_cast<int>(STEPS)));
     }
 
-    /** @brief Tests that Shared residency is the default and stays host-addressable. */
-    TEST(Medium_DeviceResident, SharedDefaultUnchanged)
+    /** @brief Tests that the host indexes a shared buffer directly and read_range sees what it wrote. */
+    TEST_F(Medium_DeviceResident, DirectHostIndexingOfASharedBufferIsSeenByReadRange)
     {
         constexpr std::size_t N = 32;
 
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
 
-        EXPECT_EQ(buf.residency(), Residency::Shared);
-        EXPECT_TRUE(buf.is_host_accessible());
-
-        for (std::size_t i = 0; i < N; ++i)
-            buf[i] = static_cast<int>(i);           // direct host indexing still valid
+        buf[0] = 7;
+        buf[N - 1] = 9;
 
         const std::vector<int> out = buf.read_range({0, N}).value();
-        for (std::size_t i = 0; i < N; ++i)
-            EXPECT_EQ(out[i], static_cast<int>(i));
+        EXPECT_EQ(out.front(), 7);
+        EXPECT_EQ(out.back(), 9);
     }
 
     /** @brief Tests that host() returns a span that indexes the whole shared buffer. */
-    TEST(Medium_DeviceResident, HostSpanIndexesSharedBuffer)
+    TEST_F(Medium_DeviceResident, HostSpanIndexesSharedBuffer)
     {
         constexpr std::size_t N = 16;
 
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
 
         auto view = buf.host();
         ASSERT_EQ(view.size(), N);
-        for (std::size_t i = 0; i < N; ++i)
-            view[i] = static_cast<int>(i * 2);
+        view[0] = 11;
+        view[N - 1] = 22;
 
         const std::vector<int> out = buf.read_range({0, N}).value();
-        for (std::size_t i = 0; i < N; ++i)
-            EXPECT_EQ(out[i], static_cast<int>(i * 2));
+        EXPECT_EQ(out.front(), 11);
+        EXPECT_EQ(out.back(), 22);
     }
 
-    /** @brief Tests that host() on a device-resident buffer stops the process. */
-    TEST(Medium_DeviceResidentDeathTest, HostOnADeviceBufferStops)
-    {
-        constexpr std::size_t N = 16;
-
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Device).value();
-        ASSERT_FALSE(buf.is_host_accessible());
-
-        EXPECT_DEATH(static_cast<void>(buf.host()), "Buffer::host: a device-resident buffer");
-    }
-
-    /**
-     * @brief Tests that a kernel writes a host-resident buffer and the host reads it by direct
-     *        indexing.
-     */
-    TEST(Medium_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
+    /** @brief Tests that a kernel writes a host-resident buffer and the host reads it by direct indexing. */
+    TEST_F(Medium_DeviceResident, HostBufferIsWrittenByAKernelAndReadOnTheHost)
     {
         constexpr std::size_t N = 64;
 
-        auto rt  = Runtime::create().value();
+        const Runtime& rt = runtime();
         auto buf = rt.buffer<int>(N, DeviceIndex{0}, Residency::Host).value();
-
-        EXPECT_EQ(buf.residency(), Residency::Host);
-        EXPECT_TRUE(buf.is_host_accessible());
-
-        for (std::size_t i = 0; i < N; ++i)
-            buf[i] = static_cast<int>(i);
+        TestSupport::assign_from(buf, TestSupport::ramp<int>(N));
 
         int* p = buf.data();
         auto g = rt.graph();
         g.add(N, Reads(buf), Writes(buf), [p](std::size_t i) { p[i] += 1000; });
         g.run().value();
 
-        for (std::size_t i = 0; i < N; ++i)
-            ASSERT_EQ(buf[i], static_cast<int>(i) + 1000) << "at i=" << i;
+        EXPECT_EQ(TestSupport::contents(buf), TestSupport::ramp<int>(N, 1000));
     }
 } // namespace DeviceResidentTests
 
 /** @brief Tests that a Buffer adopting an allocation releases its address exactly once. */
 namespace AllocationTests
 {
-    using SushiRuntime::Buffer;
-    using SushiRuntime::DeviceIndex;
-    using SushiRuntime::Residency;
-    using SushiRuntime::Detail::HandleAccess;
+    using TestSupport::adopted_buffer;
+    using TestSupport::made_up_address;
 
-    namespace
+    /** @brief Tests that an adopting Buffer exposes the address of the block it took. */
+    TEST(Small_Buffer, AdoptingConstructorExposesTheAdoptedAddress)
     {
-        /** @brief Returns a distinct non-null address that is never dereferenced. */
-        void* fake(std::uintptr_t n) { return reinterpret_cast<void*>(n * 4096u); }
+        std::vector<void*> releases;
+        auto buffer = adopted_buffer<std::uint8_t>(5, 16, releases);
 
-        /** @brief Counts the releases it receives and remembers the last address. */
-        class CountingOwner final : public SushiRuntime::Detail::AllocationOwner
+        EXPECT_EQ(buffer.data(), made_up_address(5));
+        EXPECT_TRUE(releases.empty());
+    }
+
+    /** @brief Tests that destroying an adopting Buffer releases its address once. */
+    TEST(Small_Buffer, DestructionReleasesTheAdoptedAllocationOnce)
+    {
+        std::vector<void*> releases;
         {
-            public:
-                /** @brief Binds the owner to the counters it reports into. */
-                CountingOwner(int& releases, void*& last) : releases_(releases), last_(last)
-                {
-
-                }
-
-                /** @brief Records one release of @p address. */
-                void release(void* address) noexcept override
-                {
-                    ++releases_;
-                    last_ = address;
-                }
-
-            private:
-                /** @brief Releases received so far. */
-                int& releases_;
-
-                /** @brief Address of the last release. */
-                void*& last_;
-        };
-
-        /** @brief Builds a block whose owner counts its one release, for Buffer tests. */
-        SushiRuntime::Detail::MemoryBlock counted_block(std::uintptr_t address, std::size_t bytes,
-                                                        int& releases, void*& last)
-        {
-            return SushiRuntime::Detail::MemoryBlock{SushiRuntime::Detail::Allocation(
-                fake(address), bytes, std::make_unique<CountingOwner>(releases, last))};
+            auto buffer = adopted_buffer<std::uint8_t>(6, 16, releases);
         }
+
+        EXPECT_EQ(releases, std::vector<void*>{made_up_address(6)});
     }
 
-    TEST(Medium_Buffer, AdoptingConstructorExposesTheAdoptedAddress)
+    /** @brief Tests that a moved adopting Buffer releases the address once and hands it to the target. */
+    TEST(Small_Buffer, MovingAnAdoptedBufferReleasesTheAllocationOnce)
     {
-        int releases = 0;
-        void* last = nullptr;
-        auto buffer = HandleAccess::construct<Buffer<std::uint8_t>>(
-            SushiRuntime::ContextHandle(), counted_block(5, 16, releases, last), 16,
-            DeviceIndex{0}, Residency::Shared);
-        EXPECT_EQ(buffer.data(), fake(5));
-        EXPECT_EQ(releases, 0);
-    }
-
-    TEST(Medium_Buffer, DestructionReleasesTheAdoptedAllocationOnce)
-    {
-        int releases = 0;
-        void* last = nullptr;
+        std::vector<void*> releases;
         {
-            auto buffer = HandleAccess::construct<Buffer<std::uint8_t>>(
-                SushiRuntime::ContextHandle(), counted_block(6, 16, releases, last), 16,
-                DeviceIndex{0}, Residency::Shared);
-        }
-        EXPECT_EQ(releases, 1);
-        EXPECT_EQ(last, fake(6));
-    }
-
-    TEST(Medium_Buffer, MovingAnAdoptedBufferReleasesTheAllocationOnce)
-    {
-        int releases = 0;
-        void* last = nullptr;
-        {
-            auto source = HandleAccess::construct<Buffer<std::uint8_t>>(
-                SushiRuntime::ContextHandle(), counted_block(9, 16, releases, last), 16,
-                DeviceIndex{0}, Residency::Shared);
+            auto source = adopted_buffer<std::uint8_t>(9, 16, releases);
             Buffer<std::uint8_t> target(std::move(source));
             EXPECT_TRUE(source.empty());
-            EXPECT_EQ(target.data(), fake(9));
-            EXPECT_EQ(releases, 0);
+            EXPECT_EQ(target.data(), made_up_address(9));
+            EXPECT_TRUE(releases.empty());
         }
-        EXPECT_EQ(releases, 1);
-        EXPECT_EQ(last, fake(9));
+
+        EXPECT_EQ(releases, std::vector<void*>{made_up_address(9)});
     }
 
+    /** @brief Tests that adopting a block too small for the element count stops the process. */
     TEST(Medium_BufferDeathTest, AdoptingATooSmallAllocationStops)
     {
-        int releases = 0;
-        void* last = nullptr;
-        EXPECT_DEATH(
-            {
-                auto buffer = HandleAccess::construct<Buffer<std::uint32_t>>(
-                    SushiRuntime::ContextHandle(), counted_block(7, 4, releases, last), 4,
-                    DeviceIndex{0}, Residency::Shared);
-            },
-            "Buffer adoption: an allocation of 4 bytes cannot hold 4 elements");
+        std::vector<void*> releases;
+
+        EXPECT_DEATH(static_cast<void>(adopted_buffer<std::uint32_t>(7, 4, 4, releases)),
+                     "Buffer adoption: an allocation of 4 bytes cannot hold 4 elements");
     }
 
+    /** @brief Tests that adopting with a count whose byte size overflows stops the process. */
     TEST(Medium_BufferDeathTest, AdoptingACountThatOverflowsItsByteSizeStops)
     {
-        int releases = 0;
-        void* last = nullptr;
-        const std::size_t huge = std::numeric_limits<std::size_t>::max() / sizeof(std::uint32_t) + 1;
-        EXPECT_DEATH(
-            {
-                auto buffer = HandleAccess::construct<Buffer<std::uint32_t>>(
-                    SushiRuntime::ContextHandle(), counted_block(8, 4, releases, last), huge,
-                    DeviceIndex{0}, Residency::Shared);
-            },
-            "Buffer adoption: " + std::to_string(huge) + " elements");
+        std::vector<void*> releases;
+        const std::size_t huge =
+            std::numeric_limits<std::size_t>::max() / sizeof(std::uint32_t) + 1;
+
+        EXPECT_DEATH(static_cast<void>(adopted_buffer<std::uint32_t>(8, huge, 4, releases)),
+                     "Buffer adoption: " + std::to_string(huge) + " elements");
     }
 } // namespace AllocationTests

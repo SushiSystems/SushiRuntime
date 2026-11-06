@@ -30,6 +30,7 @@
 
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
@@ -37,17 +38,29 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/vocabulary/coupled.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 
-/** @brief Tests that Coupled refers to the states it was given, in order. */
-TEST(Medium_Coupled, NamesTheStatesItWasGiven)
+static_assert(std::is_same_v<decltype(Coupled(std::declval<State<int>&>(), std::declval<State<int>&>(),
+                                              std::declval<State<float>&>())),
+                             Coupled<int, int, float>>,
+              "the element types of the states are deduced");
+
+/** @brief Fixture of the Coupled test, which allocates on the program's runtime. */
+class Medium_Coupled : public TestSupport::RuntimeTest
 {
-    auto runtime = Runtime::create().value();
-    auto out = runtime.state<int>(4).value();
-    auto first = runtime.state<int>(4).value();
-    auto second = runtime.state<float>(4).value();
+};
+
+/** @brief Tests that Coupled refers to the states it was given, in order. */
+TEST_F(Medium_Coupled, NamesTheStatesItWasGiven)
+{
+    auto out = runtime().state<int>(4).value();
+    auto first = runtime().state<int>(4).value();
+    auto second = runtime().state<float>(4).value();
+
     const Coupled coupled(out, first, second);
-    static_assert(std::is_same_v<decltype(coupled), const Coupled<int, int, float>>, "deduced");
+
     EXPECT_EQ(&coupled.out, &out);
     EXPECT_EQ(&std::get<0>(coupled.inputs), &first);
     EXPECT_EQ(&std::get<1>(coupled.inputs), &second);

@@ -28,6 +28,7 @@
  * @author Mustafa Garip
  */
 
+#include <cstddef>
 #include <cstdint>
 #include <set>
 #include <thread>
@@ -41,8 +42,31 @@
 using SushiRuntime::Detail::GraphId;
 using SushiRuntime::Detail::take_graph_id;
 
-/** @brief Tests that identities are non-zero and distinct, and a moved-from one reports 0. */
-TEST(Small_GraphId, IdsAreNonZeroDistinctAndMovedFromReportsZero)
+namespace
+{
+    /** @brief Takes @p per_thread ids on each of @p threads threads and returns the distinct ones. */
+    std::set<std::uint64_t> ids_taken_on_threads(std::size_t threads, std::size_t per_thread)
+    {
+        std::vector<std::vector<std::uint64_t>> taken(threads);
+        std::vector<std::thread> workers;
+        for (std::size_t thread = 0; thread < threads; ++thread)
+            workers.emplace_back([&taken, thread, per_thread]()
+            {
+                for (std::size_t i = 0; i < per_thread; ++i)
+                    taken[thread].push_back(take_graph_id());
+            });
+        for (std::thread& worker : workers)
+            worker.join();
+
+        std::set<std::uint64_t> all;
+        for (const auto& ids : taken)
+            all.insert(ids.begin(), ids.end());
+        return all;
+    }
+} // namespace
+
+/** @brief Tests that two identities are non-zero and differ. */
+TEST(Small_GraphId, IdsAreNonZeroAndDistinct)
 {
     GraphId first;
     GraphId second;
@@ -50,9 +74,16 @@ TEST(Small_GraphId, IdsAreNonZeroDistinctAndMovedFromReportsZero)
     EXPECT_NE(first.value(), 0u);
     EXPECT_NE(second.value(), 0u);
     EXPECT_NE(first.value(), second.value());
+}
 
+/** @brief Tests that a moved-from identity reports 0 and the moved-to one keeps the value. */
+TEST(Small_GraphId, AMovedFromIdReportsZero)
+{
+    GraphId first;
     const std::uint64_t kept = first.value();
+
     GraphId moved(std::move(first));
+
     EXPECT_EQ(moved.value(), kept) << "an identity survives a move";
     EXPECT_EQ(first.value(), 0u) << "the moved-from value stands for no graph";
 }
@@ -71,24 +102,13 @@ TEST(Small_GraphId, MoveAssignmentHandsTheIdentityOver)
 }
 
 /** @brief Tests that the counter never repeats an id, even when several threads take them at once. */
-TEST(Small_GraphId, SeveralThreadsNeverTakeTheSameId)
+TEST(Medium_GraphId, SeveralThreadsNeverTakeTheSameId)
 {
     constexpr std::size_t K_THREADS = 4;
     constexpr std::size_t K_PER_THREAD = 500;
-    std::vector<std::vector<std::uint64_t>> taken(K_THREADS);
-    std::vector<std::thread> threads;
-    for (std::size_t thread = 0; thread < K_THREADS; ++thread)
-        threads.emplace_back([&taken, thread]()
-        {
-            for (std::size_t i = 0; i < K_PER_THREAD; ++i)
-                taken[thread].push_back(take_graph_id());
-        });
-    for (std::thread& thread : threads)
-        thread.join();
 
-    std::set<std::uint64_t> all;
-    for (const auto& ids : taken)
-        all.insert(ids.begin(), ids.end());
+    const std::set<std::uint64_t> all = ids_taken_on_threads(K_THREADS, K_PER_THREAD);
+
     EXPECT_EQ(all.size(), K_THREADS * K_PER_THREAD);
     EXPECT_EQ(all.count(0), 0u);
 }

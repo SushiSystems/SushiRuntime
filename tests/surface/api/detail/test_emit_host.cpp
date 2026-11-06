@@ -29,7 +29,7 @@
  */
 
 #include <cstddef>
-#include <vector>
+#include <variant>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
@@ -37,22 +37,30 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/emit_host.hpp>
 
-#include "description_runner.hpp"
-
 using namespace SushiRuntime;
 
-/** @brief Tests the fields of the description and that its work runs once. */
-TEST(Medium_EmitHost, AHostNodeRunsItsFunction)
+/** @brief Tests the kind, the width and the written region of a host description. */
+TEST(Small_EmitHost, AHostNodeDescribesItsKindWidthAndWrites)
 {
-    auto runtime = Runtime::create().value();
-    int calls = 0;
     int target = 0;
-    const Detail::NodeDescription description = Detail::host_node(
-        {}, {BufferRegion(&target)}, [&calls] { ++calls; }, 5);
+
+    const Detail::NodeDescription description =
+        Detail::host_node({}, {BufferRegion(&target)}, [] {}, 5);
+
     EXPECT_EQ(description.kind, Detail::NodeKind::Host);
     EXPECT_EQ(description.width, 5u);
     ASSERT_EQ(description.writes.size(), 1u);
+    EXPECT_EQ(description.writes[0].base, &target);
     EXPECT_TRUE(std::holds_alternative<Detail::WorkerWork>(description.work));
-    Testing::run_description(runtime, description);
+}
+
+/** @brief Tests that the work of a host description calls its function once. */
+TEST(Small_EmitHost, AHostNodeRunsItsFunctionOnce)
+{
+    int calls = 0;
+    const Detail::NodeDescription description = Detail::host_node({}, {}, [&calls] { ++calls; }, 5);
+
+    std::get<Detail::WorkerWork>(description.work)();
+
     EXPECT_EQ(calls, 1);
 }

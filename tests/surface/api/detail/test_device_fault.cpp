@@ -45,25 +45,32 @@ static_assert(Detail::saturated_fault_word(7) == 7u,
               "a value that fits a fault word is stored as it is");
 static_assert(Detail::saturated_fault_word(std::size_t{UINT32_MAX} + 1u) == UINT32_MAX,
               "a value past a fault word is stored as the largest word");
+static_assert(sizeof(std::size_t) > sizeof(std::uint32_t),
+              "the saturation test needs a std::size_t that holds a value past a uint32");
 
 /** @brief Tests that each field of a record saturates and the message shows the saturated value. */
 TEST(Small_DeviceFault, AFieldPastAUint32IsStoredSaturated)
 {
-    if (sizeof(std::size_t) <= sizeof(std::uint32_t))
-        GTEST_SKIP() << "std::size_t holds no value past a uint32 on this platform";
-
     const std::size_t over = std::size_t{UINT32_MAX} + 5u;
     std::array<std::uint32_t, Detail::K_DEVICE_FAULT_WORDS> record{};
 
-    Detail::record_device_fault(record.data(), Detail::K_DEVICE_FAULT_WINDOW, over, 7,
-                                     over);
+    Detail::record_device_fault(record.data(), Detail::K_DEVICE_FAULT_WINDOW, over, 7, over);
 
     EXPECT_EQ(record[0], Detail::K_DEVICE_FAULT_WINDOW);
     EXPECT_EQ(record[1], UINT32_MAX);
     EXPECT_EQ(record[2], 7u);
     EXPECT_EQ(record[3], UINT32_MAX);
+}
+
+/** @brief Tests that taking a saturated record returns an error naming the saturated start and clears it. */
+TEST(Small_DeviceFault, TakingASaturatedRecordNamesItsStartAndClearsIt)
+{
+    const std::size_t over = std::size_t{UINT32_MAX} + 5u;
+    std::array<std::uint32_t, Detail::K_DEVICE_FAULT_WORDS> record{};
+    Detail::record_device_fault(record.data(), Detail::K_DEVICE_FAULT_WINDOW, over, 7, over);
 
     const std::optional<Error> fault = Detail::take_device_fault(record.data());
+
     ASSERT_TRUE(fault.has_value()) << "a record that holds a fault returned nothing";
     EXPECT_EQ(fault->code, ErrorCode::InvalidGraph);
     EXPECT_NE(fault->message.find("starts at " + std::to_string(UINT32_MAX)), std::string::npos)

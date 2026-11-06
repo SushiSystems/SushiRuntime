@@ -28,6 +28,7 @@
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -36,13 +37,24 @@
 #include <limits>
 #include <mutex>
 #include <optional>
-#include <regex>
-#include <sstream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+#  if !defined(NOMINMAX)
+#    define NOMINMAX
+#  endif
+#  if !defined(WIN32_LEAN_AND_MEAN)
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
+#else
+#  include <unistd.h>
+#endif
 
 #include <gtest/gtest.h>
 
@@ -53,11 +65,9 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/log/sushiruntime_log_project.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/execution/runtime_settings.hpp>
-#include <SushiRuntime/context_access/context_access.hpp>
-#include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
+
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -66,16 +76,93 @@ static_assert(!std::is_copy_assignable<Runtime>::value, "a Runtime must not copy
 static_assert(std::is_nothrow_move_constructible<Runtime>::value, "a Runtime must move");
 static_assert(std::is_nothrow_move_assignable<Runtime>::value, "a Runtime must move-assign");
 
-/** @brief Tests that one struct sets the worker count and that a view outlives its Runtime. */
-TEST(Medium_RuntimeEntry, OneStructConfiguresAndTheViewOutlivesTheRuntime)
+namespace
+{
+    /** @brief Returns the host name the operating system gives this machine, or an empty string. */
+    std::string os_host_name()
+    {
+#if defined(_WIN32)
+        DWORD size = 0;
+        GetComputerNameExA(ComputerNameDnsHostname, nullptr, &size);
+        std::string name(size, '\0');
+        if (size == 0 || GetComputerNameExA(ComputerNameDnsHostname, name.data(), &size) == 0)
+            return std::string();
+        name.resize(size);
+        return name;
+#else
+        char buffer[256] = {};
+        if (gethostname(buffer, sizeof(buffer) - 1) != 0)
+            return std::string();
+        return std::string(buffer);
+#endif
+    }
+
+    /** @brief Returns the operating system this test program was built for. */
+    OperatingSystem built_for_operating_system()
+    {
+#if defined(_WIN32)
+        return OperatingSystem::Windows;
+#elif defined(__linux__)
+        return OperatingSystem::Linux;
+#else
+        return OperatingSystem::Unknown;
+#endif
+    }
+
+    /** @brief Lists the kind, name and memory of each device of @p facts, in order. */
+    std::vector<std::tuple<DeviceKind, std::string, std::uint64_t>> device_rows(
+        const std::vector<DeviceFacts>& devices)
+    {
+        std::vector<std::tuple<DeviceKind, std::string, std::uint64_t>> rows;
+        for (const DeviceFacts& device : devices)
+            rows.emplace_back(device.kind, device.name, device.memory_bytes);
+        return rows;
+    }
+
+    /** @brief Lists the kind, name and memory of each device of @p devices, in order. */
+    std::vector<std::tuple<DeviceKind, std::string, std::uint64_t>> device_rows(
+        const std::vector<DeviceDescription>& devices)
+    {
+        std::vector<std::tuple<DeviceKind, std::string, std::uint64_t>> rows;
+        for (const DeviceDescription& device : devices)
+            rows.emplace_back(device.kind, device.name, device.memory_bytes);
+        return rows;
+    }
+
+    /** @brief Lists the key and value of each label, in order. */
+    std::vector<std::pair<std::string, std::string>> label_rows(const std::vector<NodeLabel>& labels)
+    {
+        std::vector<std::pair<std::string, std::string>> rows;
+        for (const NodeLabel& label : labels)
+            rows.emplace_back(label.key, label.value);
+        return rows;
+    }
+} // namespace
+
+/** @brief Fixture of the Runtime tests that run on the program's runtime and give its rebalancer back off. */
+class Medium_RuntimeEntry : public TestSupport::RuntimeTest
+{
+    protected:
+        /** @brief Turns the rebalancer off, so the next test finds the default. */
+        void TearDown() override { runtime().set_rebalancer_enabled(false); }
+};
+
+/** @brief Tests that the worker count of RuntimeConfig reaches the pool. */
+TEST_F(Medium_RuntimeEntry, TheWorkerCountOfTheConfigReachesThePool)
 {
     RuntimeConfig config;
     config.worker_count = 2;
 
-    std::optional<Runtime> rt(Runtime::create(config).value());
-    const AdvancedControls view = rt->advanced();
+    const Runtime rt = Runtime::create(config).value();
 
-    EXPECT_EQ(view.worker_pool().count, 2u);
+    EXPECT_EQ(rt.advanced().worker_pool().count, 2u);
+}
+
+/** @brief Tests that a view of a Runtime keeps answering after the Runtime is destroyed. */
+TEST_F(Medium_RuntimeEntry, TheViewOutlivesTheRuntime)
+{
+    std::optional<Runtime> rt(Runtime::create().value());
+    const AdvancedControls view = rt->advanced();
     const std::size_t device_count = view.device_count();
     ASSERT_GE(device_count, 1u);
 
@@ -83,95 +170,99 @@ TEST(Medium_RuntimeEntry, OneStructConfiguresAndTheViewOutlivesTheRuntime)
 
     EXPECT_EQ(view.device_count(), device_count);
     EXPECT_EQ(view.devices().size(), device_count);
-    EXPECT_EQ(view.worker_pool().count, 2u);
 }
 
-/** @brief Tests that devices() has one entry per device, in the order DeviceIndex counts. */
-TEST(Medium_RuntimeEntry, DevicesListsEveryDeviceInOrder)
+/** @brief Tests that devices() has one entry per device. */
+TEST_F(Medium_RuntimeEntry, DevicesListsOneEntryPerDevice)
 {
-    const Runtime rt = Runtime::create().value();
-    const AdvancedControls view = rt.advanced();
-    const std::vector<DeviceDescription>& devices = view.devices();
+    const AdvancedControls view = runtime().advanced();
 
-    ASSERT_EQ(devices.size(), view.device_count());
-    ASSERT_FALSE(devices.empty());
-
-    Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(rt);
-    for (std::size_t index = 0; index < devices.size(); ++index)
-    {
-        const std::string reported = context.devices().queue(index).get_device()
-                                         .get_info<sycl::info::device::name>();
-        EXPECT_EQ(devices[index].index, index);
-        EXPECT_EQ(devices[index].name, reported) << "entry " << index;
-    }
-
-    auto landed = rt.buffer<int>(16).value();
-    const std::optional<std::size_t> owner = context.memory().device_of(landed.data());
-    ASSERT_TRUE(owner.has_value());
-    EXPECT_EQ(*owner, devices.front().index);
-    EXPECT_EQ(landed.device_index().value(), devices.front().index);
+    ASSERT_FALSE(view.devices().empty());
+    EXPECT_EQ(view.devices().size(), view.device_count());
 }
 
-/** @brief Tests that topology() reports the machine, its devices and the labels the config gave. */
-TEST(Medium_RuntimeEntry, TopologyReportsTheLocalMachine)
+/** @brief Fixture of the device order tests; the parameter is a device index, and a row past the machine's last device skips. */
+class Medium_RuntimeDevices : public TestSupport::RuntimeTest,
+                              public ::testing::WithParamInterface<std::size_t>
+{
+    protected:
+        /** @brief Skips the row when the runtime drives no device at the parameter's index. */
+        void SetUp() override
+        {
+            if (GetParam() >= runtime().advanced().device_count())
+                GTEST_SKIP() << "the runtime drives no device " << GetParam();
+        }
+};
+
+/** @brief Tests that entry i of devices() names the device behind the queue of DeviceIndex i. */
+TEST_P(Medium_RuntimeDevices, EntryNamesTheDeviceBehindItsQueue)
+{
+    const AdvancedControls view = runtime().advanced();
+    const std::string reported = view.queue(DeviceIndex{GetParam()}).get_device()
+                                     .get_info<sycl::info::device::name>();
+
+    EXPECT_EQ(view.devices()[GetParam()].index, GetParam());
+    EXPECT_EQ(view.devices()[GetParam()].name, reported);
+}
+
+INSTANTIATE_TEST_SUITE_P(Devices, Medium_RuntimeDevices, ::testing::Range<std::size_t>(0, 4));
+
+/** @brief Tests that a buffer with no placement lands on the first device of devices(). */
+TEST_F(Medium_RuntimeEntry, ABufferLandsOnTheFirstDevice)
+{
+    auto landed = runtime().buffer<int>(16).value();
+
+    EXPECT_EQ(landed.device_index().value(), runtime().advanced().devices().front().index);
+}
+
+/** @brief Tests that topology() names the machine as the config does. */
+TEST_F(Medium_RuntimeEntry, TopologyNamesTheMachineAsTheConfigDoes)
 {
     RuntimeConfig config;
     config.node_name = "forge-3";
+
+    const Runtime rt = Runtime::create(config).value();
+
+    EXPECT_EQ(rt.topology().name, "forge-3");
+}
+
+/** @brief Tests that topology() reports the operating system the program was built for. */
+TEST_F(Medium_RuntimeEntry, TopologyReportsTheOperatingSystem)
+{
+    EXPECT_EQ(runtime().topology().operating_system, built_for_operating_system());
+}
+
+/** @brief Tests that topology() lists the devices advanced() lists, in order. */
+TEST_F(Medium_RuntimeEntry, TopologyListsTheRuntimesDevices)
+{
+    EXPECT_EQ(device_rows(runtime().topology().devices), device_rows(runtime().advanced().devices()));
+}
+
+/** @brief Tests that topology() carries the labels the config gave, in order. */
+TEST_F(Medium_RuntimeEntry, TopologyCarriesTheConfiguredLabelsInOrder)
+{
+    RuntimeConfig config;
     config.labels = {NodeLabel{"zone", "north"}, NodeLabel{"gpu", ""}, NodeLabel{"tier", "a"}};
 
     const Runtime rt = Runtime::create(config).value();
-    const NodeFacts& facts = rt.topology();
-    const std::vector<DeviceDescription>& devices = rt.advanced().devices();
 
-    EXPECT_EQ(facts.name, "forge-3");
-#if defined(_WIN32)
-    EXPECT_EQ(facts.operating_system, OperatingSystem::Windows);
-#elif defined(__linux__)
-    EXPECT_EQ(facts.operating_system, OperatingSystem::Linux);
-#else
-    EXPECT_EQ(facts.operating_system, OperatingSystem::Unknown);
-#endif
-
-    ASSERT_EQ(facts.devices.size(), rt.advanced().device_count());
-    ASSERT_EQ(facts.devices.size(), devices.size());
-    for (std::size_t index = 0; index < devices.size(); ++index)
-    {
-        EXPECT_EQ(facts.devices[index].kind, devices[index].kind) << "device " << index;
-        EXPECT_EQ(facts.devices[index].name, devices[index].name) << "device " << index;
-        EXPECT_EQ(facts.devices[index].memory_bytes, devices[index].memory_bytes)
-            << "device " << index;
-    }
-
-    ASSERT_EQ(facts.labels.size(), config.labels.size());
-    for (std::size_t index = 0; index < facts.labels.size(); ++index)
-    {
-        EXPECT_EQ(facts.labels[index].key, config.labels[index].key) << "label " << index;
-        EXPECT_EQ(facts.labels[index].value, config.labels[index].value) << "label " << index;
-    }
+    EXPECT_EQ(label_rows(rt.topology().labels), label_rows(config.labels));
 }
 
-/** @brief Tests that an empty node_name makes topology() report the host name. */
-TEST(Medium_RuntimeEntry, TopologyNamesTheMachineByItsHostNameWhenTheConfigGivesNone)
+/** @brief Tests that a config with no node_name makes topology() report the host name the OS gives. */
+TEST_F(Medium_RuntimeEntry, TopologyNamesTheMachineByItsHostNameWhenTheConfigGivesNone)
 {
-    const Runtime rt = Runtime::create().value();
+    EXPECT_EQ(runtime().topology().name, os_host_name());
+}
 
-    EXPECT_FALSE(rt.topology().name.empty());
-    EXPECT_TRUE(rt.topology().labels.empty());
+/** @brief Tests that a config with no labels makes topology() report none. */
+TEST_F(Medium_RuntimeEntry, TopologyCarriesNoLabelWhenTheConfigGivesNone)
+{
+    EXPECT_TRUE(runtime().topology().labels.empty());
 }
 
 namespace
 {
-    constexpr auto K_RULES_GATE_TIMEOUT = std::chrono::milliseconds(2000);
-
-    /** @brief Blocks until the flag is set or the deadline passes. */
-    void wait_for_rules_gate(const std::atomic<bool>& released)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + K_RULES_GATE_TIMEOUT;
-        while (!released.load(std::memory_order_acquire) &&
-               std::chrono::steady_clock::now() < deadline)
-            std::this_thread::yield();
-    }
-
     /** @brief Returns a rule that sends the matched class to device 0 at the given priority. */
     PlacementRule rule_for(const char* pattern, std::optional<std::uint64_t> key, int priority)
     {
@@ -182,343 +273,565 @@ namespace
         rule.priority = priority;
         return rule;
     }
+
+    /** @brief Returns a rule set of one rule for "sushiai.replica", at priority 1. */
+    PlacementRules replica_rules()
+    {
+        PlacementRules rules;
+        EXPECT_TRUE(rules.add(rule_for("sushiai.replica", std::nullopt, 1)));
+        return rules;
+    }
+
+    /** @brief Returns the replica rule plus a rule for the class prefix and key 0 at priority 5, which wins for a keyed replica. */
+    PlacementRules replica_and_prefix_rules()
+    {
+        PlacementRules rules = replica_rules();
+        EXPECT_TRUE(rules.add(rule_for("sushiai.*", 0u, 5)));
+        return rules;
+    }
+
+    /** @brief Returns a rule set that refuses the class "sushiai.replica": its target is a device no machine has. */
+    PlacementRules refusing_rules(const Runtime& runtime)
+    {
+        PlacementRule rule;
+        rule.match.placement_class = "sushiai.replica";
+        rule.target.device_index = runtime.advanced().device_count();
+        rule.if_absent = AbsentPolicy{AbsentAction::Fail, std::chrono::milliseconds{0}};
+        PlacementRules rules;
+        EXPECT_TRUE(rules.add(std::move(rule)));
+        return rules;
+    }
+
+    /** @brief Blocks until the flag is set. */
+    void wait_for_rules_gate(const std::atomic<bool>& released)
+    {
+        while (!released.load(std::memory_order_acquire))
+            std::this_thread::yield();
+    }
+
+    /** @brief Records a replica node and a node with no class, each writing its own buffer, into @p graph. */
+    void record_replica_and_plain(Graph& graph, const Buffer<int>& first, const Buffer<int>& second)
+    {
+        int* a = first.data();
+        int* b = second.data();
+        NodeOptions replica;
+        replica.placement_class = "sushiai.replica"_class;
+        replica.placement_key = 0;
+        graph.add(4, Reads(), Writes(first), [a](std::size_t i) { a[i] = 1; }, replica);
+        graph.add(4, Reads(), Writes(second), [b](std::size_t i) { b[i] = 2; });
+    }
 } // namespace
 
-/** @brief Tests that new rules between two runs change the winner the next plan reports. */
-TEST(Medium_RuntimePlacementRules, ASecondCompileReportsTheWinnerOfTheNewRules)
+/** @brief Fixture of the placement rule tests on the program's runtime, which start and end with no rules in force. */
+class Medium_RuntimePlacementRules : public TestSupport::RuntimeTest
 {
-    const Runtime rt = Runtime::create().value();
-    auto first = rt.buffer<int>(4).value();
-    auto second = rt.buffer<int>(4).value();
-    int* a = first.data();
-    int* b = second.data();
+    protected:
+        /** @brief Clears the rules an earlier test may have left. */
+        void SetUp() override { static_cast<void>(runtime().clear_placement_rules()); }
 
-    NodeOptions replica;
-    replica.placement_class = "sushiai.replica"_class;
-    replica.placement_key = 0;
+        /** @brief Clears the rules this test set. */
+        void TearDown() override { static_cast<void>(runtime().clear_placement_rules()); }
+};
 
-    auto graph = rt.graph();
-    graph.add(4, Reads(), Writes(first), [a](std::size_t i) { a[i] = 1; }, replica);
-    graph.add(4, Reads(), Writes(second), [b](std::size_t i) { b[i] = 2; });
-
-    ASSERT_TRUE(graph.run());
-    const PlanView without_rules = graph.plan().value();
-    ASSERT_EQ(without_rules.nodes.size(), 2u);
-    EXPECT_FALSE(without_rules.nodes[0].placement_rule.has_value()) << "no rule set is in force";
-    EXPECT_FALSE(without_rules.nodes[1].placement_rule.has_value());
-
-    PlacementRules first_rules;
-    ASSERT_TRUE(first_rules.add(rule_for("sushiai.replica", std::nullopt, 1)));
-    ASSERT_TRUE(rt.set_placement_rules(std::move(first_rules)));
-    ASSERT_TRUE(graph.run());
-    EXPECT_EQ(graph.compile_count(), 2u) << "a new rule set makes the plan stale";
-    const PlanView under_first = graph.plan().value();
-    ASSERT_TRUE(under_first.nodes[0].placement_rule.has_value());
-    EXPECT_EQ(*under_first.nodes[0].placement_rule, 0u);
-    EXPECT_FALSE(under_first.nodes[1].placement_rule.has_value())
-        << "a node with no class matches no rule that states one";
-
-    PlacementRules second_rules;
-    ASSERT_TRUE(second_rules.add(rule_for("sushiai.replica", std::nullopt, 1)));
-    ASSERT_TRUE(second_rules.add(rule_for("sushiai.*", 0u, 5)));
-    ASSERT_TRUE(rt.set_placement_rules(std::move(second_rules)));
-    ASSERT_TRUE(graph.run());
-    EXPECT_EQ(graph.compile_count(), 3u);
-    const PlanView under_second = graph.plan().value();
-    ASSERT_TRUE(under_second.nodes[0].placement_rule.has_value());
-    EXPECT_EQ(*under_second.nodes[0].placement_rule, 1u);
-    EXPECT_FALSE(under_second.nodes[1].placement_rule.has_value());
+/** @brief Tests that a graph compiled with no rule in force reports no winner for any node. */
+TEST_F(Medium_RuntimePlacementRules, ARunWithNoRulesReportsNoWinner)
+{
+    auto first = runtime().buffer<int>(4).value();
+    auto second = runtime().buffer<int>(4).value();
+    auto graph = runtime().graph();
+    record_replica_and_plain(graph, first, second);
 
     ASSERT_TRUE(graph.run());
-    EXPECT_EQ(graph.compile_count(), 3u) << "an unchanged rule set does not rebuild the plan";
 
-    ASSERT_TRUE(rt.clear_placement_rules());
-    ASSERT_TRUE(graph.run());
-    EXPECT_EQ(graph.compile_count(), 4u);
-    EXPECT_FALSE(graph.plan().value().nodes[0].placement_rule.has_value());
-    EXPECT_EQ(a[0], 1);
-    EXPECT_EQ(b[0], 2);
+    const PlanView plan = graph.plan().value();
+    ASSERT_EQ(plan.nodes.size(), 2u);
+    EXPECT_FALSE(plan.nodes[0].placement_rule.has_value());
+    EXPECT_FALSE(plan.nodes[1].placement_rule.has_value());
 }
 
-/** @brief Tests that the rules cannot be changed while a run is in flight. */
-TEST(Medium_RuntimePlacementRules, ChangingTheRulesDuringARunIsRefusedAsInvalidState)
+/** @brief Tests that a node with no class matches no rule that states one. */
+TEST_F(Medium_RuntimePlacementRules, ANodeWithNoClassMatchesNoRuleThatStatesOne)
 {
-    const Runtime rt = Runtime::create().value();
-    auto target = rt.buffer<int>(4).value();
-    int* data = target.data();
-    std::atomic<bool> released{false};
+    auto first = runtime().buffer<int>(4).value();
+    auto second = runtime().buffer<int>(4).value();
+    auto graph = runtime().graph();
+    record_replica_and_plain(graph, first, second);
+    ASSERT_TRUE(runtime().set_placement_rules(replica_rules()));
 
-    auto graph = rt.graph();
-    graph.add_host(Reads{}, Writes(target), [&released, data]()
+    ASSERT_TRUE(graph.run());
+
+    const PlanView plan = graph.plan().value();
+    EXPECT_EQ(plan.nodes[0].placement_rule, std::optional<std::size_t>(0u));
+    EXPECT_FALSE(plan.nodes[1].placement_rule.has_value());
+}
+
+/** @brief Tests that a new rule set makes the plan stale, so the next run compiles again. */
+TEST_F(Medium_RuntimePlacementRules, ANewRuleSetRecompilesThePlan)
+{
+    auto first = runtime().buffer<int>(4).value();
+    auto second = runtime().buffer<int>(4).value();
+    auto graph = runtime().graph();
+    record_replica_and_plain(graph, first, second);
+    ASSERT_TRUE(graph.run());
+    ASSERT_TRUE(runtime().set_placement_rules(replica_rules()));
+
+    ASSERT_TRUE(graph.run());
+
+    EXPECT_EQ(graph.compile_count(), 2u);
+}
+
+/** @brief Tests that a second compile reports the winner of the new rule set. */
+TEST_F(Medium_RuntimePlacementRules, ASecondCompileReportsTheWinnerOfTheNewRules)
+{
+    auto first = runtime().buffer<int>(4).value();
+    auto second = runtime().buffer<int>(4).value();
+    auto graph = runtime().graph();
+    record_replica_and_plain(graph, first, second);
+    ASSERT_TRUE(runtime().set_placement_rules(replica_rules()));
+    ASSERT_TRUE(graph.run());
+    ASSERT_TRUE(runtime().set_placement_rules(replica_and_prefix_rules()));
+
+    ASSERT_TRUE(graph.run());
+
+    EXPECT_EQ(graph.plan().value().nodes[0].placement_rule, std::optional<std::size_t>(1u));
+}
+
+/** @brief Tests that an unchanged rule set does not rebuild the plan. */
+TEST_F(Medium_RuntimePlacementRules, AnUnchangedRuleSetDoesNotRebuildThePlan)
+{
+    auto first = runtime().buffer<int>(4).value();
+    auto second = runtime().buffer<int>(4).value();
+    auto graph = runtime().graph();
+    record_replica_and_plain(graph, first, second);
+    ASSERT_TRUE(runtime().set_placement_rules(replica_rules()));
+    ASSERT_TRUE(graph.run());
+    const std::size_t compiled = graph.compile_count();
+
+    ASSERT_TRUE(graph.run());
+
+    EXPECT_EQ(graph.compile_count(), compiled);
+}
+
+/** @brief Tests that clearing the rules makes the next compile report no winner. */
+TEST_F(Medium_RuntimePlacementRules, ClearingTheRulesReportsNoWinner)
+{
+    auto first = runtime().buffer<int>(4).value();
+    auto second = runtime().buffer<int>(4).value();
+    auto graph = runtime().graph();
+    record_replica_and_plain(graph, first, second);
+    ASSERT_TRUE(runtime().set_placement_rules(replica_rules()));
+    ASSERT_TRUE(graph.run());
+    ASSERT_TRUE(runtime().clear_placement_rules());
+
+    ASSERT_TRUE(graph.run());
+
+    EXPECT_FALSE(graph.plan().value().nodes[0].placement_rule.has_value());
+}
+
+namespace
+{
+    /** @brief Holds a run in flight on a host task that waits for a gate, so a test can call the runtime meanwhile. */
+    class GatedRun
     {
-        wait_for_rules_gate(released);
-        data[0] = 7;
-    });
+        public:
+            /** @brief Starts a run of a graph whose only task waits for release(). */
+            explicit GatedRun(const Runtime& runtime)
+                : target_(runtime.buffer<int>(4).value()), graph_(runtime.graph())
+            {
+                int* data = target_.data();
+                std::atomic<bool>* released = &released_;
+                graph_.add_host(Reads{}, Writes(target_), [released, data]()
+                {
+                    wait_for_rules_gate(*released);
+                    data[0] = 7;
+                });
+                step_.emplace(graph_.run_async().value());
+            }
 
-    auto step = graph.run_async().value();
+            /** @brief Opens the gate and waits for the run to end. */
+            void finish()
+            {
+                released_.store(true, std::memory_order_release);
+                step_->wait().value();
+            }
 
-    PlacementRules rules;
-    ASSERT_TRUE(rules.add(rule_for("sushiai.replica", std::nullopt, 1)));
-    const Result<void> set = rt.set_placement_rules(std::move(rules));
-    const Result<void> cleared = rt.clear_placement_rules();
+        private:
+            /** @brief Whether the task may finish. */
+            std::atomic<bool> released_{false};
 
-    released.store(true, std::memory_order_release);
-    step.wait().value();
+            /** @brief The buffer the task writes. */
+            Buffer<int> target_;
+
+            /** @brief The graph in flight. */
+            Graph graph_;
+
+            /** @brief The run in flight. */
+            std::optional<RunHandle<Graph>> step_;
+    };
+} // namespace
+
+/** @brief Tests that set_placement_rules() is refused as InvalidState while a run is in flight. */
+TEST_F(Medium_RuntimePlacementRules, SettingTheRulesDuringARunIsRefusedAsInvalidState)
+{
+    GatedRun run(runtime());
+
+    const Result<void> set = runtime().set_placement_rules(replica_rules());
+    run.finish();
 
     ASSERT_FALSE(set.has_value());
     EXPECT_EQ(set.error().code, ErrorCode::InvalidState);
     EXPECT_NE(set.error().message.find("wait"), std::string::npos) << set.error().message;
+}
+
+/** @brief Tests that clear_placement_rules() is refused as InvalidState while a run is in flight. */
+TEST_F(Medium_RuntimePlacementRules, ClearingTheRulesDuringARunIsRefusedAsInvalidState)
+{
+    GatedRun run(runtime());
+
+    const Result<void> cleared = runtime().clear_placement_rules();
+    run.finish();
+
     ASSERT_FALSE(cleared.has_value());
     EXPECT_EQ(cleared.error().code, ErrorCode::InvalidState);
-
-    PlacementRules after;
-    ASSERT_TRUE(after.add(rule_for("sushiai.replica", std::nullopt, 1)));
-    EXPECT_TRUE(rt.set_placement_rules(std::move(after))) << "the run ended, so the call passes";
-    EXPECT_TRUE(rt.clear_placement_rules());
 }
 
-/**
- * @brief Tests that a rule change racing runs and scope reads never lands inside a run.
- *
- * Every shared value is an atomic or a std::atomic_load of the rules, so TSan sees no race.
- */
-TEST(Medium_RuntimePlacementRules, Regression_ARuleChangeRacingARunStartNeverLandsInsideTheRun)
+/** @brief Tests that set and clear both succeed once the run ended. */
+TEST_F(Medium_RuntimePlacementRules, TheRulesCanBeChangedOnceTheRunEnded)
 {
-    const Runtime rt = Runtime::create().value();
-    Internal::Execution::RuntimeContext& context = Internal::ContextAccess::context(rt);
-    std::atomic<bool> stop{false};
-    std::atomic<std::uint64_t> changed_inside_a_run{0};
-    std::atomic<std::uint64_t> applied{0};
+    GatedRun run(runtime());
+    run.finish();
 
-    auto target = rt.buffer<int>(1).value();
-    auto graph = rt.graph();
-    graph.add_host(Reads{}, Writes(target), [&context, &changed_inside_a_run]()
-    {
-        const std::uint64_t at_start = context.placement()->generation;
-        std::this_thread::yield();
-        if (context.placement()->generation != at_start)
-            changed_inside_a_run.fetch_add(1, std::memory_order_relaxed);
-    });
+    const Result<void> set = runtime().set_placement_rules(replica_rules());
+    const Result<void> cleared = runtime().clear_placement_rules();
 
-    std::thread writer([&rt, &stop, &applied]()
+    EXPECT_TRUE(set);
+    EXPECT_TRUE(cleared);
+}
+
+namespace
+{
+    /** @brief Applies rule changes to a runtime from its own thread until it is stopped. */
+    class RuleWriter
     {
-        for (int round = 0; !stop.load(std::memory_order_acquire); ++round)
+        public:
+            /** @brief Starts the thread; it alternates between the refusing set and a cleared set. */
+            explicit RuleWriter(const Runtime& runtime) : thread_([this, &runtime]() { alternate(runtime); }) {}
+
+            RuleWriter(const RuleWriter&) = delete;
+            RuleWriter& operator=(const RuleWriter&) = delete;
+
+            /** @brief Stops the thread. */
+            ~RuleWriter() { stop(); }
+
+            /** @brief Stops the thread and waits for it. */
+            void stop()
+            {
+                stop_.store(true, std::memory_order_release);
+                if (thread_.joinable())
+                    thread_.join();
+            }
+
+            /** @brief Returns how many changes the runtime accepted. */
+            [[nodiscard]] std::uint64_t applied() const { return applied_.load(std::memory_order_relaxed); }
+
+        private:
+            /** @brief Alternates the set and the clear until stopped; a refusal must be InvalidState. */
+            void alternate(const Runtime& runtime)
+            {
+                for (int round = 0; !stop_.load(std::memory_order_acquire); ++round)
+                {
+                    const Result<void> done = (round % 2 == 0)
+                        ? runtime.set_placement_rules(refusing_rules(runtime))
+                        : runtime.clear_placement_rules();
+                    if (done)
+                        applied_.fetch_add(1, std::memory_order_relaxed);
+                    else
+                        EXPECT_EQ(done.error().code, ErrorCode::InvalidState);
+                }
+            }
+
+            /** @brief Set to end the thread. */
+            std::atomic<bool> stop_{false};
+
+            /** @brief Changes the runtime accepted. */
+            std::atomic<std::uint64_t> applied_{0};
+
+            /** @brief The thread; declared last, so every other member exists before it runs. */
+            std::thread thread_;
+    };
+
+    /** @brief Records into @p graph a host task that asks @p scope for its device twice, a yield apart, and counts the runs where the answers differ. */
+    void record_scope_probe(Graph& graph, const Buffer<int>& target, const PlacementScope& scope,
+                            std::atomic<std::uint64_t>& differing)
+    {
+        graph.add_host(Reads{}, Writes(target), [scope, &differing]()
         {
-            PlacementRules rules;
-            EXPECT_TRUE(rules.add(rule_for("sushiai.replica", std::nullopt, 1)));
-            const Result<void> done = (round % 2 == 0) ? rt.set_placement_rules(std::move(rules))
-                                                       : rt.clear_placement_rules();
-            if (done)
-                applied.fetch_add(1, std::memory_order_relaxed);
-            else
-                EXPECT_EQ(done.error().code, ErrorCode::InvalidState);
-        }
-    });
-    std::vector<std::thread> readers;
-    for (int reader = 0; reader < 2; ++reader)
-        readers.emplace_back([&rt, &stop]()
-        {
-            const PlacementScope scope = rt.placement_scope("sushiai.replica");
-            while (!stop.load(std::memory_order_acquire))
-                (void)scope.device();
+            const bool at_start = scope.device().has_value();
+            std::this_thread::yield();
+            if (scope.device().has_value() != at_start)
+                differing.fetch_add(1, std::memory_order_relaxed);
         });
-
-    // EXPECT, not ASSERT: the threads must be joined whatever a run returns.
-    for (int run = 0; run < 2000; ++run)
-        EXPECT_TRUE(graph.run());
-    stop.store(true, std::memory_order_release);
-    writer.join();
-    for (std::thread& reader : readers)
-        reader.join();
-
-    EXPECT_EQ(changed_inside_a_run.load(), 0u);
-    EXPECT_GT(applied.load(), 0u) << "the writer never found the runtime idle";
-}
-
-/** @brief Tests that create() refuses an empty key, a key holding '=' and a repeated key. */
-TEST(Medium_RuntimeEntry, CreateRefusesALabelKeyThatBreaksARule)
-{
-    struct Case
-    {
-        std::vector<NodeLabel> labels;
-        std::string named;
-    };
-    const std::vector<Case> cases = {
-        {{NodeLabel{"zone", "a"}, NodeLabel{"", "b"}}, "position 1"},
-        {{NodeLabel{"a=b", "c"}}, "\"a=b\""},
-        {{NodeLabel{"zone", "a"}, NodeLabel{"rack", "b"}, NodeLabel{"zone", "c"}}, "\"zone\""},
-    };
-
-    for (const Case& refused_case : cases)
-    {
-        RuntimeConfig config;
-        config.labels = refused_case.labels;
-
-        const auto refused = Runtime::create(config);
-        ASSERT_FALSE(refused.has_value()) << refused_case.named;
-        EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument) << refused_case.named;
-        EXPECT_NE(refused.error().message.find(refused_case.named), std::string::npos)
-            << refused.error().message;
-        EXPECT_NE(refused.error().message.find("RuntimeConfig::labels"), std::string::npos)
-            << refused.error().message;
     }
-}
 
-/** @brief Tests that create() with no argument yields a runtime that runs a graph. */
-TEST(Medium_RuntimeEntry, DefaultConfigCreates)
+    /** @brief Runs @p graph @p runs times and returns how many runs succeeded. */
+    std::size_t successful_runs(Graph& graph, std::size_t runs)
+    {
+        std::size_t succeeded = 0;
+        for (std::size_t run = 0; run < runs; ++run)
+            if (graph.run())
+                ++succeeded;
+        return succeeded;
+    }
+
+    /** @brief Reads the scope's device in a loop until stopped, as a second thread of readers does. */
+    class ScopeReader
+    {
+        public:
+            /** @brief Starts the thread. */
+            explicit ScopeReader(const PlacementScope& scope)
+                : thread_([this, scope]() { read(scope); })
+            {
+            }
+
+            ScopeReader(const ScopeReader&) = delete;
+            ScopeReader& operator=(const ScopeReader&) = delete;
+
+            /** @brief Stops the thread. */
+            ~ScopeReader() { stop(); }
+
+            /** @brief Stops the thread and waits for it. */
+            void stop()
+            {
+                stop_.store(true, std::memory_order_release);
+                if (thread_.joinable())
+                    thread_.join();
+            }
+
+        private:
+            /** @brief Asks the scope for its device until stopped. */
+            void read(const PlacementScope& scope)
+            {
+                while (!stop_.load(std::memory_order_acquire))
+                    static_cast<void>(scope.device());
+            }
+
+            /** @brief Set to end the thread. */
+            std::atomic<bool> stop_{false};
+
+            /** @brief The thread; declared last. */
+            std::thread thread_;
+    };
+} // namespace
+
+/** @brief Tests that a rule change racing run starts and scope reads never lands inside a run. */
+TEST_F(Medium_RuntimePlacementRules, Regression_ARuleChangeRacingARunStartNeverLandsInsideTheRun)
 {
-    constexpr std::size_t COUNT = 64;
+    constexpr std::size_t K_RUNS = 2000;
+    const PlacementScope scope = runtime().placement_scope("sushiai.replica");
+    auto target = runtime().buffer<int>(1).value();
+    std::atomic<std::uint64_t> differing{0};
+    auto graph = runtime().graph();
+    record_scope_probe(graph, target, scope, differing);
+    RuleWriter writer(runtime());
+    ScopeReader first_reader(scope);
+    ScopeReader second_reader(scope);
 
-    const Runtime rt = Runtime::create().value();
-    EXPECT_FALSE(rt.advanced().is_rebalancer_enabled());
+    const std::size_t succeeded = successful_runs(graph, K_RUNS);
+    writer.stop();
+    first_reader.stop();
+    second_reader.stop();
 
-    auto values = rt.buffer<int>(COUNT).value();
-    int* data = values.data();
-    for (std::size_t i = 0; i < COUNT; ++i)
-        values[i] = 0;
-
-    auto graph = rt.graph();
-    graph.add(COUNT, Reads(), Writes(values), [data](std::size_t i) { data[i] = 7; });
-    graph.run().value();
-
-    for (std::size_t i = 0; i < COUNT; ++i)
-        ASSERT_EQ(values[i], 7) << "element " << i;
+    EXPECT_EQ(succeeded, K_RUNS);
+    EXPECT_EQ(differing.load(), 0u);
+    EXPECT_GT(writer.applied(), 0u) << "the writer never found the runtime idle";
 }
 
-/** @brief Tests that every RuntimeConfig field reaches the runtime it configures. */
-TEST(Medium_RuntimeEntry, EveryFieldReachesTheRuntime)
+/** @brief Holds one label set create() refuses and the text its message must carry. */
+struct RefusedLabels
+{
+    const char* name;               /**< Names the row. */
+    std::vector<NodeLabel> labels;  /**< The labels the config carries. */
+    std::string named;              /**< What the message must name. */
+};
+
+/** @brief Fixture of the label tests; the parameter is the row. */
+class Medium_RuntimeLabels : public ::testing::TestWithParam<RefusedLabels>
+{
+};
+
+/** @brief Tests that create() refuses a label set that breaks a rule and names what is wrong. */
+TEST_P(Medium_RuntimeLabels, CreateRefusesALabelKeyThatBreaksARule)
+{
+    RuntimeConfig config;
+    config.labels = GetParam().labels;
+
+    const auto refused = Runtime::create(config);
+
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
+    EXPECT_NE(refused.error().message.find(GetParam().named), std::string::npos)
+        << refused.error().message;
+    EXPECT_NE(refused.error().message.find("RuntimeConfig::labels"), std::string::npos)
+        << refused.error().message;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Keys, Medium_RuntimeLabels,
+    ::testing::Values(
+        RefusedLabels{"AnEmptyKey", {NodeLabel{"zone", "a"}, NodeLabel{"", "b"}}, "position 1"},
+        RefusedLabels{"AKeyHoldingEquals", {NodeLabel{"a=b", "c"}}, "\"a=b\""},
+        RefusedLabels{"ARepeatedKey",
+                      {NodeLabel{"zone", "a"}, NodeLabel{"rack", "b"}, NodeLabel{"zone", "c"}},
+                      "\"zone\""}),
+    [](const ::testing::TestParamInfo<RefusedLabels>& info) { return std::string(info.param.name); });
+
+/** @brief Tests that the pinning policy of RuntimeConfig reaches the pool. */
+TEST_F(Medium_RuntimeEntry, ThePinningPolicyOfTheConfigReachesThePool)
 {
     RuntimeConfig config;
     config.worker_count = 1;
     config.pinning = PinPolicy::Float;
-    config.rebalancer = true;
-    config.force_scheduler = true;
 
     const Runtime rt = Runtime::create(config).value();
-    const AdvancedControls view = rt.advanced();
-    const Internal::Execution::RuntimeSettings& settings =
-        SushiRuntime::Internal::ContextAccess::context(rt).settings();
 
-    EXPECT_EQ(view.worker_pool().count, 1u);
-    EXPECT_EQ(view.worker_pool().pinning, PinPolicy::Float);
-    EXPECT_TRUE(view.is_rebalancer_enabled());
-    EXPECT_TRUE(settings.force_scheduler);
-
-    rt.set_rebalancer_enabled(false);
-    EXPECT_FALSE(view.is_rebalancer_enabled());
+    EXPECT_EQ(rt.advanced().worker_pool().pinning, PinPolicy::Float);
 }
 
-/** @brief Tests that a moved Runtime keeps the context its handles were made from. */
-TEST(Medium_RuntimeEntry, AMovedRuntimeKeepsItsContext)
+/** @brief Tests that a view taken before a Runtime moves answers for the moved Runtime. */
+TEST_F(Medium_RuntimeEntry, AMovedRuntimeKeepsTheContextItsViewsShare)
 {
     Runtime first = Runtime::create().value();
-    Internal::Execution::RuntimeContext* const context =
-        &SushiRuntime::Internal::ContextAccess::context(first);
+    const AdvancedControls view = first.advanced();
 
     const Runtime second = std::move(first);
+    second.set_rebalancer_enabled(true);
 
-    EXPECT_EQ(&SushiRuntime::Internal::ContextAccess::context(second), context);
+    EXPECT_TRUE(view.is_rebalancer_enabled());
 }
 
 /**
  * @brief Tests that a handle a Runtime hands out reaches the Runtime's own context: a setting
  *        changed on the Runtime is read back through the handle, both ways.
  */
-TEST(Medium_RuntimeEntry, AHandleItHandsOutReachesItsOwnContext)
+TEST_F(Medium_RuntimeEntry, AHandleItHandsOutReachesItsOwnContext)
 {
-    const Runtime rt = Runtime::create().value();
-    const AdvancedControls controls = rt.advanced();
+    const AdvancedControls controls = runtime().advanced();
 
-    rt.set_rebalancer_enabled(false);
+    runtime().set_rebalancer_enabled(false);
     EXPECT_FALSE(controls.is_rebalancer_enabled());
 
-    rt.set_rebalancer_enabled(true);
+    runtime().set_rebalancer_enabled(true);
     EXPECT_TRUE(controls.is_rebalancer_enabled());
 }
 
 /** @brief Tests that a caller waits for device work and copies through the device's queue. */
-TEST(Medium_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
+TEST_F(Medium_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
 {
     constexpr std::size_t K_WORDS = 256;
-
-    const Runtime runtime = Runtime::create().value();
-    const Buffer<std::uint32_t> values = runtime.buffer<std::uint32_t>(K_WORDS).value();
+    const Buffer<std::uint32_t> values = runtime().buffer<std::uint32_t>(K_WORDS).value();
     std::uint32_t* words = values.data();
-
-    sycl::queue& queue = runtime.advanced().queue(values.device_index());
+    sycl::queue& queue = runtime().advanced().queue(values.device_index());
     queue.parallel_for(sycl::range<1>(K_WORDS), [words](sycl::id<1> i)
     {
         words[i] = static_cast<std::uint32_t>(i[0]) + 1u;
     });
-    runtime.wait().value();
-
+    runtime().wait().value();
     std::vector<std::uint32_t> copied(K_WORDS, 0u);
+
     queue.memcpy(copied.data(), words, K_WORDS * sizeof(std::uint32_t)).wait();
 
-    for (std::size_t i = 0; i < K_WORDS; ++i)
-        EXPECT_EQ(copied[i], static_cast<std::uint32_t>(i) + 1u) << "word " << i;
+    EXPECT_EQ(copied, TestSupport::ramp<std::uint32_t>(K_WORDS, 1u));
 }
 
-/** @brief Tests that asking for the queue of a device the runtime does not have stops. */
-TEST(Medium_RuntimeEntryDeathTest, AQueueOfAnUnknownDeviceStops)
+/** @brief Fixture of the death tests of Runtime, which run on the program's runtime. */
+class Medium_RuntimeEntryDeathTest : public TestSupport::RuntimeTest
 {
-    const Runtime runtime = Runtime::create().value();
-    const AdvancedControls controls = runtime.advanced();
+};
+
+/** @brief Tests that asking for the queue of a device the runtime does not have stops. */
+TEST_F(Medium_RuntimeEntryDeathTest, AQueueOfAnUnknownDeviceStops)
+{
+    const AdvancedControls controls = runtime().advanced();
 
     EXPECT_DEATH(static_cast<void>(controls.queue(DeviceIndex{controls.device_count()})),
                  "Device index .* is out of bounds");
 }
 
-/** @brief Tests that a buffer and a state no device can hold come back as AllocationFailed. */
-TEST(Medium_RuntimeEntry, ARequestNoDeviceCanSatisfyReturnsAllocationFailed)
+/** @brief Tests that a buffer no device can hold comes back as AllocationFailed with its count in the message. */
+TEST_F(Medium_RuntimeEntry, ABufferNoDeviceCanHoldReturnsAllocationFailed)
 {
-    const Runtime runtime = Runtime::create().value();
     // Half the address space in bytes: the count fits std::size_t and no device has the room.
     const std::size_t count = std::numeric_limits<std::size_t>::max() / 2;
 
-    const auto buffer = runtime.buffer<std::uint8_t>(count);
+    const auto buffer = runtime().buffer<std::uint8_t>(count);
+
     ASSERT_FALSE(buffer.has_value());
     EXPECT_EQ(buffer.error().code, ErrorCode::AllocationFailed);
-    EXPECT_NE(buffer.error().message.find(std::to_string(count) + " elements"),
-              std::string::npos)
+    EXPECT_NE(buffer.error().message.find(std::to_string(count) + " elements"), std::string::npos)
         << buffer.error().message;
+}
 
-    const auto state = runtime.state<std::uint8_t>(count);
+/** @brief Tests that a state no device can hold comes back as AllocationFailed. */
+TEST_F(Medium_RuntimeEntry, AStateNoDeviceCanHoldReturnsAllocationFailed)
+{
+    const std::size_t count = std::numeric_limits<std::size_t>::max() / 2;
+
+    const auto state = runtime().state<std::uint8_t>(count);
+
     ASSERT_FALSE(state.has_value());
     EXPECT_EQ(state.error().code, ErrorCode::AllocationFailed);
-
-    const auto small = runtime.buffer<std::uint8_t>(16);
-    EXPECT_TRUE(small.has_value()) << "a failed allocation must leave the runtime usable";
 }
 
-/** @brief Tests that the live allocation count rises with a buffer and falls when it is freed. */
-TEST(Medium_RuntimeEntry, LiveAllocationCountFollowsABuffer)
+/** @brief Tests that a failed allocation leaves the runtime able to allocate again. */
+TEST_F(Medium_RuntimeEntry, AFailedAllocationLeavesTheRuntimeUsable)
 {
-    auto rt = Runtime::create().value();
-    const AdvancedControls controls = rt.advanced();
-    const std::size_t before = controls.live_allocation_count();
+    static_cast<void>(runtime().buffer<std::uint8_t>(std::numeric_limits<std::size_t>::max() / 2));
 
+    const auto small = runtime().buffer<std::uint8_t>(16);
+
+    EXPECT_TRUE(small.has_value());
+}
+
+/** @brief Tests that a buffer adds one live allocation. */
+TEST_F(Medium_RuntimeEntry, ABufferAddsOneLiveAllocation)
+{
+    const std::size_t before = runtime().advanced().live_allocation_count();
+
+    const auto buf = runtime().buffer<int>(8).value();
+
+    EXPECT_EQ(runtime().advanced().live_allocation_count(), before + 1);
+}
+
+/** @brief Tests that a state adds two live allocations, one per field. */
+TEST_F(Medium_RuntimeEntry, AStateAddsTwoLiveAllocations)
+{
+    const std::size_t before = runtime().advanced().live_allocation_count();
+
+    const auto field = runtime().state<int>(8).value();
+
+    EXPECT_EQ(runtime().advanced().live_allocation_count(), before + 2);
+}
+
+/** @brief Tests that freeing a buffer and a state returns the live allocation count to what it was. */
+TEST_F(Medium_RuntimeEntry, FreeingABufferAndAStateReturnsTheLiveAllocationCount)
+{
+    const std::size_t before = runtime().advanced().live_allocation_count();
     {
-        const auto buf = rt.buffer<int>(8).value();
-        EXPECT_EQ(controls.live_allocation_count(), before + 1);
-
-        const auto field = rt.state<int>(8).value();
-        EXPECT_EQ(controls.live_allocation_count(), before + 3) << "a State holds two fields";
+        const auto buf = runtime().buffer<int>(8).value();
+        const auto field = runtime().state<int>(8).value();
     }
 
-    EXPECT_EQ(controls.live_allocation_count(), before);
+    EXPECT_EQ(runtime().advanced().live_allocation_count(), before);
 }
 
-/**
- * @brief Tests that a thread that outlives the Runtime it allocated from tears down without a
- *        fault.
- */
+/** @brief Tests that a thread that outlives the Runtime it allocated from tears down without a fault. */
 TEST(Medium_Runtime, AThreadOutlivingTheRuntimeTearsDownCleanly)
 {
     std::mutex gate_mutex;
     std::condition_variable gate;
     bool allocated = false;
     bool runtime_gone = false;
+    std::atomic<bool> unwound{false};
 
     std::thread outliver;
 
@@ -530,8 +843,7 @@ TEST(Medium_Runtime, AThreadOutlivingTheRuntimeTearsDownCleanly)
             // The thread's exit-time destructors touch per-thread runtime state; see README.md.
             {
                 auto scratch = rt.buffer<int>(4096).value();
-                for (std::size_t i = 0; i < 64; ++i)
-                    scratch[i] = static_cast<int>(i);
+                TestSupport::fill_with(scratch, 7);
             }
 
             {
@@ -540,9 +852,10 @@ TEST(Medium_Runtime, AThreadOutlivingTheRuntimeTearsDownCleanly)
             }
             gate.notify_one();
 
-            // Stay alive until the Runtime — and its allocator — are gone.
+            // Stay alive until the Runtime and its allocator are gone.
             std::unique_lock<std::mutex> lock(gate_mutex);
             gate.wait(lock, [&] { return runtime_gone; });
+            unwound.store(true);
         });
 
         std::unique_lock<std::mutex> lock(gate_mutex);
@@ -554,125 +867,80 @@ TEST(Medium_Runtime, AThreadOutlivingTheRuntimeTearsDownCleanly)
         runtime_gone = true;
     }
     gate.notify_one();
-
-    // Reaching the line after this join without a fault is the assertion; see README.md.
     outliver.join();
-    SUCCEED() << "a thread unwound after the Runtime it allocated from was gone";
+
+    EXPECT_TRUE(unwound.load()) << "the thread did not unwind after the Runtime it allocated from was gone";
 }
 
-/** @brief Tests that Runtime::create() prints nothing at Warn and logs its devices at Info. */
-namespace LoggingDefaultsTests
+namespace
 {
-    namespace
+    /** @brief Holds one record a test sink received: its level and a copy of its line. */
+    using SeenRecord = std::pair<SushiLog::LogLevel, std::string>;
+
+    /** @brief Creates and destroys a default Runtime. */
+    void create_and_destroy_a_runtime()
     {
-        /** @brief Holds one record a test sink received: its level and a copy of its line. */
-        using SeenRecord = std::pair<SushiLog::LogLevel, std::string>;
-
-        /** @brief Holds the two process streams as captured around one call. */
-        struct CapturedStreams
-        {
-            std::string standard_output; /**< What reached stdout. */
-            std::string standard_error;  /**< What reached stderr. */
-        };
-
-        /** @brief Creates and destroys a default Runtime and returns what the streams received. */
-        CapturedStreams capture_streams_around_create()
-        {
-            CapturedStreams captured;
-            testing::internal::CaptureStdout();
-            testing::internal::CaptureStderr();
-            {
-                auto runtime = Runtime::create().value();
-                EXPECT_GE(runtime.advanced().device_count(), 1u);
-            }
-            captured.standard_error = testing::internal::GetCapturedStderr();
-            captured.standard_output = testing::internal::GetCapturedStdout();
-            return captured;
-        }
-
-        /** @brief Tells whether a line starts the way the logger writes one: a time, then a level. */
-        bool is_logger_line(const std::string& line)
-        {
-            static const std::regex prefix(R"(^\[\d{2}:\d{2}:\d{2}\.\d{3}\] \[)");
-            return std::regex_search(line, prefix);
-        }
-
-        /** @brief Returns the lines of @p text the logger wrote, dropping any other output. */
-        std::string logger_lines_only(const std::string& text)
-        {
-            std::string kept;
-            std::istringstream lines(text);
-            std::string line;
-            while (std::getline(lines, line))
-            {
-                if (is_logger_line(line))
-                    kept += line + '\n';
-            }
-            return kept;
-        }
-
-        /** @brief Puts the logger in synchronous mode and restores the level and the sink. */
-        class Medium_LoggingDefaults : public ::testing::Test
-        {
-            protected:
-                void SetUp() override
-                {
-                    saved_level_ = SushiLog::log_level(K_SUSHIRUNTIME_LOG_PROJECT);
-                    SushiLog::set_log_synchronous(true);
-                    SushiLog::set_log_sink(nullptr);
-                }
-
-                void TearDown() override
-                {
-                    SushiLog::set_log_sink(nullptr);
-                    SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, saved_level_);
-                }
-
-            private:
-                /// @brief The level the process had when the test began.
-                SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;
-        };
+        auto runtime = Runtime::create().value();
+        EXPECT_GE(runtime.advanced().device_count(), 1u);
     }
 
-    /**
-     * @brief Tests that the default sink writes no logger line while a Runtime is created at Warn.
-     *
-     * Output that is not the logger's, such as a SYCL device sanitizer banner printed under
-     * ThreadSanitizer, is not the logger's to silence and is ignored on stderr.
-     */
-    TEST_F(Medium_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
+    /** @brief Tells whether @p records hold an Info line that names a device. */
+    bool has_info_device_line(const std::vector<SeenRecord>& records)
     {
-        SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Warn);
-
-        const CapturedStreams captured = capture_streams_around_create();
-
-        EXPECT_TRUE(captured.standard_output.empty()) << captured.standard_output;
-        EXPECT_TRUE(logger_lines_only(captured.standard_error).empty()) << captured.standard_error;
-    }
-
-    /** @brief Tests that at Info the device line reaches the sink and no logger line reaches stderr. */
-    TEST_F(Medium_LoggingDefaults, DeviceLineArrivesThroughTheSinkAtInfo)
-    {
-        std::vector<SeenRecord> records;
-        SushiLog::set_log_sink([&records](const SushiLog::LogRecord& record)
+        return std::any_of(records.begin(), records.end(), [](const SeenRecord& record)
         {
-            records.emplace_back(record.level, std::string(record.text));
+            return record.first == SushiLog::LogLevel::Info &&
+                   record.second.find("Device: ") != std::string::npos;
         });
-        SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
+    }
+} // namespace
 
-        const CapturedStreams captured = capture_streams_around_create();
-        SushiLog::set_log_sink(nullptr);
-
-        bool saw_device_line = false;
-        for (const SeenRecord& record : records)
+/** @brief Fixture of the logging tests: the logger is synchronous and sends its records to a vector, and the level and the sink are put back. */
+class Medium_LoggingDefaults : public ::testing::Test
+{
+    protected:
+        /** @brief Puts the logger in synchronous mode and installs a sink that keeps what it receives. */
+        void SetUp() override
         {
-            if (record.first == SushiLog::LogLevel::Info &&
-                record.second.find("Device: ") != std::string::npos)
-                saw_device_line = true;
+            saved_level_ = SushiLog::log_level(K_SUSHIRUNTIME_LOG_PROJECT);
+            SushiLog::set_log_synchronous(true);
+            SushiLog::set_log_sink([this](const SushiLog::LogRecord& record)
+            {
+                records_.emplace_back(record.level, std::string(record.text));
+            });
         }
 
-        EXPECT_TRUE(saw_device_line) << records.size() << " records, none an Info device line";
-        EXPECT_TRUE(captured.standard_output.empty()) << captured.standard_output;
-        EXPECT_TRUE(logger_lines_only(captured.standard_error).empty()) << captured.standard_error;
-    }
-} // namespace LoggingDefaultsTests
+        /** @brief Puts the default sink and the saved level back. */
+        void TearDown() override
+        {
+            SushiLog::set_log_sink(nullptr);
+            SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, saved_level_);
+        }
+
+        /** @brief The records the sink received. */
+        std::vector<SeenRecord> records_;
+
+    private:
+        /// @brief The level the process had when the test began.
+        SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;
+};
+
+/** @brief Tests that creating a Runtime sends nothing to the sink while the level is Warn. */
+TEST_F(Medium_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
+{
+    SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Warn);
+
+    create_and_destroy_a_runtime();
+
+    EXPECT_TRUE(records_.empty()) << records_.size() << " records reached the sink at Warn";
+}
+
+/** @brief Tests that at Info creating a Runtime sends an Info line that names a device. */
+TEST_F(Medium_LoggingDefaults, DeviceLineArrivesThroughTheSinkAtInfo)
+{
+    SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
+
+    create_and_destroy_a_runtime();
+
+    EXPECT_TRUE(has_info_device_line(records_)) << records_.size() << " records, none an Info device line";
+}

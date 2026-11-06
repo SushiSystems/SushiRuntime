@@ -39,24 +39,34 @@
 #include <SushiRuntime/api/detail/emit_late_count_resolver.hpp>
 
 #include "description_runner.hpp"
+#include "support/buffer_contents.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Tests that a fixed and a host count reach the fill as their live values. */
-TEST(Medium_EmitLateCountResolver, TheFillReceivesTheLiveCounts)
+/** @brief Fixture of the resolver test, which runs a description on the program's runtime. */
+class Medium_EmitLateCountResolver : public TestSupport::RuntimeTest
 {
-    auto runtime = Runtime::create().value();
-    int* const out = Testing::shared_integers(runtime, 2, -1);
-    ASSERT_NE(out, nullptr);
-    const std::array<LateCount, 2> counts{LateCount::fixed(6), LateCount::from_host(10, [] { return std::size_t{4}; })};
+};
+
+/** @brief Tests that a fixed and a host count reach the fill as their live values. */
+TEST_F(Medium_EmitLateCountResolver, TheFillReceivesTheLiveCounts)
+{
+    auto out = runtime().buffer<int>(2).value();
+    TestSupport::fill_with(out, -1);
+    int* const words = out.data();
+    const std::array<LateCount, 2> counts{LateCount::fixed(6),
+                                          LateCount::from_host(10, [] { return std::size_t{4}; })};
     const Detail::NodeDescription description = Detail::late_count_resolver_node(
-        counts, nullptr, [out](const std::array<std::size_t, 2>& live)
+        counts, nullptr,
+        [words](const std::array<std::size_t, 2>& live)
         {
-            out[0] = static_cast<int>(live[0]);
-            out[1] = static_cast<int>(live[1]);
-        }, {}, {BufferRegion(out)}, 1);
-    Testing::run_description(runtime, description);
-    EXPECT_EQ(out[0], 6);
-    EXPECT_EQ(out[1], 4);
-    sycl::free(out, Testing::queue_of(runtime));
+            words[0] = static_cast<int>(live[0]);
+            words[1] = static_cast<int>(live[1]);
+        },
+        {}, {BufferRegion(words)}, 1);
+
+    Testing::run_description(runtime(), description);
+
+    EXPECT_EQ(TestSupport::contents(out), (std::vector<int>{6, 4}));
 }

@@ -34,12 +34,19 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that the answer is false only for the DPC++ headers compiled without -fsycl. */
-TEST(Small_DevicePass, AnswersFalseOnlyForDpcppWithoutFsycl)
+namespace
 {
-#if defined(__SYCL_COMPILER_VERSION) && !defined(SYCL_LANGUAGE_VERSION)
-    EXPECT_FALSE(Detail::compiled_for_device_v<int>);
-#else
-    EXPECT_TRUE(Detail::compiled_for_device_v<int>);
-#endif
+    /**
+     * @brief Says whether the build compiles this unit with -fsycl.
+     *
+     * The build gives -fsycl to the units in DEVICE_SOURCES of tests/surface/api/CMakeLists.txt,
+     * and test_device_pass.cpp is not one of them.
+     */
+    constexpr bool K_UNIT_COMPILED_WITH_FSYCL = false;
+} // namespace
+
+/** @brief Tests that the answer is false in a unit the build compiles without -fsycl. */
+TEST(Small_DevicePass, IsFalseInAUnitBuiltWithoutFsycl)
+{
+    EXPECT_EQ(Detail::compiled_for_device_v<int>, K_UNIT_COMPILED_WITH_FSYCL);
 }

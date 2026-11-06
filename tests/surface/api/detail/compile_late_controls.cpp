@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_late_controls.cpp                                                 */
+/* compile_late_controls.cpp                                              */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,29 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_late_controls.cpp
- * @brief Tests Detail::LateControls: an opaque name the surface holds only by pointer.
+ * @file compile_late_controls.cpp
+ * @brief Compiles late_controls.hpp on its own, so the header carries every include it needs.
  * @see tests/surface/api/detail/README.md
  * @author Mustafa Garip
  */
 
-#include <memory>
-#include <type_traits>
-
-#include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
-
-#include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/detail/late_controls.hpp>
-
-#include "description_runner.hpp"
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the name is a class type held by shared pointer. */
-TEST(Small_LateControls, IsHeldByPointerOnly)
-{
-    const std::shared_ptr<Detail::LateControls> controls;
-    static_assert(std::is_class_v<Detail::LateControls>, "the name is a class type");
-    EXPECT_EQ(controls, nullptr);
-}

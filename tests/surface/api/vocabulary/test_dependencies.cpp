@@ -37,33 +37,77 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/vocabulary/dependencies.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 
-/** @brief Tests that a buffer reads and writes one key, and a state reads current and writes next. */
-TEST(Medium_Dependencies, KeysFollowTheHandle)
+/** @brief Fixture of the dependency tests that name a Buffer or a State, which allocate on the program's runtime. */
+class Medium_Dependencies : public TestSupport::RuntimeTest
 {
-    auto runtime = Runtime::create().value();
-    auto buffer = runtime.buffer<int>(4).value();
-    auto state = runtime.state<int>(4).value();
-    EXPECT_EQ(Detail::read_key_of(buffer).base, Detail::write_key_of(buffer).base);
-    EXPECT_EQ(Detail::read_key_of(state).base, static_cast<void*>(state.current()));
-    EXPECT_EQ(Detail::write_key_of(state).base, static_cast<void*>(state.next()));
+};
+
+/** @brief Tests that a region is given as its own key and is watched by nothing. */
+TEST(Small_Dependencies, ARegionIsItsOwnKeyAndHasNoObserver)
+{
     int raw = 0;
     const BufferRegion region(&raw, 0, sizeof(int));
-    EXPECT_EQ(Detail::read_key_of(region).base, &raw);
-    EXPECT_FALSE(Detail::liveness_of(buffer).expired());
+
+    const Reads reads(region);
+
+    ASSERT_EQ(reads.keys.size(), 1u);
+    EXPECT_EQ(reads.keys[0].base, &raw);
+    EXPECT_TRUE(reads.lives.empty());
 }
 
-/** @brief Tests that Reads and Writes collect one key per handle, in order. */
-TEST(Medium_Dependencies, ReadsAndWritesCollectOneKeyEach)
+/** @brief Tests that a buffer reads and writes one key, the address of its data. */
+TEST_F(Medium_Dependencies, ABufferReadsAndWritesTheSameKey)
 {
-    auto runtime = Runtime::create().value();
-    auto first = runtime.buffer<int>(4).value();
-    auto second = runtime.buffer<int>(4).value();
+    auto buffer = runtime().buffer<int>(4).value();
+
+    const Reads reads(buffer);
+    const Writes writes(buffer);
+
+    ASSERT_EQ(reads.keys.size(), 1u);
+    ASSERT_EQ(writes.keys.size(), 1u);
+    EXPECT_EQ(reads.keys[0].base, writes.keys[0].base);
+}
+
+/** @brief Tests that a state reads its current field and writes its next field. */
+TEST_F(Medium_Dependencies, AStateReadsCurrentAndWritesNext)
+{
+    auto state = runtime().state<int>(4).value();
+
+    const Reads reads(state);
+    const Writes writes(state);
+
+    ASSERT_EQ(reads.keys.size(), 1u);
+    ASSERT_EQ(writes.keys.size(), 1u);
+    EXPECT_EQ(reads.keys[0].base, static_cast<void*>(state.current()));
+    EXPECT_EQ(writes.keys[0].base, static_cast<void*>(state.next()));
+}
+
+/** @brief Tests that a typed handle is observed, so the graph can tell when it is destroyed. */
+TEST_F(Medium_Dependencies, ATypedHandleIsObserved)
+{
+    auto buffer = runtime().buffer<int>(4).value();
+
+    const Reads reads(buffer);
+
+    ASSERT_EQ(reads.lives.size(), 1u);
+    EXPECT_FALSE(reads.lives[0].expired());
+}
+
+/** @brief Tests that Reads collects one key per handle, in argument order. */
+TEST_F(Medium_Dependencies, ReadsAndWritesCollectOneKeyEach)
+{
+    auto first = runtime().buffer<int>(4).value();
+    auto second = runtime().buffer<int>(4).value();
+
     const Reads reads(first, second);
+    const Writes writes(first);
+
     ASSERT_EQ(reads.keys.size(), 2u);
     EXPECT_EQ(reads.keys[0].base, static_cast<void*>(first.data()));
     EXPECT_EQ(reads.keys[1].base, static_cast<void*>(second.data()));
-    const Writes writes(first);
     EXPECT_EQ(writes.keys.size(), 1u);
 }

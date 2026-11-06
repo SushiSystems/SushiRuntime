@@ -29,7 +29,10 @@ The code the tests of several modules share is in internal modules that only the
 bound, so no comparison spells one. `runtime_environment.hpp` registers one `testing::Environment`
 per program that makes the runtime and the device queue on first use and releases them after the
 last test; a medium test that needs either derives its fixture from `TestSupport::RuntimeTest` and
-never builds its own.
+never builds its own. `buffer_contents.hpp` reads, fills and windows a buffer's contents,
+`slot_buffers.hpp` makes one device, one shared and one host counter buffer, and
+`adopted_handles.hpp` builds a `Buffer` or `State` over a made-up address with
+`RecordingAllocationOwner`.
 
 One function, `sushiruntime_add_test_program` in `cmake/SushiRuntimeTests.cmake`, builds every
 program, so each is linked, placed and registered the same way.
