@@ -25,13 +25,13 @@ writes each add. Nothing in a module job changes production code except a seam a
 | M5 | the tests of `foundation` (54 files): 44 rewrite, 27 resize, 22 split, 5 merge, 28 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
 | M6 | the tests of `platform` (27 files): 49 rewrite, 18 resize, 12 split, 18 merge, 11 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
 | M7 | the tests of `surface/api` (64 files): 248 rewrite, 73 resize, 80 split, 15 merge, 26 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
-| M8 | the tests of `surface/context` (3 files): 3 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | partial: 2 rewrite, 2 delete done; `HandleOfReturnsTheOwnersHandle` waits on RW-88 |
+| M8 | the tests of `surface/context` (3 files): 3 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done: `HandleOfReturnsTheOwnersHandle` is tested through `Runtime` (decision 8) |
 | M9 | the tests of `surface/context_access` (1 file): 5 rewrite | T1, T2, T3, T4, T5, T6, T7 | todo |
-| M10 | the tests of `surface/engine_handles` (2 files): 2 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done |
-| M11 | the tests of `surface/interop` (4 files): 3 rewrite, 1 split, 5 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
-| M12 | the tests of `surface/memory_exchange` (3 files): 5 rewrite, 1 resize, 2 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M10 | the tests of `surface/engine_handles` (2 files): 2 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done: the device-free bridge tests run small (decision 9) |
+| M11 | the tests of `surface/interop` (4 files): 3 rewrite, 1 split, 5 delete | T1, T2, T3, T4, T5, T6, T7 | done: the default-empty promise lost its test, RW-91 |
+| M12 | the tests of `surface/memory_exchange` (3 files): 5 rewrite, 1 resize, 2 delete | T1, T2, T3, T4, T5, T6, T7 | partial: the resize waits on RW-89; the GPU skip is RW-90 |
 | M13 | the tests of `surface/profiling` (23 files): 66 rewrite, 10 resize, 9 split, 11 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
-| M14 | the tests of `tools` (5 files): 2 rewrite, 10 resize, 1 split, 18 merge, 5 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M14 | the tests of `tools` (5 files): 2 rewrite, 10 resize, 1 split, 18 merge, 5 delete | T1, T2, T3, T4, T5, T6, T7 | partial: the shared `test_test_budget_settings.py` is left to SushiSkills; three small resizes wait on RW-95 |
 
 ## Acceptance
 

@@ -59,6 +59,8 @@ The owner delegated these decisions on 2026-11-05. Each ruling below is final fo
 5. Death tests are medium: each one starts a child process. The testing skill records this.
 6. The size timeouts follow the testing skill: 1 s, 10 s and 120 s. The skill is the one home of these numbers; a measurement on the owner's machine changes the skill, not a repository.
 7. Ruling 1 is refined on 2026-11-06, since moving `InProcessTransport` into `transport` would make `transport` depend on `frame_transport` and `wire`, which depend on it. The adapter gets an extension module of its own, `in_process_transport`, beside the port, depending on core, transport, wire and frame_transport. `transport` gains no dependency, `distributed` and the tests that use the adapter depend on the new module, and the `TransportContract` suite runs against it small.
+8. Ruled on 2026-11-06: `ContextHandleAccess::handle_of` is tested through its public owner, the `Runtime` that hands out the handle, not by reaching the internal. `AHandleItHandsOutReachesItsOwnContext` in `tests/surface/api/runtime/test_runtime.cpp` holds the promise; the bridge test is deleted and RW-88 closes.
+9. Ruled on 2026-11-06: a bridge test that touches no device runs small, since a test's size follows what it touches. Decision 2 keeps "tested through the public bridge" and drops "at medium".
 
 ## Dispatches
 
@@ -72,6 +74,10 @@ dispatch: J16 T2 remaining adapters — haiku high, 1 round, passed, rung 1
 dispatch: J16 T3 module move — sonnet medium, 1 round, partial (contract suite to RW-87; one stale CMake line fixed by the lead), rung 1
 dispatch: J16 M8 surface/context — haiku high, 1 round, partial (one row needs RW-88), rung 1
 dispatch: J16 M10 surface/engine_handles — haiku high, 1 round, passed, rung 1
+dispatch: J16 M11 surface/interop — haiku high, 1 round, passed, rung 1
+dispatch: J16 M12 surface/memory_exchange — sonnet medium, 1 round, partial (resize to RW-89; the worker skipped DISPATCH rules 1, 2, 7 and 9, reviewed by the lead), rung 1
+dispatch: J16 M1 applications — haiku high, 1 round, partial (one record to RW-92), rung 1
+dispatch: J16 M14 tools — sonnet medium, 1 round, partial (edited a SushiSkills copy, reverted by the lead; resizes to RW-95), rung 1
 
 ## Totals
 

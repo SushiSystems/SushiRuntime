@@ -27,7 +27,12 @@
 | RW-60 | P2 | open | Give consumers a public "run after" edge and wider task overloads | a public "run after" edge exists, `Recorder::task` takes a span of regions and a small-buffer callable, and the guide states what concurrent `Recorder::task`… |  |  | 2026-10-19 |
 | RW-61 | P2 | open | Group the includes of every source file | every file groups its includes as the contributing guide states, in step with the BLAS tree |  |  | 2026-10-19 |
 | RW-62 | P2 | open | State and test host-written memory read by a replayed plan | the runtime states that a replayed plan reads memory the host wrote before the replay, and a test holds it |  |  | 2026-10-19 |
-| RW-88 | P2 | open | Test ContextHandleAccess::handle_of through its public owner | no test under tests/surface/context names Detail::ContextHandleAccess, and handle_of is checked through Runtime at medium (REPORT.md decision 2) |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-89 | P2 | decision | Move descriptor_refusal to an internal header so a small test reaches it | Medium_MemoryExchangeImport.AnImportWithNoKindIsRefused is a small test with no device |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-90 | P3 | open | Let a memory_exchange import test state the device is a GPU without hardware | The Medium_MemoryExchangeImport fixture skips on no machine |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-91 | P3 | decision | Decide whether an empty ExternalHandleKindSet keeps a test after M11 | The default-empty promise has a behaviour test or the owner rules it untested |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-92 | P2 | decision | Let the diffusion adapter take the program's runtime and expose its host step | AUniformFieldStaysUniform is split into a small step test and a medium test on the shared runtime |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-94 | P2 | decision | Rule how the test mirror treats a unit whose tests the review deleted | No known finding of check_test_mirror names a header the test review left without a test file |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-95 | P3 | open | Give check_naming, check_device_sources and the tier table a text-taking seam | The three tools tests the review resized to small read no file from disk |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
 
 ## Known issues
 
