@@ -17,8 +17,6 @@ import pytest
 
 from sushiruntime.services.project import _configure_stamp
 
-pytestmark = pytest.mark.medium
-
 
 CMAKE_DIR = Path(__file__).resolve().parents[2] / "cmake"
 
@@ -74,6 +72,7 @@ def _select(tmp_path: Path, compiler: str, stated: str | None = None) -> tuple[s
     return selected, documented + result.stderr
 
 
+@pytest.mark.medium
 def test_a_stated_toolchain_survives_a_pinned_compiler(tmp_path):
     """The defect: this was silently rewritten to "oneapi" because icpx was pinned."""
     selected, _ = _select(tmp_path, "/opt/intel/bin/icpx", stated="adaptivecpp")
@@ -81,6 +80,7 @@ def test_a_stated_toolchain_survives_a_pinned_compiler(tmp_path):
     assert selected == "adaptivecpp"
 
 
+@pytest.mark.medium
 def test_a_mismatch_between_the_two_is_reported(tmp_path):
     """Obeying the request means it can now be wrong, and failing later names neither value."""
     _, output = _select(tmp_path, "/opt/intel/bin/icpx", stated="adaptivecpp")
@@ -90,13 +90,18 @@ def test_a_mismatch_between_the_two_is_reported(tmp_path):
     assert "oneapi" in flattened
 
 
-def test_inference_still_runs_when_no_toolchain_was_stated(tmp_path):
+@pytest.mark.medium
+@pytest.mark.parametrize("compiler, inferred", [
+    ("/usr/bin/acpp", "adaptivecpp"),
+    ("/opt/intel/bin/icpx", "oneapi"),
+    ("/opt/llvm/bin/clang++", "intel-llvm"),
+])
+def test_inference_still_runs_when_no_toolchain_was_stated(tmp_path, compiler, inferred):
     """The back-compat path the guard exists for: acpp and icpx invocations keep working."""
-    assert _select(tmp_path, "/usr/bin/acpp")[0] == "adaptivecpp"
-    assert _select(tmp_path, "/opt/intel/bin/icpx")[0] == "oneapi"
-    assert _select(tmp_path, "/opt/llvm/bin/clang++")[0] == "intel-llvm"
+    assert _select(tmp_path, compiler)[0] == inferred
 
 
+@pytest.mark.medium
 def test_a_matching_pair_does_not_warn(tmp_path):
     """Stating what would have been inferred is agreement, not a mismatch."""
     _, output = _select(tmp_path, "/usr/bin/acpp", stated="adaptivecpp")
@@ -104,6 +109,7 @@ def test_a_matching_pair_does_not_warn(tmp_path):
     assert "was requested" not in " ".join(output.split())
 
 
+@pytest.mark.medium
 def test_the_cache_help_text_survives_inference(tmp_path):
     """Inference used to FORCE the entry with an empty docstring, wiping the help off it."""
     _, output = _select(tmp_path, "/usr/bin/acpp")
@@ -111,6 +117,7 @@ def test_the_cache_help_text_survives_inference(tmp_path):
     assert "intel-llvm (primary)" in output
 
 
+@pytest.mark.small
 def test_the_stamp_changes_with_the_toolchain():
     """The other half: an unchanged stamp means configure is skipped and the tree reused."""
     before = _configure_stamp("OFF", "auto", True, "intel-llvm", "")
@@ -119,6 +126,7 @@ def test_the_stamp_changes_with_the_toolchain():
     assert before != after
 
 
+@pytest.mark.small
 def test_the_stamp_changes_with_a_pinned_compiler():
     """Editing `cxx` in config.local.toml is the same class of change and was equally invisible."""
     before = _configure_stamp("OFF", "auto", True, "intel-llvm", "/a/clang++")
@@ -127,6 +135,7 @@ def test_the_stamp_changes_with_a_pinned_compiler():
     assert before != after
 
 
+@pytest.mark.small
 def test_the_stamp_changes_with_a_pinned_library_checkout():
     """A SushiLog pin resolved to another checkout reaches CMake only through a reconfigure."""
     before = _configure_stamp("OFF", "auto", True, "intel-llvm", "",
@@ -137,6 +146,7 @@ def test_the_stamp_changes_with_a_pinned_library_checkout():
     assert before != after
 
 
+@pytest.mark.small
 def test_the_stamp_is_stable_for_an_unchanged_configuration():
     """It has to keep skipping the configure it was invented to skip."""
     first = _configure_stamp("OFF", "auto", True, "intel-llvm", "/a/clang++")

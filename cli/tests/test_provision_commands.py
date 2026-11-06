@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
-import pytest
+import dataclasses
 
+import pytest
 from typer.testing import CliRunner
 
 from sushicore.provision.config import ProvisionSettings
@@ -17,13 +18,6 @@ from sushiruntime.config import Config
 pytestmark = pytest.mark.medium
 
 
-def test_the_four_provision_commands_are_registered():
-    """Assert setup, doctor, link and unlink appear in the help."""
-    out = CliRunner().invoke(app, ["--help"]).output
-    for name in ("setup", "doctor", "link", "unlink"):
-        assert name in out
-
-
 def test_setup_takes_the_shared_options():
     """Assert setup offers --dry-run, --toolchain and --no-gpu."""
     out = CliRunner().invoke(app, ["setup", "--help"]).output
@@ -31,6 +25,7 @@ def test_setup_takes_the_shared_options():
         assert option in out
 
 
-def test_config_is_a_provision_config():
-    """Assert the config carries every field provision reads."""
-    assert issubclass(Config, ProvisionSettings)
+@pytest.mark.parametrize("field", [field.name for field in dataclasses.fields(ProvisionSettings)])
+def test_config_carries_every_field_provision_reads(field):
+    """The configuration has each field the shared provision commands read."""
+    assert hasattr(Config(), field)

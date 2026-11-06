@@ -33,6 +33,8 @@
 | RW-92 | P2 | decision | Let the diffusion adapter take the program's runtime and expose its host step | AUniformFieldStaysUniform is split into a small step test and a medium test on the shared runtime |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
 | RW-94 | P2 | decision | Rule how the test mirror treats a unit whose tests the review deleted | No known finding of check_test_mirror names a header the test review left without a test file |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
 | RW-95 | P3 | open | Give check_naming, check_device_sources and the tier table a text-taking seam | The three tools tests the review resized to small read no file from disk |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-96 | P3 | decision | Show the ContextAccess promises through a public path or rule them untested | The five dropped context_access promises have a public-surface test each or an owner ruling |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-97 | P3 | decision | Decide where the no-hub-install rule of the service messages lives | test_no_service_message_sends_the_user_to_hub_install reads no source text, or a tools/ checker holds the rule |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
 
 ## Known issues
 

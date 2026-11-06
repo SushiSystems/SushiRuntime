@@ -30,11 +30,10 @@ def _windows_args(gpu_backend: str) -> list[str]:
         gpu_backend, "OFF", asan=False, tests=True)
 
 
-def test_the_windows_configure_carries_the_resolved_backend():
-    """The defect: this argument was the literal string "cpu", whatever had been resolved."""
-    assert _backend(_windows_args("auto")) == "auto"
+@pytest.mark.parametrize("resolved", ["auto", "cpu"])
+def test_the_windows_configure_carries_the_resolved_backend(resolved):
+    """The configure states the backend it was given: "auto", or "cpu" from --no-cuda and ASan.
 
-
-def test_the_windows_configure_can_still_be_told_cpu():
-    """--no-cuda and ASan resolve to "cpu", and that has to reach CMake unchanged."""
-    assert _backend(_windows_args("cpu")) == "cpu"
+    The defect: this argument was the literal string "cpu", whatever had been resolved.
+    """
+    assert _backend(_windows_args(resolved)) == resolved

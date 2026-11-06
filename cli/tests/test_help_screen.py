@@ -62,15 +62,10 @@ def test_root_help_lists_the_four_groups_with_the_sub_app_last():
 
 
 @pytest.mark.parametrize("heading", list(K_GROUPS))
-def test_every_command_sits_under_its_own_group(heading):
-    listed = _commands_by_heading(_run("--help"))[heading]
-    assert [name for name in listed if name in K_GROUPS[heading]] == K_GROUPS[heading]
-
-
-def test_no_command_is_listed_under_a_group_it_does_not_belong_to():
+def test_no_command_is_listed_under_a_group_it_does_not_belong_to(heading):
     grouped = _commands_by_heading(_run("--help"))
-    for heading, names in K_GROUPS.items():
-        assert set(grouped[heading]) == set(names)
+    assert set(grouped[heading]) == set(K_GROUPS[heading])
+    assert grouped[heading] == K_GROUPS[heading]
 
 
 @pytest.mark.parametrize(
@@ -89,14 +84,9 @@ def test_a_container_command_help_carries_examples(command):
     assert "Examples" in out and f"sr container {command}" in out
 
 
-def test_the_container_sub_app_draws_a_page_listing_its_commands():
-    listed = _commands_by_heading(_run("container", "--help"))["Commands"]
-    assert listed == K_CONTAINER_COMMANDS
-
-
-def test_the_container_sub_app_without_arguments_draws_the_same_page():
-    result = CliRunner().invoke(app, ["container"])
-    assert "Commands" in result.output and "Examples" not in result.output
+@pytest.mark.parametrize("arguments", [["container", "--help"], ["container"]])
+def test_the_container_sub_app_draws_a_page_listing_its_commands(arguments):
+    result = CliRunner().invoke(app, arguments)
     assert _commands_by_heading(result.output)["Commands"] == K_CONTAINER_COMMANDS
 
 

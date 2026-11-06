@@ -19,8 +19,6 @@ from sushiruntime.services.stage_tree import (
     StageTreeError,
 )
 
-pytestmark = pytest.mark.medium
-
 
 @pytest.fixture
 def rules(tmp_path) -> StageRules:
@@ -43,6 +41,7 @@ def _filled(path: Path) -> Path:
     return path
 
 
+@pytest.mark.medium
 @pytest.mark.parametrize("force", [False, True])
 @pytest.mark.parametrize(
     ("pick", "reason"),
@@ -62,13 +61,17 @@ def test_a_protected_directory_is_refused_even_with_force(rules, pick, reason, f
     assert reason in str(caught.value)
 
 
+@pytest.mark.small
 @pytest.mark.skipif(os.name != "nt", reason="only Windows has a second filesystem root")
-def test_the_root_of_another_drive_is_protected(rules):
+def test_the_root_of_another_drive_is_protected():
     """A drive root that is not above the checkout is still a filesystem root."""
-    letter = next(c for c in "ZY" if not rules.project_root.anchor.upper().startswith(c))
-    assert rules.protection(Path(f"{letter}:/")) == "a filesystem root"
+    rules = StageRules(project_root=Path("C:/work/repo"), home=Path("C:/home"),
+                       build_dir=Path("C:/work/repo/build"),
+                       default_stage=Path("C:/work/repo/build/dist"))
+    assert rules.protection(Path("D:/")) == "a filesystem root"
 
 
+@pytest.mark.medium
 def test_a_foreign_directory_with_content_is_refused_without_force(rules, tmp_path):
     """A non-empty directory the CLI did not stage is refused, and the message names --force."""
     foreign = _filled(tmp_path / "elsewhere")
@@ -78,11 +81,13 @@ def test_a_foreign_directory_with_content_is_refused_without_force(rules, tmp_pa
     assert str(foreign) in str(caught.value)
 
 
+@pytest.mark.medium
 def test_a_foreign_directory_with_content_is_accepted_with_force(rules, tmp_path):
     """--force lets a non-empty directory outside the protected ones be staged into."""
     StageTree(_filled(tmp_path / "elsewhere")).check(rules, force=True)
 
 
+@pytest.mark.medium
 def test_a_missing_or_empty_directory_is_accepted(rules, tmp_path):
     """A prefix that does not exist yet, or holds nothing, needs no --force."""
     (tmp_path / "empty").mkdir()
@@ -90,11 +95,13 @@ def test_a_missing_or_empty_directory_is_accepted(rules, tmp_path):
     StageTree(tmp_path / "empty").check(rules, force=False)
 
 
+@pytest.mark.medium
 def test_the_default_stage_is_accepted_without_a_marker(rules):
     """build/dist is the CLI's own directory and is cleared without --force."""
     StageTree(_filled(rules.default_stage)).check(rules, force=False)
 
 
+@pytest.mark.medium
 def test_a_file_is_refused(rules, tmp_path):
     """A prefix that names a file is refused."""
     target = tmp_path / "file.txt"
@@ -103,6 +110,7 @@ def test_a_file_is_refused(rules, tmp_path):
         StageTree(target).check(rules, force=True)
 
 
+@pytest.mark.medium
 def test_reset_empties_the_tree_and_writes_the_marker(rules, tmp_path):
     """reset() removes what was staged before and leaves only the marker."""
     stage = StageTree(_filled(tmp_path / "stage"))
@@ -110,6 +118,7 @@ def test_reset_empties_the_tree_and_writes_the_marker(rules, tmp_path):
     assert [entry.name for entry in stage.path.iterdir()] == [K_STAGE_MARKER]
 
 
+@pytest.mark.medium
 def test_a_tree_the_cli_staged_is_accepted_again_without_force(rules, tmp_path):
     """A directory that carries the marker is the CLI's own and is cleared without --force."""
     stage = StageTree(tmp_path / "stage")
@@ -118,6 +127,7 @@ def test_a_tree_the_cli_staged_is_accepted_again_without_force(rules, tmp_path):
     stage.check(rules, force=False)
 
 
+@pytest.mark.medium
 def test_reset_reports_a_delete_that_fails(rules, tmp_path, monkeypatch):
     """A tree that cannot be removed raises instead of being staged over."""
     def refuse(path, ignore_errors=False, **kwargs):

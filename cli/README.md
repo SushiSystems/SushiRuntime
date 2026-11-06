@@ -300,14 +300,16 @@ fake has.
 
 ## tests/test_console_lazy.py
 
-Regression tests for the lazy console. They guard against a console built at import time: that
+Tests of the lazy console. They guard against a console built at construction or at import: that
 build calls `config_dir()`, then `find_project_root()`, and raises `SystemExit` outside a
 checkout. Because `cli.py` imports console transitively, every `sr` invocation would end with
 "Not inside a SushiRuntime project", including `sr --help`, which Typer can answer with no
 project.
 
-The lifecycle lives in `sushicore.cli_console.LazyConsole`, one copy for every Sushi CLI. These tests pin that this CLI is wired to it,
-which is the part a shared implementation cannot check on its own.
+The lifecycle lives in `sushicore.cli_console.LazyConsole`, one copy for every Sushi CLI. The
+tests build a `LazyConsole` over a resolver they give it, one that exits like `config_dir()`
+outside a checkout and one over this CLI's own `config_dir()`, so none of them reloads the
+process-wide `sushiruntime.console` or changes the working folder.
 
 ## tests/test_docker.py
 

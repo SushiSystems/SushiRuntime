@@ -10,11 +10,11 @@ import json
 import os
 import re
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
 from sushicore.cli_console import LazyConsole
-from sushicore.root_options import version_line
 from typer.testing import CliRunner
 
 from sushiruntime import cli, config
@@ -41,6 +41,7 @@ K_PUBLISH_LIST = (
 )
 K_ARCHIVE = "docs-bundle-1.2.3.tar.gz"
 K_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+K_PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 K_DOXYFILE = Path(__file__).resolve().parents[2] / ".config" / "doxygen" / "Doxyfile"
 
 
@@ -89,10 +90,11 @@ def test_main_exits_zero_after_a_command_that_succeeds():
 
 
 def test_version_names_the_distribution():
-    """--version prints the distribution name and its version on one line."""
+    """--version prints the distribution name of cli/pyproject.toml and a release version on one line."""
+    declared = tomllib.loads(K_PYPROJECT.read_text(encoding="utf-8"))["project"]["name"]
     result = CliRunner().invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert result.output.strip() == version_line("sushiruntime-cli")
+    assert re.fullmatch(rf"{re.escape(declared)} \d+(\.\d+)+\S*", result.output.strip())
 
 
 def test_describe_lists_every_visible_command():
@@ -102,12 +104,6 @@ def test_describe_lists_every_visible_command():
     names = [command["name"] for command in document["commands"]]
     assert [name for name in names if name.split()[0] not in K_SUSHICORE_GROUPS] == K_VISIBLE
     assert {name.split()[0] for name in names} >= set(K_SUSHICORE_GROUPS)
-
-
-def test_describe_leaves_the_hidden_spellings_out():
-    """--describe carries neither `doxygen` nor anything under `docker`."""
-    names = [command["name"] for command in _described()["commands"]]
-    assert not [name for name in names if name == "doxygen" or name.startswith("docker")]
 
 
 def _checkout(root: Path) -> None:

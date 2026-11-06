@@ -11,15 +11,15 @@ import pytest
 from sushiruntime import config
 from sushiruntime.config import Config
 
-pytestmark = pytest.mark.medium
 
-
+@pytest.mark.medium
 def test_find_project_root_raises_outside_checkout(tmp_path):
     """No sushi-module.toml anywhere above -> a clear SystemExit, not a crash."""
     with pytest.raises(SystemExit):
         config.find_project_root(tmp_path)
 
 
+@pytest.mark.medium
 def test_find_project_root_walks_up_to_marker(tmp_path):
     """The root is the nearest ancestor holding sushi-module.toml."""
     (tmp_path / "sushi-module.toml").write_text("[module]\n")
@@ -28,6 +28,7 @@ def test_find_project_root_walks_up_to_marker(tmp_path):
     assert config.find_project_root(nested) == tmp_path
 
 
+@pytest.mark.medium
 def test_find_project_root_passes_a_nested_cmake_project(tmp_path):
     """A folder with its own CMakeLists.txt, like tests/, is not taken for the checkout."""
     (tmp_path / "sushi-module.toml").write_text("[module]\n")
@@ -40,6 +41,7 @@ def test_find_project_root_passes_a_nested_cmake_project(tmp_path):
     assert config.find_project_root(tmp_path / "tests") == tmp_path
 
 
+@pytest.mark.medium
 def test_a_cmake_project_without_the_module_manifest_is_not_a_checkout(tmp_path):
     """CMakeLists.txt alone does not mark a SushiRuntime checkout."""
     (tmp_path / "CMakeLists.txt").write_text("project(x)\n")
@@ -47,6 +49,7 @@ def test_a_cmake_project_without_the_module_manifest_is_not_a_checkout(tmp_path)
         config.find_project_root(tmp_path)
 
 
+@pytest.mark.medium
 def test_config_dir_prefers_cli(tmp_path):
     """config_dir() returns <root>/cli when it holds config.toml."""
     (tmp_path / "sushi-module.toml").write_text("[module]\n")
@@ -56,22 +59,20 @@ def test_config_dir_prefers_cli(tmp_path):
     assert config.config_dir(tmp_path) == cli_dir
 
 
+@pytest.mark.medium
 def test_config_dir_defaults_to_cli_when_absent(tmp_path):
     """With no config.toml present, config_dir() still defaults to <root>/cli."""
     (tmp_path / "sushi-module.toml").write_text("[module]\n")
     assert config.config_dir(tmp_path) == tmp_path / "cli"
 
 
-def test_toolchain_fallback_on_unknown(monkeypatch):
-    """A stale/typo'd toolchain resolves to the intel-llvm default."""
-    cfg = config.load_config()
-    # Stub load returns defaults; force an invalid value and re-run the guard.
-    cfg.toolchain = "bogus"
-    if cfg.toolchain not in config.TOOLCHAINS:
-        cfg.toolchain = "intel-llvm"
-    assert cfg.toolchain == "intel-llvm"
+@pytest.mark.medium
+def test_toolchain_fallback_on_unknown():
+    """A stale or mistyped toolchain resolves to the intel-llvm default."""
+    assert config.load_config(lambda cls: cls(toolchain="bogus")).toolchain == "intel-llvm"
 
 
+@pytest.mark.medium
 def test_llvm_root_is_found_under_the_provision_root(tmp_path, monkeypatch):
     """Assert a bundle under ~/.sushisystems is the resolved llvm root."""
     monkeypatch.setenv("SUSHISYSTEMS_HOME", str(tmp_path))
@@ -85,7 +86,7 @@ def test_llvm_root_is_found_under_the_provision_root(tmp_path, monkeypatch):
     assert cfg.resolved_llvm_root() == str(tmp_path / "toolchains" / "llvm-sycl")
 
 
-def test_a_pinned_llvm_root_wins(tmp_path, monkeypatch):
-    """Assert an explicit llvm_root is returned without probing."""
-    monkeypatch.setenv("SUSHISYSTEMS_HOME", str(tmp_path))
+@pytest.mark.small
+def test_a_pinned_llvm_root_wins():
+    """An explicit llvm_root is returned without probing."""
     assert Config(platform="linux", llvm_root="/opt/llvm").resolved_llvm_root() == "/opt/llvm"
