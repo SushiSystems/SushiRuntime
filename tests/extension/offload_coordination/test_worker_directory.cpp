@@ -37,7 +37,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -48,6 +47,8 @@
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/machine/node_facts.hpp>
+#include <SushiRuntime/placement/placement_rule.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
 #include <SushiRuntime/task/task_types.hpp>
@@ -88,11 +89,29 @@ namespace WorkerDirectoryTests
         /** @brief Holds a wait no test outlasts; a wake that never comes hangs the test. */
         constexpr milliseconds K_UNTIL_WOKEN = std::chrono::hours(24);
 
+        /** @brief Holds the time a handshake may take before its peer is overdue. */
+        constexpr milliseconds K_HANDSHAKE_LIMIT(5000);
+
+        /** @brief Holds the silence after which a worker is taken. */
+        constexpr milliseconds K_LIVENESS(500);
+
         /** @brief Names an operation only the first worker of a test runs. */
         constexpr OperationID K_RARE_OPERATION{101};
 
         /** @brief Names an operation every worker of a test runs. */
         constexpr OperationID K_COMMON_OPERATION{202};
+
+        /** @brief Names an operation no worker of a test runs. */
+        constexpr OperationID K_ABSENT_OPERATION{303};
+
+        /** @brief Holds the input size below which the policy of the tests keeps a task local. */
+        constexpr std::uint64_t K_MIN_OFFLOAD_BYTES = 512;
+
+        /** @brief Holds an input size the policy of the tests offers. */
+        constexpr std::uint64_t K_TASK_BYTES = 1024;
+
+        /** @brief Holds an input size the policy of the tests keeps local. */
+        constexpr std::uint64_t K_LOCAL_BYTES = 511;
 
         /** @brief Builds a node tagged with the operation every worker of these tests holds. */
         sushi_ptr<Internal::Graph::Node> common_node()
@@ -102,8 +121,13 @@ namespace WorkerDirectoryTests
             return node;
         }
 
-        /** @brief Names an operation no worker of a test runs. */
-        constexpr OperationID K_ABSENT_OPERATION{303};
+        /** @brief Builds a node tagged with the operation only the first worker holds. */
+        sushi_ptr<Internal::Graph::Node> rare_node()
+        {
+            sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
+            node->metadata.op_id = K_RARE_OPERATION;
+            return node;
+        }
 
         /** @brief Returns a fixed time point @p offset after the tests' zero. */
         std::chrono::steady_clock::time_point at(milliseconds offset)
@@ -117,6 +141,18 @@ namespace WorkerDirectoryTests
             HandshakeNonce nonce{};
             nonce.bytes.fill(value);
             return nonce;
+        }
+
+        /** @brief Returns the nonce the worker side of @p peer sends. */
+        HandshakeNonce worker_nonce_of(PeerID peer)
+        {
+            return nonce_of(static_cast<std::uint8_t>(0x10 + peer.value));
+        }
+
+        /** @brief Returns the nonce the master side of @p peer sends. */
+        HandshakeNonce master_nonce_of(PeerID peer)
+        {
+            return nonce_of(static_cast<std::uint8_t>(0x80 + peer.value));
         }
 
         /** @brief Returns handshake octets as the bytes a wire message carries. */
@@ -141,6 +177,27 @@ namespace WorkerDirectoryTests
             hello.build_id = build_id;
             hello.node_name = "worker";
             return hello;
+        }
+
+        /** @brief Returns the HELLO of the machine "gpu-box" with one label and one GPU. */
+        Wire::HelloMessage gpu_box_hello(PeerID peer, const std::string& zone)
+        {
+            Wire::HelloMessage hello = hello_with(worker_nonce_of(peer));
+            hello.node_name = "gpu-box";
+            hello.operating_system = OperatingSystem::Linux;
+            hello.labels.push_back(Wire::HelloLabel{"zone", zone});
+            hello.devices.push_back(Wire::HelloDevice{DeviceKind::GPU, "Test GPU", 4096});
+            return hello;
+        }
+
+        /** @brief Returns the target that names "gpu-box", its zone label and a GPU. */
+        PlacementTarget gpu_in_zone(const std::string& zone)
+        {
+            PlacementTarget target;
+            target.machine_name = "gpu-box";
+            target.machine_label = NodeLabel{"zone", zone};
+            target.device_kind = DeviceKind::GPU;
+            return target;
         }
 
         /** @brief Returns the PROOF a worker holding @p secret sends for the two nonces. */
@@ -169,6 +226,18 @@ namespace WorkerDirectoryTests
             return admitted;
         }
 
+        /** @brief Returns the type bytes of every message type but @p excluded. */
+        std::vector<int> every_type_but(MessageType excluded)
+        {
+            std::vector<int> types;
+            for (int type = K_FIRST_MESSAGE_TYPE; type <= K_LAST_MESSAGE_TYPE; ++type)
+            {
+                if (type != static_cast<int>(excluded))
+                    types.push_back(type);
+            }
+            return types;
+        }
+
         /** @brief Returns the type bytes of the given messages. */
         std::vector<int> type_bytes(const std::vector<MessageType>& types)
         {
@@ -187,63 +256,15 @@ namespace WorkerDirectoryTests
             return values;
         }
 
-        /** @brief Picks the first worker it is offered and records every call. */
-        class RecordingPolicy final : public OffloadPolicy
-        {
-            public:
-                /** @brief Records the offer, then returns @ref answer or the first worker. */
-                std::optional<int> pick_worker(const NodeOptions&, span<const WorkerLoad> workers,
-                                               std::uint64_t) override
-                {
-                    ++calls;
-                    offered.assign(workers.begin(), workers.end());
-                    facts_seen.clear();
-                    for (const WorkerLoad& worker : workers)
-                    {
-                        if (worker.facts != nullptr)
-                            facts_seen.push_back(*worker.facts);
-                    }
-                    if (keeps_local)
-                        return std::nullopt;
-                    if (answer.has_value())
-                        return answer;
-                    return workers.front().worker_id;
-                }
-
-                /** @brief Returns the ids of the workers of the last call. */
-                [[nodiscard]] std::vector<int> offered_ids() const
-                {
-                    std::vector<int> ids;
-                    for (const WorkerLoad& worker : offered)
-                        ids.push_back(worker.worker_id);
-                    return ids;
-                }
-
-                /** @brief Counts the calls. */
-                int calls = 0;
-
-                /** @brief Holds the workers of the last call. */
-                std::vector<WorkerLoad> offered;
-
-                /** @brief Holds copies of the facts of the workers of the last call. */
-                std::vector<NodeFacts> facts_seen;
-
-                /** @brief Holds the id to answer with in place of the first worker. */
-                std::optional<int> answer;
-
-                /** @brief Makes every call keep the task local. */
-                bool keeps_local = false;
-        };
-
-        /** @brief Builds a directory over a 32-byte secret and a recording policy. */
-        class Medium_WorkerDirectory : public ::testing::Test
+        /** @brief Builds a directory over a 32-byte secret and the real least-loaded policy. */
+        class WorkerDirectoryFixture : public ::testing::Test
         {
             protected:
                 /** @brief Fills the secret with the bytes 0 to 31 and builds the directory. */
-                Medium_WorkerDirectory()
+                WorkerDirectoryFixture()
                     : secret_(make_secret()),
-                      policy_(std::make_shared<RecordingPolicy>()),
-                      directory_(secret(), policy_)
+                      directory_(secret(), std::make_shared<LeastLoadedOffloadPolicy>(
+                                               K_MIN_OFFLOAD_BYTES))
                 {
 
                 }
@@ -254,34 +275,65 @@ namespace WorkerDirectoryTests
                     return span<const std::uint8_t>(secret_.data(), secret_.size());
                 }
 
+                /** @brief Connects a peer at time @p now under an endpoint named by its id. */
+                void connect(PeerID peer, std::chrono::steady_clock::time_point now)
+                {
+                    directory_.add_peer(peer, "10.0.0." + std::to_string(peer.value) + ":7000", now);
+                }
+
+                /** @brief Sends the HELLO of a peer with the nonces of the peer. */
+                HelloReply say_hello(PeerID peer)
+                {
+                    return directory_.accept_hello(peer, hello_with(worker_nonce_of(peer)),
+                                                   master_nonce_of(peer));
+                }
+
+                /** @brief Sends the PROOF of a peer whose HELLO came with the nonces of the peer. */
+                HandshakeStep prove(PeerID peer, std::vector<OperationID> operations,
+                                    std::uint32_t max_jobs,
+                                    std::chrono::steady_clock::time_point now)
+                {
+                    return directory_.accept_proof(
+                        peer,
+                        proof_with(secret(), worker_nonce_of(peer), master_nonce_of(peer),
+                                   std::move(operations), max_jobs),
+                        now);
+                }
+
                 /** @brief Connects a peer and takes it through HELLO and PROOF at time @p now. */
                 HandshakeStep register_worker(PeerID peer, std::vector<OperationID> operations,
                                               std::uint32_t max_jobs,
                                               std::chrono::steady_clock::time_point now)
                 {
-                    const HandshakeNonce worker_nonce =
-                        nonce_of(static_cast<std::uint8_t>(0x10 + peer.value));
-                    const HandshakeNonce master_nonce =
-                        nonce_of(static_cast<std::uint8_t>(0x80 + peer.value));
-
-                    directory_.add_peer(peer, "10.0.0." + std::to_string(peer.value) + ":7000", now);
-                    const HelloReply reply =
-                        directory_.accept_hello(peer, hello_with(worker_nonce), master_nonce);
+                    connect(peer, now);
+                    const HelloReply reply = say_hello(peer);
                     if (reply.step != HandshakeStep::Accepted)
                         return reply.step;
 
-                    return directory_.accept_proof(
-                        peer,
-                        proof_with(secret(), worker_nonce, master_nonce, std::move(operations),
-                                   max_jobs),
-                        now);
+                    return prove(peer, std::move(operations), max_jobs, now);
+                }
+
+                /** @brief Registers K_FIRST with both operations and K_SECOND with the common one. */
+                HandshakeStep register_two_workers()
+                {
+                    const HandshakeStep first = register_worker(
+                        K_FIRST, {K_RARE_OPERATION, K_COMMON_OPERATION}, 4, at(milliseconds(0)));
+                    if (first != HandshakeStep::Accepted)
+                        return first;
+
+                    return register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(0)));
+                }
+
+                /** @brief Connects a peer and sends the HELLO of "gpu-box" with a zone label. */
+                HandshakeStep hello_from_gpu_box(PeerID peer, const std::string& zone)
+                {
+                    connect(peer, at(milliseconds(0)));
+                    return directory_.accept_hello(peer, gpu_box_hello(peer, zone),
+                                                   master_nonce_of(peer)).step;
                 }
 
                 /** @brief Holds the cluster key. */
                 std::vector<std::uint8_t> secret_;
-
-                /** @brief Holds the policy the directory asks. */
-                std::shared_ptr<RecordingPolicy> policy_;
 
                 /** @brief Holds the directory under test. */
                 WorkerDirectory directory_;
@@ -296,373 +348,636 @@ namespace WorkerDirectoryTests
                     return bytes;
                 }
         };
+
+        /** @brief Names the fixture of the tests that touch memory and one mutex only. */
+        class Small_WorkerDirectory : public WorkerDirectoryFixture
+        {
+
+        };
+
+        /** @brief Names the fixture of the tests that run a second thread or a timed wait. */
+        class Medium_WorkerDirectory : public WorkerDirectoryFixture
+        {
+
+        };
     } // namespace
 
-    TEST_F(Medium_WorkerDirectory, UnregisteredPeerMessagesDropped)
+    TEST_F(Small_WorkerDirectory, AdmitsNothingFromAPeerItNeverAdded)
     {
-        const HandshakeNonce worker_nonce = nonce_of(0x11);
-        const HandshakeNonce master_nonce = nonce_of(0x22);
-
         EXPECT_TRUE(admitted_types(directory_, K_STRANGER).empty());
+    }
 
-        directory_.add_peer(K_FIRST, "10.0.0.1:7000", at(milliseconds(0)));
+    TEST_F(Small_WorkerDirectory, AdmitsOnlyHelloAndGoodbyeFromAPeerThatOwesHello)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+
         EXPECT_EQ(admitted_types(directory_, K_FIRST),
                   type_bytes({MessageType::Hello, MessageType::Goodbye}));
+    }
 
-        ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(worker_nonce), master_nonce).step,
-                  HandshakeStep::Accepted);
+    TEST_F(Small_WorkerDirectory, AdmitsNoWorkerMessageFromAPeerThatOwesProof)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(say_hello(K_FIRST).step, HandshakeStep::Accepted);
+
         EXPECT_EQ(admitted_types(directory_, K_FIRST),
                   type_bytes({MessageType::Hello, MessageType::Proof, MessageType::Goodbye}));
-        EXPECT_FALSE(directory_.admits(K_FIRST, MessageType::BufferRequest));
-        EXPECT_FALSE(directory_.admits(K_FIRST, MessageType::BufferChunk));
-        EXPECT_FALSE(directory_.admits(K_FIRST, MessageType::TaskResult));
+    }
 
-        ASSERT_EQ(directory_.accept_proof(
-                      K_FIRST, proof_with(secret(), worker_nonce, master_nonce, {}, 4),
-                      at(milliseconds(1))),
-                  HandshakeStep::Accepted);
+    TEST_F(Small_WorkerDirectory, AdmitsEveryTypeButProofFromARegisteredWorker)
+    {
+        ASSERT_EQ(register_worker(K_FIRST, {}, 4, at(milliseconds(0))), HandshakeStep::Accepted);
 
-        std::vector<int> every_type_but_proof;
-        for (int type = K_FIRST_MESSAGE_TYPE; type <= K_LAST_MESSAGE_TYPE; ++type)
-        {
-            if (type != static_cast<int>(MessageType::Proof))
-                every_type_but_proof.push_back(type);
-        }
-        EXPECT_EQ(admitted_types(directory_, K_FIRST), every_type_but_proof);
+        EXPECT_EQ(admitted_types(directory_, K_FIRST), every_type_but(MessageType::Proof));
+    }
 
-        const RemovedPeer removed = directory_.remove_peer(K_FIRST);
-        EXPECT_TRUE(removed.known);
+    TEST_F(Small_WorkerDirectory, AdmitsNothingFromARemovedPeer)
+    {
+        ASSERT_EQ(register_worker(K_FIRST, {}, 4, at(milliseconds(0))), HandshakeStep::Accepted);
+        ASSERT_TRUE(directory_.remove_peer(K_FIRST).known);
+
         EXPECT_TRUE(admitted_types(directory_, K_FIRST).empty());
     }
 
-    TEST_F(Medium_WorkerDirectory, HandshakeDeadlineClosesPeer)
+    TEST_F(Small_WorkerDirectory, HandshakeOverdueListsNobodyAtTheLimitAndThePeerOneMillisecondAfter)
     {
-        const milliseconds limit(5000);
+        connect(K_FIRST, at(milliseconds(0)));
 
-        directory_.add_peer(K_FIRST, "10.0.0.1:7000", at(milliseconds(0)));
-        ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(0))), HandshakeStep::Accepted);
-        directory_.add_peer(K_THIRD, "10.0.0.3:7000", at(milliseconds(400)));
+        std::vector<PeerID> at_limit;
+        directory_.take_handshake_overdue(at(K_HANDSHAKE_LIMIT), K_HANDSHAKE_LIMIT, at_limit);
+        std::vector<PeerID> past_limit;
+        directory_.take_handshake_overdue(at(K_HANDSHAKE_LIMIT + milliseconds(1)),
+                                          K_HANDSHAKE_LIMIT, past_limit);
 
-        // A peer that keeps sending HELLO still owes PROOF, and its time runs from the connect.
+        EXPECT_TRUE(at_limit.empty());
+        EXPECT_EQ(values_of(past_limit), (std::vector<std::uint32_t>{1}));
+    }
+
+    TEST_F(Small_WorkerDirectory, HandshakeOverdueCountsFromTheConnectOfEachPeer)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+        connect(K_THIRD, at(milliseconds(400)));
+
+        std::vector<PeerID> overdue;
+        directory_.take_handshake_overdue(at(milliseconds(5400)), K_HANDSHAKE_LIMIT, overdue);
+        ASSERT_EQ(values_of(overdue), (std::vector<std::uint32_t>{1}));
+
+        directory_.take_handshake_overdue(at(milliseconds(5401)), K_HANDSHAKE_LIMIT, overdue);
+        EXPECT_EQ(values_of(overdue), (std::vector<std::uint32_t>{1, 3}));
+    }
+
+    TEST_F(Small_WorkerDirectory, HandshakeOverdueIgnoresTheHelloASlowPeerKeepsSending)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
         ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(nonce_of(1)), nonce_of(2)).step,
                   HandshakeStep::Accepted);
         ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(nonce_of(3)), nonce_of(4)).step,
                   HandshakeStep::Accepted);
 
         std::vector<PeerID> overdue;
-        directory_.take_handshake_overdue(at(milliseconds(5000)), limit, overdue);
-        EXPECT_TRUE(overdue.empty()) << "the limit itself is still within the limit";
+        directory_.take_handshake_overdue(at(milliseconds(5001)), K_HANDSHAKE_LIMIT, overdue);
 
-        directory_.take_handshake_overdue(at(milliseconds(5001)), limit, overdue);
         EXPECT_EQ(values_of(overdue), (std::vector<std::uint32_t>{1}));
+    }
 
-        directory_.take_handshake_overdue(at(milliseconds(5400)), limit, overdue);
-        EXPECT_EQ(values_of(overdue), (std::vector<std::uint32_t>{1}));
+    TEST_F(Small_WorkerDirectory, HandshakeOverdueNeverListsARegisteredWorker)
+    {
+        ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
 
-        directory_.take_handshake_overdue(at(milliseconds(5401)), limit, overdue);
-        EXPECT_EQ(values_of(overdue), (std::vector<std::uint32_t>{1, 3}));
+        std::vector<PeerID> overdue;
+        directory_.take_handshake_overdue(at(milliseconds(900000)), K_HANDSHAKE_LIMIT, overdue);
 
-        directory_.take_handshake_overdue(at(milliseconds(900000)), limit, overdue);
-        EXPECT_EQ(overdue.size(), 2u) << "each peer is listed once and a worker never";
+        EXPECT_TRUE(overdue.empty());
+    }
+
+    TEST_F(Small_WorkerDirectory, HandshakeOverdueListsEachPeerOnce)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+        std::vector<PeerID> first_call;
+        directory_.take_handshake_overdue(at(milliseconds(5001)), K_HANDSHAKE_LIMIT, first_call);
+        ASSERT_EQ(first_call.size(), 1u);
+
+        std::vector<PeerID> second_call;
+        directory_.take_handshake_overdue(at(milliseconds(900000)), K_HANDSHAKE_LIMIT, second_call);
+
+        EXPECT_TRUE(second_call.empty());
+    }
+
+    TEST_F(Small_WorkerDirectory, RemovePeerReportsAnUnregisteredPeerAsKnownWithItsNameAndEndpoint)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(say_hello(K_FIRST).step, HandshakeStep::Accepted);
 
         const RemovedPeer removed = directory_.remove_peer(K_FIRST);
+
         EXPECT_TRUE(removed.known);
         EXPECT_FALSE(removed.registered);
         EXPECT_EQ(removed.name, "worker");
         EXPECT_EQ(removed.endpoint, "10.0.0.1:7000");
+    }
+
+    TEST_F(Small_WorkerDirectory, RemovePeerOfAPeerAlreadyRemovedFindsNothing)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_TRUE(directory_.remove_peer(K_FIRST).known);
+
         EXPECT_FALSE(directory_.remove_peer(K_FIRST).known);
-        EXPECT_EQ(directory_.alive_count(), 1u);
+    }
+
+    TEST_F(Medium_WorkerDirectory, WaitForZeroWorkersIsReachedAtOnce)
+    {
+        EXPECT_TRUE(directory_.wait_for_workers(0, milliseconds(0)));
+    }
+
+    TEST_F(Medium_WorkerDirectory, WaitForAWorkerNobodyRegisteredTimesOut)
+    {
+        EXPECT_FALSE(directory_.wait_for_workers(1, milliseconds(0)));
+    }
+
+    TEST_F(Medium_WorkerDirectory, WaitForWorkersIsReachedAtOnceOnceTheCountIsAlive)
+    {
+        ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+
+        EXPECT_TRUE(directory_.wait_for_workers(1, milliseconds(0)));
     }
 
     TEST_F(Medium_WorkerDirectory, WaitForWorkersWakesOnRegistration)
     {
-        EXPECT_TRUE(directory_.wait_for_workers(0, milliseconds(0)));
-        EXPECT_FALSE(directory_.wait_for_workers(1, milliseconds(0)));
-
         std::atomic<bool> reached{false};
         std::thread waiter([&] { reached = directory_.wait_for_workers(1, K_UNTIL_WOKEN); });
-        const HandshakeStep step = register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0)));
+
+        const HandshakeStep step =
+            register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0)));
         waiter.join();
 
-        EXPECT_EQ(step, HandshakeStep::Accepted);
+        ASSERT_EQ(step, HandshakeStep::Accepted);
         EXPECT_TRUE(reached.load());
-        EXPECT_TRUE(directory_.wait_for_workers(1, milliseconds(0)));
-
-        std::atomic<bool> reached_two{true};
-        std::thread second_waiter(
-            [&] { reached_two = directory_.wait_for_workers(2, K_UNTIL_WOKEN); });
-        directory_.close();
-        second_waiter.join();
-
-        EXPECT_FALSE(reached_two.load()) << "close() wakes a waiter whose count was not reached";
     }
 
-    TEST_F(Medium_WorkerDirectory, WrongProofIsRejected)
+    TEST_F(Medium_WorkerDirectory, CloseWakesAWaiterWhoseCountWasNotReached)
     {
-        const HandshakeNonce worker_nonce = nonce_of(0x11);
-        const HandshakeNonce master_nonce = nonce_of(0x22);
-        const std::vector<std::uint8_t> other_secret(32, 0xee);
-        const span<const std::uint8_t> other(other_secret.data(), other_secret.size());
+        std::atomic<bool> reached{true};
+        std::thread waiter([&] { reached = directory_.wait_for_workers(2, K_UNTIL_WOKEN); });
 
-        directory_.add_peer(K_FIRST, "10.0.0.1:7000", at(milliseconds(0)));
-        const HelloReply reply =
-            directory_.accept_hello(K_FIRST, hello_with(worker_nonce), master_nonce);
+        directory_.close();
+        waiter.join();
+
+        EXPECT_FALSE(reached.load());
+    }
+
+    TEST_F(Medium_WorkerDirectory, ClosedDirectoryReachesNoCountItHeldWhenItClosed)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        directory_.close();
+
+        EXPECT_FALSE(directory_.wait_for_workers(2, milliseconds(0)));
+    }
+
+    TEST_F(Medium_WorkerDirectory, ClosedDirectoryReachesNoCountEvenZero)
+    {
+        directory_.close();
+
+        EXPECT_FALSE(directory_.wait_for_workers(0, milliseconds(0)));
+    }
+
+    TEST_F(Small_WorkerDirectory, HelloReplyCarriesTheMasterProofOfTheNonces)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+
+        const HelloReply reply = say_hello(K_FIRST);
+
         ASSERT_EQ(reply.step, HandshakeStep::Accepted);
-        EXPECT_EQ(reply.master_proof,
-                  compute_proof(HandshakeRole::Master, secret(), worker_nonce, master_nonce));
+        EXPECT_EQ(reply.master_proof, compute_proof(HandshakeRole::Master, secret(),
+                                                    worker_nonce_of(K_FIRST),
+                                                    master_nonce_of(K_FIRST)));
+    }
 
-        EXPECT_EQ(directory_.accept_proof(
-                      K_FIRST, proof_with(other, worker_nonce, master_nonce, {}, 4),
+    TEST_F(Small_WorkerDirectory, ProofMadeUnderAnotherSecretFailsAuthenticationAndRegistersNobody)
+    {
+        const std::vector<std::uint8_t> other_secret(32, 0xee);
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(say_hello(K_FIRST).step, HandshakeStep::Accepted);
+
+        const HandshakeStep step = directory_.accept_proof(
+            K_FIRST,
+            proof_with(span<const std::uint8_t>(other_secret.data(), other_secret.size()),
+                       worker_nonce_of(K_FIRST), master_nonce_of(K_FIRST), {}, 4),
+            at(milliseconds(1)));
+
+        EXPECT_EQ(step, HandshakeStep::AuthenticationFailed);
+        EXPECT_EQ(directory_.alive_count(), 0u);
+    }
+
+    TEST_F(Small_WorkerDirectory, RefusedProofLeavesThePeerOutOfTheWorkerMessages)
+    {
+        const std::vector<std::uint8_t> other_secret(32, 0xee);
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(say_hello(K_FIRST).step, HandshakeStep::Accepted);
+        ASSERT_EQ(directory_.accept_proof(
+                      K_FIRST,
+                      proof_with(span<const std::uint8_t>(other_secret.data(), other_secret.size()),
+                                 worker_nonce_of(K_FIRST), master_nonce_of(K_FIRST), {}, 4),
                       at(milliseconds(1))),
                   HandshakeStep::AuthenticationFailed);
-        EXPECT_EQ(directory_.alive_count(), 0u);
+
         EXPECT_FALSE(directory_.admits(K_FIRST, MessageType::TaskResult));
         EXPECT_FALSE(directory_.admits(K_FIRST, MessageType::Proof));
-
-        // The refused proof spent the nonces, so the right proof for them comes too late.
-        EXPECT_EQ(directory_.accept_proof(
-                      K_FIRST, proof_with(secret(), worker_nonce, master_nonce, {}, 4),
-                      at(milliseconds(2))),
-                  HandshakeStep::OutOfOrder);
-
-        const HelloReply second =
-            directory_.accept_hello(K_FIRST, hello_with(worker_nonce), master_nonce);
-        ASSERT_EQ(second.step, HandshakeStep::Accepted);
-        Wire::ProofMessage replayed;
-        replayed.worker_proof = to_wire(second.master_proof);
-        replayed.max_jobs = 4;
-        EXPECT_EQ(directory_.accept_proof(K_FIRST, replayed, at(milliseconds(3))),
-                  HandshakeStep::AuthenticationFailed)
-            << "the master's own proof does not pass as the worker's";
-
-        ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(worker_nonce), master_nonce).step,
-                  HandshakeStep::Accepted);
-        EXPECT_EQ(directory_.accept_proof(
-                      K_FIRST,
-                      proof_with(span<const std::uint8_t>(), worker_nonce, master_nonce, {}, 4),
-                      at(milliseconds(4))),
-                  HandshakeStep::AuthenticationFailed)
-            << "a worker without the secret file proves under an empty key";
-
-        EXPECT_EQ(directory_.alive_count(), 0u);
-        EXPECT_FALSE(directory_.remove_peer(K_FIRST).registered);
     }
 
-    TEST_F(Medium_WorkerDirectory, SecondHelloRestartsTheHandshake)
+    TEST_F(Small_WorkerDirectory, RefusedProofSpendsItsNoncesSoTheRightProofComesTooLate)
     {
-        const HandshakeNonce first_worker_nonce = nonce_of(0x11);
-        const HandshakeNonce first_master_nonce = nonce_of(0x22);
+        const std::vector<std::uint8_t> other_secret(32, 0xee);
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(say_hello(K_FIRST).step, HandshakeStep::Accepted);
+        ASSERT_EQ(directory_.accept_proof(
+                      K_FIRST,
+                      proof_with(span<const std::uint8_t>(other_secret.data(), other_secret.size()),
+                                 worker_nonce_of(K_FIRST), master_nonce_of(K_FIRST), {}, 4),
+                      at(milliseconds(1))),
+                  HandshakeStep::AuthenticationFailed);
+
+        EXPECT_EQ(prove(K_FIRST, {}, 4, at(milliseconds(2))), HandshakeStep::OutOfOrder);
+    }
+
+    TEST_F(Small_WorkerDirectory, MasterProofSentBackDoesNotPassAsTheWorkerProof)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+        const HelloReply reply = say_hello(K_FIRST);
+        ASSERT_EQ(reply.step, HandshakeStep::Accepted);
+        Wire::ProofMessage replayed;
+        replayed.worker_proof = to_wire(reply.master_proof);
+        replayed.max_jobs = 4;
+
+        EXPECT_EQ(directory_.accept_proof(K_FIRST, replayed, at(milliseconds(1))),
+                  HandshakeStep::AuthenticationFailed);
+    }
+
+    TEST_F(Small_WorkerDirectory, ProofUnderAnEmptyKeyFailsAuthentication)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(say_hello(K_FIRST).step, HandshakeStep::Accepted);
+
+        EXPECT_EQ(directory_.accept_proof(
+                      K_FIRST,
+                      proof_with(span<const std::uint8_t>(), worker_nonce_of(K_FIRST),
+                                 master_nonce_of(K_FIRST), {}, 4),
+                      at(milliseconds(1))),
+                  HandshakeStep::AuthenticationFailed);
+    }
+
+    TEST_F(Small_WorkerDirectory, HelloFromAnUnknownPeerAnswersUnknownPeer)
+    {
+        EXPECT_EQ(say_hello(K_STRANGER).step, HandshakeStep::UnknownPeer);
+    }
+
+    TEST_F(Small_WorkerDirectory, ProofFromAnUnknownPeerAnswersUnknownPeer)
+    {
+        EXPECT_EQ(prove(K_STRANGER, {}, 4, at(milliseconds(0))), HandshakeStep::UnknownPeer);
+    }
+
+    TEST_F(Small_WorkerDirectory, SecondHelloAnswersTheMasterProofOfItsOwnNonces)
+    {
         const HandshakeNonce second_worker_nonce = nonce_of(0x33);
         const HandshakeNonce second_master_nonce = nonce_of(0x44);
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(say_hello(K_FIRST).step, HandshakeStep::Accepted);
 
-        EXPECT_EQ(directory_.accept_hello(K_STRANGER, hello_with(first_worker_nonce),
-                                          first_master_nonce).step,
-                  HandshakeStep::UnknownPeer);
-        EXPECT_EQ(directory_.accept_proof(
-                      K_STRANGER,
-                      proof_with(secret(), first_worker_nonce, first_master_nonce, {}, 4),
-                      at(milliseconds(0))),
-                  HandshakeStep::UnknownPeer);
+        const HelloReply second = directory_.accept_hello(
+            K_FIRST, hello_with(second_worker_nonce), second_master_nonce);
 
-        directory_.add_peer(K_FIRST, "10.0.0.1:7000", at(milliseconds(0)));
-        directory_.add_peer(K_SECOND, "10.0.0.2:7000", at(milliseconds(0)));
-        for (const PeerID peer : {K_FIRST, K_SECOND})
-        {
-            const HelloReply first =
-                directory_.accept_hello(peer, hello_with(first_worker_nonce), first_master_nonce);
-            const HelloReply second =
-                directory_.accept_hello(peer, hello_with(second_worker_nonce), second_master_nonce);
-            ASSERT_EQ(first.step, HandshakeStep::Accepted);
-            ASSERT_EQ(second.step, HandshakeStep::Accepted);
-            EXPECT_NE(first.master_proof, second.master_proof);
-            EXPECT_EQ(second.master_proof,
-                      compute_proof(HandshakeRole::Master, secret(), second_worker_nonce,
-                                    second_master_nonce));
-        }
+        ASSERT_EQ(second.step, HandshakeStep::Accepted);
+        EXPECT_EQ(second.master_proof, compute_proof(HandshakeRole::Master, secret(),
+                                                     second_worker_nonce, second_master_nonce));
+    }
+
+    TEST_F(Small_WorkerDirectory, ProofForTheNoncesOfTheFirstHelloFailsAfterASecondHello)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(say_hello(K_FIRST).step, HandshakeStep::Accepted);
+        ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(nonce_of(0x33)), nonce_of(0x44)).step,
+                  HandshakeStep::Accepted);
+
+        EXPECT_EQ(prove(K_FIRST, {}, 4, at(milliseconds(1))), HandshakeStep::AuthenticationFailed);
+    }
+
+    TEST_F(Small_WorkerDirectory, ProofForTheNoncesOfTheSecondHelloRegistersTheWorker)
+    {
+        const HandshakeNonce second_worker_nonce = nonce_of(0x33);
+        const HandshakeNonce second_master_nonce = nonce_of(0x44);
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(say_hello(K_FIRST).step, HandshakeStep::Accepted);
+        ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(second_worker_nonce),
+                                          second_master_nonce).step,
+                  HandshakeStep::Accepted);
 
         EXPECT_EQ(directory_.accept_proof(
                       K_FIRST,
-                      proof_with(secret(), first_worker_nonce, first_master_nonce, {}, 4),
-                      at(milliseconds(1))),
-                  HandshakeStep::AuthenticationFailed)
-            << "a proof for the nonces of the first HELLO";
-        EXPECT_EQ(directory_.accept_proof(
-                      K_SECOND,
                       proof_with(secret(), second_worker_nonce, second_master_nonce, {}, 4),
                       at(milliseconds(1))),
                   HandshakeStep::Accepted);
-        EXPECT_EQ(directory_.alive_count(), 1u);
-
-        // A registered worker owes no handshake frame, and sending one costs it nothing.
-        EXPECT_EQ(directory_.accept_hello(K_SECOND, hello_with(first_worker_nonce),
-                                          first_master_nonce).step,
-                  HandshakeStep::AlreadyRegistered);
-        EXPECT_EQ(directory_.accept_proof(
-                      K_SECOND,
-                      proof_with(secret(), second_worker_nonce, second_master_nonce, {}, 4),
-                      at(milliseconds(2))),
-                  HandshakeStep::OutOfOrder);
-        EXPECT_EQ(directory_.alive_count(), 1u);
-        EXPECT_TRUE(directory_.admits(K_SECOND, MessageType::TaskResult));
     }
 
-    TEST_F(Medium_WorkerDirectory, SilentWorkerIsTakenOnce)
+    TEST_F(Small_WorkerDirectory, ProofFromARegisteredWorkerAnswersOutOfOrderAndChangesNothing)
     {
-        const sushi_ptr<Internal::Graph::Node> node = common_node();
-        const milliseconds liveness(500);
+        ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
 
-        ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION, K_COMMON_OPERATION}, 4,
-                                  at(milliseconds(0))),
-                  HandshakeStep::Accepted);
-        ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
-                  HandshakeStep::Accepted);
-        EXPECT_EQ(directory_.alive_count(), 2u);
-        EXPECT_TRUE(directory_.supports(K_RARE_OPERATION));
-        EXPECT_TRUE(directory_.supports(K_COMMON_OPERATION));
-        EXPECT_FALSE(directory_.supports(K_ABSENT_OPERATION));
+        EXPECT_EQ(prove(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(1))),
+                  HandshakeStep::OutOfOrder);
+        EXPECT_EQ(directory_.alive_count(), 1u);
+    }
+
+    TEST_F(Small_WorkerDirectory, TakeSilentLeavesAWorkerThatIsAtTheLimit)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
 
         std::vector<PeerID> silent;
-        directory_.take_silent(at(milliseconds(500)), liveness, silent);
-        EXPECT_TRUE(silent.empty()) << "the limit itself is still within the limit";
+        directory_.take_silent(at(milliseconds(500)), K_LIVENESS, silent);
 
+        EXPECT_TRUE(silent.empty());
+    }
+
+    TEST_F(Small_WorkerDirectory, TakeSilentListsOnlyTheWorkerWithoutAFrameWithinTheLimit)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
         directory_.note_frame(K_SECOND, at(milliseconds(900)));
-        directory_.take_silent(at(milliseconds(1000)), liveness, silent);
-        EXPECT_EQ(values_of(silent), (std::vector<std::uint32_t>{1}));
-        EXPECT_EQ(directory_.alive_count(), 1u);
 
-        directory_.take_silent(at(milliseconds(1000)), liveness, silent);
-        EXPECT_EQ(silent.size(), 1u) << "a worker already taken is not listed again";
+        std::vector<PeerID> silent;
+        directory_.take_silent(at(milliseconds(1000)), K_LIVENESS, silent);
+
+        EXPECT_EQ(values_of(silent), (std::vector<std::uint32_t>{1}));
+    }
+
+    TEST_F(Small_WorkerDirectory, TakeSilentStopsCountingTheWorkerAsAlive)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        directory_.note_frame(K_SECOND, at(milliseconds(900)));
+
+        std::vector<PeerID> silent;
+        directory_.take_silent(at(milliseconds(1000)), K_LIVENESS, silent);
+
+        EXPECT_EQ(directory_.alive_count(), 1u);
+    }
+
+    TEST_F(Small_WorkerDirectory, TakeSilentListsAWorkerOnce)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        directory_.note_frame(K_SECOND, at(milliseconds(900)));
+        std::vector<PeerID> first_call;
+        directory_.take_silent(at(milliseconds(1000)), K_LIVENESS, first_call);
+        ASSERT_EQ(first_call.size(), 1u);
+
+        std::vector<PeerID> second_call;
+        directory_.take_silent(at(milliseconds(1000)), K_LIVENESS, second_call);
+
+        EXPECT_TRUE(second_call.empty());
+    }
+
+    TEST_F(Small_WorkerDirectory, TakenWorkerLeavesTheWorkerList)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        directory_.note_frame(K_SECOND, at(milliseconds(900)));
+        std::vector<PeerID> silent;
+        directory_.take_silent(at(milliseconds(1000)), K_LIVENESS, silent);
 
         std::vector<PeerID> workers;
         directory_.list_workers(workers);
+
         EXPECT_EQ(values_of(workers), (std::vector<std::uint32_t>{2}));
-        EXPECT_FALSE(directory_.supports(K_RARE_OPERATION));
-        EXPECT_TRUE(directory_.supports(K_COMMON_OPERATION));
-
-        const std::optional<PeerID> picked = directory_.pick(*node, 1024);
-        ASSERT_TRUE(picked.has_value());
-        EXPECT_EQ(picked->value, 2u);
-        EXPECT_EQ(policy_->offered_ids(), (std::vector<int>{2}));
-
-        // A late frame does not bring the worker back; only a new connection registers.
-        directory_.note_frame(K_FIRST, at(milliseconds(1001)));
-        EXPECT_EQ(directory_.alive_count(), 1u);
-
-        const RemovedPeer removed = directory_.remove_peer(K_FIRST);
-        EXPECT_TRUE(removed.known);
-        EXPECT_TRUE(removed.registered);
-        EXPECT_EQ(directory_.alive_count(), 1u) << "the worker stopped counting when it was taken";
-
-        directory_.take_silent(at(milliseconds(1401)), liveness, silent);
-        EXPECT_EQ(values_of(silent), (std::vector<std::uint32_t>{1, 2}));
-        EXPECT_EQ(directory_.alive_count(), 0u);
-        EXPECT_FALSE(directory_.supports(K_COMMON_OPERATION));
-        EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
     }
 
-    TEST_F(Medium_WorkerDirectory, PickSkipsWorkersAtTheirJobLimit)
+    TEST_F(Small_WorkerDirectory, KernelsOfATakenWorkerStopCountingAndTheOthersStay)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        ASSERT_TRUE(directory_.supports(K_RARE_OPERATION));
+        directory_.note_frame(K_SECOND, at(milliseconds(900)));
+        std::vector<PeerID> silent;
+        directory_.take_silent(at(milliseconds(1000)), K_LIVENESS, silent);
+
+        EXPECT_FALSE(directory_.supports(K_RARE_OPERATION));
+        EXPECT_TRUE(directory_.supports(K_COMMON_OPERATION));
+    }
+
+    TEST_F(Small_WorkerDirectory, SupportsNoOperationNoWorkerSent)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+
+        EXPECT_FALSE(directory_.supports(K_ABSENT_OPERATION));
+    }
+
+    TEST_F(Small_WorkerDirectory, PickSkipsATakenWorker)
+    {
+        const sushi_ptr<Internal::Graph::Node> node = common_node();
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        directory_.note_frame(K_SECOND, at(milliseconds(900)));
+        std::vector<PeerID> silent;
+        directory_.take_silent(at(milliseconds(1000)), K_LIVENESS, silent);
+
+        const std::optional<PeerID> picked = directory_.pick(*node, K_TASK_BYTES);
+
+        ASSERT_TRUE(picked.has_value());
+        EXPECT_EQ(picked->value, 2u);
+    }
+
+    TEST_F(Small_WorkerDirectory, LateFrameDoesNotBringATakenWorkerBack)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        directory_.note_frame(K_SECOND, at(milliseconds(900)));
+        std::vector<PeerID> silent;
+        directory_.take_silent(at(milliseconds(1000)), K_LIVENESS, silent);
+
+        directory_.note_frame(K_FIRST, at(milliseconds(1001)));
+
+        EXPECT_EQ(directory_.alive_count(), 1u);
+    }
+
+    TEST_F(Small_WorkerDirectory, RemovePeerReportsATakenWorkerAsRegistered)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        directory_.note_frame(K_SECOND, at(milliseconds(900)));
+        std::vector<PeerID> silent;
+        directory_.take_silent(at(milliseconds(1000)), K_LIVENESS, silent);
+
+        const RemovedPeer removed = directory_.remove_peer(K_FIRST);
+
+        EXPECT_TRUE(removed.known);
+        EXPECT_TRUE(removed.registered);
+    }
+
+    TEST_F(Small_WorkerDirectory, RemovePeerDoesNotUncountATakenWorkerAgain)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        directory_.note_frame(K_SECOND, at(milliseconds(900)));
+        std::vector<PeerID> silent;
+        directory_.take_silent(at(milliseconds(1000)), K_LIVENESS, silent);
+
+        static_cast<void>(directory_.remove_peer(K_FIRST));
+
+        EXPECT_EQ(directory_.alive_count(), 1u);
+    }
+
+    TEST_F(Small_WorkerDirectory, EverySilentWorkerTakenLeavesNothingToPick)
+    {
+        const sushi_ptr<Internal::Graph::Node> node = common_node();
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        std::vector<PeerID> silent;
+        directory_.take_silent(at(milliseconds(1000)), K_LIVENESS, silent);
+        ASSERT_EQ(values_of(silent), (std::vector<std::uint32_t>{1, 2}));
+
+        EXPECT_FALSE(directory_.pick(*node, K_TASK_BYTES).has_value());
+    }
+
+    TEST_F(Small_WorkerDirectory, PickWithNoWorkerReturnsNothing)
     {
         const sushi_ptr<Internal::Graph::Node> node = common_node();
 
-        EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
-        EXPECT_EQ(policy_->calls, 0) << "the policy is not asked when no worker has room";
-
-        ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 1, at(milliseconds(0))), HandshakeStep::Accepted);
-        ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 2, at(milliseconds(0))), HandshakeStep::Accepted);
-
-        std::optional<PeerID> picked = directory_.pick(*node, 1024);
-        ASSERT_TRUE(picked.has_value());
-        EXPECT_EQ(picked->value, 1u);
-        EXPECT_EQ(policy_->offered_ids(), (std::vector<int>{1, 2}));
-
-        picked = directory_.pick(*node, 1024);
-        ASSERT_TRUE(picked.has_value());
-        EXPECT_EQ(picked->value, 2u);
-        EXPECT_EQ(policy_->offered_ids(), (std::vector<int>{2}));
-        ASSERT_EQ(policy_->offered.size(), 1u);
-        EXPECT_TRUE(policy_->offered[0].alive);
-        EXPECT_EQ(policy_->offered[0].inflight, 0u);
-
-        picked = directory_.pick(*node, 1024);
-        ASSERT_TRUE(picked.has_value());
-        EXPECT_EQ(picked->value, 2u);
-        EXPECT_EQ(policy_->offered[0].inflight, 1u);
-        EXPECT_EQ(policy_->calls, 3);
-
-        EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
-        EXPECT_EQ(policy_->calls, 3) << "both workers are at the limit they sent in PROOF";
-
-        directory_.release_inflight(K_FIRST);
-        directory_.release_inflight(K_FIRST);
-        picked = directory_.pick(*node, 1024);
-        ASSERT_TRUE(picked.has_value());
-        EXPECT_EQ(picked->value, 1u) << "one release frees one slot, and a second lowers nothing";
-        EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
-
-        // An answer the policy was not offered counts as no pick and raises no count.
-        directory_.release_inflight(K_SECOND);
-        policy_->answer = 1;
-        EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
-        policy_->answer = 77;
-        EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
-        policy_->answer.reset();
-
-        policy_->keeps_local = true;
-        EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
-        policy_->keeps_local = false;
-
-        directory_.close();
-        const int calls_before_close = policy_->calls;
-        EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
-        EXPECT_EQ(policy_->calls, calls_before_close) << "a closed directory asks nobody";
+        EXPECT_FALSE(directory_.pick(*node, K_TASK_BYTES).has_value());
     }
 
-    /** @brief Tests that pick() offers a node only to a worker that holds its kernel. */
-    TEST_F(Medium_WorkerDirectory, PickOffersOnlyWorkersWithTheKernel)
+    TEST_F(Small_WorkerDirectory, PickKeepsATaskLocalBelowTheByteThresholdOfThePolicy)
     {
-        using std::chrono::milliseconds;
+        const sushi_ptr<Internal::Graph::Node> node = common_node();
+        ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
 
+        EXPECT_FALSE(directory_.pick(*node, K_LOCAL_BYTES).has_value());
+    }
+
+    TEST_F(Small_WorkerDirectory, PickCountsTheTaskAgainstThePickedWorker)
+    {
+        const sushi_ptr<Internal::Graph::Node> node = common_node();
+        ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_TRUE(directory_.pick(*node, K_TASK_BYTES).has_value());
+
+        std::vector<WorkerSnapshot> workers;
+        directory_.snapshot(at(milliseconds(1)), workers);
+
+        ASSERT_EQ(workers.size(), 1u);
+        EXPECT_EQ(workers[0].inflight, 1u);
+    }
+
+    TEST_F(Small_WorkerDirectory, PickSkipsAWorkerAtItsJobLimit)
+    {
+        const sushi_ptr<Internal::Graph::Node> node = common_node();
+        ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 1, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 2, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_EQ(directory_.pick(*node, K_TASK_BYTES)->value, 1u);
+
+        const std::optional<PeerID> picked = directory_.pick(*node, K_TASK_BYTES);
+
+        ASSERT_TRUE(picked.has_value());
+        EXPECT_EQ(picked->value, 2u);
+    }
+
+    TEST_F(Small_WorkerDirectory, PickReturnsNothingWhenEveryWorkerIsAtItsJobLimit)
+    {
+        const sushi_ptr<Internal::Graph::Node> node = common_node();
+        ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 1, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 2, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_TRUE(directory_.pick(*node, K_TASK_BYTES).has_value());
+        ASSERT_TRUE(directory_.pick(*node, K_TASK_BYTES).has_value());
+        ASSERT_TRUE(directory_.pick(*node, K_TASK_BYTES).has_value());
+
+        EXPECT_FALSE(directory_.pick(*node, K_TASK_BYTES).has_value());
+    }
+
+    TEST_F(Small_WorkerDirectory, ReleaseInflightFreesOneSlotAndASecondReleaseLowersNothing)
+    {
+        const sushi_ptr<Internal::Graph::Node> node = common_node();
+        ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 1, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_EQ(directory_.pick(*node, K_TASK_BYTES)->value, 1u);
+        ASSERT_FALSE(directory_.pick(*node, K_TASK_BYTES).has_value());
+
+        directory_.release_inflight(K_FIRST);
+        directory_.release_inflight(K_FIRST);
+        const std::optional<PeerID> refilled = directory_.pick(*node, K_TASK_BYTES);
+        const std::optional<PeerID> overfilled = directory_.pick(*node, K_TASK_BYTES);
+
+        ASSERT_TRUE(refilled.has_value());
+        EXPECT_EQ(refilled->value, 1u);
+        EXPECT_FALSE(overfilled.has_value());
+    }
+
+    TEST_F(Small_WorkerDirectory, PickOnAClosedDirectoryReturnsNothing)
+    {
+        const sushi_ptr<Internal::Graph::Node> node = common_node();
+        ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        directory_.close();
+
+        EXPECT_FALSE(directory_.pick(*node, K_TASK_BYTES).has_value());
+    }
+
+    TEST_F(Small_WorkerDirectory, PickOffersATaskToTheWorkerThatHoldsItsKernel)
+    {
+        const sushi_ptr<Internal::Graph::Node> rare = rare_node();
         ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
                   HandshakeStep::Accepted);
         ASSERT_EQ(register_worker(K_SECOND, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
                   HandshakeStep::Accepted);
 
-        const sushi_ptr<Internal::Graph::Node> rare = make_sushi<Internal::Graph::Node>();
-        rare->metadata.op_id = K_RARE_OPERATION;
-        for (int round = 0; round < 4; ++round)
-        {
-            const std::optional<PeerID> picked = directory_.pick(*rare, 1024);
-            ASSERT_TRUE(picked.has_value());
-            EXPECT_EQ(picked->value, K_SECOND.value) << "the task went to a worker without its kernel";
-        }
+        const std::optional<PeerID> picked = directory_.pick(*rare, K_TASK_BYTES);
 
-        // The only worker with the kernel is full; the other one is not a fallback.
-        EXPECT_FALSE(directory_.pick(*rare, 1024).has_value());
-
-        const sushi_ptr<Internal::Graph::Node> untagged = make_sushi<Internal::Graph::Node>();
-        EXPECT_FALSE(directory_.pick(*untagged, 1024).has_value())
-            << "a node with no operation was offered to a worker";
+        ASSERT_TRUE(picked.has_value());
+        EXPECT_EQ(picked->value, K_SECOND.value);
     }
 
-    TEST_F(Medium_WorkerDirectory, SnapshotReportsWhatTheWorkerSent)
+    TEST_F(Small_WorkerDirectory, PickDoesNotFallBackToAWorkerWithoutTheKernelWhenTheHolderIsFull)
     {
-        const sushi_ptr<Internal::Graph::Node> node = common_node();
+        const sushi_ptr<Internal::Graph::Node> rare = rare_node();
+        ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_EQ(register_worker(K_SECOND, {K_RARE_OPERATION}, 1, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_TRUE(directory_.pick(*rare, K_TASK_BYTES).has_value());
 
-        directory_.add_peer(K_FIRST, "10.0.0.1:7000", at(milliseconds(0)));
-        ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(100))),
+        EXPECT_FALSE(directory_.pick(*rare, K_TASK_BYTES).has_value());
+    }
+
+    TEST_F(Small_WorkerDirectory, PickOffersNoWorkerATaskWithNoOperation)
+    {
+        const sushi_ptr<Internal::Graph::Node> untagged = make_sushi<Internal::Graph::Node>();
+        ASSERT_EQ(register_worker(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
                   HandshakeStep::Accepted);
 
-        directory_.note_pong(K_SECOND, 250, 4096);
-        directory_.note_heartbeat(K_SECOND, 3, 8192);
-        directory_.note_frame(K_SECOND, at(milliseconds(400)));
-        directory_.note_pong(K_FIRST, 1, 1);
-        ASSERT_TRUE(directory_.pick(*node, 1024).has_value());
+        EXPECT_FALSE(directory_.pick(*untagged, K_TASK_BYTES).has_value());
+    }
+
+    TEST_F(Small_WorkerDirectory, SnapshotListsOnlyAPeerThatFinishedTheHandshake)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(100))),
+                  HandshakeStep::Accepted);
 
         std::vector<WorkerSnapshot> workers;
         directory_.snapshot(at(milliseconds(1000)), workers);
 
-        ASSERT_EQ(workers.size(), 1u) << "a peer that has not finished the handshake is no worker";
+        ASSERT_EQ(workers.size(), 1u);
         EXPECT_EQ(workers[0].id, 2u);
+    }
+
+    TEST_F(Small_WorkerDirectory, SnapshotReportsWhatTheWorkerSent)
+    {
+        const sushi_ptr<Internal::Graph::Node> node = common_node();
+        ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(100))),
+                  HandshakeStep::Accepted);
+        directory_.note_pong(K_SECOND, 250, 4096);
+        directory_.note_heartbeat(K_SECOND, 3, 8192);
+        directory_.note_frame(K_SECOND, at(milliseconds(400)));
+        ASSERT_TRUE(directory_.pick(*node, K_TASK_BYTES).has_value());
+
+        std::vector<WorkerSnapshot> workers;
+        directory_.snapshot(at(milliseconds(1000)), workers);
+
+        ASSERT_EQ(workers.size(), 1u);
         EXPECT_EQ(workers[0].name, "worker");
         EXPECT_EQ(workers[0].endpoint, "10.0.0.2:7000");
         EXPECT_EQ(workers[0].inflight, 1u);
@@ -673,93 +988,80 @@ namespace WorkerDirectoryTests
         EXPECT_EQ(workers[0].ms_since_last_frame, 600u);
     }
 
-    TEST_F(Medium_WorkerDirectory, FactsFollowTheNameAndOnlyAProvenHelloReplacesThem)
+    TEST_F(Small_WorkerDirectory, TargetNamingTheMachineLabelAndDeviceOfAProvenHelloPicksItsWorker)
     {
-        const sushi_ptr<Internal::Graph::Node> node = common_node();
-        const std::string name = "gpu-box";
-        const std::string zone_key = "zone";
-        const std::string first_zone = "a";
-        const std::string second_zone = "b";
-        const std::string device_name = "Test GPU";
-
-        // Sends HELLO under the shared name with one label and one device; proves when asked.
-        const auto connect = [&](PeerID peer, const std::string& zone, bool proves)
-        {
-            const HandshakeNonce worker_nonce =
-                nonce_of(static_cast<std::uint8_t>(0x10 + peer.value));
-            const HandshakeNonce master_nonce =
-                nonce_of(static_cast<std::uint8_t>(0x80 + peer.value));
-            Wire::HelloMessage hello = hello_with(worker_nonce);
-            hello.node_name = name;
-            hello.operating_system = OperatingSystem::Linux;
-            hello.labels.push_back(Wire::HelloLabel{zone_key, zone});
-            hello.devices.push_back(Wire::HelloDevice{DeviceKind::GPU, device_name, 4096});
-
-            directory_.add_peer(peer, "10.0.0.1:7000", at(milliseconds(0)));
-            ASSERT_EQ(directory_.accept_hello(peer, hello, master_nonce).step,
-                      HandshakeStep::Accepted);
-            if (!proves)
-                return;
-
-            ASSERT_EQ(directory_.accept_proof(peer,
-                                              proof_with(secret(), worker_nonce, master_nonce,
-                                                         {K_COMMON_OPERATION}, 4),
-                                              at(milliseconds(0))),
-                      HandshakeStep::Accepted);
-        };
-
-        connect(K_FIRST, first_zone, true);
-        ASSERT_TRUE(directory_.pick(*node, 1024).has_value());
-        ASSERT_EQ(policy_->facts_seen.size(), 1u);
-        EXPECT_EQ(policy_->facts_seen[0].name, name);
-        EXPECT_EQ(policy_->facts_seen[0].operating_system, OperatingSystem::Linux);
-        ASSERT_EQ(policy_->facts_seen[0].labels.size(), 1u);
-        EXPECT_EQ(policy_->facts_seen[0].labels[0].value, first_zone);
-        ASSERT_EQ(policy_->facts_seen[0].devices.size(), 1u);
-        EXPECT_EQ(policy_->facts_seen[0].devices[0].kind, DeviceKind::GPU);
-        EXPECT_EQ(policy_->facts_seen[0].devices[0].name, device_name);
-        EXPECT_EQ(policy_->facts_seen[0].devices[0].memory_bytes, 4096u);
-
-        // A HELLO that has not proved the secret replaces nothing.
-        connect(K_SECOND, second_zone, false);
-        ASSERT_TRUE(directory_.pick(*node, 1024).has_value());
-        ASSERT_EQ(policy_->facts_seen.size(), 1u);
-        EXPECT_EQ(policy_->facts_seen[0].labels[0].value, first_zone);
-
-        // The facts outlive the peer, and the proven HELLO of the same name replaces them.
-        const RemovedPeer removed = directory_.remove_peer(K_FIRST);
-        EXPECT_TRUE(removed.registered);
-        EXPECT_FALSE(directory_.pick(*node, 1024).has_value());
-
-        const HandshakeNonce second_worker_nonce = nonce_of(static_cast<std::uint8_t>(0x10 + 2));
-        const HandshakeNonce second_master_nonce = nonce_of(static_cast<std::uint8_t>(0x80 + 2));
-        ASSERT_EQ(directory_.accept_proof(K_SECOND,
-                                          proof_with(secret(), second_worker_nonce,
-                                                     second_master_nonce, {K_COMMON_OPERATION}, 4),
-                                          at(milliseconds(0))),
+        ASSERT_EQ(hello_from_gpu_box(K_FIRST, "a"), HandshakeStep::Accepted);
+        ASSERT_EQ(prove(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
                   HandshakeStep::Accepted);
-        ASSERT_TRUE(directory_.pick(*node, 1024).has_value());
-        ASSERT_EQ(policy_->facts_seen.size(), 1u);
-        EXPECT_EQ(policy_->facts_seen[0].name, name);
-        EXPECT_EQ(policy_->facts_seen[0].labels[0].value, second_zone);
+
+        const TargetPick pick = directory_.pick_target(gpu_in_zone("a"), K_COMMON_OPERATION);
+
+        ASSERT_EQ(pick.status, TargetStatus::Picked);
+        EXPECT_EQ(pick.worker.value, K_FIRST.value);
     }
 
-    TEST_F(Medium_WorkerDirectory, IdentityCarriesTheBuildOfTheLastHello)
+    TEST_F(Small_WorkerDirectory, TargetNeedingMoreDeviceMemoryThanTheHelloReportedIsAbsent)
     {
-        const HandshakeNonce first_worker_nonce = nonce_of(0x11);
-        const HandshakeNonce first_master_nonce = nonce_of(0x22);
+        ASSERT_EQ(hello_from_gpu_box(K_FIRST, "a"), HandshakeStep::Accepted);
+        ASSERT_EQ(prove(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        PlacementTarget target;
+        target.device_min_memory = 4097;
+
+        EXPECT_EQ(directory_.pick_target(target, K_COMMON_OPERATION).status,
+                  TargetStatus::Absent);
+    }
+
+    TEST_F(Small_WorkerDirectory, HelloThatHasNotProvedTheSecretReplacesNoFacts)
+    {
+        ASSERT_EQ(hello_from_gpu_box(K_FIRST, "a"), HandshakeStep::Accepted);
+        ASSERT_EQ(prove(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_EQ(hello_from_gpu_box(K_SECOND, "b"), HandshakeStep::Accepted);
+
+        EXPECT_EQ(directory_.pick_target(gpu_in_zone("b"), K_COMMON_OPERATION).status,
+                  TargetStatus::Absent);
+    }
+
+    TEST_F(Small_WorkerDirectory, ProvenHelloOfTheSameNameReplacesTheFactsOfTheLostWorker)
+    {
+        ASSERT_EQ(hello_from_gpu_box(K_FIRST, "a"), HandshakeStep::Accepted);
+        ASSERT_EQ(prove(K_FIRST, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_TRUE(directory_.remove_peer(K_FIRST).registered);
+        ASSERT_EQ(hello_from_gpu_box(K_SECOND, "b"), HandshakeStep::Accepted);
+        ASSERT_EQ(prove(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+
+        const TargetPick new_zone = directory_.pick_target(gpu_in_zone("b"), K_COMMON_OPERATION);
+        const TargetPick old_zone = directory_.pick_target(gpu_in_zone("a"), K_COMMON_OPERATION);
+
+        ASSERT_EQ(new_zone.status, TargetStatus::Picked);
+        EXPECT_EQ(new_zone.worker.value, K_SECOND.value);
+        EXPECT_EQ(old_zone.status, TargetStatus::Absent);
+    }
+
+    TEST_F(Small_WorkerDirectory, IdentityOfAnUnknownPeerIsEmpty)
+    {
+        EXPECT_FALSE(directory_.identity(K_STRANGER).has_value());
+    }
+
+    TEST_F(Small_WorkerDirectory, IdentityOfAPeerThatOwesProofIsEmpty)
+    {
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(say_hello(K_FIRST).step, HandshakeStep::Accepted);
+
+        EXPECT_FALSE(directory_.identity(K_FIRST).has_value());
+    }
+
+    TEST_F(Small_WorkerDirectory, IdentityCarriesTheBuildOfTheLastHello)
+    {
         const HandshakeNonce second_worker_nonce = nonce_of(0x33);
         const HandshakeNonce second_master_nonce = nonce_of(0x44);
-
-        EXPECT_FALSE(directory_.identity(K_STRANGER).has_value());
-
-        directory_.add_peer(K_FIRST, "10.0.0.1:7000", at(milliseconds(0)));
-        ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(first_worker_nonce, "build-a"),
-                                          first_master_nonce).step,
+        connect(K_FIRST, at(milliseconds(0)));
+        ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(nonce_of(0x11), "build-a"),
+                                          nonce_of(0x22)).step,
                   HandshakeStep::Accepted);
-        EXPECT_FALSE(directory_.identity(K_FIRST).has_value())
-            << "a peer that owes PROOF is no worker yet";
-
         ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(second_worker_nonce, "build-b"),
                                           second_master_nonce).step,
                   HandshakeStep::Accepted);
@@ -770,88 +1072,164 @@ namespace WorkerDirectoryTests
                   HandshakeStep::Accepted);
 
         const std::optional<WorkerIdentity> worker = directory_.identity(K_FIRST);
+
+        ASSERT_TRUE(worker.has_value());
+        EXPECT_EQ(worker->build_id, "build-b");
+    }
+
+    TEST_F(Small_WorkerDirectory, IdentityCarriesTheNameAndEndpointOfARegisteredWorker)
+    {
+        ASSERT_EQ(register_worker(K_FIRST, {}, 4, at(milliseconds(0))), HandshakeStep::Accepted);
+
+        const std::optional<WorkerIdentity> worker = directory_.identity(K_FIRST);
+
         ASSERT_TRUE(worker.has_value());
         EXPECT_EQ(worker->name, "worker");
         EXPECT_EQ(worker->endpoint, "10.0.0.1:7000");
-        EXPECT_EQ(worker->build_id, "build-b");
+    }
 
-        // A registered worker's HELLO leaves what it registered with.
-        ASSERT_EQ(directory_.accept_hello(K_FIRST, hello_with(first_worker_nonce, "build-c"),
-                                          first_master_nonce).step,
-                  HandshakeStep::AlreadyRegistered);
-        EXPECT_EQ(directory_.identity(K_FIRST)->build_id, "build-b");
+    TEST_F(Small_WorkerDirectory, IdentityIsEmptyOnceThePeerIsRemoved)
+    {
+        ASSERT_EQ(register_worker(K_FIRST, {}, 4, at(milliseconds(0))), HandshakeStep::Accepted);
+        ASSERT_TRUE(directory_.remove_peer(K_FIRST).registered);
 
-        EXPECT_TRUE(directory_.remove_peer(K_FIRST).registered);
         EXPECT_FALSE(directory_.identity(K_FIRST).has_value());
     }
 
-    TEST_F(Medium_WorkerDirectory, HelloFromARegisteredWorkerRegistersNothingTwice)
+    TEST_F(Small_WorkerDirectory, RepeatedHelloFromARegisteredWorkerAnswersAlreadyRegistered)
     {
         ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
                   HandshakeStep::Accepted);
-        const sushi_ptr<Internal::Graph::Node> rare = make_sushi<Internal::Graph::Node>();
-        rare->metadata.op_id = K_RARE_OPERATION;
-        ASSERT_TRUE(directory_.pick(*rare, 0).has_value());
-
-        // The worker lost its WELCOME and says HELLO again with a nonce of its own choosing.
         ASSERT_TRUE(directory_.admits(K_FIRST, MessageType::Hello));
-        const HelloReply again =
-            directory_.accept_hello(K_FIRST, hello_with(nonce_of(0x77), "build-z"), nonce_of(0x88));
+
+        const HelloReply again = directory_.accept_hello(K_FIRST, hello_with(nonce_of(0x77), "build-z"),
+                                                         nonce_of(0x88));
 
         EXPECT_EQ(again.step, HandshakeStep::AlreadyRegistered);
+    }
+
+    TEST_F(Small_WorkerDirectory, RepeatedHelloKeepsTheWorkerCountedAndItsKernelsSupported)
+    {
+        ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        static_cast<void>(directory_.accept_hello(K_FIRST, hello_with(nonce_of(0x77), "build-z"),
+                                                  nonce_of(0x88)));
+
         EXPECT_EQ(directory_.alive_count(), 1u);
         EXPECT_TRUE(directory_.supports(K_RARE_OPERATION));
+    }
+
+    TEST_F(Small_WorkerDirectory, RepeatedHelloDoesNotReopenTheHandshake)
+    {
+        ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        static_cast<void>(directory_.accept_hello(K_FIRST, hello_with(nonce_of(0x77), "build-z"),
+                                                  nonce_of(0x88)));
+
         EXPECT_TRUE(directory_.admits(K_FIRST, MessageType::TaskResult));
-        EXPECT_FALSE(directory_.admits(K_FIRST, MessageType::Proof))
-            << "the repeated HELLO reopened the handshake";
+        EXPECT_FALSE(directory_.admits(K_FIRST, MessageType::Proof));
+    }
+
+    TEST_F(Small_WorkerDirectory, RepeatedHelloKeepsATaskThatIsOut)
+    {
+        const sushi_ptr<Internal::Graph::Node> rare = rare_node();
+        ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        ASSERT_TRUE(directory_.pick(*rare, K_TASK_BYTES).has_value());
+        static_cast<void>(directory_.accept_hello(K_FIRST, hello_with(nonce_of(0x77), "build-z"),
+                                                  nonce_of(0x88)));
 
         std::vector<WorkerSnapshot> workers;
         directory_.snapshot(at(milliseconds(1)), workers);
+
         ASSERT_EQ(workers.size(), 1u);
-        EXPECT_EQ(workers[0].id, K_FIRST.value);
-        EXPECT_EQ(workers[0].inflight, 1u) << "the repeated HELLO forgot a task that is out";
+        EXPECT_EQ(workers[0].inflight, 1u);
+    }
+
+    TEST_F(Small_WorkerDirectory, RepeatedHelloLeavesTheIdentityTheWorkerRegisteredWith)
+    {
+        ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION}, 4, at(milliseconds(0))),
+                  HandshakeStep::Accepted);
+        static_cast<void>(directory_.accept_hello(K_FIRST, hello_with(nonce_of(0x77), "build-z"),
+                                                  nonce_of(0x88)));
+
         EXPECT_EQ(directory_.identity(K_FIRST)->build_id, K_BUILD);
     }
 
-    /** @brief Tests that close() leaves no worker alive, no operation supported and no way in. */
-    TEST_F(Medium_WorkerDirectory, CloseRetiresEveryWorker)
+    TEST_F(Small_WorkerDirectory, CloseLeavesNoWorkerAlive)
     {
-        ASSERT_EQ(register_worker(K_FIRST, {K_RARE_OPERATION, K_COMMON_OPERATION}, 4,
-                                  at(milliseconds(0))),
-                  HandshakeStep::Accepted);
-        ASSERT_EQ(register_worker(K_SECOND, {K_COMMON_OPERATION}, 4, at(milliseconds(0))),
-                  HandshakeStep::Accepted);
-        ASSERT_TRUE(directory_.wait_for_workers(2, milliseconds(0)));
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
 
         directory_.close();
 
         EXPECT_EQ(directory_.alive_count(), 0u);
+    }
+
+    TEST_F(Small_WorkerDirectory, CloseEndsSupportForEveryOperation)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+
+        directory_.close();
+
         EXPECT_FALSE(directory_.supports(K_RARE_OPERATION));
         EXPECT_FALSE(directory_.supports(K_COMMON_OPERATION));
-        EXPECT_FALSE(directory_.wait_for_workers(2, milliseconds(100)))
-            << "a closed directory reported the workers it held when it closed";
-        EXPECT_FALSE(directory_.wait_for_workers(0, milliseconds(0)))
-            << "a closed directory reached a count";
+    }
 
-        std::vector<PeerID> listed;
-        directory_.list_workers(listed);
-        EXPECT_TRUE(listed.empty());
-
-        std::vector<WorkerSnapshot> workers;
-        directory_.snapshot(at(milliseconds(1)), workers);
-        EXPECT_TRUE(workers.empty());
-
-        EXPECT_EQ(register_worker(K_THIRD, {K_COMMON_OPERATION}, 4, at(milliseconds(2))),
-                  HandshakeStep::OutOfOrder)
-            << "a peer registered with a closed directory";
-        EXPECT_EQ(directory_.alive_count(), 0u);
-
-        // The transport still reports each loss, and the session it ends was a worker's.
-        const RemovedPeer removed = directory_.remove_peer(K_FIRST);
-        EXPECT_TRUE(removed.registered);
-        EXPECT_EQ(directory_.alive_count(), 0u) << "remove_peer() uncounted a worker twice";
+    TEST_F(Small_WorkerDirectory, CloseEmptiesTheWorkerList)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
 
         directory_.close();
-        EXPECT_EQ(directory_.alive_count(), 0u) << "a second close() uncounted a worker twice";
+        std::vector<PeerID> listed;
+        directory_.list_workers(listed);
+
+        EXPECT_TRUE(listed.empty());
+    }
+
+    TEST_F(Small_WorkerDirectory, CloseEmptiesTheSnapshot)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+
+        directory_.close();
+        std::vector<WorkerSnapshot> workers;
+        directory_.snapshot(at(milliseconds(1)), workers);
+
+        EXPECT_TRUE(workers.empty());
+    }
+
+    TEST_F(Small_WorkerDirectory, ClosedDirectoryRegistersNoPeer)
+    {
+        directory_.close();
+
+        EXPECT_EQ(register_worker(K_THIRD, {K_COMMON_OPERATION}, 4, at(milliseconds(2))),
+                  HandshakeStep::OutOfOrder);
+    }
+
+    TEST_F(Small_WorkerDirectory, RemovePeerAfterCloseReportsTheWorkerAsRegistered)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        directory_.close();
+
+        EXPECT_TRUE(directory_.remove_peer(K_FIRST).registered);
+    }
+
+    TEST_F(Small_WorkerDirectory, RemovePeerAfterCloseDoesNotUncountTheWorkerTwice)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        directory_.close();
+
+        static_cast<void>(directory_.remove_peer(K_FIRST));
+
+        EXPECT_EQ(directory_.alive_count(), 0u);
+    }
+
+    TEST_F(Small_WorkerDirectory, SecondCloseDoesNotUncountTheWorkerTwice)
+    {
+        ASSERT_EQ(register_two_workers(), HandshakeStep::Accepted);
+        directory_.close();
+
+        directory_.close();
+
+        EXPECT_EQ(directory_.alive_count(), 0u);
     }
 } // namespace WorkerDirectoryTests
