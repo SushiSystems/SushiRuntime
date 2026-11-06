@@ -1,8 +1,7 @@
 # test_build_trees.py
 # SushiRuntime - https://github.com/SushiSystems/SushiRuntime
 # Copyright (c) 2026-present Mustafa Garip & Sushi Systems
-# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
-# Commercial use requires a licence from Sushi Systems.
+# Licensed under the Apache License 2.0. See LICENSE.
 """Tests that each build type has its own tree, that Debug is the default and that a build runs
 behind the memory gate."""
 

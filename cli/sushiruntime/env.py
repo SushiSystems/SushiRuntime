@@ -1,8 +1,7 @@
 # env.py
 # SushiRuntime - https://github.com/SushiSystems/SushiRuntime
 # Copyright (c) 2026-present Mustafa Garip & Sushi Systems
-# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
-# Commercial use requires a licence from Sushi Systems.
+# Licensed under the Apache License 2.0. See LICENSE.
 """Snapshots the build environment that every cmake and ctest subprocess runs under.
 
 See cli/README.md.

@@ -1,8 +1,7 @@
 # SushiRuntimeLanguage.cmake
 # SushiRuntime - https://github.com/SushiSystems/SushiRuntime
 # Copyright (c) 2026-present Mustafa Garip & Sushi Systems
-# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
-# Commercial use requires a licence from Sushi Systems.
+# Licensed under the Apache License 2.0. See LICENSE.
 
 # Sets the CMake policies and the C++ language baseline. Included after project().
 # The options are in cmake/SushiRuntimeOptions.cmake.

@@ -1,8 +1,7 @@
 # CheckTestSizes.cmake
 # SushiRuntime - https://github.com/SushiSystems/SushiRuntime
 # Copyright (c) 2026-present Mustafa Garip & Sushi Systems
-# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
-# Commercial use requires a licence from Sushi Systems.
+# Licensed under the Apache License 2.0. See LICENSE.
 
 # Run with cmake -P by the build step cmake/SushiRuntimeTests.cmake adds to each test program.
 # Fails when a suite in SOURCES has no size prefix, since such a suite would register no test,

@@ -66,7 +66,5 @@ limits that [`KNOWN_ISSUES.md`](docs/backlog/README.md) lists. What is left is i
 
 ## Licence
 
-SushiRuntime is source-available and free for noncommercial use under the PolyForm Noncommercial
-License 1.0.0; see [LICENSE](LICENSE). Commercial use needs a licence from Sushi Systems; see
-[COMMERCIAL.md](COMMERCIAL.md). Third-party components keep their own licences, listed in
-[NOTICE.md](NOTICE.md).
+SushiRuntime is open source under the Apache License 2.0; see [LICENSE](LICENSE). Third-party
+components keep their own licences, listed in [NOTICE.md](NOTICE.md).

@@ -160,15 +160,11 @@ and §12 of [the distributed guide](DISTRIBUTED_GUIDE.md) lists that layer's lim
 
 ## How is SushiRuntime licensed?
 
-SushiRuntime is source-available and free for non-commercial use under the PolyForm
-Noncommercial License 1.0.0. [`LICENSE`](../../LICENSE) is the binding text and lists the
-permitted purposes: personal, non-commercial use, and use by the non-commercial organisations
-it names.
+SushiRuntime is open source under the Apache License 2.0, and [`LICENSE`](../../LICENSE) is the
+binding text. Any use is allowed, commercial use included, as long as the licence and the notices
+travel with the code.
 
-Any commercial purpose needs a separate, paid licence from Sushi Systems. That includes use
-inside a company, use in paid client work, and use in a product or service that is sold.
-[`COMMERCIAL.md`](../../COMMERCIAL.md) says how to ask: write to hello@sushisystems.io with
-what you want to build and who will use it. Third-party components keep their own licences,
+Third-party components keep their own licences,
 listed in [`NOTICE.md`](../../NOTICE.md).
 
 ## Where do I report a problem?

@@ -2,9 +2,8 @@
 
 How to get a working build, what a change must contain and how it lands.
 
-Contributions from outside Sushi Systems are not accepted yet. SushiRuntime is source-available
-under the PolyForm Noncommercial License 1.0.0; see [`LICENSE`](../LICENSE) and
-[`COMMERCIAL.md`](../COMMERCIAL.md).
+Contributions from outside Sushi Systems are not accepted yet. SushiRuntime is open source
+under the Apache License 2.0; see [`LICENSE`](../LICENSE).
 
 Read [`ARCHITECTURE.md`](architecture/ARCHITECTURE.md) before a change that crosses modules. It
 lists the modules, which of them are public, and how a run moves through them.

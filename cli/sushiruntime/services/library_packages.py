@@ -1,8 +1,7 @@
 # library_packages.py
 # SushiRuntime - https://github.com/SushiSystems/SushiRuntime
 # Copyright (c) 2026-present Mustafa Garip & Sushi Systems
-# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
-# Commercial use requires a licence from Sushi Systems.
+# Licensed under the Apache License 2.0. See LICENSE.
 """Takes the Sushi libraries `sr` links as built packages and puts their run-time folders on the path.
 
 See cli/README.md.

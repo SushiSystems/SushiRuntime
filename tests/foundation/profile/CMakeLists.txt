@@ -1,8 +1,7 @@
 # CMakeLists.txt
 # SushiRuntime - https://github.com/SushiSystems/SushiRuntime
 # Copyright (c) 2026-present Mustafa Garip & Sushi Systems
-# Licensed under PolyForm Noncommercial 1.0.0. See LICENSE.
-# Commercial use requires a licence from Sushi Systems.
+# Licensed under the Apache License 2.0. See LICENSE.
 
 # The gate units are compiled at each level and linked into one program, so the level of a
 # translation unit is tested against the others.
