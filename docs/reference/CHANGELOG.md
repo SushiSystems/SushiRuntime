@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-06 — tests: Added in-memory adapters for five more ports, among them `Task` and `AllocationOwner`, and moved `RecordingObserver` beside its port into `report`.
 - 2026-11-06 — cli: Gave the project, package and container commands a `Surroundings` seam so the CLI tests run on sushicore's recording runner and console; the CLI needs sushicore 0.10.12 (`surroundings.py`).
 - 2026-11-06 — cli: Fixed `sr config` failing with an AttributeError under sushicore 0.10.12, which reads `_ENV_OVERRIDES` from the configuration module (`config.py`).
 - 2026-11-06 — tests: Set the size time limits to 1 s, 10 s and 120 s, the testing skill's numbers, and removed `K_ALL_KEYS`, which nothing read (`cmake/SushiRuntimeTests.cmake`, `profile_keys.hpp`).

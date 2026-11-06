@@ -35,3 +35,14 @@ The file tests `K_MEMORY_EXCHANGE_LOG_CATEGORY`: the name its records carry.
 | Test | What it proves |
 | --- | --- |
 | `TheCategoryIsNamedAfterTheModule` | Tests that the category is the module's folder in the runtime's project. |
+
+## test_scripted_capability_probe.cpp
+
+A `ScriptedCapabilityProbe` answers from a queue the test fills. The tests call `next_answer()`, which
+needs no `sycl::device`. `operator()` forwards to it and is not exercised here, since it takes a device.
+
+| Test | What it proves |
+| --- | --- |
+| `ReturnsTheQueuedAnswersInOrder` | Queued answers come back in queue order, and each call is counted. |
+| `RaisesTheQueuedFailureThenAnswersTheNext` | A queued throw is raised by its own call and does not consume the next answer. |
+| `RefusesACallWithNothingQueued` | A call with nothing queued fails with `std::logic_error`, and is still counted. |

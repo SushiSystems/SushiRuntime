@@ -88,6 +88,13 @@ one lost. A run that lost none has all counts zero.
 
 `tests/foundation/report/` builds `sr_report_test_objects`, linked into `sr_foundation_tests`.
 
+## recording_observer.hpp
+
+`SushiRuntime::RecordingObserver` is a header-only `RunObserver` that copies every
+`RunObservation` it receives under a mutex, since `on_run()` runs on the thread that learned the
+run finished. `count()`, `runs()` and `last()` read the copies and `clear()` forgets them. A test
+adds it with `Runtime::add_run_observer()` and keeps the returned handle while it reads runs.
+
 ## Designs
 
 <!-- designs:begin -->

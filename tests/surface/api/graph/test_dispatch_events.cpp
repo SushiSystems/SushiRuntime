@@ -41,10 +41,10 @@
 #include <SushiRuntime/api/graph/dispatch_events.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/test_runner/recording_observer.hpp>
+#include <SushiRuntime/report/recording_observer.hpp>
 
 using namespace SushiRuntime;
-using TestRunner::RecordingObserver;
+using SushiRuntime::RecordingObserver;
 
 namespace
 {

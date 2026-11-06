@@ -98,6 +98,15 @@ objects must be reclaimed. The helpers `retire_objects`, `retire_from_threads`,
 loop. Under ASan and TSan the same run surfaces races and use-after-free. The counters are
 `shared_ptr`-owned for the reason `OrphanedNodesReclaimed` gives.
 
+## test_recording_usm_release_observer.cpp
+
+A `RecordingUSMReleaseObserver` keeps the addresses it hears. The test calls `on_release()` itself,
+with no allocator and no device.
+
+| Test | What it proves |
+| --- | --- |
+| `KeepsEachAddressInArrivalOrder` | The observer keeps each address it hears, in arrival order, repeats included. |
+
 ## test_usm_allocator.cpp
 
 The file covers `USMAllocator`. The sections below cover its release of an address that it holds no

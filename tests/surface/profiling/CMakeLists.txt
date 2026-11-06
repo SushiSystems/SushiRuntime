@@ -9,6 +9,7 @@ sushiruntime_add_module_tests(
         test_clock_conversion.cpp
         test_device_source.cpp
         test_device_track_name.cpp
+        test_in_memory_feed_attachment.cpp
         test_profiling_log_category.cpp
         test_register_profiler_parts/test_collect_profiling.cpp
         test_register_profiler_parts/test_device_timing_window.cpp

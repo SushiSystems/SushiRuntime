@@ -87,6 +87,15 @@ Each step runs in its own call of the translator, so a failed unmap still releas
 once at ERROR with its name and the device index, and nothing is rethrown, because the steps run
 from a destructor and from `AllocationOwner::release`, which is `noexcept`.
 
+## scripted_capability_probe.hpp
+
+### ScriptedCapabilityProbe
+
+ScriptedCapabilityProbe is a `CapabilityCache::Probe` that answers each call from a queue the caller
+fills, with an answer or a throw, and counts the calls. Pass it to `CapabilityCache` as
+`std::ref(probe)` so the caller keeps the count. `next_answer()` serves the queue without a
+`sycl::device`, which a small test cannot make; `operator()` forwards to it.
+
 ## Tests
 
 The import is tested through the surface that reaches it, in

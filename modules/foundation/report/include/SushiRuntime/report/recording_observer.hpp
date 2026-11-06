@@ -25,7 +25,7 @@
  * @file recording_observer.hpp
  * @brief Declares RecordingObserver, a RunObserver that keeps every observation a test receives.
  * @author Mustafa Garip
- * @see modules/foundation/test_runner/README.md
+ * @see modules/foundation/report/README.md
  */
 
 #pragma once
@@ -36,14 +36,14 @@
 
 #include <SushiRuntime/report/run_observer.hpp>
 
-namespace SushiRuntime::TestRunner
+namespace SushiRuntime
 {
     /**
      * @brief Copies every observation it receives, for a test to read after the run.
      *
      * Thread-safe: on_run() runs on the thread that learned the run finished. Add it to a runtime
      * with Runtime::add_run_observer() and keep the handle for as long as the test reads runs.
-     * @see modules/foundation/test_runner/README.md
+     * @see modules/foundation/report/README.md
      */
     class RecordingObserver final : public RunObserver
     {
@@ -100,4 +100,4 @@ namespace SushiRuntime::TestRunner
             /** @brief The observations, oldest first. */
             std::vector<RunObservation> runs_;
     };
-} // namespace SushiRuntime::TestRunner
+} // namespace SushiRuntime

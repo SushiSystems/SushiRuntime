@@ -2,10 +2,10 @@
 
 The module holds `main`, the entry point every test program shares: it puts the logger in
 synchronous mode and runs every GoogleTest case, and `LogCapture`, the sink a test uses to read
-what the runtime logged, and `RecordingObserver`, the observer a test uses to read a run's timing. It is an internal, test-only module: its source builds into the test
-programs and never into the library.
+what the runtime logged. It is an internal, test-only module: its source builds into the test
+programs and never into the library. `RecordingObserver` lives beside its port in `report`.
 
-It depends on `logging`, on `report` for the observer and on GoogleTest.
+It depends on `logging` and on GoogleTest.
 
 ## test_main.cpp
 
@@ -21,13 +21,6 @@ shutdown, not in this code: by that point the workers are joined and every `Runt
 destroyed. Data races are reported live during the run, and `halt_on_error=1` aborts at once,
 so skipping the teardown loses nothing. The exit is scoped to TSan so that ASan's leak check
 and ordinary builds keep a full, ordered shutdown.
-
-## recording_observer.hpp
-
-`SushiRuntime::TestRunner::RecordingObserver` is a header-only `RunObserver` that copies every
-`RunObservation` it receives under a mutex, since `on_run()` runs on the thread that learned the
-run finished. `count()`, `runs()` and `last()` read the copies and `clear()` forgets them. A test
-adds it with `Runtime::add_run_observer()` and keeps the returned handle while it reads runs.
 
 ## log_capture.hpp
 

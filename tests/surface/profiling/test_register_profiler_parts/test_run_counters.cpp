@@ -38,7 +38,7 @@
 
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/test_runner/recording_observer.hpp>
+#include <SushiRuntime/report/recording_observer.hpp>
 
 #include "session_pipeline.hpp"
 
@@ -124,7 +124,7 @@ TEST(Medium_RunCounters, WorkerBucketSumsAreWrittenOnEveryRun)
 TEST(Medium_RunCounters, AnUnobservedRunReportsNoStaleWorkerTime)
 {
     SessionPipeline pipeline;
-    const auto observer = std::make_shared<TestRunner::RecordingObserver>();
+    const auto observer = std::make_shared<RecordingObserver>();
     RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
 
     const RunRecord record = record_periods_without_source(

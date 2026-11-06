@@ -146,6 +146,18 @@ The file tests OffloadState: not offloadable, no attempt, no lists and no payloa
 | --- | --- |
 | `DefaultsHoldNothingAndThePayloadIsOwned` | Tests the defaults, and that the state owns its payload. |
 
+## test_recording_task.cpp
+
+The file tests RecordingTask, the in-memory host Task. Its host run takes a queue, so that call is
+left to the medium tests that hold one.
+
+| Test | What it proves |
+| --- | --- |
+| `ReportsItsNameAndPriority` | The task reports the name and priority it was built with. |
+| `IsAHostTaskThatNeverSplits` | The task is a host task that submits no device work and never splits. |
+| `CountsEachNativeRun` | Each native run is counted. |
+| `CountsEachCompletion` | Each completion is counted. |
+
 ## test_ready_sink.cpp
 
 The file tests ReadySink: the list a completed node writes its ready successors into.

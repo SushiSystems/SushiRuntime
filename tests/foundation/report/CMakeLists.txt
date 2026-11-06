@@ -11,5 +11,6 @@ sushiruntime_add_module_tests(
         test_drop_counts.cpp
         test_node_event_record.cpp
         test_node_table.cpp
+        test_recording_observer.cpp
         test_run_observer.cpp
         test_run_report.cpp)

@@ -39,7 +39,7 @@
 
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/test_runner/recording_observer.hpp>
+#include <SushiRuntime/report/recording_observer.hpp>
 
 #include "session_pipeline.hpp"
 
@@ -122,7 +122,7 @@ TEST(Medium_DeviceTimingWindow, APausedSessionCostsNoDeviceTiming)
     SessionPipeline pipeline;
     SushiProfiler::Registry registry;
     SushiRuntime::RuntimeProfilerParts parts = SushiRuntime::register_profiler_parts(registry, pipeline.runtime());
-    const auto ungated = std::make_shared<TestRunner::RecordingObserver>();
+    const auto ungated = std::make_shared<RecordingObserver>();
     const RunObserverHandle ungated_handle = pipeline.runtime().add_run_observer(ungated);
 
     SushiProfiler::SessionStart start = SushiProfiler::Session::start(session_config(0, 3), registry);

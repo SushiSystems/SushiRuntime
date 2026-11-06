@@ -412,7 +412,7 @@ armed after recording runs inside the next build. `graph/plumbing/test_plan_cach
 
 ## run_recorder.hpp
 
-`Testing::RunRecorder` adds a `TestRunner::RecordingObserver` to a `Runtime` and removes it when it is
+`Testing::RunRecorder` adds a `RecordingObserver` to a `Runtime` and removes it when it is
 stopped or destroyed. Adding the observer turns device timing on, so every graph of the runtime records
 timing from its next run, and the recorder returns the `RunObservation` of each run: `count()`, `last()`
 and `runs()`. `pairing_of()` finds the `ClockPairing` of a device in an observation, and `steady_ns()`

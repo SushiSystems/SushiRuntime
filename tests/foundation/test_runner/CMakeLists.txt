@@ -6,5 +6,4 @@
 sushiruntime_add_module_tests(
     MODULE test_runner
     SOURCES
-        test_log_capture.cpp
-        test_recording_observer.cpp)
+        test_log_capture.cpp)

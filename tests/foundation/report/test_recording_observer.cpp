@@ -35,10 +35,10 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/report/run_observer.hpp>
-#include <SushiRuntime/test_runner/recording_observer.hpp>
+#include <SushiRuntime/report/recording_observer.hpp>
 
 using namespace SushiRuntime;
-using TestRunner::RecordingObserver;
+using SushiRuntime::RecordingObserver;
 
 namespace
 {

@@ -47,13 +47,13 @@
 #include <SushiRuntime/profiling/register_profiler_parts.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/test_runner/recording_observer.hpp>
+#include <SushiRuntime/report/recording_observer.hpp>
 
 #include "session_pipeline.hpp"
 
 using namespace SushiRuntime;
 using SessionTests::SessionPipeline;
-using TestRunner::RecordingObserver;
+using SushiRuntime::RecordingObserver;
 
 namespace
 {

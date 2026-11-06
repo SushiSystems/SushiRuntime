@@ -47,7 +47,7 @@
 #include <SushiRuntime/profiling/register_profiler_parts.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/test_runner/recording_observer.hpp>
+#include <SushiRuntime/report/recording_observer.hpp>
 
 #include "test_register_profiler_parts/session_pipeline.hpp"
 
@@ -118,7 +118,7 @@ TEST(Benchmark_RunOverhead, CostOfOneRunInEachState)
 
     RunStatistics observed;
     {
-        const auto observer = std::make_shared<TestRunner::RecordingObserver>();
+        const auto observer = std::make_shared<RecordingObserver>();
         const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
         warm(graph);
         observed = SushiRuntime::Test::measure([&graph]() { return nanoseconds_per_run(graph); }, K_SAMPLES);

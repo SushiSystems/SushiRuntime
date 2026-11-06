@@ -54,6 +54,14 @@ with no owner releases nothing; a Buffer over borrowed memory holds one, so the 
 its real owner. It sits in `core` under `Detail` because `Buffer`, a public header, holds one by
 value and may not include an internal module.
 
+## recording_allocation_owner.hpp
+
+### RecordingAllocationOwner
+
+RecordingAllocationOwner is an AllocationOwner for tests. It appends each address it is asked to
+release to a vector the caller owns, in call order, and frees nothing. The vector must outlive the
+owner.
+
 ## assert.hpp
 
 ### SR_ASSERT, SR_VERIFY and SR_FATAL

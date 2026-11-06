@@ -460,7 +460,7 @@ TEST(Medium_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 TEST(Medium_RunDriver, AddRunObserverReturnsAHandleThatRemovesIt)
 {
     auto rt = Runtime::create().value();
-    auto observer = std::make_shared<TestRunner::RecordingObserver>();
+    auto observer = std::make_shared<RecordingObserver>();
 
     RunObserverHandle handle = rt.add_run_observer(observer);
     EXPECT_TRUE(static_cast<bool>(handle));
@@ -490,8 +490,8 @@ TEST(Medium_RunDriver, AnObserverRebuildsNothing)
     g.run().value();
     EXPECT_EQ(g.compile_count(), 1u);
 
-    auto first = std::make_shared<TestRunner::RecordingObserver>();
-    auto second = std::make_shared<TestRunner::RecordingObserver>();
+    auto first = std::make_shared<RecordingObserver>();
+    auto second = std::make_shared<RecordingObserver>();
     RunObserverHandle first_handle = rt.add_run_observer(first);
     g.run().value();
     EXPECT_EQ(g.compile_count(), 1u) << "the first observer rebuilt the plan";

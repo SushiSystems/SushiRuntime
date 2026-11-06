@@ -37,7 +37,7 @@
 
 #include <SushiRuntime/api/runtime/runtime.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
-#include <SushiRuntime/test_runner/recording_observer.hpp>
+#include <SushiRuntime/report/recording_observer.hpp>
 
 namespace SushiRuntime
 {
@@ -55,7 +55,7 @@ namespace SushiRuntime
             public:
                 /** @brief Adds a recording observer to @p runtime. */
                 explicit RunRecorder(const Runtime& runtime)
-                    : observer_(std::make_shared<TestRunner::RecordingObserver>()),
+                    : observer_(std::make_shared<RecordingObserver>()),
                       handle_(runtime.add_run_observer(observer_))
                 {
                 }
@@ -123,7 +123,7 @@ namespace SushiRuntime
 
             private:
                 /** @brief The observer the runtime holds. */
-                std::shared_ptr<TestRunner::RecordingObserver> observer_;
+                std::shared_ptr<RecordingObserver> observer_;
 
                 /** @brief Removes the observer from the runtime. */
                 RunObserverHandle handle_;

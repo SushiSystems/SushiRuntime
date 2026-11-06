@@ -128,6 +128,16 @@ DeviceSource over SushiProfiler's own SourceContext, SpanSink and SpanTable, wit
 | `Small_DeviceSource.ASpanPastTheDelayIsStillCountedLate` | A span arriving after its period closed is dropped late, and counted once. |
 
 
+## test_in_memory_feed_attachment.cpp
+
+An `InMemoryFeedAttachment` records each `attach()` and `detach()` and starts nothing.
+
+| Test | What it proves |
+| --- | --- |
+| `RecordsEachCallInArrivalOrder` | Attach and detach calls are kept in the order they are made. |
+| `AttachAcceptsWhenNoRefusalIsSet` | `attach()` returns an empty refusal until one is set. |
+| `AttachReturnsTheRefusalItWasSet` | `attach()` returns the refusal set, on every call. |
+
 ## test_runtime_environment.cpp
 
 The facts the runtime states about its machine, its devices and its build.

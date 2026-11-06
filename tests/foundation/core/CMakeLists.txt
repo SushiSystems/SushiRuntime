@@ -18,6 +18,7 @@ sushiruntime_add_module_tests(
         test_node_cost.cpp
         test_operation_id.cpp
         test_placement_class.cpp
+        test_recording_allocation_owner.cpp
         test_ref_counted.cpp
         test_result.cpp
         test_span.cpp

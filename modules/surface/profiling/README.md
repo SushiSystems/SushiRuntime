@@ -136,6 +136,14 @@ the build facts are the library's own and not the host's:
 the pairing's two readings taken beside each other; a time before the steady clock's origin is 0.
 `saturate_uncertainty()` clamps the pairing's 64-bit uncertainty to the 32 bits a span carries.
 
+## in_memory_feed_attachment.hpp
+
+### InMemoryFeedAttachment
+
+InMemoryFeedAttachment is the `FeedAttachment` of `device_source.hpp` that starts and stops nothing.
+It records each `attach()` and `detach()` in order. `attach()` returns the refusal set with
+`refuse_with()`; until one is set the refusal is empty, which accepts.
+
 ## Tests
 
 `tests/surface/profiling/` builds `sr_profiling_test_objects`, linked into `sr_surface_tests`; its `README.md` describes it.

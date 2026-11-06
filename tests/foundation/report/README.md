@@ -104,3 +104,14 @@ RunObservation and RunObserverHandle, the way a run's timing leaves the runtime.
 | `Small_RunObserverHandle.DestructionRemovesTheObserver` | Destroying a handle removes its observer. |
 | `Small_RunObserverHandle.AMovedHandleCarriesTheRemoval` | A moved handle carries the removal and the moved-from one removes nothing. |
 | `Small_RunObserverHandle.AssigningOverALiveHandleRemovesItsObserver` | Assigning over a live handle removes the observer it stood for. |
+
+## test_recording_observer.cpp
+
+RecordingObserver, the observer the runtime's tests keep observations with.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_RecordingObserver.StartsEmpty` | An observer that saw nothing holds nothing. |
+| `Small_RecordingObserver.KeepsEveryObservationInOrder` | It keeps a copy of every observation in the order they came. |
+| `Small_RecordingObserver.ClearForgetsEveryObservation` | Clear() forgets every observation. |
+| `Small_RecordingObserver.KeepsObservationsFromSeveralThreads` | Observations arriving from several threads are all kept. |

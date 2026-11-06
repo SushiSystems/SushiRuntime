@@ -43,13 +43,13 @@
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/test_runner/log_capture.hpp>
-#include <SushiRuntime/test_runner/recording_observer.hpp>
+#include <SushiRuntime/report/recording_observer.hpp>
 
 #include "observed_pipeline.hpp"
 
 using namespace SushiRuntime;
 using ObserverTests::ObservedPipeline;
-using TestRunner::RecordingObserver;
+using SushiRuntime::RecordingObserver;
 
 namespace
 {

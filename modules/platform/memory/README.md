@@ -155,6 +155,14 @@ dropped after the free could be matched by a new allocation that received the sa
 
 The destructor is protected and not virtual because the allocator never owns its observer.
 
+## recording_usm_release_observer.hpp
+
+### RecordingUSMReleaseObserver
+
+RecordingUSMReleaseObserver is a USMReleaseObserver that keeps the address of each release it hears,
+in arrival order. `on_release()` may be called from several threads at once, so the list is guarded
+by a mutex, and `released()` returns a copy. It needs no device or thread.
+
 ## usm_allocator.hpp
 
 ### USMAllocator

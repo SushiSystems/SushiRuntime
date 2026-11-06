@@ -6,5 +6,5 @@
 sushiruntime_add_module(
     NAME test_runner TIER foundation INTERNAL TEST_ONLY
     SOURCES test_main.cpp
-    DEPENDS log report
+    DEPENDS log
     EXTERNAL GTest::gtest)

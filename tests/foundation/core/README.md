@@ -78,6 +78,16 @@ The file covers `ErrorCode` and its `to_string`.
 built against an older header compares the numbers it compiled in, so a new enumerator goes at the
 end and the test pins each number, `ProtocolMismatch` at 10 and `InvalidArgument` at 11.
 
+## test_recording_allocation_owner.cpp
+
+A `RecordingAllocationOwner` appends each address it is asked to release to a vector the test owns.
+The addresses are never dereferenced.
+
+| Test | What it proves |
+| --- | --- |
+| `KeepsEachReleaseInCallOrder` | The owner keeps each released address in call order, repeats included. |
+| `AnAllocationReleasesItsAddressOnceThroughIt` | An `Allocation` holding the owner releases its address once, when it ends, and not before. |
+
 ## test_ref_counted.cpp
 
 The file covers the intrusive reference count `RefCounted` and its smart pointer `sushi_ptr`: single
