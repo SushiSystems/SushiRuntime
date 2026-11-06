@@ -305,18 +305,6 @@ task is resubmitted and the local fallback writes the output.
 | `ManyChunkBufferCrossesIntact` | Finding DIST-12. 1 MiB goes to the worker and 1 MiB comes back at `chunk_bytes` 4 KiB: 256 chunks each way, no abort and no stale writeback. |
 | `DispatchReturnsWhilePeerStalled` | Finding DIST-14. While the proxy holds every byte, a graph with one offloadable node and one native node is started. The native node runs, `offloaded` reaches 1 and the task stays pending; the run ends on the worker once the bytes pass. |
 
-## test_in_process_transport.cpp
-
-The file needs no hardware. `InProcessTransport` also runs the conformance suite of
-`test_tcp_transport.cpp` as its reference.
-
-### `InProcessTransportDeliversBothDirections`
-
-A master endpoint and a worker endpoint each start with a recording `TransportEvents`. The test
-waits on the `on_peer_connected` event of both sides, sends one control frame each way and checks
-that each side sees the frame under the `PeerID` its own `on_peer_connected` named, with the type,
-flags 0 and the payload it was sent.
-
 ## test_kernel_registry.cpp
 
 ### `SealedRegistryStopsARegistration`, `EmptyKernelStopsTheRegistration`

@@ -25,7 +25,7 @@
  * @file in_process_transport.hpp
  * @brief Declares InProcessFabric and InProcessTransport, a transport inside one process.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/in_process_transport/README.md
  */
 
 #pragma once
@@ -99,7 +99,7 @@ namespace SushiRuntime
          *
          * The endpoints share the fabric's state, so the fabric and its endpoints may be
          * destroyed in any order. Every member may be called from any thread.
-         * @see modules/extension/distributed/README.md
+         * @see modules/extension/in_process_transport/README.md
          */
         class SUSHIRUNTIME_API InProcessFabric final
         {
@@ -183,7 +183,7 @@ namespace SushiRuntime
          * Each endpoint runs one pump thread, which delivers its inbound frames and makes its
          * events. A worker endpoint connects once it and the master endpoint are both started,
          * and each connection is a new PeerID on both sides.
-         * @see modules/extension/distributed/README.md
+         * @see modules/extension/in_process_transport/README.md
          */
         class SUSHIRUNTIME_API InProcessTransport final : public Transport
         {

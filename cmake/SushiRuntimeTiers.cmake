@@ -55,6 +55,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
     link_security   extension
     network_socket  extension
     frame_transport extension
+    in_process_transport extension
     buffer_exchange extension
     pending_tasks   extension
     dispatch_deduplication extension
@@ -99,6 +100,9 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     network_socket  transport
     frame_transport transport
     frame_transport wire
+    in_process_transport transport
+    in_process_transport wire
+    in_process_transport frame_transport
     buffer_exchange transport
     buffer_exchange wire
     pending_tasks   transport
@@ -135,6 +139,7 @@ set(SUSHIRUNTIME_OPTIONAL_MODULES
     link_security   SR_ENABLE_DISTRIBUTED
     network_socket  SR_ENABLE_DISTRIBUTED
     frame_transport SR_ENABLE_DISTRIBUTED
+    in_process_transport SR_ENABLE_DISTRIBUTED
     buffer_exchange SR_ENABLE_DISTRIBUTED
     pending_tasks   SR_ENABLE_DISTRIBUTED
     dispatch_deduplication SR_ENABLE_DISTRIBUTED

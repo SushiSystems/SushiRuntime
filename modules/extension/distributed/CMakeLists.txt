@@ -15,7 +15,6 @@ sushiruntime_add_module(
         dispatch_settler.cpp
         distributed_coordinator.cpp
         held_tasks.cpp
-        in_process_transport.cpp
         kernel_registry.cpp
         master_link.cpp
         peer_connection.cpp

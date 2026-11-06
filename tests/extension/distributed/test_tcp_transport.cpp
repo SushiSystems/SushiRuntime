@@ -43,7 +43,7 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/distributed/in_process_transport.hpp>
+#include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>

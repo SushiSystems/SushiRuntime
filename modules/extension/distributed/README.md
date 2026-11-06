@@ -30,7 +30,6 @@ module `transport`; the offload policy and the cluster's statistics are the publ
 | `shared_secret.hpp` | `SharedSecret` |
 | `buffer_view.hpp` | `BufferView` |
 | `tcp_transport.hpp` | `TCPTransport`, `TCPMasterOptions`, `TCPWorkerOptions` |
-| `in_process_transport.hpp` | `InProcessFabric`, `InProcessTransport`, `FaultPolicy`, `FaultedFrame`, `FaultAction` |
 | `kernel_registry.hpp` | `KernelRegistry` and its `Kernel` form |
 | `worker_agent.hpp` | `WorkerAgent`, `WorkerAgentOptions`, `WorkerEnd`, `WorkerStatistics` |
 | `worker_main.hpp` | `run_worker()`, `WorkerOptions`, `WorkerExitCode` |
@@ -40,9 +39,8 @@ module `transport`; the offload policy and the cluster's statistics are the publ
 `MessageType`, `GlobalBufferID` and `BufferHandle` are also reachable as `Wire::` names, which the
 codec of `wire` uses.
 
-`distributed.hpp` includes every header of the table except `in_process_transport.hpp` and
-`worker_options_parser.hpp`, and the headers of `transport` and `cluster_load` except
-`message_type.hpp`. The `_op` literal is no header of this module: it comes with
+`distributed.hpp` includes every header of the table except `worker_options_parser.hpp`, and the headers of `transport` and
+`cluster_load` except `message_type.hpp`. The `_op` literal is no header of this module: it comes with
 `core/operation_id.hpp`, which declares it in `SushiRuntime::Literals`. A worker program includes
 `distributed.hpp` alone; a master includes it beside `SushiRuntime/sushiruntime.hpp`.
 
@@ -232,18 +230,6 @@ is closed by the monitor; a repeated `HELLO` restarts the handshake and not that
 SHA-256 and HMAC are written in the module (`sha256.hpp`, `hmac_sha256.hpp`) and pinned by the
 FIPS 180-4 and RFC 4231 vectors in `tests/extension/distributed/test_shared_secret.cpp`. Nonces come from
 `std::random_device`. Frames after the handshake carry no MAC and are not encrypted.
-
-## in_process_transport.hpp
-
-One `InProcessFabric` joins one master endpoint and any number of worker endpoints, made with
-`InProcessTransport::make_master(fabric)` and `make_worker(fabric)`. The fabric numbers worker
-endpoints from 0 in the order they are made; that index, not a `PeerID`, is what
-`set_partitioned()` and a `FaultPolicy` name, because it stays the same across reconnects.
-
-A `FaultPolicy` sees every frame as it enters the fabric, control or stream, as a `FaultedFrame`:
-direction, worker index, type, flags and payload. A partition discards frames in both directions
-and tells neither side, which is a half-open link; the connection ends only when the master's
-liveness check closes the peer.
 
 ## Bricks
 

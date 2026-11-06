@@ -25,10 +25,10 @@
  * @file in_process_transport.cpp
  * @brief Moves version 4 frames between endpoints of one process, through a fault policy.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/in_process_transport/README.md
  */
 
-#include <SushiRuntime/distributed/in_process_transport.hpp>
+#include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 
 #include <algorithm>
 #include <array>
@@ -46,7 +46,7 @@
 #include <vector>
 
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/distributed/distributed_log_category.hpp>
+#include <SushiRuntime/in_process_transport/in_process_transport_log_category.hpp>
 #include <SushiRuntime/frame_transport/outbox.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
 
@@ -159,7 +159,8 @@ namespace SushiRuntime
             void log_handler_failure(PeerID peer, const std::string& name, const char* event,
                                      std::size_t length, const char* what)
             {
-                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "handler of {} ({} bytes) from {} (peer {}) threw '{}'; "
+                SR_LOG_ERROR(K_IN_PROCESS_TRANSPORT_LOG_CATEGORY,
+                             "handler of {} ({} bytes) from {} (peer {}) threw '{}'; "
                              "closing the peer, the process continues",
                              event, length, name, peer.value, what);
             }
@@ -422,13 +423,15 @@ namespace SushiRuntime
                 }
                 catch (const std::exception& error)
                 {
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "handler of the abandoned connection of in-process worker {} "
+                    SR_LOG_ERROR(K_IN_PROCESS_TRANSPORT_LOG_CATEGORY,
+                                 "handler of the abandoned connection of in-process worker {} "
                                  "threw '{}'; the endpoint stays idle",
                                  worker_index, error.what());
                 }
                 catch (...)
                 {
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "handler of the abandoned connection of in-process worker {} "
+                    SR_LOG_ERROR(K_IN_PROCESS_TRANSPORT_LOG_CATEGORY,
+                                 "handler of the abandoned connection of in-process worker {} "
                                  "threw an unknown exception; the endpoint stays idle",
                                  worker_index);
                 }

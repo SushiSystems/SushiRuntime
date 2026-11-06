@@ -13,7 +13,7 @@ writes each add. Nothing in a module job changes production code except a seam a
 | --- | --- | --- | --- |
 | T1 | `tests/support/tolerance.hpp` copied from SushiSkills, and a `testing::Environment` fixture base that holds the one runtime and device of the program |  | done: helpers in place; test bodies move onto them in the M jobs |
 | T2 | In-memory adapters beside their ports: `TopologyProvider`, the offload ports, `TelemetryProvider`, `TaskMigrator`, `RebalanceStrategy`, `Task`, `AllocationOwner`, `RunObserver` (moving `RecordingObserver`), `USMReleaseObserver`, `FeedAttachment`, `CapabilityCache::Probe` |  | done |
-| T3 | `InProcessTransport` beside the `Transport` port |  | blocked: the move makes `transport` depend on `frame_transport` and `wire`, which depend on `transport`; RW-81 waits for the owner |
+| T3 | `InProcessTransport` beside the `Transport` port |  | done: own module `in_process_transport` (decision 7); the small `TransportContract` run is RW-87 |
 | T4 | `Performance_` and `Stress_` suites moved to the benchmark runner |  | done |
 | T5 | The defects of this report, each with a test that fails first, and the pages corrected |  | done: pages, timeouts, `K_ALL_KEYS`, stray comment fixed; RW-83 to RW-86 hold the test defects |
 | T6 | The CLI tests on sushicore's in-memory runner and console | sushicore T1 | done: no CLI test patches an owned function; the patches left replace the standard library or set a constant |

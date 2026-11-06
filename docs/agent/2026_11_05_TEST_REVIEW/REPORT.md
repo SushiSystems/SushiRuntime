@@ -58,6 +58,7 @@ The owner delegated these decisions on 2026-11-05. Each ruling below is final fo
 4. `K_ALL_KEYS` is deleted, with its test. Nothing reads it.
 5. Death tests are medium: each one starts a child process. The testing skill records this.
 6. The size timeouts follow the testing skill: 1 s, 10 s and 120 s. The skill is the one home of these numbers; a measurement on the owner's machine changes the skill, not a repository.
+7. Ruling 1 is refined on 2026-11-06, since moving `InProcessTransport` into `transport` would make `transport` depend on `frame_transport` and `wire`, which depend on it. The adapter gets an extension module of its own, `in_process_transport`, beside the port, depending on core, transport, wire and frame_transport. `transport` gains no dependency, `distributed` and the tests that use the adapter depend on the new module, and the `TransportContract` suite runs against it small.
 
 ## Dispatches
 

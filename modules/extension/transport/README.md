@@ -6,7 +6,8 @@ or a worker passes frames through. It is built with the distributed layer, under
 `SR_ENABLE_DISTRIBUTED`, and every name it declares is in `SushiRuntime::Distributed`. Its headers
 are installed: a program that names an endpoint or writes its own transport includes them.
 
-It depends on `core`.
+It depends on `core`. The in-memory adapter of `Transport`, `InProcessTransport`, is the module
+`in_process_transport`.
 
 ## Public entry points
 

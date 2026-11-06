@@ -24,7 +24,7 @@
 /**
  * @file test_in_process_transport.cpp
  * @brief Tests InProcessTransport: a fabric delivers frames both ways.
- * @see tests/extension/distributed/README.md
+ * @see tests/extension/in_process_transport/README.md
  * @author Mustafa Garip
  */
 
@@ -40,7 +40,7 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/distributed/in_process_transport.hpp>
+#include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 
