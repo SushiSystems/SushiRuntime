@@ -13,4 +13,5 @@ vectors.
 
 | Test | What it proves |
 | --- | --- |
-| `TheKernelAddsTwoVectors` | The kernel is registered under its operation and adds element by element. |
+| `TheKernelIsRegisteredUnderItsOperation` | The kernel is registered under its operation. |
+| `TheKernelAddsTwoVectors` | The kernel adds two vectors element by element on the program's queue. |

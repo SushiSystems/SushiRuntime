@@ -37,34 +37,109 @@
 #include <SushiRuntime/distributed/distributed.hpp>
 
 #include "distributed_kernels.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
-/** @brief Tests that the kernel is registered under its operation and adds element by element. */
-TEST(Medium_DistributedKernels, TheKernelAddsTwoVectors)
+namespace
 {
-    constexpr std::size_t K_COUNT = 16;
+    /** @brief Holds an array of shared memory and frees it on the queue it came from. */
+    class SharedFloats
+    {
+        public:
+            /**
+             * @brief Allocates count floats of shared memory on a queue.
+             * @param queue The queue the memory is shared with and freed on.
+             * @param count The number of floats.
+             */
+            SharedFloats(sycl::queue& queue, std::size_t count)
+                : queue_(queue), data_(sycl::malloc_shared<float>(count, queue))
+            {
+            }
+
+            /** @brief Frees the memory on the queue it came from; a null allocation is left alone. */
+            ~SharedFloats()
+            {
+                if (data_ != nullptr)
+                {
+                    sycl::free(data_, queue_);
+                }
+            }
+
+            /** @brief Copying is not allowed, since the memory has one owner. */
+            SharedFloats(const SharedFloats&) = delete;
+
+            /** @brief Copy assignment is not allowed, since the memory has one owner. */
+            SharedFloats& operator=(const SharedFloats&) = delete;
+
+            /**
+             * @brief Returns the first element.
+             * @return Null when the allocation failed.
+             */
+            [[nodiscard]] float* data() const noexcept
+            {
+                return data_;
+            }
+
+        private:
+            sycl::queue& queue_; /**< The queue the memory came from. */
+            float* data_;        /**< The shared allocation. */
+    };
+
+    /**
+     * @brief Writes the index of each element to a and 1 to b, so each sum is its index plus one.
+     * @param a The first addends, count floats.
+     * @param b The second addends, count floats.
+     * @param count The number of elements.
+     */
+    void fill_addends(float* a, float* b, std::size_t count)
+    {
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            a[index] = static_cast<float>(index);
+            b[index] = 1.0f;
+        }
+    }
+
+    /**
+     * @brief Asserts that each element of sum is its index plus one.
+     * @param sum The sums, count floats.
+     * @param count The number of elements.
+     */
+    void expect_index_plus_one(const float* sum, std::size_t count)
+    {
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            EXPECT_EQ(sum[index], static_cast<float>(index) + 1.0f) << "at " << index;
+        }
+    }
+} // namespace
+
+/** @brief Fixture of the medium tests of the distributed example, which submit work on the program's queue. */
+class Medium_DistributedKernels : public TestSupport::RuntimeTest
+{
+};
+
+/** @brief Tests that the kernel is registered under its operation. */
+TEST(Small_DistributedKernels, TheKernelIsRegisteredUnderItsOperation)
+{
     sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
     DistributedDemo::register_kernels(*kernels);
     EXPECT_TRUE(kernels->has(DistributedDemo::K_VECTOR_ADD));
+}
 
-    sycl::queue queue;
-    float* const a = sycl::malloc_shared<float>(K_COUNT, queue);
-    float* const b = sycl::malloc_shared<float>(K_COUNT, queue);
-    float* const sum = sycl::malloc_shared<float>(K_COUNT, queue);
-    ASSERT_TRUE(a != nullptr && b != nullptr && sum != nullptr);
-    for (std::size_t index = 0; index < K_COUNT; ++index)
-    {
-        a[index] = static_cast<float>(index);
-        b[index] = 1.0f;
-    }
-    const BufferView inputs[2] = {BufferView{a, K_COUNT * sizeof(float)}, BufferView{b, K_COUNT * sizeof(float)}};
-    const BufferView outputs[1] = {BufferView{sum, K_COUNT * sizeof(float)}};
-    DistributedDemo::add_vectors(queue, span<const BufferView>(inputs, 2), span<const BufferView>(outputs, 1), NodeOptions()).wait();
-    for (std::size_t index = 0; index < K_COUNT; ++index)
-        EXPECT_EQ(sum[index], static_cast<float>(index) + 1.0f) << "at " << index;
-    sycl::free(a, queue);
-    sycl::free(b, queue);
-    sycl::free(sum, queue);
+/** @brief Tests that the kernel adds two vectors element by element on the program's queue. */
+TEST_F(Medium_DistributedKernels, TheKernelAddsTwoVectors)
+{
+    constexpr std::size_t K_COUNT = 16;
+    SharedFloats a(queue(), K_COUNT);
+    SharedFloats b(queue(), K_COUNT);
+    SharedFloats sum(queue(), K_COUNT);
+    ASSERT_TRUE(a.data() != nullptr && b.data() != nullptr && sum.data() != nullptr);
+    fill_addends(a.data(), b.data(), K_COUNT);
+    const BufferView inputs[2] = {BufferView{a.data(), K_COUNT * sizeof(float)}, BufferView{b.data(), K_COUNT * sizeof(float)}};
+    const BufferView outputs[1] = {BufferView{sum.data(), K_COUNT * sizeof(float)}};
+    DistributedDemo::add_vectors(queue(), span<const BufferView>(inputs, 2), span<const BufferView>(outputs, 1), NodeOptions()).wait();
+    expect_index_plus_one(sum.data(), K_COUNT);
 }

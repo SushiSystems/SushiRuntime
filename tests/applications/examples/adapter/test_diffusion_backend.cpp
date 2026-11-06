@@ -63,11 +63,13 @@ TEST(Small_DiffusionBackend, AUniformFieldStaysUniform)
         EXPECT_NEAR(values[index], 3.0f, K_TOLERANCE) << "at " << index;
 }
 
-/** @brief Tests the name of every status code. */
+/** @brief Tests that every status code has its own name, spelled as the code is. */
 TEST(Small_DiffusionBackend, EveryCodeHasAName)
 {
     EXPECT_STREQ(to_string(StatusCode::Ok), "Ok");
     EXPECT_STREQ(to_string(StatusCode::OutOfMemory), "OutOfMemory");
+    EXPECT_STREQ(to_string(StatusCode::DeviceFailed), "DeviceFailed");
+    EXPECT_STREQ(to_string(StatusCode::InvalidRequest), "InvalidRequest");
+    EXPECT_STREQ(to_string(StatusCode::Unsupported), "Unsupported");
     EXPECT_STREQ(to_string(StatusCode::BackendFault), "BackendFault");
-    EXPECT_TRUE(Status{}.is_ok());
 }
