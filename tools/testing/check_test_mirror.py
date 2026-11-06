@@ -35,6 +35,7 @@ K_UNITY_NOT_PRODUCTS = frozenset({
     "ThirdParty", "LargeFiles", "Resources", "Plugins", "StreamingAssets", "Gizmos", "Editor",
 })
 K_PACKAGE_FOLDER = "package"
+K_SUPPORT_FOLDER = "support"
 K_APPLICATIONS_FOLDER = "applications"
 K_PRIVATE_FOLDER = "source"
 K_TREE_FOLDERS = ("tests", "modules", K_APPLICATIONS_FOLDER, "include", K_PRIVATE_FOLDER, "Assets",
@@ -184,7 +185,8 @@ def _private_headers(entries: Entries) -> frozenset[str]:
 def _walked(tests: Path, entries: Entries) -> tuple[Path, ...]:
     """Returns the entries below tests/ that the rules judge, in the order a walk visits them.
 
-    A data folder, the package test and an entry git ignores are left out, with what sits below them.
+    A data folder, the package test, the shared test support folder and an entry git ignores are left
+    out, with what sits below them.
     """
     if tests not in entries.folders:
         return ()
@@ -198,7 +200,7 @@ def _walked(tests: Path, entries: Entries) -> tuple[Path, ...]:
             if entry in entries.ignored:
                 continue
             is_folder = entry in entries.folders
-            if is_folder and (entry.name in K_DATA_FOLDERS or entry == tests / K_PACKAGE_FOLDER):
+            if is_folder and (entry.name in K_DATA_FOLDERS or entry in (tests / K_PACKAGE_FOLDER, tests / K_SUPPORT_FOLDER)):
                 continue
             walked.append(entry)
             if is_folder:

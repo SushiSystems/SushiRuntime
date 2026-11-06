@@ -8,6 +8,7 @@
 | RW-51 | P2 | open | Correct the CMake comments that cite moved documents | `cmake/SushiRuntimeConfig.cmake.in`, `tests/package/CMakeLists.txt` and `cmake/SushiRuntimeRedistributables.cmake` cite documents at their paths |  |  | 2026-10-19 |
 | RW-52 | P2 | open | Write `cmake/README.md` | the build functions and the tier table are described in `cmake/README.md` |  |  | 2026-10-19 |
 | RW-53 | P2 | unmeasured | Verify the manual's C++ samples and CLI flags | every C++ sample compiles against the current headers and each flag in `docs/guides/CLI_GUIDE.md` matches the CLI |  |  | 2026-10-19 |
+| RW-82 | P3 | open | Split the scheduler module README, which sits at the 800-line ceiling | modules/engine/scheduler/README.md is under the ceiling and names the rebalancer in-memory adapters |  | `modules/engine/scheduler/README.md` | 2026-11-06 |
 
 ## Known issues
 

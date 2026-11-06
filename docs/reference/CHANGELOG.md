@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-06 — tools: Fixed the mirror checker refusing `tests/support`, the shared test helper folder, by taking SushiSkills' copy (KI-26, `check_test_mirror.py`).
 - 2026-11-06 — licence: Relicensed SushiRuntime under the Apache License 2.0 and removed `COMMERCIAL.md`; every source file's licence block follows (`LICENSE`, `tools/settings.py`).
 - 2026-11-05 — tools: Took the shared checkers of 2026-11-05 with a baseline of the findings they meet, which RW-80 clears.
 - 2026-10-30 — build: Fixed a `tsan` build failing under `-Werror` on every unit compiled without `-fsycl`, which has no device pass for the TSan opt-out to apply to (`cmake/Sanitizers.cmake`).
