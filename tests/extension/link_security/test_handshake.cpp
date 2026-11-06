@@ -23,7 +23,7 @@
 
 /**
  * @file test_handshake.cpp
- * @brief Tests the handshake proofs: known values, roles, wrong secrets, replay and nonces.
+ * @brief Tests the handshake proofs: the values, the roles, the secret, the nonces and the platform nonce source.
  * @see tests/extension/link_security/README.md
  * @author Mustafa Garip
  */
@@ -81,29 +81,75 @@ namespace
         nonce.bytes.fill(value);
         return nonce;
     }
-}
 
-/** @brief Tests the two proofs against values from Python's hmac module for the same input. */
-TEST(Medium_HandshakeTest, ProofsMatchAnIndependentImplementation)
+    /** @brief Holds the worker nonce of the handshake every test in this file records. */
+    constexpr std::uint8_t K_WORKER_NONCE = 0x11;
+
+    /** @brief Holds the master nonce of the handshake every test in this file records. */
+    constexpr std::uint8_t K_MASTER_NONCE = 0x22;
+
+    /** @brief Returns the name of a role for a test report. */
+    std::string name_of_role(HandshakeRole role)
+    {
+        return role == HandshakeRole::Master ? "Master" : "Worker";
+    }
+
+    /** @brief Holds the proof of one role for the recorded handshake. */
+    struct ProofRow
+    {
+        HandshakeRole role; /**< The role that computes the proof. */
+        const char* proof;  /**< The expected proof, 64 lowercase hexadecimal digits. */
+    };
+
+    /** @brief Names a proof row in a test report. */
+    std::string name_of_proof(const ::testing::TestParamInfo<ProofRow>& info)
+    {
+        return name_of_role(info.param.role);
+    }
+
+    /** @brief Names a role row in a test report. */
+    std::string name_of_role_row(const ::testing::TestParamInfo<HandshakeRole>& info)
+    {
+        return name_of_role(info.param);
+    }
+
+    /**
+     * @brief Holds the proofs for the secret of bytes 0 to 31 and the recorded nonces.
+     *
+     * Computed with the hmac module of Python over the labels `SRDP2 master` and `SRDP2 worker`,
+     * the worker nonce 32 x 0x11 and the master nonce 32 x 0x22. A change of the label, of the
+     * order of the nonces or of the key is a change to the wire protocol.
+     */
+    const ProofRow K_RECORDED_PROOFS[] = {
+        {HandshakeRole::Master, "228855beb9cdc5298f9fe8a2da682d24d692884990f488ad24c1ec94988c031e"},
+        {HandshakeRole::Worker, "2b7db168d24e1b61ab59423115a162615b8f1c47a0a137e659f8d8d55d8ac225"},
+    };
+} // namespace
+
+/** @brief Runs a test once per proof of the recorded handshake. */
+class Small_HandshakeProofTest : public ::testing::TestWithParam<ProofRow>
+{
+};
+
+/** @brief Tests a proof against the value from an independent implementation for the same input. */
+TEST_P(Small_HandshakeProofTest, ProofMatchesAnIndependentImplementation)
 {
     const std::vector<std::uint8_t> secret = counting(0x00, 32);
-    const HandshakeNonce worker_nonce = nonce_of(0x11);
-    const HandshakeNonce master_nonce = nonce_of(0x22);
 
-    EXPECT_EQ(to_hex(compute_proof(HandshakeRole::Master, bytes_of(secret), worker_nonce,
-                                   master_nonce)),
-              "228855beb9cdc5298f9fe8a2da682d24d692884990f488ad24c1ec94988c031e");
-    EXPECT_EQ(to_hex(compute_proof(HandshakeRole::Worker, bytes_of(secret), worker_nonce,
-                                   master_nonce)),
-              "2b7db168d24e1b61ab59423115a162615b8f1c47a0a137e659f8d8d55d8ac225");
+    EXPECT_EQ(to_hex(compute_proof(GetParam().role, bytes_of(secret), nonce_of(K_WORKER_NONCE),
+                                   nonce_of(K_MASTER_NONCE))),
+              GetParam().proof);
 }
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_HandshakeProofTest, ::testing::ValuesIn(K_RECORDED_PROOFS),
+                         name_of_proof);
 
 /** @brief Tests that one side's proof cannot be sent back as the other's. */
-TEST(Medium_HandshakeTest, ProofsDifferByRole)
+TEST(Small_HandshakeTest, ProofsDifferByRole)
 {
     const std::vector<std::uint8_t> secret = counting(0x00, 32);
-    const HandshakeNonce worker_nonce = nonce_of(0x11);
-    const HandshakeNonce master_nonce = nonce_of(0x22);
+    const HandshakeNonce worker_nonce = nonce_of(K_WORKER_NONCE);
+    const HandshakeNonce master_nonce = nonce_of(K_MASTER_NONCE);
 
     const Sha256Digest master_proof =
         compute_proof(HandshakeRole::Master, bytes_of(secret), worker_nonce, master_nonce);
@@ -121,48 +167,93 @@ TEST(Medium_HandshakeTest, ProofsDifferByRole)
                               master_nonce, worker_proof));
 }
 
-/** @brief Tests that a proof made under another secret, or under none, is refused. */
-TEST(Medium_HandshakeTest, WrongSecretFails)
+/** @brief Runs a test once per role. */
+class Small_HandshakeRoleTest : public ::testing::TestWithParam<HandshakeRole>
+{
+};
+
+/** @brief Tests that a proof made under another secret is refused. */
+TEST_P(Small_HandshakeRoleTest, AProofUnderAnotherSecretIsRefused)
 {
     const std::vector<std::uint8_t> secret = counting(0x00, 32);
     std::vector<std::uint8_t> other = secret;
     other.back() ^= 0x01u;
-    const HandshakeNonce worker_nonce = nonce_of(0x11);
-    const HandshakeNonce master_nonce = nonce_of(0x22);
+    const HandshakeNonce worker_nonce = nonce_of(K_WORKER_NONCE);
+    const HandshakeNonce master_nonce = nonce_of(K_MASTER_NONCE);
+    const Sha256Digest forged =
+        compute_proof(GetParam(), bytes_of(other), worker_nonce, master_nonce);
 
-    for (const HandshakeRole role : { HandshakeRole::Master, HandshakeRole::Worker })
-    {
-        const Sha256Digest forged =
-            compute_proof(role, bytes_of(other), worker_nonce, master_nonce);
-        const Sha256Digest keyless = compute_proof(role, {}, worker_nonce, master_nonce);
-
-        EXPECT_FALSE(verify_proof(role, bytes_of(secret), worker_nonce, master_nonce, forged));
-        EXPECT_FALSE(verify_proof(role, bytes_of(secret), worker_nonce, master_nonce, keyless));
-        EXPECT_TRUE(verify_proof(role, {}, worker_nonce, master_nonce, keyless));
-    }
+    EXPECT_FALSE(verify_proof(GetParam(), bytes_of(secret), worker_nonce, master_nonce, forged));
 }
 
-/** @brief Tests that a proof recorded in one handshake fails once either nonce changes. */
-TEST(Medium_HandshakeTest, FreshNonceDefeatsReplay)
+/** @brief Tests that a proof made under no secret is refused where a secret is set. */
+TEST_P(Small_HandshakeRoleTest, AProofUnderNoSecretIsRefused)
 {
     const std::vector<std::uint8_t> secret = counting(0x00, 32);
-    const HandshakeNonce worker_nonce = nonce_of(0x11);
-    const HandshakeNonce master_nonce = nonce_of(0x22);
-    const HandshakeNonce fresh_worker_nonce = nonce_of(0x33);
-    const HandshakeNonce fresh_master_nonce = nonce_of(0x44);
+    const HandshakeNonce worker_nonce = nonce_of(K_WORKER_NONCE);
+    const HandshakeNonce master_nonce = nonce_of(K_MASTER_NONCE);
+    const Sha256Digest keyless = compute_proof(GetParam(), {}, worker_nonce, master_nonce);
 
-    const Sha256Digest recorded_worker_proof =
-        compute_proof(HandshakeRole::Worker, bytes_of(secret), worker_nonce, master_nonce);
-    const Sha256Digest recorded_master_proof =
-        compute_proof(HandshakeRole::Master, bytes_of(secret), worker_nonce, master_nonce);
-
-    EXPECT_FALSE(verify_proof(HandshakeRole::Worker, bytes_of(secret), worker_nonce,
-                              fresh_master_nonce, recorded_worker_proof));
-    EXPECT_FALSE(verify_proof(HandshakeRole::Master, bytes_of(secret), fresh_worker_nonce,
-                              master_nonce, recorded_master_proof));
-    EXPECT_FALSE(verify_proof(HandshakeRole::Worker, bytes_of(secret), master_nonce,
-                              worker_nonce, recorded_worker_proof));
+    EXPECT_FALSE(verify_proof(GetParam(), bytes_of(secret), worker_nonce, master_nonce, keyless));
 }
+
+/** @brief Tests that a proof made under no secret is accepted where no secret is set. */
+TEST_P(Small_HandshakeRoleTest, AProofUnderNoSecretIsAcceptedWhereNoneIsSet)
+{
+    const HandshakeNonce worker_nonce = nonce_of(K_WORKER_NONCE);
+    const HandshakeNonce master_nonce = nonce_of(K_MASTER_NONCE);
+    const Sha256Digest keyless = compute_proof(GetParam(), {}, worker_nonce, master_nonce);
+
+    EXPECT_TRUE(verify_proof(GetParam(), {}, worker_nonce, master_nonce, keyless));
+}
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_HandshakeRoleTest,
+                         ::testing::Values(HandshakeRole::Master, HandshakeRole::Worker),
+                         name_of_role_row);
+
+namespace
+{
+    /** @brief Holds the nonces a replayed proof is verified under. */
+    struct ReplayRow
+    {
+        const char* meaning;       /**< Names the replay in a test report. */
+        HandshakeRole role;        /**< The role whose recorded proof is replayed. */
+        std::uint8_t worker_nonce; /**< The worker nonce the verifier contributes. */
+        std::uint8_t master_nonce; /**< The master nonce the verifier contributes. */
+    };
+
+    /** @brief Names a replay row in a test report. */
+    std::string name_of_replay(const ::testing::TestParamInfo<ReplayRow>& info)
+    {
+        return info.param.meaning;
+    }
+
+    const ReplayRow K_REPLAYS[] = {
+        {"FreshMasterNonce", HandshakeRole::Worker, K_WORKER_NONCE, 0x44},
+        {"FreshWorkerNonce", HandshakeRole::Master, 0x33, K_MASTER_NONCE},
+        {"NoncesSwapped", HandshakeRole::Worker, K_MASTER_NONCE, K_WORKER_NONCE},
+    };
+} // namespace
+
+/** @brief Runs a test once per way a verifier's nonces can differ from the recorded ones. */
+class Small_HandshakeReplayTest : public ::testing::TestWithParam<ReplayRow>
+{
+};
+
+/** @brief Tests that a proof recorded in one handshake fails once a nonce changes. */
+TEST_P(Small_HandshakeReplayTest, FreshNonceDefeatsReplay)
+{
+    const ReplayRow& row = GetParam();
+    const std::vector<std::uint8_t> secret = counting(0x00, 32);
+    const Sha256Digest recorded = compute_proof(
+        row.role, bytes_of(secret), nonce_of(K_WORKER_NONCE), nonce_of(K_MASTER_NONCE));
+
+    EXPECT_FALSE(verify_proof(row.role, bytes_of(secret), nonce_of(row.worker_nonce),
+                              nonce_of(row.master_nonce), recorded));
+}
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_HandshakeReplayTest, ::testing::ValuesIn(K_REPLAYS),
+                         name_of_replay);
 
 /** @brief Tests that the platform's nonce source does not hand out one nonce twice. */
 TEST(Medium_HandshakeTest, PlatformNonceSourceDoesNotRepeat)
@@ -171,5 +262,12 @@ TEST(Medium_HandshakeTest, PlatformNonceSourceDoesNotRepeat)
     const HandshakeNonce second = make_nonce().value();
 
     EXPECT_NE(first.bytes, second.bytes);
-    EXPECT_NE(first.bytes, nonce_of(0x00).bytes);
+}
+
+/** @brief Tests that the platform's nonce source does not hand out an all-zero nonce. */
+TEST(Medium_HandshakeTest, PlatformNonceSourceIsNotAllZero)
+{
+    const HandshakeNonce nonce = make_nonce().value();
+
+    EXPECT_NE(nonce.bytes, nonce_of(0x00).bytes);
 }

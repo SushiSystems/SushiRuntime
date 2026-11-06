@@ -39,7 +39,7 @@ using namespace SushiRuntime::Distributed;
 using namespace SushiRuntime::Distributed::Wire;
 
 /** @brief Tests that the router calls the handler of the type and reports the rest. */
-TEST(Medium_WireFormat, RouterDeliversByType)
+TEST(Small_WireFormat, RouterDeliversByType)
 {
     MessageRouter<int&> router;
     router.set_handler(MessageType::Ping, [](int& calls) { ++calls; });

@@ -201,8 +201,7 @@ of `Host` residency is registered too.
 ### The per-run offloaded count
 
 No test of this file reads `RunReport`. That `tasks_offloaded_to_network` counts the dispatches
-of one run is pinned by `OffloadedCountIsOfThisRun` in
-`tests/surface/api/graph/plumbing/test_step_driver.cpp`, with a coordinator that only counts.
+of one run has no test: installing a coordinator needs an internal name, and RW-107 holds it.
 
 The file is a soak test in the style of Jepsen. It runs an offload graph under a seeded fault
 policy and a nemesis thread, which between them drop, repeat, park, reorder and partition frames.
@@ -352,9 +351,9 @@ handshake proofs it feeds are tested in `tests/extension/link_security/`.
 ## test_tcp_transport.cpp
 
 The file pins the `Transport` contract as `transport.hpp` writes it and needs no hardware. The
-suite `Medium_TransportConformanceTest` is typed over two rigs, so each test runs once over TCP on
-`127.0.0.1` with port 0 and once on an `InProcessFabric`, the reference that `TCPTransport` must
-match. The tests wait on recorded events with a 10 s limit and never on a sleep.
+suite `Medium_TransportConformanceTest` is typed over one rig, TCP on `127.0.0.1` with port 0. The
+same promises run on an `InProcessFabric` in `tests/extension/in_process_transport/README.md`. The
+tests wait on recorded events with a 10 s limit and never on a sleep.
 
 | Test | What it proves |
 | --- | --- |

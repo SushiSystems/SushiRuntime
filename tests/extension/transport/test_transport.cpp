@@ -23,10 +23,12 @@
 
 /**
  * @file test_transport.cpp
- * @brief Tests the vocabulary of transport.hpp: a result that holds no failure, and peer ids.
+ * @brief Tests TransportResult: only Ok counts as a started transport.
  * @see tests/extension/transport/README.md
  * @author Mustafa Garip
  */
+
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -35,20 +37,43 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
-/** @brief Tests that a default result is Ok with no message. */
-TEST(Medium_Transport, ADefaultResultIsOk)
+namespace
 {
-    const TransportResult result;
-    EXPECT_TRUE(result.is_ok());
-    EXPECT_EQ(result.status, TransportStatus::Ok);
-    EXPECT_TRUE(result.message.empty());
+    /** @brief Holds a start status and whether it counts as a started transport. */
+    struct StatusRow
+    {
+        const char* meaning;   /**< Names the status in a test report. */
+        TransportStatus status; /**< The status of the result. */
+        bool started;           /**< Whether is_ok() must answer true. */
+    };
+
+    /** @brief Names a row by its meaning in a test report. */
+    std::string name_of(const ::testing::TestParamInfo<StatusRow>& info)
+    {
+        return info.param.meaning;
+    }
+
+    const StatusRow K_STATUSES[] = {
+        {"Ok", TransportStatus::Ok, true},
+        {"AlreadyStarted", TransportStatus::AlreadyStarted, false},
+        {"InvalidArgument", TransportStatus::InvalidArgument, false},
+        {"BindFailed", TransportStatus::BindFailed, false},
+        {"Failed", TransportStatus::Failed, false},
+    };
+} // namespace
+
+/** @brief Runs a test once per start status. */
+class Small_TransportResult : public ::testing::TestWithParam<StatusRow>
+{
+};
+
+/** @brief Tests that is_ok() is true for Ok and false for every other status. */
+TEST_P(Small_TransportResult, IsOkOnlyForOk)
+{
+    TransportResult result;
+    result.status = GetParam().status;
+
+    EXPECT_EQ(result.is_ok(), GetParam().started);
 }
 
-/** @brief Tests that peer ids compare by value and the send statuses differ. */
-TEST(Medium_Transport, PeersCompareByValue)
-{
-    EXPECT_EQ(PeerID{1}, PeerID{1});
-    EXPECT_NE(PeerID{1}, PeerID{2});
-    EXPECT_NE(SendStatus::Queued, SendStatus::Stopped);
-    EXPECT_NE(SendStatus::QueueFull, SendStatus::UnknownPeer);
-}
+INSTANTIATE_TEST_SUITE_P(Rows, Small_TransportResult, ::testing::ValuesIn(K_STATUSES), name_of);

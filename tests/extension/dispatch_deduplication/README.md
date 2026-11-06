@@ -11,5 +11,6 @@ A section is named after a test file, and a subsection after the test, helper or
 
 | Test | What it proves |
 | --- | --- |
-| `DuplicateDispatchRunsOnce` | An id is accepted once and refused while it is remembered. A deduplicator of capacity 2 forgets its oldest id when a third arrives. |
+| `ARepeatedIDIsRefusedWhileRemembered` | An id is accepted once and refused while it is remembered. |
+| `TheOldestIDIsForgottenAtTheCapacity` | A deduplicator of capacity 2 forgets its oldest id when a third arrives. |
 | `ClearForgetsEveryId` | `clear()`, which a new master session calls, empties the set, so an id seen before is accepted again. |

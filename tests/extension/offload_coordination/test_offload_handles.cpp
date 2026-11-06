@@ -40,7 +40,7 @@ using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 /** @brief Tests that the two views split the handles at the input count. */
-TEST(Medium_OffloadHandles, InputsThenOutputs)
+TEST(Small_OffloadHandles, InputsThenOutputs)
 {
     OffloadHandles handles;
     handles.handles = {BufferHandle{GlobalBufferID{1}, 1, 8}, BufferHandle{GlobalBufferID{2}, 1, 8},

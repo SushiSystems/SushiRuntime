@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_in_process_transport_log_category.cpp                             */
+/* compile_socket_option_report.cpp                                       */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,24 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_in_process_transport_log_category.cpp
- * @brief Tests K_IN_PROCESS_TRANSPORT_LOG_CATEGORY: the name its records carry.
- * @see tests/extension/in_process_transport/README.md
+ * @file compile_socket_option_report.cpp
+ * @brief Compiles socket_option_report.hpp on its own, so the header carries every include it needs.
+ * @see tests/extension/network_socket/README.md
  * @author Mustafa Garip
  */
 
-#include <SushiRuntime/in_process_transport/in_process_transport_log_category.hpp>
-
-#include <gtest/gtest.h>
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the category is the module's folder in the runtime's project. */
-TEST(Small_InProcessTransportLogCategory, TheCategoryIsNamedAfterTheModule)
-{
-    static_assert(K_IN_PROCESS_TRANSPORT_LOG_CATEGORY.module() == "in_process_transport",
-                  "the folder name of the module");
-    static_assert(K_IN_PROCESS_TRANSPORT_LOG_CATEGORY.project().name() == "sushiruntime",
-                  "the project of the runtime");
-    SUCCEED();
-}
+#include <SushiRuntime/network_socket/socket_option_report.hpp>

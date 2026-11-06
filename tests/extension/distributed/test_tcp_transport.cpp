@@ -23,7 +23,7 @@
 
 /**
  * @file test_tcp_transport.cpp
- * @brief Tests TCPTransport against the Transport contract, beside the in-process reference.
+ * @brief Tests TCPTransport against the Transport contract.
  * @see tests/extension/distributed/README.md
  * @author Mustafa Garip
  */
@@ -43,7 +43,6 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 #include <SushiRuntime/distributed/tcp_transport.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
@@ -247,35 +246,6 @@ namespace
             Reaction reaction_;
     };
 
-    /** @brief Builds a master and a worker endpoint on one in-process fabric. */
-    class InProcessRig final
-    {
-        public:
-            /** @brief Returns the name the typed suite gives this rig. */
-            static std::string name()
-            {
-                return "InProcess";
-            }
-
-            /** @brief Creates the master endpoint. */
-            std::shared_ptr<Transport> make_master()
-            {
-                return InProcessTransport::make_master(fabric_);
-            }
-
-            /** @brief Creates a worker endpoint. */
-            std::shared_ptr<Transport> make_worker(bool reconnect)
-            {
-                InProcessWorkerOptions options;
-                options.reconnect = reconnect;
-                return InProcessTransport::make_worker(fabric_, options);
-            }
-
-        private:
-            /// @brief The fabric both endpoints attach to.
-            InProcessFabric fabric_;
-    };
-
     /** @brief Builds a TCP master on a free loopback port and a worker that connects to it. */
     class TCPLoopbackRig final
     {
@@ -428,7 +398,7 @@ namespace
 
 /**
  * @brief Starts a master and a worker of one rig and records the events of both.
- * @tparam Rig InProcessRig or TCPLoopbackRig.
+ * @tparam Rig TCPLoopbackRig.
  */
 template <typename Rig>
 class Medium_TransportConformanceTest : public ::testing::Test
@@ -488,7 +458,7 @@ class Medium_TransportConformanceTest : public ::testing::Test
 };
 
 /** @brief Lists the rigs the conformance suite runs on. */
-using RigTypes = ::testing::Types<InProcessRig, TCPLoopbackRig>;
+using RigTypes = ::testing::Types<TCPLoopbackRig>;
 TYPED_TEST_SUITE(Medium_TransportConformanceTest, RigTypes, RigNames);
 
 /**

@@ -264,17 +264,12 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that random dispatches cross a whole frame with every wire field intact. */
-TEST(Medium_WireCodec, SeededDispatchesSurviveAWholeFrame)
+namespace
 {
-    std::mt19937_64 random(K_SEED);
-    Bytes frame;
-    for (int round = 0; round < K_ROUND_TRIPS; ++round)
+    /** @brief Checks that a dispatch crosses a whole frame with every wire field intact. */
+    void expect_dispatch_survives_frame(const TaskDispatchMessage& sent)
     {
-        SCOPED_TRACE(round);
-        const TaskDispatchMessage sent = random_dispatch(random);
-
-        frame.clear();
+        Bytes frame;
         ASSERT_EQ(append_frame(sent, 0, frame), CodecStatus::Ok);
 
         FrameHeader header;
@@ -299,36 +294,11 @@ TEST(Medium_WireCodec, SeededDispatchesSurviveAWholeFrame)
         expect_same_handles(received.outputs, sent.outputs);
         EXPECT_EQ(received.device_index, sent.device_index);
     }
-}
 
-TEST(Medium_WireCodecFuzz, TaskResultRefusesACountItCannotHold)
-{
-    Bytes payload;
-    FieldWriter writer(payload);
-    writer.put_u64(99);
-    writer.put_enum(TaskResultStatus::Succeeded);
-    writer.put_u32(1000);
-    ASSERT_EQ(writer.status(), CodecStatus::Ok);
-
-    TaskResultMessage message;
-    const DecodeResult result = TaskResultMessage::decode(view_of(payload), message);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, 9u);
-    EXPECT_TRUE(message.outputs.empty());
-}
-
-/** @brief Tests that every decoder refuses or accepts a damaged payload without leaving it. */
-TEST(Medium_WireCodecFuzz, SeededMutationsDecodeOrFailInsideThePayload)
-{
-    std::mt19937_64 random(K_SEED);
-    const std::vector<Sample> samples = every_sample();
-    ASSERT_EQ(samples.size(), K_MESSAGE_TYPE_COUNT);
-
-    for (const Sample& sample : samples)
+    /** @brief Checks that every mutation of a sample payload decodes or fails inside it. */
+    void expect_mutations_stay_inside(const Sample& sample)
     {
-        SCOPED_TRACE(message_type_name(sample.type));
-        ASSERT_TRUE(sample.decode(view_of(sample.payload)).ok());
-
+        std::mt19937_64 random(K_SEED);
         for (int round = 0; round < K_MUTATIONS_PER_SAMPLE; ++round)
         {
             const Bytes damaged = mutated(sample.payload, random);
@@ -338,45 +308,94 @@ TEST(Medium_WireCodecFuzz, SeededMutationsDecodeOrFailInsideThePayload)
                 EXPECT_EQ(result.offset, 0u) << "mutation " << round;
         }
     }
+
+    /**
+     * @brief Decodes random headers, checks each accepted one lies inside its ranges and
+     *        returns how many were accepted.
+     */
+    int expect_accepted_random_headers_in_range(std::mt19937_64& random)
+    {
+        int accepted = 0;
+        for (int round = 0; round < K_RANDOM_HEADERS; ++round)
+        {
+            Bytes bytes(K_FRAME_HEADER_BYTES);
+            for (std::byte& value : bytes)
+                value = random_byte(random);
+
+            // Three headers in four carry the magic and this build's version, so the later checks run.
+            if (round % 4 != 0)
+            {
+                std::copy(K_FRAME_MAGIC.begin(), K_FRAME_MAGIC.end(), bytes.begin());
+                bytes[4] = static_cast<std::byte>(K_PROTOCOL_VERSION & 0xFFu);
+                bytes[5] = static_cast<std::byte>(K_PROTOCOL_VERSION >> 8);
+                bytes[6] = static_cast<std::byte>(random() % (K_LAST_MESSAGE_TYPE + 2u));
+                bytes[7] = static_cast<std::byte>(random() % 3);
+                bytes[10] = static_cast<std::byte>(random() % 0x12);
+                bytes[11] = std::byte{0x00};
+            }
+
+            FrameHeader header;
+            if (decode_frame_header(view_of(bytes), header) != FrameStatus::Ok)
+                continue;
+
+            ++accepted;
+            EXPECT_EQ(header.version, K_PROTOCOL_VERSION);
+            EXPECT_TRUE(is_message_type(static_cast<std::uint8_t>(header.type)));
+            EXPECT_LE(header.payload_length, K_MAX_FRAME_PAYLOAD);
+            if (header.flags != 0)
+            {
+                EXPECT_EQ(header.flags, K_FRAME_FLAG_LAST_CHUNK);
+                EXPECT_EQ(header.type, MessageType::BufferChunk);
+            }
+        }
+        return accepted;
+    }
+
+    /** @brief Names a sample by its message type in a test report. */
+    std::string name_of_sample(const ::testing::TestParamInfo<Sample>& info)
+    {
+        return message_type_name(info.param.type);
+    }
+} // namespace
+
+/** @brief Runs a test once per seeded dispatch. */
+class Small_WireCodecRoundTrip : public ::testing::TestWithParam<int>
+{
+};
+
+/** @brief Tests that a seeded random dispatch crosses a whole frame with every field intact. */
+TEST_P(Small_WireCodecRoundTrip, SeededDispatchSurvivesAWholeFrame)
+{
+    std::mt19937_64 random(K_SEED + static_cast<std::uint64_t>(GetParam()));
+    const TaskDispatchMessage sent = random_dispatch(random);
+
+    expect_dispatch_survives_frame(sent);
 }
 
+INSTANTIATE_TEST_SUITE_P(Seeds, Small_WireCodecRoundTrip, ::testing::Range(0, K_ROUND_TRIPS));
+
+/** @brief Runs a test once per message type, over a well-formed payload of it. */
+class Small_WireCodecMutation : public ::testing::TestWithParam<Sample>
+{
+};
+
+/** @brief Tests that a damaged payload decodes or fails without leaving the payload. */
+TEST_P(Small_WireCodecMutation, SeededMutationsDecodeOrFailInsideThePayload)
+{
+    ASSERT_TRUE(GetParam().decode(view_of(GetParam().payload)).ok());
+
+    expect_mutations_stay_inside(GetParam());
+}
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_WireCodecMutation, ::testing::ValuesIn(every_sample()),
+                         name_of_sample);
+
 /** @brief Tests that a random header passes only with every field inside its range. */
-TEST(Medium_WireCodecFuzz, SeededHeadersPassOnlyInsideTheirRanges)
+TEST(Small_WireCodecFuzz, SeededHeadersPassOnlyInsideTheirRanges)
 {
     std::mt19937_64 random(K_SEED);
-    int accepted = 0;
-    for (int round = 0; round < K_RANDOM_HEADERS; ++round)
-    {
-        Bytes bytes(K_FRAME_HEADER_BYTES);
-        for (std::byte& value : bytes)
-            value = random_byte(random);
 
-        // Three headers in four carry the magic and this build's version, so the later checks run.
-        if (round % 4 != 0)
-        {
-            std::copy(K_FRAME_MAGIC.begin(), K_FRAME_MAGIC.end(), bytes.begin());
-            bytes[4] = static_cast<std::byte>(K_PROTOCOL_VERSION & 0xFFu);
-            bytes[5] = static_cast<std::byte>(K_PROTOCOL_VERSION >> 8);
-            bytes[6] = static_cast<std::byte>(random() % (K_LAST_MESSAGE_TYPE + 2u));
-            bytes[7] = static_cast<std::byte>(random() % 3);
-            bytes[10] = static_cast<std::byte>(random() % 0x12);
-            bytes[11] = std::byte{0x00};
-        }
-
-        FrameHeader header;
-        if (decode_frame_header(view_of(bytes), header) != FrameStatus::Ok)
-            continue;
-
-        ++accepted;
-        EXPECT_EQ(header.version, K_PROTOCOL_VERSION);
-        EXPECT_TRUE(is_message_type(static_cast<std::uint8_t>(header.type)));
-        EXPECT_LE(header.payload_length, K_MAX_FRAME_PAYLOAD);
-        if (header.flags != 0)
-        {
-            EXPECT_EQ(header.flags, K_FRAME_FLAG_LAST_CHUNK);
-            EXPECT_EQ(header.type, MessageType::BufferChunk);
-        }
-    }
+    const int accepted = expect_accepted_random_headers_in_range(random);
 
     EXPECT_GT(accepted, 0) << "no random header passed, so the checks above never ran";
 }

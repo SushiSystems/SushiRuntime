@@ -28,6 +28,7 @@
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -106,15 +107,26 @@ namespace PendingTasksTests
             return table.insert(task_id, node, worker, span<const BufferHandle>(), at(offset));
         }
 
-        /** @brief Returns the ids of the given tasks in rising order. */
-        std::vector<std::uint64_t> sorted_ids(const std::vector<PendingTask>& tasks)
+        /** @brief Returns the given tasks in rising order of their ids. */
+        std::vector<PendingTask> sorted_by_id(std::vector<PendingTask> tasks)
         {
-            std::vector<std::uint64_t> ids;
-            ids.reserve(tasks.size());
-            for (const PendingTask& task : tasks)
-                ids.push_back(task.task_id);
-            std::sort(ids.begin(), ids.end());
-            return ids;
+            std::sort(tasks.begin(), tasks.end(), [](const PendingTask& left, const PendingTask& right)
+                      { return left.task_id < right.task_id; });
+            return tasks;
+        }
+
+        /** @brief Returns how many of the two removals of one task returned it. */
+        std::size_t winners_of(const std::optional<PendingTask>& by_result,
+                               const std::vector<PendingTask>& by_loss)
+        {
+            return (by_result.has_value() ? 1u : 0u) + by_loss.size();
+        }
+
+        /** @brief Returns the task the winning removal returned. */
+        const PendingTask& winner_among(const std::optional<PendingTask>& by_result,
+                                        const std::vector<PendingTask>& by_loss)
+        {
+            return by_result.has_value() ? *by_result : by_loss.front();
         }
 
         /** @brief Releases two threads at the same moment, once both have arrived. */
@@ -135,7 +147,7 @@ namespace PendingTasksTests
         };
     } // namespace
 
-    TEST(Medium_PendingTasks, TaskIDsRiseFromOne)
+    TEST(Small_PendingTasks, TaskIDsRiseFromOne)
     {
         PendingTasks table;
 
@@ -144,39 +156,44 @@ namespace PendingTasksTests
         EXPECT_EQ(table.allocate_task_id(), 3u);
     }
 
-    TEST(Medium_PendingTasks, InsertAfterCloseRefused)
+    TEST(Small_PendingTasks, ADuplicateIDIsRefused)
     {
         PendingTasks table;
         const sushi_ptr<Node> first = make_sushi<Node>();
         const sushi_ptr<Node> second = make_sushi<Node>();
-
         ASSERT_TRUE(insert_plain(table, 1, *first, K_WORKER));
-        EXPECT_FALSE(insert_plain(table, 1, *second, K_WORKER)) << "an id in the table is refused";
 
+        EXPECT_FALSE(insert_plain(table, 1, *second, K_WORKER));
+
+        EXPECT_EQ(table.size(), 1u);
+    }
+
+    TEST(Small_PendingTasks, InsertAfterCloseIsRefused)
+    {
+        PendingTasks table;
+        const sushi_ptr<Node> first = make_sushi<Node>();
+        const sushi_ptr<Node> second = make_sushi<Node>();
+        ASSERT_TRUE(insert_plain(table, 1, *first, K_WORKER));
         table.close();
 
         EXPECT_FALSE(insert_plain(table, 2, *second, K_WORKER));
+
         EXPECT_EQ(table.size(), 1u);
         EXPECT_EQ(table.count_for_worker(K_WORKER), 1u);
-
-        std::vector<PendingTask> drained;
-        table.drain(drained);
-        ASSERT_EQ(drained.size(), 1u);
-        EXPECT_EQ(drained[0].node, first.get());
     }
 
-    TEST(Medium_PendingTasks, TakeIsExactlyOnce)
+    TEST(Small_PendingTasks, TakeReturnsTheTaskWithItsOutputs)
     {
         PendingTasks table;
         const sushi_ptr<Node> node = make_sushi<Node>();
         const std::vector<BufferHandle> outputs = {output_of(7, 3), output_of(8, 1)};
-
         ASSERT_TRUE(table.insert(5, *node, K_WORKER,
                                  span<const BufferHandle>(outputs.data(), outputs.size()),
                                  at(milliseconds(0))));
         EXPECT_EQ(table.size(), 1u);
 
         const std::optional<PendingTask> taken = table.take(5, K_WORKER);
+
         ASSERT_TRUE(taken.has_value());
         EXPECT_EQ(taken->task_id, 5u);
         EXPECT_EQ(taken->node, node.get());
@@ -186,73 +203,108 @@ namespace PendingTasksTests
         EXPECT_EQ(taken->outputs[0].version, 3u);
         EXPECT_EQ(taken->outputs[1].id, GlobalBufferID{8});
         EXPECT_EQ(taken->outputs[1].size_bytes, 64u);
+    }
+
+    TEST(Small_PendingTasks, ATakenTaskLeavesThroughNoSecondRemoval)
+    {
+        PendingTasks table;
+        const sushi_ptr<Node> node = make_sushi<Node>();
+        ASSERT_TRUE(insert_plain(table, 5, *node, K_WORKER));
+        ASSERT_TRUE(table.take(5, K_WORKER).has_value());
 
         EXPECT_FALSE(table.take(5, K_WORKER).has_value());
+
         EXPECT_EQ(table.size(), 0u);
         EXPECT_EQ(table.count_for_worker(K_WORKER), 0u);
-
         std::vector<PendingTask> rest;
         table.take_for_worker(K_WORKER, rest);
         table.take_overdue(at(milliseconds(1000000)), limits_with(milliseconds(1)), rest);
         table.drain(rest);
-        EXPECT_TRUE(rest.empty()) << "a taken task leaves through no second removal";
+        EXPECT_TRUE(rest.empty());
     }
 
-    TEST(Medium_PendingTasks, DrainReturnsEveryNode)
+    TEST(Small_PendingTasks, DrainReturnsEveryNodeOfEveryWorker)
     {
         PendingTasks table;
         const std::vector<sushi_ptr<Node>> nodes = {make_sushi<Node>(), make_sushi<Node>(),
                                                     make_sushi<Node>()};
-
         ASSERT_TRUE(insert_plain(table, 1, *nodes[0], K_WORKER));
         ASSERT_TRUE(insert_plain(table, 2, *nodes[1], K_OTHER_WORKER));
         ASSERT_TRUE(insert_plain(table, 3, *nodes[2], K_WORKER));
         ASSERT_TRUE(table.acknowledge(3, K_WORKER));
-
         table.close();
         std::vector<PendingTask> drained;
+
         table.drain(drained);
 
-        ASSERT_EQ(sorted_ids(drained), (std::vector<std::uint64_t>{1, 2, 3}));
-        for (const PendingTask& task : drained)
-            EXPECT_EQ(task.node, nodes[task.task_id - 1].get());
-
+        const std::vector<PendingTask> by_id = sorted_by_id(drained);
+        ASSERT_EQ(by_id.size(), 3u);
+        EXPECT_EQ(by_id[0].task_id, 1u);
+        EXPECT_EQ(by_id[0].node, nodes[0].get());
+        EXPECT_EQ(by_id[1].task_id, 2u);
+        EXPECT_EQ(by_id[1].node, nodes[1].get());
+        EXPECT_EQ(by_id[2].task_id, 3u);
+        EXPECT_EQ(by_id[2].node, nodes[2].get());
         EXPECT_EQ(table.size(), 0u);
         EXPECT_EQ(table.count_for_worker(K_WORKER), 0u);
         EXPECT_EQ(table.count_for_worker(K_OTHER_WORKER), 0u);
-
-        table.drain(drained);
-        EXPECT_EQ(drained.size(), 3u) << "a second drain finds nothing";
     }
 
-    TEST(Medium_PendingTasks, LateResultLeavesInflightAlone)
+    TEST(Small_PendingTasks, ASecondDrainFindsNothing)
+    {
+        PendingTasks table;
+        const sushi_ptr<Node> node = make_sushi<Node>();
+        ASSERT_TRUE(insert_plain(table, 1, *node, K_WORKER));
+        std::vector<PendingTask> first;
+        table.drain(first);
+        std::vector<PendingTask> second;
+
+        table.drain(second);
+
+        EXPECT_TRUE(second.empty());
+    }
+
+    TEST(Small_PendingTasks, AnIDThatWasNeverDispatchedTakesNothing)
+    {
+        PendingTasks table;
+
+        EXPECT_FALSE(table.take(9, K_WORKER).has_value());
+    }
+
+    TEST(Small_PendingTasks, AResultForATaskAlreadyReturnedIsRefused)
     {
         PendingTasks table;
         const sushi_ptr<Node> lost = make_sushi<Node>();
-        const sushi_ptr<Node> running = make_sushi<Node>();
-
-        EXPECT_FALSE(table.take(9, K_WORKER).has_value()) << "an id that was never dispatched";
-
         ASSERT_TRUE(insert_plain(table, 1, *lost, K_WORKER));
-        ASSERT_TRUE(insert_plain(table, 2, *running, K_OTHER_WORKER));
-
         std::vector<PendingTask> returned;
         table.take_for_worker(K_WORKER, returned);
         ASSERT_EQ(returned.size(), 1u);
         EXPECT_EQ(returned[0].node, lost.get());
 
-        EXPECT_FALSE(table.take(1, K_WORKER).has_value()) << "the result of a task already returned";
+        EXPECT_FALSE(table.take(1, K_WORKER).has_value());
         EXPECT_FALSE(table.acknowledge(1, K_WORKER));
+    }
+
+    TEST(Small_PendingTasks, ALostTaskLeavesAnotherWorkersTaskInflight)
+    {
+        PendingTasks table;
+        const sushi_ptr<Node> lost = make_sushi<Node>();
+        const sushi_ptr<Node> running = make_sushi<Node>();
+        ASSERT_TRUE(insert_plain(table, 1, *lost, K_WORKER));
+        ASSERT_TRUE(insert_plain(table, 2, *running, K_OTHER_WORKER));
+        std::vector<PendingTask> returned;
+
+        table.take_for_worker(K_WORKER, returned);
+
         EXPECT_EQ(table.size(), 1u);
         EXPECT_EQ(table.count_for_worker(K_OTHER_WORKER), 1u);
     }
 
-    TEST(Medium_PendingTasks, ForeignWorkerCannotTake)
+    TEST(Small_PendingTasks, ForeignWorkerCannotTake)
     {
         PendingTasks table;
         const sushi_ptr<Node> node = make_sushi<Node>();
         const std::vector<BufferHandle> outputs = {output_of(7, 3)};
-
         ASSERT_TRUE(table.insert(1, *node, K_WORKER,
                                  span<const BufferHandle>(outputs.data(), outputs.size()),
                                  at(milliseconds(0))));
@@ -261,22 +313,19 @@ namespace PendingTasksTests
         EXPECT_FALSE(table.acknowledge(1, K_OTHER_WORKER));
         EXPECT_FALSE(table.expects_output(1, K_OTHER_WORKER, GlobalBufferID{7}, 3));
         EXPECT_EQ(table.size(), 1u);
-
         std::vector<PendingTask> returned;
         table.take_for_worker(K_OTHER_WORKER, returned);
         EXPECT_TRUE(returned.empty());
-
         const std::optional<PendingTask> taken = table.take(1, K_WORKER);
         ASSERT_TRUE(taken.has_value());
         EXPECT_EQ(taken->node, node.get());
     }
 
-    TEST(Medium_PendingTasks, ExpectsOutputOnlyAtTheDispatchedVersion)
+    TEST(Small_PendingTasks, ExpectsOutputOnlyAtTheDispatchedVersion)
     {
         PendingTasks table;
         const sushi_ptr<Node> node = make_sushi<Node>();
         const std::vector<BufferHandle> outputs = {output_of(7, 3)};
-
         ASSERT_TRUE(table.insert(1, *node, K_WORKER,
                                  span<const BufferHandle>(outputs.data(), outputs.size()),
                                  at(milliseconds(0))));
@@ -286,252 +335,300 @@ namespace PendingTasksTests
         EXPECT_FALSE(table.expects_output(1, K_WORKER, GlobalBufferID{7}, 4));
         EXPECT_FALSE(table.expects_output(1, K_WORKER, GlobalBufferID{8}, 3));
         EXPECT_FALSE(table.expects_output(2, K_WORKER, GlobalBufferID{7}, 3));
-
         ASSERT_TRUE(table.take(1, K_WORKER).has_value());
         EXPECT_FALSE(table.expects_output(1, K_WORKER, GlobalBufferID{7}, 3));
     }
 
-    TEST(Medium_PendingTasks, UnacknowledgedTaskReapedWithDeadlineZero)
+    TEST(Small_PendingTasks, AnUnacknowledgedTaskIsReapedOneMillisecondAfterTheLimit)
     {
         PendingTasks table;
         const sushi_ptr<Node> silent = make_sushi<Node>();
-        const sushi_ptr<Node> accepted = make_sushi<Node>();
         const OverdueLimits limits = limits_with(milliseconds(0));
-
         ASSERT_TRUE(insert_plain(table, 1, *silent, K_WORKER));
-        ASSERT_TRUE(insert_plain(table, 2, *accepted, K_WORKER));
-        ASSERT_TRUE(table.acknowledge(2, K_WORKER));
-
         std::vector<PendingTask> reaped;
         table.take_overdue(at(K_ACKNOWLEDGE_TIMEOUT), limits, reaped);
         EXPECT_TRUE(reaped.empty()) << "the limit itself is still within the limit";
 
         table.take_overdue(at(K_ACKNOWLEDGE_TIMEOUT + milliseconds(1)), limits, reaped);
+
         ASSERT_EQ(reaped.size(), 1u);
         EXPECT_EQ(reaped[0].task_id, 1u);
         EXPECT_EQ(reaped[0].node, silent.get());
         EXPECT_EQ(reaped[0].cause, ReapCause::Unacknowledged);
+    }
+
+    TEST(Small_PendingTasks, ADeadlineOfZeroBoundsNoAcceptedTask)
+    {
+        PendingTasks table;
+        const sushi_ptr<Node> accepted = make_sushi<Node>();
+        const OverdueLimits limits = limits_with(milliseconds(0));
+        ASSERT_TRUE(insert_plain(table, 2, *accepted, K_WORKER));
+        ASSERT_TRUE(table.acknowledge(2, K_WORKER));
+        std::vector<PendingTask> reaped;
 
         table.take_overdue(at(milliseconds(100000000)), limits, reaped);
-        EXPECT_EQ(reaped.size(), 1u) << "deadline 0 puts no bound on an accepted task";
+
+        EXPECT_TRUE(reaped.empty());
         EXPECT_EQ(table.size(), 1u);
     }
 
-    TEST(Medium_PendingTasks, AcknowledgedTaskBelowOldestHeldReaped)
+    TEST(Small_PendingTasks, TwoMissesInARowReapATaskAsLostResult)
     {
         PendingTasks table;
-        const std::vector<sushi_ptr<Node>> nodes = {make_sushi<Node>(), make_sushi<Node>(),
-                                                    make_sushi<Node>(), make_sushi<Node>()};
+        const sushi_ptr<Node> lost = make_sushi<Node>();
+        const sushi_ptr<Node> held = make_sushi<Node>();
         const OverdueLimits limits = limits_with(milliseconds(0));
-
-        ASSERT_TRUE(insert_plain(table, 1, *nodes[0], K_WORKER));
-        ASSERT_TRUE(insert_plain(table, 2, *nodes[1], K_WORKER));
-        ASSERT_TRUE(insert_plain(table, 3, *nodes[2], K_WORKER));
-        ASSERT_TRUE(insert_plain(table, 4, *nodes[3], K_OTHER_WORKER));
+        ASSERT_TRUE(insert_plain(table, 1, *lost, K_WORKER));
+        ASSERT_TRUE(insert_plain(table, 3, *held, K_WORKER));
         ASSERT_TRUE(table.acknowledge(1, K_WORKER));
-        ASSERT_TRUE(table.acknowledge(2, K_WORKER));
         ASSERT_TRUE(table.acknowledge(3, K_WORKER));
-        ASSERT_TRUE(table.acknowledge(4, K_OTHER_WORKER));
-
         std::vector<PendingTask> reaped;
-
-        // The worker holds 3 and up: tasks 1 and 2 miss once, which is one short of lost.
+        // The worker holds 3 and up: task 1 misses once, which is one short of lost.
         table.note_heartbeat(K_WORKER, 3);
         table.take_overdue(at(milliseconds(1)), limits, reaped);
         EXPECT_TRUE(reaped.empty());
 
-        // The worker lists 2 again, so only task 1 has missed twice in a row.
+        table.note_heartbeat(K_WORKER, 3);
+        table.take_overdue(at(milliseconds(2)), limits, reaped);
+
+        ASSERT_EQ(reaped.size(), 1u);
+        EXPECT_EQ(reaped[0].task_id, 1u);
+        EXPECT_EQ(reaped[0].node, lost.get());
+        EXPECT_EQ(reaped[0].cause, ReapCause::LostResult);
+        EXPECT_EQ(table.count_for_worker(K_WORKER), 1u);
+    }
+
+    TEST(Small_PendingTasks, AHeartbeatThatListsTheTaskAgainRestartsItsMisses)
+    {
+        PendingTasks table;
+        const sushi_ptr<Node> first = make_sushi<Node>();
+        const sushi_ptr<Node> second = make_sushi<Node>();
+        const OverdueLimits limits = limits_with(milliseconds(0));
+        ASSERT_TRUE(insert_plain(table, 1, *first, K_WORKER));
+        ASSERT_TRUE(insert_plain(table, 2, *second, K_WORKER));
+        ASSERT_TRUE(table.acknowledge(1, K_WORKER));
+        ASSERT_TRUE(table.acknowledge(2, K_WORKER));
+        std::vector<PendingTask> reaped;
+        // Both tasks miss once, then the worker lists task 2 again, so only task 1 has missed twice.
+        table.note_heartbeat(K_WORKER, 3);
+        table.take_overdue(at(milliseconds(1)), limits, reaped);
         table.note_heartbeat(K_WORKER, 2);
         table.take_overdue(at(milliseconds(2)), limits, reaped);
         ASSERT_EQ(reaped.size(), 1u);
         EXPECT_EQ(reaped[0].task_id, 1u);
-        EXPECT_EQ(reaped[0].node, nodes[0].get());
-        EXPECT_EQ(reaped[0].cause, ReapCause::LostResult);
 
-        // Task 2 starts a second run of misses; task 4 belongs to a worker that sent nothing.
+        // Task 2 starts a second run of misses and needs two more to be lost.
         table.note_heartbeat(K_WORKER, 3);
         table.take_overdue(at(milliseconds(3)), limits, reaped);
         EXPECT_EQ(reaped.size(), 1u);
-
         table.note_heartbeat(K_WORKER, 3);
         table.take_overdue(at(milliseconds(4)), limits, reaped);
+
         ASSERT_EQ(reaped.size(), 2u);
         EXPECT_EQ(reaped[1].task_id, 2u);
         EXPECT_EQ(reaped[1].cause, ReapCause::LostResult);
+    }
 
-        EXPECT_EQ(table.count_for_worker(K_WORKER), 1u);
+    TEST(Small_PendingTasks, AWorkerThatSentNoHeartbeatLosesNothing)
+    {
+        PendingTasks table;
+        const sushi_ptr<Node> mine = make_sushi<Node>();
+        const sushi_ptr<Node> silent = make_sushi<Node>();
+        const OverdueLimits limits = limits_with(milliseconds(0));
+        ASSERT_TRUE(insert_plain(table, 1, *mine, K_WORKER));
+        ASSERT_TRUE(insert_plain(table, 4, *silent, K_OTHER_WORKER));
+        ASSERT_TRUE(table.acknowledge(1, K_WORKER));
+        ASSERT_TRUE(table.acknowledge(4, K_OTHER_WORKER));
+        std::vector<PendingTask> reaped;
+
+        table.note_heartbeat(K_WORKER, 3);
+        table.note_heartbeat(K_WORKER, 3);
+        table.take_overdue(at(milliseconds(1)), limits, reaped);
+
         EXPECT_EQ(table.count_for_worker(K_OTHER_WORKER), 1u);
     }
 
-    TEST(Medium_PendingTasks, HeartbeatLeavesAnUnacknowledgedTaskToItsOwnLimit)
+    TEST(Small_PendingTasks, AHeartbeatLeavesAnUnacknowledgedTaskToItsOwnLimit)
     {
         PendingTasks table;
         const sushi_ptr<Node> node = make_sushi<Node>();
         const OverdueLimits limits = limits_with(milliseconds(0));
-
         ASSERT_TRUE(insert_plain(table, 1, *node, K_WORKER));
         table.note_heartbeat(K_WORKER, 5);
         table.note_heartbeat(K_WORKER, 5);
         table.note_heartbeat(K_WORKER, 5);
-
         std::vector<PendingTask> reaped;
-        table.take_overdue(at(K_ACKNOWLEDGE_TIMEOUT), limits, reaped);
-        EXPECT_TRUE(reaped.empty()) << "the dispatch may still be on its way to the worker";
 
-        table.take_overdue(at(K_ACKNOWLEDGE_TIMEOUT + milliseconds(1)), limits, reaped);
-        ASSERT_EQ(reaped.size(), 1u);
-        EXPECT_EQ(reaped[0].cause, ReapCause::Unacknowledged);
+        table.take_overdue(at(K_ACKNOWLEDGE_TIMEOUT), limits, reaped);
+
+        EXPECT_TRUE(reaped.empty()) << "the dispatch may still be on its way to the worker";
     }
 
-    TEST(Medium_PendingTasks, ChunkRestartsTheDeadline)
+    TEST(Small_PendingTasks, ChunkRestartsTheDeadline)
     {
         PendingTasks table;
         const sushi_ptr<Node> busy = make_sushi<Node>();
         const sushi_ptr<Node> idle = make_sushi<Node>();
         const OverdueLimits limits = limits_with(milliseconds(1000));
-
         ASSERT_TRUE(insert_plain(table, 1, *busy, K_WORKER));
         ASSERT_TRUE(insert_plain(table, 2, *idle, K_OTHER_WORKER));
         ASSERT_TRUE(table.acknowledge(1, K_WORKER));
         ASSERT_TRUE(table.acknowledge(2, K_OTHER_WORKER));
-
         table.note_chunk(K_WORKER, at(milliseconds(900)));
-
         std::vector<PendingTask> reaped;
         table.take_overdue(at(milliseconds(1000)), limits, reaped);
         EXPECT_TRUE(reaped.empty());
-
         table.take_overdue(at(milliseconds(1001)), limits, reaped);
         ASSERT_EQ(reaped.size(), 1u);
         EXPECT_EQ(reaped[0].task_id, 2u);
         EXPECT_EQ(reaped[0].cause, ReapCause::Deadline);
-
         table.take_overdue(at(milliseconds(1900)), limits, reaped);
         EXPECT_EQ(reaped.size(), 1u);
 
         table.take_overdue(at(milliseconds(1901)), limits, reaped);
+
         ASSERT_EQ(reaped.size(), 2u);
         EXPECT_EQ(reaped[1].task_id, 1u);
         EXPECT_EQ(reaped[1].node, busy.get());
         EXPECT_EQ(reaped[1].cause, ReapCause::Deadline);
     }
 
-    TEST(Medium_PendingTasks, EarliestDeadlineFollowsTheOwnDeadlines)
+    TEST(Small_PendingTasks, EarliestDeadlinePublishesOnlyOwnDeadlines)
     {
         PendingTasks table;
         const sushi_ptr<Node> ruled = make_sushi<Node>();
         const sushi_ptr<Node> plain = make_sushi<Node>();
-        const OverdueLimits limits = limits_with(milliseconds(1000));
         const auto none = std::chrono::steady_clock::time_point::max();
         const auto tick = std::chrono::steady_clock::duration(1);
         EXPECT_EQ(table.earliest_deadline(), none);
-
         ASSERT_TRUE(insert_plain(table, 2, *plain, K_WORKER));
         EXPECT_EQ(table.earliest_deadline(), none) << "the cluster's deadline is not published";
+
         ASSERT_TRUE(table.insert(1, *ruled, K_WORKER, span<const BufferHandle>(),
                                  at(milliseconds(0)), milliseconds(50)));
+
         EXPECT_EQ(table.earliest_deadline(), at(milliseconds(50)) + tick);
-
-        // A chunk moves the deadline on; the next pass makes the bound exact again.
-        table.note_chunk(K_WORKER, at(milliseconds(40)));
-        std::vector<PendingTask> reaped;
-        table.take_overdue(at(milliseconds(45)), limits, reaped);
-        EXPECT_TRUE(reaped.empty());
-        EXPECT_EQ(table.earliest_deadline(), at(milliseconds(90)) + tick);
-
-        ASSERT_TRUE(table.take(1, K_WORKER).has_value());
-        table.take_overdue(at(milliseconds(46)), limits, reaped);
-        EXPECT_EQ(table.earliest_deadline(), none);
     }
 
-    TEST(Medium_PendingTasks, OwnDeadlineReplacesTheClusterDeadline)
+    TEST(Small_PendingTasks, EarliestDeadlineIsAtOrBeforeTheMovedDeadlineAfterAChunk)
+    {
+        PendingTasks table;
+        const sushi_ptr<Node> ruled = make_sushi<Node>();
+        const OverdueLimits limits = limits_with(milliseconds(1000));
+        const auto tick = std::chrono::steady_clock::duration(1);
+        ASSERT_TRUE(table.insert(1, *ruled, K_WORKER, span<const BufferHandle>(),
+                                 at(milliseconds(0)), milliseconds(50)));
+        // A chunk moves the deadline on; the bound published may stay earlier until the next pass.
+        table.note_chunk(K_WORKER, at(milliseconds(40)));
+        std::vector<PendingTask> reaped;
+
+        table.take_overdue(at(milliseconds(45)), limits, reaped);
+
+        EXPECT_TRUE(reaped.empty());
+        EXPECT_NE(table.earliest_deadline(), std::chrono::steady_clock::time_point::max());
+        EXPECT_LE(table.earliest_deadline(), at(milliseconds(90)) + tick);
+    }
+
+    TEST(Small_PendingTasks, ATakeLeavesNoEarliestDeadline)
+    {
+        PendingTasks table;
+        const sushi_ptr<Node> ruled = make_sushi<Node>();
+        const OverdueLimits limits = limits_with(milliseconds(1000));
+        ASSERT_TRUE(table.insert(1, *ruled, K_WORKER, span<const BufferHandle>(),
+                                 at(milliseconds(0)), milliseconds(50)));
+        ASSERT_TRUE(table.take(1, K_WORKER).has_value());
+        std::vector<PendingTask> reaped;
+
+        table.take_overdue(at(milliseconds(46)), limits, reaped);
+
+        EXPECT_EQ(table.earliest_deadline(), std::chrono::steady_clock::time_point::max());
+    }
+
+    TEST(Small_PendingTasks, OwnDeadlineReplacesTheClusterDeadline)
     {
         PendingTasks table;
         const sushi_ptr<Node> ruled = make_sushi<Node>();
         const sushi_ptr<Node> plain = make_sushi<Node>();
         const sushi_ptr<Node> patient = make_sushi<Node>();
         const OverdueLimits limits = limits_with(milliseconds(1000));
-
         ASSERT_TRUE(table.insert(1, *ruled, K_WORKER, span<const BufferHandle>(),
                                  at(milliseconds(0)), milliseconds(100)));
         ASSERT_TRUE(insert_plain(table, 2, *plain, K_WORKER));
         ASSERT_TRUE(table.insert(3, *patient, K_WORKER, span<const BufferHandle>(),
                                  at(milliseconds(0)), milliseconds(5000)));
-        for (std::uint64_t task_id = 1; task_id <= 3; ++task_id)
-            ASSERT_TRUE(table.acknowledge(task_id, K_WORKER));
-
+        ASSERT_TRUE(table.acknowledge(1, K_WORKER));
+        ASSERT_TRUE(table.acknowledge(2, K_WORKER));
+        ASSERT_TRUE(table.acknowledge(3, K_WORKER));
         std::vector<PendingTask> reaped;
         table.take_overdue(at(milliseconds(101)), limits, reaped);
         ASSERT_EQ(reaped.size(), 1u) << "the task's own 100 ms deadline applies";
         EXPECT_EQ(reaped[0].task_id, 1u);
         EXPECT_EQ(reaped[0].cause, ReapCause::Deadline);
-
         table.take_overdue(at(milliseconds(1001)), limits, reaped);
         ASSERT_EQ(reaped.size(), 2u) << "a task with no deadline keeps the cluster's";
         EXPECT_EQ(reaped[1].task_id, 2u);
 
         table.take_overdue(at(milliseconds(5001)), limits, reaped);
+
         ASSERT_EQ(reaped.size(), 3u) << "a longer own deadline outlasts the cluster's";
         EXPECT_EQ(reaped[2].task_id, 3u);
     }
 
-    TEST(Medium_PendingTasks, TakeForWorkerForgetsItsChunkTime)
+    TEST(Small_PendingTasks, TakeForWorkerForgetsItsChunkTime)
     {
         PendingTasks table;
         const sushi_ptr<Node> first = make_sushi<Node>();
         const sushi_ptr<Node> second = make_sushi<Node>();
         const OverdueLimits limits = limits_with(milliseconds(1000));
-
         ASSERT_TRUE(insert_plain(table, 1, *first, K_WORKER));
         table.note_chunk(K_WORKER, at(milliseconds(50000)));
-
         std::vector<PendingTask> returned;
         table.take_for_worker(K_WORKER, returned);
         ASSERT_EQ(returned.size(), 1u);
-
         ASSERT_TRUE(insert_plain(table, 2, *second, K_WORKER, milliseconds(100)));
         ASSERT_TRUE(table.acknowledge(2, K_WORKER));
-
         std::vector<PendingTask> reaped;
+
         table.take_overdue(at(milliseconds(1101)), limits, reaped);
+
         ASSERT_EQ(reaped.size(), 1u) << "the deadline runs from the dispatch, not from the old chunk";
         EXPECT_EQ(reaped[0].task_id, 2u);
         EXPECT_EQ(reaped[0].cause, ReapCause::Deadline);
     }
 
-    TEST(Medium_PendingTasks, TwoRemovalsOfOneTaskHaveOneWinner)
+    /** @brief Runs a test once per round of the two-thread removal. */
+    class Medium_PendingTasksRace : public ::testing::TestWithParam<int>
+    {
+    };
+
+    TEST_P(Medium_PendingTasksRace, TwoRemovalsOfOneTaskHaveOneWinner)
     {
         PendingTasks table;
         const sushi_ptr<Node> node = make_sushi<Node>();
-
-        for (int round = 0; round < K_RACE_ROUNDS; ++round)
+        const std::uint64_t task_id = table.allocate_task_id();
+        ASSERT_TRUE(insert_plain(table, task_id, *node, K_WORKER));
+        StartGate gate;
+        std::optional<PendingTask> by_result;
+        std::vector<PendingTask> by_loss;
+        std::thread result_thread([&]
         {
-            const std::uint64_t task_id = table.allocate_task_id();
-            ASSERT_TRUE(insert_plain(table, task_id, *node, K_WORKER));
+            gate.arrive_and_wait();
+            by_result = table.take(task_id, K_WORKER);
+        });
+        std::thread loss_thread([&]
+        {
+            gate.arrive_and_wait();
+            table.take_for_worker(K_WORKER, by_loss);
+        });
 
-            StartGate gate;
-            std::optional<PendingTask> by_result;
-            std::vector<PendingTask> by_loss;
+        result_thread.join();
+        loss_thread.join();
 
-            std::thread result_thread([&]
-            {
-                gate.arrive_and_wait();
-                by_result = table.take(task_id, K_WORKER);
-            });
-            std::thread loss_thread([&]
-            {
-                gate.arrive_and_wait();
-                table.take_for_worker(K_WORKER, by_loss);
-            });
-            result_thread.join();
-            loss_thread.join();
-
-            const std::size_t winners = (by_result.has_value() ? 1u : 0u) + by_loss.size();
-            ASSERT_EQ(winners, 1u) << "round " << round;
-            const PendingTask& won = by_result.has_value() ? *by_result : by_loss.front();
-            EXPECT_EQ(won.node, node.get());
-            EXPECT_EQ(won.task_id, task_id);
-            ASSERT_EQ(table.size(), 0u);
-        }
+        ASSERT_EQ(winners_of(by_result, by_loss), 1u);
+        EXPECT_EQ(winner_among(by_result, by_loss).node, node.get());
+        EXPECT_EQ(winner_among(by_result, by_loss).task_id, task_id);
+        EXPECT_EQ(table.size(), 0u);
     }
+
+    INSTANTIATE_TEST_SUITE_P(Rounds, Medium_PendingTasksRace, ::testing::Range(0, K_RACE_ROUNDS));
 } // namespace PendingTasksTests

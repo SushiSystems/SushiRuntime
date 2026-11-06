@@ -9,19 +9,27 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_environment.cpp
 
+The tests set and remove one variable of the test process, `SR_TEST_READ_ENVIRONMENT`, through a guard that
+puts back the value it found, so they are medium and name no variable the machine may lack.
+
 | Test | What it proves |
 | --- | --- |
-| `ReadsASetVariableAndReportsAnUnsetOne` | `read_environment("PATH")` returns text; a name nobody sets returns nothing. |
+| `ASetVariableIsReturnedWithItsValue` | `read_environment` returns the text a variable was set to. |
+| `AnUnsetVariableIsNothing` | `read_environment` returns nothing for a variable that is not set. |
 
 ## test_stop_signal.cpp
 
-| Test | What it proves |
-| --- | --- |
-| `RequestSetsTheFlagAndANewObjectClearsIt` | A `StopSignal` starts clear, `request()` sets the flag, and the next `StopSignal` starts clear again. |
-| `Small_StopSignal.LogsAHandlerThatCouldNotBeInstalled` | An installer that answers `SIG_ERR` makes the constructor log one `WARN` per stop signal in the `process_environment` module; the flag still starts clear and `request()` still sets it. |
-
-## test_process_environment_log_category.cpp
+The tests install through an installer they pass in, so no real process handler changes and every test is
+small.
 
 | Test | What it proves |
 | --- | --- |
-| `TheCategoryIsNamedAfterTheModule` | `K_PROCESS_ENVIRONMENT_LOG_CATEGORY` names the module `process_environment` in the project `sushiruntime`, at compile time. |
+| `RequestSetsTheFlag` | A `StopSignal` starts clear and `request()` sets the flag. |
+| `ANewObjectAfterARequestStartsClear` | A `StopSignal` made after a request starts with the flag clear. |
+| `LogsAHandlerThatCouldNotBeInstalled` | An installer that answers `SIG_ERR` makes the constructor log one `WARN` per stop signal in the `process_environment` module. |
+| `TheFlagStillWorksAfterARefusedInstallation` | After every installation was refused, the flag still starts clear and `request()` still sets it. |
+
+## compile_process_environment_log_category.cpp
+
+The file includes `process_environment_log_category.hpp` alone, so the header carries every include it
+needs. The header holds a constant, which has no behaviour of its own to test.

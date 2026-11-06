@@ -34,30 +34,40 @@
 
 using namespace SushiRuntime::Distributed;
 
-/** @brief Tests that a repeated id is refused while remembered, and the oldest goes first. */
-TEST(Medium_DispatchDeduplicatorTest, DuplicateDispatchRunsOnce)
+/** @brief Tests that a repeated id is refused while it is remembered. */
+TEST(Small_DispatchDeduplicatorTest, ARepeatedIDIsRefusedWhileRemembered)
 {
     DispatchDeduplicator seen;
-    EXPECT_TRUE(seen.mark_seen(1));
+    ASSERT_TRUE(seen.mark_seen(1));
+
     EXPECT_FALSE(seen.mark_seen(1)) << "a repeated dispatch would run twice";
+
     EXPECT_TRUE(seen.mark_seen(2));
     EXPECT_EQ(seen.size(), 2u);
+}
 
+/** @brief Tests that the oldest id is forgotten once the capacity is reached. */
+TEST(Small_DispatchDeduplicatorTest, TheOldestIDIsForgottenAtTheCapacity)
+{
     DispatchDeduplicator bounded(2);
-    EXPECT_TRUE(bounded.mark_seen(1));
-    EXPECT_TRUE(bounded.mark_seen(2));
+    ASSERT_TRUE(bounded.mark_seen(1));
+    ASSERT_TRUE(bounded.mark_seen(2));
+
     EXPECT_TRUE(bounded.mark_seen(3));
+
     EXPECT_EQ(bounded.size(), 2u);
     EXPECT_TRUE(bounded.mark_seen(1)) << "the oldest id was not forgotten at the capacity";
     EXPECT_FALSE(bounded.mark_seen(3));
 }
 
 /** @brief Tests that clear() forgets every id, as a new master session needs. */
-TEST(Medium_DispatchDeduplicatorTest, ClearForgetsEveryId)
+TEST(Small_DispatchDeduplicatorTest, ClearForgetsEveryId)
 {
     DispatchDeduplicator seen;
-    EXPECT_TRUE(seen.mark_seen(7));
+    ASSERT_TRUE(seen.mark_seen(7));
+
     seen.clear();
+
     EXPECT_EQ(seen.size(), 0u);
     EXPECT_TRUE(seen.mark_seen(7));
 }

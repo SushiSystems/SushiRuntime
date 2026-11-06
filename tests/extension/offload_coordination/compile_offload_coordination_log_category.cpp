@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_offload_coordination_log_category.cpp                             */
+/* compile_offload_coordination_log_category.cpp                          */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,24 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_offload_coordination_log_category.cpp
- * @brief Tests K_OFFLOAD_COORDINATION_LOG_CATEGORY: the name its records carry.
+ * @file compile_offload_coordination_log_category.cpp
+ * @brief Compiles offload_coordination_log_category.hpp on its own, so the header carries every include it needs.
  * @see tests/extension/offload_coordination/README.md
  * @author Mustafa Garip
  */
 
 #include <SushiRuntime/offload_coordination/offload_coordination_log_category.hpp>
-
-#include <gtest/gtest.h>
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the category is the module's folder in the runtime's project. */
-TEST(Small_OffloadCoordinationLogCategory, TheCategoryIsNamedAfterTheModule)
-{
-    static_assert(K_OFFLOAD_COORDINATION_LOG_CATEGORY.module() == "offload_coordination",
-                  "the folder name of the module");
-    static_assert(K_OFFLOAD_COORDINATION_LOG_CATEGORY.project().name() == "sushiruntime",
-                  "the project of the runtime");
-    SUCCEED();
-}

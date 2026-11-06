@@ -6,6 +6,6 @@
 sushiruntime_add_module_tests(
     MODULE process_environment
     SOURCES
+        compile_process_environment_log_category.cpp
         test_environment.cpp
-        test_process_environment_log_category.cpp
         test_stop_signal.cpp)

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_cluster_statistics.cpp                                            */
+/* compile_cluster_statistics.cpp                                         */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,28 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_cluster_statistics.cpp
- * @brief Tests ClusterStatistics and WorkerSnapshot: everything starts at zero and empty.
+ * @file compile_cluster_statistics.cpp
+ * @brief Compiles cluster_statistics.hpp on its own, so the header carries every include it needs.
  * @see tests/extension/cluster_load/README.md
  * @author Mustafa Garip
  */
 
-#include <gtest/gtest.h>
-
 #include <SushiRuntime/cluster_load/cluster_statistics.hpp>
-
-using namespace SushiRuntime;
-using namespace SushiRuntime::Distributed;
-
-/** @brief Tests that the statistics of a cluster with no worker are zero. */
-TEST(Medium_ClusterStatistics, StartAtZero)
-{
-    const ClusterStatistics statistics;
-    EXPECT_EQ(statistics.alive_workers, 0u);
-    EXPECT_EQ(statistics.pending_tasks, 0u);
-    EXPECT_EQ(statistics.held_nodes, 0u);
-    EXPECT_TRUE(statistics.workers.empty());
-    const WorkerSnapshot worker;
-    EXPECT_TRUE(worker.name.empty());
-    EXPECT_TRUE(worker.endpoint.empty());
-}

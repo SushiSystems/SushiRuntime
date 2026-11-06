@@ -6,5 +6,5 @@
 sushiruntime_add_module_tests(
     MODULE in_process_transport
     SOURCES
-        test_in_process_transport.cpp
-        test_in_process_transport_log_category.cpp)
+        compile_in_process_transport_log_category.cpp
+        test_in_process_transport.cpp)

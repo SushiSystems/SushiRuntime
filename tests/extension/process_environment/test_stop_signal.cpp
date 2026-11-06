@@ -23,38 +23,28 @@
 
 /**
  * @file test_stop_signal.cpp
- * @brief Tests StopSignal: the flag starts clear, request() sets it.
+ * @brief Tests StopSignal: the flag starts clear, request() sets it and a refused handler is logged.
  * @see tests/extension/process_environment/README.md
  * @author Mustafa Garip
  */
 
-#include <gtest/gtest.h>
-
 #include <csignal>
+
+#include <gtest/gtest.h>
 
 #include <SushiRuntime/process_environment/stop_signal.hpp>
 #include <SushiRuntime/test_runner/log_capture.hpp>
 
 using namespace SushiRuntime::Distributed;
 
-/** @brief Tests that the flag starts clear, request() sets it and a later object clears it. */
-TEST(Medium_StopSignalTest, RequestSetsTheFlagAndANewObjectClearsIt)
-{
-    {
-        StopSignal stop_signal;
-        EXPECT_FALSE(stop_signal.is_requested());
-
-        stop_signal.request();
-
-        EXPECT_TRUE(stop_signal.is_requested());
-    }
-
-    const StopSignal next;
-    EXPECT_FALSE(next.is_requested());
-}
-
 namespace
 {
+    /** @brief Accepts every installation without touching the process's handlers. */
+    StopSignal::Handler accept_every_signal(int, StopSignal::Handler)
+    {
+        return SIG_DFL;
+    }
+
     /** @brief Refuses every installation, as a C runtime that cannot take a handler does. */
     StopSignal::Handler refuse_every_signal(int, StopSignal::Handler)
     {
@@ -62,20 +52,50 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that a refused installation is logged once per signal and the flag still works. */
+/** @brief Tests that request() sets a flag that starts clear. */
+TEST(Small_StopSignal, RequestSetsTheFlag)
+{
+    StopSignal stop_signal(&accept_every_signal);
+    ASSERT_FALSE(stop_signal.is_requested());
+
+    stop_signal.request();
+
+    EXPECT_TRUE(stop_signal.is_requested());
+}
+
+/** @brief Tests that an object made after a request starts with the flag clear. */
+TEST(Small_StopSignal, ANewObjectAfterARequestStartsClear)
+{
+    {
+        StopSignal first(&accept_every_signal);
+        first.request();
+    }
+
+    const StopSignal next(&accept_every_signal);
+
+    EXPECT_FALSE(next.is_requested());
+}
+
+/** @brief Tests that a refused installation is logged once per signal as a WARN. */
 TEST(Small_StopSignal, LogsAHandlerThatCouldNotBeInstalled)
 {
     SushiRuntime::TestRunner::LogCapture capture;
 
-    {
-        StopSignal stop_signal(&refuse_every_signal);
+    const StopSignal stop_signal(&refuse_every_signal);
 
-        EXPECT_GE(capture.count_at(SushiLog::LogLevel::Warn), 2u);
-        EXPECT_EQ(capture.count_in("process_environment"),
-                  capture.count_at(SushiLog::LogLevel::Warn));
-        EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Warn, "could not be installed"));
-        EXPECT_FALSE(stop_signal.is_requested());
-        stop_signal.request();
-        EXPECT_TRUE(stop_signal.is_requested());
-    }
+    EXPECT_GE(capture.count_at(SushiLog::LogLevel::Warn), 2u);
+    EXPECT_EQ(capture.count_in("process_environment"),
+              capture.count_at(SushiLog::LogLevel::Warn));
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Warn, "could not be installed"));
+}
+
+/** @brief Tests that the flag still works after every installation was refused. */
+TEST(Small_StopSignal, TheFlagStillWorksAfterARefusedInstallation)
+{
+    StopSignal stop_signal(&refuse_every_signal);
+    ASSERT_FALSE(stop_signal.is_requested());
+
+    stop_signal.request();
+
+    EXPECT_TRUE(stop_signal.is_requested());
 }

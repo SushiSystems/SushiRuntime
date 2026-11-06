@@ -73,7 +73,7 @@ namespace
 }
 
 /** @brief Tests that a payload below the policy's byte gate stays local. */
-TEST(Medium_OffloadPolicy, PolicyKeepsTinyPayloadLocal)
+TEST(Small_OffloadPolicy, PolicyKeepsTinyPayloadLocal)
 {
     const std::vector<WorkerLoad> workers{live_worker(1, 0, K_AMPLE_MEMORY, 50)};
 
@@ -81,7 +81,7 @@ TEST(Medium_OffloadPolicy, PolicyKeepsTinyPayloadLocal)
 }
 
 /** @brief Tests that the worker with the shorter round trip wins when load is equal. */
-TEST(Medium_OffloadPolicy, PolicyPicksLowerRttWorker)
+TEST(Small_OffloadPolicy, PolicyPicksLowerRttWorker)
 {
     const std::vector<WorkerLoad> workers{
         live_worker(1, 0, K_AMPLE_MEMORY, 50000),
@@ -94,7 +94,7 @@ TEST(Medium_OffloadPolicy, PolicyPicksLowerRttWorker)
 }
 
 /** @brief Tests that the worker with fewer tasks in flight wins when round trips are equal. */
-TEST(Medium_OffloadPolicy, PolicyPrefersLessLoadedWhenEquallyNear)
+TEST(Small_OffloadPolicy, PolicyPrefersLessLoadedWhenEquallyNear)
 {
     const std::vector<WorkerLoad> workers{
         live_worker(1, 5, K_AMPLE_MEMORY, 200),
@@ -107,7 +107,7 @@ TEST(Medium_OffloadPolicy, PolicyPrefersLessLoadedWhenEquallyNear)
 }
 
 /** @brief Tests that a worker with less free memory than the payload is not picked. */
-TEST(Medium_OffloadPolicy, PolicyRejectsInsufficientHeadroom)
+TEST(Small_OffloadPolicy, PolicyRejectsInsufficientHeadroom)
 {
     const std::vector<WorkerLoad> workers{live_worker(1, 0, K_LARGE_PAYLOAD / 2, 100)};
 
@@ -115,7 +115,7 @@ TEST(Medium_OffloadPolicy, PolicyRejectsInsufficientHeadroom)
 }
 
 /** @brief Tests that the policy picks nobody when no worker is alive. */
-TEST(Medium_OffloadPolicy, PolicyFallsBackLocalWhenNoLiveWorker)
+TEST(Small_OffloadPolicy, PolicyFallsBackLocalWhenNoLiveWorker)
 {
     WorkerLoad dead = live_worker(1, 0, K_AMPLE_MEMORY, 100);
     dead.alive = false;
@@ -125,7 +125,7 @@ TEST(Medium_OffloadPolicy, PolicyFallsBackLocalWhenNoLiveWorker)
 }
 
 /** @brief Tests that a free-memory figure of zero counts as unknown and keeps the worker. */
-TEST(Medium_OffloadPolicy, PolicyTreatsZeroFreeMemAsUnknown)
+TEST(Small_OffloadPolicy, PolicyTreatsZeroFreeMemAsUnknown)
 {
     const std::vector<WorkerLoad> workers{live_worker(1, 0, 0, 100)};
 

@@ -6,6 +6,6 @@
 sushiruntime_add_module_tests(
     MODULE cluster_load
     SOURCES
-        test_cluster_statistics.cpp
-        test_offload_policy.cpp
-        test_placement_decision.cpp)
+        compile_cluster_statistics.cpp
+        compile_placement_decision.cpp
+        test_offload_policy.cpp)

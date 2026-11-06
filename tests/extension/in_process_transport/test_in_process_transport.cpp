@@ -23,18 +23,22 @@
 
 /**
  * @file test_in_process_transport.cpp
- * @brief Tests InProcessTransport: a fabric delivers frames both ways.
+ * @brief Tests InProcessTransport against the Transport contract: ordering, loss, stop and the statuses of a send.
  * @see tests/extension/in_process_transport/README.md
  * @author Mustafa Garip
  */
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
-#include <optional>
+#include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -43,157 +47,567 @@
 #include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
 #include <SushiRuntime/transport/transport.hpp>
+#include <SushiRuntime/wire/wire_frame.hpp>
+
+#include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
+#include <SushiRuntime/buffer_exchange/buffer_registry.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
 namespace
 {
-    /** @brief Names the bytes of a payload or a frame. */
-    using Bytes = std::vector<std::byte>;
+    /** @brief Longest a test waits for an event that a healthy transport delivers at once. */
+    constexpr std::chrono::milliseconds K_EVENT_LIMIT{10000};
 
-    /** @brief Holds how long a transport test waits for an event. */
-    constexpr std::chrono::seconds K_EVENT_LIMIT{10};
+    /** @brief Number of frames the ordering test sends each way. */
+    constexpr std::uint32_t K_ORDERED_FRAMES = 500;
 
-    /** @brief Returns a read-only view of a byte vector. */
-    span<const std::byte> view_of(const Bytes& bytes)
+    /** @brief Names what a recorded event was. */
+    enum class EventKind : std::uint8_t
     {
-        return span<const std::byte>(bytes.data(), bytes.size());
-    }
-
-    /** @brief Holds one frame a transport delivered. */
-    struct ReceivedFrame
-    {
-        /** @brief The peer the frame came from. */
-        PeerID peer;
-
-        /** @brief The type the header carried. */
-        MessageType type = MessageType::Hello;
-
-        /** @brief The flag byte the header carried. */
-        std::uint8_t flags = 0;
-
-        /** @brief A copy of the payload. */
-        Bytes payload;
+        Connected, /**< on_peer_connected(). */
+        Frame,     /**< on_frame(). */
+        Lost,      /**< on_peer_lost(). */
+        Abandoned, /**< on_connect_abandoned(). */
     };
 
+    /** @brief Holds one recorded event with a copy of its payload. */
+    struct Event
+    {
+        EventKind kind = EventKind::Frame;                 /**< What was called. */
+        PeerID peer;                                       /**< The peer it was called for. */
+        MessageType type = MessageType::Hello;             /**< The type of a frame. */
+        std::uint8_t flags = 0;                            /**< The flags of a frame. */
+        std::vector<std::byte> payload;                    /**< The payload of a frame. */
+        PeerLossCause cause = PeerLossCause::ClosedByPeer; /**< The cause of a loss. */
+    };
+
+    /** @brief Encodes a counter as the four-byte payload the tests send. */
+    std::vector<std::byte> encode_index(std::uint32_t index)
+    {
+        std::vector<std::byte> bytes(sizeof(index));
+        for (std::size_t byte = 0; byte < bytes.size(); ++byte)
+            bytes[byte] = static_cast<std::byte>((index >> (8 * byte)) & 0xFFu);
+        return bytes;
+    }
+
+    /** @brief Decodes the first four bytes of a payload written by encode_index(). */
+    std::uint32_t decode_index(const std::vector<std::byte>& bytes)
+    {
+        std::uint32_t index = 0;
+        for (std::size_t byte = 0; byte < sizeof(index) && byte < bytes.size(); ++byte)
+            index |= std::to_integer<std::uint32_t>(bytes[byte]) << (8 * byte);
+        return index;
+    }
+
     /**
-     * @brief Records the connections and the frames of one endpoint and wakes a waiting test.
+     * @brief Records every event of one transport and lets a test wait for a condition.
+     *
+     * The reaction, when set, runs after the event is recorded and outside the recorder's
+     * lock, on the transport thread that made the event.
      */
-    class RecordingEvents final : public TransportEvents
+    class EventRecorder final : public TransportEvents
     {
         public:
-            /** @brief Records the peer of a connection that opened. */
-            void on_peer_connected(PeerID peer, const PeerDescription& /*info*/) override
+            /** @brief Names the callable a test runs inside an event. */
+            using Reaction = std::function<void(const Event&)>;
+
+            /** @brief Sets the reaction; called before the transport starts. */
+            void set_reaction(Reaction reaction)
             {
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    connected_.push_back(peer);
-                }
-                changed_.notify_all();
+                reaction_ = std::move(reaction);
             }
 
-            /** @brief Records a copy of a frame. */
+            /** @brief Records the connection. */
+            void on_peer_connected(PeerID peer, const PeerDescription&) override
+            {
+                Event event;
+                event.kind = EventKind::Connected;
+                event.peer = peer;
+                record(std::move(event));
+            }
+
+            /** @brief Records the frame and copies its payload. */
             void on_frame(PeerID peer, MessageType type, std::uint8_t flags,
-                          span<const std::byte> payload) override
+                          SushiRuntime::span<const std::byte> payload) override
             {
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    frames_.push_back(
-                        ReceivedFrame{peer, type, flags, Bytes(payload.begin(), payload.end())});
-                }
-                changed_.notify_all();
+                Event event;
+                event.kind = EventKind::Frame;
+                event.peer = peer;
+                event.type = type;
+                event.flags = flags;
+                event.payload.assign(payload.data(), payload.data() + payload.size());
+                record(std::move(event));
             }
 
-            /** @brief Ignores a loss; the test stops both endpoints itself. */
-            void on_peer_lost(PeerID /*peer*/, const PeerLoss& /*loss*/) override
+            /** @brief Records the loss and its cause. */
+            void on_peer_lost(PeerID peer, const PeerLoss& loss) override
             {
-
+                Event event;
+                event.kind = EventKind::Lost;
+                event.peer = peer;
+                event.cause = loss.cause;
+                record(std::move(event));
             }
 
-            /** @brief Ignores an abandoned connect; the test sets no connect timeout. */
-            void on_connect_abandoned(const std::string& /*cause*/) override
+            /** @brief Records that the worker endpoint gave up. */
+            void on_connect_abandoned(const std::string&) override
             {
-
+                Event event;
+                event.kind = EventKind::Abandoned;
+                record(std::move(event));
             }
 
-            /** @brief Waits for the first connection and returns its peer, or nothing. */
-            [[nodiscard]] std::optional<PeerID> wait_for_peer()
+            /** @brief Waits until at least @p count events of one kind were recorded. */
+            [[nodiscard]] bool wait_for_count(EventKind kind, std::size_t count)
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                if (!changed_.wait_for(lock, K_EVENT_LIMIT, [&] { return !connected_.empty(); }))
-                    return std::nullopt;
-                return connected_.front();
+                return changed_.wait_for(lock, K_EVENT_LIMIT,
+                                         [&] { return count_of(events_, kind) >= count; });
             }
 
-            /** @brief Waits for the first frame and returns it, or nothing. */
-            [[nodiscard]] std::optional<ReceivedFrame> wait_for_frame()
+            /** @brief Returns a copy of every event recorded so far, in order. */
+            [[nodiscard]] std::vector<Event> events() const
             {
-                std::unique_lock<std::mutex> lock(mutex_);
-                if (!changed_.wait_for(lock, K_EVENT_LIMIT, [&] { return !frames_.empty(); }))
-                    return std::nullopt;
-                return frames_.front();
+                std::lock_guard<std::mutex> lock(mutex_);
+                return events_;
+            }
+
+            /** @brief Returns the number of events recorded so far. */
+            [[nodiscard]] std::size_t size() const
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                return events_.size();
+            }
+
+            /** @brief Returns the peer of the first recorded connection, or no peer. */
+            [[nodiscard]] PeerID first_peer() const
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                for (const Event& event : events_)
+                    if (event.kind == EventKind::Connected)
+                        return event.peer;
+                return PeerID{};
+            }
+
+            /** @brief Counts the events of one kind in a list. */
+            [[nodiscard]] static std::size_t count_of(const std::vector<Event>& events,
+                                                      EventKind kind)
+            {
+                std::size_t count = 0;
+                for (const Event& event : events)
+                    count += event.kind == kind ? 1 : 0;
+                return count;
             }
 
         private:
-            /// @brief Guards the two lists.
-            std::mutex mutex_;
+            /** @brief Appends an event, wakes the waiters and runs the reaction. */
+            void record(Event&& event)
+            {
+                const Event copy = event;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    events_.push_back(std::move(event));
+                }
+                changed_.notify_all();
+                if (reaction_)
+                    reaction_(copy);
+            }
 
-            /// @brief Wakes a waiting test on every event.
+            /// @brief Guards events_.
+            mutable std::mutex mutex_;
+
+            /// @brief Wakes the waiters on every event.
             std::condition_variable changed_;
 
-            /// @brief The peers that connected, in order.
-            std::vector<PeerID> connected_;
+            /// @brief The events in the order they were made.
+            std::vector<Event> events_;
 
-            /// @brief The frames that arrived, in order.
-            std::vector<ReceivedFrame> frames_;
+            /// @brief Runs inside each event, or is empty.
+            Reaction reaction_;
     };
-}
 
-/** @brief Tests that frames of both directions arrive with the sender's peer id and type. */
-TEST(Medium_InProcessTransport, InProcessTransportDeliversBothDirections)
+    /** @brief Sends the indices 0 to count - 1 as frames of one type and expects each queued. */
+    void expect_indexed_frames_queued(Transport& from, PeerID to, MessageType type,
+                                      std::uint32_t count)
+    {
+        for (std::uint32_t index = 0; index < count; ++index)
+        {
+            const std::vector<std::byte> payload = encode_index(index);
+            ASSERT_EQ(from.send(to, type, {payload.data(), payload.size()}), SendStatus::Queued);
+        }
+    }
+
+    /** @brief Expects the frame events to carry the indices 0 to count - 1 in order. */
+    void expect_frames_in_order(const EventRecorder& recorder, std::uint32_t count)
+    {
+        std::uint32_t expected = 0;
+        for (const Event& event : recorder.events())
+        {
+            if (event.kind != EventKind::Frame)
+                continue;
+            EXPECT_EQ(event.flags, 0);
+            ASSERT_EQ(decode_index(event.payload), expected);
+            ++expected;
+        }
+        EXPECT_EQ(expected, count);
+    }
+
+    /** @brief Sends heartbeats until stopped, from a thread of its own. */
+    class FloodingSender final
+    {
+        public:
+            /** @brief Starts sending @p type frames with no payload to @p peer. */
+            FloodingSender(Transport& from, PeerID peer)
+                : thread_([this, &from, peer] { run(from, peer); })
+            {
+            }
+
+            /** @brief Stops the thread. */
+            ~FloodingSender()
+            {
+                is_running_.store(false);
+                thread_.join();
+            }
+
+            FloodingSender(const FloodingSender&) = delete;
+            FloodingSender& operator=(const FloodingSender&) = delete;
+
+        private:
+            /** @brief Sends until the flag clears. */
+            void run(Transport& from, PeerID peer)
+            {
+                while (is_running_.load())
+                {
+                    if (from.send(peer, MessageType::Heartbeat, {}) != SendStatus::Queued)
+                        std::this_thread::yield();
+                }
+            }
+
+            /// @brief Cleared by the destructor.
+            std::atomic<bool> is_running_{true};
+
+            /// @brief The sending thread; declared last so the flag exists before it runs.
+            std::thread thread_;
+    };
+
+    /** @brief Sends @p count heartbeats and returns how many were refused as Stopped. */
+    std::uint32_t count_stopped_sends(Transport& from, PeerID peer, std::uint32_t count)
+    {
+        std::uint32_t stopped = 0;
+        for (std::uint32_t index = 0; index < count; ++index)
+            stopped += from.send(peer, MessageType::Heartbeat, {}) == SendStatus::Stopped ? 1 : 0;
+        return stopped;
+    }
+
+    /** @brief Makes a reaction that answers a master's connection with a PING and each frame with a PONG. */
+    EventRecorder::Reaction make_echoing_reaction(
+        const std::shared_ptr<InProcessTransport>& master, std::atomic<std::uint32_t>& refused)
+    {
+        return [&master, &refused](const Event& event)
+        {
+            SendStatus status = SendStatus::Queued;
+            if (event.kind == EventKind::Connected)
+                status = master->send(event.peer, MessageType::Ping, {});
+            else if (event.kind == EventKind::Frame)
+                status = master->send(event.peer, MessageType::Pong,
+                                      {event.payload.data(), event.payload.size()});
+            if (status != SendStatus::Queued)
+                refused.fetch_add(1);
+        };
+    }
+
+    /** @brief Makes a reaction that closes the master's peer once the last echo arrives. */
+    EventRecorder::Reaction make_closing_reaction(
+        const std::shared_ptr<InProcessTransport>& worker, std::uint32_t frames)
+    {
+        return [&worker, frames](const Event& event)
+        {
+            const bool is_last_echo = event.kind == EventKind::Frame &&
+                                      event.type == MessageType::Pong &&
+                                      decode_index(event.payload) + 1 == frames;
+            if (is_last_echo)
+                worker->close_peer(event.peer);
+        };
+    }
+
+    /** @brief Returns the indices the PONG frames in a recorder carry, in order. */
+    std::vector<std::uint32_t> pong_indices(const EventRecorder& recorder)
+    {
+        std::vector<std::uint32_t> indices;
+        for (const Event& event : recorder.events())
+            if (event.kind == EventKind::Frame && event.type == MessageType::Pong)
+                indices.push_back(decode_index(event.payload));
+        return indices;
+    }
+
+    /** @brief Returns the indices 0 to count - 1. */
+    std::vector<std::uint32_t> counting_to(std::uint32_t count)
+    {
+        std::vector<std::uint32_t> indices(count);
+        for (std::uint32_t index = 0; index < count; ++index)
+            indices[index] = index;
+        return indices;
+    }
+} // namespace
+
+/** @brief Builds a master and a worker endpoint on one fabric and records the events of both. */
+class Medium_TransportContract : public ::testing::Test
 {
-    RecordingEvents master_events;
-    RecordingEvents worker_events;
-    InProcessFabric fabric;
-    const std::shared_ptr<InProcessTransport> master = InProcessTransport::make_master(fabric);
-    const std::shared_ptr<InProcessTransport> worker = InProcessTransport::make_worker(fabric);
-    EXPECT_EQ(fabric.worker_count(), 1u);
-    EXPECT_EQ(worker->worker_index(), 0u);
+    protected:
+        /**
+         * @brief Starts both endpoints and waits until each has seen the other connect.
+         * @param reconnect Whether the worker connects again after a loss.
+         */
+        void connect(bool reconnect)
+        {
+            master_ = InProcessTransport::make_master(fabric_);
+            const TransportResult master_started = master_->start(master_events_);
+            ASSERT_TRUE(master_started.is_ok()) << master_started.message;
 
-    ASSERT_TRUE(master->start(master_events).is_ok());
-    ASSERT_TRUE(worker->start(worker_events).is_ok());
+            InProcessWorkerOptions options;
+            options.reconnect = reconnect;
+            worker_ = InProcessTransport::make_worker(fabric_, options);
+            const TransportResult worker_started = worker_->start(worker_events_);
+            ASSERT_TRUE(worker_started.is_ok()) << worker_started.message;
 
-    const std::optional<PeerID> worker_as_seen = master_events.wait_for_peer();
-    const std::optional<PeerID> master_as_seen = worker_events.wait_for_peer();
-    ASSERT_TRUE(worker_as_seen.has_value());
-    ASSERT_TRUE(master_as_seen.has_value());
-    EXPECT_TRUE(worker_as_seen->valid());
-    EXPECT_TRUE(master_as_seen->valid());
+            ASSERT_TRUE(master_events_.wait_for_count(EventKind::Connected, 1));
+            ASSERT_TRUE(worker_events_.wait_for_count(EventKind::Connected, 1));
+            worker_peer_ = master_events_.first_peer();
+            master_peer_ = worker_events_.first_peer();
+            ASSERT_TRUE(worker_peer_.valid());
+            ASSERT_TRUE(master_peer_.valid());
+        }
 
-    const Bytes outbound = {std::byte{0x01}, std::byte{0x02}, std::byte{0x03}};
-    const Bytes inbound = {std::byte{0x0A}, std::byte{0x0B}};
-    ASSERT_EQ(master->send(*worker_as_seen, MessageType::TaskDispatch, view_of(outbound)),
-              SendStatus::Queued);
-    ASSERT_EQ(worker->send(*master_as_seen, MessageType::TaskResult, view_of(inbound)),
-              SendStatus::Queued);
+        /** @brief Stops both endpoints, so no event outlives the recorders. */
+        void TearDown() override
+        {
+            if (worker_ != nullptr)
+                worker_->stop();
+            if (master_ != nullptr)
+                master_->stop();
+        }
 
-    const std::optional<ReceivedFrame> at_worker = worker_events.wait_for_frame();
-    const std::optional<ReceivedFrame> at_master = master_events.wait_for_frame();
-    ASSERT_TRUE(at_worker.has_value());
-    ASSERT_TRUE(at_master.has_value());
+        /// @brief The fabric both endpoints attach to.
+        InProcessFabric fabric_;
 
-    EXPECT_EQ(at_worker->peer, *master_as_seen);
-    EXPECT_EQ(at_worker->type, MessageType::TaskDispatch);
-    EXPECT_EQ(at_worker->flags, 0u);
-    EXPECT_EQ(at_worker->payload, outbound);
+        /// @brief Records the master's events; declared before the transports it outlives.
+        EventRecorder master_events_;
 
-    EXPECT_EQ(at_master->peer, *worker_as_seen);
-    EXPECT_EQ(at_master->type, MessageType::TaskResult);
-    EXPECT_EQ(at_master->flags, 0u);
-    EXPECT_EQ(at_master->payload, inbound);
+        /// @brief Records the worker's events.
+        EventRecorder worker_events_;
 
-    worker->stop();
-    master->stop();
+        /// @brief The master endpoint.
+        std::shared_ptr<InProcessTransport> master_;
+
+        /// @brief The worker endpoint.
+        std::shared_ptr<InProcessTransport> worker_;
+
+        /// @brief The id the master uses for the worker.
+        PeerID worker_peer_;
+
+        /// @brief The id the worker uses for the master.
+        PeerID master_peer_;
+};
+
+/** @brief Checks that control frames from the worker arrive at the master in the order queued. */
+TEST_F(Medium_TransportContract, DeliversWorkerFramesInOrder)
+{
+    connect(false);
+    expect_indexed_frames_queued(*worker_, master_peer_, MessageType::Heartbeat, K_ORDERED_FRAMES);
+
+    ASSERT_TRUE(master_events_.wait_for_count(EventKind::Frame, K_ORDERED_FRAMES));
+
+    expect_frames_in_order(master_events_, K_ORDERED_FRAMES);
 }
 
+/** @brief Checks that control frames from the master arrive at the worker in the order queued. */
+TEST_F(Medium_TransportContract, DeliversMasterFramesInOrder)
+{
+    connect(false);
+    expect_indexed_frames_queued(*master_, worker_peer_, MessageType::Ping, K_ORDERED_FRAMES);
+
+    ASSERT_TRUE(worker_events_.wait_for_count(EventKind::Frame, K_ORDERED_FRAMES));
+
+    expect_frames_in_order(worker_events_, K_ORDERED_FRAMES);
+}
+
+/** @brief Checks that the statistics count the header and the payload of each frame. */
+TEST_F(Medium_TransportContract, StatisticsCountEveryFrameWithItsHeader)
+{
+    connect(false);
+    expect_indexed_frames_queued(*worker_, master_peer_, MessageType::Heartbeat, K_ORDERED_FRAMES);
+    ASSERT_TRUE(master_events_.wait_for_count(EventKind::Frame, K_ORDERED_FRAMES));
+    const std::uint64_t frame_bytes = Wire::K_FRAME_HEADER_BYTES + sizeof(std::uint32_t);
+
+    EXPECT_GE(worker_->statistics().bytes_sent, K_ORDERED_FRAMES * frame_bytes);
+    EXPECT_GE(master_->statistics().bytes_received, K_ORDERED_FRAMES * frame_bytes);
+}
+
+/** @brief Checks that the frames queued before close_peer() arrive before the loss. */
+TEST_F(Medium_TransportContract, QueuedFramesArriveBeforeTheLossOfTheirPeer)
+{
+    constexpr std::uint32_t K_FRAMES = 100;
+    connect(false);
+    expect_indexed_frames_queued(*worker_, master_peer_, MessageType::Heartbeat, K_FRAMES);
+
+    worker_->close_peer(master_peer_);
+
+    ASSERT_TRUE(master_events_.wait_for_count(EventKind::Lost, 1));
+    const std::vector<Event> seen = master_events_.events();
+    ASSERT_EQ(seen.size(), K_FRAMES + 2);
+    EXPECT_EQ(seen.front().kind, EventKind::Connected);
+    EXPECT_EQ(seen.back().kind, EventKind::Lost);
+    EXPECT_EQ(seen.back().cause, PeerLossCause::ClosedByPeer);
+    EXPECT_EQ(seen.back().peer, worker_peer_);
+}
+
+/** @brief Checks that the side that closes a peer hears ClosedLocally once, then gives up. */
+TEST_F(Medium_TransportContract, TheClosingSideHearsOneLocalLossThenAbandons)
+{
+    connect(false);
+
+    worker_->close_peer(master_peer_);
+
+    ASSERT_TRUE(worker_events_.wait_for_count(EventKind::Lost, 1));
+    ASSERT_TRUE(worker_events_.wait_for_count(EventKind::Abandoned, 1));
+    const std::vector<Event> seen = worker_events_.events();
+    EXPECT_EQ(EventRecorder::count_of(seen, EventKind::Lost), 1u);
+    ASSERT_GE(seen.size(), 2u);
+    EXPECT_EQ(seen[seen.size() - 2].cause, PeerLossCause::ClosedLocally);
+    EXPECT_EQ(seen.back().kind, EventKind::Abandoned);
+}
+
+/** @brief Checks that a send to a peer that was closed returns UnknownPeer. */
+TEST_F(Medium_TransportContract, ASendToAClosedPeerReturnsUnknownPeer)
+{
+    connect(false);
+    worker_->close_peer(master_peer_);
+    ASSERT_TRUE(master_events_.wait_for_count(EventKind::Lost, 1));
+
+    EXPECT_EQ(worker_->send(master_peer_, MessageType::Heartbeat, {}), SendStatus::UnknownPeer);
+    EXPECT_EQ(master_->send(worker_peer_, MessageType::Ping, {}), SendStatus::UnknownPeer);
+}
+
+/** @brief Checks that stop() reports no loss. */
+TEST_F(Medium_TransportContract, StopReportsNoLoss)
+{
+    connect(false);
+
+    master_->stop();
+
+    EXPECT_EQ(EventRecorder::count_of(master_events_.events(), EventKind::Lost), 0u);
+}
+
+/** @brief Checks that the stopped transport makes no event once stop() has returned. */
+TEST_F(Medium_TransportContract, NoEventIsMadeAfterStopReturns)
+{
+    constexpr std::size_t K_FRAMES_BEFORE_STOP = 50;
+    connect(false);
+    const FloodingSender flood(*worker_, master_peer_);
+    ASSERT_TRUE(master_events_.wait_for_count(EventKind::Frame, K_FRAMES_BEFORE_STOP));
+
+    master_->stop();
+    const std::size_t events_at_stop = master_events_.size();
+    count_stopped_sends(*worker_, master_peer_, 200);
+
+    EXPECT_EQ(master_events_.size(), events_at_stop);
+}
+
+/** @brief Checks that an event may answer each frame it receives from inside its callback. */
+TEST_F(Medium_TransportContract, AnEventMayAnswerTheFramesItReceives)
+{
+    constexpr std::uint32_t K_FRAMES = 64;
+    std::atomic<std::uint32_t> refused_sends{0};
+    master_events_.set_reaction(make_echoing_reaction(master_, refused_sends));
+    worker_events_.set_reaction(make_closing_reaction(worker_, K_FRAMES));
+    connect(false);
+
+    expect_indexed_frames_queued(*worker_, master_peer_, MessageType::Heartbeat, K_FRAMES);
+
+    ASSERT_TRUE(worker_events_.wait_for_count(EventKind::Lost, 1));
+    ASSERT_TRUE(master_events_.wait_for_count(EventKind::Lost, 1));
+    EXPECT_EQ(refused_sends.load(), 0u);
+    EXPECT_EQ(pong_indices(worker_events_), counting_to(K_FRAMES));
+}
+
+/** @brief Checks that an event may send to a peer from the callback that announces it. */
+TEST_F(Medium_TransportContract, AnEventMaySendFromTheConnectionCallback)
+{
+    std::atomic<std::uint32_t> refused_sends{0};
+    master_events_.set_reaction(make_echoing_reaction(master_, refused_sends));
+    connect(false);
+
+    ASSERT_TRUE(worker_events_.wait_for_count(EventKind::Frame, 1));
+
+    const std::vector<Event> seen = worker_events_.events();
+    EXPECT_EQ(seen.back().type, MessageType::Ping);
+    EXPECT_EQ(refused_sends.load(), 0u);
+}
+
+/** @brief Checks that a transport that was never started refuses a send as Stopped. */
+TEST_F(Medium_TransportContract, ASendBeforeStartReturnsStopped)
+{
+    master_ = InProcessTransport::make_master(fabric_);
+
+    EXPECT_EQ(master_->send(PeerID{1}, MessageType::Ping, {}), SendStatus::Stopped);
+}
+
+/** @brief Checks that a started transport refuses a send to a peer it never saw. */
+TEST_F(Medium_TransportContract, ASendToAnUnknownPeerReturnsUnknownPeer)
+{
+    master_ = InProcessTransport::make_master(fabric_);
+    ASSERT_TRUE(master_->start(master_events_).is_ok());
+
+    EXPECT_EQ(master_->send(PeerID{1}, MessageType::Ping, {}), SendStatus::UnknownPeer);
+}
+
+/** @brief Checks that a second start is refused as AlreadyStarted with a message. */
+TEST_F(Medium_TransportContract, ASecondStartReturnsAlreadyStarted)
+{
+    master_ = InProcessTransport::make_master(fabric_);
+    ASSERT_TRUE(master_->start(master_events_).is_ok());
+
+    const TransportResult second = master_->start(master_events_);
+
+    EXPECT_EQ(second.status, TransportStatus::AlreadyStarted);
+    EXPECT_FALSE(second.message.empty());
+}
+
+/** @brief Checks that a stopped transport refuses a send as Stopped, however often it stopped. */
+TEST_F(Medium_TransportContract, ASendAfterStopReturnsStopped)
+{
+    master_ = InProcessTransport::make_master(fabric_);
+    ASSERT_TRUE(master_->start(master_events_).is_ok());
+    master_->stop();
+    master_->stop();
+
+    EXPECT_EQ(master_->send(PeerID{1}, MessageType::Ping, {}), SendStatus::Stopped);
+}
+
+/** @brief Checks that a stopped transport cannot start again and makes no event. */
+TEST_F(Medium_TransportContract, AStoppedTransportCannotStartAgain)
+{
+    master_ = InProcessTransport::make_master(fabric_);
+    ASSERT_TRUE(master_->start(master_events_).is_ok());
+    master_->stop();
+
+    EXPECT_EQ(master_->start(master_events_).status, TransportStatus::AlreadyStarted);
+    EXPECT_EQ(master_events_.size(), 0u);
+}
+
+/** @brief Checks that a stream offered to a stopped transport is refused as Stopped. */
+TEST_F(Medium_TransportContract, AStreamOfferedAfterStopReturnsStopped)
+{
+    std::vector<std::byte> storage(16);
+    BufferRegistry registry;
+    BufferExchange exchange(registry, 4096);
+    const BufferHandle handle = registry.register_buffer(storage.data(), storage.size());
+    master_ = InProcessTransport::make_master(fabric_);
+    ASSERT_TRUE(master_->start(master_events_).is_ok());
+    master_->stop();
+
+    EXPECT_EQ(master_->send_stream(PeerID{1}, exchange.serve_pull(handle.id, handle.version)),
+              SendStatus::Stopped);
+}

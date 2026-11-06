@@ -57,79 +57,26 @@ local run of the first node still raises the version of the buffer it wrote.
 
 ## test_worker_directory.cpp
 
-The file tests `WorkerDirectory`. It
-needs no hardware and no transport: the test plays the worker's side of the handshake with fixed
-nonces and a secret of the bytes 0 to 31, computes proofs with `compute_proof` of `handshake.hpp`,
-and passes every time in as a fixed point.
+The file tests `WorkerDirectory` over the real `LeastLoadedOffloadPolicy`. It needs no hardware and no
+transport: the test plays the worker's side of the handshake with fixed nonces and a secret of the
+bytes 0 to 31, computes proofs with `compute_proof` of `handshake.hpp`, and passes every time in as a
+fixed point. `Small_WorkerDirectory` holds memory and one mutex; `Medium_WorkerDirectory` holds the
+tests that start a second thread or wait on a timer. One promise is one test, so the table lists each
+group by the names it holds.
 
-| Test | What it proves |
-| --- | --- |
-| `RecordingPolicy` | `RecordingPolicy` is the offload policy of the fixture. It records the workers of each call and returns the first, a fixed id, or nothing, as the test sets it. |
-
-### `UnregisteredPeerMessagesDropped`
-
-The regression test of finding DIST-03. The test lists the message types `admits` passes for a peer
-at each step: none for an unknown peer, `HELLO` and `GOODBYE` after the connect, those and `PROOF`
-after `HELLO`, and every type but the two handshake frames once the proof holds. A `BUFFER_REQUEST`
-or `BUFFER_CHUNK` from a peer that has not proved the secret is therefore dropped unread.
-
-| Test | What it proves |
-| --- | --- |
-| `HandshakeDeadlineClosesPeer` | Finding DIST-04. A peer that has not registered is listed one millisecond after the limit, counted from its connect, and once. Sending `HELLO` again does not move the limit, and a registered worker is never listed. |
-
-### `WaitForWorkersWakesOnRegistration`
-
-Finding DIST-10. A thread waits for one worker with a limit of 24 hours while the test registers
-one, and a second thread waits for two while the test closes the directory. The limit is never
-reached, so a registration or a `close()` that wakes nobody hangs the test until the program's
-timeout; no outcome depends on which thread runs first.
-
-| Test | What it proves |
-| --- | --- |
-| `WrongProofIsRejected` | A proof made under another secret, the master's own proof sent back, and a proof made under an empty key are each refused with `AuthenticationFailed`, and the peer is not a worker afterwards. A refused proof spends its nonces: the right proof for them is then `OutOfOrder`. |
-| `SecondHelloRestartsTheHandshake` | A second `HELLO` from a peer that owes `PROOF` gets a proof for the new nonces, and only a `PROOF` for the new nonces registers it. `HELLO` and `PROOF` from a registered worker are `OutOfOrder` and change nothing. |
-
-### `SilentWorkerIsTakenOnce`
-
-A worker silent for longer than the liveness limit is listed once and stops counting at that
-moment: the alive count drops, its operations stop counting toward `supports`, and `pick` offers
-only the other worker. The `remove_peer` that follows does not lower the count a second time, and
-a late frame does not bring the worker back.
-
-| Test | What it proves |
-| --- | --- |
-| `PickSkipsWorkersAtTheirJobLimit` | Two workers send limits of 1 and 2 in `PROOF`. The policy sees both, then only the second, then nobody, and at that point it is not called at all. One `release_inflight` frees one slot. An answer that names a worker the policy was not offered counts as no pick. |
-
-| Test | What it proves |
-| --- | --- |
-| `SnapshotReportsWhatTheWorkerSent` | One registered worker and one peer that only connected. After a `PONG`, a `HEARTBEAT`, a frame and a pick, the snapshot holds one entry, the worker's, with its id, name, endpoint, an inflight count of 1 and the round trip, free memory, queue depth and cache size it sent. Its `ms_since_last_frame` is 600, the time from its last frame to the snapshot. |
-
-### `FactsFollowTheNameAndOnlyAProvenHelloReplacesThem`
-
-One worker named `gpu-box` registers with the label `zone=a` and one GPU. A pick hands the policy
-a load whose `facts` hold that name, system, label and device. A second peer sends a `HELLO`
-under the same name with `zone=b` and does not prove the secret: the next pick still shows
-`zone=a`. The first worker is removed and no pick succeeds. The second peer proves, and the next
-pick shows `zone=b` under the same name.
-
-### `IdentityCarriesTheBuildOfTheLastHello`
-
-`WorkerDirectory::identity()` returns nothing for a stranger and for a peer that still owes
-`PROOF`. A peer that said `HELLO` twice and then proved itself has the name, the endpoint and the
-build id of the second `HELLO`. A third `HELLO`, sent after registration, changes none of them,
-and `remove_peer` ends the identity.
-
-| Test | What it proves |
-| --- | --- |
-| `HelloFromARegisteredWorkerRegistersNothingTwice` | A registered worker with one task out says `HELLO` again, as a worker does when its `WELCOME` was lost. The answer is `AlreadyRegistered`. The alive count, the kernels, the inflight count and the build id stay as they were, and the directory still refuses a `PROOF` from that peer. |
-
-### `CloseRetiresEveryWorker`
-
-Finding QC-36. Two workers are registered and `close()` is called. The alive count must be 0, no
-operation supported, `list_workers` and `snapshot` empty, and `wait_for_workers` false for a
-count of 2 and for a count of 0. A third peer that then sends a valid `HELLO` and `PROOF` gets
-`OutOfOrder`. `remove_peer` on a worker still reports it as registered, since the coordinator
-counts the loss from that answer, and neither it nor a second `close()` lowers the count again.
+| Group | Tests | What they prove |
+| --- | --- | --- |
+| Admission | `Small_WorkerDirectory.AdmitsNothingFromAPeerItNeverAdded`, `Small_WorkerDirectory.AdmitsOnlyHelloAndGoodbyeFromAPeerThatOwesHello`, `Small_WorkerDirectory.AdmitsNoWorkerMessageFromAPeerThatOwesProof`, `Small_WorkerDirectory.AdmitsEveryTypeButProofFromARegisteredWorker`, `Small_WorkerDirectory.AdmitsNothingFromARemovedPeer` | A peer the directory never added gets no message type through `admits`. A peer that owes `HELLO` gets `HELLO` and `GOODBYE`; one that owes `PROOF` gets those and `PROOF`, so a `BUFFER_REQUEST` or `BUFFER_CHUNK` before the proof is dropped unread (finding DIST-03). A registered worker gets every type but `PROOF`, and a removed peer gets none. |
+| Handshake deadline | `Small_WorkerDirectory.HandshakeOverdueListsNobodyAtTheLimitAndThePeerOneMillisecondAfter`, `Small_WorkerDirectory.HandshakeOverdueCountsFromTheConnectOfEachPeer`, `Small_WorkerDirectory.HandshakeOverdueIgnoresTheHelloASlowPeerKeepsSending`, `Small_WorkerDirectory.HandshakeOverdueNeverListsARegisteredWorker`, `Small_WorkerDirectory.HandshakeOverdueListsEachPeerOnce`, `Small_WorkerDirectory.RemovePeerReportsAnUnregisteredPeerAsKnownWithItsNameAndEndpoint`, `Small_WorkerDirectory.RemovePeerOfAPeerAlreadyRemovedFindsNothing` | Finding DIST-04. A peer that has not registered is listed one millisecond after the limit, counted from its connect and not from a later `HELLO`, and once. A registered worker is never listed. `remove_peer` reports an unregistered peer with its name and endpoint, and a peer already removed as unknown. |
+| Waiting for workers | `Medium_WorkerDirectory.WaitForZeroWorkersIsReachedAtOnce`, `Medium_WorkerDirectory.WaitForAWorkerNobodyRegisteredTimesOut`, `Medium_WorkerDirectory.WaitForWorkersIsReachedAtOnceOnceTheCountIsAlive`, `Medium_WorkerDirectory.WaitForWorkersWakesOnRegistration`, `Medium_WorkerDirectory.CloseWakesAWaiterWhoseCountWasNotReached`, `Medium_WorkerDirectory.ClosedDirectoryReachesNoCountItHeldWhenItClosed`, `Medium_WorkerDirectory.ClosedDirectoryReachesNoCountEvenZero` | Finding DIST-10, medium because a second thread or a timed wait runs. A thread waits with a limit of 24 hours while the test registers a worker or calls `close()`; the limit is never reached, so a wake that never comes hangs the test until the program timeout. A closed directory reaches no count, zero included. |
+| PROOF and HELLO | `Small_WorkerDirectory.HelloReplyCarriesTheMasterProofOfTheNonces`, `Small_WorkerDirectory.ProofMadeUnderAnotherSecretFailsAuthenticationAndRegistersNobody`, `Small_WorkerDirectory.RefusedProofLeavesThePeerOutOfTheWorkerMessages`, `Small_WorkerDirectory.RefusedProofSpendsItsNoncesSoTheRightProofComesTooLate`, `Small_WorkerDirectory.MasterProofSentBackDoesNotPassAsTheWorkerProof`, `Small_WorkerDirectory.ProofUnderAnEmptyKeyFailsAuthentication`, `Small_WorkerDirectory.HelloFromAnUnknownPeerAnswersUnknownPeer`, `Small_WorkerDirectory.ProofFromAnUnknownPeerAnswersUnknownPeer`, `Small_WorkerDirectory.SecondHelloAnswersTheMasterProofOfItsOwnNonces`, `Small_WorkerDirectory.ProofForTheNoncesOfTheFirstHelloFailsAfterASecondHello`, `Small_WorkerDirectory.ProofForTheNoncesOfTheSecondHelloRegistersTheWorker`, `Small_WorkerDirectory.ProofFromARegisteredWorkerAnswersOutOfOrderAndChangesNothing` | A proof made under another secret, under an empty key, or the master proof sent back is refused with `AuthenticationFailed`, and a refused proof spends its nonces. A second `HELLO` answers the master proof of its own nonces, and only a `PROOF` for those nonces registers the peer. Unknown peers answer `UnknownPeer`. A `PROOF` from a registered worker is `OutOfOrder`. |
+| Silent workers | `Small_WorkerDirectory.TakeSilentLeavesAWorkerThatIsAtTheLimit`, `Small_WorkerDirectory.TakeSilentListsOnlyTheWorkerWithoutAFrameWithinTheLimit`, `Small_WorkerDirectory.TakeSilentStopsCountingTheWorkerAsAlive`, `Small_WorkerDirectory.TakeSilentListsAWorkerOnce`, `Small_WorkerDirectory.TakenWorkerLeavesTheWorkerList`, `Small_WorkerDirectory.KernelsOfATakenWorkerStopCountingAndTheOthersStay`, `Small_WorkerDirectory.SupportsNoOperationNoWorkerSent`, `Small_WorkerDirectory.PickSkipsATakenWorker`, `Small_WorkerDirectory.LateFrameDoesNotBringATakenWorkerBack`, `Small_WorkerDirectory.RemovePeerReportsATakenWorkerAsRegistered`, `Small_WorkerDirectory.RemovePeerDoesNotUncountATakenWorkerAgain`, `Small_WorkerDirectory.EverySilentWorkerTakenLeavesNothingToPick` | A worker silent for longer than the liveness limit is listed once and stops counting at that moment: the alive count drops, it leaves `list_workers`, its operations stop counting toward `supports`, and `pick` skips it. A late frame does not bring it back, and `remove_peer` does not lower the count a second time. |
+| Picks | `Small_WorkerDirectory.PickWithNoWorkerReturnsNothing`, `Small_WorkerDirectory.PickKeepsATaskLocalBelowTheByteThresholdOfThePolicy`, `Small_WorkerDirectory.PickCountsTheTaskAgainstThePickedWorker`, `Small_WorkerDirectory.PickSkipsAWorkerAtItsJobLimit`, `Small_WorkerDirectory.PickReturnsNothingWhenEveryWorkerIsAtItsJobLimit`, `Small_WorkerDirectory.ReleaseInflightFreesOneSlotAndASecondReleaseLowersNothing`, `Small_WorkerDirectory.PickOnAClosedDirectoryReturnsNothing`, `Small_WorkerDirectory.PickOffersATaskToTheWorkerThatHoldsItsKernel`, `Small_WorkerDirectory.PickDoesNotFallBackToAWorkerWithoutTheKernelWhenTheHolderIsFull`, `Small_WorkerDirectory.PickOffersNoWorkerATaskWithNoOperation` | Every pick runs the real `LeastLoadedOffloadPolicy` with a threshold of 512 bytes, so the tests assert the worker picked and never a call record. A task below the threshold stays local. A worker at its `max_jobs` is skipped, and when every worker is full nothing is picked. One `release_inflight` frees one slot and a second lowers nothing. Only a worker that holds the kernel is offered the task, and a full holder is not replaced by a worker without it. Each test builds its node with `Internal::Graph::Node`, because `WorkerDirectory::pick` takes one. |
+| Snapshots | `Small_WorkerDirectory.SnapshotListsOnlyAPeerThatFinishedTheHandshake`, `Small_WorkerDirectory.SnapshotReportsWhatTheWorkerSent` | A peer that has not finished the handshake is no worker in the snapshot. A worker's entry holds its name, endpoint, inflight count, and the round trip, free memory, queue depth and cache size it sent; `ms_since_last_frame` is the time from its last frame to the snapshot. |
+| Facts | `Small_WorkerDirectory.TargetNamingTheMachineLabelAndDeviceOfAProvenHelloPicksItsWorker`, `Small_WorkerDirectory.TargetNeedingMoreDeviceMemoryThanTheHelloReportedIsAbsent`, `Small_WorkerDirectory.HelloThatHasNotProvedTheSecretReplacesNoFacts`, `Small_WorkerDirectory.ProvenHelloOfTheSameNameReplacesTheFactsOfTheLostWorker` | The facts from a `HELLO` are read through `pick_target`, the only public reader. A target that names the machine, its `zone` label and a GPU picks the worker of a proven `HELLO`, and one that needs more device memory than the `HELLO` reported finds none. A `HELLO` under the same name that has not proved the secret replaces nothing; a proven one replaces the facts of a worker already lost. |
+| Identity | `Small_WorkerDirectory.IdentityOfAnUnknownPeerIsEmpty`, `Small_WorkerDirectory.IdentityOfAPeerThatOwesProofIsEmpty`, `Small_WorkerDirectory.IdentityCarriesTheBuildOfTheLastHello`, `Small_WorkerDirectory.IdentityCarriesTheNameAndEndpointOfARegisteredWorker`, `Small_WorkerDirectory.IdentityIsEmptyOnceThePeerIsRemoved` | `identity` returns nothing for a stranger, for a peer that owes `PROOF` and for a removed peer. A registered worker has the name and endpoint of its connect and the build id of its last `HELLO`. |
+| Repeated HELLO | `Small_WorkerDirectory.RepeatedHelloFromARegisteredWorkerAnswersAlreadyRegistered`, `Small_WorkerDirectory.RepeatedHelloKeepsTheWorkerCountedAndItsKernelsSupported`, `Small_WorkerDirectory.RepeatedHelloDoesNotReopenTheHandshake`, `Small_WorkerDirectory.RepeatedHelloKeepsATaskThatIsOut`, `Small_WorkerDirectory.RepeatedHelloLeavesTheIdentityTheWorkerRegisteredWith` | A registered worker that lost its `WELCOME` says `HELLO` again: the answer is `AlreadyRegistered`, the worker stays counted with its kernels, the handshake does not reopen, a task that is out stays counted, and the identity keeps what it registered with. |
+| close() | `Small_WorkerDirectory.CloseLeavesNoWorkerAlive`, `Small_WorkerDirectory.CloseEndsSupportForEveryOperation`, `Small_WorkerDirectory.CloseEmptiesTheWorkerList`, `Small_WorkerDirectory.CloseEmptiesTheSnapshot`, `Small_WorkerDirectory.ClosedDirectoryRegistersNoPeer`, `Small_WorkerDirectory.RemovePeerAfterCloseReportsTheWorkerAsRegistered`, `Small_WorkerDirectory.RemovePeerAfterCloseDoesNotUncountTheWorkerTwice`, `Small_WorkerDirectory.SecondCloseDoesNotUncountTheWorkerTwice` | Finding QC-36. After `close()` the alive count is 0, no operation is supported, `list_workers` and `snapshot` are empty, and a peer that then sends a valid `HELLO` and `PROOF` gets `OutOfOrder`. `remove_peer` still reports a worker as registered, since the coordinator counts the loss from that answer, and neither it nor a second `close()` lowers the count again. |
 
 ## test_offload_handles.cpp
 
@@ -137,17 +84,17 @@ The file tests OffloadHandles: the inputs come first, the outputs after them.
 
 | Test | What it proves |
 | --- | --- |
-| `InputsThenOutputs` | The two views split the handles at the input count. |
+| `Small_OffloadHandles.InputsThenOutputs` | The two views split the handles at the input count. |
 
 ## test_task_description.cpp
 
 The file tests describe_task(): the name, the operation and the parameters up to the last non-zero
-one.
+one. The header is pure, so every test is small.
 
 | Test | What it proves |
 | --- | --- |
-| `TrailingZerosAreDropped` | Trailing zero parameters are not sent and a zero inside the list is. |
-| `NoParameterSendsNone` | A task with no parameter sends none. |
+| `Small_TaskDescription.OnlyTheParametersUpToTheLastNonZeroTravel` | Trailing zero parameters are not sent and a zero inside the list is; a task with no parameter sends none. |
+| `Small_TaskDescriptionFields.TheNameAndTheOperationTravel` | The description carries the task's name and operation. |
 
 ## test_rule_placement.cpp
 
@@ -163,6 +110,8 @@ worker is covered end to end in `tests/extension/distributed/README.md`.
 | `Small_RulePlacement.FailNamesTheRuleAndTheTarget` | Under `Fail` the error is `InvalidState` and names the rule, else its position, and the target. |
 | `Small_RulePlacementDevice.Regression_ADeviceOnlyRuleTheMasterLacksIsNotTheMasters` | On a master with one CPU, a rule for a GPU or for device 1 does not name the master, and a rule for a CPU does. |
 | `Small_RulePlacement.Regression_AHugeWaitBoundWaitsUntilTheLatestTime` | A `Wait` bound of `milliseconds::max()` waits until `steady_clock::time_point::max()` instead of overflowing the sum. |
+| `Small_RulePlacement.FailRefusesANodeThatCannotTravel` | Under `Fail` a node that cannot travel gets `InvalidArgument` or `InvalidState` by cause, and the message names the rule. |
+| `Small_RulePlacementUnreachable.RunsANodeThatCannotTravelOnTheMaster` | Under `Local` and under `Wait` a node that cannot travel runs on the master at once and is not held. |
 
 ## test_held_nodes.cpp
 
@@ -171,8 +120,12 @@ The tests hold real nodes that no graph runs, at fixed points of the steady cloc
 | Test | What it proves |
 | --- | --- |
 | `Small_HeldNodes.FirstOfferIsKeptUntilForgotten` | A node's first offer stays until `forget()`. |
-| `Small_HeldNodes.TakeExpiredReturnsOnlyTheEndedWaits` | `take_expired()` returns the waits that ended, `take_all()` the rest, and `earliest()` follows both. |
-| `Small_HeldNodes.CloseRefusesAHoldAndDrainEmptiesTheTable` | After `close()` a hold is refused; `drain()` returns the held node and forgets every first offer. |
+| `Small_HeldNodes.TakeExpiredReturnsOnlyTheEndedWaits` | `take_expired()` returns the waits that ended and leaves the rest. |
+| `Small_HeldNodes.EarliestFollowsTheRemainingHolds` | `earliest()` is the end of the soonest remaining wait, or the clock's maximum when nothing is held. |
+| `Small_HeldNodes.TakeAllReturnsTheRestAndEmptiesTheTable` | `take_all()` returns the rest of the held nodes and empties the table. |
+| `Small_HeldNodes.CloseRefusesALaterHold` | After `close()` a hold is refused. |
+| `Small_HeldNodes.DrainReturnsTheHeldNodes` | `drain()` returns the held node and empties the table. |
+| `Small_HeldNodes.DrainForgetsTheFirstOffers` | After `drain()` the next `first_offer()` of a returned node records the new time. |
 | `Small_HeldNodes.HoldAfterAReleaseIsStale` | A hold whose decision came before a `take_all()` is refused as `Stale` and keeps nothing; one made after it is held. |
 
 ## test_task_resubmission.cpp
@@ -183,3 +136,8 @@ throws, at fixed points of the steady clock.
 | Test | What it proves |
 | --- | --- |
 | `Small_TaskResubmission.Regression_ARefusedReofferForgetsTheFirstOffer` | A node whose first offer `HeldNodes` recorded is refused by the sink: `reoffer_nodes()` releases its scheduling reference, and the next `first_offer()` records the new time instead of the old one. |
+
+## compile_offload_coordination_log_category.cpp
+
+The file includes `offload_coordination_log_category.hpp` alone, so the header carries every include it
+needs. The header holds a constant, which has no behaviour of its own to test.

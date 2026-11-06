@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_process_environment_log_category.cpp                              */
+/* compile_network_socket_log_category.cpp                                */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -19,26 +19,13 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
+/**************************************************************************/
 
 /**
- * @file test_process_environment_log_category.cpp
- * @brief Tests K_PROCESS_ENVIRONMENT_LOG_CATEGORY: the name its records carry.
- * @see tests/extension/process_environment/README.md
+ * @file compile_network_socket_log_category.cpp
+ * @brief Compiles network_socket_log_category.hpp on its own, so the header carries every include it needs.
+ * @see tests/extension/network_socket/README.md
  * @author Mustafa Garip
  */
 
-#include <SushiRuntime/process_environment/process_environment_log_category.hpp>
-
-#include <gtest/gtest.h>
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the category is the module's folder in the runtime's project. */
-TEST(Small_ProcessEnvironmentLogCategory, TheCategoryIsNamedAfterTheModule)
-{
-    static_assert(K_PROCESS_ENVIRONMENT_LOG_CATEGORY.module() == "process_environment",
-                  "the folder name of the module");
-    static_assert(K_PROCESS_ENVIRONMENT_LOG_CATEGORY.project().name() == "sushiruntime",
-                  "the project of the runtime");
-    SUCCEED();
-}
+#include <SushiRuntime/network_socket/network_socket_log_category.hpp>

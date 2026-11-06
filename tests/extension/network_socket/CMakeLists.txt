@@ -6,6 +6,6 @@
 sushiruntime_add_module_tests(
     MODULE network_socket
     SOURCES
-        test_network_socket_log_category.cpp
-        test_socket.cpp
-        test_socket_option_report.cpp)
+        compile_network_socket_log_category.cpp
+        compile_socket_option_report.cpp
+        test_socket.cpp)

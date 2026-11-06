@@ -204,11 +204,21 @@ TEST_F(Small_RulePlacement, FailRefusesANodeThatCannotTravel)
     EXPECT_EQ(std::get<FailRun>(spent).error.code, ErrorCode::InvalidState);
 }
 
-/** @brief Tests that Local and Wait run a node that cannot travel on the master at once. */
-TEST_F(Small_RulePlacement, LocalAndWaitRunANodeThatCannotTravelOnTheMaster)
+/** @brief Runs a test once per absent action that lets a node that cannot travel run on the master. */
+class Small_RulePlacementUnreachable : public Small_RulePlacement,
+                                       public ::testing::WithParamInterface<AbsentAction>
 {
-    for (const AbsentAction action : {AbsentAction::Local, AbsentAction::Wait})
-        EXPECT_TRUE(std::holds_alternative<RunLocally>(placement_.decide_unreachable(
-            remote_rule(action), 0, *node_, UnreachableCause::Untagged)));
+};
+
+/** @brief Tests that Local and Wait run a node that cannot travel on the master at once. */
+TEST_P(Small_RulePlacementUnreachable, RunsANodeThatCannotTravelOnTheMaster)
+{
+    const PlacementDecision decision = placement_.decide_unreachable(
+        remote_rule(GetParam()), 0, *node_, UnreachableCause::Untagged);
+
+    EXPECT_TRUE(std::holds_alternative<RunLocally>(decision));
     EXPECT_EQ(held_.size(), 0u);
 }
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_RulePlacementUnreachable,
+                         ::testing::Values(AbsentAction::Local, AbsentAction::Wait));

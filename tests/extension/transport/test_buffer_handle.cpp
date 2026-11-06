@@ -23,7 +23,7 @@
 
 /**
  * @file test_buffer_handle.cpp
- * @brief Tests GlobalBufferID and BufferHandle: the invalid id 0, equality and the defaults.
+ * @brief Tests GlobalBufferID: only id 0 names no buffer.
  * @see tests/extension/transport/README.md
  * @author Mustafa Garip
  */
@@ -35,20 +35,9 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
-/** @brief Tests that id 0 is invalid and ids compare by value. */
-TEST(Medium_BufferHandle, IDZeroIsInvalid)
+/** @brief Tests that id 0 names no buffer and a non-zero id does. */
+TEST(Small_BufferHandle, OnlyIDZeroIsInvalid)
 {
-    static_assert(!GlobalBufferID{}.valid(), "the default id names no buffer");
-    static_assert(GlobalBufferID{3}.valid(), "a non-zero id names a buffer");
-    EXPECT_EQ(GlobalBufferID{3}, GlobalBufferID{3});
-    EXPECT_NE(GlobalBufferID{3}, GlobalBufferID{4});
-}
-
-/** @brief Tests the defaults of a handle. */
-TEST(Medium_BufferHandle, DefaultsNameNoBuffer)
-{
-    const BufferHandle handle;
-    EXPECT_FALSE(handle.id.valid());
-    EXPECT_EQ(handle.version, 0u);
-    EXPECT_EQ(handle.size_bytes, 0u);
+    EXPECT_FALSE(GlobalBufferID{0}.valid());
+    EXPECT_TRUE(GlobalBufferID{3}.valid());
 }

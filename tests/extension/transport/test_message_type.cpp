@@ -23,13 +23,14 @@
 
 /**
  * @file test_message_type.cpp
- * @brief Tests MessageType: sixteen types from 1, their names, and the bytes that name none.
+ * @brief Tests MessageType: which bytes name a type and what a byte that names none is called.
  * @see tests/extension/transport/README.md
  * @author Mustafa Garip
  */
 
 #include <cstdint>
 #include <cstring>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -38,24 +39,46 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
-/** @brief Tests that the types run from 1 to 16 and only those bytes name a type. */
-TEST(Medium_MessageType, SixteenTypesFromOne)
+namespace
 {
-    static_assert(static_cast<int>(MessageType::Hello) == K_FIRST_MESSAGE_TYPE, "the first type is 1");
-    static_assert(static_cast<int>(MessageType::Heartbeat) == K_LAST_MESSAGE_TYPE, "the last type is 16");
-    static_assert(K_MESSAGE_TYPE_COUNT == 16, "sixteen messages");
-    EXPECT_FALSE(is_message_type(0));
-    EXPECT_TRUE(is_message_type(1));
-    EXPECT_TRUE(is_message_type(16));
-    EXPECT_FALSE(is_message_type(17));
+    /** @brief Holds a byte and whether it names a message type. */
+    struct ByteRow
+    {
+        int byte;       /**< The byte offered to is_message_type(). */
+        bool is_a_type; /**< Whether it names a type. */
+    };
+
+    /** @brief Names a row by its byte in a test report. */
+    std::string name_of(const ::testing::TestParamInfo<ByteRow>& info)
+    {
+        return "Byte" + std::to_string(info.param.byte);
+    }
+
+    const ByteRow K_BYTES[] = {{0, false}, {1, true}, {16, true}, {17, false}};
+} // namespace
+
+/** @brief Runs a test once per byte at the edge of the type range. */
+class Small_MessageTypeByte : public ::testing::TestWithParam<ByteRow>
+{
+};
+
+/** @brief Tests that the types run from 1 to 16 and only those bytes name a type. */
+TEST_P(Small_MessageTypeByte, IsAMessageTypeOnlyFromOneToSixteen)
+{
+    EXPECT_EQ(is_message_type(GetParam().byte), GetParam().is_a_type);
 }
 
-/** @brief Tests the name of a type and the name of a byte that names none. */
-TEST(Medium_MessageType, NamesAreTheWireNames)
+INSTANTIATE_TEST_SUITE_P(Rows, Small_MessageTypeByte, ::testing::ValuesIn(K_BYTES), name_of);
+
+/** @brief Runs a test once per byte that names no type. */
+class Small_MessageTypeUnknownByte : public ::testing::TestWithParam<int>
 {
-    EXPECT_STREQ(message_type_name(MessageType::Hello), "HELLO");
-    EXPECT_STREQ(message_type_name(MessageType::TaskDispatch), "TASK_DISPATCH");
-    EXPECT_STREQ(message_type_name(MessageType::Heartbeat), "HEARTBEAT");
-    EXPECT_STREQ(message_type_name(static_cast<MessageType>(0)), "UNKNOWN");
-    EXPECT_STREQ(message_type_name(static_cast<MessageType>(200)), "UNKNOWN");
+};
+
+/** @brief Tests that a byte outside the enumeration is named UNKNOWN. */
+TEST_P(Small_MessageTypeUnknownByte, ANameIsUnknown)
+{
+    EXPECT_STREQ(message_type_name(static_cast<MessageType>(GetParam())), "UNKNOWN");
 }
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_MessageTypeUnknownByte, ::testing::Values(0, 200));

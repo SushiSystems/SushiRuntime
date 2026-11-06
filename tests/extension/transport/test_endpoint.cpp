@@ -28,6 +28,8 @@
  * @author Mustafa Garip
  */
 
+#include <cctype>
+#include <cstdint>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -40,7 +42,7 @@ using namespace SushiRuntime::Distributed;
 /**
  * @brief Checks each accepted and each refused text form against its status, host and port.
  */
-TEST(Medium_EndpointTest, ParseTable)
+TEST(Small_EndpointTest, ParseTable)
 {
     /** @brief One line of the parse table. */
     struct Row
@@ -89,7 +91,7 @@ TEST(Medium_EndpointTest, ParseTable)
 /**
  * @brief Checks that a refusal quotes the text it refused and names both accepted forms.
  */
-TEST(Medium_EndpointTest, ParseFailureSaysWhatWasWrongWithWhichText)
+TEST(Small_EndpointTest, ParseFailureSaysWhatWasWrongWithWhichText)
 {
     const EndpointParseResult result = Endpoint::parse("master.lan:http");
 
@@ -100,21 +102,53 @@ TEST(Medium_EndpointTest, ParseFailureSaysWhatWasWrongWithWhichText)
     EXPECT_NE(result.message.find("[ipv6]:port"), std::string::npos) << result.message;
 }
 
-/**
- * @brief Checks that the log form of an endpoint parses back to the same endpoint.
- */
-TEST(Medium_EndpointTest, FormatParsesBack)
+namespace
 {
-    const Endpoint endpoints[] = { { "worker-1", 5555 }, { "192.168.1.20", 1 }, { "::1", 65535 } };
-
-    EXPECT_EQ(endpoints[0].to_string(), "worker-1:5555");
-    EXPECT_EQ(endpoints[2].to_string(), "[::1]:65535");
-
-    for (const Endpoint& endpoint : endpoints)
+    /** @brief Holds an endpoint and the text its log form must be. */
+    struct FormatRow
     {
-        const EndpointParseResult parsed = Endpoint::parse(endpoint.to_string());
-        ASSERT_TRUE(parsed.is_ok()) << parsed.message;
-        EXPECT_EQ(parsed.endpoint.host, endpoint.host);
-        EXPECT_EQ(parsed.endpoint.port, endpoint.port);
+        Endpoint endpoint; /**< The endpoint to format. */
+        const char* text;  /**< Its log form. */
+    };
+
+    /** @brief Names a row by its text in a test report. */
+    std::string name_of_format(const ::testing::TestParamInfo<FormatRow>& info)
+    {
+        std::string name;
+        for (const char letter : std::string(info.param.text))
+            name += std::isalnum(static_cast<unsigned char>(letter)) != 0 ? letter : '_';
+        return name;
     }
+
+    const FormatRow K_FORMATS[] = {
+        {{"worker-1", 5555}, "worker-1:5555"},
+        {{"192.168.1.20", 1}, "192.168.1.20:1"},
+        {{"::1", 65535}, "[::1]:65535"},
+    };
+} // namespace
+
+/** @brief Runs a test once per endpoint. */
+class Small_EndpointFormat : public ::testing::TestWithParam<FormatRow>
+{
+};
+
+/** @brief Checks that the log form is host:port, with an IPv6 host in brackets. */
+TEST_P(Small_EndpointFormat, FormatIsTheHostPortForm)
+{
+    EXPECT_EQ(GetParam().endpoint.to_string(), GetParam().text);
 }
+
+/** @brief Checks that the log form of an endpoint parses back to the same endpoint. */
+TEST_P(Small_EndpointFormat, FormatParsesBack)
+{
+    const Endpoint& endpoint = GetParam().endpoint;
+
+    const EndpointParseResult parsed = Endpoint::parse(endpoint.to_string());
+
+    ASSERT_TRUE(parsed.is_ok()) << parsed.message;
+    EXPECT_EQ(parsed.endpoint.host, endpoint.host);
+    EXPECT_EQ(parsed.endpoint.port, endpoint.port);
+}
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_EndpointFormat, ::testing::ValuesIn(K_FORMATS),
+                         name_of_format);

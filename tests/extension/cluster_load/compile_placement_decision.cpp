@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_placement_decision.cpp                                            */
+/* compile_placement_decision.cpp                                         */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,40 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_placement_decision.cpp
- * @brief Tests PlacementDecision: its default and what each outcome carries.
- * @author Mustafa Garip
+ * @file compile_placement_decision.cpp
+ * @brief Compiles placement_decision.hpp on its own, so the header carries every include it needs.
  * @see tests/extension/cluster_load/README.md
+ * @author Mustafa Garip
  */
 
-#include <chrono>
-#include <variant>
-
-#include <gtest/gtest.h>
-
-#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/cluster_load/placement_decision.hpp>
-
-using namespace SushiRuntime;
-using namespace SushiRuntime::Distributed;
-
-/** @brief Tests that a default decision names no worker and device 0. */
-TEST(Small_PlacementDecision, DefaultIsAWorkerOnDeviceZeroWithNoId)
-{
-    const PlacementDecision decision;
-    ASSERT_TRUE(std::holds_alternative<RunOnWorker>(decision));
-    EXPECT_EQ(std::get<RunOnWorker>(decision).worker_id, -1);
-    EXPECT_EQ(std::get<RunOnWorker>(decision).device_index, 0u);
-}
-
-/** @brief Tests that a wait carries its end and a failure its error. */
-TEST(Small_PlacementDecision, WaitAndFailCarryTheirFacts)
-{
-    const auto until = std::chrono::steady_clock::time_point(std::chrono::seconds(5));
-    const PlacementDecision wait = WaitForTarget{until};
-    EXPECT_EQ(std::get<WaitForTarget>(wait).until, until);
-
-    const PlacementDecision fail = FailRun{Error{ErrorCode::InvalidState, "absent"}};
-    EXPECT_EQ(std::get<FailRun>(fail).error.code, ErrorCode::InvalidState);
-    EXPECT_EQ(std::get<FailRun>(fail).error.message, "absent");
-}

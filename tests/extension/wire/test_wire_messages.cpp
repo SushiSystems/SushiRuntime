@@ -364,7 +364,7 @@ namespace
 
 
 /** @brief Tests the HELLO bytes. */
-TEST(Medium_WireFormat, GoldenBytes_Hello)
+TEST(Small_WireFormat, GoldenBytes_Hello)
 {
     HelloMessage message;
     message.worker_nonce = counting_from(0x00);
@@ -390,7 +390,7 @@ TEST(Medium_WireFormat, GoldenBytes_Hello)
 }
 
 /** @brief Tests that a HELLO with two devices and two labels keeps every field and its order. */
-TEST(Medium_WireFormat, HelloWithTwoDevicesAndTwoLabelsDecodes)
+TEST(Small_WireFormat, HelloWithTwoDevicesAndTwoLabelsDecodes)
 {
     HelloMessage message;
     message.worker_nonce = counting_from(0x00);
@@ -423,7 +423,7 @@ TEST(Medium_WireFormat, HelloWithTwoDevicesAndTwoLabelsDecodes)
 }
 
 /** @brief Tests the CHALLENGE bytes. */
-TEST(Medium_WireFormat, GoldenBytes_Challenge)
+TEST(Small_WireFormat, GoldenBytes_Challenge)
 {
     ChallengeMessage message;
     message.master_nonce = counting_from(0x20);
@@ -438,7 +438,7 @@ TEST(Medium_WireFormat, GoldenBytes_Challenge)
 }
 
 /** @brief Tests the PROOF bytes. */
-TEST(Medium_WireFormat, GoldenBytes_Proof)
+TEST(Small_WireFormat, GoldenBytes_Proof)
 {
     ProofMessage message;
     message.worker_proof = counting_from(0x60);
@@ -457,7 +457,7 @@ TEST(Medium_WireFormat, GoldenBytes_Proof)
 }
 
 /** @brief Tests the WELCOME bytes. */
-TEST(Medium_WireFormat, GoldenBytes_Welcome)
+TEST(Small_WireFormat, GoldenBytes_Welcome)
 {
     WelcomeMessage message;
     message.worker_id = 7;
@@ -474,7 +474,7 @@ TEST(Medium_WireFormat, GoldenBytes_Welcome)
 }
 
 /** @brief Tests the REJECT bytes, whose layout is frozen across versions. */
-TEST(Medium_WireFormat, GoldenBytes_Reject)
+TEST(Small_WireFormat, GoldenBytes_Reject)
 {
     RejectMessage message;
     message.reason = RejectReason::Version;
@@ -489,7 +489,7 @@ TEST(Medium_WireFormat, GoldenBytes_Reject)
 }
 
 /** @brief Tests the GOODBYE bytes, whose layout is frozen across versions. */
-TEST(Medium_WireFormat, GoldenBytes_Goodbye)
+TEST(Small_WireFormat, GoldenBytes_Goodbye)
 {
     GoodbyeMessage message;
     message.reason = GoodbyeReason::Liveness;
@@ -502,7 +502,7 @@ TEST(Medium_WireFormat, GoldenBytes_Goodbye)
 }
 
 /** @brief Tests the TASK_DISPATCH bytes; the six zero parameters stay off the wire. */
-TEST(Medium_WireFormat, GoldenBytes_TaskDispatch)
+TEST(Small_WireFormat, GoldenBytes_TaskDispatch)
 {
     TaskDispatchMessage message;
     message.task_id = 42;
@@ -540,7 +540,7 @@ TEST(Medium_WireFormat, GoldenBytes_TaskDispatch)
 }
 
 /** @brief Tests the TASK_ACCEPTED bytes. */
-TEST(Medium_WireFormat, GoldenBytes_TaskAccepted)
+TEST(Small_WireFormat, GoldenBytes_TaskAccepted)
 {
     TaskAcceptedMessage message;
     message.task_id = 42;
@@ -551,7 +551,7 @@ TEST(Medium_WireFormat, GoldenBytes_TaskAccepted)
 }
 
 /** @brief Tests the TASK_RESULT bytes. */
-TEST(Medium_WireFormat, GoldenBytes_TaskResult)
+TEST(Small_WireFormat, GoldenBytes_TaskResult)
 {
     TaskResultMessage message;
     message.task_id = 42;
@@ -569,7 +569,7 @@ TEST(Medium_WireFormat, GoldenBytes_TaskResult)
 }
 
 /** @brief Tests the BUFFER_REQUEST bytes. */
-TEST(Medium_WireFormat, GoldenBytes_BufferRequest)
+TEST(Small_WireFormat, GoldenBytes_BufferRequest)
 {
     BufferRequestMessage message;
     message.id = GlobalBufferID{ 5 };
@@ -582,7 +582,7 @@ TEST(Medium_WireFormat, GoldenBytes_BufferRequest)
 }
 
 /** @brief Tests the BUFFER_CHUNK bytes; the data runs to the end of the payload. */
-TEST(Medium_WireFormat, GoldenBytes_BufferChunk)
+TEST(Small_WireFormat, GoldenBytes_BufferChunk)
 {
     const Bytes data = bytes_of({ 0xDE, 0xAD, 0xBE, 0xEF });
     BufferChunkMessage message;
@@ -606,7 +606,7 @@ TEST(Medium_WireFormat, GoldenBytes_BufferChunk)
 }
 
 /** @brief Tests the BUFFER_ABORT bytes. */
-TEST(Medium_WireFormat, GoldenBytes_BufferAbort)
+TEST(Small_WireFormat, GoldenBytes_BufferAbort)
 {
     BufferAbortMessage message;
     message.id = GlobalBufferID{ 5 };
@@ -623,7 +623,7 @@ TEST(Medium_WireFormat, GoldenBytes_BufferAbort)
 }
 
 /** @brief Tests the BUFFER_RELEASE bytes. */
-TEST(Medium_WireFormat, GoldenBytes_BufferRelease)
+TEST(Small_WireFormat, GoldenBytes_BufferRelease)
 {
     BufferReleaseMessage message;
     message.id = GlobalBufferID{ 5 };
@@ -634,7 +634,7 @@ TEST(Medium_WireFormat, GoldenBytes_BufferRelease)
 }
 
 /** @brief Tests the PING bytes. */
-TEST(Medium_WireFormat, GoldenBytes_Ping)
+TEST(Small_WireFormat, GoldenBytes_Ping)
 {
     PingMessage message;
     message.token = 0x1122334455667788ull;
@@ -645,7 +645,7 @@ TEST(Medium_WireFormat, GoldenBytes_Ping)
 }
 
 /** @brief Tests the PONG bytes. */
-TEST(Medium_WireFormat, GoldenBytes_Pong)
+TEST(Small_WireFormat, GoldenBytes_Pong)
 {
     PongMessage message;
     message.token = 0x1122334455667788ull;
@@ -658,7 +658,7 @@ TEST(Medium_WireFormat, GoldenBytes_Pong)
 }
 
 /** @brief Tests the HEARTBEAT bytes. */
-TEST(Medium_WireFormat, GoldenBytes_Heartbeat)
+TEST(Small_WireFormat, GoldenBytes_Heartbeat)
 {
     HeartbeatMessage message;
     message.queue_depth = 3;
@@ -672,14 +672,17 @@ TEST(Medium_WireFormat, GoldenBytes_Heartbeat)
     EXPECT_EQ(decoded.cache_bytes, 0x100000ull);
 }
 
-/** @brief Tests that every strict prefix of every golden frame is refused. */
-TEST(Medium_WireFormat, EveryTruncationFailsCleanly)
+namespace
 {
-    for (const GoldenCase& golden : golden_cases())
+    /** @brief Names a golden case by its message type in a test report. */
+    std::string name_of_golden(const ::testing::TestParamInfo<GoldenCase>& info)
     {
-        SCOPED_TRACE(message_type_name(golden.type));
-        ASSERT_TRUE(golden.decode(view_of(golden.payload)).ok());
+        return message_type_name(info.param.type);
+    }
 
+    /** @brief Checks that every strict prefix of a payload is refused, bar a cut chunk's data. */
+    void expect_every_payload_prefix_fails(const GoldenCase& golden)
+    {
         for (std::size_t length = 0; length < golden.payload.size(); ++length)
         {
             const Bytes prefix = prefix_of(golden.payload, length);
@@ -690,7 +693,11 @@ TEST(Medium_WireFormat, EveryTruncationFailsCleanly)
             EXPECT_EQ(result.ok(), cut_inside_chunk_data) << "payload prefix " << length;
             EXPECT_LE(result.offset, length);
         }
+    }
 
+    /** @brief Checks that every strict prefix of a whole frame is short or a cut payload. */
+    void expect_every_frame_prefix_is_short(const GoldenCase& golden)
+    {
         Bytes frame;
         const auto payload_length = static_cast<std::uint32_t>(golden.payload.size());
         append_frame_header(FrameHeader{ K_PROTOCOL_VERSION, golden.type, 0, payload_length },
@@ -711,170 +718,325 @@ TEST(Medium_WireFormat, EveryTruncationFailsCleanly)
             EXPECT_LT(length - K_FRAME_HEADER_BYTES, header.payload_length);
         }
     }
+} // namespace
+
+/** @brief Runs a test once per message type, over its golden payload. */
+class Small_WireTruncation : public ::testing::TestWithParam<GoldenCase>
+{
+};
+
+/** @brief Tests that every strict prefix of a golden payload is refused. */
+TEST_P(Small_WireTruncation, EveryPayloadPrefixFailsCleanly)
+{
+    ASSERT_TRUE(GetParam().decode(view_of(GetParam().payload)).ok());
+
+    expect_every_payload_prefix_fails(GetParam());
 }
 
-/** @brief Tests the range checks on bools, enumerations, bounded bytes and header fields. */
-TEST(Medium_WireFormat, RejectsOutOfRangeEnumAndBool)
+/** @brief Tests that every strict prefix of a golden frame is short of its header or payload. */
+TEST_P(Small_WireTruncation, EveryFramePrefixIsShort)
+{
+    expect_every_frame_prefix_is_short(GetParam());
+}
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_WireTruncation, ::testing::ValuesIn(golden_cases()),
+                         name_of_golden);
+
+/** @brief Tests that a bool outside 0 and 1 is refused at its offset. */
+TEST(Small_WireFormat, ABoolOutsideZeroAndOneIsRefused)
 {
     const Bytes bools = bytes_of({ 0x00, 0x01, 0x02 });
     FieldReader reader(view_of(bools));
-    EXPECT_FALSE(reader.read_bool());
-    EXPECT_TRUE(reader.read_bool());
-    EXPECT_TRUE(reader.ok());
-    EXPECT_FALSE(reader.read_bool());
-    const DecodeResult bool_result = reader.finish();
-    EXPECT_EQ(bool_result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(bool_result.offset, 2u);
+    ASSERT_FALSE(reader.read_bool());
+    ASSERT_TRUE(reader.read_bool());
+    ASSERT_TRUE(reader.ok());
 
-    DecodeResult result = decode_with_byte<RejectMessage>(golden_reject(), 0, 0);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, 0u);
-    result = decode_with_byte<RejectMessage>(golden_reject(), 0, 5);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    result = decode_with_byte<GoodbyeMessage>(golden_goodbye(), 0, 4);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    // The parameter count sits behind the task id, the operation and the 6-byte name field.
-    result = decode_with_byte<TaskDispatchMessage>(golden_task_dispatch(), 18, 9);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, 18u);
-    result = decode_with_byte<TaskResultMessage>(golden_task_result(), 8, 0);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, 8u);
-    result = decode_with_byte<TaskResultMessage>(golden_task_result(), 8, 7);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    result = decode_with_byte<BufferChunkMessage>(golden_buffer_chunk(), 0, 3);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    result = decode_with_byte<BufferAbortMessage>(golden_buffer_abort(), 20, 3);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, 20u);
+    EXPECT_FALSE(reader.read_bool());
 
+    const DecodeResult result = reader.finish();
+    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
+    EXPECT_EQ(result.offset, 2u);
+}
+
+namespace
+{
+    /** @brief Holds a decode that must refuse an enumeration byte outside its range. */
+    struct EnumRow
+    {
+        const char* meaning;          /**< Names the row in a test report. */
+        DecodeResult (*decode)();     /**< Decodes a golden payload with one byte replaced. */
+        std::size_t offset;           /**< The offset of the replaced byte. */
+    };
+
+    /** @brief Names an enumeration row by its meaning in a test report. */
+    std::string name_of_enum(const ::testing::TestParamInfo<EnumRow>& info)
+    {
+        return info.param.meaning;
+    }
+
+    /** @brief Holds the offset of the operating system of a HELLO: nonce, "b1" and "node". */
+    constexpr std::size_t K_HELLO_OS_OFFSET = 32 + 4 + 6;
+
+    /** @brief Holds the offset of the device kind: behind the operating system and a 4-byte count. */
+    constexpr std::size_t K_HELLO_DEVICE_KIND_OFFSET = K_HELLO_OS_OFFSET + 1 + 4;
+
+    const EnumRow K_ENUM_ROWS[] = {
+        {"RejectReasonZero",
+         [] { return decode_with_byte<RejectMessage>(golden_reject(), 0, 0); }, 0},
+        {"RejectReasonFive",
+         [] { return decode_with_byte<RejectMessage>(golden_reject(), 0, 5); }, 0},
+        {"GoodbyeReasonFour",
+         [] { return decode_with_byte<GoodbyeMessage>(golden_goodbye(), 0, 4); }, 0},
+        {"DispatchParameterCountNine",
+         [] { return decode_with_byte<TaskDispatchMessage>(golden_task_dispatch(), 18, 9); }, 18},
+        {"TaskResultStatusZero",
+         [] { return decode_with_byte<TaskResultMessage>(golden_task_result(), 8, 0); }, 8},
+        {"TaskResultStatusSeven",
+         [] { return decode_with_byte<TaskResultMessage>(golden_task_result(), 8, 7); }, 8},
+        {"ChunkPurposeThree",
+         [] { return decode_with_byte<BufferChunkMessage>(golden_buffer_chunk(), 0, 3); }, 0},
+        {"AbortReasonThree",
+         [] { return decode_with_byte<BufferAbortMessage>(golden_buffer_abort(), 20, 3); }, 20},
+        {"HelloOperatingSystemThree",
+         [] { return decode_with_byte<HelloMessage>(golden_hello(), K_HELLO_OS_OFFSET, 3); },
+         K_HELLO_OS_OFFSET},
+        {"HelloDeviceKindFour",
+         [] {
+             return decode_with_byte<HelloMessage>(golden_hello(), K_HELLO_DEVICE_KIND_OFFSET, 4);
+         },
+         K_HELLO_DEVICE_KIND_OFFSET},
+    };
+} // namespace
+
+/** @brief Runs a test once per enumeration byte outside its range. */
+class Small_WireEnumRange : public ::testing::TestWithParam<EnumRow>
+{
+};
+
+/** @brief Tests that a value outside its enumeration is refused at the byte's offset. */
+TEST_P(Small_WireEnumRange, IsRefusedAtItsOffset)
+{
+    const DecodeResult result = GetParam().decode();
+
+    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
+    EXPECT_EQ(result.offset, GetParam().offset);
+}
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_WireEnumRange, ::testing::ValuesIn(K_ENUM_ROWS),
+                         name_of_enum);
+
+namespace
+{
+    /** @brief Holds a header with one byte replaced and the status it must get. */
+    struct HeaderByteRow
+    {
+        const char* meaning;   /**< Names the row in a test report. */
+        std::size_t offset;    /**< The offset of the replaced byte. */
+        unsigned value;        /**< The replacement. */
+        FrameStatus expected;  /**< The status the header decode must return. */
+    };
+
+    /** @brief Names a header row by its meaning in a test report. */
+    std::string name_of_header_byte(const ::testing::TestParamInfo<HeaderByteRow>& info)
+    {
+        return info.param.meaning;
+    }
+
+    const HeaderByteRow K_HEADER_BYTE_ROWS[] = {
+        {"MagicChanged", 0, 0x54, FrameStatus::BadMagic},
+        {"TypeZero", 6, 0x00, FrameStatus::UnknownType},
+        {"TypeSeventeen", 6, 0x11, FrameStatus::UnknownType},
+        {"FlagsTwo", 7, 0x02, FrameStatus::ReservedFlags},
+        {"LastChunkFlagOnAPing", 7, 0x01, FrameStatus::ReservedFlags},
+    };
+} // namespace
+
+/** @brief Runs a test once per header field outside its range. */
+class Small_WireHeaderRange : public ::testing::TestWithParam<HeaderByteRow>
+{
+};
+
+/** @brief Tests that a header field outside its range gets the status of that field. */
+TEST_P(Small_WireHeaderRange, GetsTheStatusOfItsField)
+{
     FrameHeader header;
-    EXPECT_EQ(header_status_with_byte(0, 0x54, header), FrameStatus::BadMagic);
-    EXPECT_EQ(header_status_with_byte(6, 0x00, header), FrameStatus::UnknownType);
-    EXPECT_EQ(header_status_with_byte(6, 0x11, header), FrameStatus::UnknownType);
-    EXPECT_EQ(header_status_with_byte(7, 0x02, header), FrameStatus::ReservedFlags);
-    EXPECT_EQ(header_status_with_byte(7, 0x01, header), FrameStatus::ReservedFlags);
-    EXPECT_EQ(header_status_with_byte(4, 0x02, header), FrameStatus::VersionMismatch);
-    EXPECT_EQ(header.version, 2u);
 
+    EXPECT_EQ(header_status_with_byte(GetParam().offset, GetParam().value, header),
+              GetParam().expected);
+}
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_WireHeaderRange, ::testing::ValuesIn(K_HEADER_BYTE_ROWS),
+                         name_of_header_byte);
+
+/** @brief Tests that a payload of exactly the frame limit passes the header check. */
+TEST(Small_WireFormat, APayloadOfExactlyTheFrameLimitIsAccepted)
+{
     const Bytes largest = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0B, 0x00, 0x00,
                                      0x00, 0x10, 0x00 });
+    FrameHeader header;
+
     EXPECT_EQ(decode_frame_header(view_of(largest), header), FrameStatus::Ok);
+}
+
+/** @brief Tests that a payload one byte over the frame limit is refused. */
+TEST(Small_WireFormat, APayloadOneByteOverTheFrameLimitIsTooLong)
+{
     const Bytes too_long = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0B, 0x00, 0x01,
                                       0x00, 0x10, 0x00 });
+    FrameHeader header;
+
     EXPECT_EQ(decode_frame_header(view_of(too_long), header), FrameStatus::PayloadTooLong);
 }
 
+namespace
+{
+    /** @brief Holds what a decode of a list count the payload cannot hold left behind. */
+    struct ListOutcome
+    {
+        DecodeResult result;           /**< What the decode returned. */
+        std::size_t reserved = 0;      /**< The capacity the list was given before the failure. */
+    };
+
+    /** @brief Holds a payload with a list count it cannot hold and the offset of that count. */
+    struct ListCountRow
+    {
+        const char* meaning;      /**< Names the row in a test report. */
+        ListOutcome (*decode)();  /**< Builds the payload, decodes it and reports the outcome. */
+        std::size_t offset;       /**< The offset of the count that must be refused. */
+    };
+
+    /** @brief Names a list count row by its meaning in a test report. */
+    std::string name_of_list_count(const ::testing::TestParamInfo<ListCountRow>& info)
+    {
+        return info.param.meaning;
+    }
+
+    /** @brief Holds the offset of the counts of a HELLO: nonce, "b1", "node" and the system. */
+    constexpr std::size_t K_HELLO_COUNTS_OFFSET = 32 + 4 + 6 + 1;
+
+    /** @brief Holds the offset of the inputs of the golden dispatch, behind its fixed fields. */
+    constexpr std::size_t K_DISPATCH_INPUTS_OFFSET = 35;
+
+    /** @brief Returns a proof payload whose operation count is followed by twelve zero bytes. */
+    Bytes proof_with_count(const Bytes& count)
+    {
+        Bytes proof = prefix_of(golden_proof(), K_PROOF_BYTES);
+        proof.insert(proof.end(), count.begin(), count.end());
+        proof.insert(proof.end(), 12, std::byte{ 0 });
+        return proof;
+    }
+
+    /** @brief Decodes a proof payload and reports the outcome for its operation list. */
+    ListOutcome decode_proof(const Bytes& payload)
+    {
+        ProofMessage message;
+        const DecodeResult result = ProofMessage::decode(view_of(payload), message);
+        return ListOutcome{ result, message.ops.capacity() };
+    }
+
+    /** @brief Returns a HELLO payload with the given bytes behind the fixed fields. */
+    Bytes hello_with_tail(const Bytes& tail)
+    {
+        Bytes hello = prefix_of(golden_hello(), K_HELLO_COUNTS_OFFSET);
+        hello.insert(hello.end(), tail.begin(), tail.end());
+        return hello;
+    }
+
+    /** @brief Decodes a HELLO payload and reports the outcome for the list the test names. */
+    ListOutcome decode_hello_devices(const Bytes& payload)
+    {
+        HelloMessage message;
+        const DecodeResult result = HelloMessage::decode(view_of(payload), message);
+        return ListOutcome{ result, message.devices.capacity() };
+    }
+
+    /** @brief Decodes a HELLO payload and reports the outcome for its label list. */
+    ListOutcome decode_hello_labels(const Bytes& payload)
+    {
+        HelloMessage message;
+        const DecodeResult result = HelloMessage::decode(view_of(payload), message);
+        return ListOutcome{ result, message.labels.capacity() };
+    }
+
+    const ListCountRow K_LIST_COUNT_ROWS[] = {
+        {"ProofCountAboveEverything",
+         [] { return decode_proof(proof_with_count(bytes_of({ 0xFF, 0xFF, 0xFF, 0xFF }))); },
+         K_PROOF_BYTES},
+        // Twelve bytes hold three operations, so a count of four is one too many.
+        {"ProofCountOneTooMany",
+         [] { return decode_proof(proof_with_count(bytes_of({ 0x04, 0x00, 0x00, 0x00 }))); },
+         K_PROOF_BYTES},
+        // 0x0CCCCCCD handles of 20 bytes each come to 2^32 + 4 bytes, past a 32-bit product.
+        {"DispatchCountPastA32BitProduct",
+         [] {
+             Bytes dispatch = prefix_of(golden_task_dispatch(), K_DISPATCH_INPUTS_OFFSET);
+             const Bytes wrapping_count = bytes_of({ 0xCD, 0xCC, 0xCC, 0x0C });
+             const Bytes two_handles(2 * K_BUFFER_HANDLE_BYTES, std::byte{ 0 });
+             dispatch.insert(dispatch.end(), wrapping_count.begin(), wrapping_count.end());
+             dispatch.insert(dispatch.end(), two_handles.begin(), two_handles.end());
+             TaskDispatchMessage message;
+             const DecodeResult result = TaskDispatchMessage::decode(view_of(dispatch), message);
+             return ListOutcome{ result, message.inputs.capacity() };
+         },
+         K_DISPATCH_INPUTS_OFFSET},
+        {"HelloDeviceCountAboveEverything",
+         [] {
+             Bytes tail = bytes_of({ 0xFF, 0xFF, 0xFF, 0xFF });
+             tail.insert(tail.end(), 11, std::byte{ 0 });
+             return decode_hello_devices(hello_with_tail(tail));
+         },
+         K_HELLO_COUNTS_OFFSET},
+        // Twenty-one bytes hold one device of at least 11 bytes, so a count of two is too many.
+        {"HelloDeviceCountOneTooMany",
+         [] {
+             Bytes tail = bytes_of({ 0x02, 0x00, 0x00, 0x00 });
+             tail.insert(tail.end(), 21, std::byte{ 0 });
+             return decode_hello_devices(hello_with_tail(tail));
+         },
+         K_HELLO_COUNTS_OFFSET},
+        // No devices, then a label count of 0x40000000 with eight bytes behind it.
+        {"HelloLabelCountPastA32BitProduct",
+         [] {
+             Bytes tail = bytes_of({ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40 });
+             tail.insert(tail.end(), 8, std::byte{ 0 });
+             return decode_hello_labels(hello_with_tail(tail));
+         },
+         K_HELLO_COUNTS_OFFSET + 4},
+        {"TaskResultCountOfAThousand",
+         [] {
+             Bytes payload;
+             FieldWriter writer(payload);
+             writer.put_u64(99);
+             writer.put_enum(TaskResultStatus::Succeeded);
+             writer.put_u32(1000);
+             TaskResultMessage message;
+             const DecodeResult result = TaskResultMessage::decode(view_of(payload), message);
+             return ListOutcome{ result, message.outputs.capacity() };
+         },
+         9},
+    };
+} // namespace
+
+/** @brief Runs a test once per list count a payload cannot hold. */
+class Small_WireListCount : public ::testing::TestWithParam<ListCountRow>
+{
+};
+
 /** @brief Tests that a list count the payload cannot hold fails before any reserve. */
-TEST(Medium_WireFormat, ListCountBoundedByRemainingBytes)
+TEST_P(Small_WireListCount, FailsBeforeAnyReserve)
 {
-    Bytes proof = prefix_of(golden_proof(), K_PROOF_BYTES);
-    const Bytes huge_count = bytes_of({ 0xFF, 0xFF, 0xFF, 0xFF });
-    const Bytes twelve_bytes(12, std::byte{ 0 });
-    proof.insert(proof.end(), huge_count.begin(), huge_count.end());
-    proof.insert(proof.end(), twelve_bytes.begin(), twelve_bytes.end());
+    const ListOutcome outcome = GetParam().decode();
 
-    ProofMessage proof_message;
-    DecodeResult result = ProofMessage::decode(view_of(proof), proof_message);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, K_PROOF_BYTES);
-    EXPECT_EQ(proof_message.ops.capacity(), 0u);
-
-    // Twelve bytes hold three operations, so a count of four is one too many.
-    proof[K_PROOF_BYTES] = std::byte{ 0x04 };
-    proof[K_PROOF_BYTES + 1] = std::byte{ 0x00 };
-    proof[K_PROOF_BYTES + 2] = std::byte{ 0x00 };
-    proof[K_PROOF_BYTES + 3] = std::byte{ 0x00 };
-    result = ProofMessage::decode(view_of(proof), proof_message);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(proof_message.ops.capacity(), 0u);
-
-    // 0x0CCCCCCD handles of 20 bytes each come to 2^32 + 4 bytes, past a 32-bit product.
-    const std::size_t inputs_offset = 35;
-    Bytes dispatch = prefix_of(golden_task_dispatch(), inputs_offset);
-    const Bytes wrapping_count = bytes_of({ 0xCD, 0xCC, 0xCC, 0x0C });
-    const Bytes two_handles(2 * K_BUFFER_HANDLE_BYTES, std::byte{ 0 });
-    dispatch.insert(dispatch.end(), wrapping_count.begin(), wrapping_count.end());
-    dispatch.insert(dispatch.end(), two_handles.begin(), two_handles.end());
-
-    TaskDispatchMessage dispatch_message;
-    result = TaskDispatchMessage::decode(view_of(dispatch), dispatch_message);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, inputs_offset);
-    EXPECT_EQ(dispatch_message.inputs.capacity(), 0u);
+    EXPECT_EQ(outcome.result.status, CodecStatus::OutOfRange);
+    EXPECT_EQ(outcome.result.offset, GetParam().offset);
+    EXPECT_EQ(outcome.reserved, 0u);
 }
 
-/** @brief Tests that a HELLO device or label count the payload cannot hold fails first. */
-TEST(Medium_WireFormat, HelloListCountsAreBoundedByRemainingBytes)
-{
-    // The fixed fields: nonce, "b1", "node" and the operating system.
-    const std::size_t counts_offset = 32 + 4 + 6 + 1;
-    const Bytes huge_count = bytes_of({ 0xFF, 0xFF, 0xFF, 0xFF });
-
-    Bytes devices = prefix_of(golden_hello(), counts_offset);
-    devices.insert(devices.end(), huge_count.begin(), huge_count.end());
-    devices.insert(devices.end(), 11, std::byte{ 0 });
-    HelloMessage message;
-    DecodeResult result = HelloMessage::decode(view_of(devices), message);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, counts_offset);
-    EXPECT_EQ(message.devices.capacity(), 0u);
-
-    // Twenty-one bytes hold one device of at least 11 bytes, so a count of two is one too many.
-    devices = prefix_of(golden_hello(), counts_offset);
-    const Bytes two = bytes_of({ 0x02, 0x00, 0x00, 0x00 });
-    devices.insert(devices.end(), two.begin(), two.end());
-    devices.insert(devices.end(), 21, std::byte{ 0 });
-    result = HelloMessage::decode(view_of(devices), message);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, counts_offset);
-    EXPECT_EQ(message.devices.capacity(), 0u);
-
-    // No devices, then a label count of 0x40000000 with eight bytes behind it.
-    Bytes labels = prefix_of(golden_hello(), counts_offset);
-    const Bytes no_devices = bytes_of({ 0x00, 0x00, 0x00, 0x00 });
-    const Bytes wrapping_count = bytes_of({ 0x00, 0x00, 0x00, 0x40 });
-    labels.insert(labels.end(), no_devices.begin(), no_devices.end());
-    labels.insert(labels.end(), wrapping_count.begin(), wrapping_count.end());
-    labels.insert(labels.end(), 8, std::byte{ 0 });
-    result = HelloMessage::decode(view_of(labels), message);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, counts_offset + 4);
-    EXPECT_EQ(message.labels.capacity(), 0u);
-}
-
-/** @brief Tests that an operating system or a device kind outside its enumeration is refused. */
-TEST(Medium_WireFormat, HelloRefusesAnUnknownOperatingSystemAndDeviceKind)
-{
-    const std::size_t os_offset = 32 + 4 + 6;
-    DecodeResult result = decode_with_byte<HelloMessage>(golden_hello(), os_offset, 3);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, os_offset);
-
-    // The device kind follows the operating system byte and the 4-byte device count.
-    const std::size_t kind_offset = os_offset + 1 + 4;
-    result = decode_with_byte<HelloMessage>(golden_hello(), kind_offset, 4);
-    EXPECT_EQ(result.status, CodecStatus::OutOfRange);
-    EXPECT_EQ(result.offset, kind_offset);
-}
-
-/** @brief Tests that a HELLO device name or label key above 255 bytes does not encode. */
-TEST(Medium_WireFormat, HelloRefusesAStringAbove255Bytes)
-{
-    const std::string long_text(256, 'a');
-    Bytes encoded;
-
-    HelloMessage device_message;
-    device_message.devices = { HelloDevice{ DeviceKind::GPU, long_text, 0 } };
-    EXPECT_EQ(device_message.encode(encoded), CodecStatus::TooLong);
-
-    HelloMessage label_message;
-    label_message.labels = { HelloLabel{ long_text, "v" } };
-    EXPECT_EQ(label_message.encode(encoded), CodecStatus::TooLong);
-}
+INSTANTIATE_TEST_SUITE_P(Rows, Small_WireListCount, ::testing::ValuesIn(K_LIST_COUNT_ROWS),
+                         name_of_list_count);
 
 /** @brief Tests that a payload with bytes after its last field is refused. */
-TEST(Medium_WireFormat, RejectsTrailingBytes)
+TEST(Small_WireFormat, RejectsTrailingBytes)
 {
     Bytes ping = golden_ping();
     ping.push_back(std::byte{ 0x00 });
@@ -885,21 +1047,83 @@ TEST(Medium_WireFormat, RejectsTrailingBytes)
     EXPECT_EQ(result.offset, 8u);
 }
 
-/** @brief Tests that a string outside 255 bytes fails on both sides and leaves no frame. */
-TEST(Medium_WireFormat, StringLengthBoundedAt255)
+namespace
 {
-    const std::string long_text(256, 'a');
+    /** @brief Holds an encode that must refuse a string above 255 bytes. */
+    struct LongStringRow
+    {
+        const char* meaning;               /**< Names the row in a test report. */
+        CodecStatus (*encode)(Bytes& out); /**< Encodes a message that carries the string. */
+    };
+
+    /** @brief Names a long string row by its meaning in a test report. */
+    std::string name_of_long_string(const ::testing::TestParamInfo<LongStringRow>& info)
+    {
+        return info.param.meaning;
+    }
+
+    /** @brief Holds a string one byte above the limit of 255. */
+    const std::string K_LONG_TEXT(256, 'a');
+
+    const LongStringRow K_LONG_STRING_ROWS[] = {
+        {"GoodbyeText",
+         [](Bytes& out) {
+             GoodbyeMessage message;
+             message.text = K_LONG_TEXT;
+             return append_frame(message, 0, out);
+         }},
+        {"HelloDeviceName",
+         [](Bytes& out) {
+             HelloMessage message;
+             message.devices = { HelloDevice{ DeviceKind::GPU, K_LONG_TEXT, 0 } };
+             return message.encode(out);
+         }},
+        {"HelloLabelKey",
+         [](Bytes& out) {
+             HelloMessage message;
+             message.labels = { HelloLabel{ K_LONG_TEXT, "v" } };
+             return message.encode(out);
+         }},
+    };
+} // namespace
+
+/** @brief Runs a test once per message field that carries a string. */
+class Small_WireLongString : public ::testing::TestWithParam<LongStringRow>
+{
+};
+
+/** @brief Tests that a string above 255 bytes does not encode. */
+TEST_P(Small_WireLongString, DoesNotEncode)
+{
+    Bytes out;
+
+    EXPECT_EQ(GetParam().encode(out), CodecStatus::TooLong);
+}
+
+INSTANTIATE_TEST_SUITE_P(Rows, Small_WireLongString, ::testing::ValuesIn(K_LONG_STRING_ROWS),
+                         name_of_long_string);
+
+/** @brief Tests that a frame whose payload does not encode leaves the buffer as it was. */
+TEST(Small_WireFormat, AnEncodeRefusalAppendsNoFrame)
+{
     GoodbyeMessage message;
-    message.text = long_text;
-
+    message.text = K_LONG_TEXT;
     Bytes frame = bytes_of({ 0xAA });
-    EXPECT_EQ(append_frame(message, 0, frame), CodecStatus::TooLong);
-    EXPECT_EQ(frame, bytes_of({ 0xAA }));
 
+    ASSERT_EQ(append_frame(message, 0, frame), CodecStatus::TooLong);
+
+    EXPECT_EQ(frame, bytes_of({ 0xAA }));
+}
+
+/** @brief Tests that a string above 255 bytes fails to decode at its length field. */
+TEST(Small_WireFormat, AStringAbove255BytesDoesNotDecode)
+{
     Bytes payload = bytes_of({ 0x01, 0x00, 0x01 });
     payload.insert(payload.end(), 256, std::byte{ 0x61 });
     GoodbyeMessage decoded;
+
     const DecodeResult result = GoodbyeMessage::decode(view_of(payload), decoded);
+
     EXPECT_EQ(result.status, CodecStatus::OutOfRange);
     EXPECT_EQ(result.offset, 1u);
 }

@@ -9,26 +9,15 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_offload_policy.cpp
 
-The tests need no hardware and no cluster.
+The tests need no hardware and no cluster, so they are small.
 
 | Test | What it proves |
 | --- | --- |
 | Offload policy tests | The policy tests call `pick_worker()` of `LeastLoadedOffloadPolicy` with synthetic `WorkerLoad` and no cluster. They cover the byte gate, the round-trip and backlog terms of the estimate, the free-memory gate, and the worker that is not alive. |
 | `live_worker`, `pick` | `live_worker` builds the `WorkerLoad` of one live worker. `pick` asks a default policy to place a task of a given size on a list of workers. |
 
-## test_cluster_statistics.cpp
+## compile_cluster_statistics.cpp and compile_placement_decision.cpp
 
-The file tests ClusterStatistics and WorkerSnapshot: everything starts at zero and empty.
-
-| Test | What it proves |
-| --- | --- |
-| `StartAtZero` | The statistics of a cluster with no worker are zero. |
-
-## test_placement_decision.cpp
-
-The file tests PlacementDecision, the variant the dispatcher visits.
-
-| Test | What it proves |
-| --- | --- |
-| `Small_PlacementDecision.DefaultIsAWorkerOnDeviceZeroWithNoId` | A default decision is `RunOnWorker` with id -1 and device 0. |
-| `Small_PlacementDecision.WaitAndFailCarryTheirFacts` | `WaitForTarget` carries its end and `FailRun` its error. |
+Each file includes one header alone, `cluster_statistics.hpp` and `placement_decision.hpp`, so the header
+carries every include it needs. Both headers hold plain data and a `std::variant` with no behaviour of
+their own to test.

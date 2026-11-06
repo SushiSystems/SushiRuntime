@@ -68,52 +68,93 @@ TEST(Small_HeldNodes, FirstOfferIsKeptUntilForgotten)
               at(milliseconds(50)));
 }
 
-/** @brief Tests that take_expired() returns only the waits that ended, and earliest() follows. */
+/** @brief Tests that take_expired() returns only the waits that ended. */
 TEST(Small_HeldNodes, TakeExpiredReturnsOnlyTheEndedWaits)
 {
     HeldNodes held;
     const sushi_ptr<Internal::Graph::Node> early = make_sushi<Internal::Graph::Node>();
     const sushi_ptr<Internal::Graph::Node> late = make_sushi<Internal::Graph::Node>();
-    EXPECT_EQ(held.earliest(), std::chrono::steady_clock::time_point::max());
-
     ASSERT_TRUE(held.hold(*late, at(milliseconds(200)), held.releases()) == HoldStatus::Held);
     ASSERT_TRUE(held.hold(*early, at(milliseconds(100)), held.releases()) == HoldStatus::Held);
-    EXPECT_EQ(held.size(), 2u);
-    EXPECT_EQ(held.earliest(), at(milliseconds(100)));
-
     std::vector<Internal::Graph::Node*> out;
+
     held.take_expired(at(milliseconds(100)), out);
+
     ASSERT_EQ(out.size(), 1u);
     EXPECT_EQ(out[0], early.get());
-    EXPECT_EQ(held.earliest(), at(milliseconds(200)));
+    EXPECT_EQ(held.size(), 1u);
+}
 
-    out.clear();
+/** @brief Tests that earliest() is the end of the soonest remaining wait, or the clock's maximum. */
+TEST(Small_HeldNodes, EarliestFollowsTheRemainingHolds)
+{
+    HeldNodes held;
+    const sushi_ptr<Internal::Graph::Node> early = make_sushi<Internal::Graph::Node>();
+    const sushi_ptr<Internal::Graph::Node> late = make_sushi<Internal::Graph::Node>();
+    EXPECT_EQ(held.earliest(), std::chrono::steady_clock::time_point::max());
+    ASSERT_TRUE(held.hold(*late, at(milliseconds(200)), held.releases()) == HoldStatus::Held);
+    ASSERT_TRUE(held.hold(*early, at(milliseconds(100)), held.releases()) == HoldStatus::Held);
+    EXPECT_EQ(held.earliest(), at(milliseconds(100)));
+    std::vector<Internal::Graph::Node*> out;
+
+    held.take_expired(at(milliseconds(100)), out);
+
+    EXPECT_EQ(held.earliest(), at(milliseconds(200)));
+}
+
+/** @brief Tests that take_all() returns the rest of the held nodes and empties the table. */
+TEST(Small_HeldNodes, TakeAllReturnsTheRestAndEmptiesTheTable)
+{
+    HeldNodes held;
+    const sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
+    ASSERT_TRUE(held.hold(*node, at(milliseconds(200)), held.releases()) == HoldStatus::Held);
+    std::vector<Internal::Graph::Node*> out;
+
     held.take_all(out);
+
     ASSERT_EQ(out.size(), 1u);
-    EXPECT_EQ(out[0], late.get());
+    EXPECT_EQ(out[0], node.get());
     EXPECT_EQ(held.size(), 0u);
     EXPECT_EQ(held.earliest(), std::chrono::steady_clock::time_point::max());
 }
 
-/** @brief Tests that close() refuses a hold and drain() returns what was held. */
-TEST(Small_HeldNodes, CloseRefusesAHoldAndDrainEmptiesTheTable)
+/** @brief Tests that close() refuses a later hold. */
+TEST(Small_HeldNodes, CloseRefusesALaterHold)
+{
+    HeldNodes held;
+    const sushi_ptr<Internal::Graph::Node> refused = make_sushi<Internal::Graph::Node>();
+    held.close();
+
+    EXPECT_EQ(held.hold(*refused, at(milliseconds(100)), held.releases()), HoldStatus::Closed);
+}
+
+/** @brief Tests that drain() returns the held nodes and empties the table. */
+TEST(Small_HeldNodes, DrainReturnsTheHeldNodes)
 {
     HeldNodes held;
     const sushi_ptr<Internal::Graph::Node> kept = make_sushi<Internal::Graph::Node>();
-    const sushi_ptr<Internal::Graph::Node> refused = make_sushi<Internal::Graph::Node>();
     ASSERT_TRUE(held.hold(*kept, at(milliseconds(100)), held.releases()) == HoldStatus::Held);
-    const auto first = held.first_offer(*kept, at(milliseconds(0)));
-
-    held.close();
-    EXPECT_EQ(held.hold(*refused, at(milliseconds(100)), held.releases()), HoldStatus::Closed);
-
     std::vector<Internal::Graph::Node*> out;
+
     held.drain(out);
+
     ASSERT_EQ(out.size(), 1u);
     EXPECT_EQ(out[0], kept.get());
     EXPECT_EQ(held.size(), 0u);
-    EXPECT_NE(held.first_offer(*kept, at(milliseconds(30))), first)
-        << "drain() forgets every first offer";
+}
+
+/** @brief Tests that drain() forgets the first offer of every node it returns. */
+TEST(Small_HeldNodes, DrainForgetsTheFirstOffers)
+{
+    HeldNodes held;
+    const sushi_ptr<Internal::Graph::Node> kept = make_sushi<Internal::Graph::Node>();
+    ASSERT_TRUE(held.hold(*kept, at(milliseconds(100)), held.releases()) == HoldStatus::Held);
+    const auto first = held.first_offer(*kept, at(milliseconds(0)));
+    std::vector<Internal::Graph::Node*> out;
+
+    held.drain(out);
+
+    EXPECT_NE(held.first_offer(*kept, at(milliseconds(30))), first);
 }
 
 /** @brief Tests that a hold decided before a take_all() is refused as stale and keeps no node. */

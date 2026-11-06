@@ -76,45 +76,60 @@ namespace
         header[offset] = static_cast<std::byte>(value);
         return decode_frame_header(view_of(header), out);
     }
+    /** @brief Returns the first four bytes of a frame as a little-endian number. */
+    std::uint32_t little_endian_u32(const Bytes& frame)
+    {
+        std::uint32_t value = 0;
+        for (std::size_t index = 0; index < 4; ++index)
+            value |= static_cast<std::uint32_t>(frame[index]) << (8 * index);
+        return value;
+    }
 }
 
-/** @brief Tests that a peer whose header announces version 2 is refused with ProtocolMismatch. */
-TEST(Medium_WireFormat, APeerThatAnnouncesVersionTwoIsRefusedWithProtocolMismatch)
+
+namespace
+{
+    /** @brief Names the version a header announces for a test report. */
+    std::string name_of_version(const ::testing::TestParamInfo<unsigned>& info)
+    {
+        return "Version" + std::to_string(info.param);
+    }
+} // namespace
+
+/** @brief Runs a test once per older protocol version a peer can announce. */
+class Small_WireOlderPeer : public ::testing::TestWithParam<unsigned>
+{
+};
+
+/** @brief Tests that a peer whose header announces an older version is refused with ProtocolMismatch. */
+TEST_P(Small_WireOlderPeer, IsRefusedWithProtocolMismatch)
 {
     FrameHeader header;
-    ASSERT_EQ(header_status_with_byte(4, 0x02, header), FrameStatus::VersionMismatch);
-    ASSERT_EQ(header.version, 2u);
+    ASSERT_EQ(header_status_with_byte(4, GetParam(), header), FrameStatus::VersionMismatch);
+    ASSERT_EQ(header.version, GetParam());
 
     const Result<void> refused = check_protocol_version(header.version);
+
     ASSERT_FALSE(refused.has_value());
     EXPECT_EQ(refused.error().code, ErrorCode::ProtocolMismatch);
-    EXPECT_NE(refused.error().message.find("protocol v2"), std::string::npos)
+    EXPECT_NE(refused.error().message.find("protocol v" + std::to_string(GetParam())),
+              std::string::npos)
         << refused.error().message;
-    EXPECT_NE(refused.error().message.find("this build v4"), std::string::npos)
+    EXPECT_NE(refused.error().message.find("this build v" + std::to_string(K_PROTOCOL_VERSION)),
+              std::string::npos)
         << refused.error().message;
+}
 
+INSTANTIATE_TEST_SUITE_P(Rows, Small_WireOlderPeer, ::testing::Values(2u, 3u), name_of_version);
+
+/** @brief Tests that the version of this build is accepted. */
+TEST(Small_WireFormat, TheVersionOfThisBuildIsAccepted)
+{
     EXPECT_TRUE(check_protocol_version(K_PROTOCOL_VERSION).has_value());
-    static_assert(K_PROTOCOL_VERSION == 4, "the golden headers of this file carry version 4");
 }
 
-/** @brief Tests that a peer whose header announces version 3 is refused with ProtocolMismatch. */
-TEST(Medium_WireFormat, APeerThatAnnouncesVersionThreeIsRefusedWithProtocolMismatch)
-{
-    FrameHeader header;
-    ASSERT_EQ(header_status_with_byte(4, 0x03, header), FrameStatus::VersionMismatch);
-    ASSERT_EQ(header.version, 3u);
-
-    const Result<void> refused = check_protocol_version(header.version);
-    ASSERT_FALSE(refused.has_value());
-    EXPECT_EQ(refused.error().code, ErrorCode::ProtocolMismatch);
-    EXPECT_NE(refused.error().message.find("protocol v3"), std::string::npos)
-        << refused.error().message;
-    EXPECT_NE(refused.error().message.find("this build v4"), std::string::npos)
-        << refused.error().message;
-}
-
-/** @brief Tests the 12-byte header layout, the last-chunk flag and a whole PING frame. */
-TEST(Medium_WireFormat, FrameHeaderGolden)
+/** @brief Tests the 12-byte header layout in both directions. */
+TEST(Small_WireFormat, FrameHeaderGolden)
 {
     const Bytes golden = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x07, 0x00, 0x0C, 0x0B,
                                     0x0A, 0x00 });
@@ -128,34 +143,42 @@ TEST(Medium_WireFormat, FrameHeaderGolden)
     EXPECT_EQ(header.type, MessageType::TaskDispatch);
     EXPECT_EQ(header.flags, 0u);
     EXPECT_EQ(header.payload_length, 0x000A0B0Cu);
+}
 
+/** @brief Tests that the last-chunk flag of a header decodes. */
+TEST(Small_WireFormat, TheLastChunkFlagDecodes)
+{
     const Bytes last_chunk = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0B, 0x01, 0x25,
                                         0x00, 0x00, 0x00 });
+    FrameHeader header;
+
     ASSERT_EQ(decode_frame_header(view_of(last_chunk), header), FrameStatus::Ok);
+
     EXPECT_EQ(header.type, MessageType::BufferChunk);
     EXPECT_EQ(header.flags, K_FRAME_FLAG_LAST_CHUNK);
     EXPECT_EQ(header.payload_length, 37u);
+}
 
+/** @brief Tests the bytes of a whole PING frame. */
+TEST(Small_WireFormat, PingFrameGolden)
+{
     const Bytes ping_frame = bytes_of({ 0x53, 0x52, 0x44, 0x50, 0x04, 0x00, 0x0E, 0x00, 0x08,
                                         0x00, 0x00, 0x00, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33,
                                         0x22, 0x11 });
     PingMessage ping;
     ping.token = 0x1122334455667788ull;
     Bytes frame;
+
     ASSERT_EQ(append_frame(ping, 0, frame), CodecStatus::Ok);
+
     EXPECT_EQ(frame, ping_frame);
 }
 
-/** @brief Tests that a version 1 reader sees the magic as a length above its 256 MiB cap. */
-TEST(Medium_WireFormat, MagicReadsAsOversizedV1Length)
+/** @brief Tests that the magic bytes, read as a little-endian number, are 0x50445253. */
+TEST(Small_WireFormat, MagicReadsAsALittleEndianNumber)
 {
     Bytes frame;
     append_frame_header(FrameHeader{}, frame);
 
-    std::uint32_t length = 0;
-    for (std::size_t index = 0; index < 4; ++index)
-        length |= static_cast<std::uint32_t>(frame[index]) << (8 * index);
-
-    EXPECT_EQ(length, 0x50445253u);
-    EXPECT_GT(length, 256u * 1024u * 1024u);
+    EXPECT_EQ(little_endian_u32(frame), 0x50445253u);
 }
