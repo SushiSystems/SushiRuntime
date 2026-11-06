@@ -23,7 +23,7 @@
 
 /**
  * @file test_affinity.cpp
- * @brief Tests that pinning binds a valid core, refuses an invalid one and never throws.
+ * @brief Tests that pinning binds a valid core, leaves the affinity alone for an invalid one, and repeats.
  * @see tests/platform/topology/README.md
  * @author Mustafa Garip
  */
@@ -106,14 +106,15 @@ namespace
         std::string after{};  /**< Affinity after the request. */
     };
 
-    /** @brief Requests a pin from a fresh worker thread and returns its affinity around the request. */
-    AffinityAroundPin pin_from_worker(int core_id)
+    /** @brief Requests @p times pins from a fresh worker thread and returns its affinity around the requests. */
+    AffinityAroundPin pin_from_worker(int core_id, int times = 1)
     {
         AffinityAroundPin observed;
-        std::thread worker([&observed, core_id]()
+        std::thread worker([&observed, core_id, times]()
         {
             observed.before = calling_thread_affinity();
-            pin_current_thread_to_core(core_id);
+            for (int request = 0; request < times; ++request)
+                pin_current_thread_to_core(core_id);
             observed.after = calling_thread_affinity();
         });
         worker.join();
@@ -121,21 +122,22 @@ namespace
     }
 } // namespace
 
-TEST(Medium_AffinityTest, NegativeCoreLeavesAffinityUnchanged)
+class Medium_AffinityRefused : public ::testing::TestWithParam<int>
 {
-    const AffinityAroundPin observed = pin_from_worker(-1);
+};
+
+/** @brief Tests that a core the machine does not have leaves the affinity of the thread as it was. */
+TEST_P(Medium_AffinityRefused, ACoreOutOfRangeLeavesAffinityUnchanged)
+{
+    const AffinityAroundPin observed = pin_from_worker(GetParam());
 
     ASSERT_FALSE(observed.before.empty()) << "the OS did not report the thread's affinity";
     EXPECT_EQ(observed.after, observed.before);
 }
 
-TEST(Medium_AffinityTest, CoreBeyondTheMachineLeavesAffinityUnchanged)
-{
-    const AffinityAroundPin observed = pin_from_worker(100000);
-
-    ASSERT_FALSE(observed.before.empty()) << "the OS did not report the thread's affinity";
-    EXPECT_EQ(observed.after, observed.before);
-}
+INSTANTIATE_TEST_SUITE_P(Cores, Medium_AffinityRefused, ::testing::Values(-1, 100000),
+                         [](const ::testing::TestParamInfo<int>& info)
+                         { return info.param < 0 ? std::string("Negative") : std::string("BeyondTheMachine"); });
 
 TEST(Medium_AffinityTest, CoreZeroBecomesTheOnlyCoreOfTheThread)
 {
@@ -147,78 +149,15 @@ TEST(Medium_AffinityTest, CoreZeroBecomesTheOnlyCoreOfTheThread)
     EXPECT_EQ(observed.after, K_CORE_ZERO_ALONE);
 }
 
-/**
- * @brief Tests that pinning a worker thread to a valid core does not throw.
- *
- * Pinning to core 0 (always present) should be successful or at least
- * handled gracefully internally.
- */
-TEST(Medium_AffinityTest, PinToValidCore)
-{
-    bool threw = false;
-    std::thread worker([&threw]()
-    {
-        try
-        {
-            pin_current_thread_to_core(0);
-        }
-        catch (...)
-        {
-            threw = true;
-        }
-    });
-    worker.join();
-
-    EXPECT_FALSE(threw) << "Pinning to a valid core should never throw.";
-}
-
-/**
- * @brief Tests that an out-of-range core id fails gracefully.
- *
- * Requesting a non-existent core must trigger a warning but not throw an
- * exception or crash the program.
- */
-TEST(Medium_AffinityTest, PinToInvalidCoreIsGraceful)
-{
-    bool threw = false;
-    std::thread worker([&threw]()
-    {
-        try
-        {
-            pin_current_thread_to_core(100000);
-        }
-        catch (...)
-        {
-            threw = true;
-        }
-    });
-    worker.join();
-
-    EXPECT_FALSE(threw) << "Pinning to an invalid core must fail gracefully, not throw.";
-}
-
-/**
- * @brief Tests that repeated pinning on the same thread remains stable.
- *
- * Calling the pinning function multiple times should not cause any exceptions
- * or cumulative failure states.
- */
+/** @brief Tests that pinning to core 0 again and again keeps core 0 as the only core of the thread. */
 TEST(Medium_AffinityTest, PinIsRepeatable)
 {
-    bool threw = false;
-    std::thread worker([&threw]()
-    {
-        try
-        {
-            for (int i = 0; i < 16; ++i)
-                pin_current_thread_to_core(0);
-        }
-        catch (...)
-        {
-            threw = true;
-        }
-    });
-    worker.join();
+    static constexpr int K_PINS = 16;
 
-    EXPECT_FALSE(threw);
+    const AffinityAroundPin observed = pin_from_worker(0, K_PINS);
+
+    ASSERT_FALSE(observed.before.empty()) << "the OS did not report the thread's affinity";
+    if (!lists_core_zero(observed.before))
+        GTEST_SKIP() << "core 0 is outside the affinity this process may use: " << observed.before;
+    EXPECT_EQ(observed.after, K_CORE_ZERO_ALONE);
 }

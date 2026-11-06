@@ -6,8 +6,8 @@
 sushiruntime_add_module_tests(
     MODULE device
     SOURCES
-        test_device_descriptor.cpp
-        test_device_log_category.cpp
+        compile_device_descriptor.cpp
+        compile_device_log_category.cpp
         test_device_queue_set.cpp
         test_queue_flavour.cpp
     DEVICE_SOURCES

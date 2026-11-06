@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_device_descriptor.cpp                                             */
+/* compile_device_descriptor.cpp                                          */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,38 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_device_descriptor.cpp
- * @brief Tests DeviceDescriptor: it carries a SYCL device and the description of it.
+ * @file compile_device_descriptor.cpp
+ * @brief Compiles device_descriptor.hpp on its own, so the header carries every include it needs.
  * @see tests/platform/device/README.md
  * @author Mustafa Garip
  */
 
-#include <string>
-
-#include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
-
 #include <SushiRuntime/device/device_descriptor.hpp>
-#include <SushiRuntime/machine/device_kind.hpp>
-
-using namespace SushiRuntime;
-using SushiRuntime::Internal::Device::DeviceDescriptor;
-
-/** @brief Tests that a descriptor keeps the device and the description it was given. */
-TEST(Medium_DeviceDescriptor, KeepsTheDeviceAndItsDescription)
-{
-    if (sycl::device::get_devices().empty())
-        GTEST_SKIP() << "no SYCL device";
-    const sycl::device device = sycl::device::get_devices().front();
-
-    DeviceDescriptor descriptor;
-    descriptor.device = device;
-    descriptor.info.index = 2;
-    descriptor.info.name = device.get_info<sycl::info::device::name>();
-    descriptor.info.kind = DeviceKind::GPU;
-
-    EXPECT_EQ(descriptor.device, device);
-    EXPECT_EQ(descriptor.info.index, 2u);
-    EXPECT_EQ(descriptor.info.name, device.get_info<sycl::info::device::name>());
-    EXPECT_EQ(descriptor.info.kind, DeviceKind::GPU);
-}

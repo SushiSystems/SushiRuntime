@@ -64,11 +64,14 @@ TEST(Medium_USMAllocationOwner, DestroyingTheAllocationFreesTheUSM)
     EXPECT_EQ(allocator->live_count(), live - 1);
 }
 
-/** @brief Tests that an owner with no allocator releases nothing and does not stop. */
-TEST(Medium_USMAllocationOwner, AnOwnerWithNoAllocatorDoesNothing)
+/** @brief Tests that an owner with no allocator releases nothing and leaves the memory alone. */
+TEST(Small_USMAllocationOwner, AnOwnerWithNoAllocatorLeavesTheMemoryAlone)
 {
+    constexpr int K_KEPT = 7;
     USMAllocationOwner owner(nullptr);
-    int value = 0;
+    int value = K_KEPT;
+
     owner.release(&value);
-    SUCCEED();
+
+    EXPECT_EQ(value, K_KEPT);
 }

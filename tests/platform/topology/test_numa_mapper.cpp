@@ -28,6 +28,7 @@
  * @author Mustafa Garip
  */
 
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -55,17 +56,39 @@ TEST(Small_NUMAMapper, ARemoteNodeIsFartherThanALocalOne)
     EXPECT_GT(mapper.distance(0, 1), 10);
 }
 
-/** @brief Tests that mapping leaves every discovered device on a node, and an empty list alone. */
-TEST(Small_NUMAMapper, MappingPlacesEveryDevice)
+namespace
+{
+    /** @brief Describes the first node of @p nodes left on no NUMA node, or returns an empty text. */
+    std::string first_device_left_unplaced(const std::vector<HardwareNode>& nodes)
+    {
+        for (const HardwareNode& node : nodes)
+        {
+            if (node.numa_node_id < 0)
+                return "device [" + node.name + "] was left on node " + std::to_string(node.numa_node_id);
+        }
+        return {};
+    }
+} // namespace
+
+/** @brief Tests that mapping an empty list leaves it empty. */
+TEST(Medium_NUMAMapper, MappingAnEmptyListLeavesItAlone)
 {
     NUMAMapper mapper;
     std::vector<HardwareNode> none;
-    mapper.map_distances(none);
-    EXPECT_TRUE(none.empty());
 
+    mapper.map_distances(none);
+
+    EXPECT_TRUE(none.empty());
+}
+
+/** @brief Tests that mapping leaves every discovered device on a node. */
+TEST(Medium_NUMAMapper, MappingPlacesEveryDevice)
+{
+    NUMAMapper mapper;
     HwlocTopologyProvider provider;
     std::vector<HardwareNode> nodes = provider.enumerate().value();
+
     mapper.map_distances(nodes);
-    for (const HardwareNode& node : nodes)
-        EXPECT_GE(node.numa_node_id, 0) << node.name;
+
+    EXPECT_EQ(first_device_left_unplaced(nodes), "");
 }

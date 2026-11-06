@@ -38,12 +38,16 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Topology;
 
-/** @brief Tests that the host name is stable between two calls and holds no terminator. */
-TEST(Small_HostIdentity, HostNameIsStableAndHoldsNoTerminator)
+/** @brief Tests that the host name is the same between two calls. */
+TEST(Small_HostIdentity, HostNameIsStable)
 {
-    const std::string first = host_name();
-    EXPECT_EQ(host_name(), first);
-    EXPECT_EQ(first.find('\0'), std::string::npos);
+    EXPECT_EQ(host_name(), host_name());
+}
+
+/** @brief Tests that the host name holds no terminator. */
+TEST(Small_HostIdentity, HostNameHoldsNoTerminator)
+{
+    EXPECT_EQ(host_name().find('\0'), std::string::npos);
 }
 
 /** @brief Tests that the operating system is the one this test was compiled for. */

@@ -6,82 +6,26 @@ runs them with the rest; `sr run sr_platform_tests -- --gtest_filter='<pattern>'
 program alone.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
-
-## test_profiling_ledger.cpp
-
-The file covers the move operations of `ProfilingLedger`. A moved-to ledger and a moved-from ledger are
-compared with a fresh ledger reserved with the same multiplicities and the same device count.
-
-### `run_dispatches`
-
-`run_dispatches` records one dispatch for each attempt of each node through `record()`, with the node
-index and the invocation number. An attempt that finds no slot is counted and skipped. It returns the
-records that `collect` appends.
-
-### `expect_same_run`
-
-`expect_same_run` asserts that two runs hold the same number of records, and that the node index
-and the invocation of each record match in order.
-
-### `pair_device_zero` and `pairings_of`
-
-`pair_device_zero` claims device 0's pairing, with an event reading of 900 ns beside a steady reading of
-5000 ns. `pairings_of` returns what `collect_pairings` reports.
-
-### `MovedFromLedgerClaimsNothingBeforeReserve`
-
-The source reserves rows for two nodes and is move-constructed into a target. The moved-from ledger returns
-`npos` from `claim_slot(0)`, and the target returns slot 0.
-
-### `MoveConstructedSourceReservesLikeFresh`
-
-The move leaves device 0's pairing in the target, and the moved-from ledger reports none. The source is then
-reserved with rows for three nodes. Its records for the same dispatches match those of a fresh ledger, as
-`expect_same_run` checks.
-
-### `MoveAssignedSourceReservesLikeFresh`
-
-The target starts with one row for one node and then takes the source by move assignment. The target holds
-the pairing, and the source reports none and returns `npos` from `claim_slot(0)`. The source is then reserved
-with rows for three nodes, and its records match those of a fresh ledger.
+Sizes are described in [the tests README](../../README.md#sizes).
 
 ## test_event_timestamps.cpp
 
-The file tests read_event_timestamps() on an event of a profiling queue and on a default event.
+The file tests the event timestamps: the read of a profiled event, the merge of the spans of several
+events, and the read of an event that cannot be read.
 
 | Test | What it proves |
 | --- | --- |
-| `AProfiledEventReadsOrderedTimes` | A profiled event reads start before end, and submit no later than start. |
-| `AnUnprofiledEventReadsNothing` | An event with no profiling reads nothing and leaves the output alone. |
-
-## test_transfer_counters.cpp
-
-The file tests TransferCounters' starting values, per-counter adds and concurrent totals.
-
-## test_event_timestamps.cpp: merging the events of a body
-
-| Test | What it proves |
-| --- | --- |
+| `Medium_EventTimestamps.AProfiledEventReadsOrderedTimes` | A profiled event reads start before end, and submit no later than start. It runs on a profiling queue. |
 | `Small_EventTimestamps.MergesEventsIntoOneSpan` | Two events fold into the earliest submit and start and the latest end. |
 | `Small_EventTimestamps.TheMergeDoesNotDependOnTheOrder` | The merge covers both events whichever one is merged into the other. |
 | `Small_EventTimestamps.TheSubmitIsTheBackendsOnlyWhenEveryEventHadOne` | The submit reading counts as the backend's own only when every event had one. |
 | `Small_EventTimestamps.MergingAnEventIntoItselfChangesNothing` | Merging one event into itself changes nothing. |
-| `Small_EventTimestamps.AnUnreadableEventFailsTheDispatch` | An event that cannot be read fails the dispatch whether it is returned or handed over. |
 
-## test_profiling_ledger.cpp: the record writer, the pairings and the drops
+### `FailsTheReadAndLeavesTheOutputAlone`
 
-| Test | What it proves |
-| --- | --- |
-| `Small_ProfilingLedger.RecordFillsEveryField` | Record() fills every field of the record it stores. |
-| `Small_ProfilingLedger.ARecordWithNoDeviceNamesTheHost` | A host record keeps the host device and unknown widths by default. |
-| `Small_ProfilingLedger.KeepsOnePairingPerDevice` | Each device claims its own pairing and only a device that read its event reports one. |
-| `Small_ProfilingLedger.AReserveClearsThePairings` | The next reserve() clears the claims, so a run starts with no pairing. |
-| `Small_ProfilingLedger.CountsADispatchThatFoundItsRowFull` | A dispatch that finds its row full is counted, not stored. |
-| `Small_ProfilingLedger.CountsARecordForANodePastTheRows` | A record for a node past the ledger is counted under its own cause. |
-| `Small_ProfilingLedger.OverflowBehavesTheSameInDebugAndRelease` | An overflow never aborts, so debug and release builds behave the same. |
-| `Small_ProfilingLedger.NoteDropCountsEachCauseApart` | The other drop causes are counted by note_drop(), each under its own count. |
-| `Small_ProfilingLedger.ACleanRunLosesNothing` | A ledger that recorded nothing reports no drop. |
-| `Small_ProfilingLedger.AMovedLedgerCarriesItsPairings` | A moved ledger keeps its pairings and a moved-from one starts with none. |
+Rows: a default event read on its own, and a dispatch read with no events handed over and with two
+handed over. A default event comes from no queue built with profiling, so each read fails and the
+output is as it was. The test needs no device.
 
 ## test_pairing_claim.cpp
 
@@ -89,7 +33,65 @@ How one dispatch claims its device's clock pairing, keeps it or gives it back.
 
 | Test | What it proves |
 | --- | --- |
-| `Small_PairingClaim.ASubmittedClaimKeepsThePairing` | A claim that submitted records a window, so the device's pairing is kept once its event is read. |
+| `Small_PairingClaim.ASubmittedClaimKeepsThePairing` | A claim that submitted keeps the device's pairing, and collect returns the event reading stored. |
+| `Small_PairingClaim.TheWindowOfAClaimStartsAtASteadyReading` | The pairing of a claim carries a steady reading above zero. |
 | `Small_PairingClaim.AClaimThatSubmittedNothingIsGivenUp` | A claim that submitted nothing is given up, so the next dispatch claims the device. |
 | `Small_PairingClaim.ALosingClaimChangesNothing` | A claim with no ledger or on a held device leaves the ledger as it was. |
 | `Small_PairingClaim.SteadyNsCountsNanosecondsSinceTheEpoch` | steady_ns() counts the nanoseconds of a time point since the steady clock's epoch. |
+
+## test_profiling_ledger.cpp
+
+The file covers the record writer, the device pairings, the drop counts and the move operations of
+`ProfilingLedger`.
+
+### `run_dispatches`
+
+`run_dispatches` records one dispatch for each attempt of each node through `record()`, with the node
+index and the invocation number. An attempt that finds no slot is counted and skipped. It returns the
+node index and the invocation of each record that `collect` appends, in order, so two runs are
+compared with one equality.
+
+### `pair_device_zero` and `pairings_of`
+
+`pair_device_zero` claims device 0's pairing, with an event reading of 900 ns beside a steady reading of
+5000 ns. `pairings_of` returns what `collect_pairings` reports.
+
+### The move tests
+
+Each runs twice, once for a move construction and once for a move assignment onto a ledger that holds
+other rows. The moved-to ledger keeps the pairing and the rows of the source, the moved-from ledger
+holds no pairing and claims nothing before a reserve, and after a reserve it records the same run as a
+fresh ledger.
+
+### `ARowKeepsItsCapacityAndCountsTheRest`
+
+Two rows: one dispatch past a row of one slot, and three past a row of two. A dispatch past the row is
+counted as `FullRow` and not stored, the first drop names its node, and nothing aborts.
+
+### The record, pairing and drop tests
+
+| Test | What it proves |
+| --- | --- |
+| `RecordFillsEveryField` | record() fills every field of the record it stores. |
+| `ARecordOnTheHostDeviceKeepsTheHostIndexAndUnknownWidths` | A record made on the host device with unknown widths keeps them. |
+| `ADeviceHasOnePairingOwnerPerRun` | A second claim on a device that has an owner fails. |
+| `EachDeviceClaimsItsOwnPairing` | Three devices are claimed one after another. |
+| `ADevicePastTheLedgerClaimsNothing` | A device past the ledger claims nothing and owns nothing. |
+| `ADeviceThatNeverReadItsEventHasNoPairing` | A device whose owner never read its event reports no pairing. |
+| `TheStoredPairingsAreReportedPerDevice` | The pairings of the devices that read their events are reported with their values. |
+| `AReserveClearsThePairings` | The next reserve() clears the claims, so a run starts with no pairing. |
+| `TheNextReserveSizesARowToTheDemand` | The run after an overflow sizes the row to the demand and loses nothing. |
+| `CountsARecordForANodePastTheRows` | A record for a node past the ledger is counted under its own cause. |
+| `NoteDropCountsEachCauseApart` | The other drop causes are counted by note_drop(), each under its own count, and the total is their sum. |
+| `TheFirstDropNamesItsNode` | The first drop names its node. |
+| `ACleanRunLosesNothing` | A ledger that recorded nothing reports no drop. |
+
+## test_transfer_counters.cpp
+
+The file tests TransferCounters' per-counter adds, accumulation and concurrent totals.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_TransferCountersAdd.RaisesOnlyItsCounter` | One add raises only its own counter; one row per direction. |
+| `Small_TransferCounters.RepeatedAddsAccumulate` | Repeated adds accumulate in each counter. |
+| `Medium_TransferCounters.ConcurrentAddsGiveExactTotals` | No add is lost when eight threads add to both counters at once. |

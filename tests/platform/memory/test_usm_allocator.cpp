@@ -40,25 +40,24 @@
 #include <optional>
 #include <sstream>
 #include <string>
-#include <string_view>
 #include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
-#include <SushiLog/log/log_calls.hpp>
 #include <SushiLog/log/log_level.hpp>
-#include <SushiLog/log/log_record.hpp>
 
-#include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/log/logger.hpp>
+#include <SushiRuntime/device_probe/device_probe.hpp>
+#include <SushiRuntime/memory/recording_usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
-#include <SushiRuntime/device_probe/device_probe.hpp>
 #include <SushiRuntime/test_runner/log_capture.hpp>
 
+#include "support/runtime_environment.hpp"
+
+using SushiRuntime::Internal::Memory::RecordingUSMReleaseObserver;
 using SushiRuntime::Internal::Memory::USMAllocator;
 using SushiRuntime::Internal::Memory::USMKind;
 using SushiRuntime::Internal::Memory::USMReleaseObserver;
@@ -122,20 +121,6 @@ namespace
         return honoured;
     }
 
-    /** @brief Records every address an allocator reports as released. */
-    class RecordingObserver final : public USMReleaseObserver
-    {
-        public:
-            /** @brief Appends the address; the tests release from one thread. */
-            void on_release(void* address) noexcept override
-            {
-                released.push_back(address);
-            }
-
-            /** @brief Addresses reported so far, in call order. */
-            std::vector<void*> released;
-    };
-
     /** @brief Blocks every on_release() call until the test opens it. */
     class BlockingObserver final : public USMReleaseObserver
     {
@@ -175,46 +160,6 @@ namespace
             bool opened_ = false;
     };
 
-    /** @brief Collects the ERROR lines the logger writes while it is alive. */
-    class ErrorLineCapture final
-    {
-        public:
-            /** @brief Makes the logger synchronous and routes its records here. */
-            ErrorLineCapture()
-                : saved_level_(SushiLog::log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT))
-            {
-                SushiLog::set_log_synchronous(true);
-                SushiLog::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
-                                            SushiLog::LogLevel::Warn);
-                SushiLog::set_log_sink(
-                    [this](const SushiLog::LogRecord& record)
-                    {
-                        if (record.level == SushiLog::LogLevel::Error)
-                            lines.emplace_back(record.text);
-                    });
-            }
-
-            /** @brief Restores the default sink and the level the process had. */
-            ~ErrorLineCapture()
-            {
-                SushiLog::set_log_sink(nullptr);
-                SushiLog::set_log_level(SushiRuntime::K_SUSHIRUNTIME_LOG_PROJECT,
-                                            saved_level_);
-            }
-
-            ErrorLineCapture(const ErrorLineCapture&) = delete;
-            ErrorLineCapture& operator=(const ErrorLineCapture&) = delete;
-            ErrorLineCapture(ErrorLineCapture&&) = delete;
-            ErrorLineCapture& operator=(ErrorLineCapture&&) = delete;
-
-            /** @brief ERROR lines seen so far, in order. */
-            std::vector<std::string> lines;
-
-        private:
-            /// @brief The level the process had before the capture.
-            SushiLog::LogLevel saved_level_;
-    };
-
     /** @brief Returns an address as the logger prints it. */
     std::string printed(void* address)
     {
@@ -223,8 +168,40 @@ namespace
         return stream.str();
     }
 
+    /** @brief Returns the bytes of a buffer as a vector, so one comparison covers all of them. */
+    std::vector<unsigned char> bytes_of(const unsigned char* data, std::size_t count)
+    {
+        return std::vector<unsigned char>(data, data + count);
+    }
+
+    /** @brief One kind, and the alignment and length it is asked for. */
+    struct AlignedRow
+    {
+        /** @brief The kind asked for. */
+        USMKind kind;
+        /** @brief The alignment asked for, in bytes. */
+        std::size_t alignment;
+        /** @brief The length asked for, in bytes. */
+        std::size_t bytes;
+    };
+
+    /** @brief Returns every kind at every alignment and length the aligned request is tried with. */
+    std::vector<AlignedRow> aligned_rows()
+    {
+        std::vector<AlignedRow> rows;
+        for (const USMKind kind : K_ALL_KINDS)
+        {
+            for (const std::size_t alignment : {std::size_t{64}, std::size_t{128}})
+            {
+                for (const std::size_t bytes : {std::size_t{1}, std::size_t{100}, std::size_t{4096}})
+                    rows.push_back(AlignedRow{kind, alignment, bytes});
+            }
+        }
+        return rows;
+    }
+
     /** @brief Builds one queue per SYCL device and an allocator over them. */
-    class Medium_UsmAllocator : public ::testing::Test
+    class UsmAllocatorFixture : public TestSupport::RuntimeTest
     {
         protected:
             /** @brief Skips when SYCL reports no device; otherwise builds the allocator. */
@@ -268,82 +245,78 @@ namespace
     };
 } // namespace
 
-TEST_F(Medium_UsmAllocator, EachKindAllocatesIsUsableIsCountedAndIsReleased)
+/** @brief Fixture of the tests that read one allocator over every device. */
+class Medium_UsmAllocator : public UsmAllocatorFixture
 {
-    std::size_t kinds_tested = 0;
-    for (const USMKind kind : K_ALL_KINDS)
+};
+
+/** @brief Fixture of the tests that run once per kind. */
+class Medium_UsmAllocatorKind : public UsmAllocatorFixture, public ::testing::WithParamInterface<USMKind>
+{
+};
+
+/** @brief Fixture of the tests that run once per kind, alignment and length. */
+class Medium_UsmAllocatorAligned : public UsmAllocatorFixture, public ::testing::WithParamInterface<AlignedRow>
+{
+};
+
+TEST_P(Medium_UsmAllocatorKind, AllocatesIsUsableIsCountedAndIsReleased)
+{
+    const USMKind kind = GetParam();
+    const std::optional<std::size_t> device = device_supporting(kind);
+    if (!device.has_value())
+        GTEST_SKIP() << "No SYCL device supports this kind.";
+
+    const std::size_t baseline = allocator_->live_count();
+    void* const address = allocator_->allocate(USMRequest{kind, K_BYTES, 0, *device});
+    ASSERT_NE(address, nullptr);
+    EXPECT_EQ(allocator_->live_count(), baseline + 1);
+
+    if (kind == USMKind::Device)
     {
-        const std::optional<std::size_t> device = device_supporting(kind);
-        if (!device.has_value())
-            continue;
-        ++kinds_tested;
-        SCOPED_TRACE(name_of(kind));
-
-        const std::size_t baseline = allocator_->live_count();
-        void* const address = allocator_->allocate(USMRequest{kind, K_BYTES, 0, *device});
-        ASSERT_NE(address, nullptr);
-        EXPECT_EQ(allocator_->live_count(), baseline + 1);
-
-        if (kind == USMKind::Device)
-        {
-            // Device USM has no host address to write through; the device writes it.
-            queues_[*device].memset(address, K_PATTERN, K_BYTES).wait_and_throw();
-        }
-        else
-        {
-            std::memset(address, K_PATTERN, K_BYTES);
-            EXPECT_EQ(static_cast<unsigned char*>(address)[K_BYTES - 1], K_PATTERN);
-        }
-
-        allocator_->release(address);
-        EXPECT_EQ(allocator_->live_count(), baseline);
-        EXPECT_FALSE(allocator_->device_of(address).has_value());
+        // Device USM has no host address to write through; the device writes it.
+        queues_[*device].memset(address, K_PATTERN, K_BYTES).wait_and_throw();
+    }
+    else
+    {
+        std::memset(address, K_PATTERN, K_BYTES);
+        EXPECT_EQ(static_cast<unsigned char*>(address)[K_BYTES - 1], K_PATTERN);
     }
 
-    if (kinds_tested == 0)
-        GTEST_SKIP() << "No SYCL device supports any USM kind.";
+    allocator_->release(address);
+    EXPECT_EQ(allocator_->live_count(), baseline);
+    EXPECT_FALSE(allocator_->device_of(address).has_value());
 }
 
-TEST_F(Medium_UsmAllocator, AnAlignedRequestReturnsAnAddressOnTheAlignment)
+INSTANTIATE_TEST_SUITE_P(Kinds, Medium_UsmAllocatorKind,
+                         ::testing::Values(USMKind::Host, USMKind::Shared, USMKind::Device),
+                         [](const ::testing::TestParamInfo<USMKind>& info) { return std::string(name_of(info.param)); });
+
+TEST_P(Medium_UsmAllocatorAligned, ReturnsAnAddressOnTheAlignment)
 {
-    std::size_t kinds_tested = 0;
-    for (const USMKind kind : K_ALL_KINDS)
-    {
-        const std::optional<std::size_t> device = device_supporting(kind);
-        if (!device.has_value())
-            continue;
-        ++kinds_tested;
+    const AlignedRow& row = GetParam();
+    const std::optional<std::size_t> device = device_supporting(row.kind);
+    if (!device.has_value())
+        GTEST_SKIP() << "No SYCL device supports this kind.";
+    if (row.kind == USMKind::Shared && !shared_allocation_honours(queues_[*device], row.alignment))
+        GTEST_SKIP() << "The toolchain's aligned shared allocation does not honour this alignment.";
 
-        for (const std::size_t alignment : {std::size_t{64}, std::size_t{128}})
-        {
-            if (kind == USMKind::Shared && !shared_allocation_honours(queues_[*device], alignment))
-            {
-                RecordProperty("shared_alignment_not_honoured", std::to_string(alignment));
-                continue;
-            }
-            for (const std::size_t bytes : {std::size_t{1}, std::size_t{100}, std::size_t{4096}})
-            {
-                SCOPED_TRACE(std::string(name_of(kind)) + ", " + std::to_string(bytes)
-                             + " bytes at alignment " + std::to_string(alignment));
+    void* const address = allocator_->allocate(USMRequest{row.kind, row.bytes, row.alignment, *device});
+    ASSERT_NE(address, nullptr);
 
-                void* const address =
-                    allocator_->allocate(USMRequest{kind, bytes, alignment, *device});
-                ASSERT_NE(address, nullptr);
-                EXPECT_EQ(reinterpret_cast<std::uintptr_t>(address) % alignment, 0u);
-
-                const std::optional<std::size_t> recorded = allocator_->device_of(address);
-                ASSERT_TRUE(recorded.has_value());
-                EXPECT_EQ(*recorded, *device);
-                allocator_->release(address);
-            }
-        }
-    }
-
-    if (kinds_tested == 0)
-        GTEST_SKIP() << "No SYCL device supports any USM kind.";
+    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(address) % row.alignment, 0u);
+    EXPECT_EQ(allocator_->device_of(address), std::optional<std::size_t>(*device));
+    allocator_->release(address);
 }
 
-TEST_F(Medium_UsmAllocator, AnAllocationResolvesToItsDeviceAtItsBaseAndInside)
+INSTANTIATE_TEST_SUITE_P(Alignments, Medium_UsmAllocatorAligned, ::testing::ValuesIn(aligned_rows()),
+                         [](const ::testing::TestParamInfo<AlignedRow>& info)
+                         {
+                             return std::string(name_of(info.param.kind)) + "At" + std::to_string(info.param.alignment)
+                                    + "Of" + std::to_string(info.param.bytes);
+                         });
+
+TEST_F(Medium_UsmAllocator, AnAllocationResolvesToItsDeviceAtItsBase)
 {
     const std::size_t device = queues_.size() - 1;
     const std::optional<USMKind> kind = kind_supported_by(device);
@@ -352,26 +325,54 @@ TEST_F(Medium_UsmAllocator, AnAllocationResolvesToItsDeviceAtItsBaseAndInside)
 
     void* const address = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, device});
     ASSERT_NE(address, nullptr);
+
+    EXPECT_EQ(allocator_->device_of(address), std::optional<std::size_t>(device));
+    EXPECT_EQ(allocator_->owning_device(address), std::optional<std::size_t>(device));
+    allocator_->release(address);
+}
+
+TEST_F(Medium_UsmAllocator, AnInteriorAddressFindsItsBase)
+{
+    const std::size_t device = queues_.size() - 1;
+    const std::optional<USMKind> kind = kind_supported_by(device);
+    if (!kind.has_value())
+        GTEST_SKIP() << "The last SYCL device supports no USM kind.";
+    void* const address = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, device});
+    ASSERT_NE(address, nullptr);
     void* const interior = static_cast<unsigned char*>(address) + K_BYTES / 2;
-    void* const past_the_end = static_cast<unsigned char*>(address) + K_BYTES;
-
-    const std::optional<std::size_t> recorded = allocator_->device_of(address);
-    ASSERT_TRUE(recorded.has_value());
-    EXPECT_EQ(*recorded, device);
-
-    const std::optional<std::size_t> owning = allocator_->owning_device(address);
-    ASSERT_TRUE(owning.has_value());
-    EXPECT_EQ(*owning, device);
 
     // device_of() answers for a first address only; containing_base() finds it from inside.
     EXPECT_FALSE(allocator_->device_of(interior).has_value());
-    const std::optional<const void*> base = allocator_->containing_base(interior);
-    ASSERT_TRUE(base.has_value());
-    EXPECT_EQ(*base, address);
+    EXPECT_EQ(allocator_->containing_base(interior), std::optional<const void*>(address));
     EXPECT_EQ(allocator_->containing_base(address), std::optional<const void*>(address));
-    EXPECT_FALSE(allocator_->containing_base(past_the_end).has_value());
+    allocator_->release(address);
+}
+
+TEST_F(Medium_UsmAllocator, TheAddressPastTheEndHasNoBase)
+{
+    const std::size_t device = queues_.size() - 1;
+    const std::optional<USMKind> kind = kind_supported_by(device);
+    if (!kind.has_value())
+        GTEST_SKIP() << "The last SYCL device supports no USM kind.";
+    void* const address = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, device});
+    ASSERT_NE(address, nullptr);
+
+    EXPECT_FALSE(allocator_->containing_base(static_cast<unsigned char*>(address) + K_BYTES).has_value());
+    allocator_->release(address);
+}
+
+TEST_F(Medium_UsmAllocator, AReleasedAllocationHasNoBase)
+{
+    const std::size_t device = queues_.size() - 1;
+    const std::optional<USMKind> kind = kind_supported_by(device);
+    if (!kind.has_value())
+        GTEST_SKIP() << "The last SYCL device supports no USM kind.";
+    void* const address = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, device});
+    ASSERT_NE(address, nullptr);
+    void* const interior = static_cast<unsigned char*>(address) + K_BYTES / 2;
 
     allocator_->release(address);
+
     EXPECT_FALSE(allocator_->containing_base(interior).has_value());
 }
 
@@ -426,34 +427,60 @@ TEST_F(Medium_UsmAllocator, RecordOfKeepsTheKindAnAllocationWasMadeAs)
     EXPECT_EQ(record->kind, kind);
     allocator_->release(address);
     EXPECT_FALSE(allocator_->record_of(address).has_value());
+}
 
+TEST_F(Medium_UsmAllocator, RecordOfAnAdoptedAddressHasNoKind)
+{
     std::array<int, 8> external{};
-    allocator_->adopt(external.data(), device, sizeof(external), std::nullopt);
+    allocator_->adopt(external.data(), queues_.size() - 1, sizeof(external), std::nullopt);
+
     const auto adopted = allocator_->record_of(external.data());
+
     ASSERT_TRUE(adopted.has_value());
     EXPECT_FALSE(adopted->kind.has_value());
     allocator_->forget(external.data());
 }
 
-TEST_F(Medium_UsmAllocator, AdoptRecordsAnAddressAndForgetDropsIt)
+TEST_F(Medium_UsmAllocator, AdoptRecordsTheDeviceOfAnAddress)
 {
     const std::size_t baseline = allocator_->live_count();
     const std::size_t device = queues_.size() - 1;
     std::array<int, 8> external{};
 
     allocator_->adopt(external.data(), device, sizeof(external), std::nullopt);
-    EXPECT_EQ(allocator_->live_count(), baseline + 1);
 
-    const std::optional<std::size_t> recorded = allocator_->device_of(external.data());
-    ASSERT_TRUE(recorded.has_value());
-    EXPECT_EQ(*recorded, device);
+    EXPECT_EQ(allocator_->live_count(), baseline + 1);
+    EXPECT_EQ(allocator_->device_of(external.data()), std::optional<std::size_t>(device));
+    allocator_->forget(external.data());
+}
+
+TEST_F(Medium_UsmAllocator, AnAdoptedAddressContainsItsBytes)
+{
+    std::array<int, 8> external{};
+    allocator_->adopt(external.data(), queues_.size() - 1, sizeof(external), std::nullopt);
+
     EXPECT_EQ(allocator_->containing_base(&external[3]), std::optional<const void*>(external.data()));
+    allocator_->forget(external.data());
+}
+
+TEST_F(Medium_UsmAllocator, ForgetDropsTheRecordWithoutFreeing)
+{
+    const std::size_t baseline = allocator_->live_count();
+    std::array<int, 8> external{};
+    allocator_->adopt(external.data(), queues_.size() - 1, sizeof(external), std::nullopt);
 
     allocator_->forget(external.data());
+
     EXPECT_EQ(allocator_->live_count(), baseline);
     EXPECT_FALSE(allocator_->device_of(external.data()).has_value());
+}
+
+TEST_F(Medium_UsmAllocator, ForgetIgnoresNull)
+{
+    const std::size_t baseline = allocator_->live_count();
 
     allocator_->forget(nullptr);
+
     EXPECT_EQ(allocator_->live_count(), baseline);
 }
 
@@ -468,13 +495,24 @@ TEST_F(Medium_UsmAllocator, ReleaseOfAnAdoptedAddressDropsTheRecordAndDoesNotFre
 
     // A sycl::free of this heap block would be a free of memory SYCL never allocated.
     allocator_->release(external.get());
+
     EXPECT_EQ(allocator_->live_count(), baseline);
     EXPECT_FALSE(allocator_->device_of(external.get()).has_value());
+    EXPECT_EQ(bytes_of(external.get(), K_BYTES), std::vector<unsigned char>(K_BYTES, K_PATTERN));
+}
 
-    for (std::size_t i = 0; i < K_BYTES; ++i)
-        ASSERT_EQ(external[i], K_PATTERN) << "byte " << i;
-    external[0] = 0;
-    EXPECT_EQ(external[0], 0);
+TEST_F(Medium_UsmAllocator, TheFirstReleaseLogsNothing)
+{
+    const std::optional<USMKind> kind = kind_supported_by(0);
+    if (!kind.has_value())
+        GTEST_SKIP() << "SYCL device 0 supports no USM kind.";
+    void* const address = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, 0});
+    ASSERT_NE(address, nullptr);
+
+    SushiRuntime::TestRunner::LogCapture capture;
+    allocator_->release(address);
+
+    EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Error), 0u);
 }
 
 TEST_F(Medium_UsmAllocator, ASecondReleaseLogsOneErrorWithTheAddressAndFreesNothing)
@@ -482,22 +520,18 @@ TEST_F(Medium_UsmAllocator, ASecondReleaseLogsOneErrorWithTheAddressAndFreesNoth
     const std::optional<USMKind> kind = kind_supported_by(0);
     if (!kind.has_value())
         GTEST_SKIP() << "SYCL device 0 supports no USM kind.";
-
     void* const address = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, 0});
     ASSERT_NE(address, nullptr);
+    allocator_->release(address);
     const std::size_t baseline = allocator_->live_count();
 
-    const ErrorLineCapture capture;
+    SushiRuntime::TestRunner::LogCapture capture;
     allocator_->release(address);
-    EXPECT_TRUE(capture.lines.empty());
-    EXPECT_EQ(allocator_->live_count(), baseline - 1);
 
-    allocator_->release(address);
-    EXPECT_EQ(allocator_->live_count(), baseline - 1);
-    EXPECT_FALSE(allocator_->device_of(address).has_value());
-    ASSERT_EQ(capture.lines.size(), 1u);
-    EXPECT_NE(capture.lines[0].find(printed(address)), std::string::npos) << capture.lines[0];
-    EXPECT_NE(capture.lines[0].find("no record"), std::string::npos) << capture.lines[0];
+    EXPECT_EQ(allocator_->live_count(), baseline);
+    EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Error), 1u);
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Error, printed(address)));
+    EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Error, "no record"));
 }
 
 TEST_F(Medium_UsmAllocator, ReleaseOfForeignUSMLeavesItAllocated)
@@ -514,14 +548,13 @@ TEST_F(Medium_UsmAllocator, ReleaseOfForeignUSMLeavesItAllocated)
     const std::size_t baseline = allocator_->live_count();
 
     {
-        const ErrorLineCapture capture;
+        SushiRuntime::TestRunner::LogCapture capture;
         allocator_->release(bytes);
-        EXPECT_EQ(capture.lines.size(), 1u);
+        EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Error), 1u);
     }
-    EXPECT_EQ(allocator_->live_count(), baseline);
 
-    for (std::size_t i = 0; i < K_BYTES; ++i)
-        ASSERT_EQ(bytes[i], K_PATTERN) << "byte " << i;
+    EXPECT_EQ(allocator_->live_count(), baseline);
+    EXPECT_EQ(bytes_of(bytes, K_BYTES), std::vector<unsigned char>(K_BYTES, K_PATTERN));
     // A release() that had freed the block would make this the second free of it.
     sycl::free(bytes, queues_[*device]);
 }
@@ -543,41 +576,57 @@ TEST_F(Medium_UsmAllocatorDeathTest, ABadDeviceIndexStopsWithTheIndexAndTheCount
     EXPECT_DEATH(allocator_->adopt(&external, bad_index, sizeof(external), std::nullopt), pattern);
 }
 
-TEST_F(Medium_UsmAllocator, TheReleaseObserverHearsEachReleasedAddressExactlyOnce)
+TEST_F(Medium_UsmAllocator, TheReleaseObserverHearsNothingBeforeARelease)
+{
+    RecordingUSMReleaseObserver observer;
+
+    allocator_->set_release_observer(&observer);
+
+    EXPECT_TRUE(observer.released().empty());
+    allocator_->set_release_observer(nullptr);
+}
+
+TEST_F(Medium_UsmAllocator, ANullReleaseAndAForgetAreNotHeard)
+{
+    RecordingUSMReleaseObserver observer;
+    allocator_->set_release_observer(&observer);
+    int external = 0;
+    allocator_->adopt(&external, 0, sizeof(external), std::nullopt);
+
+    allocator_->release(nullptr);
+    allocator_->forget(&external);
+
+    EXPECT_TRUE(observer.released().empty());
+    allocator_->set_release_observer(nullptr);
+}
+
+TEST_F(Medium_UsmAllocator, AnAdoptedAddressIsHeardWhenReleased)
+{
+    RecordingUSMReleaseObserver observer;
+    allocator_->set_release_observer(&observer);
+    int external = 0;
+    allocator_->adopt(&external, 0, sizeof(external), std::nullopt);
+
+    allocator_->release(&external);
+
+    EXPECT_EQ(observer.released(), std::vector<void*>{&external});
+    allocator_->set_release_observer(nullptr);
+}
+
+TEST_F(Medium_UsmAllocator, ARemovedObserverHearsNothingMore)
 {
     const std::optional<USMKind> kind = kind_supported_by(0);
     if (!kind.has_value())
         GTEST_SKIP() << "SYCL device 0 supports no USM kind.";
-
-    RecordingObserver observer;
+    RecordingUSMReleaseObserver observer;
     allocator_->set_release_observer(&observer);
-
-    void* const first = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, 0});
-    void* const second = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, 0});
-    ASSERT_NE(first, nullptr);
-    ASSERT_NE(second, nullptr);
-    EXPECT_TRUE(observer.released.empty());
-
-    allocator_->release(first);
-    ASSERT_EQ(observer.released.size(), 1u);
-    EXPECT_EQ(observer.released[0], first);
-
-    // Null is ignored and forget() is not a release; neither reaches the observer.
-    int external = 0;
-    allocator_->release(nullptr);
-    allocator_->adopt(&external, 0, sizeof(external), std::nullopt);
-    allocator_->forget(&external);
-    EXPECT_EQ(observer.released.size(), 1u);
-
-    // An adopted address is reported like any other, although it is not freed.
-    allocator_->adopt(&external, 0, sizeof(external), std::nullopt);
-    allocator_->release(&external);
-    ASSERT_EQ(observer.released.size(), 2u);
-    EXPECT_EQ(observer.released[1], &external);
-
+    void* const address = allocator_->allocate(USMRequest{*kind, K_BYTES, 0, 0});
+    ASSERT_NE(address, nullptr);
     allocator_->set_release_observer(nullptr);
-    allocator_->release(second);
-    EXPECT_EQ(observer.released.size(), 2u);
+
+    allocator_->release(address);
+
+    EXPECT_TRUE(observer.released().empty());
 }
 
 TEST_F(Medium_UsmAllocator, SetReleaseObserverWaitsForAnObserverCallInFlight)

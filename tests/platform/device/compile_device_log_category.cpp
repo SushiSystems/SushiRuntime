@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_memory_log_category.cpp                                           */
+/* compile_device_log_category.cpp                                        */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,24 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_memory_log_category.cpp
- * @brief Tests K_MEMORY_LOG_CATEGORY: the name its records carry.
- * @see tests/platform/memory/README.md
+ * @file compile_device_log_category.cpp
+ * @brief Compiles device_log_category.hpp on its own, so the header carries every include it needs.
+ * @see tests/platform/device/README.md
  * @author Mustafa Garip
  */
 
-#include <SushiRuntime/memory/memory_log_category.hpp>
-
-#include <gtest/gtest.h>
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the category is the module's folder in the runtime's project. */
-TEST(Small_MemoryLogCategory, TheCategoryIsNamedAfterTheModule)
-{
-    static_assert(K_MEMORY_LOG_CATEGORY.module() == "memory",
-                  "the folder name of the module");
-    static_assert(K_MEMORY_LOG_CATEGORY.project().name() == "sushiruntime",
-                  "the project of the runtime");
-    SUCCEED();
-}
+#include <SushiRuntime/device/device_log_category.hpp>

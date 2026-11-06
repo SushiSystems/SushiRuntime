@@ -8,6 +8,13 @@ The tests of the `memory` module, mirroring `modules/platform/memory/`.
 A benchmark is a `Benchmark_` suite; this module has none now.
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
+Sizes and the shared fixture base are described in [the tests README](../../README.md#sizes). The
+allocator tests derive from that fixture base and skip where SYCL reports no device.
+
+## compile_memory_log_category.cpp and compile_usm_request.cpp
+
+Each file includes one header alone. See [the scheduler tests](../../engine/scheduler/README.md)
+for why such a file stands in for a test.
 
 ## test_epoch_reclamation.cpp
 
@@ -25,15 +32,24 @@ deferred, so a tail of retired objects can be freed during a later test. A raw s
 then be written after the frame of the test is gone, which is a stack-use-after-return. The
 `shared_ptr` keeps the counter alive as long as any `Tracked` refers to it.
 
-### `retire_and_drain`
+### The retire helpers
 
-`retire_and_drain` retires the given number of objects under guards, then retires 512 more to advance
-the epoch. It returns the number of objects destroyed by then. The tests use it to drain pending nodes.
+`retire_guarded`, `retire_unguarded`, `retire_from_threads`, `run_short_threads` and `retire_parents`
+hold the loops that build the load, so a test body holds none. `retire_and_drain` retires the given
+number of objects under guards, then retires 512 more to advance the epoch, and returns the number
+destroyed by then.
+
+### `NestedGuardsBalanceTheDepthOfTheThread`
+
+Two nested guards raise the nesting depth of the thread by two, the inner one's exit leaves it one
+above where it began, and the outer one's exit restores it. The test reads the depth from the
+module's own thread-local state.
 
 ### `RetiredObjectsEventuallyReclaimed`
 
 The test retires 1024 objects through `retire_and_drain`, which retires 512 more, and asserts that more
-than 1024 of the 1536 objects are destroyed.
+than 1024 of the 1536 objects are destroyed. It reaches the process-wide manager, so it stays medium until
+the manager can be built for one test.
 
 ### `ThreadExitHandsOffOrphans`
 
@@ -58,14 +74,15 @@ guard is destroyed. The test starts one thread more than there are slots and par
 them, so at least one finds no slot, whether or not the main thread already holds one. That thread
 stops the process with a message that carries the slot count, which the death test matches.
 
-After the parked threads exit, one more thread takes a guard without a throw, which shows the
-slots came back.
+### `AnExitedThreadReturnsItsSlot`
 
-### `ABlockedReclaimScansOncePerThreshold`
+The test runs more threads than there are slots, one after another, each taking a guard and leaving.
+A slot that did not come back would stop the process on the last of them.
+
+### `AnOpenReaderKeepsEveryRetiredObjectAlive`
 
 A reader thread enters a guard and parks. The main thread then retires 10 times `K_RETIRE_THRESHOLD`
-objects and counts the scans recorded in its thread-local state. The test asserts that no object is
-destroyed, that at least one scan ran, and that no more than 10 scans ran.
+objects, and the test asserts that none of them is destroyed. The scan count of the thread is not read.
 
 ### `RetiringParent`
 
@@ -78,14 +95,6 @@ The test retires 4 times `K_RETIRE_THRESHOLD` parents under guards. Each parent'
 child. The test then retires 32 times `K_RETIRE_THRESHOLD` objects under guards and asserts that the
 parent counter and the child counter each equal the number of parents.
 
-### `OrphanedNodesReclaimed`
-
-The counter is a `shared_ptr` and not a raw pointer to an atomic on the stack. Epoch-based
-reclamation is deferred, so a tail of retired objects outlives the test and is freed during a later
-one. A raw stack pointer would then be written after the frame is gone, which is a
-stack-use-after-return. The `shared_ptr` keeps the counter alive as long as any `Tracked` refers to
-it.
-
 ### `Large_EpochStress`
 
 Two high-churn stress tests for epoch-based reclamation, moved here from a benchmark file that
@@ -96,7 +105,7 @@ drainer thread keeps advancing the epochs; the exits force the orphan handoff, a
 objects must be reclaimed. The helpers `retire_objects`, `retire_from_threads`,
 `retire_from_short_lived_threads` and `BackgroundDrainer` build the load, so the test bodies hold no
 loop. Under ASan and TSan the same run surfaces races and use-after-free. The counters are
-`shared_ptr`-owned for the reason `OrphanedNodesReclaimed` gives.
+`shared_ptr`-owned for the reason `Tracked` gives.
 
 ## test_recording_usm_release_observer.cpp
 
@@ -107,34 +116,69 @@ with no allocator and no device.
 | --- | --- |
 | `KeepsEachAddressInArrivalOrder` | The observer keeps each address it hears, in arrival order, repeats included. |
 
+## test_usm_allocation_owner.cpp
+
+The file tests USMAllocationOwner: an Allocation returns its USM to the allocator once.
+
+| Test | What it proves |
+| --- | --- |
+| `DestroyingTheAllocationFreesTheUSM` | Destroying the allocation frees the USM through the allocator. It stays medium, since the owner holds a concrete allocator. |
+| `AnOwnerWithNoAllocatorLeavesTheMemoryAlone` | An owner with no allocator releases nothing; the memory it is handed keeps its value. |
+
 ## test_usm_allocator.cpp
 
-The file covers `USMAllocator`. The sections below cover its release of an address that it holds no
-record of, and the removal of its release observer. The first two tests skip when no SYCL device
-supports the USM kind they need.
+The file covers `USMAllocator`. The kind and alignment tests run as rows and skip when no SYCL device
+supports the row's kind. The release observer is the module's `RecordingUSMReleaseObserver`, and the
+ERROR and WARN lines are read through `LogCapture`.
 
-### `RecordOfKeepsTheKindAnAllocationWasMadeAs`
+### `AllocatesIsUsableIsCountedAndIsReleased`
+
+One row per kind. A device writes device USM; the host writes host and shared USM.
+
+### `ReturnsAnAddressOnTheAlignment`
+
+One row per kind, alignment and length. A shared row skips where the toolchain's aligned shared
+allocation does not honour the alignment.
+
+### `AnAllocationResolvesToItsDeviceAtItsBase`, `AnInteriorAddressFindsItsBase`, `TheAddressPastTheEndHasNoBase` and `AReleasedAllocationHasNoBase`
+
+An allocation answers for its device at its first address through `device_of` and `owning_device`. An
+interior address has no device of its own and finds its base through `containing_base`; the address one
+past the end and a released allocation find none.
+
+### `RecordOfKeepsTheKindAnAllocationWasMadeAs` and `RecordOfAnAdoptedAddressHasNoKind`
 
 An allocation's record holds its device and the kind requested until it is released; an adopted
 address is recorded with no kind.
 
-### `ASecondReleaseLogsOneErrorWithTheAddressAndFreesNothing`
+### `AdoptRecordsTheDeviceOfAnAddress`, `AnAdoptedAddressContainsItsBytes`, `ForgetDropsTheRecordWithoutFreeing` and `ForgetIgnoresNull`
 
-The test allocates on device 0 and releases the block. That first release logs no ERROR line and lowers
-`live_count` by one. The second release leaves `live_count` unchanged, makes `device_of` return no
-value, and logs exactly one ERROR line that contains the address and the words "no record".
+`adopt` records a device and counts the address live, and an adopted address with a length resolves
+from inside it. `forget` drops the record and does not free; null is ignored.
+
+### `TheFirstReleaseLogsNothing` and `ASecondReleaseLogsOneErrorWithTheAddressAndFreesNothing`
+
+The first release of a block logs no ERROR line. The second leaves `live_count` unchanged, and logs
+exactly one ERROR line that contains the address and the words "no record".
 
 ### `ReleaseOfForeignUSMLeavesItAllocated`
 
 The test allocates shared USM with `sycl::malloc_shared` outside the allocator and releases it through
 the allocator. The release logs exactly one ERROR line and leaves `live_count` unchanged. The block keeps
-its bytes, and the test frees it with `sycl::free`.
+its bytes, which one whole-buffer comparison checks, and the test frees it with `sycl::free`.
+
+### `TheReleaseObserverHearsNothingBeforeARelease`, `ANullReleaseAndAForgetAreNotHeard`, `AnAdoptedAddressIsHeardWhenReleased` and `ARemovedObserverHearsNothingMore`
+
+Each test states one promise of the observer: it hears nothing before a release, neither a null release
+nor a `forget` reaches it, an adopted address is reported like any other, and a removed observer is
+not told. That the observer hears a released address once is in `test_usm_release_observer.cpp`.
 
 ### `SetReleaseObserverWaitsForAnObserverCallInFlight`
 
 The test installs an observer whose `on_release` blocks, then releases an adopted address on a second
 thread, so one call is in flight. A third thread removes the observer. The test asserts that the removal
-has not returned after 200 ms, opens the observer, and asserts that the removal returns.
+has not returned after 200 ms, opens the observer, and asserts that the removal returns. The wait is a
+sleep, since the module takes no clock the test could advance.
 
 ### `Medium_UsmAllocatorFailure.LogsTheRefusedRequest`
 
@@ -144,6 +188,8 @@ whose message holds the byte count and the alignment. A SYCL runtime that throws
 instead of returning null makes the test skip, since the refusal is then not made in this file.
 
 ## test_usm_registry.cpp
+
+The registry holds values only, so every test but the threaded one runs small.
 
 ### `fake`
 
@@ -155,10 +201,11 @@ test needs no `Runtime`.
 The fake addresses sit 64 bytes apart, so a 64-byte extent covers exactly one of them and never
 reaches its neighbour.
 
-### `TakeReportsTheOwnerAndForgetsThePointer`
+### `TakeReportsTheOwner` and `ATakenPointerIsFoundByNoLookup`
 
 The free path erases the entry and reads the owner in one step. A second free of the same pointer
-must therefore be distinguishable from the first and must not report a stale device.
+must therefore be distinguishable from the first and must not report a stale device. The rows ask the
+registry for the taken pointer through `take`, `owner_of` and `containing_allocation`.
 
 ### `RecordingAPointerTwiceKeepsTheLatestOwner`
 
@@ -170,31 +217,25 @@ first writer win.
 ### `ConcurrentRecordAndTakeLoseNothing`
 
 Buffers are constructed and destroyed from whichever thread owns them, so several threads write the
-registry at once. Every pointer the test records is taken exactly once, by exactly one thread.
+registry at once. Every pointer the test records is taken exactly once, by exactly one thread. Each
+thread keeps what its takes returned, and the test compares them with the expected owners after the
+join.
 
 ### `RecordOfReportsTheDeviceAndKindAtTheBaseOnly`
 
 record_of() returns the device and kind given to record(), no kind for an entry recorded without
 one, and nothing for an interior pointer or null.
 
-### `ContainingAllocationResolvesAnInteriorPointer`
+### `FindsTheAllocationOnlyInsideItsExtent`
 
 The graph builder needs this case: a caller offsets into a plan array and hands over an address that
-the table, which is keyed by base address, cannot find.
+the table, which is keyed by base address, cannot find. The rows are an interior byte, the base, the
+last byte, one past the end, an unrelated pointer and null.
 
 ### `AnEntryWithoutALengthResolvesOnlyAtItsBase`
 
 An adopted address whose importer knew no size must not read as zero-length and must not swallow
 offsets it cannot vouch for.
-
-## test_usm_allocation_owner.cpp
-
-The file tests USMAllocationOwner: an Allocation returns its USM to the allocator once.
-
-| Test | What it proves |
-| --- | --- |
-| `DestroyingTheAllocationFreesTheUSM` | Destroying the allocation frees the USM through the allocator. |
-| `AnOwnerWithNoAllocatorDoesNothing` | An owner with no allocator releases nothing and does not stop. |
 
 ## test_usm_release_observer.cpp
 
@@ -203,13 +244,4 @@ address.
 
 | Test | What it proves |
 | --- | --- |
-| `HearsEachReleaseWithItsAddress` | Tests that the observer hears the release of the address the allocator gave. |
-
-## test_usm_request.cpp
-
-The file tests USMRequest: shared memory of no bytes on device 0 by default, and three kinds.
-
-| Test | What it proves |
-| --- | --- |
-| `DefaultsToSharedMemoryOnDeviceZero` | Checks the defaults of a request. |
-| `ThreeKindsInOneByte` | Checks the three distinct kinds in one byte. |
+| `HearsEachReleaseWithItsAddress` | The observer hears the release of the address the allocator gave. |

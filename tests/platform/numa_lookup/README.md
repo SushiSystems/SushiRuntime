@@ -18,10 +18,10 @@ PU, and destroys the topology on scope exit.
 `SyntheticTopology` loads a hwloc synthetic description and destroys the topology in its destructor.
 `get()` returns null when hwloc refuses the description. Copy and move are deleted.
 
-### `EveryPuOfATwoNodeMachineMapsToItsOwnNode`
+### `MapsToItsOwnNode`
 
-The test asserts that the machine has two NUMA nodes and four PUs. For each PU, `local_numa_os_index`
-returns the OS index of the node that holds the PU, which is the PU's index divided by two.
+One row per processing unit of the machine, four in all. `local_numa_os_index` returns the OS index of
+the node that holds the PU, which is the PU's index divided by two.
 
 ### `ANUMANodeIsLocalToItself`
 

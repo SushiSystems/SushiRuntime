@@ -52,23 +52,39 @@ namespace
     constexpr std::uint64_t K_EVENT_NS = 900;
 } // namespace
 
-/** @brief Tests that a claim that submitted records a window, so the device's pairing is kept once its event is read. */
+/** @brief Tests that a claim that submitted keeps the device's pairing, so collect returns the event reading stored. */
 TEST(Small_PairingClaim, ASubmittedClaimKeepsThePairing)
 {
     ProfilingLedger ledger;
     ledger.reserve({1}, 1, K_DEVICE_COUNT);
     int task = 0;
-
     PairingClaim claim(&ledger, 0, &task);
 
     EXPECT_FALSE(claim.settle(true));
+
     EXPECT_TRUE(ledger.is_pairing_owner(0, &task));
     ledger.set_pairing_event_ns(0, K_EVENT_NS);
     std::vector<DeviceClock> clocks;
     ledger.collect_pairings(clocks);
     ASSERT_EQ(clocks.size(), 1u);
     EXPECT_EQ(clocks[0].pairing.event_ns, K_EVENT_NS);
-    EXPECT_GT(clocks[0].pairing.steady_ns, 0u) << "the window starts at a steady reading";
+}
+
+/** @brief Tests that the window of a claim starts at a steady reading. */
+TEST(Small_PairingClaim, TheWindowOfAClaimStartsAtASteadyReading)
+{
+    ProfilingLedger ledger;
+    ledger.reserve({1}, 1, K_DEVICE_COUNT);
+    int task = 0;
+    PairingClaim claim(&ledger, 0, &task);
+    static_cast<void>(claim.settle(true));
+    ledger.set_pairing_event_ns(0, K_EVENT_NS);
+
+    std::vector<DeviceClock> clocks;
+    ledger.collect_pairings(clocks);
+
+    ASSERT_EQ(clocks.size(), 1u);
+    EXPECT_GT(clocks[0].pairing.steady_ns, 0u);
 }
 
 /** @brief Tests that a claim that submitted nothing is given up, so the next dispatch claims the device. */

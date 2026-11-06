@@ -28,33 +28,17 @@
  * @author Mustafa Garip
  */
 
-#include <cstddef>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiRuntime/memory/recording_usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_release_observer.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 
 using namespace SushiRuntime::Internal::Memory;
-
-namespace
-{
-    /** @brief Records the address of each release it is told of. */
-    class RecordingObserver final : public USMReleaseObserver
-    {
-        public:
-            void on_release(void* address) noexcept override
-            {
-                released.push_back(address);
-            }
-
-            /** @brief Holds the addresses in the order they were released. */
-            std::vector<void*> released;
-    };
-}
 
 /** @brief Tests that the observer hears the release of the address the allocator gave. */
 TEST(Medium_USMReleaseObserver, HearsEachReleaseWithItsAddress)
@@ -62,7 +46,7 @@ TEST(Medium_USMReleaseObserver, HearsEachReleaseWithItsAddress)
     if (sycl::device::get_devices().empty())
         GTEST_SKIP() << "no SYCL device";
     USMAllocator allocator({sycl::queue(sycl::device::get_devices().front())});
-    RecordingObserver observer;
+    RecordingUSMReleaseObserver observer;
     allocator.set_release_observer(&observer);
 
     USMRequest request;
@@ -73,7 +57,6 @@ TEST(Medium_USMReleaseObserver, HearsEachReleaseWithItsAddress)
         GTEST_SKIP() << "the device gives no shared memory";
     allocator.release(address);
 
-    ASSERT_EQ(observer.released.size(), 1u);
-    EXPECT_EQ(observer.released.front(), address);
+    EXPECT_EQ(observer.released(), std::vector<void*>{address});
     allocator.set_release_observer(nullptr);
 }

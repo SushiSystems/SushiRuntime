@@ -23,11 +23,12 @@
 
 /**
  * @file test_matrix_distance_model.cpp
- * @brief Tests MatrixDistanceModel: the ACPI convention and an asymmetric fabric.
+ * @brief Tests MatrixDistanceModel: a distance is the entry of the row of its source node.
  * @see tests/platform/topology/README.md
  * @author Mustafa Garip
  */
 
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -37,54 +38,47 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Topology;
 
-namespace TopologyAbstractionTests
+namespace
 {
-    /**
-     * @brief Verifies that a hand-built MatrixDistanceModel yields exact, deterministic distances.
-     *
-     * Creates a synthetic 2-node distance matrix and asserts local distances are 10 while remote distances match the provided configuration.
-     */
-    TEST(Small_TopologyAbstractionTest, MatrixDistanceModelObeysACPIConvention)
+    /** @brief One matrix, and the distance it must give between two nodes. */
+    struct DistanceRow
     {
-        MatrixDistanceModel model{{{10, 21},
-                                   {21, 10}}};
+        /** @brief The row name gtest prints. */
+        const char* name;
+        /** @brief The matrix handed to the model. */
+        std::vector<std::vector<int>> matrix;
+        /** @brief The node the distance is read from. */
+        int from;
+        /** @brief The node the distance is read to. */
+        int to;
+        /** @brief The entry of row @p from, column @p to. */
+        int expected;
+    };
+} // namespace
 
-        EXPECT_EQ(model.node_count(), 2);
-        EXPECT_EQ(model.distance(0, 0), 10); // local
-        EXPECT_EQ(model.distance(1, 1), 10); // local
-        EXPECT_EQ(model.distance(0, 1), 21); // remote
-        EXPECT_EQ(model.distance(1, 0), 21); // symmetric remote
-    }
+class Small_MatrixDistanceModel : public ::testing::TestWithParam<DistanceRow>
+{
+};
 
-    /**
-     * @brief Verifies that the MatrixDistanceModel correctly supports asymmetric multi-hop fabric
-     *        distances.
-     *
-     * Constructs a 3-node matrix with non-uniform interconnect costs and verifies correct distance retrievals.
-     */
-    TEST(Small_TopologyAbstractionTest, MatrixDistanceModelSupportsAsymmetricFabric)
-    {
-        // 3-node layout: 0<->1 cheap, 0<->2 expensive (2 hops).
-        MatrixDistanceModel model{{{10, 16, 32},
-                                   {16, 10, 16},
-                                   {32, 16, 10}}};
+/** @brief Tests that a distance is the matrix entry of the row of its source node. */
+TEST_P(Small_MatrixDistanceModel, ReadsTheSourceRow)
+{
+    const DistanceRow& row = GetParam();
+    const MatrixDistanceModel model{row.matrix};
 
-        EXPECT_EQ(model.distance(0, 1), 16);
-        EXPECT_EQ(model.distance(0, 2), 32);
-        EXPECT_GT(model.distance(0, 2), model.distance(0, 1));
-    }
+    EXPECT_EQ(model.node_count(), static_cast<int>(row.matrix.size()));
+    EXPECT_EQ(model.distance(row.from, row.to), row.expected);
+}
 
-    /**
-     * @brief Verifies that a distance is read from the row of its source node.
-     *
-     * Constructs a 2-node matrix whose two directions differ and checks each direction.
-     */
-    TEST(Small_TopologyAbstractionTest, MatrixDistanceModelReadsTheSourceRow)
-    {
-        MatrixDistanceModel model{{{10, 12},
-                                   {20, 10}}};
-
-        EXPECT_EQ(model.distance(0, 1), 12);
-        EXPECT_EQ(model.distance(1, 0), 20);
-    }
-} // namespace TopologyAbstractionTests
+INSTANTIATE_TEST_SUITE_P(
+    Matrices, Small_MatrixDistanceModel,
+    ::testing::Values(
+        DistanceRow{"AcpiLocalOfNodeZero", {{10, 21}, {21, 10}}, 0, 0, 10},
+        DistanceRow{"AcpiLocalOfNodeOne", {{10, 21}, {21, 10}}, 1, 1, 10},
+        DistanceRow{"AcpiRemoteForward", {{10, 21}, {21, 10}}, 0, 1, 21},
+        DistanceRow{"AcpiRemoteBackward", {{10, 21}, {21, 10}}, 1, 0, 21},
+        DistanceRow{"AsymmetricForward", {{10, 12}, {20, 10}}, 0, 1, 12},
+        DistanceRow{"AsymmetricBackward", {{10, 12}, {20, 10}}, 1, 0, 20},
+        DistanceRow{"ThreeNodesCheapHop", {{10, 16, 32}, {16, 10, 16}, {32, 16, 10}}, 0, 1, 16},
+        DistanceRow{"ThreeNodesTwoHops", {{10, 16, 32}, {16, 10, 16}, {32, 16, 10}}, 0, 2, 32}),
+    [](const ::testing::TestParamInfo<DistanceRow>& info) { return std::string(info.param.name); });

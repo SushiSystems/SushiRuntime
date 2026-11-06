@@ -6,6 +6,7 @@
 sushiruntime_add_module_tests(
     MODULE topology
     SOURCES
+        compile_topology_log_category.cpp
         test_affinity.cpp
         test_host_identity.cpp
         test_hw_discovery.cpp
@@ -14,7 +15,6 @@ sushiruntime_add_module_tests(
         test_matrix_distance_model.cpp
         test_numa_mapper.cpp
         test_remapping_topology_provider.cpp
-        test_topology_log_category.cpp
         test_topology_provider.cpp
         test_topology_view.cpp)
 

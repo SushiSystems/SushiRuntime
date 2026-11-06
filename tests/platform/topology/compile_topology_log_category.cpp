@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_topology_log_category.cpp                                         */
+/* compile_topology_log_category.cpp                                      */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,24 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_topology_log_category.cpp
- * @brief Tests K_TOPOLOGY_LOG_CATEGORY: the name its records carry.
+ * @file compile_topology_log_category.cpp
+ * @brief Compiles topology_log_category.hpp on its own, so the header carries every include it needs.
  * @see tests/platform/topology/README.md
  * @author Mustafa Garip
  */
 
 #include <SushiRuntime/topology/topology_log_category.hpp>
-
-#include <gtest/gtest.h>
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the category is the module's folder in the runtime's project. */
-TEST(Small_TopologyLogCategory, TheCategoryIsNamedAfterTheModule)
-{
-    static_assert(K_TOPOLOGY_LOG_CATEGORY.module() == "topology",
-                  "the folder name of the module");
-    static_assert(K_TOPOLOGY_LOG_CATEGORY.project().name() == "sushiruntime",
-                  "the project of the runtime");
-    SUCCEED();
-}

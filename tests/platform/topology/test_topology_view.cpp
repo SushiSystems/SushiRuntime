@@ -37,6 +37,7 @@
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
+#include <SushiRuntime/topology/in_memory_topology_provider.hpp>
 #include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/matrix_distance_model.hpp>
 #include <SushiRuntime/topology/remapping_topology_provider.hpp>
@@ -122,7 +123,7 @@ namespace
 TEST(Small_TopologyView, CoreMapMatchesSyntheticProvider)
 {
     const std::vector<int> expected{0, 0, 1, 1};
-    FixedTopologyProvider provider(expected);
+    InMemoryTopologyProvider provider(std::vector<HardwareNode>{}, expected);
 
     TopologyView view(provider, make_two_node_model());
 

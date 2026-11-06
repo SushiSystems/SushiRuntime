@@ -29,6 +29,7 @@
  */
 
 #include <optional>
+#include <string>
 
 #include <gtest/gtest.h>
 #include <hwloc.h>
@@ -80,23 +81,34 @@ namespace
     };
 } // namespace
 
-TEST(Small_NumaLookup, EveryPuOfATwoNodeMachineMapsToItsOwnNode)
+/** @brief One processing unit of the two-node machine and the node it sits on. */
+struct PuRow
+{
+    /** @brief The index of the processing unit. */
+    unsigned pu_index;
+    /** @brief The OS index of the NUMA node that holds it. */
+    unsigned node;
+};
+
+class Small_NumaLookupPu : public ::testing::TestWithParam<PuRow>
+{
+};
+
+/** @brief Tests that a processing unit maps to the NUMA node that holds it. */
+TEST_P(Small_NumaLookupPu, MapsToItsOwnNode)
 {
     const SyntheticTopology machine("NUMANode:2 Core:2 PU:1");
     ASSERT_NE(machine.get(), nullptr);
-    ASSERT_EQ(hwloc_get_nbobjs_by_type(machine.get(), HWLOC_OBJ_NUMANODE), 2);
-    ASSERT_EQ(hwloc_get_nbobjs_by_type(machine.get(), HWLOC_OBJ_PU), 4);
+    const hwloc_obj_t pu = hwloc_get_obj_by_type(machine.get(), HWLOC_OBJ_PU, GetParam().pu_index);
+    ASSERT_NE(pu, nullptr);
 
-    for (unsigned pu_index = 0; pu_index < 4; ++pu_index)
-    {
-        const hwloc_obj_t pu = hwloc_get_obj_by_type(machine.get(), HWLOC_OBJ_PU, pu_index);
-        ASSERT_NE(pu, nullptr);
-
-        const std::optional<unsigned> node = local_numa_os_index(machine.get(), pu);
-        ASSERT_TRUE(node.has_value()) << "PU " << pu_index << " has no NUMA node";
-        EXPECT_EQ(*node, pu_index / 2) << "PU " << pu_index;
-    }
+    EXPECT_EQ(local_numa_os_index(machine.get(), pu), std::optional<unsigned>(GetParam().node));
 }
+
+INSTANTIATE_TEST_SUITE_P(Units, Small_NumaLookupPu,
+                         ::testing::Values(PuRow{0, 0}, PuRow{1, 0}, PuRow{2, 1}, PuRow{3, 1}),
+                         [](const ::testing::TestParamInfo<PuRow>& info)
+                         { return "Pu" + std::to_string(info.param.pu_index); });
 
 TEST(Small_NumaLookup, ANUMANodeIsLocalToItself)
 {

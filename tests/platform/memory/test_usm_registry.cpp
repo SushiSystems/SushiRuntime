@@ -28,10 +28,11 @@
  * @author Mustafa Garip
  */
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -56,9 +57,73 @@ namespace
     {
         return static_cast<unsigned char*>(fake(n)) + offset;
     }
+
+    /** @brief One lookup of an address against the allocation recorded at fake(1), and whether it finds it. */
+    struct ContainingRow
+    {
+        /** @brief The row name gtest prints. */
+        const char* name;
+        /** @brief The fake address the lookup is made on; zero names null. */
+        std::uintptr_t unit;
+        /** @brief The offset into that address's extent. */
+        std::size_t offset;
+        /** @brief Whether the lookup finds the allocation. */
+        bool found;
+    };
+
+    /** @brief One lookup that must find nothing, and what it looks up. */
+    struct ForgottenRow
+    {
+        /** @brief The row name gtest prints. */
+        const char* name;
+        /** @brief Returns whether the lookup finds the pointer recorded at fake(1). */
+        std::function<bool(USMRegistry&)> finds;
+    };
+
+    /** @brief What the threads of a record-and-take run took, and what they should have taken. */
+    struct TakenOwners
+    {
+        /** @brief The owner each take returned, thread by thread. */
+        std::vector<std::optional<std::size_t>> actual;
+        /** @brief The owner each take should return: the thread that recorded it. */
+        std::vector<std::optional<std::size_t>> expected;
+    };
+
+    /** @brief Records and takes @p per_thread pointers on each of @p threads threads, and collects each take's owner. */
+    TakenOwners record_and_take_from_threads(USMRegistry& registry, int threads, int per_thread)
+    {
+        std::vector<std::vector<std::optional<std::size_t>>> by_thread(static_cast<std::size_t>(threads));
+        std::vector<std::thread> workers;
+        workers.reserve(static_cast<std::size_t>(threads));
+        for (int t = 0; t < threads; ++t)
+        {
+            workers.emplace_back([&registry, &by_thread, t, per_thread]
+            {
+                for (int i = 0; i < per_thread; ++i)
+                {
+                    void* p = fake(static_cast<std::uintptr_t>(t * per_thread + i + 1));
+                    registry.record(p, static_cast<std::size_t>(t), K_EXTENT, std::nullopt);
+                    by_thread[static_cast<std::size_t>(t)].push_back(registry.take(p));
+                }
+            });
+        }
+        for (auto& w : workers)
+            w.join();
+
+        TakenOwners owners;
+        for (int t = 0; t < threads; ++t)
+        {
+            for (const std::optional<std::size_t>& taken : by_thread[static_cast<std::size_t>(t)])
+            {
+                owners.actual.push_back(taken);
+                owners.expected.push_back(static_cast<std::size_t>(t));
+            }
+        }
+        return owners;
+    }
 }
 
-TEST(Medium_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
+TEST(Small_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
 {
     USMRegistry registry;
     registry.record(fake(1), 3, K_EXTENT, std::nullopt);
@@ -68,7 +133,7 @@ TEST(Medium_UsmRegistry, RecordThenOwnerOfReturnsTheDevice)
     EXPECT_EQ(*owner, 3u);
 }
 
-TEST(Medium_UsmRegistry, AnUnrecordedPointerHasNoOwner)
+TEST(Small_UsmRegistry, AnUnrecordedPointerHasNoOwner)
 {
     USMRegistry registry;
     registry.record(fake(1), 0, K_EXTENT, std::nullopt);
@@ -77,21 +142,40 @@ TEST(Medium_UsmRegistry, AnUnrecordedPointerHasNoOwner)
     EXPECT_FALSE(registry.owner_of(nullptr).has_value());
 }
 
-TEST(Medium_UsmRegistry, TakeReportsTheOwnerAndForgetsThePointer)
+TEST(Small_UsmRegistry, TakeReportsTheOwner)
 {
     USMRegistry registry;
     registry.record(fake(1), 2, K_EXTENT, std::nullopt);
 
     const auto taken = registry.take(fake(1));
+
     ASSERT_TRUE(taken.has_value());
     EXPECT_EQ(*taken, 2u);
-
-    // A second take of the same pointer must report no owner; see README.md.
-    EXPECT_FALSE(registry.take(fake(1)).has_value());
-    EXPECT_FALSE(registry.owner_of(fake(1)).has_value());
 }
 
-TEST(Medium_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
+class Small_UsmRegistryForgotten : public ::testing::TestWithParam<ForgottenRow>
+{
+};
+
+TEST_P(Small_UsmRegistryForgotten, ATakenPointerIsFoundByNoLookup)
+{
+    USMRegistry registry;
+    registry.record(fake(1), 2, K_EXTENT, std::nullopt);
+    (void)registry.take(fake(1));
+
+    EXPECT_FALSE(GetParam().finds(registry));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Lookups, Small_UsmRegistryForgotten,
+    ::testing::Values(
+        ForgottenRow{"TakeAgain", [](USMRegistry& registry) { return registry.take(fake(1)).has_value(); }},
+        ForgottenRow{"OwnerOf", [](USMRegistry& registry) { return registry.owner_of(fake(1)).has_value(); }},
+        ForgottenRow{"ContainingAllocation",
+                     [](USMRegistry& registry) { return registry.containing_allocation(inside(1, 8)).has_value(); }}),
+    [](const ::testing::TestParamInfo<ForgottenRow>& info) { return std::string(info.param.name); });
+
+TEST(Small_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
 {
     // Recording a pointer twice keeps the last writer; see README.md.
     USMRegistry registry;
@@ -103,7 +187,7 @@ TEST(Medium_UsmRegistry, RecordingAPointerTwiceKeepsTheLatestOwner)
     EXPECT_EQ(*owner, 4u);
 }
 
-TEST(Medium_UsmRegistry, SizeCountsLiveEntries)
+TEST(Small_UsmRegistry, SizeCountsLiveEntries)
 {
     USMRegistry registry;
     EXPECT_EQ(registry.size(), 0u);
@@ -119,38 +203,15 @@ TEST(Medium_UsmRegistry, SizeCountsLiveEntries)
 TEST(Medium_UsmRegistry, ConcurrentRecordAndTakeLoseNothing)
 {
     // Every pointer recorded here is taken exactly once, by exactly one thread; see README.md.
-    constexpr int THREADS = 8;
-    constexpr int PER_THREAD = 500;
-
     USMRegistry registry;
-    std::atomic<int> taken{0};
-    std::vector<std::thread> workers;
-    workers.reserve(THREADS);
 
-    for (int t = 0; t < THREADS; ++t)
-    {
-        workers.emplace_back([&registry, &taken, t]
-        {
-            for (int i = 0; i < PER_THREAD; ++i)
-            {
-                void* p = fake(static_cast<std::uintptr_t>(t * PER_THREAD + i + 1));
-                registry.record(p, static_cast<std::size_t>(t), K_EXTENT, std::nullopt);
-                if (auto owner = registry.take(p))
-                {
-                    EXPECT_EQ(*owner, static_cast<std::size_t>(t));
-                    taken.fetch_add(1, std::memory_order_relaxed);
-                }
-            }
-        });
-    }
-    for (auto& w : workers)
-        w.join();
+    const TakenOwners owners = record_and_take_from_threads(registry, 8, 500);
 
-    EXPECT_EQ(taken.load(), THREADS * PER_THREAD);
+    EXPECT_EQ(owners.actual, owners.expected);
     EXPECT_EQ(registry.size(), 0u);
 }
 
-TEST(Medium_UsmRegistry, RecordOfReportsTheDeviceAndKindAtTheBaseOnly)
+TEST(Small_UsmRegistry, RecordOfReportsTheDeviceAndKindAtTheBaseOnly)
 {
     USMRegistry registry;
     registry.record(fake(1), 2, K_EXTENT, SushiRuntime::Internal::Memory::USMKind::Host);
@@ -169,33 +230,38 @@ TEST(Medium_UsmRegistry, RecordOfReportsTheDeviceAndKindAtTheBaseOnly)
     EXPECT_FALSE(registry.record_of(nullptr).has_value());
 }
 
-TEST(Medium_UsmRegistry, ContainingAllocationResolvesAnInteriorPointer)
+class Small_UsmRegistryContaining : public ::testing::TestWithParam<ContainingRow>
+{
+};
+
+TEST_P(Small_UsmRegistryContaining, FindsTheAllocationOnlyInsideItsExtent)
 {
     // The caller passes an interior address the base-keyed table cannot find; see README.md.
+    const ContainingRow& row = GetParam();
     USMRegistry registry;
     registry.record(fake(1), 5, K_EXTENT, std::nullopt);
+    const void* const address = row.unit == 0 ? nullptr : inside(row.unit, row.offset);
 
-    const auto found = registry.containing_allocation(inside(1, 16));
-    ASSERT_TRUE(found.has_value());
-    EXPECT_EQ(found->base, fake(1));
-    EXPECT_EQ(found->device_index, 5u);
+    const auto found = registry.containing_allocation(address);
 
-    // The base itself and the last byte are both inside; one past the end is not.
-    EXPECT_TRUE(registry.containing_allocation(fake(1)).has_value());
-    EXPECT_TRUE(registry.containing_allocation(inside(1, K_EXTENT - 1)).has_value());
-    EXPECT_FALSE(registry.containing_allocation(inside(1, K_EXTENT)).has_value());
+    EXPECT_EQ(found.has_value(), row.found);
+    if (found.has_value())
+    {
+        EXPECT_EQ(found->base, fake(1));
+        EXPECT_EQ(found->device_index, 5u);
+    }
 }
 
-TEST(Medium_UsmRegistry, ContainingAllocationIgnoresAnUnrelatedPointer)
-{
-    USMRegistry registry;
-    registry.record(fake(1), 0, K_EXTENT, std::nullopt);
+INSTANTIATE_TEST_SUITE_P(Addresses, Small_UsmRegistryContaining,
+                         ::testing::Values(ContainingRow{"AnInteriorByte", 1, 16, true},
+                                           ContainingRow{"TheBase", 1, 0, true},
+                                           ContainingRow{"TheLastByte", 1, K_EXTENT - 1, true},
+                                           ContainingRow{"OnePastTheEnd", 1, K_EXTENT, false},
+                                           ContainingRow{"AnUnrelatedPointer", 9, 0, false},
+                                           ContainingRow{"Null", 0, 0, false}),
+                         [](const ::testing::TestParamInfo<ContainingRow>& info) { return std::string(info.param.name); });
 
-    EXPECT_FALSE(registry.containing_allocation(fake(9)).has_value());
-    EXPECT_FALSE(registry.containing_allocation(nullptr).has_value());
-}
-
-TEST(Medium_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
+TEST(Small_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
 {
     // An entry without a length resolves only at its base; see README.md.
     USMRegistry registry;
@@ -204,14 +270,5 @@ TEST(Medium_UsmRegistry, AnEntryWithoutALengthResolvesOnlyAtItsBase)
     const auto base = registry.containing_allocation(fake(1));
     ASSERT_TRUE(base.has_value());
     EXPECT_EQ(base->device_index, 7u);
-    EXPECT_FALSE(registry.containing_allocation(inside(1, 8)).has_value());
-}
-
-TEST(Medium_UsmRegistry, ContainingAllocationForgetsATakenPointer)
-{
-    USMRegistry registry;
-    registry.record(fake(1), 0, K_EXTENT, std::nullopt);
-    registry.take(fake(1));
-
     EXPECT_FALSE(registry.containing_allocation(inside(1, 8)).has_value());
 }

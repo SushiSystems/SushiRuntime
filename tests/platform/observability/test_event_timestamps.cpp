@@ -23,18 +23,20 @@
 
 /**
  * @file test_event_timestamps.cpp
- * @brief Tests read_event_timestamps() on an event of a profiling queue and on a default event.
+ * @brief Tests the event timestamps: the read of a profiled event, the merge of spans and the read of an unreadable event.
  * @see tests/platform/observability/README.md
  * @author Mustafa Garip
  */
 
 #include <cstdint>
+#include <functional>
+#include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/observability/event_timestamps.hpp>
-#include <vector>
 
 using namespace SushiRuntime::Internal::Observability;
 
@@ -54,23 +56,9 @@ TEST(Medium_EventTimestamps, AProfiledEventReadsOrderedTimes)
     EventTimestamps times;
     ASSERT_TRUE(read_event_timestamps(event, times));
     EXPECT_LE(times.start_ns, times.end_ns);
-    if (times.has_submit)
-        EXPECT_LE(times.submit_ns, times.start_ns);
-    else
-        EXPECT_EQ(times.submit_ns, times.start_ns);
+    EXPECT_LE(times.submit_ns, times.start_ns);
     sycl::free(value, queue);
 }
-
-/** @brief Tests that an event with no profiling reads nothing and leaves the output alone. */
-TEST(Medium_EventTimestamps, AnUnprofiledEventReadsNothing)
-{
-    EventTimestamps times;
-    times.start_ns = 7;
-    EXPECT_FALSE(read_event_timestamps(sycl::event(), times));
-    EXPECT_EQ(times.start_ns, 7u);
-}
-
-using namespace SushiRuntime::Internal::Observability;
 
 namespace
 {
@@ -131,15 +119,38 @@ TEST(Small_EventTimestamps, MergingAnEventIntoItselfChangesNothing)
     EXPECT_EQ(total.end_ns, 30u);
 }
 
-/** @brief Tests that an event that cannot be read fails the dispatch whether it is returned or handed over. */
-TEST(Small_EventTimestamps, AnUnreadableEventFailsTheDispatch)
+/** @brief One way to read an event that cannot be read. */
+struct UnreadableRow
+{
+    /** @brief The row name gtest prints. */
+    const char* name;
+    /** @brief Reads the event into @p out the way the row names, and returns the result. */
+    std::function<bool(EventTimestamps& out)> read;
+};
+
+class Small_EventTimestampsUnreadable : public ::testing::TestWithParam<UnreadableRow>
+{
+};
+
+/** @brief Tests that an event that cannot be read fails the read, whether returned or handed over, and leaves the output alone. */
+TEST_P(Small_EventTimestampsUnreadable, FailsTheReadAndLeavesTheOutputAlone)
 {
     EventTimestamps out = stamps(1, 2, 3);
-    const std::vector<sycl::event> none;
-    const std::vector<sycl::event> handed{sycl::event{}, sycl::event{}};
 
     // A default event comes from no queue built with profiling, so reading its times throws and is reported.
-    EXPECT_FALSE(read_dispatch_timestamps(sycl::event{}, none, out));
-    EXPECT_FALSE(read_dispatch_timestamps(sycl::event{}, handed, out));
-    EXPECT_EQ(out.submit_ns, 1u) << "a failed read leaves the output as it was";
+    EXPECT_FALSE(GetParam().read(out));
+    EXPECT_EQ(out.submit_ns, 1u);
+    EXPECT_EQ(out.start_ns, 2u);
+    EXPECT_EQ(out.end_ns, 3u);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    Events, Small_EventTimestampsUnreadable,
+    ::testing::Values(
+        UnreadableRow{"ADefaultEvent", [](EventTimestamps& out) { return read_event_timestamps(sycl::event(), out); }},
+        UnreadableRow{"ADispatchWithNoEventsHandedOver",
+                      [](EventTimestamps& out) { return read_dispatch_timestamps(sycl::event{}, {}, out); }},
+        UnreadableRow{"ADispatchWithEventsHandedOver",
+                      [](EventTimestamps& out)
+                      { return read_dispatch_timestamps(sycl::event{}, {sycl::event{}, sycl::event{}}, out); }}),
+    [](const ::testing::TestParamInfo<UnreadableRow>& info) { return std::string(info.param.name); });
