@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-07 — tools: Gave the naming, device-source and tier-table checkers a text-taking function beside each file reader, so their tests run small on text; the two tier-table tests of the real CMake file stay medium (RW-95).
 - 2026-11-07 — memory_exchange: Moved the import refusal into `descriptor_refusal()` and `device_refusal()`, pure functions its rows test small with no device; one medium import test keeps the wiring (RW-89, `descriptor_refusal.hpp`).
 - 2026-11-07 — tests: Dropped the test of the empty `ExternalHandleKindSet` default, trivial code the testing skill leaves untested (RW-91).
 - 2026-11-07 — examples: Gave the diffusion adapter a second `create_backend()` form that takes the runtime it runs on, and exposed its step as `diffused_cell()` and `diffuse_on_host()`; the first form behaves as before (RW-92).

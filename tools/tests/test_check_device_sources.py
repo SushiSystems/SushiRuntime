@@ -2,32 +2,26 @@
 # SushiRuntime - https://github.com/SushiSystems/SushiRuntime
 # Copyright (c) 2026-present Mustafa Garip & Sushi Systems
 # Licensed under the Apache License 2.0. See LICENSE.
-"""Tests the rules of tools/layering/check_device_sources.py on trees built on disk."""
+"""Tests the rules of tools/layering/check_device_sources.py on trees given as text."""
 
 from __future__ import annotations
 
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from layering.check_device_sources import (  # noqa: E402
+    TextFiles,
     UnitTree,
     rule_device_source_missing,
     rule_device_source_unneeded,
 )
 
-K_TEST_SIZE = "medium"
+K_TEST_SIZE = "small"
+K_ROOT = Path("repository")
 K_API_INCLUDE = "#include <SushiRuntime/api/graph/graph.hpp>"
-
-
-def _write(root: Path, relative: str, text: str = "") -> None:
-    """Writes a file and its folders below root."""
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text + "\n", encoding="utf-8")
 
 
 def _test_build_file(sources: list[str], device: list[str]) -> str:
@@ -42,32 +36,30 @@ def _test_build_file(sources: list[str], device: list[str]) -> str:
 
 
 class DeviceSourcesTest(unittest.TestCase):
-    """Builds a temporary repository with an API module and the tests of it."""
+    """Holds a repository with an API module and the tests of it, as text under its paths."""
 
     def setUp(self) -> None:
-        self._folder = tempfile.TemporaryDirectory()
-        self.root = Path(self._folder.name)
-        _write(self.root, "modules/surface/api/include/SushiRuntime/api/graph/graph.hpp", "struct Graph;")
-        _write(self.root, "modules/surface/api/source/graph.cpp",
-               K_API_INCLUDE + "\nvoid f(Pins& pins) { pins.add(1); }")
-        _write(self.root, "modules/surface/api/CMakeLists.txt",
-               "sushiruntime_add_module(NAME api TIER surface SOURCES graph.cpp)")
-        _write(self.root, "tests/surface/api/test_recorded.cpp",
-               K_API_INCLUDE + "\nvoid t(Graph& g) { g.add(4, Reads(), Writes(b), [](std::size_t) {}); }")
-        _write(self.root, "tests/surface/api/test_launched.cpp", '#include "launch_helper.hpp"')
-        _write(self.root, "tests/surface/api/launch_helper.hpp",
-               "inline void l(sycl::queue& q) { q.single_task([] {}); }")
-        _write(self.root, "tests/surface/api/test_hooks.cpp",
-               K_API_INCLUDE + "\nvoid h(Hooks& hooks) { hooks.add([](std::size_t) {}); }")
-        _write(self.root, "tests/surface/api/test_plain.cpp", "int plain() { return set.add(1); }")
-
-    def tearDown(self) -> None:
-        self._folder.cleanup()
+        self.root = K_ROOT
+        self.texts: dict[Path, str] = {
+            self.root / "modules/surface/api/include/SushiRuntime/api/graph/graph.hpp": "struct Graph;",
+            self.root / "modules/surface/api/source/graph.cpp":
+                K_API_INCLUDE + "\nvoid f(Pins& pins) { pins.add(1); }",
+            self.root / "modules/surface/api/CMakeLists.txt":
+                "sushiruntime_add_module(NAME api TIER surface SOURCES graph.cpp)",
+            self.root / "tests/surface/api/test_recorded.cpp":
+                K_API_INCLUDE + "\nvoid t(Graph& g) { g.add(4, Reads(), Writes(b), [](std::size_t) {}); }",
+            self.root / "tests/surface/api/test_launched.cpp": '#include "launch_helper.hpp"',
+            self.root / "tests/surface/api/launch_helper.hpp":
+                "inline void l(sycl::queue& q) { q.single_task([] {}); }",
+            self.root / "tests/surface/api/test_hooks.cpp":
+                K_API_INCLUDE + "\nvoid h(Hooks& hooks) { hooks.add([](std::size_t) {}); }",
+            self.root / "tests/surface/api/test_plain.cpp": "int plain() { return set.add(1); }",
+        }
 
     def _declare(self, sources: list[str], device: list[str]) -> UnitTree:
-        """Writes the test build file and returns the tree."""
-        _write(self.root, "tests/surface/api/CMakeLists.txt", _test_build_file(sources, device))
-        return UnitTree(self.root)
+        """Keeps the test build file beside the sources and returns the tree over the text."""
+        self.texts[self.root / "tests/surface/api/CMakeLists.txt"] = _test_build_file(sources, device)
+        return UnitTree(self.root, TextFiles(self.texts))
 
     def _messages(self, rule, tree: UnitTree) -> list[str]:
         """Returns the message of each issue a rule yields."""

@@ -154,11 +154,16 @@ def _line_starts(code: str) -> tuple[int, ...]:
     return (0, *(match.end() for match in K_NEWLINE.finditer(code)))
 
 
-def _read_source(path: Path) -> SourceFile:
-    """Returns a source file with its comments, literals and directives blanked."""
-    text = path.read_text(encoding="utf-8-sig", errors="replace")
+def parse_source_text(path: Path, text: str) -> SourceFile:
+    """Returns a source file, named by path, with its comments, literals and directives blanked."""
     code = _blank_directives(_blank_comments_and_literals(text))
     return SourceFile(path, code, _line_starts(code))
+
+
+def _read_source(path: Path) -> SourceFile:
+    """Returns a source file read from disk, with its comments, literals and directives blanked."""
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
+    return parse_source_text(path, text)
 
 
 def _walk(paths: list[Path]) -> Iterator[Path]:

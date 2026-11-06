@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import sys
-import tempfile
 import unittest
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -20,7 +19,7 @@ from naming.check_naming import (  # noqa: E402
     K_FLAG_RULES,
     K_RULES,
     SourceFile,
-    collect,
+    parse_source_text,
     rule_constant_prefix,
     rule_enumerator_case,
     rule_get_prefix,
@@ -29,7 +28,7 @@ from naming.check_naming import (  # noqa: E402
     rule_short_name,
 )
 
-K_TEST_SIZE = "medium"
+K_TEST_SIZE = "small"
 Rule = Callable[[SourceFile], Iterator[Issue]]
 
 
@@ -40,11 +39,8 @@ def _lines(
     folder: tuple[str, ...] = (),
 ) -> list[int]:
     """Returns the line numbers the rule reports for a file with the given name and content."""
-    with tempfile.TemporaryDirectory() as root:
-        path = Path(root, *folder, name)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-        return [issue.line for source in collect([path]) for issue in rule(source)]
+    source = parse_source_text(Path(*folder, name), text)
+    return [issue.line for issue in rule(source)]
 
 
 class NamespaceDetailTest(unittest.TestCase):
