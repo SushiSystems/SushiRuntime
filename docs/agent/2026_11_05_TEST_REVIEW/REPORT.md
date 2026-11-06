@@ -91,6 +91,9 @@ dispatch: J16 M5 foundation — sonnet medium, 1 round, passed (one upward inclu
 dispatch: J16 M3 engine rest — sonnet medium, 1 round, passed (skipped model-routing note; seams to RW-102), rung 1
 dispatch: J16 M6 platform — sonnet medium, 1 round, passed with a rule gap (skipped humanizer, documentation and the backlog commands; READMEs reviewed by the lead; seams to RW-103), rung 1
 dispatch: J16 M4 extension distributed — sonnet medium, 1 round, partial (stand-in rewrites to RW-104), rung 1
+dispatch: J16 M4 extension rest — sonnet medium, 1 round, partial (worker_directory and dispatcher left; adapters to RW-105, RW-106), rung 1
+dispatch: J16 M4 worker_directory — sonnet medium, 1 round, passed (skipped cpp-code-style, source-comments and documentation skills; reviewed by the lead), rung 1
+dispatch: J16 M7 api graph — sonnet medium, 1 round, passed with a rule gap (skipped testing, cpp-code-style, source-comments and documentation skills and the backlog commands; reviewed by the lead; internal-only promises to RW-107), rung 1
 
 ## Totals
 

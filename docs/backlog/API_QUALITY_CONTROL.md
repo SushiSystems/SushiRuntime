@@ -42,6 +42,9 @@
 | RW-102 | P3 | decision | Give the engine units the seams their small resizes need | The M3 records left medium for an executor, logger port, dependency or ownership seam run small, or each has an owner ruling |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 | RW-103 | P3 | decision | Give the platform units the seams their small resizes need | The eleven M6 records left medium for a route, release, queue, clock or device port run small, or each has an owner ruling |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 | RW-104 | P2 | open | Finish the distributed test records on InProcessTransport | test_worker_agent and the ScriptedWorker and StubTransport tests of test_distributed run on InProcessTransport with no stand-in |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
+| RW-105 | P3 | decision | Ship the extension adapters the remaining offload tests need | test_offload_dispatcher, test_task_resubmission and test_frame_sending run on an in-memory OffloadPolicy, a refusing sink and a recording TransportEvents |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
+| RW-106 | P3 | decision | Give the logged TCP_NODELAY failure a public path or rule it untested | The socket option report promise has a test through the public surface or an owner ruling |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
+| RW-107 | P2 | decision | Give OffloadCoordinator a public install path for the dropped plan-cache tests | The four plan-cache and offloaded-count promises M7 dropped have a public-surface test each, or an owner ruling |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 
 ## Known issues
 
