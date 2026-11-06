@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -42,44 +43,93 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/context_access/context_access.hpp>
-#include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/graph/compiled_graph.hpp>
-#include <SushiRuntime/task/node.hpp>
 
-#include "dynamic_graph_plan_access.hpp"
 #include "run_recorder.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
 /** @brief Tests the region-partitioned graph that Runtime::dynamic_graph() returns. */
 namespace DynamicGraphTests
 {
-    /** @brief Tests that two independent regions advance their buffers and compose the plan once. */
-    TEST(Medium_DynamicGraph, IndependentRegionsRunAndComposeOnce)
+    /** @brief Fixture of the region tests, which run on the program's runtime with the rebalancer off. */
+    class Medium_DynamicGraph : public TestSupport::RuntimeTest
+    {
+        protected:
+            /** @brief Turns the background rebalancer off, so no thermal move reorders a region. */
+            void SetUp() override { runtime().set_rebalancer_enabled(false); }
+    };
+
+    /** @brief Fixture of the rows over the number of regions a chain threads a value through. */
+    class Medium_DynamicGraphChain : public Medium_DynamicGraph,
+                                     public ::testing::WithParamInterface<std::size_t>
+    {
+    };
+
+    /**
+     * @brief Fixture of a world of 32 regions that each add one to their own buffer and have run three steps.
+     */
+    class Medium_DynamicGraphWorld : public Medium_DynamicGraph
+    {
+        protected:
+            static constexpr std::size_t N       = 4;
+            static constexpr std::size_t K_REGIONS = 32;
+
+            /** @brief Records the 32 regions and runs three steps. */
+            void SetUp() override
+            {
+                Medium_DynamicGraph::SetUp();
+                bufs_.reserve(K_REGIONS);
+                for (std::size_t r = 0; r < K_REGIONS; ++r)
+                    bufs_.push_back(runtime().buffer<int>(N).value());
+                for (auto& buf : bufs_)
+                    for (std::size_t i = 0; i < N; ++i)
+                        buf[i] = 0;
+
+                world_.emplace(runtime().dynamic_graph());
+                for (std::size_t r = 0; r < K_REGIONS; ++r)
+                {
+                    int* p = bufs_[r].data();
+                    world_->region(r).add(N, Reads{}, Writes(bufs_[r]),
+                                          [p](std::size_t i) { p[i] += 1; });
+                }
+
+                world_->run(3).value();
+            }
+
+            /** @brief Adds ten to every cell of region 7 and runs one step. */
+            void mutate_region_seven_and_run()
+            {
+                int* p7 = bufs_[7].data();
+                world_->region(7).add(N, Reads{}, Writes(bufs_[7]),
+                                      [p7](std::size_t i) { p7[i] += 10; });
+                world_->run(1).value();
+            }
+
+            std::vector<Buffer<int>> bufs_;    /**< One buffer per region. */
+            std::optional<DynamicGraph> world_; /**< The graph of the 32 regions. */
+    };
+
+    /** @brief Tests that two independent regions advance their own buffers over a multi-step run. */
+    TEST_F(Medium_DynamicGraph, IndependentRegionsAdvanceTheirOwnBuffers)
     {
         constexpr std::size_t N     = 16;
         constexpr std::size_t STEPS = 5;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-
-        auto a = rt.buffer<int>(N).value();
-        auto b = rt.buffer<int>(N).value();
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
         int* pa = a.data();
         int* pb = b.data();
 
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
         world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
         world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 2; });
 
         world.run(STEPS).value();
 
         EXPECT_EQ(world.region_count(), 2u);
-        EXPECT_EQ(world.compose_count(), 1u) << "an unmutated multi-step run must compose once.";
         for (std::size_t i = 0; i < N; ++i)
         {
             ASSERT_EQ(a[i], static_cast<int>(STEPS));
@@ -87,53 +137,76 @@ namespace DynamicGraphTests
         }
     }
 
-    /**
-     * @brief Tests that a consumer region observes the writes of a producer region with a lower key.
-     */
-    TEST(Medium_DynamicGraph, CrossRegionDependencyOrders)
+    /** @brief Tests that an unmutated multi-step run composes the plan once. */
+    TEST_F(Medium_DynamicGraph, AnUnmutatedMultiStepRunComposesOnce)
     {
-        constexpr std::size_t N = 32;
+        constexpr std::size_t N     = 16;
+        constexpr std::size_t STEPS = 5;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
+        int* pa = a.data();
+        int* pb = b.data();
 
-        auto x = rt.buffer<int>(N).value();
-        auto y = rt.buffer<int>(N).value();
-        for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = -1; }
+        auto world = runtime().dynamic_graph();
+        world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
+        world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 2; });
 
-        int* px = x.data();
-        int* py = y.data();
+        world.run(STEPS).value();
 
-        auto world = rt.dynamic_graph();
-        world.region(10).add(N, Reads{}, Writes(x),
-                             [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
-        world.region(11).add(N, Reads(x), Writes(y),
-                             [px, py](std::size_t i) { py[i] = px[i] * 2; });
+        EXPECT_EQ(world.compose_count(), 1u) << "an unmutated multi-step run must compose once.";
+    }
+
+    /** @brief Tests that a chain of regions with ascending keys threads a value through every hop. */
+    TEST_P(Medium_DynamicGraphChain, ARegionObservesTheWritesOfTheRegionBeforeIt)
+    {
+        constexpr std::size_t N = 24;
+        const std::size_t regions = GetParam();
+
+        std::vector<Buffer<int>> hops;
+        for (std::size_t r = 0; r < regions; ++r)
+        {
+            hops.push_back(runtime().buffer<int>(N).value());
+            for (std::size_t i = 0; i < N; ++i)
+                hops[r][i] = -1;
+        }
+
+        auto world = runtime().dynamic_graph();
+        int* first = hops[0].data();
+        world.region(10).add(N, Reads{}, Writes(hops[0]),
+                             [first](std::size_t i) { first[i] = static_cast<int>(i) + 1; });
+        for (std::size_t r = 1; r < regions; ++r)
+        {
+            const int* from = hops[r - 1].data();
+            int* to = hops[r].data();
+            world.region(10 + r).add(N, Reads(hops[r - 1]), Writes(hops[r]),
+                                     [from, to](std::size_t i) { to[i] = from[i] * 2; });
+        }
 
         world.run().value();
 
+        const int factor = 1 << (regions - 1);
         for (std::size_t i = 0; i < N; ++i)
-            ASSERT_EQ(y[i], static_cast<int>(2 * (i + 1))) << "at i=" << i;
+            ASSERT_EQ(hops[regions - 1][i], static_cast<int>(i + 1) * factor) << "at i=" << i;
     }
+
+    INSTANTIATE_TEST_SUITE_P(Rows, Medium_DynamicGraphChain, ::testing::Values(2u, 3u));
 
     /**
      * @brief Tests that a dropped region's buffer freezes while the surviving region keeps advancing.
      */
-    TEST(Medium_DynamicGraph, DropRegionStopsItsWork)
+    TEST_F(Medium_DynamicGraph, DropRegionStopsItsWork)
     {
         constexpr std::size_t N = 8;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-
-        auto a = rt.buffer<int>(N).value();
-        auto b = rt.buffer<int>(N).value();
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
         int* pa = a.data();
         int* pb = b.data();
 
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
         world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
         world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 1; });
 
@@ -154,21 +227,18 @@ namespace DynamicGraphTests
     /**
      * @brief Tests that adding a region between steps recomposes once and takes effect on the next run.
      */
-    TEST(Medium_DynamicGraph, AddRegionBetweenSteps)
+    TEST_F(Medium_DynamicGraph, AddRegionBetweenSteps)
     {
         constexpr std::size_t N = 8;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-
-        auto a = rt.buffer<int>(N).value();
-        auto b = rt.buffer<int>(N).value();
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
         int* pa = a.data();
         int* pb = b.data();
 
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
         world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
         world.run(2).value();
         EXPECT_EQ(world.compose_count(), 1u);
@@ -184,65 +254,44 @@ namespace DynamicGraphTests
         }
     }
 
-    /** @brief Tests that mutating one region recomposes exactly once. */
-    TEST(Medium_DynamicGraph, SingleRecomposePerMutation)
+    /** @brief Tests that building all regions composes once. */
+    TEST_F(Medium_DynamicGraphWorld, BuildingAllRegionsComposesOnce)
     {
-        constexpr std::size_t N        = 4;
-        constexpr std::size_t REGIONS  = 32;
+        EXPECT_EQ(world_->compose_count(), 1u) << "building all regions once composes once.";
+    }
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
+    /** @brief Tests that one mutation recomposes exactly once, not once per region. */
+    TEST_F(Medium_DynamicGraphWorld, OneMutationRecomposesExactlyOnce)
+    {
+        mutate_region_seven_and_run();
 
-        std::vector<Buffer<int>> bufs;
-        bufs.reserve(REGIONS);
-        for (std::size_t r = 0; r < REGIONS; ++r)
-            bufs.push_back(rt.buffer<int>(N).value());
-        for (auto& buf : bufs)
-            for (std::size_t i = 0; i < N; ++i)
-                buf[i] = 0;
+        EXPECT_EQ(world_->compose_count(), 2u) << "one mutation recomposes exactly once.";
+    }
 
-        auto world = rt.dynamic_graph();
-        for (std::size_t r = 0; r < REGIONS; ++r)
-        {
-            int* p = bufs[r].data();
-            world.region(r).add(N, Reads{}, Writes(bufs[r]),
-                                [p](std::size_t i) { p[i] += 1; });
-        }
+    /** @brief Tests that after one mutation every region holds the count its runs give it. */
+    TEST_F(Medium_DynamicGraphWorld, EveryRegionHoldsItsRunCountAfterAMutation)
+    {
+        mutate_region_seven_and_run();
 
-        world.run(3).value();
-        EXPECT_EQ(world.compose_count(), 1u) << "building all regions once composes once.";
-
-        // Mutate exactly one region; one recompose, not REGIONS recomposes.
-        int* p7 = bufs[7].data();
-        world.region(7).add(N, Reads{}, Writes(bufs[7]),
-                            [p7](std::size_t i) { p7[i] += 10; });
-        world.run(1).value();
-        EXPECT_EQ(world.compose_count(), 2u) << "one mutation recomposes exactly once.";
-
-        for (std::size_t r = 0; r < REGIONS; ++r)
+        for (std::size_t r = 0; r < K_REGIONS; ++r)
             for (std::size_t i = 0; i < N; ++i)
             {
                 const int expected = (r == 7) ? (4 + 10) : 4;  // 3 steps + 1 step (+10 on its 4th)
-                ASSERT_EQ(bufs[r][i], expected) << "region " << r << " at i=" << i;
+                ASSERT_EQ(bufs_[r][i], expected) << "region " << r << " at i=" << i;
             }
     }
 
-    /**
-     * @brief Tests that find_region() reads without recomposing and returns nullptr for an absent key.
-     */
-    TEST(Medium_DynamicGraph, FindRegionReadsWithoutRecomposing)
+    /** @brief Tests that find_region() is not a mutation: it recomposes nothing. */
+    TEST_F(Medium_DynamicGraph, FindRegionRecomposesNothing)
     {
         constexpr std::size_t N = 4;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-
-        auto a = rt.buffer<int>(N).value();
+        auto a = runtime().buffer<int>(N).value();
         int* pa = a.data();
         for (std::size_t i = 0; i < N; ++i)
             a[i] = 0;
 
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
         world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
         world.run().value();
         const std::size_t composed = world.compose_count();
@@ -250,8 +299,6 @@ namespace DynamicGraphTests
         const Region* found = world.find_region(0);
         ASSERT_NE(found, nullptr);
         EXPECT_EQ(found->size(), 1u);
-        EXPECT_EQ(world.find_region(9), nullptr) << "an absent key is not created by a lookup";
-        EXPECT_FALSE(world.has_region(9));
 
         world.run().value();
         EXPECT_EQ(world.compose_count(), composed) << "a lookup is not a mutation";
@@ -259,55 +306,37 @@ namespace DynamicGraphTests
             ASSERT_EQ(a[i], 2) << "at i=" << i;
     }
 
-    /** @brief Tests that a three-region chain threads a value through both hops. */
-    TEST(Medium_DynamicGraph, ThreeRegionChainThreadsValue)
+    /** @brief Tests that find_region() returns nullptr for an absent key and does not create it. */
+    TEST_F(Medium_DynamicGraph, FindRegionDoesNotCreateAnAbsentKey)
     {
-        constexpr std::size_t N = 24;
+        constexpr std::size_t N = 4;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
+        auto a = runtime().buffer<int>(N).value();
+        int* pa = a.data();
 
-        auto x = rt.buffer<int>(N).value();
-        auto y = rt.buffer<int>(N).value();
-        auto z = rt.buffer<int>(N).value();
-        for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = 0; z[i] = 0; }
+        auto world = runtime().dynamic_graph();
+        world.region(0).add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
 
-        int* px = x.data();
-        int* py = y.data();
-        int* pz = z.data();
-
-        auto world = rt.dynamic_graph();
-        world.region(0).add(N, Reads{}, Writes(x),
-                            [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
-        world.region(1).add(N, Reads(x), Writes(y),
-                            [px, py](std::size_t i) { py[i] = px[i] * 2; });
-        world.region(2).add(N, Reads(y), Writes(z),
-                            [py, pz](std::size_t i) { pz[i] = py[i] + 1; });
-
-        world.run().value();
-
-        for (std::size_t i = 0; i < N; ++i)
-            ASSERT_EQ(z[i], static_cast<int>(2 * (i + 1) + 1)) << "at i=" << i;
+        EXPECT_EQ(world.find_region(9), nullptr) << "an absent key is not created by a lookup";
+        EXPECT_FALSE(world.has_region(9));
+        EXPECT_EQ(world.region_count(), 1u);
     }
 
     /** @brief Tests that two regions reading one producer's buffer both see its writes. */
-    TEST(Medium_DynamicGraph, ReadReadSharingStaysConsistent)
+    TEST_F(Medium_DynamicGraph, ReadReadSharingStaysConsistent)
     {
         constexpr std::size_t N = 24;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-
-        auto base = rt.buffer<int>(N).value();
-        auto o1   = rt.buffer<int>(N).value();
-        auto o2   = rt.buffer<int>(N).value();
+        auto base = runtime().buffer<int>(N).value();
+        auto o1   = runtime().buffer<int>(N).value();
+        auto o2   = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) { base[i] = 0; o1[i] = 0; o2[i] = 0; }
 
         int* pb = base.data();
         int* p1 = o1.data();
         int* p2 = o2.data();
 
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
         world.region(0).add(N, Reads{}, Writes(base),
                             [pb](std::size_t i) { pb[i] = static_cast<int>(i) + 1; });
         world.region(1).add(N, Reads(base), Writes(o1),
@@ -324,52 +353,66 @@ namespace DynamicGraphTests
         }
     }
 
-    /** @brief Tests that streaming a consumer in rewires the existing producer's boundary. */
-    TEST(Medium_DynamicGraph, StreamInConsumerRewiresProducer)
+    /** @brief Tests that a consumer streamed in beside an existing producer sees its writes. */
+    TEST_F(Medium_DynamicGraph, AStreamedInConsumerSeesTheProducersWrites)
     {
         constexpr std::size_t N = 16;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-
-        auto x = rt.buffer<int>(N).value();
-        auto y = rt.buffer<int>(N).value();
+        auto x = runtime().buffer<int>(N).value();
+        auto y = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = -1; }
 
         int* px = x.data();
         int* py = y.data();
 
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
         world.region(0).add(N, Reads{}, Writes(x),
                             [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
         world.run().value();
-        EXPECT_EQ(world.compose_count(), 1u);
 
         world.region(1).add(N, Reads(x), Writes(y),
                             [px, py](std::size_t i) { py[i] = px[i] * 3; });
         world.run().value();
-        EXPECT_EQ(world.compose_count(), 2u) << "streaming a sharer in recomposes once.";
 
         for (std::size_t i = 0; i < N; ++i)
             ASSERT_EQ(y[i], static_cast<int>(i + 1) * 3) << "at i=" << i;
     }
 
-    /** @brief Tests that dropping the producer leaves the consumer runnable. */
-    TEST(Medium_DynamicGraph, DropProducerLeavesConsumerRunnable)
+    /** @brief Tests that streaming a sharer in recomposes once. */
+    TEST_F(Medium_DynamicGraph, StreamingAConsumerInRecomposesOnce)
     {
         constexpr std::size_t N = 16;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
+        auto x = runtime().buffer<int>(N).value();
+        auto y = runtime().buffer<int>(N).value();
+        int* px = x.data();
+        int* py = y.data();
 
-        auto x = rt.buffer<int>(N).value();
-        auto y = rt.buffer<int>(N).value();
+        auto world = runtime().dynamic_graph();
+        world.region(0).add(N, Reads{}, Writes(x),
+                            [px](std::size_t i) { px[i] = static_cast<int>(i) + 1; });
+        world.run().value();
+        ASSERT_EQ(world.compose_count(), 1u);
+
+        world.region(1).add(N, Reads(x), Writes(y),
+                            [px, py](std::size_t i) { py[i] = px[i] * 3; });
+        world.run().value();
+        EXPECT_EQ(world.compose_count(), 2u) << "streaming a sharer in recomposes once.";
+    }
+
+    /** @brief Tests that dropping the producer leaves the consumer runnable with the values it had. */
+    TEST_F(Medium_DynamicGraph, DropProducerLeavesConsumerRunnable)
+    {
+        constexpr std::size_t N = 16;
+
+        auto x = runtime().buffer<int>(N).value();
+        auto y = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) { x[i] = 7; y[i] = 0; }
 
         int* px = x.data();
         int* py = y.data();
 
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
         world.region(0).add(N, Reads{}, Writes(x),
                             [px](std::size_t i) { px[i] = static_cast<int>(i); });
         world.region(1).add(N, Reads(x), Writes(y),
@@ -381,7 +424,6 @@ namespace DynamicGraphTests
         world.run().value();                 // consumer alone; must not deadlock
 
         EXPECT_EQ(world.region_count(), 1u);
-        // The exact value of y is not asserted, only that the consumer kept executing; see README.md.
         for (std::size_t i = 0; i < N; ++i)
             ASSERT_EQ(y[i], static_cast<int>(i) * 2) << "at i=" << i;
     }
@@ -390,7 +432,7 @@ namespace DynamicGraphTests
      * @brief Tests that two regions writing disjoint ranges of one buffer are not ordered against each
      *        other.
      */
-    TEST(Medium_DynamicGraph, DisjointRangeRegionsAreNotOrdered)
+    TEST_F(Medium_DynamicGraph, DisjointRangeRegionsAreNotOrdered)
     {
         if (std::thread::hardware_concurrency() < 2)
             GTEST_SKIP() << "needs at least two workers to observe concurrency";
@@ -398,10 +440,7 @@ namespace DynamicGraphTests
         constexpr std::size_t N = 64;
         constexpr std::size_t HALF = N / 2;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-
-        auto shared = rt.buffer<int>(N).value();
+        auto shared = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) shared[i] = 0;
 
         std::atomic<int> arrived{0};
@@ -419,7 +458,7 @@ namespace DynamicGraphTests
                 saw_both.fetch_add(1, std::memory_order_acq_rel);
         };
 
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
         world.region(0).add_host(Reads{},
                                  Writes(shared.region({0, HALF})), rendezvous);
         world.region(1).add_host(Reads{},
@@ -432,14 +471,11 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that two regions writing the same range of one buffer are still ordered. */
-    TEST(Medium_DynamicGraph, OverlappingRangeRegionsStillSerialize)
+    TEST_F(Medium_DynamicGraph, OverlappingRangeRegionsStillSerialize)
     {
         constexpr std::size_t N = 64;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-
-        auto shared = rt.buffer<int>(N).value();
+        auto shared = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) shared[i] = 0;
         int* p = shared.data();
 
@@ -458,7 +494,7 @@ namespace DynamicGraphTests
                 saw_both.fetch_add(1, std::memory_order_acq_rel);
         };
 
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
         world.region(0).add_host(Reads{}, Writes(shared),
                                  [p, rendezvous]()
                                  {
@@ -480,23 +516,20 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that a whole-buffer reader runs after both half writers. */
-    TEST(Medium_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
+    TEST_F(Medium_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
     {
         constexpr std::size_t N = 128;
         constexpr std::size_t HALF = N / 2;
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-
-        auto shared = rt.buffer<int>(N).value();
-        auto total  = rt.buffer<int>(1).value();
+        auto shared = runtime().buffer<int>(N).value();
+        auto total  = runtime().buffer<int>(1).value();
         for (std::size_t i = 0; i < N; ++i) shared[i] = -1;
         total[0] = 0;
 
         int* p = shared.data();
         int* t = total.data();
 
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
         world.region(0).add(HALF, Reads{}, Writes(shared.region({0, HALF})),
                             [p](std::size_t i) { p[i] = 2; });
         world.region(1).add(HALF, Reads{}, Writes(shared.region({HALF, HALF})),
@@ -539,7 +572,7 @@ namespace WideDynamicGraphTests
          * @param rt Runtime the buffers belong to.
          * @return The buffers, indexed by region.
          */
-        std::vector<Buffer<int>> make_zeroed_buffers(Runtime& rt)
+        std::vector<Buffer<int>> make_zeroed_buffers(const Runtime& rt)
         {
             std::vector<Buffer<int>> bufs;
             bufs.reserve(K_REGIONS);
@@ -621,25 +654,29 @@ namespace WideDynamicGraphTests
         }
     } // namespace
 
-    /** @brief Tests that each of several streamed mutations recomposes the world exactly once. */
-    TEST(Medium_DynamicGraph, EachOfSeveralStreamedMutationsRecomposesOnce)
+    /** @brief Fixture of the wide-graph tests, which run on the program's runtime with the rebalancer off. */
+    class Medium_WideDynamicGraph : public TestSupport::RuntimeTest
     {
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-        auto bufs = make_zeroed_buffers(rt);
-        auto world = rt.dynamic_graph();
+        protected:
+            /** @brief Turns the background rebalancer off, so no thermal move reorders a region. */
+            void SetUp() override { runtime().set_rebalancer_enabled(false); }
+    };
+
+    /** @brief Tests that each of several streamed mutations recomposes the world exactly once. */
+    TEST_F(Medium_WideDynamicGraph, EachOfSeveralStreamedMutationsRecomposesOnce)
+    {
+        auto bufs = make_zeroed_buffers(runtime());
+        auto world = runtime().dynamic_graph();
         compose_the_world_once(world, bufs);
 
         EXPECT_EQ(stream_mutations(world, bufs), 0u);
     }
 
     /** @brief Tests that after streamed mutations every region holds the count its runs give it. */
-    TEST(Medium_DynamicGraph, EveryRegionKeepsItsRunCountAfterStreamedMutations)
+    TEST_F(Medium_WideDynamicGraph, EveryRegionKeepsItsRunCountAfterStreamedMutations)
     {
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-        auto bufs = make_zeroed_buffers(rt);
-        auto world = rt.dynamic_graph();
+        auto bufs = make_zeroed_buffers(runtime());
+        auto world = runtime().dynamic_graph();
         compose_the_world_once(world, bufs);
         stream_mutations(world, bufs);
 
@@ -652,172 +689,111 @@ namespace DynamicGraphNodeEventsTests
 {
     namespace
     {
-        /** @brief Returns the registration index of the one compiled node with the given name. */
-        std::uint32_t registration_index_of(const Internal::Graph::CompiledGraph& plan, const char* name)
+        constexpr std::size_t N = 16;
+
+        /** @brief Records a region that fills one buffer with its index, under the given label. */
+        void add_labelled_fill(DynamicGraph& world, DynamicGraph::RegionKey key, Buffer<int>& buffer,
+                               int scale, const char* label)
         {
-            const Internal::Graph::Node* found = Testing::find_plan_node(plan, name);
-            return found ? found->registration_index : 0u;
+            int* p = buffer.data();
+            world.region(key).add(N, Reads{}, Writes(buffer),
+                                  [p, scale](std::size_t i) { p[i] = static_cast<int>(i) * scale; })
+                .name(label);
         }
     } // namespace
 
-    /** @brief Tests that a graph of a runtime with no observer records nothing. */
-    TEST(Medium_DynamicGraphNodeEvents, NotRequestedRecordsNothing)
+    /** @brief Fixture of the node-event tests, which run on the program's runtime with the rebalancer off. */
+    class Medium_DynamicGraphNodeEvents : public TestSupport::RuntimeTest
     {
-        constexpr std::size_t N = 32;
+        protected:
+            /** @brief Turns the background rebalancer off, so no thermal move reorders a region. */
+            void SetUp() override { runtime().set_rebalancer_enabled(false); }
+    };
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-        Testing::RunRecorder observed(rt);
-        observed.stop();
-        auto buf = rt.buffer<int>(N).value();
-        int* p = buf.data();
-
-        auto world = rt.dynamic_graph();
-        world.region(0).add(N, Reads{}, Writes(buf),
-                            [p](std::size_t i) { p[i] = static_cast<int>(i); });
-
-        auto report = world.run().value();
-        EXPECT_TRUE(report.is_successful);
-        EXPECT_EQ(observed.count(), 0u);
-    }
-
-    /** @brief Tests that an observed DynamicGraph produces records that match the renumbered index. */
-    TEST(Medium_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRenumberedIndex)
+    /** @brief Tests that every record of an observed run names a node the table of the run describes. */
+    TEST_F(Medium_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRenumberedIndex)
     {
-        constexpr std::size_t N = 32;
+        Testing::RunRecorder observed(runtime());
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-        Testing::RunRecorder observed(rt);
-        auto a = rt.buffer<int>(N).value();
-        auto b = rt.buffer<int>(N).value();
-        int* pa = a.data();
-        int* pb = b.data();
-
-        auto world = rt.dynamic_graph();
-        world.region(0).add(N, Reads{}, Writes(a),
-                            [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("A");
-        world.region(1).add(N, Reads{}, Writes(b),
-                            [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("B");
+        auto world = runtime().dynamic_graph();
+        add_labelled_fill(world, 0, a, 1, "A");
+        add_labelled_fill(world, 1, b, 1, "B");
 
         world.run().value();
         ASSERT_EQ(observed.count(), 1u);
         const RunObservation observation = observed.last();
         ASSERT_FALSE(observation.events.empty())
             << "an observed DynamicGraph must record device dispatches, not just stamp the flag";
-
-        const auto& plan = Detail::DynamicGraphNodeEventsTestAccess::plan(world);
-        const std::uint32_t idx_a = registration_index_of(plan, "A");
-        const std::uint32_t idx_b = registration_index_of(plan, "B");
+        ASSERT_NE(observation.table, nullptr);
 
         for (const auto& rec : observation.events)
-            EXPECT_TRUE(rec.node_index == idx_a || rec.node_index == idx_b)
-                << "record node_index " << rec.node_index << " matches neither renumbered index";
+        {
+            const NodeTableRow* row = observation.table->find(rec.node_index);
+            ASSERT_NE(row, nullptr) << "record node_index " << rec.node_index
+                                    << " names no row of the table";
+            EXPECT_TRUE(row->name == "A" || row->name == "B") << row->name;
+        }
     }
 
-    /** @brief Tests that node_index is dense and ordered by ascending region key, then add() order. */
-    TEST(Medium_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrder)
+    /** @brief Tests that the table indices are dense and ordered by ascending region key, then add() order. */
+    TEST_F(Medium_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrder)
     {
-        constexpr std::size_t N = 16;
+        Testing::RunRecorder observed(runtime());
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
+        auto c = runtime().buffer<int>(N).value();
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-        Testing::RunRecorder observed(rt);
-        auto a = rt.buffer<int>(N).value();
-        auto b = rt.buffer<int>(N).value();
-        auto c = rt.buffer<int>(N).value();
-        int* pa = a.data();
-        int* pb = b.data();
-        int* pc = c.data();
-
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
 
         // Region 5 is keyed above region 2, so its two calls land after region 2's one; see README.md.
-        world.region(5).add(N, Reads{}, Writes(a),
-                            [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("R5_first");
-        world.region(5).add(N, Reads{}, Writes(b),
-                            [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("R5_second");
-        world.region(2).add(N, Reads{}, Writes(c),
-                            [pc](std::size_t i) { pc[i] = static_cast<int>(i); }).name("R2_only");
+        add_labelled_fill(world, 5, a, 1, "R5_first");
+        add_labelled_fill(world, 5, b, 1, "R5_second");
+        add_labelled_fill(world, 2, c, 1, "R2_only");
 
         world.run().value();
+        ASSERT_EQ(observed.count(), 1u);
+        const auto& rows = observed.last().table->rows();
 
-        const auto& plan = Detail::DynamicGraphNodeEventsTestAccess::plan(world);
-        const std::uint32_t idx_r2 = registration_index_of(plan, "R2_only");
-        const std::uint32_t idx_r5_first = registration_index_of(plan, "R5_first");
-        const std::uint32_t idx_r5_second = registration_index_of(plan, "R5_second");
-
-        EXPECT_EQ(idx_r2, 0u) << "region 2 sorts before region 5 by key, whatever add() order";
-        EXPECT_EQ(idx_r5_first, 1u);
-        EXPECT_EQ(idx_r5_second, 2u);
+        ASSERT_EQ(rows.size(), 3u);
+        for (std::size_t k = 0; k < rows.size(); ++k)
+            EXPECT_EQ(rows[k].index, k) << "the indices are not dense";
+        EXPECT_EQ(rows[0].name, "R2_only") << "region 2 sorts before region 5 by key, whatever add() order";
+        EXPECT_EQ(rows[1].name, "R5_first");
+        EXPECT_EQ(rows[2].name, "R5_second");
     }
 
     /** @brief Tests that the index stays dense after a region is dropped and re-added. */
-    TEST(Medium_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
+    TEST_F(Medium_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
     {
-        constexpr std::size_t N = 16;
+        Testing::RunRecorder observed(runtime());
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
 
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-        Testing::RunRecorder observed(rt);
-        auto a = rt.buffer<int>(N).value();
-        auto b = rt.buffer<int>(N).value();
-        int* pa = a.data();
-        int* pb = b.data();
+        auto world = runtime().dynamic_graph();
 
-        auto world = rt.dynamic_graph();
-
-        world.region(0).add(N, Reads{}, Writes(a),
-                            [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("kept");
-        world.region(1).add(N, Reads{}, Writes(b),
-                            [pb](std::size_t i) { pb[i] = static_cast<int>(i); }).name("dropped_v1");
+        add_labelled_fill(world, 0, a, 1, "kept");
+        add_labelled_fill(world, 1, b, 1, "dropped_v1");
         world.run().value();
 
         world.drop(1);
-        world.region(1).add(N, Reads{}, Writes(b),
-                            [pb](std::size_t i) { pb[i] = static_cast<int>(i) * 2; }).name("dropped_v2");
+        add_labelled_fill(world, 1, b, 2, "dropped_v2");
         world.run().value();
 
-        const auto& plan = Detail::DynamicGraphNodeEventsTestAccess::plan(world);
-        const std::uint32_t idx_kept = registration_index_of(plan, "kept");
-        const std::uint32_t idx_v2 = registration_index_of(plan, "dropped_v2");
+        ASSERT_EQ(observed.count(), 2u);
+        const auto& rows = observed.last().table->rows();
 
         EXPECT_EQ(world.region_count(), 2u);
-        EXPECT_EQ(idx_kept, 0u);
-        EXPECT_EQ(idx_v2, 1u) << "re-adding region 1 must not resume from a stale counter";
-    }
-
-    // Adding an observer recomposes nothing: timing is chosen per run, not per plan.
-    TEST(Medium_DynamicGraphNodeEvents, AddingAnObserverRecomposesNothing)
-    {
-        constexpr std::size_t N = 8;
-
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
-        auto buf = rt.buffer<int>(N).value();
-        int* p = buf.data();
-
-        auto world = rt.dynamic_graph();
-        world.region(0).add(N, Reads{}, Writes(buf),
-                            [p](std::size_t i) { p[i] += 1; });
-
-        world.run().value();
-        const std::size_t compiles_before = world.compose_count();
-
-        Testing::RunRecorder observed(rt);
-        world.run().value();
-        EXPECT_EQ(world.compose_count(), compiles_before)
-            << "the first observer must not recompose the plan";
-        EXPECT_EQ(observed.count(), 1u);
-
-        const std::size_t compiles_after_toggle = world.compose_count();
-        world.run().value();
-        EXPECT_EQ(world.compose_count(), compiles_after_toggle)
-            << "an unmutated run with the observer added must not recompose";
+        ASSERT_EQ(rows.size(), 2u);
+        EXPECT_EQ(rows[0].name, "kept");
+        EXPECT_EQ(rows[0].index, 0u);
+        EXPECT_EQ(rows[1].name, "dropped_v2");
+        EXPECT_EQ(rows[1].index, 1u) << "re-adding region 1 must not resume from a stale counter";
     }
 } // namespace DynamicGraphNodeEventsTests
 
-/** @brief Tests that four graph shapes give byte-identical output on every path that runs them. */
+/** @brief Tests that graph shapes leave the bytes a host model of their work leaves, on the chain and on the scheduler. */
 namespace LayerEquivalenceTests
 {
     namespace
@@ -854,8 +830,6 @@ namespace LayerEquivalenceTests
         {
             std::vector<const char*> names; /**< One label per image, for failure messages. */
             std::vector<Image> images;      /**< The output buffers, in the order they were taken. */
-            /** @brief Layer the last blocking run reported. */
-            ExecutionLayer layer = ExecutionLayer::Scheduler;
         };
 
         /** @brief Appends one named output to a snapshot. */
@@ -893,14 +867,6 @@ namespace LayerEquivalenceTests
             }
         }
 
-        /** @brief Returns a configuration that keeps every plan on the scheduler layer. */
-        RuntimeConfig scheduler_only()
-        {
-            RuntimeConfig config;
-            config.force_scheduler = true;
-            return config;
-        }
-
         /** @brief Says how a graph is stepped. */
         enum class Drive : std::uint8_t
         {
@@ -909,17 +875,16 @@ namespace LayerEquivalenceTests
         };
 
         /**
-         * @brief Steps a graph the given way and records the layer a blocking run reports.
+         * @brief Steps a graph the given way.
          * @tparam Runnable Graph or DynamicGraph.
          */
         template <class Runnable>
-        void drive(Runnable& graph, Drive how, std::size_t steps, Snapshot& shot)
+        void drive(Runnable& graph, Drive how, std::size_t steps)
         {
             if (how == Drive::Blocking)
             {
                 const RunReport report = graph.run(steps).value();
                 EXPECT_TRUE(report.is_successful);
-                shot.layer = report.layer;
                 return;
             }
             for (std::size_t s = 0; s < steps; ++s)
@@ -930,7 +895,7 @@ namespace LayerEquivalenceTests
         struct Tiles
         {
             /** @brief Allocates the data on @p rt and writes the starting values. */
-            explicit Tiles(Runtime& rt)
+            explicit Tiles(const Runtime& rt)
                 : scale(rt.buffer<Word>(K_TILE_N).value()),
                   mix(rt.buffer<Word>(K_TILE_N).value()),
                   fold(rt.buffer<Word>(K_TILE_N).value()),
@@ -1036,8 +1001,8 @@ namespace LayerEquivalenceTests
         };
 
         /** @brief Runs one segment as a static graph built for exactly that segment's work. */
-        void run_static_segment(Runtime& rt, Tiles& tiles, const Segment& segment,
-                                bool evolve_field, Drive how, Snapshot& shot)
+        void run_static_segment(const Runtime& rt, Tiles& tiles, const Segment& segment,
+                                bool evolve_field, Drive how)
         {
             auto g = rt.graph();
             record_scale(g, tiles);
@@ -1048,16 +1013,16 @@ namespace LayerEquivalenceTests
                 record_field(g, tiles);
 
             for (std::size_t r = 0; r < segment.runs; ++r)
-                drive(g, how, K_STEPS, shot);
+                drive(g, how, K_STEPS);
         }
 
         /** @brief Runs a script with one static graph per segment and copies the results out. */
-        Snapshot run_static_tiles(Runtime& rt, const Script& script, Drive how)
+        Snapshot run_static_tiles(const Runtime& rt, const Script& script, Drive how)
         {
             Tiles tiles(rt);
             Snapshot shot;
             for (const Segment& segment : script.segments)
-                run_static_segment(rt, tiles, segment, script.evolve_field, how, shot);
+                run_static_segment(rt, tiles, segment, script.evolve_field, how);
             take_tiles(shot, tiles);
             return shot;
         }
@@ -1067,7 +1032,7 @@ namespace LayerEquivalenceTests
          *
          * The mix region is dropped or recorded again where a segment changes it.
          */
-        Snapshot run_dynamic_tiles(Runtime& rt, const Script& script, Drive how)
+        Snapshot run_dynamic_tiles(const Runtime& rt, const Script& script, Drive how)
         {
             Tiles tiles(rt);
             Snapshot shot;
@@ -1087,7 +1052,7 @@ namespace LayerEquivalenceTests
                     world.drop(K_KEY_MIX);
 
                 for (std::size_t r = 0; r < segment.runs; ++r)
-                    drive(world, how, K_STEPS, shot);
+                    drive(world, how, K_STEPS);
             }
 
             take_tiles(shot, tiles);
@@ -1153,7 +1118,7 @@ namespace LayerEquivalenceTests
          * @brief Runs a five-task dependency chain in which two passes sit between device kernels.
          * @param site Where the two passes run; the three kernels always run on the device.
          */
-        Snapshot run_pass_chain(Runtime& rt, PassSite site)
+        Snapshot run_pass_chain(const Runtime& rt, PassSite site)
         {
             auto a = rt.buffer<Word>(K_HOST_N).value();
             auto b = rt.buffer<Word>(K_HOST_N).value();
@@ -1182,14 +1147,87 @@ namespace LayerEquivalenceTests
             g.add(K_HOST_N, Reads(a, d), Writes(a),
                   [pa, pd](std::size_t i) { pa[i] += pd[i]; });
 
-            Snapshot shot;
             for (std::size_t r = 0; r < K_RUNS; ++r)
-                drive(g, Drive::Blocking, K_STEPS, shot);
+                drive(g, Drive::Blocking, K_STEPS);
 
+            Snapshot shot;
             take(shot, "a", Image(pa, pa + K_HOST_N));
             take(shot, "b", Image(pb, pb + K_HOST_N));
             take(shot, "c", Image(pc, pc + K_HOST_N));
             take(shot, "d", Image(pd, pd + K_HOST_N));
+            return shot;
+        }
+
+        /** @brief Returns the bytes the tile workload leaves, computed on the host in the order the kernels are recorded. */
+        Snapshot tile_reference(const Script& script)
+        {
+            Image scale(K_TILE_N);
+            Image mix(K_TILE_N);
+            Image fold(K_TILE_N);
+            Image field(K_TILE_N);
+            for (std::size_t i = 0; i < K_TILE_N; ++i)
+            {
+                scale[i] = static_cast<Word>(i) * 3u + 1u;
+                mix[i]   = static_cast<Word>(i) ^ 0x9E3779B9u;
+                fold[i]  = 0u;
+                field[i] = static_cast<Word>(i) + 11u;
+            }
+
+            for (const Segment& segment : script.segments)
+                for (std::size_t step = 0; step < segment.runs * K_STEPS; ++step)
+                {
+                    for (std::size_t i = 0; i < K_TILE_N; ++i)
+                        scale[i] = scale[i] * 31u + static_cast<Word>(i) + 1u;
+                    if (segment.mix_live)
+                        for (std::size_t i = 0; i < K_TILE_N; ++i)
+                            mix[i] = (mix[i] ^ (scale[i] * 2654435761u)) + 7u;
+                    for (std::size_t i = 0; i < K_TILE_N; ++i)
+                        fold[i] = fold[i] * 17u + scale[i] + mix[i];
+                    if (script.evolve_field)
+                        for (std::size_t i = 0; i < K_TILE_N; ++i)
+                            field[i] = field[i] * 5u + static_cast<Word>(i % 7);
+                }
+
+            Snapshot shot;
+            take(shot, "scale", scale);
+            take(shot, "mix", mix);
+            take(shot, "fold", fold);
+            take(shot, "field", field);
+            return shot;
+        }
+
+        /** @brief Returns the bytes the pass chain leaves after K_RUNS runs of K_STEPS steps, computed on the host. */
+        Snapshot pass_chain_reference()
+        {
+            Image a(K_HOST_N);
+            Image b(K_HOST_N);
+            Image c(K_HOST_N);
+            Image d(K_HOST_N);
+            for (std::size_t i = 0; i < K_HOST_N; ++i)
+            {
+                a[i] = static_cast<Word>(i) * 7u + 3u;
+                b[i] = static_cast<Word>(i) ^ 0x85EBCA6Bu;
+                c[i] = 1u;
+                d[i] = 0u;
+            }
+
+            for (std::size_t step = 0; step < K_RUNS * K_STEPS; ++step)
+            {
+                for (std::size_t i = 0; i < K_HOST_N; ++i)
+                    a[i] = a[i] * 31u + static_cast<Word>(i) + 1u;
+                MixPass{a.data(), b.data()}.apply();
+                for (std::size_t i = 0; i < K_HOST_N; ++i)
+                    c[i] = c[i] * 17u + b[i];
+                ScanPass{c.data(), d.data()}.apply();
+                for (std::size_t i = 0; i < K_HOST_N; ++i)
+                    a[i] += d[i];
+            }
+
+            Snapshot shot;
+            take(shot, "a", a);
+            take(shot, "b", b);
+            take(shot, "c", c);
+            take(shot, "d", d);
             return shot;
         }
 
@@ -1264,7 +1302,7 @@ namespace LayerEquivalenceTests
         }
 
         /** @brief Allocates a grid-sized buffer on a device of @p rt holding the starting words. */
-        Buffer<Word> seeded_grid(Runtime& rt, DeviceIndex device = DeviceIndex{0})
+        Buffer<Word> seeded_grid(const Runtime& rt, DeviceIndex device = DeviceIndex{0})
         {
             auto grid = rt.buffer<Word>(K_GRID_N, device).value();
             for (std::size_t k = 0; k < K_GRID_N; ++k)
@@ -1273,7 +1311,7 @@ namespace LayerEquivalenceTests
         }
 
         /** @brief Allocates the read-only input grid on a device of @p rt. */
-        Buffer<Word> source_grid(Runtime& rt, DeviceIndex device = DeviceIndex{0})
+        Buffer<Word> source_grid(const Runtime& rt, DeviceIndex device = DeviceIndex{0})
         {
             auto grid = rt.buffer<Word>(K_GRID_N, device).value();
             for (std::size_t k = 0; k < K_GRID_N; ++k)
@@ -1286,7 +1324,7 @@ namespace LayerEquivalenceTests
          *
          * The State is box-sized: its slot is the cell's position inside the box.
          */
-        Snapshot run_tracked_launches(Runtime& rt)
+        Snapshot run_tracked_launches(const Runtime& rt)
         {
             auto source     = source_grid(rt);
             auto by_origin  = seeded_grid(rt);
@@ -1327,9 +1365,9 @@ namespace LayerEquivalenceTests
                                  item.get_global_id(1) + K_BOX_COL0);
                   });
 
-            Snapshot shot;
-            drive(g, Drive::Blocking, K_STEPS, shot);
+            drive(g, Drive::Blocking, K_STEPS);
 
+            Snapshot shot;
             take(shot, "Extent(range, origin)", Image(origin_out, origin_out + K_GRID_N));
             take(shot, "Extent{sizes}.at(origin)", Image(rebase_out, rebase_out + K_GRID_N));
             take(shot, "Extent with In/InOut", Image(by_capture.data(), by_capture.data() + K_GRID_N));
@@ -1352,7 +1390,7 @@ namespace LayerEquivalenceTests
         }
 
         /** @brief Runs the offset box through both untracked launch forms, one output each. */
-        Snapshot run_untracked_launches(Runtime& rt)
+        Snapshot run_untracked_launches(const Runtime& rt)
         {
             auto source    = source_grid(rt);
             auto by_extent = seeded_grid(rt);
@@ -1374,9 +1412,9 @@ namespace LayerEquivalenceTests
                            item.get_global_id(1) + K_BOX_COL0);
             });
 
-            Snapshot shot;
-            drive(g, Drive::Blocking, K_STEPS, shot);
+            drive(g, Drive::Blocking, K_STEPS);
 
+            Snapshot shot;
             take(shot, "untracked Extent", Image(extent_out, extent_out + K_GRID_N));
             take(shot, "untracked NdRange", Image(tiles_out, tiles_out + K_GRID_N));
             return shot;
@@ -1387,7 +1425,7 @@ namespace LayerEquivalenceTests
          *
          * Every buffer lives on that device, so a kernel routed anywhere else faults or misses.
          */
-        Snapshot run_placed_untracked_launches(Runtime& rt)
+        Snapshot run_placed_untracked_launches(const Runtime& rt)
         {
             const DeviceIndex device{rt.advanced().device_count() - 1};
             auto source    = source_grid(rt, device);
@@ -1410,9 +1448,9 @@ namespace LayerEquivalenceTests
                            item.get_global_id(1) + K_BOX_COL0);
             });
 
-            Snapshot shot;
-            drive(g, Drive::Blocking, K_STEPS, shot);
+            drive(g, Drive::Blocking, K_STEPS);
 
+            Snapshot shot;
             take(shot, "untracked Extent", Image(extent_out, extent_out + K_GRID_N));
             take(shot, "untracked NdRange", Image(tiles_out, tiles_out + K_GRID_N));
             return shot;
@@ -1429,156 +1467,135 @@ namespace LayerEquivalenceTests
         }
     } // namespace
 
-    /** @brief Tests that four regions of a DynamicGraph leave the bytes one static Graph leaves. */
-    TEST(Medium_LayerEquivalence, DynamicRegionsMatchOneStaticGraph)
+
+    /** @brief Holds the runtime of a row: the program's for the in-order chain, one forced onto the scheduler otherwise. */
+    class LayerRuntime
+    {
+        protected:
+            /** @brief Makes the runtime of the row. */
+            void make_runtime(bool force_scheduler)
+            {
+                if (force_scheduler)
+                {
+                    RuntimeConfig config;
+                    config.force_scheduler = true;
+                    scheduled_.emplace(Runtime::create(config).value());
+                }
+            }
+
+            /** @brief Returns the runtime of the row. */
+            [[nodiscard]] const Runtime& runtime() const
+            {
+                return scheduled_ ? *scheduled_ : TestSupport::RuntimeEnvironment::runtime();
+            }
+
+        private:
+            std::optional<Runtime> scheduled_; /**< The forced-scheduler runtime of the true row. */
+    };
+
+    /** @brief The pass chain of one row: the layer it runs on and where its two passes run. */
+    struct PassRow
+    {
+        bool force_scheduler; /**< Whether the runtime is forced onto the scheduler. */
+        PassSite site;        /**< Where the two whole-buffer passes run. */
+    };
+} // namespace
+
+/** @brief Fixture of the rows that run a workload on the in-order chain (false) and on the scheduler (true). */
+class Medium_LayerEquivalence : public ::testing::TestWithParam<bool>, protected LayerEquivalenceTests::LayerRuntime
+{
+    protected:
+        /** @brief Makes the runtime of the row. */
+        void SetUp() override { make_runtime(GetParam()); }
+};
+
+/** @brief Fixture of the rows of the pass chain. */
+class Medium_LayerEquivalencePasses : public ::testing::TestWithParam<LayerEquivalenceTests::PassRow>,
+                                      protected LayerEquivalenceTests::LayerRuntime
+{
+    protected:
+        /** @brief Makes the runtime of the row. */
+        void SetUp() override { make_runtime(GetParam().force_scheduler); }
+};
+
+namespace LayerEquivalenceTests
+{
+    /** @brief Tests that a static graph and a DynamicGraph of four regions both leave the bytes of the host model. */
+    TEST_P(Medium_LayerEquivalence, DynamicRegionsMatchTheHostModel)
     {
         const Script script{{{true, K_RUNS}}, true};
+        const Snapshot reference = tile_reference(script);
 
-        auto chained_rt = Runtime::create().value();
-        auto scheduled_rt = Runtime::create(scheduler_only()).value();
-
-        const Snapshot static_chained    = run_static_tiles(chained_rt, script, Drive::Blocking);
-        const Snapshot static_scheduled  = run_static_tiles(scheduled_rt, script, Drive::Blocking);
-        const Snapshot dynamic_default   = run_dynamic_tiles(chained_rt, script, Drive::Blocking);
-        const Snapshot dynamic_scheduled = run_dynamic_tiles(scheduled_rt, script, Drive::Blocking);
-
-        EXPECT_EQ(static_chained.layer, ExecutionLayer::Chain)
-            << "the static graph of tracked kernels must take the chain";
-        EXPECT_EQ(static_scheduled.layer, ExecutionLayer::Scheduler);
-
-        expect_identical(static_chained, static_scheduled, "static chain vs static scheduler");
-        expect_identical(static_chained, dynamic_default, "static chain vs dynamic");
-        expect_identical(static_chained, dynamic_scheduled,
-                         "static chain vs dynamic, forced scheduler");
+        expect_identical(reference, run_static_tiles(runtime(), script, Drive::Blocking),
+                         "host model vs static graph");
+        expect_identical(reference, run_dynamic_tiles(runtime(), script, Drive::Blocking),
+                         "host model vs dynamic graph");
     }
 
-    /** @brief Tests that a region dropped and recorded again matches a static graph per stretch. */
-    TEST(Medium_LayerEquivalence, DroppedAndReaddedRegionMatchesStaticGraphs)
+    /** @brief Tests that a region dropped and recorded again leaves the bytes of the host model. */
+    TEST_P(Medium_LayerEquivalence, DroppedAndReaddedRegionMatchesTheHostModel)
     {
         const Script script{{{true, 1}, {false, 1}, {true, 1}}, false};
 
-        auto chained_rt = Runtime::create().value();
-        auto scheduled_rt = Runtime::create(scheduler_only()).value();
-
-        const Snapshot static_chained    = run_static_tiles(chained_rt, script, Drive::Blocking);
-        const Snapshot static_scheduled  = run_static_tiles(scheduled_rt, script, Drive::Blocking);
-        const Snapshot dynamic_default   = run_dynamic_tiles(chained_rt, script, Drive::Blocking);
-        const Snapshot dynamic_scheduled = run_dynamic_tiles(scheduled_rt, script, Drive::Blocking);
-
-        EXPECT_EQ(static_chained.layer, ExecutionLayer::Chain);
-        EXPECT_EQ(static_scheduled.layer, ExecutionLayer::Scheduler);
-
-        expect_identical(static_chained, static_scheduled, "static chain vs static scheduler");
-        expect_identical(static_chained, dynamic_default, "static chain vs dynamic");
-        expect_identical(static_chained, dynamic_scheduled,
-                         "static chain vs dynamic, forced scheduler");
+        expect_identical(tile_reference(script), run_dynamic_tiles(runtime(), script, Drive::Blocking),
+                         "host model vs dynamic graph");
     }
 
-    /** @brief Tests that host tasks between kernels give the same bytes on both layers. */
-    TEST(Medium_LayerEquivalence, HostTasksAmongKernelsMatchAcrossLayers)
+    /** @brief Tests that the pass chain leaves the bytes of the host model, with the passes on the host or on the device. */
+    TEST_P(Medium_LayerEquivalencePasses, PassChainMatchesTheHostModel)
     {
-        auto default_rt = Runtime::create().value();
-        auto scheduled_rt = Runtime::create(scheduler_only()).value();
-
-        const Snapshot host_default   = run_pass_chain(default_rt, PassSite::Host);
-        const Snapshot host_scheduled = run_pass_chain(scheduled_rt, PassSite::Host);
-        const Snapshot device_chained = run_pass_chain(default_rt, PassSite::Device);
-
-        EXPECT_EQ(host_scheduled.layer, ExecutionLayer::Scheduler);
-        EXPECT_EQ(device_chained.layer, ExecutionLayer::Chain)
-            << "the same chain written as kernels only must take the chain";
-
-        expect_identical(host_default, host_scheduled, "host tasks: default vs forced scheduler");
-        expect_identical(device_chained, host_default, "kernels on the chain vs host tasks");
+        expect_identical(pass_chain_reference(), run_pass_chain(runtime(), GetParam().site),
+                         "host model vs pass chain");
     }
 
-    /** @brief Tests that N run_async() steps leave the bytes run(N) leaves, on both layers. */
-    TEST(Medium_LayerEquivalence, AsyncStepsMatchBlockingRun)
+    /** @brief Tests that N run_async() steps of a static graph leave the bytes of the host model. */
+    TEST_P(Medium_LayerEquivalence, AsyncStepsMatchTheHostModel)
     {
         const Script script{{{true, K_RUNS}}, true};
 
-        auto chained_rt = Runtime::create().value();
-        auto scheduled_rt = Runtime::create(scheduler_only()).value();
-
-        const Snapshot blocking_chained   = run_static_tiles(chained_rt, script, Drive::Blocking);
-        const Snapshot blocking_scheduled = run_static_tiles(scheduled_rt, script, Drive::Blocking);
-        const Snapshot async_default      = run_static_tiles(chained_rt, script, Drive::Asynchronous);
-        const Snapshot async_scheduled    = run_static_tiles(scheduled_rt, script, Drive::Asynchronous);
-
-        EXPECT_EQ(blocking_chained.layer, ExecutionLayer::Chain);
-        EXPECT_EQ(blocking_scheduled.layer, ExecutionLayer::Scheduler);
-
-        expect_identical(blocking_chained, async_default, "run(N) on the chain vs run_async");
-        expect_identical(blocking_scheduled, async_scheduled, "run(N) vs run_async, forced scheduler");
-        expect_identical(blocking_chained, blocking_scheduled, "run(N): chain vs forced scheduler");
+        expect_identical(tile_reference(script), run_static_tiles(runtime(), script, Drive::Asynchronous),
+                         "host model vs run_async");
     }
 
-    /** @brief Tests that a DynamicGraph stepped through run_async() matches its blocking run. */
-    TEST(Medium_LayerEquivalence, AsyncStepsOfADynamicGraphMatchBlockingRun)
+    /** @brief Tests that a DynamicGraph stepped through run_async() leaves the bytes of the host model. */
+    TEST_P(Medium_LayerEquivalence, AsyncStepsOfADynamicGraphMatchTheHostModel)
     {
         const Script script{{{true, 1}, {false, 1}, {true, 1}}, true};
 
-        auto rt = Runtime::create().value();
-
-        const Snapshot blocking = run_dynamic_tiles(rt, script, Drive::Blocking);
-        const Snapshot stepped  = run_dynamic_tiles(rt, script, Drive::Asynchronous);
-
-        expect_identical(blocking, stepped, "dynamic run(N) vs dynamic run_async");
+        expect_identical(tile_reference(script), run_dynamic_tiles(runtime(), script, Drive::Asynchronous),
+                         "host model vs dynamic run_async");
     }
 
     /** @brief Tests that every tracked form of an offset 2-D launch matches the host reference. */
-    TEST(Medium_LayerEquivalence, OffsetLaunchFormsMatchAcrossLayers)
+    TEST_P(Medium_LayerEquivalence, OffsetLaunchFormsMatchTheHostReference)
     {
-        auto chained_rt = Runtime::create().value();
-        auto scheduled_rt = Runtime::create(scheduler_only()).value();
-
-        const Snapshot reference = tracked_launch_reference();
-        const Snapshot chained   = run_tracked_launches(chained_rt);
-        const Snapshot scheduled = run_tracked_launches(scheduled_rt);
-
-        EXPECT_EQ(chained.layer, ExecutionLayer::Chain)
-            << "tracked Extent and NdRange kernels on one device must take the chain";
-        EXPECT_EQ(scheduled.layer, ExecutionLayer::Scheduler);
-
-        expect_identical(reference, chained, "host reference vs chain");
-        expect_identical(reference, scheduled, "host reference vs forced scheduler");
-        expect_identical(chained, scheduled, "chain vs forced scheduler");
+        expect_identical(tracked_launch_reference(), run_tracked_launches(runtime()),
+                         "host reference vs tracked launches");
     }
 
     /** @brief Tests that the untracked Extent and NdRange launches match the host reference. */
-    TEST(Medium_LayerEquivalence, UntrackedOffsetLaunchesMatchAcrossLayers)
+    TEST_P(Medium_LayerEquivalence, UntrackedOffsetLaunchesMatchTheHostReference)
     {
-        auto default_rt = Runtime::create().value();
-        auto scheduled_rt = Runtime::create(scheduler_only()).value();
-
-        const Snapshot reference       = untracked_launch_reference();
-        const Snapshot default_layer   = run_untracked_launches(default_rt);
-        const Snapshot scheduler_layer = run_untracked_launches(scheduled_rt);
-
-        EXPECT_EQ(scheduler_layer.layer, ExecutionLayer::Scheduler);
-
-        expect_identical(reference, default_layer, "host reference vs default layer");
-        expect_identical(reference, scheduler_layer, "host reference vs forced scheduler");
-        expect_identical(default_layer, scheduler_layer, "default layer vs forced scheduler");
+        expect_identical(untracked_launch_reference(), run_untracked_launches(runtime()),
+                         "host reference vs untracked launches");
     }
 
     /** @brief Tests that an untracked kernel placed with On() runs on the device it names. */
-    TEST(Medium_LayerEquivalence, PlacedUntrackedLaunchesMatchAcrossLayers)
+    TEST_P(Medium_LayerEquivalence, PlacedUntrackedLaunchesMatchTheHostReference)
     {
-        auto default_rt = Runtime::create().value();
-        auto scheduled_rt = Runtime::create(scheduler_only()).value();
-
-        const Snapshot reference       = untracked_launch_reference();
-        const Snapshot default_layer   = run_placed_untracked_launches(default_rt);
-        const Snapshot scheduler_layer = run_placed_untracked_launches(scheduled_rt);
-
-        EXPECT_EQ(scheduler_layer.layer, ExecutionLayer::Scheduler);
-
-        expect_identical(reference, default_layer, "host reference vs default layer");
-        expect_identical(reference, scheduler_layer, "host reference vs forced scheduler");
-        expect_identical(default_layer, scheduler_layer, "default layer vs forced scheduler");
+        expect_identical(untracked_launch_reference(), run_placed_untracked_launches(runtime()),
+                         "host reference vs placed untracked launches");
     }
 } // namespace LayerEquivalenceTests
+
+INSTANTIATE_TEST_SUITE_P(Rows, Medium_LayerEquivalence, ::testing::Values(false, true));
+
+INSTANTIATE_TEST_SUITE_P(
+    Rows, Medium_LayerEquivalencePasses,
+    ::testing::Values(LayerEquivalenceTests::PassRow{false, LayerEquivalenceTests::PassSite::Host},
+                      LayerEquivalenceTests::PassRow{true, LayerEquivalenceTests::PassSite::Host},
+                      LayerEquivalenceTests::PassRow{false, LayerEquivalenceTests::PassSite::Device},
+                      LayerEquivalenceTests::PassRow{true, LayerEquivalenceTests::PassSite::Device}));
 
 /** @brief Tests that the placement rules place the nodes of a DynamicGraph's regions. */
 namespace DynamicGraphPlacementTests
@@ -1599,7 +1616,7 @@ namespace DynamicGraphPlacementTests
         }
 
         /** @brief Records in region 0, in the rule's scope, a task that notes its device. */
-        void record_ruled_task(Runtime& rt, DynamicGraph& world,
+        void record_ruled_task(const Runtime& rt, DynamicGraph& world,
                                std::optional<sycl::device>& ran_on)
         {
             world.region(0).recorder().within(
@@ -1616,36 +1633,90 @@ namespace DynamicGraphPlacementTests
         }
     } // namespace
 
-    /** @brief Tests that a rule change between two runs re-places a region's node unrecorded. */
-    TEST(Medium_DynamicGraphPlacement, Regression_ARuleChangeReplacesARegionsNodeWithoutARecord)
+    /**
+     * @brief Fixture of the placement tests; it hands the program's runtime back with no rules.
+     */
+    class Medium_DynamicGraphPlacement : public TestSupport::RuntimeTest
     {
-        auto rt = Runtime::create().value();
-        const std::size_t absent = rt.advanced().device_count();
-        std::optional<sycl::device> noted;
-        auto world = rt.dynamic_graph();
-        record_ruled_task(rt, world, noted);
+        protected:
+            /** @brief Returns the number of devices the runtime drives, which is the first index it lacks. */
+            [[nodiscard]] std::size_t absent_device() const { return runtime().advanced().device_count(); }
 
-        ASSERT_TRUE(rt.set_placement_rules(rule_to_device(absent, AbsentAction::Fail)));
+            /** @brief Returns the device the runtime submits the work of device index @p index on. */
+            [[nodiscard]] sycl::device device_of(std::size_t index) const
+            {
+                return runtime().advanced().queue(DeviceIndex{index}).get_device();
+            }
+
+            /** @brief Clears the rules, so no later test places a node by this test's rule. */
+            void TearDown() override { (void)runtime().set_placement_rules(PlacementRules{}); }
+    };
+
+    /** @brief Tests that a Fail rule naming an absent device refuses the run of a region's node. */
+    TEST_F(Medium_DynamicGraphPlacement, ARuleToAnAbsentDeviceRefusesTheRun)
+    {
+        std::optional<sycl::device> noted;
+        auto world = runtime().dynamic_graph();
+        record_ruled_task(runtime(), world, noted);
+
+        ASSERT_TRUE(runtime().set_placement_rules(rule_to_device(absent_device(), AbsentAction::Fail)));
         const auto refused = world.run();
+
         ASSERT_FALSE(refused) << "the region's node is placed by the Fail rule";
         EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
         EXPECT_NE(refused.error().message.find("\"ruled\""), std::string::npos)
             << refused.error().message;
+    }
 
-        ASSERT_TRUE(rt.set_placement_rules(rule_to_device(absent, AbsentAction::Local)));
+    /** @brief Tests that a rule change between two runs re-places a region's node without a re-record. */
+    TEST_F(Medium_DynamicGraphPlacement, ARuleChangeReplacesARegionsNodeWithoutARecord)
+    {
+        std::optional<sycl::device> noted;
+        auto world = runtime().dynamic_graph();
+        record_ruled_task(runtime(), world, noted);
+
+        ASSERT_TRUE(runtime().set_placement_rules(rule_to_device(absent_device(), AbsentAction::Fail)));
+        ASSERT_FALSE(world.run());
+
+        ASSERT_TRUE(runtime().set_placement_rules(rule_to_device(absent_device(), AbsentAction::Local)));
         ASSERT_TRUE(world.run()) << "the new set reaches the region without a re-record";
         ASSERT_TRUE(noted.has_value());
-        EXPECT_EQ(*noted, Internal::ContextAccess::context(rt).devices().queue(0).get_device());
+        EXPECT_EQ(*noted, device_of(0));
+    }
+
+    /** @brief Tests that a rule set that has not changed composes nothing at the next run. */
+    TEST_F(Medium_DynamicGraphPlacement, AnUnchangedRuleSetComposesNothing)
+    {
+        std::optional<sycl::device> noted;
+        auto world = runtime().dynamic_graph();
+        record_ruled_task(runtime(), world, noted);
+
+        ASSERT_TRUE(runtime().set_placement_rules(rule_to_device(absent_device(), AbsentAction::Local)));
+        ASSERT_TRUE(world.run());
         const std::size_t composed = world.compose_count();
 
         ASSERT_TRUE(world.run());
         EXPECT_EQ(world.compose_count(), composed) << "an unchanged set composes nothing";
+    }
 
-        if (absent < 2)
-            return;
-        ASSERT_TRUE(rt.set_placement_rules(rule_to_device(1, AbsentAction::Fail)));
+    /** @brief Tests that a rule change to device one re-places the node there and composes once. */
+    TEST_F(Medium_DynamicGraphPlacement, ARuleChangeToDeviceOneRemapsTheNode)
+    {
+        if (absent_device() < 2)
+            GTEST_SKIP() << "needs a second device to remap the node to";
+
+        std::optional<sycl::device> noted;
+        auto world = runtime().dynamic_graph();
+        record_ruled_task(runtime(), world, noted);
+
+        ASSERT_TRUE(runtime().set_placement_rules(rule_to_device(absent_device(), AbsentAction::Local)));
+        ASSERT_TRUE(world.run());
+        const std::size_t composed = world.compose_count();
+
+        ASSERT_TRUE(runtime().set_placement_rules(rule_to_device(1, AbsentAction::Fail)));
         ASSERT_TRUE(world.run());
         EXPECT_EQ(world.compose_count(), composed + 1);
-        EXPECT_EQ(*noted, Internal::ContextAccess::context(rt).devices().queue(1).get_device());
+        ASSERT_TRUE(noted.has_value());
+        EXPECT_EQ(*noted, device_of(1));
     }
 } // namespace DynamicGraphPlacementTests

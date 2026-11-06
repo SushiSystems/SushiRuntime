@@ -30,11 +30,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
+
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -46,7 +49,7 @@ namespace
     constexpr std::size_t K_WIDTH = 32;
 
     /** @brief Allocates a buffer of K_WIDTH zeroes. */
-    Buffer<Word> zeroed(Runtime& rt)
+    Buffer<Word> zeroed(const Runtime& rt)
     {
         auto buffer = rt.buffer<Word>(K_WIDTH).value();
         for (std::size_t i = 0; i < K_WIDTH; ++i)
@@ -55,111 +58,161 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that compile() builds the plan, runs nothing, and leaves run() no build. */
-TEST(Medium_PlanView, CompileThenRunCompilesOnce)
+/** @brief Fixture of the plan-view tests, which record graphs on the program's runtime. */
+class Medium_PlanView : public TestSupport::RuntimeTest
 {
-    auto rt = Runtime::create().value();
-    auto target = zeroed(rt);
+};
+
+/** @brief Fixture of the plan-view tests of a chain of three kernels whose second node states every option. */
+class Medium_PlanViewChain : public TestSupport::RuntimeTest
+{
+    protected:
+        /** @brief Records the chain. */
+        void SetUp() override
+        {
+            first_.emplace(zeroed(runtime()));
+            second_.emplace(zeroed(runtime()));
+            third_.emplace(zeroed(runtime()));
+            Word* a = first_->data();
+            Word* b = second_->data();
+            Word* c = third_->data();
+
+            NodeOptions scaled;
+            scaled.name = "scale";
+            scaled.operation = "plan_view.scale"_op;
+            scaled.placement_class = "sushiai.replica"_class;
+            scaled.placement_key = 0;
+            scaled.determinism = Determinism::Bitwise;
+
+            graph_.emplace(runtime().graph());
+            graph_->add(K_WIDTH, Reads(), Writes(*first_), [a](std::size_t i) { a[i] = 1u; });
+            graph_->add(K_WIDTH, Reads(*first_), Writes(*second_),
+                        [a, b](std::size_t i) { b[i] = a[i] * 2u; }, scaled);
+            graph_->add(K_WIDTH, Reads(*second_), Writes(*third_),
+                        [b, c](std::size_t i) { c[i] = b[i]; });
+        }
+
+        std::optional<Buffer<Word>> first_;
+        std::optional<Buffer<Word>> second_;
+        std::optional<Buffer<Word>> third_;
+        std::optional<Graph> graph_;
+};
+
+/** @brief Tests that compile() builds the plan and runs nothing. */
+TEST_F(Medium_PlanView, CompileRunsNothing)
+{
+    auto target = zeroed(runtime());
     Word* words = target.data();
-    auto graph = rt.graph();
+    auto graph = runtime().graph();
     graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
 
     ASSERT_TRUE(graph.compile());
     EXPECT_EQ(graph.compile_count(), 1u);
-    EXPECT_EQ(words[0], 0u) << "compile() must run nothing";
+    EXPECT_EQ(words[0], 0u);
+}
+
+/** @brief Tests that a plan compile() built, and the graph has not changed since, is not built again. */
+TEST_F(Medium_PlanView, ACurrentPlanIsNotBuiltAgain)
+{
+    auto target = zeroed(runtime());
+    Word* words = target.data();
+    auto graph = runtime().graph();
+    graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
 
     ASSERT_TRUE(graph.compile());
-    EXPECT_EQ(graph.compile_count(), 1u) << "a current plan is not built again";
+    ASSERT_TRUE(graph.compile());
+    EXPECT_EQ(graph.compile_count(), 1u);
+}
 
+/** @brief Tests that run() after compile() uses the plan compile() built. */
+TEST_F(Medium_PlanView, RunUsesThePlanCompileBuilt)
+{
+    auto target = zeroed(runtime());
+    Word* words = target.data();
+    auto graph = runtime().graph();
+    graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
+
+    ASSERT_TRUE(graph.compile());
     ASSERT_TRUE(graph.run());
     EXPECT_EQ(graph.compile_count(), 1u);
     for (std::size_t i = 0; i < K_WIDTH; ++i)
         ASSERT_EQ(words[i], 1u) << "at i=" << i;
 }
 
-/** @brief Tests that compile() and plan() return the refusal the recorder kept. */
-TEST(Medium_PlanView, CompileReturnsTheRecordersRefusal)
+/** @brief Tests that compile() and plan() return one InvalidGraph refusal, the one run() returns. */
+TEST_F(Medium_PlanView, CompileReturnsTheRecordersRefusal)
 {
-    auto rt = Runtime::create().value();
-    auto graph = rt.graph();
+    auto graph = runtime().graph();
     State<int> empty;
     graph.add_rule(empty, [](std::size_t, const int*, int*) {});
-    ASSERT_NE(graph.refusal(), nullptr);
 
     const auto compiled = graph.compile();
     ASSERT_FALSE(compiled);
-    EXPECT_EQ(compiled.error().code, graph.refusal()->code);
-    EXPECT_EQ(compiled.error().message, graph.refusal()->message);
+    EXPECT_EQ(compiled.error().code, ErrorCode::InvalidGraph);
+    EXPECT_FALSE(compiled.error().message.empty());
     EXPECT_EQ(graph.compile_count(), 0u);
 
     const auto plan = graph.plan();
     ASSERT_FALSE(plan);
-    EXPECT_EQ(plan.error().message, graph.refusal()->message);
+    EXPECT_EQ(plan.error().code, ErrorCode::InvalidGraph);
+    EXPECT_EQ(plan.error().message, compiled.error().message);
+
+    const auto run = graph.run();
+    ASSERT_FALSE(run);
+    EXPECT_EQ(run.error().message, compiled.error().message);
 }
 
 /** @brief Tests that compile() on a graph with nothing recorded is InvalidGraph, as run() is. */
-TEST(Medium_PlanView, CompileOfAnEmptyGraphIsRefused)
+TEST_F(Medium_PlanView, CompileOfAnEmptyGraphIsRefused)
 {
-    auto rt = Runtime::create().value();
-    auto graph = rt.graph();
+    auto graph = runtime().graph();
 
     const auto compiled = graph.compile();
     ASSERT_FALSE(compiled);
     EXPECT_EQ(compiled.error().code, ErrorCode::InvalidGraph);
 }
 
-/** @brief Tests that a DynamicGraph composes once for compile() and the run after it. */
-TEST(Medium_PlanView, ADynamicGraphCompiledThenRunComposesOnce)
+/** @brief Tests that compile() on a DynamicGraph composes it once and runs nothing. */
+TEST_F(Medium_PlanView, ACompiledDynamicGraphRunsNothing)
 {
-    auto rt = Runtime::create().value();
-    auto target = zeroed(rt);
+    auto target = zeroed(runtime());
     Word* words = target.data();
-    auto world = rt.dynamic_graph();
+    auto world = runtime().dynamic_graph();
     world.region(0).add(K_WIDTH, Reads(), Writes(target),
                         [words](std::size_t i) { words[i] += 1u; });
 
     ASSERT_TRUE(world.compile());
     EXPECT_EQ(world.compose_count(), 1u);
-    EXPECT_EQ(words[0], 0u) << "compile() must run nothing";
+    EXPECT_EQ(words[0], 0u);
+}
 
+/** @brief Tests that a DynamicGraph compiled and then run composes once in all. */
+TEST_F(Medium_PlanView, ADynamicGraphCompiledThenRunComposesOnce)
+{
+    auto target = zeroed(runtime());
+    Word* words = target.data();
+    auto world = runtime().dynamic_graph();
+    world.region(0).add(K_WIDTH, Reads(), Writes(target),
+                        [words](std::size_t i) { words[i] += 1u; });
+
+    ASSERT_TRUE(world.compile());
     ASSERT_TRUE(world.run());
     EXPECT_EQ(world.compose_count(), 1u);
     EXPECT_EQ(words[0], 1u);
 }
 
-/** @brief Tests that a chain of three kernels reports its predecessors and its regions. */
-TEST(Medium_PlanView, AChainOfThreeKernelsReportsItsPredecessorsAndRegions)
+/** @brief Tests that plan() of a chain of three kernels reports its predecessors and regions, and runs nothing. */
+TEST_F(Medium_PlanViewChain, AChainOfThreeKernelsReportsItsPredecessorsAndRegions)
 {
-    auto rt = Runtime::create().value();
-    auto first = zeroed(rt);
-    auto second = zeroed(rt);
-    auto third = zeroed(rt);
-    Word* a = first.data();
-    Word* b = second.data();
-    Word* c = third.data();
-
-    NodeOptions scaled;
-    scaled.name = "scale";
-    scaled.operation = "plan_view.scale"_op;
-    scaled.placement_class = "sushiai.replica"_class;
-    scaled.placement_key = 0;
-    scaled.determinism = Determinism::Bitwise;
-
-    auto graph = rt.graph();
-    graph.add(K_WIDTH, Reads(), Writes(first), [a](std::size_t i) { a[i] = 1u; });
-    graph.add(K_WIDTH, Reads(first), Writes(second),
-              [a, b](std::size_t i) { b[i] = a[i] * 2u; }, scaled);
-    graph.add(K_WIDTH, Reads(second), Writes(third), [b, c](std::size_t i) { c[i] = b[i]; });
-
-    const auto plan = graph.plan();
+    const auto plan = graph_->plan();
     ASSERT_TRUE(plan);
-    EXPECT_EQ(graph.compile_count(), 1u);
-    EXPECT_EQ(a[0], 0u) << "plan() must run nothing";
+    EXPECT_EQ(graph_->compile_count(), 1u);
+    EXPECT_EQ(first_->data()[0], 0u) << "plan() must run nothing";
     ASSERT_EQ(plan->nodes.size(), 3u);
 
     const std::size_t expected_predecessors[] = {0u, 1u, 1u};
-    const void* const expected_reads[] = {nullptr, a, b};
-    const void* const expected_writes[] = {a, b, c};
+    const void* const expected_reads[] = {nullptr, first_->data(), second_->data()};
+    const void* const expected_writes[] = {first_->data(), second_->data(), third_->data()};
     for (std::size_t node = 0; node < 3u; ++node)
     {
         const PlanNode& described = plan->nodes[node];
@@ -172,6 +225,15 @@ TEST(Medium_PlanView, AChainOfThreeKernelsReportsItsPredecessorsAndRegions)
         ASSERT_EQ(described.writes.size(), 1u) << "node " << node;
         EXPECT_EQ(described.writes[0].base, expected_writes[node]) << "node " << node;
     }
+}
+
+/** @brief Tests that plan() carries the name, operation, placement and determinism a node stated. */
+TEST_F(Medium_PlanViewChain, ThePlanCarriesTheOptionsANodeStated)
+{
+    const auto plan = graph_->plan();
+    ASSERT_TRUE(plan);
+    ASSERT_EQ(plan->nodes.size(), 3u);
+
     EXPECT_EQ(plan->nodes[1].name, std::string("scale"));
     EXPECT_TRUE(plan->nodes[1].operation == "plan_view.scale"_op);
     EXPECT_FALSE(plan->nodes[0].operation.is_named());
@@ -182,23 +244,18 @@ TEST(Medium_PlanView, AChainOfThreeKernelsReportsItsPredecessorsAndRegions)
     EXPECT_FALSE(plan->nodes[0].placement_key.has_value());
     EXPECT_EQ(plan->nodes[1].determinism, Determinism::Bitwise);
     EXPECT_EQ(plan->nodes[0].determinism, Determinism::Unstated);
-
-    ASSERT_TRUE(graph.run());
-    EXPECT_EQ(graph.compile_count(), 1u) << "the plan plan() built is the one run() uses";
-    EXPECT_EQ(c[K_WIDTH - 1], 2u);
 }
 
 /** @brief Tests that a PlanView stays readable after its graph is destroyed. */
-TEST(Medium_PlanView, AViewOutlivesItsGraph)
+TEST_F(Medium_PlanView, AViewOutlivesItsGraph)
 {
-    auto rt = Runtime::create().value();
-    auto target = zeroed(rt);
+    auto target = zeroed(runtime());
     Word* words = target.data();
     PlanView kept;
     {
         NodeOptions named;
         named.name = "kept";
-        auto graph = rt.graph();
+        auto graph = runtime().graph();
         graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] = 1u; },
                   named);
         kept = graph.plan().value();

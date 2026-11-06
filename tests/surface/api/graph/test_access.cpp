@@ -37,10 +37,12 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/graph/access.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 
-/** @brief Tests that regions given directly keep their order and carry no observer. */
-TEST(Medium_Access, RegionsKeepTheirOrder)
+/** @brief Tests that the reads and the writes given directly keep the order they were given in. */
+TEST(Small_Access, RegionsKeepTheirOrder)
 {
     int first = 0;
     int second = 0;
@@ -49,15 +51,28 @@ TEST(Medium_Access, RegionsKeepTheirOrder)
     EXPECT_EQ(access.reads[0].base, &first);
     EXPECT_EQ(access.reads[1].base, &second);
     ASSERT_EQ(access.writes.size(), 1u);
+    EXPECT_EQ(access.writes[0].base, &second);
+}
+
+/** @brief Tests that bare regions carry no liveness observer. */
+TEST(Small_Access, BareRegionsCarryNoObserver)
+{
+    int first = 0;
+    int second = 0;
+    const Access access({BufferRegion(&first)}, {BufferRegion(&second)});
     EXPECT_TRUE(access.lives.empty());
 }
 
-/** @brief Tests that handles given through Reads and Writes bring the observers of both. */
-TEST(Medium_Access, HandlesBringTheirObservers)
+/** @brief Fixture of the Access tests that hand out buffers of the program's runtime. */
+class Medium_Access : public TestSupport::RuntimeTest
 {
-    auto runtime = Runtime::create().value();
-    auto in = runtime.buffer<int>(4).value();
-    auto out = runtime.buffer<int>(4).value();
+};
+
+/** @brief Tests that handles given through Reads and Writes bring the observers of both. */
+TEST_F(Medium_Access, HandlesBringTheirObservers)
+{
+    auto in = runtime().buffer<int>(4).value();
+    auto out = runtime().buffer<int>(4).value();
     const Access access{Reads(in), Writes(out)};
     EXPECT_EQ(access.reads.size(), 1u);
     EXPECT_EQ(access.writes.size(), 1u);

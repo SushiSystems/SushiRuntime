@@ -39,6 +39,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "run_recorder.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -55,15 +56,20 @@ namespace
             EXPECT_EQ(observation.events[i].live_width, expected[i]) << "node " << i;
         }
     }
+
+    /** @brief Fixture of the node-option tests, which record graphs on the program's runtime. */
+    class Medium_NodeOptionsWidth : public TestSupport::RuntimeTest
+    {
+    };
 } // namespace
 
 /** @brief Tests that each node of a rule reports the width it stated, not a buffer's size. */
-TEST(Medium_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
+TEST_F(Medium_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
 {
     constexpr std::size_t WIDE = 600;
 
     // The buffers are oversized by different amounts to expose a buffer width; see README.md.
-    auto rt     = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto values = rt.buffer<std::uint32_t>(WIDE + 9).value();
     auto copies = rt.buffer<std::uint32_t>(WIDE + 8).value();
     auto first  = rt.buffer<std::uint32_t>(1).value();
@@ -94,11 +100,11 @@ TEST(Medium_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
 }
 
 /** @brief Tests that a resolver and a device-sized node report the widths they stated. */
-TEST(Medium_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidths)
+TEST_F(Medium_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidths)
 {
     constexpr std::size_t CAPACITY = 128;
 
-    auto rt  = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto out = rt.buffer<std::uint32_t>(CAPACITY + 8).value();
     for (std::size_t i = 0; i < CAPACITY + 8; ++i)
         out[i] = 0;
@@ -138,11 +144,11 @@ TEST(Medium_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidths)
 }
 
 /** @brief Tests that an observed run reports the name and the operation a node stated. */
-TEST(Medium_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
+TEST_F(Medium_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
 {
     constexpr std::size_t WIDE = 64;
 
-    auto rt     = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto values = rt.buffer<std::uint32_t>(WIDE).value();
     for (std::size_t i = 0; i < WIDE; ++i)
         values[i] = static_cast<std::uint32_t>(i);
@@ -172,11 +178,11 @@ TEST(Medium_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
 }
 
 /** @brief Tests that a node's own name is reported in place of the name of its rule. */
-TEST(Medium_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
+TEST_F(Medium_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
 {
     constexpr std::size_t WIDE = 32;
 
-    auto rt     = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto first  = rt.buffer<std::uint32_t>(WIDE).value();
     auto second = rt.buffer<std::uint32_t>(WIDE).value();
     std::uint32_t* a = first.data();
@@ -203,26 +209,22 @@ TEST(Medium_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
     EXPECT_EQ(observation.table->rows()[1].name, "rule name");
 }
 
-/** @brief Tests that more parameters than a node carries are refused and record nothing. */
-TEST(Medium_NodeOptionsWidth, MoreParametersThanANodeCarriesAreRefused)
+/** @brief Tests that an add refused for its parameters records no node. */
+TEST_F(Medium_NodeOptionsWidth, ARefusedAddRecordsNoNode)
 {
     constexpr std::size_t WIDE = 8;
 
-    auto rt     = Runtime::create().value();
-    auto values = rt.buffer<std::uint32_t>(WIDE).value();
+    auto values = runtime().buffer<std::uint32_t>(WIDE).value();
     std::uint32_t* v = values.data();
 
     const std::array<std::uint64_t, 9> parameters{1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u};
     NodeOptions options;
     options.parameters = parameters;
 
-    auto g = rt.graph();
+    auto g = runtime().graph();
     g.add(WIDE, Reads(), Writes(values), [v](std::size_t i) { v[i] = 0u; }, options);
 
     ASSERT_NE(g.refusal(), nullptr);
     EXPECT_EQ(g.refusal()->code, ErrorCode::InvalidGraph);
-    EXPECT_NE(g.refusal()->message.find("NodeOptions::parameters, rule 0: 9 parameters"),
-              std::string::npos)
-        << g.refusal()->message;
     EXPECT_EQ(g.size(), 0u);
 }

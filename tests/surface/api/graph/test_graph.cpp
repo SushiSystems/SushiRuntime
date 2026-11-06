@@ -37,6 +37,7 @@
 #include <cstring>
 #include <future>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -45,50 +46,62 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/graph/compiled_graph.hpp>
-#include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/context_access/context_access.hpp>
-#include <SushiRuntime/device/device_queue_set.hpp>
-
-#include <SushiRuntime/engine_handles/plan_access.hpp>
 
 #include "run_recorder.hpp"
-
-namespace SushiRuntime
-{
-    namespace Detail
-    {
-        /** @brief Declares the test-only friend access to the plan of a Graph. */
-        struct NodeEventRecordsTestAccess
-        {
-            static const SushiRuntime::Internal::Graph::CompiledGraph& plan(const Graph& g) noexcept
-            {
-                return *engine_plan(g.compiled_plan());
-            }
-        };
-    }
-}
+#include "support/runtime_environment.hpp"
+#include "support/tolerance.hpp"
 
 using namespace SushiRuntime;
+
+/**
+ * @brief Holds the runtime of a row of the layer tests: the program's for the in-order chain, one forced onto the
+ *        scheduler otherwise.
+ */
+class LayerRuntime
+{
+    protected:
+        /** @brief Makes the runtime of the row. */
+        void make_runtime(bool force_scheduler)
+        {
+            if (force_scheduler)
+            {
+                RuntimeConfig config;
+                config.force_scheduler = true;
+                scheduled_.emplace(Runtime::create(config).value());
+            }
+        }
+
+        /** @brief Returns the runtime of the row. */
+        [[nodiscard]] const Runtime& layer_runtime() const
+        {
+            return scheduled_ ? *scheduled_ : TestSupport::RuntimeEnvironment::runtime();
+        }
+
+    private:
+        std::optional<Runtime> scheduled_; /**< The forced-scheduler runtime of the true row. */
+};
 
 /** @brief Tests add_host(), which runs plain C++ on a worker thread ordered by the data it touches. */
 namespace NativeCpuPathTests
 {
+    /** @brief Fixture of the native-task tests, which run on the program's runtime. */
+    class Medium_NativeCPU : public TestSupport::RuntimeTest
+    {
+    };
+
     /** @brief Tests that a host task ordered after a device kernel sees the kernel's output. */
-    TEST(Medium_NativeCPU, HostTaskRunsAfterKernel)
+    TEST_F(Medium_NativeCPU, HostTaskRunsAfterKernel)
     {
         constexpr std::size_t N = 64;
 
-        auto rt = Runtime::create().value();
-        auto a  = rt.buffer<int>(N).value();
-        auto b  = rt.buffer<int>(N).value();
+        auto a  = runtime().buffer<int>(N).value();
+        auto b  = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
         int* ap = a.data();
         int* bp = b.data();
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes(a),
               [ap](std::size_t i) { ap[i] = static_cast<int>(i) * 2; });
         g.add_host(Reads(a), Writes(b),
@@ -101,19 +114,18 @@ namespace NativeCpuPathTests
     }
 
     /** @brief Tests that a device kernel ordered after a host task sees the host's writes. */
-    TEST(Medium_NativeCPU, KernelRunsAfterHostTask)
+    TEST_F(Medium_NativeCPU, KernelRunsAfterHostTask)
     {
         constexpr std::size_t N = 64;
 
-        auto rt = Runtime::create().value();
-        auto a  = rt.buffer<int>(N).value();
-        auto b  = rt.buffer<int>(N).value();
+        auto a  = runtime().buffer<int>(N).value();
+        auto b  = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
         int* ap = a.data();
         int* bp = b.data();
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add_host(Reads{}, Writes(a),
                    [ap]() { for (std::size_t i = 0; i < N; ++i) ap[i] = static_cast<int>(i) + 5; });
         g.add(N, Reads(a), Writes(b),
@@ -126,14 +138,13 @@ namespace NativeCpuPathTests
     }
 
     /** @brief Tests that an untracked host task runs once per step. */
-    TEST(Medium_NativeCPU, UntrackedHostTaskRunsEveryStep)
+    TEST_F(Medium_NativeCPU, UntrackedHostTaskRunsEveryStep)
     {
         constexpr std::size_t STEPS = 5;
 
-        auto rt = Runtime::create().value();
         std::atomic<int> ticks{0};
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add_host([&ticks]() { ticks.fetch_add(1, std::memory_order_relaxed); });
 
         g.run(STEPS).value();
@@ -141,22 +152,28 @@ namespace NativeCpuPathTests
         EXPECT_EQ(ticks.load(), static_cast<int>(STEPS));
     }
 
-    /** @brief Tests that a throwing host task fails the run and leaves the runtime usable. */
-    TEST(Medium_NativeCPU, ThrowingHostTaskKeepsRuntimeUsable)
+    /** @brief Tests that a throwing host task fails the run. */
+    TEST_F(Medium_NativeCPU, ThrowingHostTaskFailsTheRun)
     {
-        auto rt = Runtime::create().value();
-
-        auto bad = rt.graph();
+        auto bad = runtime().graph();
         bad.add_host([]() { throw std::runtime_error("boom"); });
-        auto r1 = bad.run();
-        ASSERT_FALSE(r1.has_value()) << "a throwing native task must fail the run.";
+
+        ASSERT_FALSE(bad.run().has_value()) << "a throwing native task must fail the run.";
+    }
+
+    /** @brief Tests that a graph runs on the same runtime after another graph's host task threw. */
+    TEST_F(Medium_NativeCPU, TheRuntimeRunsAGraphAfterAHostTaskThrew)
+    {
+        auto bad = runtime().graph();
+        bad.add_host([]() { throw std::runtime_error("boom"); });
+        ASSERT_FALSE(bad.run().has_value());
 
         constexpr std::size_t N = 16;
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
         int* p = buf.data();
 
-        auto good = rt.graph();
+        auto good = runtime().graph();
         good.add_host(Reads{}, Writes(buf),
                       [p]() { for (std::size_t i = 0; i < N; ++i) p[i] = static_cast<int>(i); });
         auto r2 = good.run();
@@ -170,41 +187,26 @@ namespace NativeCpuPathTests
 /** @brief Tests per-dispatch node event records and their pairing with the event clock. */
 namespace NodeEventRecordsTests
 {
-    namespace
+    /** @brief Fixture of the node-event tests, which observe runs of the program's runtime. */
+    class Medium_NodeEventRecords : public TestSupport::RuntimeTest
     {
-        // Registration index of the one compiled node named @p name.
-        std::uint32_t registration_index_of(const Internal::Graph::CompiledGraph& plan, const char* name)
-        {
-            const Internal::Graph::Node* found = nullptr;
-            for (const auto& n : plan.all_nodes)
-            {
-                if (std::string(n->metadata.name) == name)
-                {
-                    EXPECT_EQ(found, nullptr) << "Node name '" << name << "' is not unique.";
-                    found = n.get();
-                }
-            }
-            EXPECT_NE(found, nullptr) << "No compiled node named '" << name << "'.";
-            return found ? found->registration_index : 0u;
-        }
-    } // namespace
+    };
 
-    // E.1 - a runtime with no observer must hand out no record.
-    TEST(Medium_NodeEventRecords, ProfilingNotRequestedLeavesNodeEventsEmpty)
+    /** @brief Tests that a run of a runtime with no observer succeeds and no record reaches an observer. */
+    TEST_F(Medium_NodeEventRecords, ARunWithNoObserverRecordsNothing)
     {
         constexpr std::size_t N = 128;
 
-        auto rt = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
         int* p = buf.data();
 
-        Testing::RunRecorder recorder(rt);
+        Testing::RunRecorder recorder(runtime());
         recorder.stop();
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
-        auto report = g.run().value();
+        auto report = g.run(4).value();
         EXPECT_TRUE(report.is_successful);
         EXPECT_EQ(recorder.count(), 0u);
     }
@@ -213,20 +215,19 @@ namespace NodeEventRecordsTests
      * @brief Tests that three kernel nodes over run(5) give fifteen records with submit <= start <=
      *        end.
      */
-    TEST(Medium_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
+    TEST_F(Medium_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
     {
         constexpr std::size_t N = 64;
 
-        auto rt = Runtime::create().value();
-        auto a = rt.buffer<int>(N).value();
-        auto b = rt.buffer<int>(N).value();
-        auto c = rt.buffer<int>(N).value();
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
+        auto c = runtime().buffer<int>(N).value();
         int* pa = a.data();
         int* pb = b.data();
         int* pc = c.data();
 
-        Testing::RunRecorder recorder(rt);
-        auto g = rt.graph();
+        Testing::RunRecorder recorder(runtime());
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] = static_cast<int>(i); });
         g.add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
         g.add(N, Reads{}, Writes(c), [pc](std::size_t i) { pc[i] = static_cast<int>(i); });
@@ -257,21 +258,20 @@ namespace NodeEventRecordsTests
     // The steady-state capture case is in test_sushiruntime.cpp; see README.md.
 
     /** @brief Tests that node_index follows registration order, not the compiled order. */
-    TEST(Medium_NodeEventRecords, NodeIndexIsRegistrationOrder)
+    TEST_F(Medium_NodeEventRecords, NodeIndexIsRegistrationOrder)
     {
         constexpr std::size_t N = 32;
 
-        auto rt = Runtime::create().value();
-        auto a = rt.buffer<int>(N).value();
-        auto b = rt.buffer<int>(N).value();
-        auto c = rt.buffer<int>(N).value();
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
+        auto c = runtime().buffer<int>(N).value();
         int* pa = a.data();
         int* pb = b.data();
         int* pc = c.data();
 
         // The strict dependency chain forces the execution order A, B, C; see README.md.
-        Testing::RunRecorder recorder(rt);
-        auto g = rt.graph();
+        Testing::RunRecorder recorder(runtime());
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] = static_cast<int>(i); }).name("A");
         g.add(N, Reads(a), Writes(b), [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; }).name("B");
         g.add(N, Reads(b), Writes(c), [pb, pc](std::size_t i) { pc[i] = pb[i] + 1; }).name("C");
@@ -279,15 +279,16 @@ namespace NodeEventRecordsTests
         g.run().value();
         ASSERT_EQ(recorder.count(), 1u);
         const RunObservation observation = recorder.last();
+        ASSERT_NE(observation.table, nullptr);
 
-        const auto& plan = Detail::NodeEventRecordsTestAccess::plan(g);
-        const std::uint32_t idx_a = registration_index_of(plan, "A");
-        const std::uint32_t idx_b = registration_index_of(plan, "B");
-        const std::uint32_t idx_c = registration_index_of(plan, "C");
-
-        EXPECT_EQ(idx_a, 0u);
-        EXPECT_EQ(idx_b, 1u);
-        EXPECT_EQ(idx_c, 2u);
+        const auto& rows = observation.table->rows();
+        ASSERT_EQ(rows.size(), 3u);
+        EXPECT_EQ(rows[0].name, "A");
+        EXPECT_EQ(rows[0].index, 0u);
+        EXPECT_EQ(rows[1].name, "B");
+        EXPECT_EQ(rows[1].index, 1u);
+        EXPECT_EQ(rows[2].name, "C");
+        EXPECT_EQ(rows[2].index, 2u);
 
         std::unordered_map<std::uint32_t, std::uint64_t> earliest_submit;
         for (const auto& rec : observation.events)
@@ -295,13 +296,13 @@ namespace NodeEventRecordsTests
             auto [it, inserted] = earliest_submit.try_emplace(rec.node_index, rec.submit_ns);
             if (!inserted) it->second = std::min(it->second, rec.submit_ns);
         }
-        ASSERT_EQ(earliest_submit.count(idx_a), 1u);
-        ASSERT_EQ(earliest_submit.count(idx_b), 1u);
-        ASSERT_EQ(earliest_submit.count(idx_c), 1u);
+        ASSERT_EQ(earliest_submit.count(0u), 1u);
+        ASSERT_EQ(earliest_submit.count(1u), 1u);
+        ASSERT_EQ(earliest_submit.count(2u), 1u);
 
-        EXPECT_LE(earliest_submit[idx_a], earliest_submit[idx_b])
+        EXPECT_LE(earliest_submit[0u], earliest_submit[1u])
             << "A's dependency chain must have it dispatch no later than B";
-        EXPECT_LE(earliest_submit[idx_b], earliest_submit[idx_c])
+        EXPECT_LE(earliest_submit[1u], earliest_submit[2u])
             << "B's dependency chain must have it dispatch no later than C";
     }
 
@@ -309,17 +310,16 @@ namespace NodeEventRecordsTests
      * @brief Tests that a host node's record, on the steady clock, lands after the kernel it depends
      *        on once the kernel's record goes through its device's pairing.
      */
-    TEST(Medium_NodeEventRecords, HostNodeLandsAfterItsKernelOnTheSteadyClock)
+    TEST_F(Medium_NodeEventRecords, HostNodeLandsAfterItsKernelOnTheSteadyClock)
     {
         constexpr std::size_t N = 64;
 
-        auto rt = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
         int* p = buf.data();
 
         // The host node reads what the kernel writes, so it runs after the kernel; see README.md.
-        Testing::RunRecorder recorder(rt);
-        auto g = rt.graph();
+        Testing::RunRecorder recorder(runtime());
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); }).name("kernel");
         g.add_host(Reads(buf), Writes{}, [p]()
         {
@@ -332,9 +332,17 @@ namespace NodeEventRecordsTests
         ASSERT_EQ(recorder.count(), 1u);
         const RunObservation observation = recorder.last();
         ASSERT_FALSE(observation.events.empty());
+        ASSERT_NE(observation.table, nullptr);
 
-        const auto& plan = Detail::NodeEventRecordsTestAccess::plan(g);
-        const std::uint32_t idx_kernel = registration_index_of(plan, "kernel");
+        std::uint32_t idx_kernel = 0;
+        bool found_kernel = false;
+        for (const auto& row : observation.table->rows())
+            if (row.name == "kernel")
+            {
+                idx_kernel = row.index;
+                found_kernel = true;
+            }
+        ASSERT_TRUE(found_kernel) << "no node named 'kernel' in the table";
 
         // Only a host record carries the host device index.
         const NodeEventRecord* kernel_record = nullptr;
@@ -380,14 +388,18 @@ namespace RunReportReuseTests
             g.add(N, Reads{}, Writes(buf),
                   [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
         }
-    }
+    } // namespace
+
+    /** @brief Fixture of the report-reuse tests, which run on the program's runtime. */
+    class Medium_RunReportReuse : public TestSupport::RuntimeTest
+    {
+    };
 
     /** @brief Tests that the reuse overload reports what the value-returning one reports. */
-    TEST(Medium_RunReportReuse, ReuseReportsWhatTheValueFormReports)
+    TEST_F(Medium_RunReportReuse, ReuseReportsWhatTheValueFormReports)
     {
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
-        auto g   = rt.graph();
+        auto buf = runtime().buffer<int>(N).value();
+        auto g   = runtime().graph();
         record_write(g, buf);
 
         const RunReport allocated = g.run(std::size_t{3}).value();
@@ -405,39 +417,29 @@ namespace RunReportReuseTests
             ASSERT_EQ(buf[i], static_cast<int>(i) + 1) << "at i=" << i;
     }
 
-    /** @brief Tests that steady-state runs refill the report's vectors in place. */
-    TEST(Medium_RunReportReuse, SteadyStateRunsDoNotReallocateTheReport)
+    /** @brief Tests that steady-state runs into one report leave one row per run, not one more each. */
+    TEST_F(Medium_RunReportReuse, SteadyStateRunsLeaveOneRowPerRun)
     {
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
-        auto g   = rt.graph();
+        auto buf = runtime().buffer<int>(N).value();
+        auto g   = runtime().graph();
         record_write(g, buf);
 
         RunReport report;
         g.run(report).value();
-
         ASSERT_FALSE(report.numa_statistics.empty());
-        const void* rows_after_first = report.numa_statistics.data();
-        const std::size_t capacity_after_first = report.numa_statistics.capacity();
 
         for (int tick = 0; tick < 8; ++tick)
-        {
             g.run(report).value();
-            ASSERT_EQ(static_cast<const void*>(report.numa_statistics.data()), rows_after_first)
-                << "the per-run rows were reallocated on tick " << tick;
-            ASSERT_EQ(report.numa_statistics.capacity(), capacity_after_first);
-        }
 
         // Refilled, not appended: eight more runs must not leave eight more rows.
         EXPECT_EQ(report.numa_statistics.size(), 1u);
     }
 
     /** @brief Tests that a short run after a long one reports the short run's count. */
-    TEST(Medium_RunReportReuse, EachRunOverwritesTheLastOne)
+    TEST_F(Medium_RunReportReuse, EachRunOverwritesTheLastOne)
     {
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
-        auto g   = rt.graph();
+        auto buf = runtime().buffer<int>(N).value();
+        auto g   = runtime().graph();
         record_write(g, buf);
 
         RunReport report;
@@ -452,11 +454,10 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that a rejected run clears the report and marks it unsuccessful. */
-    TEST(Medium_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
+    TEST_F(Medium_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
     {
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
-        auto g   = rt.graph();
+        auto buf = runtime().buffer<int>(N).value();
+        auto g   = runtime().graph();
         record_write(g, buf);
 
         RunReport report;
@@ -465,7 +466,7 @@ namespace RunReportReuseTests
         ASSERT_GT(report.total_tasks_executed, 0u);
 
         // An empty graph cannot run; the same report goes in again.
-        auto empty = rt.graph();
+        auto empty = runtime().graph();
         auto rejected = empty.run(report);
 
         EXPECT_FALSE(rejected);
@@ -476,11 +477,10 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that run(RunReport&) returns the report it was given. */
-    TEST(Medium_RunReportReuse, TryRunReturnsTheCallersReport)
+    TEST_F(Medium_RunReportReuse, TryRunReturnsTheCallersReport)
     {
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
-        auto g   = rt.graph();
+        auto buf = runtime().buffer<int>(N).value();
+        auto g   = runtime().graph();
         record_write(g, buf);
 
         RunReport report;
@@ -492,11 +492,10 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that RunHandle::wait(RunReport&) fills the caller's report. */
-    TEST(Medium_RunReportReuse, AsyncWaitFillsTheCallersReport)
+    TEST_F(Medium_RunReportReuse, AsyncWaitFillsTheCallersReport)
     {
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
-        auto g   = rt.graph();
+        auto buf = runtime().buffer<int>(N).value();
+        auto g   = runtime().graph();
         record_write(g, buf);
 
         RunReport report;
@@ -514,28 +513,24 @@ namespace RunReportReuseTests
     }
 
     // The composed-plan driver shares the fill path, so it gets the same guarantee.
-    TEST(Medium_RunReportReuse, DynamicGraphRunsIntoACallersReport)
+    TEST_F(Medium_RunReportReuse, DynamicGraphRunsIntoACallersReport)
     {
-        auto rt = Runtime::create().value();
-
-        auto a = rt.buffer<int>(N).value();
+        auto a = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i)
             a[i] = 0;
         int* pa = a.data();
 
-        auto world = rt.dynamic_graph();
+        auto world = runtime().dynamic_graph();
         world.region(0).add(N, Reads{}, Writes(a),
                             [pa](std::size_t i) { pa[i] += 1; });
 
         RunReport report;
         world.run(report).value();
         ASSERT_FALSE(report.numa_statistics.empty());
-        const void* rows_after_first = report.numa_statistics.data();
 
         world.run(std::size_t{3}, report).value();
 
         EXPECT_TRUE(report.is_successful);
-        EXPECT_EQ(static_cast<const void*>(report.numa_statistics.data()), rows_after_first);
         EXPECT_EQ(report.numa_statistics.size(), 1u);
 
         for (std::size_t i = 0; i < N; ++i)
@@ -663,17 +658,21 @@ namespace CancellationTests
         }
     } // namespace
 
+    /** @brief Fixture of the cancellation tests, which run on the program's runtime. */
+    class Medium_Cancellation : public TestSupport::RuntimeTest
+    {
+    };
+
     /**
      * @brief A second thread cancels an unbounded run_until and it returns quickly.
      */
-    TEST(Medium_Cancellation, CancelStopsRunUntilFromAnotherThread)
+    TEST_F(Medium_Cancellation, CancelStopsRunUntilFromAnotherThread)
     {
         constexpr std::size_t N = 1024;
-        auto rt    = Runtime::create().value();
-        auto field = rt.state<int>(N).value();
+        auto field = runtime().state<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) field[i] = 0;
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
         // The second predicate call follows the first whole step, so the report holds one.
@@ -687,14 +686,13 @@ namespace CancellationTests
     /**
      * @brief After a cancelled run, the next run starts clean and completes fully.
      */
-    TEST(Medium_Cancellation, NextRunIsNotCancelledAfterReset)
+    TEST_F(Medium_Cancellation, NextRunIsNotCancelledAfterReset)
     {
         constexpr std::size_t N = 256;
-        auto rt    = Runtime::create().value();
-        auto field = rt.state<int>(N).value();
+        auto field = runtime().state<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) field[i] = 0;
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
         RunReport cancelled_report;
@@ -708,7 +706,7 @@ namespace CancellationTests
     }
 } // namespace CancellationTests
 
-/** @brief Tests that a chainable plan runs as an in-order chain, bit-identical to the scheduler. */
+/** @brief Tests that a chainable plan runs as an in-order chain, bit-identical to the host model. */
 namespace ChainLayerTests
 {
     namespace
@@ -722,9 +720,6 @@ namespace ChainLayerTests
             std::vector<std::uint32_t> acc;    /**< Written over a host-sized prefix each step. */
             std::vector<std::uint32_t> mix;    /**< Reads acc, so it orders after it. */
             std::vector<std::uint32_t> gated;  /**< Written only on the steps its when() allows. */
-            /** @brief Layer of the last run. */
-            ExecutionLayer layer = ExecutionLayer::Scheduler;
-            std::size_t tasks = 0;             /**< total_tasks_executed summed over the runs. */
         };
 
         /**
@@ -732,10 +727,10 @@ namespace ChainLayerTests
          *        results out.
          *
          * Host values change every step: the sized() count and the when() gate
-         * both come from counters their providers advance. @p native_tail adds
+         * both come from counters their providers advance once per step. @p native_tail adds
          * a no-op host task, which keeps the plan off the chain.
          */
-        Outputs run_workload(Runtime& rt, std::size_t runs, std::size_t steps, bool native_tail)
+        Outputs run_workload(const Runtime& rt, std::size_t runs, std::size_t steps, bool native_tail)
         {
             auto field = rt.state<float>(N).value();
             auto acc   = rt.buffer<std::uint32_t>(N).value();
@@ -772,20 +767,51 @@ namespace ChainLayerTests
             if (native_tail)
                 g.add_host([] {});
 
-            Outputs out;
             for (std::size_t r = 0; r < runs; ++r)
             {
                 const auto report = g.run(steps).value();
                 EXPECT_TRUE(report.is_successful);
-                out.layer = report.layer;
-                out.tasks += report.total_tasks_executed;
             }
 
+            Outputs out;
             out.field.assign(field.current(), field.current() + N);
             out.acc.assign(pa, pa + N);
             out.mix.assign(pm, pm + N);
             out.gated.assign(pg, pg + N);
             return out;
+        }
+
+        /**
+         * @brief Computes on the host what run_workload() leaves after @p total_steps steps.
+         *
+         * The providers advance once per step, so step t reads the sized() count 1 + (t * 37) % N and
+         * the gate (t % 3) != 0.
+         */
+        Outputs workload_model(std::size_t total_steps)
+        {
+            Outputs model;
+            model.field.resize(N);
+            model.acc.assign(N, 0u);
+            model.mix.assign(N, 0u);
+            model.gated.assign(N, 0u);
+            for (std::size_t i = 0; i < N; ++i)
+                model.field[i] = static_cast<float>(i) * 0.5f;
+
+            for (std::size_t t = 0; t < total_steps; ++t)
+            {
+                for (std::size_t i = 0; i < N; ++i)
+                    model.field[i] = model.field[i] * 0.75f + static_cast<float>(i % 7) * 0.125f;
+
+                const std::size_t live = 1 + (t * 37) % N;
+                for (std::size_t i = 0; i < live; ++i)
+                    model.acc[i] = model.acc[i] * 31u + static_cast<std::uint32_t>(i) + 1u;
+                for (std::size_t i = 0; i < N; ++i)
+                    model.mix[i] = (model.mix[i] ^ (model.acc[i] * 2654435761u)) + 7u;
+                if ((t % 3) != 0)
+                    for (std::size_t i = 0; i < N; ++i)
+                        model.gated[i] = model.gated[i] * 17u + model.mix[i];
+            }
+            return model;
         }
 
         /**
@@ -799,67 +825,64 @@ namespace ChainLayerTests
         }
 
         /**
-         * @brief Asserts two workload results are bit-identical, buffer by buffer.
+         * @brief Asserts a workload result holds the integer bytes of the model and its field within the rounding bound.
+         * @param steps Steps the workload ran, which bounds the rounded operations of the field.
          */
-        void expect_identical(const Outputs& a, const Outputs& b)
+        void expect_matches_model(const Outputs& measured, const Outputs& model, std::size_t steps)
         {
-            EXPECT_TRUE(same_bytes(a.field, b.field)) << "State field differs";
-            EXPECT_TRUE(same_bytes(a.acc, b.acc)) << "sized() buffer differs";
-            EXPECT_TRUE(same_bytes(a.mix, b.mix)) << "dependent buffer differs";
-            EXPECT_TRUE(same_bytes(a.gated, b.gated)) << "when() buffer differs";
-            EXPECT_EQ(a.tasks, b.tasks);
+            EXPECT_TRUE(same_bytes(measured.acc, model.acc)) << "sized() buffer differs";
+            EXPECT_TRUE(same_bytes(measured.mix, model.mix)) << "dependent buffer differs";
+            EXPECT_TRUE(same_bytes(measured.gated, model.gated)) << "when() buffer differs";
+            ASSERT_EQ(measured.field.size(), model.field.size());
+            for (std::size_t i = 0; i < N; ++i)
+                ASSERT_TRUE(TestSupport::is_within(TestSupport::measure_relative_error<float>(
+                    measured.field[i], model.field[i], 3 * steps)))
+                    << "State field differs at i=" << i;
         }
+
+        /** @brief The workload of one row: the layer it runs on and whether a host task is appended. */
+        struct WorkloadRow
+        {
+            bool force_scheduler; /**< Whether the runtime is forced onto the scheduler. */
+            bool native_tail;     /**< Whether a no-op host task keeps the plan off the chain. */
+        };
     } // namespace
+} // namespace ChainLayerTests
 
-    TEST(Medium_ChainLayer, ChainMatchesForcedSchedulerBitForBit)
-    {
-        constexpr std::size_t RUNS  = 3;
-        constexpr std::size_t STEPS = 40;
+/** @brief Fixture of the rows that run the workload on a layer, with or without a host task at the end. */
+class Medium_ChainLayerWorkload : public ::testing::TestWithParam<ChainLayerTests::WorkloadRow>,
+                                  protected LayerRuntime
+{
+    protected:
+        /** @brief Makes the runtime of the row. */
+        void SetUp() override { make_runtime(GetParam().force_scheduler); }
+};
 
-        auto chained_rt = Runtime::create().value();
-        RuntimeConfig forced;
-        forced.force_scheduler = true;
-        auto scheduled_rt = Runtime::create(forced).value();
+/** @brief Fixture of the chain tests that run on the program's runtime. */
+class Medium_ChainLayer : public TestSupport::RuntimeTest
+{
+};
 
-        const Outputs chained   = run_workload(chained_rt, RUNS, STEPS, false);
-        const Outputs scheduled = run_workload(scheduled_rt, RUNS, STEPS, false);
-
-        EXPECT_EQ(chained.layer, ExecutionLayer::Chain)
-            << "a plan of tracked kernels on one device must take the chain";
-        EXPECT_EQ(scheduled.layer, ExecutionLayer::Scheduler)
-            << "force_scheduler must keep every plan on the scheduler";
-        expect_identical(chained, scheduled);
-    }
-
-    TEST(Medium_ChainLayer, NonChainablePlanMatchesChainBitForBit)
+namespace ChainLayerTests
+{
+    /** @brief Tests that the workload leaves the bytes of its host model, on either layer and with a host task among the nodes. */
+    TEST_P(Medium_ChainLayerWorkload, WorkloadMatchesTheHostModel)
     {
         constexpr std::size_t RUNS  = 2;
-        constexpr std::size_t STEPS = 64;
+        constexpr std::size_t STEPS = 40;
 
-        auto rt = Runtime::create().value();
+        const Outputs measured = run_workload(layer_runtime(), RUNS, STEPS, GetParam().native_tail);
 
-        const Outputs chained = run_workload(rt, RUNS, STEPS, false);
-        const Outputs native  = run_workload(rt, RUNS, STEPS, true);
-
-        EXPECT_EQ(chained.layer, ExecutionLayer::Chain);
-        EXPECT_EQ(native.layer, ExecutionLayer::Scheduler)
-            << "a native host task must keep the plan on the scheduler";
-
-        EXPECT_TRUE(same_bytes(chained.field, native.field));
-        EXPECT_TRUE(same_bytes(chained.acc, native.acc));
-        EXPECT_TRUE(same_bytes(chained.mix, native.mix));
-        EXPECT_TRUE(same_bytes(chained.gated, native.gated));
+        expect_matches_model(measured, workload_model(RUNS * STEPS), RUNS * STEPS);
     }
 
     /**
-     * @brief Tests that a node that names an operation runs on the chain when no cluster is
-     *        attached; see README.md.
+     * @brief Tests that a node that names an operation, with no cluster attached, gives the right values; see README.md.
      */
-    TEST(Medium_ChainLayer, ANamedNodeRunsOnTheChainWithNoClusterAttached)
+    TEST_F(Medium_ChainLayer, ANamedNodeGivesTheRightValuesWithNoClusterAttached)
     {
-        auto rt = Runtime::create().value();
-        auto values = rt.buffer<std::uint32_t>(N).value();
-        auto field = rt.state<std::uint32_t>(N).value();
+        auto values = runtime().buffer<std::uint32_t>(N).value();
+        auto field = runtime().state<std::uint32_t>(N).value();
         for (std::size_t i = 0; i < N; ++i)
         {
             values[i] = 0;
@@ -872,7 +895,7 @@ namespace ChainLayerTests
         named.operation = "chain_layer.named"_op;
         named.parameters = parameters;
 
-        auto graph = rt.graph();
+        auto graph = runtime().graph();
         graph.add(N, Reads{}, Writes(values), [words](std::size_t i) { words[i] += 1u; }, named);
         graph.add_rule(field,
                        [](std::size_t i, const std::uint32_t* current, std::uint32_t* next)
@@ -882,8 +905,6 @@ namespace ChainLayerTests
         constexpr std::size_t STEPS = 3;
         const auto report = graph.run(STEPS);
         ASSERT_TRUE(report.has_value()) << report.error().message;
-        EXPECT_EQ(report->layer, ExecutionLayer::Chain)
-            << "a named node kept the plan off the chain although nothing can take it";
         for (std::size_t i = 0; i < N; ++i)
         {
             ASSERT_EQ(values[i], STEPS) << "at i=" << i;
@@ -891,33 +912,32 @@ namespace ChainLayerTests
         }
     }
 
-    TEST(Medium_ChainLayer, RunUntilSeesEveryStepsResult)
+    /** @brief Tests that run_until stops on each step's device result, after exactly the steps the target needs. */
+    TEST_F(Medium_ChainLayer, RunUntilSeesEveryStepsResult)
     {
         constexpr std::uint32_t TARGET = 9;
 
-        auto rt = Runtime::create().value();
-        auto counter = rt.buffer<std::uint32_t>(1).value();
+        auto counter = runtime().buffer<std::uint32_t>(1).value();
         counter[0] = 0;
         std::uint32_t* pc = counter.data();
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add(1, Reads{}, Writes(counter), [pc](std::size_t) { pc[0] += 1u; });
 
-        // The stop test reads a device result, so the chain must wait after every step.
+        // The stop test reads a device result, so the run must wait after every step.
         const auto report = g.run_until([&counter] { return counter[0] >= TARGET; }).value();
 
-        EXPECT_EQ(report.layer, ExecutionLayer::Chain);
         EXPECT_EQ(report.total_tasks_executed, static_cast<std::size_t>(TARGET));
         EXPECT_EQ(counter[0], TARGET);
     }
 
-    TEST(Medium_ChainLayer, ProfiledChainRecordsEveryDispatch)
+    /** @brief Tests that a profiled run records each dispatch once per step and per node. */
+    TEST_F(Medium_ChainLayer, ProfiledRunRecordsEveryDispatch)
     {
         constexpr std::size_t STEPS = 12;
 
-        auto rt = Runtime::create().value();
-        auto a = rt.buffer<int>(N).value();
-        auto b = rt.buffer<int>(N).value();
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i)
         {
             a[i] = 0;
@@ -926,18 +946,15 @@ namespace ChainLayerTests
         int* pa = a.data();
         int* pb = b.data();
 
-        Testing::RunRecorder recorder(rt);
-        auto g = rt.graph();
+        Testing::RunRecorder recorder(runtime());
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] += 1; });
         g.add(N, Reads(a), Writes(b), [pa, pb](std::size_t i) { pb[i] += pa[i]; });
 
-        const auto report = g.run(STEPS).value();
+        g.run(STEPS).value();
         ASSERT_EQ(recorder.count(), 1u);
         const RunObservation observation = recorder.last();
 
-        EXPECT_EQ(report.layer, ExecutionLayer::Chain)
-            << "profiling must not move a chainable plan off layer 1";
-        EXPECT_EQ(observation.layer, ExecutionLayer::Chain);
         ASSERT_EQ(observation.events.size(), 2 * STEPS);
 
         std::vector<std::size_t> per_step(STEPS, 0);
@@ -967,19 +984,28 @@ namespace ChainLayerTests
     }
 } // namespace ChainLayerTests
 
+INSTANTIATE_TEST_SUITE_P(Rows, Medium_ChainLayerWorkload,
+                         ::testing::Values(ChainLayerTests::WorkloadRow{false, false},
+                                           ChainLayerTests::WorkloadRow{true, false},
+                                           ChainLayerTests::WorkloadRow{false, true}));
+
 /** @brief Tests that the reusable completion latch drives a replayed run and re-runs on one plan. */
 namespace CompletionLatchTests
 {
-    TEST(Medium_CompletionLatch, ManyStepReplayReachesCorrectState)
+    /** @brief Fixture of the latch tests, which run on the program's runtime. */
+    class Medium_CompletionLatch : public TestSupport::RuntimeTest
+    {
+    };
+
+    TEST_F(Medium_CompletionLatch, ManyStepReplayReachesCorrectState)
     {
         constexpr std::size_t N = 1024;
         constexpr std::size_t STEPS = 5000;
 
-        auto rt    = Runtime::create().value();
-        auto field = rt.state<int>(N).value();
+        auto field = runtime().state<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) field[i] = 0;
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         // Each step adds 1 to every cell: after STEPS steps every cell equals STEPS.
         g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
@@ -991,15 +1017,14 @@ namespace CompletionLatchTests
             ASSERT_EQ(field[i], static_cast<int>(STEPS)) << "at i=" << i;
     }
 
-    TEST(Medium_CompletionLatch, ReRunsCleanlyOnTheSamePlan)
+    TEST_F(Medium_CompletionLatch, ReRunsCleanlyOnTheSamePlan)
     {
         constexpr std::size_t N = 256;
 
-        auto rt    = Runtime::create().value();
-        auto field = rt.state<int>(N).value();
+        auto field = runtime().state<int>(N).value();
         for (std::size_t i = 0; i < N; ++i) field[i] = 0;
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
         // The latch resets between the three run() calls and the sentinel still signals; see README.md.
@@ -1011,15 +1036,15 @@ namespace CompletionLatchTests
             ASSERT_EQ(field[i], 25) << "at i=" << i;
     }
 
-    TEST(Medium_CompletionLatch, SingleStepRunsRepeatedlyWithoutLeak)
+    /** @brief Tests that each of 200 single-step runs on one plan completes with the right values. */
+    TEST_F(Medium_CompletionLatch, EachOfManySingleStepRunsCompletesWithTheRightValues)
     {
         constexpr std::size_t N = 64;
 
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
         int* p = buf.data();
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
         // Each single-step run goes through one reset, arm and wait cycle of the latch; see README.md.
@@ -1036,34 +1061,58 @@ namespace CompletionLatchTests
 /** @brief Tests that a node spanning two device contexts fails the run with an error. */
 namespace CrossContextGuardTests
 {
-    TEST(Medium_CrossContextGuard, NodeSpanningTwoContextsFailsCleanly)
+    /** @brief Fixture of the cross-context tests, which skip on a machine with fewer than two devices. */
+    class Medium_CrossContextGuard : public TestSupport::RuntimeTest
+    {
+    protected:
+        /** @brief Skips the test below two device contexts. */
+        void SetUp() override
+        {
+            if (runtime().advanced().device_count() < 2)
+                GTEST_SKIP() << "needs at least two device contexts to straddle a boundary";
+        }
+    };
+
+    /** @brief Tests that a node that reads one device context and writes another fails the run with InvalidGraph. */
+    TEST_F(Medium_CrossContextGuard, NodeSpanningTwoContextsFailsCleanly)
     {
         constexpr std::size_t N = 256;
 
-        auto rt = Runtime::create().value();
-        if (rt.advanced().device_count() < 2)
-            GTEST_SKIP() << "needs at least two device contexts to straddle a boundary";
-
         // Two buffers pinned to different device queues (and thus contexts).
-        auto a = rt.buffer<int>(N, DeviceIndex{0}).value();
-        auto b = rt.buffer<int>(N, DeviceIndex{1}).value();
+        auto a = runtime().buffer<int>(N, DeviceIndex{0}).value();
+        auto b = runtime().buffer<int>(N, DeviceIndex{1}).value();
         int* pb = b.data();
         const int* pa = a.data();
 
         // No one queue can run a node that reads context 0 and writes context 1; see README.md.
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add(N, Reads(a), Writes(b),
               [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; });
 
-        // The run fails with an error and the runtime stays usable afterward; see README.md.
         auto result = g.run();
         ASSERT_FALSE(result) << "a cross-context node must not run successfully";
         EXPECT_EQ(result.error().code, ErrorCode::InvalidGraph);
+    }
+
+    /** @brief Tests that a co-located graph runs on the same runtime after the guarded failure. */
+    TEST_F(Medium_CrossContextGuard, ACoLocatedGraphRunsAfterTheGuardedFailure)
+    {
+        constexpr std::size_t N = 256;
+
+        auto a = runtime().buffer<int>(N, DeviceIndex{0}).value();
+        auto b = runtime().buffer<int>(N, DeviceIndex{1}).value();
+        int* pb = b.data();
+        const int* pa = a.data();
+
+        auto g = runtime().graph();
+        g.add(N, Reads(a), Writes(b),
+              [pa, pb](std::size_t i) { pb[i] = pa[i] + 1; });
+        ASSERT_FALSE(g.run());
 
         // A well-formed, co-located graph still runs on the same runtime afterward.
         for (std::size_t i = 0; i < N; ++i) a[i] = static_cast<int>(i);
         int* pa2 = a.data();
-        auto g2 = rt.graph();
+        auto g2 = runtime().graph();
         g2.add(N, Reads{}, Writes(a), [pa2](std::size_t i) { pa2[i] *= 2; });
         auto ok = g2.run();
         EXPECT_TRUE(ok) << "the pool must stay re-armable after the guarded failure";
@@ -1144,18 +1193,11 @@ namespace DeterminismTests
         };
 
         /**
-         * @brief Runs the fixed workload on a runtime built for the given worker count and copies the
-         *        results out.
-         * @param rebalancer Whether the background rebalancer runs during the workload.
+         * @brief Runs the fixed workload on a runtime and copies the results out.
+         * @param rt The runtime the workload runs on.
          */
-        Outcome run_workload(std::size_t worker_count, bool rebalancer = false)
+        Outcome run_workload(const Runtime& rt)
         {
-            RuntimeConfig config;
-            config.worker_count = worker_count;
-            config.rebalancer   = rebalancer;
-
-            auto rt = Runtime::create(config).value();
-
             auto first   = rt.buffer<float>(N).value();
             auto second  = rt.buffer<float>(N).value();
             auto total_a = rt.buffer<float>(1).value();
@@ -1198,6 +1240,20 @@ namespace DeterminismTests
             return outcome;
         }
 
+        /**
+         * @brief Runs the fixed workload on a runtime built for the given worker count and copies the
+         *        results out.
+         * @param rebalancer Whether the background rebalancer runs during the workload.
+         */
+        Outcome run_workload(std::size_t worker_count, bool rebalancer = false)
+        {
+            RuntimeConfig config;
+            config.worker_count = worker_count;
+            config.rebalancer   = rebalancer;
+
+            return run_workload(Runtime::create(config).value());
+        }
+
         /** @brief Returns whether two float vectors are equal byte for byte. */
         bool bytes_equal(const std::vector<float>& a, const std::vector<float>& b)
         {
@@ -1214,29 +1270,15 @@ namespace DeterminismTests
                     return i;
             return n;
         }
-    }
+    } // namespace
 
-    /** @brief Tests that the floating-point compile contract reaches a consumer translation unit. */
-    TEST(Medium_Determinism, TheFloatingPointContractReachesConsumerCode)
+    /** @brief Fixture of the determinism tests that run on the program's runtime. */
+    class Medium_Determinism : public TestSupport::RuntimeTest
     {
-    #ifndef SR_DETERMINISTIC_FP
-        GTEST_SKIP() << "built with SR_DETERMINISTIC_FP=OFF; byte-equal replay is "
-                        "not claimed for this configuration";
-    #else
-    #if defined(__FAST_MATH__) || defined(_M_FP_FAST)
-        constexpr bool fast_math_enabled = true;
-    #else
-        constexpr bool fast_math_enabled = false;
-    #endif
-        EXPECT_FALSE(fast_math_enabled)
-            << "fast-math is enabled: reassociation is licensed, so the same source "
-               "can fold to different bits between builds and replay cannot be "
-               "byte-equal";
-    #endif
-    }
+    };
 
     /** @brief Tests that the compiler does not reassociate host arithmetic. */
-    TEST(Medium_Determinism, HostArithmeticIsNotReassociated)
+    TEST(Small_Determinism, HostArithmeticIsNotReassociated)
     {
         volatile double big   = 1.0e16;
         volatile double minus = -1.0e16;
@@ -1282,11 +1324,11 @@ namespace DeterminismTests
         EXPECT_EQ(std::memcmp(&single.second_total, &full.second_total, sizeof(float)), 0);
     }
 
-    /** @brief Tests that the same configuration run again from scratch lands on the same bytes. */
-    TEST(Medium_Determinism, RepeatedConfigurationsAgreeByteForByte)
+    /** @brief Tests that the same configuration run again lands on the same bytes. */
+    TEST_F(Medium_Determinism, RepeatedConfigurationsAgreeByteForByte)
     {
-        const Outcome first  = run_workload(0);
-        const Outcome second = run_workload(0);
+        const Outcome first  = run_workload(runtime());
+        const Outcome second = run_workload(runtime());
 
         ASSERT_EQ(first.workers, second.workers);
         EXPECT_TRUE(bytes_equal(first.output, second.output))
@@ -1305,20 +1347,18 @@ namespace DeterminismTests
             << "the rebalancer changed element " << first_difference(quiet.output, moving.output);
     }
 
-    /** @brief Tests that the first and the last step of a multi-step run produce the same bytes. */
-    TEST(Medium_Determinism, ReplayDoesNotDriftAcrossSteps)
+    /** @brief Tests that the result of a replayed rule after many steps equals its result after one. */
+    TEST_F(Medium_Determinism, ReplayDoesNotDriftAcrossSteps)
     {
-        RuntimeConfig config;
-        config.rebalancer = false;
-        auto rt = Runtime::create(config).value();
+        runtime().set_rebalancer_enabled(false);
 
-        auto in    = rt.buffer<float>(N).value();
-        auto total = rt.buffer<float>(1).value();
+        auto in    = runtime().buffer<float>(N).value();
+        auto total = runtime().buffer<float>(1).value();
         for (std::size_t i = 0; i < N; ++i)
             in[i] = order_sensitive_value(i);
         total[0] = 0.0f;
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         record_tiled_total(g.recorder(), in, total);
 
         g.run().value();
@@ -1330,158 +1370,160 @@ namespace DeterminismTests
         EXPECT_EQ(std::memcmp(&after_one_step, &total[0], sizeof(float)), 0)
             << "a replayed rule drifted: one step gave " << after_one_step
             << ", " << K_STEPS << " steps gave " << total[0];
+    }
+
+    /** @brief Tests that a replay does not recompile. */
+    TEST_F(Medium_Determinism, AReplayDoesNotRecompile)
+    {
+        runtime().set_rebalancer_enabled(false);
+
+        auto in    = runtime().buffer<float>(N).value();
+        auto total = runtime().buffer<float>(1).value();
+        for (std::size_t i = 0; i < N; ++i)
+            in[i] = order_sensitive_value(i);
+        total[0] = 0.0f;
+
+        auto g = runtime().graph();
+        record_tiled_total(g.recorder(), in, total);
+
+        g.run().value();
+        g.run(K_STEPS).value();
+
         EXPECT_EQ(g.compile_count(), 1u) << "a replay must not recompile";
     }
 } // namespace DeterminismTests
 
-/** @brief Tests the per-graph profiling switch and the profiling queue each dispatch branch uses. */
+/** @brief Tests the per-graph profiling switch and the records a node without declared access leaves. */
 namespace GraphProfilingSwitchTests
 {
-    namespace
+    /** @brief Fixture of the profiling-switch tests, which observe runs of the program's runtime. */
+    class Medium_GraphProfilingSwitch : public TestSupport::RuntimeTest
     {
-        // True once any device queue this runtime built carries enable_profiling.
-        bool any_profiling_queue_built(Internal::Execution::RuntimeContext& ctx)
-        {
-            for (std::size_t i = 0; i < ctx.devices().count(); ++i)
-                if (ctx.devices().has_profiling_queue(i))
-                    return true;
-            return false;
-        }
-    } // namespace
+    };
 
-    TEST(Medium_GraphProfilingSwitch, TwoGraphsBothRecordWhileAnObserverIsAdded)
+    /** @brief Tests that an observer added to a runtime turns timing on for every graph of it. */
+    TEST_F(Medium_GraphProfilingSwitch, TwoGraphsBothRecordWhileAnObserverIsAdded)
     {
         constexpr std::size_t N = 256;
 
-        auto rt = Runtime::create().value(); // no observer, so no timing
-        ASSERT_FALSE(any_profiling_queue_built(SushiRuntime::Internal::ContextAccess::context(rt)));
-
-        auto a = rt.buffer<int>(N).value();
-        auto b = rt.buffer<int>(N).value();
+        auto a = runtime().buffer<int>(N).value();
+        auto b = runtime().buffer<int>(N).value();
         int* pa = a.data();
         int* pb = b.data();
 
-        auto first = rt.graph();
+        auto first = runtime().graph();
         first.add(N, Reads{}, Writes(a), [pa](std::size_t i) { pa[i] = static_cast<int>(i); });
 
-        auto second = rt.graph();
+        auto second = runtime().graph();
         second.add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] = static_cast<int>(i); });
 
-        // Without an observer neither graph builds a profiling queue.
+        // The two graphs are built with no observer; adding one turns timing on for both.
         first.run().value();
         second.run().value();
-        EXPECT_FALSE(any_profiling_queue_built(SushiRuntime::Internal::ContextAccess::context(rt)));
 
-        // Adding the observer turns timing on for both graphs of the runtime.
-        Testing::RunRecorder recorder(rt);
+        Testing::RunRecorder recorder(runtime());
         first.run().value();
         ASSERT_EQ(recorder.count(), 1u);
         EXPECT_FALSE(recorder.last().events.empty()) << "the first graph must collect device timing";
-        EXPECT_TRUE(any_profiling_queue_built(SushiRuntime::Internal::ContextAccess::context(rt)))
-            << "running a timed graph must have built a profiling queue";
 
         second.run().value();
         ASSERT_EQ(recorder.count(), 2u);
         EXPECT_FALSE(recorder.last().events.empty()) << "the second graph must collect device timing too";
     }
 
-    TEST(Medium_GraphProfilingSwitch, AddingAnObserverRecompilesNothingAndSwitches)
+    /** @brief Tests that a plan built before the observer gives full records after the add and none after the removal. */
+    TEST_F(Medium_GraphProfilingSwitch, ObserverAddedAfterTheBuildGivesRecordsAndRemovalStopsThem)
     {
         constexpr std::size_t N = 128;
 
-        auto rt = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
         int* p = buf.data();
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
         g.run().value();
-        const std::size_t compiles_after_first_run = g.compile_count();
-        EXPECT_EQ(compiles_after_first_run, 1u);
 
         // A plan built before the observer gives full records on its first run after the add.
-        Testing::RunRecorder recorder(rt);
+        Testing::RunRecorder recorder(runtime());
         g.run().value();
         ASSERT_EQ(recorder.count(), 1u);
         EXPECT_FALSE(recorder.last().events.empty());
-        EXPECT_EQ(g.compile_count(), compiles_after_first_run)
-            << "adding an observer must not recompile the plan";
 
         g.run().value();
         ASSERT_EQ(recorder.count(), 2u);
         EXPECT_FALSE(recorder.last().events.empty());
-        EXPECT_EQ(g.compile_count(), compiles_after_first_run);
 
-        // Removing the last observer recompiles nothing and records nothing.
+        // Removing the last observer records nothing.
         recorder.stop();
         g.run().value();
         EXPECT_EQ(recorder.count(), 2u);
-        EXPECT_EQ(g.compile_count(), compiles_after_first_run)
-            << "removing the last observer must not recompile the plan";
     }
 
-    /**
-     * @brief Tests that a node without declared Reads or Writes takes the NUMA fallback branch and
-     *        still uses a profiling queue.
-     */
-    TEST(Medium_GraphProfilingSwitch, NUMAFallbackBranchUsesProfilingQueue)
+    /** @brief Tests that a node without declared Reads or Writes still leaves a record of its dispatch. */
+    TEST_F(Medium_GraphProfilingSwitch, ANodeWithoutDeclaredAccessIsRecorded)
     {
         constexpr std::size_t N = 256;
 
-        auto rt = Runtime::create().value(); // no observer until the recorder below
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
         int* p = buf.data();
 
-        Testing::RunRecorder recorder(rt);
-        auto g = rt.graph();
+        Testing::RunRecorder recorder(runtime());
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes{}, [p](std::size_t i) { p[i] = static_cast<int>(i); });
 
         g.run().value();
         ASSERT_EQ(recorder.count(), 1u);
         EXPECT_FALSE(recorder.last().events.empty())
-            << "the NUMA-fallback branch must still dispatch on a profiling queue";
-        EXPECT_TRUE(any_profiling_queue_built(SushiRuntime::Internal::ContextAccess::context(rt)))
-            << "reaching this branch under profiling must build a profiling queue";
+            << "a node without declared access must still leave a record";
     }
 } // namespace GraphProfilingSwitchTests
 
 /** @brief Tests the node table, the node names and the transfer accounting around a run. */
 namespace ObservabilityTests
 {
-    TEST(Medium_Observability, ProfilingOffLeavesBreakdownEmpty)
+    /** @brief Fixture of the observability tests, which observe runs of the program's runtime. */
+    class Medium_Observability : public TestSupport::RuntimeTest
     {
-        constexpr std::size_t N = 256;
+    };
 
-        auto rt  = Runtime::create().value();                 // no observer
-        Testing::RunRecorder recorder(rt);
-        recorder.stop();
+    /** @brief Fixture of the rows that run a profiled graph on the in-order chain (false) and on the scheduler (true). */
+    class Medium_ObservabilityLayers : public ::testing::TestWithParam<bool>, protected LayerRuntime
+    {
+    protected:
+        /** @brief Makes the runtime of the row. */
+        void SetUp() override { make_runtime(GetParam()); }
+    };
 
-        auto buf = rt.buffer<int>(N).value();
-        int* p = buf.data();
+    /** @brief The add() shapes whose node can be named, as the rows of one test. */
+    enum class Shape
+    {
+        Plain,    /**< Tracked per-element add(). */
+        Captured, /**< Variadic capture shape. */
+        Stateful, /**< State rule. */
+        Host,     /**< Host task. */
+        Dynamic   /**< Dynamic per-element add. */
+    };
 
-        auto g = rt.graph();
-        g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
-        auto rep = g.run(4).value();
+    /** @brief Fixture of the rows that name one add() shape each. */
+    class Medium_ObservabilityShapes : public TestSupport::RuntimeTest,
+                                       public ::testing::WithParamInterface<Shape>
+    {
+    };
 
-        EXPECT_TRUE(rep.is_successful);
-        EXPECT_EQ(recorder.count(), 0u);
-    }
-
-    TEST(Medium_Observability, ProfilingOnCapturesPerNodeTiming)
+    TEST_F(Medium_Observability, ProfilingOnCapturesPerNodeTiming)
     {
         constexpr std::size_t N = 4096;
         constexpr std::size_t STEPS = 8;
 
-        auto rt = Runtime::create().value();
-        Testing::RunRecorder recorder(rt);
+        Testing::RunRecorder recorder(runtime());
 
-        auto a = rt.buffer<float>(N).value();
-        auto b = rt.buffer<float>(N).value();
+        auto a = runtime().buffer<float>(N).value();
+        auto b = runtime().buffer<float>(N).value();
         float* pa = a.data();
         float* pb = b.data();
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         // A heavier kernel and a lighter one, two distinct plan nodes.
         g.add(N, Reads{}, Writes(a), [pa](std::size_t i)
         {
@@ -1513,18 +1555,17 @@ namespace ObservabilityTests
     }
 
     /** @brief Tests that a name given through name() reaches the node table. */
-    TEST(Medium_Observability, NamingTheLastNodeReachesTheNodeTable)
+    TEST_F(Medium_Observability, NamingTheLastNodeReachesTheNodeTable)
     {
         constexpr std::size_t N = 512;
         constexpr std::size_t STEPS = 4;
 
-        auto rt = Runtime::create().value();
-        Testing::RunRecorder recorder(rt);
+        Testing::RunRecorder recorder(runtime());
 
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
         int* p = buf.data();
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes(buf),
               [p](std::size_t i) { p[i] = static_cast<int>(i); }).name("seed");
 
@@ -1537,42 +1578,46 @@ namespace ObservabilityTests
         EXPECT_EQ(observation.table->rows()[0].name, "seed");
     }
 
-    /** @brief Tests that every add() shape can be named, the two variadic ones included. */
-    TEST(Medium_Observability, EveryAddShapeCanBeNamed)
+    /** @brief Tests that every add() shape can be named. */
+    TEST_P(Medium_ObservabilityShapes, AShapeCanBeNamed)
     {
         constexpr std::size_t N = 256;
 
-        auto rt = Runtime::create().value();
-        Testing::RunRecorder recorder(rt);
+        Testing::RunRecorder recorder(runtime());
 
-        auto a = rt.buffer<float>(N).value();
-        auto b = rt.buffer<float>(N).value();
-        auto c = rt.buffer<float>(N).value();
-        auto s = rt.state<float>(N).value();
+        auto a = runtime().buffer<float>(N).value();
+        auto b = runtime().buffer<float>(N).value();
+        auto c = runtime().buffer<float>(N).value();
+        auto s = runtime().state<float>(N).value();
         float* pa = a.data();
         float* pb = b.data();
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
 
-        // Plain tracked per-element.
-        g.add(N, Reads(a), Writes(b),
-              [pa, pb](std::size_t i) { pb[i] = pa[i] + 1.0f; }).name("plain");
-
-        // Variadic capture shape: the pack's last element is the callable.
-        g.add(Extent<1>{N}, In(b), Out(c),
-              [](sycl::id<1> i, const float* in, float* out) { out[i] = in[i] * 2.0f; })
-         .name("captured");
-
-        // State shape.
-        g.add_rule(s, [](std::size_t i, const float* cur, float* next) { next[i] = cur[i] + 1.0f; })
-         .name("stateful");
-
-        // Host shape.
-        g.add_host(Reads(c), Writes{}, [] {}).name("host");
-
-        // Dynamic per-element shape.
-        g.add_dynamic(sized([] { return N; }), N, Reads(a), Writes(b),
-                      [pa, pb](std::size_t i) { pb[i] = pa[i]; }).name("dynamic");
+        switch (GetParam())
+        {
+            case Shape::Plain:
+                g.add(N, Reads(a), Writes(b),
+                      [pa, pb](std::size_t i) { pb[i] = pa[i] + 1.0f; }).name("named");
+                break;
+            case Shape::Captured:
+                // Variadic capture shape: the pack's last element is the callable.
+                g.add(Extent<1>{N}, In(b), Out(c),
+                      [](sycl::id<1> i, const float* in, float* out) { out[i] = in[i] * 2.0f; })
+                 .name("named");
+                break;
+            case Shape::Stateful:
+                g.add_rule(s, [](std::size_t i, const float* cur, float* next) { next[i] = cur[i] + 1.0f; })
+                 .name("named");
+                break;
+            case Shape::Host:
+                g.add_host(Reads(c), Writes{}, [] {}).name("named");
+                break;
+            case Shape::Dynamic:
+                g.add_dynamic(sized([] { return N; }), N, Reads(a), Writes(b),
+                              [pa, pb](std::size_t i) { pb[i] = pa[i]; }).name("named");
+                break;
+        }
 
         g.run().value();
         ASSERT_EQ(recorder.count(), 1u);
@@ -1583,23 +1628,25 @@ namespace ObservabilityTests
         for (const auto& row : observation.table->rows())
             names.push_back(row.name);
 
-        for (const char* expected : {"plain", "captured", "stateful", "host", "dynamic"})
-            EXPECT_NE(std::find(names.begin(), names.end(), expected), names.end())
-                << "no node reported as '" << expected << "'";
+        EXPECT_NE(std::find(names.begin(), names.end(), "named"), names.end())
+            << "no node reported as 'named'";
     }
 
+    INSTANTIATE_TEST_SUITE_P(Rows, Medium_ObservabilityShapes,
+                             ::testing::Values(Shape::Plain, Shape::Captured, Shape::Stateful,
+                                               Shape::Host, Shape::Dynamic));
+
     /** @brief Tests that an unnamed node reports the documented default label. */
-    TEST(Medium_Observability, UnnamedNodeStillReportsTheDefaultLabel)
+    TEST_F(Medium_Observability, UnnamedNodeStillReportsTheDefaultLabel)
     {
         constexpr std::size_t N = 128;
 
-        auto rt = Runtime::create().value();
-        Testing::RunRecorder recorder(rt);
+        Testing::RunRecorder recorder(runtime());
 
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
         int* p = buf.data();
 
-        auto g = rt.graph();
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i); });
         g.run().value();
         ASSERT_EQ(recorder.count(), 1u);
@@ -1610,63 +1657,69 @@ namespace ObservabilityTests
         EXPECT_EQ(observation.table->rows()[0].name, "unnamed_task");
     }
 
-    TEST(Medium_Observability, ProfilingOnPopulatesWorkerSplit)
+    /** @brief Tests that a profiled run of 16 steps has one event per dispatch, on either layer. */
+    TEST_P(Medium_ObservabilityLayers, AProfiledRunHasOneEventPerStep)
     {
         constexpr std::size_t N = 1024;
 
-        // The scheduler layer is what the observation names, so keep this plan off the chain.
-        RuntimeConfig config;
-        config.force_scheduler = true;
-        auto rt = Runtime::create(config).value();
-        Testing::RunRecorder recorder(rt);
-        auto buf = rt.buffer<int>(N).value();
+        Testing::RunRecorder recorder(layer_runtime());
+        auto buf = layer_runtime().buffer<int>(N).value();
         int* p = buf.data();
 
-        auto g = rt.graph();
+        auto g = layer_runtime().graph();
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
-        auto rep = g.run(16).value();
+        g.run(16).value();
         ASSERT_EQ(recorder.count(), 1u);
-        const RunObservation observation = recorder.last();
 
-        EXPECT_EQ(rep.layer, ExecutionLayer::Scheduler);
-        EXPECT_EQ(observation.layer, ExecutionLayer::Scheduler);
-        EXPECT_EQ(observation.events.size(), 16u);
+        EXPECT_EQ(recorder.last().events.size(), 16u);
     }
 
-    TEST(Medium_Observability, ExplicitTransfersAreAccounted)
+    INSTANTIATE_TEST_SUITE_P(Rows, Medium_ObservabilityLayers, ::testing::Values(false, true));
+
+    /** @brief Tests that an explicit host-to-device copy is counted in the host-to-device bytes. */
+    TEST_F(Medium_Observability, AHostToDeviceCopyIsAccounted)
     {
         constexpr std::size_t N = 512;
 
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
+        const std::size_t before = runtime().advanced().host_to_device_bytes();
 
-        // The context counts the runtime-issued copies directly.
         std::vector<int> src(N, 7);
         buf.write_range({0, N}, src).value();
-        EXPECT_EQ(rt.advanced().host_to_device_bytes(), N * sizeof(int));
+
+        EXPECT_EQ(runtime().advanced().host_to_device_bytes() - before, N * sizeof(int));
+    }
+
+    /** @brief Tests that an explicit device-to-host copy is counted in the device-to-host bytes. */
+    TEST_F(Medium_Observability, ADeviceToHostCopyIsAccounted)
+    {
+        constexpr std::size_t N = 512;
+
+        auto buf = runtime().buffer<int>(N).value();
+        const std::size_t before = runtime().advanced().device_to_host_bytes();
 
         auto out = buf.read_range({0, N}).value();
         ASSERT_EQ(out.size(), N);
-        EXPECT_EQ(rt.advanced().device_to_host_bytes(), N * sizeof(int));
+
+        EXPECT_EQ(runtime().advanced().device_to_host_bytes() - before, N * sizeof(int));
     }
 
-    TEST(Medium_Observability, TransferBytesAttributedToTheRunWindow)
+    TEST_F(Medium_Observability, TransferBytesAttributedToTheRunWindow)
     {
         constexpr std::size_t N = 128;
 
-        auto rt  = Runtime::create().value();
-        auto buf = rt.buffer<int>(N).value();
+        auto buf = runtime().buffer<int>(N).value();
         std::vector<int> src(N, 3);
 
         // The bytes a host node pushes during the run land in the runtime's counters; see README.md.
-        const std::size_t h2d_before = rt.advanced().host_to_device_bytes();
-        const std::size_t d2h_before = rt.advanced().device_to_host_bytes();
-        auto g = rt.graph();
+        const std::size_t h2d_before = runtime().advanced().host_to_device_bytes();
+        const std::size_t d2h_before = runtime().advanced().device_to_host_bytes();
+        auto g = runtime().graph();
         g.add_host([&buf, &src]() { buf.write_range({0, N}, src).value(); });
         g.run().value();
 
-        EXPECT_EQ(rt.advanced().host_to_device_bytes() - h2d_before, N * sizeof(int));
-        EXPECT_EQ(rt.advanced().device_to_host_bytes() - d2h_before, 0u);
+        EXPECT_EQ(runtime().advanced().host_to_device_bytes() - h2d_before, N * sizeof(int));
+        EXPECT_EQ(runtime().advanced().device_to_host_bytes() - d2h_before, 0u);
     }
 } // namespace ObservabilityTests
 
@@ -1681,16 +1734,10 @@ namespace GraphReplayTests
 
         /**
          * @brief Replays a chain of dependent kernels; node i writes buffer i + 1 as buffer i plus one.
-         * @param force_scheduler True to keep the plan on the scheduler instead of the chain layer.
          * @return The value of the last buffer after one compiling run and K_REPLAYS replays.
          */
-        int settle_chain(bool force_scheduler)
+        int settle_chain(const Runtime& rt)
         {
-            RuntimeConfig config;
-            config.force_scheduler = force_scheduler;
-            auto rt = Runtime::create(config).value();
-            rt.set_rebalancer_enabled(false);
-
             std::vector<Buffer<int>> bufs;
             bufs.reserve(K_CHAIN_LENGTH + 1);
             for (std::size_t i = 0; i <= K_CHAIN_LENGTH; ++i)
@@ -1719,11 +1766,8 @@ namespace GraphReplayTests
          *
          * @return The number of roots whose buffer does not hold that count.
          */
-        std::size_t count_roots_that_missed_a_step()
+        std::size_t count_roots_that_missed_a_step(const Runtime& rt)
         {
-            auto rt = Runtime::create().value();
-            rt.set_rebalancer_enabled(false);
-
             std::vector<Buffer<int>> bufs;
             bufs.reserve(K_ROOTS);
             for (std::size_t r = 0; r < K_ROOTS; ++r)
@@ -1749,21 +1793,29 @@ namespace GraphReplayTests
         }
     } // namespace
 
-    /** @brief Tests that a chain kept on the scheduler settles to its length after replays. */
-    TEST(Medium_GraphReplay, AChainOnTheSchedulerSettlesToItsLength)
+    /** @brief Fixture of the replay rows that run on the in-order chain (false) and on the scheduler (true). */
+    class Medium_GraphReplay : public ::testing::TestWithParam<bool>, protected LayerRuntime
     {
-        EXPECT_EQ(settle_chain(true), static_cast<int>(K_CHAIN_LENGTH));
+    protected:
+        /** @brief Makes the runtime of the row and turns its rebalancer off. */
+        void SetUp() override
+        {
+            make_runtime(GetParam());
+            layer_runtime().set_rebalancer_enabled(false);
+        }
+    };
+
+    /** @brief Tests that a replayed chain settles to its length, on either layer. */
+    TEST_P(Medium_GraphReplay, AChainSettlesToItsLength)
+    {
+        EXPECT_EQ(settle_chain(layer_runtime()), static_cast<int>(K_CHAIN_LENGTH));
     }
 
-    /** @brief Tests that a chain allowed onto the chain layer settles to its length after replays. */
-    TEST(Medium_GraphReplay, AChainOnTheChainLayerSettlesToItsLength)
+    /** @brief Tests that every independent root runs on every step of a replay, on either layer. */
+    TEST_P(Medium_GraphReplay, EveryIndependentRootRunsOnEveryStep)
     {
-        EXPECT_EQ(settle_chain(false), static_cast<int>(K_CHAIN_LENGTH));
+        EXPECT_EQ(count_roots_that_missed_a_step(layer_runtime()), 0u);
     }
 
-    /** @brief Tests that every independent root runs on every step of a replay. */
-    TEST(Medium_GraphReplay, EveryIndependentRootRunsOnEveryStep)
-    {
-        EXPECT_EQ(count_roots_that_missed_a_step(), 0u);
-    }
+    INSTANTIATE_TEST_SUITE_P(Rows, Medium_GraphReplay, ::testing::Values(false, true));
 } // namespace GraphReplayTests

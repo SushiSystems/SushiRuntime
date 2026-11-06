@@ -1,5 +1,10 @@
 # test_graph.cpp
 
+Every test of the file runs on the program's runtime, through `TestSupport::RuntimeTest`. The rows
+that need a runtime forced onto the scheduler make that runtime in their fixture, since
+`RuntimeConfig::force_scheduler` is set at creation. The tests name no layer: which path ran a plan
+is an inside detail, and a run must give the right bytes on both.
+
 The file covers the native CPU execution path, work package WP-7 of
 `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. `add_host()` runs plain C++ on a worker thread
 with no SYCL submission. The task is ordered into the graph by the data it touches and shares one
@@ -10,22 +15,19 @@ completion contract with kernel tasks.
 | `HostTaskRunsAfterKernel` | A native host task ordered after a device kernel must see the kernel's output. The task is dispatched only once the kernel's event has completed, so the shared USM the kernel wrote is visible on the host. The ordering comes from the shared buffer `a`. |
 | `KernelRunsAfterHostTask` | A device kernel ordered after a native host task must see the host's writes. The kernel waits on the inline completion of the host task before it is dispatched, and shared USM written on the host is visible on the device. |
 | `UntrackedHostTaskRunsEveryStep` | An untracked native task runs once per step, which proves that the form without dependencies is both a root and a leaf and replays on every step. |
-
-### `ThrowingHostTaskKeepsRuntimeUsable`
-
-A native task that throws fails the run, which is the error isolation of work package WP-0, and the
-runtime stays usable: a fresh graph runs cleanly afterwards. Native tasks therefore share the kernel
-error path and do not latch the worker pool dead.
+| `ThrowingHostTaskFailsTheRun` | A native task that throws fails the run, which is the error isolation of work package WP-0. |
+| `TheRuntimeRunsAGraphAfterAHostTaskThrew` | A fresh graph runs cleanly on the same runtime afterwards. Native tasks therefore share the kernel error path and do not latch the worker pool dead. |
 
 The file covers per-dispatch node event records, the clock pairing and steady-state capture. The
 design is section C and items 1, 2, 3, 4 and 6 of section E in
 the g1 node event records design spec in the version history, built as task 5 of
 the g1 node event records plan spec in the version history. The item numbers in the
-subsections refer to section E of the design.
+subsections refer to section E of the design. The observations come from `Testing::RunRecorder`,
+which wraps the `RecordingObserver` adapter of the report module.
 
 | Test | What it proves |
 | --- | --- |
-| `NodeEventRecordsTestAccess` | `NodeEventRecordsTestAccess` is a friend used only by tests to reach the compiled plan of a `Graph`. It mirrors `RegistrationIndexTestAccess` in `graph/test_recorder.cpp`. |
+| `ARunWithNoObserverRecordsNothing` | Item 1: a run of a runtime whose observer was removed succeeds and hands out no observation. This one test holds the promise for `Graph` and for `DynamicGraph`. |
 | `RequestedGraphRecordsOnePerDispatch` | Item 2: three independent kernel nodes and `run(5)` give fifteen records, invocations 0 to 4 per node, and `submit <= start <= end` for every record. |
 
 ### Steady-state capture
@@ -38,19 +40,19 @@ of the shared library. The opening of this file explains why that test needs its
 ### `NodeIndexIsRegistrationOrder`
 
 Item 4: `node_index` follows the registration order, not the compiled order, which is reversed. The
-test cross-checks it against the plan's own `registration_index`.
+test reads the rows of the observation's node table: the nodes named A, B and C hold the indices 0, 1 and 2.
 
 A strict dependency chain, in which B reads what A wrote and C reads what B wrote, forces the
-execution order A, B, C. That gives an observation of identity which does not depend on trusting the
-`registration_index` read from the `Node` object. If the registration order of the plan and the
-dispatch order of the run ever disagreed, sorting by earliest submit would catch it, even though
-both would still read as {0, 1, 2} on their own.
+execution order A, B, C. That gives an observation of identity which does not depend on a trusted
+index read from the plan. If the registration order of the plan and the dispatch order of the run
+ever disagreed, sorting by earliest submit would catch it, even though both would still read as
+{0, 1, 2} on their own.
 
 ### `HostNodeLandsAfterItsKernelOnTheSteadyClock`
 
 Item 6: the record of a native host node is on the steady clock and carries `K_HOST_DEVICE_INDEX`. The
 kernel's record goes through its device's pairing, and the host record must not start before the kernel
-ended, within the `uncertainty_ns` of that pairing.
+ended, within the `uncertainty_ns` of that pairing. The kernel's node is found by its name in the node table.
 
 The host node reads what the kernel writes. That chains it strictly behind the kernel's completion;
 the two are not independent roots. The test tells a host record from a device record by its device
@@ -67,16 +69,18 @@ The tests pin down two properties that pull against each other. The overloads ex
 loop keeps one report alive and the per-run vectors stop being reallocated, so the report must not
 be rebuilt from scratch. A report carried across ticks must also never let the numbers of the
 previous run survive into the current one, and not rebuilding invites exactly that. The resolution
-is to reset and then refill: the capacity stays and the values do not. Both halves are asserted,
-also on the failure paths, where stale numbers would mislead most: a caller that ignored the
+is to reset and then refill. The public half of it is asserted: the report holds one row per run and
+never a row more. Whether the vector kept its address is an inside detail and no test reads it. The
+same holds on the failure paths, where stale numbers would mislead most: a caller that ignored the
 returned error would otherwise read a report that looks successful.
 
 | Test | What it proves |
 | --- | --- |
-| `record_write` | `record_write` zeroes `buf` and records the one task every test in the file runs: element i gets i+1. It takes both handles by reference and does not return them, because a `Buffer` must not be moved once a graph has recorded it; the graph would keep pointing at the old address. |
+| `record_write` | `record_write` zeroes `buf` and records the one task every test in the file runs: element i gets i+1. It takes both handles by reference and does not return them, because a `Buffer` must not be moved once a graph has recorded it. |
 | `ReuseReportsWhatTheValueFormReports` | The reuse overload must report what the value-returning one reports. If the two drivers ever diverged, every number a consumer reads from the cheap path would silently become a different measurement from the documented one. |
-| `SteadyStateRunsDoNotReallocateTheReport` | The overload exists so that the per-run vectors are refilled in place. Comparing the address of the row before and after proves that no reallocation happened. A capacity check alone would pass even if the vector were rebuilt into a new block of the same size. |
+| `SteadyStateRunsLeaveOneRowPerRun` | Eight runs into one report leave one row of per-run statistics, not eight. |
 | `EachRunOverwritesTheLastOne` | Reuse must not accumulate. A short run that follows a long one has to read as the short run, because the count belongs to the run, not to the report. |
+| `DynamicGraphRunsIntoACallersReport` | The composed-plan driver shares the fill path, so a `DynamicGraph` run into a caller's report leaves one row and the right values. |
 
 ### `ARejectedRunLeavesNoStaleNumbers`
 
@@ -100,15 +104,19 @@ completes normally. Cancellation is reset per run; it does not latch.
 
 The file covers layer 1 of `docs/design/GRAPH_REPLAY/README.md` (sections C and G, phase P1).
 
-A chainable plan runs as an in-order chain, matches the scheduler bit for bit, and names the path it
-took in `RunReport::layer`.
+A chainable plan runs as an in-order chain and matches the scheduler. The oracle is a host model of
+the workload: the integer buffers must match its bytes, and the `State` field matches within the
+rounding bound of its float operations, through `tests/support/tolerance.hpp`. The sized count and the gate come
+from host providers that advance once per step, and the model reads them the same way. The rows of
+`Medium_ChainLayerWorkload` run the workload on the chain, on a runtime forced onto the scheduler, and on the chain
+with a host task among the nodes, which keeps the plan off the chain.
 
-### `ANamedNodeRunsOnTheChainWithNoClusterAttached`
-
-A kernel and a State rule each name an operation and one parameter in their `NodeOptions`. No
-cluster is attached, so nothing can take either node. The run of three steps must report
-`ExecutionLayer::Chain` and leave the values an unnamed graph leaves: a named node is a candidate
-for another machine only where one can run it.
+| Test | What it proves |
+| --- | --- |
+| `WorkloadMatchesTheHostModel` | Each of the three rows leaves the bytes of `workload_model`. |
+| `ANamedNodeGivesTheRightValuesWithNoClusterAttached` | A kernel and a State rule each name an operation and one parameter in their `NodeOptions`. No cluster is attached, so nothing can take either node. The run of three steps leaves the values an unnamed graph leaves. |
+| `RunUntilSeesEveryStepsResult` | `run_until` with a stop test that reads a device result stops after exactly the steps the target needs. |
+| `ProfiledRunRecordsEveryDispatch` | A profiled run of 12 steps records each dispatch once per step and per node, and leaves the right sums. |
 
 The file covers the reusable completion latch, section 5.1 of
 `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. `execute()` allocates no promise and no future
@@ -119,28 +127,24 @@ sentinel to re-wire.
 
 | Test | What it proves |
 | --- | --- |
+| `ManyStepReplayReachesCorrectState` | 5000 replayed steps reach the right state. |
 | `ReRunsCleanlyOnTheSamePlan` | The test makes three separate `run()` calls on one compiled plan. The latch must reset between them, and the sentinel, which is wired once, must keep signalling. |
-
-### `SingleStepRunsRepeatedlyWithoutLeak`
-
-Many independent single-step runs stress the reset, arm and wait cycle hardest. Each run allocates
-nothing on the completion path.
+| `EachOfManySingleStepRunsCompletesWithTheRightValues` | Many independent single-step runs stress the reset, arm and wait cycle hardest. Each of 200 runs completes and the buffer holds the right values. That the completion path allocates nothing is not read here; the sanitizer runs hold it. |
 
 A single kernel cannot dereference USM from two device contexts that are not peers. The scheduler
 detects such a node on its first dispatch and fails the run with a precise error, before the node
 can make an illegal cross-context access. The guard is section 5.4 of
 `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. Splitting data together with the work across
 devices belongs to work package WP-5 of the same document, and until that is built the guard
-enforces the co-location contract. The check needs at least two device contexts, so the test skips
-on a single-device machine.
+enforces the co-location contract. The check needs at least two device contexts, so the fixture
+skips on a single-device machine.
 
 ### `NodeSpanningTwoContextsFailsCleanly`
 
 The node reads data in context 0 and writes data in context 1, and no single queue can run it
-correctly.
-
-The run fails with a clear error and not with an illegal memory access, and the runtime stays usable
-afterwards, which is the error-isolation contract.
+correctly. The run fails with `InvalidGraph` and not with an illegal memory access.
+`ACoLocatedGraphRunsAfterTheGuardedFailure` holds the other half, the error-isolation contract: the runtime
+stays usable afterwards, and a co-located graph runs on it.
 
 The file is the determinism conformance suite: the same graph on the same machine must produce
 byte-identical output however many workers ran it.
@@ -178,86 +182,83 @@ sum of the same input.
 
 ### `run_workload`
 
-`run_workload` runs one fixed workload on a runtime built for `worker_count` workers, where 0 means
-the whole machine, and copies the results out. Two independent rules compete for the pool, so the
-worker that adds a given tile varies with the pool size. A map then mixes both totals into every
-output element, so a divergence in either rule reaches the bytes being compared.
+`run_workload` runs one fixed workload on a runtime and copies the results out. A second form builds
+a runtime for `worker_count` workers first, where 0 means the whole machine. Two independent rules
+compete for the pool, so the worker that adds a given tile varies with the pool size. A map then
+mixes both totals into every output element, so a divergence in either rule reaches the bytes being compared.
 
 | Test | What it proves |
 | --- | --- |
 | `bytes_equal` | `bytes_equal` compares bytes, not numbers. A difference of one ulp must fail, and NaN payloads must compare as the bits they are. |
 | `first_difference` | `first_difference` returns the index of the first differing element, so that a failure message can name the element. |
 
-### `TheFloatingPointContractReachesConsumerCode`
-
-The test asserts the compiler half of the contract where a consumer would feel it. This translation
-unit is not part of the library and compiles against the installed-style interface, so a definition
-that arrives in it is evidence that the floating-point contract travels with the target and does not
-stop at the library edge. Restoring `/fp:fast` or `-ffast-math` fails the test at compile time,
-which is the property item BB-3 of `docs/design/ENGINE_BACKBONE_REFACTOR/` asks the suite to have.
-
 ### `HostArithmeticIsNotReassociated`
 
 The test catches reassociation at run time, without a macro, so it still works on a compiler whose
 fast-math mode does not announce itself. The two expressions hold the same three values in the same
 order with different grouping, and they are required to disagree. A compiler allowed to reassociate
-would rewrite one into the other and they would match.
+would rewrite one into the other and they would match. It touches no device and runs small.
 
 ### `OutputIsByteEqualAcrossWorkerCounts`
 
 This test is the core claim of the suite. One worker, two workers and the whole machine must agree
-on every byte of the output.
+on every byte of the output. It builds a runtime per worker count in its body, because the count is
+fixed at creation; that waits on the owner's ruling on one device per process.
 
 The test guards against a vacuous pass: if every configuration collapsed to the same pool, the
 schedule would not have varied at all.
 
 ### `RepeatedConfigurationsAgreeByteForByte`
 
-The same configuration, run again from scratch, must land on the same bytes.
+The same configuration, run again, must land on the same bytes.
 `OutputIsByteEqualAcrossWorkerCounts` varies the pool size. This test varies nothing and relies on
 the run-to-run scheduling jitter of an unchanged pool (which steal wins a race, which worker parks)
 to expose a dependence on order.
 
 | Test | What it proves |
 | --- | --- |
-| `TheRebalancerDoesNotChangeTheBytes` | The whole machine runs the workload with the background rebalancer off and then on. Task migration reassigns work-items to workers in the middle of a run, and the output must not move by a byte. |
-
-### `ReplayDoesNotDriftAcrossSteps`
-
-A replayed graph must not drift. Every step of a multi-step run recomputes the same total from
-the same input, so step 1 and step `STEPS` have to produce the same bytes. A drift would mean that
-per-step state of the plan had leaked into the arithmetic.
+| `TheRebalancerDoesNotChangeTheBytes` | The whole machine runs the workload with the background rebalancer off and then on. Task migration reassigns work-items to workers in the middle of a run, and the output must not move by a byte. It builds its two runtimes in its body, since the rebalancer is set at creation, and waits on the same ruling. |
+| `ReplayDoesNotDriftAcrossSteps` | A replayed graph must not drift. Every step of a multi-step run recomputes the same total from the same input, so step 1 and step `STEPS` have to produce the same bytes. A drift would mean that per-step state of the plan had leaked into the arithmetic. |
+| `AReplayDoesNotRecompile` | The replay of `K_STEPS` steps after the first run leaves `compile_count()` at one. |
 
 The file covers how an added observer reaches the graphs of a runtime: section B of
 the g1 node event records design spec in the version history, built as task 4 of
 the g1 node event records plan spec in the version history. It checks that an observer turns timing
-on for every graph of its runtime, that no plan recompiles, and that
-every device-dispatch branch the scheduler can route to a profiling queue does so.
+on for every graph of its runtime. That no plan recompiles when an observer is added or removed is held,
+for both graph types, by `AnObserverRebuildsNothing` in
+[plumbing/test_step_driver.cpp](plumbing/README.md).
 
-### `NUMAFallbackBranchUsesProfilingQueue`
+| Test | What it proves |
+| --- | --- |
+| `TwoGraphsBothRecordWhileAnObserverIsAdded` | Two graphs built with no observer both collect device timing once one is added to the runtime. |
+| `ObserverAddedAfterTheBuildGivesRecordsAndRemovalStopsThem` | A plan built before the observer gives full records on its first run after the add, and none after the last observer is removed. |
 
-A node with no declared `Reads` or `Writes` leaves the scheduler's anchor unset. That forces the
-NUMA-local fallback branch and not the cached-index branch that the other two tests of the file
-exercise. Nothing public exposes which branch a node took, because `Node::cached_queue_index_` is
-private to the scheduler, so the test asserts the observable effect of the fallback: a profiling
-queue is built and timing is collected. If the fallback still landed on the plain queue, the
-poller's timestamp read on that event would throw, because the plain queue is not built with
-`enable_profiling`. A regression therefore fails loudly and does not merely lose timing.
+### `ANodeWithoutDeclaredAccessIsRecorded`
+
+A node with no declared `Reads` or `Writes` leaves the scheduler's anchor unset, which takes the
+NUMA-local fallback of the dispatch. Nothing public says which branch a node took, so the test
+asserts the observable effect: the node still leaves a record. A regression that dispatched it on a
+queue without profiling would fail the poller loudly and lose the record.
 
 One branch is left: the NUMA fallback of `devices().queue_or_numa_local()`, taken when
 `memory().owning_device()` does not recognise an anchor. A test
 cannot force it safely. Reaching it needs a device kernel that dereferences a pointer the runtime
-never allocated, which is an illegal access on a real GPU backend.
+never allocated, which is an illegal access on a real GPU backend. That the observer builds a
+profiling queue is read through internal names and has no test.
 
 The file covers the observation of a run, section 5.5 of
 `docs/design/SIMULATION_ENGINE_SUBSTRATE_PLAN/`. Device timing is on while an observer is added to the
 runtime. With none, a run hands out no observation. With one, the observation carries the node table
 and one record per dispatch. Explicit transfers between host and device are counted by the runtime in
-both cases.
+both cases, and the tests read the counters as a difference, since the program's runtime has counted
+the transfers of the tests before.
 
 | Test | What it proves |
 | --- | --- |
 | `ProfilingOnCapturesPerNodeTiming` | Both kernels appear as distinct plan nodes, each dispatched once per step. The magnitudes of the device times depend on the backend and on noise, so the stable claim is structural: the per-node breakdown is present and correctly counted. |
+| `AProfiledRunHasOneEventPerStep` | A run of 16 steps of one kernel leaves 16 events, on the chain and on a runtime forced onto the scheduler. |
+| `AHostToDeviceCopyIsAccounted` | An explicit `write_range` raises the host-to-device bytes by the size of the range. |
+| `ADeviceToHostCopyIsAccounted` | An explicit `read_range` raises the device-to-host bytes by the size of the range. |
 
 ### `NamingTheLastNodeReachesTheNodeTable`
 
@@ -270,16 +271,16 @@ The test sets the name with `name()`, which names the rule the verb before it re
 
 | Test | What it proves |
 | --- | --- |
-| `EveryAddShapeCanBeNamed` | The test names a node of every launch shape: counted, captured, a State rule, host work and a dynamic kernel. |
+| `AShapeCanBeNamed` | One row per launch shape: counted, captured, a State rule, host work and a dynamic kernel. In each a node is named and its row carries the name. |
 | `UnnamedNodeStillReportsTheDefaultLabel` | A node added without a name keeps the documented default label, so a call site without a label is still visible in the report. |
 | `TransferBytesAttributedToTheRunWindow` | A host node pushes data during the run. The bytes must land in the window of that run, not before it. |
 
 ## `Medium_GraphReplay`
 
-Replay tests moved here from the benchmark file, each on a small graph.
+Replay tests moved here from the benchmark file, each on a small graph, in two rows: the chain and
+a runtime forced onto the scheduler.
 
 | Test | What it proves |
 | --- | --- |
-| `AChainOnTheSchedulerSettlesToItsLength` | A chain of 16 dependent kernels kept on the work-stealing path, run once and then replayed five times, leaves its length in the last buffer. |
-| `AChainOnTheChainLayerSettlesToItsLength` | The same chain allowed onto the chain layer settles to the same value. |
+| `AChainSettlesToItsLength` | A chain of 16 dependent kernels, run once and then replayed five times, leaves its length in the last buffer. |
 | `EveryIndependentRootRunsOnEveryStep` | Sixteen independent roots, each adding one to its own buffer, hold one more than the replay count after a compiling run and five replays. |

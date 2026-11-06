@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -42,6 +43,8 @@
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/report/recording_observer.hpp>
+
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using SushiRuntime::RecordingObserver;
@@ -84,14 +87,11 @@ namespace
 
     /**
      * @brief Runs a one-node graph whose task submits two kernels and returns what was observed.
+     * @param rt The runtime the graph runs on.
      * @param hand_over Whether the body hands both events over.
-     * @param force_scheduler Whether the run takes the worker pool and not the in-order chain.
      */
-    TwoKernelRun run_two_kernels(bool hand_over, bool force_scheduler)
+    TwoKernelRun run_two_kernels(const Runtime& rt, bool hand_over)
     {
-        RuntimeConfig config;
-        config.force_scheduler = force_scheduler;
-        auto rt = Runtime::create(config).value();
         auto buf = rt.buffer<std::uint32_t>(K_WIDTH).value();
         std::uint32_t* p = buf.data();
         SubmittedEvents submitted;
@@ -138,9 +138,9 @@ namespace
     }
 
     /** @brief Checks the record of a body that handed both events over spans both. */
-    void expect_spans_both(bool force_scheduler)
+    void expect_spans_both(const Runtime& rt)
     {
-        const TwoKernelRun run = run_two_kernels(true, force_scheduler);
+        const TwoKernelRun run = run_two_kernels(rt, true);
 
         ASSERT_EQ(run.records.size(), 1u);
         ASSERT_EQ(run.events.size(), 2u);
@@ -148,52 +148,68 @@ namespace
         const std::uint64_t earliest_start = std::min(start_of(run.events[0]), start_of(run.events[1]));
         const std::uint64_t latest_end = std::max(end_of(run.events[0]), end_of(run.events[1]));
         const std::uint64_t earliest_submit = std::min(submit_of(run.events[0]), submit_of(run.events[1]));
-        EXPECT_EQ(record.start_ns, earliest_start) << "force_scheduler = " << force_scheduler;
-        EXPECT_EQ(record.end_ns, latest_end) << "force_scheduler = " << force_scheduler;
-        EXPECT_EQ(record.submit_ns, earliest_submit) << "force_scheduler = " << force_scheduler;
+        EXPECT_EQ(record.start_ns, earliest_start);
+        EXPECT_EQ(record.end_ns, latest_end);
+        EXPECT_EQ(record.submit_ns, earliest_submit);
         EXPECT_NE(record.start_ns, start_of(run.events[1]))
             << "the span starts with the first kernel, which the returned event alone would miss";
     }
 
     /** @brief Checks the record of a body that handed none over is the returned event's alone. */
-    void expect_times_the_returned_event(bool force_scheduler)
+    void expect_times_the_returned_event(const Runtime& rt)
     {
-        const TwoKernelRun run = run_two_kernels(false, force_scheduler);
+        const TwoKernelRun run = run_two_kernels(rt, false);
 
         ASSERT_EQ(run.records.size(), 1u);
         ASSERT_EQ(run.events.size(), 2u);
         const NodeEventRecord& record = run.records[0];
-        EXPECT_EQ(record.start_ns, start_of(run.events[1])) << "force_scheduler = " << force_scheduler;
-        EXPECT_EQ(record.end_ns, end_of(run.events[1])) << "force_scheduler = " << force_scheduler;
+        EXPECT_EQ(record.start_ns, start_of(run.events[1]));
+        EXPECT_EQ(record.end_ns, end_of(run.events[1]));
     }
 } // namespace
 
-/** @brief Tests that on the worker pool a body handing over two events is timed from the earliest start to the latest end. */
-TEST(Medium_DispatchEvents, ABodyHandingOverTwoEventsIsTimedAcrossBoth)
+/** @brief Fixture of the rows that run the two-kernel body on the worker pool (true) and on the in-order chain (false). */
+class Medium_DispatchEvents : public ::testing::TestWithParam<bool>
 {
-    expect_spans_both(true);
-}
+    protected:
+        /** @brief Makes the runtime of the row: the program's for the chain, one forced onto the pool otherwise. */
+        void SetUp() override
+        {
+            if (GetParam())
+            {
+                RuntimeConfig config;
+                config.force_scheduler = true;
+                pool_.emplace(Runtime::create(config).value());
+            }
+        }
 
-/** @brief Tests the same on the in-order chain path. */
-TEST(Medium_DispatchEvents, ABodyHandingOverTwoEventsIsTimedAcrossBothOnTheChain)
+        /** @brief Returns the runtime of the row. */
+        [[nodiscard]] const Runtime& runtime() const
+        {
+            return pool_ ? *pool_ : TestSupport::RuntimeEnvironment::runtime();
+        }
+
+    private:
+        std::optional<Runtime> pool_; /**< The pool runtime of the true row. */
+};
+
+/** @brief Tests that a body handing over two events is timed from the earliest start to the latest end. */
+TEST_P(Medium_DispatchEvents, ABodyHandingOverTwoEventsIsTimedAcrossBoth)
 {
-    expect_spans_both(false);
+    expect_spans_both(runtime());
 }
 
 /** @brief Tests that a body handing over nothing is timed by the event it returns, as before. */
-TEST(Medium_DispatchEvents, ABodyHandingOverNoneIsTimedAsBefore)
+TEST_P(Medium_DispatchEvents, ABodyHandingOverNoneIsTimedAsBefore)
 {
-    expect_times_the_returned_event(true);
+    expect_times_the_returned_event(runtime());
 }
 
-/** @brief Tests the same on the in-order chain path. */
-TEST(Medium_DispatchEvents, ABodyHandingOverNoneIsTimedAsBeforeOnTheChain)
-{
-    expect_times_the_returned_event(false);
-}
-
-/** @brief Tests that handing an event over outside any body does nothing. */
-TEST(Medium_DispatchEvents, HandingAnEventOverOutsideABodyDoesNothing)
+/** @brief Tests that handing an event over outside any body leaves no event in the record of a later run. */
+TEST_P(Medium_DispatchEvents, HandingAnEventOverOutsideABodyLeavesNoTraceInALaterRun)
 {
     EXPECT_NO_THROW(note_dispatch_event(sycl::event{}));
+    expect_times_the_returned_event(runtime());
 }
+
+INSTANTIATE_TEST_SUITE_P(Rows, Medium_DispatchEvents, ::testing::Values(true, false));

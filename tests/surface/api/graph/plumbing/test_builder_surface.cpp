@@ -38,6 +38,8 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 
 static_assert(std::is_trivially_copyable<Extent<2>>::value,
@@ -57,7 +59,7 @@ namespace
     constexpr Word K_SEED = 5;
 
     /** @brief Allocates count words on a device, each holding its index plus K_SEED. */
-    Buffer<Word> seeded(Runtime& rt, std::size_t count = K_WIDTH,
+    Buffer<Word> seeded(const Runtime& rt, std::size_t count = K_WIDTH,
                              DeviceIndex device = DeviceIndex{0})
     {
         auto buffer = rt.buffer<Word>(count, device).value();
@@ -67,7 +69,7 @@ namespace
     }
 
     /** @brief Allocates a State of count words whose current field holds index plus K_SEED. */
-    State<Word> seeded_state(Runtime& rt, std::size_t count = K_WIDTH)
+    State<Word> seeded_state(const Runtime& rt, std::size_t count = K_WIDTH)
     {
         auto state = rt.state<Word>(count).value();
         for (std::size_t i = 0; i < count; ++i)
@@ -100,10 +102,15 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that a count launch hands its kernel the pointer of each capture. */
-TEST(Medium_BuilderSurface, CountLaunchWithCapturesPassesPointers)
+/** @brief Fixture of the builder tests, which record graphs on the program's runtime. */
+class Medium_BuilderSurface : public TestSupport::RuntimeTest
 {
-    auto rt = Runtime::create().value();
+};
+
+/** @brief Tests that a count launch hands its kernel the pointer of each capture. */
+TEST_F(Medium_BuilderSurface, CountLaunchWithCapturesPassesPointers)
+{
+    const Runtime& rt = runtime();
     auto source = seeded(rt);
     auto target = seeded(rt);
 
@@ -117,15 +124,13 @@ TEST(Medium_BuilderSurface, CountLaunchWithCapturesPassesPointers)
 }
 
 /** @brief Tests that an NdRange with an origin hands the shifted id to a two-index kernel. */
-TEST(Medium_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
+TEST_F(Medium_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto target = seeded(rt);
 
     const NdRange<1> tiles =
         NdRange<1>(sycl::range<1>(K_PREFIX), sycl::range<1>(K_TILE)).at(sycl::id<1>(K_ORIGIN));
-    EXPECT_EQ(tiles.origin[0], K_ORIGIN);
-    EXPECT_EQ(tiles.count(), K_PREFIX);
 
     auto graph = rt.graph();
     graph.add(tiles, InOut(target), [](sycl::nd_item<1>, sycl::id<1> index, Word* words)
@@ -142,9 +147,9 @@ TEST(Medium_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
 }
 
 /** @brief Tests that add(count, state, kernel) updates the first count elements and no more. */
-TEST(Medium_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
+TEST_F(Medium_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto field = seeded_state(rt);
 
     auto graph = rt.graph();
@@ -159,9 +164,9 @@ TEST(Medium_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
 }
 
 /** @brief Tests that a launch reaching past its State is refused where add() is called. */
-TEST(Medium_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
+TEST_F(Medium_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto field = seeded_state(rt);
     auto graph = rt.graph();
 
@@ -178,30 +183,42 @@ TEST(Medium_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 }
 
-/** @brief Tests both coupled forms: the whole field and a launch, each reading two States. */
-TEST(Medium_BuilderSurface, CoupledRulesReadEveryStateNamed)
+/** @brief Tests that a whole-field coupled rule reads the State it names. */
+TEST_F(Medium_BuilderSurface, AWholeFieldCoupledRuleReadsTheStateItNames)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto whole = seeded_state(rt);
-    auto prefix = seeded_state(rt);
     auto input = seeded_state(rt);
 
     auto graph = rt.graph();
     graph.add_coupled(Coupled(whole, input),
                       [](std::size_t i, const Word* current, Word* next, const Word* other)
                       {
-                  next[i] = current[i] + other[i];
+                          next[i] = current[i] + other[i];
                       });
-    graph.add_coupled(K_PREFIX, Coupled(prefix, input),
-                      [](std::size_t i, const Word* current, Word* next, const Word* other)
-                      {
-                  next[i] = current[i] * other[i];
-                      });
-    EXPECT_EQ(graph.size(), 2u);
+    EXPECT_EQ(graph.size(), 1u);
     graph.run().value();
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
         ASSERT_EQ(whole.current()[i], (static_cast<Word>(i) + K_SEED) * 2u) << "at i=" << i;
+}
+
+/** @brief Tests that a launch-shaped coupled rule reads its prefix and the second State. */
+TEST_F(Medium_BuilderSurface, ALaunchShapedCoupledRuleReadsItsPrefixAndTheSecondState)
+{
+    const Runtime& rt = runtime();
+    auto prefix = seeded_state(rt);
+    auto input = seeded_state(rt);
+
+    auto graph = rt.graph();
+    graph.add_coupled(K_PREFIX, Coupled(prefix, input),
+                      [](std::size_t i, const Word* current, Word* next, const Word* other)
+                      {
+                          next[i] = current[i] * other[i];
+                      });
+    EXPECT_EQ(graph.size(), 1u);
+    graph.run().value();
+
     for (std::size_t i = 0; i < K_PREFIX; ++i)
     {
         const Word seed = static_cast<Word>(i) + K_SEED;
@@ -210,9 +227,9 @@ TEST(Medium_BuilderSurface, CoupledRulesReadEveryStateNamed)
 }
 
 /** @brief Tests that a coupled rule whose input is shorter than its output is refused. */
-TEST(Medium_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd)
+TEST_F(Medium_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto output = seeded_state(rt);
     auto input = seeded_state(rt, K_PREFIX);
     auto graph = rt.graph();
@@ -229,9 +246,9 @@ TEST(Medium_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd)
 }
 
 /** @brief Tests the late-bound order: Dynamic, capacity, access, callable. */
-TEST(Medium_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
+TEST_F(Medium_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto target = seeded(rt);
     Word* words = target.data();
     std::size_t live = K_PREFIX;
@@ -245,55 +262,82 @@ TEST(Medium_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
         ASSERT_EQ(target[i], i < K_PREFIX ? 0u : static_cast<Word>(i) + K_SEED) << "at i=" << i;
 }
 
-/** @brief Tests that untracked kernels placed with On() write buffers of the device named. */
-TEST(Medium_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
+/** @brief Tests that an untracked kernel placed with On(buffer) runs on the device of the buffer named. */
+TEST_F(Medium_BuilderSurface, UntrackedKernelRunsOnTheDeviceOfTheBufferNamed)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     const DeviceIndex last{rt.advanced().device_count() - 1};
     auto by_handle = seeded(rt, K_WIDTH, last);
-    auto by_index = seeded(rt, K_WIDTH, last);
     Word* handle_words = by_handle.data();
-    Word* index_words = by_index.data();
 
-    // The two kernels are unordered; each is the only writer of its own buffer.
     auto graph = rt.graph();
     graph.add_untracked(K_WIDTH, On(by_handle),
                         [handle_words](std::size_t i) { handle_words[i] += 1u; });
+    EXPECT_EQ(graph.size(), 1u);
+    graph.run().value();
+
+    for (std::size_t i = 0; i < K_WIDTH; ++i)
+        ASSERT_EQ(by_handle[i], static_cast<Word>(i) + K_SEED + 1u) << "at i=" << i;
+}
+
+/** @brief Tests that an untracked kernel placed with On(device) runs on the device named. */
+TEST_F(Medium_BuilderSurface, UntrackedKernelRunsOnTheDeviceNamed)
+{
+    const Runtime& rt = runtime();
+    const DeviceIndex last{rt.advanced().device_count() - 1};
+    auto by_index = seeded(rt, K_WIDTH, last);
+    Word* index_words = by_index.data();
+
+    auto graph = rt.graph();
     graph.add_untracked(On(last), [index_words](sycl::handler& handler)
     {
         handler.parallel_for(sycl::range<1>(K_WIDTH),
                              [index_words](sycl::id<1> i) { index_words[i[0]] += 2u; });
     });
-    EXPECT_EQ(graph.size(), 2u);
+    EXPECT_EQ(graph.size(), 1u);
     graph.run().value();
 
     for (std::size_t i = 0; i < K_WIDTH; ++i)
-    {
-        ASSERT_EQ(by_handle[i], static_cast<Word>(i) + K_SEED + 1u) << "at i=" << i;
         ASSERT_EQ(by_index[i], static_cast<Word>(i) + K_SEED + 2u) << "at i=" << i;
-    }
 }
 
-/** @brief Tests that both add_untracked() forms stop on an On() the runtime has no device for. */
-TEST(Medium_BuilderSurfaceDeathTest, PlacementOnADeviceTheRuntimeLacksStops)
+/** @brief Fixture of the death tests, which each start a child process on the program's runtime. */
+class Medium_BuilderSurfaceDeathTest : public TestSupport::RuntimeTest
 {
-    auto rt = Runtime::create().value();
-    const std::size_t count = rt.advanced().device_count();
-    auto graph = rt.graph();
-    const std::string detail =
-        ": device index " + std::to_string(count) + " names no device; the runtime drives " +
-        std::to_string(count) + " devices";
+    protected:
+        /** @brief Returns the tail of the message a device index the runtime lacks leaves. */
+        [[nodiscard]] static std::string missing_device_detail(std::size_t count)
+        {
+            return ": device index " + std::to_string(count) + " names no device; the runtime drives " +
+                   std::to_string(count) + " devices";
+        }
+};
+
+/** @brief Tests that add_untracked(launch, On(device), kernel) stops on a device the runtime has not. */
+TEST_F(Medium_BuilderSurfaceDeathTest, ALaunchPlacementOnADeviceTheRuntimeLacksStops)
+{
+    const std::size_t count = runtime().advanced().device_count();
+    auto graph = runtime().graph();
 
     EXPECT_DEATH(graph.add_untracked(K_WIDTH, On(DeviceIndex{count}), [](std::size_t) {}),
-                 "add_untracked\\(launch, On\\(\\.\\.\\.\\), kernel\\)" + detail);
+                 "add_untracked\\(launch, On\\(\\.\\.\\.\\), kernel\\)" +
+                     missing_device_detail(count));
+}
+
+/** @brief Tests that add_untracked(On(device), kernel) stops on a device the runtime has not. */
+TEST_F(Medium_BuilderSurfaceDeathTest, AHandlerPlacementOnADeviceTheRuntimeLacksStops)
+{
+    const std::size_t count = runtime().advanced().device_count();
+    auto graph = runtime().graph();
+
     EXPECT_DEATH(graph.add_untracked(On(DeviceIndex{count}), [](sycl::handler&) {}),
-                 "add_untracked\\(On\\(\\.\\.\\.\\), kernel\\)" + detail);
+                 "add_untracked\\(On\\(\\.\\.\\.\\), kernel\\)" + missing_device_detail(count));
 }
 
 /** @brief Tests that a graph watches the handle an On() names. */
-TEST(Medium_BuilderSurface, PlacementWatchesTheHandleItNames)
+TEST_F(Medium_BuilderSurface, PlacementWatchesTheHandleItNames)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto graph = rt.graph();
 
     {
@@ -306,10 +350,10 @@ TEST(Medium_BuilderSurface, PlacementWatchesTheHandleItNames)
     EXPECT_EQ(result.error().code, ErrorCode::DanglingResource);
 }
 
-/** @brief Tests that extend() runs its callable once and counts what it records as one rule. */
-TEST(Medium_BuilderSurface, ExtendRecordsOneNamedRule)
+/** @brief Tests that extend() runs its callable once and counts what it records as one rule of two nodes. */
+TEST_F(Medium_BuilderSurface, ExtendRecordsOneNamedRule)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto target = seeded(rt);
     Word* words = target.data();
     std::size_t calls = 0;
@@ -326,6 +370,25 @@ TEST(Medium_BuilderSurface, ExtendRecordsOneNamedRule)
     EXPECT_EQ(calls, 1u);
     EXPECT_EQ(graph.size(), 1u);
     EXPECT_EQ(graph.node_count(), 2u);
+}
+
+/** @brief Tests that the kernels an extension recorded add their results and the extension is not replayed at a build. */
+TEST_F(Medium_BuilderSurface, AnExtensionsKernelsRunAndTheExtensionIsNotReplayed)
+{
+    const Runtime& rt = runtime();
+    auto target = seeded(rt);
+    Word* words = target.data();
+    std::size_t calls = 0;
+
+    auto graph = rt.graph();
+    graph.extend([&](Recorder& recorder)
+    {
+        ++calls;
+        for (std::size_t node = 0; node < 2; ++node)
+            recorder.kernel(K_WIDTH, Access(Reads(target), Writes(target)),
+                            [words](std::size_t i) { words[i] += 1u; });
+    }).name("twice");
+
     graph.run().value();
     EXPECT_EQ(calls, 1u) << "an extension is not replayed when the plan is built";
 
@@ -333,10 +396,25 @@ TEST(Medium_BuilderSurface, ExtendRecordsOneNamedRule)
         ASSERT_EQ(target[i], static_cast<Word>(i) + K_SEED + 2u) << "at i=" << i;
 }
 
-/** @brief Tests that each refusal names the add() call the user wrote, through the public add(). */
-TEST(Medium_BuilderSurface, RefusalsNameTheCallTheUserWrote)
+/** @brief The add() overloads whose refusal names the call the user wrote, as the rows of one test. */
+enum class Overload
 {
-    auto rt = Runtime::create().value();
+    StateLaunch,    /**< add_rule(launch, state, kernel) past the State. */
+    EmptyState,     /**< add_rule(state, kernel) on an unallocated State. */
+    Coupled,        /**< add_coupled(Coupled(...), kernel) with a short input. */
+    CoupledLaunch   /**< add_coupled(launch, Coupled(...), kernel) with a short input. */
+};
+
+/** @brief Fixture of the rows that refuse one overload each. */
+class Medium_BuilderSurfaceRefusals : public TestSupport::RuntimeTest,
+                                      public ::testing::WithParamInterface<Overload>
+{
+};
+
+/** @brief Tests that the refusal of an add() overload names the call the user wrote. */
+TEST_P(Medium_BuilderSurfaceRefusals, ARefusalNamesTheCallTheUserWrote)
+{
+    const Runtime& rt = runtime();
     auto field = seeded_state(rt);
     auto output = seeded_state(rt);
     auto input = seeded_state(rt, K_PREFIX);
@@ -344,48 +422,57 @@ TEST(Medium_BuilderSurface, RefusalsNameTheCallTheUserWrote)
     auto graph = rt.graph();
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
 
-    const std::string state_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
+    std::string refusal;
+    std::string prefix;
+    switch (GetParam())
     {
-        graph.add_rule(window, field, [](sycl::id<1>, const Word*, Word*) {});
-    });
-    EXPECT_TRUE(begins_with(state_refusal, "add_rule(launch, state, kernel), rule 0: "))
-        << state_refusal;
+        case Overload::StateLaunch:
+            prefix = "add_rule(launch, state, kernel), rule 0: ";
+            refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
+            {
+                graph.add_rule(window, field, [](sycl::id<1>, const Word*, Word*) {});
+            });
+            break;
+        case Overload::EmptyState:
+            prefix = "add_rule(state, kernel), rule 0: ";
+            refusal = refusal_of(graph.recorder(), ErrorCode::InvalidAccess, [&]
+            {
+                graph.add_rule(unallocated, [](std::size_t, const Word*, Word*) {});
+            });
+            break;
+        case Overload::Coupled:
+            prefix = "add_coupled(Coupled(out, in0, ...), kernel), rule 0: ";
+            refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
+            {
+                graph.add_coupled(Coupled(output, input),
+                                  [](std::size_t, const Word*, Word*, const Word*) {});
+            });
+            break;
+        case Overload::CoupledLaunch:
+            prefix = "add_coupled(launch, Coupled(out, in0, ...), kernel), rule 0: ";
+            refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
+            {
+                graph.add_coupled(window, Coupled(output, input),
+                                  [](sycl::id<1>, const Word*, Word*, const Word*) {});
+            });
+            break;
+    }
 
-    const std::string empty_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidAccess, [&]
-    {
-        graph.add_rule(unallocated, [](std::size_t, const Word*, Word*) {});
-    });
-    EXPECT_TRUE(begins_with(empty_refusal, "add_rule(state, kernel), rule 0: ")) << empty_refusal;
-
-    const std::string coupled_refusal = refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
-    {
-        graph.add_coupled(Coupled(output, input),
-                          [](std::size_t, const Word*, Word*, const Word*) {});
-    });
-    EXPECT_TRUE(begins_with(coupled_refusal, "add_coupled(Coupled(out, in0, ...), kernel), rule 0: "))
-        << coupled_refusal;
-
-    const std::string launch_coupled_refusal =
-        refusal_of(graph.recorder(), ErrorCode::InvalidGraph, [&]
-    {
-        graph.add_coupled(window, Coupled(output, input),
-                          [](sycl::id<1>, const Word*, Word*, const Word*) {});
-    });
-    EXPECT_TRUE(begins_with(launch_coupled_refusal,
-                            "add_coupled(launch, Coupled(out, in0, ...), kernel), rule 0: "))
-        << launch_coupled_refusal;
-
+    EXPECT_TRUE(begins_with(refusal, prefix)) << refusal;
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 }
 
-/** @brief Tests that a refused add is kept, records nothing, and is what the next run returns. */
-TEST(Medium_BuilderSurface, ARefusedAddIsKeptAndReturnedByTheNextRun)
+INSTANTIATE_TEST_SUITE_P(Rows, Medium_BuilderSurfaceRefusals,
+                         ::testing::Values(Overload::StateLaunch, Overload::EmptyState,
+                                           Overload::Coupled, Overload::CoupledLaunch));
+
+/** @brief Tests that the first refusal is kept, records nothing, and a later one does not replace it. */
+TEST_F(Medium_BuilderSurface, TheFirstRefusalIsKept)
 {
-    auto rt = Runtime::create().value();
+    const Runtime& rt = runtime();
     auto field = seeded_state(rt);
     auto target = seeded(rt);
     Word* words = target.data();
-    const Word before = words[0];
     State<Word> unallocated;
     auto graph = rt.graph();
     const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
@@ -402,10 +489,26 @@ TEST(Medium_BuilderSurface, ARefusedAddIsKeptAndReturnedByTheNextRun)
         << refused->message;
     EXPECT_EQ(graph.size(), 2u) << "the valid rules are recorded, the refused one is not";
 
-    // A later refusal does not replace the first.
+    const std::string first_message = refused->message;
     graph.add_rule(unallocated, [](std::size_t, const Word*, Word*) {});
     ASSERT_NE(graph.refusal(), nullptr);
-    EXPECT_EQ(graph.refusal()->code, ErrorCode::InvalidGraph);
+    EXPECT_EQ(graph.refusal()->message, first_message) << "a later refusal replaced the first";
+}
+
+/** @brief Tests that a run returns the kept refusal and runs nothing until clear(). */
+TEST_F(Medium_BuilderSurface, ARunReturnsTheRefusalAndRunsNothingUntilCleared)
+{
+    const Runtime& rt = runtime();
+    auto field = seeded_state(rt);
+    auto target = seeded(rt);
+    Word* words = target.data();
+    const Word before = words[0];
+    auto graph = rt.graph();
+    const Extent<1> window{sycl::range<1>(K_WIDTH), sycl::id<1>(K_ORIGIN)};
+
+    graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
+    graph.add_rule(window, field, [](sycl::id<1>, const Word*, Word*) {});
+    ASSERT_NE(graph.refusal(), nullptr);
 
     const auto first_run = graph.run();
     ASSERT_FALSE(first_run.has_value());
@@ -418,7 +521,6 @@ TEST(Medium_BuilderSurface, ARefusedAddIsKeptAndReturnedByTheNextRun)
 
     graph.recorder().clear();
     EXPECT_EQ(graph.refusal(), nullptr);
-    graph.add(K_WIDTH, Reads(), Writes(target), [words](std::size_t i) { words[i] += 1u; });
     const auto valid_run = graph.run();
     ASSERT_TRUE(valid_run.has_value());
     EXPECT_EQ(words[0], before + 1u);

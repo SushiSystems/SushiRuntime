@@ -37,6 +37,8 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 
 namespace
@@ -61,22 +63,27 @@ namespace
     }
 } // namespace
 
+/** @brief Fixture of the Region extension tests, which run on the program's runtime with the rebalancer off. */
+class Medium_RegionEmitter : public TestSupport::RuntimeTest
+{
+    protected:
+        /** @brief Turns the background rebalancer off, so no thermal move reorders a task. */
+        void SetUp() override { runtime().set_rebalancer_enabled(false); }
+};
+
 /** @brief Tests that the tasks an extension records run in order and precede a consumer region. */
-TEST(Medium_RegionEmitter, ExtensionTasksOrderAgainstANeighbourRegion)
+TEST_F(Medium_RegionEmitter, ExtensionTasksOrderAgainstANeighbourRegion)
 {
     constexpr std::size_t N = 32;
 
-    auto rt = Runtime::create().value();
-    rt.set_rebalancer_enabled(false);
-
-    auto x = rt.buffer<int>(N).value();
-    auto y = rt.buffer<int>(N).value();
+    auto x = runtime().buffer<int>(N).value();
+    auto y = runtime().buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = -1; }
 
     int* px = x.data();
     int* py = y.data();
 
-    auto world = rt.dynamic_graph();
+    auto world = runtime().dynamic_graph();
     world.region(10).extend([&x, px](Recorder& recorder)
     {
         record_device_task(recorder, "fill", Access(Reads(), Writes(x)), N,
@@ -94,19 +101,16 @@ TEST(Medium_RegionEmitter, ExtensionTasksOrderAgainstANeighbourRegion)
 }
 
 /** @brief Tests that an extension counts as one rule however many tasks it records. */
-TEST(Medium_RegionEmitter, AnExtensionIsOneRule)
+TEST_F(Medium_RegionEmitter, AnExtensionIsOneRule)
 {
     constexpr std::size_t N = 4;
 
-    auto rt = Runtime::create().value();
-    rt.set_rebalancer_enabled(false);
-
-    auto x = rt.buffer<int>(N).value();
+    auto x = runtime().buffer<int>(N).value();
     int* px = x.data();
     for (std::size_t i = 0; i < N; ++i)
         x[i] = 0;
 
-    auto world = rt.dynamic_graph();
+    auto world = runtime().dynamic_graph();
     world.region(0).extend([&x, px](Recorder& recorder)
     {
         record_device_task(recorder, "first", Access(Reads(), Writes(x)), N,
@@ -121,19 +125,38 @@ TEST(Medium_RegionEmitter, AnExtensionIsOneRule)
     EXPECT_EQ(found->size(), 1u);
     EXPECT_EQ(found->node_count(), 2u);
     EXPECT_EQ(world.size(), 1u);
+}
+
+/** @brief Tests that the tasks an extension records run in the order they were recorded. */
+TEST_F(Medium_RegionEmitter, AnExtensionsTasksRunInRecordedOrder)
+{
+    constexpr std::size_t N = 4;
+
+    auto x = runtime().buffer<int>(N).value();
+    int* px = x.data();
+    for (std::size_t i = 0; i < N; ++i)
+        x[i] = 0;
+
+    auto world = runtime().dynamic_graph();
+    world.region(0).extend([&x, px](Recorder& recorder)
+    {
+        record_device_task(recorder, "first", Access(Reads(), Writes(x)), N,
+                           [px](std::size_t i) { px[i] += 1; });
+        record_device_task(recorder, "second", Access(Reads(x), Writes(x)), N,
+                           [px](std::size_t i) { px[i] += 1; });
+    });
+    world.run().value();
+
     EXPECT_EQ(x[0], 2);
 }
 
-/** @brief Tests that an extension runs once, when extend() is called, and never at a build. */
-TEST(Medium_RegionEmitter, AnExtensionRunsOnceWhenItIsCalled)
+/** @brief Tests that an extension runs once, when extend() is called, and never at a build or a replay. */
+TEST_F(Medium_RegionEmitter, AnExtensionRunsOnceWhenItIsCalled)
 {
     constexpr std::size_t N = 8;
 
-    auto rt = Runtime::create().value();
-    rt.set_rebalancer_enabled(false);
-
-    auto a = rt.buffer<int>(N).value();
-    auto b = rt.buffer<int>(N).value();
+    auto a = runtime().buffer<int>(N).value();
+    auto b = runtime().buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { a[i] = 0; b[i] = 0; }
 
     int* pa = a.data();
@@ -147,7 +170,7 @@ TEST(Medium_RegionEmitter, AnExtensionRunsOnceWhenItIsCalled)
                            [pa](std::size_t i) { pa[i] += 1; });
     };
 
-    auto world = rt.dynamic_graph();
+    auto world = runtime().dynamic_graph();
     world.region(0).extend(extension);
     EXPECT_EQ(extended, 1) << "extend() calls the extension before it returns";
     world.region(1).add(N, Reads{}, Writes(b), [pb](std::size_t i) { pb[i] += 1; });
@@ -160,34 +183,56 @@ TEST(Medium_RegionEmitter, AnExtensionRunsOnceWhenItIsCalled)
     world.run().value();
     EXPECT_EQ(extended, 1) << "rebuilding a neighbour leaves this region's nodes alone";
 
+    for (std::size_t i = 0; i < N; ++i)
+        ASSERT_EQ(a[i], 4) << "at i=" << i;
+}
+
+/** @brief Tests that a region recorded again after drop() is extended again. */
+TEST_F(Medium_RegionEmitter, ARegionRecordedAgainAfterADropIsExtendedAgain)
+{
+    constexpr std::size_t N = 8;
+
+    auto a = runtime().buffer<int>(N).value();
+    for (std::size_t i = 0; i < N; ++i)
+        a[i] = 0;
+
+    int* pa = a.data();
+
+    int extended = 0;
+    const auto extension = [&a, pa, &extended](Recorder& recorder)
+    {
+        ++extended;
+        record_device_task(recorder, "advance_a", Access(Reads(a), Writes(a)), N,
+                           [pa](std::size_t i) { pa[i] += 1; });
+    };
+
+    auto world = runtime().dynamic_graph();
+    world.region(0).extend(extension);
+    world.run().value();
+    EXPECT_EQ(extended, 1);
+
     world.drop(0);
     world.region(0).extend(extension);
     world.run().value();
     EXPECT_EQ(extended, 2) << "a region recorded again is extended again";
 
     for (std::size_t i = 0; i < N; ++i)
-    {
-        ASSERT_EQ(a[i], 5) << "at i=" << i;
-        ASSERT_EQ(b[i], 3 + 2 + 2) << "at i=" << i;
-    }
+        ASSERT_EQ(a[i], 2) << "at i=" << i;
 }
 
-/** @brief Tests that a static graph accepts an extension beside an ordinary add(). */
-TEST(Medium_RegionEmitter, AStaticGraphTakesAnExtension)
+/** @brief Tests that a static graph accepts an extension beside an ordinary add() and both run. */
+TEST_F(Medium_RegionEmitter, AStaticGraphTakesAnExtension)
 {
     constexpr std::size_t N = 16;
 
-    auto rt = Runtime::create().value();
-    rt.set_rebalancer_enabled(false);
-
-    auto x = rt.buffer<int>(N).value();
-    auto y = rt.buffer<int>(N).value();
+    auto x = runtime().buffer<int>(N).value();
+    auto y = runtime().buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) { x[i] = 0; y[i] = 0; }
 
     int* px = x.data();
     int* py = y.data();
 
-    auto graph = rt.graph();
+    auto graph = runtime().graph();
     graph.extend([&x, px](Recorder& recorder)
     {
         record_device_task(recorder, "count_up", Access(Reads(x), Writes(x)), N,

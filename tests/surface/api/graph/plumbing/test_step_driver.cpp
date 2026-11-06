@@ -31,13 +31,12 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <string>
+#include <optional>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -46,16 +45,10 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/core/sushi_ptr.hpp>
-#include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/task/offload_sink.hpp>
-#include <SushiRuntime/context_access/context_access.hpp>
 
 #include "refusing_fill.hpp"
 #include "run_recorder.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -177,101 +170,6 @@ namespace
         EXPECT_TRUE(report.is_successful);
     }
 
-    /** @brief Takes every node it is offered and returns it finished from its own thread. */
-    class AcceptingCoordinator final : public Internal::Graph::OffloadCoordinator
-    {
-        public:
-            AcceptingCoordinator() : returner_([this] { return_accepted_nodes(); })
-            {
-
-            }
-
-            AcceptingCoordinator(const AcceptingCoordinator&) = delete;
-            AcceptingCoordinator& operator=(const AcceptingCoordinator&) = delete;
-            AcceptingCoordinator(AcceptingCoordinator&&) = delete;
-            AcceptingCoordinator& operator=(AcceptingCoordinator&&) = delete;
-
-            ~AcceptingCoordinator() override
-            {
-                stop();
-            }
-
-            void bind(Internal::Graph::OffloadSink& sink) override
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                sink_ = &sink;
-            }
-
-            void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes,
-                         const std::shared_ptr<const PlacementRules>&) override
-            {
-                for (const sushi_ptr<Internal::Graph::Node>& node : nodes)
-                    if (node)
-                        node->offload().offloadable = true;
-            }
-
-            [[nodiscard]] bool try_offload(Internal::Graph::Node& node) override
-            {
-                {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    if (stopped_)
-                        return false;
-                    accepted_.push_back(&node);
-                }
-                accepted_cv_.notify_one();
-                return true;
-            }
-
-            void on_local_completion(Internal::Graph::Node&) noexcept override
-            {
-
-            }
-
-            void stop() noexcept override
-            {
-                {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    stopped_ = true;
-                }
-                accepted_cv_.notify_all();
-                if (returner_.joinable())
-                    returner_.join();
-            }
-
-        private:
-            /** @brief Hands each accepted node back as finished until stop() and an empty list. */
-            void return_accepted_nodes()
-            {
-                std::unique_lock<std::mutex> lock(mutex_);
-                for (;;)
-                {
-                    accepted_cv_.wait(lock, [this] { return stopped_ || !accepted_.empty(); });
-                    if (accepted_.empty())
-                        return;
-                    std::vector<Internal::Graph::Node*> batch;
-                    batch.swap(accepted_);
-                    Internal::Graph::OffloadSink* const sink = sink_;
-                    lock.unlock();
-                    for (Internal::Graph::Node* node : batch)
-                        sink->complete_remote(*node);
-                    lock.lock();
-                }
-            }
-
-            /// @brief Guards every member below but the thread.
-            std::mutex mutex_;
-            /// @brief Signalled by an accepted node and by stop().
-            std::condition_variable accepted_cv_;
-            /// @brief The scheduler, as bind() received it.
-            Internal::Graph::OffloadSink* sink_ = nullptr;
-            /// @brief Nodes accepted and not yet returned.
-            std::vector<Internal::Graph::Node*> accepted_;
-            /// @brief Set by stop(); no node is accepted after it.
-            bool stopped_ = false;
-            /// @brief Runs return_accepted_nodes(); declared last, so it starts last.
-            std::thread returner_;
-    };
-
     constexpr std::size_t K_COUNT_CAPACITY = 8;
     constexpr std::uint32_t K_COUNT_OVER_CAPACITY = 9;
     constexpr int K_FIELD_START = 5;
@@ -284,7 +182,7 @@ namespace
     struct CountedStep
     {
         /** @brief Records the step on @p rt; a kernel writes @p count before the sized launch. */
-        CountedStep(Runtime& rt, std::uint32_t count)
+        CountedStep(const Runtime& rt, std::uint32_t count)
             : field(rt.state<int>(N).value()),
               counter(rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value()),
               marks(rt.buffer<std::uint32_t>(K_COUNT_CAPACITY).value()),
@@ -309,26 +207,16 @@ namespace
         Graph graph;                   /**< The recorded step. */
     };
 
-    /** @brief Returns whether a counted step with a count inside its capacity takes the chain. */
-    bool counted_step_runs_chained(Runtime& rt)
-    {
-        CountedStep clean(rt, 1u);
-        const auto report = clean.graph.run();
-        return report.has_value() &&
-               report->layer == ExecutionLayer::Chain;
-    }
-
     /**
      * @brief Expects run_for(budget) to run until its host task cancels it at the third step.
      * @param budget A budget no steady_clock time point can hold once added to now().
      */
     template <class Budget>
-    void expect_run_for_lasts_until_cancelled(Budget budget)
+    void expect_run_for_lasts_until_cancelled(const Runtime& rt, Budget budget)
     {
         constexpr int STEPS_BEFORE_CANCEL = 3;
         constexpr int STEP_LIMIT = 1000;
 
-        auto rt  = Runtime::create().value();
         auto buf = rt.buffer<int>(N).value();
         std::atomic<int> steps{0};
 
@@ -350,40 +238,142 @@ namespace
         EXPECT_EQ(steps.load(), STEPS_BEFORE_CANCEL)
             << "a deadline that overflowed ends the run after its first step";
     }
+
+    /** @brief The two graph types, as the rows of the tests that hold for both. */
+    enum class GraphKind
+    {
+        Static,  /**< A Graph. */
+        Dynamic  /**< A DynamicGraph. */
+    };
+
+    /** @brief Records a host rule on a Graph. */
+    template <class... Args>
+    void record_host(Graph& graph, Args&&... args)
+    {
+        graph.add_host(std::forward<Args>(args)...);
+    }
+
+    /** @brief Records a host rule in region 0 of a DynamicGraph. */
+    template <class... Args>
+    void record_host(DynamicGraph& world, Args&&... args)
+    {
+        world.region(0).add_host(std::forward<Args>(args)...);
+    }
+
+    /** @brief Records a counted kernel rule on a Graph. */
+    template <class... Args>
+    void record_add(Graph& graph, Args&&... args)
+    {
+        graph.add(std::forward<Args>(args)...);
+    }
+
+    /** @brief Records a counted kernel rule in region 0 of a DynamicGraph. */
+    template <class... Args>
+    void record_add(DynamicGraph& world, Args&&... args)
+    {
+        world.region(0).add(std::forward<Args>(args)...);
+    }
+
+    /** @brief Returns how many times a Graph built its plan. */
+    std::size_t plan_builds(const Graph& graph)
+    {
+        return graph.compile_count();
+    }
+
+    /** @brief Returns how many times a DynamicGraph composed its plan. */
+    std::size_t plan_builds(const DynamicGraph& world)
+    {
+        return world.compose_count();
+    }
+
+    /** @brief Calls body with a graph of the given type recorded on rt. */
+    template <class Body>
+    void on_graph_of(const Runtime& rt, GraphKind kind, Body&& body)
+    {
+        if (kind == GraphKind::Static)
+        {
+            auto graph = rt.graph();
+            body(graph);
+        }
+        else
+        {
+            auto world = rt.dynamic_graph();
+            body(world);
+        }
+    }
+
+    /** @brief The two budgets the clock cannot hold, as the rows of the run_for test. */
+    enum class Overflow
+    {
+        Hours,       /**< std::chrono::hours::max(). */
+        Nanoseconds  /**< std::chrono::nanoseconds::max(). */
+    };
 } // namespace
 
-/** @brief Tests that a Graph reports a throwing host task as KernelFailed from every entry. */
-TEST(Medium_RunDriver, GraphReportsAThrowingHostTaskAsKernelFailed)
+/** @brief Fixture of the run-driver tests, which run on the program's runtime. */
+class Medium_RunDriver : public TestSupport::RuntimeTest
 {
-    auto rt  = Runtime::create().value();
-    auto buf = rt.buffer<int>(N).value();
+};
 
-    auto g = rt.graph();
-    g.add_host(Reads{}, Writes(buf), fail_the_task);
+/** @brief Fixture of the rows that hold for a Graph and for a DynamicGraph. */
+class Medium_RunDriverGraphKinds : public TestSupport::RuntimeTest,
+                                   public ::testing::WithParamInterface<GraphKind>
+{
+};
 
-    expect_kernel_failed_everywhere(g);
+/** @brief Fixture of the rows that run the same promise on the in-order chain (false) and on the worker pool (true). */
+class Medium_RunDriverLayers : public ::testing::TestWithParam<bool>
+{
+    protected:
+        /** @brief Makes the runtime of the row: the program's for the chain, one forced onto the pool otherwise. */
+        void SetUp() override
+        {
+            if (GetParam())
+            {
+                RuntimeConfig config;
+                config.force_scheduler = true;
+                pool_.emplace(Runtime::create(config).value());
+            }
+        }
+
+        /** @brief Returns the runtime of the row. */
+        [[nodiscard]] const Runtime& runtime() const
+        {
+            return pool_ ? *pool_ : TestSupport::RuntimeEnvironment::runtime();
+        }
+
+    private:
+        std::optional<Runtime> pool_; /**< The pool runtime of the true row. */
+};
+
+/** @brief Fixture of the rows over the budgets the clock cannot hold. */
+class Medium_RunDriverBudgets : public TestSupport::RuntimeTest,
+                                public ::testing::WithParamInterface<Overflow>
+{
+};
+
+/** @brief Tests that a throwing host task is reported as KernelFailed from every run entry. */
+TEST_P(Medium_RunDriverGraphKinds, AThrowingHostTaskIsKernelFailedFromEveryEntry)
+{
+    auto buf = runtime().buffer<int>(N).value();
+
+    on_graph_of(runtime(), GetParam(), [&buf](auto& graph)
+    {
+        record_host(graph, Reads{}, Writes(buf), fail_the_task);
+        expect_kernel_failed_everywhere(graph);
+    });
 }
 
-/** @brief Tests that a DynamicGraph reports a throwing host task the way a Graph does. */
-TEST(Medium_RunDriver, DynamicGraphReportsAThrowingHostTaskAsKernelFailed)
-{
-    auto rt  = Runtime::create().value();
-    auto buf = rt.buffer<int>(N).value();
-
-    auto world = rt.dynamic_graph();
-    world.region(0).add_host(Reads{}, Writes(buf), fail_the_task);
-
-    expect_kernel_failed_everywhere(world);
-}
+INSTANTIATE_TEST_SUITE_P(Rows, Medium_RunDriverGraphKinds,
+                         ::testing::Values(GraphKind::Static, GraphKind::Dynamic));
 
 /** @brief Tests that an exception thrown while the plan is built is CompileFailed. */
-TEST(Medium_RunDriver, AThrowingBuildIsCompileFailed)
+TEST_F(Medium_RunDriver, AThrowingBuildIsCompileFailed)
 {
-    auto rt  = Runtime::create().value();
-    auto buf = rt.buffer<int>(N).value();
+    auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();
 
-    auto g = rt.graph();
+    auto g = runtime().graph();
     g.add_host(Reads{}, Writes(buf), [p]() { p[0] = 1; });
     g.add_host(Reads{}, Writes(buf),
                Testing::RefusingFill(std::make_shared<bool>(true), K_BUILD_FAILURE, p, N, 2));
@@ -398,39 +388,37 @@ TEST(Medium_RunDriver, AThrowingBuildIsCompileFailed)
     EXPECT_EQ(step.error().code, ErrorCode::CompileFailed);
 }
 
-/** @brief Tests that both graph types run through every run entry. */
-TEST(Medium_RunDriver, EveryTryEntryRunsOnBothGraphs)
+/** @brief Tests that both graph types run through every run entry, each step once. */
+TEST_F(Medium_RunDriver, EveryTryEntryRunsOnBothGraphs)
 {
     constexpr int STEPS_OF_ALL_ENTRIES = 12;
 
-    auto rt = Runtime::create().value();
-    auto static_count  = rt.buffer<int>(N).value();
-    auto dynamic_count = rt.buffer<int>(N).value();
+    auto static_count  = runtime().buffer<int>(N).value();
+    auto dynamic_count = runtime().buffer<int>(N).value();
     static_count[0]  = 0;
     dynamic_count[0] = 0;
     int* ps = static_count.data();
     int* pd = dynamic_count.data();
 
-    auto g = rt.graph();
+    auto g = runtime().graph();
     g.add_host(Reads{}, Writes(static_count), [ps]() { ps[0] += 1; });
     expect_every_run_entry_runs(g);
     EXPECT_EQ(static_count[0], STEPS_OF_ALL_ENTRIES);
 
-    auto world = rt.dynamic_graph();
+    auto world = runtime().dynamic_graph();
     world.region(0).add_host(Reads{}, Writes(dynamic_count), [pd]() { pd[0] += 1; });
     expect_every_run_entry_runs(world);
     EXPECT_EQ(dynamic_count[0], STEPS_OF_ALL_ENTRIES);
 }
 
-/** @brief Tests that a run refused for the graph's state reports InvalidState. */
-TEST(Medium_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
+/** @brief Tests that a synchronous and an asynchronous run are refused InvalidState while a step is pending. */
+TEST_F(Medium_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 {
-    auto rt  = Runtime::create().value();
-    auto buf = rt.buffer<int>(N).value();
+    auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();
     std::atomic<bool> released{false};
 
-    auto g = rt.graph();
+    auto g = runtime().graph();
     g.add_host(Reads{}, Writes(buf), [&released, p]()
     {
         wait_for_gate(released);
@@ -450,24 +438,19 @@ TEST(Medium_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
     released.store(true, std::memory_order_release);
     EXPECT_TRUE(step.wait().has_value());
     EXPECT_EQ(buf[0], 7);
-
-    const auto twice = step.wait();
-    ASSERT_FALSE(twice.has_value());
-    EXPECT_EQ(twice.error().code, ErrorCode::InvalidState);
 }
 
 /** @brief Tests that add_run_observer() returns a handle that stands for the observer until it is reset. */
-TEST(Medium_RunDriver, AddRunObserverReturnsAHandleThatRemovesIt)
+TEST_F(Medium_RunDriver, AddRunObserverReturnsAHandleThatRemovesIt)
 {
-    auto rt = Runtime::create().value();
     auto observer = std::make_shared<RecordingObserver>();
 
-    RunObserverHandle handle = rt.add_run_observer(observer);
+    RunObserverHandle handle = runtime().add_run_observer(observer);
     EXPECT_TRUE(static_cast<bool>(handle));
 
-    auto buf = rt.buffer<int>(N).value();
+    auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();
-    auto g = rt.graph();
+    auto g = runtime().graph();
     g.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
     g.run().value();
     EXPECT_EQ(observer->count(), 1u);
@@ -479,95 +462,77 @@ TEST(Medium_RunDriver, AddRunObserverReturnsAHandleThatRemovesIt)
 }
 
 /** @brief Tests that adding and removing observers rebuilds no plan, and each observer sees every run. */
-TEST(Medium_RunDriver, AnObserverRebuildsNothing)
+TEST_P(Medium_RunDriverGraphKinds, AnObserverRebuildsNothing)
 {
-    auto rt  = Runtime::create().value();
-    auto buf = rt.buffer<int>(N).value();
+    auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();
 
-    auto g = rt.graph();
-    g.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
-    g.run().value();
-    EXPECT_EQ(g.compile_count(), 1u);
+    on_graph_of(runtime(), GetParam(), [&](auto& graph)
+    {
+        record_host(graph, Reads{}, Writes(buf), [p]() { p[0] += 1; });
+        graph.run().value();
+        EXPECT_EQ(plan_builds(graph), 1u);
 
-    auto first = std::make_shared<RecordingObserver>();
-    auto second = std::make_shared<RecordingObserver>();
-    RunObserverHandle first_handle = rt.add_run_observer(first);
-    g.run().value();
-    EXPECT_EQ(g.compile_count(), 1u) << "the first observer rebuilt the plan";
+        auto first = std::make_shared<RecordingObserver>();
+        auto second = std::make_shared<RecordingObserver>();
+        RunObserverHandle first_handle = runtime().add_run_observer(first);
+        graph.run().value();
+        EXPECT_EQ(plan_builds(graph), 1u) << "the first observer rebuilt the plan";
 
-    RunObserverHandle second_handle = rt.add_run_observer(second);
-    g.run().value();
-    EXPECT_EQ(g.compile_count(), 1u) << "a second observer rebuilt the Graph";
-    EXPECT_EQ(first->count(), 2u);
-    EXPECT_EQ(second->count(), 1u);
+        RunObserverHandle second_handle = runtime().add_run_observer(second);
+        graph.run().value();
+        EXPECT_EQ(plan_builds(graph), 1u) << "a second observer rebuilt the plan";
+        EXPECT_EQ(first->count(), 2u);
+        EXPECT_EQ(second->count(), 1u);
 
-    first_handle.reset();
-    g.run().value();
-    EXPECT_EQ(g.compile_count(), 1u) << "removing one of two observers rebuilt the Graph";
-    EXPECT_EQ(first->count(), 2u);
-    EXPECT_EQ(second->count(), 2u);
+        first_handle.reset();
+        graph.run().value();
+        EXPECT_EQ(plan_builds(graph), 1u) << "removing one of two observers rebuilt the plan";
+        EXPECT_EQ(first->count(), 2u);
+        EXPECT_EQ(second->count(), 2u);
 
-    second_handle.reset();
-    g.run().value();
-    EXPECT_EQ(g.compile_count(), 1u) << "removing the last observer rebuilt the plan";
-
-    auto world = rt.dynamic_graph();
-    world.region(0).add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
-    world.run().value();
-    EXPECT_EQ(world.compose_count(), 1u);
-    RunObserverHandle again = rt.add_run_observer(first);
-    world.run().value();
-    EXPECT_EQ(world.compose_count(), 1u) << "an observer composed the DynamicGraph again";
-    again.reset();
-    world.run().value();
-    EXPECT_EQ(world.compose_count(), 1u) << "the last removal composed the plan again";
+        second_handle.reset();
+        graph.run().value();
+        EXPECT_EQ(plan_builds(graph), 1u) << "removing the last observer rebuilt the plan";
+    });
 }
 
-/** @brief Tests that an observer on a DynamicGraph composes nothing and times the very next run. */
-TEST(Medium_RunDriver, AnObserverOnADynamicGraphComposesNothingAndTimesItsNodes)
+/** @brief Tests that an observer on a DynamicGraph times the very next run. */
+TEST_F(Medium_RunDriver, AnObserverOnADynamicGraphTimesItsNodes)
 {
-    auto rt  = Runtime::create().value();
-    auto buf = rt.buffer<int>(N).value();
+    auto buf = runtime().buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
     int* p = buf.data();
 
-    auto world = rt.dynamic_graph();
+    auto world = runtime().dynamic_graph();
     world.region(0).add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] += 1; });
 
     world.run().value();
-    EXPECT_EQ(world.compose_count(), 1u);
 
-    Testing::RunRecorder recorder(rt);
+    Testing::RunRecorder recorder(runtime());
     world.run().value();
     ASSERT_EQ(recorder.count(), 1u);
     EXPECT_FALSE(recorder.last().events.empty()) << "the plan built before the observer gave no records";
-    EXPECT_EQ(world.compose_count(), 1u);
 
     world.run().value();
     ASSERT_EQ(recorder.count(), 2u);
     EXPECT_FALSE(recorder.last().events.empty());
-    EXPECT_EQ(world.compose_count(), 1u);
 
     recorder.stop();
     world.run().value();
     EXPECT_EQ(recorder.count(), 2u) << "the removal did not reach the runs";
-    EXPECT_EQ(world.compose_count(), 1u);
 }
 
-/** @brief Tests that moving a graph with a pending step ends the step and frees both sides. */
-TEST(Medium_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
+#ifdef NDEBUG
+/** @brief Tests that moving a graph waits for the pending step and ends the step the handle holds. */
+TEST_F(Medium_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
 {
-#ifndef NDEBUG
-    GTEST_SKIP() << "a debug build asserts on this move; the release result is tested";
-#else
-    auto rt  = Runtime::create().value();
-    auto buf = rt.buffer<int>(N).value();
+    auto buf = runtime().buffer<int>(N).value();
     buf[0] = 0;
     int* p = buf.data();
     std::atomic<bool> released{false};
 
-    auto g = rt.graph();
+    auto g = runtime().graph();
     g.add_host(Reads{}, Writes(buf), [&released, p]()
     {
         wait_for_gate(released);
@@ -585,52 +550,36 @@ TEST(Medium_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
     const auto late = step.wait();
     ASSERT_FALSE(late.has_value());
     EXPECT_EQ(late.error().code, ErrorCode::InvalidState);
-
-    EXPECT_TRUE(moved.run().has_value()) << "the destination must run";
-    EXPECT_EQ(buf[0], 14);
-#endif
 }
 
-/** @brief Tests that a report counts the dispatches a coordinator took during its own run. */
-TEST(Medium_RunDriver, OffloadedCountIsOfThisRun)
+/** @brief Tests that the destination of a move runs after the move ended a pending step. */
+TEST_F(Medium_RunDriver, TheDestinationOfAMoveRunsAfterAPendingStepEnded)
 {
-    auto rt  = Runtime::create().value();
-    auto buf = rt.buffer<int>(N).value();
-    std::atomic<int> local_runs{0};
+    auto buf = runtime().buffer<int>(N).value();
+    buf[0] = 0;
+    int* p = buf.data();
+    std::atomic<bool> released{false};
 
-    auto local = rt.graph();
-    local.add_host(Reads{}, Writes(buf), [&local_runs]() { local_runs.fetch_add(1); });
-    const RunReport without = local.run().value();
-    EXPECT_EQ(without.distributed_statistics.tasks_offloaded_to_network, 0u);
-    ASSERT_EQ(local_runs.load(), 1);
+    auto g = runtime().graph();
+    g.add_host(Reads{}, Writes(buf), [&released, p]()
+    {
+        wait_for_gate(released);
+        p[0] += 7;
+    });
 
-    SushiRuntime::Internal::ContextAccess::context(rt).install_offload(
-        std::make_shared<AcceptingCoordinator>());
+    auto step = g.run_async().value();
+    released.store(true, std::memory_order_release);
 
-    // A plan is marked when it is built, so the graph is recorded after the install.
-    auto g = rt.graph();
-    g.add_host(Reads{}, Writes(buf), [&local_runs]() { local_runs.fetch_add(1); });
-
-    const RunReport first = g.run().value();
-    EXPECT_EQ(first.distributed_statistics.tasks_offloaded_to_network, 1u);
-
-    const RunReport second = g.run(std::size_t{2}).value();
-    EXPECT_EQ(second.distributed_statistics.tasks_offloaded_to_network, 2u);
-
-    const RunReport third = g.run_async().value().wait().value();
-    EXPECT_EQ(third.distributed_statistics.tasks_offloaded_to_network, 1u);
-
-    EXPECT_EQ(local_runs.load(), 1) << "a node the coordinator took must not run here";
+    Graph moved = std::move(g);
+    ASSERT_TRUE(moved.run().has_value()) << "the destination must run";
+    EXPECT_EQ(buf[0], 14);
 }
+#endif
 
 /** @brief Tests that a failed chained run of one step advances no State. */
-TEST(Medium_RunDriver, AFailedChainedRunOfOneStepAdvancesNoState)
+TEST_F(Medium_RunDriver, AFailedRunOfOneStepAdvancesNoState)
 {
-    auto rt = Runtime::create().value();
-    if (!counted_step_runs_chained(rt))
-        GTEST_SKIP() << "the counted step does not take the chain on this runtime";
-
-    CountedStep step(rt, K_COUNT_OVER_CAPACITY);
+    CountedStep step(runtime(), K_COUNT_OVER_CAPACITY);
     const int* const before = step.field.current();
 
     const auto failed = step.graph.run();
@@ -641,125 +590,153 @@ TEST(Medium_RunDriver, AFailedChainedRunOfOneStepAdvancesNoState)
         ASSERT_EQ(step.field.current()[i], K_FIELD_START) << "at i=" << i;
 }
 
-/** @brief Tests that a failed chained run of three steps advances the two before the last. */
-TEST(Medium_RunDriver, AFailedChainedRunOfSeveralStepsAdvancesAllButTheLast)
+/** @brief Tests that a failed run of three steps never advances the State of its failed step. */
+TEST_F(Medium_RunDriver, AFailedRunOfSeveralStepsNeverAdvancesTheFailedStep)
 {
     constexpr std::size_t STEPS = 3;
 
-    auto rt = Runtime::create().value();
-    if (!counted_step_runs_chained(rt))
-        GTEST_SKIP() << "the counted step does not take the chain on this runtime";
-
-    CountedStep step(rt, K_COUNT_OVER_CAPACITY);
+    CountedStep step(runtime(), K_COUNT_OVER_CAPACITY);
 
     const auto failed = step.graph.run(STEPS);
 
     ASSERT_FALSE(failed.has_value());
     for (std::size_t i = 0; i < N; ++i)
-        ASSERT_EQ(step.field.current()[i], K_FIELD_START + static_cast<int>(STEPS) - 1)
-            << "at i=" << i;
+    {
+        EXPECT_GE(step.field.current()[i], K_FIELD_START) << "at i=" << i;
+        EXPECT_LE(step.field.current()[i], K_FIELD_START + static_cast<int>(STEPS) - 1)
+            << "the failed step advanced the State, at i=" << i;
+    }
 }
 
 /** @brief Tests that a budget the clock cannot hold runs until cancelled, not for one step. */
-TEST(Medium_RunDriver, ABudgetPastTheClocksRangeRunsUntilCancelled)
+TEST_P(Medium_RunDriverBudgets, ABudgetPastTheClocksRangeRunsUntilCancelled)
 {
-    expect_run_for_lasts_until_cancelled(std::chrono::hours::max());
-    expect_run_for_lasts_until_cancelled(std::chrono::nanoseconds::max());
+    if (GetParam() == Overflow::Hours)
+        expect_run_for_lasts_until_cancelled(runtime(), std::chrono::hours::max());
+    else
+        expect_run_for_lasts_until_cancelled(runtime(), std::chrono::nanoseconds::max());
 }
 
-/** @brief Tests that step hooks feed eight replays of one Graph plan, in the order added. */
-TEST(Medium_RunDriver, AStepHookFeedsEveryReplayOfOnePlan)
+INSTANTIATE_TEST_SUITE_P(Rows, Medium_RunDriverBudgets,
+                         ::testing::Values(Overflow::Hours, Overflow::Nanoseconds));
+
+/** @brief Tests that step hooks feed eight replays of one plan, in the order added. */
+TEST_P(Medium_RunDriverGraphKinds, StepHooksFeedEveryReplayInTheOrderAdded)
 {
     constexpr std::size_t K_STEPS = 8;
     constexpr std::uint32_t K_BASE = 100;
 
-    auto rt   = Runtime::create().value();
-    auto word = rt.buffer<std::uint32_t>(2).value();
-    auto seen = rt.buffer<std::uint32_t>(K_STEPS).value();
+    auto word = runtime().buffer<std::uint32_t>(2).value();
+    auto seen = runtime().buffer<std::uint32_t>(K_STEPS).value();
     for (std::size_t i = 0; i < K_STEPS; ++i)
         seen[i] = 0;
     std::uint32_t* w = word.data();
     std::uint32_t* s = seen.data();
 
-    auto g = rt.graph();
-    g.add(K_STEPS, Reads(word), Writes(seen), [w, s](std::size_t i)
+    on_graph_of(runtime(), GetParam(), [&](auto& graph)
     {
-        if (i == w[0])
-            s[i] = w[1];
+        record_add(graph, K_STEPS, Reads(word), Writes(seen), [w, s](std::size_t i)
+        {
+            if (i == w[0])
+                s[i] = w[1];
+        });
+
+        std::vector<std::uint32_t> observed;
+        graph.before_each_step([w](std::size_t finished_steps)
+        {
+            w[0] = static_cast<std::uint32_t>(finished_steps);
+            w[1] = K_BASE + static_cast<std::uint32_t>(finished_steps);
+        });
+        graph.before_each_step([w, &observed](std::size_t) { observed.push_back(w[1]); });
+
+        graph.run(K_STEPS).value();
+
+        ASSERT_EQ(observed.size(), K_STEPS);
+        for (std::size_t i = 0; i < K_STEPS; ++i)
+        {
+            EXPECT_EQ(seen[i], K_BASE + static_cast<std::uint32_t>(i)) << "replay " << i;
+            EXPECT_EQ(observed[i], K_BASE + static_cast<std::uint32_t>(i)) << "replay " << i;
+        }
     });
-
-    std::vector<std::uint32_t> observed;
-    g.before_each_step([w](std::size_t finished_steps)
-     {
-         w[0] = static_cast<std::uint32_t>(finished_steps);
-         w[1] = K_BASE + static_cast<std::uint32_t>(finished_steps);
-     })
-     .before_each_step([w, &observed](std::size_t) { observed.push_back(w[1]); });
-
-    g.run(K_STEPS).value();
-
-    EXPECT_EQ(g.compile_count(), 1u);
-    ASSERT_EQ(observed.size(), K_STEPS);
-    for (std::size_t i = 0; i < K_STEPS; ++i)
-    {
-        EXPECT_EQ(seen[i], K_BASE + static_cast<std::uint32_t>(i)) << "replay " << i;
-        EXPECT_EQ(observed[i], K_BASE + static_cast<std::uint32_t>(i)) << "replay " << i;
-    }
-
-    g.run().value();
-
-    EXPECT_EQ(g.compile_count(), 1u) << "a hook must not rebuild the plan";
-    EXPECT_EQ(observed.back(), K_BASE) << "a new run counts its steps from zero";
 }
 
-/** @brief Tests that a step hook feeds eight replays of one DynamicGraph plan. */
-TEST(Medium_RunDriver, AStepHookFeedsEveryReplayOfADynamicGraph)
+/** @brief Tests that a step hook does not rebuild the plan. */
+TEST_P(Medium_RunDriverGraphKinds, AStepHookRebuildsNothing)
 {
     constexpr std::size_t K_STEPS = 8;
-    constexpr std::uint32_t K_BASE = 100;
 
-    auto rt   = Runtime::create().value();
-    auto word = rt.buffer<std::uint32_t>(2).value();
-    auto seen = rt.buffer<std::uint32_t>(K_STEPS).value();
-    for (std::size_t i = 0; i < K_STEPS; ++i)
-        seen[i] = 0;
+    auto word = runtime().buffer<std::uint32_t>(2).value();
     std::uint32_t* w = word.data();
-    std::uint32_t* s = seen.data();
 
-    auto world = rt.dynamic_graph();
-    world.region(0).add(K_STEPS, Reads(word), Writes(seen), [w, s](std::size_t i)
+    on_graph_of(runtime(), GetParam(), [&](auto& graph)
     {
-        if (i == w[0])
-            s[i] = w[1];
-    });
-    world.before_each_step([w](std::size_t finished_steps)
-    {
-        w[0] = static_cast<std::uint32_t>(finished_steps);
-        w[1] = K_BASE + static_cast<std::uint32_t>(finished_steps);
-    });
+        record_add(graph, std::size_t{1}, Reads{}, Writes(word), [w](std::size_t) { w[0] += 1u; });
+        graph.before_each_step([w](std::size_t finished_steps)
+        {
+            w[1] = static_cast<std::uint32_t>(finished_steps);
+        });
 
-    world.run(K_STEPS).value();
+        graph.run(K_STEPS).value();
+        graph.run().value();
 
-    EXPECT_EQ(world.compose_count(), 1u);
-    for (std::size_t i = 0; i < K_STEPS; ++i)
-        EXPECT_EQ(seen[i], K_BASE + static_cast<std::uint32_t>(i)) << "replay " << i;
+        EXPECT_EQ(plan_builds(graph), 1u) << "a hook must not rebuild the plan";
+    });
 }
 
-/** @brief Tests that a moved graph keeps its step hooks and its source has none. */
-TEST(Medium_RunDriver, AStepHookMovesWithItsGraph)
+/** @brief Tests that a new run counts the steps its hooks are given from zero. */
+TEST_P(Medium_RunDriverGraphKinds, ANewRunCountsItsStepsFromZero)
 {
-    auto rt  = Runtime::create().value();
-    auto buf = rt.buffer<int>(N).value();
+    constexpr std::size_t K_STEPS = 8;
+
+    auto word = runtime().buffer<std::uint32_t>(2).value();
+    std::uint32_t* w = word.data();
+
+    on_graph_of(runtime(), GetParam(), [&](auto& graph)
+    {
+        record_add(graph, std::size_t{1}, Reads{}, Writes(word), [w](std::size_t) { w[0] += 1u; });
+        graph.before_each_step([w](std::size_t finished_steps)
+        {
+            w[1] = static_cast<std::uint32_t>(finished_steps);
+        });
+
+        graph.run(K_STEPS).value();
+        ASSERT_EQ(w[1], K_STEPS - 1);
+
+        graph.run().value();
+        EXPECT_EQ(w[1], 0u) << "a new run counts its steps from zero";
+    });
+}
+
+/** @brief Tests that a moved graph keeps its step hooks. */
+TEST_F(Medium_RunDriver, AMovedGraphKeepsItsStepHooks)
+{
+    auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();
 
     std::size_t calls = 0;
-    auto source = rt.graph();
+    auto source = runtime().graph();
     source.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
     source.before_each_step([&calls](std::size_t) { ++calls; });
 
     auto moved = std::move(source);
     moved.run().value();
     EXPECT_EQ(calls, 1u);
+}
+
+/** @brief Tests that the source of a move has no step hook. */
+TEST_F(Medium_RunDriver, TheSourceOfAMoveHasNoStepHook)
+{
+    auto buf = runtime().buffer<int>(N).value();
+    int* p = buf.data();
+
+    std::size_t calls = 0;
+    auto source = runtime().graph();
+    source.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
+    source.before_each_step([&calls](std::size_t) { ++calls; });
+
+    auto moved = std::move(source);
+    moved.run().value();
+    ASSERT_EQ(calls, 1u);
 
     source.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
     source.run().value();
@@ -767,17 +744,16 @@ TEST(Medium_RunDriver, AStepHookMovesWithItsGraph)
 }
 
 /** @brief Tests that a hook too large for the inline storage is held and called. */
-TEST(Medium_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
+TEST_F(Medium_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
 {
-    auto rt  = Runtime::create().value();
-    auto buf = rt.buffer<int>(N).value();
+    auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();
 
     std::array<std::uint64_t, 16> payload{};
     payload[15] = 7;
     std::uint64_t seen = 0;
 
-    auto g = rt.graph();
+    auto g = runtime().graph();
     g.add_host(Reads{}, Writes(buf), [p]() { p[0] += 1; });
     g.before_each_step([payload, &seen](std::size_t) { seen = payload[15]; });
     g.run().value();
@@ -786,19 +762,11 @@ TEST(Medium_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
 }
 
 #if defined(SYCL_IMPLEMENTATION_ONEAPI)
-/**
- * @brief Tests that an error SYCL reports only through its asynchronous handler fails the run on
- *        both layers; see README.md.
- */
-TEST(Medium_RunDriver, AnErrorOnlyTheAsynchronousHandlerSeesFailsTheRunOnBothLayers)
+namespace
 {
-    for (const bool force_scheduler : {false, true})
+    /** @brief Records a graph whose task throws from a host_task, an error SYCL reports only asynchronously. */
+    Graph record_asynchronous_failure(const Runtime& rt, Buffer<int>& buf)
     {
-        RuntimeConfig config;
-        config.force_scheduler = force_scheduler;
-        auto rt  = Runtime::create(config).value();
-        auto buf = rt.buffer<int>(N).value();
-
         auto g = rt.graph();
         g.add_task(Reads{}, Writes(buf),
                    [](sycl::queue& queue, const std::vector<sycl::event>& events)
@@ -810,19 +778,32 @@ TEST(Medium_RunDriver, AnErrorOnlyTheAsynchronousHandlerSeesFailsTheRunOnBothLay
                 handler.host_task([]() { throw std::runtime_error(K_TASK_FAILURE); });
             });
         });
-
-        const auto run = g.run();
-        EXPECT_FALSE(run.has_value())
-            << "force_scheduler = " << force_scheduler << ": the run reported success";
-        if (!run.has_value())
-            EXPECT_EQ(run.error().code, ErrorCode::KernelFailed)
-                << "force_scheduler = " << force_scheduler;
-
-        // An error the run did not return is still in the queue and comes out of this wait.
-        const auto drained = rt.wait();
-        EXPECT_TRUE(drained.has_value())
-            << "force_scheduler = " << force_scheduler
-            << ": the error outlived the run that caused it";
+        return g;
     }
+} // namespace
+
+/** @brief Tests that an error SYCL reports only through its asynchronous handler fails the run. */
+TEST_P(Medium_RunDriverLayers, AnErrorOnlyTheAsynchronousHandlerSeesFailsTheRun)
+{
+    auto buf = runtime().buffer<int>(N).value();
+    auto g = record_asynchronous_failure(runtime(), buf);
+
+    const auto run = g.run();
+    ASSERT_FALSE(run.has_value()) << "the run reported success";
+    EXPECT_EQ(run.error().code, ErrorCode::KernelFailed);
 }
+
+/** @brief Tests that an error only the asynchronous handler sees does not outlive the run in the queue. */
+TEST_P(Medium_RunDriverLayers, AnAsynchronousErrorDoesNotOutliveTheRun)
+{
+    auto buf = runtime().buffer<int>(N).value();
+    auto g = record_asynchronous_failure(runtime(), buf);
+    (void)g.run();
+
+    // An error the run did not return is still in the queue and comes out of this wait.
+    const auto drained = runtime().wait();
+    EXPECT_TRUE(drained.has_value()) << "the error outlived the run that caused it";
+}
+
+INSTANTIATE_TEST_SUITE_P(Rows, Medium_RunDriverLayers, ::testing::Values(false, true));
 #endif

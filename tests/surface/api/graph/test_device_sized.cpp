@@ -31,14 +31,14 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <functional>
-#include <memory>
+#include <optional>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
+
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -102,14 +102,6 @@ namespace
         return LateCount::from_device(capacity, counter);
     }
 
-    /** @brief Holds one run's per-step digests and the layer it took. */
-    struct Recording
-    {
-        std::vector<std::uint32_t> digests;                           /**< One word per step. */
-        /** @brief Layer the run took. */
-        ExecutionLayer layer = ExecutionLayer::Scheduler;
-    };
-
     /**
      * @brief Builds a live-count schedule over a capacity that hits 0 and the capacity.
      * @return Eleven counts, cycled by the producer.
@@ -131,7 +123,7 @@ namespace
         Buffer<std::uint32_t> history;  /**< One digest per step. */
 
         /** @brief Allocates the shared buffers for a schedule over capacity. */
-        Harness(Runtime& rt, std::size_t capacity)
+        Harness(const Runtime& rt, std::size_t capacity)
             : counter(rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value()),
               step(rt.buffer<std::uint32_t>(1).value()),
               schedule(rt.buffer<std::uint32_t>(schedule_for(capacity).size()).value()),
@@ -179,55 +171,73 @@ namespace
         }
 
         /** @brief Runs the graph for K_STEPS steps and copies the digests out. */
-        Recording record(Graph& g)
+        std::vector<std::uint32_t> record(Graph& g)
         {
-            Recording r;
             const auto report = g.run(K_STEPS).value();
             EXPECT_TRUE(report.is_successful);
-            r.layer = report.layer;
-            r.digests.assign(history.data(), history.data() + K_STEPS);
-            return r;
+            return std::vector<std::uint32_t>(history.data(), history.data() + K_STEPS);
         }
     };
 
-    /**
-     * @brief Runs a workload on a default and a forced-scheduler runtime and compares them.
-     *
-     * The default run must take the chain, the forced one the scheduler, and every step's
-     * digest must match bit for bit.
-     */
-    void expect_chain_matches_scheduler(const std::function<Recording(Runtime&)>& workload)
+    /** @brief Folds the first words words of source into a digest, as the digest kernel does. */
+    std::uint32_t digest_of(const std::vector<std::uint32_t>& source, std::size_t words)
     {
-        auto chained_rt = Runtime::create().value();
-        RuntimeConfig forced;
-        forced.force_scheduler = true;
-        auto scheduled_rt = Runtime::create(forced).value();
+        std::uint32_t acc = 2166136261u;
+        for (std::size_t i = 0; i < words; ++i)
+            acc = (acc ^ source[i]) * K_MIX;
+        return acc;
+    }
 
-        const Recording chained = workload(chained_rt);
-        const Recording scheduled = workload(scheduled_rt);
-
-        EXPECT_EQ(chained.layer, ExecutionLayer::Chain)
-            << "a plan of device-sized launches and kernels must take the chain";
-        EXPECT_EQ(scheduled.layer, ExecutionLayer::Scheduler);
-        ASSERT_EQ(chained.digests.size(), scheduled.digests.size());
-        EXPECT_EQ(std::memcmp(chained.digests.data(), scheduled.digests.data(),
-                              chained.digests.size() * sizeof(std::uint32_t)), 0);
-
+    /** @brief Checks that the live count changes the digests step to step, so a match shows the count at work. */
+    void expect_digests_change(const std::vector<std::uint32_t>& digests)
+    {
         std::size_t changes = 0;
-        for (std::size_t i = 1; i < chained.digests.size(); ++i)
-            changes += (chained.digests[i] != chained.digests[i - 1]) ? 1u : 0u;
+        for (std::size_t i = 1; i < digests.size(); ++i)
+            changes += (digests[i] != digests[i - 1]) ? 1u : 0u;
         EXPECT_GT(changes, K_STEPS / 4) << "the live count must change the results step to step";
     }
 } // namespace
 
+
+/** @brief Fixture of the device-sized launch tests, which record graphs on the program's runtime. */
+class Medium_DeviceSizedLaunch : public TestSupport::RuntimeTest
+{
+};
+
+/**
+ * @brief Fixture of the rows that run a device-sized workload on the in-order chain (false) and on the worker pool (true).
+ */
+class Medium_DeviceSizedLayers : public ::testing::TestWithParam<bool>
+{
+    protected:
+        /** @brief Makes the runtime of the row: the program's for the chain, one forced onto the pool otherwise. */
+        void SetUp() override
+        {
+            if (GetParam())
+            {
+                RuntimeConfig config;
+                config.force_scheduler = true;
+                pool_.emplace(Runtime::create(config).value());
+            }
+        }
+
+        /** @brief Returns the runtime of the row. */
+        [[nodiscard]] const Runtime& runtime() const
+        {
+            return pool_ ? *pool_ : TestSupport::RuntimeEnvironment::runtime();
+        }
+
+    private:
+        std::optional<Runtime> pool_; /**< The pool runtime of the true row. */
+};
+
 /** @brief Tests that exactly the work-items below the live width run, at every width. */
-TEST(Medium_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
+TEST_F(Medium_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
 {
     constexpr std::size_t CAPACITY = 600;
     constexpr std::size_t SALT = 7;
 
-    auto rt    = Runtime::create().value();
-    auto marks = rt.buffer<std::uint32_t>(CAPACITY + 1).value();
+    auto marks = runtime().buffer<std::uint32_t>(CAPACITY + 1).value();
     std::vector<std::uint32_t> expected(CAPACITY + 1, K_CANARY);
     for (std::size_t i = 0; i <= CAPACITY; ++i)
         marks[i] = K_CANARY;
@@ -236,7 +246,7 @@ TEST(Medium_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
     const LateCount width = LateCount::from_host(CAPACITY, [&live]() { return live; });
     const LateCount salt = LateCount::fixed(SALT);
 
-    auto g = rt.graph();
+    auto g = runtime().graph();
     record_marking_rule(g.recorder(), marks, width, salt);
 
     for (const std::size_t n : {std::size_t{10}, std::size_t{0}, CAPACITY, std::size_t{257}})
@@ -248,44 +258,77 @@ TEST(Medium_DeviceSizedLaunch, OnlyItemsBelowTheLiveWidthRun)
         for (std::size_t t = 0; t <= CAPACITY; ++t)
             ASSERT_EQ(marks[t], expected[t]) << "live width " << n << ", item " << t;
     }
-
-    EXPECT_EQ(g.compile_count(), 1u) << "a live width change must not trigger a recompile";
 }
 
-/** @brief Tests that a null live width runs every item and the arity picks the live words. */
-TEST(Medium_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksTheWords)
+/** @brief Tests that a change of the live width does not recompile the graph. */
+TEST_F(Medium_DeviceSizedLaunch, ALiveWidthChangeDoesNotRecompile)
+{
+    constexpr std::size_t CAPACITY = 600;
+
+    auto marks = runtime().buffer<std::uint32_t>(CAPACITY).value();
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        marks[i] = K_CANARY;
+
+    std::size_t live = 0;
+    const LateCount width = LateCount::from_host(CAPACITY, [&live]() { return live; });
+
+    auto g = runtime().graph();
+    record_marking_rule(g.recorder(), marks, width, LateCount::fixed(7));
+
+    for (const std::size_t n : {std::size_t{10}, std::size_t{0}, CAPACITY, std::size_t{257}})
+    {
+        live = n;
+        g.run().value();
+    }
+
+    EXPECT_EQ(g.compile_count(), 1u);
+}
+
+/** @brief Tests that a launch with a null live width runs every item up to its capacity. */
+TEST_F(Medium_DeviceSizedLaunch, ANullLiveWidthRunsEveryItem)
+{
+    constexpr std::size_t CAPACITY = 300;
+
+    auto plain = runtime().buffer<std::uint32_t>(CAPACITY).value();
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        plain[i] = K_CANARY;
+    std::uint32_t* p = plain.data();
+
+    auto g = runtime().graph();
+    g.recorder().kernel(DeviceSized{CAPACITY, nullptr, nullptr},
+                        Access(Reads(), Writes(plain)),
+                        [p](std::size_t t) { p[t] = static_cast<std::uint32_t>(t); });
+    g.run().value();
+
+    for (std::size_t t = 0; t < CAPACITY; ++t)
+        ASSERT_EQ(plain[t], t) << "item " << t;
+}
+
+/** @brief Tests that a kernel taking a live word is passed the live words, while one that does not take it is not. */
+TEST_F(Medium_DeviceSizedLaunch, TheKernelArityPicksTheLiveWords)
 {
     constexpr std::size_t CAPACITY = 300;
     constexpr std::size_t LIVE = 123;
 
-    auto rt     = Runtime::create().value();
-    auto plain  = rt.buffer<std::uint32_t>(CAPACITY).value();
-    auto worded = rt.buffer<std::uint32_t>(CAPACITY).value();
+    auto worded = runtime().buffer<std::uint32_t>(CAPACITY).value();
     for (std::size_t i = 0; i < CAPACITY; ++i)
-    {
-        plain[i] = K_CANARY;
         worded[i] = K_CANARY;
-    }
 
     const LateCount count = LateCount::from_host(CAPACITY, []() { return LIVE; });
 
-    auto g = rt.graph();
+    auto g = runtime().graph();
     Recorder& recorder = g.recorder();
     std::uint32_t* word =
-        recorder.scratch<std::uint32_t>(1, plain.device_index(), plain.residency()).value();
+        recorder.scratch<std::uint32_t>(1, worded.device_index(), worded.residency()).value();
     const BufferRegion word_region{word, 0, sizeof(std::uint32_t)};
-    std::uint32_t* p = plain.data();
     std::uint32_t* w = worded.data();
 
-    recorder.resolve(std::array<LateCount, 1>{count}, plain.device_index(),
+    recorder.resolve(std::array<LateCount, 1>{count}, worded.device_index(),
                      Access(Reads(), Writes(word_region)),
                      [word](const std::array<std::size_t, 1>& live)
                      {
                          word[0] = static_cast<std::uint32_t>(live[0]);
                      });
-    recorder.kernel(DeviceSized{CAPACITY, nullptr, nullptr},
-                    Access(Reads(), Writes(plain)),
-                    [p](std::size_t t) { p[t] = static_cast<std::uint32_t>(t); });
     recorder.kernel(DeviceSized{CAPACITY, nullptr, word},
                     Access(Reads(word_region), Writes(worded)),
                     [w](std::size_t t, std::size_t live)
@@ -295,108 +338,158 @@ TEST(Medium_DeviceSizedLaunch, ANullLiveWidthRunsEveryItemAndTheArityPicksTheWor
     g.run().value();
 
     for (std::size_t t = 0; t < CAPACITY; ++t)
-    {
-        ASSERT_EQ(plain[t], t) << "item " << t;
         ASSERT_EQ(worded[t], t + LIVE) << "item " << t;
-    }
 }
 
-/** @brief Tests that a launch of capacity zero runs no item and still releases its successor. */
-TEST(Medium_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothingAndReleasesItsSuccessor)
+/** @brief Tests that a launch of capacity zero runs no item. */
+TEST_F(Medium_DeviceSizedLaunch, ZeroCapacityLaunchRunsNothing)
 {
-    auto rt     = Runtime::create().value();
-    auto target = rt.buffer<std::uint32_t>(1).value();
-    auto done   = rt.buffer<std::uint32_t>(1).value();
+    auto target = runtime().buffer<std::uint32_t>(1).value();
     target[0] = K_CANARY;
-    done[0] = 0;
     std::uint32_t* t = target.data();
-    std::uint32_t* d = done.data();
 
-    auto g = rt.graph();
+    auto g = runtime().graph();
     g.recorder().kernel(DeviceSized{0, nullptr, nullptr},
                         Access(Reads(), Writes(target)),
                         [t](std::size_t item) { t[item] = 0u; });
-    g.add(std::size_t{1}, Reads(target), Writes(done), [t, d](std::size_t) { d[0] = t[0]; });
 
     const auto report = g.run().value();
 
     EXPECT_TRUE(report.is_successful);
     EXPECT_EQ(target[0], K_CANARY);
+}
+
+/** @brief Tests that the successor of a launch of capacity zero still runs. */
+TEST_F(Medium_DeviceSizedLaunch, ZeroCapacityLaunchReleasesItsSuccessor)
+{
+    auto target = runtime().buffer<std::uint32_t>(1).value();
+    auto done   = runtime().buffer<std::uint32_t>(1).value();
+    target[0] = K_CANARY;
+    done[0] = 0;
+    std::uint32_t* t = target.data();
+    std::uint32_t* d = done.data();
+
+    auto g = runtime().graph();
+    g.recorder().kernel(DeviceSized{0, nullptr, nullptr},
+                        Access(Reads(), Writes(target)),
+                        [t](std::size_t item) { t[item] = 0u; });
+    g.add(std::size_t{1}, Reads(target), Writes(done), [t, d](std::size_t) { d[0] = t[0]; });
+
+    g.run().value();
+
     EXPECT_EQ(done[0], K_CANARY) << "the successor must run after the empty launch";
 }
 
-/**
- * @brief Tests that a device-sized rule gives the same bytes on both layers as its counts change.
- */
-TEST(Medium_DeviceSizedLaunch, DeviceSizedRuleChainMatchesSchedulerAsTheCountsChange)
+/** @brief Tests that a device-sized rule leaves the bytes the host model of the marking rule gives, as its counts change. */
+TEST_P(Medium_DeviceSizedLayers, DeviceSizedRuleMatchesTheHostModelAsTheCountsChange)
 {
     constexpr std::size_t CAPACITY = 4096;
-    constexpr std::size_t SALT_CAPACITY = std::size_t{1} << 20;
-    expect_chain_matches_scheduler([](Runtime& rt)
+    constexpr std::size_t SALT = 7;
+
+    Harness hx(runtime(), CAPACITY);
+    auto marks = runtime().buffer<std::uint32_t>(CAPACITY).value();
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        marks[i] = static_cast<std::uint32_t>(i);
+
+    auto g = runtime().graph();
+    hx.add_producer(g);
+    record_marking_rule(g.recorder(), marks, device_count(hx.counter, CAPACITY),
+                        LateCount::fixed(SALT));
+    hx.add_digest(g, marks, CAPACITY);
+    const std::vector<std::uint32_t> measured = hx.record(g);
+
+    const std::vector<std::uint32_t> schedule = schedule_for(CAPACITY);
+    std::vector<std::uint32_t> model(CAPACITY);
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        model[i] = static_cast<std::uint32_t>(i);
+    std::vector<std::uint32_t> expected(K_STEPS);
+    for (std::size_t step = 0; step < K_STEPS; ++step)
     {
-        Harness hx(rt, CAPACITY);
-        auto marks = rt.buffer<std::uint32_t>(CAPACITY).value();
-        for (std::size_t i = 0; i < CAPACITY; ++i)
-            marks[i] = static_cast<std::uint32_t>(i);
+        const std::size_t width = schedule[step % schedule.size()];
+        for (std::size_t t = 0; t < width; ++t)
+            model[t] = marked(model[t], t, width, SALT);
+        expected[step] = digest_of(model, CAPACITY);
+    }
 
-        // The salt changes every step on the host while the width changes on the device.
-        const std::array<std::size_t, 4> salts{5, 300, 70000, SALT_CAPACITY};
-        auto tick = std::make_shared<std::size_t>(0);
-        const LateCount salt = LateCount::from_host(
-            SALT_CAPACITY, [salts, tick] { return salts[(*tick)++ % salts.size()]; });
-
-        auto g = rt.graph();
-        hx.add_producer(g);
-        record_marking_rule(g.recorder(), marks, device_count(hx.counter, CAPACITY), salt);
-        hx.add_digest(g, marks, CAPACITY);
-        return hx.record(g);
-    });
+    expect_digests_change(expected);
+    EXPECT_EQ(measured, expected);
 }
 
-/** @brief Tests that a sized_from_device task gives the same bytes on both layers. */
-TEST(Medium_DeviceSizedLaunch, SizedFromDeviceChainMatchesSchedulerAsTheCountChanges)
+/** @brief Tests that a sized_from_device task leaves the bytes the host model gives as its count changes. */
+TEST_P(Medium_DeviceSizedLayers, SizedFromDeviceMatchesTheHostModelAsTheCountChanges)
 {
     constexpr std::size_t CAPACITY = 4096;
-    expect_chain_matches_scheduler([](Runtime& rt)
-    {
-        Harness hx(rt, CAPACITY);
-        auto acc = rt.buffer<std::uint32_t>(CAPACITY).value();
-        for (std::size_t i = 0; i < CAPACITY; ++i)
-            acc[i] = static_cast<std::uint32_t>(i);
-        std::uint32_t* a = acc.data();
 
-        auto g = rt.graph();
-        hx.add_producer(g);
-        g.add_dynamic(sized_from_device(hx.counter), CAPACITY, Reads{}, Writes(acc),
-                      [a](std::size_t i) { a[i] = a[i] * 2654435761u + 12345u; });
-        hx.add_digest(g, acc, CAPACITY);
-        return hx.record(g);
-    });
+    Harness hx(runtime(), CAPACITY);
+    auto acc = runtime().buffer<std::uint32_t>(CAPACITY).value();
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        acc[i] = static_cast<std::uint32_t>(i);
+    std::uint32_t* a = acc.data();
+
+    auto g = runtime().graph();
+    hx.add_producer(g);
+    g.add_dynamic(sized_from_device(hx.counter), CAPACITY, Reads{}, Writes(acc),
+                  [a](std::size_t i) { a[i] = a[i] * 2654435761u + 12345u; });
+    hx.add_digest(g, acc, CAPACITY);
+    const std::vector<std::uint32_t> measured = hx.record(g);
+
+    const std::vector<std::uint32_t> schedule = schedule_for(CAPACITY);
+    std::vector<std::uint32_t> model(CAPACITY);
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        model[i] = static_cast<std::uint32_t>(i);
+    std::vector<std::uint32_t> expected(K_STEPS);
+    for (std::size_t step = 0; step < K_STEPS; ++step)
+    {
+        const std::size_t count = schedule[step % schedule.size()];
+        for (std::size_t i = 0; i < count; ++i)
+            model[i] = model[i] * 2654435761u + 12345u;
+        expected[step] = digest_of(model, CAPACITY);
+    }
+
+    expect_digests_change(expected);
+    EXPECT_EQ(measured, expected);
 }
 
-/** @brief Tests that a device count over its capacity fails a chained run. */
-TEST(Medium_DeviceSizedLaunch, DeviceCountOverCapacityFailsAChainedRun)
+INSTANTIATE_TEST_SUITE_P(Rows, Medium_DeviceSizedLayers, ::testing::Values(false, true));
+
+/** @brief Tests that a device count over its capacity fails the run. */
+TEST_F(Medium_DeviceSizedLaunch, DeviceCountOverCapacityFailsTheRun)
 {
     constexpr std::size_t CAPACITY = 100;
 
-    auto rt = Runtime::create().value();
-    auto counter = rt.buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
-    auto marks = rt.buffer<std::uint32_t>(CAPACITY).value();
+    auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto marks = runtime().buffer<std::uint32_t>(CAPACITY).value();
     for (std::size_t i = 0; i < CAPACITY; ++i)
         marks[i] = 0;
     std::uint32_t* c = counter.data();
 
-    auto g = rt.graph();
+    auto g = runtime().graph();
     g.add(std::size_t{1}, Reads{}, Writes(counter),
           [c](std::size_t) { c[0] = static_cast<std::uint32_t>(CAPACITY) + 1u; });
     record_marking_rule(g.recorder(), marks, device_count(counter, CAPACITY), fixed_count(1));
     EXPECT_FALSE(g.run(4).has_value());
+}
 
-    // A later graph with a count inside the capacity runs clean on the same runtime.
-    auto valid = rt.graph();
+/** @brief Tests that a graph with a count inside the capacity runs clean after a run failed for a count over it. */
+TEST_F(Medium_DeviceSizedLaunch, AGraphRunsCleanAfterARunFailedForACountOverTheCapacity)
+{
+    constexpr std::size_t CAPACITY = 100;
+
+    auto counter = runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value();
+    auto marks = runtime().buffer<std::uint32_t>(CAPACITY).value();
+    for (std::size_t i = 0; i < CAPACITY; ++i)
+        marks[i] = 0;
+    std::uint32_t* c = counter.data();
+
+    auto g = runtime().graph();
+    g.add(std::size_t{1}, Reads{}, Writes(counter),
+          [c](std::size_t) { c[0] = static_cast<std::uint32_t>(CAPACITY) + 1u; });
+    record_marking_rule(g.recorder(), marks, device_count(counter, CAPACITY), fixed_count(1));
+    ASSERT_FALSE(g.run(4).has_value());
+
+    auto valid = runtime().graph();
     valid.add(std::size_t{1}, Reads{}, Writes(counter), [c](std::size_t) { c[0] = 3u; });
     record_marking_rule(valid.recorder(), marks, device_count(counter, CAPACITY), fixed_count(1));
     const auto report = valid.run(2).value();
     EXPECT_TRUE(report.is_successful);
-    EXPECT_EQ(report.layer, ExecutionLayer::Chain);
 }

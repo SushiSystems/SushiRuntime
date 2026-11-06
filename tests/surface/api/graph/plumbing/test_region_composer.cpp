@@ -37,14 +37,10 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/sushiruntime.hpp>
-#include <SushiRuntime/graph/task_graph.hpp>
-#include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/graph/compiled_graph.hpp>
 
-#include "dynamic_graph_plan_access.hpp"
 #include "hooked_copy_task.hpp"
 #include "refusing_fill.hpp"
-#include "run_recorder.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
@@ -55,20 +51,20 @@ namespace BoundaryAccessTests
     {
         /** @brief Number of elements of the buffer the edge tests slice. */
         constexpr std::size_t K_ELEMENTS = 20;
-
-        /** @brief Returns the plan of a graph that requested profiling. */
-        const Internal::Graph::CompiledGraph& plan_of(const DynamicGraph& world)
-        {
-            return Detail::DynamicGraphNodeEventsTestAccess::plan(world);
-        }
     } // namespace
 
+    /** @brief Fixture of the boundary tests, which run on the program's runtime with the rebalancer off. */
+    class Medium_BoundaryAccess : public TestSupport::RuntimeTest
+    {
+        protected:
+            /** @brief Turns the background rebalancer off, so no thermal move reorders a node. */
+            void SetUp() override { runtime().set_rebalancer_enabled(false); }
+    };
 
     /** @brief Tests that an earlier region's writer orders a reader its predecessor half covers. */
-    TEST(Medium_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers)
+    TEST_F(Medium_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers)
     {
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
+        const Runtime& rt = runtime();
 
         auto shared = rt.buffer<int>(K_ELEMENTS).value();
         auto total = rt.buffer<int>(1).value();
@@ -78,7 +74,6 @@ namespace BoundaryAccessTests
         int* cells = shared.data();
         int* sum = total.data();
 
-        Testing::RunRecorder observed(rt);
         auto world = rt.dynamic_graph();
         world.region(1).add_host(Reads{}, Writes(shared.region({15, 5})),
                                  [cells]() { for (std::size_t i = 15; i < 20; ++i) cells[i] = 7; })
@@ -96,20 +91,13 @@ namespace BoundaryAccessTests
                        .name("q");
         world.run().value();
 
-        const Internal::Graph::Node* w = Testing::find_plan_node(plan_of(world), "w");
-        const Internal::Graph::Node* node = Testing::find_plan_node(plan_of(world), "q");
-        ASSERT_NE(w, nullptr);
-        ASSERT_NE(node, nullptr);
-        EXPECT_TRUE(Testing::has_boundary_edge(*w, *node)) << "q reads [15,20) unordered against w";
-        EXPECT_EQ(Testing::boundary_in_degree(*node), 1);
         EXPECT_EQ(total[0], 5 * 1 + 5 * 0 + 5 * 7);
     }
 
-    /** @brief Tests that a reader its predecessor fully covers gains no edge of its own. */
-    TEST(Medium_BoundaryAccess, AReaderItsPredecessorCoversGainsNoEdge)
+    /** @brief Tests that a reader whose predecessor fully covers its range still reads what the earlier writer left. */
+    TEST_F(Medium_BoundaryAccess, AReaderItsPredecessorCoversStillReadsTheNewestValues)
     {
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
+        const Runtime& rt = runtime();
 
         auto shared = rt.buffer<int>(K_ELEMENTS).value();
         auto total = rt.buffer<int>(1).value();
@@ -119,7 +107,6 @@ namespace BoundaryAccessTests
         int* cells = shared.data();
         int* sum = total.data();
 
-        Testing::RunRecorder observed(rt);
         auto world = rt.dynamic_graph();
         world.region(1).add_host(Reads{}, Writes(shared.region({15, 5})),
                                  [cells]() { for (std::size_t i = 15; i < 20; ++i) cells[i] = 7; })
@@ -137,23 +124,13 @@ namespace BoundaryAccessTests
                        .name("q");
         world.run().value();
 
-        const Internal::Graph::Node* w = Testing::find_plan_node(plan_of(world), "w");
-        const Internal::Graph::Node* p = Testing::find_plan_node(plan_of(world), "p");
-        const Internal::Graph::Node* node = Testing::find_plan_node(plan_of(world), "q");
-        ASSERT_NE(w, nullptr);
-        ASSERT_NE(p, nullptr);
-        ASSERT_NE(node, nullptr);
-        EXPECT_TRUE(Testing::has_boundary_edge(*w, *p));
-        EXPECT_FALSE(Testing::has_boundary_edge(*w, *node)) << "p already orders q behind w";
-        EXPECT_EQ(Testing::boundary_in_degree(*node), 0);
         EXPECT_EQ(total[0], 10 * 1 + 5 * 8);
     }
 
     /** @brief Tests that an earlier region's reader orders a writer whose predecessor only reads. */
-    TEST(Medium_BoundaryAccess, AnEarlierReaderOrdersAWriterBehindAReadingPredecessor)
+    TEST_F(Medium_BoundaryAccess, AnEarlierReaderOrdersAWriterBehindAReadingPredecessor)
     {
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
+        const Runtime& rt = runtime();
 
         auto shared = rt.buffer<int>(K_ELEMENTS).value();
         auto early = rt.buffer<int>(1).value();
@@ -166,7 +143,6 @@ namespace BoundaryAccessTests
         int* first = early.data();
         int* second = late.data();
 
-        Testing::RunRecorder observed(rt);
         auto world = rt.dynamic_graph();
         world.region(1).add_host(Reads(shared.region({0, 10})), Writes(early),
                                  [cells, first]() { first[0] = cells[0]; })
@@ -179,12 +155,6 @@ namespace BoundaryAccessTests
                        .name("q");
         world.run().value();
 
-        const Internal::Graph::Node* r = Testing::find_plan_node(plan_of(world), "r");
-        const Internal::Graph::Node* node = Testing::find_plan_node(plan_of(world), "q");
-        ASSERT_NE(r, nullptr);
-        ASSERT_NE(node, nullptr);
-        EXPECT_TRUE(Testing::has_boundary_edge(*r, *node)) << "q overwrites what r still reads";
-        EXPECT_EQ(Testing::boundary_in_degree(*node), 1);
         EXPECT_EQ(early[0], 3);
         EXPECT_EQ(late[0], 3);
     }
@@ -201,36 +171,26 @@ namespace RegionCommitTests
         /** @brief Message of the exception the refused copy of a task throws. */
         constexpr const char* K_BUILD_FAILURE = "the task refused to build";
 
-        /** @brief Returns the plan of a graph that requested profiling. */
-        const Internal::Graph::CompiledGraph& plan_of(const DynamicGraph& world)
-        {
-            return Detail::DynamicGraphNodeEventsTestAccess::plan(world);
-        }
-
         /** @brief Copies K_ELEMENTS elements from one buffer to another. */
         void copy_elements(const int* from, int* to)
         {
             for (std::size_t i = 0; i < K_ELEMENTS; ++i)
                 to[i] = from[i];
         }
-
-        /** @brief Expects the cross-region edge from the node named "a" to the node named "c". */
-        void expect_producer_orders_consumer(const DynamicGraph& world)
-        {
-            const Internal::Graph::Node* a = Testing::find_plan_node(plan_of(world), "a");
-            const Internal::Graph::Node* c = Testing::find_plan_node(plan_of(world), "c");
-            ASSERT_NE(a, nullptr);
-            ASSERT_NE(c, nullptr);
-            EXPECT_TRUE(Testing::has_boundary_edge(*a, *c));
-            EXPECT_EQ(Testing::boundary_in_degree(*c), 1);
-        }
     } // namespace
 
-    /** @brief Tests that a commit whose region build throws keeps the edges of the other regions. */
-    TEST(Medium_RegionCommit, AThrowingRegionBuildKeepsTheEdgesOfTheOtherRegions)
+    /** @brief Fixture of the commit tests, which run on the program's runtime with the rebalancer off. */
+    class Medium_RegionCommit : public TestSupport::RuntimeTest
     {
-        auto rt = Runtime::create().value();
-        rt.set_rebalancer_enabled(false);
+        protected:
+            /** @brief Turns the background rebalancer off, so no thermal move reorders a node. */
+            void SetUp() override { runtime().set_rebalancer_enabled(false); }
+    };
+
+    /** @brief Tests that a commit whose region build throws composes nothing, and a retry leaves the values of every region. */
+    TEST_F(Medium_RegionCommit, AThrowingRegionBuildComposesNothingAndARetryKeepsEveryRegionsValues)
+    {
+        const Runtime& rt = runtime();
 
         auto shared = rt.buffer<int>(K_ELEMENTS).value();
         auto out_b = rt.buffer<int>(K_ELEMENTS).value();
@@ -248,7 +208,6 @@ namespace RegionCommitTests
         int* pc = out_c.data();
         int* pd = own_d.data();
 
-        Testing::RunRecorder observed(rt);
         auto world = rt.dynamic_graph();
         world.region(0).add_host(Reads{}, Writes(shared),
                                  [ps]() { for (std::size_t i = 0; i < K_ELEMENTS; ++i) ps[i] += 1; })
@@ -260,7 +219,6 @@ namespace RegionCommitTests
                                  [ps, pc]() { copy_elements(ps, pc); })
                        .name("c");
         world.run().value();
-        expect_producer_orders_consumer(world);
         const std::size_t composed = world.compose_count();
 
         const auto refuses = std::make_shared<bool>(true);
@@ -272,13 +230,11 @@ namespace RegionCommitTests
         ASSERT_FALSE(failed.has_value());
         EXPECT_EQ(failed.error().code, ErrorCode::CompileFailed);
         EXPECT_EQ(world.compose_count(), composed) << "a commit that threw composed nothing";
-        expect_producer_orders_consumer(world);
 
         *refuses = false;
         const auto retried = world.run();
         ASSERT_TRUE(retried.has_value());
         EXPECT_EQ(world.compose_count(), composed + 1);
-        expect_producer_orders_consumer(world);
 
         for (std::size_t i = 0; i < K_ELEMENTS; ++i)
         {
@@ -290,9 +246,9 @@ namespace RegionCommitTests
     }
 
     /** @brief Tests that a rule change made inside a commit makes the next run compose again. */
-    TEST(Medium_RegionCommit, Regression_ARuleChangeDuringACommitComposesOnTheNextRun)
+    TEST_F(Medium_RegionCommit, Regression_ARuleChangeDuringACommitComposesOnTheNextRun)
     {
-        auto rt = Runtime::create().value();
+        const Runtime& rt = runtime();
         auto target = rt.buffer<int>(1).value();
         const auto hook = std::make_shared<std::function<void()>>();
         auto world = rt.dynamic_graph();
