@@ -31,18 +31,6 @@ K_FOLDER_CEILING = 60
 K_CLOSED_GRACE_DAYS = 0
 K_ARCHIVE_UNTRACKED = True
 
-K_TEST_BUDGET: dict[str, int] = {
-    "small_test_s": 1,
-    "medium_test_s": 10,
-    "large_test_s": 120,
-    "small_program_s": 10,
-    "large_program_s": 600,
-    "default_run_s": 300,
-    "large_tier_s": 1800,
-    "cases_per_commit": 20,
-    "cases_per_fix": 5,
-    "second_program": 0,
-}
 K_TOOLING_PACKAGE = 'sushicore'
 K_TOOLING_MINIMUM_VERSION = '0.10.2'
 K_TOOLING_SIBLING_SOURCE = 'sushicore/source'

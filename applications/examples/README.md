@@ -407,7 +407,7 @@ program, `sr_adapter_demo`.
 
 | File | Holds | Includes the library |
 | --- | --- | --- |
-| `adapter/diffusion_backend.hpp` | The host's side of the seam: `StatusCode`, `Status`, the handle of a backend it cannot look into, and four functions | No |
+| `adapter/diffusion_backend.hpp` | The host's side of the seam: `StatusCode`, `Status`, the handle of a backend it cannot look into, the backend's functions, and the step on the host | Declares `Runtime` only |
 | `adapter/sushiruntime_adapter.cpp` | The four functions on SushiRuntime, and the mapping of every `ErrorCode` to a `StatusCode` | Yes |
 | `adapter/adapter_demo.cpp` | The host: it seeds a field, advances it and compares it with its own computation | No |
 
@@ -415,6 +415,12 @@ The header declares `DiffusionBackend` and does not define it, so the host holds
 `BackendHandle` and passes it back to `create_backend()`, `allocate_field()`, `advance()` and
 `read_field()`. Each returns a `Status`. The adapter defines the type: a `Runtime`, a
 `State<float>` and a `Graph` with the one rule that steps the field.
+
+`create_backend()` has two forms. With the handle alone it creates a runtime the backend keeps.
+A host that already holds a `Runtime` passes it as a second argument, and the backend borrows
+it, so the runtime must outlive the backend. `diffused_cell()` is the one step of one cell,
+which the device rule calls; `diffuse_on_host()` runs the same step over a whole field on the
+host, so a host can compare a device run with its own.
 
 `status_of()` is the one place an `Error` becomes a `Status`. Its `switch` names every
 `ErrorCode` and has no `default`, so a compiler that warns on an unhandled enumerator reports a

@@ -10,7 +10,7 @@ A section is named after a test file, and a subsection after the test, helper or
 
 The file covers a `ContextHandle` that shares no context. It includes the module's handle header
 and nothing of the engine, so it cannot build a context; a handle that shares one is
-tested in `tests/surface/context_access/test_context_access.cpp`.
+reached through `Runtime` in `tests/surface/api/runtime/test_runtime.cpp`.
 
 ### `ACopyOfADefaultHandleIsEmpty`
 
@@ -24,3 +24,7 @@ does not list it.
 
 `ContextHandleAccess::handle_of` has no test here: it is tested through its public owner, in
 `tests/surface/api/runtime/test_runtime.cpp`, `AHandleItHandsOutReachesItsOwnContext`.
+
+## compile_context_handle_access.cpp
+
+Includes `context_handle_access.hpp` alone, so the build fails if the header misses an include. It holds no test.

@@ -35,6 +35,11 @@
 | RW-95 | P3 | open | Give check_naming, check_device_sources and the tier table a text-taking seam | The three tools tests the review resized to small read no file from disk |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
 | RW-96 | P3 | decision | Show the ContextAccess promises through a public path or rule them untested | The five dropped context_access promises have a public-surface test each or an owner ruling |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
 | RW-97 | P3 | decision | Decide where the no-hub-install rule of the service messages lives | test_no_service_message_sends_the_user_to_hub_install reads no source text, or a tools/ checker holds the rule |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-98 | P2 | open | Give register_profiler_parts the registration interface of decision 3 | RefusesASecondRegistration and TheRegistryMakesTheDeviceSource run small with no Runtime |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-99 | P3 | decision | Give the profiling tests the seams their small resizes need | The nine M13 records left medium for want of a seam run small, or each has an owner ruling |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-100 | P3 | decision | Give WorkloadCoordinator a clock and the scheduler a single-thread executor | test_workload_coordinator and PriorityBypass hold no sleep_for and no loop |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
+| RW-101 | P3 | decision | Give the foundation units the seams their small resizes need | The M5 records left medium for a handler, clock, threshold or sink seam run small, or each has an owner ruling |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
+| RW-102 | P3 | decision | Give the engine units the seams their small resizes need | The M3 records left medium for an executor, logger port, dependency or ownership seam run small, or each has an owner ruling |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 
 ## Known issues
 

@@ -61,6 +61,12 @@ The owner delegated these decisions on 2026-11-05. Each ruling below is final fo
 7. Ruling 1 is refined on 2026-11-06, since moving `InProcessTransport` into `transport` would make `transport` depend on `frame_transport` and `wire`, which depend on it. The adapter gets an extension module of its own, `in_process_transport`, beside the port, depending on core, transport, wire and frame_transport. `transport` gains no dependency, `distributed` and the tests that use the adapter depend on the new module, and the `TransportContract` suite runs against it small.
 8. Ruled on 2026-11-06: `ContextHandleAccess::handle_of` is tested through its public owner, the `Runtime` that hands out the handle, not by reaching the internal. `AHandleItHandsOutReachesItsOwnContext` in `tests/surface/api/runtime/test_runtime.cpp` holds the promise; the bridge test is deleted and RW-88 closes.
 9. Ruled on 2026-11-06: a bridge test that touches no device runs small, since a test's size follows what it touches. Decision 2 keeps "tested through the public bridge" and drops "at medium".
+10. Ruled on 2026-11-06 (RW-89): the check that refuses an import descriptor is a pure function of its module, `descriptor_refusal()` with `device_refusal()` beside it, declared in `memory_exchange/descriptor_refusal.hpp` and called by the import. Its rows run small through it, and one medium import test keeps the wiring. No test includes an internal header.
+11. Ruled on 2026-11-06 (RW-91): the empty default of `ExternalHandleKindSet` gets no test. It is trivial code, which the testing skill does not test.
+12. Ruled on 2026-11-06 (RW-92): the diffusion adapter takes the runtime it runs on through a second `create_backend()` form, the first keeping today's behaviour, and exposes its step as `diffused_cell()` and `diffuse_on_host()`. `AUniformFieldStaysUniform` is a small host-step test, and one medium test compares a device run on the program's runtime with the host steps.
+13. Ruled on 2026-11-06 (RW-94): a header whose tests the rulings deleted gets a `compile_<name>.cpp` beside its test path that includes it alone. The four known findings are gone.
+14. Ruled on 2026-11-06: no test reaches an `Internal::` name. A record that does is rewritten through the public surface with the in-memory adapters of T2; a promise only an internal name can show goes to a backlog entry and the record is dropped.
+15. Ruled on 2026-11-06: `tools/tests/test_test_budget_settings.py` is deleted with `K_TEST_BUDGET` and its known finding, as SushiSkills did in a528a1d.
 
 ## Dispatches
 
@@ -78,6 +84,11 @@ dispatch: J16 M11 surface/interop — haiku high, 1 round, passed, rung 1
 dispatch: J16 M12 surface/memory_exchange — sonnet medium, 1 round, partial (resize to RW-89; the worker skipped DISPATCH rules 1, 2, 7 and 9, reviewed by the lead), rung 1
 dispatch: J16 M1 applications — haiku high, 1 round, partial (one record to RW-92), rung 1
 dispatch: J16 M14 tools — sonnet medium, 1 round, partial (edited a SushiSkills copy, reverted by the lead; resizes to RW-95), rung 1
+dispatch: J16 M2 cli — sonnet medium, 1 round, passed (one record to RW-97), rung 1
+dispatch: J16 M13 surface/profiling — sonnet medium, 1 round, passed (resizes to RW-98, RW-99), rung 1
+dispatch: J16 M3 engine scheduler, task, work_stealing — sonnet medium, 1 round, passed (seams to RW-100, RW-102), rung 1
+dispatch: J16 M5 foundation — sonnet medium, 1 round, passed (one upward include fixed by the lead; seams to RW-101), rung 1
+dispatch: J16 M3 engine rest — sonnet medium, 1 round, passed (skipped model-routing note; seams to RW-102), rung 1
 
 ## Totals
 

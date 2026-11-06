@@ -55,6 +55,7 @@ class Language:
     skipped_names: frozenset[str]
     has_project_folder: bool
     entry_names: frozenset[str] = frozenset()
+    compile_prefix: str = ""
 
     def test_name(self, unit: Path) -> str:
         """Returns the name of the test file of a unit; a package entry such as `__main__` drops its underscores."""
@@ -65,7 +66,7 @@ class Language:
         return name.startswith(self.test_prefix) and name.endswith(self.test_suffix)
 
 
-K_CPP = Language("include", frozenset({".h", ".hpp"}), "test_", ".cpp", frozenset(), True)
+K_CPP = Language("include", frozenset({".h", ".hpp"}), "test_", ".cpp", frozenset(), True, compile_prefix="compile_")
 K_LANGUAGES = (
     K_CPP,
     Language("source", frozenset({".py"}), "test_", ".py", frozenset({"__init__.py"}), True,
@@ -117,6 +118,14 @@ def unit_folder(test: Path) -> Path:
         if language.is_test(name) and name.endswith(language.test_suffix):
             return test.parent / name[: len(name) - len(language.test_suffix)]
     return test.parent / test.stem
+
+
+def compile_check(test: Path) -> Path | None:
+    """Returns the compile-only file that stands for a unit's test file when the unit has no runtime promise."""
+    for language in K_LANGUAGES:
+        if language.compile_prefix and language.is_test(test.name):
+            return test.parent / f"{language.compile_prefix}{test.name[len(language.test_prefix):]}"
+    return None
 
 
 def _subfolders(folders: frozenset[Path], parent: Path) -> list[Path]:
@@ -296,9 +305,11 @@ def collect(paths: list[Path]) -> Iterable[TestMirror]:
 
 
 def rule_untested_unit(mirror: TestMirror) -> Iterator[Issue]:
-    """Yields an issue for each header or source file whose test file does not exist."""
+    """Yields an issue for each header or source file with neither a test file nor a compile-only check."""
     for test, header in sorted(mirror.expected.items(), key=lambda item: str(item[1])):
-        if test not in mirror.files and not _aspect_files(mirror.files, unit_folder(test)):
+        if test in mirror.files or compile_check(test) in mirror.files:
+            continue
+        if not _aspect_files(mirror.files, unit_folder(test)):
             shown = test.relative_to(mirror.root).as_posix()
             yield Issue(header, 1, f"no test file; expected {shown}")
 

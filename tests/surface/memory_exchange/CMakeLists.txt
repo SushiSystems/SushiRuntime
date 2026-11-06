@@ -6,6 +6,8 @@
 sushiruntime_add_module_tests(
     MODULE memory_exchange
     SOURCES
+        compile_memory_exchange_log_category.cpp
         test_capability_cache.cpp
+        test_descriptor_refusal.cpp
         test_memory_exchange.cpp
         test_scripted_capability_probe.cpp)

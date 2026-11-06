@@ -42,7 +42,8 @@ error.
 
 The function returns `Result<Allocation>`; `import_checked()` holds its steps. The checks run in
 this order, and the first that fails is the error returned; `descriptor_refusal()` and
-`device_refusal()` hold the checks of the descriptor and return `std::optional<Error>`:
+`device_refusal()`, declared in `descriptor_refusal.hpp`, hold the checks of the descriptor as pure
+functions of their inputs and return `std::optional<Error>`:
 
 | Check | Error |
 | --- | --- |

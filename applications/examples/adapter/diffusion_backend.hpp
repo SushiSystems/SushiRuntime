@@ -36,7 +36,15 @@
 #include <string>
 #include <vector>
 
-/** @brief Holds the host program of the adapter example; it names no type of the library. */
+namespace SushiRuntime
+{
+    class Runtime;
+} // namespace SushiRuntime
+
+/**
+ * @brief Holds the host program of the adapter example; it names no type of the library but the
+ *        runtime a host that already has one passes to create_backend().
+ */
 namespace HostProgram
 {
     /** @brief Names the outcome of a backend call in the host's own terms. */
@@ -88,8 +96,42 @@ namespace HostProgram
     /** @brief Owns a backend the host cannot look into. */
     using BackendHandle = std::unique_ptr<DiffusionBackend, BackendDeleter>;
 
-    /** @brief Creates a backend on the devices of this machine. */
+    /** @brief Creates a backend on a runtime of its own, over the devices of this machine. */
     [[nodiscard]] Status create_backend(BackendHandle& backend);
+
+    /**
+     * @brief Creates a backend on a runtime the host already holds.
+     * @param runtime The runtime the backend runs on; it must outlive the backend.
+     */
+    [[nodiscard]] Status create_backend(BackendHandle& backend, SushiRuntime::Runtime& runtime);
+
+    /**
+     * @brief Returns the value of cell @p i after one step: it moves toward its neighbours by
+     *        @p rate of the difference, and an edge cell counts itself as its missing neighbour.
+     * @param i       The cell; below @p cells.
+     * @param cells   The cell count of the field.
+     * @param rate    Share of the difference to the neighbours one step moves.
+     * @param current The field before the step.
+     */
+    [[nodiscard]] inline float diffused_cell(std::size_t i, std::size_t cells, float rate,
+                                             const float* current) noexcept
+    {
+        const float left = (i == 0) ? current[i] : current[i - 1];
+        const float right = (i == cells - 1) ? current[i] : current[i + 1];
+        return current[i] + rate * (left - 2.0f * current[i] + right);
+    }
+
+    /**
+     * @brief Advances @p field by one step on the host, the step each device launch runs.
+     * @param field The field; replaced by its value after the step.
+     * @param rate  Share of the difference to the neighbours one step moves.
+     */
+    inline void diffuse_on_host(std::vector<float>& field, float rate)
+    {
+        const std::vector<float> current = field;
+        for (std::size_t i = 0; i < field.size(); ++i)
+            field[i] = diffused_cell(i, field.size(), rate, current.data());
+    }
 
     /**
      * @brief Allocates a field that each step moves toward its neighbours, and seeds it.

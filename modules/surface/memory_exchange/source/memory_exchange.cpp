@@ -45,6 +45,7 @@
 #include <SushiRuntime/execution/runtime_context.hpp>
 #include <SushiRuntime/memory_exchange/memory_exchange.hpp>
 #include <SushiRuntime/memory_exchange/capability_cache.hpp>
+#include <SushiRuntime/memory_exchange/descriptor_refusal.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/memory_exchange/memory_exchange_log_category.hpp>
 #include <SushiRuntime/sycl/error_translation.hpp>
@@ -60,6 +61,10 @@ namespace SushiRuntime
 {
     namespace
     {
+        using Internal::MemoryExchange::descriptor_refusal;
+        using Internal::MemoryExchange::device_refusal;
+        using Internal::MemoryExchange::kind_name;
+
 #if defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
         namespace Experimental = sycl::ext::oneapi::experimental;
 #endif
@@ -91,120 +96,6 @@ namespace SushiRuntime
         }
 
 #if defined(SYCL_EXT_ONEAPI_BINDLESS_IMAGES)
-        /// @brief Returns the enumerator name of @p kind, or "unknown" for any other value.
-        const char* kind_name(ExternalHandleKind kind) noexcept
-        {
-            switch (kind)
-            {
-                case ExternalHandleKind::Unspecified: return "Unspecified";
-                case ExternalHandleKind::OpaqueWin32: return "OpaqueWin32";
-                case ExternalHandleKind::OpaqueFd:    return "OpaqueFd";
-            }
-            return "unknown";
-        }
-
-        /// @brief Spells the members of @p kinds as a comma-separated list, or "no kind".
-        std::string kind_names(const ExternalHandleKindSet& kinds)
-        {
-            std::string text;
-            for (const ExternalHandleKind kind : K_NAMED_HANDLE_KINDS)
-            {
-                if (!kinds.contains(kind))
-                    continue;
-                if (!text.empty())
-                    text += ", ";
-                text += kind_name(kind);
-            }
-            return text.empty() ? std::string("no kind") : text;
-        }
-
-        /// @brief Spells @p uuid as thirty-two lowercase hexadecimal digits.
-        std::string hex(const DeviceUUID& uuid)
-        {
-            static constexpr char K_DIGITS[] = "0123456789abcdef";
-            std::string text;
-            text.reserve(uuid.bytes.size() * 2);
-            for (const std::uint8_t byte : uuid.bytes)
-            {
-                text += K_DIGITS[byte >> 4];
-                text += K_DIGITS[byte & 0x0F];
-            }
-            return text;
-        }
-
-        /// @brief Builds the error import_device returns for a descriptor it refuses.
-        Error descriptor_error(std::string detail)
-        {
-            return Error{ErrorCode::InvalidAccess, "import_device: " + std::move(detail)};
-        }
-
-        /**
-         * @brief Returns why @p descriptor cannot describe @p bytes on device @p device_index.
-         * @return An InvalidAccess error naming the field at fault, or nothing.
-         */
-        std::optional<Error> descriptor_refusal(const InteropCapabilities& capabilities,
-                                                const ExternalMemoryDescriptor& descriptor,
-                                                std::size_t bytes, std::size_t device_index)
-        {
-            const std::string imported = kind_names(capabilities.importable_kinds);
-            if (descriptor.kind == ExternalHandleKind::Unspecified)
-                return descriptor_error(
-                    std::string("descriptor.kind is Unspecified; the exporter must state ") +
-                    "it, and device " + std::to_string(device_index) + " imports " + imported +
-                    ".");
-
-            if (!capabilities.importable_kinds.contains(descriptor.kind))
-                return descriptor_error(
-                    std::string("descriptor.kind is ") + kind_name(descriptor.kind) +
-                    " (value " + std::to_string(static_cast<unsigned>(descriptor.kind)) +
-                    ") and device " + std::to_string(device_index) + " imports only " +
-                    imported + "; export a handle of a kind the device imports.");
-
-            if (descriptor.kind == ExternalHandleKind::OpaqueWin32 && descriptor.handle == 0)
-                return descriptor_error(
-                    "descriptor.handle is null; set it to the Win32 NT handle the exporting "
-                    "API returned.");
-
-            if (descriptor.kind == ExternalHandleKind::OpaqueFd &&
-                descriptor.handle > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
-                return descriptor_error(
-                    "descriptor.handle is " + std::to_string(descriptor.handle) +
-                    ", above the largest file descriptor, " +
-                    std::to_string(std::numeric_limits<int>::max()) +
-                    "; set it to the descriptor the exporting API returned.");
-
-            if (descriptor.offset > descriptor.allocation_bytes ||
-                bytes > descriptor.allocation_bytes - descriptor.offset)
-                return descriptor_error(
-                    "the region of " + std::to_string(bytes) + " bytes at offset " +
-                    std::to_string(descriptor.offset) + " ends past the allocation of " +
-                    std::to_string(descriptor.allocation_bytes) +
-                    " bytes that descriptor.allocation_bytes states.");
-            return std::nullopt;
-        }
-
-        /**
-         * @brief Returns why device @p device_index is not the one @p descriptor names.
-         * @return An InvalidAccess error naming both UUIDs when both exist, or nothing.
-         */
-        std::optional<Error> device_refusal(const InteropCapabilities& capabilities,
-                                            const ExternalMemoryDescriptor& descriptor,
-                                            std::size_t device_index)
-        {
-            if (!capabilities.device_uuid)
-                return descriptor_error(
-                    "device " + std::to_string(device_index) + " reports no UUID, so it " +
-                    "cannot be matched to descriptor.device; import on a device whose " +
-                    "capabilities() hold a device_uuid.");
-
-            if (*capabilities.device_uuid != descriptor.device)
-                return descriptor_error(
-                    "descriptor.device is " + hex(descriptor.device) + " and device " +
-                    std::to_string(device_index) + " is " + hex(*capabilities.device_uuid) +
-                    "; import on the device that exported the handle.");
-            return std::nullopt;
-        }
-
         /// @brief Runs one step of releasing an import and logs a failure in place of a throw.
         template <typename Step>
         void run_release_step(const char* name, std::size_t device_index, Step&& step) noexcept

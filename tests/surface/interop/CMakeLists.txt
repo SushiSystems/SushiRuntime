@@ -6,5 +6,7 @@
 sushiruntime_add_module_tests(
     MODULE interop
     SOURCES
+        compile_device_uuid.cpp
+        compile_external_memory.cpp
         test_external_handle_kind_set.cpp
         test_interop_capabilities.cpp)

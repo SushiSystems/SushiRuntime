@@ -23,46 +23,75 @@
 
 /**
  * @file test_diffusion_backend.cpp
- * @brief Tests the adapter example's backend: a uniform field stays uniform, and the status names.
+ * @brief Tests the adapter example's backend: the host step, a device run against it, and the status names.
  * @see tests/applications/examples/adapter/README.md
  * @author Mustafa Garip
  */
 
-#include <cmath>
 #include <cstddef>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "adapter/diffusion_backend.hpp"
+#include "support/runtime_environment.hpp"
+#include "support/tolerance.hpp"
 
 using namespace HostProgram;
 
-/** @brief Holds the tolerance of a diffused value, absolute; the field is uniform. */
-constexpr float K_TOLERANCE = 1e-5f;
-
-/** @brief Tests that a uniform field read back after ten steps is still the same value. */
+/** @brief Tests that one host step leaves a uniform field unchanged, edges included. */
 TEST(Small_DiffusionBackend, AUniformFieldStaysUniform)
 {
-    BackendHandle backend;
-    const Status created = create_backend(backend);
-    if (created.code == StatusCode::Unsupported)
-        GTEST_SKIP() << created.message;
-    ASSERT_TRUE(created.is_ok()) << created.message;
+    std::vector<float> field(8, 3.0f);
 
-    const std::vector<float> initial(64, 3.0f);
-    const Status allocated = allocate_field(*backend, initial, 0.1f);
-    ASSERT_TRUE(allocated.is_ok()) << allocated.message;
-    const Status advanced = advance(*backend, 10);
-    ASSERT_TRUE(advanced.is_ok()) << advanced.message;
-    std::vector<float> values;
-    const Status read = read_field(*backend, values);
-    ASSERT_TRUE(read.is_ok()) << read.message;
-    ASSERT_EQ(values.size(), initial.size());
-    for (std::size_t index = 0; index < values.size(); ++index)
-        EXPECT_NEAR(values[index], 3.0f, K_TOLERANCE) << "at " << index;
+    diffuse_on_host(field, 0.25f);
+
+    EXPECT_EQ(field, std::vector<float>(8, 3.0f));
 }
 
+/** @brief Tests that one host step moves a lone peak by rate toward each neighbour. */
+TEST(Small_DiffusionBackend, APeakSpreadsByTheRate)
+{
+    std::vector<float> field{0.0f, 1.0f, 0.0f};
+
+    diffuse_on_host(field, 0.25f);
+
+    EXPECT_EQ(field, (std::vector<float>{0.25f, 0.5f, 0.25f}));
+}
+
+/** @brief Runs the backend on the program's one runtime. */
+class Medium_DiffusionBackend : public TestSupport::RuntimeTest
+{
+};
+
+/** @brief Tests that ten device steps on the program's runtime match ten host steps. */
+TEST_F(Medium_DiffusionBackend, TenDeviceStepsMatchTheHostSteps)
+{
+    BackendHandle backend;
+    const Status created = create_backend(backend, runtime());
+    ASSERT_TRUE(created.is_ok()) << created.message;
+    std::vector<float> expected(16, 0.0f);
+    expected[8] = 1.0f;
+    const Status allocated = allocate_field(*backend, expected, 0.25f);
+    ASSERT_TRUE(allocated.is_ok()) << allocated.message;
+
+    const Status advanced = advance(*backend, 10);
+    std::vector<float> values;
+    const Status read = read_field(*backend, values);
+
+    ASSERT_TRUE(advanced.is_ok()) << advanced.message;
+    ASSERT_TRUE(read.is_ok()) << read.message;
+    for (int step = 0; step < 10; ++step)
+        diffuse_on_host(expected, 0.25f);
+    ASSERT_EQ(values.size(), expected.size());
+    for (std::size_t index = 0; index < values.size(); ++index)
+    {
+        // Each step adds at most 4 roundings per cell to a value at most 1.
+        const TestSupport::ErrorRatio ratio = TestSupport::measure_error(
+            values[index], expected[index], 10 * 4 * TestSupport::unit_roundoff<float>());
+        EXPECT_TRUE(ratio.is_within()) << "at " << index << ": " << ratio.describe();
+    }
+}
 /** @brief Tests that every status code has its own name, spelled as the code is. */
 TEST(Small_DiffusionBackend, EveryCodeHasAName)
 {

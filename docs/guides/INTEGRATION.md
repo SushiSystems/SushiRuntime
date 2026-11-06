@@ -184,7 +184,7 @@ includes it.
 
 **What it exposes.** Functions and types of your project: a function that creates the backend,
 a function that runs steps, your own status type. The header the ordinary lane includes names
-no type of `SushiRuntime`. It declares the backend and does not define it, so the host holds
+no type of `SushiRuntime` but `Runtime`, which it declares for a host that passes its own. It declares the backend and does not define it, so the host holds
 the backend by a handle and cannot look into it:
 
 ```cpp
@@ -194,7 +194,7 @@ the backend by a handle and cannot look into it:
     /** @brief Owns a backend the host cannot look into. */
     using BackendHandle = std::unique_ptr<DiffusionBackend, BackendDeleter>;
 
-    /** @brief Creates a backend on the devices of this machine. */
+    /** @brief Creates a backend on a runtime of its own, over the devices of this machine. */
     [[nodiscard]] Status create_backend(BackendHandle& backend);
     // ...
     /** @brief Advances the field by a number of steps. */
@@ -209,7 +209,8 @@ The adapter defines that type from the handles of the library:
     struct DiffusionBackend final
     {
         // ...
-        SushiRuntime::Runtime runtime;    /**< The runtime every handle below came from. */
+        std::optional<SushiRuntime::Runtime> owned; /**< The runtime created for this backend, if any. */
+        SushiRuntime::Runtime& runtime;   /**< The runtime every handle below came from. */
         SushiRuntime::State<float> field; /**< The field; empty until allocate_field(). */
         SushiRuntime::Graph graph;        /**< Holds the one rule that steps the field. */
     };

@@ -6,6 +6,6 @@
 sushiruntime_add_module(
     NAME memory_exchange TIER surface INTERNAL
     SYCL
-    SOURCES capability_cache.cpp memory_exchange.cpp
+    SOURCES capability_cache.cpp descriptor_refusal.cpp memory_exchange.cpp
     DEPENDS core log interop
     PRIVATE_DEPENDS memory sycl device execution)

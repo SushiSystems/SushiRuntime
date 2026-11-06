@@ -121,7 +121,7 @@ TEST_F(Medium_MemoryExchange, AHostExportGivesTheSizeAsked)
     EXPECT_EQ(exported.value().bytes(), 4096u);
 }
 
-/** @brief Tests that an import naming no handle kind is refused with InvalidAccess, naming Unspecified. */
+/** @brief Tests that an import runs the descriptor checks: one naming no handle kind is refused with InvalidAccess. */
 TEST_F(Medium_MemoryExchangeImport, AnImportWithNoKindIsRefused)
 {
     ScriptedCapabilityProbe probe;
@@ -137,26 +137,5 @@ TEST_F(Medium_MemoryExchangeImport, AnImportWithNoKindIsRefused)
     ASSERT_FALSE(imported.has_value());
     EXPECT_EQ(imported.error().code, ErrorCode::InvalidAccess);
     EXPECT_NE(imported.error().message.find("Unspecified"), std::string::npos)
-        << imported.error().message;
-}
-
-/** @brief Tests that a kind the device does not import is refused with InvalidAccess, naming the kind. */
-TEST_F(Medium_MemoryExchangeImport, AKindTheDeviceDoesNotImportIsRefusedByName)
-{
-    ScriptedCapabilityProbe probe;
-    probe.answer_next(fd_importer());
-    CapabilityCache cache(std::ref(probe));
-    const auto context = shared_context();
-    ExternalMemoryDescriptor descriptor;
-    descriptor.kind = ExternalHandleKind::OpaqueWin32;
-    descriptor.handle = 1;
-    descriptor.allocation_bytes = 4096;
-
-    const Result<Detail::Allocation> imported =
-        Internal::MemoryExchange::import_device_memory(context, cache, descriptor, 4096, 0);
-
-    ASSERT_FALSE(imported.has_value());
-    EXPECT_EQ(imported.error().code, ErrorCode::InvalidAccess);
-    EXPECT_NE(imported.error().message.find("OpaqueWin32"), std::string::npos)
         << imported.error().message;
 }

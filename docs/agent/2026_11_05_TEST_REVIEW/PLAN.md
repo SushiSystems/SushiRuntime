@@ -18,20 +18,20 @@ writes each add. Nothing in a module job changes production code except a seam a
 | T5 | The defects of this report, each with a test that fails first, and the pages corrected |  | done: pages, timeouts, `K_ALL_KEYS`, stray comment fixed; RW-83 to RW-86 hold the test defects |
 | T6 | The CLI tests on sushicore's in-memory runner and console | sushicore T1 | done: no CLI test patches an owned function; the patches left replace the standard library or set a constant |
 | T7 | `tools/testing/check_test_additions.py`, `tools/tests/test_check_test_additions.py` deleted |  | done |
-| M1 | the tests of `applications` (2 files): 2 rewrite, 1 split | T1, T2, T3, T4, T5, T6, T7 | partial: `AUniformFieldStaysUniform` waits on RW-92; the distributed test builds only with RW-93 |
+| M1 | the tests of `applications` (2 files): 2 rewrite, 1 split | T1, T2, T3, T4, T5, T6, T7 | done, not built: RW-92 applied (decision 12); the distributed test builds only with RW-93 |
 | M2 | the tests of `cli` (20 files): 60 rewrite, 20 resize, 1 split, 5 merge, 7 delete | T1, T2, T3, T4, T5, T6, T7 | done: the source-text rule of the install hint waits on RW-97 |
-| M3 | the tests of `engine` (52 files): 106 rewrite, 17 resize, 25 split, 7 merge, 21 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M3 | the tests of `engine` (52 files): 106 rewrite, 17 resize, 25 split, 7 merge, 21 delete | T1, T2, T3, T4, T5, T6, T7 | done, not built (owner's rule of 2026-11-07): the resizes that need a seam wait on RW-100 and RW-102 |
 | M4 | the tests of `extension` (49 files): 142 rewrite, 66 resize, 43 split, 13 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
-| M5 | the tests of `foundation` (54 files): 44 rewrite, 27 resize, 22 split, 5 merge, 28 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M5 | the tests of `foundation` (54 files): 44 rewrite, 27 resize, 22 split, 5 merge, 28 delete | T1, T2, T3, T4, T5, T6, T7 | done, not built: the resizes that need a seam wait on RW-101; the default device-filter promise moves to M7 |
 | M6 | the tests of `platform` (27 files): 49 rewrite, 18 resize, 12 split, 18 merge, 11 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
 | M7 | the tests of `surface/api` (64 files): 248 rewrite, 73 resize, 80 split, 15 merge, 26 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
 | M8 | the tests of `surface/context` (3 files): 3 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done: `HandleOfReturnsTheOwnersHandle` is tested through `Runtime` (decision 8) |
-| M9 | the tests of `surface/context_access` (1 file): 5 rewrite | T1, T2, T3, T4, T5, T6, T7 | todo |
+| M9 | the tests of `surface/context_access` (1 file): 5 rewrite | T1, T2, T3, T4, T5, T6, T7 | done, not built: all five records reach `Internal::ContextAccess` only, dropped to RW-96 (decision 14); a compile check holds the header |
 | M10 | the tests of `surface/engine_handles` (2 files): 2 rewrite, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done: the device-free bridge tests run small (decision 9) |
 | M11 | the tests of `surface/interop` (4 files): 3 rewrite, 1 split, 5 delete | T1, T2, T3, T4, T5, T6, T7 | done: the default-empty promise lost its test, RW-91 |
-| M12 | the tests of `surface/memory_exchange` (3 files): 5 rewrite, 1 resize, 2 delete | T1, T2, T3, T4, T5, T6, T7 | partial: the resize waits on RW-89; the GPU skip is RW-90 |
-| M13 | the tests of `surface/profiling` (23 files): 66 rewrite, 10 resize, 9 split, 11 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | todo |
-| M14 | the tests of `tools` (5 files): 2 rewrite, 10 resize, 1 split, 18 merge, 5 delete | T1, T2, T3, T4, T5, T6, T7 | partial: the shared `test_test_budget_settings.py` is left to SushiSkills; three small resizes wait on RW-95 |
+| M12 | the tests of `surface/memory_exchange` (3 files): 5 rewrite, 1 resize, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done, not built: RW-89 applied (decision 10); the GPU skip is RW-90 |
+| M13 | the tests of `surface/profiling` (23 files): 66 rewrite, 10 resize, 9 split, 11 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | done, not built: the resizes wait on RW-98 and RW-99 |
+| M14 | the tests of `tools` (5 files): 2 rewrite, 10 resize, 1 split, 18 merge, 5 delete | T1, T2, T3, T4, T5, T6, T7 | partial: `test_test_budget_settings.py` deleted (decision 15); three small resizes wait on RW-95 |
 
 ## Acceptance
 

@@ -27,3 +27,11 @@ The file tests `ExternalHandleKindSet`, one bit per handle kind.
 | `SetsCompareByMembers` | Two sets are equal exactly when they hold the same kinds. |
 
 The constant-expression use of the set is checked by a `static_assert` at file scope, which the build compiles and no test runs.
+
+## compile_device_uuid.cpp
+
+Includes `device_uuid.hpp` alone, so the build fails if the header misses an include. It holds no test.
+
+## compile_external_memory.cpp
+
+Includes `external_memory.hpp` alone, so the build fails if the header misses an include. It holds no test.

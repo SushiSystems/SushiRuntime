@@ -31,6 +31,7 @@
 #include "diffusion_backend.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -41,14 +42,22 @@ namespace HostProgram
     /** @brief Holds the runtime, the field and the graph that steps the field. */
     struct DiffusionBackend final
     {
-        /** @brief Takes a created runtime and starts an empty graph on it. */
+        /** @brief Takes a created runtime, keeps it, and starts an empty graph on it. */
         explicit DiffusionBackend(SushiRuntime::Runtime created)
-            : runtime(std::move(created)), graph(runtime.graph())
+            : owned(std::move(created)), runtime(*owned), graph(runtime.graph())
         {
 
         }
 
-        SushiRuntime::Runtime runtime;    /**< The runtime every handle below came from. */
+        /** @brief Borrows a runtime the host holds and starts an empty graph on it. */
+        explicit DiffusionBackend(SushiRuntime::Runtime& borrowed)
+            : runtime(borrowed), graph(runtime.graph())
+        {
+
+        }
+
+        std::optional<SushiRuntime::Runtime> owned; /**< The runtime created for this backend, if any. */
+        SushiRuntime::Runtime& runtime;   /**< The runtime every handle below came from. */
         SushiRuntime::State<float> field; /**< The field; empty until allocate_field(). */
         SushiRuntime::Graph graph;        /**< Holds the one rule that steps the field. */
     };
@@ -109,6 +118,12 @@ namespace HostProgram
         return Status();
     }
 
+    Status create_backend(BackendHandle& backend, SushiRuntime::Runtime& runtime)
+    {
+        backend.reset(new DiffusionBackend(runtime));
+        return Status();
+    }
+
     Status allocate_field(DiffusionBackend& backend, const std::vector<float>& initial, float rate)
     {
         const std::size_t cells = initial.size();
@@ -126,9 +141,7 @@ namespace HostProgram
         backend.graph.add_rule(backend.field,
             [cells, rate](std::size_t i, const float* current, float* next)
             {
-                const float left = (i == 0) ? current[i] : current[i - 1];
-                const float right = (i == cells - 1) ? current[i] : current[i + 1];
-                next[i] = current[i] + rate * (left - 2.0f * current[i] + right);
+                next[i] = diffused_cell(i, cells, rate, current);
             });
         if (const SushiRuntime::Error* refusal = backend.graph.refusal())
             return status_of(*refusal);
