@@ -11,29 +11,10 @@ from pathlib import Path
 
 import pytest
 
+from sushiruntime.config import Config
 from sushiruntime.services import project
 
 pytestmark = pytest.mark.small
-
-
-class _StubConfig:
-    """Enough of Config for _configure_args_windows; every tool is a bare name."""
-
-    is_windows = True
-    cmake_exe = ""
-    toolchain = "intel-llvm"
-    vcpkg_root = "C:/vcpkg"
-    vcpkg_triplet = "x64-windows"
-    ninja_exe = "ninja"
-    pkgconf_exe = "pkgconf"
-    rc_exe = ""
-    cxx = ""
-
-    def expand(self, value):
-        return value
-
-    def resolved_windows_compiler(self):
-        return "clang++"
 
 
 def _backend(arguments: list[str]) -> str:
@@ -45,7 +26,8 @@ def _backend(arguments: list[str]) -> str:
 
 def _windows_args(gpu_backend: str) -> list[str]:
     return project._configure_args_windows(
-        _StubConfig(), Path("build"), "Release", gpu_backend, "OFF", asan=False, tests=True)
+        "cmake", Config(platform="windows", vcpkg_root="C:/vcpkg"), Path("build"), "Release",
+        gpu_backend, "OFF", asan=False, tests=True)
 
 
 def test_the_windows_configure_carries_the_resolved_backend():

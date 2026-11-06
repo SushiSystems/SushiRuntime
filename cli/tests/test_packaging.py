@@ -7,92 +7,65 @@
 from __future__ import annotations
 
 import pytest
-from sushicore.proc import Runner
-from sushicore.provision.package_install import CapturedRun
 from typer.testing import CliRunner
 
 from sushiruntime.cli import app
-from sushiruntime.config import Config
 from sushiruntime.services import packaging
 from sushiruntime.services.stage_tree import K_STAGE_MARKER
 
 pytestmark = pytest.mark.medium
 
 
-class _Console:
-    """Records the error and information lines a service prints and ignores the rest."""
-
-    def __init__(self) -> None:
-        """Starts with no recorded line."""
-        self.errors: list[str] = []
-        self.infos: list[str] = []
-
-    def error(self, message: str) -> None:
-        """Records one error line."""
-        self.errors.append(message)
-
-    def info(self, message: str) -> None:
-        """Records one information line."""
-        self.infos.append(message)
-
-    def __getattr__(self, name: str):
-        """Returns a printer that prints nothing, for every other console call."""
-        return lambda *args, **kwargs: None
-
-
 @pytest.fixture
-def checkout(tmp_path, monkeypatch):
-    """Returns a configured checkout beside its owner's home; commands are recorded, not run."""
-    root = tmp_path / "work" / "repo"
-    (root / "build" / "default-debug").mkdir(parents=True)
+def make(rig, tmp_path, monkeypatch):
+    """Returns a builder of a rig over a configured checkout beside its owner's home."""
     (tmp_path / "home").mkdir()
-    (root / "build" / "default-debug" / "CMakeCache.txt").write_text("", encoding="utf-8")
-    commands: list[list[str]] = []
-    recorder = _Console()
-    monkeypatch.setattr(packaging, "find_project_root", lambda: root)
-    monkeypatch.setattr(packaging, "load_config", lambda: Config(platform="linux"))
-    monkeypatch.setattr(packaging, "load_build_env", lambda cfg, build_dir: {})
-    monkeypatch.setattr(packaging, "console", recorder)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
-    monkeypatch.setattr(
-        Runner, "run", lambda self, cmd, cwd, env=None: commands.append(list(cmd)) or 0)
-    monkeypatch.setattr(
-        packaging, "_capture",
-        lambda cmd, cwd, env=None: commands.append(list(cmd)) or CapturedRun(0, ""))
-    return root, commands, recorder
+
+    def build(**options):
+        """Builds the rig and the configured Debug tree below its checkout."""
+        built = rig(**options)
+        (built.root / "build" / "default-debug").mkdir(parents=True)
+        cache = built.root / "build" / "default-debug" / "CMakeCache.txt"
+        cache.write_text("", encoding="utf-8")
+        return built
+
+    return build
 
 
-def test_package_prints_one_line_for_the_install(checkout, monkeypatch):
-    """cmake's per-file lines are held back and one summary names the stage."""
-    root, _, recorder = checkout
-    monkeypatch.setattr(packaging, "_capture",
-                        lambda cmd, cwd, env=None: CapturedRun(0, "-- Installing: nowhere\n"))
-    assert packaging.package(archive=False) == 0
-    assert recorder.infos[-2:] == [
-        f"Installed 0 files, 0 up to date, into {root / 'build' / 'dist'}",
+def _package(built, **options) -> int:
+    """Runs the package service over the rig and returns its exit code."""
+    return packaging.package(surroundings=built.surroundings, **options)
+
+
+def test_package_prints_one_line_for_the_install(make):
+    """cmake per-file lines are held back and one summary names the stage."""
+    built = make(capture_output="-- Installing: nowhere\n")
+    assert _package(built, archive=False) == 0
+    assert built.console.texts("info")[-2:] == [
+        f"Installed 0 files, 0 up to date, into {built.root / 'build' / 'dist'}",
         "Run `sr test --label package` to check it actually works."]
 
 
-def test_package_shows_cmakes_output_when_the_install_fails(checkout, monkeypatch):
-    """A failed install exits with cmake's code and its output in one error."""
-    _, _, recorder = checkout
-    monkeypatch.setattr(packaging, "_capture",
-                        lambda cmd, cwd, env=None: CapturedRun(2, "CMake Error: no install rules"))
-    assert packaging.package(archive=False) == 2
-    assert recorder.errors == ["cmake --install exited 2:\nCMake Error: no install rules"]
+def test_package_shows_cmakes_output_when_the_install_fails(make):
+    """A failed install exits with the code of cmake and its output in one error."""
+    built = make(capture_code=2, capture_output="CMake Error: no install rules")
+    assert _package(built, archive=False) == 2
+    assert built.console.texts("error") == ["cmake --install exited 2:\nCMake Error: no install rules"]
 
 
-def test_package_refuses_a_foreign_directory_with_one_error_line(checkout, tmp_path):
+def test_package_refuses_a_foreign_directory_with_one_error_line(make, tmp_path):
     """A non-empty prefix the CLI did not stage is left untouched; one error line, exit 1."""
-    root, commands, recorder = checkout
+    checkout = make()
     foreign = tmp_path / "precious"
     foreign.mkdir()
     (foreign / "thesis.tex").write_text("years", encoding="utf-8")
-    assert packaging.package(prefix=str(foreign), archive=False) == 1
+    assert _package(checkout, prefix=str(foreign), archive=False) == 1
     assert (foreign / "thesis.tex").read_text(encoding="utf-8") == "years"
-    assert commands == []
-    assert len(recorder.errors) == 1 and "\n" not in recorder.errors[0]
+    assert checkout.captured == []
+    errors = checkout.console.texts("error")
+    assert len(errors) == 1 and "\n" not in errors[0]
 
 
 @pytest.mark.parametrize(
@@ -104,45 +77,50 @@ def test_package_refuses_a_foreign_directory_with_one_error_line(checkout, tmp_p
         ("~", "the home directory"),
     ],
 )
-def test_package_refuses_a_protected_prefix_even_with_force(checkout, monkeypatch, prefix, reason):
+def test_package_refuses_a_protected_prefix_even_with_force(make, monkeypatch, prefix, reason):
     """The checkout, its parent, its build tree and the home directory are never cleared."""
-    root, commands, recorder = checkout
-    monkeypatch.chdir(root)
-    assert packaging.package(prefix=prefix, archive=False, force=True) == 1
-    assert (root / "build" / "default-debug" / "CMakeCache.txt").is_file()
-    assert commands == []
-    assert len(recorder.errors) == 1 and reason in recorder.errors[0]
+    checkout = make()
+    monkeypatch.chdir(checkout.root)
+    assert _package(checkout, prefix=prefix, archive=False, force=True) == 1
+    assert (checkout.root / "build" / "default-debug" / "CMakeCache.txt").is_file()
+    assert checkout.captured == []
+    errors = checkout.console.texts("error")
+    assert len(errors) == 1 and reason in errors[0]
 
 
-def test_package_with_force_clears_a_foreign_directory_and_marks_it(checkout, tmp_path):
+def test_package_with_force_clears_a_foreign_directory_and_marks_it(make, tmp_path):
     """--force empties the prefix, writes the stage marker and installs into it."""
-    root, commands, recorder = checkout
+    checkout = make()
     foreign = tmp_path / "staging"
     foreign.mkdir()
     (foreign / "old.txt").write_text("stale", encoding="utf-8")
-    assert packaging.package(prefix=str(foreign), archive=False, force=True) == 0
+    assert _package(checkout, prefix=str(foreign), archive=False, force=True) == 0
     assert [entry.name for entry in foreign.iterdir()] == [K_STAGE_MARKER]
-    assert commands[0][1:] == ["--install", str(root / "build" / "default-debug"),
-                               "--prefix", str(foreign)]
+    assert checkout.captured[0][1:] == ["--install", str(checkout.root / "build" / "default-debug"),
+                                        "--prefix", str(foreign)]
 
 
-def test_package_clears_its_default_stage_without_force(checkout):
+def test_package_clears_its_default_stage_without_force(make):
     """build/dist from an earlier run is cleared and marked with no flag."""
-    root, commands, recorder = checkout
-    stale = root / "build" / "dist" / "stale.txt"
+    checkout = make()
+    stale = checkout.root / "build" / "dist" / "stale.txt"
     stale.parent.mkdir()
     stale.write_text("stale", encoding="utf-8")
-    assert packaging.package(archive=False) == 0
+    assert _package(checkout, archive=False) == 0
     assert not stale.exists()
-    assert (root / "build" / "dist" / K_STAGE_MARKER).is_file()
-    assert recorder.errors == []
+    assert (checkout.root / "build" / "dist" / K_STAGE_MARKER).is_file()
+    assert checkout.console.texts("error") == []
 
 
-def test_the_command_passes_force_to_the_service(monkeypatch):
-    """`sr package --force` reaches the service as force=True, and defaults to False."""
-    seen: list[dict] = []
-    monkeypatch.setattr(packaging, "package", lambda **options: seen.append(options) or 0)
-    runner = CliRunner()
-    assert runner.invoke(app, ["package", "--prefix", "out", "--force"]).exit_code == 0
-    assert runner.invoke(app, ["package"]).exit_code == 0
-    assert [options["force"] for options in seen] == [True, False]
+@pytest.mark.parametrize("arguments, forced", [(["--force"], True), ([], False)])
+def test_the_command_passes_force_to_the_service(make, arguments, forced):
+    """`sr package --force` clears a prefix it did not stage, and without it refuses one."""
+    checkout = make()
+    prefix = checkout.root / "out"
+    prefix.mkdir()
+    (prefix / "foreign.txt").write_text("data", encoding="utf-8")
+    result = CliRunner().invoke(
+        app, ["package", "--prefix", str(prefix), "--no-archive", *arguments],
+        obj=checkout.surroundings)
+    assert (result.exit_code == 0) is forced
+    assert (not (prefix / "foreign.txt").exists()) is forced

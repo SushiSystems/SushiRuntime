@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from sushicore.console_memory import RecordingConsole
+from sushicore.proc_memory import RecordingRunner
 
 import sushiruntime
 from sushiruntime.config import TOOLCHAINS, Config
@@ -25,12 +27,12 @@ def test_the_install_command_is_sr_setup_for_the_toolchain(name):
 
 
 @pytest.mark.parametrize("name", TOOLCHAINS)
-def test_a_missing_windows_compiler_names_sr_setup(name, monkeypatch):
+def test_a_missing_windows_compiler_names_sr_setup(name):
     """The build's missing-compiler error names `sr setup`, as `sr toolchain` does."""
-    printed: list[str] = []
-    monkeypatch.setattr(project.console, "error", printed.append)
-    monkeypatch.setattr(Config, "resolved_windows_compiler", lambda self: "no-such-compiler-xyz")
-    assert project._check_windows_compiler(Config(platform="windows", toolchain=name), {}) == 1
+    console = RecordingConsole()
+    cfg = Config(platform="windows", toolchain=name, stack_cxx="no-such-compiler-xyz")
+    assert project._check_windows_compiler(console, RecordingRunner(console), cfg, {}) == 1
+    printed = console.texts("error")
     assert toolchain_install_command(name) in printed[0]
     assert "hub install" not in printed[0]
 

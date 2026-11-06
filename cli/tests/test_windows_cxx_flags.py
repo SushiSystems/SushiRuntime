@@ -11,37 +11,17 @@ from pathlib import Path
 
 import pytest
 
+from sushiruntime.config import Config
 from sushiruntime.services import project
 
 pytestmark = pytest.mark.small
 
 
-class _StubConfig:
-    """Enough of Config for _configure_args_windows; every tool is a bare name."""
-
-    is_windows = True
-    cmake_exe = ""
-    vcpkg_root = "C:/vcpkg"
-    vcpkg_triplet = "x64-windows"
-    ninja_exe = "ninja"
-    pkgconf_exe = "pkgconf"
-    rc_exe = ""
-    cxx = ""
-
-    def __init__(self, toolchain: str) -> None:
-        self.toolchain = toolchain
-
-    def expand(self, value):
-        return value
-
-    def resolved_windows_compiler(self):
-        return "clang++"
-
-
 def _cxx_flags(toolchain: str, asan: bool) -> str:
     """Returns the CMAKE_CXX_FLAGS the Windows configure states, failing when it states none."""
     arguments = project._configure_args_windows(
-        _StubConfig(toolchain), Path("build"), "Release", "auto", "OFF", asan=asan, tests=True)
+        "cmake", Config(platform="windows", toolchain=toolchain, vcpkg_root="C:/vcpkg"),
+        Path("build"), "Release", "auto", "OFF", asan=asan, tests=True)
     stated = [argument for argument in arguments if argument.startswith("-DCMAKE_CXX_FLAGS=")]
     assert len(stated) == 1, f"CMAKE_CXX_FLAGS stated {len(stated)} times:\n{arguments}"
     return stated[0].split("=", 1)[1]

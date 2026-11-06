@@ -7,79 +7,68 @@
 See cli/README.md.
 """
 
-from pathlib import Path
-
 import pytest
-from sushicore.proc import Runner
+import sushicore.proc as proc
+from sushicore.console_memory import RecordingConsole
 
 from sushiruntime.services import docker
+from sushiruntime.services.surroundings import Surroundings
 
 pytestmark = pytest.mark.medium
 
 
-@pytest.fixture
-def calls(tmp_path, monkeypatch):
-    """Every command Runner.run would have executed, recorded instead of run."""
-    recorded: list[tuple[list[str], Path]] = []
-    monkeypatch.setattr(docker, "find_project_root", lambda: tmp_path)
-    monkeypatch.setattr(Runner, "run",
-                        lambda self, cmd, cwd, env=None: recorded.append(
-                            (list(cmd), cwd)) or 0)
-    return recorded
+def test_build_with_no_flags(rig):
+    built = rig()
+    assert docker.build(surroundings=built.surroundings) == 0
+
+    assert built.argv() == ["docker", "build", "-f", ".config/docker/Dockerfile",
+                            "-t", "sushiruntime", "."]
+    assert built.runner.commands[0].cwd == built.root
 
 
-def test_build_with_no_flags(calls, tmp_path):
-    assert docker.build() == 0
+def test_build_with_no_cache_and_oneapi(rig):
+    built = rig()
+    assert docker.build(no_cache=True, oneapi=True, surroundings=built.surroundings) == 0
 
-    cmd, cwd = calls[0]
-    assert cmd == ["docker", "build", "-f", ".config/docker/Dockerfile",
-                   "-t", "sushiruntime", "."]
-    assert cwd == tmp_path
-
-
-def test_build_with_no_cache_and_oneapi(calls):
-    assert docker.build(no_cache=True, oneapi=True) == 0
-
-    cmd, _ = calls[0]
-    assert cmd == ["docker", "build", "-f", ".config/docker/Dockerfile",
-                   "-t", "sushiruntime", "--no-cache",
-                    "--build-arg", "WITH_ONEAPI=1", "."]
+    assert built.argv() == ["docker", "build", "-f", ".config/docker/Dockerfile",
+                            "-t", "sushiruntime", "--no-cache",
+                            "--build-arg", "WITH_ONEAPI=1", "."]
 
 
-def test_run_with_no_flags_passes_through_gpu(calls, tmp_path):
-    assert docker.run() == 0
+def test_run_with_no_flags_passes_through_gpu(rig):
+    built = rig()
+    assert docker.run(surroundings=built.surroundings) == 0
 
-    cmd, cwd = calls[0]
-    assert cmd == ["docker", "run", "-it", "--rm", "--gpus", "all",
-                    "-v", f"{tmp_path}:/workspace/sushiruntime", "sushiruntime", "/bin/bash"]
-    assert cwd == tmp_path
-
-
-def test_run_without_gpu_passthrough(calls, tmp_path):
-    assert docker.run(no_gpu=True) == 0
-
-    cmd, _ = calls[0]
-    assert "--gpus" not in cmd
-    assert cmd == ["docker", "run", "-it", "--rm",
-                    "-v", f"{tmp_path}:/workspace/sushiruntime", "sushiruntime", "/bin/bash"]
+    assert built.argv() == ["docker", "run", "-it", "--rm", "--gpus", "all",
+                            "-v", f"{built.root}:/workspace/sushiruntime", "sushiruntime",
+                            "/bin/bash"]
+    assert built.runner.commands[0].cwd == built.root
 
 
-def test_run_admin_adds_privileged_flags(calls):
-    assert docker.run(admin=True) == 0
+def test_run_without_gpu_passthrough(rig):
+    built = rig()
+    assert docker.run(no_gpu=True, surroundings=built.surroundings) == 0
 
-    cmd, _ = calls[0]
-    assert "--privileged" in cmd
-    assert "--cap-add=SYS_ADMIN" in cmd
-    assert "--gpus" in cmd, "admin does not imply --no-gpu"
+    assert built.argv() == ["docker", "run", "-it", "--rm",
+                            "-v", f"{built.root}:/workspace/sushiruntime", "sushiruntime",
+                            "/bin/bash"]
+
+
+def test_run_admin_adds_privileged_flags(rig):
+    built = rig()
+    assert docker.run(admin=True, surroundings=built.surroundings) == 0
+
+    assert "--privileged" in built.argv()
+    assert "--cap-add=SYS_ADMIN" in built.argv()
+    assert "--gpus" in built.argv(), "admin does not imply --no-gpu"
 
 
 def test_run_is_still_interactive_through_runner(monkeypatch, tmp_path):
     """`docker run -it` needs inherited stdio. Runner.run passes the resolved command
     straight to subprocess.run with no stdout/stderr/stdin override, so the child
     inherits this process's terminal exactly as the old `subprocess.run(cmd,
-    cwd=str(cwd))` did. Confirmed here against Runner.run's real implementation
-    rather than the stand-in the other tests in this file use."""
-    monkeypatch.setattr(docker, "find_project_root", lambda: tmp_path)
+    cwd=str(cwd))` did. Confirmed here against Runner.run's real implementation;
+    only the standard library's subprocess.run is replaced."""
 
     class _Result:
         returncode = 0
@@ -90,10 +79,9 @@ def test_run_is_still_interactive_through_runner(monkeypatch, tmp_path):
         calls.append(kwargs)
         return _Result()
 
-    import sushicore.proc as proc
     monkeypatch.setattr(proc.subprocess, "run", fake_run)
 
-    assert docker.run() == 0
+    assert docker.run(surroundings=Surroundings(console=RecordingConsole(), root=tmp_path)) == 0
 
     assert len(calls) == 1
     assert set(calls[0]) <= {"cwd", "env"}, (

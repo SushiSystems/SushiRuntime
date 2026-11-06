@@ -31,7 +31,8 @@ K_THREAD_LIBRARIES = ("sushilog", "sushiprofiler")
 
 
 def resolve(cfg: Config, root: Path, build_type: str, compiler: str,
-            report: Callable[[str], None], warn: Callable[[str], None]) -> PackageSet:
+            report: Callable[[str], None], warn: Callable[[str], None],
+            provision: Callable[..., PackageSet] | None = None) -> PackageSet:
     """Return a built package of every library the runtime links, building a missing one.
 
     The runtime passes no option to a library, so a library builds as its CLI defaults, except
@@ -46,6 +47,7 @@ def resolve(cfg: Config, root: Path, build_type: str, compiler: str,
         compiler: The compiler of this build; the library packages are built with it.
         report: Receives one ``reused`` or ``built`` line per library.
         warn: Receives the warnings of the resolver.
+        provision: Provisions the packages; the configuration's own ``sushi_packages`` when None.
 
     Raises:
         sushicore.provision.sushi_packages.PackageError: A package cannot be chosen.
@@ -55,8 +57,8 @@ def resolve(cfg: Config, root: Path, build_type: str, compiler: str,
     if build_type == K_THREAD_TYPE:
         package_type = K_THREAD_PACKAGE_TYPE
         options = {name: ("--sanitize", "thread") for name in K_THREAD_LIBRARIES}
-    return cfg.sushi_packages(root, package_type, options,
-                              report=report, warn=warn, compiler=compiler)
+    provision = provision or cfg.sushi_packages
+    return provision(root, package_type, options, report=report, warn=warn, compiler=compiler)
 
 
 #: The run-time folders of the packages a tree linked, kept in the tree for the commands that run it.

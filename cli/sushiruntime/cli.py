@@ -10,7 +10,8 @@ layer in ``sushiruntime.services``.
 
 from __future__ import annotations
 
-from typing import Callable, NamedTuple, Optional
+from pathlib import Path
+from typing import Callable, NamedTuple, Optional, Sequence
 
 import typer
 from sushicore import entry
@@ -31,6 +32,7 @@ from .services import packaging as packaging_svc
 from .services import project as project_svc
 from .services import select as select_svc
 from .services.project import K_BENCH_TYPE, K_DEFAULT_TYPE, BuildType, DistributedRole, Label
+from .services.surroundings import Surroundings
 
 K_DISTRIBUTION = "sushiruntime-cli"
 K_TOOLCHAIN = "Toolchain"
@@ -51,6 +53,11 @@ app = typer.Typer(
 )
 
 register_root_options(app, distribution=K_DISTRIBUTION)
+
+
+def _surroundings(ctx: typer.Context) -> Surroundings | None:
+    """Returns the surroundings the caller of the app handed in as its object, else None."""
+    return ctx.obj if isinstance(ctx.obj, Surroundings) else None
 
 
 def _tree_type(name: BuildType, asan: bool) -> BuildType:
@@ -112,6 +119,7 @@ def toolchain(
            "sr build --build-dir build/pkg-x --lean  # What a consumer's package build runs",
 )
 def build(
+    ctx: typer.Context,
     type: BuildType = typer.Option(
         K_DEFAULT_TYPE, "--type", "-t", case_sensitive=False,
         help="Build type; each type has its own tree under build/. "
@@ -149,7 +157,8 @@ def build(
     """Configure and build the project."""
     raise typer.Exit(project_svc.build(type, distributed, no_cuda, clean, force,
                                        tests=not no_test, jobs=jobs, lean=lean,
-                                       build_dir=build_dir, report=report))
+                                       build_dir=build_dir, report=report,
+                                       surroundings=_surroundings(ctx)))
 
 
 @app.command(
@@ -162,6 +171,7 @@ def build(
            "sr test --repeat 5  # Hunt a flaky test",
 )
 def test(
+    ctx: typer.Context,
     label: Optional[Label] = typer.Option(
         None, "--label", "-l", case_sensitive=False,
         help="Run one size (small, medium, large), the quarantined tests or the package check."),
@@ -191,7 +201,8 @@ def test(
     sr run sr_surface_tests -- --gtest_shuffle --gtest_break_on_failure
     """
     raise typer.Exit(project_svc.test(
-        label, distributed, filter, _tree_type(type, asan), repeat, module, jobs))
+        label, distributed, filter, _tree_type(type, asan), repeat, module, jobs,
+        surroundings=_surroundings(ctx)))
 
 
 @app.command(
@@ -201,6 +212,7 @@ def test(
            "sr bench --filter 'Stress_*'  # --gtest_filter for every program",
 )
 def bench(
+    ctx: typer.Context,
     distributed: bool = typer.Option(
         False, "--distributed", help="Run against a distributed-enabled build."),
     filter: Optional[str] = typer.Option(
@@ -208,7 +220,7 @@ def bench(
     type: BuildType = _tree_option(K_BENCH_TYPE, "the benchmarks run from"),
 ):
     """Run every benchmark program the build produced."""
-    raise typer.Exit(project_svc.bench(distributed, filter, type))
+    raise typer.Exit(project_svc.bench(distributed, filter, type, _surroundings(ctx)))
 
 
 @app.command(
@@ -237,7 +249,8 @@ def run(
     role = distributed.value if distributed else None
     raise typer.Exit(
         project_svc.run(target=target, sort=sort, distributed_role=role,
-                        build_type=_tree_type(type, asan), app_args=list(ctx.args))
+                        build_type=_tree_type(type, asan), app_args=list(ctx.args),
+                        surroundings=_surroundings(ctx))
     )
 
 
@@ -250,6 +263,7 @@ def run(
            "sr package --prefix ../staging --force  # Clear a directory sr did not stage",
 )
 def package(
+    ctx: typer.Context,
     build_dir: Optional[str] = typer.Option(
         None, "--build-dir", metavar="PATH",
         help="The built tree to install from, below the checkout. Defaults to the tree of --type."),
@@ -272,7 +286,8 @@ def package(
     """
     raise typer.Exit(
         packaging_svc.package(prefix=prefix, archive=not no_archive, force=force,
-                              build_dir=build_dir, build_type=type))
+                              build_dir=build_dir, build_type=type,
+                              surroundings=_surroundings(ctx)))
 
 
 @app.command(
@@ -280,14 +295,18 @@ def package(
     rich_help_panel=K_PROJECT,
     epilog="sr clean",
 )
-def clean():
+def clean(ctx: typer.Context):
     """Remove the build tree of every build type, the sanitizer tree included."""
-    raise typer.Exit(project_svc.clean())
+    raise typer.Exit(project_svc.clean(_surroundings(ctx)))
 
 
-def _api_source() -> ApiSource:
-    """Returns how `sr` builds the API reference and where Doxygen leaves its XML."""
-    return ApiSource(build=project_svc.docs, xml_dir=find_project_root() / K_API_XML)
+def _api_source(root: Path | None = None) -> ApiSource:
+    """Returns how `sr` builds the API reference and where Doxygen leaves its XML.
+
+    Args:
+        root: The checkout the XML lies below; the one the working folder sits in when None.
+    """
+    return ApiSource(build=project_svc.docs, xml_dir=(root or find_project_root()) / K_API_XML)
 
 
 def _docs_alias() -> None:
@@ -330,6 +349,7 @@ register_design_commands(
            "sr container build --no-cache --oneapi  # Every layer again, with icpx",
 )
 def container_build(
+    ctx: typer.Context,
     no_cache: bool = typer.Option(
         False, "--no-cache",
         help="Rebuild every layer from scratch (ignore Docker's cache)."),
@@ -339,7 +359,8 @@ def container_build(
              "(several GB; needed only for the 'oneapi' toolchain)."),
 ):
     """Build the sushiruntime Docker image."""
-    raise typer.Exit(docker_svc.build(no_cache=no_cache, oneapi=oneapi))
+    raise typer.Exit(docker_svc.build(no_cache=no_cache, oneapi=oneapi,
+                                      surroundings=_surroundings(ctx)))
 
 
 @container_app.command(
@@ -349,6 +370,7 @@ def container_build(
            "sr container run --admin  # Privileged, for profiling",
 )
 def container_run(
+    ctx: typer.Context,
     admin: bool = typer.Option(
         False, "--admin",
         help="Run with --privileged --cap-add=SYS_ADMIN (for profiling)."),
@@ -357,7 +379,8 @@ def container_run(
         help="Omit --gpus all (useful when CUDA is disabled or no GPU is available)."),
 ):
     """Start the developer container with the repo mounted."""
-    raise typer.Exit(docker_svc.run(admin=admin, no_gpu=no_gpu))
+    raise typer.Exit(docker_svc.run(admin=admin, no_gpu=no_gpu,
+                                    surroundings=_surroundings(ctx)))
 
 
 class _AliasRow(NamedTuple):
@@ -417,9 +440,15 @@ def _print_error(message: str) -> None:
     console.error(message)
 
 
-def main() -> None:
-    """Runs `sr`, turning a failure the user can act on into one line and exit code 1."""
-    entry.run(app, _print_error)
+def main(argv: Sequence[str] | None = None,
+         report: Callable[[str], None] = _print_error) -> None:
+    """Runs `sr`, turning a failure the user can act on into one line and exit code 1.
+
+    Args:
+        argv: The arguments to parse; the process's own when None.
+        report: Prints the one error line; the CLI's console by default.
+    """
+    entry.run(app, report, argv=argv)
 
 
 if __name__ == "__main__":

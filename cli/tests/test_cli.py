@@ -7,20 +7,18 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
-import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
+from sushicore.cli_console import LazyConsole
 from sushicore.root_options import version_line
 from typer.testing import CliRunner
 
-from sushiruntime import cli, console
+from sushiruntime import cli, config
 from sushiruntime.cli import app
-from sushiruntime.services import diag, project
-from sushiruntime.services.project import BuildType
 
 pytestmark = pytest.mark.medium
 
@@ -46,14 +44,16 @@ K_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 K_DOXYFILE = Path(__file__).resolve().parents[2] / ".config" / "doxygen" / "Doxyfile"
 
 
-def test_docs_runs_the_api_build_and_bundle_is_its_subcommand(monkeypatch, tmp_path):
-    """`sr docs` still builds the reference, and `sr docs bundle` asks for a release."""
-    monkeypatch.setattr(project, "docs", lambda: 6)
-    monkeypatch.setattr(cli, "find_project_root", lambda: tmp_path)
-    runner = CliRunner()
-    assert runner.invoke(app, ["docs"]).exit_code == 6
-    assert runner.invoke(app, ["doxygen"]).exit_code == 6
-    missing = runner.invoke(app, ["docs", "bundle"])
+def test_docs_builds_the_api_reference(doxygen_exits_with, monkeypatch, tmp_path):
+    """`sr docs` ends with the exit code of the doxygen it runs."""
+    doxygen_exits_with(6, tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert CliRunner().invoke(app, ["docs"]).exit_code == 6
+
+
+def test_docs_bundle_asks_for_a_release():
+    """`sr docs bundle` without --release is a usage error that names the option."""
+    missing = CliRunner().invoke(app, ["docs", "bundle"])
     assert missing.exit_code == 2
     assert "--release" in K_ANSI_ESCAPE.sub("", missing.output)
 
@@ -71,10 +71,9 @@ def test_main_reports_a_malformed_config_as_one_line_and_exit_one(tmp_path, monk
     (tmp_path / "cli").mkdir()
     (tmp_path / "cli" / "config.toml").write_text("[tool\ncmake_exe = ", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["sr", "config"])
-    monkeypatch.setattr(console._lazy, "_console", None)
+    unbuilt = LazyConsole(config.config_dir)
     with pytest.raises(SystemExit) as caught:
-        cli.main()
+        cli.main(["config"], report=lambda message: unbuilt.get().error(message))
     captured = capsys.readouterr()
     assert caught.value.code == 1
     assert len(captured.err.splitlines()) == 1
@@ -82,11 +81,10 @@ def test_main_reports_a_malformed_config_as_one_line_and_exit_one(tmp_path, monk
     assert "Traceback" not in captured.err + captured.out
 
 
-def test_main_exits_zero_after_a_command_that_succeeds(monkeypatch):
+def test_main_exits_zero_after_a_command_that_succeeds():
     """A command that returns 0 ends the process with exit code 0."""
-    monkeypatch.setattr(sys, "argv", ["sr", "--version"])
     with pytest.raises(SystemExit) as caught:
-        cli.main()
+        cli.main(["--version"])
     assert caught.value.code == 0
 
 
@@ -112,38 +110,53 @@ def test_describe_leaves_the_hidden_spellings_out():
     assert not [name for name in names if name == "doxygen" or name.startswith("docker")]
 
 
-def test_config_runs_the_diagnostics_object(monkeypatch):
-    """`sr config` exits with what the diagnostics object's report returns."""
-    monkeypatch.setattr(type(diag.DIAGNOSTICS), "config_show", lambda self: 7)
-    assert CliRunner().invoke(app, ["config"]).exit_code == 7
+def _checkout(root: Path) -> None:
+    """Writes the root marker of a checkout with no configuration of its own."""
+    (root / cli.PROFILE.root_marker).write_text("", encoding="utf-8")
+
+
+def test_config_reports_the_resolved_configuration(tmp_path, monkeypatch):
+    """`sr config` reports the configuration of a checkout and exits 0."""
+    _checkout(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(app, ["config"])
+    assert result.exit_code == 0, result.output
 
 
 @pytest.mark.parametrize("flag", ["--all", "-a"])
-def test_env_keeps_its_own_asan_flag(flag, monkeypatch):
-    """`sr env` passes --all and --asan to the runtime's own environment report."""
-    seen: list[tuple[bool, BuildType | None]] = []
-    monkeypatch.setattr(
-        diag, "env_dump",
-        lambda show_all=False, build_type=None: seen.append((show_all, build_type)) or 0)
+def test_env_keeps_its_own_asan_flag(flag, tmp_path, monkeypatch):
+    """`sr env --asan` reads the environment of the sanitizer tree, with --all or without."""
+    _checkout(tmp_path)
+    monkeypatch.chdir(tmp_path)
     assert CliRunner().invoke(app, ["env", flag, "--asan"]).exit_code == 0
-    assert seen == [(True, BuildType.asan)]
+    assert (tmp_path / "build" / "asan-release").is_dir()
 
 
-def test_run_forwards_a_known_role(monkeypatch):
-    """`sr run --distributed worker` hands the role to the run service."""
-    seen: list[str | None] = []
-    monkeypatch.setattr(
-        project, "run", lambda **options: seen.append(options["distributed_role"]) or 0)
-    assert CliRunner().invoke(app, ["run", "demo", "--distributed", "WORKER"]).exit_code == 0
-    assert seen == ["worker"]
+def _demo_tree(built) -> None:
+    """Makes the Debug tree of the rig checkout and an executable called demo in it."""
+    tree = built.root / "build" / "default-debug"
+    tree.mkdir(parents=True)
+    (tree / ("demo.exe" if os.name == "nt" else "demo")).write_text("", encoding="utf-8")
 
 
-def test_run_rejects_an_unknown_role(monkeypatch):
+def test_run_forwards_a_known_role(rig):
+    """`sr run --distributed worker` hands the role to the program it runs."""
+    built = rig()
+    _demo_tree(built)
+    result = CliRunner().invoke(
+        app, ["run", "demo", "--distributed", "WORKER"], obj=built.surroundings)
+    assert result.exit_code == 0, result.output
+    assert built.argv()[-1] == "--distributed=worker"
+
+
+def test_run_rejects_an_unknown_role(rig):
     """`sr run --distributed <typo>` exits 2 and starts nothing."""
-    started: list[dict] = []
-    monkeypatch.setattr(project, "run", lambda **options: started.append(options) or 0)
-    assert CliRunner().invoke(app, ["run", "demo", "--distributed", "wroker"]).exit_code == 2
-    assert started == []
+    built = rig()
+    _demo_tree(built)
+    result = CliRunner().invoke(
+        app, ["run", "demo", "--distributed", "wroker"], obj=built.surroundings)
+    assert result.exit_code == 2
+    assert built.runner.commands == []
 
 
 def _published_checkout(root: Path) -> None:
@@ -173,20 +186,18 @@ def test_docs_bundle_writes_the_archive_of_the_checkout_it_runs_in(tmp_path, mon
     """Writes the archive and its digest file at the checkout's root and reports both lines."""
     _published_checkout(tmp_path)
     monkeypatch.chdir(tmp_path / "docs" / "guides")
-    said: list[str] = []
-    monkeypatch.setattr(cli, "console", SimpleNamespace(success=said.append))
     result = CliRunner().invoke(cli.app, ["docs", "bundle", "--release", "1.2.3"])
     assert result.exit_code == 0, result.output
     bundle = tmp_path / "build" / "docs" / "bundle"
     assert (bundle / K_ARCHIVE).is_file()
     assert (bundle / (K_ARCHIVE + ".sha256")).is_file()
-    assert len(said) == 2, said
-    assert said[0].endswith(f"{K_ARCHIVE} (1 pages)")
-    assert said[1].startswith("sha256 ")
+    said = "".join(K_ANSI_ESCAPE.sub("", result.output).split())
+    assert said.count("[SUCCESS]") == 2, said
+    assert f"{K_ARCHIVE}(1pages)" in said
+    assert "[SUCCESS]sha256" in said
 
 
-def test_the_api_source_reads_the_xml_doxygen_writes_under_the_site_folder(monkeypatch, tmp_path):
+def test_the_api_source_reads_the_xml_doxygen_writes_under_the_site_folder(tmp_path):
     """Names `<OUTPUT_DIRECTORY>/<XML_OUTPUT>` of the Doxyfile, below the repository root."""
-    monkeypatch.setattr(cli, "find_project_root", lambda: tmp_path)
     written = Path(_doxyfile_value("OUTPUT_DIRECTORY", "")) / _doxyfile_value("XML_OUTPUT", "xml")
-    assert cli._api_source().xml_dir == tmp_path / written
+    assert cli._api_source(tmp_path).xml_dir == tmp_path / written

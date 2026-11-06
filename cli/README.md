@@ -276,6 +276,18 @@ compiler that outranks the configured one, on both platforms.
 When the chosen toolchain is not installed, `sr toolchain` names the exact profile to install.
 That message is what the user asked the command for.
 
+## sushiruntime/services/surroundings.py
+
+`build`, `test`, `bench`, `run`, `clean`, `docs`, `package` and the `container` services take an
+optional `surroundings` argument: the console they print through, the runner that spawns their
+commands, the checkout, the configuration, the provisioner of library packages and the function
+that captures a command's output. Every part defaults to what the command used before the
+argument existed, so `sr` behaves as it did. A caller of the Typer app hands the same object in
+as the app's context object (`CliRunner().invoke(app, args, obj=surroundings)`); a command
+reads it and passes it on, and no flag or output changes. The tests build it from
+`sushicore.console_memory.RecordingConsole` and `sushicore.proc_memory.RecordingRunner`, so a
+command runs to the end and the test reads the commands it recorded.
+
 ## tests/conftest.py
 
 `sushiruntime` imports sushicore, the shared core underneath every Sushi CLI, at module load,

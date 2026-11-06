@@ -6,20 +6,18 @@
 
 from __future__ import annotations
 
-from sushicore.proc import Runner
-
-from .. import console
-from ..config import PROFILE, find_project_root
+from .surroundings import Surroundings
 
 IMAGE = "sushiruntime"
 DOCKERFILE = ".config/docker/Dockerfile"
 
-_RUNNER = Runner(console, PROFILE.program)
 
-
-def build(no_cache: bool = False, oneapi: bool = False) -> int:
+def build(no_cache: bool = False, oneapi: bool = False,
+          surroundings: Surroundings | None = None) -> int:
+    ws = surroundings or Surroundings()
+    console = ws.console
     console.header("Docker Build")
-    root = find_project_root()
+    root = ws.root
     cmd = ["docker", "build", "-f", DOCKERFILE, "-t", IMAGE]
     if no_cache:
         console.info("Building without the layer cache (--no-cache).")
@@ -28,12 +26,15 @@ def build(no_cache: bool = False, oneapi: bool = False) -> int:
         console.info("Including the Intel oneAPI DPC++ compiler (--build-arg WITH_ONEAPI=1).")
         cmd += ["--build-arg", "WITH_ONEAPI=1"]
     cmd.append(".")
-    return _RUNNER.run(cmd, root)
+    return ws.runner.run(cmd, root)
 
 
-def run(admin: bool = False, no_gpu: bool = False) -> int:
+def run(admin: bool = False, no_gpu: bool = False,
+        surroundings: Surroundings | None = None) -> int:
+    ws = surroundings or Surroundings()
+    console = ws.console
     console.header("Docker Run")
-    root = find_project_root()
+    root = ws.root
     cmd = ["docker", "run", "-it", "--rm"]
     if no_gpu:
         console.info("Running without GPU passthrough (--no-gpu).")
@@ -43,4 +44,4 @@ def run(admin: bool = False, no_gpu: bool = False) -> int:
         console.info("Running in ADMIN mode (privileged)")
         cmd += ["--privileged", "--cap-add=SYS_ADMIN"]
     cmd += ["-v", f"{root}:/workspace/sushiruntime", IMAGE, "/bin/bash"]
-    return _RUNNER.run(cmd, root)
+    return ws.runner.run(cmd, root)

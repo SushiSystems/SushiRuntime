@@ -11,16 +11,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sushicore.provision.package_install import capture_command, install_summary
+from sushicore.provision.package_install import install_summary
 
-from .. import console
-from ..config import Config, find_project_root, load_config
+from ..config import Config
 from ..env import load_build_env
-from .project import _DRIVER, _RUNNER, K_DEFAULT_TYPE, BuildType, build_tree
+from .project import K_DEFAULT_TYPE, BuildType, build_tree
 from .stage_tree import StageRules, StageTree, StageTreeError
-
-#: Runs the install with its output held back; replaced in tests.
-_capture = capture_command
+from .surroundings import Surroundings
 
 
 def _cpack(cfg: Config) -> str:
@@ -40,7 +37,8 @@ def _cpack(cfg: Config) -> str:
 
 
 def package(prefix: str | None = None, archive: bool = True, force: bool = False,
-            build_dir: str | None = None, build_type: BuildType = K_DEFAULT_TYPE) -> int:
+            build_dir: str | None = None, build_type: BuildType = K_DEFAULT_TYPE,
+            surroundings: Surroundings | None = None) -> int:
     """Install the built tree to a prefix and archive it.
 
     :param prefix: Where to install. Defaults to build/dist under the project root.
@@ -49,11 +47,15 @@ def package(prefix: str | None = None, archive: bool = True, force: bool = False
     :param build_dir: The built tree to install from, below the project root. Defaults to the
         tree of *build_type*.
     :param build_type: The build type whose tree is installed when no *build_dir* is given.
+    :param surroundings: What the command prints through, runs commands with and reads its
+        checkout from; the CLI's own when None.
     :return: 0 when every requested step succeeded, non-zero on the first failure.
     """
+    ws = surroundings or Surroundings()
+    console = ws.console
     console.header("Project Package")
-    root = find_project_root()
-    cfg = load_config()
+    root = ws.root
+    cfg = ws.cfg
     built = build_tree(root, build_type, build_dir)
 
     if not (built / "CMakeCache.txt").is_file():
@@ -75,9 +77,9 @@ def package(prefix: str | None = None, archive: bool = True, force: bool = False
         console.error(str(error))
         return 1
 
-    install = [_DRIVER.cmake(cfg), "--install", str(built), "--prefix", str(stage)]
+    install = [ws.driver.cmake(cfg), "--install", str(built), "--prefix", str(stage)]
     console.command(" ".join(install))
-    result = _capture(install, root, env)
+    result = ws.capture(install, root, env)
     if result.code != 0:
         console.error(f"cmake --install exited {result.code}:\n{result.output.rstrip()}")
         return result.code
@@ -87,7 +89,7 @@ def package(prefix: str | None = None, archive: bool = True, force: bool = False
         cpack_config = built / "CPackConfig.cmake"
         if cpack_config.is_file():
             console.info("Building the archive...")
-            rc = _RUNNER.run([_cpack(cfg), "--config", str(cpack_config)], built, env)
+            rc = ws.runner.run([_cpack(cfg), "--config", str(cpack_config)], built, env)
             if rc != 0:
                 console.error("CPack failed.")
                 return rc

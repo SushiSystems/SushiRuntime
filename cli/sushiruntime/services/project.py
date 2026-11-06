@@ -21,16 +21,15 @@ from pathlib import Path
 
 from sushicore import build_admission, build_report, cmake_cache
 from sushicore.build_tree import K_DEFAULT_BUILD_TYPE, refuse_another_build_type, tree_dir
-from sushicore.cmake_driver import CMakeDriver
 from sushicore.errors import SushiCoreError
-from sushicore.proc import Runner
+from sushicore.proc import CommandRunner
 from sushicore.provision.sushi_packages import PackageError, configure_arguments
 
-from .. import console
-from ..config import Config, PROFILE, find_project_root, load_config
+from ..config import Config
 from ..env import load_build_env
 from . import discovery, library_packages
 from .install_hint import toolchain_install_command
+from .surroundings import Surroundings
 
 # The ASan tree is its own tree, CUDA off, Release and UBSan too; see cli/README.md.
 ASAN_FLAGS = ("-fsanitize=address,undefined -fno-sanitize-recover=undefined "
@@ -137,9 +136,6 @@ def thread_sanitizer_applies(is_windows: bool, build_type: BuildType) -> bool:
     return build_type == BuildType.tsan
 
 
-_RUNNER = Runner(console, PROFILE.program)
-_DRIVER = CMakeDriver(console, _RUNNER)
-
 _API_SITE_DIR = Path("build") / "docs" / "api-site"
 _DOXYGEN_HINT = (
     "  - Windows: winget install DimitriVanHeesch.Doxygen"
@@ -244,7 +240,7 @@ def _stamp_differs(build_dir: Path, stamp_key: str) -> bool:
     return True
 
 
-def _resolve_compiler(cfg: Config, force: bool,
+def _resolve_compiler(console, cfg: Config, force: bool,
                       env: dict[str, str] | None = None,
                       asan: bool = False) -> tuple[str, str] | None:
     """Resolve (cc, cxx) for the selected toolchain, validating availability.
@@ -308,11 +304,11 @@ def _resolve_compiler(cfg: Config, force: bool,
     return None
 
 
-def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
+def _configure_args_linux(cmake: str, cfg: Config, build_dir: Path, build_type: str,
                           gpu_backend: str, dist: str, asan: bool, tests: bool,
                           cc: str, cxx: str) -> list[str]:
     args = [
-        _DRIVER.cmake(cfg), "-B", str(build_dir), "-G", cfg.generator,
+        cmake, "-B", str(build_dir), "-G", cfg.generator,
         f"-DCMAKE_BUILD_TYPE={build_type}",
         f"-DSR_SYCL_TOOLCHAIN={cfg.toolchain}",
         f"-DCMAKE_C_COMPILER={cc}",
@@ -345,7 +341,8 @@ def _configure_args_linux(cfg: Config, build_dir: Path, build_type: str,
     return args
 
 
-def _check_windows_compiler(cfg: Config, env: dict[str, str]) -> int:
+def _check_windows_compiler(console, runner: CommandRunner, cfg: Config,
+                            env: dict[str, str]) -> int:
     """Fail early (with guidance) if the toolchain's compiler is not installed.
 
     Without this, an unresolved compiler (e.g. selecting the adaptivecpp toolchain
@@ -353,7 +350,7 @@ def _check_windows_compiler(cfg: Config, env: dict[str, str]) -> int:
     error several lines into configure.
     """
     cxx = cfg.resolved_windows_compiler()
-    found = Path(cxx).is_file() or _RUNNER.resolve_exe(cxx, env) != cxx
+    found = Path(cxx).is_file() or runner.resolve_exe(cxx, env) != cxx
     if found:
         return 0
     install = f"Install it with `{toolchain_install_command(cfg.toolchain)}`"
@@ -369,7 +366,7 @@ def _check_windows_compiler(cfg: Config, env: dict[str, str]) -> int:
     return 1
 
 
-def _check_sanitizer_runtime(cfg: Config) -> int:
+def _check_sanitizer_runtime(console, cfg: Config) -> int:
     """Fail early if the selected intel/llvm bundle ships no AddressSanitizer runtime.
 
     An intel/llvm bundle can carry the compiler and no compiler-rt at all, in
@@ -379,6 +376,7 @@ def _check_sanitizer_runtime(cfg: Config) -> int:
     rather than as "this bundle cannot sanitize" — and the fix is to point at a
     bundle that can, not to change anything in the tree.
 
+    :param console: Receives the error line.
     :param cfg: Loaded CLI configuration.
     :return: 0 when a runtime is present or the check does not apply, 1 otherwise.
     """
@@ -403,7 +401,7 @@ def _check_sanitizer_runtime(cfg: Config) -> int:
     return 1
 
 
-def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
+def _configure_args_windows(cmake: str, cfg: Config, build_dir: Path, build_type: str,
                             gpu_backend: str, dist: str, asan: bool,
                             tests: bool) -> list[str]:
     vcpkg = cfg.expand(cfg.vcpkg_root)
@@ -412,7 +410,7 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
     # -DSR_SYCL_TOOLCHAIN is explicit so CMakeLists does not infer it; see cli/README.md.
     cxx = cfg.resolved_windows_compiler()
     args = [
-        _DRIVER.cmake(cfg), "-B", str(build_dir), "-G", "Ninja",
+        cmake, "-B", str(build_dir), "-G", "Ninja",
         f"-DCMAKE_BUILD_TYPE={build_type}",
         f"-DSR_SYCL_TOOLCHAIN={cfg.toolchain}",
         f"-DCMAKE_TOOLCHAIN_FILE={vcpkg}/scripts/buildsystems/vcpkg.cmake",
@@ -441,7 +439,7 @@ def _configure_args_windows(cfg: Config, build_dir: Path, build_type: str,
 _LEAN_ARGS = ("-DSR_BUILD_EXAMPLES=OFF", "-DSR_BUILD_BENCHMARKS=OFF")
 
 
-def _package_compiler(cfg: Config, force: bool, env: dict[str, str],
+def _package_compiler(ws: Surroundings, cfg: Config, force: bool, env: dict[str, str],
                       asan: bool) -> tuple[str, str] | None:
     """Return the (cc, cxx) this build compiles with, or None after printing why it cannot.
 
@@ -450,10 +448,10 @@ def _package_compiler(cfg: Config, force: bool, env: dict[str, str],
     the pair against the PATH of *env*.
     """
     if cfg.is_windows:
-        if _check_windows_compiler(cfg, env) != 0:
+        if _check_windows_compiler(ws.console, ws.runner, cfg, env) != 0:
             return None
         return "", cfg.resolved_windows_compiler()
-    return _resolve_compiler(cfg, force, env, asan=asan)
+    return _resolve_compiler(ws.console, cfg, force, env, asan=asan)
 
 
 def _on_build_path(compiler: str, env: dict[str, str]) -> str:
@@ -471,7 +469,7 @@ def _launcher_arguments(cfg: Config, tree: Path) -> list[str]:
     return [f"-D{entry}" for entry in build_admission.launcher_defines(tree, cache)]
 
 
-def _print_report(tree: Path, offset: int) -> None:
+def _print_report(console, tree: Path, offset: int) -> None:
     """Print the build that appended to the ninja log of *tree* from *offset*, and write it down."""
     report = build_report.of_build(tree, offset, build_admission.state_dir(tree))
     for line in report.lines():
@@ -482,7 +480,8 @@ def _print_report(tree: Path, offset: int) -> None:
 def build(build_type: BuildType, distributed: bool = False,
           no_cuda: bool = False, clean: bool = False, force: bool = False,
           tests: bool = True, jobs: int | None = None, lean: bool = False,
-          build_dir: str | None = None, report: bool = False) -> int:
+          build_dir: str | None = None, report: bool = False,
+          surroundings: Surroundings | None = None) -> int:
     """Configure and build the project.
 
     Args:
@@ -490,10 +489,14 @@ def build(build_type: BuildType, distributed: bool = False,
         lean: Builds no tests, examples or benchmarks; what a library package is built as.
         build_dir: The tree to build in, below the project root; the tree of the type when None.
         report: Prints what each kind of build edge cost and writes `build_report.json`.
+        surroundings: What the build prints through, runs commands with and reads its checkout
+            from; the CLI's own when None.
     """
+    ws = surroundings or Surroundings()
+    console, driver = ws.console, ws.driver
     console.header("Project Build")
-    root = find_project_root()
-    cfg = load_config()
+    root = ws.root
+    cfg = ws.cfg
     asan = build_type == BuildType.asan
     dist = "ON" if distributed else "OFF"
     cmake_build_type = _CMAKE_BUILD_TYPE[build_type]
@@ -501,7 +504,7 @@ def build(build_type: BuildType, distributed: bool = False,
     tests = tests and not lean
 
     if clean:
-        _DRIVER.clean_tree(tree)
+        driver.clean_tree(tree)
 
     try:
         refuse_another_build_type(tree, cmake_build_type)
@@ -532,13 +535,14 @@ def build(build_type: BuildType, distributed: bool = False,
 
     env = load_build_env(cfg, tree)
 
-    compilers = _package_compiler(cfg, force, env, asan)
+    compilers = _package_compiler(ws, cfg, force, env, asan)
     if compilers is None:
         return 1
     cc, cxx = compilers
     try:
         packages = library_packages.resolve(
-            cfg, root, build_type.value, _on_build_path(cxx, env), console.info, console.warn)
+            cfg, root, build_type.value, _on_build_path(cxx, env), console.info, console.warn,
+            provision=ws.provision_packages)
     except PackageError as error:
         console.error(str(error))
         return 1
@@ -549,18 +553,18 @@ def build(build_type: BuildType, distributed: bool = False,
     sushi_definitions = tuple(configure_arguments(cfg, root, packages))
     stamp_key = _configure_stamp(dist, gpu_backend, tests,
                                  cfg.toolchain, cfg.cxx, sushi_definitions, lean)
-    if _DRIVER.needs_configure(tree, cfg.generator, root=root) or _stamp_differs(tree, stamp_key):
+    if driver.needs_configure(tree, cfg.generator, root=root) or _stamp_differs(tree, stamp_key):
         console.info(f"Configuring CMake... (type={build_type.value}, "
                      f"distributed={dist}, gpu={gpu_backend}, tests={'ON' if tests else 'OFF'})")
         if tree.is_dir():
             shutil.rmtree(tree, ignore_errors=True)
         if cfg.is_windows:
-            if asan and (rc := _check_sanitizer_runtime(cfg)) != 0:
+            if asan and (rc := _check_sanitizer_runtime(console, cfg)) != 0:
                 return rc
-            args = _configure_args_windows(cfg, tree, cmake_build_type,
+            args = _configure_args_windows(driver.cmake(cfg), cfg, tree, cmake_build_type,
                                            gpu_backend, dist, asan, tests)
         else:
-            args = _configure_args_linux(cfg, tree, cmake_build_type,
+            args = _configure_args_linux(driver.cmake(cfg), cfg, tree, cmake_build_type,
                                          gpu_backend, dist, asan, tests, cc, cxx)
             # A benchmark replaces operator new, which TSan's runtime defines as well.
             if thread_sanitizer_applies(cfg.is_windows, build_type):
@@ -570,7 +574,7 @@ def build(build_type: BuildType, distributed: bool = False,
         # Each library package reaches CMake as <Package>_DIR; CMake never downloads.
         args += list(sushi_definitions)
         args += _launcher_arguments(cfg, tree)
-        rc = _DRIVER.configure(args, cwd=root, env=env)
+        rc = driver.configure(args, cwd=root, env=env)
         if rc != 0:
             console.error("CMake configure failed.")
             return rc
@@ -580,10 +584,10 @@ def build(build_type: BuildType, distributed: bool = False,
 
     console.info("Building...")
     offset = build_report.ninja_log_offset(tree)
-    rc = _DRIVER.compile(cfg, tree, cwd=root, env=env, config=cmake_build_type,
+    rc = driver.compile(cfg, tree, cwd=root, env=env, config=cmake_build_type,
                          jobs=jobs or build_admission.hardware_threads())
     if report:
-        _print_report(tree, offset)
+        _print_report(console, tree, offset)
     if rc == 0:
         console.success("Build completed successfully!")
     else:
@@ -593,10 +597,12 @@ def build(build_type: BuildType, distributed: bool = False,
 
 def test(label: Label | None, distributed: bool = False, filter: str | None = None,
          build_type: BuildType = K_DEFAULT_TYPE, repeat: int = 0, module: str | None = None,
-         jobs: int | None = None) -> int:
+         jobs: int | None = None, surroundings: Surroundings | None = None) -> int:
+    ws = surroundings or Surroundings()
+    console = ws.console
     console.header("Project Test")
-    root = find_project_root()
-    cfg = load_config()
+    root = ws.root
+    cfg = ws.cfg
     build_dir = build_tree(root, build_type)
     if not build_dir.is_dir():
         console.error(f"{build_dir.name}/ not found. Run `sr build` first.")
@@ -622,16 +628,19 @@ def test(label: Label | None, distributed: bool = False, filter: str | None = No
     else:
         label_regex = _DEFAULT_LABEL_REGEX
     exclude = None if label is Label.quarantined else _QUARANTINED_LABEL_REGEX
-    return _DRIVER.ctest_run(
+    return ws.driver.ctest_run(
         cfg, build_dir, env, label_regex=label_regex, exclude_label_regex=exclude,
         filter=filter, repeat=repeat, jobs=jobs)
 
 
 def bench(distributed: bool = False, filter: str | None = None,
-          build_type: BuildType = K_BENCH_TYPE) -> int:
+          build_type: BuildType = K_BENCH_TYPE,
+          surroundings: Surroundings | None = None) -> int:
+    ws = surroundings or Surroundings()
+    console = ws.console
     console.header("Project Bench")
-    root = find_project_root()
-    cfg = load_config()
+    root = ws.root
+    cfg = ws.cfg
     build_dir = build_tree(root, build_type)
     programs = sorted(p for p in (build_dir / "tests").glob("sr_*_benchmarks*")
                       if p.is_file() and p.suffix in ("", ".exe"))
@@ -647,7 +656,7 @@ def bench(distributed: bool = False, filter: str | None = None,
     failed = 0
     for program in programs:
         console.info(f"Executing: {program.name}")
-        if _RUNNER.run([str(program), *forwarded], build_dir / "tests", env) != 0:
+        if ws.runner.run([str(program), *forwarded], build_dir / "tests", env) != 0:
             failed += 1
     if failed:
         console.error(f"{failed} of {len(programs)} benchmark programs failed.")
@@ -658,10 +667,13 @@ def bench(distributed: bool = False, filter: str | None = None,
 
 def run(target: str | None = None, sort: bool = False,
         distributed_role: str | None = None, build_type: BuildType = K_DEFAULT_TYPE,
-        app_args: list[str] | None = None) -> int:
+        app_args: list[str] | None = None,
+        surroundings: Surroundings | None = None) -> int:
+    ws = surroundings or Surroundings()
+    console = ws.console
     console.header("Project Run")
-    root = find_project_root()
-    cfg = load_config()
+    root = ws.root
+    cfg = ws.cfg
     build_dir = build_tree(root, build_type)
     if not build_dir.is_dir():
         console.error(f"{build_dir.name}/ not found. Run `sr build` first.")
@@ -686,27 +698,30 @@ def run(target: str | None = None, sort: bool = False,
 
     console.info(f"Executing: {exe.name}")
     console.console.print(f"[muted]{exe}[/muted]")
-    return _RUNNER.run([str(exe), *forwarded], root, env)
+    return ws.runner.run([str(exe), *forwarded], root, env)
 
 
-def clean_tree(root: Path, build_type: BuildType = K_DEFAULT_TYPE) -> None:
-    _DRIVER.clean_tree(build_tree(root, build_type))
+def clean_tree(root: Path, build_type: BuildType = K_DEFAULT_TYPE,
+               surroundings: Surroundings | None = None) -> None:
+    (surroundings or Surroundings()).driver.clean_tree(build_tree(root, build_type))
 
 
-def clean() -> int:
-    console.header("Project Clean")
-    root = find_project_root()
+def clean(surroundings: Surroundings | None = None) -> int:
+    ws = surroundings or Surroundings()
+    ws.console.header("Project Clean")
+    root = ws.root
     for build_type in BuildType:
-        clean_tree(root, build_type)
+        clean_tree(root, build_type, ws)
     return 0
 
 
-def docs() -> int:
+def docs(surroundings: Surroundings | None = None) -> int:
     """Builds the API reference with Doxygen and returns its exit code."""
-    console.header("Doxygen Generation")
-    root = find_project_root()
-    cfg = load_config()
+    ws = surroundings or Surroundings()
+    ws.console.header("Doxygen Generation")
+    root = ws.root
+    cfg = ws.cfg
     env = load_build_env(cfg, build_tree(root, K_DEFAULT_TYPE))
     doxyfile = root / ".config" / "doxygen" / "Doxyfile"
     (root / _API_SITE_DIR).mkdir(parents=True, exist_ok=True)
-    return _DRIVER.doxygen(cfg, doxyfile, root, env, install_hint=_DOXYGEN_HINT)
+    return ws.driver.doxygen(cfg, doxyfile, root, env, install_hint=_DOXYGEN_HINT)

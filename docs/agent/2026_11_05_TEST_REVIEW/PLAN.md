@@ -16,7 +16,7 @@ writes each add. Nothing in a module job changes production code except a seam a
 | T3 | `InProcessTransport` beside the `Transport` port |  | blocked: the move makes `transport` depend on `frame_transport` and `wire`, which depend on `transport`; RW-81 waits for the owner |
 | T4 | `Performance_` and `Stress_` suites moved to the benchmark runner |  | done |
 | T5 | The defects of this report, each with a test that fails first, and the pages corrected |  | done: pages, timeouts, `K_ALL_KEYS`, stray comment fixed; RW-83 to RW-86 hold the test defects |
-| T6 | The CLI tests on sushicore's in-memory runner and console | sushicore T1 | in progress: sushicore 0.10.12 ships the adapters; the CLI floor is raised |
+| T6 | The CLI tests on sushicore's in-memory runner and console | sushicore T1 | done: no CLI test patches an owned function; the patches left replace the standard library or set a constant |
 | T7 | `tools/testing/check_test_additions.py`, `tools/tests/test_check_test_additions.py` deleted |  | done |
 | M1 | the tests of `applications` (2 files): 2 rewrite, 1 split | T1, T2, T3, T4, T5, T6, T7 | todo |
 | M2 | the tests of `cli` (20 files): 60 rewrite, 20 resize, 1 split, 5 merge, 7 delete | T1, T2, T3, T4, T5, T6, T7 | todo |

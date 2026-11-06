@@ -10,6 +10,7 @@ See cli/README.md.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,6 +63,9 @@ _MODULE = _RuntimeModuleConfig(PROFILE)
 
 find_project_root = _MODULE.find_project_root
 config_dir = _MODULE.config_dir
+
+#: Maps each field to its environment variable; `sushicore.diag.Diagnostics` reads it for `sr config`.
+_ENV_OVERRIDES = PROFILE.env_overrides()
 
 
 # The compiler a consumer's package build hands the library CLI; it outranks the configured one.
@@ -156,13 +160,16 @@ class Config(StackConfig):
         return str(Path(bin_dir) / "clang++.exe") if bin_dir else "clang++"
 
 
-def load_config() -> Config:
+def load_config(load: Callable[[type[Config]], Config] | None = None) -> Config:
     """Load and resolve the layered configuration for the current platform.
 
     Precedence (low to high): repo config.toml -> workspace-shared
     config.local.toml (written by ``hub``) -> repo config.local.toml -> env.
+
+    Args:
+        load: Reads the layered files into a Config; the module loader when None.
     """
-    cfg = _MODULE.load(Config)
+    cfg = (load or _MODULE.load)(Config)
     cfg.stack_cxx = os.environ.get(K_STACK_CXX_ENV, "")
     # Guard against a stale/typo'd toolchain leaking through from config or env.
     if cfg.toolchain not in TOOLCHAINS:
