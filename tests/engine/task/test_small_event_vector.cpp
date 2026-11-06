@@ -28,6 +28,7 @@
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <cstddef>
 #include <utility>
 #include <vector>
@@ -50,15 +51,44 @@ namespace
     {
         return std::vector<sycl::event>(count);
     }
+
+    /** @brief Builds a vector that holds @p count events. */
+    SmallEventVector holding(std::size_t count)
+    {
+        SmallEventVector events;
+        events = distinct_events(count);
+        return events;
+    }
+
+    /** @brief Returns the events @p events visits when iterated, in order. */
+    std::vector<sycl::event> visited(const SmallEventVector& events)
+    {
+        std::vector<sycl::event> seen;
+        for (const sycl::event& stored : events)
+            seen.push_back(stored);
+        return seen;
+    }
+
+    /** @brief Returns how many of @p count events do not fit the inline storage. */
+    std::size_t overflow_of(std::size_t count)
+    {
+        return std::max(count, SmallEventVector::K_STATIC_CAP) - SmallEventVector::K_STATIC_CAP;
+    }
+
+    /** @brief One assignment: the events the target held before, and the events assigned to it. */
+    struct AssignmentRow
+    {
+        /** @brief Events the target holds before the assignment. */
+        std::size_t prior;
+        /** @brief Events the source holds. */
+        std::size_t assigned;
+    };
 } // namespace
 
-TEST(Small_SmallEventVector, ADefaultVectorIsEmpty)
+/** @brief Fixture of the rows of the assignment that replaces prior events. */
+class Small_SmallEventVectorAssignment : public ::testing::TestWithParam<AssignmentRow>
 {
-    const SmallEventVector events;
-
-    EXPECT_EQ(events.size(), 0u);
-    EXPECT_TRUE(events.to_vector().empty());
-}
+};
 
 TEST(Small_SmallEventVector, ACopyHoldsTheSameEventsInlineAndOverflow)
 {
@@ -88,21 +118,29 @@ TEST(Small_SmallEventVector, AMoveHoldsTheEventsAndEmptiesTheSource)
     EXPECT_TRUE(source.dynamic_data.empty());
 }
 
-TEST(Small_SmallEventVector, ACopyAssignmentReplacesEveryPriorEvent)
+/** @brief Tests that assigning a SmallEventVector, or a std::vector, replaces every prior event. */
+TEST_P(Small_SmallEventVectorAssignment, AssignmentReplacesEveryPriorEvent)
 {
-    const std::vector<sycl::event> expected = distinct_events(3);
+    const AssignmentRow row = GetParam();
+    const std::vector<sycl::event> expected = distinct_events(row.assigned);
     SmallEventVector source;
     source = expected;
+    SmallEventVector from_small = holding(row.prior);
+    SmallEventVector from_vector = holding(row.prior);
 
-    SmallEventVector target;
-    target = distinct_events(10);
-    target = source;
+    from_small = source;
+    from_vector = expected;
 
-    EXPECT_EQ(target.size(), expected.size());
-    EXPECT_EQ(target.to_vector(), expected);
-    EXPECT_TRUE(target.dynamic_data.empty());
+    EXPECT_EQ(from_small.to_vector(), expected);
+    EXPECT_EQ(from_vector.to_vector(), expected);
+    EXPECT_EQ(from_small.dynamic_data.size(), overflow_of(row.assigned));
+    EXPECT_EQ(from_vector.dynamic_data.size(), overflow_of(row.assigned));
     EXPECT_EQ(source.to_vector(), expected);
 }
+
+INSTANTIATE_TEST_SUITE_P(PriorAndAssigned, Small_SmallEventVectorAssignment,
+                         ::testing::Values(AssignmentRow{10, 3}, AssignmentRow{3, 10}, AssignmentRow{0, 5},
+                                           AssignmentRow{10, 0}, AssignmentRow{10, 20}));
 
 TEST(Small_SmallEventVector, AMoveAssignmentReplacesEveryPriorEventAndEmptiesTheSource)
 {
@@ -120,19 +158,7 @@ TEST(Small_SmallEventVector, AMoveAssignmentReplacesEveryPriorEventAndEmptiesThe
     EXPECT_TRUE(source.to_vector().empty());
 }
 
-TEST(Small_SmallEventVector, AssignmentFromAVectorShrinksPastTheOldContent)
-{
-    SmallEventVector events;
-    events = distinct_events(10);
-
-    const std::vector<sycl::event> expected = distinct_events(3);
-    events = expected;
-
-    EXPECT_EQ(events.size(), expected.size());
-    EXPECT_EQ(events.to_vector(), expected);
-    EXPECT_TRUE(events.dynamic_data.empty());
-}
-
+/** @brief Tests that assigning past the inline capacity keeps every element, in order. */
 TEST(Small_SmallEventVector, AssignmentPastTheInlineCapacityKeepsEveryElementInOrder)
 {
     const std::vector<sycl::event> expected = distinct_events(20);
@@ -142,33 +168,43 @@ TEST(Small_SmallEventVector, AssignmentPastTheInlineCapacityKeepsEveryElementInO
     EXPECT_EQ(events.size(), 20u);
     EXPECT_EQ(events.dynamic_data.size(), 12u);
     EXPECT_EQ(events.to_vector(), expected);
-
-    std::size_t index = 0;
-    for (const sycl::event& stored : events)
-    {
-        ASSERT_LT(index, expected.size());
-        EXPECT_EQ(stored, expected[index]);
-        ++index;
-    }
-    EXPECT_EQ(index, expected.size());
 }
 
-TEST(Small_SmallEventVector, ClearEmptiesTheVectorAndItAcceptsNewEvents)
+/** @brief Tests that iterating a vector past the inline capacity visits every event, in order. */
+TEST(Small_SmallEventVector, IterationVisitsEveryEventInOrder)
 {
+    const std::vector<sycl::event> expected = distinct_events(20);
     SmallEventVector events;
-    events = distinct_events(10);
+    events = expected;
+
+    EXPECT_EQ(visited(events), expected);
+}
+
+/** @brief Tests that clear() empties the vector. */
+TEST(Small_SmallEventVector, ClearEmptiesTheVector)
+{
+    SmallEventVector events = holding(10);
 
     events.clear();
 
     EXPECT_EQ(events.size(), 0u);
     EXPECT_TRUE(events.to_vector().empty());
+}
 
+/** @brief Tests that a cleared vector accepts new events. */
+TEST(Small_SmallEventVector, AClearedVectorAcceptsNewEvents)
+{
+    SmallEventVector events = holding(10);
+    events.clear();
     const std::vector<sycl::event> expected = distinct_events(2);
+
     events = expected;
+
     EXPECT_EQ(events.to_vector(), expected);
 }
 
-TEST(Small_SmallEventVector, SelfAssignmentKeepsEveryEvent)
+/** @brief Tests that a copy assignment to itself keeps every event. */
+TEST(Small_SmallEventVector, SelfCopyAssignmentKeepsEveryEvent)
 {
     const std::vector<sycl::event> expected = distinct_events(10);
     SmallEventVector events;
@@ -176,9 +212,20 @@ TEST(Small_SmallEventVector, SelfAssignmentKeepsEveryEvent)
     SmallEventVector& same = events;
 
     events = same;
+
     EXPECT_EQ(events.to_vector(), expected);
+}
+
+/** @brief Tests that a move assignment to itself keeps every event. */
+TEST(Small_SmallEventVector, SelfMoveAssignmentKeepsEveryEvent)
+{
+    const std::vector<sycl::event> expected = distinct_events(10);
+    SmallEventVector events;
+    events = expected;
+    SmallEventVector& same = events;
 
     events = std::move(same);
+
     EXPECT_EQ(events.to_vector(), expected);
 }
 

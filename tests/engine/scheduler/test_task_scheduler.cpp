@@ -23,20 +23,19 @@
 
 /**
  * @file test_task_scheduler.cpp
- * @brief Tests the TaskScheduler: node placement, its work-stealing deque and its offload seam.
+ * @brief Tests the TaskScheduler: device placement, the offload seam, exact execution, steal order and the log lines of its pool.
  * @see tests/engine/scheduler/README.md
  * @author Mustafa Garip
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -45,595 +44,774 @@
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
+#include <SushiLog/log/log_level.hpp>
+#include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/device/device_descriptor.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
-#include <SushiRuntime/topology/hw_discovery.hpp>
-#include <SushiRuntime/topology/topology_provider.hpp>
-#include <SushiRuntime/topology/topology_view.hpp>
-#include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/machine/pin_policy.hpp>
-#include <SushiRuntime/scheduler/task_scheduler.hpp>
-#include <SushiRuntime/scheduler/worker_pool_settings.hpp>
-#include <SushiRuntime/task/task.hpp>
-#include <SushiRuntime/core/span.hpp>
-#include <SushiRuntime/task/late_bindings.hpp>
-#include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/task/offload_sink.hpp>
-#include <SushiRuntime/task/offload_state.hpp>
 #include <SushiRuntime/execution/runtime_context.hpp>
-#include <SushiRuntime/topology/hwloc_topology_provider.hpp>
-#include <SushiRuntime/topology/matrix_distance_model.hpp>
-#include <SushiRuntime/topology/remapping_topology_provider.hpp>
+#include <SushiRuntime/machine/pin_policy.hpp>
+#include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/probe_tasks/atomic_counter_task.hpp>
 #include <SushiRuntime/probe_tasks/priority_tracking_task.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
 #include <SushiRuntime/runtime_assembly/scheduler_factory.hpp>
-#include <SushiLog/log/log_level.hpp>
-#include <SushiRuntime/core/common.hpp>
+#include <SushiRuntime/scheduler/task_scheduler.hpp>
+#include <SushiRuntime/scheduler/worker_pool_settings.hpp>
+#include <SushiRuntime/task/in_memory_offload_coordinator.hpp>
+#include <SushiRuntime/task/late_bindings.hpp>
+#include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/test_runner/log_capture.hpp>
+#include <SushiRuntime/topology/in_memory_topology_provider.hpp>
+#include <SushiRuntime/topology/matrix_distance_model.hpp>
+#include <SushiRuntime/topology/topology_view.hpp>
 
+#include "support/runtime_environment.hpp"
 
-/** @brief Tests which device queue the scheduler hands a graph node at dispatch. */
-namespace NodePlacementTests
+using namespace SushiRuntime;
+using SushiRuntime::Internal::Graph::Node;
+using SushiRuntime::Internal::Scheduler::TaskScheduler;
+using SushiRuntime::Internal::Scheduler::WorkerPoolSettings;
+
+namespace
 {
-    namespace
+    /** @brief Stands for "handed a queue of no entry", and for a node whose work did not run. */
+    constexpr std::size_t K_NO_DEVICE = static_cast<std::size_t>(-1);
+
+    /** @brief Builds an inventory of @p count entries over the device SYCL selects by default, all on NUMA node 0. */
+    std::vector<Internal::Device::DeviceDescriptor> entries_over_the_default_device(std::size_t count)
     {
-        using SushiRuntime::make_sushi;
-        using SushiRuntime::sushi_ptr;
-        using SushiRuntime::Internal::Graph::Node;
-
-        /** @brief Stands for "handed a queue of no entry", and for a node whose work did not run. */
-        constexpr std::size_t K_NO_DEVICE = static_cast<std::size_t>(-1);
-
-        /** @brief Describes a machine with no core map; see README.md. */
-        class SingleNodeTopology final : public SushiRuntime::Internal::Topology::TopologyProvider
+        std::vector<Internal::Device::DeviceDescriptor> entries;
+        for (std::size_t index = 0; index < count; ++index)
         {
-            public:
-                SushiRuntime::Result<std::vector<SushiRuntime::Internal::Topology::HardwareNode>>
-                enumerate(const SushiRuntime::DeviceFilter&) override
-                {
-                    return std::vector<SushiRuntime::Internal::Topology::HardwareNode>{};
-                }
-        };
-
-        /** @brief Reports one NUMA node at the local distance. */
-        class SingleNodeDistance final : public SushiRuntime::Internal::Topology::NUMADistanceModel
-        {
-            public:
-                int distance(int, int) const override
-                {
-                    return 10;
-                }
-
-                int node_count() const override
-                {
-                    return 1;
-                }
-        };
-
-        /** @brief Returns two entries over the device SYCL selects by default; see README.md. */
-        std::vector<SushiRuntime::Internal::Device::DeviceDescriptor> two_entries_over_the_default_device()
-        {
-            SushiRuntime::Internal::Device::DeviceDescriptor descriptor;
+            Internal::Device::DeviceDescriptor descriptor;
             descriptor.device = sycl::device{sycl::default_selector_v};
             descriptor.info.name = "default";
             descriptor.info.backend = descriptor.device.get_backend();
             descriptor.info.numa_node = 0;
-            return {descriptor, descriptor};
+            entries.push_back(descriptor);
         }
+        return entries;
+    }
 
-        /**
-         * @brief Builds a host node that submits device work and records the queue it is handed.
-         * @param handed Receives a copy of the queue; must outlive the node.
-         */
-        sushi_ptr<Node> make_recording_node(std::optional<sycl::queue>& handed)
-        {
-            sushi_ptr<Node> node = make_sushi<Node>();
-            node->mode = Node::ExecutionMode::Host;
-            node->host_work = [&handed](sycl::queue& queue, const std::vector<sycl::event>&)
-            {
-                handed = queue;
-                return sycl::event{};
-            };
-            return node;
-        }
-    } // namespace
-
-    /** @brief Runs a two-worker scheduler over a two-entry device set; see README.md. */
-    class Medium_NodePlacement : public ::testing::Test
+    /** @brief Builds a distance matrix of @p nodes NUMA nodes: 10 to itself, 21 to another. */
+    std::vector<std::vector<int>> distances_between(int nodes)
     {
-        protected:
-            Medium_NodePlacement()
-                : topology_(SingleNodeTopology(), std::make_shared<SingleNodeDistance>()),
-                  devices_(two_entries_over_the_default_device(), false),
-                  memory_(devices_.plain_queues()),
-                  scheduler_(SushiRuntime::Internal::Scheduler::WorkerPoolSettings{
-                                 2, 0, SushiRuntime::PinPolicy::Float},
-                             topology_, devices_, memory_)
-            {
-                scheduler_.start();
-                scheduler_.arm_for_execution();
-            }
+        std::vector<std::vector<int>> matrix(static_cast<std::size_t>(nodes),
+                                             std::vector<int>(static_cast<std::size_t>(nodes), 21));
+        for (std::size_t node = 0; node < matrix.size(); ++node)
+            matrix[node][node] = 10;
+        return matrix;
+    }
 
-            ~Medium_NodePlacement() override
-            {
-                scheduler_.stop();
-            }
+    /** @brief Builds a core map that gives core i the NUMA node i modulo @p nodes, for @p cores cores. */
+    std::vector<int> cores_alternating_over(std::size_t cores, int nodes)
+    {
+        std::vector<int> map;
+        for (std::size_t core = 0; core < cores; ++core)
+            map.push_back(static_cast<int>(core) % nodes);
+        return map;
+    }
 
+    /**
+     * @brief Owns what a scheduler is built on: a topology, a device set and an allocator.
+     *
+     * The device set makes a queue only at its first use, so building the parts touches no device.
+     */
+    class Hardware
+    {
+        public:
             /**
-             * @brief Runs @p node once and returns the entry whose queue it was handed.
-             * @param handed The slot the node's work records into.
-             * @return The entry's index, or K_NO_DEVICE when the node's work did not run.
+             * @brief Builds the parts.
+             * @param entries Device entries of the set; none for a scheduler that only constructs.
+             * @param core_to_numa NUMA node of each logical core; empty for a machine with no core map.
+             * @param nodes NUMA nodes the distance model knows.
              */
-            std::size_t dispatched_device(Node& node, std::optional<sycl::queue>& handed)
+            Hardware(std::vector<Internal::Device::DeviceDescriptor> entries, std::vector<int> core_to_numa,
+                     int nodes)
+                : topology_(Internal::Topology::InMemoryTopologyProvider({}, std::move(core_to_numa)),
+                            std::make_shared<Internal::Topology::MatrixDistanceModel>(distances_between(nodes))),
+                  devices_(std::move(entries), false), memory_(devices_.plain_queues())
             {
-                handed.reset();
-                scheduler_.submit(&node);
-                scheduler_.wait_quiescent();
-
-                if (!handed)
-                    return K_NO_DEVICE;
-                for (std::size_t index = 0; index < devices_.count(); ++index)
-                    if (devices_.queue(index) == *handed)
-                        return index;
-                return K_NO_DEVICE;
             }
 
-            /// @brief One NUMA node and no core map.
-            SushiRuntime::Internal::Topology::TopologyView topology_;
-            /// @brief Two entries on NUMA node 0, each with its own queue on one SYCL device.
-            SushiRuntime::Internal::Device::DeviceQueueSet devices_;
-            /// @brief Allocator over the two entries; a test records ownership with adopt().
-            SushiRuntime::Internal::Memory::USMAllocator memory_;
-            /// @brief The scheduler under test, started and armed.
-            SushiRuntime::Internal::Scheduler::TaskScheduler scheduler_;
+            /** @brief Builds a scheduler of @p settings over the parts, without starting it. */
+            std::unique_ptr<TaskScheduler> make(const WorkerPoolSettings& settings)
+            {
+                return std::make_unique<TaskScheduler>(settings, topology_, devices_, memory_);
+            }
+
+            /** @brief Returns the device set. */
+            Internal::Device::DeviceQueueSet& devices() noexcept { return devices_; }
+
+            /** @brief Returns the allocator over the device set. */
+            Internal::Memory::USMAllocator& memory() noexcept { return memory_; }
+
+        private:
+            /// @brief The topology the scheduler reads its core map and distances from.
+            Internal::Topology::TopologyView topology_;
+            /// @brief The entries a scheduler dispatches to.
+            Internal::Device::DeviceQueueSet devices_;
+            /// @brief Allocator over the entries; a test records ownership with adopt().
+            Internal::Memory::USMAllocator memory_;
     };
 
-    /**
-     * @brief Two region-less nodes run on device 0 and a node placed on device 1 runs there.
-     */
-    TEST_F(Medium_NodePlacement, RegionlessNodesRunOnDeviceZeroAndAPlacedNodeOnItsDevice)
+    /** @brief Returns the one hardware of the program with @p count entries, built on the first call. */
+    Hardware& shared_hardware(std::size_t count)
     {
-        // The control proves the two entries can be told apart by their queues.
-        ASSERT_EQ(devices_.count(), 2u);
-        ASSERT_FALSE(devices_.queue(0) == devices_.queue(1));
-
-        std::optional<sycl::queue> handed;
-
-        const sushi_ptr<Node> first = make_recording_node(handed);
-        EXPECT_EQ(dispatched_device(*first, handed), 0u);
-        EXPECT_EQ(first->cached_queue_index_, 0);
-
-        const sushi_ptr<Node> second = make_recording_node(handed);
-        EXPECT_EQ(dispatched_device(*second, handed), 0u);
-        EXPECT_EQ(second->cached_queue_index_, 0);
-
-        const sushi_ptr<Node> placed = make_recording_node(handed);
-        placed->place_on(1);
-        EXPECT_EQ(dispatched_device(*placed, handed), 1u);
-        EXPECT_EQ(placed->cached_queue_index_, 1);
+        static Hardware one{entries_over_the_default_device(1), {}, 1};
+        static Hardware two{entries_over_the_default_device(2), {}, 1};
+        return count == 1 ? one : two;
     }
 
-    /**
-     * @brief A node is handed the same device on every step.
-     */
-    TEST_F(Medium_NodePlacement, ANodeKeepsItsDeviceOnEveryStep)
+    /** @brief Builds hardware with no device entry and the given core map, for a scheduler that only constructs. */
+    std::unique_ptr<Hardware> hardware_without_devices(std::vector<int> core_to_numa, int nodes)
     {
-        std::optional<sycl::queue> handed;
+        return std::make_unique<Hardware>(std::vector<Internal::Device::DeviceDescriptor>{},
+                                          std::move(core_to_numa), nodes);
+    }
 
-        const sushi_ptr<Node> regionless = make_recording_node(handed);
-        const sushi_ptr<Node> placed = make_recording_node(handed);
-        placed->place_on(1);
-
-        for (int step = 0; step < 4; ++step)
+    /** @brief Builds a host node that submits device work and records the queue it is handed.
+     *  @param handed Receives a copy of the queue; must outlive the node. */
+    sushi_ptr<Node> make_recording_node(std::optional<sycl::queue>& handed)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->mode = Node::ExecutionMode::Host;
+        node->host_work = [&handed](sycl::queue& queue, const std::vector<sycl::event>&)
         {
-            EXPECT_EQ(dispatched_device(*regionless, handed), 0u) << "step " << step;
-            EXPECT_EQ(dispatched_device(*placed, handed), 1u) << "step " << step;
+            handed = queue;
+            return sycl::event{};
+        };
+        return node;
+    }
+
+    /** @brief Builds a host node that adds one to @p runs when the pool runs it.
+     *  @param runs Must outlive the node. */
+    sushi_ptr<Node> make_counting_node(std::atomic<int>& runs)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->mode = Node::ExecutionMode::Host;
+        node->submits_device_work_ = false;
+        node->native_work = [&runs] { runs.fetch_add(1, std::memory_order_relaxed); };
+        return node;
+    }
+
+    /** @brief Builds a counting node the scheduler offers to the coordinator. */
+    sushi_ptr<Node> make_offloadable_node(std::atomic<int>& runs)
+    {
+        sushi_ptr<Node> node = make_counting_node(runs);
+        node->offload().offloadable = true;
+        return node;
+    }
+
+    /** @brief Builds a host node whose work throws, which fails the run. */
+    sushi_ptr<Node> make_throwing_node()
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->mode = Node::ExecutionMode::Host;
+        node->submits_device_work_ = false;
+        node->native_work = [] { throw std::runtime_error("offload seam test failure"); };
+        return node;
+    }
+
+    /** @brief Builds @p count counting nodes that add to @p ran. */
+    std::vector<sushi_ptr<Node>> counting_nodes(std::atomic<int>& ran, int count)
+    {
+        std::vector<sushi_ptr<Node>> nodes;
+        for (int index = 0; index < count; ++index)
+            nodes.push_back(make_counting_node(ran));
+        return nodes;
+    }
+
+    /** @brief Submits every node of @p nodes to @p scheduler. */
+    void submit_all(TaskScheduler& scheduler, const std::vector<sushi_ptr<Node>>& nodes)
+    {
+        for (const sushi_ptr<Node>& node : nodes)
+            scheduler.submit(node.get());
+    }
+
+    /** @brief Submits @p count counter tasks that add to @p executed. */
+    void submit_counters(TaskScheduler& scheduler, std::atomic<size_t>& executed, std::size_t count)
+    {
+        for (std::size_t index = 0; index < count; ++index)
+            scheduler.submit(new SushiRuntime::Test::AtomicCounterTask(executed));
+    }
+
+    /** @brief Counts the captured records of @p level and @p module whose message holds @p text. */
+    std::size_t count_lines(const TestRunner::LogCapture& capture, SushiLog::LogLevel level,
+                            const std::string& module, const std::string& text)
+    {
+        std::size_t lines = 0;
+        for (const TestRunner::CapturedRecord& record : capture.records())
+        {
+            if (record.level == level && record.module == module && record.message.find(text) != std::string::npos)
+                ++lines;
         }
+        return lines;
     }
 
-    /**
-     * @brief A node over an owned region runs on the owner unless it states a device in the
-     *        owner's context, which then wins.
-     */
-    TEST_F(Medium_NodePlacement, AStatedPlacementInTheOwnersContextOutranksTheOwner)
+    /** @brief Returns the steal victims of every worker of @p scheduler that violate locality under @p nodes nodes. */
+    std::vector<std::string> locality_violations(const TaskScheduler& scheduler, const std::vector<int>& core_to_numa)
     {
-        int cell = 0;
-        memory_.adopt(&cell, 1, sizeof(cell), std::nullopt);
-
-        std::optional<sycl::queue> handed;
-        const sushi_ptr<Node> unplaced = make_recording_node(handed);
-        unplaced->io_writes_.emplace_back(&cell);
-        EXPECT_EQ(dispatched_device(*unplaced, handed), 1u);
-
-        const sushi_ptr<Node> placed = make_recording_node(handed);
-        placed->io_writes_.emplace_back(&cell);
-        placed->place_on(0);
-        EXPECT_EQ(dispatched_device(*placed, handed), 0u);
-
-        memory_.forget(&cell);
+        std::vector<std::string> violations;
+        for (int worker = 0; worker < static_cast<int>(scheduler.worker_count()); ++worker)
+        {
+            const int my_node = core_to_numa[static_cast<std::size_t>(worker)];
+            bool seen_remote = false;
+            for (const int victim : scheduler.steal_victim_order(worker))
+            {
+                const bool is_local = core_to_numa[static_cast<std::size_t>(victim)] == my_node;
+                if (!is_local)
+                    seen_remote = true;
+                else if (seen_remote)
+                    violations.push_back("worker " + std::to_string(worker) + ": local victim " +
+                                         std::to_string(victim) + " follows a remote victim");
+            }
+        }
+        return violations;
     }
 
-    /**
-     * @brief A node whose region no device owns runs on the placement it states, else on device 0.
-     */
-    TEST_F(Medium_NodePlacement, AnUnownedRegionLeavesTheStatedPlacementInForce)
+    /** @brief Returns the sorted steal victims of each worker of @p scheduler. */
+    std::vector<std::vector<int>> sorted_victims_of_every_worker(const TaskScheduler& scheduler)
     {
-        int cell = 0;
-
-        std::optional<sycl::queue> handed;
-        const sushi_ptr<Node> placed = make_recording_node(handed);
-        placed->io_reads_.emplace_back(&cell);
-        placed->place_on(1);
-        EXPECT_EQ(dispatched_device(*placed, handed), 1u);
-
-        const sushi_ptr<Node> unplaced = make_recording_node(handed);
-        unplaced->io_reads_.emplace_back(&cell);
-        EXPECT_EQ(dispatched_device(*unplaced, handed), 0u);
+        std::vector<std::vector<int>> all;
+        for (int worker = 0; worker < static_cast<int>(scheduler.worker_count()); ++worker)
+        {
+            std::vector<int> victims = scheduler.steal_victim_order(worker);
+            std::sort(victims.begin(), victims.end());
+            all.push_back(victims);
+        }
+        return all;
     }
+} // namespace
 
-    /**
-     * @brief A placement past the device set fails the run with the index and the device count.
-     */
-    TEST_F(Medium_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
-    {
-        std::optional<sycl::queue> handed;
-        const sushi_ptr<Node> node = make_recording_node(handed);
-        node->metadata.name = "misplaced";
-        node->place_on(2);
-
-        EXPECT_EQ(dispatched_device(*node, handed), K_NO_DEVICE);
-        ASSERT_TRUE(scheduler_.run_failed());
-
-        const std::optional<SushiRuntime::Error> error = scheduler_.run_error();
-        ASSERT_TRUE(error.has_value());
-        const std::string& message = error->message;
-        EXPECT_EQ(error->code, SushiRuntime::ErrorCode::InvalidGraph) << message;
-        EXPECT_NE(message.find("node 'misplaced'"), std::string::npos) << message;
-        EXPECT_NE(message.find("device 2"), std::string::npos) << message;
-        EXPECT_NE(message.find("2 device(s)"), std::string::npos) << message;
-    }
-} // namespace NodePlacementTests
-
-/** @brief Tests what the scheduler offers and reports to an offload coordinator. */
-namespace OffloadSeamTests
+/** @brief Runs a two-worker scheduler over a two-entry device set; see README.md. */
+class Medium_NodePlacement : public TestSupport::RuntimeTest
 {
-    namespace
-    {
-        using SushiRuntime::make_sushi;
-        using SushiRuntime::sushi_ptr;
-        using SushiRuntime::Internal::Graph::Node;
-
-        /** @brief Describes a machine with no core map; see README.md. */
-        class SingleNodeTopology final : public SushiRuntime::Internal::Topology::TopologyProvider
+    protected:
+        Medium_NodePlacement()
+            : hardware_(shared_hardware(2)),
+              scheduler_(hardware_.make(WorkerPoolSettings{2, 0, PinPolicy::Float}))
         {
-            public:
-                SushiRuntime::Result<std::vector<SushiRuntime::Internal::Topology::HardwareNode>>
-                enumerate(const SushiRuntime::DeviceFilter&) override
-                {
-                    return std::vector<SushiRuntime::Internal::Topology::HardwareNode>{};
-                }
-        };
-
-        /** @brief Reports one NUMA node at the local distance. */
-        class SingleNodeDistance final : public SushiRuntime::Internal::Topology::NUMADistanceModel
-        {
-            public:
-                int distance(int, int) const override
-                {
-                    return 10;
-                }
-
-                int node_count() const override
-                {
-                    return 1;
-                }
-        };
-
-        /** @brief Returns an inventory of the one device SYCL selects by default. */
-        std::vector<SushiRuntime::Internal::Device::DeviceDescriptor> default_device()
-        {
-            SushiRuntime::Internal::Device::DeviceDescriptor descriptor;
-            descriptor.device = sycl::device{sycl::default_selector_v};
-            descriptor.info.name = "default";
-            descriptor.info.backend = descriptor.device.get_backend();
-            return {descriptor};
+            scheduler_->start();
+            scheduler_->arm_for_execution();
         }
 
-        /** @brief Counts what the scheduler offers and reports; declines an offer unless told. */
-        class CountingCoordinator final : public SushiRuntime::Internal::Graph::OffloadCoordinator
+        ~Medium_NodePlacement() override
         {
-            public:
-                void bind(SushiRuntime::Internal::Graph::OffloadSink&) override
-                {
-
-                }
-
-                void prepare(SushiRuntime::span<const sushi_ptr<Node>>,
-                             const std::shared_ptr<const SushiRuntime::PlacementRules>&) override
-                {
-
-                }
-
-                [[nodiscard]] bool try_offload(Node& node) override
-                {
-                    offers_.fetch_add(1, std::memory_order_relaxed);
-                    if (!accepting_.load(std::memory_order_relaxed))
-                        return false;
-                    held_.store(&node, std::memory_order_release);
-                    return true;
-                }
-
-                void on_local_completion(Node&) noexcept override
-                {
-                    completions_.fetch_add(1, std::memory_order_relaxed);
-                }
-
-                void stop() noexcept override
-                {
-
-                }
-
-                /** @brief Makes try_offload() take the next nodes, or decline them again. */
-                void set_accepting(bool accepting) noexcept
-                {
-                    accepting_.store(accepting, std::memory_order_relaxed);
-                }
-
-                /** @brief Returns the node try_offload() took last, or nullptr. */
-                [[nodiscard]] Node* held() const noexcept
-                {
-                    return held_.load(std::memory_order_acquire);
-                }
-
-                /** @brief Returns how many nodes try_offload() was offered. */
-                [[nodiscard]] std::size_t offers() const noexcept
-                {
-                    return offers_.load(std::memory_order_relaxed);
-                }
-
-                /** @brief Returns how many nodes on_local_completion() was told of. */
-                [[nodiscard]] std::size_t completions() const noexcept
-                {
-                    return completions_.load(std::memory_order_relaxed);
-                }
-
-            private:
-                /// @brief Calls of try_offload().
-                std::atomic<std::size_t> offers_{0};
-                /// @brief Calls of on_local_completion().
-                std::atomic<std::size_t> completions_{0};
-                /// @brief Whether try_offload() takes the node.
-                std::atomic<bool> accepting_{false};
-                /// @brief The node try_offload() took last.
-                std::atomic<Node*> held_{nullptr};
-        };
+            scheduler_->stop();
+        }
 
         /**
-         * @brief Builds a host node that adds one to @p runs when the pool runs it.
-         * @param runs Must outlive the node.
+         * @brief Runs @p node once and returns the entry whose queue it was handed.
+         * @param handed The slot the node's work records into.
+         * @return The entry's index, or K_NO_DEVICE when the node's work did not run.
          */
-        sushi_ptr<Node> make_counting_node(std::atomic<int>& runs)
+        std::size_t dispatched_device(Node& node, std::optional<sycl::queue>& handed)
         {
-            sushi_ptr<Node> node = make_sushi<Node>();
-            node->mode = Node::ExecutionMode::Host;
-            node->submits_device_work_ = false;
-            node->native_work = [&runs] { runs.fetch_add(1, std::memory_order_relaxed); };
-            return node;
+            handed.reset();
+            scheduler_->submit(&node);
+            scheduler_->wait_quiescent();
+
+            if (!handed)
+                return K_NO_DEVICE;
+            for (std::size_t index = 0; index < hardware_.devices().count(); ++index)
+                if (hardware_.devices().queue(index) == *handed)
+                    return index;
+            return K_NO_DEVICE;
         }
 
-        /** @brief Builds a counting node the scheduler offers to the coordinator. */
-        sushi_ptr<Node> make_offloadable_node(std::atomic<int>& runs)
+        /** @brief Runs @p node @p steps times and returns the entry it was handed on each step. */
+        std::vector<std::size_t> dispatched_devices(Node& node, std::optional<sycl::queue>& handed, int steps)
         {
-            sushi_ptr<Node> node = make_counting_node(runs);
-            node->offload().offloadable = true;
-            return node;
+            std::vector<std::size_t> entries;
+            for (int step = 0; step < steps; ++step)
+                entries.push_back(dispatched_device(node, handed));
+            return entries;
         }
 
-        /** @brief Builds a host node whose work throws, which fails the run. */
-        sushi_ptr<Node> make_throwing_node()
+        /// @brief Two entries on NUMA node 0, each with its own queue on one SYCL device.
+        Hardware& hardware_;
+        /// @brief The scheduler under test, started and armed.
+        std::unique_ptr<TaskScheduler> scheduler_;
+};
+
+/** @brief Tests that two nodes with no region and no placement run on entry 0. */
+TEST_F(Medium_NodePlacement, RegionlessNodesRunOnDeviceZero)
+{
+    // The control proves the two entries can be told apart by their queues.
+    ASSERT_EQ(hardware_.devices().count(), 2u);
+    ASSERT_FALSE(hardware_.devices().queue(0) == hardware_.devices().queue(1));
+    std::optional<sycl::queue> handed;
+
+    const sushi_ptr<Node> first = make_recording_node(handed);
+    EXPECT_EQ(dispatched_device(*first, handed), 0u);
+    EXPECT_EQ(first->cached_queue_index_, 0);
+
+    const sushi_ptr<Node> second = make_recording_node(handed);
+    EXPECT_EQ(dispatched_device(*second, handed), 0u);
+    EXPECT_EQ(second->cached_queue_index_, 0);
+}
+
+/** @brief Tests that a node placed on an entry runs on that entry. */
+TEST_F(Medium_NodePlacement, APlacedNodeRunsOnItsDevice)
+{
+    ASSERT_FALSE(hardware_.devices().queue(0) == hardware_.devices().queue(1));
+    std::optional<sycl::queue> handed;
+    const sushi_ptr<Node> placed = make_recording_node(handed);
+    placed->place_on(1);
+
+    EXPECT_EQ(dispatched_device(*placed, handed), 1u);
+    EXPECT_EQ(placed->cached_queue_index_, 1);
+}
+
+/** @brief Tests that a node keeps the entry it was first dispatched to on every later step. */
+TEST_F(Medium_NodePlacement, ANodeKeepsItsDeviceOnEveryStep)
+{
+    std::optional<sycl::queue> handed;
+    const sushi_ptr<Node> regionless = make_recording_node(handed);
+    const sushi_ptr<Node> placed = make_recording_node(handed);
+    placed->place_on(1);
+
+    EXPECT_EQ(dispatched_devices(*regionless, handed, 4), (std::vector<std::size_t>{0, 0, 0, 0}));
+    EXPECT_EQ(dispatched_devices(*placed, handed, 4), (std::vector<std::size_t>{1, 1, 1, 1}));
+}
+
+/** @brief Tests that a node over an owned region, stating nothing, runs on the owner. */
+TEST_F(Medium_NodePlacement, ANodeOverAnOwnedRegionRunsOnTheOwner)
+{
+    int cell = 0;
+    hardware_.memory().adopt(&cell, 1, sizeof(cell), std::nullopt);
+    std::optional<sycl::queue> handed;
+    const sushi_ptr<Node> unplaced = make_recording_node(handed);
+    unplaced->io_writes_.emplace_back(&cell);
+
+    EXPECT_EQ(dispatched_device(*unplaced, handed), 1u);
+
+    hardware_.memory().forget(&cell);
+}
+
+/** @brief Tests that a stated placement in the owner's context outranks the owner. */
+TEST_F(Medium_NodePlacement, AStatedPlacementInTheOwnersContextOutranksTheOwner)
+{
+    int cell = 0;
+    hardware_.memory().adopt(&cell, 1, sizeof(cell), std::nullopt);
+    std::optional<sycl::queue> handed;
+    const sushi_ptr<Node> placed = make_recording_node(handed);
+    placed->io_writes_.emplace_back(&cell);
+    placed->place_on(0);
+
+    EXPECT_EQ(dispatched_device(*placed, handed), 0u);
+
+    hardware_.memory().forget(&cell);
+}
+
+/** @brief Tests that a node whose region no device owns runs on the placement it states. */
+TEST_F(Medium_NodePlacement, AnUnownedRegionLeavesTheStatedPlacementInForce)
+{
+    int cell = 0;
+    std::optional<sycl::queue> handed;
+    const sushi_ptr<Node> placed = make_recording_node(handed);
+    placed->io_reads_.emplace_back(&cell);
+    placed->place_on(1);
+
+    EXPECT_EQ(dispatched_device(*placed, handed), 1u);
+}
+
+/** @brief Tests that a node whose region no device owns and that states nothing runs on entry 0. */
+TEST_F(Medium_NodePlacement, AnUnownedRegionWithNothingStatedRunsOnDeviceZero)
+{
+    int cell = 0;
+    std::optional<sycl::queue> handed;
+    const sushi_ptr<Node> unplaced = make_recording_node(handed);
+    unplaced->io_reads_.emplace_back(&cell);
+
+    EXPECT_EQ(dispatched_device(*unplaced, handed), 0u);
+}
+
+/** @brief Tests that a placement past the device set fails the run, naming the node, the index and the device count. */
+TEST_F(Medium_NodePlacement, APlacementPastTheDeviceSetFailsTheRun)
+{
+    std::optional<sycl::queue> handed;
+    const sushi_ptr<Node> node = make_recording_node(handed);
+    node->metadata.name = "misplaced";
+    node->place_on(2);
+
+    EXPECT_EQ(dispatched_device(*node, handed), K_NO_DEVICE);
+    ASSERT_TRUE(scheduler_->run_failed());
+
+    const std::optional<SushiRuntime::Error> error = scheduler_->run_error();
+    ASSERT_TRUE(error.has_value());
+    const std::string& message = error->message;
+    EXPECT_EQ(error->code, SushiRuntime::ErrorCode::InvalidGraph) << message;
+    EXPECT_NE(message.find("node 'misplaced'"), std::string::npos) << message;
+    EXPECT_NE(message.find("device 2"), std::string::npos) << message;
+    EXPECT_NE(message.find("2 device(s)"), std::string::npos) << message;
+}
+
+/** @brief Runs a two-worker scheduler with an in-memory coordinator installed; see README.md. */
+class Medium_OffloadSeam : public TestSupport::RuntimeTest
+{
+    protected:
+        Medium_OffloadSeam()
+            : scheduler_(shared_hardware(1).make(WorkerPoolSettings{2, 0, PinPolicy::Float}))
         {
-            sushi_ptr<Node> node = make_sushi<Node>();
-            node->mode = Node::ExecutionMode::Host;
-            node->submits_device_work_ = false;
-            node->native_work = [] { throw std::runtime_error("offload seam test failure"); };
-            return node;
+            scheduler_->set_offload_coordinator(&coordinator_);
+            scheduler_->start();
+            scheduler_->arm_for_execution();
         }
-    } // namespace
 
-    /** @brief Runs a two-worker scheduler with a counting coordinator installed; see README.md. */
-    class Medium_OffloadSeam : public ::testing::Test
-    {
-        protected:
-            Medium_OffloadSeam()
-                : topology_(SingleNodeTopology(), std::make_shared<SingleNodeDistance>()),
-                  devices_(default_device(), false),
-                  memory_(devices_.plain_queues()),
-                  scheduler_(SushiRuntime::Internal::Scheduler::WorkerPoolSettings{
-                                 2, 0, SushiRuntime::PinPolicy::Float},
-                             topology_, devices_, memory_)
-            {
-                scheduler_.set_offload_coordinator(&coordinator_);
-                scheduler_.start();
-                scheduler_.arm_for_execution();
-            }
+        ~Medium_OffloadSeam() override
+        {
+            scheduler_->stop();
+        }
 
-            ~Medium_OffloadSeam() override
-            {
-                scheduler_.stop();
-            }
+        /** @brief Submits @p node and returns once the pool has reaped it. */
+        void run(Node& node)
+        {
+            scheduler_->submit(&node);
+            scheduler_->wait_quiescent();
+        }
 
-            /** @brief Submits @p node and returns once the pool has reaped it. */
-            void run(Node& node)
-            {
-                scheduler_.submit(&node);
-                scheduler_.wait_quiescent();
-            }
+        /** @brief Runs one offloadable node on a healthy run, which the coordinator is offered. */
+        void run_a_healthy_offer(std::atomic<int>& runs)
+        {
+            const sushi_ptr<Node> healthy = make_offloadable_node(runs);
+            run(*healthy);
+        }
 
-            /// @brief Declared before the scheduler, which keeps its address until stop().
-            CountingCoordinator coordinator_;
-            /// @brief One NUMA node and no core map.
-            SushiRuntime::Internal::Topology::TopologyView topology_;
-            /// @brief The default device's queues; the host nodes of these tests use none.
-            SushiRuntime::Internal::Device::DeviceQueueSet devices_;
-            /// @brief Allocator over the device set; no test allocates.
-            SushiRuntime::Internal::Memory::USMAllocator memory_;
-            /// @brief The scheduler under test, started and armed.
-            SushiRuntime::Internal::Scheduler::TaskScheduler scheduler_;
-    };
+        /** @brief Runs one counting node on a healthy run, which the coordinator is told of. */
+        void run_an_executed_node(std::atomic<int>& runs)
+        {
+            const sushi_ptr<Node> executed = make_counting_node(runs);
+            run(*executed);
+        }
 
-    /**
-     * @brief A cancelled or failed run offers no node to the coordinator.
-     */
-    TEST_F(Medium_OffloadSeam, AbortedRunOffersNoNode)
-    {
-        std::atomic<int> runs{0};
+        /// @brief Declared before the scheduler, which keeps its address until stop().
+        Internal::Graph::InMemoryOffloadCoordinator coordinator_;
+        /// @brief The scheduler under test, started and armed; the host nodes of these tests use no device.
+        std::unique_ptr<TaskScheduler> scheduler_;
+};
 
-        // The control proves the coordinator is offered a node when the run is healthy.
-        const sushi_ptr<Node> healthy = make_offloadable_node(runs);
-        run(*healthy);
-        ASSERT_EQ(coordinator_.offers(), 1u);
-        ASSERT_EQ(runs.load(), 1);
+/** @brief Tests that a healthy run offers an offloadable node to the coordinator. */
+TEST_F(Medium_OffloadSeam, AHealthyRunOffersAnOffloadableNode)
+{
+    std::atomic<int> runs{0};
 
-        const sushi_ptr<Node> cancelled = make_offloadable_node(runs);
-        scheduler_.request_cancellation();
-        run(*cancelled);
-        scheduler_.reset_cancellation();
-        EXPECT_EQ(coordinator_.offers(), 1u) << "a cancelled run offered a node";
-        EXPECT_EQ(runs.load(), 1) << "a cancelled run executed a node";
+    run_a_healthy_offer(runs);
 
-        const sushi_ptr<Node> thrower = make_throwing_node();
-        run(*thrower);
-        ASSERT_TRUE(scheduler_.run_failed());
+    EXPECT_EQ(coordinator_.offered().size(), 1u);
+    EXPECT_EQ(runs.load(), 1);
+}
 
-        const sushi_ptr<Node> after_failure = make_offloadable_node(runs);
-        run(*after_failure);
-        EXPECT_EQ(coordinator_.offers(), 1u) << "a failed run offered a node";
-        EXPECT_EQ(runs.load(), 1) << "a failed run executed a node";
-    }
+/** @brief Tests that a cancelled run offers no node to the coordinator. */
+TEST_F(Medium_OffloadSeam, ACancelledRunOffersNoNode)
+{
+    std::atomic<int> runs{0};
+    run_a_healthy_offer(runs);
+    ASSERT_EQ(coordinator_.offered().size(), 1u) << "the control: a healthy run offers";
+    const sushi_ptr<Node> cancelled = make_offloadable_node(runs);
+    scheduler_->request_cancellation();
 
-    /**
-     * @brief A node the scheduler releases without running is not reported as completed.
-     */
-    TEST_F(Medium_OffloadSeam, SkippedNodeNotReportedAsCompleted)
-    {
-        std::atomic<int> runs{0};
+    run(*cancelled);
+    scheduler_->reset_cancellation();
 
-        // The control proves an executed node is reported, offloadable or not.
-        const sushi_ptr<Node> executed = make_counting_node(runs);
-        run(*executed);
-        ASSERT_EQ(coordinator_.completions(), 1u);
-        ASSERT_EQ(runs.load(), 1);
+    EXPECT_EQ(coordinator_.offered().size(), 1u) << "a cancelled run offered a node";
+    EXPECT_EQ(runs.load(), 1) << "a cancelled run executed a node";
+}
 
-        const sushi_ptr<Node> cancelled = make_counting_node(runs);
-        scheduler_.request_cancellation();
-        run(*cancelled);
-        scheduler_.reset_cancellation();
-        EXPECT_EQ(coordinator_.completions(), 1u) << "a node skipped by a cancelled run was reported";
+/** @brief Tests that a failed run offers no node to the coordinator. */
+TEST_F(Medium_OffloadSeam, AFailedRunOffersNoNode)
+{
+    std::atomic<int> runs{0};
+    run_a_healthy_offer(runs);
+    ASSERT_EQ(coordinator_.offered().size(), 1u) << "the control: a healthy run offers";
+    const sushi_ptr<Node> thrower = make_throwing_node();
+    run(*thrower);
+    ASSERT_TRUE(scheduler_->run_failed());
+    const sushi_ptr<Node> after_failure = make_offloadable_node(runs);
 
-        const sushi_ptr<Node> disabled = make_counting_node(runs);
-        disabled->bindings_ = std::make_shared<SushiRuntime::Internal::Graph::LateBindings>();
-        disabled->bindings_->enabled.store(false, std::memory_order_relaxed);
-        run(*disabled);
-        EXPECT_EQ(coordinator_.completions(), 1u) << "a node disabled for the step was reported";
+    run(*after_failure);
 
-        EXPECT_EQ(runs.load(), 1);
+    EXPECT_EQ(coordinator_.offered().size(), 1u) << "a failed run offered a node";
+    EXPECT_EQ(runs.load(), 1) << "a failed run executed a node";
+}
 
-        const sushi_ptr<Node> thrower = make_throwing_node();
-        run(*thrower);
-        ASSERT_TRUE(scheduler_.run_failed());
-        EXPECT_EQ(coordinator_.completions(), 1u) << "a node whose work threw was reported";
-    }
+/** @brief Tests that a node a cancelled run skipped is not reported as completed. */
+TEST_F(Medium_OffloadSeam, ANodeSkippedByACancelledRunIsNotReportedAsCompleted)
+{
+    std::atomic<int> runs{0};
+    run_an_executed_node(runs);
+    ASSERT_EQ(coordinator_.local_completions().size(), 1u) << "the control: an executed node is reported";
+    const sushi_ptr<Node> cancelled = make_counting_node(runs);
+    scheduler_->request_cancellation();
 
-    /**
-     * @brief The scheduler counts the offers a coordinator took, and no offer it declined.
-     */
-    TEST_F(Medium_OffloadSeam, OnlyAcceptedOffersAreCounted)
-    {
-        std::atomic<int> runs{0};
-        ASSERT_EQ(scheduler_.offloaded_task_count(), 0u);
+    run(*cancelled);
+    scheduler_->reset_cancellation();
 
-        const sushi_ptr<Node> declined = make_offloadable_node(runs);
-        run(*declined);
-        EXPECT_EQ(coordinator_.offers(), 1u);
-        EXPECT_EQ(scheduler_.offloaded_task_count(), 0u) << "a declined offer was counted";
-        EXPECT_EQ(runs.load(), 1);
+    EXPECT_EQ(coordinator_.local_completions().size(), 1u) << "a node skipped by a cancelled run was reported";
+    EXPECT_EQ(runs.load(), 1);
+}
 
-        coordinator_.set_accepting(true);
-        const sushi_ptr<Node> accepted = make_offloadable_node(runs);
-        run(*accepted);
-        coordinator_.set_accepting(false);
-        ASSERT_EQ(coordinator_.held(), accepted.get());
-        EXPECT_EQ(scheduler_.offloaded_task_count(), 1u);
-        EXPECT_EQ(runs.load(), 1) << "the pool ran a node the coordinator took";
+/** @brief Tests that a node disabled for the step is not reported as completed. */
+TEST_F(Medium_OffloadSeam, ADisabledNodeIsNotReportedAsCompleted)
+{
+    std::atomic<int> runs{0};
+    run_an_executed_node(runs);
+    ASSERT_EQ(coordinator_.local_completions().size(), 1u) << "the control: an executed node is reported";
+    const sushi_ptr<Node> disabled = make_counting_node(runs);
+    disabled->bindings_ = std::make_shared<SushiRuntime::Internal::Graph::LateBindings>();
+    disabled->bindings_->enabled.store(false, std::memory_order_relaxed);
 
-        // The coordinator's reference goes back the way a finished remote node returns.
-        scheduler_.complete_remote(*accepted);
-        EXPECT_EQ(scheduler_.offloaded_task_count(), 1u);
-    }
-} // namespace OffloadSeamTests
+    run(*disabled);
 
-/** @brief Tests the scheduler for exact task execution, priority bypass and a clean stop. */
+    EXPECT_EQ(coordinator_.local_completions().size(), 1u) << "a node disabled for the step was reported";
+    EXPECT_EQ(runs.load(), 1);
+}
+
+/** @brief Tests that a node whose work threw is not reported as completed. */
+TEST_F(Medium_OffloadSeam, ANodeWhoseWorkThrewIsNotReportedAsCompleted)
+{
+    std::atomic<int> runs{0};
+    run_an_executed_node(runs);
+    ASSERT_EQ(coordinator_.local_completions().size(), 1u) << "the control: an executed node is reported";
+    const sushi_ptr<Node> thrower = make_throwing_node();
+
+    run(*thrower);
+
+    ASSERT_TRUE(scheduler_->run_failed());
+    EXPECT_EQ(coordinator_.local_completions().size(), 1u) << "a node whose work threw was reported";
+}
+
+/** @brief Tests that an offer the coordinator declined is not counted as offloaded. */
+TEST_F(Medium_OffloadSeam, ADeclinedOfferIsNotCounted)
+{
+    std::atomic<int> runs{0};
+    ASSERT_EQ(scheduler_->offloaded_task_count(), 0u);
+    const sushi_ptr<Node> declined = make_offloadable_node(runs);
+
+    run(*declined);
+
+    EXPECT_EQ(coordinator_.offered().size(), 1u);
+    EXPECT_EQ(scheduler_->offloaded_task_count(), 0u) << "a declined offer was counted";
+    EXPECT_EQ(runs.load(), 1);
+}
+
+/** @brief Tests that an offer the coordinator took is counted as offloaded and not run by the pool. */
+TEST_F(Medium_OffloadSeam, AnAcceptedOfferIsCounted)
+{
+    std::atomic<int> runs{0};
+    coordinator_.set_accepting(true);
+    const sushi_ptr<Node> accepted = make_offloadable_node(runs);
+
+    run(*accepted);
+
+    ASSERT_EQ(coordinator_.accepted().size(), 1u);
+    EXPECT_EQ(coordinator_.accepted()[0], accepted.get());
+    EXPECT_EQ(scheduler_->offloaded_task_count(), 1u);
+    EXPECT_EQ(runs.load(), 0) << "the pool ran a node the coordinator took";
+    // The coordinator's reference goes back the way a finished remote node returns.
+    scheduler_->complete_remote(*accepted);
+}
+
+/** @brief Tests that a node the coordinator finished remotely stays counted as offloaded. */
+TEST_F(Medium_OffloadSeam, ACompletedRemoteNodeStaysCounted)
+{
+    std::atomic<int> runs{0};
+    coordinator_.set_accepting(true);
+    const sushi_ptr<Node> accepted = make_offloadable_node(runs);
+    run(*accepted);
+
+    scheduler_->complete_remote(*accepted);
+
+    EXPECT_EQ(scheduler_->offloaded_task_count(), 1u);
+}
+
+/** @brief Tests that the scheduler runs exactly the tasks submitted. */
+TEST(Medium_SchedulerIntegration, ExecutesExactlySubmitted)
+{
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    Internal::Execution::RuntimeContext& ctx = *ctx_owner;
+    TaskScheduler scheduler = SushiRuntime::Test::make_scheduler(ctx);
+    std::atomic<size_t> executed{0};
+    constexpr size_t TOTAL = 2000;
+    scheduler.start();
+    scheduler.arm_for_execution();
+
+    submit_counters(scheduler, executed, TOTAL);
+    scheduler.wait_quiescent();
+    scheduler.stop();
+
+    EXPECT_EQ(executed.load(), TOTAL);
+}
+
+/** @brief Tests that stop right after submit drains every submitted task, without deadlock. */
+TEST(Medium_TaskScheduler, AbruptStopDrains)
+{
+    const auto ctx_owner = SushiRuntime::Test::make_context();
+    Internal::Execution::RuntimeContext& ctx = *ctx_owner;
+    TaskScheduler scheduler = SushiRuntime::Test::make_scheduler(ctx);
+    std::atomic<size_t> executed{0};
+    constexpr size_t TOTAL = 1000;
+    scheduler.start();
+    scheduler.arm_for_execution();
+    submit_counters(scheduler, executed, TOTAL);
+
+    scheduler.stop();
+
+    EXPECT_EQ(executed.load(), TOTAL) << "stop() dropped a submitted task";
+}
+
+/** @brief Tests that a worker count of 0 asks for one worker per logical core. */
+TEST(Medium_TaskScheduler, AWorkerCountOfZeroAsksForOneWorkerPerLogicalCore)
+{
+    const std::unique_ptr<Hardware> hardware = hardware_without_devices({}, 1);
+    const std::size_t cores = std::max<std::size_t>(std::thread::hardware_concurrency(), 1);
+
+    const auto scheduler = hardware->make(WorkerPoolSettings{0, 0, PinPolicy::Float});
+
+    EXPECT_EQ(scheduler->worker_count(), std::min(cores, K_MAX_WORKER_THREADS));
+}
+
+/** @brief Tests that, on a topology split over two NUMA nodes, same-node steal victims precede remote ones. */
+TEST(Small_NumaStealTest, LocalVictimsPrecedeRemote)
+{
+    constexpr int NODES = 2;
+    const std::vector<int> core_to_numa = cores_alternating_over(K_MAX_WORKER_THREADS, NODES);
+    const std::unique_ptr<Hardware> hardware = hardware_without_devices(core_to_numa, NODES);
+
+    // Construction only: the workers are not started.
+    const auto scheduler = hardware->make(WorkerPoolSettings{0, 0, PinPolicy::Pin});
+
+    EXPECT_TRUE(locality_violations(*scheduler, core_to_numa).empty());
+}
+
+/** @brief Tests that a flat topology gives each worker every other worker as a steal victim, once. */
+TEST(Small_NumaStealTest, FlatTopologyKeepsAllVictims)
+{
+    const std::unique_ptr<Hardware> hardware = hardware_without_devices({}, 1);
+
+    const auto scheduler = hardware->make(WorkerPoolSettings{4, 0, PinPolicy::Float});
+
+    const std::vector<std::vector<int>> expected{{1, 2, 3}, {0, 2, 3}, {0, 1, 3}, {0, 1, 2}};
+    EXPECT_EQ(sorted_victims_of_every_worker(*scheduler), expected);
+}
+
+/** @brief Tests that a request past the largest pool is cut to it. */
+TEST(Small_TaskScheduler, ARequestPastTheLargestPoolIsCutToIt)
+{
+    const std::unique_ptr<Hardware> hardware = hardware_without_devices({}, 1);
+
+    const auto scheduler = hardware->make(WorkerPoolSettings{K_MAX_WORKER_THREADS + 5, 0, PinPolicy::Float});
+
+    EXPECT_EQ(scheduler->worker_count(), K_MAX_WORKER_THREADS);
+}
+
+/** @brief Tests that a cut request is logged at Warn, naming the requested count and the maximum. */
+TEST(Small_TaskScheduler, ACutRequestIsLoggedAtWarnNamingBothCounts)
+{
+    TestRunner::LogCapture capture;
+    const std::unique_ptr<Hardware> hardware = hardware_without_devices({}, 1);
+
+    const auto scheduler = hardware->make(WorkerPoolSettings{K_MAX_WORKER_THREADS + 5, 0, PinPolicy::Float});
+
+    const auto records = capture.records();
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_EQ(records[0].level, SushiLog::LogLevel::Warn);
+    EXPECT_EQ(records[0].module, "scheduler");
+    EXPECT_NE(records[0].message.find(std::to_string(K_MAX_WORKER_THREADS + 5)), std::string::npos)
+        << "the line names the requested count: " << records[0].message;
+    EXPECT_NE(records[0].message.find(std::to_string(K_MAX_WORKER_THREADS)), std::string::npos)
+        << "and the maximum: " << records[0].message;
+}
+
+/** @brief Tests that a request inside the limits logs no warning about the count. */
+TEST(Small_TaskScheduler, AWorkerCountInsideTheLimitsLogsNoWarning)
+{
+    TestRunner::LogCapture capture;
+    const std::unique_ptr<Hardware> hardware = hardware_without_devices({}, 1);
+
+    const auto scheduler = hardware->make(WorkerPoolSettings{2, 0, PinPolicy::Float});
+
+    EXPECT_EQ(scheduler->worker_count(), 2u);
+    EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Warn), 0u);
+}
+
+/** @brief Tests that a pinned worker whose core the topology does not list is mapped to NUMA node 0, and says so. */
+TEST(Small_TaskScheduler, APinnedWorkerWhoseCoreHasNoNumaNodeIsLogged)
+{
+    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Debug);
+    const std::unique_ptr<Hardware> hardware = hardware_without_devices({}, 1);
+
+    const auto scheduler = hardware->make(WorkerPoolSettings{2, 0, PinPolicy::Pin});
+
+    // The pool clamps a pinned range on a machine with fewer cores, so the lines follow the workers it kept.
+    EXPECT_EQ(count_lines(capture, SushiLog::LogLevel::Debug, "scheduler", "NUMA node 0"), scheduler->worker_count())
+        << "one line per pinned worker the core map does not cover";
+}
+
+/** @brief Tests that a floating pool has no core to map and logs no such line. */
+TEST(Small_TaskScheduler, AFloatingPoolLogsNoCoreMapLine)
+{
+    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Debug);
+    const std::unique_ptr<Hardware> hardware = hardware_without_devices({}, 1);
+
+    const auto scheduler = hardware->make(WorkerPoolSettings{2, 0, PinPolicy::Float});
+
+    ASSERT_TRUE(capture.has_message(SushiLog::LogLevel::Info, "unpinned workers")) << "the sink saw the constructor";
+    EXPECT_EQ(count_lines(capture, SushiLog::LogLevel::Debug, "scheduler", "NUMA node 0"), 0u);
+}
+
+/** @brief Tests that a cancelled run logs one INFO that names the number of tasks it skipped. */
+TEST(Medium_TaskSchedulerCancel, LogsTheTasksASkippedRunLeftUnrun)
+{
+    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
+    const auto scheduler = shared_hardware(1).make(WorkerPoolSettings{2, 0, PinPolicy::Float});
+    scheduler->start();
+    scheduler->arm_for_execution();
+    scheduler->request_cancellation();
+    std::atomic<int> ran{0};
+    const std::vector<sushi_ptr<Node>> nodes = counting_nodes(ran, 5);
+
+    submit_all(*scheduler, nodes);
+    scheduler->wait_quiescent();
+    scheduler->disarm();
+    scheduler->stop();
+
+    EXPECT_EQ(ran.load(), 0) << "a cancelled run executes no task";
+    EXPECT_EQ(count_lines(capture, SushiLog::LogLevel::Info, "scheduler", "5 tasks were skipped"), 1u)
+        << "exactly one line names how many tasks the cancel left unrun";
+}
+
+/** @brief Tests that a run nobody cancelled logs no skip line. */
+TEST(Medium_TaskSchedulerCancel, ARunNobodyCancelledLogsNoSkipLine)
+{
+    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
+    const auto scheduler = shared_hardware(1).make(WorkerPoolSettings{2, 0, PinPolicy::Float});
+    scheduler->start();
+    scheduler->arm_for_execution();
+    std::atomic<int> ran{0};
+    const std::vector<sushi_ptr<Node>> nodes = counting_nodes(ran, 1);
+
+    submit_all(*scheduler, nodes);
+    scheduler->wait_quiescent();
+    scheduler->disarm();
+    scheduler->stop();
+
+    EXPECT_EQ(ran.load(), 1);
+    ASSERT_TRUE(capture.has_message(SushiLog::LogLevel::Info, "unpinned workers")) << "the sink saw the pool";
+    EXPECT_EQ(count_lines(capture, SushiLog::LogLevel::Info, "scheduler", "were skipped"), 0u);
+}
+
+/** @brief Tests the scheduler for priority bypass. */
 namespace SchedulerIntegrationTests
 {
     using namespace SushiRuntime::Internal::Execution;
     using namespace SushiRuntime::Internal::Scheduler;
     using SushiRuntime::Test::make_scheduler;
-    using SushiRuntime::Test::AtomicCounterTask;
     using SushiRuntime::Test::PriorityTrackingTask;
-
-    namespace
-    {
-        /**
-         * @brief Blocks until value hits target, or fails past the budget.
-         * @param value The atomic value to wait for.
-         * @param target The target value.
-         * @param budget The maximum duration to wait.
-         * @return True if the target was reached, false if it timed out.
-         */
-        bool wait_for(const std::atomic<size_t>& value, size_t target,
-                      std::chrono::seconds budget)
-        {
-            auto deadline = std::chrono::steady_clock::now() + budget;
-            while (value.load(std::memory_order_acquire) < target)
-            {
-                if (std::chrono::steady_clock::now() > deadline)
-                    return false;
-                std::this_thread::sleep_for(std::chrono::milliseconds(2));
-            }
-            return true;
-        }
-    }
-
-    /**
-     * @brief Tests that a modest batch of host tasks runs exactly once.
-     *
-     * Verifies that the scheduler properly executes all submitted tasks.
-     */
-    TEST(Medium_SchedulerIntegration, ExecutesExactlySubmitted)
-    {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        TaskScheduler scheduler = make_scheduler(ctx);
-
-        std::atomic<size_t> executed{0};
-        constexpr size_t TOTAL = 2000;
-
-        scheduler.start();
-        scheduler.arm_for_execution();
-
-        for (size_t i = 0; i < TOTAL; ++i)
-            scheduler.submit(new AtomicCounterTask(executed));
-
-        ASSERT_TRUE(wait_for(executed, TOTAL, std::chrono::seconds(10)))
-            << "Scheduler did not drain a 2000-task batch in time.";
-
-        scheduler.stop();
-        EXPECT_EQ(executed.load(), TOTAL);
-    }
 
     /**
      * @brief Tests that a late high-priority task bypasses lower priority tasks.
@@ -690,344 +868,4 @@ namespace SchedulerIntegrationTests
 
         EXPECT_TRUE(found_high_early) << "High priority task missed the first batch.";
     }
-
-    /**
-     * @brief Tests that a single lifecycle round shuts down cleanly.
-     *
-     * Verifies that a clean arm -> submit -> stop round with no inflight work exits without hanging.
-     */
-    TEST(Medium_SchedulerIntegration, CleanLifecycleRound)
-    {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        TaskScheduler scheduler = make_scheduler(ctx);
-
-        std::atomic<size_t> executed{0};
-
-        scheduler.start();
-        scheduler.arm_for_execution();
-        for (int i = 0; i < 100; ++i)
-            scheduler.submit(new AtomicCounterTask(executed));
-
-        ASSERT_TRUE(wait_for(executed, 100, std::chrono::seconds(5)));
-        EXPECT_NO_THROW({ scheduler.stop(); });
-        EXPECT_EQ(executed.load(), 100u);
-    }
 } // namespace SchedulerIntegrationTests
-
-/** @brief Tests that node-local steal victims precede remote ones under a synthetic NUMA topology. */
-namespace NUMAStealTests
-{
-    using namespace SushiRuntime::Internal::Execution;
-    using namespace SushiRuntime::Internal::Scheduler;
-    using SushiRuntime::Test::make_scheduler;
-    using namespace SushiRuntime::Internal::Topology;
-
-    namespace
-    {
-        /**
-         * @brief Creates a synthetic RuntimeContext split into `nodes` NUMA nodes.
-         *
-         * Generates a context with a symmetric distance matrix mapping core i -> i % nodes.
-         *
-         * @param nodes The number of synthetic NUMA nodes.
-         * @return A shared pointer to the created RuntimeContext.
-         */
-        std::shared_ptr<RuntimeContext> make_synthetic_ctx(int nodes)
-        {
-            auto provider = std::make_shared<RemappingTopologyProvider>(
-                std::make_shared<HwlocTopologyProvider>(), nodes);
-
-            std::vector<std::vector<int>> matrix(nodes, std::vector<int>(nodes, 21));
-            for (int i = 0; i < nodes; ++i)
-                matrix[i][i] = 10;
-            auto distance = std::make_shared<MatrixDistanceModel>(std::move(matrix));
-
-            return SushiRuntime::Test::make_context({}, provider, distance);
-        }
-    }
-
-    /**
-     * @brief Tests that node-local victims precede remote ones in the steal order.
-     *
-     * With cores split across nodes, every worker's steal order must list all
-     * same-node victims before any cross-node victim.
-     */
-    TEST(Medium_NumaStealTest, LocalVictimsPrecedeRemote)
-    {
-        constexpr int NODES = 2;
-        auto ctx = make_synthetic_ctx(NODES);
-
-        TaskScheduler sched = make_scheduler(*ctx); // construction only — workers are not started.
-
-        const int workers = static_cast<int>(sched.worker_count());
-        if (workers < 2)
-            GTEST_SKIP() << "Need at least 2 worker threads to exercise stealing order.";
-
-        for (int th = 0; th < workers; ++th)
-        {
-            const int my_node = th % NODES;
-            const std::vector<int> order = sched.steal_victim_order(th);
-
-            // The worker steals from everyone except itself.
-            ASSERT_EQ(order.size(), static_cast<size_t>(workers - 1))
-                << "Victim list for worker " << th << " has wrong size.";
-
-            // Once the first remote victim appears, no local victim may follow.
-            bool seen_remote = false;
-            for (int victim : order)
-            {
-                const bool is_local = (victim % NODES) == my_node;
-                if (!is_local)
-                    seen_remote = true;
-                else
-                    EXPECT_FALSE(seen_remote)
-                        << "Worker " << th << ": local victim " << victim
-                        << " appears after a remote victim — locality violated.";
-            }
-        }
-    }
-
-    /**
-     * @brief Tests that a flat topology keeps all victims in the steal order.
-     *
-     * The default (real) topology collapses to one node here; the steal order
-     * must still contain every other worker.
-     */
-    TEST(Medium_NumaStealTest, FlatTopologyKeepsAllVictims)
-    {
-        const auto ctx_owner = SushiRuntime::Test::make_context();
-        RuntimeContext& ctx = *ctx_owner;
-        TaskScheduler sched = make_scheduler(ctx);
-
-        const int workers = static_cast<int>(sched.worker_count());
-        if (workers < 2)
-            GTEST_SKIP() << "Need at least 2 worker threads.";
-
-        const std::vector<int> order = sched.steal_victim_order(0);
-        EXPECT_EQ(order.size(), static_cast<size_t>(workers - 1));
-
-        // No self, no duplicates, all in range.
-        std::vector<bool> seen(workers, false);
-        for (int v : order)
-        {
-            ASSERT_GE(v, 0);
-            ASSERT_LT(v, workers);
-            EXPECT_NE(v, 0) << "Worker 0 must not be its own steal victim.";
-            EXPECT_FALSE(seen[v]) << "Duplicate victim " << v;
-            seen[v] = true;
-        }
-    }
-} // namespace NUMAStealTests
-
-/**
- * @brief Tests that stop() right after submit drains cleanly.
- *
- * Prevents deadlocks or leaked threads when stopping the scheduler immediately
- * after queuing tasks.
- */
-TEST(Medium_TaskScheduler, AbruptStopDrains)
-{
-    const auto ctx_owner = SushiRuntime::Test::make_context();
-    SushiRuntime::Internal::Execution::RuntimeContext& ctx = *ctx_owner;
-    SushiRuntime::Internal::Scheduler::TaskScheduler scheduler =
-        SushiRuntime::Test::make_scheduler(ctx);
-    std::atomic<size_t> executed{0};
-
-    scheduler.start();
-    scheduler.arm_for_execution();
-
-    for (int i = 0; i < 1000; ++i)
-        scheduler.submit(new SushiRuntime::Test::AtomicCounterTask(executed));
-
-    EXPECT_NO_THROW({ scheduler.stop(); })
-        << "Abrupt stop() must drain without deadlock or throw.";
-}
-
-using namespace SushiRuntime;
-using SushiRuntime::Internal::Graph::Node;
-using SushiRuntime::Internal::Scheduler::TaskScheduler;
-using SushiRuntime::Internal::Scheduler::WorkerPoolSettings;
-
-namespace
-{
-    /** @brief Describes a machine with no core map, so no core has a NUMA node. */
-    class NoCoreMapTopology final : public Internal::Topology::TopologyProvider
-    {
-        public:
-            Result<std::vector<Internal::Topology::HardwareNode>> enumerate(const DeviceFilter&) override
-            {
-                return std::vector<Internal::Topology::HardwareNode>{};
-            }
-    };
-
-    /** @brief Reports one NUMA node at the local distance. */
-    class OneNodeDistance final : public Internal::Topology::NUMADistanceModel
-    {
-        public:
-            int distance(int, int) const override { return 10; }
-            int node_count() const override { return 1; }
-    };
-
-    /** @brief Returns one entry over the device SYCL selects by default. */
-    std::vector<Internal::Device::DeviceDescriptor> one_entry()
-    {
-        Internal::Device::DeviceDescriptor descriptor;
-        descriptor.device = sycl::device{sycl::default_selector_v};
-        descriptor.info.name = "default";
-        descriptor.info.backend = descriptor.device.get_backend();
-        descriptor.info.numa_node = 0;
-        return {descriptor};
-    }
-
-    /** @brief Owns what a scheduler is built on: a topology, one device entry and an allocator. */
-    class SchedulerParts
-    {
-        public:
-            SchedulerParts()
-                : topology_(NoCoreMapTopology(), std::make_shared<OneNodeDistance>()),
-                  devices_(one_entry(), false), memory_(devices_.plain_queues())
-            {
-            }
-
-            /** @brief Builds a scheduler of @p settings over the parts, without starting it. */
-            std::unique_ptr<TaskScheduler> make(const WorkerPoolSettings& settings)
-            {
-                return std::make_unique<TaskScheduler>(settings, topology_, devices_, memory_);
-            }
-
-        private:
-            Internal::Topology::TopologyView topology_; /**< One NUMA node and no core map. */
-            Internal::Device::DeviceQueueSet devices_;  /**< One entry on the default device. */
-            Internal::Memory::USMAllocator memory_;     /**< Allocator over the entry. */
-    };
-
-    /** @brief Builds a host node that counts how often its work runs. */
-    sushi_ptr<Node> counting_node(std::atomic<int>& ran)
-    {
-        sushi_ptr<Node> node = make_sushi<Node>();
-        node->mode = Node::ExecutionMode::Host;
-        node->host_work = [&ran](sycl::queue&, const std::vector<sycl::event>&)
-        {
-            ran.fetch_add(1);
-            return sycl::event{};
-        };
-        return node;
-    }
-} // namespace
-
-/** @brief Tests that a request past the largest pool is cut to it, with a line saying so. */
-TEST(Medium_TaskScheduler, LogsAClampedWorkerCount)
-{
-    TestRunner::LogCapture capture;
-    SchedulerParts parts;
-
-    const auto scheduler = parts.make(WorkerPoolSettings{K_MAX_WORKER_THREADS + 5, 0, PinPolicy::Float});
-
-    EXPECT_EQ(scheduler->worker_count(), K_MAX_WORKER_THREADS);
-    const auto records = capture.records();
-    ASSERT_EQ(records.size(), 1u);
-    EXPECT_EQ(records[0].level, SushiLog::LogLevel::Warn);
-    EXPECT_EQ(records[0].module, "scheduler");
-    EXPECT_NE(records[0].message.find(std::to_string(K_MAX_WORKER_THREADS + 5)), std::string::npos)
-        << "the line names the requested count: " << records[0].message;
-    EXPECT_NE(records[0].message.find(std::to_string(K_MAX_WORKER_THREADS)), std::string::npos)
-        << "and the maximum: " << records[0].message;
-}
-
-/** @brief Tests that a request inside the limits logs nothing about the count. */
-TEST(Medium_TaskScheduler, AWorkerCountInsideTheLimitsLogsNoWarning)
-{
-    TestRunner::LogCapture capture;
-    SchedulerParts parts;
-
-    const auto scheduler = parts.make(WorkerPoolSettings{2, 0, PinPolicy::Float});
-
-    EXPECT_EQ(scheduler->worker_count(), 2u);
-    EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Warn), 0u);
-}
-
-/** @brief Tests that a pinned worker whose core the topology does not list is mapped to NUMA node 0, and says so. */
-TEST(Medium_TaskScheduler, LogsAWorkerWhoseCoreHasNoNumaNode)
-{
-    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Debug);
-    SchedulerParts parts;
-
-    const auto scheduler = parts.make(WorkerPoolSettings{2, 0, PinPolicy::Pin});
-
-    ASSERT_EQ(scheduler->worker_count(), 2u);
-    std::size_t lines = 0;
-    for (const TestRunner::CapturedRecord& record : capture.records())
-    {
-        if (record.level == SushiLog::LogLevel::Debug && record.module == "scheduler" &&
-            record.message.find("NUMA node 0") != std::string::npos)
-            ++lines;
-    }
-    EXPECT_EQ(lines, 2u) << "one line per pinned worker the core map does not cover";
-}
-
-/** @brief Tests that a floating pool has no core to map and logs no such line. */
-TEST(Medium_TaskScheduler, AFloatingPoolLogsNoCoreMapLine)
-{
-    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Debug);
-    SchedulerParts parts;
-
-    const auto scheduler = parts.make(WorkerPoolSettings{2, 0, PinPolicy::Float});
-
-    for (const TestRunner::CapturedRecord& record : capture.records())
-        EXPECT_EQ(record.message.find("NUMA node 0"), std::string::npos) << record.message;
-}
-
-/** @brief Tests that a cancelled run logs one INFO with the number of tasks it skipped. */
-TEST(Medium_TaskSchedulerCancel, LogsTheTasksASkippedRunLeftUnrun)
-{
-    SchedulerParts parts;
-    const auto scheduler = parts.make(WorkerPoolSettings{2, 0, PinPolicy::Float});
-    scheduler->start();
-    scheduler->arm_for_execution();
-    scheduler->request_cancellation();
-
-    std::atomic<int> ran{0};
-    std::vector<sushi_ptr<Node>> nodes;
-    for (int i = 0; i < 5; ++i)
-        nodes.push_back(counting_node(ran));
-
-    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
-    for (const sushi_ptr<Node>& node : nodes)
-        scheduler->submit(node.get());
-    scheduler->wait_quiescent();
-    scheduler->disarm();
-    scheduler->stop();
-
-    EXPECT_EQ(ran.load(), 0) << "a cancelled run executes no task";
-    bool logged = false;
-    for (const TestRunner::CapturedRecord& record : capture.records())
-    {
-        if (record.level == SushiLog::LogLevel::Info && record.module == "scheduler" &&
-            record.message.find("5 tasks were skipped") != std::string::npos)
-            logged = true;
-    }
-    EXPECT_TRUE(logged) << "the line names how many tasks the cancel left unrun";
-}
-
-/** @brief Tests that a run nobody cancelled logs no skip line. */
-TEST(Medium_TaskSchedulerCancel, ARunNobodyCancelledLogsNoSkipLine)
-{
-    SchedulerParts parts;
-    const auto scheduler = parts.make(WorkerPoolSettings{2, 0, PinPolicy::Float});
-    scheduler->start();
-    scheduler->arm_for_execution();
-
-    std::atomic<int> ran{0};
-    const sushi_ptr<Node> node = counting_node(ran);
-
-    TestRunner::LogCapture capture(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Info);
-    scheduler->submit(node.get());
-    scheduler->wait_quiescent();
-    scheduler->disarm();
-    scheduler->stop();
-
-    EXPECT_EQ(ran.load(), 1);
-    for (const TestRunner::CapturedRecord& record : capture.records())
-        EXPECT_EQ(record.message.find("were skipped"), std::string::npos) << record.message;
-}

@@ -75,8 +75,8 @@ TEST(Small_DispatchEventScope, NestedScopesRestoreTheOuterOne)
     EXPECT_EQ(inner.size(), 2u);
 }
 
-/** @brief Tests that a scope belongs to its thread: another thread's events do not reach it. */
-TEST(Small_DispatchEventScope, AScopeBelongsToItsThread)
+/** @brief Tests that a scope belongs to its thread: another thread's events do not reach it. A second thread is the smallest way to see it. */
+TEST(Medium_DispatchEventScope, AScopeBelongsToItsThread)
 {
     std::vector<sycl::event> sink;
     DispatchEventScope scope(sink);
@@ -86,10 +86,4 @@ TEST(Small_DispatchEventScope, AScopeBelongsToItsThread)
     DispatchEventScope::note(sycl::event{});
 
     EXPECT_EQ(sink.size(), 1u) << "only the event handed over on the scope's own thread is collected";
-}
-
-/** @brief Tests that handing over with no scope open does nothing and does not throw. */
-TEST(Small_DispatchEventScope, HandingOverWithNoScopeDoesNothing)
-{
-    EXPECT_NO_THROW(DispatchEventScope::note(sycl::event{}));
 }

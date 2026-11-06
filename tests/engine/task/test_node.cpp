@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -41,6 +42,40 @@
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
+
+namespace
+{
+    /** @brief Registers @p count new nodes as successors of @p source and returns them. */
+    std::vector<sushi_ptr<Node>> add_successors(Node& source, std::size_t count)
+    {
+        std::vector<sushi_ptr<Node>> targets;
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            targets.push_back(make_sushi<Node>());
+            source.add_successor(targets.back().get());
+        }
+        return targets;
+    }
+
+    /** @brief Returns the successors @p source visits, sorted by address. */
+    std::vector<Node*> visited_successors(const Node& source)
+    {
+        std::vector<Node*> seen;
+        source.for_each_successor([&seen](Node* successor) { seen.push_back(successor); });
+        std::sort(seen.begin(), seen.end());
+        return seen;
+    }
+
+    /** @brief Returns the addresses of @p nodes, sorted. */
+    std::vector<Node*> addresses_of(const std::vector<sushi_ptr<Node>>& nodes)
+    {
+        std::vector<Node*> addresses;
+        for (const sushi_ptr<Node>& node : nodes)
+            addresses.push_back(node.get());
+        std::sort(addresses.begin(), addresses.end());
+        return addresses;
+    }
+} // namespace
 
 /** @brief Tests that a successor becomes ready when its last predecessor completes. */
 TEST(Small_Node, ASuccessorIsReadyAfterItsLastPredecessor)
@@ -64,19 +99,10 @@ TEST(Small_Node, ASuccessorIsReadyAfterItsLastPredecessor)
 /** @brief Tests that successors past the inline capacity are kept and each visited once. */
 TEST(Small_Node, SuccessorsPastTheInlineCapacityAreKept)
 {
-    constexpr std::size_t K_SUCCESSORS = Node::K_MAX_INLINE_SUCCESSORS + 5;
     const sushi_ptr<Node> source = make_sushi<Node>();
-    std::vector<sushi_ptr<Node>> targets;
-    for (std::size_t index = 0; index < K_SUCCESSORS; ++index)
-    {
-        targets.push_back(make_sushi<Node>());
-        source->add_successor(targets.back().get());
-    }
-    std::vector<Node*> seen;
-    source->for_each_successor([&seen](Node* successor) { seen.push_back(successor); });
-    EXPECT_EQ(seen.size(), K_SUCCESSORS);
-    for (const sushi_ptr<Node>& target : targets)
-        EXPECT_EQ(std::count(seen.begin(), seen.end(), target.get()), 1) << "a successor was lost or doubled";
+    const std::vector<sushi_ptr<Node>> targets = add_successors(*source, Node::K_MAX_INLINE_SUCCESSORS + 5);
+
+    EXPECT_EQ(visited_successors(*source), addresses_of(targets)) << "a successor was lost or doubled";
 }
 
 /** @brief Tests arm_in_degree(): the intra and the boundary counts add up. */
@@ -89,20 +115,39 @@ TEST(Small_Node, ArmingAddsTheIntraAndBoundaryCounts)
     EXPECT_EQ(node.in_degree.load(), 5);
 }
 
-/** @brief Tests that placement is unstated until place_on(), and the offload state is made once. */
-TEST(Small_Node, PlacementAndOffloadStateStartEmpty)
+/** @brief Tests that placement is unstated until place_on(), and then holds the index last stated. */
+TEST(Small_Node, PlacementIsUnstatedUntilPlaceOn)
 {
     Node node;
     EXPECT_FALSE(node.stated_placement().has_value());
-    node.place_on(3);
-    ASSERT_TRUE(node.stated_placement().has_value());
-    EXPECT_EQ(*node.stated_placement(), 3u);
 
+    node.place_on(0);
+    EXPECT_EQ(node.stated_placement(), std::optional<std::size_t>(0));
+
+    node.place_on(3);
+    EXPECT_EQ(node.stated_placement(), std::optional<std::size_t>(3));
+}
+
+/** @brief Tests that the offload state is absent until asked for and then made once. */
+TEST(Small_Node, TheOffloadStateIsMadeOnceOnDemand)
+{
+    Node node;
     EXPECT_EQ(node.offload_state(), nullptr);
+
     OffloadState& state = node.offload();
+
     EXPECT_EQ(&node.offload(), &state);
-    node.set_live_io(std::make_shared<std::vector<void*>>(1, nullptr), nullptr);
-    EXPECT_EQ(node.offload_state()->live_reads->size(), 1u);
-    EXPECT_TRUE(node.is_graph_node());
-    EXPECT_FALSE(node.is_splittable());
+    EXPECT_EQ(node.offload_state(), &state);
+}
+
+/** @brief Tests that set_live_io() stores the lists the next dispatch reads. */
+TEST(Small_Node, SetLiveIoStoresTheListsOfTheNextDispatch)
+{
+    Node node;
+    const std::shared_ptr<std::vector<void*>> reads = std::make_shared<std::vector<void*>>(1, nullptr);
+
+    node.set_live_io(reads, nullptr);
+
+    EXPECT_EQ(node.offload_state()->live_reads, reads);
+    EXPECT_EQ(node.offload_state()->live_writes, nullptr);
 }

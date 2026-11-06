@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_late_bindings.cpp                                                 */
+/* compile_rebalancer_interfaces.cpp                                      */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -19,32 +19,12 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
-/**************************************************************************/
 
 /**
- * @file test_late_bindings.cpp
- * @brief Tests LateBindings: an enabled binding that uses the baked width and base 0.
- * @see tests/engine/task/README.md
+ * @file compile_rebalancer_interfaces.cpp
+ * @brief Compiles rebalancer_interfaces.hpp on its own, so the header carries every include it needs.
+ * @see tests/engine/scheduler/README.md
  * @author Mustafa Garip
  */
 
-#include <cstddef>
-
-#include <gtest/gtest.h>
-
-#include <SushiRuntime/task/late_bindings.hpp>
-
-using namespace SushiRuntime;
-using namespace SushiRuntime::Internal::Graph;
-
-/** @brief Tests the defaults of the bindings. */
-TEST(Small_LateBindings, DefaultsUseTheBakedWidth)
-{
-    const LateBindings bindings;
-    EXPECT_TRUE(bindings.enabled.load());
-    EXPECT_EQ(bindings.count.load(), LateBindings::K_USE_BAKED);
-    EXPECT_EQ(bindings.base.load(), 0u);
-    EXPECT_EQ(bindings.device_count, nullptr);
-    EXPECT_EQ(bindings.device_base, nullptr);
-    static_assert(LateBindings::K_USE_BAKED == ~std::size_t{0}, "the sentinel is the largest size");
-}
+#include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>

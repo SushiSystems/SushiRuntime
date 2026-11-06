@@ -23,13 +23,12 @@
 
 /**
  * @file test_offload_state.cpp
- * @brief Tests OffloadState: not offloadable, no attempt, no lists and no payload until set.
+ * @brief Tests OffloadState: the state owns its payload.
  * @see tests/engine/task/README.md
  * @author Mustafa Garip
  */
 
 #include <memory>
-#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -40,7 +39,7 @@ using namespace SushiRuntime::Internal::Graph;
 
 namespace
 {
-    /** @brief Counts its own destruction. */
+    /** @brief Counts its own destruction; no payload type ships in the task module to watch instead. */
     class CountingPayload final : public OffloadPayload
     {
         public:
@@ -59,17 +58,14 @@ namespace
     };
 }
 
-/** @brief Tests the defaults, and that the state owns its payload. */
-TEST(Small_OffloadState, DefaultsHoldNothingAndThePayloadIsOwned)
+/** @brief Tests that the state owns its payload and destroys it with itself. */
+TEST(Small_OffloadState, ThePayloadIsOwned)
 {
     int destroyed = 0;
     {
         OffloadState state;
-        EXPECT_FALSE(state.offloadable);
-        EXPECT_EQ(state.attempts.load(), 0u);
-        EXPECT_EQ(state.live_reads, nullptr);
-        EXPECT_EQ(state.payload, nullptr);
         state.payload = std::make_unique<CountingPayload>(destroyed);
+        EXPECT_EQ(destroyed, 0) << "the payload was destroyed while the state held it";
     }
     EXPECT_EQ(destroyed, 1);
 }

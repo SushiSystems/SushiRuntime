@@ -38,12 +38,16 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Scheduler;
 
-/** @brief Tests that an empty latch does not wait. */
-TEST(Medium_QuiescenceLatch, AnEmptyLatchDoesNotWait)
+/** @brief Tests that an empty latch's wait returns at once. */
+TEST(Small_QuiescenceLatch, AnEmptyLatchDoesNotWait)
 {
     QuiescenceLatch latch;
+    bool returned = false;
+
     latch.wait();
-    SUCCEED();
+    returned = true;
+
+    EXPECT_TRUE(returned);
 }
 
 /** @brief Tests that the waiter wakes only after the last of three units retires. */
@@ -54,13 +58,16 @@ TEST(Medium_QuiescenceLatch, TheWaiterWakesAfterTheLastRetire)
     std::atomic<int> retired{0};
     std::thread worker([&]
     {
-        for (int unit = 0; unit < 3; ++unit)
-        {
-            retired.fetch_add(1);
-            latch.retire();
-        }
+        retired.fetch_add(1);
+        latch.retire();
+        retired.fetch_add(1);
+        latch.retire();
+        retired.fetch_add(1);
+        latch.retire();
     });
+
     latch.wait();
+
     EXPECT_EQ(retired.load(), 3) << "the wait returned before every unit retired";
     worker.join();
 }

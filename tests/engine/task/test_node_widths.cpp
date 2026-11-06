@@ -42,28 +42,67 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
 
-/** @brief Tests that a node without bindings reports its baked width twice. */
-TEST(Small_NodeWidths, ABakedNodeReportsItsWidthTwice)
+namespace
+{
+    /** @brief Gives @p node the baked width 64 and late bindings that hold their defaults. */
+    void bake_with_default_bindings(Node& node)
+    {
+        node.baked_width = 64;
+        node.bindings_ = std::make_shared<LateBindings>();
+    }
+} // namespace
+
+/** @brief Tests that a node with a baked width and no bindings reports it as launched. */
+TEST(Small_NodeWidths, ABakedNodeReportsItsWidthAsLaunched)
 {
     Node node;
     node.baked_width = 64;
-    const NodeWidths widths = snapshot_widths(node);
-    EXPECT_EQ(widths.launched, 64u);
-    EXPECT_EQ(widths.live, 64u);
+
+    EXPECT_EQ(snapshot_widths(node).launched, 64u);
+}
+
+/** @brief Tests that a node with a baked width and no bindings reports it as live. */
+TEST(Small_NodeWidths, ABakedNodeReportsItsWidthAsLive)
+{
+    Node node;
+    node.baked_width = 64;
+
+    EXPECT_EQ(snapshot_widths(node).live, 64u);
+}
+
+/** @brief Tests that a node with no baked width reports an unknown width. */
+TEST(Small_NodeWidths, ANodeWithNoBakedWidthReportsUnknown)
+{
     EXPECT_EQ(snapshot_widths(Node()).launched, K_WIDTH_UNKNOWN);
 }
 
-/** @brief Tests that a late count sets the live width and leaves the launch alone. */
+/** @brief Tests that default bindings report the baked width as live. */
+TEST(Small_NodeWidths, DefaultBindingsReportTheBakedWidthAsLive)
+{
+    Node node;
+    bake_with_default_bindings(node);
+
+    EXPECT_EQ(snapshot_widths(node).live, 64u) << "the baked width was not used by default";
+}
+
+/** @brief Tests that a late count sets the live width. */
 TEST(Small_NodeWidths, ALateCountSetsTheLiveWidth)
 {
     Node node;
-    node.baked_width = 64;
-    node.bindings_ = std::make_shared<LateBindings>();
-    EXPECT_EQ(snapshot_widths(node).live, 64u) << "the baked width was not used by default";
+    bake_with_default_bindings(node);
     node.bindings_->count.store(24);
-    const NodeWidths widths = snapshot_widths(node);
-    EXPECT_EQ(widths.launched, 64u);
-    EXPECT_EQ(widths.live, 24u);
+
+    EXPECT_EQ(snapshot_widths(node).live, 24u);
+}
+
+/** @brief Tests that a late count leaves the launched width alone. */
+TEST(Small_NodeWidths, ALateCountLeavesTheLaunchedWidthAlone)
+{
+    Node node;
+    bake_with_default_bindings(node);
+    node.bindings_->count.store(24);
+
+    EXPECT_EQ(snapshot_widths(node).launched, 64u);
 }
 
 /** @brief Tests that a width beyond 32 bits is reported as unknown. */

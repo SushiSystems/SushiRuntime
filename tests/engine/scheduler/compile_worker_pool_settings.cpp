@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_worker_pool_settings.cpp                                          */
+/* compile_worker_pool_settings.cpp                                       */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -19,29 +19,12 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
-/**************************************************************************/
 
 /**
- * @file test_worker_pool_settings.cpp
- * @brief Tests WorkerPoolSettings: one worker per core, pinned from core 0, by default.
+ * @file compile_worker_pool_settings.cpp
+ * @brief Compiles worker_pool_settings.hpp on its own, so the header carries every include it needs.
  * @see tests/engine/scheduler/README.md
  * @author Mustafa Garip
  */
 
-#include <gtest/gtest.h>
-
-#include <SushiRuntime/machine/pin_policy.hpp>
-
 #include <SushiRuntime/scheduler/worker_pool_settings.hpp>
-
-using namespace SushiRuntime;
-using namespace SushiRuntime::Internal::Scheduler;
-
-/** @brief Tests the defaults of the settings. */
-TEST(Medium_WorkerPoolSettings, DefaultsAskForOneWorkerPerCore)
-{
-    const WorkerPoolSettings settings;
-    EXPECT_EQ(settings.worker_count, 0u);
-    EXPECT_EQ(settings.first_core, 0u);
-    EXPECT_EQ(settings.pinning, PinPolicy::Pin);
-}

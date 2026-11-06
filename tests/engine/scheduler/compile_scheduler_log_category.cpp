@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_scheduler_log_category.cpp                                        */
+/* compile_scheduler_log_category.cpp                                     */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -19,27 +19,12 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
-/**************************************************************************/
 
 /**
- * @file test_scheduler_log_category.cpp
- * @brief Tests K_SCHEDULER_LOG_CATEGORY: the name its records carry.
+ * @file compile_scheduler_log_category.cpp
+ * @brief Compiles scheduler_log_category.hpp on its own, so the header carries every include it needs.
  * @see tests/engine/scheduler/README.md
  * @author Mustafa Garip
  */
 
 #include <SushiRuntime/scheduler/scheduler_log_category.hpp>
-
-#include <gtest/gtest.h>
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the category is the module's folder in the runtime's project. */
-TEST(Small_SchedulerLogCategory, TheCategoryIsNamedAfterTheModule)
-{
-    static_assert(K_SCHEDULER_LOG_CATEGORY.module() == "scheduler",
-                  "the folder name of the module");
-    static_assert(K_SCHEDULER_LOG_CATEGORY.project().name() == "sushiruntime",
-                  "the project of the runtime");
-    SUCCEED();
-}

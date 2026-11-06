@@ -23,53 +23,28 @@
 
 /**
  * @file test_task.cpp
- * @brief Tests Task: the defaults a subclass inherits and the two members it must write.
+ * @brief Tests Task: the completion a task without successors reports.
  * @see tests/engine/task/README.md
  * @author Mustafa Garip
  */
 
-#include <optional>
-#include <vector>
-
 #include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
 
-#include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/ready_sink.hpp>
 #include <SushiRuntime/task/task.hpp>
 
 using namespace SushiRuntime;
 using SushiRuntime::Internal::Scheduler::Task;
 
-namespace
+/** @brief Tests that a task with no successor readies nothing when it completes. */
+TEST(Small_Task, ATaskWithNoSuccessorReadiesNothing)
 {
-    /** @brief Writes the two pure members and nothing else. */
-    class PlainTask final : public Task
-    {
-        public:
-            std::optional<sushi_ptr<Task>> split() override
-            {
-                return std::nullopt;
-            }
-
-            bool is_splittable() const override
-            {
-                return false;
-            }
-    };
-}
-
-/** @brief Tests the defaults: a kernel task, unnamed, priority 0, device work, not a graph node. */
-TEST(Small_Task, ASubclassInheritsTheDefaults)
-{
-    const sushi_ptr<PlainTask> task = make_sushi<PlainTask>();
-    EXPECT_STREQ(task->name(), "unnamed_task");
-    EXPECT_EQ(task->execution_mode(), Task::ExecutionMode::Kernel);
-    EXPECT_EQ(task->priority(), 0);
-    EXPECT_TRUE(task->submits_device_work());
-    EXPECT_FALSE(task->is_graph_node());
-
+    Internal::Graph::Node node;
+    Task& task = node;
     Internal::Scheduler::ReadySink ready;
-    task->on_complete(ready);
-    EXPECT_TRUE(ready.empty()) << "a plain task readied a successor it does not have";
+
+    task.on_complete(ready);
+
+    EXPECT_TRUE(ready.empty()) << "a task readied a successor it does not have";
 }

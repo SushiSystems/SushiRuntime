@@ -28,130 +28,87 @@
  * @author Mustafa Garip
  */
 
-#include <atomic>
+#include <cstddef>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
+#include <SushiRuntime/scheduler/in_memory_telemetry.hpp>
+#include <SushiRuntime/scheduler/recording_task_migrator.hpp>
 #include <SushiRuntime/scheduler/thermal_proxy_strategy.hpp>
 
 using namespace SushiRuntime::Internal::Scheduler;
 
 namespace
 {
-    /**
-     * @brief A stub telemetry provider for testing thermal rebalancing.
-     *
-     * Supplies preconfigured per-worker queue depths and cumulative completion rates to simulate various system states.
-     */
-    class FakeTelemetry : public TelemetryProvider
+    /** @brief Runs one evaluation of a fresh strategy over the given queue depths and completed totals. */
+    std::vector<MigrationRequest> migrations_for(std::vector<size_t> queues, std::vector<size_t> completed)
     {
-    public:
-        std::vector<size_t> queue;       // current queue depth per worker
-        std::vector<size_t> completed;   // cumulative completed tasks per worker
+        const InMemoryTelemetry telemetry(std::move(queues), std::move(completed));
+        RecordingTaskMigrator migrator;
+        ThermalProxyStrategy strategy;
 
-        size_t worker_count() const override         { return queue.size(); }
-        size_t queue_size(int w) const override       { return queue[static_cast<size_t>(w)]; }
-        size_t completed_task_count(int w) const override  { return completed[static_cast<size_t>(w)]; }
-    };
+        strategy.evaluate_and_rebalance(telemetry, migrator);
 
-    /**
-     * @brief A stub task migrator that records migration requests.
-     *
-     * Captures the source and task count of the most recent migration to verify rebalancer decisions.
-     */
-    class RecordingMigrator : public TaskMigrator
-    {
-    public:
-        std::atomic<int> calls{0};
-        int from = -1;
-        size_t count = 0;
+        return migrator.requests();
+    }
+} // namespace
 
-        void migrate_tasks(int f, size_t c) override
-        {
-            from  = f;
-            count = c;
-            calls.fetch_add(1, std::memory_order_relaxed);
-        }
-    };
-}
-
-/**
- * @brief Verifies that the strategy migrates tasks away from a throttled worker.
- *
- * Sets up a scenario where one worker is backed up but stalled, while another is idle, expecting half the imbalance to be migrated.
- */
+/** @brief Tests that a worker with a deep queue that completes at most 5 tasks is migrated half the gap to the shortest queue. */
 TEST(Small_ThermalRebalanceTest, RescuesThrottledWorker)
 {
-    FakeTelemetry telemetry;
-    telemetry.queue     = {100, 0};
-    telemetry.completed = {0,   0}; // worker 0 delta = 0 -> throttled
+    // Worker 0 completed 0 tasks since the last look, so it is throttled; its queue is 100 deep against 0.
+    const std::vector<MigrationRequest> requests = migrations_for({100, 0}, {0, 0});
 
-    RecordingMigrator migrator;
-    ThermalProxyStrategy strategy;
-
-    strategy.evaluate_and_rebalance(telemetry, migrator);
-
-    ASSERT_EQ(migrator.calls.load(), 1) << "A throttled, backed-up worker must trigger one migration.";
-    EXPECT_EQ(migrator.from, 0);
-    EXPECT_EQ(migrator.count, 50u) << "Should move half the (max-min) queue imbalance.";
+    ASSERT_EQ(requests.size(), 1u) << "A throttled, backed-up worker must trigger one migration.";
+    EXPECT_EQ(requests[0], (MigrationRequest{0, 50u})) << "Should move half the (max-min) queue imbalance.";
 }
 
-/**
- * @brief Verifies that a long but fast-draining queue is not mistaken for a throttled worker.
- *
- * Provides a high completion delta for a worker with a deep queue, ensuring the strategy does not trigger migration.
- */
+/** @brief Tests that a deep queue that drains faster than 5 tasks is not mistaken for a throttled worker. */
 TEST(Small_ThermalRebalanceTest, IgnoresFastWorkerWithLongQueue)
 {
-    FakeTelemetry telemetry;
-    telemetry.queue     = {100,  0};
-    telemetry.completed = {1000, 0}; // worker 0 delta = 1000 -> draining fast
-
-    RecordingMigrator migrator;
-    ThermalProxyStrategy strategy;
-
-    strategy.evaluate_and_rebalance(telemetry, migrator);
-
-    EXPECT_EQ(migrator.calls.load(), 0)
+    // Worker 0 completed 1000 tasks since the last look, so it is draining fast.
+    EXPECT_TRUE(migrations_for({100, 0}, {1000, 0}).empty())
         << "A fast-draining worker is not throttled; its long queue must not trigger migration.";
 }
 
-/**
- * @brief Verifies that balanced and shallow queues do not trigger unnecessary migrations.
- *
- * Simulates comparable queues well below the imbalance threshold, expecting zero migrations.
- */
+/** @brief Tests that balanced or shallow queues trigger no migration. */
 TEST(Small_ThermalRebalanceTest, NoMigrationWhenBalanced)
 {
-    FakeTelemetry telemetry;
-    telemetry.queue     = {5,  5};
-    telemetry.completed = {50, 60};
-
-    RecordingMigrator migrator;
-    ThermalProxyStrategy strategy;
-
-    strategy.evaluate_and_rebalance(telemetry, migrator);
-
-    EXPECT_EQ(migrator.calls.load(), 0) << "Balanced, shallow queues must not migrate.";
+    EXPECT_TRUE(migrations_for({5, 5}, {50, 60}).empty()) << "Balanced, shallow queues must not migrate.";
 }
 
-/**
- * @brief Verifies that a single-worker topology correctly acts as a no-op during rebalancing.
- *
- * Provides only one worker and ensures that no migrations are attempted.
- */
+/** @brief Tests that a single worker triggers no migration. */
 TEST(Small_ThermalRebalanceTest, SingleWorkerIsNoOp)
 {
-    FakeTelemetry telemetry;
-    telemetry.queue     = {1000};
-    telemetry.completed = {0};
+    EXPECT_TRUE(migrations_for({1000}, {0}).empty()) << "A single-worker topology has no migration target.";
+}
 
-    RecordingMigrator migrator;
+/** @brief Tests that a migration moves at least 10 tasks, even when half the gap is smaller. */
+TEST(Small_ThermalRebalanceTest, AMigrationMovesAtLeastTenTasks)
+{
+    // Queues of 25 and 20 are 5 apart, so half the gap is 2; the floor is 10.
+    const std::vector<MigrationRequest> requests = migrations_for({25, 20}, {0, 0});
+
+    ASSERT_EQ(requests.size(), 1u);
+    EXPECT_EQ(requests[0], (MigrationRequest{0, 10u}));
+}
+
+/** @brief Tests that the completion rate is the change since the previous evaluation, not the running total. */
+TEST(Small_ThermalRebalanceTest, TheCompletionRateIsTheChangeSinceThePreviousEvaluation)
+{
+    const InMemoryTelemetry first_look({100, 0}, {1000, 0});
+    const InMemoryTelemetry second_look({100, 0}, {1000, 0});
+    RecordingTaskMigrator migrator;
     ThermalProxyStrategy strategy;
 
-    strategy.evaluate_and_rebalance(telemetry, migrator);
+    // The first look sees 1000 completions since the start: draining fast.
+    strategy.evaluate_and_rebalance(first_look, migrator);
+    ASSERT_TRUE(migrator.requests().empty());
+    // The second look sees the same total, so nothing completed since the first.
+    strategy.evaluate_and_rebalance(second_look, migrator);
 
-    EXPECT_EQ(migrator.calls.load(), 0) << "A single-worker topology has no migration target.";
+    ASSERT_EQ(migrator.requests().size(), 1u);
+    EXPECT_EQ(migrator.requests()[0], (MigrationRequest{0, 50u}));
 }

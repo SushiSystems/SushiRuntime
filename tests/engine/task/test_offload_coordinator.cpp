@@ -23,20 +23,21 @@
 
 /**
  * @file test_offload_coordinator.cpp
- * @brief Tests the OffloadCoordinator contract through a recording implementation.
+ * @brief Tests the OffloadCoordinator contract through its in-memory implementation.
  * @see tests/engine/task/README.md
  * @author Mustafa Garip
  */
 
-#include <cstddef>
-#include <string>
+#include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/placement/placement_rules.hpp>
+#include <SushiRuntime/task/in_memory_offload_coordinator.hpp>
+#include <SushiRuntime/task/in_memory_offload_sink.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_coordinator.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
@@ -44,60 +45,63 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Graph;
 
-namespace
+/** @brief Tests that bind() through the port reaches the implementation with the sink. */
+TEST(Small_OffloadCoordinator, BindReachesTheImplementationWithTheSink)
 {
-    /** @brief Records what the scheduler asks of an offload coordinator and its sink. */
-    class RecordingCoordinator final : public OffloadCoordinator, public OffloadSink
-    {
-        public:
-            void bind(OffloadSink& sink) override { bound = &sink; }
-            void prepare(span<const sushi_ptr<Node>> nodes,
-                         const std::shared_ptr<const PlacementRules>& given) override
-            {
-                prepared = nodes.size();
-                rules = given;
-            }
-            bool try_offload(Node& node) override { offered = &node; return false; }
-            void on_local_completion(Node& node) noexcept override { completed = &node; }
-            void stop() noexcept override { stopped = true; }
-            void resubmit(Node& node) override { resubmitted = &node; }
-            void complete_remote(Node& node) override { remote = &node; }
-            void fail(Node& node, Error error) override { failed = &node; failure = error.message; }
+    InMemoryOffloadCoordinator implementation;
+    OffloadCoordinator& coordinator = implementation;
+    InMemoryOffloadSink sink;
 
-            OffloadSink* bound = nullptr;     /**< The sink bind() was given. */
-            std::size_t prepared = 0;         /**< The nodes prepare() was given. */
-            std::shared_ptr<const PlacementRules> rules; /**< The rules prepare() was given. */
-            Node* offered = nullptr;          /**< The node try_offload() was given. */
-            Node* completed = nullptr;        /**< The node completed locally. */
-            Node* resubmitted = nullptr;      /**< The node given back. */
-            Node* remote = nullptr;           /**< The node completed on a worker. */
-            Node* failed = nullptr;           /**< The node that ended its run. */
-            std::string failure;              /**< The message fail() was given. */
-            bool stopped = false;             /**< Whether stop() was called. */
-    };
+    coordinator.bind(sink);
+
+    EXPECT_EQ(implementation.bound_sink(), &sink);
 }
 
-/** @brief Tests that each member of the seam reaches the implementation with its argument. */
-TEST(Small_OffloadCoordinator, EveryMemberReachesTheImplementation)
+/** @brief Tests that prepare() through the port reaches the implementation with the rules. */
+TEST(Small_OffloadCoordinator, PrepareReachesTheImplementationWithTheRules)
 {
-    RecordingCoordinator recorder;
-    OffloadCoordinator& coordinator = recorder;
+    InMemoryOffloadCoordinator implementation;
+    OffloadCoordinator& coordinator = implementation;
     std::vector<sushi_ptr<Node>> nodes{make_sushi<Node>(), make_sushi<Node>()};
+    const std::shared_ptr<const PlacementRules> rules = std::make_shared<const PlacementRules>();
 
-    coordinator.bind(recorder);
-    const std::shared_ptr<int> token = std::make_shared<int>(0);
-    // The address is only compared, never read, so the incomplete type needs no link.
-    const std::shared_ptr<const PlacementRules> rules(
-        token, reinterpret_cast<const PlacementRules*>(token.get()));
     coordinator.prepare(span<const sushi_ptr<Node>>(nodes.data(), nodes.size()), rules);
-    EXPECT_FALSE(coordinator.try_offload(*nodes[0]));
-    coordinator.on_local_completion(*nodes[1]);
+
+    EXPECT_EQ(implementation.prepare_count(), 1u);
+    EXPECT_EQ(implementation.last_rules(), rules);
+}
+
+/** @brief Tests that try_offload() through the port reaches the implementation with the node. */
+TEST(Small_OffloadCoordinator, TryOffloadReachesTheImplementationWithTheNode)
+{
+    InMemoryOffloadCoordinator implementation;
+    OffloadCoordinator& coordinator = implementation;
+    Node node;
+
+    EXPECT_FALSE(coordinator.try_offload(node));
+
+    EXPECT_EQ(implementation.offered(), std::vector<Node*>{&node});
+}
+
+/** @brief Tests that on_local_completion() through the port reaches the implementation with the node. */
+TEST(Small_OffloadCoordinator, OnLocalCompletionReachesTheImplementationWithTheNode)
+{
+    InMemoryOffloadCoordinator implementation;
+    OffloadCoordinator& coordinator = implementation;
+    Node node;
+
+    coordinator.on_local_completion(node);
+
+    EXPECT_EQ(implementation.local_completions(), std::vector<Node*>{&node});
+}
+
+/** @brief Tests that stop() through the port reaches the implementation. */
+TEST(Small_OffloadCoordinator, StopReachesTheImplementation)
+{
+    InMemoryOffloadCoordinator implementation;
+    OffloadCoordinator& coordinator = implementation;
+
     coordinator.stop();
 
-    EXPECT_EQ(recorder.bound, &recorder);
-    EXPECT_EQ(recorder.prepared, 2u);
-    EXPECT_EQ(recorder.rules, rules);
-    EXPECT_EQ(recorder.offered, nodes[0].get());
-    EXPECT_EQ(recorder.completed, nodes[1].get());
-    EXPECT_TRUE(recorder.stopped);
+    EXPECT_TRUE(implementation.stopped());
 }

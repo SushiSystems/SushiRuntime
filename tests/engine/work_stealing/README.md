@@ -13,6 +13,6 @@ The tests push tags, never real tasks: the deque moves pointers and never reads 
 
 | Test | What it proves |
 | --- | --- |
-| `PushBeyondCapacityParksOverflow` | A push past the capacity parks the task in the overflow list; nothing is dropped. |
-| `PopDrainsOverflowExactlyOnce` | The owner's pops return every task of the ring and the overflow once each. |
-| `NoLossUnderConcurrentSteal` | While the owner pushes and pops, thieves steal; every task comes out exactly once. |
+| `Small_WorkStealingDeque.PushBeyondCapacityParksOverflow` | A push past the capacity parks the task in the overflow list; nothing is dropped. A builder pushes the tags. |
+| `Small_WorkStealingDeque.PopDrainsOverflowExactlyOnce` | The owner's pops, on one thread, return every task of the ring and the overflow once each. |
+| `Medium_WorkStealingDeque.NoLossUnderConcurrentSteal` | While the owner pushes and pops, three thieves steal; every task comes out exactly once. The owner and thief loops are named helpers. |

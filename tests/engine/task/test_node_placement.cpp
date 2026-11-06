@@ -43,35 +43,21 @@
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
 
+#include "support/runtime_environment.hpp"
+
 namespace
 {
     using SushiRuntime::make_sushi;
     using SushiRuntime::sushi_ptr;
     using SushiRuntime::Internal::Graph::Node;
     using SushiRuntime::Internal::Graph::placement_of;
-
-    /** @brief Returns two queues of one context on the device SYCL selects by default. */
-    std::vector<sycl::queue> two_queues_on_the_default_device()
-    {
-        const sycl::device device{sycl::default_selector_v};
-        const sycl::context context{device};
-        return {sycl::queue{context, device}, sycl::queue{context, device}};
-    }
-
-    /** @brief Returns two queues on the default device, each in a context of its own. */
-    std::vector<sycl::queue> two_queues_in_two_contexts()
-    {
-        const sycl::device device{sycl::default_selector_v};
-        return {sycl::queue{sycl::context{device}, device},
-                sycl::queue{sycl::context{device}, device}};
-    }
 } // namespace
 
-/** @brief Holds an allocator over two device entries; see README.md. */
-class Medium_NodePlacementRule : public ::testing::Test
+/** @brief Holds an allocator over two device entries that share the program's queue; see README.md. */
+class Medium_NodePlacementRule : public TestSupport::RuntimeTest
 {
     protected:
-        Medium_NodePlacementRule() : memory_(two_queues_on_the_default_device())
+        Medium_NodePlacementRule() : memory_({queue(), queue()})
         {
 
         }
@@ -80,18 +66,27 @@ class Medium_NodePlacementRule : public ::testing::Test
         SushiRuntime::Internal::Memory::USMAllocator memory_;
 };
 
-TEST(Medium_NodePlacementState, ANodeStatesNoPlacementUntilPlaceOn)
+/** @brief Holds an allocator over two entries that sit in two SYCL contexts; see README.md. */
+class Medium_NodePlacementContexts : public TestSupport::RuntimeTest
 {
-    const sushi_ptr<Node> node = make_sushi<Node>();
-    EXPECT_FALSE(node->stated_placement().has_value());
+    protected:
+        Medium_NodePlacementContexts() : memory_({queue(), queue_in_another_context()})
+        {
 
-    node->place_on(0);
-    EXPECT_EQ(node->stated_placement(), std::optional<std::size_t>(0));
+        }
 
-    node->place_on(3);
-    EXPECT_EQ(node->stated_placement(), std::optional<std::size_t>(3));
-}
+        /** @brief Returns the one queue of the program that sits in a context of its own, made on the first call. */
+        static sycl::queue& queue_in_another_context()
+        {
+            static sycl::queue other{sycl::context{queue().get_device()}, queue().get_device()};
+            return other;
+        }
 
+        /// @brief Allocates nothing; a test records ownership with adopt().
+        SushiRuntime::Internal::Memory::USMAllocator memory_;
+};
+
+/** @brief Tests that place_on stops the process on an index it cannot hold, and the earlier placement stays. A death test starts a child process. */
 TEST(Medium_NodePlacementStateDeathTest, PlaceOnStopsOnAnIndexItCannotHold)
 {
     const sushi_ptr<Node> node = make_sushi<Node>();
@@ -103,106 +98,145 @@ TEST(Medium_NodePlacementStateDeathTest, PlaceOnStopsOnAnIndexItCannotHold)
     EXPECT_EQ(node->stated_placement(), std::optional<std::size_t>(1));
 }
 
-TEST_F(Medium_NodePlacementRule, ANodeWithNoRegionRunsOnItsStatedDeviceElseOnTheDefault)
+/** @brief Tests that a node with no region and nothing stated runs on the default device, 0. */
+TEST_F(Medium_NodePlacementRule, ANodeWithNoRegionRunsOnTheDefaultWhenNothingIsStated)
 {
     const sushi_ptr<Node> node = make_sushi<Node>();
-    EXPECT_EQ(placement_of(*node, memory_).value(),
-              SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT);
-    EXPECT_EQ(SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT, 0u);
 
+    EXPECT_EQ(placement_of(*node, memory_).value(), SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT);
+    EXPECT_EQ(SushiRuntime::Internal::Graph::K_DEFAULT_PLACEMENT, 0u);
+}
+
+/** @brief Tests that a node with no region runs on the device it states. */
+TEST_F(Medium_NodePlacementRule, ANodeWithNoRegionRunsOnItsStatedDevice)
+{
+    const sushi_ptr<Node> node = make_sushi<Node>();
     node->place_on(1);
+
     EXPECT_EQ(placement_of(*node, memory_).value(), 1u);
 }
 
+/** @brief Tests that a node whose only region is a read runs on the owner of that region. */
+TEST_F(Medium_NodePlacementRule, ANodeWithOnlyAReadRegionRunsOnItsOwner)
+{
+    int read_cell = 0;
+    memory_.adopt(&read_cell, 1, sizeof(read_cell), std::nullopt);
+    const sushi_ptr<Node> reader = make_sushi<Node>();
+    reader->io_reads_.emplace_back(&read_cell);
+
+    EXPECT_EQ(placement_of(*reader, memory_).value(), 1u);
+
+    memory_.forget(&read_cell);
+}
+
+/** @brief Tests that the owner of the first write outranks the owner of the first read. */
 TEST_F(Medium_NodePlacementRule, TheFirstWriteRegionOutranksTheFirstReadRegion)
 {
     int read_cell = 0;
     int write_cell = 0;
     memory_.adopt(&read_cell, 0, sizeof(read_cell), std::nullopt);
     memory_.adopt(&write_cell, 1, sizeof(write_cell), std::nullopt);
-
-    const sushi_ptr<Node> reader = make_sushi<Node>();
-    reader->io_reads_.emplace_back(&write_cell);
-    EXPECT_EQ(placement_of(*reader, memory_).value(), 1u);
-
     const sushi_ptr<Node> both = make_sushi<Node>();
     both->io_reads_.emplace_back(&read_cell);
     both->io_writes_.emplace_back(&write_cell);
+
     EXPECT_EQ(placement_of(*both, memory_).value(), 1u);
 
     memory_.forget(&read_cell);
     memory_.forget(&write_cell);
 }
 
+/** @brief Tests that an owned region places a node that states nothing. */
 TEST_F(Medium_NodePlacementRule, AnOwnedRegionPlacesANodeThatStatesNothing)
 {
     int cell = 0;
     memory_.adopt(&cell, 1, sizeof(cell), std::nullopt);
-
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->io_writes_.emplace_back(&cell);
+
     EXPECT_EQ(placement_of(*node, memory_).value(), 1u);
 
     memory_.forget(&cell);
 }
 
+/** @brief Tests that a stated device in the owner's context outranks the owner. */
 TEST_F(Medium_NodePlacementRule, AStatedDeviceInTheOwnersContextOutranksTheOwner)
 {
     int cell = 0;
     memory_.adopt(&cell, 1, sizeof(cell), std::nullopt);
-
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->io_writes_.emplace_back(&cell);
     node->place_on(0);
+
     EXPECT_EQ(placement_of(*node, memory_).value(), 0u);
 
     memory_.forget(&cell);
 }
 
-TEST(Medium_NodePlacementContexts, AStatedDeviceInAnotherContextIsRefused)
+/** @brief Tests that a stated device in another SYCL context than the owner's is refused, naming the owner. */
+TEST_F(Medium_NodePlacementContexts, AStatedDeviceInAnotherContextIsRefused)
 {
-    SushiRuntime::Internal::Memory::USMAllocator memory(two_queues_in_two_contexts());
     int cell = 0;
-    memory.adopt(&cell, 1, sizeof(cell), std::nullopt);
-
+    memory_.adopt(&cell, 1, sizeof(cell), std::nullopt);
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->io_writes_.emplace_back(&cell);
     node->place_on(0);
-    const SushiRuntime::Result<std::size_t> placed = placement_of(*node, memory);
+
+    const SushiRuntime::Result<std::size_t> placed = placement_of(*node, memory_);
 
     ASSERT_FALSE(placed);
     EXPECT_EQ(placed.error().code, SushiRuntime::ErrorCode::InvalidGraph);
     EXPECT_NE(placed.error().message.find("device 1 in another SYCL context"), std::string::npos)
         << placed.error().message;
 
-    node->place_on(1);
-    EXPECT_EQ(placement_of(*node, memory).value(), 1u) << "the owner itself is never refused";
-
-    memory.forget(&cell);
+    memory_.forget(&cell);
 }
 
-TEST(Medium_NodePlacementContexts, AStatedIndexPastTheDevicesIsLeftToTheDispatch)
+/** @brief Tests that stating the owner itself is accepted, whatever the contexts. */
+TEST_F(Medium_NodePlacementContexts, StatingTheOwnerItselfIsAccepted)
 {
-    SushiRuntime::Internal::Memory::USMAllocator memory(two_queues_in_two_contexts());
     int cell = 0;
-    memory.adopt(&cell, 1, sizeof(cell), std::nullopt);
+    memory_.adopt(&cell, 1, sizeof(cell), std::nullopt);
+    const sushi_ptr<Node> node = make_sushi<Node>();
+    node->io_writes_.emplace_back(&cell);
+    node->place_on(1);
 
+    EXPECT_EQ(placement_of(*node, memory_).value(), 1u) << "the owner itself is never refused";
+
+    memory_.forget(&cell);
+}
+
+/** @brief Tests that a stated index past the devices is returned as stated, for the dispatch to refuse. */
+TEST_F(Medium_NodePlacementContexts, AStatedIndexPastTheDevicesIsLeftToTheDispatch)
+{
+    int cell = 0;
+    memory_.adopt(&cell, 1, sizeof(cell), std::nullopt);
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->io_writes_.emplace_back(&cell);
     node->place_on(5);
-    EXPECT_EQ(placement_of(*node, memory).value(), 5u);
 
-    memory.forget(&cell);
+    EXPECT_EQ(placement_of(*node, memory_).value(), 5u);
+
+    memory_.forget(&cell);
 }
 
+/** @brief Tests that an unowned region with nothing stated runs on device 0. */
+TEST_F(Medium_NodePlacementRule, AnUnownedRegionWithNothingStatedRunsOnDeviceZero)
+{
+    int cell = 0;
+    const sushi_ptr<Node> node = make_sushi<Node>();
+    node->io_reads_.emplace_back(&cell);
+
+    EXPECT_EQ(placement_of(*node, memory_).value(), 0u);
+}
+
+/** @brief Tests that a stated device stands for an unowned region. */
 TEST_F(Medium_NodePlacementRule, AnUnownedRegionLeavesTheStatedPlacementInForce)
 {
     int cell = 0;
-
     const sushi_ptr<Node> node = make_sushi<Node>();
     node->io_reads_.emplace_back(&cell);
-    EXPECT_EQ(placement_of(*node, memory_).value(), 0u);
-
     node->place_on(1);
+
     EXPECT_EQ(placement_of(*node, memory_).value(), 1u);
 }

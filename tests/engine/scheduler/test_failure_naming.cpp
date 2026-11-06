@@ -28,10 +28,11 @@
  * @author Mustafa Garip
  */
 
-#include <optional>
+#include <cstddef>
 #include <string>
 
 #include <gtest/gtest.h>
+#include <sycl/sycl.hpp>
 
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
@@ -39,26 +40,16 @@
 #include <SushiRuntime/task/task.hpp>
 
 #include <SushiRuntime/scheduler/failure_naming.hpp>
+#include <SushiRuntime/scheduler/range_task.hpp>
 
 using namespace SushiRuntime;
 using namespace SushiRuntime::Internal::Scheduler;
 
-namespace
-{
-    /** @brief Names itself and does nothing else. */
-    class NamedTask final : public Task
-    {
-        public:
-            const char* name() const noexcept override { return "copy"; }
-            std::optional<sushi_ptr<Task>> split() override { return std::nullopt; }
-            bool is_splittable() const override { return false; }
-    };
-}
-
 /** @brief Tests that a plain task is described by its name. */
 TEST(Small_FailureNaming, ATaskIsDescribedByItsName)
 {
-    const sushi_ptr<NamedTask> task = make_sushi<NamedTask>();
+    const sushi_ptr<RangeTask> task =
+        make_sushi<RangeTask>(size_t{0}, size_t{1}, [](size_t, size_t, sycl::handler&) {}, "copy");
     EXPECT_EQ(describe_task(*task), "task 'copy'");
 }
 

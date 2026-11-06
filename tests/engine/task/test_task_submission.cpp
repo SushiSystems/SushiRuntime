@@ -29,7 +29,6 @@
  */
 
 #include <cstddef>
-#include <optional>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -37,54 +36,59 @@
 
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/task/dispatch_events.hpp>
+#include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/small_event_vector.hpp>
-#include <SushiRuntime/task/task.hpp>
 #include <SushiRuntime/task/task_submission.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
+using SushiRuntime::Internal::Graph::Node;
 using SushiRuntime::Internal::Graph::SmallEventVector;
-using SushiRuntime::Internal::Scheduler::Task;
 
 namespace
 {
-    /** @brief Records what a submission handed it and hands one event over. */
-    class RecordingTask final : public Task
+    /** @brief What a node's body saw when the submission ran it. */
+    struct BodyLog
     {
-        public:
-            /** @brief Builds a task of @p mode. */
-            explicit RecordingTask(ExecutionMode mode) : mode_(mode) {}
-
-            ExecutionMode execution_mode() const override { return mode_; }
-
-            void execute(sycl::handler& h) override
-            {
-                ++runs;
-                h.single_task([]() {});
-            }
-
-            sycl::event execute_host(sycl::queue& queue, const std::vector<sycl::event>& dependencies) override
-            {
-                ++runs;
-                seen_dependencies = dependencies.size();
-                const sycl::event event = queue.submit([&dependencies](sycl::handler& h)
-                {
-                    h.depends_on(dependencies);
-                    h.single_task([]() {});
-                });
-                Internal::DispatchEvents::DispatchEventScope::note(event);
-                return event;
-            }
-
-            std::optional<sushi_ptr<Task>> split() override { return std::nullopt; }
-
-            bool is_splittable() const override { return false; }
-
-            int runs = 0;                       /**< Times either body ran. */
-            std::size_t seen_dependencies = 0;  /**< Dependencies the host body received. */
-
-        private:
-            ExecutionMode mode_; /**< The mode the task reports. */
+        /** @brief Times the body ran. */
+        int runs = 0;
+        /** @brief Dependencies the host body received. */
+        std::size_t seen_dependencies = 0;
     };
+
+    /** @brief Builds a host node whose body logs into @p log, submits one kernel and hands its event over. */
+    sushi_ptr<Node> host_node(BodyLog& log)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->mode = Node::ExecutionMode::Host;
+        node->host_work = [&log](sycl::queue& queue, const std::vector<sycl::event>& dependencies)
+        {
+            ++log.runs;
+            log.seen_dependencies = dependencies.size();
+            const sycl::event event = queue.submit([&dependencies](sycl::handler& h)
+            {
+                h.depends_on(dependencies);
+                h.single_task([]() {});
+            });
+            Internal::DispatchEvents::DispatchEventScope::note(event);
+            return event;
+        };
+        return node;
+    }
+
+    /** @brief Builds a kernel node whose command group logs into @p log. */
+    sushi_ptr<Node> kernel_node(BodyLog& log)
+    {
+        sushi_ptr<Node> node = make_sushi<Node>();
+        node->mode = Node::ExecutionMode::Kernel;
+        node->work = [&log](sycl::handler& h)
+        {
+            ++log.runs;
+            h.single_task([]() {});
+        };
+        return node;
+    }
 
     /** @brief Builds a vector of @p count completed events from @p queue. */
     SmallEventVector completed_events(sycl::queue& queue, std::size_t count)
@@ -96,62 +100,100 @@ namespace
         small = events;
         return small;
     }
-}
+} // namespace
 
-/** @brief Tests that a host task receives every dependency and its handed-over event lands in the sink. */
-TEST(Medium_TaskSubmission, AHostTaskGetsItsDependenciesAndHandsItsEventOver)
+/** @brief Fixture of the tests that submit to the queue of the program. */
+class Medium_TaskSubmission : public TestSupport::RuntimeTest
 {
-    sycl::queue queue;
-    const SmallEventVector dependencies = completed_events(queue, 3);
-    const sushi_ptr<RecordingTask> task = make_sushi<RecordingTask>(Task::ExecutionMode::Host);
+};
+
+/** @brief Tests that a host task receives every dependency. */
+TEST_F(Medium_TaskSubmission, AHostTaskGetsItsDependencies)
+{
+    const SmallEventVector dependencies = completed_events(queue(), 3);
+    BodyLog log;
+    const sushi_ptr<Node> task = host_node(log);
     std::vector<sycl::event> handed_over;
 
-    sycl::event event = Internal::Graph::submit_task(queue, *task, &dependencies, &handed_over);
-    event.wait();
-    EXPECT_EQ(task->runs, 1);
-    EXPECT_EQ(task->seen_dependencies, 3u);
+    Internal::Graph::submit_task(queue(), *task, &dependencies, &handed_over).wait();
+
+    EXPECT_EQ(log.runs, 1);
+    EXPECT_EQ(log.seen_dependencies, 3u);
+}
+
+/** @brief Tests that the event a host task hands over lands in the sink. */
+TEST_F(Medium_TaskSubmission, AHostTaskHandsItsEventOver)
+{
+    BodyLog log;
+    const sushi_ptr<Node> task = host_node(log);
+    std::vector<sycl::event> handed_over;
+
+    Internal::Graph::submit_task(queue(), *task, nullptr, &handed_over).wait();
+
     EXPECT_EQ(handed_over.size(), 1u) << "the scope did not collect the handed-over event";
 }
 
-/** @brief Tests that a null sink opens no scope, so a handed-over event reaches no one. */
-TEST(Medium_TaskSubmission, ANullSinkCollectsNothing)
+/** @brief Tests that a null sink opens no scope, so a handed-over event reaches the enclosing scope. */
+TEST_F(Medium_TaskSubmission, ANullSinkCollectsNothing)
 {
-    sycl::queue queue;
-    const sushi_ptr<RecordingTask> task = make_sushi<RecordingTask>(Task::ExecutionMode::Host);
+    BodyLog log;
+    const sushi_ptr<Node> task = host_node(log);
     std::vector<sycl::event> outer;
     Internal::DispatchEvents::DispatchEventScope enclosing(outer);
 
-    Internal::Graph::submit_task(queue, *task, nullptr, nullptr).wait();
-    EXPECT_EQ(task->seen_dependencies, 0u);
+    Internal::Graph::submit_task(queue(), *task, nullptr, nullptr).wait();
+
+    EXPECT_EQ(log.seen_dependencies, 0u);
     EXPECT_EQ(outer.size(), 1u) << "a null sink must leave the enclosing scope in force";
 }
 
-/** @brief Tests that a kernel task runs its command group behind its dependencies and returns an event. */
-TEST(Medium_TaskSubmission, AKernelTaskReturnsAnEvent)
+/** @brief Tests that a kernel task runs its command group once and returns an event. */
+TEST_F(Medium_TaskSubmission, AKernelTaskReturnsAnEvent)
 {
-    sycl::queue queue;
-    const SmallEventVector dependencies = completed_events(queue, 2);
-    const sushi_ptr<RecordingTask> task = make_sushi<RecordingTask>(Task::ExecutionMode::Kernel);
+    const SmallEventVector dependencies = completed_events(queue(), 2);
+    BodyLog log;
+    const sushi_ptr<Node> task = kernel_node(log);
     std::vector<sycl::event> handed_over;
 
-    sycl::event event = Internal::Graph::submit_task(queue, *task, &dependencies, &handed_over);
-    event.wait();
-    EXPECT_EQ(task->runs, 1);
+    Internal::Graph::submit_task(queue(), *task, &dependencies, &handed_over).wait();
+
+    EXPECT_EQ(log.runs, 1);
+}
+
+/** @brief Tests that a kernel task hands no event over. */
+TEST_F(Medium_TaskSubmission, AKernelTaskHandsNoEventOver)
+{
+    BodyLog log;
+    const sushi_ptr<Node> task = kernel_node(log);
+    std::vector<sycl::event> handed_over;
+
+    Internal::Graph::submit_task(queue(), *task, nullptr, &handed_over).wait();
+
     EXPECT_TRUE(handed_over.empty()) << "a kernel task handed an event over";
 }
 
-/** @brief Tests that the discarding path runs both kinds of task once. */
-TEST(Medium_TaskSubmission, TheDiscardingPathRunsEitherKind)
+/** @brief Tests that the discarding path runs a host task once, behind its dependencies. */
+TEST_F(Medium_TaskSubmission, TheDiscardingPathRunsAHostTask)
 {
-    sycl::queue queue;
-    const SmallEventVector dependencies = completed_events(queue, 1);
-    const sushi_ptr<RecordingTask> host = make_sushi<RecordingTask>(Task::ExecutionMode::Host);
-    const sushi_ptr<RecordingTask> kernel = make_sushi<RecordingTask>(Task::ExecutionMode::Kernel);
+    const SmallEventVector dependencies = completed_events(queue(), 1);
+    BodyLog log;
+    const sushi_ptr<Node> host = host_node(log);
 
-    Internal::Graph::submit_task_discarding(queue, *host, &dependencies);
-    Internal::Graph::submit_task_discarding(queue, *kernel, nullptr);
-    queue.wait();
-    EXPECT_EQ(host->runs, 1);
-    EXPECT_EQ(host->seen_dependencies, 1u);
-    EXPECT_EQ(kernel->runs, 1);
+    Internal::Graph::submit_task_discarding(queue(), *host, &dependencies);
+    queue().wait();
+
+    EXPECT_EQ(log.runs, 1);
+    EXPECT_EQ(log.seen_dependencies, 1u);
+}
+
+/** @brief Tests that the discarding path runs a kernel task once. */
+TEST_F(Medium_TaskSubmission, TheDiscardingPathRunsAKernelTask)
+{
+    BodyLog log;
+    const sushi_ptr<Node> kernel = kernel_node(log);
+
+    Internal::Graph::submit_task_discarding(queue(), *kernel, nullptr);
+    queue().wait();
+
+    EXPECT_EQ(log.runs, 1);
 }

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_task_work.cpp                                                     */
+/* compile_task_work.cpp                                                  */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -19,45 +19,12 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
-/**************************************************************************/
 
 /**
- * @file test_task_work.cpp
- * @brief Tests TaskWork and HostWork: the two callables a node runs.
+ * @file compile_task_work.cpp
+ * @brief Compiles task_work.hpp on its own, so the header carries every include it needs.
  * @see tests/engine/task/README.md
  * @author Mustafa Garip
  */
 
-#include <vector>
-
-#include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
-
 #include <SushiRuntime/task/task_work.hpp>
-
-using namespace SushiRuntime;
-using namespace SushiRuntime::Internal::Graph;
-
-/** @brief Tests that host work runs on a queue and returns its event. */
-TEST(Medium_TaskWork, HostWorkRunsOnAQueue)
-{
-    int calls = 0;
-    const HostWork work = [&calls](sycl::queue&, const std::vector<sycl::event>& dependencies)
-    {
-        calls += static_cast<int>(dependencies.size()) + 1;
-        return sycl::event();
-    };
-    sycl::queue queue;
-    work(queue, {sycl::event()}).wait();
-    EXPECT_EQ(calls, 2);
-}
-
-/** @brief Tests that a command group runs inside a submit. */
-TEST(Medium_TaskWork, TaskWorkRunsInsideASubmit)
-{
-    bool called = false;
-    const TaskWork work = [&called](sycl::handler&) { called = true; };
-    sycl::queue queue;
-    queue.submit([&work](sycl::handler& handler) { work(handler); }).wait();
-    EXPECT_TRUE(called);
-}

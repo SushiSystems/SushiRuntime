@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_ready_sink.cpp                                                    */
+/* compile_late_bindings.cpp                                              */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -19,32 +19,12 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
-/**************************************************************************/
 
 /**
- * @file test_ready_sink.cpp
- * @brief Tests ReadySink: the list a completed node writes its ready successors into.
+ * @file compile_late_bindings.cpp
+ * @brief Compiles late_bindings.hpp on its own, so the header carries every include it needs.
  * @see tests/engine/task/README.md
  * @author Mustafa Garip
  */
 
-#include <type_traits>
-#include <vector>
-
-#include <gtest/gtest.h>
-
-#include <SushiRuntime/task/ready_sink.hpp>
-
-using namespace SushiRuntime::Internal::Scheduler;
-
-/** @brief Tests that the sink is a vector of task pointers that keeps their order. */
-TEST(Small_ReadySink, IsAnOrderedListOfTasks)
-{
-    static_assert(std::is_same_v<ReadySink, std::vector<Task*>>, "the sink is a vector of tasks");
-    ReadySink sink;
-    Task* const first = reinterpret_cast<Task*>(0x10);
-    Task* const second = reinterpret_cast<Task*>(0x20);
-    sink.push_back(first);
-    sink.push_back(second);
-    EXPECT_EQ(sink, (ReadySink{first, second}));
-}
+#include <SushiRuntime/task/late_bindings.hpp>

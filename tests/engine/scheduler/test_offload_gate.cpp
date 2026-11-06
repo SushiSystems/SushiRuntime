@@ -28,19 +28,17 @@
  * @author Mustafa Garip
  */
 
-#include <cstdint>
-#include <optional>
+#include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
+#include <SushiRuntime/placement/placement_rules.hpp>
+#include <SushiRuntime/task/in_memory_offload_coordinator.hpp>
 #include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/task/offload_coordinator.hpp>
-#include <SushiRuntime/task/offload_sink.hpp>
-#include <SushiRuntime/task/task.hpp>
+#include <SushiRuntime/task/recording_task.hpp>
 
 #include <SushiRuntime/scheduler/offload_gate.hpp>
 #include <SushiRuntime/scheduler/run_outcome.hpp>
@@ -50,88 +48,123 @@ using namespace SushiRuntime::Internal::Scheduler;
 
 namespace
 {
-    /** @brief Accepts every offer when told to, and counts the offers. */
-    class AcceptingCoordinator final : public Internal::Graph::OffloadCoordinator
+    /** @brief Builds a node that the graph marks offloadable. */
+    sushi_ptr<Internal::Graph::Node> offloadable_node()
     {
-        public:
-            void bind(Internal::Graph::OffloadSink&) override {}
-            void prepare(span<const sushi_ptr<Internal::Graph::Node>> nodes,
-                         const std::shared_ptr<const PlacementRules>& given) override
-            {
-                prepared = nodes.size();
-                rules = given;
-            }
-            bool try_offload(Internal::Graph::Node&) override { ++offers; return accepts; }
-            void on_local_completion(Internal::Graph::Node&) noexcept override {}
-            void stop() noexcept override {}
+        sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
+        node->offload().offloadable = true;
+        return node;
+    }
 
-            bool accepts = true;        /**< What try_offload() answers. */
-            int offers = 0;             /**< The calls of try_offload(). */
-            std::size_t prepared = 0;   /**< The nodes prepare() was given. */
-            std::shared_ptr<const PlacementRules> rules; /**< The rules prepare() was given. */
-    };
+} // namespace
 
-    /** @brief A task that is no graph node. */
-    class PlainTask final : public Task
-    {
-        public:
-            std::optional<sushi_ptr<Task>> split() override { return std::nullopt; }
-            bool is_splittable() const override { return false; }
-    };
-}
-
-/** @brief Tests that an offloadable node is offered and counted once accepted. */
-TEST(Small_OffloadGate, AnOffloadableNodeIsOfferedAndCounted)
+/** @brief Tests that an offloadable node is offered to the installed coordinator. */
+TEST(Small_OffloadGate, AnOffloadableNodeIsOfferedToTheCoordinator)
 {
-    AcceptingCoordinator coordinator;
+    Internal::Graph::InMemoryOffloadCoordinator coordinator;
     OffloadGate gate;
     gate.install(&coordinator);
-    const sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
-    node->offload().offloadable = true;
+    const sushi_ptr<Internal::Graph::Node> node = offloadable_node();
+    RunOutcome outcome;
+
+    static_cast<void>(gate.offer(*node, outcome));
+
+    ASSERT_EQ(coordinator.offered().size(), 1u);
+    EXPECT_EQ(coordinator.offered()[0], node.get());
+}
+
+/** @brief Tests that an offer the coordinator accepts is taken and counted. */
+TEST(Small_OffloadGate, AnAcceptedOfferIsCounted)
+{
+    Internal::Graph::InMemoryOffloadCoordinator coordinator;
+    coordinator.set_accepting(true);
+    OffloadGate gate;
+    gate.install(&coordinator);
+    const sushi_ptr<Internal::Graph::Node> node = offloadable_node();
     RunOutcome outcome;
 
     EXPECT_TRUE(gate.offer(*node, outcome));
     EXPECT_EQ(gate.accepted_count(), 1u);
-    coordinator.accepts = false;
-    EXPECT_FALSE(gate.offer(*node, outcome));
-    EXPECT_EQ(gate.accepted_count(), 1u) << "a refused offer was counted";
-    EXPECT_EQ(coordinator.offers, 2);
 }
 
-/** @brief Tests the four cases the gate never offers: no coordinator, no node, not offloadable, aborting. */
-TEST(Small_OffloadGate, TheGateOffersNothingItMustNot)
+/** @brief Tests that an offer the coordinator refuses is not taken and not counted. */
+TEST(Small_OffloadGate, ARefusedOfferIsNotCounted)
 {
-    AcceptingCoordinator coordinator;
+    Internal::Graph::InMemoryOffloadCoordinator coordinator;
     OffloadGate gate;
-    RunOutcome outcome;
-    const sushi_ptr<Internal::Graph::Node> node = make_sushi<Internal::Graph::Node>();
-    node->offload().offloadable = true;
-    EXPECT_FALSE(gate.offer(*node, outcome)) << "offered with no coordinator";
-
     gate.install(&coordinator);
-    const sushi_ptr<PlainTask> plain = make_sushi<PlainTask>();
-    EXPECT_FALSE(gate.offer(*plain, outcome));
-    const sushi_ptr<Internal::Graph::Node> local = make_sushi<Internal::Graph::Node>();
-    EXPECT_FALSE(gate.offer(*local, outcome));
-    outcome.cancel();
+    const sushi_ptr<Internal::Graph::Node> node = offloadable_node();
+    RunOutcome outcome;
+
     EXPECT_FALSE(gate.offer(*node, outcome));
-    EXPECT_EQ(coordinator.offers, 0);
+    EXPECT_EQ(gate.accepted_count(), 0u);
 }
 
-/** @brief Tests that prepare() reaches the coordinator, and does nothing without one. */
-TEST(Small_OffloadGate, PrepareReachesTheCoordinator)
+/** @brief Tests that the gate offers nothing while no coordinator is installed. */
+TEST(Small_OffloadGate, TheGateOffersNothingWithNoCoordinator)
+{
+    OffloadGate gate;
+    const sushi_ptr<Internal::Graph::Node> node = offloadable_node();
+    RunOutcome outcome;
+
+    EXPECT_FALSE(gate.offer(*node, outcome));
+}
+
+/** @brief Tests that the gate offers a task that is no graph node to nobody. */
+TEST(Small_OffloadGate, TheGateOffersNothingThatIsNoNode)
+{
+    Internal::Graph::InMemoryOffloadCoordinator coordinator;
+    coordinator.set_accepting(true);
+    OffloadGate gate;
+    gate.install(&coordinator);
+    const sushi_ptr<RecordingTask> plain = make_sushi<RecordingTask>();
+    RunOutcome outcome;
+
+    EXPECT_FALSE(gate.offer(*plain, outcome));
+    EXPECT_TRUE(coordinator.offered().empty());
+}
+
+/** @brief Tests that the gate offers a node that is not offloadable to nobody. */
+TEST(Small_OffloadGate, TheGateOffersNothingThatIsNotOffloadable)
+{
+    Internal::Graph::InMemoryOffloadCoordinator coordinator;
+    coordinator.set_accepting(true);
+    OffloadGate gate;
+    gate.install(&coordinator);
+    const sushi_ptr<Internal::Graph::Node> local = make_sushi<Internal::Graph::Node>();
+    RunOutcome outcome;
+
+    EXPECT_FALSE(gate.offer(*local, outcome));
+    EXPECT_TRUE(coordinator.offered().empty());
+}
+
+/** @brief Tests that the gate offers nothing while the run is aborting. */
+TEST(Small_OffloadGate, TheGateOffersNothingToAnAbortingRun)
+{
+    Internal::Graph::InMemoryOffloadCoordinator coordinator;
+    coordinator.set_accepting(true);
+    OffloadGate gate;
+    gate.install(&coordinator);
+    const sushi_ptr<Internal::Graph::Node> node = offloadable_node();
+    RunOutcome outcome;
+    outcome.cancel();
+
+    EXPECT_FALSE(gate.offer(*node, outcome));
+    EXPECT_TRUE(coordinator.offered().empty());
+}
+
+/** @brief Tests that prepare() reaches an installed coordinator with the rules it was given. */
+TEST(Small_OffloadGate, PrepareReachesTheCoordinatorWithTheRulesItWasGiven)
 {
     std::vector<sushi_ptr<Internal::Graph::Node>> nodes{make_sushi<Internal::Graph::Node>()};
     const span<const sushi_ptr<Internal::Graph::Node>> view(nodes.data(), nodes.size());
-    const std::shared_ptr<int> token = std::make_shared<int>(0);
-    // The address is only compared, never read, so the incomplete type needs no link.
-    const std::shared_ptr<const PlacementRules> rules(
-        token, reinterpret_cast<const PlacementRules*>(token.get()));
+    const std::shared_ptr<const PlacementRules> rules = std::make_shared<const PlacementRules>();
+    Internal::Graph::InMemoryOffloadCoordinator coordinator;
     OffloadGate gate;
-    gate.prepare(view, rules);
-    AcceptingCoordinator coordinator;
     gate.install(&coordinator);
+
     gate.prepare(view, rules);
-    EXPECT_EQ(coordinator.prepared, 1u);
-    EXPECT_EQ(coordinator.rules, rules) << "the gate passed on other rules than it was given";
+
+    EXPECT_EQ(coordinator.prepare_count(), 1u);
+    EXPECT_EQ(coordinator.last_rules(), rules) << "the gate passed on other rules than it was given";
 }

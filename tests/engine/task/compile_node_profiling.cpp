@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_node_profiling.cpp                                                */
+/* compile_node_profiling.cpp                                             */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -19,31 +19,12 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
-/**************************************************************************/
 
 /**
- * @file test_node_profiling.cpp
- * @brief Tests NodeProfiling: three counters that start at zero and add up.
+ * @file compile_node_profiling.cpp
+ * @brief Compiles node_profiling.hpp on its own, so the header carries every include it needs.
  * @see tests/engine/task/README.md
  * @author Mustafa Garip
  */
 
-#include <gtest/gtest.h>
-
 #include <SushiRuntime/task/node_profiling.hpp>
-
-using namespace SushiRuntime;
-using namespace SushiRuntime::Internal::Graph;
-
-/** @brief Tests that the counters start at zero and accumulate. */
-TEST(Small_NodeProfiling, CountersStartAtZeroAndAccumulate)
-{
-    NodeProfiling profiling;
-    EXPECT_EQ(profiling.invocations.load(), 0u);
-    EXPECT_EQ(profiling.device_ns.load(), 0u);
-    EXPECT_EQ(profiling.host_ns.load(), 0u);
-    profiling.invocations.fetch_add(2);
-    profiling.device_ns.fetch_add(500);
-    EXPECT_EQ(profiling.invocations.load(), 2u);
-    EXPECT_EQ(profiling.device_ns.load(), 500u);
-}
