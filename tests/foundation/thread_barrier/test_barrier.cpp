@@ -39,41 +39,63 @@
 
 using namespace SushiRuntime::Test;
 
-/** @brief Holds the threads that meet at the barrier. */
-constexpr std::size_t K_THREADS = 4;
+namespace
+{
+    /** @brief Holds the threads that meet at the barrier. */
+    constexpr std::size_t K_THREADS = 4;
+
+    /** @brief Holds what the threads of a run counted. */
+    struct BarrierRun
+    {
+        std::size_t arrivals;      /**< Arrivals made over every round. */
+        std::size_t early_passes;  /**< Passes made before every thread of the round had arrived. */
+    };
+
+    /** @brief Runs @p threads threads through @p rounds rounds at one barrier and counts early passes. */
+    BarrierRun meet_at_barrier(std::size_t threads, int rounds)
+    {
+        Barrier barrier(threads);
+        std::atomic<std::size_t> arrived{0};
+        std::atomic<std::size_t> early{0};
+        std::vector<std::thread> workers;
+        for (std::size_t index = 0; index < threads; ++index)
+        {
+            workers.emplace_back([&]
+            {
+                for (int round = 1; round <= rounds; ++round)
+                {
+                    arrived.fetch_add(1);
+                    barrier.arrive_and_wait();
+                    early.fetch_add(arrived.load() < threads * static_cast<std::size_t>(round) ? 1 : 0);
+                    barrier.arrive_and_wait();
+                }
+            });
+        }
+        for (std::thread& worker : workers)
+            worker.join();
+        return BarrierRun{arrived.load(), early.load()};
+    }
+} // namespace
 
 /** @brief Tests that every thread arrived before any passed, over two rounds. */
 TEST(Medium_Barrier, NoThreadPassesBeforeTheLastArrives)
 {
-    Barrier barrier(K_THREADS);
-    std::atomic<std::size_t> arrived{0};
-    std::atomic<bool> early{false};
-    std::vector<std::thread> threads;
-    for (std::size_t index = 0; index < K_THREADS; ++index)
-    {
-        threads.emplace_back([&]
-        {
-            for (int round = 1; round <= 2; ++round)
-            {
-                arrived.fetch_add(1);
-                barrier.arrive_and_wait();
-                if (arrived.load() < K_THREADS * static_cast<std::size_t>(round))
-                    early.store(true);
-                barrier.arrive_and_wait();
-            }
-        });
-    }
-    for (std::thread& thread : threads)
-        thread.join();
-    EXPECT_FALSE(early.load()) << "a thread passed before every thread arrived";
-    EXPECT_EQ(arrived.load(), 2 * K_THREADS);
+    const BarrierRun run = meet_at_barrier(K_THREADS, 2);
+
+    EXPECT_EQ(run.early_passes, 0u) << "a thread passed before every thread arrived";
+    EXPECT_EQ(run.arrivals, 2 * K_THREADS);
 }
 
-/** @brief Tests that a barrier of one never waits. */
-TEST(Medium_Barrier, ABarrierOfOneNeverWaits)
+/** @brief Tests that a barrier of one returns at once, on the calling thread, both times it is used. */
+TEST(Small_Barrier, ABarrierOfOneNeverWaits)
 {
     Barrier barrier(1);
+    int passes = 0;
+
     barrier.arrive_and_wait();
+    ++passes;
     barrier.arrive_and_wait();
-    SUCCEED();
+    ++passes;
+
+    EXPECT_EQ(passes, 2);
 }

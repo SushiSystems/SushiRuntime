@@ -24,25 +24,32 @@ program. `PF-15` checks that build by configuring the tree with the option off.
 | --- | --- |
 | `AZoneAtTheCompiledLevelWritesOneEvent` | A stage zone and a value compiled at level 1 each write one event. |
 | `AZoneAboveTheCompiledLevelWritesNothing` | A fine zone at level 1 and a detail zone at level 2 write nothing and register no site. |
+| `AFineZoneOfAUnitCompiledAtLevelTwoWritesOneEvent` | The control of the test above: a fine zone at level 2 writes one event. |
 | `AUnitCompiledAtLevelZeroWritesNothing` | Level 0 writes nothing. |
 | `AUnitCompiledAtLevelThreeWritesEveryZone` | Level 3 writes a zone of each level. |
 | `AClosedCollectorWritesNothing` | A closed collector keeps even a level-3 unit silent. |
-| `ThisUnitCompilesAtTheDefaultLevel` | The compiled level of a unit that sets none is the build's `SR_PROFILE_LEVEL`. |
 
 ## test_profile.cpp
 
 The file tests the `SR_ZONE` family at the level this build compiles, and the two thread helpers of the front.
+`ProfileTest` is the fixture base that opens and empties the collector; `Small_Profile` and `Medium_Profile` derive from it, the second for the tests that start a thread.
 
 | Test | What it proves |
 | --- | --- |
-| `Small_Profile.EachMacroWritesItsKind` | A stage zone, a value, a counter and an instant each write their own kind. |
-| `Small_Profile.TheThreadIndexIsTheCollectorsOnceTheThreadIsRegistered` | `current_thread_index()` reads the collector's index of a registered thread. |
-| `Small_Profile.AThreadThatNeverRecordedReadsZero` | A thread that never recorded reads 0, which stands for unknown. |
-| `Small_Profile.NamingAThreadPutsTheNameInTheDrain` | `name_this_thread()` registers the thread and the drain carries the name. |
+| `Small_Profile.AZoneWritesAZoneEvent` | A stage zone writes one event of the zone kind. |
+| `Small_Profile.AValueWritesAValueEvent` | A value writes one event of the value kind. |
+| `Small_Profile.ACounterWritesACounterEvent` | A counter writes one event of the counter kind. |
+| `Small_Profile.AnInstantWritesAnInstantEvent` | An instant writes one event of the instant kind. |
+| `Small_Profile.TheThreadIndexIsTheOneItsDrainedEntryCarries` | `current_thread_index()` of a registered thread equals the index its drained entry carries. |
+| `Medium_Profile.AThreadThatNeverRecordedReadsZero` | A thread that never recorded reads 0, which stands for unknown. |
+| `Medium_Profile.NamingAThreadPutsTheNameInTheDrain` | `name_this_thread()` registers the thread and the drain carries the name. |
 | `Small_ProfileLockWait.TheLockIsReleasedAtTheEndOfItsScope` | A lock taken through `SR_LOCK_WAIT` is released at the end of its scope. |
 
 ## test_profile_keys.cpp
 
+The layer names are checked on the reader side, in `tests/surface/profiling`. The host track name has no
+reader-side check, so the one test here states it.
+
 | Test | What it proves |
 | --- | --- |
-| `TheNamesAreSpelledAsTheProfileReaderExpects` | The source, track and layer names are the strings a profile reader looks for. |
+| `TheHostTrackIsSpelledAsTheProfileReaderExpects` | The host track name is the string a profile reader looks for. |

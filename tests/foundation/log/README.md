@@ -6,12 +6,6 @@ rest; `sr run sr_foundation_tests -- --gtest_filter='<pattern>'` runs one progra
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 
-## test_sushiruntime_log_project.cpp
-
-| Test | What it proves |
-| --- | --- |
-| `TheProjectIsTheRuntimeReadFromItsVariable` | `K_SUSHIRUNTIME_LOG_PROJECT` is `sushiruntime` with `SR_LOG_LEVEL`, at compile time. |
-
 ## test_logger.cpp
 
 The file covers the `SR_LOG_*` macros over SushiLog: their gates, the record they make and
@@ -19,9 +13,10 @@ The file covers the `SR_LOG_*` macros over SushiLog: their gates, the record the
 tested there. Its state lives in the SushiLog library, so every test changes state that the next
 test would inherit.
 
-### `Medium_LoggerTest`
+### `LoggerTest`, `Small_LoggerTest`, `Medium_LoggerTest`
 
-The fixture puts the logger in synchronous mode and sets the test project to `Warn` before each
+`LoggerTest` is the fixture base. `Small_LoggerTest` holds the tests that touch no thread and no clock, and
+`Medium_LoggerTest` the ones that read the clock or queue a record. The fixture puts the logger in synchronous mode and sets the test project to `Warn` before each
 test, and afterwards restores the default sink and the level the project had. A test sink captures a pointer
 to a local vector, so the default sink has to be back before that vector dies.
 
@@ -60,3 +55,7 @@ The file tests the log gate: the floor of the build and the levels it lets throu
 | --- | --- |
 | `TheFloorFollowsTheBuild` | The floor is Error with logging off, Debug in a release build and Trace otherwise. |
 | `ALevelPassesAtOrAboveItsCategoryLevel` | A level passes the gate when it is at or above its category's level. |
+
+## compile_sushiruntime_log_project.cpp
+
+Includes `sushiruntime_log_project.hpp` alone, so the build fails if the header misses an include. It holds no test.

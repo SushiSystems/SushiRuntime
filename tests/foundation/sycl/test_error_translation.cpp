@@ -59,12 +59,17 @@ TEST(Small_SYCLErrorTranslation, AMemoryAllocationErrorIsAllocationFailed)
               ErrorCode::AllocationFailed);
 }
 
-/** @brief Tests that a standard exception takes the other code, and success a value. */
+/** @brief Tests that a standard exception takes the other code. */
 TEST(Small_SYCLErrorTranslation, AStandardExceptionTakesTheOtherCode)
 {
     const Result<void> failed = Internal::SYCL::translate_exceptions(
         ErrorCode::DeviceLost, ErrorCode::InvalidAccess, [] { throw std::logic_error("bad"); });
     ASSERT_FALSE(failed.has_value());
     EXPECT_EQ(failed.error().code, ErrorCode::InvalidAccess);
+}
+
+/** @brief Tests that a call that returns gives a value. */
+TEST(Small_SYCLErrorTranslation, AReturningCallGivesAValue)
+{
     EXPECT_TRUE(Internal::SYCL::translate_exceptions([] {}).has_value());
 }

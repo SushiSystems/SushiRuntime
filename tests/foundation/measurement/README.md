@@ -9,20 +9,26 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_completion_signal.cpp
 
-The file tests CompletionSignal: a wait times out, a raise wakes it, and reset clears it.
+The file tests CompletionSignal: a wait times out, a raise wakes the waiter, and reset clears it. Every
+test is `Medium_`: a wait reads the real clock, and the wake test hands the raise to another thread.
 
 | Test | What it proves |
 | --- | --- |
 | `AWaitWithNoRaiseTimesOut` | A wait with nothing raised returns false. |
-| `ARaiseWakesTheWaiterAndResetClearsIt` | A raise on another thread wakes the waiter, and reset() clears it. |
+| `ARaiseWakesTheWaiter` | A raise on another thread wakes the waiter. |
+| `ResetClearsARaisedSignal` | A raised signal stays raised, and reset() clears it. |
 
 ## test_measurement.cpp
 
-The file tests summarize(), measure() and the SR_MEASUREMENT line.
+The file tests summarize(), measure() and the SR_MEASUREMENT line. The figures are exact, so the
+comparisons are equalities.
 
 | Test | What it proves |
 | --- | --- |
-| `SummaryTakesTheMiddleAndTheExtremes` | Holds the tolerance of every comparison of a summary; the figures are exact. */ constexpr double K_TOLERANCE = 0.0; /** @brief Tests the median of an odd and an even count, and the extremes. |
-| `NoSampleGivesAnEmptySummary` | No sample gives an empty summary. |
-| `MeasureCallsTheRunEachTime` | Measure() calls the run the number of times asked. |
-| `TheLineCarriesEveryKey` | The line starts with the prefix and carries every key. |
+| `TheMedianOfAnOddCountIsTheMiddleSample` | The median of 5, 1 and 3 is 3. |
+| `TheMedianOfAnEvenCountIsTheMeanOfTheMiddlePair` | The median of 4, 1, 2 and 3 is 2.5. |
+| `SummaryTakesTheExtremesAndCountsTheRuns` | The minimum, the maximum and the run count of a summary. |
+| `NoSampleGivesAnEmptySummary` | No sample gives an all-zero summary. |
+| `MeasureCallsTheRunEachTime` | measure() calls the run the number of times asked. |
+| `TheLineCarriesEveryKey` | The line opens with the prefix and carries every key with its value. |
+| `TheLineNamesTheBuild` | The line names the build as release or debug. |

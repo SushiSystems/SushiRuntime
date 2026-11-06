@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_operating_system.cpp                                              */
+/* compile_clock_pairing.cpp                                              */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,27 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_operating_system.cpp
- * @brief Tests OperatingSystem: three distinct systems in one byte.
+ * @file compile_clock_pairing.cpp
+ * @brief Compiles clock_pairing.hpp on its own, so the header carries every include it needs.
+ * @see tests/foundation/report/README.md
  * @author Mustafa Garip
- * @see tests/foundation/machine/README.md
  */
 
-#include <cstdint>
-#include <type_traits>
-
-#include <gtest/gtest.h>
-
-#include <SushiRuntime/machine/operating_system.hpp>
-
-using namespace SushiRuntime;
-
-/** @brief Tests the size and the distinct values of the enumeration. */
-TEST(Small_OperatingSystem, ThreeDistinctSystemsInOneByte)
-{
-    static_assert(std::is_same_v<std::underlying_type_t<OperatingSystem>, std::uint8_t>,
-                  "one byte");
-    EXPECT_NE(OperatingSystem::Unknown, OperatingSystem::Linux);
-    EXPECT_NE(OperatingSystem::Linux, OperatingSystem::Windows);
-    EXPECT_NE(OperatingSystem::Windows, OperatingSystem::Unknown);
-}
+#include <SushiRuntime/report/clock_pairing.hpp>

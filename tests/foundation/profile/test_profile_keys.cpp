@@ -23,7 +23,7 @@
 
 /**
  * @file test_profile_keys.cpp
- * @brief Tests that the names the runtime writes into a record are listed once each.
+ * @brief Tests the spelling of the host track name the runtime writes into a record.
  * @see tests/foundation/profile/README.md
  * @author Mustafa Garip
  */
@@ -36,11 +36,8 @@
 
 using namespace SushiRuntime::Internal::Profile;
 
-/** @brief Tests the spelling of the names a profile reader looks for. */
-TEST(Small_ProfileKeys, TheNamesAreSpelledAsTheProfileReaderExpects)
+/** @brief Tests the spelling of the host track name, which no reader-side test states. */
+TEST(Small_ProfileKeys, TheHostTrackIsSpelledAsTheProfileReaderExpects)
 {
     EXPECT_EQ(K_HOST_TRACK_NAME, "host");
-    EXPECT_EQ(K_KEY_LAYER, "layer");
-    EXPECT_EQ(K_LAYER_SCHEDULER, "scheduler");
-    EXPECT_EQ(K_LAYER_CHAIN, "chain");
 }

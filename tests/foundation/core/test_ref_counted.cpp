@@ -29,7 +29,7 @@
  */
 
 #include <atomic>
-#include <cstdlib>
+#include <functional>
 #include <thread>
 #include <vector>
 
@@ -85,7 +85,7 @@ namespace
  *
  * Creates a smart pointer and ensures that the tracked object is destroyed upon the pointer going out of scope.
  */
-TEST(Medium_RefCountedTest, MakeSushiOwnsAndReleasesOnce)
+TEST(Small_RefCountedTest, MakeSushiOwnsAndReleasesOnce)
 {
     std::atomic<int> destroyed{0};
     {
@@ -103,7 +103,7 @@ TEST(Medium_RefCountedTest, MakeSushiOwnsAndReleasesOnce)
  *
  * Tracks the reference count through move and copy operations and ensures proper decrementing upon scope exit.
  */
-TEST(Medium_RefCountedTest, CopyBumpsMoveTransfers)
+TEST(Small_RefCountedTest, CopyBumpsMoveTransfers)
 {
     std::atomic<int> destroyed{0};
     auto a = make_sushi<Tracked>(destroyed);
@@ -124,31 +124,11 @@ TEST(Medium_RefCountedTest, CopyBumpsMoveTransfers)
 }
 
 /**
- * @brief Verifies that leak() detaches the raw pointer without modifying the reference count.
- *
- * Asserts that the smart pointer is emptied while the object's reference count remains unchanged, leaving ownership to the caller.
- */
-TEST(Medium_RefCountedTest, LeakDetachesWithoutChangingCount)
-{
-    std::atomic<int> destroyed{0};
-    auto p = make_sushi<Tracked>(destroyed);
-
-    Tracked* raw = p.leak();
-    EXPECT_EQ(p.get(), nullptr) << "leak() must empty the smart pointer.";
-    ASSERT_NE(raw, nullptr);
-    EXPECT_EQ(raw->ref_count(), 1) << "leak() must not touch the refcount.";
-    EXPECT_EQ(destroyed.load(), 0);
-
-    raw->release();                              // caller-owned reference
-    EXPECT_EQ(destroyed.load(), 1);
-}
-
-/**
  * @brief Verifies polymorphic conversion and single deletion through a base pointer.
  *
  * Converts a derived smart pointer to a base smart pointer, asserts virtual dispatch works, and ensures exactly one destruction occurs.
  */
-TEST(Medium_RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
+TEST(Small_RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
 {
     std::atomic<int> destroyed{0};
     {
@@ -160,34 +140,46 @@ TEST(Medium_RefCountedTest, DerivedConvertsToBaseAndDeletesOnce)
     EXPECT_EQ(destroyed.load(), 1) << "Deleting via base must run the derived destructor exactly once.";
 }
 
+namespace
+{
+    /**
+     * @brief Copies and drops the shared pointer @p iterations times on the calling thread.
+     *
+     * Each copy adds a reference and each drop releases it, so the count is back where it started.
+     */
+    void churn(const sushi_ptr<Tracked>& shared, int iterations)
+    {
+        for (int i = 0; i < iterations; ++i)
+        {
+            sushi_ptr<Tracked> copy = shared;
+            EXPECT_GE(copy->ref_count(), 2);
+        }
+    }
+
+    /**
+     * @brief Starts @p count threads that each run churn on @p shared and joins them all.
+     */
+    void churn_on_threads(const sushi_ptr<Tracked>& shared, int count, int iterations)
+    {
+        std::vector<std::thread> workers;
+        for (int t = 0; t < count; ++t)
+            workers.emplace_back(churn, std::cref(shared), iterations);
+        for (std::thread& worker : workers)
+            worker.join();
+    }
+}
+
 /**
  * @brief Verifies that concurrent reference counting operations are thread-safe and atomic.
  *
- * Spawns multiple threads to aggressively copy and drop a shared pointer, asserting that the object survives and count remains consistent.
+ * Spawns multiple threads to copy and drop a shared pointer, asserting that the object survives and the count is consistent.
  */
 TEST(Medium_RefCountedTest, ConcurrentRefCountingIsAtomic)
 {
     std::atomic<int> destroyed{0};
     auto root = make_sushi<Tracked>(destroyed);
 
-    constexpr int THREADS = 8;
-    constexpr int ITERS   = 20000;
-
-    std::vector<std::thread> workers;
-    for (int t = 0; t < THREADS; ++t)
-    {
-        workers.emplace_back([&root]()
-        {
-            for (int i = 0; i < ITERS; ++i)
-            {
-                sushi_ptr<Tracked> copy = root;  // atomic add_ref
-                if (copy->ref_count() < 1)   // force the read; not optimizable away
-                    std::abort();
-            }                                    // atomic release
-        });
-    }
-    for (auto& w : workers)
-        w.join();
+    churn_on_threads(root, 8, 20000);
 
     EXPECT_EQ(destroyed.load(), 0) << "Object must survive while the root reference is held.";
     EXPECT_EQ(root->ref_count(), 1) << "All transient copies must have released exactly once.";

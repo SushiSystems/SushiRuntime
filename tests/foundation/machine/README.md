@@ -6,45 +6,18 @@ with the rest; `sr run sr_foundation_tests -- --gtest_filter='<pattern>'` runs o
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 
-## test_device_description.cpp
+## compile_device_filter.cpp
 
-The file tests DeviceDescription: the values a description holds before discovery fills it.
-
-| Test | What it proves |
-| --- | --- |
-| `DefaultsDescribeNoDevice` | Checks the defaults of a description. |
-
-## test_device_facts.cpp
-
-The file tests DeviceFacts: the values a record holds before a device fills it.
-
-| Test | What it proves |
-| --- | --- |
-| `DefaultsDescribeNoDevice` | Checks the defaults of the record. |
-
-## test_device_filter.cpp
-
-The file tests DeviceFilter: every class accepted, double precision not required.
-
-| Test | What it proves |
-| --- | --- |
-| `DefaultsAcceptEveryClass` | Checks the defaults of the filter. |
-
-## test_device_kind.cpp
-
-The file tests DeviceKind: four distinct classes in one byte.
-
-| Test | What it proves |
-| --- | --- |
-| `FourDistinctClassesInOneByte` | Checks the size and the distinct values of the enumeration. |
+Includes `device_filter.hpp` alone, so the build fails if the header misses an include. The
+promise that a default filter admits every device class needs a `Runtime`, which sits above this
+tier; it moves to the `surface/api` runtime tests in job M7.
 
 ## test_node_facts.cpp
 
-The file tests NodeFacts: the values a record holds before a runtime fills it.
+The file tests NodeFacts: a copy keeps the labels in order and every device.
 
 | Test | What it proves |
 | --- | --- |
-| `DefaultsDescribeNoMachine` | Checks the defaults of the record. |
 | `ACopyKeepsTheLabelsInOrderAndTheDevices` | Checks that a copy keeps the label order and each device. |
 
 ## test_node_label.cpp
@@ -53,29 +26,28 @@ The file tests NodeLabel: a key and a value that copy as plain strings.
 
 | Test | What it proves |
 | --- | --- |
-| `DefaultsHoldAnEmptyKeyAndValue` | Checks the defaults of a label. |
 | `ACopyKeepsTheKeyAndTheValue` | Checks that a copy keeps both strings. |
 
-## test_operating_system.cpp
+## compile_device_description.cpp
 
-The file tests OperatingSystem: three distinct systems in one byte.
+Includes `device_description.hpp` alone, so the build fails if the header misses an include. It holds no test.
 
-| Test | What it proves |
-| --- | --- |
-| `ThreeDistinctSystemsInOneByte` | Checks the size and the distinct values of the enumeration. |
+## compile_device_facts.cpp
 
-## test_pin_policy.cpp
+Includes `device_facts.hpp` alone, so the build fails if the header misses an include. It holds no test.
 
-The file tests PinPolicy: two distinct placements in one byte.
+## compile_device_kind.cpp
 
-| Test | What it proves |
-| --- | --- |
-| `TwoPlacementsInOneByte` | Checks the size and the two values of the enumeration. |
+Includes `device_kind.hpp` alone, so the build fails if the header misses an include, and states at file scope that `DeviceKind` is stored in one byte. It holds no test.
 
-## test_worker_pool.cpp
+## compile_operating_system.cpp
 
-The file tests WorkerPool: an empty pool that pins by default.
+Includes `operating_system.hpp` alone, so the build fails if the header misses an include, and states at file scope that `OperatingSystem` is stored in one byte. It holds no test.
 
-| Test | What it proves |
-| --- | --- |
-| `DefaultsToAnEmptyPinnedPool` | Checks the defaults: no worker, core 0, pinned. |
+## compile_pin_policy.cpp
+
+Includes `pin_policy.hpp` alone, so the build fails if the header misses an include, and states at file scope that `PinPolicy` is stored in one byte. It holds no test.
+
+## compile_worker_pool.cpp
+
+Includes `worker_pool.hpp` alone, so the build fails if the header misses an include. It holds no test.

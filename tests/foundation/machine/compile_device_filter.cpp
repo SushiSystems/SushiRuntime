@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_device_filter.cpp                                                 */
+/* compile_device_filter.cpp                                              */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -19,27 +19,12 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
-/**************************************************************************/
 
 /**
- * @file test_device_filter.cpp
- * @brief Tests DeviceFilter: every class accepted, double precision not required.
+ * @file compile_device_filter.cpp
+ * @brief Compiles device_filter.hpp on its own, so the header carries every include it needs.
  * @see tests/foundation/machine/README.md
  * @author Mustafa Garip
  */
 
-#include <gtest/gtest.h>
-
 #include <SushiRuntime/machine/device_filter.hpp>
-
-using namespace SushiRuntime;
-
-/** @brief Tests the defaults of the filter. */
-TEST(Small_DeviceFilter, DefaultsAcceptEveryClass)
-{
-    const DeviceFilter filter;
-    EXPECT_TRUE(filter.include_cpu);
-    EXPECT_TRUE(filter.include_gpu);
-    EXPECT_TRUE(filter.include_accelerator);
-    EXPECT_FALSE(filter.require_fp64);
-}

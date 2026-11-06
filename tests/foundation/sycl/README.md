@@ -14,13 +14,15 @@ The file tests the SYCL error translation: device codes, allocation failures and
 | --- | --- |
 | `ASYCLExceptionTakesTheDeviceCode` | A SYCL exception takes the device code with its text. |
 | `AMemoryAllocationErrorIsAllocationFailed` | A SYCL memory allocation failure is AllocationFailed. |
-| `AStandardExceptionTakesTheOtherCode` | A standard exception takes the other code, and success a value. |
+| `AStandardExceptionTakesTheOtherCode` | A standard exception takes the other code. |
+| `AReturningCallGivesAValue` | A call that returns gives a value. |
 
 ## test_sycl_compat.cpp
 
-The file tests the host task trait and enqueue_host_task() on a host queue.
+The file tests the host task trait and enqueue_host_task() on the program's queue, which the fixture base
+of `tests/support/runtime_environment.hpp` hands out.
 
 | Test | What it proves |
 | --- | --- |
-| `TheTraitSeesHostTask` | Names a handler with no host_task member. */ struct NoHostTask { }; } /** @brief Tests that the trait sees host_task on a SYCL handler and not on a plain type. |
-| `AHostTaskRunsOnce` | A host task enqueued through the shim runs once before wait() returns. |
+| `Small_SYCLCompat.TheTraitSeesAHostTaskMemberAndNoOther` | The trait is true for a handler type with a `host_task` member and false for one without. |
+| `Medium_SYCLCompat.AHostTaskRunsOnce` | A host task enqueued through the shim runs once before wait() returns. |

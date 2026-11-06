@@ -24,7 +24,7 @@
 /**
  * @file test_recording_observer.cpp
  * @brief Tests RecordingObserver, the observer the runtime's tests keep observations with.
- * @see tests/foundation/test_runner/README.md
+ * @see tests/foundation/report/README.md
  * @author Mustafa Garip
  */
 
@@ -34,8 +34,8 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/report/recording_observer.hpp>
+#include <SushiRuntime/report/run_observer.hpp>
 
 using namespace SushiRuntime;
 using SushiRuntime::RecordingObserver;
@@ -48,6 +48,20 @@ namespace
         RunObservation observation;
         observation.events.resize(records);
         return observation;
+    }
+
+    /** @brief Posts @p per_thread observations to @p observer from each of @p threads threads, and joins them. */
+    void post_from_threads(RecordingObserver& observer, std::size_t threads, std::size_t per_thread)
+    {
+        std::vector<std::thread> workers;
+        for (std::size_t worker = 0; worker < threads; ++worker)
+            workers.emplace_back([&observer, per_thread]()
+            {
+                for (std::size_t run = 0; run < per_thread; ++run)
+                    observer.on_run(observation_of(1));
+            });
+        for (std::thread& worker : workers)
+            worker.join();
     }
 } // namespace
 
@@ -87,20 +101,11 @@ TEST(Small_RecordingObserver, ClearForgetsEveryObservation)
 }
 
 /** @brief Tests that observations arriving from several threads are all kept. */
-TEST(Small_RecordingObserver, KeepsObservationsFromSeveralThreads)
+TEST(Medium_RecordingObserver, KeepsObservationsFromSeveralThreads)
 {
-    constexpr std::size_t K_THREADS = 4;
-    constexpr std::size_t K_PER_THREAD = 100;
     RecordingObserver observer;
-    std::vector<std::thread> threads;
-    for (std::size_t thread = 0; thread < K_THREADS; ++thread)
-        threads.emplace_back([&observer]()
-        {
-            for (std::size_t run = 0; run < K_PER_THREAD; ++run)
-                observer.on_run(observation_of(1));
-        });
-    for (std::thread& thread : threads)
-        thread.join();
 
-    EXPECT_EQ(observer.count(), K_THREADS * K_PER_THREAD);
+    post_from_threads(observer, 4, 100);
+
+    EXPECT_EQ(observer.count(), 400u);
 }

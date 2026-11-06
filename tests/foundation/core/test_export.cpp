@@ -23,16 +23,15 @@
 
 /**
  * @file test_export.cpp
- * @brief Tests the export macros: each one is defined, and SR_API spells SUSHIRUNTIME_API.
+ * @brief Tests the export macros: each one is defined, SR_API spells SUSHIRUNTIME_API, and a consumer links an exported symbol.
  * @see tests/foundation/core/README.md
  * @author Mustafa Garip
  */
 
-#include <cstring>
-
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/core/export.hpp>
+#include <SushiRuntime/core/version.hpp>
 
 #define SR_STRINGIFY_EXPANDED(text) SR_STRINGIFY(text)
 #define SR_STRINGIFY(text) #text
@@ -47,12 +46,11 @@ TEST(Small_Export, ShortSpellingExpandsLikeTheLongOne)
     EXPECT_STREQ(SR_STRINGIFY_EXPANDED(SR_API), SR_STRINGIFY_EXPANDED(SUSHIRUNTIME_API));
 }
 
-/** @brief Tests that a consumer of the library imports, which a test program is. */
-TEST(Small_Export, AConsumerImportsTheSymbols)
+/** @brief Tests that a consumer links an exported symbol of the library and calls it. */
+TEST(Small_Export, AConsumerLinksAndCallsAnExportedSymbol)
 {
-#if defined(_WIN32) || defined(__CYGWIN__)
-    EXPECT_NE(std::strstr(SR_STRINGIFY_EXPANDED(SUSHIRUNTIME_API), "dllimport"), nullptr);
-#else
-    EXPECT_NE(std::strstr(SR_STRINGIFY_EXPANDED(SUSHIRUNTIME_API), "visibility"), nullptr);
-#endif
+    const char* const version = SushiRuntime::runtime_version_string();
+
+    ASSERT_NE(version, nullptr);
+    EXPECT_STREQ(version, SUSHIRUNTIME_VERSION_STRING);
 }

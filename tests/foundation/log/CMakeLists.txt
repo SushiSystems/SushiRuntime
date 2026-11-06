@@ -6,6 +6,6 @@
 sushiruntime_add_module_tests(
     MODULE log
     SOURCES
+        compile_sushiruntime_log_project.cpp
         test_log_gate.cpp
-        test_logger.cpp
-        test_sushiruntime_log_project.cpp)
+        test_logger.cpp)

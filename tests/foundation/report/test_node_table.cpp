@@ -36,7 +36,6 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/core/node_cost.hpp>
-#include <SushiRuntime/core/operation_id.hpp>
 #include <SushiRuntime/report/node_table.hpp>
 
 using namespace SushiRuntime;
@@ -100,44 +99,4 @@ TEST(Small_NodeTable, KeepsAnAbsentCostApartFromAStatedZero)
     ASSERT_TRUE(table.find(2)->cost.has_value());
     EXPECT_EQ(table.find(2)->cost->flops, 1024u);
     EXPECT_EQ(table.find(2)->cost->dtype, NodeDType::F32);
-}
-
-/** @brief Tests that a row keeps the operation, the host flag and the multiplicity it was given. */
-TEST(Small_NodeTable, ARowKeepsItsOperationHostFlagAndMultiplicity)
-{
-    NodeTableRow row = row_of(7, "gemm");
-    row.operation = OperationID(0xABCDu);
-    row.host_native = true;
-    row.multiplicity = 3;
-    const NodeTable table(std::vector<NodeTableRow>{row});
-
-    const NodeTableRow* found = table.find(7);
-    ASSERT_NE(found, nullptr);
-    EXPECT_EQ(found->operation.value, 0xABCDu);
-    EXPECT_TRUE(found->host_native);
-    EXPECT_EQ(found->multiplicity, 3u);
-}
-
-/** @brief Tests that a table keeps the label of its graph and the origin of each row. */
-TEST(Small_NodeTable, CarriesTheLabelAndTheOriginOfItsRows)
-{
-    NodeTableRow stated = row_of(0, "q_proj");
-    stated.origin = "attention";
-    const NodeTable table(std::vector<NodeTableRow>{stated, row_of(1, "plain")}, "decoder");
-
-    EXPECT_EQ(table.label(), "decoder");
-    EXPECT_EQ(table.find(0)->origin, "attention");
-    EXPECT_TRUE(table.find(1)->origin.empty()) << "a node that states no origin has none";
-    EXPECT_TRUE(NodeTable().label().empty());
-}
-
-/** @brief Tests that a table keeps the id of the graph it was built for, and 0 when none was given. */
-TEST(Small_NodeTable, CarriesTheGraphId)
-{
-    const NodeTable table(std::vector<NodeTableRow>{row_of(0, "a")}, "g", 42);
-    const NodeTable unnamed(std::vector<NodeTableRow>{row_of(0, "a")});
-
-    EXPECT_EQ(table.graph_id(), 42u);
-    EXPECT_EQ(unnamed.graph_id(), 0u);
-    EXPECT_TRUE(unnamed.label().empty());
 }

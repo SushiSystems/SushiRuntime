@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_device_description.cpp                                            */
+/* compile_operating_system.cpp                                           */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,28 +22,16 @@
 /**************************************************************************/
 
 /**
- * @file test_device_description.cpp
- * @brief Tests DeviceDescription: the values a description holds before discovery fills it.
+ * @file compile_operating_system.cpp
+ * @brief Compiles operating_system.hpp on its own, so the header carries every include it needs.
  * @see tests/foundation/machine/README.md
  * @author Mustafa Garip
  */
 
-#include <gtest/gtest.h>
-#include <sycl/sycl.hpp>
+#include <SushiRuntime/machine/operating_system.hpp>
 
-#include <SushiRuntime/machine/device_description.hpp>
-#include <SushiRuntime/machine/device_kind.hpp>
+#include <cstdint>
+#include <type_traits>
 
-using namespace SushiRuntime;
-
-/** @brief Tests the defaults of a description. */
-TEST(Small_DeviceDescription, DefaultsDescribeNoDevice)
-{
-    const DeviceDescription description;
-    EXPECT_EQ(description.index, 0u);
-    EXPECT_TRUE(description.name.empty());
-    EXPECT_EQ(description.kind, DeviceKind::Other);
-    EXPECT_EQ(description.numa_node, 0);
-    EXPECT_EQ(description.memory_bytes, 0u);
-    EXPECT_EQ(description.compute_units, 0u);
-}
+static_assert(std::is_same_v<std::underlying_type_t<SushiRuntime::OperatingSystem>, std::uint8_t>,
+              "OperatingSystem is stored in one byte");

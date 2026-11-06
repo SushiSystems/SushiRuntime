@@ -99,7 +99,7 @@ namespace
     }
 
     /** @brief Puts the logger in synchronous mode and restores the levels and the sink. */
-    class Medium_LoggerTest : public ::testing::Test
+    class LoggerTest : public ::testing::Test
     {
         protected:
             void SetUp() override
@@ -121,10 +121,20 @@ namespace
             SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;
     };
 
+    /** @brief The logger tests that touch no thread and no clock. */
+    class Small_LoggerTest : public LoggerTest
+    {
+    };
+
+    /** @brief The logger tests that read the clock or hand a record to another thread. */
+    class Medium_LoggerTest : public LoggerTest
+    {
+    };
+
 }
 
 /** @brief Tests that a call below its category's level leaves its arguments unevaluated. */
-TEST_F(Medium_LoggerTest, DisabledLevelDoesNotEvaluateItsArguments)
+TEST_F(Small_LoggerTest, DisabledLevelDoesNotEvaluateItsArguments)
 {
     SeenRecords records;
     SushiLog::set_log_sink(collect_into(&records));
@@ -142,7 +152,7 @@ TEST_F(Medium_LoggerTest, DisabledLevelDoesNotEvaluateItsArguments)
 }
 
 /** @brief Tests that SushiLog::set_log_level decides which calls reach the sink. */
-TEST_F(Medium_LoggerTest, SetLogLevelTakesEffect)
+TEST_F(Small_LoggerTest, SetLogLevelTakesEffect)
 {
     SeenRecords records;
     SushiLog::set_log_sink(collect_into(&records));

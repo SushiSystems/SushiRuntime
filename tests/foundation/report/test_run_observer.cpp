@@ -28,13 +28,12 @@
  * @author Mustafa Garip
  */
 
-#include <memory>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/report/recording_observer.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 
 using namespace SushiRuntime;
@@ -43,46 +42,17 @@ static_assert(!std::is_copy_constructible_v<RunObserverHandle>, "a handle remove
 static_assert(!std::is_copy_assignable_v<RunObserverHandle>, "a handle removes one observer, once");
 static_assert(std::is_nothrow_move_constructible_v<RunObserverHandle>, "a handle moves without throwing");
 
-namespace
-{
-    /** @brief Counts the observations it receives. */
-    class CountingObserver final : public RunObserver
-    {
-        public:
-            void on_run(const RunObservation& observation) noexcept override
-            {
-                ++runs;
-                last_events = observation.events.size();
-            }
-
-            int runs = 0;                  /**< How many runs were observed. */
-            std::size_t last_events = 0;   /**< Records of the latest observation. */
-    };
-} // namespace
-
-/** @brief Tests that an observation starts empty and on the scheduler layer. */
-TEST(Small_RunObservation, StartsEmpty)
-{
-    const RunObservation observation;
-
-    EXPECT_EQ(observation.layer, ExecutionLayer::Scheduler);
-    EXPECT_EQ(observation.table, nullptr);
-    EXPECT_TRUE(observation.events.empty());
-    EXPECT_TRUE(observation.device_clocks.empty());
-    EXPECT_FALSE(observation.drops.any());
-}
-
 /** @brief Tests that an observer is called through the interface with the observation it is given. */
 TEST(Small_RunObservation, AnObserverReadsTheObservationItIsGiven)
 {
-    CountingObserver observer;
+    RecordingObserver observer;
     RunObservation observation;
     observation.events.resize(3);
 
     static_cast<RunObserver&>(observer).on_run(observation);
 
-    EXPECT_EQ(observer.runs, 1);
-    EXPECT_EQ(observer.last_events, 3u);
+    ASSERT_EQ(observer.count(), 1u);
+    EXPECT_EQ(observer.last().events.size(), 3u);
 }
 
 /** @brief Tests that a default handle stands for nothing and a reset of it is harmless. */
@@ -120,8 +90,8 @@ TEST(Small_RunObserverHandle, DestructionRemovesTheObserver)
     EXPECT_EQ(removals, 1);
 }
 
-/** @brief Tests that a moved handle carries the removal and the moved-from one removes nothing. */
-TEST(Small_RunObserverHandle, AMovedHandleCarriesTheRemoval)
+/** @brief Tests that move construction hands the removal to the new handle and leaves the old one removing nothing. */
+TEST(Small_RunObserverHandle, AMoveConstructedHandleCarriesTheRemoval)
 {
     int removals = 0;
     RunObserverHandle first([&removals]() { ++removals; });
@@ -131,11 +101,21 @@ TEST(Small_RunObserverHandle, AMovedHandleCarriesTheRemoval)
     EXPECT_TRUE(static_cast<bool>(second));
     first.reset();
     EXPECT_EQ(removals, 0);
+    second.reset();
+    EXPECT_EQ(removals, 1);
+}
 
-    RunObserverHandle third;
-    third = std::move(second);
-    EXPECT_TRUE(static_cast<bool>(third));
-    third.reset();
+/** @brief Tests that move assignment hands the removal to the target handle. */
+TEST(Small_RunObserverHandle, AMoveAssignedHandleCarriesTheRemoval)
+{
+    int removals = 0;
+    RunObserverHandle source([&removals]() { ++removals; });
+
+    RunObserverHandle target;
+    target = std::move(source);
+    EXPECT_TRUE(static_cast<bool>(target));
+    EXPECT_FALSE(static_cast<bool>(source));
+    target.reset();
     EXPECT_EQ(removals, 1);
 }
 

@@ -23,7 +23,7 @@
 
 /**
  * @file test_completion_signal.cpp
- * @brief Tests CompletionSignal: a wait times out, a raise wakes it, and reset clears it.
+ * @brief Tests CompletionSignal: a wait times out, a raise wakes the waiter, and reset clears it.
  * @see tests/foundation/measurement/README.md
  * @author Mustafa Garip
  */
@@ -44,15 +44,22 @@ TEST(Medium_CompletionSignal, AWaitWithNoRaiseTimesOut)
     EXPECT_FALSE(signal.wait_for(std::chrono::seconds(0)));
 }
 
-/** @brief Tests that a raise on another thread wakes the waiter, and reset() clears it. */
-TEST(Medium_CompletionSignal, ARaiseWakesTheWaiterAndResetClearsIt)
+/** @brief Tests that a raise on another thread wakes the waiter. */
+TEST(Medium_CompletionSignal, ARaiseWakesTheWaiter)
 {
     CompletionSignal signal;
     std::thread raiser([&signal] { signal.raise(); });
     EXPECT_TRUE(signal.wait_for(std::chrono::seconds(30)));
     raiser.join();
+}
 
+/** @brief Tests that a raised signal stays raised until reset() clears it. */
+TEST(Medium_CompletionSignal, ResetClearsARaisedSignal)
+{
+    CompletionSignal signal;
+    signal.raise();
     EXPECT_TRUE(signal.wait_for(std::chrono::seconds(0))) << "a raised signal stays raised";
+
     signal.reset();
     EXPECT_FALSE(signal.wait_for(std::chrono::seconds(0)));
 }

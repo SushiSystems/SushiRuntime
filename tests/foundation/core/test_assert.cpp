@@ -53,19 +53,19 @@ namespace
         std::fflush(stderr);
     }
 
-    TEST(Small_Assert, AssertStopsTheProcessAndNamesItsSite)
+    TEST(Medium_AssertDeathTest, AssertStopsTheProcessAndNamesItsSite)
     {
         const int line = __LINE__ + 1;
         EXPECT_DEATH(SR_ASSERT(1 + 1 == 3, "the sum holds"), "the sum holds.*" + site(line));
     }
 
-    TEST(Small_Assert, VerifyStopsTheProcessAndNamesItsSite)
+    TEST(Medium_AssertDeathTest, VerifyStopsTheProcessAndNamesItsSite)
     {
         const int line = __LINE__ + 1;
         EXPECT_DEATH(SR_VERIFY(1 + 1 == 3, "the sum holds"), "1 \\+ 1 == 3.*" + site(line));
     }
 
-    TEST(Small_Assert, FatalStopsTheProcessAndNamesItsSite)
+    TEST(Medium_AssertDeathTest, FatalStopsTheProcessAndNamesItsSite)
     {
         const int line = __LINE__ + 1;
         EXPECT_DEATH(SR_FATAL("the unreachable state"), "the unreachable state.*" + site(line));
@@ -79,7 +79,7 @@ namespace
         EXPECT_EQ(evaluations, 2);
     }
 
-    TEST(Small_Assert, AReplacedHandlerIsCalledBeforeTheProcessStops)
+    TEST(Medium_AssertDeathTest, AReplacedHandlerIsCalledBeforeTheProcessStops)
     {
         const int line = __LINE__ + 5;
         EXPECT_DEATH(

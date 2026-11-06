@@ -13,5 +13,5 @@ The file tests Barrier: no thread passes before the last arrives, and it serves 
 
 | Test | What it proves |
 | --- | --- |
-| `NoThreadPassesBeforeTheLastArrives` | Holds the threads that meet at the barrier. */ constexpr std::size_t K_THREADS = 4; /** @brief Tests that every thread arrived before any passed, over two rounds. |
-| `ABarrierOfOneNeverWaits` | A barrier of one never waits. |
+| `Medium_Barrier.NoThreadPassesBeforeTheLastArrives` | Four threads meet twice at the barrier; none passes before every thread of the round has arrived. A helper starts the threads and counts the early passes. |
+| `Small_Barrier.ABarrierOfOneNeverWaits` | A barrier of one returns at once on the calling thread, both times it is used; a hang ends at the size timeout. |

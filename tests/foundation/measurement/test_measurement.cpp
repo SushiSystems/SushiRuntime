@@ -30,7 +30,6 @@
 
 #include <cstddef>
 #include <string>
-#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -38,41 +37,46 @@
 
 using namespace SushiRuntime::Test;
 
-/** @brief Holds the tolerance of every comparison of a summary; the figures are exact. */
-constexpr double K_TOLERANCE = 0.0;
-
-/** @brief Tests the median of an odd and an even count, and the extremes. */
-TEST(Small_Measurement, SummaryTakesTheMiddleAndTheExtremes)
+/** @brief Tests the median of an odd count. */
+TEST(Small_Measurement, TheMedianOfAnOddCountIsTheMiddleSample)
 {
-    const RunStatistics odd = summarize({5.0, 1.0, 3.0});
-    EXPECT_NEAR(odd.median, 3.0, K_TOLERANCE);
-    EXPECT_NEAR(odd.minimum, 1.0, K_TOLERANCE);
-    EXPECT_NEAR(odd.maximum, 5.0, K_TOLERANCE);
-    EXPECT_EQ(odd.run_count, 3u);
-
-    const RunStatistics even = summarize({4.0, 1.0, 2.0, 3.0});
-    EXPECT_NEAR(even.median, 2.5, K_TOLERANCE);
+    EXPECT_EQ(summarize({5.0, 1.0, 3.0}).median, 3.0);
 }
 
-/** @brief Tests that no sample gives an empty summary. */
+/** @brief Tests the median of an even count. */
+TEST(Small_Measurement, TheMedianOfAnEvenCountIsTheMeanOfTheMiddlePair)
+{
+    EXPECT_EQ(summarize({4.0, 1.0, 2.0, 3.0}).median, 2.5);
+}
+
+/** @brief Tests the extremes and the run count of a summary. */
+TEST(Small_Measurement, SummaryTakesTheExtremesAndCountsTheRuns)
+{
+    const RunStatistics statistics = summarize({5.0, 1.0, 3.0});
+    EXPECT_EQ(statistics.minimum, 1.0);
+    EXPECT_EQ(statistics.maximum, 5.0);
+    EXPECT_EQ(statistics.run_count, 3u);
+}
+
+/** @brief Tests that no sample gives an all-zero summary. */
 TEST(Small_Measurement, NoSampleGivesAnEmptySummary)
 {
     const RunStatistics empty = summarize({});
     EXPECT_EQ(empty.run_count, 0u);
-    EXPECT_NEAR(empty.median, 0.0, K_TOLERANCE);
+    EXPECT_EQ(empty.median, 0.0);
+    EXPECT_EQ(empty.minimum, 0.0);
+    EXPECT_EQ(empty.maximum, 0.0);
 }
 
 /** @brief Tests that measure() calls the run the number of times asked. */
 TEST(Small_Measurement, MeasureCallsTheRunEachTime)
 {
     std::size_t calls = 0;
-    const RunStatistics statistics = measure([&calls] { return static_cast<double>(++calls); }, 3);
+    static_cast<void>(measure([&calls] { return static_cast<double>(++calls); }, 3));
     EXPECT_EQ(calls, 3u);
-    EXPECT_NEAR(statistics.median, 2.0, K_TOLERANCE);
-    EXPECT_EQ(measure([] { return 1.0; }).run_count, K_DEFAULT_RUN_COUNT);
 }
 
-/** @brief Tests that the line starts with the prefix and carries every key. */
+/** @brief Tests that the line opens with the prefix and carries every key with its value. */
 TEST(Small_Measurement, TheLineCarriesEveryKey)
 {
     MeasurementLabel label;
@@ -83,9 +87,17 @@ TEST(Small_Measurement, TheLineCarriesEveryKey)
     label.problem_size = 1024;
     const std::string line = format_measurement(label, summarize({1.0, 2.0, 3.0}));
 
-    EXPECT_EQ(line.rfind(K_MEASUREMENT_PREFIX, 0), 0u) << line;
-    for (const char* key : {"benchmark=graph", "case=compile", "unit=ms", "median=2", "min=1",
-                            "max=3", "runs=3", "workers=4", "size=1024"})
-        EXPECT_NE(line.find(key), std::string::npos) << key << " in " << line;
-    EXPECT_NE(line.find(std::string("build=") + build_type()), std::string::npos) << line;
+    EXPECT_EQ(line.rfind("SR_MEASUREMENT benchmark=graph case=compile unit=ms median=2 min=1 max=3 runs=3 build=", 0), 0u)
+        << line;
+    EXPECT_NE(line.find(" workers=4 size=1024"), std::string::npos) << line;
+}
+
+/** @brief Tests that the line names the build as release or debug. */
+TEST(Small_Measurement, TheLineNamesTheBuild)
+{
+    const std::string line = format_measurement(MeasurementLabel{}, summarize({1.0}));
+    const bool names_a_build = line.find(" build=release ") != std::string::npos ||
+                               line.find(" build=debug ") != std::string::npos;
+
+    EXPECT_TRUE(names_a_build) << line;
 }

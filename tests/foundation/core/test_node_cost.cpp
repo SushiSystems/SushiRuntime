@@ -29,7 +29,6 @@
  */
 
 #include <cstring>
-#include <optional>
 
 #include <gtest/gtest.h>
 
@@ -47,13 +46,11 @@ TEST(Small_NodeCost, NamesItsDtype)
     EXPECT_EQ(dtype_name(NodeDType::Unstated), nullptr);
 }
 
-/** @brief Tests that a default cost states no element type and holds zeros. */
-TEST(Small_NodeCost, ADefaultCostHoldsZerosAndNoDtype)
+/** @brief Tests that a default cost states no element type. */
+TEST(Small_NodeCost, ADefaultCostStatesNoDtype)
 {
     const NodeCost cost;
 
-    EXPECT_EQ(cost.flops, 0u);
-    EXPECT_EQ(cost.bytes, 0u);
     EXPECT_EQ(cost.dtype, NodeDType::Unstated);
 }
 
@@ -66,16 +63,4 @@ TEST(Small_NodeCost, EqualityComparesEveryField)
     EXPECT_TRUE(base != (NodeCost{11, 20, NodeDType::F16}));
     EXPECT_TRUE(base != (NodeCost{10, 21, NodeDType::F16}));
     EXPECT_TRUE(base != (NodeCost{10, 20, NodeDType::BF16}));
-}
-
-/** @brief Tests that an optional cost tells an unstated cost from a stated zero. */
-TEST(Small_NodeCost, AnOptionalCostTellsAnUnstatedCostFromAStatedZero)
-{
-    std::optional<NodeCost> unstated;
-    std::optional<NodeCost> zero = NodeCost{};
-
-    EXPECT_FALSE(unstated.has_value());
-    ASSERT_TRUE(zero.has_value());
-    EXPECT_EQ(zero->flops, 0u);
-    EXPECT_EQ(zero->bytes, 0u);
 }

@@ -86,13 +86,19 @@ TEST(Small_PlacementClass, HasPrefixMatchesStrictPrefixesOnly)
     EXPECT_FALSE(named.has_prefix(OperationID::hash("sushiai", 7)));
 }
 
-/** @brief Tests that the default names nothing and equality compares the value only. */
-TEST(Small_PlacementClass, DefaultIsUnnamedAndEqualityComparesTheValue)
+/** @brief Tests that the default names nothing. */
+TEST(Small_PlacementClass, DefaultIsUnnamed)
 {
     constexpr PlacementClass none;
     EXPECT_FALSE(none.is_named());
     EXPECT_EQ(none.value, PlacementClass::K_NONE);
     EXPECT_EQ(none.prefix_count, 0u);
+}
+
+/** @brief Tests that equality compares the value only. */
+TEST(Small_PlacementClass, EqualityComparesTheValue)
+{
+    constexpr PlacementClass none;
     EXPECT_EQ("sushiai.replica"_class, "sushiai.replica"_class);
     EXPECT_NE("sushiai.replica"_class, "sushiai.trainer"_class);
     EXPECT_NE("sushiai.replica"_class, none);

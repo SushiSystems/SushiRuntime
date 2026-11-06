@@ -6,12 +6,12 @@
 sushiruntime_add_module_tests(
     MODULE machine
     SOURCES
-        test_device_description.cpp
-        test_device_facts.cpp
-        test_device_filter.cpp
-        test_device_kind.cpp
+        compile_device_description.cpp
+        compile_device_facts.cpp
+        compile_device_kind.cpp
+        compile_operating_system.cpp
+        compile_pin_policy.cpp
+        compile_worker_pool.cpp
+        compile_device_filter.cpp
         test_node_facts.cpp
-        test_node_label.cpp
-        test_operating_system.cpp
-        test_pin_policy.cpp
-        test_worker_pool.cpp)
+        test_node_label.cpp)

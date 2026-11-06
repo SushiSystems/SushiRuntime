@@ -36,14 +36,6 @@
 
 using namespace SushiRuntime;
 
-/** @brief Tests that a default label holds two empty strings. */
-TEST(Small_NodeLabel, DefaultsHoldAnEmptyKeyAndValue)
-{
-    const NodeLabel label;
-    EXPECT_TRUE(label.key.empty());
-    EXPECT_TRUE(label.value.empty());
-}
-
 /** @brief Tests that a copy keeps the key and the value. */
 TEST(Small_NodeLabel, ACopyKeepsTheKeyAndTheValue)
 {

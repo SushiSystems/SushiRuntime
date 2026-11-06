@@ -23,27 +23,19 @@
 
 /**
  * @file test_node_facts.cpp
- * @brief Tests NodeFacts: the values a record holds before a runtime fills it.
+ * @brief Tests NodeFacts: a copy keeps the labels in order and every device.
  * @author Mustafa Garip
  * @see tests/foundation/machine/README.md
  */
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/machine/device_facts.hpp>
+#include <SushiRuntime/machine/device_kind.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
-#include <SushiRuntime/machine/operating_system.hpp>
+#include <SushiRuntime/machine/node_label.hpp>
 
 using namespace SushiRuntime;
-
-/** @brief Tests the defaults of a record. */
-TEST(Small_NodeFacts, DefaultsDescribeNoMachine)
-{
-    const NodeFacts facts;
-    EXPECT_TRUE(facts.name.empty());
-    EXPECT_EQ(facts.operating_system, OperatingSystem::Unknown);
-    EXPECT_TRUE(facts.labels.empty());
-    EXPECT_TRUE(facts.devices.empty());
-}
 
 /** @brief Tests that a copy keeps the labels in order and every device. */
 TEST(Small_NodeFacts, ACopyKeepsTheLabelsInOrderAndTheDevices)

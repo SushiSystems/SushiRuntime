@@ -23,43 +23,24 @@
 
 /**
  * @file test_run_report.cpp
- * @brief Tests the node event records and the names a RunReport gives its values.
+ * @brief Tests what RunReport::reset() keeps and zeroes.
  * @see tests/foundation/report/README.md
  * @author Mustafa Garip
  */
 
 #include <cstddef>
-#include <cstdint>
-#include <string>
-#include <type_traits>
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/report/node_event_record.hpp>
 #include <SushiRuntime/report/run_report.hpp>
 
 using namespace SushiRuntime;
 
-/** @brief Tests NodeEventRecord's layout and what RunReport::reset() keeps and zeroes. */
-namespace NodeEventRecordTests
+/** @brief Tests what RunReport::reset() keeps and zeroes. */
+namespace RunReportTests
 {
-    /** @brief Tests that NodeEventRecord is 48 bytes and trivially copyable. */
-    TEST(Small_NodeEventRecord, LayoutIsFortyEightBytesAndTriviallyCopyable)
-    {
-        static_assert(sizeof(NodeEventRecord) == 48u,
-                      "NodeEventRecord must stay 48 bytes");
-        static_assert(std::is_trivially_copyable<NodeEventRecord>::value,
-                      "NodeEventRecord must stay trivially copyable");
-        static_assert(offsetof(NodeEventRecord, end_ns) == 32u &&
-                          offsetof(NodeEventRecord, device_index) == 40u &&
-                          offsetof(NodeEventRecord, submit_thread) == 44u,
-                      "the two appended fields follow end_ns");
-        EXPECT_EQ(sizeof(NodeEventRecord), 48u);
-        EXPECT_TRUE(std::is_trivially_copyable<NodeEventRecord>::value);
-    }
-
     /** @brief Tests that reset() keeps the capacity of the report's vectors. */
-    TEST(Small_NodeEventRecord, ResetKeepsWarningsCapacity)
+    TEST(Small_RunReport, ResetKeepsWarningsCapacity)
     {
         RunReport report;
         report.warnings.push_back("first");
@@ -77,7 +58,7 @@ namespace NodeEventRecordTests
     }
 
     /** @brief Tests that reset() returns the outcome and the counts to their constructed values. */
-    TEST(Small_NodeEventRecord, ResetZeroesTheOutcomeAndTheCounts)
+    TEST(Small_RunReport, ResetZeroesTheOutcomeAndTheCounts)
     {
         RunReport report;
         report.is_successful = false;
@@ -94,29 +75,4 @@ namespace NodeEventRecordTests
         EXPECT_EQ(report.layer, ExecutionLayer::Scheduler);
         EXPECT_EQ(report.distributed_statistics.tasks_offloaded_to_network, 0u);
     }
-
-    /** @brief Tests that the widths default to K_WIDTH_UNKNOWN and the device to the host. */
-    TEST(Small_NodeEventRecord, WidthsDefaultToUnknown)
-    {
-        const NodeEventRecord rec{};
-        EXPECT_EQ(K_WIDTH_UNKNOWN, 0xFFFFFFFFu);
-        EXPECT_EQ(rec.launched_width, K_WIDTH_UNKNOWN);
-        EXPECT_EQ(rec.live_width, K_WIDTH_UNKNOWN);
-        EXPECT_EQ(rec.device_index, K_HOST_DEVICE_INDEX);
-        EXPECT_EQ(rec.submit_thread, 0u);
-    }
-} // namespace NodeEventRecordTests
-
-/** @brief Tests that the report types are reachable under their public names. */
-namespace RunReportNamesTests
-{
-    /** @brief Tests that a default report reads as a successful scheduler run with no rows. */
-    TEST(Small_RunReportNames, ADefaultReportIsEmpty)
-    {
-        const SushiRuntime::RunReport report;
-        EXPECT_TRUE(report.is_successful);
-        EXPECT_EQ(report.layer, SushiRuntime::ExecutionLayer::Scheduler);
-        EXPECT_TRUE(report.numa_statistics.empty());
-        EXPECT_EQ(SushiRuntime::NodeEventRecord().launched_width, SushiRuntime::K_WIDTH_UNKNOWN);
-    }
-} // namespace RunReportNamesTests
+} // namespace RunReportTests

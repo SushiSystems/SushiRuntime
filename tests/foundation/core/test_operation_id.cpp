@@ -53,12 +53,17 @@ TEST(Small_OperationID, LiteralMatchesTheExplicitHash)
     EXPECT_NE(literal, "vec.triple"_op);
 }
 
-/** @brief Tests that the default names nothing and ordering follows the value. */
-TEST(Small_OperationID, DefaultIsUnnamedAndOrderFollowsTheValue)
+/** @brief Tests that the default names nothing. */
+TEST(Small_OperationID, DefaultIsUnnamed)
 {
     constexpr OperationID none;
     EXPECT_FALSE(none.is_named());
     EXPECT_EQ(none.value, OperationID::K_NONE);
+}
+
+/** @brief Tests that ordering follows the value. */
+TEST(Small_OperationID, OrderFollowsTheValue)
+{
     EXPECT_TRUE(OperationID(1) < OperationID(2));
     EXPECT_FALSE(OperationID(2) < OperationID(2));
 }

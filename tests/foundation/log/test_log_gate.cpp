@@ -40,7 +40,6 @@ using namespace SushiRuntime;
 
 namespace
 {
-    /** @brief Names the category the gate tests read. */
     /** @brief Names the project of the category the gate tests read. */
     constexpr SushiLog::LogProject K_GATE_TEST_LOG_PROJECT{"log_gate_test", "SR_LOG_GATE_TEST_LEVEL"};
 

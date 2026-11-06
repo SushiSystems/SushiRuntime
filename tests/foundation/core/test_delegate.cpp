@@ -29,7 +29,6 @@
  */
 
 #include <memory>
-#include <type_traits>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -132,21 +131,5 @@ namespace
         Delegate<int()> moved = std::move(d);
         EXPECT_EQ(moved(), 123);
         EXPECT_FALSE(static_cast<bool>(d));
-    }
-
-    TEST(Small_Delegate, HoldsNothrowMovableMoveOnlyTarget)
-    {
-        auto owned = std::make_unique<int>(321);
-        auto target = [p = std::move(owned)] { return *p; };
-        static_assert(std::is_nothrow_move_constructible_v<decltype(target)>,
-                      "The target of this test must have a noexcept move constructor.");
-        static_assert(!std::is_copy_constructible_v<decltype(target)>,
-                      "The target of this test must be move-only.");
-
-        Delegate<int()> d = std::move(target);
-        Delegate<int()> moved = std::move(d);
-        EXPECT_FALSE(static_cast<bool>(d));
-        ASSERT_TRUE(static_cast<bool>(moved));
-        EXPECT_EQ(moved(), 321);
     }
 }

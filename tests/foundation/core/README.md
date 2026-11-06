@@ -8,15 +8,16 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_allocation.cpp
 
-A counting owner records each release and the address it was given; the addresses are never
+A `RecordingAllocationOwner` records each release and the address it was given; the addresses are never
 dereferenced.
 
 | Test | What it proves |
 | --- | --- |
 | `ReleasesOnceOnDestruction` | A destroyed allocation releases its address once, to its owner. |
-| `MoveTransfersTheReleaseAndEmptiesTheSource` | A move hands the release to the target and leaves the source empty, so the address is released once. |
+| `MoveTransfersTheRelease` | A move hands the release to the target, so the address is released once. |
+| `MoveEmptiesTheSource` | A moved-from allocation is empty and holds no bytes. |
 | `MoveAssignmentReleasesTheOverwrittenAddressFirst` | Assigning over an allocation releases the address it held before it takes the new one. |
-| `AnEmptyAllocationHasNoAddressOrOwner` | A default allocation is empty and holds 0 bytes. |
+| `AnEmptyAllocationHasNoAddressAndNoBytes` | A default allocation is empty and holds 0 bytes. |
 | `ResetOnANonNullAddressWithNoOwnerReleasesNothing` | `reset()` on an allocation with no owner empties it and releases nothing. |
 
 ## test_assert.cpp
@@ -27,7 +28,8 @@ the tests too.
 
 ### Death tests
 
-Each of the three death tests runs its macro in a child process and matches the line the default
+The suite is `Medium_AssertDeathTest`, since each death test starts a child process. Each of the three
+stop tests runs its macro in a child process and matches the line the default
 handler writes against the message or the condition's text, followed by `test_assert.cpp:` and
 the line of the macro.
 
@@ -42,6 +44,11 @@ The file covers `Delegate`: the empty state, invocation and return values, argum
 forwarding, move semantics (a move leaves the source empty), destruction of the erased target, and
 that a move-only target is held without a copy.
 
+### `HoldsMoveOnlyTarget`
+
+The lambda captures a `unique_ptr`, so it cannot be copied. After the `Delegate` is moved, the source is
+empty and the destination returns the pointee.
+
 ### `DestroysTarget`
 
 The lambda owns a copy of the `shared_ptr`. Destroying the `Delegate` must run the destructor of the
@@ -51,12 +58,6 @@ lambda and release that copy.
 
 A `Delegate<void(int)>` holds a lambda that returns an `int`. The call runs the lambda and drops
 the value it returns.
-
-### `HoldsNothrowMovableMoveOnlyTarget`
-
-The lambda captures a `unique_ptr`, so it cannot be copied and its move constructor is `noexcept`;
-two `static_assert`s state both. After the `Delegate` is moved, the source is empty and the
-destination returns the pointee.
 
 ## test_determinism.cpp
 
@@ -91,8 +92,9 @@ The addresses are never dereferenced.
 ## test_ref_counted.cpp
 
 The file covers the intrusive reference count `RefCounted` and its smart pointer `sushi_ptr`: single
-ownership, copy and move semantics, `leak()`, polymorphic deletion, and concurrent counting without
-a race.
+ownership, copy and move semantics, polymorphic deletion, and concurrent counting without
+a race. `leak()` is tested with `sushi_ptr`. The three single-thread tests are `Small_`; the concurrent one
+starts threads and is `Medium_`.
 
 ## test_result.cpp
 
@@ -124,10 +126,6 @@ the stored message.
 `error()` on a `Result` that holds an error returns the stored code and message, and a write
 through the non-const form is read back through the const one.
 
-### `TheErrorTypeDefaultsToError`
-
-`Result<int>` is `Result<int, Error>`, and `Result<void>` is `Result<void, Error>`.
-
 ### `EveryValueAccessorOnAnErrorStopsWithTheStoredMessage`
 
 Each of the six value accessors on a `Result` that holds `lost_device()` stops the process, and
@@ -142,7 +140,7 @@ of `K_VALUE_OF_ERROR`.
 
 `error()` on a `Result` that holds a value, const or non-const, stops the process.
 
-### `VoidSuccessHoldsNoErrorAndValueReturns`, `VoidErrorReturnsTheStoredError`
+### `VoidSuccessHoldsNoError`, `VoidValueReturnsOnSuccess`, `VoidErrorReturnsTheStoredError`
 
 A default-constructed `Result<void>` is a success, and `value()` returns. One built from
 `make_error` reports no value and returns the stored error from both forms of `error()`.
@@ -154,7 +152,7 @@ A default-constructed `Result<void>` is a success, and `value()` returns. One bu
 
 ## test_span.cpp
 
-The file covers `SushiRuntime::span`: construction, subviews and the container binding rules. The binding
+The file covers `SushiRuntime::span`: construction, subviews and the container binding rules; a helper takes each container as a row. The binding
 rules are static_asserts: a non-const span does not bind to an rvalue container, and a const span binds to
 one. Under C++20 the file also checks conversion to and from `std::span`.
 
@@ -171,32 +169,24 @@ A default span is empty, has size 0 and a null data pointer.
 A span built from a pointer and a count points at the first element and reports the count as its size
 and the byte count as its `size_bytes`. Its element 1 reads 20.
 
-### `ConstructsFromCArray`
+### `ConstructsFromAnLvalueContiguousContainer`
 
-A span built from a C array has the array's size, and its `back()` is the last element.
+A span built from a C array, a vector or a `std::array` has the container's data pointer and size. One helper
+takes each container as a row.
 
-### `ConstructsFromLvalueVector`
+### `AnLvalueVectorSpanWritesThrough`
 
-A span over an lvalue vector has the vector's data pointer and size. A write through the span changes the
-vector's first element.
+A write through a span over an lvalue vector changes the vector's first element.
 
-### `ConstructsFromStdArray`
+### `ConstViewAliasesAConstOrNonConstContainer`
 
-A span over a `std::array` has the array's size and its `front()` element.
-
-### `ConstViewOverConstContainer`
-
-A const span over a const vector has the vector's size and data pointer.
-
-### `ConstViewOverNonConstLvalue`
-
-A const span over a non-const vector sums the elements to 6.
+A const span over a const vector, and over a non-const one, has the vector's size and data pointer.
 
 ### `AcceptsTemporaryContainerForConstElements`
 
 A const span accepts a temporary vector, and `sum` over that vector returns 6.
 
-### `FirstLastAndSubspanSelectElements`
+### `FirstSelectsTheLeadingElements`, `LastSelectsTheTrailingElements`, `SubspanSelectsAWindow`
 
 On a span of the four values 1 to 4, `first(2)` holds 1 and 2, `last(2)` holds 3 and 4, `subspan(1, 2)`
 holds 2 and 3, and `subspan(1)` has size 3 and ends at 4.
@@ -211,18 +201,17 @@ the data pointer and the size of 3.
 The file covers `StrongID`. Its `static_assert`s state that an id is trivially copyable, has
 the size of its representation and does not convert from an integer.
 
-### `DefaultIsZero`, `ExplicitConstructionKeepsValue`
+### `ExplicitConstructionKeepsValue`
 
-A default id wraps zero, and an id built from an integer returns that integer from `value()`.
+An id built from an integer returns that integer from `value()`.
 
 ### `EqualityComparesValues`, `OrderingFollowsValues`
 
-`==`, `!=` and `<` compare the wrapped integers.
+`==`, `!=` and `<` compare the wrapped integers, and an ordered map lists its keys in that order.
 
-### `UsableAsUnorderedMapKey`, `UsableAsOrderedMapKey`, `HashForwardsToRepresentation`
+### `UsableAsUnorderedMapKey`, `HashForwardsToRepresentation`
 
-An id is a key of `std::unordered_map` and of `std::map`, and `std::hash` of an id equals
-`std::hash` of its integer.
+An id is a key of `std::unordered_map`, and `std::hash` of an id equals `std::hash` of its integer.
 
 ## test_sushi_ptr.cpp
 
@@ -257,11 +246,10 @@ A non-empty `sushi_ptr` does not compare equal to a null raw pointer.
 Copy-assigning a `sushi_ptr` to itself, and then move-assigning it to itself, keeps the object. Its count is
 1 afterwards, and nothing is destroyed.
 
-### `ResetReleasesOldAndTakesNew`
+### `ResetReleasesTheOldObject`, `ResetTakesTheNewObject`
 
-Resetting the first owner to the second owner's object destroys the object the first owner held and gives
-the second object a count of 2. Resetting the first owner to null leaves the second object with a count of
-1 and destroys nothing more.
+Resetting the first owner to the second owner's object destroys the object the first owner held. The second
+object then has a count of 2, and resetting the first owner to null leaves it with a count of 1.
 
 ### `LeakRoundTripHandsReferenceBack`
 
@@ -279,9 +267,10 @@ The test program and the library it loads are built from one tree, so `require_m
 returns here. The mismatch cases call `Detail::require_same_release`, the function it forwards to,
 with two versions the test chooses.
 
-### `APatchDifferenceIsAMatch`
+### `APatchDifferenceDoesNotStop`
 
-Only the major and the minor are compared. A patch release changes no header a consumer compiled.
+Only the major and the minor are compared. A patch release changes no header a consumer compiled. The call
+runs in a child process that exits with 0, so the test fails if the call stops it.
 
 ### `AnOlderLibraryStopsWithBothVersions`, `ANewerLibraryStopsAndIsCalledNewer`
 
@@ -300,11 +289,11 @@ The file tests popcount_u64() and countr_zero_u64() on edge and mixed words.
 
 ## test_common.cpp
 
-The file tests the constants of common.hpp: their values and the powers of two they promise.
+The file tests the powers of two the alignment constants of common.hpp promise. The values themselves
+are not tested.
 
 | Test | What it proves |
 | --- | --- |
-| `ConstantsHoldTheirDocumentedValues` | Checks the values the scheduler and the allocators are sized by. |
 | `AlignmentsArePowersOfTwo` | Both alignments are powers of two and the default covers a cache line. |
 
 ## test_error_translation.cpp
@@ -326,7 +315,7 @@ The file tests the export macros: each one is defined, and SR_API spells SUSHIRU
 | Test | What it proves |
 | --- | --- |
 | `ShortSpellingExpandsLikeTheLongOne` | The short spelling expands to the same attribute as the long one. |
-| `AConsumerImportsTheSymbols` | A consumer of the library imports, which a test program is. |
+| `AConsumerLinksAndCallsAnExportedSymbol` | A consumer links an exported symbol of the library and calls it. |
 
 ## test_operation_id.cpp
 
@@ -336,7 +325,8 @@ The file tests OperationID: the FNV-1a hash, the literal, naming and ordering.
 | --- | --- |
 | `HashIsFNV1a` | Checks the hash against the FNV-1a offset basis and a published value. |
 | `LiteralMatchesTheExplicitHash` | The literal hashes at compile time and equals the explicit form. |
-| `DefaultIsUnnamedAndOrderFollowsTheValue` | The default names nothing and ordering follows the value. |
+| `DefaultIsUnnamed` | The default names nothing. |
+| `OrderFollowsTheValue` | Ordering follows the value. |
 
 ## test_placement_class.cpp
 
@@ -349,7 +339,8 @@ The file tests PlacementClass: the whole-name hash, the prefix hashes, the liter
 | `OneSegmentNameHoldsNoPrefix` | A one-segment name holds none. |
 | `SixSegmentNameKeepsFourPrefixes` | Prefixes past `K_MAX_PREFIX_DEPTH` are not kept. |
 | `HasPrefixMatchesStrictPrefixesOnly` | has_prefix() finds a prefix and never the whole name. |
-| `DefaultIsUnnamedAndEqualityComparesTheValue` | The default names nothing and equality compares the value. |
+| `DefaultIsUnnamed` | The default names nothing. |
+| `EqualityComparesTheValue` | Equality compares the value. |
 
 ## test_node_cost.cpp
 
@@ -358,6 +349,5 @@ NodeCost and NodeDType, the work a caller states one dispatch of a node does.
 | Test | What it proves |
 | --- | --- |
 | `Small_NodeCost.NamesItsDtype` | Each element type has its name and that an unstated one has none. |
-| `Small_NodeCost.ADefaultCostHoldsZerosAndNoDtype` | A default cost states no element type and holds zeros. |
+| `Small_NodeCost.ADefaultCostStatesNoDtype` | A default cost states no element type. |
 | `Small_NodeCost.EqualityComparesEveryField` | Equality compares every field, the dtype included. |
-| `Small_NodeCost.AnOptionalCostTellsAnUnstatedCostFromAStatedZero` | An optional cost tells an unstated cost from a stated zero. |

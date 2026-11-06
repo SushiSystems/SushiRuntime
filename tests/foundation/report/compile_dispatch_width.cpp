@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_sushiruntime_log_project.cpp                                      */
+/* compile_dispatch_width.cpp                                             */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,23 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_sushiruntime_log_project.cpp
- * @brief Tests K_SUSHIRUNTIME_LOG_PROJECT: the name and variable of the runtime's records.
- * @see tests/foundation/log/README.md
+ * @file compile_dispatch_width.cpp
+ * @brief Compiles dispatch_width.hpp on its own, so the header carries every include it needs.
+ * @see tests/foundation/report/README.md
  * @author Mustafa Garip
  */
 
-#include <SushiRuntime/log/sushiruntime_log_project.hpp>
-
-#include <gtest/gtest.h>
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the runtime's project is sushiruntime, read from SR_LOG_LEVEL. */
-TEST(Small_SushiRuntimeLogProject, TheProjectIsTheRuntimeReadFromItsVariable)
-{
-    static_assert(K_SUSHIRUNTIME_LOG_PROJECT.name() == "sushiruntime", "the runtime's name");
-    static_assert(K_SUSHIRUNTIME_LOG_PROJECT.level_variable() == "SR_LOG_LEVEL",
-                  "the runtime's variable");
-    SUCCEED();
-}
+#include <SushiRuntime/report/dispatch_width.hpp>

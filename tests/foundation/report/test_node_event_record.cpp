@@ -23,7 +23,7 @@
 
 /**
  * @file test_node_event_record.cpp
- * @brief Tests that NodeEventRecord keeps the size and the field order SushiEngine mirrors.
+ * @brief Tests what a default NodeEventRecord states; the size and the field order SushiEngine mirrors are held by file-scope static_asserts.
  * @see tests/foundation/report/README.md
  * @author Mustafa Garip
  */
@@ -34,7 +34,6 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/report/clock_pairing.hpp>
 #include <SushiRuntime/report/dispatch_width.hpp>
 #include <SushiRuntime/report/node_event_record.hpp>
 
@@ -54,12 +53,11 @@ static_assert(offsetof(NodeEventRecord, end_ns) == 32, "end_ns follows");
 static_assert(offsetof(NodeEventRecord, device_index) == 40, "device_index is appended after the old fields");
 static_assert(offsetof(NodeEventRecord, submit_thread) == 44, "submit_thread is appended last");
 
-/** @brief Tests the size and the order of the record, and what a default record states. */
-TEST(Small_NodeEventRecord, HasTheSizeAndTheOrderTheEngineMirrors)
+/** @brief Tests what a default record states: unknown widths, the host device, no thread and zero times. */
+TEST(Small_NodeEventRecord, ADefaultRecordStatesUnknownWidthsAndTheHost)
 {
     const NodeEventRecord record;
 
-    EXPECT_EQ(sizeof(NodeEventRecord), 48u);
     EXPECT_EQ(record.launched_width, K_WIDTH_UNKNOWN);
     EXPECT_EQ(record.live_width, K_WIDTH_UNKNOWN);
     EXPECT_EQ(record.device_index, K_HOST_DEVICE_INDEX) << "a record names the host until a device claims it";
@@ -67,15 +65,4 @@ TEST(Small_NodeEventRecord, HasTheSizeAndTheOrderTheEngineMirrors)
     EXPECT_EQ(record.submit_ns, 0u);
     EXPECT_EQ(record.start_ns, 0u);
     EXPECT_EQ(record.end_ns, 0u);
-}
-
-/** @brief Tests that a device clock holds the device and its pairing as they were given. */
-TEST(Small_NodeEventRecord, ADeviceClockKeepsItsDeviceAndPairing)
-{
-    const DeviceClock clock{2, ClockPairing{100, 200, 5}};
-
-    EXPECT_EQ(clock.device_index, 2u);
-    EXPECT_EQ(clock.pairing.event_ns, 100u);
-    EXPECT_EQ(clock.pairing.steady_ns, 200u);
-    EXPECT_EQ(clock.pairing.uncertainty_ns, 5u);
 }

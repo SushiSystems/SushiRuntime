@@ -9,8 +9,8 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_device_probe.cpp
 
-The file tests has_any_sycl_device() against the device list SYCL reports.
+The file tests has_any_sycl_device() against the devices of every SYCL platform.
 
 | Test | What it proves |
 | --- | --- |
-| `AgreesWithTheDeviceList` | The probe agrees with the device list. |
+| `AgreesWithTheDevicesOfEveryPlatform` | The probe agrees with the devices counted platform by platform; the test reports skipped when the machine has none. |

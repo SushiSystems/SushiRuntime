@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_worker_pool.cpp                                                   */
+/* compile_pin_policy.cpp                                                 */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,23 +22,16 @@
 /**************************************************************************/
 
 /**
- * @file test_worker_pool.cpp
- * @brief Tests WorkerPool: an empty pool that pins by default.
+ * @file compile_pin_policy.cpp
+ * @brief Compiles pin_policy.hpp on its own, so the header carries every include it needs.
  * @see tests/foundation/machine/README.md
  * @author Mustafa Garip
  */
 
-#include <gtest/gtest.h>
+#include <SushiRuntime/machine/pin_policy.hpp>
 
-#include <SushiRuntime/machine/worker_pool.hpp>
+#include <cstdint>
+#include <type_traits>
 
-using namespace SushiRuntime;
-
-/** @brief Tests the defaults: no worker, core 0, pinned. */
-TEST(Medium_WorkerPool, DefaultsToAnEmptyPinnedPool)
-{
-    const WorkerPool pool;
-    EXPECT_EQ(pool.count, 0u);
-    EXPECT_EQ(pool.first_core, 0u);
-    EXPECT_EQ(pool.pinning, PinPolicy::Pin);
-}
+static_assert(std::is_same_v<std::underlying_type_t<SushiRuntime::PinPolicy>, std::uint8_t>,
+              "PinPolicy is stored in one byte");

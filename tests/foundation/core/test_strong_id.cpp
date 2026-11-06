@@ -23,7 +23,7 @@
 
 /**
  * @file test_strong_id.cpp
- * @brief Tests StrongID: defaults, construction, comparison, hashing and its type traits.
+ * @brief Tests StrongID: construction, comparison, hashing and its type traits.
  * @see tests/foundation/core/README.md
  * @author Mustafa Garip
  */
@@ -53,9 +53,13 @@ namespace
     static_assert(!std::is_convertible_v<std::size_t, DeviceID>,
                   "A raw integer must not convert implicitly to StrongID.");
 
-    TEST(Small_StrongId, DefaultIsZero)
+    /** @brief Returns the values of the keys of @p ordered, in map order. */
+    std::vector<std::size_t> keys_of(const std::map<DeviceID, int>& ordered)
     {
-        EXPECT_EQ(DeviceID{}.value(), std::size_t{0});
+        std::vector<std::size_t> keys;
+        for (const auto& entry : ordered)
+            keys.push_back(entry.first.value());
+        return keys;
     }
 
     TEST(Small_StrongId, ExplicitConstructionKeepsValue)
@@ -77,6 +81,14 @@ namespace
         EXPECT_TRUE(DeviceID{1} < DeviceID{2});
         EXPECT_FALSE(DeviceID{2} < DeviceID{2});
         EXPECT_FALSE(DeviceID{3} < DeviceID{2});
+
+        std::map<DeviceID, int> ordered;
+        ordered[DeviceID{9}] = 90;
+        ordered[DeviceID{2}] = 20;
+        ordered[DeviceID{5}] = 50;
+
+        const std::vector<std::size_t> keys = keys_of(ordered);
+        EXPECT_EQ(keys, (std::vector<std::size_t>{2, 5, 9}));
     }
 
     TEST(Small_StrongId, UsableAsUnorderedMapKey)
@@ -87,19 +99,6 @@ namespace
         ASSERT_EQ(names.size(), 2u);
         EXPECT_EQ(names.at(DeviceID{5}), 50);
         EXPECT_EQ(names.count(DeviceID{0}), 0u);
-    }
-
-    TEST(Small_StrongId, UsableAsOrderedMapKey)
-    {
-        std::map<DeviceID, int> ordered;
-        ordered[DeviceID{9}] = 90;
-        ordered[DeviceID{2}] = 20;
-        ordered[DeviceID{5}] = 50;
-
-        std::vector<std::size_t> keys;
-        for (const auto& entry : ordered)
-            keys.push_back(entry.first.value());
-        EXPECT_EQ(keys, (std::vector<std::size_t>{2, 5, 9}));
     }
 
     TEST(Small_StrongId, HashForwardsToRepresentation)

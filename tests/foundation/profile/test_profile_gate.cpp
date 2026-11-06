@@ -118,12 +118,20 @@ TEST_F(Small_ProfileGate, AZoneAboveTheCompiledLevelWritesNothing)
         << "a fine zone is level 2, above a unit compiled at level 1";
     EXPECT_EQ(std::count(written.begin(), written.end(), "gate.two.detail"), 0)
         << "a detail zone is level 3, above a unit compiled at level 2";
-    EXPECT_EQ(std::count(written.begin(), written.end(), "gate.two.fine"), 1);
 
     // A compiled-out zone never reaches the registry.
     EXPECT_FALSE(site_registered("gate.one.fine"));
     EXPECT_FALSE(site_registered("gate.two.detail"));
     EXPECT_TRUE(site_registered("gate.one.stage"));
+}
+
+/** @brief Tests, as the control of the test above, that a fine zone of a unit compiled at level 2 writes one event. */
+TEST_F(Small_ProfileGate, AFineZoneOfAUnitCompiledAtLevelTwoWritesOneEvent)
+{
+    ProfileGateTests::record_at_level_two();
+
+    const std::vector<std::string> written = names_written();
+    EXPECT_EQ(std::count(written.begin(), written.end(), "gate.two.fine"), 1);
 }
 
 /** @brief Tests that a unit compiled at level 0 writes nothing at all. */
@@ -153,11 +161,4 @@ TEST_F(Small_ProfileGate, AClosedCollectorWritesNothing)
     ProfileGateTests::record_at_level_three();
 
     EXPECT_TRUE(names_written().empty());
-}
-
-/** @brief Tests that the compiled level of this translation unit is the default the build sets. */
-TEST(Small_ProfileGateLevel, ThisUnitCompilesAtTheDefaultLevel)
-{
-    static_assert(SushiRuntime::Internal::Profile::K_COMPILED_LEVEL >= 0, "a level is never negative");
-    EXPECT_EQ(SushiRuntime::Internal::Profile::K_COMPILED_LEVEL, SR_PROFILE_LEVEL);
 }

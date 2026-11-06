@@ -13,5 +13,8 @@ The file tests USMShared: an allocation the host reads and writes, freed once, m
 
 | Test | What it proves |
 | --- | --- |
-| `TheHostWritesAndReadsEveryElement` | The host writes and reads every element. |
-| `AMoveHandsTheAllocationOver` | A move hands the allocation over and empties the source. |
+| `Medium_USMShared.TheHostWritesAndReadsEveryElement` | The host writes and reads every element; a helper writes the multiples and another reads them back. |
+| `Medium_USMShared.AMoveConstructionHandsTheAllocationOver` | A move construction hands the allocation over and empties the source. |
+| `Medium_USMShared.AMoveAssignmentHandsTheAllocationOver` | A move assignment hands the allocation over, with its count. |
+
+The queue comes from the fixture base of `tests/support/runtime_environment.hpp`; the fixture skips the test on a machine with no SYCL device.

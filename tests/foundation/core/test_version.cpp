@@ -28,6 +28,7 @@
  * @author Mustafa Garip
  */
 
+#include <cstdlib>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -56,9 +57,14 @@ namespace
         EXPECT_STREQ(SushiRuntime::runtime_version_string(), SUSHIRUNTIME_VERSION_STRING);
     }
 
-    TEST(Small_Version, APatchDifferenceIsAMatch)
+    TEST(Medium_VersionDeathTest, APatchDifferenceDoesNotStop)
     {
-        SushiRuntime::Detail::require_same_release(Version{0, 4, 0}, Version{0, 4, 7});
+        EXPECT_EXIT(
+            {
+                SushiRuntime::Detail::require_same_release(Version{0, 4, 0}, Version{0, 4, 7});
+                std::exit(0);
+            },
+            ::testing::ExitedWithCode(0), "");
     }
 
     TEST(Medium_VersionDeathTest, AnOlderLibraryStopsWithBothVersions)

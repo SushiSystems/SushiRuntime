@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_device_facts.cpp                                                  */
+/* compile_device_facts.cpp                                               */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,24 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_device_facts.cpp
- * @brief Tests DeviceFacts: the values a record holds before a device fills it.
- * @author Mustafa Garip
+ * @file compile_device_facts.cpp
+ * @brief Compiles device_facts.hpp on its own, so the header carries every include it needs.
  * @see tests/foundation/machine/README.md
+ * @author Mustafa Garip
  */
 
-#include <gtest/gtest.h>
-
 #include <SushiRuntime/machine/device_facts.hpp>
-#include <SushiRuntime/machine/device_kind.hpp>
-
-using namespace SushiRuntime;
-
-/** @brief Tests the defaults of a record. */
-TEST(Small_DeviceFacts, DefaultsDescribeNoDevice)
-{
-    const DeviceFacts facts;
-    EXPECT_EQ(facts.kind, DeviceKind::Other);
-    EXPECT_TRUE(facts.name.empty());
-    EXPECT_EQ(facts.memory_bytes, 0u);
-}

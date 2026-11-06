@@ -29,6 +29,7 @@
  */
 
 #include <array>
+#include <iterator>
 #include <type_traits>
 #include <vector>
 
@@ -95,46 +96,51 @@ namespace
         EXPECT_EQ(view[1], 20);
     }
 
-    TEST(Small_Span, ConstructsFromCArray)
+    /** @brief Expects a span built from @p container to alias its elements. */
+    template <typename Container>
+    void expect_span_aliases(Container& container)
     {
-        int values[] = {1, 2, 3, 4};
-        span<int> view = values;
-        EXPECT_EQ(view.size(), 4U);
-        EXPECT_EQ(view.back(), 4);
+        span<int> view = container;
+        EXPECT_EQ(view.data(), std::data(container));
+        EXPECT_EQ(view.size(), std::size(container));
     }
 
-    TEST(Small_Span, ConstructsFromLvalueVector)
+    /** @brief Expects a const span built from @p container to alias its elements. */
+    template <typename Container>
+    void expect_const_span_aliases(Container& container)
+    {
+        span<const int> view = container;
+        EXPECT_EQ(view.data(), std::data(container));
+        EXPECT_EQ(view.size(), std::size(container));
+    }
+
+    TEST(Small_Span, ConstructsFromAnLvalueContiguousContainer)
+    {
+        int c_array[] = {1, 2, 3, 4};
+        std::vector<int> vector{5, 6, 7};
+        std::array<int, 3> std_array{8, 9, 10};
+
+        expect_span_aliases(c_array);
+        expect_span_aliases(vector);
+        expect_span_aliases(std_array);
+    }
+
+    TEST(Small_Span, AnLvalueVectorSpanWritesThrough)
     {
         std::vector<int> values{5, 6, 7};
         span<int> view = values;
-        EXPECT_EQ(view.data(), values.data());
-        EXPECT_EQ(view.size(), values.size());
 
         view[0] = 50;
         EXPECT_EQ(values[0], 50);
     }
 
-    TEST(Small_Span, ConstructsFromStdArray)
+    TEST(Small_Span, ConstViewAliasesAConstOrNonConstContainer)
     {
-        std::array<int, 3> values{8, 9, 10};
-        span<int> view = values;
-        EXPECT_EQ(view.size(), values.size());
-        EXPECT_EQ(view.front(), 8);
-    }
+        const std::vector<int> constant{1, 2, 3};
+        std::vector<int> mutable_values{1, 2, 3};
 
-    TEST(Small_Span, ConstViewOverConstContainer)
-    {
-        const std::vector<int> values{1, 2, 3};
-        span<const int> view = values;
-        EXPECT_EQ(view.size(), 3U);
-        EXPECT_EQ(view.data(), values.data());
-    }
-
-    TEST(Small_Span, ConstViewOverNonConstLvalue)
-    {
-        std::vector<int> values{1, 2, 3};
-        span<const int> view = values;
-        EXPECT_EQ(sum(view), 6);
+        expect_const_span_aliases(constant);
+        expect_const_span_aliases(mutable_values);
     }
 
     TEST(Small_Span, AcceptsTemporaryContainerForConstElements)
@@ -142,17 +148,27 @@ namespace
         EXPECT_EQ(sum(std::vector<int>{1, 2, 3}), 6);
     }
 
-    TEST(Small_Span, FirstLastAndSubspanSelectElements)
+    TEST(Small_Span, FirstSelectsTheLeadingElements)
     {
         span<const int> all(K_VALUES, 4);
 
         span<const int> head = all.first(2);
         EXPECT_EQ(head.size(), 2U);
         EXPECT_EQ(head[1], 2);
+    }
+
+    TEST(Small_Span, LastSelectsTheTrailingElements)
+    {
+        span<const int> all(K_VALUES, 4);
 
         span<const int> tail = all.last(2);
         EXPECT_EQ(tail.size(), 2U);
         EXPECT_EQ(tail.data(), K_VALUES + 2);
+    }
+
+    TEST(Small_Span, SubspanSelectsAWindow)
+    {
+        span<const int> all(K_VALUES, 4);
 
         span<const int> middle = all.subspan(1, 2);
         EXPECT_EQ(middle.size(), 2U);

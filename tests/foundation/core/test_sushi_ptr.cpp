@@ -164,12 +164,23 @@ TEST(Small_SushiPtrTest, SelfAssignmentKeepsObject)
 }
 
 /**
- * @brief Verifies that reset releases the old object and takes the new one.
- *
- * Resets one owner to another owner's object, then to null, and checks which object is destroyed
- * at each step.
+ * @brief Verifies that reset to another owner's object destroys the object only the first held.
  */
-TEST(Small_SushiPtrTest, ResetReleasesOldAndTakesNew)
+TEST(Small_SushiPtrTest, ResetReleasesTheOldObject)
+{
+    int destroyed = 0;
+    auto first = make_sushi<Probe>(destroyed);
+    auto second = make_sushi<Probe>(destroyed);
+
+    first.reset(second.get());
+
+    EXPECT_EQ(destroyed, 1) << "The object only first held must be destroyed.";
+}
+
+/**
+ * @brief Verifies that reset takes a share of the new object, and that reset to null gives it back.
+ */
+TEST(Small_SushiPtrTest, ResetTakesTheNewObject)
 {
     int destroyed = 0;
     auto first = make_sushi<Probe>(destroyed);
@@ -177,13 +188,11 @@ TEST(Small_SushiPtrTest, ResetReleasesOldAndTakesNew)
     Probe* second_raw = second.get();
 
     first.reset(second.get());
-    EXPECT_EQ(destroyed, 1) << "The object only first held must be destroyed.";
     EXPECT_EQ(second_raw->ref_count(), 2);
 
     first.reset();
     EXPECT_FALSE(first);
     EXPECT_EQ(second_raw->ref_count(), 1);
-    EXPECT_EQ(destroyed, 1);
 }
 
 /**

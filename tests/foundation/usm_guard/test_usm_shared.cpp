@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
@@ -37,37 +38,70 @@
 #include <SushiRuntime/device_probe/device_probe.hpp>
 #include <SushiRuntime/usm_guard/usm_shared.hpp>
 
+#include <support/runtime_environment.hpp>
+
 using namespace SushiRuntime::Test;
 
-/** @brief Tests that the host writes and reads every element. */
-TEST(Medium_USMShared, TheHostWritesAndReadsEveryElement)
+namespace
 {
-    if (!has_any_sycl_device())
-        GTEST_SKIP() << "no SYCL device";
-    sycl::queue queue;
-    USMShared<int> values(queue, 16);
+    /** @brief Gives the USMShared tests the device queue of the program, and skips them on a machine with no device. */
+    class Medium_USMShared : public TestSupport::RuntimeTest
+    {
+        protected:
+            void SetUp() override
+            {
+                if (!has_any_sycl_device())
+                    GTEST_SKIP() << "no SYCL device";
+            }
+    };
+
+    /** @brief Writes @p factor times each element's position into @p values, from the host. */
+    void write_multiples(USMShared<int>& values, int factor)
+    {
+        for (std::size_t index = 0; index < values.count(); ++index)
+            values[index] = static_cast<int>(index) * factor;
+    }
+
+    /** @brief Returns what the host reads from every element of @p values. */
+    std::vector<int> read_all(const USMShared<int>& values)
+    {
+        return std::vector<int>(values.get(), values.get() + values.count());
+    }
+} // namespace
+
+/** @brief Tests that the host writes and reads every element. */
+TEST_F(Medium_USMShared, TheHostWritesAndReadsEveryElement)
+{
+    USMShared<int> values(queue(), 6);
     ASSERT_TRUE(values);
-    EXPECT_EQ(values.count(), 16u);
-    for (std::size_t index = 0; index < values.count(); ++index)
-        values[index] = static_cast<int>(index) * 3;
-    for (std::size_t index = 0; index < values.count(); ++index)
-        EXPECT_EQ(values.get()[index], static_cast<int>(index) * 3);
+    EXPECT_EQ(values.count(), 6u);
+
+    write_multiples(values, 3);
+
+    EXPECT_EQ(read_all(values), (std::vector<int>{0, 3, 6, 9, 12, 15}));
 }
 
-/** @brief Tests that a move hands the allocation over and empties the source. */
-TEST(Medium_USMShared, AMoveHandsTheAllocationOver)
+/** @brief Tests that a move construction hands the allocation over and empties the source. */
+TEST_F(Medium_USMShared, AMoveConstructionHandsTheAllocationOver)
 {
-    if (!has_any_sycl_device())
-        GTEST_SKIP() << "no SYCL device";
-    sycl::queue queue;
-    USMShared<float> source(queue, 4);
+    USMShared<float> source(queue(), 4);
     float* const address = source.get();
+
     USMShared<float> target(std::move(source));
+
     EXPECT_FALSE(source);
     EXPECT_EQ(target.get(), address);
+}
 
-    USMShared<float> other(queue, 2);
-    other = std::move(target);
+/** @brief Tests that a move assignment hands the allocation over, with its count. */
+TEST_F(Medium_USMShared, AMoveAssignmentHandsTheAllocationOver)
+{
+    USMShared<float> source(queue(), 4);
+    float* const address = source.get();
+    USMShared<float> other(queue(), 2);
+
+    other = std::move(source);
+
     EXPECT_EQ(other.get(), address);
     EXPECT_EQ(other.count(), 4u);
 }

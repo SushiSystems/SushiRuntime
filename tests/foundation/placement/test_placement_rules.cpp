@@ -83,6 +83,49 @@ namespace
         const char* fragment; /**< Text the refusal message holds. */
     };
 
+    /** @brief Adds every rule of @p list to @p rules, in order, and expects each to be accepted. */
+    void add_all(PlacementRules& rules, const std::vector<PlacementRule>& list)
+    {
+        for (const PlacementRule& rule : list)
+            ASSERT_TRUE(rules.add(rule).has_value()) << rule.name;
+    }
+
+    /** @brief Expects resolve to give each case's position over @p rules. */
+    void expect_resolves(const PlacementRules& rules, const std::vector<ResolveCase>& cases)
+    {
+        for (const ResolveCase& item : cases)
+        {
+            SCOPED_TRACE(item.label);
+            EXPECT_EQ(rules.resolve(item.placement_class, item.key, item.operation), item.expect);
+        }
+    }
+
+    /** @brief Holds the ten rules the resolve tests share; positions 0 to 9 in the order added. */
+    class Small_PlacementRulesResolve : public ::testing::Test
+    {
+        protected:
+            void SetUp() override
+            {
+                PlacementRule exact = class_rule("exact", "sushiai.replica", 0);
+                PlacementRule prefix = class_rule("prefix", "sushiengine.*", 0);
+                PlacementRule keyed = class_rule("keyed", "sushiai.replica", 5);
+                keyed.match.key = 3;
+                PlacementRule operation = class_rule("operation", "", 1);
+                operation.match.operation = "gemm";
+                PlacementRule any_class_key = class_rule("any-class-key", "", 2);
+                any_class_key.match.key = 9;
+                PlacementRule zero_key = class_rule("zero-key", "zero.key", 0);
+                zero_key.match.key = 0;
+                add_all(rules_, {exact, prefix, keyed, operation, any_class_key,
+                                 class_rule("low", "conflict.a", 4), class_rule("high", "conflict.a", 7),
+                                 class_rule("tie-first", "tie.x", 3), class_rule("tie-second", "tie.x", 3),
+                                 zero_key});
+            }
+
+            /// @brief The rules the tests resolve over.
+            PlacementRules rules_;
+    };
+
     /** @brief Returns a valid rule changed by a function. */
     template <class Change>
     PlacementRule changed(Change change)
@@ -126,58 +169,55 @@ TEST(Small_PlacementRules, AnExactClassOfAnyDepthIsAccepted)
               std::optional<std::size_t>(0));
 }
 
-/** @brief Tests the match and the winner over a table of nodes. */
-TEST(Small_PlacementRules, ResolveTableMatchesClassPrefixKeyOperationAndPriority)
+/** @brief Tests that an exact class matches itself and a prefix matches the classes below it, never its own. */
+TEST_F(Small_PlacementRulesResolve, ClassPatternsMatchExactAndPrefix)
 {
-    PlacementRules rules;
-    PlacementRule exact = class_rule("exact", "sushiai.replica", 0);
-    PlacementRule prefix = class_rule("prefix", "sushiengine.*", 0);
-    PlacementRule keyed = class_rule("keyed", "sushiai.replica", 5);
-    keyed.match.key = 3;
-    PlacementRule operation = class_rule("operation", "", 1);
-    operation.match.operation = "gemm";
-    PlacementRule any_class_key = class_rule("any-class-key", "", 2);
-    any_class_key.match.key = 9;
-    PlacementRule low = class_rule("low", "conflict.a", 4);
-    PlacementRule high = class_rule("high", "conflict.a", 7);
-    PlacementRule tie_first = class_rule("tie-first", "tie.x", 3);
-    PlacementRule tie_second = class_rule("tie-second", "tie.x", 3);
-    PlacementRule zero_key = class_rule("zero-key", "zero.key", 0);
-    zero_key.match.key = 0;
-    for (PlacementRule* rule : {&exact, &prefix, &keyed, &operation, &any_class_key, &low, &high,
-                                &tie_first, &tie_second, &zero_key})
-        ASSERT_TRUE(rules.add(*rule).has_value()) << rule->name;
-
-    const std::vector<ResolveCase> cases = {
+    expect_resolves(rules_, {
         {"exact class", "sushiai.replica"_class, std::nullopt, "vec.add"_op, 0},
-        {"exact class, key the keyed rule wants", "sushiai.replica"_class, 3, "vec.add"_op, 2},
         {"exact class, another key", "sushiai.replica"_class, 4, "vec.add"_op, 0},
         {"prefix, class below it", "sushiengine.physics"_class, std::nullopt, "vec.add"_op, 1},
         {"prefix, class two below it", "sushiengine.matter.water"_class, std::nullopt,
          "vec.add"_op, 1},
         {"prefix never matches its own class", "sushiengine"_class, std::nullopt, "vec.add"_op,
          std::nullopt},
-        {"operation rule matches any class", "other.thing"_class, std::nullopt, "gemm"_op, 3},
-        {"operation rule matches a node with no class", PlacementClass(), std::nullopt, "gemm"_op,
-         3},
-        {"operation rule outranks the exact rule", "sushiai.replica"_class, std::nullopt,
-         "gemm"_op, 3},
-        {"keyed rule outranks the operation rule", "sushiai.replica"_class, 3, "gemm"_op, 2},
-        {"key rule matches any class", "other.thing"_class, 9, "vec.add"_op, 4},
-        {"larger priority beats the operation rule", PlacementClass(), 9, "gemm"_op, 4},
-        {"larger priority wins a conflict", "conflict.a"_class, std::nullopt, "vec.add"_op, 6},
-        {"equal priority goes to the first added", "tie.x"_class, std::nullopt, "vec.add"_op, 7},
-        {"key 0 is a key like any other", "zero.key"_class, 0, "vec.add"_op, 9},
-        {"a key rule needs a key", "zero.key"_class, std::nullopt, "vec.add"_op, std::nullopt},
         {"no rule matches", "other.thing"_class, std::nullopt, "vec.add"_op, std::nullopt},
         {"no class and no rule for it", PlacementClass(), std::nullopt, "vec.add"_op,
          std::nullopt},
-    };
-    for (const ResolveCase& item : cases)
-    {
-        SCOPED_TRACE(item.label);
-        EXPECT_EQ(rules.resolve(item.placement_class, item.key, item.operation), item.expect);
-    }
+    });
+}
+
+/** @brief Tests that a key rule matches a node with that key, key 0 included, and never a node without one. */
+TEST_F(Small_PlacementRulesResolve, AKeyRuleMatchesOnlyANodeThatCarriesTheKey)
+{
+    expect_resolves(rules_, {
+        {"exact class, key the keyed rule wants", "sushiai.replica"_class, 3, "vec.add"_op, 2},
+        {"key rule matches any class", "other.thing"_class, 9, "vec.add"_op, 4},
+        {"key 0 is a key like any other", "zero.key"_class, 0, "vec.add"_op, 9},
+        {"a key rule needs a key", "zero.key"_class, std::nullopt, "vec.add"_op, std::nullopt},
+    });
+}
+
+/** @brief Tests that an operation rule matches its operation under any class, and under none. */
+TEST_F(Small_PlacementRulesResolve, AnOperationRuleMatchesItsOperationUnderAnyClass)
+{
+    expect_resolves(rules_, {
+        {"operation rule matches any class", "other.thing"_class, std::nullopt, "gemm"_op, 3},
+        {"operation rule matches a node with no class", PlacementClass(), std::nullopt, "gemm"_op,
+         3},
+    });
+}
+
+/** @brief Tests that the larger priority wins and equal priorities go to the rule added first. */
+TEST_F(Small_PlacementRulesResolve, TheLargerPriorityWinsAndATieGoesToTheFirstAdded)
+{
+    expect_resolves(rules_, {
+        {"operation rule outranks the exact rule", "sushiai.replica"_class, std::nullopt,
+         "gemm"_op, 3},
+        {"keyed rule outranks the operation rule", "sushiai.replica"_class, 3, "gemm"_op, 2},
+        {"larger priority beats the operation rule", PlacementClass(), 9, "gemm"_op, 4},
+        {"larger priority wins a conflict", "conflict.a"_class, std::nullopt, "vec.add"_op, 6},
+        {"equal priority goes to the first added", "tie.x"_class, std::nullopt, "vec.add"_op, 7},
+    });
 }
 
 /** @brief Tests that add refuses every refusal of the design table and keeps nothing. */
@@ -291,47 +331,73 @@ TEST(Small_PlacementRules, ARefusalNamesAnUnnamedRuleByItsPosition)
     EXPECT_EQ(rules.size(), 1u);
 }
 
-/** @brief Tests that a wait with a positive bound and a positive deadline are accepted. */
-TEST(Small_PlacementRules, APositiveWaitBoundAndDeadlineAreAccepted)
+/** @brief Tests that a Wait with a positive bound is accepted. */
+TEST(Small_PlacementRules, APositiveWaitBoundIsAccepted)
 {
     PlacementRules rules;
     PlacementRule rule = valid_rule();
     rule.if_absent.action = AbsentAction::Wait;
     rule.if_absent.bound = std::chrono::milliseconds(250);
+    EXPECT_TRUE(rules.add(rule).has_value());
+    EXPECT_EQ(rules.size(), 1u);
+}
+
+/** @brief Tests that a positive deadline is accepted. */
+TEST(Small_PlacementRules, APositiveDeadlineIsAccepted)
+{
+    PlacementRules rules;
+    PlacementRule rule = valid_rule();
     rule.deadline = std::chrono::milliseconds(1000);
     EXPECT_TRUE(rules.add(rule).has_value());
     EXPECT_EQ(rules.size(), 1u);
 }
 
-/** @brief Tests that a Wait bound or a deadline above K_MAX_DURATION is refused, and it is not. */
-TEST(Small_PlacementRules, Regression_AWaitBoundOrDeadlineAboveTheMaximumIsRefused)
+/** @brief Tests that a Wait bound above K_MAX_DURATION is refused. */
+TEST(Small_PlacementRules, Regression_AWaitBoundAboveTheMaximumIsRefused)
 {
     const std::chrono::milliseconds above =
         PlacementRules::K_MAX_DURATION + std::chrono::milliseconds(1);
     PlacementRules rules;
-
     PlacementRule waits = valid_rule();
     waits.if_absent.action = AbsentAction::Wait;
+
     waits.if_absent.bound = std::chrono::milliseconds::max();
-    Result<void> refused = rules.add(waits);
+    const Result<void> refused = rules.add(waits);
     ASSERT_FALSE(refused.has_value());
     EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
     EXPECT_NE(refused.error().message.find("longest bound"), std::string::npos)
         << refused.error().message;
+
     waits.if_absent.bound = above;
     EXPECT_FALSE(rules.add(waits).has_value());
+    EXPECT_EQ(rules.size(), 0u);
+}
 
+/** @brief Tests that a deadline above K_MAX_DURATION is refused. */
+TEST(Small_PlacementRules, Regression_ADeadlineAboveTheMaximumIsRefused)
+{
+    PlacementRules rules;
     PlacementRule late = valid_rule();
-    late.deadline = above;
-    refused = rules.add(late);
+    late.deadline = PlacementRules::K_MAX_DURATION + std::chrono::milliseconds(1);
+
+    const Result<void> refused = rules.add(late);
     ASSERT_FALSE(refused.has_value());
     EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
     EXPECT_NE(refused.error().message.find("deadline"), std::string::npos)
         << refused.error().message;
     EXPECT_EQ(rules.size(), 0u);
+}
 
+/** @brief Tests that K_MAX_DURATION itself is accepted as a Wait bound and as a deadline. */
+TEST(Small_PlacementRules, TheMaximumIsAcceptedAsAWaitBoundAndAsADeadline)
+{
+    PlacementRules rules;
+    PlacementRule waits = valid_rule();
+    waits.if_absent.action = AbsentAction::Wait;
     waits.if_absent.bound = PlacementRules::K_MAX_DURATION;
+    PlacementRule late = valid_rule();
     late.deadline = PlacementRules::K_MAX_DURATION;
+
     EXPECT_TRUE(rules.add(waits).has_value());
     EXPECT_TRUE(rules.add(late).has_value());
 }

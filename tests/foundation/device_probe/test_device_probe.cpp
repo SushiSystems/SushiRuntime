@@ -23,10 +23,12 @@
 
 /**
  * @file test_device_probe.cpp
- * @brief Tests has_any_sycl_device() against the device list SYCL reports.
+ * @brief Tests has_any_sycl_device() against the devices of every SYCL platform.
  * @see tests/foundation/device_probe/README.md
  * @author Mustafa Garip
  */
+
+#include <cstddef>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
@@ -35,8 +37,24 @@
 
 using namespace SushiRuntime::Test;
 
-/** @brief Tests that the probe agrees with the device list. */
-TEST(Medium_DeviceProbe, AgreesWithTheDeviceList)
+namespace
 {
-    EXPECT_EQ(has_any_sycl_device(), !sycl::device::get_devices().empty());
+    /** @brief Counts the devices of every platform, a path other than the flat device list. */
+    std::size_t devices_of_all_platforms()
+    {
+        std::size_t total = 0;
+        for (const sycl::platform& platform : sycl::platform::get_platforms())
+            total += platform.get_devices().size();
+        return total;
+    }
+}
+
+/** @brief Tests that the probe agrees with the devices counted platform by platform, and skips on a machine with none. */
+TEST(Medium_DeviceProbe, AgreesWithTheDevicesOfEveryPlatform)
+{
+    const std::size_t counted = devices_of_all_platforms();
+
+    EXPECT_EQ(has_any_sycl_device(), counted > 0);
+    if (counted == 0)
+        GTEST_SKIP() << "no SYCL platform reports a device on this machine";
 }

@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <type_traits>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -47,34 +48,76 @@ namespace
 
     /** @brief Stands in for a second allocation; only its address is used. */
     int second_allocation = 0;
+
+    /** @brief Holds two regions and the answer a query about them is expected to give. */
+    struct RegionPair
+    {
+        const char* label;    /**< Names the row in a failure. */
+        BufferRegion subject; /**< The region the query is asked of. */
+        BufferRegion other;   /**< The region the query is given. */
+        bool expect;          /**< The expected answer. */
+    };
+
+    /** @brief Expects overlaps to give each row's answer. */
+    void expect_overlaps(const std::vector<RegionPair>& rows)
+    {
+        for (const RegionPair& row : rows)
+        {
+            SCOPED_TRACE(row.label);
+            EXPECT_EQ(row.subject.overlaps(row.other), row.expect);
+        }
+    }
+
+    /** @brief Expects contains to give each row's answer. */
+    void expect_contains(const std::vector<RegionPair>& rows)
+    {
+        for (const RegionPair& row : rows)
+        {
+            SCOPED_TRACE(row.label);
+            EXPECT_EQ(row.subject.contains(row.other), row.expect);
+        }
+    }
 }
 
+/** @brief Tests that a default region is not valid and overlaps no region, itself included. */
 TEST(Small_BufferRegion, ADefaultRegionOverlapsNothing)
 {
     const BufferRegion empty;
-    const BufferRegion other_empty;
     const BufferRegion whole(&first_allocation);
 
     EXPECT_FALSE(empty.valid());
-    EXPECT_FALSE(empty.overlaps(other_empty));
-    EXPECT_FALSE(empty.overlaps(empty));
-    EXPECT_FALSE(empty.overlaps(whole));
-    EXPECT_FALSE(whole.overlaps(empty));
-    EXPECT_FALSE(BufferRegion(nullptr, 0, 8).overlaps(BufferRegion(nullptr, 4, 8)));
+    expect_overlaps({
+        {"a default region with another", empty, BufferRegion(), false},
+        {"a default region with itself", empty, empty, false},
+        {"a default region with a whole allocation", empty, whole, false},
+        {"a whole allocation with a default region", whole, empty, false},
+        {"two regions with a null base", BufferRegion(nullptr, 0, 8), BufferRegion(nullptr, 4, 8), false},
+    });
 }
 
-TEST(Small_BufferRegion, ADefaultRegionContainsNothingAndIsContainedByNothing)
+/** @brief Tests that a default region contains no region. */
+TEST(Small_BufferRegion, ADefaultRegionContainsNothing)
 {
     const BufferRegion empty;
-    const BufferRegion other_empty;
     const BufferRegion whole(&first_allocation);
 
-    EXPECT_FALSE(empty.contains(other_empty));
-    EXPECT_FALSE(empty.contains(empty));
-    EXPECT_FALSE(empty.contains(whole));
-    EXPECT_FALSE(whole.contains(empty));
+    expect_contains({
+        {"a default region holds another", empty, BufferRegion(), false},
+        {"a default region holds itself", empty, empty, false},
+        {"a default region holds a whole allocation", empty, whole, false},
+    });
 }
 
+/** @brief Tests that no region is contained by a default region. */
+TEST(Small_BufferRegion, ADefaultRegionIsContainedByNothing)
+{
+    const BufferRegion empty;
+    const BufferRegion whole(&first_allocation);
+
+    expect_contains({{"a whole allocation holds a default region", whole, empty, false}});
+}
+
+/** @brief Tests that regions of one allocation overlap when their intervals intersect. */
 TEST(Small_BufferRegion, RegionsOfOneAllocationOverlapWhenTheirIntervalsIntersect)
 {
     const BufferRegion whole(&first_allocation);
@@ -83,20 +126,32 @@ TEST(Small_BufferRegion, RegionsOfOneAllocationOverlapWhenTheirIntervalsIntersec
     const BufferRegion middle(&first_allocation, 4, 8);
     const BufferRegion tail(&first_allocation, 12, BufferRegion::K_WHOLE);
 
-    EXPECT_TRUE(whole.overlaps(whole));
-    EXPECT_TRUE(whole.overlaps(low));
-    EXPECT_TRUE(low.overlaps(whole));
-    EXPECT_TRUE(low.overlaps(middle));
-    EXPECT_TRUE(middle.overlaps(high));
-    EXPECT_TRUE(high.overlaps(tail));
-    EXPECT_TRUE(tail.overlaps(high));
-
-    // The intervals are half-open: [0, 8) and [8, 16) share no byte.
-    EXPECT_FALSE(low.overlaps(high));
-    EXPECT_FALSE(low.overlaps(tail));
-    EXPECT_FALSE(tail.overlaps(low));
+    expect_overlaps({
+        {"the whole with itself", whole, whole, true},
+        {"the whole with a part", whole, low, true},
+        {"a part with the whole", low, whole, true},
+        {"overlapping parts", low, middle, true},
+        {"overlapping parts, the other way", middle, high, true},
+        {"a part with a tail", high, tail, true},
+        {"a tail with a part", tail, high, true},
+    });
 }
 
+/** @brief Tests that half-open intervals that only touch share no byte. */
+TEST(Small_BufferRegion, TouchingRegionsShareNoByte)
+{
+    const BufferRegion low(&first_allocation, 0, 8);
+    const BufferRegion high(&first_allocation, 8, 8);
+    const BufferRegion tail(&first_allocation, 12, BufferRegion::K_WHOLE);
+
+    expect_overlaps({
+        {"[0, 8) and [8, 16)", low, high, false},
+        {"[0, 8) and a tail from 12", low, tail, false},
+        {"a tail from 12 and [0, 8)", tail, low, false},
+    });
+}
+
+/** @brief Tests that regions of different allocations neither overlap nor contain each other. */
 TEST(Small_BufferRegion, RegionsOfDifferentAllocationsNeverOverlap)
 {
     const BufferRegion first(&first_allocation);
@@ -106,6 +161,7 @@ TEST(Small_BufferRegion, RegionsOfDifferentAllocationsNeverOverlap)
     EXPECT_FALSE(first.contains(second));
 }
 
+/** @brief Tests that a region contains what lies entirely inside it. */
 TEST(Small_BufferRegion, ARegionContainsWhatLiesEntirelyInside)
 {
     const BufferRegion whole(&first_allocation);
@@ -113,12 +169,13 @@ TEST(Small_BufferRegion, ARegionContainsWhatLiesEntirelyInside)
     const BufferRegion inner(&first_allocation, 2, 4);
     const BufferRegion middle(&first_allocation, 4, 8);
 
-    EXPECT_TRUE(whole.contains(whole));
-    EXPECT_TRUE(whole.contains(low));
-    EXPECT_TRUE(low.contains(low));
-    EXPECT_TRUE(low.contains(inner));
-
-    EXPECT_FALSE(low.contains(whole));
-    EXPECT_FALSE(low.contains(middle));
-    EXPECT_FALSE(inner.contains(low));
+    expect_contains({
+        {"the whole holds itself", whole, whole, true},
+        {"the whole holds a part", whole, low, true},
+        {"a part holds itself", low, low, true},
+        {"a part holds an inner part", low, inner, true},
+        {"a part does not hold the whole", low, whole, false},
+        {"a part does not hold a part that sticks out", low, middle, false},
+        {"an inner part does not hold the part around it", inner, low, false},
+    });
 }

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_pin_policy.cpp                                                    */
+/* compile_device_kind.cpp                                                */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,24 +22,16 @@
 /**************************************************************************/
 
 /**
- * @file test_pin_policy.cpp
- * @brief Tests PinPolicy: two distinct placements in one byte.
+ * @file compile_device_kind.cpp
+ * @brief Compiles device_kind.hpp on its own, so the header carries every include it needs.
  * @see tests/foundation/machine/README.md
  * @author Mustafa Garip
  */
 
+#include <SushiRuntime/machine/device_kind.hpp>
+
 #include <cstdint>
 #include <type_traits>
 
-#include <gtest/gtest.h>
-
-#include <SushiRuntime/machine/pin_policy.hpp>
-
-using namespace SushiRuntime;
-
-/** @brief Tests the size and the two values of the enumeration. */
-TEST(Small_PinPolicy, TwoPlacementsInOneByte)
-{
-    static_assert(std::is_same_v<std::underlying_type_t<PinPolicy>, std::uint8_t>, "one byte");
-    EXPECT_NE(PinPolicy::Pin, PinPolicy::Float);
-}
+static_assert(std::is_same_v<std::underlying_type_t<SushiRuntime::DeviceKind>, std::uint8_t>,
+              "DeviceKind is stored in one byte");

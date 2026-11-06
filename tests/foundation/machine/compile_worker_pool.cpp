@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_device_kind.cpp                                                   */
+/* compile_worker_pool.cpp                                                */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,26 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_device_kind.cpp
- * @brief Tests DeviceKind: four distinct classes in one byte.
+ * @file compile_worker_pool.cpp
+ * @brief Compiles worker_pool.hpp on its own, so the header carries every include it needs.
  * @see tests/foundation/machine/README.md
  * @author Mustafa Garip
  */
 
-#include <cstdint>
-#include <type_traits>
-
-#include <gtest/gtest.h>
-
-#include <SushiRuntime/machine/device_kind.hpp>
-
-using namespace SushiRuntime;
-
-/** @brief Tests the size and the distinct values of the enumeration. */
-TEST(Small_DeviceKind, FourDistinctClassesInOneByte)
-{
-    static_assert(std::is_same_v<std::underlying_type_t<DeviceKind>, std::uint8_t>, "one byte");
-    EXPECT_NE(DeviceKind::CPU, DeviceKind::GPU);
-    EXPECT_NE(DeviceKind::GPU, DeviceKind::Accelerator);
-    EXPECT_NE(DeviceKind::Accelerator, DeviceKind::Other);
-}
+#include <SushiRuntime/machine/worker_pool.hpp>

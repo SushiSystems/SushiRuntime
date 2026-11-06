@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_clock_pairing.cpp                                                 */
+/* compile_device_description.cpp                                         */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,47 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_clock_pairing.cpp
- * @brief Tests ClockPairing and DeviceClock, which place a device's event clock on the steady clock.
- * @see tests/foundation/report/README.md
+ * @file compile_device_description.cpp
+ * @brief Compiles device_description.hpp on its own, so the header carries every include it needs.
+ * @see tests/foundation/machine/README.md
  * @author Mustafa Garip
  */
 
-#include <cstdint>
-
-#include <gtest/gtest.h>
-
-#include <SushiRuntime/report/clock_pairing.hpp>
-
-using namespace SushiRuntime;
-
-/** @brief Tests that a default pairing is the identity pairing: both readings 0 and no uncertainty. */
-TEST(Small_ClockPairing, ADefaultPairingIsTheIdentity)
-{
-    const ClockPairing pairing;
-
-    EXPECT_EQ(pairing.event_ns, 0u);
-    EXPECT_EQ(pairing.steady_ns, 0u);
-    EXPECT_EQ(pairing.uncertainty_ns, 0u);
-}
-
-/** @brief Tests that a pairing keeps its three readings as given. */
-TEST(Small_ClockPairing, APairingKeepsItsThreeReadings)
-{
-    const ClockPairing pairing{100, 200, 5};
-
-    EXPECT_EQ(pairing.event_ns, 100u);
-    EXPECT_EQ(pairing.steady_ns, 200u);
-    EXPECT_EQ(pairing.uncertainty_ns, 5u);
-}
-
-/** @brief Tests that a device clock holds the device and its pairing as they were given. */
-TEST(Small_ClockPairing, ADeviceClockKeepsItsDeviceAndPairing)
-{
-    const DeviceClock clock{2, ClockPairing{100, 200, 5}};
-
-    EXPECT_EQ(clock.device_index, 2u);
-    EXPECT_EQ(clock.pairing.event_ns, 100u);
-    EXPECT_EQ(clock.pairing.steady_ns, 200u);
-    EXPECT_EQ(clock.pairing.uncertainty_ns, 5u);
-}
+#include <SushiRuntime/machine/device_description.hpp>

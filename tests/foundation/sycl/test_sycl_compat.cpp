@@ -23,7 +23,7 @@
 
 /**
  * @file test_sycl_compat.cpp
- * @brief Tests the host task trait and enqueue_host_task() on a host queue.
+ * @brief Tests the host task trait and enqueue_host_task() on the program's queue.
  * @see tests/foundation/sycl/README.md
  * @author Mustafa Garip
  */
@@ -35,6 +35,8 @@
 
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 
+#include <support/runtime_environment.hpp>
+
 using namespace SushiRuntime;
 
 namespace
@@ -44,22 +46,38 @@ namespace
     {
 
     };
+
+    /** @brief Names a handler with a host_task member. */
+    struct WithHostTask
+    {
+        /** @brief Accepts the callable and does nothing with it. */
+        template <class Fn>
+        void host_task(Fn&&)
+        {
+
+        }
+    };
+
+    /** @brief Gives the host task tests the device queue of the program. */
+    class Medium_SYCLCompat : public TestSupport::RuntimeTest
+    {
+    };
 }
 
-/** @brief Tests that the trait sees host_task on a SYCL handler and not on a plain type. */
-TEST(Medium_SYCLCompat, TheTraitSeesHostTask)
+/** @brief Tests that the trait sees a host_task member and does not see its absence. */
+TEST(Small_SYCLCompat, TheTraitSeesAHostTaskMemberAndNoOther)
 {
     const auto function = [] {};
-    static_assert(!Detail::has_host_task_v<NoHostTask, decltype(function)>, "no member");
+
+    EXPECT_TRUE((Detail::has_host_task_v<WithHostTask, decltype(function)>));
     EXPECT_FALSE((Detail::has_host_task_v<NoHostTask, decltype(function)>));
 }
 
 /** @brief Tests that a host task enqueued through the shim runs once before wait() returns. */
-TEST(Medium_SYCLCompat, AHostTaskRunsOnce)
+TEST_F(Medium_SYCLCompat, AHostTaskRunsOnce)
 {
-    sycl::queue queue;
     std::atomic<int> calls{0};
-    queue.submit([&](sycl::handler& handler)
+    queue().submit([&](sycl::handler& handler)
     {
         Detail::enqueue_host_task(handler, [&calls] { ++calls; });
     }).wait();

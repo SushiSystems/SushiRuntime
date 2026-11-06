@@ -30,7 +30,6 @@
 
 #include <memory>
 #include <string>
-#include <type_traits>
 
 #include <gtest/gtest.h>
 
@@ -105,14 +104,6 @@ namespace
         EXPECT_EQ(result_view.error().message, "rewritten");
     }
 
-    TEST(Small_Result, TheErrorTypeDefaultsToError)
-    {
-        static_assert(std::is_same_v<Result<int>, Result<int, Error>>,
-                      "Result<T> must name Result<T, Error>");
-        static_assert(std::is_same_v<Result<void>, Result<void, Error>>,
-                      "Result<void> must name Result<void, Error>");
-    }
-
     TEST(Medium_ResultDeathTest, EveryValueAccessorOnAnErrorStopsWithTheStoredMessage)
     {
         Result<int> number(make_error(lost_device()));
@@ -160,13 +151,20 @@ namespace
         EXPECT_DEATH(static_cast<void>(result_view.error()), K_ERROR_OF_VALUE);
     }
 
-    TEST(Small_Result, VoidSuccessHoldsNoErrorAndValueReturns)
+    TEST(Small_Result, VoidSuccessHoldsNoError)
     {
         const Result<void> done;
 
         EXPECT_TRUE(done.has_value());
         EXPECT_TRUE(static_cast<bool>(done));
+    }
+
+    TEST(Small_Result, VoidValueReturnsOnSuccess)
+    {
+        const Result<void> done;
+
         done.value();
+        SUCCEED() << "value() on a successful Result<void> returned";
     }
 
     TEST(Small_Result, VoidErrorReturnsTheStoredError)

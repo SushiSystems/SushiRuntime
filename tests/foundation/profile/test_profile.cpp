@@ -45,7 +45,7 @@
 namespace
 {
     /** @brief Opens the collector before each test and closes and empties it after. */
-    class Small_Profile : public ::testing::Test
+    class ProfileTest : public ::testing::Test
     {
         protected:
             void SetUp() override
@@ -57,6 +57,14 @@ namespace
             void TearDown() override
             {
                 close_and_empty();
+            }
+
+            /** @brief Returns the drain of the collector since the last drain. */
+            static SushiProfiler::DrainBatch drained()
+            {
+                SushiProfiler::DrainBatch batch;
+                SushiProfiler::Collector::instance().drain(batch);
+                return batch;
             }
 
             /** @brief Returns the kinds of the events every thread wrote since the last drain, in the order drained. */
@@ -80,35 +88,85 @@ namespace
                 SushiProfiler::Collector::instance().drain(discarded);
             }
     };
+
+    /** @brief The profile tests that touch no thread besides the test's own. */
+    class Small_Profile : public ProfileTest
+    {
+    };
+
+    /** @brief The profile tests that start a thread. */
+    class Medium_Profile : public ProfileTest
+    {
+    };
+
+    /** @brief Returns the names of the threads in @p batch. */
+    std::vector<std::string> thread_names(const SushiProfiler::DrainBatch& batch)
+    {
+        std::vector<std::string> names;
+        for (const SushiProfiler::ThreadDrain& thread : batch.threads)
+            names.push_back(thread.name);
+        return names;
+    }
+
+    /** @brief Returns the drained thread named @p name, or null when the batch holds none. */
+    const SushiProfiler::ThreadDrain* thread_named(const SushiProfiler::DrainBatch& batch, const std::string& name)
+    {
+        for (const SushiProfiler::ThreadDrain& thread : batch.threads)
+            if (thread.name == name)
+                return &thread;
+        return nullptr;
+    }
 } // namespace
 
-/** @brief Tests that a stage zone, a value, a counter and an instant each write their own kind at the default level. */
-TEST_F(Small_Profile, EachMacroWritesItsKind)
+/** @brief Tests that a stage zone writes one event of the zone kind at the default level. */
+TEST_F(Small_Profile, AZoneWritesAZoneEvent)
 {
     {
         SR_ZONE("profile.test.zone");
     }
-    SR_VALUE("profile.test.value", "", 1.5);
-    SR_COUNTER("profile.test.counter", "B", Add, 64.0);
-    SR_INSTANT("profile.test.instant");
 
-    const std::vector<SushiProfiler::EventKind> kinds = kinds_written();
-    EXPECT_EQ(std::count(kinds.begin(), kinds.end(), SushiProfiler::EventKind::Zone), 1);
-    EXPECT_EQ(std::count(kinds.begin(), kinds.end(), SushiProfiler::EventKind::Value), 1);
-    EXPECT_EQ(std::count(kinds.begin(), kinds.end(), SushiProfiler::EventKind::Counter), 1);
-    EXPECT_EQ(std::count(kinds.begin(), kinds.end(), SushiProfiler::EventKind::Instant), 1);
+    EXPECT_EQ(kinds_written(), (std::vector<SushiProfiler::EventKind>{SushiProfiler::EventKind::Zone}));
 }
 
-/** @brief Tests that a registered thread reads the index the collector gave it. */
-TEST_F(Small_Profile, TheThreadIndexIsTheCollectorsOnceTheThreadIsRegistered)
+/** @brief Tests that a value writes one event of the value kind. */
+TEST_F(Small_Profile, AValueWritesAValueEvent)
+{
+    SR_VALUE("profile.test.value", "", 1.5);
+
+    EXPECT_EQ(kinds_written(), (std::vector<SushiProfiler::EventKind>{SushiProfiler::EventKind::Value}));
+}
+
+/** @brief Tests that a counter writes one event of the counter kind. */
+TEST_F(Small_Profile, ACounterWritesACounterEvent)
+{
+    SR_COUNTER("profile.test.counter", "B", Add, 64.0);
+
+    EXPECT_EQ(kinds_written(), (std::vector<SushiProfiler::EventKind>{SushiProfiler::EventKind::Counter}));
+}
+
+/** @brief Tests that an instant writes one event of the instant kind. */
+TEST_F(Small_Profile, AnInstantWritesAnInstantEvent)
+{
+    SR_INSTANT("profile.test.instant");
+
+    EXPECT_EQ(kinds_written(), (std::vector<SushiProfiler::EventKind>{SushiProfiler::EventKind::Instant}));
+}
+
+/** @brief Tests that a registered thread reads the index its drained entry carries. */
+TEST_F(Small_Profile, TheThreadIndexIsTheOneItsDrainedEntryCarries)
 {
     SushiRuntime::Internal::Profile::name_this_thread("profile.test");
+    SR_INSTANT("profile.test.tick");
 
-    EXPECT_EQ(SushiRuntime::Internal::Profile::current_thread_index(), SushiProfiler::Collector::thread_index());
+    const SushiProfiler::DrainBatch batch = drained();
+    const SushiProfiler::ThreadDrain* entry = thread_named(batch, "profile.test");
+
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(SushiRuntime::Internal::Profile::current_thread_index(), entry->thread_index);
 }
 
 /** @brief Tests that a thread that never recorded reads index 0, which stands for unknown. */
-TEST_F(Small_Profile, AThreadThatNeverRecordedReadsZero)
+TEST_F(Medium_Profile, AThreadThatNeverRecordedReadsZero)
 {
     std::uint32_t index = 1;
     std::thread other([&index]() { index = SushiRuntime::Internal::Profile::current_thread_index(); });
@@ -118,7 +176,7 @@ TEST_F(Small_Profile, AThreadThatNeverRecordedReadsZero)
 }
 
 /** @brief Tests that naming a thread registers it and puts the name in the collector's drain. */
-TEST_F(Small_Profile, NamingAThreadPutsTheNameInTheDrain)
+TEST_F(Medium_Profile, NamingAThreadPutsTheNameInTheDrain)
 {
     std::thread named([]()
     {
@@ -127,13 +185,9 @@ TEST_F(Small_Profile, NamingAThreadPutsTheNameInTheDrain)
     });
     named.join();
 
-    SushiProfiler::DrainBatch batch;
-    SushiProfiler::Collector::instance().drain(batch);
-    bool found = false;
-    for (const SushiProfiler::ThreadDrain& thread : batch.threads)
-        if (thread.name == "profile.named")
-            found = true;
-    EXPECT_TRUE(found);
+    const std::vector<std::string> names = thread_names(drained());
+
+    EXPECT_EQ(std::count(names.begin(), names.end(), "profile.named"), 1);
 }
 
 /** @brief Tests that a lock taken through SR_LOCK_WAIT is released at the end of its scope. */

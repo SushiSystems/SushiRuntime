@@ -32,92 +32,85 @@
 #include <cstdint>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/core/allocation.hpp>
+#include <SushiRuntime/core/recording_allocation_owner.hpp>
 
 namespace AllocationTests
 {
     using SushiRuntime::Detail::Allocation;
-    using SushiRuntime::Detail::AllocationOwner;
-
+    using SushiRuntime::Detail::RecordingAllocationOwner;
 
     namespace
     {
-        /** @brief Counts the releases it receives and remembers the last address. */
-        class CountingOwner final : public AllocationOwner
-        {
-            public:
-                /** @brief Binds the owner to the counters it reports into. */
-                CountingOwner(int& releases, void*& last) : releases_(releases), last_(last) {}
-
-                /** @brief Records one release of @p address. */
-                void release(void* address) noexcept override
-                {
-                    ++releases_;
-                    last_ = address;
-                }
-
-            private:
-                int& releases_;
-                void*& last_;
-        };
-
         /** @brief Returns a distinct non-null address that is never dereferenced. */
         void* fake(std::uintptr_t n) { return reinterpret_cast<void*>(n * 4096u); }
     }
 
+    /** @brief Tests that an allocation reports its address and size and releases the address once at its end. */
     TEST(Small_Allocation, ReleasesOnceOnDestruction)
     {
-        int releases = 0;
-        void* last = nullptr;
+        std::vector<void*> releases;
         {
-            Allocation allocation(fake(1), 64, std::make_unique<CountingOwner>(releases, last));
+            Allocation allocation(fake(1), 64, std::make_unique<RecordingAllocationOwner>(releases));
             EXPECT_EQ(allocation.address(), fake(1));
             EXPECT_EQ(allocation.bytes(), 64u);
         }
-        EXPECT_EQ(releases, 1);
-        EXPECT_EQ(last, fake(1));
+        const std::vector<void*> expected{fake(1)};
+        EXPECT_EQ(releases, expected);
     }
 
-    TEST(Small_Allocation, MoveTransfersTheReleaseAndEmptiesTheSource)
+    /** @brief Tests that a move hands the release to the target, which releases the address once. */
+    TEST(Small_Allocation, MoveTransfersTheRelease)
     {
-        int releases = 0;
-        void* last = nullptr;
+        std::vector<void*> releases;
         {
-            Allocation source(fake(2), 32, std::make_unique<CountingOwner>(releases, last));
+            Allocation source(fake(2), 32, std::make_unique<RecordingAllocationOwner>(releases));
             Allocation target(std::move(source));
-            EXPECT_TRUE(source.empty());
             EXPECT_EQ(target.address(), fake(2));
         }
-        EXPECT_EQ(releases, 1);
-        EXPECT_EQ(last, fake(2));
+        const std::vector<void*> expected{fake(2)};
+        EXPECT_EQ(releases, expected);
     }
 
+    /** @brief Tests that a moved-from allocation is empty. */
+    TEST(Small_Allocation, MoveEmptiesTheSource)
+    {
+        std::vector<void*> releases;
+        Allocation source(fake(2), 32, std::make_unique<RecordingAllocationOwner>(releases));
+        const Allocation target(std::move(source));
+        EXPECT_TRUE(source.empty());
+        EXPECT_EQ(source.bytes(), 0u);
+    }
+
+    /** @brief Tests that move-assignment releases the overwritten address before it takes the new one. */
     TEST(Small_Allocation, MoveAssignmentReleasesTheOverwrittenAddressFirst)
     {
-        int releases = 0;
-        void* last = nullptr;
-        Allocation first(fake(3), 8, std::make_unique<CountingOwner>(releases, last));
-        Allocation second(fake(4), 8, std::make_unique<CountingOwner>(releases, last));
+        std::vector<void*> releases;
+        Allocation first(fake(3), 8, std::make_unique<RecordingAllocationOwner>(releases));
+        Allocation second(fake(4), 8, std::make_unique<RecordingAllocationOwner>(releases));
         first = std::move(second);
-        EXPECT_EQ(releases, 1);
-        EXPECT_EQ(last, fake(3));
+        const std::vector<void*> expected{fake(3)};
+        EXPECT_EQ(releases, expected);
         EXPECT_EQ(first.address(), fake(4));
     }
 
-    TEST(Small_Allocation, AnEmptyAllocationHasNoAddressOrOwner)
+    /** @brief Tests that a default allocation is empty and holds no bytes. */
+    TEST(Small_Allocation, AnEmptyAllocationHasNoAddressAndNoBytes)
     {
-        Allocation allocation;
+        const Allocation allocation;
         EXPECT_TRUE(allocation.empty());
         EXPECT_EQ(allocation.bytes(), 0u);
     }
 
+    /** @brief Tests that reset empties an allocation that has no owner and releases nothing. */
     TEST(Small_Allocation, ResetOnANonNullAddressWithNoOwnerReleasesNothing)
     {
         Allocation allocation(fake(9), 16, nullptr);
-        EXPECT_NO_THROW(allocation.reset());
+        allocation.reset();
         EXPECT_TRUE(allocation.empty());
     }
 

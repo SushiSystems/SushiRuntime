@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_dispatch_width.cpp                                                */
+/* compile_sushiruntime_log_project.cpp                                   */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,25 +22,10 @@
 /**************************************************************************/
 
 /**
- * @file test_dispatch_width.cpp
- * @brief Tests K_WIDTH_UNKNOWN: the sentinel no real launch width reaches.
- * @see tests/foundation/report/README.md
+ * @file compile_sushiruntime_log_project.cpp
+ * @brief Compiles sushiruntime_log_project.hpp on its own, so the header carries every include it needs.
+ * @see tests/foundation/log/README.md
  * @author Mustafa Garip
  */
 
-#include <cstdint>
-#include <limits>
-
-#include <gtest/gtest.h>
-
-#include <SushiRuntime/report/dispatch_width.hpp>
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the unknown width is the largest 32-bit value. */
-TEST(Small_DispatchWidth, UnknownIsTheLargestWidth)
-{
-    static_assert(K_WIDTH_UNKNOWN == std::numeric_limits<std::uint32_t>::max(),
-                  "the unknown width is the one value no launch counts to");
-    SUCCEED();
-}
+#include <SushiRuntime/log/sushiruntime_log_project.hpp>
