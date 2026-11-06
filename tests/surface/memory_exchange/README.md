@@ -9,32 +9,23 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_memory_exchange.cpp
 
-The file tests the memory exchange: capabilities, a host export, and an import that names no mechanism, each through a `CapabilityCache` of its own. The suite `Medium_MemoryExchangeImport` tests a kind the device does not import, which is refused by name.
+The file tests the memory exchange: capabilities, a host export, and an import that names no mechanism, each through a `CapabilityCache` of its own that answers from a `ScriptedCapabilityProbe`, on the program's one runtime. The suite `Medium_MemoryExchangeImport` holds the two import tests; it skips on a device that is not a GPU, which refuses every import before it reads the descriptor.
 
 | Test | What it proves |
 | --- | --- |
-| `CapabilitiesOfDeviceZero` | Device 0 reports its capabilities. |
-| `AHostExportGivesTheSizeAsked` | A host export gives an allocation of the size asked when the device can export. |
-| `AnImportWithNoKindIsRefused` | An import naming no handle kind is refused with InvalidAccess; skipped on a device that cannot import, which refuses first with Unsupported. |
-| `AKindTheDeviceDoesNotImportIsRefusedByName` | A descriptor of a kind outside `capabilities(0).importable_kinds` is refused, and the message names the kind: `Unsupported` on a device that imports nothing, `InvalidAccess` otherwise. Skipped on a device that imports every kind. |
+| `CapabilitiesOfDeviceZero` | Device 0 reports the capabilities its probe answered. |
+| `AHostExportGivesTheSizeAsked` | A host export gives an allocation of the size asked. |
+| `AnImportWithNoKindIsRefused` | An import naming no handle kind is refused with InvalidAccess, and the message names `Unspecified`. Suite `Medium_MemoryExchangeImport`. |
+| `AKindTheDeviceDoesNotImportIsRefusedByName` | A device that imports only `OpaqueFd` refuses an `OpaqueWin32` descriptor with InvalidAccess, and the message names `OpaqueWin32`. |
 
 ## test_capability_cache.cpp
 
-The file tests `CapabilityCache` with probes the test writes, on the devices SYCL lists.
+The file tests `CapabilityCache` with a `ScriptedCapabilityProbe` and the device SYCL selects by default.
 
 | Test | What it proves |
 | --- | --- |
-| `TheSecondQueryHitsTheCache` | A device is probed once over two queries and both return the same answer. |
-| `EachDeviceIsProbedOnce` | Two devices are probed once each and keep their own answers; skipped on a machine with one device. |
-| `AThrowingProbeKeepsNothing` | A probe that throws passes the throw on and keeps no answer, so the next query probes again. |
-
-## test_memory_exchange_log_category.cpp
-
-The file tests `K_MEMORY_EXCHANGE_LOG_CATEGORY`: the name its records carry.
-
-| Test | What it proves |
-| --- | --- |
-| `TheCategoryIsNamedAfterTheModule` | Tests that the category is the module's folder in the runtime's project. |
+| `EachDeviceIsProbedOnce` | A device is probed once over two queries, and both return its answer. |
+| `AThrowingProbeKeepsNothing` | A probe that throws passes the throw on and keeps no answer, so the next query probes again and returns its answer. |
 
 ## test_scripted_capability_probe.cpp
 

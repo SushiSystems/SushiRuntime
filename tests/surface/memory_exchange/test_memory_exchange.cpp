@@ -29,12 +29,13 @@
  */
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
-#include <utility>
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/context_access/context_access.hpp>
 #include <SushiRuntime/core/allocation.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/result.hpp>
@@ -43,87 +44,119 @@
 #include <SushiRuntime/interop/external_handle_kind_set.hpp>
 #include <SushiRuntime/interop/external_memory.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
-#include <SushiRuntime/runtime_assembly/context_factory.hpp>
 
 #include <SushiRuntime/memory_exchange/capability_cache.hpp>
 #include <SushiRuntime/memory_exchange/memory_exchange.hpp>
+#include <SushiRuntime/memory_exchange/scripted_capability_probe.hpp>
+
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
+using Internal::MemoryExchange::CapabilityCache;
+using Internal::MemoryExchange::ScriptedCapabilityProbe;
 
-/** @brief Tests that device 0 reports its capabilities. */
-TEST(Medium_MemoryExchange, CapabilitiesOfDeviceZero)
+/**
+ * @brief Runs the memory exchange tests on the program's one runtime.
+ */
+class Medium_MemoryExchange : public TestSupport::RuntimeTest
 {
-    const auto context = SushiRuntime::Test::make_context();
-    Internal::MemoryExchange::CapabilityCache cache;
-    EXPECT_TRUE(Internal::MemoryExchange::query_capabilities(*context, cache, 0).has_value());
+    protected:
+        /** @brief Returns a share of the context of the program's runtime. */
+        [[nodiscard]] static std::shared_ptr<Internal::Execution::RuntimeContext> shared_context()
+        {
+            return Internal::ContextAccess::shared(runtime());
+        }
+};
+
+/**
+ * @brief Runs the import tests on the program's one runtime. A device that is not a GPU refuses
+ *        every import before it reads the descriptor, so a program without a GPU skips them.
+ */
+class Medium_MemoryExchangeImport : public Medium_MemoryExchange
+{
+    protected:
+        /** @brief Skips the test when device 0 is not a GPU. */
+        void SetUp() override
+        {
+            if (!shared_context()->devices().is_gpu(0))
+                GTEST_SKIP() << "device 0 is not a GPU, so it imports nothing";
+        }
+
+        /** @brief Returns the capabilities of a GPU that imports an opaque file descriptor and nothing else. */
+        [[nodiscard]] static InteropCapabilities fd_importer()
+        {
+            InteropCapabilities capabilities;
+            capabilities.device_import = true;
+            capabilities.importable_kinds.insert(ExternalHandleKind::OpaqueFd);
+            return capabilities;
+        }
+};
+
+/** @brief Tests that device 0 reports the capabilities its probe answered. */
+TEST_F(Medium_MemoryExchange, CapabilitiesOfDeviceZero)
+{
+    ScriptedCapabilityProbe probe;
+    InteropCapabilities answer;
+    answer.host_export = true;
+    probe.answer_next(answer);
+    CapabilityCache cache(std::ref(probe));
+    const auto context = shared_context();
+
+    const Result<InteropCapabilities> capabilities =
+        Internal::MemoryExchange::query_capabilities(*context, cache, 0);
+
+    ASSERT_TRUE(capabilities.has_value());
+    EXPECT_TRUE(capabilities.value().host_export);
 }
 
-/** @brief Tests that a host export gives an allocation of the size asked when the device can export. */
-TEST(Medium_MemoryExchange, AHostExportGivesTheSizeAsked)
+/** @brief Tests that a host export gives an allocation of the size asked. */
+TEST_F(Medium_MemoryExchange, AHostExportGivesTheSizeAsked)
 {
-    const auto context = SushiRuntime::Test::make_context();
-    Internal::MemoryExchange::CapabilityCache cache;
-    const InteropCapabilities capabilities =
-        Internal::MemoryExchange::query_capabilities(*context, cache, 0).value();
-    if (!capabilities.host_export)
-        GTEST_SKIP() << "device 0 cannot export host memory";
+    const auto context = shared_context();
+
     const Result<Detail::Allocation> exported =
         Internal::MemoryExchange::export_host_memory(context, 4096, 0, 4096);
+
     ASSERT_TRUE(exported.has_value()) << exported.error().message;
     EXPECT_EQ(exported.value().bytes(), 4096u);
 }
 
-/** @brief Tests that an import naming no handle kind is refused with InvalidAccess. */
-TEST(Medium_MemoryExchange, AnImportWithNoKindIsRefused)
+/** @brief Tests that an import naming no handle kind is refused with InvalidAccess, naming Unspecified. */
+TEST_F(Medium_MemoryExchangeImport, AnImportWithNoKindIsRefused)
 {
-    const auto context = SushiRuntime::Test::make_context();
-    Internal::MemoryExchange::CapabilityCache cache;
-    const InteropCapabilities capabilities =
-        Internal::MemoryExchange::query_capabilities(*context, cache, 0).value();
-    if (!capabilities.device_import)
-        GTEST_SKIP() << "device 0 cannot import, so its descriptor is never read";
+    ScriptedCapabilityProbe probe;
+    probe.answer_next(fd_importer());
+    CapabilityCache cache(std::ref(probe));
+    const auto context = shared_context();
     ExternalMemoryDescriptor descriptor;
     descriptor.allocation_bytes = 4096;
+
     const Result<Detail::Allocation> imported =
         Internal::MemoryExchange::import_device_memory(context, cache, descriptor, 4096, 0);
+
     ASSERT_FALSE(imported.has_value());
     EXPECT_EQ(imported.error().code, ErrorCode::InvalidAccess);
-    EXPECT_NE(imported.error().message.find("Unspecified"), std::string::npos);
-}
-
-/** @brief Tests that a kind device 0 does not import is refused before SYCL sees it, by name. */
-TEST(Medium_MemoryExchangeImport, AKindTheDeviceDoesNotImportIsRefusedByName)
-{
-    const auto context = SushiRuntime::Test::make_context();
-    Internal::MemoryExchange::CapabilityCache cache;
-    const InteropCapabilities capabilities =
-        Internal::MemoryExchange::query_capabilities(*context, cache, 0).value();
-
-    const std::pair<ExternalHandleKind, const char*> candidates[] = {
-        {ExternalHandleKind::OpaqueWin32, "OpaqueWin32"},
-        {ExternalHandleKind::OpaqueFd, "OpaqueFd"}};
-    const std::pair<ExternalHandleKind, const char*>* refused = nullptr;
-    for (const auto& candidate : candidates)
-    {
-        if (!capabilities.importable_kinds.contains(candidate.first))
-            refused = &candidate;
-    }
-    if (refused == nullptr)
-        GTEST_SKIP() << "device 0 imports every handle kind";
-
-    ExternalMemoryDescriptor descriptor;
-    descriptor.kind = refused->first;
-    descriptor.handle = 1;
-    descriptor.allocation_bytes = 4096;
-    if (capabilities.device_uuid)
-        descriptor.device = *capabilities.device_uuid;
-    const Result<Detail::Allocation> imported =
-        Internal::MemoryExchange::import_device_memory(context, cache, descriptor, 4096, 0);
-
-    ASSERT_FALSE(imported.has_value());
-    EXPECT_EQ(imported.error().code,
-              capabilities.device_import ? ErrorCode::InvalidAccess : ErrorCode::Unsupported);
-    EXPECT_NE(imported.error().message.find(refused->second), std::string::npos)
+    EXPECT_NE(imported.error().message.find("Unspecified"), std::string::npos)
         << imported.error().message;
 }
 
+/** @brief Tests that a kind the device does not import is refused with InvalidAccess, naming the kind. */
+TEST_F(Medium_MemoryExchangeImport, AKindTheDeviceDoesNotImportIsRefusedByName)
+{
+    ScriptedCapabilityProbe probe;
+    probe.answer_next(fd_importer());
+    CapabilityCache cache(std::ref(probe));
+    const auto context = shared_context();
+    ExternalMemoryDescriptor descriptor;
+    descriptor.kind = ExternalHandleKind::OpaqueWin32;
+    descriptor.handle = 1;
+    descriptor.allocation_bytes = 4096;
+
+    const Result<Detail::Allocation> imported =
+        Internal::MemoryExchange::import_device_memory(context, cache, descriptor, 4096, 0);
+
+    ASSERT_FALSE(imported.has_value());
+    EXPECT_EQ(imported.error().code, ErrorCode::InvalidAccess);
+    EXPECT_NE(imported.error().message.find("OpaqueWin32"), std::string::npos)
+        << imported.error().message;
+}

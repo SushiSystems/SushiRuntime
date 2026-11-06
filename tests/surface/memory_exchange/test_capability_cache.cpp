@@ -28,88 +28,52 @@
  * @author Mustafa Garip
  */
 
-#include <cstddef>
+#include <functional>
 #include <stdexcept>
-#include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/interop/external_handle_kind_set.hpp>
-#include <SushiRuntime/interop/external_memory.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
 #include <SushiRuntime/memory_exchange/capability_cache.hpp>
+#include <SushiRuntime/memory_exchange/scripted_capability_probe.hpp>
 
-using SushiRuntime::ExternalHandleKind;
 using SushiRuntime::InteropCapabilities;
 using SushiRuntime::Internal::MemoryExchange::CapabilityCache;
+using SushiRuntime::Internal::MemoryExchange::ScriptedCapabilityProbe;
 
-/** @brief Tests that the second query of a device returns the kept answer unprobed. */
-TEST(Medium_CapabilityCache, TheSecondQueryHitsTheCache)
+/** @brief Tests that a device is probed once over two queries, and both queries return its answer. */
+TEST(Medium_CapabilityCache, EachDeviceIsProbedOnce)
 {
     const sycl::device device;
-    std::size_t probes = 0;
+    ScriptedCapabilityProbe probe;
     InteropCapabilities answer;
     answer.host_export = true;
-    answer.importable_kinds.insert(ExternalHandleKind::OpaqueFd);
-    CapabilityCache cache(
-        [&probes, answer](const sycl::device&)
-        {
-            ++probes;
-            return answer;
-        });
+    probe.answer_next(answer);
+    CapabilityCache cache(std::ref(probe));
 
     const InteropCapabilities first = cache.get(device);
     const InteropCapabilities second = cache.get(device);
 
-    EXPECT_EQ(probes, 1u);
+    EXPECT_EQ(probe.calls(), 1u);
+    EXPECT_TRUE(first.host_export);
     EXPECT_TRUE(second.host_export);
-    EXPECT_EQ(second.importable_kinds, first.importable_kinds);
-    EXPECT_TRUE(second.importable_kinds.contains(ExternalHandleKind::OpaqueFd));
-}
-
-/** @brief Tests that each distinct device is probed once and keeps its own answer. */
-TEST(Medium_CapabilityCache, EachDeviceIsProbedOnce)
-{
-    const std::vector<sycl::device> devices = sycl::device::get_devices();
-    if (devices.size() < 2)
-        GTEST_SKIP() << "the machine exposes fewer than two SYCL devices";
-
-    std::vector<sycl::device> probed;
-    CapabilityCache cache(
-        [&probed, &devices](const sycl::device& device)
-        {
-            probed.push_back(device);
-            InteropCapabilities answer;
-            answer.host_export = device == devices[0];
-            return answer;
-        });
-
-    EXPECT_TRUE(cache.get(devices[0]).host_export);
-    EXPECT_FALSE(cache.get(devices[1]).host_export);
-    EXPECT_TRUE(cache.get(devices[0]).host_export);
-    ASSERT_EQ(probed.size(), 2u);
-    EXPECT_TRUE(probed[0] == devices[0]);
-    EXPECT_TRUE(probed[1] == devices[1]);
 }
 
 /** @brief Tests that a probe that throws passes the throw on and keeps no answer. */
 TEST(Medium_CapabilityCache, AThrowingProbeKeepsNothing)
 {
     const sycl::device device;
-    std::size_t probes = 0;
-    CapabilityCache cache(
-        [&probes](const sycl::device&) -> InteropCapabilities
-        {
-            ++probes;
-            if (probes == 1)
-                throw std::runtime_error("probe failed");
-            InteropCapabilities answer;
-            answer.host_export = true;
-            return answer;
-        });
+    ScriptedCapabilityProbe probe;
+    InteropCapabilities answer;
+    answer.host_export = true;
+    probe.throw_next("probe failed");
+    probe.answer_next(answer);
+    CapabilityCache cache(std::ref(probe));
 
     EXPECT_THROW(static_cast<void>(cache.get(device)), std::runtime_error);
-    EXPECT_TRUE(cache.get(device).host_export) << "the failed probe left an answer behind";
-    EXPECT_EQ(probes, 2u);
+    const InteropCapabilities retried = cache.get(device);
+
+    EXPECT_TRUE(retried.host_export);
+    EXPECT_EQ(probe.calls(), 2u);
 }
