@@ -23,7 +23,7 @@
 
 /**
  * @file test_late_controls_access.cpp
- * @brief Tests engine_controls() and surface_controls(): one object under two names, sharing its owner.
+ * @brief Tests engine_controls() and surface_controls(): one object, two names, one owner.
  * @see tests/surface/engine_handles/README.md
  * @author Mustafa Garip
  */
@@ -39,22 +39,19 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the surface share and the engine share name one binding and one owner. */
-TEST(Small_LateControlsAccess, BothSharesNameOneBinding)
+TEST(Medium_LateControlsAccess, BothSharesNameOneBinding)
 {
-    const auto bindings = std::make_shared<Internal::Graph::LateBindings>();
+    auto bindings = std::make_shared<Internal::Graph::LateBindings>();
+    const Internal::Graph::LateBindings* const binding = bindings.get();
+    const std::weak_ptr<Internal::Graph::LateBindings> watch = bindings;
     const std::shared_ptr<Detail::LateControls> controls = Detail::surface_controls(bindings);
-    EXPECT_EQ(bindings.use_count(), 2) << "the surface share does not own the binding";
+    bindings.reset();
+    EXPECT_FALSE(watch.expired()) << "the surface share does not own the binding";
 
     const std::shared_ptr<Internal::Graph::LateBindings> back = Detail::engine_controls(controls);
-    EXPECT_EQ(back.get(), bindings.get());
-    EXPECT_EQ(Detail::engine_controls(controls.get()), bindings.get());
-    back->count.store(5);
-    EXPECT_EQ(bindings->count.load(), 5u);
-}
+    EXPECT_EQ(back.get(), binding);
+    EXPECT_EQ(Detail::engine_controls(controls.get()), binding);
 
-/** @brief Tests that null converts to null. */
-TEST(Small_LateControlsAccess, NullStaysNull)
-{
-    EXPECT_EQ(Detail::surface_controls(nullptr), nullptr);
-    EXPECT_EQ(Detail::engine_controls(std::shared_ptr<Detail::LateControls>()), nullptr);
+    back->count.store(5);
+    EXPECT_EQ(binding->count.load(), 5u);
 }

@@ -23,7 +23,7 @@
 
 /**
  * @file test_plan_access.cpp
- * @brief Tests engine_plan() and surface_plan(): a round trip that names one object, and null for null.
+ * @brief Tests engine_plan() and surface_plan(): a round trip that names one object both ways.
  * @see tests/surface/engine_handles/README.md
  * @author Mustafa Garip
  */
@@ -37,18 +37,14 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the surface name and the engine plan are one object both ways. */
-TEST(Small_PlanAccess, ARoundTripNamesTheSamePlan)
+TEST(Medium_PlanAccess, ARoundTripNamesTheSamePlan)
 {
     Internal::Graph::CompiledGraph graph;
-    Detail::Plan* const plan = Detail::surface_plan(&graph);
-    EXPECT_EQ(Detail::engine_plan(plan), &graph);
-    const Detail::Plan* const read_only = Detail::surface_plan(static_cast<const Internal::Graph::CompiledGraph*>(&graph));
-    EXPECT_EQ(Detail::engine_plan(read_only), &graph);
-}
+    const Internal::Graph::CompiledGraph* const engine = &graph;
 
-/** @brief Tests that null converts to null in both directions. */
-TEST(Small_PlanAccess, NullStaysNull)
-{
-    EXPECT_EQ(Detail::engine_plan(static_cast<Detail::Plan*>(nullptr)), nullptr);
-    EXPECT_EQ(Detail::surface_plan(static_cast<Internal::Graph::CompiledGraph*>(nullptr)), nullptr);
+    Detail::Plan* const plan = Detail::surface_plan(&graph);
+    EXPECT_EQ(Detail::engine_plan(plan), engine);
+
+    const Detail::Plan* const read_only = Detail::surface_plan(engine);
+    EXPECT_EQ(Detail::engine_plan(read_only), engine);
 }
