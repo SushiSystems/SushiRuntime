@@ -23,26 +23,19 @@
 
 /**
  * @file test_context.cpp
- * @brief Tests Detail::Context: an opaque name the surface holds only by pointer.
+ * @brief Checks at compile time that the surface holds Detail::Context by shared pointer alone.
  * @see tests/surface/context/README.md
  * @author Mustafa Garip
  */
 
+#include <cstddef>
 #include <memory>
 #include <type_traits>
-
-#include <gtest/gtest.h>
 
 #include <SushiRuntime/context/context.hpp>
 
 using namespace SushiRuntime;
 
-/** @brief Tests that the name is held by pointer and by shared pointer without a definition. */
-TEST(Small_Context, IsHeldByPointerOnly)
-{
-    const Detail::Context* pointer = nullptr;
-    const std::shared_ptr<Detail::Context> shared;
-    static_assert(std::is_class_v<Detail::Context>, "the name is a class type");
-    EXPECT_EQ(pointer, nullptr);
-    EXPECT_EQ(shared, nullptr);
-}
+// A shared pointer holds the context while its definition is absent.
+static_assert(std::is_constructible_v<std::shared_ptr<Detail::Context>, std::nullptr_t>,
+              "a shared pointer holds the context without its definition");

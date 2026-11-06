@@ -23,16 +23,13 @@
 
 /**
  * @file test_context_handle_access.cpp
- * @brief Tests ContextHandleAccess: wrap, share and the handle an owner holds.
+ * @brief Tests ContextHandleAccess::handle_of: the handle an owner holds.
  * @see tests/surface/context/README.md
  * @author Mustafa Garip
  */
 
-#include <memory>
-
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/context/context.hpp>
 #include <SushiRuntime/context/context_handle.hpp>
 #include <SushiRuntime/context/context_handle_access.hpp>
 
@@ -45,14 +42,6 @@ namespace
     {
         ContextHandle context_; /**< The handle handle_of() returns. */
     };
-}
-
-/** @brief Tests that an empty share gives an empty handle and shares nothing back. */
-TEST(Small_ContextHandleAccess, AnEmptyShareGivesAnEmptyHandle)
-{
-    const ContextHandle handle = Detail::ContextHandleAccess::wrap(nullptr);
-    EXPECT_FALSE(handle);
-    EXPECT_EQ(Detail::ContextHandleAccess::share(handle), nullptr);
 }
 
 /** @brief Tests that handle_of() returns the owner's handle itself, not a copy. */

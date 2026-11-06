@@ -63,6 +63,15 @@ The owner delegated these decisions on 2026-11-05. Each ruling below is final fo
 ## Dispatches
 
 dispatch: J15 review, 16 chunks — haiku high, 1 round each, passed, rung 1
+dispatch: J16 T2 offload adapters — haiku high, 2 rounds (course corrections: test per header, member naming), passed, rung 1
+dispatch: J16 T2 topology adapter — haiku high, 1 round, passed, rung 1
+dispatch: J16 T5 garbled READMEs — haiku high, 1 round, passed, rung 1
+dispatch: J16 T4 benchmark suites — sonnet medium, 1 round, passed, rung 1
+dispatch: J16 T6 CLI tests — sonnet medium, 1 round, passed (one owned patch left, fixed by the lead), rung 1
+dispatch: J16 T2 remaining adapters — haiku high, 1 round, passed, rung 1
+dispatch: J16 T3 module move — sonnet medium, 1 round, partial (contract suite to RW-87; one stale CMake line fixed by the lead), rung 1
+dispatch: J16 M8 surface/context — haiku high, 1 round, partial (one row needs RW-88), rung 1
+dispatch: J16 M10 surface/engine_handles — haiku high, 1 round, passed, rung 1
 
 ## Totals
 

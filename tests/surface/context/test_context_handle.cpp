@@ -31,24 +31,13 @@
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/context/context_handle.hpp>
-#include <SushiRuntime/context/context_handle_access.hpp>
 
 using SushiRuntime::ContextHandle;
-using SushiRuntime::Detail::ContextHandleAccess;
 
-/** @brief Tests that a default handle shares no context. */
-TEST(Small_ContextHandle, ADefaultHandleIsEmpty)
+/** @brief Tests that a copy of a default handle shares no context, as the handle does. */
+TEST(Small_ContextHandle, ACopyOfADefaultHandleIsEmpty)
 {
     const ContextHandle handle;
-
-    EXPECT_FALSE(static_cast<bool>(handle));
-    EXPECT_TRUE(ContextHandleAccess::share(handle) == nullptr);
-}
-
-/** @brief Tests that a handle wrapped around no context is empty, and so is its copy. */
-TEST(Small_ContextHandle, AHandleWrappedAroundNothingIsEmpty)
-{
-    const ContextHandle handle = ContextHandleAccess::wrap(nullptr);
     const ContextHandle copy = handle;
 
     EXPECT_FALSE(static_cast<bool>(handle));

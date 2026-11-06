@@ -27,6 +27,7 @@
 | RW-60 | P2 | open | Give consumers a public "run after" edge and wider task overloads | a public "run after" edge exists, `Recorder::task` takes a span of regions and a small-buffer callable, and the guide states what concurrent `Recorder::task`… |  |  | 2026-10-19 |
 | RW-61 | P2 | open | Group the includes of every source file | every file groups its includes as the contributing guide states, in step with the BLAS tree |  |  | 2026-10-19 |
 | RW-62 | P2 | open | State and test host-written memory read by a replayed plan | the runtime states that a replayed plan reads memory the host wrote before the replay, and a test holds it |  |  | 2026-10-19 |
+| RW-88 | P2 | open | Test ContextHandleAccess::handle_of through its public owner | no test under tests/surface/context names Detail::ContextHandleAccess, and handle_of is checked through Runtime at medium (REPORT.md decision 2) |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-06 |
 
 ## Known issues
 
