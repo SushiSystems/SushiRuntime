@@ -37,7 +37,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the surface name and the engine plan are one object both ways. */
-TEST(Medium_PlanAccess, ARoundTripNamesTheSamePlan)
+TEST(Small_PlanAccess, ARoundTripNamesTheSamePlan)
 {
     Internal::Graph::CompiledGraph graph;
     const Internal::Graph::CompiledGraph* const engine = &graph;

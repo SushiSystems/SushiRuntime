@@ -39,7 +39,7 @@
 using namespace SushiRuntime;
 
 /** @brief Tests that the surface share and the engine share name one binding and one owner. */
-TEST(Medium_LateControlsAccess, BothSharesNameOneBinding)
+TEST(Small_LateControlsAccess, BothSharesNameOneBinding)
 {
     auto bindings = std::make_shared<Internal::Graph::LateBindings>();
     const Internal::Graph::LateBindings* const binding = bindings.get();
