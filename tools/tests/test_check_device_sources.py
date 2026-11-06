@@ -19,6 +19,7 @@ from layering.check_device_sources import (  # noqa: E402
     rule_device_source_unneeded,
 )
 
+K_TEST_SIZE = "medium"
 K_API_INCLUDE = "#include <SushiRuntime/api/graph/graph.hpp>"
 
 
@@ -81,40 +82,37 @@ class PassingTreeTest(DeviceSourcesTest):
     """Covers a tree whose device lists are exactly the units that instantiate a kernel."""
 
     def test_reports_nothing_when_the_lists_match(self) -> None:
+        """Yields no issue from either rule when DEVICE_SOURCES lists exactly the kernel units."""
         tree = self._declare(K_ALL, K_DEVICE)
-        for rule in (rule_device_source_missing, rule_device_source_unneeded):
-            self.assertEqual(self._messages(rule, tree), [])
+        issues = self._messages(rule_device_source_missing, tree) + self._messages(rule_device_source_unneeded, tree)
+        self.assertEqual(issues, [])
 
 
 class RuleDeviceSourceMissingTest(DeviceSourcesTest):
     """Covers the rule that every unit instantiating a kernel is listed."""
 
-    def test_reports_a_unit_that_records_a_kernel_and_is_not_listed(self) -> None:
-        messages = self._messages(rule_device_source_missing, self._declare(K_ALL, ["test_launched.cpp"]))
-        self.assertEqual(len(messages), 1)
+    def test_reports_each_unit_that_instantiates_a_kernel_and_is_not_listed(self) -> None:
+        """Names the unit that records a kernel through the API and the unit whose quoted header launches one."""
+        messages = self._messages(rule_device_source_missing, self._declare(K_ALL, []))
+        self.assertEqual(len(messages), 2)
         self.assertIn("test_recorded.cpp instantiates a kernel recorded through the API", messages[0])
-
-    def test_reports_a_unit_whose_quoted_header_launches_a_kernel(self) -> None:
-        messages = self._messages(rule_device_source_missing, self._declare(K_ALL, ["test_recorded.cpp"]))
-        self.assertEqual(len(messages), 1)
-        self.assertIn("test_launched.cpp instantiates launch_helper.hpp -> a kernel launch", messages[0])
+        self.assertIn("test_launched.cpp instantiates launch_helper.hpp -> a kernel launch", messages[1])
 
     def test_reads_no_recording_call_in_a_library_source(self) -> None:
+        """Reports nothing for a library source that calls add, since only tests and applications record."""
         self.assertEqual(self._messages(rule_device_source_missing, self._declare(K_ALL, K_DEVICE)), [])
 
 
 class RuleDeviceSourceUnneededTest(DeviceSourcesTest):
     """Covers the rule that a listed unit instantiates a kernel."""
 
-    def test_reports_a_listed_unit_with_a_container_add_only(self) -> None:
-        messages = self._messages(rule_device_source_unneeded, self._declare(K_ALL, [*K_DEVICE, "test_hooks.cpp"]))
-        self.assertEqual(messages, ["test_hooks.cpp is in DEVICE_SOURCES and instantiates no kernel; "
-                                    "list it in SOURCES only"])
-
-    def test_reports_a_listed_unit_that_reaches_no_api(self) -> None:
-        messages = self._messages(rule_device_source_unneeded, self._declare(K_ALL, [*K_DEVICE, "test_plain.cpp"]))
-        self.assertEqual(len(messages), 1)
-        self.assertIn("test_plain.cpp", messages[0])
+    def test_reports_each_listed_unit_that_instantiates_no_kernel(self) -> None:
+        """Names the listed unit that only adds to a container and the listed unit that reaches no API."""
+        tree = self._declare(K_ALL, [*K_DEVICE, "test_hooks.cpp", "test_plain.cpp"])
+        self.assertEqual(self._messages(rule_device_source_unneeded, tree), [
+            "test_hooks.cpp is in DEVICE_SOURCES and instantiates no kernel; list it in SOURCES only",
+            "test_plain.cpp is in DEVICE_SOURCES and instantiates no kernel; list it in SOURCES only",
+        ])
 
 
 if __name__ == "__main__":

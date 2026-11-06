@@ -21,6 +21,7 @@ from layering.check_layering import (  # noqa: E402
 )
 from settings import K_TIER_ORDER  # noqa: E402
 
+K_TEST_SIZE = "medium"
 K_ROOT = Path(__file__).resolve().parents[2]
 K_TIERS_FILE = K_ROOT / "cmake" / "SushiRuntimeTiers.cmake"
 K_COMMENT = re.compile(r"#.*")
@@ -41,14 +42,20 @@ def _cmake_pairs(name: str) -> list[tuple[str, str]]:
     return list(zip(items[0::2], items[1::2], strict=True))
 
 
-class TierTableTest(unittest.TestCase):
-    """Checks the tier order in settings.py and the module folders against the CMake file."""
+class TierRulesTest(unittest.TestCase):
+    """Checks the rule table of the layering checker."""
+
+    K_TEST_SIZE = "small"
 
     def test_is_registered(self) -> None:
         """Runs the rules that read a build table as part of the checker's rule table."""
         self.assertIs(K_CHECKER.rules["rule_same_tier_includes"], rule_same_tier_includes)
         self.assertIs(K_CHECKER.rules["rule_declared_dependencies"], rule_declared_dependencies)
         self.assertIs(K_CHECKER.rules["rule_public_headers"], rule_public_headers)
+
+
+class TierTableTest(unittest.TestCase):
+    """Checks the tier order in settings.py and the module folders against the CMake file."""
 
     def test_tier_order_matches_the_cmake_table(self) -> None:
         """Holds the tiers of SUSHIRUNTIME_TIER_ORDER in the same order."""
