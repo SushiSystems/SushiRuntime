@@ -6,4 +6,4 @@
 sushiruntime_add_module_tests(
     MODULE context_access
     SOURCES
-        test_context_access.cpp)
+        compile_context_access.cpp)
