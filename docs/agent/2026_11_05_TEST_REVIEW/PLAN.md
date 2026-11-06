@@ -12,11 +12,11 @@ writes each add. Nothing in a module job changes production code except a seam a
 | Job | Files | Waits on | Status |
 | --- | --- | --- | --- |
 | T1 | `tests/support/tolerance.hpp` copied from SushiSkills, and a `testing::Environment` fixture base that holds the one runtime and device of the program |  | done: helpers in place; test bodies move onto them in the M jobs |
-| T2 | In-memory adapters beside their ports: `TopologyProvider`, the offload ports, `TelemetryProvider`, `TaskMigrator`, `RebalanceStrategy`, `Task`, `AllocationOwner`, `RunObserver` (moving `RecordingObserver`), `USMReleaseObserver`, `FeedAttachment`, `CapabilityCache::Probe` |  | todo |
-| T3 | `InProcessTransport` beside the `Transport` port |  | todo |
+| T2 | In-memory adapters beside their ports: `TopologyProvider`, the offload ports, `TelemetryProvider`, `TaskMigrator`, `RebalanceStrategy`, `Task`, `AllocationOwner`, `RunObserver` (moving `RecordingObserver`), `USMReleaseObserver`, `FeedAttachment`, `CapabilityCache::Probe` |  | partial: rebalancer (telemetry, migrator, strategy), offload coordinator and sink, topology provider done; `Task`, `AllocationOwner`, `RunObserver`, `USMReleaseObserver`, `FeedAttachment`, `CapabilityCache::Probe` left |
+| T3 | `InProcessTransport` beside the `Transport` port |  | blocked: the move makes `transport` depend on `frame_transport` and `wire`, which depend on `transport`; RW-81 waits for the owner |
 | T4 | `Performance_` and `Stress_` suites moved to the benchmark runner |  | todo |
 | T5 | The defects of this report, each with a test that fails first, and the pages corrected |  | todo |
-| T6 | The CLI tests on sushicore's in-memory runner and console | sushicore T1 | todo |
+| T6 | The CLI tests on sushicore's in-memory runner and console | sushicore T1 | blocked: sushicore's in-memory adapters are on its feature branch; no release (0.10.11 and below) ships them |
 | T7 | `tools/testing/check_test_additions.py`, `tools/tests/test_check_test_additions.py` deleted |  | done |
 | M1 | the tests of `applications` (2 files): 2 rewrite, 1 split | T1, T2, T3, T4, T5, T6, T7 | todo |
 | M2 | the tests of `cli` (20 files): 60 rewrite, 20 resize, 1 split, 5 merge, 7 delete | T1, T2, T3, T4, T5, T6, T7 | todo |

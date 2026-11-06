@@ -9,10 +9,13 @@ sushiruntime_add_module_tests(
         test_dispatch_record.cpp
         test_event_polling.cpp
         test_failure_naming.cpp
+        test_in_memory_telemetry.cpp
         test_offload_gate.cpp
         test_quiescence_latch.cpp
         test_range_task.cpp
         test_rebalancer_interfaces.cpp
+        test_recording_rebalance_strategy.cpp
+        test_recording_task_migrator.cpp
         test_run_outcome.cpp
         test_scheduler_log_category.cpp
         test_task_scheduler.cpp

@@ -46,6 +46,15 @@ Nodes without a PCI address are skipped.
 Discovery over every device class finds at least one device, numbers the devices 0, 1, 2 in order
 and gives each a name.
 
+## test_in_memory_topology_provider.cpp
+
+| Test | What it proves |
+| --- | --- |
+| `ReturnsTheNodesItWasGiven` | `enumerate()` returns the nodes the provider was built with. |
+| `ReturnsTheCoreMapItWasGiven` | `cpu_core_to_numa()` returns the core map the provider was built with. |
+| `CoreMapIsEmptyWhenNoneIsGiven` | The core map is empty when the provider is built without one. |
+| `FailingFormReturnsItsError` | A provider built by `failing()` returns the error it was given. |
+
 ## test_matrix_distance_model.cpp
 
 | Test | What it proves |

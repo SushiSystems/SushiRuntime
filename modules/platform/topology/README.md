@@ -50,6 +50,13 @@ settings that is worker i on core i, and under a reserved-core configuration it 
 The default implementation returns an empty vector, and callers then fall back to a single flat tier
 (NUMA-blind stealing). A provider overrides it to supply a real or synthetic map.
 
+## in_memory_topology_provider.hpp
+
+InMemoryTopologyProvider answers `enumerate()` and `cpu_core_to_numa()` from nodes and a core map held
+in memory, with no hwloc and no device query, so placement logic is tested on any machine. Its
+`failing()` form returns the error it was given. It does not apply the DeviceFilter: every call returns
+every stored node.
+
 ## matrix_distance_model.hpp
 
 ### MatrixDistanceModel

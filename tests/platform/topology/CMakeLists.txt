@@ -10,6 +10,7 @@ sushiruntime_add_module_tests(
         test_host_identity.cpp
         test_hw_discovery.cpp
         test_hwloc_topology_provider.cpp
+        test_in_memory_topology_provider.cpp
         test_matrix_distance_model.cpp
         test_numa_mapper.cpp
         test_remapping_topology_provider.cpp

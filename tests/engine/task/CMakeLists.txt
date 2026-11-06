@@ -7,6 +7,8 @@ sushiruntime_add_module_tests(
     MODULE task
     SOURCES
         test_dispatch_events.cpp
+        test_in_memory_offload_coordinator.cpp
+        test_in_memory_offload_sink.cpp
         test_late_bindings.cpp
         test_node.cpp
         test_node_placement.cpp

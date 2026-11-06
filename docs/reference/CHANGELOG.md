@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-06 — tests: Added in-memory adapters for the rebalancer, offload and topology ports, beside each port (`in_memory_telemetry.hpp`, `in_memory_offload_coordinator.hpp`, `in_memory_topology_provider.hpp`).
 - 2026-11-06 — tools: Fixed the mirror checker refusing `tests/support`, the shared test helper folder, by taking SushiSkills' copy (KI-26, `check_test_mirror.py`).
 - 2026-11-06 — licence: Relicensed SushiRuntime under the Apache License 2.0 and removed `COMMERCIAL.md`; every source file's licence block follows (`LICENSE`, `tools/settings.py`).
 - 2026-11-05 — tools: Took the shared checkers of 2026-11-05 with a baseline of the findings they meet, which RW-80 clears.

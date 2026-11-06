@@ -17,8 +17,8 @@ scheduler's `tests/engine/scheduler/test_task_scheduler.cpp` checks the queue a 
 ### `Medium_NodePlacementState`
 
 The two tests need no allocator. `place_on()` stores an index and `stated_placement()` returns it;
-an index the 16-bit field cannot hold throws `ErrorCode::InvalidGraph` with the index in the message
-and leaves the earlier placement in force.
+an index the 16-bit field cannot hold fails `SR_VERIFY`, which aborts the process with the index in
+the message; a death test checks it.
 
 ### `Medium_NodePlacementRule`
 
@@ -114,13 +114,37 @@ The file tests the OffloadSink contract through a recording implementation.
 | `BothCallsReachTheSink` | A node given back and a node finished remotely reach the sink. |
 | `FailReachesTheSinkWithTheError` | `fail()` reaches the implementation with the node and the error. |
 
+## test_in_memory_offload_coordinator.cpp
+
+The file tests the InMemoryOffloadCoordinator adapter against the OffloadCoordinator contract.
+
+| Test | What it proves |
+| --- | --- |
+| `RefusesAndRecordsANodeByDefault` | Without acceptance set, try_offload() refuses and the node is recorded as offered only. |
+| `AcceptsAndListsANodeOnceAcceptingIsSet` | With acceptance set, try_offload() accepts and the node is listed as accepted. |
+| `KeepsTheSinkItIsBoundTo` | bind() keeps the address of the sink it was given. |
+| `CountsEachPrepareCall` | Each prepare() call is counted. |
+| `KeepsTheRulesOfTheLatestPrepareCall` | The rules of the latest prepare() call replace those held before. |
+| `RecordsEachLocalCompletionInCallOrder` | Each node the pool finished itself is recorded in call order. |
+| `RecordsThatStopRan` | stop() is recorded once the scheduler calls it. |
+
+## test_in_memory_offload_sink.cpp
+
+The file tests the InMemoryOffloadSink adapter against the OffloadSink contract.
+
+| Test | What it proves |
+| --- | --- |
+| `RecordsEachResubmittedNodeInCallOrder` | Each node given back by resubmit() is recorded in call order. |
+| `RecordsEachRemotelyCompletedNodeInCallOrder` | Each node finished by a worker and given to complete_remote() is recorded in call order. |
+| `RecordsEachFailedNodeWithItsError` | fail() records the node with the error code and message it was given. |
+
 ## test_offload_state.cpp
 
 The file tests OffloadState: not offloadable, no attempt, no lists and no payload until set.
 
 | Test | What it proves |
 | --- | --- |
-| `DefaultsHoldNothingAndThePayloadIsOwned` | Counts its own destruction. */ class CountingPayload final : public OffloadPayload { public: explicit CountingPayload(int& destroyed) : destroyed_(destroyed) { } ~CountingPayload() override { ++destroyed_; } private: int& destroyed_; }; } /** @brief Tests the defaults, and that the state owns its payload. |
+| `DefaultsHoldNothingAndThePayloadIsOwned` | Tests the defaults, and that the state owns its payload. |
 
 ## test_ready_sink.cpp
 
@@ -144,7 +168,7 @@ The file tests Task: the defaults a subclass inherits and the two members it mus
 
 | Test | What it proves |
 | --- | --- |
-| `ASubclassInheritsTheDefaults` | Writes the two pure members and nothing else. */ class PlainTask final : public Task { public: std::optional<sushi_ptr<Task>> split() override { return std::nullopt; } bool is_splittable() const override { return false; } }; } /** @brief Tests the defaults: a kernel task, unnamed, priority 0, device work, not a graph node. |
+| `ASubclassInheritsTheDefaults` | Tests the defaults: a kernel task, unnamed, priority 0, device work, not a graph node. |
 
 ## test_task_submission.cpp
 
