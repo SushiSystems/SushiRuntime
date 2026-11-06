@@ -52,25 +52,29 @@ namespace
     constexpr std::size_t K_READ = 40;
 } // namespace
 
+namespace
+{
+    /** @brief Reads the first @p count elements of @p buffer through the explicit copy, and returns them. */
+    std::vector<float> read_back(Buffer<float>& buffer, std::size_t count)
+    {
+        auto read = buffer.read_range(ElementRange{0, count});
+        EXPECT_TRUE(read.has_value());
+        return read.has_value() ? *read : std::vector<float>{};
+    }
+} // namespace
+
 /** @brief Tests that a run that copies a known number of bytes writes counters of exactly those bytes. */
 TEST(Medium_RunCounters, TransferBytesMatchTheExplicitCopies)
 {
     auto runtime = Runtime::create().value();
     auto buffer = runtime.buffer<float>(256, DeviceIndex{0}, Residency::Device).value();
     const std::vector<float> source(K_WRITTEN, 1.0f);
-    std::vector<float> sink;
     auto graph = runtime.graph();
     graph.add_host(Reads{}, Writes(buffer), [&buffer, &source]()
     {
         EXPECT_TRUE(buffer.write_range(ElementRange{0, K_WRITTEN}, span<const float>(source.data(), source.size())).has_value());
     });
-    graph.add_host(Reads(buffer), Writes{}, [&buffer, &sink]()
-    {
-        auto read = buffer.read_range(ElementRange{0, K_READ});
-        EXPECT_TRUE(read.has_value());
-        if (read.has_value())
-            sink = *read;
-    });
+    graph.add_host(Reads(buffer), Writes{}, [&buffer]() { static_cast<void>(read_back(buffer, K_READ)); });
 
     const RunRecord record = record_periods_without_source(
         0, 1, [&graph](std::uint32_t, SushiProfiler::PeriodTimeline&) { EXPECT_TRUE(graph.run().has_value()); });
@@ -104,6 +108,37 @@ TEST(Medium_RunCounters, TheTaskCountIsWrittenPerRun)
     EXPECT_EQ(tasks.first, 9.0) << "three nodes in each of three runs";
 }
 
+namespace
+{
+    /** @brief Expects counter or value @p name to hold @p samples samples in @p record, none of them negative. */
+    void expect_one_value_per_run(const RunRecord& record, const char* name, std::size_t samples)
+    {
+        SCOPED_TRACE(name);
+        const auto total = sample_total(record, name);
+        EXPECT_EQ(total.second, samples) << "one value per run";
+        EXPECT_GE(total.first, 0.0);
+    }
+
+    /** @brief Returns the last value site @p name wrote in @p period, or -1 when it wrote none. */
+    double last_value_of(const RunRecord& record, const SushiProfiler::PeriodRecord& period, const char* name)
+    {
+        double last = -1.0;
+        for (const SushiProfiler::SampleSeries& series : period.samples)
+            if (record.sites[series.site].name == name && !series.values.empty())
+                last = series.values.back();
+        return last;
+    }
+
+    /** @brief Runs @p pipeline's graph once, dropping @p handle first when @p period is @p first_unobserved. */
+    void run_unobserved_from(SessionPipeline& pipeline, RunObserverHandle& handle, std::uint32_t first_unobserved,
+                             std::uint32_t period)
+    {
+        if (period == first_unobserved)
+            handle.reset();
+        EXPECT_TRUE(pipeline.graph().run().has_value());
+    }
+} // namespace
+
 /** @brief Tests that the worker time is written as four values on every run, with no observer added. */
 TEST(Medium_RunCounters, WorkerBucketSumsAreWrittenOnEveryRun)
 {
@@ -112,12 +147,10 @@ TEST(Medium_RunCounters, WorkerBucketSumsAreWrittenOnEveryRun)
     const RunRecord record = record_periods_without_source(
         0, 3, [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline&) { EXPECT_TRUE(pipeline.graph().run().has_value()); });
 
-    for (const char* name : {"worker.busy", "worker.stealing", "worker.polling", "worker.idle"})
-    {
-        const auto total = sample_total(record, name);
-        EXPECT_EQ(total.second, 3u) << name << ": one value per run";
-        EXPECT_GE(total.first, 0.0) << name;
-    }
+    expect_one_value_per_run(record, "worker.busy", 3u);
+    expect_one_value_per_run(record, "worker.stealing", 3u);
+    expect_one_value_per_run(record, "worker.polling", 3u);
+    expect_one_value_per_run(record, "worker.idle", 3u);
 }
 
 /** @brief Tests that the worker values of a run that recorded no timing are zero, not the time of an earlier run. */
@@ -127,20 +160,12 @@ TEST(Medium_RunCounters, AnUnobservedRunReportsNoStaleWorkerTime)
     const auto observer = std::make_shared<RecordingObserver>();
     RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
 
+    // The first run records timing and so accumulates worker time; the second has no observer.
     const RunRecord record = record_periods_without_source(
         0, 2, [&pipeline, &handle](std::uint32_t period, SushiProfiler::PeriodTimeline&)
-        {
-            // The first run records timing and so accumulates worker time; the second has no observer.
-            if (period == 1)
-                handle.reset();
-            EXPECT_TRUE(pipeline.graph().run().has_value());
-        });
+        { run_unobserved_from(pipeline, handle, 1, period); });
 
     ASSERT_EQ(record.periods.size(), 2u);
-    double busy_in_second_period = -1.0;
-    for (const SushiProfiler::SampleSeries& series : record.periods[1].samples)
-        if (record.sites[series.site].name == "worker.busy")
-            for (const double value : series.values)
-                busy_in_second_period = value;
-    EXPECT_EQ(busy_in_second_period, 0.0) << "a run that measured nothing writes zero, not what the run before it measured";
+    EXPECT_EQ(last_value_of(record, record.periods[1], "worker.busy"), 0.0)
+        << "a run that measured nothing writes zero, not what the run before it measured";
 }

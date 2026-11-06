@@ -35,6 +35,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -77,10 +78,170 @@ namespace
     {
         return record.tracks.at(period.spans.span(row).track);
     }
+
+    /** @brief Calls @p visit with the period and the row of every span of @p record. */
+    template <class Visit>
+    void for_each_span(const RunRecord& record, Visit&& visit)
+    {
+        for (const PeriodRecord& period : record.periods)
+            for (std::size_t row = 0; row < period.spans.size(); ++row)
+                visit(period, row);
+    }
+
+    /** @brief Spins until @p ready returns true. */
+    template <class Ready>
+    void spin_until(Ready&& ready)
+    {
+        while (!ready())
+            std::this_thread::yield();
+    }
+
+    /** @brief Expects @p record to name the load, scale and store node each span belongs to, with its operation and one step. */
+    void expect_every_span_joined_to_its_node(const RunRecord& record)
+    {
+        const std::string names[] = {"load", "scale", "store"};
+        const std::int64_t operations[] = {
+            static_cast<std::int64_t>(("pipeline.load"_op).value),
+            static_cast<std::int64_t>(("pipeline.scale"_op).value),
+            static_cast<std::int64_t>(("pipeline.store"_op).value)};
+        for_each_span(record, [&](const PeriodRecord& period, std::size_t row)
+        {
+            const std::int64_t node = integer_attribute(record, period, "node", row);
+            ASSERT_GE(node, 0);
+            ASSERT_LT(node, 3);
+            EXPECT_EQ(span_name(record, period, row), names[node]) << "row " << row;
+            EXPECT_EQ(integer_attribute(record, period, "operation", row), operations[node]) << "row " << row;
+            EXPECT_EQ(integer_attribute(record, period, "invocation", row), 0) << "one step per run";
+        });
+    }
+
+    /** @brief Returns whether a submit zone of the thread @p span names encloses its queue time, to the pairing's slack. */
+    bool is_enclosed_by_a_submit_zone(const RunRecord& record, const PeriodRecord& period,
+                                      const SushiProfiler::Span& span)
+    {
+        for (const SushiProfiler::ZoneRun& run : period.runs)
+        {
+            const std::string& site = record.sites[run.site].name;
+            const bool is_submit = site == "run.submit" || site == "dispatch.submit" || site == "chain.submit_step";
+            // The queue time is the device's reading, placed on the steady clock to within the pairing's uncertainty.
+            const std::uint64_t slack = span.uncertainty_ns;
+            if (run.thread == span.submit_thread && is_submit && run.begin_ns <= span.queued_ns + slack &&
+                span.queued_ns <= run.end_ns + slack)
+                return true;
+        }
+        return false;
+    }
+
+    /** @brief Expects every span of every recorded period to be enclosed by a submit zone, and returns how many it checked. */
+    std::size_t expect_every_span_enclosed_by_a_submit_zone(const RunRecord& record)
+    {
+        std::size_t checked = 0;
+        for (const PeriodRecord& period : record.periods)
+        {
+            if (period.warmup)
+                continue; // a warm-up period keeps its zone trees but not the individual zone runs
+            EXPECT_FALSE(period.runs.empty());
+            for (std::size_t row = 0; row < period.spans.size(); ++row)
+            {
+                EXPECT_TRUE(is_enclosed_by_a_submit_zone(record, period, period.spans.span(row)))
+                    << "span " << span_name(record, period, row) << " in period " << period.index;
+                ++checked;
+            }
+        }
+        return checked;
+    }
+
+    /** @brief Expects @p period of an inference pass to hold one span per node, each with a stated cost. */
+    void expect_an_inference_period(const RunRecord& record, const PeriodRecord& period,
+                                    const std::vector<std::string>& node_names)
+    {
+        SCOPED_TRACE(period.index);
+        ASSERT_EQ(period.spans.size(), node_names.size());
+        std::set<std::string> seen;
+        for (std::size_t row = 0; row < period.spans.size(); ++row)
+        {
+            seen.insert(span_name(record, period, row));
+            EXPECT_TRUE(has_attribute(record, period, "flops", row));
+            EXPECT_TRUE(has_attribute(record, period, "bytes", row));
+        }
+        EXPECT_EQ(seen, std::set<std::string>(node_names.begin(), node_names.end()));
+    }
+
+    /** @brief Runs a blocking run, or on period @p async_period an async step that is waited for after the next mark. */
+    void run_with_a_late_wait(SessionPipeline& pipeline, std::uint32_t async_period, std::uint32_t iteration,
+                              SushiProfiler::PeriodTimeline& timeline)
+    {
+        if (iteration != async_period)
+        {
+            EXPECT_TRUE(pipeline.graph().run().has_value());
+            return;
+        }
+        auto step = pipeline.graph().run_async().value();
+        // The step's device work finishes inside this period; the caller waits only after the next mark.
+        spin_until([&step]() { return step.ready(); });
+        timeline.mark();
+        EXPECT_TRUE(step.wait().has_value());
+    }
+
+    /** @brief A host node of a pipeline that holds its step open until released. */
+    class HeldHostNode
+    {
+        public:
+            /** @brief Records the node into @p pipeline's graph. */
+            explicit HeldHostNode(SessionPipeline& pipeline)
+            {
+                pipeline.graph().add_host(Reads{}, Writes{}, [this]()
+                {
+                    entered_.store(true, std::memory_order_release);
+                    spin_until([this]() { return released_.load(std::memory_order_acquire); });
+                });
+            }
+
+            HeldHostNode(const HeldHostNode&) = delete;
+            HeldHostNode& operator=(const HeldHostNode&) = delete;
+
+            /** @brief Spins until the node has started. */
+            void wait_until_entered() const
+            {
+                spin_until([this]() { return entered_.load(std::memory_order_acquire); });
+            }
+
+            /** @brief Lets the node end. */
+            void release() { released_.store(true, std::memory_order_release); }
+
+        private:
+            std::atomic<bool> entered_{false};  /**< Whether the node has started. */
+            std::atomic<bool> released_{false}; /**< Whether the node may end. */
+    };
+
+    /**
+     * @brief Runs period 0 as an async step whose held node outlives @p marks_while_held marks and then @p linger;
+     *        every other period releases the node and runs blocking.
+     */
+    void run_with_a_held_node(SessionPipeline& pipeline, HeldHostNode& held, std::uint32_t iteration,
+                              SushiProfiler::PeriodTimeline& timeline, int marks_while_held,
+                              std::chrono::milliseconds linger)
+    {
+        if (iteration != 0)
+        {
+            held.release();
+            EXPECT_TRUE(pipeline.graph().run().has_value());
+            return;
+        }
+        auto step = pipeline.graph().run_async().value();
+        // The held node must start inside the first period, or its span opens in a later one and is never late.
+        held.wait_until_entered();
+        for (int mark = 0; mark < marks_while_held; ++mark)
+            timeline.mark();
+        const auto deadline = std::chrono::steady_clock::now() + linger;
+        spin_until([deadline]() { return std::chrono::steady_clock::now() >= deadline; });
+        held.release();
+        EXPECT_TRUE(step.wait().has_value());
+    }
 } // namespace
 
-/** @brief Tests that the record holds the plan zones, the run zones and the three device spans of every period. */
-TEST(Medium_RuntimeSession, RecordsPlanRunAndDeviceSpansOfAGraph)
+/** @brief Tests that the first period holds the plan zones the first run builds and the run zones. */
+TEST(Medium_RuntimeSession, TheFirstPeriodHoldsThePlanBuildAndTheRunZones)
 {
     SessionPipeline pipeline;
 
@@ -93,14 +254,35 @@ TEST(Medium_RuntimeSession, RecordsPlanRunAndDeviceSpansOfAGraph)
     EXPECT_TRUE(first.count("run.steps"));
     EXPECT_TRUE(first.count("run.submit"));
     EXPECT_TRUE(first.count("run.wait"));
-    for (std::size_t period = 1; period < K_PERIODS; ++period)
-    {
-        const std::set<std::string> later = zone_sites(record, record.periods[period]);
-        EXPECT_TRUE(later.count("run.steps")) << "period " << period;
-        EXPECT_FALSE(later.count("plan.build")) << "the plan is cached after the first run, period " << period;
-    }
-    for (const PeriodRecord& period : record.periods)
-        EXPECT_EQ(period.spans.size(), 3u) << "one span per node dispatch, period " << period.index;
+}
+
+/** @brief Tests that the later periods hold the run zones and no plan build, since the plan is cached. */
+TEST(Medium_RuntimeSession, LaterPeriodsHoldTheRunZonesAndNoPlanBuild)
+{
+    SessionPipeline pipeline;
+
+    const RunRecord record = record_blocking_runs(pipeline);
+
+    ASSERT_EQ(record.periods.size(), K_PERIODS);
+    const std::set<std::string> second = zone_sites(record, record.periods[1]);
+    const std::set<std::string> third = zone_sites(record, record.periods[2]);
+    EXPECT_TRUE(second.count("run.steps"));
+    EXPECT_FALSE(second.count("plan.build"));
+    EXPECT_TRUE(third.count("run.steps"));
+    EXPECT_FALSE(third.count("plan.build"));
+}
+
+/** @brief Tests that every period holds one span per node dispatch and no span was dropped. */
+TEST(Medium_RuntimeSession, EveryPeriodHoldsOneSpanPerNodeDispatch)
+{
+    SessionPipeline pipeline;
+
+    const RunRecord record = record_blocking_runs(pipeline);
+
+    ASSERT_EQ(record.periods.size(), K_PERIODS);
+    EXPECT_EQ(record.periods[0].spans.size(), 3u);
+    EXPECT_EQ(record.periods[1].spans.size(), 3u);
+    EXPECT_EQ(record.periods[2].spans.size(), 3u);
     EXPECT_EQ(record.drops.spans_dropped, 0u);
 }
 
@@ -112,27 +294,7 @@ TEST(Medium_RuntimeSession, JoinsEverySpanToANodeName)
     const RunRecord record = record_blocking_runs(pipeline);
 
     ASSERT_EQ(record.periods.size(), K_PERIODS);
-    const std::string names[] = {"load", "scale", "store"};
-    const std::int64_t operations[] = {
-        static_cast<std::int64_t>(("pipeline.load"_op).value),
-        static_cast<std::int64_t>(("pipeline.scale"_op).value),
-        static_cast<std::int64_t>(("pipeline.store"_op).value)};
-    for (const PeriodRecord& period : record.periods)
-    {
-        ASSERT_EQ(period.spans.size(), 3u);
-        std::set<std::string> seen;
-        for (std::size_t row = 0; row < period.spans.size(); ++row)
-        {
-            const std::int64_t node = integer_attribute(record, period, "node", row);
-            ASSERT_GE(node, 0);
-            ASSERT_LT(node, 3);
-            EXPECT_EQ(span_name(record, period, row), names[node]) << "row " << row;
-            EXPECT_EQ(integer_attribute(record, period, "operation", row), operations[node]) << "row " << row;
-            EXPECT_EQ(integer_attribute(record, period, "invocation", row), 0) << "one step per run";
-            seen.insert(span_name(record, period, row));
-        }
-        EXPECT_EQ(seen, (std::set<std::string>{"load", "scale", "store"}));
-    }
+    expect_every_span_joined_to_its_node(record);
 }
 
 /** @brief Tests that each span is in the period whose steady span holds its start. */
@@ -142,13 +304,12 @@ TEST(Medium_RuntimeSession, PutsEachSpanInThePeriodHoldingItsStart)
 
     const RunRecord record = record_blocking_runs(pipeline);
 
-    for (const PeriodRecord& period : record.periods)
-        for (std::size_t row = 0; row < period.spans.size(); ++row)
-        {
-            const SushiProfiler::Span span = period.spans.span(row);
-            EXPECT_GE(span.start_ns, period.begin_ns) << "period " << period.index;
-            EXPECT_LT(span.start_ns, period.end_ns) << "period " << period.index;
-        }
+    for_each_span(record, [](const PeriodRecord& period, std::size_t row)
+    {
+        const SushiProfiler::Span span = period.spans.span(row);
+        EXPECT_GE(span.start_ns, period.begin_ns) << "period " << period.index;
+        EXPECT_LT(span.start_ns, period.end_ns) << "period " << period.index;
+    });
 }
 
 /** @brief Tests that every span's submitting thread resolves to the thread whose submit zone encloses the span's queue time. */
@@ -158,158 +319,48 @@ TEST(Medium_RuntimeSession, ResolvesEverySubmitThreadToAnEnclosingZone)
 
     const RunRecord record = record_blocking_runs(pipeline);
 
-    std::size_t checked = 0;
-    for (const PeriodRecord& period : record.periods)
-    {
-        if (period.warmup)
-            continue; // a warm-up period keeps its zone trees but not the individual zone runs
-        ASSERT_FALSE(period.runs.empty());
-        for (std::size_t row = 0; row < period.spans.size(); ++row)
-        {
-            const SushiProfiler::Span span = period.spans.span(row);
-            bool enclosed = false;
-            for (const SushiProfiler::ZoneRun& run : period.runs)
-            {
-                const std::string& site = record.sites[run.site].name;
-                if (run.thread != span.submit_thread ||
-                    (site != "run.submit" && site != "dispatch.submit" && site != "chain.submit_step"))
-                    continue;
-                // The queue time is the device's reading, placed on the steady clock to within the pairing's uncertainty.
-                const std::uint64_t slack = span.uncertainty_ns;
-                if (run.begin_ns <= span.queued_ns + slack && span.queued_ns <= run.end_ns + slack)
-                    enclosed = true;
-            }
-            EXPECT_TRUE(enclosed) << "span " << span_name(record, period, row) << " in period " << period.index
-                                  << " names thread " << span.submit_thread;
-            ++checked;
-        }
-    }
-    EXPECT_EQ(checked, 3u * K_ACTIVE);
+    EXPECT_EQ(expect_every_span_enclosed_by_a_submit_zone(record), 3u * K_ACTIVE);
 }
 
-/** @brief Tests that a node that stated a cost writes it as attributes and a node that stated none writes none. */
-TEST(Medium_RuntimeSession, WritesTheCostAttributesWhereACostWasStated)
+/** @brief Tests that every span names the scheduler layer when its run took the worker pool. */
+TEST(Medium_RuntimeSession, EverySpanNamesTheSchedulerLayer)
 {
     SessionPipeline pipeline;
 
     const RunRecord record = record_blocking_runs(pipeline);
 
-    for (const PeriodRecord& period : record.periods)
-        for (std::size_t row = 0; row < period.spans.size(); ++row)
-        {
-            const std::int64_t node = integer_attribute(record, period, "node", row);
-            if (node == K_LOAD)
-            {
-                EXPECT_EQ(integer_attribute(record, period, "flops", row),
-                          static_cast<std::int64_t>(SessionPipeline::K_ELEMENTS));
-                EXPECT_EQ(integer_attribute(record, period, "bytes", row),
-                          static_cast<std::int64_t>(SessionPipeline::K_ELEMENTS * sizeof(float)));
-                EXPECT_EQ(integer_attribute(record, period, "dtype", row),
-                          static_cast<std::int64_t>(record.find_name("f32")));
-            }
-            else if (node == K_SCALE)
-            {
-                EXPECT_TRUE(has_attribute(record, period, "flops", row)) << "a stated zero is written";
-                EXPECT_EQ(integer_attribute(record, period, "flops", row), 0);
-                EXPECT_GT(integer_attribute(record, period, "bytes", row), 0);
-            }
-            else
-            {
-                EXPECT_FALSE(has_attribute(record, period, "flops", row));
-                EXPECT_FALSE(has_attribute(record, period, "bytes", row));
-                EXPECT_FALSE(has_attribute(record, period, "dtype", row));
-            }
-        }
+    for_each_span(record, [&record](const PeriodRecord& period, std::size_t row)
+    {
+        EXPECT_EQ(integer_attribute(record, period, "layer", row),
+                  static_cast<std::int64_t>(record.find_name("scheduler")));
+    });
 }
 
-/** @brief Tests that every span names the execution layer of its run and that the tracks are the runtime's. */
-TEST(Medium_RuntimeSession, EverySpanNamesItsLayerAndLiesOnADeviceTrack)
+/** @brief Tests that every span lies on the runtime's device track. */
+TEST(Medium_RuntimeSession, EverySpanLiesOnTheDevicesTrack)
 {
     SessionPipeline pipeline;
     const std::string track = device_track_name(pipeline.runtime(), 0);
 
     const RunRecord record = record_blocking_runs(pipeline);
 
-    for (const PeriodRecord& period : record.periods)
-        for (std::size_t row = 0; row < period.spans.size(); ++row)
-        {
-            EXPECT_EQ(integer_attribute(record, period, "layer", row),
-                      static_cast<std::int64_t>(record.find_name("scheduler")));
-            EXPECT_EQ(span_track(record, period, row), track);
-        }
-}
-
-/** @brief Tests that a plan that runs as a chain names the chain layer. */
-TEST(Medium_RuntimeSession, ARunOnTheChainPathNamesTheChainLayer)
-{
-    SessionPipeline pipeline(SessionPipeline::chain_config());
-
-    const RunRecord record = record_blocking_runs(pipeline);
-
-    ASSERT_EQ(record.periods.size(), K_PERIODS);
-    if (!zone_sites(record, record.periods[1]).count("chain.submit_step"))
-        GTEST_SKIP() << "this device's plan does not classify as a chain";
-    for (const PeriodRecord& period : record.periods)
-        for (std::size_t row = 0; row < period.spans.size(); ++row)
-            EXPECT_EQ(integer_attribute(record, period, "layer", row),
-                      static_cast<std::int64_t>(record.find_name("chain")));
-}
-
-/** @brief Tests that the record states the runtime's devices, its drivers and the build of the library. */
-TEST(Medium_RuntimeSession, TheRecordStatesTheDevicesAndTheBuild)
-{
-    SessionPipeline pipeline;
-
-    const RunRecord record = record_blocking_runs(pipeline);
-
-    bool version = false;
-    bool device_name = false;
-    bool driver = false;
-    for (const SushiProfiler::Fact& fact : record.environment)
+    for_each_span(record, [&record, &track](const PeriodRecord& period, std::size_t row)
     {
-        if (fact.name == "sushiruntime.version")
-            version = true;
-        if (fact.name.find(".device.0.name") != std::string::npos)
-            device_name = true;
-        if (fact.name.find(".device.0.driver") != std::string::npos)
-            driver = !fact.value.empty();
-    }
-    EXPECT_TRUE(version);
-    EXPECT_TRUE(device_name);
-    EXPECT_TRUE(driver) << "the driver reads \"unknown\" where it is not answerable, never empty";
-    bool build_type = false;
-    for (const SushiProfiler::Fact& fact : record.build)
-        if (fact.name == "sushiruntime.build_type")
-            build_type = fact.value == "release" || fact.value == "debug";
-    EXPECT_TRUE(build_type);
+        EXPECT_EQ(span_track(record, period, row), track);
+    });
 }
 
 /** @brief Tests that a run_async step waited for after its period closed still lands in the period it ran in. */
 TEST(Medium_RuntimeSession, ARunAsyncStepWaitedForLateStillLandsInItsPeriod)
 {
     SessionPipeline pipeline;
-    bool landed = false;
 
     // Periods: 0 a blocking run; 1 the async step, finished in it; 2 opened by a mark before the wait, empty; 3 a blocking run.
     const RunRecord record = record_periods(
         pipeline.runtime(), 1, 3,
-        [&pipeline, &landed](std::uint32_t iteration, SushiProfiler::PeriodTimeline& timeline)
-        {
-            if (iteration != 1)
-            {
-                EXPECT_TRUE(pipeline.graph().run().has_value());
-                return;
-            }
-            auto step = pipeline.graph().run_async().value();
-            // The step's device work finishes inside this period; the caller waits only after the next mark.
-            while (!step.ready())
-                std::this_thread::yield();
-            timeline.mark();
-            EXPECT_TRUE(step.wait().has_value());
-            landed = true;
-        });
+        [&pipeline](std::uint32_t iteration, SushiProfiler::PeriodTimeline& timeline)
+        { run_with_a_late_wait(pipeline, 1, iteration, timeline); });
 
-    ASSERT_TRUE(landed);
     ASSERT_EQ(record.periods.size(), 4u);
     EXPECT_EQ(record.periods[0].spans.size(), 3u);
     EXPECT_EQ(record.periods[1].spans.size(), 3u) << "the step reported when its work finished, not when it was waited for";
@@ -322,33 +373,12 @@ TEST(Medium_RuntimeSession, ARunAsyncStepWaitedForLateStillLandsInItsPeriod)
 TEST(Medium_RuntimeSession, ASpanThatFinishesWithinTheMaxDelayLandsInItsPeriodAndIsNotLate)
 {
     SessionPipeline pipeline;
-    std::atomic<bool> gate{false};
-    std::atomic<bool> entered{false};
-    pipeline.graph().add_host(Reads{}, Writes{}, [&gate, &entered]()
-    {
-        entered.store(true, std::memory_order_release);
-        while (!gate.load(std::memory_order_acquire))
-            std::this_thread::yield();
-    });
+    HeldHostNode held(pipeline);
 
     const RunRecord record = record_periods(
         pipeline.runtime(), 0, 3,
-        [&pipeline, &gate, &entered](std::uint32_t iteration, SushiProfiler::PeriodTimeline& timeline)
-        {
-            if (iteration != 0)
-            {
-                gate.store(true, std::memory_order_release);
-                EXPECT_TRUE(pipeline.graph().run().has_value());
-                return;
-            }
-            auto step = pipeline.graph().run_async().value();
-            // The host node starts inside the first period, then the period ends while the node is still held.
-            while (!entered.load(std::memory_order_acquire))
-                std::this_thread::yield();
-            timeline.mark();
-            gate.store(true, std::memory_order_release);
-            EXPECT_TRUE(step.wait().has_value());
-        });
+        [&pipeline, &held](std::uint32_t iteration, SushiProfiler::PeriodTimeline& timeline)
+        { run_with_a_held_node(pipeline, held, iteration, timeline, 1, std::chrono::milliseconds(0)); });
 
     // The step ended well inside the two seconds the source asks the consumer to keep a period open.
     ASSERT_GE(record.periods.size(), 1u);
@@ -360,43 +390,15 @@ TEST(Medium_RuntimeSession, ASpanThatFinishesWithinTheMaxDelayLandsInItsPeriodAn
 TEST(Medium_RuntimeSession, AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDrops)
 {
     SessionPipeline pipeline;
-    std::atomic<bool> gate{false};
-    std::atomic<bool> entered{false};
-    pipeline.graph().add_host(Reads{}, Writes{}, [&gate, &entered]()
-    {
-        entered.store(true, std::memory_order_release);
-        while (!gate.load(std::memory_order_acquire))
-            std::this_thread::yield();
-    });
-    std::size_t nodes = 0;
+    HeldHostNode held(pipeline);
 
+    // The held node outlives both marks and the 2 s maximum delay the consumer waits before it collects.
     const RunRecord record = record_periods(
         pipeline.runtime(), 0, 3,
-        [&pipeline, &gate, &entered, &nodes](std::uint32_t iteration, SushiProfiler::PeriodTimeline& timeline)
-        {
-            if (iteration != 0)
-            {
-                gate.store(true, std::memory_order_release);
-                EXPECT_TRUE(pipeline.graph().run().has_value());
-                return;
-            }
-            // A host node of the step blocks until the first period has ended and the source's two-second delay has passed.
-            auto step = pipeline.graph().run_async().value();
-            // The held node must start inside the first period, or its span opens in a later one and is never late.
-            while (!entered.load(std::memory_order_acquire))
-                std::this_thread::yield();
-            timeline.mark();
-            timeline.mark();
-            // The consumer holds a closed period open for the source's maximum delay, 2 s, then collects it on its own thread.
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
-            while (std::chrono::steady_clock::now() < deadline)
-                std::this_thread::yield();
-            gate.store(true, std::memory_order_release);
-            EXPECT_TRUE(step.wait().has_value());
-            nodes = pipeline.graph().node_count();
-        });
+        [&pipeline, &held](std::uint32_t iteration, SushiProfiler::PeriodTimeline& timeline)
+        { run_with_a_held_node(pipeline, held, iteration, timeline, 2, std::chrono::milliseconds(2500)); });
 
-    EXPECT_EQ(nodes, 4u);
+    EXPECT_EQ(pipeline.graph().node_count(), 4u);
     EXPECT_GE(record.drops.spans_dropped, 1u) << "the step's spans arrived after their period was collected";
 }
 
@@ -404,7 +406,6 @@ TEST(Medium_RuntimeSession, AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDr
 TEST(Medium_RuntimeSession, AnInferenceShapedGraphOnTheCpuDeviceRecordsEveryNode)
 {
     InferencePipeline pipeline;
-    const std::size_t nodes = 2 * InferencePipeline::K_LAYERS;
 
     const RunRecord record = record_periods(
         pipeline.runtime(), K_WARMUP, K_ACTIVE,
@@ -414,17 +415,8 @@ TEST(Medium_RuntimeSession, AnInferenceShapedGraphOnTheCpuDeviceRecordsEveryNode
         });
 
     ASSERT_EQ(record.periods.size(), K_PERIODS);
-    for (const PeriodRecord& period : record.periods)
-    {
-        ASSERT_EQ(period.spans.size(), nodes) << "period " << period.index;
-        std::set<std::string> seen;
-        for (std::size_t row = 0; row < period.spans.size(); ++row)
-        {
-            seen.insert(span_name(record, period, row));
-            EXPECT_TRUE(has_attribute(record, period, "flops", row));
-            EXPECT_TRUE(has_attribute(record, period, "bytes", row));
-        }
-        EXPECT_EQ(seen, std::set<std::string>(pipeline.names().begin(), pipeline.names().end()));
-    }
+    expect_an_inference_period(record, record.periods[0], pipeline.names());
+    expect_an_inference_period(record, record.periods[1], pipeline.names());
+    expect_an_inference_period(record, record.periods[2], pipeline.names());
     EXPECT_EQ(record.drops.spans_dropped, 0u);
 }

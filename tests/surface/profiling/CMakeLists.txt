@@ -6,6 +6,7 @@
 sushiruntime_add_module_tests(
     MODULE profiling
     SOURCES
+        compile_source_names.cpp
         test_clock_conversion.cpp
         test_device_source.cpp
         test_device_track_name.cpp
@@ -27,7 +28,6 @@ sushiruntime_add_module_tests(
         test_run_feed.cpp
         test_run_queue.cpp
         test_runtime_environment.cpp
-        test_source_names.cpp
         test_span_loss_tally.cpp
     BENCHMARK_SOURCES
         benchmark_run_overhead.cpp

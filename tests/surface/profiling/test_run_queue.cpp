@@ -51,6 +51,36 @@ namespace
         observation.events.resize(records);
         return observation;
     }
+
+    /** @brief Pushes the observations of runtimes 0 to @p count - 1, runtime r holding r + 1 records. */
+    void push_runtimes(RunQueue& queue, std::uint32_t count)
+    {
+        for (std::uint32_t runtime = 0; runtime < count; ++runtime)
+            queue.push(runtime, observation_of(runtime + 1));
+    }
+
+    /** @brief Pushes @p per_thread observations from each of @p threads threads and joins them. */
+    void push_from_threads(RunQueue& queue, std::size_t threads, std::size_t per_thread)
+    {
+        std::vector<std::thread> producers;
+        for (std::size_t thread = 0; thread < threads; ++thread)
+            producers.emplace_back([&queue, thread, per_thread]()
+            {
+                for (std::size_t run = 0; run < per_thread; ++run)
+                    queue.push(static_cast<std::uint32_t>(thread), observation_of(1));
+            });
+        for (std::thread& producer : producers)
+            producer.join();
+    }
+
+    /** @brief Takes from the queue until @p pushing turns false, and returns how many observations it took. */
+    std::size_t take_while_pushing(RunQueue& queue, const std::atomic<bool>& pushing)
+    {
+        std::size_t taken = 0;
+        while (pushing.load(std::memory_order_acquire))
+            taken += queue.take().size();
+        return taken;
+    }
 } // namespace
 
 /** @brief Tests that a queue that holds some observations hands them over oldest first. */
@@ -71,18 +101,25 @@ TEST(Small_RunQueue, TakesEveryObservationOldestFirst)
     EXPECT_TRUE(queue.take().empty());
 }
 
-/** @brief Tests that a full queue drops the oldest observation and counts the records it held. */
-TEST(Small_RunQueue, DropsTheOldestWhenFullAndCountsIt)
+/** @brief Tests that a full queue drops the oldest observations and keeps the newest. */
+TEST(Small_RunQueue, DropsTheOldestWhenFull)
 {
     RunQueue queue(3);
-    for (std::uint32_t runtime = 0; runtime < 5; ++runtime)
-        queue.push(runtime, observation_of(runtime + 1));
+    push_runtimes(queue, 5);
 
     EXPECT_EQ(queue.size(), 3u);
     const std::vector<QueuedRun> runs = queue.take();
     ASSERT_EQ(runs.size(), 3u);
     EXPECT_EQ(runs[0].runtime, 2u) << "the two oldest were dropped";
     EXPECT_EQ(runs[2].runtime, 4u);
+}
+
+/** @brief Tests that the overflow count is the records of the dropped observations, and taking it starts it again. */
+TEST(Small_RunQueue, CountsTheRecordsOfTheObservationsItDropped)
+{
+    RunQueue queue(3);
+    push_runtimes(queue, 5);
+
     EXPECT_EQ(queue.take_overflow(), 1u + 2u) << "the records of the observations of runtimes 0 and 1";
     EXPECT_EQ(queue.take_overflow(), 0u) << "taking the count starts it again";
 }
@@ -101,47 +138,43 @@ TEST(Small_RunQueue, ACapacityOfZeroHoldsOne)
 }
 
 /** @brief Tests that discard() drops what was never taken and says how many that was. */
-TEST(Small_RunQueue, EndDropsWhatWasNeverCollected)
+TEST(Small_RunQueue, DiscardDropsWhatWasNeverCollected)
 {
     RunQueue queue(8);
     queue.push(0, observation_of(1));
     queue.push(0, observation_of(1));
 
     EXPECT_EQ(queue.discard(), 2u);
-
     EXPECT_EQ(queue.size(), 0u);
     EXPECT_TRUE(queue.take().empty());
     EXPECT_EQ(queue.discard(), 0u);
-    EXPECT_EQ(queue.take_overflow(), 0u) << "a discard at the end of a session is not an overflow";
+}
+
+/** @brief Tests that a discard at the end of a session is not an overflow. */
+TEST(Small_RunQueue, ADiscardIsNotAnOverflow)
+{
+    RunQueue queue(8);
+    queue.push(0, observation_of(1));
+
+    static_cast<void>(queue.discard());
+
+    EXPECT_EQ(queue.take_overflow(), 0u);
 }
 
 /** @brief Tests that several threads may push while one takes, with nothing lost within the capacity. */
-TEST(Small_RunQueue, SeveralThreadsMayPushWhileOneTakes)
+TEST(Medium_RunQueue, SeveralThreadsMayPushWhileOneTakes)
 {
     constexpr std::size_t K_THREADS = 4;
     constexpr std::size_t K_PER_THREAD = 200;
     RunQueue queue(K_THREADS * K_PER_THREAD);
-    std::atomic<std::size_t> taken{0};
     std::atomic<bool> pushing{true};
+    std::atomic<std::size_t> taken{0};
+    std::thread consumer([&]() { taken.store(take_while_pushing(queue, pushing)); });
 
-    std::thread consumer([&]()
-    {
-        while (pushing.load(std::memory_order_acquire))
-            taken.fetch_add(queue.take().size());
-    });
-    std::vector<std::thread> producers;
-    for (std::size_t thread = 0; thread < K_THREADS; ++thread)
-        producers.emplace_back([&queue, thread]()
-        {
-            for (std::size_t run = 0; run < K_PER_THREAD; ++run)
-                queue.push(static_cast<std::uint32_t>(thread), observation_of(1));
-        });
-    for (std::thread& producer : producers)
-        producer.join();
+    push_from_threads(queue, K_THREADS, K_PER_THREAD);
     pushing.store(false, std::memory_order_release);
     consumer.join();
-    taken.fetch_add(queue.take().size());
 
-    EXPECT_EQ(taken.load(), K_THREADS * K_PER_THREAD);
+    EXPECT_EQ(taken.load() + queue.take().size(), K_THREADS * K_PER_THREAD);
     EXPECT_EQ(queue.take_overflow(), 0u);
 }

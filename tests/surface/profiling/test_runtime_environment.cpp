@@ -42,6 +42,8 @@
 #include <SushiRuntime/profiling/register_profiler_parts.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 
 namespace
@@ -54,24 +56,10 @@ namespace
             map[fact.name] = fact.value;
         return map;
     }
-} // namespace
 
-/** @brief Tests that the record states every device the runtime drives with its class, backend and driver. */
-TEST(Medium_RuntimeEnvironment, StatesEveryDeviceOfTheRuntime)
-{
-    auto runtime = Runtime::create().value();
-    SushiProfiler::Registry registry;
-    const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime);
-    ASSERT_TRUE(parts.is_registered());
-
-    const SushiProfiler::RecordFacts facts = SushiProfiler::gather_facts(registry.contributors());
-
-    const auto environment = facts_of(facts.environment);
-    const std::string prefix = "sushiruntime." + runtime.topology().name + ".";
-    const auto& devices = runtime.advanced().devices();
-    ASSERT_FALSE(devices.empty());
-    EXPECT_EQ(environment.at(prefix + "devices"), std::to_string(devices.size()));
-    for (const DeviceDescription& device : devices)
+    /** @brief Expects @p environment to state the name, class, backend, driver, memory and units of @p device under @p prefix. */
+    void expect_device_stated(const std::map<std::string, std::string>& environment, const std::string& prefix,
+                              const DeviceDescription& device)
     {
         const std::string key = prefix + "device." + std::to_string(device.index) + ".";
         EXPECT_EQ(environment.at(key + "name"), device.name);
@@ -81,29 +69,68 @@ TEST(Medium_RuntimeEnvironment, StatesEveryDeviceOfTheRuntime)
         EXPECT_EQ(environment.at(key + "memory_bytes"), std::to_string(device.memory_bytes));
         EXPECT_EQ(environment.at(key + "compute_units"), std::to_string(device.compute_units));
     }
+
+    /** @brief Expects every device of @p devices to be stated in @p environment under @p prefix. */
+    template <class Devices>
+    void expect_every_device_stated(const std::map<std::string, std::string>& environment, const std::string& prefix,
+                                    const Devices& devices)
+    {
+        for (const DeviceDescription& device : devices)
+            expect_device_stated(environment, prefix, device);
+    }
+
+    /** @brief Fixture of the tests that read the facts the runtime of the program states. */
+    class Medium_RuntimeEnvironment : public TestSupport::RuntimeTest
+    {
+    };
+} // namespace
+
+/** @brief Tests that the record states how many devices the runtime drives. */
+TEST_F(Medium_RuntimeEnvironment, StatesTheNumberOfDevices)
+{
+    SushiProfiler::Registry registry;
+    const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime());
+    ASSERT_TRUE(parts.is_registered());
+
+    const auto environment = facts_of(SushiProfiler::gather_facts(registry.contributors()).environment);
+
+    const std::string prefix = "sushiruntime." + runtime().topology().name + ".";
+    EXPECT_EQ(environment.at(prefix + "devices"), std::to_string(runtime().advanced().devices().size()));
+}
+
+/** @brief Tests that the record states every device the runtime drives with its class, backend and driver. */
+TEST_F(Medium_RuntimeEnvironment, StatesEveryDeviceOfTheRuntime)
+{
+    SushiProfiler::Registry registry;
+    const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime());
+    ASSERT_TRUE(parts.is_registered());
+
+    const auto environment = facts_of(SushiProfiler::gather_facts(registry.contributors()).environment);
+
+    const auto& devices = runtime().advanced().devices();
+    ASSERT_FALSE(devices.empty());
+    expect_every_device_stated(environment, "sushiruntime." + runtime().topology().name + ".", devices);
 }
 
 /** @brief Tests that the runtime states its version, its workers and the rebalancer. */
-TEST(Medium_RuntimeEnvironment, StatesTheVersionAndTheWorkers)
+TEST_F(Medium_RuntimeEnvironment, StatesTheVersionAndTheWorkers)
 {
-    auto runtime = Runtime::create().value();
     SushiProfiler::Registry registry;
-    const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime);
+    const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime());
 
     const auto environment = facts_of(SushiProfiler::gather_facts(registry.contributors()).environment);
 
     EXPECT_EQ(environment.at("sushiruntime.version"), SUSHIRUNTIME_VERSION_STRING);
-    const std::string prefix = "sushiruntime." + runtime.topology().name + ".";
-    EXPECT_EQ(environment.at(prefix + "workers"), std::to_string(runtime.advanced().worker_pool().count));
+    const std::string prefix = "sushiruntime." + runtime().topology().name + ".";
+    EXPECT_EQ(environment.at(prefix + "workers"), std::to_string(runtime().advanced().worker_pool().count));
     EXPECT_EQ(environment.at(prefix + "rebalancer"), "off");
 }
 
 /** @brief Tests that the library's own build type is a build fact, so two records of different builds do not compare. */
-TEST(Medium_RuntimeEnvironment, StatesTheBuildTypeAsABuildFact)
+TEST_F(Medium_RuntimeEnvironment, StatesTheBuildTypeAsABuildFact)
 {
-    auto runtime = Runtime::create().value();
     SushiProfiler::Registry registry;
-    const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime);
+    const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime());
 
     const auto build = facts_of(SushiProfiler::gather_facts(registry.contributors()).build);
 
@@ -112,19 +139,15 @@ TEST(Medium_RuntimeEnvironment, StatesTheBuildTypeAsABuildFact)
     EXPECT_FALSE(build.at("sushiruntime.profile_level").empty());
     EXPECT_FALSE(build.at("sushiruntime.sanitizer").empty());
     EXPECT_FALSE(build.at("sushiruntime.sycl_toolchain").empty());
-    EXPECT_EQ(facts_of(SushiProfiler::gather_facts(registry.contributors()).environment).count("sushiruntime.build_type"), 0u)
-        << "a build fact is not an environment fact";
 }
 
-/** @brief Tests that a registry that refused the source states nothing of the runtime. */
-TEST(Medium_RuntimeEnvironment, ARefusedRegistrationStatesNothingTwice)
+/** @brief Tests that a build fact is not stated as an environment fact. */
+TEST_F(Medium_RuntimeEnvironment, ABuildFactIsNotAnEnvironmentFact)
 {
-    auto runtime = Runtime::create().value();
     SushiProfiler::Registry registry;
-    const RuntimeProfilerParts first = register_profiler_parts(registry, runtime);
-    const RuntimeProfilerParts second = register_profiler_parts(registry, runtime);
+    const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime());
 
-    EXPECT_TRUE(first.is_registered());
-    EXPECT_FALSE(second.is_registered());
-    EXPECT_EQ(registry.contributors().size(), 1u) << "the refused parts added no contributor";
+    const auto environment = facts_of(SushiProfiler::gather_facts(registry.contributors()).environment);
+
+    EXPECT_EQ(environment.count("sushiruntime.build_type"), 0u);
 }

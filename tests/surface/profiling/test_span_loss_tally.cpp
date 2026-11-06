@@ -63,16 +63,25 @@ TEST(Small_SpanLossTally, SaysNothingWhenNoSpanWasLost)
     EXPECT_EQ(tally.take_report(10 * K_SECOND_NS), std::nullopt);
 }
 
-TEST(Small_SpanLossTally, ReportsAtMostOncePerIntervalAndStartsAgainAfterEach)
+/** @brief Tests that at most one report comes per steady interval, and the counts held back arrive after it. */
+TEST(Small_SpanLossTally, ReportsAtMostOncePerInterval)
 {
     SpanLossTally tally;
     tally.add(SpanLoss::NoPairing, 1U);
     ASSERT_TRUE(tally.take_report(10 * K_SECOND_NS).has_value());
-
     tally.add(SpanLoss::NoPairing, 4U);
+
     EXPECT_EQ(tally.take_report(12 * K_SECOND_NS), std::nullopt) << "two seconds is inside the interval";
+    EXPECT_EQ(tally.take_report(15 * K_SECOND_NS), std::optional<std::string>("4 no clock pairing"));
+}
+
+/** @brief Tests that a report clears the counts it named, so the next one names only what came after. */
+TEST(Small_SpanLossTally, AReportClearsTheCountsItNamed)
+{
+    SpanLossTally tally;
+    tally.add(SpanLoss::NoPairing, 1U);
+    ASSERT_TRUE(tally.take_report(10 * K_SECOND_NS).has_value());
     tally.add(SpanLoss::Refused, 1U);
-    EXPECT_EQ(tally.take_report(15 * K_SECOND_NS),
-              std::optional<std::string>("4 no clock pairing, 1 refused by the table"))
-        << "the held counts arrive once the interval passes, and the first report's one is gone";
+
+    EXPECT_EQ(tally.take_report(15 * K_SECOND_NS), std::optional<std::string>("1 refused by the table"));
 }

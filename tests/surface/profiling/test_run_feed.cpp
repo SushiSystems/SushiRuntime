@@ -28,6 +28,7 @@
  * @author Mustafa Garip
  */
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -43,47 +44,46 @@ using SushiRuntime::Internal::Profiling::QueuedRun;
 using SushiRuntime::Internal::Profiling::RunFeed;
 using SushiRuntime::Internal::Profiling::RunQueue;
 
-/** @brief Tests that a feed queues each observation it hears, tagged with its runtime. */
+namespace
+{
+    /** @brief Builds an observation of @p records records. */
+    RunObservation observation_of(std::size_t records)
+    {
+        RunObservation observation;
+        observation.events.resize(records);
+        return observation;
+    }
+} // namespace
+
+/** @brief Tests that feeds of one queue queue each observation they hear tagged with their own runtime. */
 TEST(Small_RunFeed, QueuesEachObservationTaggedWithItsRuntime)
 {
     const auto queue = std::make_shared<RunQueue>(8);
-    RunFeed feed(queue, 3);
-    RunObservation observation;
-    observation.events.resize(2);
+    RunFeed first(queue, 3);
+    RunFeed second(queue, 1);
 
-    feed.on_run(observation);
-    feed.on_run(observation);
+    first.on_run(observation_of(2));
+    second.on_run(observation_of(1));
 
     const std::vector<QueuedRun> runs = queue->take();
     ASSERT_EQ(runs.size(), 2u);
     EXPECT_EQ(runs[0].runtime, 3u);
     EXPECT_EQ(runs[0].observation.events.size(), 2u);
-}
-
-/** @brief Tests that two feeds of one queue keep their runtimes apart. */
-TEST(Small_RunFeed, TwoFeedsOfOneQueueKeepTheirRuntimesApart)
-{
-    const auto queue = std::make_shared<RunQueue>(8);
-    RunFeed first(queue, 0);
-    RunFeed second(queue, 1);
-
-    first.on_run(RunObservation{});
-    second.on_run(RunObservation{});
-
-    const std::vector<QueuedRun> runs = queue->take();
-    ASSERT_EQ(runs.size(), 2u);
-    EXPECT_EQ(runs[0].runtime, 0u);
     EXPECT_EQ(runs[1].runtime, 1u);
+    EXPECT_EQ(runs[1].observation.events.size(), 1u);
 }
 
-/** @brief Tests that a feed keeps its queue alive, so an observation that arrives after the owner let go is safe. */
+/** @brief Tests that a feed keeps its queue alive, so an observation that arrives after the owner let go is queued. */
 TEST(Small_RunFeed, AFeedKeepsItsQueueAlive)
 {
-    std::unique_ptr<RunFeed> feed;
-    {
-        auto queue = std::make_shared<RunQueue>(2);
-        feed = std::make_unique<RunFeed>(queue, 0);
-    }
+    auto queue = std::make_shared<RunQueue>(2);
+    const std::weak_ptr<RunQueue> observer = queue;
+    RunFeed feed(queue, 0);
+    queue.reset();
 
-    EXPECT_NO_THROW(feed->on_run(RunObservation{}));
+    feed.on_run(observation_of(1));
+
+    const std::shared_ptr<RunQueue> alive = observer.lock();
+    ASSERT_NE(alive, nullptr) << "the feed holds the queue after the owner let go";
+    EXPECT_EQ(alive->take().size(), 1u);
 }

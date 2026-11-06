@@ -29,6 +29,7 @@
  */
 
 #include <cstddef>
+#include <set>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -57,7 +58,19 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that a build writes plan.build around plan.compile, and the first one is the longer. */
+namespace
+{
+    /** @brief Returns the first tree of @p period that holds a zone called @p name, or null when none does. */
+    const SushiProfiler::ZoneTree* tree_with(const RunRecord& record, const PeriodRecord& period, const char* name)
+    {
+        for (const SushiProfiler::ZoneTree& tree : period.zones)
+            if (find_zone(record, tree, name) >= 0)
+                return &tree;
+        return nullptr;
+    }
+} // namespace
+
+/** @brief Tests that a build writes plan.compile inside plan.build, and the build covers the compile's time. */
 TEST(Medium_PlanZones, ABuildWritesPlanBuildAroundPlanCompile)
 {
     SessionPipeline pipeline;
@@ -65,25 +78,40 @@ TEST(Medium_PlanZones, ABuildWritesPlanBuildAroundPlanCompile)
     const RunRecord record = record_two_runs(pipeline);
 
     ASSERT_EQ(record.periods.size(), 2u);
-    bool found = false;
-    for (const SushiProfiler::ZoneTree& tree : record.periods[0].zones)
-    {
-        const int compile = find_zone(record, tree, "plan.compile");
-        if (compile < 0)
-            continue;
-        found = true;
-        EXPECT_EQ(parent_zone(record, tree, compile), "plan.build");
-        const int build = tree.nodes[static_cast<std::size_t>(compile)].parent;
-        ASSERT_GE(build, 0);
-        EXPECT_GE(tree.nodes[static_cast<std::size_t>(build)].inclusive_ns,
-                  tree.nodes[static_cast<std::size_t>(compile)].inclusive_ns)
-            << "a parent's inclusive time covers its child's";
-        EXPECT_GE(find_zone(record, tree, "plan.prepare"), 0);
-        EXPECT_GE(find_zone(record, tree, "plan.classify"), 0);
-    }
-    EXPECT_TRUE(found) << "the first run builds the plan inside the first period";
-    for (const SushiProfiler::ZoneTree& tree : record.periods[1].zones)
-        EXPECT_LT(find_zone(record, tree, "plan.build"), 0) << "the plan is cached for the second run";
+    const SushiProfiler::ZoneTree* tree = tree_with(record, record.periods[0], "plan.compile");
+    ASSERT_NE(tree, nullptr) << "the first run builds the plan inside the first period";
+    const int compile = find_zone(record, *tree, "plan.compile");
+    EXPECT_EQ(parent_zone(record, *tree, compile), "plan.build");
+    const int build = tree->nodes[static_cast<std::size_t>(compile)].parent;
+    ASSERT_GE(build, 0);
+    EXPECT_GE(tree->nodes[static_cast<std::size_t>(build)].inclusive_ns,
+              tree->nodes[static_cast<std::size_t>(compile)].inclusive_ns)
+        << "a parent's inclusive time covers its child's";
+}
+
+/** @brief Tests that a build writes the prepare and classify steps in the tree of its compile. */
+TEST(Medium_PlanZones, ABuildWritesItsPrepareAndClassifySteps)
+{
+    SessionPipeline pipeline;
+
+    const RunRecord record = record_two_runs(pipeline);
+
+    ASSERT_EQ(record.periods.size(), 2u);
+    const SushiProfiler::ZoneTree* tree = tree_with(record, record.periods[0], "plan.compile");
+    ASSERT_NE(tree, nullptr);
+    EXPECT_GE(find_zone(record, *tree, "plan.prepare"), 0);
+    EXPECT_GE(find_zone(record, *tree, "plan.classify"), 0);
+}
+
+/** @brief Tests that a second run writes no plan.build, because the plan is cached. */
+TEST(Medium_PlanZones, TheSecondRunWritesNoBuildBecauseThePlanIsCached)
+{
+    SessionPipeline pipeline;
+
+    const RunRecord record = record_two_runs(pipeline);
+
+    ASSERT_EQ(record.periods.size(), 2u);
+    EXPECT_EQ(tree_with(record, record.periods[1], "plan.build"), nullptr);
 }
 
 /** @brief Tests that building a plan writes the node and root counts as values. */
@@ -99,6 +127,20 @@ TEST(Medium_PlanZones, ABuildWritesTheNodeAndRootCountsAsValues)
     EXPECT_EQ(nodes.first, 3.0) << "the three recorded nodes; the completion sentinel is held apart and not counted";
     EXPECT_EQ(roots.first, 1.0) << "the load node is the only root";
 }
+
+namespace
+{
+    /** @brief Returns the names of the sites of every event @p batch holds, from @p collector's site table. */
+    std::set<std::string> drained_site_names(SushiProfiler::Collector& collector,
+                                             const SushiProfiler::DrainBatch& batch)
+    {
+        std::set<std::string> names;
+        for (const SushiProfiler::ThreadDrain& thread : batch.threads)
+            for (const SushiProfiler::TraceEvent& event : thread.events)
+                names.insert(collector.sites().info(SushiProfiler::site_of(event)).name);
+        return names;
+    }
+} // namespace
 
 /** @brief Tests that nothing of the plan is written while the gate is closed. */
 TEST(Medium_PlanZones, NoZoneIsWrittenWhileTheGateIsClosed)
@@ -116,10 +158,7 @@ TEST(Medium_PlanZones, NoZoneIsWrittenWhileTheGateIsClosed)
     SushiProfiler::DrainBatch batch;
     collector.drain(batch);
     collector.close();
-    for (const SushiProfiler::ThreadDrain& thread : batch.threads)
-        for (const SushiProfiler::TraceEvent& event : thread.events)
-            EXPECT_NE(collector.sites().info(SushiProfiler::site_of(event)).name, "plan.build")
-                << "a closed gate writes no event";
+    EXPECT_EQ(drained_site_names(collector, batch).count("plan.build"), 0u) << "a closed gate writes no event";
 }
 
 /** @brief Tests that a graph of regions writes region.commit when it composes its plan. */

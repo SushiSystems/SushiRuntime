@@ -73,6 +73,47 @@ namespace
         SR_LOCK_WAIT("lock.test", mutex);
     }
 
+    /** @brief Holds a mutex on its own thread until another thread's try_lock on it has failed. */
+    class MutexHolder
+    {
+        public:
+            /** @brief Starts the thread and returns once it holds @p mutex. */
+            explicit MutexHolder(CountingMutex& mutex)
+                : thread_([this, &mutex]() { hold(mutex); })
+            {
+                wait_until_holding();
+            }
+
+            ~MutexHolder()
+            {
+                thread_.join();
+            }
+
+            MutexHolder(const MutexHolder&) = delete;
+            MutexHolder& operator=(const MutexHolder&) = delete;
+
+        private:
+            /** @brief Locks @p mutex and keeps it until a try_lock has failed on it, so the waiter is certainly contending. */
+            void hold(CountingMutex& mutex)
+            {
+                mutex.lock();
+                holding_.store(true, std::memory_order_release);
+                while (mutex.failed_tries() == 0)
+                    std::this_thread::yield();
+                mutex.unlock();
+            }
+
+            /** @brief Yields until the thread holds the mutex. */
+            void wait_until_holding() const
+            {
+                while (!holding_.load(std::memory_order_acquire))
+                    std::this_thread::yield();
+            }
+
+            std::atomic<bool> holding_{false}; /**< Whether the thread holds the mutex. */
+            std::thread thread_;               /**< The thread that holds it. */
+    };
+
     /** @brief Opens the collector before each test and closes and empties it after. */
     class Medium_PendingMutexLockWait : public ::testing::Test
     {
@@ -129,28 +170,16 @@ TEST_F(Medium_PendingMutexLockWait, AnUncontendedLockWritesNone)
 TEST_F(Medium_PendingMutexLockWait, AContendedLockWritesAZone)
 {
     CountingMutex mutex;
-    std::atomic<bool> holding{false};
-    std::thread holder([&mutex, &holding]()
-    {
-        mutex.lock();
-        holding.store(true, std::memory_order_release);
-        // Held until the waiter's try_lock has failed, so the waiter is certainly contending.
-        while (mutex.failed_tries() == 0)
-            std::this_thread::yield();
-        mutex.unlock();
-    });
-    while (!holding.load(std::memory_order_acquire))
-        std::this_thread::yield();
+    const MutexHolder holder(mutex);
 
     lock_and_release(mutex);
-    holder.join();
 
     EXPECT_EQ(mutex.failed_tries(), 1u);
     EXPECT_EQ(waits_written(), 1u) << "one wait, one zone";
 }
 
 /** @brief Tests that the guard releases the mutex when its scope ends, so the next lock is uncontended. */
-TEST_F(Medium_PendingMutexLockWait, TheGuardReleasesTheMutexAtTheEndOfItsScope)
+TEST(Small_PendingMutexLockWait, TheGuardReleasesTheMutexAtTheEndOfItsScope)
 {
     CountingMutex mutex;
 

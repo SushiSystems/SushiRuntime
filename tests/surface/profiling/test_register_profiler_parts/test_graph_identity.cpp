@@ -62,31 +62,49 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that a label set on a graph is the label of the table its runs are observed with. */
+namespace
+{
+    /** @brief Returns the label of the table a run of a graph labelled @p label is observed with; null label sets none. */
+    std::string observed_label_of_a_graph(const char* label)
+    {
+        ObservedPipeline pipeline;
+        if (label != nullptr)
+            pipeline.graph().set_label(label);
+        const auto observer = std::make_shared<RecordingObserver>();
+        const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
+
+        EXPECT_TRUE(pipeline.graph().run().has_value());
+
+        EXPECT_EQ(observer->count(), 1u);
+        EXPECT_NE(observer->last().table, nullptr);
+        return observer->last().table->label();
+    }
+
+    /** @brief Returns the label of the table a run of a dynamic graph labelled @p label is observed with. */
+    std::string observed_label_of_a_dynamic_graph(const char* label)
+    {
+        auto runtime = Runtime::create().value();
+        auto buffer = runtime.buffer<float>(K_N).value();
+        float* data = buffer.data();
+        auto world = runtime.dynamic_graph();
+        world.set_label(label);
+        world.region(0).add(K_N, Reads{}, Writes(buffer), [data](std::size_t i) { data[i] = 1.0f; });
+        const auto observer = std::make_shared<RecordingObserver>();
+        const RunObserverHandle handle = runtime.add_run_observer(observer);
+
+        EXPECT_TRUE(world.run().has_value());
+
+        EXPECT_EQ(observer->count(), 1u);
+        return observer->last().table->label();
+    }
+} // namespace
+
+/** @brief Tests that the label of a graph, static or dynamic, is the label of the table its runs are observed with, and none is empty. */
 TEST(Medium_GraphLabel, TheTableCarriesTheLabelOfItsGraph)
 {
-    ObservedPipeline pipeline;
-    pipeline.graph().set_label("encoder");
-    const auto observer = std::make_shared<RecordingObserver>();
-    const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
-
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-
-    ASSERT_EQ(observer->count(), 1u);
-    ASSERT_NE(observer->last().table, nullptr);
-    EXPECT_EQ(observer->last().table->label(), "encoder");
-}
-
-/** @brief Tests that a graph with no label has an empty one. */
-TEST(Medium_GraphLabel, AGraphWithNoLabelHasAnEmptyOne)
-{
-    ObservedPipeline pipeline;
-    const auto observer = std::make_shared<RecordingObserver>();
-    const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
-
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-
-    EXPECT_TRUE(observer->last().table->label().empty());
+    EXPECT_EQ(observed_label_of_a_graph("encoder"), "encoder");
+    EXPECT_EQ(observed_label_of_a_graph(nullptr), "") << "a graph with no label has an empty one";
+    EXPECT_EQ(observed_label_of_a_dynamic_graph("world"), "world");
 }
 
 /** @brief Tests that a changed label reaches the table at the next build and forces no rebuild of its own. */
@@ -157,6 +175,19 @@ TEST(Medium_NodeOptions, OriginIsCopiedAtRecordTime)
     EXPECT_EQ(row->origin, "attention");
 }
 
+namespace
+{
+    /** @brief Returns the names of the rows of @p table that state an origin. */
+    std::vector<std::string> rows_stating_an_origin(const NodeTable& table)
+    {
+        std::vector<std::string> names;
+        for (const NodeTableRow& row : table.rows())
+            if (!row.origin.empty())
+                names.push_back(row.name);
+        return names;
+    }
+} // namespace
+
 /** @brief Tests that a node that states no origin has an empty one. */
 TEST(Medium_NodeOptions, ANodeThatStatesNoOriginHasNone)
 {
@@ -166,54 +197,42 @@ TEST(Medium_NodeOptions, ANodeThatStatesNoOriginHasNone)
 
     ASSERT_TRUE(pipeline.graph().run().has_value());
 
-    for (const NodeTableRow& row : observer->last().table->rows())
-        EXPECT_TRUE(row.origin.empty()) << row.name;
+    ASSERT_EQ(observer->count(), 1u);
+    EXPECT_TRUE(rows_stating_an_origin(*observer->last().table).empty());
 }
 
-/** @brief Tests that two graphs on one runtime observe their own ids and never each other's. */
-TEST(Medium_GraphId, TwoGraphsOnOneRuntimeObserveTheirOwnIds)
+/** @brief Tests that a run carries the id of its graph, static or dynamic, and no graph shares or has the id 0. */
+TEST(Medium_GraphId, ARunCarriesTheIdOfItsGraph)
 {
     auto runtime = Runtime::create().value();
     auto first_buffer = runtime.buffer<float>(K_N).value();
     auto second_buffer = runtime.buffer<float>(K_N).value();
+    auto world_buffer = runtime.buffer<float>(K_N).value();
+    float* world_data = world_buffer.data();
     auto first = runtime.graph();
     auto second = runtime.graph();
+    auto world = runtime.dynamic_graph();
     add_fill(first, first_buffer, "a");
     add_fill(second, second_buffer, "b");
+    world.region(0).add(K_N, Reads{}, Writes(world_buffer), [world_data](std::size_t i) { world_data[i] = 1.0f; });
     const auto observer = std::make_shared<RecordingObserver>();
     const RunObserverHandle handle = runtime.add_run_observer(observer);
 
     ASSERT_TRUE(first.run().has_value());
     ASSERT_TRUE(second.run().has_value());
     ASSERT_TRUE(first.run().has_value());
+    ASSERT_TRUE(world.run().has_value());
 
     const std::vector<RunObservation> runs = observer->runs();
-    ASSERT_EQ(runs.size(), 3u);
+    ASSERT_EQ(runs.size(), 4u);
     EXPECT_NE(first.id(), second.id());
+    EXPECT_NE(world.id(), first.id());
+    EXPECT_NE(world.id(), 0u);
     EXPECT_EQ(runs[0].graph_id, first.id());
     EXPECT_EQ(runs[1].graph_id, second.id());
     EXPECT_EQ(runs[2].graph_id, first.id());
+    EXPECT_EQ(runs[3].graph_id, world.id());
     EXPECT_EQ(runs[0].table->graph_id(), first.id()) << "the table of a plan names the graph it was built for";
-}
-
-/** @brief Tests that a run of a dynamic graph carries the dynamic graph's id. */
-TEST(Medium_GraphId, ADynamicGraphRunCarriesItsOwnId)
-{
-    auto runtime = Runtime::create().value();
-    auto buffer = runtime.buffer<float>(K_N).value();
-    float* data = buffer.data();
-    auto world = runtime.dynamic_graph();
-    world.region(0).add(K_N, Reads{}, Writes(buffer), [data](std::size_t i) { data[i] = 1.0f; });
-    auto plain = runtime.graph();
-    const auto observer = std::make_shared<RecordingObserver>();
-    const RunObserverHandle handle = runtime.add_run_observer(observer);
-
-    ASSERT_TRUE(world.run().has_value());
-
-    ASSERT_EQ(observer->count(), 1u);
-    EXPECT_EQ(observer->last().graph_id, world.id());
-    EXPECT_NE(world.id(), plain.id());
-    EXPECT_NE(world.id(), 0u);
 }
 
 /** @brief Tests that an async step is observed under the id of the graph that started it. */
@@ -244,13 +263,24 @@ TEST(Medium_GraphId, AMovedFromGraphReportsZero)
     EXPECT_EQ(original.id(), 0u);
 }
 
-/** @brief Tests that a run with no known graph id would read 0, which no graph has. */
+namespace
+{
+    /** @brief Returns the ids of @p count graphs made on @p runtime. */
+    std::set<std::uint64_t> ids_of_new_graphs(Runtime& runtime, int count)
+    {
+        std::set<std::uint64_t> ids;
+        for (int i = 0; i < count; ++i)
+            ids.insert(runtime.graph().id());
+        return ids;
+    }
+} // namespace
+
+/** @brief Tests that every graph takes its own id and none takes 0. */
 TEST(Medium_GraphId, NoGraphHasIdZero)
 {
     auto runtime = Runtime::create().value();
-    std::set<std::uint64_t> ids;
-    for (int i = 0; i < 8; ++i)
-        ids.insert(runtime.graph().id());
+
+    const std::set<std::uint64_t> ids = ids_of_new_graphs(runtime, 8);
 
     EXPECT_EQ(ids.size(), 8u) << "every graph takes its own id";
     EXPECT_EQ(ids.count(0), 0u);

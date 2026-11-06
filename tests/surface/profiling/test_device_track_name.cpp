@@ -36,7 +36,14 @@
 #include <SushiRuntime/profiling/device_track_name.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
+
+/** @brief Fixture of the tests that need the runtime of the program. */
+class Medium_DeviceTrackName : public TestSupport::RuntimeTest
+{
+};
 
 /** @brief Tests that the track names the node, the device index and the device. */
 TEST(Small_DeviceTrackName, NamesTheNodeTheIndexAndTheDevice)
@@ -58,29 +65,42 @@ TEST(Small_DeviceTrackName, TwoNodesWithTheSameDeviceGetDifferentTracks)
     EXPECT_NE(device_track_name("alpha", 0, "gpu"), device_track_name("beta", 0, "gpu"));
 }
 
-/** @brief Tests that the host track names the node and is not a device track of any index. */
+/** @brief Tests that the host track names the node. */
 TEST(Small_DeviceTrackName, TheHostTrackNamesTheNode)
 {
     EXPECT_EQ(host_track_name("node"), "node/host");
+}
+
+/** @brief Tests that the host track is not the track of a device called host, whatever its index. */
+TEST(Small_DeviceTrackName, TheHostTrackDiffersFromADeviceTrack)
+{
     EXPECT_NE(host_track_name("node"), device_track_name("node", 0, "host"));
 }
 
-/** @brief Tests that the runtime overload builds the same string from the runtime's own node and device. */
-TEST(Medium_DeviceTrackName, TheRuntimeOverloadAgreesWithThePartsOverload)
+namespace
 {
-    auto runtime = Runtime::create().value();
-    const auto& devices = runtime.advanced().devices();
-    ASSERT_FALSE(devices.empty());
-
-    for (std::uint32_t index = 0; index < devices.size(); ++index)
+    /** @brief Checks that the runtime overload names device @p index as the parts overload names it. */
+    void expect_overloads_agree(const Runtime& runtime, std::uint32_t index)
+    {
+        SCOPED_TRACE(index);
+        const auto& devices = runtime.advanced().devices();
         EXPECT_EQ(device_track_name(runtime, index),
                   device_track_name(runtime.topology().name, index, devices[index].name));
+    }
+} // namespace
+
+/** @brief Tests that the runtime overload builds the same string from the runtime's own node and device. */
+TEST_F(Medium_DeviceTrackName, TheRuntimeOverloadAgreesWithThePartsOverload)
+{
+    const auto& devices = runtime().advanced().devices();
+    ASSERT_FALSE(devices.empty());
+
+    expect_overloads_agree(runtime(), 0);
+    expect_overloads_agree(runtime(), static_cast<std::uint32_t>(devices.size() - 1));
 }
 
 /** @brief Tests that an index the runtime does not have names a device called "device". */
-TEST(Medium_DeviceTrackName, AnIndexTheRuntimeLacksNamesAGenericDevice)
+TEST_F(Medium_DeviceTrackName, AnIndexTheRuntimeLacksNamesAGenericDevice)
 {
-    auto runtime = Runtime::create().value();
-
-    EXPECT_EQ(device_track_name(runtime, 99), device_track_name(runtime.topology().name, 99, "device"));
+    EXPECT_EQ(device_track_name(runtime(), 99), device_track_name(runtime().topology().name, 99, "device"));
 }

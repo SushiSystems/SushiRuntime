@@ -48,33 +48,89 @@ using namespace SessionTests;
 using SushiProfiler::PeriodRecord;
 using SushiProfiler::RunRecord;
 
-/** @brief Tests that with a window of one warm-up and two active periods the record holds spans for exactly those three. */
-TEST(Medium_DeviceTimingWindow, SpansExistOnlyForTheRecordedPeriods)
+namespace
+{
+    /** @brief Returns the spans the periods of @p record hold, all together. */
+    std::size_t total_spans(const RunRecord& record)
+    {
+        std::size_t spans = 0;
+        for (const PeriodRecord& period : record.periods)
+            spans += period.spans.size();
+        return spans;
+    }
+
+    /** @brief Runs the graph once, and when it is the window's last period @p extra_periods more, each under its own mark. */
+    void run_and_overrun_the_window(SessionPipeline& pipeline, SushiProfiler::PeriodTimeline& timeline,
+                                    std::uint32_t last_period, std::uint32_t period, int extra_periods)
+    {
+        EXPECT_TRUE(pipeline.graph().run().has_value());
+        if (period != last_period)
+            return;
+        for (int extra = 0; extra < extra_periods; ++extra)
+        {
+            timeline.mark();
+            EXPECT_TRUE(pipeline.graph().run().has_value());
+        }
+    }
+
+    /** @brief Expects every value of @p counts to equal @p expected. */
+    void expect_all_equal(const std::vector<std::size_t>& counts, std::size_t expected)
+    {
+        for (const std::size_t count : counts)
+            EXPECT_EQ(count, expected);
+    }
+
+    /** @brief Runs three one-run periods; the first is paused and the second and third are resumed. Returns the record. */
+    RunRecord record_paused_then_resumed(SessionPipeline& pipeline, const std::shared_ptr<RecordingObserver>& ungated)
+    {
+        SushiProfiler::Registry registry;
+        SushiRuntime::RuntimeProfilerParts parts = SushiRuntime::register_profiler_parts(registry, pipeline.runtime());
+        const RunObserverHandle ungated_handle = pipeline.runtime().add_run_observer(ungated);
+
+        SushiProfiler::SessionStart start = SushiProfiler::Session::start(session_config(0, 3), registry);
+        EXPECT_TRUE(start.ok()) << start.error;
+        SushiProfiler::PeriodTimeline& timeline = start.session->timeline("run.step");
+
+        timeline.mark();
+        EXPECT_TRUE(start.session->pause());
+        EXPECT_TRUE(pipeline.graph().run().has_value());
+        timeline.mark();
+        EXPECT_TRUE(start.session->resume());
+        EXPECT_TRUE(pipeline.graph().run().has_value());
+        timeline.mark();
+        EXPECT_TRUE(pipeline.graph().run().has_value());
+        timeline.mark();
+        return std::move(start.session->stop().record);
+    }
+} // namespace
+
+/** @brief Tests that with a window of one warm-up and two active periods the record holds exactly those three periods. */
+TEST(Medium_DeviceTimingWindow, TheRecordHoldsOnlyThePeriodsOfTheWindow)
 {
     SessionPipeline pipeline;
 
     // Six periods are marked and run; the window keeps the first three.
     const RunRecord record = record_periods(
         pipeline.runtime(), 1, 2,
-        [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline& timeline)
-        {
-            EXPECT_TRUE(pipeline.graph().run().has_value());
-            // Three runs follow the window's last period; their periods are not recorded.
-            if (timeline.current() == 2)
-                for (int extra = 0; extra < 3; ++extra)
-                {
-                    timeline.mark();
-                    EXPECT_TRUE(pipeline.graph().run().has_value());
-                }
-        });
+        [&pipeline](std::uint32_t period, SushiProfiler::PeriodTimeline& timeline)
+        { run_and_overrun_the_window(pipeline, timeline, 2, period, 3); });
 
     ASSERT_EQ(record.periods.size(), 3u);
     EXPECT_TRUE(record.periods[0].warmup);
     EXPECT_FALSE(record.periods[1].warmup);
-    std::size_t spans = 0;
-    for (const PeriodRecord& period : record.periods)
-        spans += period.spans.size();
-    EXPECT_EQ(spans, 9u) << "three nodes in each of the three recorded periods, none from the periods after the window";
+}
+
+/** @brief Tests that spans exist only for the recorded periods: three nodes in each, none from the periods after the window. */
+TEST(Medium_DeviceTimingWindow, SpansExistOnlyForTheRecordedPeriods)
+{
+    SessionPipeline pipeline;
+
+    const RunRecord record = record_periods(
+        pipeline.runtime(), 1, 2,
+        [&pipeline](std::uint32_t period, SushiProfiler::PeriodTimeline& timeline)
+        { run_and_overrun_the_window(pipeline, timeline, 2, period, 3); });
+
+    EXPECT_EQ(total_spans(record), 9u);
 }
 
 /** @brief Tests that a session costs no plan rebuild, when it starts, in its window or when it ends. */
@@ -85,22 +141,18 @@ TEST(Medium_DeviceTimingWindow, CostsNoRebuild)
     ASSERT_EQ(pipeline.graph().compile_count(), 1u) << "built before any session, with no observer";
 
     std::vector<std::size_t> counts;
-    const RunRecord record = record_periods(
+    static_cast<void>(record_periods(
         pipeline.runtime(), 1, 2,
         [&pipeline, &counts](std::uint32_t, SushiProfiler::PeriodTimeline&)
         {
             EXPECT_TRUE(pipeline.graph().run().has_value());
             counts.push_back(pipeline.graph().compile_count());
-        });
+        }));
 
     ASSERT_EQ(counts.size(), 3u);
-    for (const std::size_t count : counts)
-        EXPECT_EQ(count, 1u) << "the session's observer turned timing on for each run, with no rebuild";
+    expect_all_equal(counts, 1u);
     ASSERT_TRUE(pipeline.graph().run().has_value());
     EXPECT_EQ(pipeline.graph().compile_count(), 1u) << "the session ended and removed the observer, with no rebuild";
-    ASSERT_EQ(record.periods.size(), 3u);
-    for (const PeriodRecord& period : record.periods)
-        EXPECT_EQ(period.spans.size(), 3u) << "the run after the add was timed, though its plan was built before";
 }
 
 /** @brief Tests that a runtime with no session records no device spans in a record made without its source. */
@@ -111,41 +163,42 @@ TEST(Medium_DeviceTimingWindow, ARecordMadeWithoutTheSourceHoldsNoDeviceSpans)
     const RunRecord record = record_periods_without_source(
         0, 2, [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline&) { EXPECT_TRUE(pipeline.graph().run().has_value()); });
 
-    for (const PeriodRecord& period : record.periods)
-        EXPECT_EQ(period.spans.size(), 0u);
+    EXPECT_EQ(total_spans(record), 0u);
     EXPECT_EQ(pipeline.graph().compile_count(), 1u) << "no observer, so no rebuild for timing";
 }
 
-/** @brief Tests that pausing the session stops the parts' device timing, leaves an ungated observer timed, and resuming starts it again. */
-TEST(Medium_DeviceTimingWindow, APausedSessionCostsNoDeviceTiming)
+/** @brief Tests that a paused session receives no device span, and the periods after the resume do. */
+TEST(Medium_DeviceTimingWindow, APausedSessionReceivesNoDeviceSpans)
 {
     SessionPipeline pipeline;
-    SushiProfiler::Registry registry;
-    SushiRuntime::RuntimeProfilerParts parts = SushiRuntime::register_profiler_parts(registry, pipeline.runtime());
-    const auto ungated = std::make_shared<RecordingObserver>();
-    const RunObserverHandle ungated_handle = pipeline.runtime().add_run_observer(ungated);
 
-    SushiProfiler::SessionStart start = SushiProfiler::Session::start(session_config(0, 3), registry);
-    ASSERT_TRUE(start.ok()) << start.error;
-    SushiProfiler::PeriodTimeline& timeline = start.session->timeline("run.step");
+    const RunRecord record = record_paused_then_resumed(pipeline, std::make_shared<RecordingObserver>());
 
-    timeline.mark();
-    ASSERT_TRUE(start.session->pause());
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-    timeline.mark();
-    ASSERT_TRUE(start.session->resume());
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-    timeline.mark();
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-    timeline.mark();
-    const RunRecord record = std::move(start.session->stop().record);
-
-    ASSERT_EQ(ungated->count(), 3u);
-    for (const RunObservation& observation : ungated->runs())
-        EXPECT_EQ(observation.events.size(), 3u) << "the ungated observer is timed, paused or not";
-    EXPECT_EQ(pipeline.graph().compile_count(), 1u) << "pausing and resuming rebuild nothing";
     ASSERT_EQ(record.periods.size(), 3u);
     EXPECT_EQ(record.periods[0].spans.size(), 0u) << "no device span reaches a paused session";
     EXPECT_EQ(record.periods[1].spans.size(), 3u) << "the run after the resume is timed for the session";
     EXPECT_EQ(record.periods[2].spans.size(), 3u);
+}
+
+/** @brief Tests that an observer the session does not gate is timed whether the session is paused or not. */
+TEST(Medium_DeviceTimingWindow, AnUngatedObserverIsTimedWhileTheSessionIsPaused)
+{
+    SessionPipeline pipeline;
+    const auto ungated = std::make_shared<RecordingObserver>();
+
+    static_cast<void>(record_paused_then_resumed(pipeline, ungated));
+
+    ASSERT_EQ(ungated->count(), 3u);
+    for (const RunObservation& observation : ungated->runs())
+        EXPECT_EQ(observation.events.size(), 3u);
+}
+
+/** @brief Tests that pausing and resuming a session rebuild no plan. */
+TEST(Medium_DeviceTimingWindow, PausingAndResumingRebuildNothing)
+{
+    SessionPipeline pipeline;
+
+    static_cast<void>(record_paused_then_resumed(pipeline, std::make_shared<RecordingObserver>()));
+
+    EXPECT_EQ(pipeline.graph().compile_count(), 1u);
 }

@@ -42,6 +42,8 @@
 #include <SushiRuntime/profiling/device_track_name.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/runtime_environment.hpp"
+
 #include "session_pipeline.hpp"
 
 using namespace SushiRuntime;
@@ -63,18 +65,79 @@ namespace
                 return index;
         return devices.size();
     }
+
+    /** @brief The duration and the pairing uncertainty of the longest span of a period. */
+    struct LongestSpan
+    {
+        std::uint64_t duration_ns = 0;   /**< How long the span lasted. */
+        std::uint32_t uncertainty_ns = 0; /**< The uncertainty of its device's pairing. */
+    };
+
+    /** @brief Returns the longest span of @p period; the last of equal ones wins. */
+    LongestSpan longest_span_of(const PeriodRecord& period)
+    {
+        LongestSpan longest;
+        for (std::size_t row = 0; row < period.spans.size(); ++row)
+        {
+            const SushiProfiler::Span span = period.spans.span(row);
+            const std::uint64_t duration = span.end_ns - span.start_ns;
+            if (duration >= longest.duration_ns)
+                longest = LongestSpan{duration, span.uncertainty_ns};
+        }
+        return longest;
+    }
+
+    /** @brief Returns the tracks the spans of @p period lie on. */
+    std::set<std::string> tracks_of(const RunRecord& record, const PeriodRecord& period)
+    {
+        std::set<std::string> tracks;
+        for (std::size_t row = 0; row < period.spans.size(); ++row)
+            tracks.insert(record.tracks.at(period.spans.span(row).track));
+        return tracks;
+    }
+
+    /** @brief Expects the longest span of @p period to carry a pairing uncertainty and, outside warm-up, to outlast it. */
+    void expect_the_uncertainty_below_the_longest_span(const PeriodRecord& period)
+    {
+        SCOPED_TRACE(period.index);
+        ASSERT_EQ(period.spans.size(), 3u);
+        const LongestSpan longest = longest_span_of(period);
+        EXPECT_GT(longest.uncertainty_ns, 0u) << "a device span carries the uncertainty of its pairing";
+        // The warm-up run's first submit includes the driver's compilation (SPEC, current state 7).
+        if (!period.warmup)
+            EXPECT_LT(longest.uncertainty_ns, longest.duration_ns) << "the longest kernel outlasts the submit call";
+    }
+
+    /** @brief Skips a test that needs a GPU when the program's runtime has none. */
+    class Large_RuntimeSessionOnAGpu : public TestSupport::RuntimeTest
+    {
+        protected:
+            void SetUp() override
+            {
+                if (first_device_of(runtime(), DeviceKind::GPU) == runtime().advanced().device_count())
+                    GTEST_SKIP() << "no GPU device is available";
+            }
+    };
+
+    /** @brief Skips a test that needs two devices when the program's runtime has fewer. */
+    class Large_RuntimeSessionOnTwoDevices : public TestSupport::RuntimeTest
+    {
+        protected:
+            void SetUp() override
+            {
+                if (runtime().advanced().device_count() < 2)
+                    GTEST_SKIP() << "a second device is not available";
+            }
+    };
 } // namespace
 
 /** @brief Tests that the longest span of a period on the GPU lasts longer than the uncertainty of its device's pairing. */
-TEST(Large_RuntimeSession, SpansOnTheGpuHaveAPairingUncertaintyBelowTheirDuration)
+TEST_F(Large_RuntimeSessionOnAGpu, SpansOnTheGpuHaveAPairingUncertaintyBelowTheirDuration)
 {
-    auto probe = Runtime::create().value();
-    const std::size_t gpu = first_device_of(probe, DeviceKind::GPU);
-    if (gpu == probe.advanced().device_count())
-        GTEST_SKIP() << "no GPU device is available";
-
+    const std::size_t gpu = first_device_of(runtime(), DeviceKind::GPU);
     SessionPipeline pipeline(SessionPipeline::scheduler_config(),
                              DeviceIndex{static_cast<std::uint32_t>(gpu)}, K_GPU_ELEMENTS);
+
     const RunRecord record = record_periods(pipeline.runtime(), 1, 2,
                                             [&pipeline](std::uint32_t, SushiProfiler::PeriodTimeline&)
                                             {
@@ -82,42 +145,21 @@ TEST(Large_RuntimeSession, SpansOnTheGpuHaveAPairingUncertaintyBelowTheirDuratio
                                             });
 
     ASSERT_EQ(record.periods.size(), 3u);
-    for (const PeriodRecord& period : record.periods)
-    {
-        ASSERT_EQ(period.spans.size(), 3u);
-        std::uint64_t longest = 0;
-        std::uint32_t uncertainty = 0;
-        for (std::size_t row = 0; row < period.spans.size(); ++row)
-        {
-            const SushiProfiler::Span span = period.spans.span(row);
-            if (span.end_ns - span.start_ns >= longest)
-            {
-                longest = span.end_ns - span.start_ns;
-                uncertainty = span.uncertainty_ns;
-            }
-        }
-        EXPECT_GT(uncertainty, 0u) << "a device span carries the uncertainty of its pairing";
-        // The warm-up run's first submit includes the driver's compilation (SPEC, current state 7).
-        if (period.warmup)
-            continue;
-        EXPECT_LT(uncertainty, longest) << "the longest kernel of period " << period.index << " outlasts the submit call";
-    }
+    expect_the_uncertainty_below_the_longest_span(record.periods[0]);
+    expect_the_uncertainty_below_the_longest_span(record.periods[1]);
+    expect_the_uncertainty_below_the_longest_span(record.periods[2]);
     EXPECT_FALSE(record.periods.back().warmup) << "the active periods are the ones compared";
 }
 
 /** @brief Tests that with two devices each gets its own track and its spans are all placed. */
-TEST(Large_RuntimeSession, TwoDevicesGetOneTrackAndOnePairingEach)
+TEST_F(Large_RuntimeSessionOnTwoDevices, TwoDevicesGetOneTrackAndOnePairingEach)
 {
-    auto runtime = Runtime::create().value();
-    if (runtime.advanced().device_count() < 2)
-        GTEST_SKIP() << "a second device is not available";
-
     constexpr std::size_t K_ELEMENTS = 1024;
-    auto first = runtime.buffer<float>(K_ELEMENTS, DeviceIndex{0}).value();
-    auto second = runtime.buffer<float>(K_ELEMENTS, DeviceIndex{1}).value();
+    auto first = runtime().buffer<float>(K_ELEMENTS, DeviceIndex{0}).value();
+    auto second = runtime().buffer<float>(K_ELEMENTS, DeviceIndex{1}).value();
     float* a = first.data();
     float* b = second.data();
-    auto graph = runtime.graph();
+    auto graph = runtime().graph();
     NodeOptions on_first;
     on_first.name = "on_device_0";
     NodeOptions on_second;
@@ -125,20 +167,19 @@ TEST(Large_RuntimeSession, TwoDevicesGetOneTrackAndOnePairingEach)
     graph.add(K_ELEMENTS, Reads{}, Writes(first), [a](std::size_t i) { a[i] = static_cast<float>(i); }, on_first);
     graph.add(K_ELEMENTS, Reads{}, Writes(second), [b](std::size_t i) { b[i] = static_cast<float>(i); }, on_second);
 
-    const RunRecord record = record_periods(runtime, 1, 2,
+    const RunRecord record = record_periods(runtime(), 1, 2,
                                             [&graph](std::uint32_t, SushiProfiler::PeriodTimeline&)
                                             {
                                                 EXPECT_TRUE(graph.run().has_value());
                                             });
 
     ASSERT_EQ(record.periods.size(), 3u);
-    for (const PeriodRecord& period : record.periods)
-    {
-        ASSERT_EQ(period.spans.size(), 2u);
-        std::set<std::string> tracks;
-        for (std::size_t row = 0; row < period.spans.size(); ++row)
-            tracks.insert(record.tracks.at(period.spans.span(row).track));
-        EXPECT_EQ(tracks, (std::set<std::string>{device_track_name(runtime, 0), device_track_name(runtime, 1)}));
-    }
+    const std::set<std::string> expected{device_track_name(runtime(), 0), device_track_name(runtime(), 1)};
+    ASSERT_EQ(record.periods[0].spans.size(), 2u);
+    EXPECT_EQ(tracks_of(record, record.periods[0]), expected);
+    ASSERT_EQ(record.periods[1].spans.size(), 2u);
+    EXPECT_EQ(tracks_of(record, record.periods[1]), expected);
+    ASSERT_EQ(record.periods[2].spans.size(), 2u);
+    EXPECT_EQ(tracks_of(record, record.periods[2]), expected);
     EXPECT_EQ(record.drops.spans_dropped, 0u) << "every span found its own device's pairing";
 }

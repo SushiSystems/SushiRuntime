@@ -61,20 +61,16 @@ namespace
             std::this_thread::yield();
         return observer.count() >= count;
     }
-} // namespace
 
-/** @brief Tests that an observer sees each blocking run once, with the nodes the plan holds. */
-TEST(Medium_RunObserver, SeesEachBlockingRunOnce)
-{
-    ObservedPipeline pipeline;
-    const auto observer = std::make_shared<RecordingObserver>();
-    const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
+    /** @brief Runs the graph of @p pipeline @p runs times and expects each run to succeed. */
+    void run_times(ObservedPipeline& pipeline, int runs)
+    {
+        for (int run = 0; run < runs; ++run)
+            EXPECT_TRUE(pipeline.graph().run().has_value());
+    }
 
-    for (int run = 0; run < 3; ++run)
-        ASSERT_TRUE(pipeline.graph().run().has_value());
-
-    ASSERT_EQ(observer->count(), 3u);
-    for (const RunObservation& observation : observer->runs())
+    /** @brief Expects @p observation to hold the three nodes' table and one well-ordered record per node dispatch. */
+    void expect_a_whole_observation(const RunObservation& observation)
     {
         ASSERT_NE(observation.table, nullptr);
         EXPECT_EQ(observation.table->size(), 3u);
@@ -86,6 +82,82 @@ TEST(Medium_RunObserver, SeesEachBlockingRunOnce)
             EXPECT_LE(record.start_ns, record.end_ns);
         }
     }
+
+    /** @brief Returns the highest invocation any record of @p observation carries. */
+    std::uint32_t highest_invocation(const RunObservation& observation)
+    {
+        std::uint32_t highest = 0;
+        for (const NodeEventRecord& record : observation.events)
+            highest = std::max(highest, record.invocation);
+        return highest;
+    }
+
+    /** @brief Spins until @p gate opens or the delivery timeout passes. */
+    void spin_until_open(const std::atomic<bool>& gate)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + K_DELIVERY_TIMEOUT;
+        while (!gate.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+    }
+
+    /**
+     * @brief A step held open by a host node while an observer is added, and what the observer then hears.
+     *
+     * The step was armed with no observer, so it is untimed; the observer joins while it is held open.
+     */
+    class StepObservedMidway
+    {
+        public:
+            StepObservedMidway()
+            {
+                pipeline_.graph().add_host(Reads{}, Writes{}, [this]() { spin_until_open(gate_); });
+                auto step = pipeline_.graph().run_async().value();
+                handle_ = pipeline_.runtime().add_run_observer(observer_);
+                gate_.store(true, std::memory_order_release);
+                EXPECT_TRUE(step.wait().has_value());
+                EXPECT_TRUE(wait_for_runs(*observer_, 1));
+            }
+
+            StepObservedMidway(const StepObservedMidway&) = delete;
+            StepObservedMidway& operator=(const StepObservedMidway&) = delete;
+
+            /** @brief Returns the pipeline. */
+            ObservedPipeline& pipeline() noexcept { return pipeline_; }
+
+            /** @brief Returns the observer that joined midway. */
+            RecordingObserver& observer() noexcept { return *observer_; }
+
+        private:
+            ObservedPipeline pipeline_;                                                  /**< The runtime and its graph. */
+            std::atomic<bool> gate_{false};                                              /**< Opened to let the host node end. */
+            std::shared_ptr<RecordingObserver> observer_{std::make_shared<RecordingObserver>()}; /**< Joins midway. */
+            RunObserverHandle handle_;                                                   /**< Keeps the observer added. */
+    };
+} // namespace
+
+/** @brief Tests that an observer sees each blocking run once. */
+TEST(Medium_RunObserver, SeesEachBlockingRunOnce)
+{
+    ObservedPipeline pipeline;
+    const auto observer = std::make_shared<RecordingObserver>();
+    const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
+
+    run_times(pipeline, 3);
+
+    EXPECT_EQ(observer->count(), 3u);
+}
+
+/** @brief Tests that each observed run holds the nodes the plan holds and one well-ordered record per dispatch. */
+TEST(Medium_RunObserver, EachObservedRunHoldsTheNodesOfThePlan)
+{
+    ObservedPipeline pipeline;
+    const auto observer = std::make_shared<RecordingObserver>();
+    const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
+
+    run_times(pipeline, 1);
+
+    ASSERT_EQ(observer->count(), 1u);
+    expect_a_whole_observation(observer->last());
 }
 
 /** @brief Tests that two observers both receive every run. */
@@ -105,7 +177,7 @@ TEST(Medium_RunObserver, TwoObserversBothReceiveEveryRun)
     EXPECT_EQ(first->last().events.size(), second->last().events.size());
 }
 
-/** @brief Tests that removing one observer leaves the other receiving runs. */
+/** @brief Tests that removing one observer leaves the other receiving runs, and the removed one hears no later run. */
 TEST(Medium_RunObserver, RemovingOneLeavesTheOther)
 {
     ObservedPipeline pipeline;
@@ -113,29 +185,14 @@ TEST(Medium_RunObserver, RemovingOneLeavesTheOther)
     const auto second = std::make_shared<RecordingObserver>();
     RunObserverHandle first_handle = pipeline.runtime().add_run_observer(first);
     const RunObserverHandle second_handle = pipeline.runtime().add_run_observer(second);
-    ASSERT_TRUE(pipeline.graph().run().has_value());
+    run_times(pipeline, 1);
 
     first_handle.reset();
-    ASSERT_TRUE(pipeline.graph().run().has_value());
+    run_times(pipeline, 2);
 
     EXPECT_EQ(first->count(), 1u) << "a removed observer hears no later run";
-    EXPECT_EQ(second->count(), 2u);
+    EXPECT_EQ(second->count(), 3u);
     EXPECT_FALSE(second->last().events.empty()) << "device timing stays on while one observer remains";
-}
-
-/** @brief Tests that no observer is called once its handle is reset. */
-TEST(Medium_RunObserver, IsNotCalledAfterItsHandleIsReset)
-{
-    ObservedPipeline pipeline;
-    const auto observer = std::make_shared<RecordingObserver>();
-    RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-
-    handle.reset();
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-
-    EXPECT_EQ(observer->count(), 1u);
 }
 
 /** @brief Tests that a handle that goes out of scope removes its observer. */
@@ -248,66 +305,80 @@ TEST(Medium_RunObserver, AddingAnObserverCostsNoRebuild)
     EXPECT_EQ(second->count(), 2u);
 }
 
-/** @brief Tests that removing the last observer costs no plan rebuild and the runs after it are untimed. */
-TEST(Medium_RunObserver, RemovingTheLastObserverCostsNoRebuild)
+/** @brief Tests that removing an observer, the last one included, costs no plan rebuild. */
+TEST(Medium_RunObserver, RemovingObserversCostsNoRebuild)
 {
     ObservedPipeline pipeline;
     RunObserverHandle first = pipeline.runtime().add_run_observer(std::make_shared<RecordingObserver>());
     const auto last_observer = std::make_shared<RecordingObserver>();
     RunObserverHandle second = pipeline.runtime().add_run_observer(last_observer);
-    ASSERT_TRUE(pipeline.graph().run().has_value());
+    run_times(pipeline, 1);
     ASSERT_EQ(pipeline.graph().compile_count(), 1u);
 
     first.reset();
-    ASSERT_TRUE(pipeline.graph().run().has_value());
+    run_times(pipeline, 1);
     EXPECT_EQ(pipeline.graph().compile_count(), 1u);
     EXPECT_FALSE(last_observer->last().events.empty()) << "one observer remains, so the run is still timed";
 
     second.reset();
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-    ASSERT_TRUE(pipeline.graph().run().has_value());
+    run_times(pipeline, 2);
     EXPECT_EQ(pipeline.graph().compile_count(), 1u) << "the last remove rebuilds nothing either";
-    EXPECT_EQ(last_observer->count(), 2u) << "and the runs after it reach no observer";
 }
 
-/** @brief Tests that an observer added while a step is in flight gets that step with no records and times the next run. */
-TEST(Medium_RunObserver, AnObserverAddedMidRunTimesTheNextRunNotTheCurrentOne)
+/** @brief Tests that the runs after the last observer is removed reach no observer. */
+TEST(Medium_RunObserver, RunsAfterTheLastRemovalReachNoObserver)
 {
     ObservedPipeline pipeline;
-    std::atomic<bool> gate{false};
-    pipeline.graph().add_host(Reads{}, Writes{}, [&gate]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + K_DELIVERY_TIMEOUT;
-        while (!gate.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
-            std::this_thread::yield();
-    });
-    auto step = pipeline.graph().run_async().value();
-
-    // The step was armed with no observer, so it is untimed; the observer joins while it is held open.
     const auto observer = std::make_shared<RecordingObserver>();
-    const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
-    gate.store(true, std::memory_order_release);
-    ASSERT_TRUE(step.wait().has_value());
+    RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
+    run_times(pipeline, 1);
 
-    ASSERT_TRUE(wait_for_runs(*observer, 1));
-    const RunObservation in_flight = observer->last();
-    EXPECT_TRUE(in_flight.events.empty()) << "the run in flight chose its timing before the observer was added";
-    EXPECT_NE(in_flight.table, nullptr) << "the table of its plan is handed over all the same";
+    handle.reset();
+    run_times(pipeline, 2);
 
-    gate.store(true, std::memory_order_release);
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-    ASSERT_EQ(observer->count(), 2u);
-    EXPECT_EQ(observer->last().events.size(), 4u) << "the next run is timed: three kernels and the host node";
-    EXPECT_EQ(pipeline.graph().compile_count(), 1u);
+    EXPECT_EQ(observer->count(), 1u);
 }
 
-/** @brief Tests that a graph run with no observer attached records no device timing and reports to nobody. */
+/** @brief Tests that the run in flight when an observer is added carries no records, as it chose its timing before. */
+TEST(Medium_RunObserver, AnObserverAddedMidRunGetsNoRecordsOfTheCurrentOne)
+{
+    StepObservedMidway midway;
+
+    EXPECT_TRUE(midway.observer().last().events.empty())
+        << "the run in flight chose its timing before the observer was added";
+}
+
+/** @brief Tests that the run in flight when an observer is added still hands over the table of its plan. */
+TEST(Medium_RunObserver, AnObserverAddedMidRunStillGetsTheTableOfTheCurrentOne)
+{
+    StepObservedMidway midway;
+
+    EXPECT_NE(midway.observer().last().table, nullptr);
+}
+
+/** @brief Tests that the next run after an observer was added midway is timed, with no rebuild. */
+TEST(Medium_RunObserver, AnObserverAddedMidRunTimesTheNextRun)
+{
+    StepObservedMidway midway;
+
+    run_times(midway.pipeline(), 1);
+
+    ASSERT_EQ(midway.observer().count(), 2u);
+    EXPECT_EQ(midway.observer().last().events.size(), 4u) << "three kernels and the host node";
+    EXPECT_EQ(midway.pipeline().graph().compile_count(), 1u);
+}
+
+/** @brief Tests that a run after the only observer was removed makes no observation and is unchanged. */
 TEST(Medium_RunObserver, ARunWithNoObserverMakesNoObservation)
 {
     ObservedPipeline pipeline;
+    const auto observer = std::make_shared<RecordingObserver>();
+    RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
+    handle.reset();
 
-    ASSERT_TRUE(pipeline.graph().run().has_value());
+    run_times(pipeline, 1);
 
+    EXPECT_EQ(observer->count(), 0u);
     EXPECT_EQ(pipeline.graph().compile_count(), 1u);
     EXPECT_EQ(pipeline.result()[3], 7.0f) << "the run itself is unchanged by there being no observer";
 }
@@ -319,13 +390,11 @@ TEST(Medium_RunObserver, ARunOnTheChainPathCarriesTheChainLayer)
     const auto observer = std::make_shared<RecordingObserver>();
     const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
 
-    ASSERT_TRUE(pipeline.graph().run().has_value());
+    run_times(pipeline, 1);
 
     ASSERT_EQ(observer->count(), 1u);
-    const RunObservation observation = observer->last();
-    if (observation.layer != ExecutionLayer::Chain)
-        GTEST_SKIP() << "this device's plan does not classify as a chain";
-    EXPECT_EQ(observation.events.size(), 3u);
+    EXPECT_EQ(observer->last().layer, ExecutionLayer::Chain);
+    EXPECT_EQ(observer->last().events.size(), 3u);
 }
 
 /** @brief Tests that a multi-step run is one observation holding every step's records. */
@@ -340,8 +409,5 @@ TEST(Medium_RunObserver, AMultiStepRunIsOneObservationWithEveryStep)
     ASSERT_EQ(observer->count(), 1u);
     const RunObservation observation = observer->last();
     EXPECT_EQ(observation.events.size(), 12u) << "three nodes over four steps";
-    std::uint32_t highest = 0;
-    for (const NodeEventRecord& record : observation.events)
-        highest = std::max(highest, record.invocation);
-    EXPECT_EQ(highest, 3u);
+    EXPECT_EQ(highest_invocation(observation), 3u);
 }

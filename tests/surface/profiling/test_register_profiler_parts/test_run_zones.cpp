@@ -30,10 +30,13 @@
 
 #include <cstddef>
 #include <memory>
+#include <set>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
+#include <SushiRuntime/profile/profile_config.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/report/recording_observer.hpp>
@@ -48,6 +51,9 @@ using SushiProfiler::RunRecord;
 
 namespace
 {
+    /** @brief The deepest zone level this library was compiled at; 0 when profiling is off. */
+    constexpr int K_LIBRARY_LEVEL = SR_ENABLE_PROFILER != 0 ? SR_PROFILE_LEVEL : 0;
+
     /** @brief Records two periods around two runs of @p pipeline with no source. */
     RunRecord record_two_runs(SessionPipeline& pipeline)
     {
@@ -57,14 +63,86 @@ namespace
                                              });
     }
 
-    /** @brief Returns the value of the build fact @p name in @p record, or an empty string. */
-    std::string build_fact(const RunRecord& record, const char* name)
+    /** @brief Returns the trees of @p period that hold a zone called @p name. */
+    std::vector<const SushiProfiler::ZoneTree*> trees_holding(const RunRecord& record, const PeriodRecord& period,
+                                                              const char* name)
     {
-        for (const SushiProfiler::Fact& fact : record.build)
-            if (fact.name == name)
-                return fact.value;
-        return {};
+        std::vector<const SushiProfiler::ZoneTree*> trees;
+        for (const SushiProfiler::ZoneTree& tree : period.zones)
+            if (find_zone(record, tree, name) >= 0)
+                trees.push_back(&tree);
+        return trees;
     }
+
+    /** @brief Returns whether the thread @p tree was written on is one of the pool's workers. */
+    bool is_written_by_a_worker(const RunRecord& record, const SushiProfiler::ZoneTree& tree)
+    {
+        for (const SushiProfiler::ThreadRecord& thread : record.threads)
+            if (thread.index == tree.thread)
+                return thread.name.rfind("sr-worker-", 0) == 0;
+        return false;
+    }
+
+    /** @brief Returns how many threads of @p record carry a name that starts with @p prefix. */
+    std::size_t threads_named(const RunRecord& record, const std::string& prefix)
+    {
+        std::size_t named = 0;
+        for (const SushiProfiler::ThreadRecord& thread : record.threads)
+            if (thread.name.rfind(prefix, 0) == 0)
+                ++named;
+        return named;
+    }
+
+    /** @brief Returns whether any period of @p record holds a zone called @p name. */
+    bool any_period_has_zone(const RunRecord& record, const char* name)
+    {
+        for (const PeriodRecord& period : record.periods)
+            if (zone_sites(record, period).count(name) != 0)
+                return true;
+        return false;
+    }
+
+    /** @brief Expects @p period to hold run.submit and run.wait under run.steps, with the wait's two children. */
+    void expect_submit_and_wait_under_the_run(const RunRecord& record, const PeriodRecord& period)
+    {
+        SCOPED_TRACE(period.index);
+        const auto submits = trees_holding(record, period, "run.submit");
+        ASSERT_FALSE(submits.empty());
+        const SushiProfiler::ZoneTree& tree = *submits.front();
+        const int submit = find_zone(record, tree, "run.submit");
+        const int wait = find_zone(record, tree, "run.wait");
+        const int latch = find_zone(record, tree, "run.wait.latch");
+        const int quiesce = find_zone(record, tree, "run.wait.quiesce");
+        ASSERT_GE(wait, 0);
+        ASSERT_GE(latch, 0);
+        ASSERT_GE(quiesce, 0);
+        EXPECT_EQ(parent_zone(record, tree, submit), "run.steps");
+        EXPECT_EQ(parent_zone(record, tree, wait), "run.steps");
+        EXPECT_EQ(parent_zone(record, tree, latch), "run.wait");
+        EXPECT_EQ(parent_zone(record, tree, quiesce), "run.wait");
+    }
+
+    /** @brief Skips a test that needs the fine zones of level 2 when the library was compiled below it. */
+    class Medium_RunZonesAtLevelTwo : public ::testing::Test
+    {
+        protected:
+            void SetUp() override
+            {
+                if (K_LIBRARY_LEVEL < 2)
+                    GTEST_SKIP() << "the library is compiled below level 2";
+            }
+    };
+
+    /** @brief Skips a test about the absence of the per-element zones when the library was compiled with them. */
+    class Medium_RunZonesBelowLevelThree : public ::testing::Test
+    {
+        protected:
+            void SetUp() override
+            {
+                if (K_LIBRARY_LEVEL >= 3)
+                    GTEST_SKIP() << "the library is compiled at level 3";
+            }
+    };
 } // namespace
 
 /** @brief Tests that on the worker pool a run writes run.submit and run.wait under run.steps, with their children. */
@@ -75,55 +153,31 @@ TEST(Medium_RunZones, TheSchedulerPathWritesSubmitAndWaitUnderTheRun)
     const RunRecord record = record_two_runs(pipeline);
 
     ASSERT_EQ(record.periods.size(), 2u);
-    for (const PeriodRecord& period : record.periods)
-    {
-        bool found = false;
-        for (const SushiProfiler::ZoneTree& tree : period.zones)
-        {
-            const int submit = find_zone(record, tree, "run.submit");
-            const int wait = find_zone(record, tree, "run.wait");
-            if (submit < 0 || wait < 0)
-                continue;
-            found = true;
-            EXPECT_EQ(parent_zone(record, tree, submit), "run.steps");
-            EXPECT_EQ(parent_zone(record, tree, wait), "run.steps");
-            const int latch = find_zone(record, tree, "run.wait.latch");
-            const int quiesce = find_zone(record, tree, "run.wait.quiesce");
-            ASSERT_GE(latch, 0);
-            ASSERT_GE(quiesce, 0);
-            EXPECT_EQ(parent_zone(record, tree, latch), "run.wait");
-            EXPECT_EQ(parent_zone(record, tree, quiesce), "run.wait");
-        }
-        EXPECT_TRUE(found) << "period " << period.index;
-    }
+    expect_submit_and_wait_under_the_run(record, record.periods[0]);
+    expect_submit_and_wait_under_the_run(record, record.periods[1]);
 }
 
 /** @brief Tests that the dispatches of a run write dispatch.task and dispatch.submit on the worker threads. */
-TEST(Medium_RunZones, DispatchZonesAreWrittenAtLevelTwo)
+TEST_F(Medium_RunZonesAtLevelTwo, DispatchZonesAreWritten)
 {
     SessionPipeline pipeline;
 
     const RunRecord record = record_two_runs(pipeline);
 
-    if (build_fact(record, "sushiruntime.profile_level") == "1" || build_fact(record, "sushiruntime.profile_level") == "0")
-        GTEST_SKIP() << "the library is compiled below level 2";
     ASSERT_EQ(record.periods.size(), 2u);
     const std::set<std::string> sites = zone_sites(record, record.periods[1]);
     EXPECT_TRUE(sites.count("dispatch.task"));
     EXPECT_TRUE(sites.count("dispatch.submit"));
 }
 
-/** @brief Tests that the per-element zones of the steal path are not compiled into a level-2 library. */
-TEST(Medium_RunZones, TheStealZoneIsAbsentBelowLevelThree)
+/** @brief Tests that the per-element zones of the steal path are not compiled into a library below level 3. */
+TEST_F(Medium_RunZonesBelowLevelThree, TheStealZoneIsAbsent)
 {
     SessionPipeline pipeline;
 
     const RunRecord record = record_two_runs(pipeline);
 
-    if (build_fact(record, "sushiruntime.profile_level") == "3")
-        GTEST_SKIP() << "the library is compiled at level 3";
-    for (const PeriodRecord& period : record.periods)
-        EXPECT_FALSE(zone_sites(record, period).count("worker.steal"));
+    EXPECT_FALSE(any_period_has_zone(record, "worker.steal"));
 }
 
 /** @brief Tests that on the in-order chain a run writes its own zones and none of the pool's. */
@@ -137,11 +191,9 @@ TEST(Medium_RunZones, TheChainPathWritesItsOwnZones)
 
     ASSERT_EQ(record.periods.size(), 2u);
     const std::set<std::string> sites = zone_sites(record, record.periods[1]);
-    if (!sites.count("chain.submit_step"))
-        GTEST_SKIP() << "this device's plan does not classify as a chain";
+    EXPECT_TRUE(sites.count("chain.submit_step"));
     EXPECT_TRUE(sites.count("chain.wait"));
-    EXPECT_TRUE(sites.count("chain.record_events") ||
-                build_fact(record, "sushiruntime.profile_level") == "1")
+    EXPECT_TRUE(sites.count("chain.record_events") || K_LIBRARY_LEVEL == 1)
         << "recording the events is a fine zone, level 2";
     EXPECT_FALSE(sites.count("run.submit"));
 }
@@ -153,11 +205,7 @@ TEST(Medium_RunZones, WorkerThreadsCarryTheirNames)
 
     const RunRecord record = record_two_runs(pipeline);
 
-    std::size_t named = 0;
-    for (const SushiProfiler::ThreadRecord& thread : record.threads)
-        if (thread.name.rfind("sr-worker-", 0) == 0)
-            ++named;
-    EXPECT_GE(named, 1u) << "a worker that recorded a zone has the name sr-worker-N";
+    EXPECT_GE(threads_named(record, "sr-worker-"), 1u) << "a worker that recorded a zone has the name sr-worker-N";
 }
 
 /** @brief Tests that the stage zones of a blocking run are written on the caller's thread, not on a worker's. */
@@ -167,16 +215,9 @@ TEST(Medium_RunZones, TheRunZonesAreOnTheCallersThread)
 
     const RunRecord record = record_two_runs(pipeline);
 
-    std::size_t trees = 0;
-    for (const SushiProfiler::ZoneTree& tree : record.periods[1].zones)
-        if (find_zone(record, tree, "run.steps") >= 0)
-        {
-            ++trees;
-            for (const SushiProfiler::ThreadRecord& thread : record.threads)
-                if (thread.index == tree.thread)
-                    EXPECT_NE(thread.name.rfind("sr-worker-", 0), 0u) << "run.steps ran on a worker";
-        }
-    EXPECT_EQ(trees, 1u);
+    const auto trees = trees_holding(record, record.periods[1], "run.steps");
+    ASSERT_EQ(trees.size(), 1u);
+    EXPECT_FALSE(is_written_by_a_worker(record, *trees.front())) << "run.steps ran on a worker";
 }
 
 /** @brief Tests that Runtime::wait writes wait.runtime around wait.queues. */
@@ -192,14 +233,7 @@ TEST(Medium_RunZones, RuntimeWaitWritesWaitRuntimeAroundWaitQueues)
         });
 
     ASSERT_EQ(record.periods.size(), 1u);
-    bool found = false;
-    for (const SushiProfiler::ZoneTree& tree : record.periods[0].zones)
-    {
-        const int queues = find_zone(record, tree, "wait.queues");
-        if (queues < 0)
-            continue;
-        found = true;
-        EXPECT_EQ(parent_zone(record, tree, queues), "wait.runtime");
-    }
-    EXPECT_TRUE(found);
+    const auto trees = trees_holding(record, record.periods[0], "wait.queues");
+    ASSERT_FALSE(trees.empty());
+    EXPECT_EQ(parent_zone(record, *trees.front(), find_zone(record, *trees.front(), "wait.queues")), "wait.runtime");
 }

@@ -64,7 +64,57 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that every record joins a table row by its node index, with the name, operation and cost stated. */
+namespace
+{
+    /** @brief Returns whether @p observation holds a device clock for @p device. */
+    bool has_pairing(const RunObservation& observation, std::uint32_t device)
+    {
+        for (const DeviceClock& clock : observation.device_clocks)
+            if (clock.device_index == device)
+                return true;
+        return false;
+    }
+
+    /** @brief Returns the names of the table rows the records of @p observation join; a record with no row adds "?". */
+    std::set<std::string> joined_names(const RunObservation& observation)
+    {
+        std::set<std::string> names;
+        for (const NodeEventRecord& record : observation.events)
+        {
+            const NodeTableRow* row = observation.table->find(record.node_index);
+            names.insert(row != nullptr ? row->name : std::string("?"));
+        }
+        return names;
+    }
+
+    /** @brief Expects every row of @p expected to be in @p actual with the same name, operation and cost presence. */
+    void expect_same_rows(const NodeTable& expected, const NodeTable& actual)
+    {
+        for (const NodeTableRow& row : expected.rows())
+        {
+            SCOPED_TRACE(row.name);
+            const NodeTableRow* other = actual.find(row.index);
+            ASSERT_NE(other, nullptr);
+            EXPECT_EQ(other->name, row.name);
+            EXPECT_EQ(other->operation.value, row.operation.value);
+            EXPECT_EQ(other->cost.has_value(), row.cost.has_value());
+        }
+    }
+
+    /** @brief Expects every device record of @p observation, @p records of them, to have its device's pairing. */
+    void expect_every_device_record_paired(const RunObservation& observation, std::size_t records)
+    {
+        ASSERT_EQ(observation.events.size(), records);
+        for (const NodeEventRecord& record : observation.events)
+        {
+            ASSERT_NE(record.device_index, K_HOST_DEVICE_INDEX) << "a kernel or a task body runs on a device queue";
+            EXPECT_TRUE(has_pairing(observation, record.device_index))
+                << "device " << record.device_index << " has no pairing, so a profiler drops the record";
+        }
+    }
+} // namespace
+
+/** @brief Tests that every record joins a table row by its node index, and the rows are the nodes the caller named. */
 TEST(Medium_CollectProfiling, TheTableAndTheRecordsJoinByNodeIndex)
 {
     ObservedPipeline pipeline;
@@ -73,47 +123,41 @@ TEST(Medium_CollectProfiling, TheTableAndTheRecordsJoinByNodeIndex)
 
     ASSERT_NE(observation.table, nullptr);
     ASSERT_EQ(observation.table->size(), 3u);
-    std::set<std::string> names;
-    for (const NodeEventRecord& record : observation.events)
-    {
-        const NodeTableRow* row = observation.table->find(record.node_index);
-        ASSERT_NE(row, nullptr) << "node " << record.node_index;
-        names.insert(row->name);
-    }
-    EXPECT_EQ(names, (std::set<std::string>{"load", "scale", "store"}));
+    EXPECT_EQ(joined_names(observation), (std::set<std::string>{"load", "scale", "store"}));
+}
 
+/** @brief Tests that the table rows carry the operation and the cost the caller stated, and no cost where none was. */
+TEST(Medium_CollectProfiling, TheTableCarriesTheOperationAndTheCostTheCallerStated)
+{
+    ObservedPipeline pipeline;
+
+    const RunObservation observation = observe_one_run(pipeline);
+
+    ASSERT_NE(observation.table, nullptr);
     const NodeTableRow* load = observation.table->find(ObserverTests::K_LOAD);
-    EXPECT_EQ(load->name, "load");
+    ASSERT_NE(load, nullptr);
     EXPECT_EQ(load->operation.value, ("pipeline.load"_op).value);
     ASSERT_TRUE(load->cost.has_value());
     EXPECT_EQ(load->cost->flops, ObservedPipeline::K_ELEMENTS);
     EXPECT_EQ(load->cost->dtype, NodeDType::F32);
     const NodeTableRow* scale = observation.table->find(ObserverTests::K_SCALE);
+    ASSERT_NE(scale, nullptr);
     ASSERT_TRUE(scale->cost.has_value()) << "a data-movement node states zero flops and real bytes";
     EXPECT_EQ(scale->cost->flops, 0u);
     EXPECT_GT(scale->cost->bytes, 0u);
-    EXPECT_FALSE(observation.table->find(ObserverTests::K_STORE)->cost.has_value());
+    const NodeTableRow* store = observation.table->find(ObserverTests::K_STORE);
+    ASSERT_NE(store, nullptr);
+    EXPECT_FALSE(store->cost.has_value());
 }
 
-/** @brief Tests that each kernel record names a device the runtime has and that device's pairing is present. */
-TEST(Medium_CollectProfiling, EveryDeviceRecordHasItsDevicesPairing)
+/** @brief Tests that each kernel record of a graph names a device the pairing of which is present. */
+TEST(Medium_CollectProfiling, KernelNodesClaimTheirDevicesPairing)
 {
     ObservedPipeline pipeline;
-    const std::size_t devices = pipeline.runtime().advanced().device_count();
 
     const RunObservation observation = observe_one_run(pipeline);
 
-    ASSERT_FALSE(observation.events.empty());
-    for (const NodeEventRecord& record : observation.events)
-    {
-        ASSERT_NE(record.device_index, K_HOST_DEVICE_INDEX) << "a kernel node runs on a device queue";
-        EXPECT_LT(record.device_index, devices);
-        bool paired = false;
-        for (const DeviceClock& clock : observation.device_clocks)
-            if (clock.device_index == record.device_index)
-                paired = true;
-        EXPECT_TRUE(paired) << "device " << record.device_index << " has no pairing";
-    }
+    expect_every_device_record_paired(observation, 3u);
 }
 
 /** @brief Tests that the table of a plan on the chain path holds the same rows as on the worker pool. */
@@ -125,45 +169,54 @@ TEST(Medium_CollectProfiling, APlanRunOnTheChainFillsTheSameTable)
     const RunObservation on_pool = observe_one_run(scheduled);
     const RunObservation on_chain = observe_one_run(chained);
 
-    if (on_chain.layer != ExecutionLayer::Chain)
-        GTEST_SKIP() << "this device's plan does not classify as a chain";
     ASSERT_NE(on_chain.table, nullptr);
+    ASSERT_NE(on_pool.table, nullptr);
     ASSERT_EQ(on_chain.table->size(), on_pool.table->size());
-    for (const NodeTableRow& row : on_pool.table->rows())
-    {
-        const NodeTableRow* other = on_chain.table->find(row.index);
-        ASSERT_NE(other, nullptr);
-        EXPECT_EQ(other->name, row.name);
-        EXPECT_EQ(other->operation.value, row.operation.value);
-        EXPECT_EQ(other->cost.has_value(), row.cost.has_value());
-    }
+    expect_same_rows(*on_pool.table, *on_chain.table);
     EXPECT_EQ(on_chain.events.size(), on_pool.events.size());
 }
 
-/** @brief Tests that a run that lost no dispatch carries zero drops and logs nothing. */
+/** @brief Tests that a run that lost no dispatch carries zero drops. */
 TEST(Medium_CollectProfiling, CarriesNoDropWhenNoneWasLost)
 {
     ObservedPipeline pipeline;
-    TestRunner::LogCapture capture;
 
     const RunObservation observation = observe_one_run(pipeline);
 
     EXPECT_FALSE(observation.drops.any());
     EXPECT_EQ(observation.drops.total(), 0u);
-    EXPECT_EQ(capture.count_in("execution"), 0u) << "a run that loses none logs nothing";
 }
 
-/** @brief Tests that a run longer than its ledger was sized for carries the drops and logs one WARN. */
+/** @brief Tests that a run that lost no dispatch logs nothing. */
+TEST(Medium_CollectProfiling, ALossFreeRunLogsNothing)
+{
+    ObservedPipeline pipeline;
+    TestRunner::LogCapture capture;
+
+    static_cast<void>(observe_one_run(pipeline));
+
+    EXPECT_EQ(capture.count_in("execution"), 0u);
+}
+
+namespace
+{
+    /** @brief Runs the pipeline's graph for six steps,, which overflows a ledger sized for one. */
+    void run_six_steps(ObservedPipeline& pipeline)
+    {
+        int calls = 0;
+        ASSERT_TRUE(pipeline.graph().run_until([&calls]() { return ++calls > 6; }).has_value());
+    }
+} // namespace
+
+/** @brief Tests that a run longer than its ledger was sized for carries the drops, and a drop plus a record is a dispatch. */
 TEST(Medium_CollectProfiling, CarriesTheDropCountsOfTheRun)
 {
     ObservedPipeline pipeline;
     const auto observer = std::make_shared<RecordingObserver>();
     const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
-    TestRunner::LogCapture capture;
 
     // run_until sizes the ledger for one step, so a run of six overflows every node's row.
-    int calls = 0;
-    ASSERT_TRUE(pipeline.graph().run_until([&calls]() { return ++calls > 6; }).has_value());
+    run_six_steps(pipeline);
 
     ASSERT_EQ(observer->count(), 1u);
     const RunObservation observation = observer->last();
@@ -171,6 +224,18 @@ TEST(Medium_CollectProfiling, CarriesTheDropCountsOfTheRun)
     EXPECT_GT(observation.drops.of(DropCause::FullRow), 0u);
     EXPECT_EQ(observation.drops.of(DropCause::FullRow) + observation.events.size(), 18u)
         << "three nodes over six steps: each dispatch is a record or a counted drop";
+}
+
+/** @brief Tests that a run which overflowed its ledger logs one WARN line for the run, not one per dispatch. */
+TEST(Medium_CollectProfiling, AnOverflowedRunLogsOneWarn)
+{
+    ObservedPipeline pipeline;
+    const auto observer = std::make_shared<RecordingObserver>();
+    const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
+    TestRunner::LogCapture capture;
+
+    run_six_steps(pipeline);
+
     EXPECT_EQ(capture.count_at(SushiLog::LogLevel::Warn), 1u) << "one line for the run, not one per dispatch";
     EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Warn, "full ledger row"));
 }
@@ -224,21 +289,6 @@ namespace
         EXPECT_EQ(observer->count(), 1u);
         return observer->count() == 1 ? observer->last() : RunObservation{};
     }
-
-    /** @brief Expects every device record of @p observation to have its device's pairing. */
-    void expect_every_device_record_paired(const RunObservation& observation)
-    {
-        ASSERT_EQ(observation.events.size(), 2u);
-        for (const NodeEventRecord& record : observation.events)
-        {
-            ASSERT_NE(record.device_index, K_HOST_DEVICE_INDEX) << "a task body submits on a device queue";
-            bool paired = false;
-            for (const DeviceClock& clock : observation.device_clocks)
-                if (clock.device_index == record.device_index)
-                    paired = true;
-            EXPECT_TRUE(paired) << "device " << record.device_index << " has no pairing, so a profiler drops the record";
-        }
-    }
 } // namespace
 
 /** @brief Tests that a plan of task bodies alone, run on the worker pool, pairs the device its records name. */
@@ -247,7 +297,7 @@ TEST(Medium_CollectProfiling, TaskBodiesOnTheWorkerPoolClaimTheirDevicesPairing)
     const RunObservation observation = observe_task_bodies(ObservedPipeline::scheduler_config());
 
     EXPECT_EQ(observation.layer, ExecutionLayer::Scheduler);
-    expect_every_device_record_paired(observation);
+    expect_every_device_record_paired(observation, 2u);
 }
 
 /** @brief Tests that a plan of task bodies alone, run as a chain, pairs the device its records name. */
@@ -255,7 +305,5 @@ TEST(Medium_CollectProfiling, TaskBodiesOnTheChainClaimTheirDevicesPairing)
 {
     const RunObservation observation = observe_task_bodies(ObservedPipeline::chain_config());
 
-    if (observation.layer != ExecutionLayer::Chain)
-        GTEST_SKIP() << "this device's plan does not classify as a chain";
-    expect_every_device_record_paired(observation);
+    expect_every_device_record_paired(observation, 2u);
 }

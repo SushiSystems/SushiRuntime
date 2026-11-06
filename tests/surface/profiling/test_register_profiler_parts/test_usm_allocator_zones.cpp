@@ -30,6 +30,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <set>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -46,25 +48,55 @@ namespace
     constexpr std::size_t K_COUNT = 1000;
 } // namespace
 
+namespace
+{
+    /** @brief Records one period around the allocation of a buffer of @p count floats. */
+    RunRecord record_one_allocation(Runtime& runtime, std::size_t count)
+    {
+        return record_periods_without_source(
+            0, 1, [&runtime, count](std::uint32_t, SushiProfiler::PeriodTimeline&)
+            {
+                auto buffer = runtime.buffer<float>(count);
+                EXPECT_TRUE(buffer.has_value());
+            });
+    }
+
+    /** @brief Returns how many samples of site @p name in the first period of @p record equal @p value. */
+    std::size_t samples_equal_to(const RunRecord& record, const char* name, double value)
+    {
+        std::size_t equal = 0;
+        for (const SushiProfiler::SampleSeries& series : record.periods.at(0).samples)
+            if (record.sites[series.site].name == name)
+                for (const double sample : series.values)
+                    equal += sample == value ? 1 : 0;
+        return equal;
+    }
+} // namespace
+
 /** @brief Tests that an allocation writes a memory.allocate zone and a value of its size. */
 TEST(Medium_UsmAllocatorZones, AnAllocationWritesAZoneAndItsSize)
 {
     auto runtime = Runtime::create().value();
 
-    const RunRecord record = record_periods_without_source(
-        0, 1, [&runtime](std::uint32_t, SushiProfiler::PeriodTimeline&)
-        {
-            auto buffer = runtime.buffer<float>(K_COUNT);
-            EXPECT_TRUE(buffer.has_value());
-        });
+    const RunRecord record = record_one_allocation(runtime, K_COUNT);
 
     ASSERT_EQ(record.periods.size(), 1u);
-    const std::set<std::string> sites = zone_sites(record, record.periods[0]);
-    EXPECT_TRUE(sites.count("memory.allocate"));
-    EXPECT_TRUE(sites.count("memory.release")) << "the buffer was released at the end of the period's work";
+    EXPECT_TRUE(zone_sites(record, record.periods[0]).count("memory.allocate"));
     const auto bytes = sample_total(record, "memory.allocate_bytes");
     EXPECT_GE(bytes.first, static_cast<double>(K_COUNT * sizeof(float)));
     EXPECT_GE(bytes.second, 1u);
+}
+
+/** @brief Tests that releasing the buffer writes a memory.release zone. */
+TEST(Medium_UsmAllocatorZones, AReleaseWritesAZone)
+{
+    auto runtime = Runtime::create().value();
+
+    const RunRecord record = record_one_allocation(runtime, K_COUNT);
+
+    ASSERT_EQ(record.periods.size(), 1u);
+    EXPECT_TRUE(zone_sites(record, record.periods[0]).count("memory.release"))
+        << "the buffer was released at the end of the period's work";
 }
 
 /** @brief Tests that the value of an allocation is the size of that allocation, one value per allocation. */
@@ -81,15 +113,6 @@ TEST(Medium_UsmAllocatorZones, EachAllocationWritesOneValueOfItsOwnSize)
             EXPECT_TRUE(second.has_value());
         });
 
-    std::size_t seen_64 = 0;
-    std::size_t seen_4096 = 0;
-    for (const SushiProfiler::SampleSeries& series : record.periods.at(0).samples)
-        if (record.sites[series.site].name == "memory.allocate_bytes")
-            for (const double value : series.values)
-            {
-                seen_64 += value == 64.0 ? 1 : 0;
-                seen_4096 += value == 4096.0 ? 1 : 0;
-            }
-    EXPECT_EQ(seen_64, 1u);
-    EXPECT_EQ(seen_4096, 1u);
+    EXPECT_EQ(samples_equal_to(record, "memory.allocate_bytes", 64.0), 1u);
+    EXPECT_EQ(samples_equal_to(record, "memory.allocate_bytes", 4096.0), 1u);
 }

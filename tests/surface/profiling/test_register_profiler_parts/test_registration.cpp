@@ -36,6 +36,7 @@
 #include <gtest/gtest.h>
 
 #include <SushiProfiler/collector/collector.hpp>
+#include <SushiProfiler/environment/environment_contributor.hpp>
 #include <SushiProfiler/json/json_reader.hpp>
 #include <SushiProfiler/registry/registry.hpp>
 #include <SushiProfiler/record/span_table.hpp>
@@ -96,6 +97,7 @@ TEST(Medium_RegisterProfilerParts, RefusesASecondRegistration)
     EXPECT_TRUE(first.is_registered());
     EXPECT_FALSE(second.is_registered());
     EXPECT_NE(make_source(registry), nullptr);
+    EXPECT_EQ(registry.contributors().size(), 1u) << "the refused parts added no contributor";
 }
 
 /** @brief Tests that the registered source is the one the registry knows by the runtime's source name. */
@@ -111,37 +113,56 @@ TEST(Medium_RegisterProfilerParts, TheRegistryMakesTheDeviceSource)
     EXPECT_EQ(source->name(), "sushiruntime.device");
 }
 
-/** @brief Tests that a session adds the observer when its source begins and removes it when it ends. */
-TEST(Medium_RegisterProfilerParts, ASessionAddsAndRemovesTheObserver)
+namespace
 {
-    SessionPipeline pipeline;
-    SushiProfiler::Registry registry;
-    const RuntimeProfilerParts parts = register_profiler_parts(registry, pipeline.runtime());
-    const std::unique_ptr<SushiProfiler::Source> source = make_source(registry);
-    SourceHarness harness;
-    SushiProfiler::SpanTable table;
-    SushiProfiler::SpanSink sink(table, harness.names, harness.tracks);
-    const SushiProfiler::PeriodSpan everything{0, 0, ~std::uint64_t{0}};
+    /** @brief Holds a pipeline whose parts are registered and the device source the registry makes, outside a session. */
+    struct RegisteredSource
+    {
+        SessionPipeline pipeline;                                  /**< The runtime and its graph. */
+        SushiProfiler::Registry registry;                          /**< Holds the registered source. */
+        RuntimeProfilerParts parts{register_profiler_parts(registry, pipeline.runtime())}; /**< The registration. */
+        std::unique_ptr<SushiProfiler::Source> source{make_source(registry)};              /**< The source it makes. */
+        SourceHarness harness;                                     /**< What the source begins on. */
+        SushiProfiler::SpanTable table;                            /**< The period's spans. */
+        SushiProfiler::SpanSink sink{table, harness.names, harness.tracks}; /**< The sink collect writes to. */
+    };
+
+    /** @brief The period that holds every span. */
+    constexpr SushiProfiler::PeriodSpan K_EVERYTHING{0, 0, ~std::uint64_t{0}};
+} // namespace
+
+/** @brief Tests that a session adds the observer when its source begins, so a run reaches the source with its records. */
+TEST(Medium_RegisterProfilerParts, ASessionAddsTheObserverWhenItsSourceBegins)
+{
+    RegisteredSource registered;
     const WantedSources wanted;
+    ASSERT_TRUE(registered.pipeline.graph().run().has_value());
+    ASSERT_EQ(registered.pipeline.graph().compile_count(), 1u);
 
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-    ASSERT_EQ(pipeline.graph().compile_count(), 1u);
+    ASSERT_TRUE(registered.source->begin(registered.harness.context).ok());
+    ASSERT_TRUE(registered.pipeline.graph().run().has_value());
+    registered.source->collect(K_EVERYTHING, registered.sink);
 
-    ASSERT_TRUE(source->begin(harness.context).ok());
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-    source->collect(everything, sink);
-    EXPECT_EQ(table.size(), 3u) << "the session's observer was added, so the run reached the source with its records";
-    EXPECT_EQ(pipeline.graph().compile_count(), 1u) << "and no plan was rebuilt for it";
+    EXPECT_EQ(registered.table.size(), 3u);
+    EXPECT_EQ(registered.pipeline.graph().compile_count(), 1u) << "and no plan was rebuilt for it";
+    registered.source->end();
+}
 
-    source->end();
-    ASSERT_TRUE(pipeline.graph().run().has_value());
-    ASSERT_TRUE(source->begin(harness.context).ok());
-    SushiProfiler::SpanTable after;
-    SushiProfiler::SpanSink after_sink(after, harness.names, harness.tracks);
-    source->collect(everything, after_sink);
-    EXPECT_EQ(after.size(), 0u) << "ending the session removed the observer, so the run after it reached nothing";
-    EXPECT_EQ(pipeline.graph().compile_count(), 1u);
-    source->end();
+/** @brief Tests that a session removes the observer when its source ends, so a run after it reaches nothing. */
+TEST(Medium_RegisterProfilerParts, ASessionRemovesTheObserverWhenItsSourceEnds)
+{
+    RegisteredSource registered;
+    const WantedSources wanted;
+    ASSERT_TRUE(registered.source->begin(registered.harness.context).ok());
+    registered.source->end();
+
+    ASSERT_TRUE(registered.pipeline.graph().run().has_value());
+    ASSERT_TRUE(registered.source->begin(registered.harness.context).ok());
+    registered.source->collect(K_EVERYTHING, registered.sink);
+
+    EXPECT_EQ(registered.table.size(), 0u);
+    EXPECT_EQ(registered.pipeline.graph().compile_count(), 1u);
+    registered.source->end();
 }
 
 /** @brief Tests that the destructor removes only the observer it added, so another observer keeps its runs. */
@@ -167,8 +188,8 @@ TEST(Medium_RegisterProfilerParts, TheDestructorRemovesItsOwnObserverOnly)
     EXPECT_EQ(pipeline.graph().compile_count(), 1u) << "an observer remained, so no plan was rebuilt";
 }
 
-/** @brief Tests that a second runtime may feed the same source before a session starts and not while one runs. */
-TEST(Medium_RegisterProfilerParts, AFurtherRuntimeAttachesBeforeASessionAndNotDuringOne)
+/** @brief Tests that a second runtime may feed the same source when it attaches before a session starts. */
+TEST(Medium_RegisterProfilerParts, AFurtherRuntimeAttachesBeforeASession)
 {
     SessionPipeline first;
     SessionPipeline second;
@@ -179,14 +200,26 @@ TEST(Medium_RegisterProfilerParts, AFurtherRuntimeAttachesBeforeASessionAndNotDu
     EXPECT_TRUE(parts.attach(second.runtime()));
     const std::unique_ptr<SushiProfiler::Source> source = make_source(registry);
     ASSERT_TRUE(source->begin(harness.context).ok());
-
-    SessionPipeline third;
-    EXPECT_FALSE(parts.attach(third.runtime())) << "a session is running";
-
     ASSERT_TRUE(first.graph().run().has_value());
     ASSERT_TRUE(second.graph().run().has_value());
+
     EXPECT_EQ(first.graph().compile_count(), 1u);
     EXPECT_EQ(second.graph().compile_count(), 1u) << "both runtimes record timing for the session";
+    source->end();
+}
+
+/** @brief Tests that a further runtime is refused while a session runs. */
+TEST(Medium_RegisterProfilerParts, AFurtherRuntimeIsRefusedDuringASession)
+{
+    SessionPipeline first;
+    SessionPipeline third;
+    SushiProfiler::Registry registry;
+    RuntimeProfilerParts parts = register_profiler_parts(registry, first.runtime());
+    SourceHarness harness;
+    const std::unique_ptr<SushiProfiler::Source> source = make_source(registry);
+    ASSERT_TRUE(source->begin(harness.context).ok());
+
+    EXPECT_FALSE(parts.attach(third.runtime())) << "a session is running";
     source->end();
 }
 

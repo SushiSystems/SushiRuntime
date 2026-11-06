@@ -46,6 +46,7 @@
 
 #include <SushiRuntime/core/node_cost.hpp>
 #include <SushiRuntime/profiling/device_source.hpp>
+#include <SushiRuntime/profiling/in_memory_feed_attachment.hpp>
 #include <SushiRuntime/profiling/run_queue.hpp>
 #include <SushiRuntime/report/node_table.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
@@ -53,7 +54,7 @@
 namespace Keys = SushiProfiler::DeviceSpanKeys;
 using namespace SushiRuntime;
 using SushiRuntime::Internal::Profiling::DeviceSource;
-using SushiRuntime::Internal::Profiling::FeedAttachment;
+using SushiRuntime::Internal::Profiling::InMemoryFeedAttachment;
 using SushiRuntime::Internal::Profiling::RunQueue;
 using SushiRuntime::Internal::Profiling::RuntimeTracks;
 using SushiProfiler::NameID;
@@ -66,25 +67,8 @@ namespace
     /** @brief Pairs device event time 5000 with steady time 2000, with an uncertainty of 40 ns. */
     constexpr ClockPairing K_PAIRING{5000, 2000, 40};
 
-    /** @brief Records the calls of begin() and end() and can refuse to start. */
-    class FakeAttachment final : public FeedAttachment
-    {
-        public:
-            std::string attach() override
-            {
-                ++attaches;
-                return refusal;
-            }
-
-            void detach() noexcept override
-            {
-                ++detaches;
-            }
-
-            int attaches = 0;      /**< How often begin() started the delivery. */
-            int detaches = 0;      /**< How often end() stopped it. */
-            std::string refusal;   /**< The text attach() returns; empty accepts. */
-    };
+    /** @brief The longest delay the profiler accepts of a source: 60 000 ms, as SushiProfiler's Source documents it. */
+    constexpr std::uint64_t K_PROFILER_MAX_DELAY_NS = 60'000ULL * 1'000'000ULL;
 
     /** @brief Builds a device record for node @p node on device 0, at event times 5010, 5020, 5120. */
     NodeEventRecord device_record(std::uint32_t node = 0, std::uint32_t device = 0)
@@ -154,6 +138,15 @@ namespace
                 source_.collect(SushiProfiler::PeriodSpan{0, start, end}, sink_);
             }
 
+            /** @brief Returns how many late spans @p observation adds when its period is collected. */
+            std::uint64_t late_added_by(const RunObservation& observation)
+            {
+                const std::uint64_t before = sink_.late();
+                push(observation);
+                collect(2000, 3000);
+                return sink_.late() - before;
+            }
+
             /** @brief Pushes @p observation as runtime 0. */
             void push(const RunObservation& observation)
             {
@@ -164,7 +157,7 @@ namespace
             std::vector<std::string> tracks_;                                 /**< The record's tracks. */
             SushiProfiler::SourceContext context_{names_, tracks_, K_ORIGIN}; /**< What begin() receives. */
             RunQueue queue_{16};                                              /**< The source's queue. */
-            FakeAttachment attachment_;                                       /**< Stands for the runtimes' observers. */
+            InMemoryFeedAttachment attachment_;                               /**< Stands for the runtimes' observers. */
             DeviceSource source_{queue_, {RuntimeTracks{"node", {"gpu0", "gpu1"}}}, &attachment_};
             SushiProfiler::SpanTable table_;                                  /**< The period's spans. */
             SushiProfiler::SpanSink sink_{table_, names_, tracks_};           /**< The sink under test. */
@@ -192,8 +185,8 @@ TEST_F(Small_DeviceSource, ConvertsEventTimesThroughThePairing)
     EXPECT_EQ(sink_.refused(), 0u);
 }
 
-/** @brief Tests the integer and name attributes every span carries. */
-TEST_F(Small_DeviceSource, SetsNodeInvocationOperationAndLayerAttributes)
+/** @brief Tests the integer attributes every span carries: node, invocation and operation. */
+TEST_F(Small_DeviceSource, SetsNodeInvocationAndOperationAttributes)
 {
     push(observation_of({device_record(4)}, {row_of(0, "x"), row_of(4, "conv", 0xBEEF)}));
 
@@ -203,24 +196,26 @@ TEST_F(Small_DeviceSource, SetsNodeInvocationOperationAndLayerAttributes)
     EXPECT_EQ(integer_of(Keys::K_NODE, 0), 4);
     EXPECT_EQ(integer_of(Keys::K_INVOCATION, 0), 2);
     EXPECT_EQ(integer_of(Keys::K_OPERATION, 0), 0xBEEF);
-    // A name attribute holds the interned id of its value.
-    EXPECT_EQ(integer_of("layer", 0), static_cast<std::int64_t>(names_.intern("scheduler")));
 }
 
-/** @brief Tests that a chain-layer observation names the chain layer. */
-TEST_F(Small_DeviceSource, ANameAttributeNamesTheChainLayer)
+/** @brief Tests that a span names the layer that ran it: the scheduler by default, the chain when the run took it. */
+TEST_F(Small_DeviceSource, ASpanNamesTheLayerThatRanIt)
 {
-    RunObservation observation = observation_of({device_record()}, {row_of(0, "conv")});
-    observation.layer = ExecutionLayer::Chain;
-    push(observation);
+    RunObservation scheduler = observation_of({device_record()}, {row_of(0, "conv")});
+    RunObservation chain = observation_of({device_record()}, {row_of(0, "conv")});
+    chain.layer = ExecutionLayer::Chain;
+    push(scheduler);
+    push(chain);
 
     collect(2000, 3000);
 
-    ASSERT_EQ(table_.size(), 1u);
-    EXPECT_EQ(integer_of("layer", 0), static_cast<std::int64_t>(names_.intern("chain")));
+    ASSERT_EQ(table_.size(), 2u);
+    // A name attribute holds the interned id of its value.
+    EXPECT_EQ(integer_of("layer", 0), static_cast<std::int64_t>(names_.intern("scheduler")));
+    EXPECT_EQ(integer_of("layer", 1), static_cast<std::int64_t>(names_.intern("chain")));
 }
 
-/** @brief Tests that an operation that names none is left out and a width that is unknown is left out. */
+/** @brief Tests that a launch width and a live width that are unknown are left out, and a known one is written. */
 TEST_F(Small_DeviceSource, OmitsAWidthThatIsUnknown)
 {
     NodeEventRecord known = device_record(0);
@@ -236,7 +231,17 @@ TEST_F(Small_DeviceSource, OmitsAWidthThatIsUnknown)
     EXPECT_EQ(integer_of(Keys::K_LIVE_WIDTH, 0), 100);
     EXPECT_FALSE(has(Keys::K_LAUNCHED_WIDTH, 1));
     EXPECT_FALSE(has(Keys::K_LIVE_WIDTH, 1));
-    EXPECT_FALSE(has(Keys::K_OPERATION, 0)) << "an operation of 0 names none";
+}
+
+/** @brief Tests that an operation of 0 names none and is left out. */
+TEST_F(Small_DeviceSource, OmitsAnOperationThatNamesNone)
+{
+    push(observation_of({device_record(0)}, {row_of(0, "a", 0)}));
+
+    collect(2000, 3000);
+
+    ASSERT_EQ(table_.size(), 1u);
+    EXPECT_FALSE(has(Keys::K_OPERATION, 0));
 }
 
 /** @brief Tests that a node that stated a cost writes flops, bytes and its dtype. */
@@ -254,24 +259,33 @@ TEST_F(Small_DeviceSource, WritesTheCostOfANodeThatStatesOne)
     EXPECT_EQ(integer_of(Keys::K_DTYPE, 0), static_cast<std::int64_t>(names_.intern("bf16")));
 }
 
-/** @brief Tests that a stated zero cost is written as zeros and an absent cost writes nothing. */
-TEST_F(Small_DeviceSource, WritesAStatedZeroCostAndOmitsAnAbsentOne)
+/** @brief Tests that a stated zero cost is written as zeros, with no dtype when none was named. */
+TEST_F(Small_DeviceSource, WritesAStatedZeroCost)
 {
     NodeTableRow moves = row_of(0, "copy");
     moves.cost = NodeCost{0, 1024, NodeDType::Unstated};
-    NodeTableRow none = row_of(1, "plain");
-    push(observation_of({device_record(0), device_record(1)}, {moves, none}));
+    push(observation_of({device_record(0)}, {moves}));
 
     collect(2000, 3000);
 
-    ASSERT_EQ(table_.size(), 2u);
+    ASSERT_EQ(table_.size(), 1u);
     EXPECT_TRUE(has(Keys::K_FLOPS, 0));
     EXPECT_EQ(integer_of(Keys::K_FLOPS, 0), 0) << "a data-movement node does no floating-point work";
     EXPECT_EQ(integer_of(Keys::K_BYTES, 0), 1024);
     EXPECT_FALSE(has(Keys::K_DTYPE, 0)) << "no dtype was named";
-    EXPECT_FALSE(has(Keys::K_FLOPS, 1));
-    EXPECT_FALSE(has(Keys::K_BYTES, 1));
-    EXPECT_FALSE(has(Keys::K_DTYPE, 1));
+}
+
+/** @brief Tests that a node that stated no cost writes no cost attribute. */
+TEST_F(Small_DeviceSource, OmitsAnAbsentCost)
+{
+    push(observation_of({device_record(0)}, {row_of(0, "plain")}));
+
+    collect(2000, 3000);
+
+    ASSERT_EQ(table_.size(), 1u);
+    EXPECT_FALSE(has(Keys::K_FLOPS, 0));
+    EXPECT_FALSE(has(Keys::K_BYTES, 0));
+    EXPECT_FALSE(has(Keys::K_DTYPE, 0));
 }
 
 /** @brief Tests that a host node goes on the runtime's host track on the steady clock, with no uncertainty. */
@@ -310,6 +324,7 @@ TEST_F(Small_DeviceSource, ASpanOfALaterPeriodWaitsForIt)
     SushiProfiler::SpanSink next_sink(next_table, names_, tracks_);
     source_.collect(SushiProfiler::PeriodSpan{1, 3000, 4000}, next_sink);
     EXPECT_EQ(next_table.size(), 1u) << "the later period takes it";
+    EXPECT_EQ(next_sink.late(), 0u);
 }
 
 /** @brief Tests that a span that started before the period is dropped late and not added. */
@@ -326,28 +341,16 @@ TEST_F(Small_DeviceSource, ASpanOfAClosedPeriodIsDroppedLate)
     EXPECT_EQ(sink_.late(), 1u) << "steady 1500 belongs to a period that has closed";
 }
 
-/** @brief Tests that the drops a run carries reach the sink as late spans. */
+/** @brief Tests that the drops a run carries reach the sink as late spans, and a run with none forwards none. */
 TEST_F(Small_DeviceSource, ForwardsTheDropsOfARun)
 {
-    RunObservation observation = observation_of({device_record()}, {row_of(0, "conv")});
-    observation.drops.per_cause[static_cast<std::size_t>(DropCause::FullRow)] = 3;
-    observation.drops.per_cause[static_cast<std::size_t>(DropCause::UnreadableEvent)] = 1;
-    push(observation);
+    RunObservation dropping = observation_of({device_record()}, {row_of(0, "conv")});
+    dropping.drops.per_cause[static_cast<std::size_t>(DropCause::FullRow)] = 3;
+    dropping.drops.per_cause[static_cast<std::size_t>(DropCause::UnreadableEvent)] = 1;
+    const RunObservation clean = observation_of({device_record()}, {row_of(0, "conv")});
 
-    collect(2000, 3000);
-
-    EXPECT_EQ(table_.size(), 1u);
-    EXPECT_EQ(sink_.late(), 4u);
-}
-
-/** @brief Tests that a run with no drops forwards none. */
-TEST_F(Small_DeviceSource, ARunWithNoDropsForwardsNone)
-{
-    push(observation_of({device_record()}, {row_of(0, "conv")}));
-
-    collect(2000, 3000);
-
-    EXPECT_EQ(sink_.late(), 0u);
+    EXPECT_EQ(late_added_by(dropping), 4u);
+    EXPECT_EQ(late_added_by(clean), 0u);
 }
 
 /** @brief Tests that a record of a device with no pairing is dropped and counted. */
@@ -362,18 +365,23 @@ TEST_F(Small_DeviceSource, AMissingPairingDropsTheSpan)
 }
 
 /** @brief Tests that the records a full queue dropped are counted too. */
-TEST_F(Small_DeviceSource, TheQueuesOverflowIsCounted)
+TEST(Small_DeviceSourceQueue, TheQueuesOverflowIsCounted)
 {
-    RunQueue small_queue(1);
-    DeviceSource source(small_queue, {RuntimeTracks{"node", {"gpu0"}}});
-    ASSERT_TRUE(source.begin(context_).ok());
-    small_queue.push(0, observation_of({device_record(), device_record()}, {row_of(0, "a")}));
-    small_queue.push(0, observation_of({device_record()}, {row_of(0, "a")}));
+    SushiProfiler::NameTable names;
+    std::vector<std::string> tracks;
+    SushiProfiler::SourceContext context(names, tracks, K_ORIGIN);
+    SushiProfiler::SpanTable table;
+    SushiProfiler::SpanSink sink(table, names, tracks);
+    RunQueue queue(1);
+    DeviceSource source(queue, {RuntimeTracks{"node", {"gpu0"}}});
+    ASSERT_TRUE(source.begin(context).ok());
+    queue.push(0, observation_of({device_record(), device_record()}, {row_of(0, "a")}));
+    queue.push(0, observation_of({device_record()}, {row_of(0, "a")}));
 
-    source.collect(SushiProfiler::PeriodSpan{0, 2000, 3000}, sink_);
+    source.collect(SushiProfiler::PeriodSpan{0, 2000, 3000}, sink);
 
-    EXPECT_EQ(table_.size(), 1u) << "only the newest run is left";
-    EXPECT_EQ(sink_.late(), 2u) << "the two records of the dropped run";
+    EXPECT_EQ(table.size(), 1u) << "only the newest run is left";
+    EXPECT_EQ(sink.late(), 2u) << "the two records of the dropped run";
     source.end();
 }
 
@@ -399,18 +407,6 @@ TEST_F(Small_DeviceSource, AnUnknownRuntimeIsSkipped)
 
     EXPECT_EQ(table_.size(), 0u);
     EXPECT_EQ(sink_.refused(), 0u);
-}
-
-/** @brief Tests that a graph's label is written as the graph attribute of each of its spans. */
-TEST_F(Small_DeviceSource, WritesTheGraphLabelWhenOneIsSet)
-{
-    push(observation_of({device_record(0), device_record(1)}, {row_of(0, "a"), row_of(1, "b")}, "decoder", 7));
-
-    collect(2000, 3000);
-
-    ASSERT_EQ(table_.size(), 2u);
-    EXPECT_EQ(integer_of(Keys::K_GRAPH, 0), static_cast<std::int64_t>(names_.intern("decoder")));
-    EXPECT_EQ(integer_of(Keys::K_GRAPH, 1), static_cast<std::int64_t>(names_.intern("decoder")));
 }
 
 /** @brief Tests that two graphs whose nodes share registration indices are told apart by their labels. */
@@ -442,8 +438,19 @@ TEST_F(Small_DeviceSource, WritesTheOriginOfANodeThatStatesOne)
     EXPECT_FALSE(has(Keys::K_ORIGIN, 1)) << "a node that states none has none";
 }
 
-/** @brief Tests that an empty origin and an empty label write no attribute. */
-TEST_F(Small_DeviceSource, OmitsTheOriginAndTheLabelWhenEmpty)
+/** @brief Tests that an empty origin writes no origin attribute. */
+TEST_F(Small_DeviceSource, OmitsTheOriginWhenEmpty)
+{
+    push(observation_of({device_record()}, {row_of(0, "conv")}));
+
+    collect(2000, 3000);
+
+    ASSERT_EQ(table_.size(), 1u);
+    EXPECT_FALSE(has(Keys::K_ORIGIN, 0));
+}
+
+/** @brief Tests that an empty graph label writes no graph attribute. */
+TEST_F(Small_DeviceSource, OmitsTheGraphWhenTheLabelIsEmpty)
 {
     push(observation_of({device_record()}, {row_of(0, "conv")}));
 
@@ -451,7 +458,6 @@ TEST_F(Small_DeviceSource, OmitsTheOriginAndTheLabelWhenEmpty)
 
     ASSERT_EQ(table_.size(), 1u);
     EXPECT_FALSE(has(Keys::K_GRAPH, 0));
-    EXPECT_FALSE(has(Keys::K_ORIGIN, 0));
 }
 
 /** @brief Tests that the label of one table is interned once however many runs of it arrive. */
@@ -472,7 +478,7 @@ TEST_F(Small_DeviceSource, TheLabelOfATableIsInternedOnceForAllItsRuns)
     ASSERT_EQ(table_.size(), 2u);
     EXPECT_EQ(next_table.size(), 1u);
     EXPECT_EQ(integer_of(Keys::K_GRAPH, 0), integer_of(Keys::K_GRAPH, 1));
-    EXPECT_EQ(names_.size(), names_before + 0u) << "the names of the table were interned already";
+    EXPECT_EQ(names_.size(), names_before) << "the names of the table were interned already";
 }
 
 /** @brief Tests that two runtimes get tracks named by their own nodes. */
@@ -497,28 +503,36 @@ TEST(Small_DeviceSourceRuntimes, TwoRuntimesGetTracksNamedByTheirNodes)
     source.end();
 }
 
-/** @brief Tests that begin() starts the delivery and end() stops it and drops what was never collected. */
-TEST_F(Small_DeviceSource, EndStopsTheDeliveryAndDropsWhatWasNeverCollected)
+/** @brief Tests that begin() starts the delivery and end() stops it. */
+TEST_F(Small_DeviceSource, EndStopsTheDelivery)
 {
-    EXPECT_EQ(attachment_.attaches, 1);
+    source_.end();
+
+    const std::vector<InMemoryFeedAttachment::Call> expected{InMemoryFeedAttachment::Call::Attach,
+                                                             InMemoryFeedAttachment::Call::Detach};
+    EXPECT_EQ(attachment_.calls(), expected);
+}
+
+/** @brief Tests that end() drops the observations that were never collected. */
+TEST_F(Small_DeviceSource, EndDropsWhatWasNeverCollected)
+{
     push(observation_of({device_record()}, {row_of(0, "conv")}));
     ASSERT_EQ(queue_.size(), 1u);
 
     source_.end();
 
-    EXPECT_EQ(attachment_.detaches, 1);
     EXPECT_EQ(queue_.size(), 0u);
 }
 
-/** @brief Tests that a source whose delivery cannot start reports why and does not begin. */
-TEST(Small_DeviceSourceStart, BeginFailsWhenTheAttachmentRefuses)
+/** @brief Tests that a source whose delivery cannot start returns why. */
+TEST(Small_DeviceSourceStart, BeginReturnsTheRefusalOfTheAttachment)
 {
     SushiProfiler::NameTable names;
     std::vector<std::string> tracks;
     SushiProfiler::SourceContext context(names, tracks, K_ORIGIN);
     RunQueue queue(8);
-    FakeAttachment attachment;
-    attachment.refusal = "a runtime already has an observer";
+    InMemoryFeedAttachment attachment;
+    attachment.refuse_with("a runtime already has an observer");
     DeviceSource source(queue, {RuntimeTracks{"node", {"gpu"}}}, &attachment);
 
     const SushiProfiler::SourceStatus status = source.begin(context);
@@ -527,33 +541,17 @@ TEST(Small_DeviceSourceStart, BeginFailsWhenTheAttachmentRefuses)
     EXPECT_EQ(status.error, "a runtime already has an observer");
 }
 
-/** @brief Tests the name the registry knows the source by. */
-TEST(Small_DeviceSourceStart, TheSourceIsNamedSushiruntimeDevice)
+/** @brief Tests that the source reports the max delay it was given. */
+TEST_F(Small_DeviceSource, ReportsTheMaxDelayItWasGiven)
 {
-    RunQueue queue(1);
-    const DeviceSource source(queue, {});
+    const DeviceSource short_delay(queue_, {RuntimeTracks{"node", {"gpu0"}}}, nullptr, 5'000'000ULL);
 
-    EXPECT_EQ(source.name(), "sushiruntime.device");
-}
-
-/** @brief Tests that the source reports a bounded delay the profiler accepts, and that a test may state its own. */
-TEST_F(Small_DeviceSource, ReportsItsMaxDelayBelowTheProfilersLimit)
-{
-    constexpr std::uint64_t K_PROFILER_LIMIT_NS = 60'000ULL * 1'000'000ULL;
-    EXPECT_EQ(source_.max_delay_ns(), DeviceSource::K_MAX_DELAY_NS);
-    EXPECT_GT(source_.max_delay_ns(), 0U);
-    EXPECT_LE(source_.max_delay_ns(), K_PROFILER_LIMIT_NS);
-
-    DeviceSource short_delay(queue_, {RuntimeTracks{"node", {"gpu0"}}}, nullptr, 5'000'000ULL);
     EXPECT_EQ(short_delay.max_delay_ns(), 5'000'000ULL);
 }
 
-/** @brief Tests that a span arriving after its period closed is dropped late, and counted once. */
-TEST_F(Small_DeviceSource, ASpanPastTheDelayIsStillCountedLate)
+/** @brief Tests that the default max delay is positive and within the limit the profiler accepts. */
+TEST_F(Small_DeviceSource, TheDefaultMaxDelayIsWithinTheProfilersLimit)
 {
-    push(observation_of({device_record()}, {row_of(0, "late")}));
-    // The span starts at steady 2020, before the period [5000, 6000) the session now collects.
-    collect(5000, 6000);
-    EXPECT_EQ(table_.size(), 0U);
-    EXPECT_EQ(sink_.late(), 1U);
+    EXPECT_GT(source_.max_delay_ns(), 0U);
+    EXPECT_LE(source_.max_delay_ns(), K_PROFILER_MAX_DELAY_NS);
 }

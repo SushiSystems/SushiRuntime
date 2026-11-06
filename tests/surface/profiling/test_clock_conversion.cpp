@@ -30,6 +30,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -44,22 +45,38 @@ namespace
     constexpr ClockPairing K_PAIRING{5000, 2000, 25};
 } // namespace
 
-/** @brief Tests that the paired instant maps to its steady reading. */
-TEST(Small_ClockConversion, ThePairedInstantMapsToItsSteadyReading)
+namespace
 {
-    EXPECT_EQ(to_steady_ns(K_PAIRING, 5000), 2000u);
+    /** @brief One event time and the steady reading the pairing maps it to. */
+    struct ConversionRow
+    {
+        /** @brief The device's event time. */
+        std::uint64_t event_ns;
+        /** @brief The steady reading the pairing gives it. */
+        std::uint64_t steady_ns;
+    };
+
+    /** @brief Checks that every row converts to its steady reading through the pairing. */
+    void expect_converts(const ClockPairing& pairing, const std::vector<ConversionRow>& rows)
+    {
+        for (const ConversionRow& row : rows)
+        {
+            SCOPED_TRACE(row.event_ns);
+            EXPECT_EQ(to_steady_ns(pairing, row.event_ns), row.steady_ns);
+        }
+    }
+} // namespace
+
+/** @brief Tests that an event time maps to the steady reading offset by its distance from the paired instant. */
+TEST(Small_ClockConversion, AnEventTimeMapsByItsDistanceFromThePairedInstant)
+{
+    expect_converts(K_PAIRING, {{5000, 2000}, {5750, 2750}, {4600, 1600}});
 }
 
-/** @brief Tests that a later event time lands the same distance after the steady reading. */
-TEST(Small_ClockConversion, ALaterEventTimeLandsTheSameDistanceLater)
+/** @brief Tests that the event time one nanosecond past the steady origin reads 1, not 0. */
+TEST(Small_ClockConversion, ATimeOneNanosecondPastTheOriginReadsOne)
 {
-    EXPECT_EQ(to_steady_ns(K_PAIRING, 5750), 2750u);
-}
-
-/** @brief Tests that an earlier event time lands the same distance before the steady reading. */
-TEST(Small_ClockConversion, AnEarlierEventTimeLandsTheSameDistanceEarlier)
-{
-    EXPECT_EQ(to_steady_ns(K_PAIRING, 4600), 1600u);
+    expect_converts(K_PAIRING, {{3001, 1}});
 }
 
 /** @brief Tests that a time before the steady clock's origin reads 0 and does not wrap. */
