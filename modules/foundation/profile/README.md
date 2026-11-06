@@ -35,10 +35,9 @@ nothing, the library builds without SushiProfiler present, and the `profiling` m
 | `Internal::Profile::name_this_thread(name)` | Registers the calling thread and names it, so its first zone allocates nothing |
 
 `profile_keys.hpp`: `K_DEVICE_SOURCE_NAME` (`sushiruntime.device`), `K_HOST_TRACK_NAME` (`host`),
-`K_KEY_LAYER` (`layer`), `K_LAYER_SCHEDULER`, `K_LAYER_CHAIN` and `K_ALL_KEYS`, which lists each
-once. The attribute keys `node`, `invocation`, `operation`, `launched_width`, `live_width`, `flops`,
-`bytes` and `dtype` are SushiProfiler's (`SushiProfiler::DeviceSpanKeys`), and the `profiling` module
-uses them from there.
+`K_KEY_LAYER` (`layer`), `K_LAYER_SCHEDULER` and `K_LAYER_CHAIN`. The attribute keys `node`,
+`invocation`, `operation`, `launched_width`, `live_width`, `flops`, `bytes` and `dtype` are
+SushiProfiler's (`SushiProfiler::DeviceSpanKeys`), and the `profiling` module uses them from there.
 
 ## What the macros cost
 

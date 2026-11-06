@@ -50,9 +50,9 @@ program.
 
 | Suite prefix | Label | The test may use | Time limit |
 | --- | --- | --- | --- |
-| `Small_` | `small` | One thread; no SYCL queue or context, no sleep, no file, no child process | 60 seconds |
-| `Medium_` | `medium` | Threads, a death test's child process, localhost, a SYCL CPU device | 300 seconds |
-| `Large_` | `large` | A real GPU; the test skips when none is present | 900 seconds |
+| `Small_` | `small` | The memory of its own process, one thread, an injected clock and seed; no device, file, socket, sleep or child process | 1 second |
+| `Medium_` | `medium` | The device the program made once (`tests/support/runtime_environment.hpp`), threads, a death test's child process, localhost, a per-test temporary folder | 10 seconds |
+| `Large_` | `large` | A real GPU; the test skips when none is present | 120 seconds |
 
 An intermittent test is quarantined by naming it in `SR_QUARANTINED_TESTS` in
 `cmake/SushiRuntimeTests.cmake`, with an entry in `docs/backlog/README.md`. It keeps its

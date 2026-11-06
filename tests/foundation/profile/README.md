@@ -45,5 +45,4 @@ The file tests the `SR_ZONE` family at the level this build compiles, and the tw
 
 | Test | What it proves |
 | --- | --- |
-| `EveryKeyIsListedOnce` | `K_ALL_KEYS` holds no empty name and no name twice. |
 | `TheNamesAreSpelledAsTheProfileReaderExpects` | The source, track and layer names are the strings a profile reader looks for. |

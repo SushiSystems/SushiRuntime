@@ -36,5 +36,5 @@ The file tests ContextHandleAccess: wrap, share and the handle an owner holds.
 
 | Test | What it proves |
 | --- | --- |
-| `AnEmptyShareGivesAnEmptyHandle` | Holds a handle under the member name the accessor reads. */ struct Owner { ContextHandle context_; /**< The handle handle_of() returns. */ }; } /** @brief Tests that an empty share gives an empty handle and shares nothing back. |
+| `AnEmptyShareGivesAnEmptyHandle` | Tests that an empty share gives an empty handle and shares nothing back. |
 | `HandleOfReturnsTheOwnersHandle` | Handle_of() returns the owner's handle itself, not a copy. |

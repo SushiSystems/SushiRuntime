@@ -30,7 +30,6 @@
 
 #pragma once
 
-#include <array>
 #include <string_view>
 
 namespace SushiRuntime
@@ -48,9 +47,5 @@ namespace SushiRuntime
 
         /** @brief Names the layer value of a run submitted in order to one queue. */
         inline constexpr std::string_view K_LAYER_CHAIN = "chain";
-
-        /** @brief Lists every name above once, for the check that none repeats. */
-        inline constexpr std::array<std::string_view, 4> K_ALL_KEYS{
-            K_HOST_TRACK_NAME, K_KEY_LAYER, K_LAYER_SCHEDULER, K_LAYER_CHAIN};
     } // namespace Internal::Profile
 } // namespace SushiRuntime

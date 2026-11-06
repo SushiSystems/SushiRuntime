@@ -9,9 +9,7 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_memory_exchange.cpp
 
-The file tests the memory exchange: capabilities, a host export, and an import that names no
-mechanism, each through a `CapabilityCache` of its own, and in the suite `Medium_MemoryExchangeImport`, a kind the device does not import and the
-capability cache.
+The file tests the memory exchange: capabilities, a host export, and an import that names no mechanism, each through a `CapabilityCache` of its own. The suite `Medium_MemoryExchangeImport` tests a kind the device does not import, which is refused by name.
 
 | Test | What it proves |
 | --- | --- |
@@ -29,3 +27,11 @@ The file tests `CapabilityCache` with probes the test writes, on the devices SYC
 | `TheSecondQueryHitsTheCache` | A device is probed once over two queries and both return the same answer. |
 | `EachDeviceIsProbedOnce` | Two devices are probed once each and keep their own answers; skipped on a machine with one device. |
 | `AThrowingProbeKeepsNothing` | A probe that throws passes the throw on and keeps no answer, so the next query probes again. |
+
+## test_memory_exchange_log_category.cpp
+
+The file tests `K_MEMORY_EXCHANGE_LOG_CATEGORY`: the name its records carry.
+
+| Test | What it proves |
+| --- | --- |
+| `TheCategoryIsNamedAfterTheModule` | Tests that the category is the module's folder in the runtime's project. |

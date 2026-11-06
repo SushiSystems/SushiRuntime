@@ -28,7 +28,6 @@
  * @author Mustafa Garip
  */
 
-#include <set>
 #include <string_view>
 
 #include <gtest/gtest.h>
@@ -36,18 +35,6 @@
 #include <SushiRuntime/profile/profile_keys.hpp>
 
 using namespace SushiRuntime::Internal::Profile;
-
-/** @brief Tests that no name is listed twice and none is empty. */
-TEST(Small_ProfileKeys, EveryKeyIsListedOnce)
-{
-    std::set<std::string_view> seen;
-    for (const std::string_view key : K_ALL_KEYS)
-    {
-        EXPECT_FALSE(key.empty());
-        EXPECT_TRUE(seen.insert(key).second) << "duplicate key " << key;
-    }
-    EXPECT_EQ(seen.size(), K_ALL_KEYS.size());
-}
 
 /** @brief Tests the spelling of the names a profile reader looks for. */
 TEST(Small_ProfileKeys, TheNamesAreSpelledAsTheProfileReaderExpects)

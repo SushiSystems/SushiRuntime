@@ -92,7 +92,7 @@ endif()
 #                               [DEVICE_SOURCES <file>...])
 #
 # A BENCHMARK program is built and not registered with CTest; `sr bench` runs it. Any other
-# program registers Small_* with 60 seconds, Medium_* with 300 and Large_* with 900. MODULE
+# program registers Small_* with 1 second, Medium_* with 10 and Large_* with 120. MODULE
 # adds the module's name as a label on every test of the program. DEVICE_SOURCES names the
 # SOURCES that instantiate a kernel, the only units compiled for the device.
 function(sushiruntime_add_test_program)
@@ -149,13 +149,13 @@ endfunction()
 
 # sushiruntime_register_sized_tests(<program> [MODULE <module>] FILTER <pattern>...)
 #
-# Registers the tests of <program> that the GoogleTest patterns select: Small_* with 60
-# seconds, Medium_* with 300 and Large_* with 900. MODULE adds the module's name as a label on
+# Registers the tests of <program> that the GoogleTest patterns select: Small_* with 1
+# second, Medium_* with 10 and Large_* with 120. MODULE adds the module's name as a label on
 # each of them. A pattern names a suite as `<suite>.*`, or `*` for every suite.
 function(sushiruntime_register_sized_tests program)
     cmake_parse_arguments(ARG "" "MODULE" "FILTER" ${ARGN})
     set(ARG_NAME ${program})
-    set(groups "Small_|small|60" "Medium_|medium|300" "Large_|large|900")
+    set(groups "Small_|small|1" "Medium_|medium|10" "Large_|large|120")
     foreach(group IN LISTS groups)
         string(REPLACE "|" ";" parts "${group}")
         list(GET parts 0 prefix)

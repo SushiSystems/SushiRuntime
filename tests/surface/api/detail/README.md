@@ -211,7 +211,7 @@ The file tests resolve_live_range() and read_late_window(): windows inside and p
 
 ## test_node_description.cpp
 
-The file tests NodeDescription: a kernel of unknown width on device 0, with no regions or bindings.
+The file tests NodeDescription: a kernel of unknown width placed on no device, with no regions or bindings.
 
 | Test | What it proves |
 | --- | --- |

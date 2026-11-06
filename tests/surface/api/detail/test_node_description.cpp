@@ -23,7 +23,7 @@
 
 /**
  * @file test_node_description.cpp
- * @brief Tests NodeDescription: a kernel of unknown width on device 0, with no regions or bindings.
+ * @brief Tests NodeDescription: a kernel of unknown width placed on no device, with no regions or bindings.
  * @see tests/surface/api/detail/README.md
  * @author Mustafa Garip
  */

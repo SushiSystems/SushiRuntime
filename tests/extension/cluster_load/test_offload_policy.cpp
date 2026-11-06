@@ -133,5 +133,3 @@ TEST(Medium_OffloadPolicy, PolicyTreatsZeroFreeMemAsUnknown)
     ASSERT_TRUE(picked.has_value());
     EXPECT_EQ(*picked, 1);
 }
-
-/** @brief Tests that a result naming more outputs than its payload holds is refused. */
