@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 2026-11-07 — memory_exchange: Moved the import refusal into `descriptor_refusal()` and `device_refusal()`, pure functions its rows test small with no device; one medium import test keeps the wiring (RW-89, `descriptor_refusal.hpp`).
+- 2026-11-07 — tests: Dropped the test of the empty `ExternalHandleKindSet` default, trivial code the testing skill leaves untested (RW-91).
+- 2026-11-07 — examples: Gave the diffusion adapter a second `create_backend()` form that takes the runtime it runs on, and exposed its step as `diffused_cell()` and `diffuse_on_host()`; the first form behaves as before (RW-92).
+- 2026-11-07 — tests: Gave each header whose tests the review deleted a `compile_<name>.cpp` that includes it alone, which clears the four mirror findings (RW-94).
 - 2026-11-06 — distributed: Moved `InProcessTransport` out of `distributed` into its own module, `in_process_transport`, beside the `Transport` port; its behaviour is unchanged (RW-81).
 - 2026-11-06 — tests: Added in-memory adapters for five more ports, among them `Task` and `AllocationOwner`, and moved `RecordingObserver` beside its port into `report`.
 - 2026-11-06 — cli: Gave the project, package and container commands a `Surroundings` seam so the CLI tests run on sushicore's recording runner and console; the CLI needs sushicore 0.10.12 (`surroundings.py`).

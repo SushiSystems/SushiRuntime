@@ -67,6 +67,16 @@ The owner delegated these decisions on 2026-11-05. Each ruling below is final fo
 13. Ruled on 2026-11-06 (RW-94): a header whose tests the rulings deleted gets a `compile_<name>.cpp` beside its test path that includes it alone. The four known findings are gone.
 14. Ruled on 2026-11-06: no test reaches an `Internal::` name. A record that does is rewritten through the public surface with the in-memory adapters of T2; a promise only an internal name can show goes to a backlog entry and the record is dropped.
 15. Ruled on 2026-11-06: `tools/tests/test_test_budget_settings.py` is deleted with `K_TEST_BUDGET` and its known finding, as SushiSkills did in a528a1d.
+16. Ruled on 2026-11-07 by the lead, under the owner's delegation of that day (RW-95): `check_naming`, `check_device_sources` and the tier table each gain a function that takes the text, beside the one that reads the file and calls it. The three resized tools tests pass text and read no file.
+17. Ruled on 2026-11-07 (RW-96): a `ContextAccess` promise with an effect a caller of the public context or `Runtime` can see is tested there, small when it touches no device. A promise with no such effect is wiring the public tests already cover, and stays untested.
+18. Ruled on 2026-11-07 (RW-97): the rule that no service message sends the user to a hub install is a check on source text, so it lives in a `tools/` checker run by `check_all.py`, and the CLI test that read source text is deleted.
+19. Ruled on 2026-11-07 (RW-98): decision 3 is applied as written. `register_profiler_parts` gets an overload taking the registration interface it uses; the `Runtime` form forwards to it.
+20. Ruled on 2026-11-07 (RW-99, RW-100, RW-101, RW-102, RW-103): each seam a resize waits on is a constructor or function parameter, or an overload, whose default keeps today's behaviour: a clock, an executor, a sink, a handler, a threshold, a logger port, a route, a queue or a device port. The record then runs small through the public surface. A record whose seam would reach an internal name instead follows decision 14.
+21. Ruled on 2026-11-07 (RW-104): the distributed tests that use a stand-in run on `InProcessTransport`, which decision 7 made a module; the stand-ins are deleted.
+22. Ruled on 2026-11-07 (RW-105): the in-memory `OffloadPolicy`, the refusing sink and the recording `TransportEvents` ship beside their ports as T2 shipped the other adapters, and the three offload tests run on them.
+23. Ruled on 2026-11-07 (RW-106): the socket setup takes its option setter as a parameter whose default calls the system; the test passes one that fails and reads the report through `LogCapture`.
+24. Ruled on 2026-11-07 (RW-107): the graph's runtime path takes the `OffloadCoordinator` it installs as a parameter whose default keeps today's coordinator, so the four plan-cache and offloaded-count promises are tested through the public graph with the T2 in-memory coordinator.
+25. Ruled on 2026-11-07: the `LayerRuntime` copies and the force-scheduler and determinism fixtures share one configured `RuntimeEnvironment` in `tests/support`; `to_hex` and `bytes_of` of the link_security tests move to one shared helper.
 
 ## Dispatches
 
