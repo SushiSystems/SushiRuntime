@@ -810,62 +810,39 @@ namespace SchedulerIntegrationTests
 {
     using namespace SushiRuntime::Internal::Execution;
     using namespace SushiRuntime::Internal::Scheduler;
-    using SushiRuntime::Test::make_scheduler;
     using SushiRuntime::Test::PriorityTrackingTask;
 
+    /** @brief Submits @p count priority-0 tasks that record into @p order, then one priority-100 task. */
+    void submit_low_tasks_then_one_high(TaskScheduler& scheduler, std::size_t count, std::vector<int>& order,
+                                        std::mutex& order_mutex)
+    {
+        for (std::size_t index = 0; index < count; ++index)
+            scheduler.submit(new PriorityTrackingTask(0, order, order_mutex));
+        scheduler.submit(new PriorityTrackingTask(100, order, order_mutex));
+    }
+
     /**
-     * @brief Tests that a late high-priority task bypasses lower priority tasks.
+     * @brief Tests that a priority task submitted last runs first.
      *
-     * Verifies that the scheduler honors task priorities and executes the high priority task among the first.
+     * The pool has one worker, and the tasks are queued before it starts, so the order is the scheduler's
+     * choice alone.
      */
-    TEST(Medium_SchedulerIntegration, PriorityBypass)
+    TEST(Medium_SchedulerIntegration, ALateHighPriorityTaskRunsFirstOnOneWorker)
     {
         const auto ctx_owner = SushiRuntime::Test::make_context();
         RuntimeContext& ctx = *ctx_owner;
-        TaskScheduler scheduler = make_scheduler(ctx);
-
+        TaskScheduler scheduler(WorkerPoolSettings{1, 0, PinPolicy::Float}, ctx.topology(), ctx.devices(),
+                                ctx.memory());
         std::vector<int> order;
         std::mutex order_mutex;
+        scheduler.arm_for_execution();
+        submit_low_tasks_then_one_high(scheduler, 50, order, order_mutex);
 
         scheduler.start();
-
-        for (int i = 0; i < 50; ++i)
-            scheduler.submit(new PriorityTrackingTask(0, order, order_mutex));
-        scheduler.submit(new PriorityTrackingTask(100, order, order_mutex));
-
-        scheduler.arm_for_execution();
-
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (true)
-        {
-            {
-                std::lock_guard<std::mutex> lock(order_mutex);
-                if (order.size() >= 51)
-                    break;
-            }
-            if (std::chrono::steady_clock::now() > deadline)
-                break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        }
-
+        scheduler.wait_quiescent();
         scheduler.stop();
 
         ASSERT_EQ(order.size(), 51u);
-
-        int window = static_cast<int>(scheduler.worker_count()) * 2;
-        if (window > 51)
-            window = 51;
-
-        bool found_high_early = false;
-        for (int i = 0; i < window; ++i)
-        {
-            if (order[i] == 100)
-            {
-                found_high_early = true;
-                break;
-            }
-        }
-
-        EXPECT_TRUE(found_high_early) << "High priority task missed the first batch.";
+        EXPECT_EQ(order.front(), 100);
     }
 } // namespace SchedulerIntegrationTests

@@ -212,17 +212,14 @@ The stop count is 1 after `shutdown()` and the probe has run, which only a live 
 count is 2 after the context is destroyed: the destructor stops the coordinator again, which
 `OffloadCoordinator::stop()` allows.
 
-### Gated observers
+### Observer wiring
 
-`Medium_RuntimeContextObservers` covers the optional gate of an observer, with a test gate the test opens and
-closes. The fixture closes the gate before and after each test, so no test starts with it open.
+`Medium_RuntimeContextObservers` keeps the one test of the context's wiring. The gate and delivery rules
+are tested on `RunObserverRegistry`, which the context owns, in `test_run_observer_registry.cpp`.
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_RuntimeContextObservers.AnUngatedObserverAlwaysWantsTiming` | A context with no observer wants no timing, one with an ungated observer wants it, and removing that observer ends it. |
-| `Medium_RuntimeContextObservers.AGatedObserverWantsTimingOnlyWhileItsGateIsOpen` | A closed gate costs no device timing and an open one asks for it. |
-| `Medium_RuntimeContextObservers.AnUngatedObserverKeepsTimingOnWhateverTheGateSays` | With a gated and an ungated observer added, the context wants timing while the gate is closed. |
-| `Medium_RuntimeContextObservers.ADeliveryToAGatedObserverWaitsForItsGate` | A delivery skips an observer whose gate is closed and reaches it once the gate opens, while an ungated observer receives both. |
+| `Medium_RuntimeContextObservers.AnAddedObserverHearsRunsUntilItIsRemoved` | An observer added to the context hears the runs it delivers, the context wants timing while it is added, and removing it ends both. |
 
 ## test_scheduler_execution_engine.cpp
 
@@ -300,15 +297,17 @@ that every round ran all 1000 of its tasks, since `stop()` drains.
 
 ## test_chain_plan.cpp
 
-The file tests classify_chain(): a one-device kernel chain, and the nodes that keep a plan off the
-chain.
+The file tests classify_chain() on `InMemoryPlacementMemory`: a one-device kernel chain, and the
+nodes that keep a plan off the chain. No test makes a context or a device.
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_ChainPlan.KernelsOnOneDeviceChainInOrder` | Two kernels on one device's memory chain in order. |
-| `Medium_ChainPlan.AHostNodeKeepsThePlanOff` | A host node keeps the plan off the chain. |
-| `Medium_ChainPlan.ForeignMemoryKeepsThePlanOff` | A node on memory no device owns keeps the plan off the chain. |
-| `Medium_ChainPlan.AnEmptyPlanIsNotChainable` | An empty plan is not chainable. |
+| `Small_ChainPlan.KernelsOnOneDeviceChainInOrder` | Two kernels on one device's memory chain in order. |
+| `Small_ChainPlan.TheChainTakesTheQueueOfTheDeviceThatOwnsTheMemory` | The chain submits to the device that owns the nodes' memory, here device 1. |
+| `Small_ChainPlan.KernelsOnTwoDevicesKeepThePlanOff` | Nodes on the memory of two devices keep the plan off the chain. |
+| `Small_ChainPlan.AHostNodeKeepsThePlanOff` | A host node keeps the plan off the chain. |
+| `Small_ChainPlan.ForeignMemoryKeepsThePlanOff` | A node on memory no device owns keeps the plan off the chain. |
+| `Small_ChainPlan.AnEmptyPlanIsNotChainable` | An empty plan is not chainable. |
 
 ## test_chain_run.cpp
 
@@ -337,6 +336,24 @@ The one line a run logs for the dispatches it left out of its timing.
 | `Small_DroppedDispatches.LogsNothingWhenNoneWasLost` | A run that lost nothing logs nothing. |
 | `Small_DroppedDispatches.LogsOneLineNamingEachCause` | A run that lost dispatches logs one WARN under the execution module. |
 | `Small_DroppedDispatches.ALossThatNamesNoNodeLeavesTheNodeOut` | A loss that names no node leaves the first node out of the line. |
+
+## test_run_observer_registry.cpp
+
+The file tests `RunObserverRegistry` on `RecordingObserver` and two fixed gates, one open and one closed. No
+test makes a device or a context.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_RunObserverRegistry.AnEmptyRegistryWantsNoTiming` | A registry with no observer wants no device timing. |
+| `Small_RunObserverRegistry.AnUngatedObserverWantsTimingUntilItIsRemoved` | An observer with no gate wants timing until it is removed. |
+| `Small_RunObserverRegistry.AnOpenGateWantsTiming` | An observer behind an open gate wants timing. |
+| `Small_RunObserverRegistry.AClosedGateWantsNoTiming` | An observer behind a closed gate costs no device timing. |
+| `Small_RunObserverRegistry.AnUngatedObserverKeepsTimingOnWhateverAnotherGateSays` | With a closed-gate and an ungated observer added, the registry wants timing. |
+| `Small_RunObserverRegistry.ADeliveryReachesAnObserverWhoseGateIsOpenOrAbsent` | A delivery reaches an observer behind an open gate and one with no gate. |
+| `Small_RunObserverRegistry.ADeliverySkipsAnObserverWhoseGateIsClosed` | A delivery skips an observer behind a closed gate. |
+| `Small_RunObserverRegistry.ARemovedObserverHearsNothingMore` | A removed observer hears no delivery while the others still do. |
+| `Small_RunObserverRegistry.RemovingAnUnknownIdLeavesTheObserversAdded` | Removing an id nobody holds removes nothing. |
+| `Small_RunObserverRegistry.ClearRemovesEveryObserver` | clear() removes every observer. |
 
 ## test_run_failures.cpp
 

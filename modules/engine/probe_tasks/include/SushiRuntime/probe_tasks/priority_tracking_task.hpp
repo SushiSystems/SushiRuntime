@@ -29,10 +29,8 @@
 
 #pragma once
 
-#include <chrono>
 #include <mutex>
 #include <optional>
-#include <thread>
 #include <vector>
 
 #include <sycl/sycl.hpp>
@@ -69,7 +67,6 @@ namespace SushiRuntime
 
             sycl::event execute_host(sycl::queue&, const std::vector<sycl::event>&) override
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 std::lock_guard<std::mutex> lock(order_mutex_);
                 execution_order_.push_back(priority_);
                 return {};

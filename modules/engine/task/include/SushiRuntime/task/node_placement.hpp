@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/result.hpp>
+#include <SushiRuntime/task/placement_memory.hpp>
 
 namespace SushiRuntime
 {
@@ -58,6 +59,16 @@ namespace SushiRuntime
          */
         SUSHIRUNTIME_API Result<std::size_t>
         placement_of(const Node& node, const Internal::Memory::USMAllocator& memory);
+
+        /**
+         * @brief Returns the device @p node runs on, reading memory through a port.
+         * @param node A node whose regions and stated placement are final.
+         * @param memory The memory facts; a USMAllocator form of this function wraps its allocator.
+         * @return As the USMAllocator form.
+         * @see modules/engine/task/README.md
+         */
+        SUSHIRUNTIME_API Result<std::size_t>
+        placement_of(const Node& node, const PlacementMemory& memory);
 
     } // namespace Graph
 } // namespace SushiRuntime

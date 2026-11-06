@@ -46,6 +46,9 @@ fields it stores behind `OffloadState::payload`.
 | `task_submission.hpp` | `Internal::Graph::submit_task`, `Internal::Graph::submit_task_discarding` (defined in `modules/engine/task/source/task_submission.cpp`): submit one task behind its event dependencies, the one path `ChainRun` and `TaskScheduler` share |
 | `dispatch_events.hpp` | `Internal::DispatchEvents::DispatchEventScope`, the thread-local scope that collects the events a task body hands over |
 | `node_placement.hpp` | `Internal::Graph::K_DEFAULT_PLACEMENT`, `Internal::Graph::placement_of` (defined in `modules/engine/task/source/node_placement.cpp`), the device a node runs on |
+| `placement_memory.hpp` | `Internal::Graph::PlacementMemory`, the memory facts `placement_of()` and the chain classifier read: the device of an address, the device count and the shared contexts |
+| `usm_placement_memory.hpp` | `Internal::Graph::USMPlacementMemory` (defined in `modules/engine/task/source/usm_placement_memory.cpp`), the port answered from a `USMAllocator` |
+| `in_memory_placement_memory.hpp` | `Internal::Graph::InMemoryPlacementMemory`, a test double of the port that answers from addresses a test records |
 
 ## Metadata of a node
 
@@ -77,7 +80,9 @@ signature and `execute_host()` are unchanged.
 3. No owner: the stated device, else `K_DEFAULT_PLACEMENT`.
 
 The allocator answers both questions, `owning_device()` and `shares_context()`, so the
-function needs no queue. The scheduler's `place_for_dispatch()` passes the refusal on and
+function needs no queue. It reads them through `PlacementMemory`; the form that takes a
+`USMAllocator` wraps it in `USMPlacementMemory` and gives the same answers, and a test passes
+`InMemoryPlacementMemory` and needs no device. The scheduler's `place_for_dispatch()` passes the refusal on and
 refuses an index past the device count; `modules/engine/scheduler/README.md` holds why.
 
 The notes on why each symbol is the way it is are in `modules/engine/graph/README.md` and

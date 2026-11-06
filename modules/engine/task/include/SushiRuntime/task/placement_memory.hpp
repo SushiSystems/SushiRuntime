@@ -1,0 +1,75 @@
+/**************************************************************************/
+/* placement_memory.hpp                                                   */
+/**************************************************************************/
+/*                          This file is part of:                         */
+/*                              SushiRuntime                              */
+/*              https://github.com/SushiSystems/SushiRuntime              */
+/*                         https://sushisystems.io                        */
+/**************************************************************************/
+/* Copyright (c) 2026-present Mustafa Garip & Sushi Systems               */
+/*                                                                        */
+/* Licensed under the Apache License, Version 2.0 (the "License"); you    */
+/* may not use this file except in compliance with the License. You may   */
+/* obtain a copy of the License at                                        */
+/*                                                                        */
+/*     https://www.apache.org/licenses/LICENSE-2.0                        */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
+/**************************************************************************/
+
+/**
+ * @file placement_memory.hpp
+ * @brief Declares PlacementMemory, the memory facts that decide which device a node runs on.
+ * @author Mustafa Garip
+ * @see modules/engine/task/README.md
+ */
+
+#pragma once
+
+#include <cstddef>
+#include <optional>
+
+namespace SushiRuntime
+{
+    namespace Internal::Graph
+    {
+        /**
+         * @brief Answers which device owns an address and which devices share a SYCL context.
+         *
+         * placement_of() and the chain classifier read memory through this port. USMPlacementMemory
+         * answers from a USMAllocator, and InMemoryPlacementMemory from a table a test fills.
+         * @see modules/engine/task/README.md
+         */
+        class PlacementMemory
+        {
+            public:
+                virtual ~PlacementMemory() = default;
+
+                /**
+                 * @brief Returns the device an address was recorded on, with no query of the SYCL runtime.
+                 * @param address The first address of an allocation; null and an unknown address have no device.
+                 */
+                [[nodiscard]] virtual std::optional<std::size_t> recorded_device(const void* address) const = 0;
+
+                /**
+                 * @brief Returns the device that owns an address, recorded or not.
+                 * @param address Null has no device.
+                 */
+                [[nodiscard]] virtual std::optional<std::size_t> owning_device(const void* address) const = 0;
+
+                /** @return How many devices the memory spans. */
+                [[nodiscard]] virtual std::size_t device_count() const = 0;
+
+                /**
+                 * @brief Tells whether two devices share one SYCL context.
+                 * @param first  A device index below device_count().
+                 * @param second A device index below device_count().
+                 */
+                [[nodiscard]] virtual bool shares_context(std::size_t first, std::size_t second) const = 0;
+        };
+    } // namespace Internal::Graph
+} // namespace SushiRuntime

@@ -47,6 +47,30 @@ The file tests the InMemoryOffloadSink adapter against the OffloadSink contract.
 | `RecordsEachRemotelyCompletedNodeInCallOrder` | Each node finished by a worker and given to complete_remote() is recorded in call order. |
 | `RecordsEachFailedNodeWithItsError` | fail() records the node with the error code and message it was given. |
 
+## test_placement_memory.cpp, test_usm_placement_memory.cpp and compile_usm_placement_memory.cpp
+
+`PlacementMemory` is a port with two implementations. The checks every implementation must pass are
+`expect_*` helpers in `tests/support/placement_memory_contract.hpp`. `test_placement_memory.cpp` runs
+them on `InMemoryPlacementMemory` as `Small_PlacementMemoryContract`. `test_usm_placement_memory.cpp` runs them on `USMPlacementMemory` over a `USMAllocator` of two
+entries that share the program queue, as `Medium_USMPlacementMemoryContract`. `compile_usm_placement_memory.cpp`
+includes the adapter header alone.
+
+| Test | What it proves |
+| --- | --- |
+| `AnUnrecordedAddressHasNoDevice` | An address nobody recorded has no recorded and no owning device. |
+| `ARecordedAddressNamesItsDevice` | A recorded (small) or adopted (medium) address names its device. |
+| `TheDeviceCountIsTheNumberOfDevicesItWasBuiltWith` | The device count is the number of devices or allocator entries. |
+| `TwoDevicesInOneContextShareIt` | Two devices in one context share it. |
+
+## test_in_memory_placement_memory.cpp
+
+The file tests what `InMemoryPlacementMemory` adds to the contract: devices numbered into two contexts do not
+share one.
+
+| Test | What it proves |
+| --- | --- |
+| `TwoDevicesInTwoContextsDoNotShareOne` | Two devices in two contexts do not share one. |
+
 ## test_node.cpp
 
 The file tests Node: successors inline and spilled, readiness on completion, placement and offload
@@ -75,11 +99,11 @@ scheduler's `tests/engine/scheduler/test_task_scheduler.cpp` checks the queue a 
 the 16-bit field cannot hold fails `SR_VERIFY`, which aborts the process with the index in the message;
 a death test checks it, and the earlier placement stays. A death test starts a child process.
 
-### `Medium_NodePlacementRule`
+### `Small_NodePlacementRule`
 
-The fixture holds a `USMAllocator` over two entries that share the program's queue, so device indices 0
-and 1 both exist and both sit in one SYCL context. No test allocates device memory: `adopt()` records a
-host address as owned by one of the two, and an address with no record stands for a region no device owns.
+The fixture holds an `InMemoryPlacementMemory` of two devices in one SYCL context, so device indices 0
+and 1 both exist. No test makes a queue or allocates: `record()` names a host address as owned by one of the
+two, and an address with no record stands for a region no device owns.
 
 | Test | What it proves |
 | --- | --- |
@@ -92,16 +116,16 @@ host address as owned by one of the two, and an address with no record stands fo
 | `AnUnownedRegionWithNothingStatedRunsOnDeviceZero` | An unowned region with nothing stated runs on device 0. |
 | `AnUnownedRegionLeavesTheStatedPlacementInForce` | A stated device stands for an unowned region. |
 
-### `Medium_NodePlacementContexts`
+### `Small_NodePlacementContexts`
 
-The fixture holds a `USMAllocator` over two entries in two SYCL contexts: the program's queue, and a
-queue of a context of its own made once per process, so the refusal needs no second device.
+The fixture holds an `InMemoryPlacementMemory` of two devices in two SYCL contexts, so the refusal needs no
+second device.
 
 | Test | What it proves |
 | --- | --- |
 | `AStatedDeviceInAnotherContextIsRefused` | A stated device in the other context is an `InvalidGraph` error naming the owner. |
 | `StatingTheOwnerItselfIsAccepted` | Stating the owner itself is accepted. |
-| `AStatedIndexPastTheDevicesIsLeftToTheDispatch` | A stated index past the allocator's devices is returned as stated, for `place_for_dispatch()` to refuse with the count. |
+| `AStatedIndexPastTheDevicesIsLeftToTheDispatch` | A stated index past the memory's devices is returned as stated, for `place_for_dispatch()` to refuse with the count. |
 
 ## test_node_widths.cpp
 

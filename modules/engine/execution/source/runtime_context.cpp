@@ -178,7 +178,7 @@ namespace SushiRuntime
                 offload.reset();
 
                 // No run is left to report to them once the engine is gone.
-                std::atomic_store(&observers, std::make_shared<const ObserverList>());
+                observers.clear();
             }
 
             /**
@@ -246,30 +246,8 @@ namespace SushiRuntime
             std::shared_ptr<const PlacementSnapshot> placement =
                 std::make_shared<const PlacementSnapshot>();
 
-            /** @brief Names one added observer. */
-            struct ObserverEntry
-            {
-                std::uint64_t id = 0;                   /**< What add_run_observer() returned. */
-                std::shared_ptr<RunObserver> observer;  /**< The observer; never null. */
-                TimingGate gate = nullptr;              /**< Whether it wants timing now; null for always. */
-            };
-
-            /** @brief The observers in the order they were added. */
-            using ObserverList = std::vector<ObserverEntry>;
-
-            /**
-             * @brief The added observers, copied whole on every add and remove; never null.
-             *
-             * Read and written only through the std::atomic_* functions for shared_ptr, so a run reads
-             * one consistent list without a lock.
-             */
-            std::shared_ptr<const ObserverList> observers = std::make_shared<const ObserverList>();
-
-            /** @brief Serializes the writers of observers. */
-            std::mutex observers_mutex;
-
-            /** @brief The id the next added observer takes. */
-            std::uint64_t next_observer_id = 1;
+            /** @brief The observers added to this runtime. */
+            RunObserverRegistry observers;
 
             /** @brief Facts of this machine, set once by set_machine_facts(); null before. */
             std::shared_ptr<const NodeFacts> machine;
@@ -386,50 +364,22 @@ namespace SushiRuntime
 
         std::uint64_t RuntimeContext::add_run_observer(std::shared_ptr<RunObserver> observer, TimingGate gate)
         {
-            const std::lock_guard<std::mutex> lock(impl_->observers_mutex);
-            const std::shared_ptr<const Impl::ObserverList> current = std::atomic_load(&impl_->observers);
-            auto next = std::make_shared<Impl::ObserverList>(*current);
-            const std::uint64_t id = impl_->next_observer_id++;
-            next->push_back(Impl::ObserverEntry{id, std::move(observer), gate});
-            std::atomic_store(&impl_->observers, std::shared_ptr<const Impl::ObserverList>(std::move(next)));
-            return id;
+            return impl_->observers.add(std::move(observer), gate);
         }
 
         void RuntimeContext::remove_run_observer(std::uint64_t id) noexcept
         {
-            try
-            {
-                const std::lock_guard<std::mutex> lock(impl_->observers_mutex);
-                const std::shared_ptr<const Impl::ObserverList> current = std::atomic_load(&impl_->observers);
-                auto next = std::make_shared<Impl::ObserverList>();
-                next->reserve(current->size());
-                for (const Impl::ObserverEntry& entry : *current)
-                    if (entry.id != id)
-                        next->push_back(entry);
-                std::atomic_store(&impl_->observers, std::shared_ptr<const Impl::ObserverList>(std::move(next)));
-            }
-            catch (const std::exception& error)
-            {
-                SR_LOG_ERROR(K_EXECUTION_LOG_CATEGORY, "Removing run observer {} failed: {}; it stays added.",
-                             id, error.what());
-            }
+            impl_->observers.remove(id);
         }
 
         bool RuntimeContext::wants_device_timing() const noexcept
         {
-            const std::shared_ptr<const Impl::ObserverList> current = std::atomic_load(&impl_->observers);
-            for (const Impl::ObserverEntry& entry : *current)
-                if (entry.gate == nullptr || entry.gate())
-                    return true;
-            return false;
+            return impl_->observers.wants_device_timing();
         }
 
         void RuntimeContext::notify_run(const RunObservation& observation) const noexcept
         {
-            const std::shared_ptr<const Impl::ObserverList> current = std::atomic_load(&impl_->observers);
-            for (const Impl::ObserverEntry& entry : *current)
-                if (entry.gate == nullptr || entry.gate())
-                    entry.observer->on_run(observation);
+            impl_->observers.notify(observation);
         }
 
         Internal::Graph::OffloadCoordinator* RuntimeContext::offload() const noexcept

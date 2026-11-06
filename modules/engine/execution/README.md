@@ -10,6 +10,10 @@ symbol or passage it explains, and that header's file block cites this page.
 
 ### classify_chain
 
+The form that takes a RuntimeContext wraps the context's allocator in `USMPlacementMemory` and calls
+the form that takes a `PlacementMemory` and a coordinator flag, which holds the rules below. A test
+passes `InMemoryPlacementMemory`, so the classification needs no device.
+
 Any doubt leaves the plan on the scheduler. classify_chain() refuses the chain for native host work,
 a node the installed coordinator acts on, a device value read at dispatch, a node with no USM
 region, a region this context did not allocate, two devices, or a stated device that
@@ -227,6 +231,16 @@ write_run_values() sums the workers' busy, stealing, polling and idle time and w
 values `worker.busy`, `worker.stealing`, `worker.polling` and `worker.idle`, then starts the buckets
 again so an unobserved run does not report an earlier run's time.
 
+## run_observer_registry.hpp
+
+### RunObserverRegistry
+
+RunObserverRegistry holds the observers a runtime delivers its runs to. It was the observer list inside
+`RuntimeContext`'s private state, which only a context built on a device could reach; moved out, the
+gate rules run in a test with no device. `TimingGate` lives here and `runtime_context.hpp` includes it, so
+callers keep the same name. The list is copied whole on every add and remove, as the section on
+`add_run_observer()` below describes.
+
 ## runtime_context.hpp
 
 ### RuntimeContext(config, provider, distance_model, settings)
@@ -299,7 +313,7 @@ sets and run in turn each place their nodes by their own set.
 
 ### add_run_observer, remove_run_observer and observe_runs
 
-The context keeps its observers as one immutable list behind one atomic shared pointer. Adding or
+The context keeps its observers in a `RunObserverRegistry` (`run_observer_registry.hpp`), which holds them as one immutable list behind one atomic shared pointer; the three calls below forward to it, and a test builds a registry of its own. Adding or
 removing copies the list under a mutex and publishes the copy, so a run reads one consistent list
 without a lock, and a run that is notifying while an observer is removed still holds the list it
 began with. `add_run_observer()` returns an id and `remove_run_observer()` takes it; the free function

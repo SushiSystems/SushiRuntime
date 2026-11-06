@@ -398,15 +398,16 @@ at or below K_THROTTLING_RATE.
 ### WorkloadCoordinator
 
 WorkloadCoordinator runs a dedicated coordinator thread that calls
-RebalanceStrategy::evaluate_and_rebalance every 5 ms. The strategy inspects live telemetry through
-TelemetryProvider and issues task migrations through TaskMigrator. The strategy can be swapped at
-runtime while the coordinator is running.
+RebalanceStrategy::evaluate_and_rebalance every 5 ms through beat(), pausing on a HeartbeatClock
+(SystemHeartbeatClock unless another is given; ManualHeartbeatClock steps it by hand). The strategy
+inspects live telemetry through TelemetryProvider and issues migrations through TaskMigrator, and can be
+swapped at runtime while the coordinator is running.
 
 ### strategy_mtx_
 
 strategy_mtx_ guards strategy_ against a concurrent set_strategy() destroying the object the monitor
 thread is mid-call on. It is held only across the fast evaluate_and_rebalance call and the swap,
-never across the 5 ms sleep.
+never across the pause between two beats.
 
 ## Implementation
 

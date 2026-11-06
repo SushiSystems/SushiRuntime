@@ -6,6 +6,6 @@
 sushiruntime_add_module(
     NAME task TIER engine INTERNAL
     SYCL
-    SOURCES dispatch_events.cpp node_placement.cpp node_widths.cpp task_submission.cpp
+    SOURCES dispatch_events.cpp node_placement.cpp node_widths.cpp task_submission.cpp usm_placement_memory.cpp
     DEPENDS core report region
     PRIVATE_DEPENDS memory)

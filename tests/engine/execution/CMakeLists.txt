@@ -12,6 +12,7 @@ sushiruntime_add_module_tests(
         test_dropped_dispatches.cpp
         test_execution_engine.cpp
         test_run_failures.cpp
+        test_run_observer_registry.cpp
         test_runtime_context.cpp
         test_runtime_settings.cpp
         test_scheduler_execution_engine.cpp

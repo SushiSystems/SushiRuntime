@@ -56,6 +56,7 @@
 #include <SushiRuntime/sycl/sycl_compat.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/report/run_observer.hpp>
+#include <SushiRuntime/report/recording_observer.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
@@ -831,44 +832,16 @@ namespace OffloadSeamShutdownTests
     }
 } // namespace OffloadSeamShutdownTests
 
-namespace RunObserverGateTests
+namespace RunObserverWiringTests
 {
-    /** @brief Whether the test's gate is open. */
-    std::atomic<bool> g_gate_open{false};
-
-    /** @brief The gate an observer of the tests is added behind. */
-    bool test_gate() noexcept
-    {
-        return g_gate_open.load(std::memory_order_relaxed);
-    }
-
-    /** @brief Counts the runs it hears. */
-    class CountingObserver final : public SushiRuntime::RunObserver
-    {
-        public:
-            void on_run(const SushiRuntime::RunObservation&) noexcept override
-            {
-                ++runs;
-            }
-
-            std::atomic<int> runs{0}; /**< Runs heard so far. */
-    };
-
-    /** @brief Fixture of the observer tests: a context, and a gate that starts closed and is left closed. */
+    /** @brief Fixture of the observer wiring test: a context built once on the program's devices. */
     class Medium_RuntimeContextObservers : public ::testing::Test
     {
         protected:
-            /** @brief Builds the context and closes the gate. */
+            /** @brief Builds the context. */
             void SetUp() override
             {
                 context_owner_ = SushiRuntime::Test::make_context();
-                g_gate_open.store(false);
-            }
-
-            /** @brief Closes the gate, so no later test starts with it open. */
-            void TearDown() override
-            {
-                g_gate_open.store(false);
             }
 
             /** @brief Returns the context. */
@@ -878,65 +851,23 @@ namespace RunObserverGateTests
             std::shared_ptr<SushiRuntime::Internal::Execution::RuntimeContext> context_owner_; /**< The test's context. */
     };
 
-    /** @brief Tests that an observer with no gate always wants device timing. */
-    TEST_F(Medium_RuntimeContextObservers, AnUngatedObserverAlwaysWantsTiming)
+    /**
+     * @brief Tests that an observer added to the context hears the runs the context delivers until it is removed.
+     *
+     * The gate rules are tested on RunObserverRegistry, which the context owns.
+     */
+    TEST_F(Medium_RuntimeContextObservers, AnAddedObserverHearsRunsUntilItIsRemoved)
     {
-        EXPECT_FALSE(context().wants_device_timing());
-
-        const auto observer = std::make_shared<CountingObserver>();
+        const auto observer = std::make_shared<SushiRuntime::RecordingObserver>();
         const std::uint64_t id = context().add_run_observer(observer);
-        EXPECT_TRUE(context().wants_device_timing());
-
-        context().remove_run_observer(id);
-        EXPECT_FALSE(context().wants_device_timing());
-    }
-
-    /** @brief Tests that a gated observer asks for timing only while its gate is open. */
-    TEST_F(Medium_RuntimeContextObservers, AGatedObserverWantsTimingOnlyWhileItsGateIsOpen)
-    {
-        const auto observer = std::make_shared<CountingObserver>();
-        const std::uint64_t id = context().add_run_observer(observer, &test_gate);
-
-        EXPECT_FALSE(context().wants_device_timing()) << "a closed gate costs no device timing";
-        g_gate_open.store(true);
-        EXPECT_TRUE(context().wants_device_timing());
-
-        context().remove_run_observer(id);
-    }
-
-    /** @brief Tests that an ungated observer keeps timing on whatever the gate of another observer says. */
-    TEST_F(Medium_RuntimeContextObservers, AnUngatedObserverKeepsTimingOnWhateverTheGateSays)
-    {
-        const auto gated = std::make_shared<CountingObserver>();
-        const auto ungated = std::make_shared<CountingObserver>();
-        const std::uint64_t gated_id = context().add_run_observer(gated, &test_gate);
-        const std::uint64_t ungated_id = context().add_run_observer(ungated);
-
-        EXPECT_TRUE(context().wants_device_timing());
-
-        context().remove_run_observer(ungated_id);
-        context().remove_run_observer(gated_id);
-    }
-
-    /** @brief Tests that a delivery waits for the gate of its observer and skips a closed one. */
-    TEST_F(Medium_RuntimeContextObservers, ADeliveryToAGatedObserverWaitsForItsGate)
-    {
-        const auto gated = std::make_shared<CountingObserver>();
-        const auto open = std::make_shared<CountingObserver>();
-        const std::uint64_t gated_id = context().add_run_observer(gated, &test_gate);
-        const std::uint64_t open_id = context().add_run_observer(open);
-
         const SushiRuntime::RunObservation observation;
         context().notify_run(observation);
-        EXPECT_EQ(gated->runs.load(), 0);
-        EXPECT_EQ(open->runs.load(), 1);
+        EXPECT_TRUE(context().wants_device_timing());
 
-        g_gate_open.store(true);
+        context().remove_run_observer(id);
         context().notify_run(observation);
-        EXPECT_EQ(gated->runs.load(), 1);
-        EXPECT_EQ(open->runs.load(), 2);
 
-        context().remove_run_observer(gated_id);
-        context().remove_run_observer(open_id);
+        EXPECT_EQ(observer->count(), 1u);
+        EXPECT_FALSE(context().wants_device_timing());
     }
-} // namespace RunObserverGateTests
+} // namespace RunObserverWiringTests

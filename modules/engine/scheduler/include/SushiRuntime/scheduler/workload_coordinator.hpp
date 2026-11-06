@@ -29,6 +29,7 @@
  */
 
 #pragma once
+#include <SushiRuntime/scheduler/heartbeat_clock.hpp>
 #include <SushiRuntime/scheduler/rebalancer_interfaces.hpp>
 #include <memory>
 #include <thread>
@@ -42,6 +43,9 @@ namespace SushiRuntime
     {
         /**
          * @brief Drives an RebalanceStrategy from a background thread on a 5 ms heartbeat.
+         *
+         * The pause between two beats is made on a HeartbeatClock, the system clock unless the caller
+         * passes another.
          * @see modules/engine/scheduler/README.md
          */
         class WorkloadCoordinator
@@ -49,6 +53,10 @@ namespace SushiRuntime
             private:
                 const TelemetryProvider& telemetry_;
                 TaskMigrator& migrator_;
+
+                /** @brief The clock a coordinator built without one pauses on. */
+                SystemHeartbeatClock system_clock_;
+                HeartbeatClock* clock_;
 
                 /**
                  * @brief Guards strategy_ against set_strategy() destroying it mid-call.
@@ -64,27 +72,49 @@ namespace SushiRuntime
                 {
                     while (running_.load(std::memory_order_relaxed))
                     {
-                        {
-                            std::lock_guard<std::mutex> lk(strategy_mtx_);
-                            if (strategy_)
-                                strategy_->evaluate_and_rebalance(telemetry_, migrator_);
-                        }
-                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                        beat();
+                        clock_->pause(K_HEARTBEAT_INTERVAL);
                     }
                 }
 
             public:
+                /** @brief The time the coordinator pauses between two beats. */
+                static constexpr std::chrono::milliseconds K_HEARTBEAT_INTERVAL{5};
+
                 /**
-                 * @brief Constructs a coordinator but does not start the thread.
+                 * @brief Constructs a coordinator that pauses on the system clock; starts no thread.
                  * @param t        Telemetry source (must outlive this object).
                  * @param m        Migration actuator (must outlive this object).
                  * @param s        Initial rebalance strategy.
                  */
                 WorkloadCoordinator(const TelemetryProvider& t, TaskMigrator& m, std::unique_ptr<RebalanceStrategy> s)
-                    : telemetry_(t), migrator_(m), strategy_(std::move(s)) {}
+                    : telemetry_(t), migrator_(m), clock_(&system_clock_), strategy_(std::move(s)) {}
+
+                /**
+                 * @brief Constructs a coordinator that pauses on @p clock; starts no thread.
+                 * @param t        Telemetry source (must outlive this object).
+                 * @param m        Migration actuator (must outlive this object).
+                 * @param s        Initial rebalance strategy.
+                 * @param clock    The clock the heartbeat pauses on (must outlive this object).
+                 */
+                WorkloadCoordinator(const TelemetryProvider& t, TaskMigrator& m, std::unique_ptr<RebalanceStrategy> s,
+                                    HeartbeatClock& clock)
+                    : telemetry_(t), migrator_(m), clock_(&clock), strategy_(std::move(s)) {}
 
                 /** @brief Calls stop() if the coordinator thread is still running. */
                 ~WorkloadCoordinator() { stop(); }
+
+                /**
+                 * @brief Evaluates the active strategy once, as one heartbeat does.
+                 *
+                 * Safe to call from any thread; it does nothing when no strategy is set.
+                 */
+                void beat()
+                {
+                    std::lock_guard<std::mutex> lk(strategy_mtx_);
+                    if (strategy_)
+                        strategy_->evaluate_and_rebalance(telemetry_, migrator_);
+                }
 
                 /**
                  * @brief Starts the coordinator thread. No-op if already running.

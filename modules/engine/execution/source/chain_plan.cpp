@@ -37,6 +37,7 @@
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/task/node_placement.hpp>
+#include <SushiRuntime/task/usm_placement_memory.hpp>
 #include <SushiRuntime/execution/execution_log_category.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
@@ -88,21 +89,20 @@ namespace SushiRuntime
              * @brief Resolves the device a node runs on when every region of it belongs to one
              *        device: placement_of(), so a stated device wins or is refused as at dispatch.
              * @param node A compiled, non-sentinel node.
-             * @param context  The context whose registry owns the regions.
+             * @param memory  The memory whose registry owns the regions.
              * @return The queue index, or -1 for no region, an unknown region, two devices, or a
              *         placement placement_of() refuses, which the scheduler then reports.
              */
-            int chained_queue_index(const Internal::Graph::Node& node, RuntimeContext& context)
+            int chained_queue_index(const Internal::Graph::Node& node, const Internal::Graph::PlacementMemory& memory)
             {
                 int owner = -1;
-                Internal::Memory::USMAllocator& memory = context.memory();
                 auto visit = [&](const std::vector<BufferRegion>& regions)
                 {
                     for (const auto& r : regions)
                     {
                         if (!r.base)
                             continue;
-                        const std::optional<std::size_t> device = memory.device_of(r.base);
+                        const std::optional<std::size_t> device = memory.recorded_device(r.base);
                         const int index = device ? static_cast<int>(*device) : -1;
                         if (index < 0 || (owner >= 0 && index != owner))
                             return false;
@@ -114,7 +114,7 @@ namespace SushiRuntime
                     return -1;
 
                 const Result<std::size_t> placed = Internal::Graph::placement_of(node, memory);
-                if (!placed || placed.value() >= context.devices().count())
+                if (!placed || placed.value() >= memory.device_count())
                     return -1;
                 return static_cast<int>(placed.value());
             }
@@ -199,8 +199,18 @@ namespace SushiRuntime
          */
         Internal::Graph::ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context)
         {
+            return classify_chain(graph, Internal::Graph::USMPlacementMemory(context.memory()),
+                                  context.offload() != nullptr);
+        }
+
+        /**
+         * @brief Classifies a compiled plan for the in-order chain, reading memory through a port.
+         */
+        Internal::Graph::ChainPlan classify_chain(const Internal::Graph::CompiledGraph& graph,
+                                                  const Internal::Graph::PlacementMemory& memory,
+                                                  bool has_coordinator)
+        {
             const Internal::Graph::Node* sentinel = graph.sentinel.get();
-            const bool has_coordinator = context.offload() != nullptr;
             std::size_t node_count = 0;
             int device = -1;
 
@@ -226,7 +236,7 @@ namespace SushiRuntime
                                       ? "an installed offload coordinator acts on a node"
                                       : "a node is native host work");
 
-                const int index = chained_queue_index(*node, context);
+                const int index = chained_queue_index(*node, memory);
                 if (index < 0)
                     return refuse("a node has no USM region on one known device, or its placement was refused");
                 if (device >= 0 && index != device)

@@ -33,6 +33,7 @@
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/graph/chain_plan.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
+#include <SushiRuntime/task/placement_memory.hpp>
 
 namespace SushiRuntime
 {
@@ -49,6 +50,17 @@ namespace SushiRuntime
          */
         SUSHIRUNTIME_API Internal::Graph::ChainPlan
         classify_chain(const Internal::Graph::CompiledGraph& graph, RuntimeContext& context);
+
+        /**
+         * @brief Classifies a compiled plan for the in-order chain, reading memory through a port.
+         * @param graph A plan after capture_base_state().
+         * @param memory Which device owns each region and how many devices there are.
+         * @param has_coordinator Whether an offload coordinator is installed.
+         * @see modules/engine/execution/README.md
+         */
+        SUSHIRUNTIME_API Internal::Graph::ChainPlan
+        classify_chain(const Internal::Graph::CompiledGraph& graph, const Internal::Graph::PlacementMemory& memory,
+                       bool has_coordinator);
 
     } // namespace Execution
 } // namespace SushiRuntime

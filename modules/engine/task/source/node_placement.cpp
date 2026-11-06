@@ -34,8 +34,8 @@
 #include <string>
 
 #include <SushiRuntime/core/error.hpp>
-#include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/task/node.hpp>
+#include <SushiRuntime/task/usm_placement_memory.hpp>
 
 namespace SushiRuntime
 {
@@ -59,6 +59,14 @@ namespace SushiRuntime
          */
         Result<std::size_t> placement_of(const Node& node,
                                          const Internal::Memory::USMAllocator& memory)
+        {
+            return placement_of(node, USMPlacementMemory(memory));
+        }
+
+        /**
+         * @brief Returns the device @p node runs on, reading memory through a port.
+         */
+        Result<std::size_t> placement_of(const Node& node, const PlacementMemory& memory)
         {
             const std::optional<std::size_t> stated = node.stated_placement();
             const std::optional<std::size_t> owner = memory.owning_device(anchor_of(node));

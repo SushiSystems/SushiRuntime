@@ -45,6 +45,7 @@
 #include <SushiRuntime/topology/topology_provider.hpp>
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/execution/execution_engine.hpp>
+#include <SushiRuntime/execution/run_observer_registry.hpp>
 #include <SushiRuntime/execution/runtime_settings.hpp>
 
 namespace SushiRuntime
@@ -56,9 +57,6 @@ namespace SushiRuntime
 
     namespace Internal::Execution
     {
-        /** @brief Answers whether an observer wants device timing for a run armed now; must not throw. */
-        using TimingGate = bool (*)() noexcept;
-
         /**
          * @brief Builds the topology view, the device queues and the USM allocator, and owns
          *        the execution engine that runs on them.

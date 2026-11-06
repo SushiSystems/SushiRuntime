@@ -9,10 +9,10 @@ A test's prefix names what it touches: `Small_` touches no device, thread, file 
 `Medium_` touches a device or a thread. The medium tests that need a device take the fixture base of
 `tests/support/runtime_environment.hpp`, so the program holds one runtime and one queue.
 
-## compile_rebalancer_interfaces.cpp, compile_scheduler_log_category.cpp and compile_worker_pool_settings.cpp
+## compile_heartbeat_clock.cpp, compile_rebalancer_interfaces.cpp, compile_scheduler_log_category.cpp and compile_worker_pool_settings.cpp
 
 Each file includes one header alone, so the header carries every include it needs. The headers hold
-interfaces, a constant and a plain struct, which have no behaviour of their own to test.
+interfaces, the system heartbeat clock (a sleep), a constant and a plain struct, which have no behaviour of their own to test.
 
 ## test_dispatch_record.cpp
 
@@ -200,7 +200,7 @@ These checks are fast and deterministic; heavy load is tested by
 | Test | What it proves |
 | --- | --- |
 | `Medium_SchedulerIntegration.ExecutesExactlySubmitted` | The scheduler runs exactly the 2000 tasks submitted; the test waits on `wait_quiescent()`. |
-| `Medium_SchedulerIntegration.PriorityBypass` | A late high-priority task completes within the first window of the pool. It still polls with `sleep_for`, since the pool has no single-threaded executor to replay the order from a seed. |
+| `Medium_SchedulerIntegration.ALateHighPriorityTaskRunsFirstOnOneWorker` | A priority task submitted after fifty others runs first. The pool has one worker, set through `WorkerPoolSettings`, and the tasks are queued before `start()`, so the order is the scheduler's alone and the test waits with `wait_quiescent()`, not a poll. |
 | `Medium_TaskScheduler.AbruptStopDrains` | `stop()` right after `submit` drains every one of the 1000 submitted tasks, without a deadlock. |
 | `Medium_TaskScheduler.AWorkerCountOfZeroAsksForOneWorkerPerLogicalCore` | A worker count of 0 gives the platform's `hardware_concurrency` count, up to the pool maximum. |
 
@@ -246,13 +246,30 @@ crawls, toward the least-loaded one, and leaves alone a long queue that still dr
 | `AMigrationMovesAtLeastTenTasks` | Queues of 25 and 20 move 10 tasks, not half the gap of 2. |
 | `TheCompletionRateIsTheChangeSinceThePreviousEvaluation` | The same completed totals look fast at the first evaluation and throttled at the second. |
 
+## test_manual_heartbeat_clock.cpp
+
+The file tests `ManualHeartbeatClock`, which the coordinator tests step. Each test pauses a thread on the
+clock and waits for its pause with `wait_for_pauses()`.
+
+| Test | Promise |
+| --- | --- |
+| `Medium_ManualHeartbeatClock.AdvancingByOneBeatEndsOnePause` | `advance(1)` ends one pause, and the pause is counted. |
+| `Medium_ManualHeartbeatClock.ReleaseAllEndsAPauseNoBeatWasGrantedTo` | `release_all()` ends a pause that no beat was granted to. |
+
 ## test_workload_coordinator.cpp
 
-The file covers the heartbeat loop of `WorkloadCoordinator`. Fakes for all three collaborators
-(telemetry, migrator and strategy) keep the test on the host. The loop must drive
-the strategy, start and stop cleanly, and swap strategies at runtime.
+The file covers the heartbeat of `WorkloadCoordinator` on `InMemoryTelemetry`, `RecordingTaskMigrator`,
+`RecordingRebalanceStrategy` and a `ManualHeartbeatClock`, so no test sleeps, polls or loops. The four
+`Small_` tests call `beat()`, the evaluation one heartbeat makes, on the test's own thread. The three
+`Medium_` tests start the heartbeat thread and step it with the clock: `advance()` ends one pause and
+`wait_for_pauses()` returns when the thread has entered the pause that follows its beat.
 
-The loop sleeps 5 ms on the system clock and takes no clock of its own, so the tests still wait with
-`wait_until_at_least`, which polls with `sleep_for`. A clock the test advances is the seam that would
-remove the waits, the fakes and the 50 ms sleep that proves no evaluation after `stop()`; it needs a
-change to the coordinator.
+| Test | Promise |
+| --- | --- |
+| `OneBeatEvaluatesTheStrategyOnce` | One beat evaluates the active strategy once. |
+| `AMigrationTheStrategyRequestsReachesTheMigrator` | A migration the strategy asks for during a beat reaches the migrator. |
+| `SetStrategyHandsTheNextBeatToTheNewStrategy` | After `set_strategy()` the next beat evaluates the new strategy and not the old one. |
+| `ABeatWithNoStrategyMigratesNothing` | A beat with no strategy set migrates nothing. |
+| `TheThreadEvaluatesOnceForEachBeatTheClockGrants` | The started thread evaluates once, then once more for each beat the clock grants. |
+| `NoEvaluationFollowsStop` | After `stop()` returns, advancing the clock evaluates nothing. |
+| `ASecondStartLeavesOneHeartbeatThread` | Two `start()` calls leave one thread, which evaluates once per granted beat. |
