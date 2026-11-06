@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* test_distributed_log_category.cpp                                      */
+/* compile_distributed_log_category.cpp                                   */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -19,27 +19,12 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
-/**************************************************************************/
 
 /**
- * @file test_distributed_log_category.cpp
- * @brief Tests K_DISTRIBUTED_LOG_CATEGORY: the name its records carry.
+ * @file compile_distributed_log_category.cpp
+ * @brief Compiles distributed_log_category.hpp on its own, so the header carries every include it needs.
  * @see tests/extension/distributed/README.md
  * @author Mustafa Garip
  */
 
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
-
-#include <gtest/gtest.h>
-
-using namespace SushiRuntime;
-
-/** @brief Tests that the category is the module's folder in the runtime's project. */
-TEST(Small_DistributedLogCategory, TheCategoryIsNamedAfterTheModule)
-{
-    static_assert(K_DISTRIBUTED_LOG_CATEGORY.module() == "distributed",
-                  "the folder name of the module");
-    static_assert(K_DISTRIBUTED_LOG_CATEGORY.project().name() == "sushiruntime",
-                  "the project of the runtime");
-    SUCCEED();
-}

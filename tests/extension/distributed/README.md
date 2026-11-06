@@ -90,9 +90,7 @@ timing. The TCP test binds `TCPMasterOptions` defaults (127.0.0.1, port 0) and r
 
 | Test | What it proves |
 | --- | --- |
-| `AutoVersionBumpAcrossLocalWriteThenOffloadedRead` | A local task with no operation writes a shared buffer and an offloaded task reads it. The buffer's version must rise, and the worker must compute from the values the local task wrote. The worker's kernel runs once, so the writer ran on the master. |
-| `WorkerPullsTheNewVersionAfterALocalWrite` | One offloaded read puts version 1 of a shared buffer in the worker's cache. A local task with no operation then rewrites the buffer and a second offloaded read follows. The version rises, `chunks_sent` grows, so the worker pulled again, and the output holds the new bytes. This is the optimizer-then-replica step of a training run. |
-| `TwoLocalWritesBeforeADispatchCostOnePull` | Two local writes of one buffer, in order, before one offloaded read. The version rises by two, one per write, and `chunks_sent` doubles, so the worker pulled once for the two. |
+| `LocalWritesRaiseTheVersionAndCostOnePull` | One offloaded read puts version 1 of a shared buffer in the worker's cache. One or two local tasks with no operation then rewrite the buffer, one row each, and a second offloaded read follows. The version rises by the number of writes, `chunks_sent` doubles, so the worker pulled once for all the writes, and the output holds the last write's bytes. This is the optimizer-then-replica step of a training run. |
 | `WorkerDeathFallsBackToLocal` | A `FallSilent` worker takes the dispatch and stops answering. With a liveness timeout of 300 ms the master closes it and resubmits the task, which finishes locally. Until the dispatch the worker answers pings, so it cannot be closed early on a slow machine. |
 
 ### `PolicySeesWorkerFactsAcrossReconnect`
@@ -118,7 +116,6 @@ then a GPU. A wait is observed through `ClusterStatistics::held_nodes`, never th
 | `Medium_DistributedPlacementTest.WaitHoldsTheNodeUntilTheWorkerRegisters` | Under `Wait`, with no worker, the node is held; the named worker registers and gets the node on device 0. The bound is `K_WAIT`, so only a hang reaches it. |
 | `Medium_DistributedPlacementTest.WaitRunsTheNodeLocallyOnceTheBoundPasses` | Under `Wait` with a 30 ms bound and no worker, the run returns no sooner than the bound, the master computed the sum, and nothing was offloaded. |
 | `Medium_DistributedPlacementTest.FailEndsTheRunNamingTheRuleAndTheTarget` | Under `Fail`, with no worker, `run()` returns `InvalidState` whose message names the rule `"pin"` and `machine "rack-7-gpu"`; the output stays unwritten and nothing is offloaded. |
-| `Medium_DistributedPlacementTest.RuleDeadlineTakesASilentTaskBackSooner` | With the liveness timeout and `task_deadline` at 60 s, a rule deadline of 100 ms takes a `FallSilent` worker's task back, counted as `tasks_reaped_deadline`, and the master computes the sum within `K_WAIT`. |
 | `Medium_DistributedPlacementTest.BusyTargetRunsBothNodesOneAfterTheOther` | A worker whose `max_jobs` is 1 gets the first of two pinned nodes; the second is held, then dispatched to it once the first result frees the slot. Both outputs hold what the worker wrote and nothing was redispatched, so neither ran on the master. `ScriptedWorker::limit_jobs()` sets the limit `PROOF` reports. |
 | `Medium_DistributedPlacementTest.UnmatchedNodeIsPlacedByThePolicy` | A rule for another key leaves the node to the policy, which is called once, and the dispatch carries device 0. |
 | `Medium_DistributedPlacementTest.Regression_ADeviceOnlyRuleTheMasterLacksOffloads` | A master built on CPU devices only, under a rule with `device_kind` GPU and no machine part, sends the node to the worker with a GPU, on its `device_index` 1. Skipped when SYCL has no CPU device. |
@@ -134,7 +131,7 @@ received, one refused and nothing resubmitted.
 
 | Test | What it proves |
 | --- | --- |
-| `LostBufferPushTimesOutInsteadOfHanging` | The fault policy drops every `BUFFER_CHUNK` from master to worker, so no input arrives. With a pull idle timeout of 200 ms the worker reports `InputUnavailable`; the master resubmits, and after the attempt cap the task runs locally. The kernel must not have run on the worker. |
+| `LostBufferPushIsRedispatchedAndTheRunReturns` | The fault policy drops every `BUFFER_CHUNK` from master to worker, so no input arrives. With a pull idle timeout of 200 ms the worker reports `InputUnavailable`; the master resubmits, and after the attempt cap the task runs locally. The kernel must not have run on the worker. |
 | `FluentClusterOffload`, `FluentDistributedStateParity`, `evolve_distributed_state` | The fluent surface builds the same offload. A `State` swaps its two allocations every step, so its handles are resolved at each dispatch; `evolve_distributed_state` runs 4 and 5 steps, which leave the result in different allocations, and both must match `seed[i] + steps * (i % 7)`. |
 | `ClusterDetachAndDisplacement`, `ClusterHandleOutlivesRuntime` | `detach()` leaves `offload()` null and a second call does nothing. A later `attach()` displaces the installed master, and the displaced handle's `detach()` leaves the new one installed. A handle that outlives its context still answers `alive_workers()` and `offloaded()`. |
 | `StopResubmitsPendingNodes` | An `Accept` worker holds the only task while `execute()` waits. The test calls `stop()` on the installed coordinator. The run must return with the local result, `redispatched` must be 1 and `pending_tasks` 0. |
@@ -154,13 +151,13 @@ leave the other.
 | `RefusesEmptySecretOnNetworkExposure` | On a `StubTransport` that reports `Network`, `attach` with an empty secret must return an error before `start()` is called. With a 32-byte secret the same transport attaches. |
 | `RegisteredTaskRunsWithAndWithoutAWorker`, `run_registered_sum` | `record_registered_task`, called through `Graph::extend()`, records the vector-add with no lambda. Run with no cluster, the master's own registry runs the kernel once. Run with a worker, the worker's registry runs it once and the master's not at all. Both outputs must be equal. |
 
-### `AttachOnAStartedTransportLeavesTheFirstMasterServing`
+### `AttachOnAStartedTransportIsRefused`, `AttachOnAStartedTransportLeavesTheFirstMasterServing`
 
 Finding QC-35. One master is attached on an in-process transport, then a second context attaches
 on the same transport object. The transport answers `AlreadyStarted`, so the second `attach` must
-return an error and leave its context without a coordinator. A worker started after that must still
-register with the first master within 10 s, which it cannot when the failed attach stopped the
-transport.
+return an error and leave its context without a coordinator, and the first context's coordinator
+unchanged. In the second test a worker started after that must still register with the first
+master within 10 s, which it cannot when the failed attach stopped the transport.
 
 | Test | What it proves |
 | --- | --- |
@@ -183,23 +180,23 @@ must remove it.
 
 Finding QC-38. `attach` with `liveness_timeout` of 0 and with `handshake_timeout` of 0 must each
 return a message that names the option and its value, before `start()` is called. `attach` with a
-`task_deadline` of 0 and both timeouts at 1 ms must succeed. `Cluster::liveness_timeout(0 ms)` must
-return `InvalidState`, and 1 ms must succeed.
+`task_deadline` of 0 and both timeouts at 1 ms must succeed. The setter `Cluster::liveness_timeout`
+is tested in `test_cluster.cpp`.
 
 | Test | What it proves |
 | --- | --- |
 | `ShareStopsOnADeviceResidentHandle` | `Cluster::share` on a device-resident handle stops the process for both overloads of Buffer and for State. The line names `Cluster::share(buffer)` or `Cluster::share(state)`, and the residency. |
 
-### `ShareRegistersAHostAccessibleHandle`
+### `ShareRegistersABufferAndAState`, `ShareSkipsAnEmptyHandle`, `ShareRegistersAHostResidentBuffer`
 
-`Cluster::share` returns its argument for a named Buffer and a named State, and the moved buffer
-for a temporary. Each shared allocation, both fields of the State among them, then has a handle
-in `buffer_handle()`. A moved-from handle that owns nothing is skipped, and a buffer nobody
-shared has no handle.
+`Cluster::share` returns its argument for a named Buffer and a named State, and each shared
+allocation, both fields of the State among them, then has a handle in `buffer_handle()`. A
+moved-from handle that owns nothing is skipped, and a buffer nobody shared has no handle. A buffer
+of `Host` residency is registered too.
 
 | Test | What it proves |
 | --- | --- |
-| `WorkerAgentSealsItsRegistry` | Finding QC-37. A registry is open until a `WorkerAgent` is built with it and sealed from then on, before `start()`. `register_kernel` must then stop the process, which the death test checks. |
+| `WorkerAgentSealsItsRegistry` | Finding QC-37. A registry is open until a `WorkerAgent` is built with it and sealed from then on, before `start()`. The refusal of a registration on a sealed registry is held by `test_kernel_registry.cpp`. |
 
 ### The per-run offloaded count
 
@@ -237,12 +234,13 @@ waits on a condition variable, so `heal()` ends it at once.
 
 | Test | What it proves |
 | --- | --- |
-| `RegistrationSurvivesMessageLoss`, `drop_first_of` | `drop_first_of` drops the first frame of each listed type. The test loses the first `HELLO`, the first `CHALLENGE` and the first `PROOF`. The worker sends `HELLO` again with a fresh nonce after each heartbeat interval, so it must register; the policy must have dropped exactly three frames, and the task that follows must run on the worker. |
+| `RegistrationSurvivesLostHandshakeFrames`, `drop_first_of` | The second row. `drop_first_of` drops the first frame of each listed type. The test loses the first `HELLO`, the first `CHALLENGE` and the first `PROOF`. The worker sends `HELLO` again with a fresh nonce after each heartbeat interval, so it must register; the policy must have dropped exactly three frames, and the task that follows must run on the worker. |
 
-### `RegistrationSurvivesALostWelcome`
+### `RegistrationSurvivesLostHandshakeFrames`
 
-The same run with only the first `WELCOME` lost. The master has registered the worker by then and
-the worker has not heard it. The test asserts that the task still runs on the worker.
+The registration test has two rows. In the first, only the first `WELCOME` is lost: the master has
+registered the worker by then and the worker has not heard it. The task must still run on the
+worker.
 
 The file runs a master and a worker in one process over TCP on `127.0.0.1` and breaks the link
 between them. The master is a `Cluster` on a `Runtime` and binds port 0; the test reads the
@@ -276,7 +274,8 @@ then registers, and in the first and the third test a task runs on it.
 
 | Test | What it proves |
 | --- | --- |
-| `WrongSecretRejected` | Finding DIST-03. A worker with another secret ends with `RejectedAuthentication`: it checks the master's proof first and sends no PROOF, so the master counts nothing for it. A raw peer then answers CHALLENGE with a proof of 0x44 bytes, and `handshake_rejected_auth` is 1. |
+| `AWorkerWithAnotherSecretEndsRejected` | Finding DIST-03. A worker with another secret ends with `RejectedAuthentication`: it checks the master's proof first and sends no PROOF. |
+| `WrongProofClosesTheConnectionAndIsCounted` | A raw peer answers CHALLENGE with a proof of 0x44 bytes. The master closes it, `handshake_rejected_auth` is 1 and no worker is registered. |
 | `VersionMismatchLoggedOncePerConnection` | Finding DIST-06. Two connections each send two headers of version 2. A sink installed with `set_log_sink` counts the ERROR lines that hold `protocol v2`: two after the master is detached, one for each connection, and `handshake_rejected_version` is 2. |
 | `MasterKilledWorkerSurvivesAndReconnects` | Findings DIST-01 and DIST-07. The proxy cuts the link and the master is detached. A second master attaches on another port and the proxy is retargeted. The worker registers with it, counts one reconnect, and a task runs on it. |
 
@@ -305,15 +304,20 @@ task is resubmitted and the local fallback writes the output.
 | `ManyChunkBufferCrossesIntact` | Finding DIST-12. 1 MiB goes to the worker and 1 MiB comes back at `chunk_bytes` 4 KiB: 256 chunks each way, no abort and no stale writeback. |
 | `DispatchReturnsWhilePeerStalled` | Finding DIST-14. While the proxy holds every byte, a graph with one offloadable node and one native node is started. The native node runs, `offloaded` reaches 1 and the task stays pending; the run ends on the worker once the bytes pass. |
 
+## compile_distributed_log_category.cpp
+
+The file includes `distributed_log_category.hpp` alone, so the header carries every include it needs.
+The header holds a constant, which has no behaviour of its own to test.
+
 ## test_kernel_registry.cpp
 
-### `SealedRegistryStopsARegistration`, `EmptyKernelStopsTheRegistration`
+### `SealedRegistryStopsARegistration`, `SealingKeepsTheRegisteredKernels`, `EmptyKernelStopsTheRegistration`
 
 Finding QC-37. `Medium_KernelRegistryDeathTest` needs no queue: its kernel returns a default event
-and is never called. After `seal()`, called twice, `register_kernel` must stop the process for a
-new operation and for one already registered, and the registry must hold what it held. A
-default-constructed `Kernel` must stop it on an open registry and on a sealed one, with the
-message that names the empty kernel.
+and is never called. After `seal()`, `register_kernel` must stop the process for a new operation
+and for one already registered. `SealingKeepsTheRegisteredKernels` runs small: sealing marks the
+registry sealed and keeps what it held. A default-constructed `Kernel` must stop a registration on
+an open registry and on a sealed one, with the message that names the empty kernel.
 
 ## test_registered_task/test_nested_run_probe.cpp
 
@@ -323,14 +327,17 @@ SushiAI's replica does with a whole compiled step; the nested-run rule is in
 The kernel runs a one-task graph, `out = 2 * in`, and records how its `Graph::run()` ended. A worker
 runs each dispatch as a task of its runtime's run, and the master runs a local fallback as a task
 of its own run, so in both places the kernel's body is inside a run. Every master run goes through
-`BoundedRun`, which fails a test after 10 s instead of hanging it. Every test skips when SYCL
-reports no device.
+`BoundedRun`, which fails a test after 10 s instead of hanging it. The master runs on the program's
+one runtime; the worker's runtime and the second runtime are made once for the program, on first
+use, by the fixture.
 
 | Test | What it proves |
 | --- | --- |
-| `WorkerKernelRunningAGraphOfItsOwnRuntimeIsRefused` | On a worker, the nested `run()` on the worker's own runtime returns `InvalidState`, the inner output stays unwritten, the dispatch still succeeds, and the same graph runs once the dispatch is over. |
+| `WorkerKernelRunningAGraphOfItsOwnRuntimeIsRefused` | On a worker, the nested `run()` on the worker's own runtime returns `InvalidState`, the inner output stays unwritten, the dispatch still succeeds. |
+| `TheWorkerRuntimeIsUsableAfterTheRefusal` | After that refusal the same graph runs on the worker's runtime and writes the right output. |
 | `WorkerKernelRunsAGraphOfASecondRuntime` | On a worker, a graph built on a second `Runtime` of the process runs to its end and writes the right output. |
-| `MasterFallbackRunningAGraphOfItsOwnRuntimeIsRefused` | On the master, the same refusal, with the task's body run locally; the runtime is usable after the run. |
+| `MasterFallbackRunningAGraphOfItsOwnRuntimeIsRefused` | On the master, the same refusal, with the task's body run locally. |
+| `TheMasterRuntimeIsUsableAfterTheRefusal` | After that refusal the same graph runs on the master's runtime and writes the right output. |
 | `MasterFallbackRunsAGraphOfASecondRuntime` | On the master, a graph of a second `Runtime` runs to its end and writes the right output. |
 
 ## test_shared_secret.cpp
@@ -340,7 +347,7 @@ handshake proofs it feeds are tested in `tests/extension/link_security/`.
 
 | Test | What it proves |
 | --- | --- |
-| `ScratchFile` | `ScratchFile` writes a file into the working directory of the test program, which is inside the build tree, and removes it when the test ends. The `SharedSecret` tests read their secrets from such files: 31 bytes must be refused with the file name and the length in the message, 32 bytes must be accepted byte for byte, and a missing file must be refused with its path in the message. |
+| `ScratchFile` | `ScratchFile` writes a file into a temporary folder named for the running test and removes the folder when the test ends. The `SharedSecret` tests read their secrets from such files: 31 bytes must be refused with the file name and the length in the message, 32 bytes must be accepted byte for byte, and a missing file must be refused with its path in the message. A move empties its source and a clone keeps it, each its own small test, as does the refusal of 31 bytes given in memory. |
 
 ## test_tcp_transport.cpp
 
@@ -441,7 +448,7 @@ of the next connection then runs on the same exec thread.
 
 ## test_worker_main.cpp
 
-The five exit-code tests of `Medium_WorkerMainTest` call `run_worker()` against a master
+The exit-code tests of `Medium_WorkerMainTest` call `run_worker()` against a master
 listening with `TCPTransport::make_master()` on a port the OS chooses, through `ServedWorker`, which
 runs the worker on a thread of its own with an empty secret and reconnecting off. `FakeMaster` is a
 `TransportEvents` on the master endpoint that plays the frames of one script: reject for
@@ -465,18 +472,18 @@ default, receives it. The worker returns 0 and the master receives `GOODBYE`.
 | `AuthenticationRejectExitsThree`, `VersionRejectExitsFour` | The fake master answers `HELLO` with `REJECT(authentication)` or `REJECT(version)`. The worker returns 3 or 4 and does not reconnect. |
 | `MasterNotReachedExitsTwo` | Exit code 2. Nobody listens on `127.0.0.1:1` and the worker's connect timeout is 1 s. |
 | `MasterLostWithoutReconnectExitsFive` | Exit code 5. The fake master sends `WELCOME` and closes the connection; the worker runs with reconnecting off. |
-| `RunWorkerOverTCPReturnsTheCodeOfItsEnd` | The one test of `run_worker(options, kernels)` with a connection. A fake master listens with `TCPTransport::make_master()` on a port the OS chooses, welcomes the worker and closes. The worker, on a second thread with reconnecting off, returns 5. |
 
 ## test_worker_options_parser.cpp
 
 The parser tests pass an `EnvironmentReader` over a table, so no test changes the environment of
-the test process.
+the test process. Every test runs small but `ProcessEnvironmentOverloadReadsTheFlags`, which reads the
+real environment.
 
 | Test | What it proves |
 | --- | --- |
-| `MasterAloneGivesTheDefaults`, `EveryFlagIsRead` | `--master` alone leaves every other setting at the default of the flag table. The second test gives every flag, half as `--flag value` and half as `--flag=value`, and reads each field back. |
+| `TheMasterAloneLeavesTheDefault`, `EveryFlagIsRead` | `--master` alone leaves each setting at the default of the flag table, one row per default. The second test gives every flag, half as `--flag value` and half as `--flag=value`, and reads each field back. |
 | `EnvironmentFillsWhatNoFlagGives`, `FlagBeatsEnvironmentBeatsDefault`, `EmptyVariableCountsAsUnset` | With no flag, each of the eight variables sets its field. With `--max-jobs 3` and `SR_WORKER_MAX_JOBS` set to text that is not a number, the flag wins and the variable is never parsed. A variable set to nothing leaves the default. |
-| `HelpListsEveryFlagAndVariable`, `VersionNeedsNoMaster` | `--help` and `--version` are answered without `--master`. The usage text names all thirteen flags and all nine variables. |
+| `HelpNamesTheFlagOrVariable`, `VersionNeedsNoMaster` | `--help` and `--version` are answered without `--master`. The usage text names each of the thirteen flags and nine variables, one row each. |
 | `LabelsComeFromTheVariableAndRepeatedFlags`, `TheVariableHoldsPairsSeparatedByCommas`, `NoLabelGivesAnEmptyList` | `SR_WORKER_LABELS` and two `--label` flags give three labels, the variable's first. The variable splits at each comma and a label's value may hold '='. An empty variable counts as unset. |
 | `ALabelThatBreaksARuleIsRefused`, `ALabelAbove255BytesIsRefused` | An empty key, a label with no '=' and a repeated key are each refused, from a flag and from the variable, and so is a repeat across the two. A key or a value over 255 bytes is refused. Each message is one line that starts with `--label` or `SR_WORKER_LABELS`. |
 
@@ -494,7 +501,8 @@ The file tests BufferView: the bytes it names, read as an element type.
 
 | Test | What it proves |
 | --- | --- |
-| `AsTypesTheAddress` | As() returns the address typed, and a default view names nothing. |
+| `AsTypesTheAddress` | As() returns the address of the bytes, typed as the element asked for. |
+| `ADefaultViewNamesNothing` | A default view names no bytes. |
 
 ## test_cluster.cpp
 
@@ -502,9 +510,12 @@ The file tests Cluster without a worker: attach, shared buffers, versions and th
 
 | Test | What it proves |
 | --- | --- |
-| `AMasterWithNoWorkerReportsNone` | A master with no worker reports none and offloads nothing. |
-| `ASharedAddressGetsAHandle` | A shared address gets a valid handle whose version bump_buffer() raises. |
-| `ALivenessTimeoutBelowTheMinimumIsRefused` | A liveness timeout under one millisecond is refused and changes nothing. |
+| `AMasterWithNoWorkerReportsNone` | An attached master with no worker reports none and offloads nothing. |
+| `ADetachedMasterReportsNoWorker` | A detached master reports no worker. |
+| `ASharedAddressGetsAHandle` | A shared address gets a valid handle whose version bump_buffer() raises by one. |
+| `AnUnsharedAddressHasNoHandle` | An address nobody shared has no handle. |
+| `ALivenessTimeoutBelowTheMinimumIsRefused` | A liveness timeout under one millisecond is refused. |
+| `ALivenessTimeoutOfTheMinimumIsAccepted` | A liveness timeout of exactly the minimum is accepted. |
 
 ## test_registered_task/test_registered_task.cpp
 

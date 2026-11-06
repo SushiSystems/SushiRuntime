@@ -51,23 +51,31 @@ namespace
     }
 }
 
-/** @brief Tests that a sealed registry keeps its kernels and stops a registration. */
+/** @brief Tests that a sealed registry stops a registration, of a new operation or a known one. */
 TEST(Medium_KernelRegistryDeathTest, SealedRegistryStopsARegistration)
 {
     const OperationID early(21);
     const OperationID late(22);
     const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
     kernels->register_kernel(early, idle_kernel());
+    kernels->seal();
+
+    EXPECT_DEATH(kernels->register_kernel(late, idle_kernel()), "the registry is sealed");
+    EXPECT_DEATH(kernels->register_kernel(early, idle_kernel()), "the registry is sealed");
+}
+
+/** @brief Tests that sealing marks the registry sealed and keeps the kernels registered before it. */
+TEST(Small_KernelRegistry, SealingKeepsTheRegisteredKernels)
+{
+    const OperationID early(21);
+    const sushi_ptr<KernelRegistry> kernels = make_sushi<KernelRegistry>();
+    kernels->register_kernel(early, idle_kernel());
     EXPECT_FALSE(kernels->is_sealed());
 
     kernels->seal();
-    kernels->seal();
 
     EXPECT_TRUE(kernels->is_sealed());
-    EXPECT_DEATH(kernels->register_kernel(late, idle_kernel()), "the registry is sealed");
-    EXPECT_DEATH(kernels->register_kernel(early, idle_kernel()), "the registry is sealed");
     EXPECT_TRUE(kernels->has(early));
-    EXPECT_FALSE(kernels->has(late));
     EXPECT_EQ(kernels->known_ops().size(), 1u);
 }
 

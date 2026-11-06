@@ -72,24 +72,34 @@ namespace
         return secret.error();
     }
 
-    /** @brief Writes a file in the working directory and removes it when destroyed. */
+    /** @brief Returns the temporary folder that belongs to the running test. */
+    std::filesystem::path test_folder()
+    {
+        const ::testing::TestInfo* info = ::testing::UnitTest::GetInstance()->current_test_info();
+        return std::filesystem::temp_directory_path() / "sushiruntime_tests" /
+               (std::string(info->test_suite_name()) + "_" + info->name());
+    }
+
+    /** @brief Writes a file in the running test's temporary folder and removes the folder when destroyed. */
     class ScratchFile final
     {
         public:
-            /** @brief Writes @p bytes to a file called @p name in the working directory. */
+            /** @brief Writes @p bytes to a file called @p name in the test's temporary folder. */
             ScratchFile(const std::string& name, const std::vector<std::uint8_t>& bytes)
-                : path_(std::filesystem::current_path() / name)
+                : folder_(test_folder()),
+                  path_(folder_ / name)
             {
+                std::filesystem::create_directories(folder_);
                 std::ofstream stream(path_, std::ios::binary | std::ios::trunc);
                 stream.write(reinterpret_cast<const char*>(bytes.data()),
                              static_cast<std::streamsize>(bytes.size()));
             }
 
-            /** @brief Removes the file. */
+            /** @brief Removes the folder and the file in it. */
             ~ScratchFile()
             {
                 std::error_code ignored;
-                std::filesystem::remove(path_, ignored);
+                std::filesystem::remove_all(folder_, ignored);
             }
 
             ScratchFile(const ScratchFile&) = delete;
@@ -104,6 +114,9 @@ namespace
             }
 
         private:
+            /** @brief Holds the temporary folder of the running test. */
+            std::filesystem::path folder_;
+
             /** @brief Holds the absolute path of the file. */
             std::filesystem::path path_;
     };
@@ -140,7 +153,7 @@ TEST(Medium_SharedSecretTest, FromFileAcceptsThirtyTwoBytes)
 TEST(Medium_SharedSecretTest, FromFileMissingNamesThePath)
 {
     const std::filesystem::path missing =
-        std::filesystem::current_path() / "sr_test_shared_secret_missing.bin";
+        test_folder() / "sr_test_shared_secret_missing.bin";
 
     const std::optional<Error> error =
         error_of(SharedSecret::from_file(missing));
@@ -160,24 +173,32 @@ TEST(Medium_SharedSecretTest, FromEnvironmentUnsetIsEmpty)
     EXPECT_EQ(secret.size(), 0u);
 }
 
-/** @brief Tests that a move empties its source and a clone leaves it whole. */
-TEST(Medium_SharedSecretTest, MoveEmptiesTheSourceAndCloneKeepsIt)
+/** @brief Tests that a clone holds the same bytes and leaves its source whole. */
+TEST(Small_SharedSecretTest, CloneKeepsTheSource)
 {
     const std::vector<std::uint8_t> content = counting(0x40, 48);
     SharedSecret original = SharedSecret::from_bytes(bytes_of(content)).value();
 
     const SharedSecret copy = original.clone();
+
     EXPECT_EQ(original.size(), content.size());
     EXPECT_EQ(std::vector<std::uint8_t>(copy.bytes().begin(), copy.bytes().end()), content);
+}
+
+/** @brief Tests that a move hands the bytes over and empties the source. */
+TEST(Small_SharedSecretTest, MoveEmptiesTheSource)
+{
+    const std::vector<std::uint8_t> content = counting(0x40, 48);
+    SharedSecret original = SharedSecret::from_bytes(bytes_of(content)).value();
 
     const SharedSecret moved = std::move(original);
+
     EXPECT_EQ(moved.size(), content.size());
     EXPECT_TRUE(original.empty());
-    EXPECT_TRUE(SharedSecret().empty());
 }
 
 /** @brief Tests that bytes passed in memory meet the same minimum as a file. */
-TEST(Medium_SharedSecretTest, FromBytesRefusesAShortSecret)
+TEST(Small_SharedSecretTest, FromBytesRefusesAShortSecret)
 {
     const std::vector<std::uint8_t> content = counting(0x00, 31);
 

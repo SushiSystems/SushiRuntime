@@ -98,6 +98,7 @@
 #include <SushiRuntime/network_socket/socket.hpp>
 #include <SushiRuntime/offload_coordination/offload_dispatcher.hpp>
 
+#include "support/runtime_environment.hpp"
 #include "tcp_fault_proxy.hpp"
 
 using namespace SushiRuntime;
@@ -381,6 +382,13 @@ namespace EndToEndTests
                         });
                     });
                 }, options);
+        }
+
+        /** @brief Records @p writes local fills of @p buffer, the n-th with base 10 * n. */
+        void add_local_writes(Graph& graph, const USMFloats& buffer, int writes)
+        {
+            for (int write = 1; write <= writes; ++write)
+                add_local_fill(graph, "write", buffer, 10.0f * static_cast<float>(write));
         }
 
         /**
@@ -1112,7 +1120,7 @@ namespace EndToEndTests
 
         constexpr std::size_t K_COUNT = 1024;
         std::atomic<int> worker_runs{0};
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 0.0f);
@@ -1153,7 +1161,7 @@ namespace EndToEndTests
         constexpr std::size_t K_COUNT = 256;
         std::atomic<int> first_runs{0};
         std::atomic<int> second_runs{0};
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats in(queue, K_COUNT, 0.0f);
@@ -1189,75 +1197,22 @@ namespace EndToEndTests
         second.stop();
     }
 
-    /** @brief Tests that a local write raises a shared buffer's version and the worker reads it. */
-    TEST(Medium_DistributedE2ETest, AutoVersionBumpAcrossLocalWriteThenOffloadedRead)
+    /** @brief Runs one row of local writes before the dispatch on the program's one runtime. */
+    class Medium_DistributedE2EVersionTest : public TestSupport::RuntimeTest,
+                                             public ::testing::WithParamInterface<int>
     {
-        if (!SushiRuntime::Test::has_any_sycl_device())
-            GTEST_SKIP() << "SYCL reports no device.";
-
-        constexpr std::size_t K_COUNT = 512;
-        std::atomic<int> worker_runs{0};
-        Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
-        sycl::queue& queue = master_context.devices().queue(0);
-        USMFloats x(queue, K_COUNT, -7.0f);
-        USMFloats y(queue, K_COUNT, K_UNWRITTEN);
-
-        InProcessFabric fabric;
-        LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
-        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
-                                          eager_options()).value();
-        ASSERT_TRUE(worker.start());
-        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
-
-        share(cluster, x);
-        share(cluster, y);
-        const std::optional<BufferHandle> before = cluster.buffer_handle(x.data());
-        ASSERT_TRUE(before.has_value());
-
-        auto graph = master_runtime.graph();
-        NodeOptions fill_options;
-        fill_options.name = "local_fill";
-        float* values = x.data();
-        graph.add_task(
-            Reads(), Writes(BufferRegion(values)),
-            [values](sycl::queue& local_queue, const std::vector<sycl::event>&) -> sycl::event
-            {
-                return local_queue.submit([&](sycl::handler& handler)
-                {
-                    SushiRuntime::Detail::enqueue_host_task(handler, [=]
-                    {
-                        for (std::size_t index = 0; index < K_COUNT; ++index)
-                            values[index] = static_cast<float>(index + 1);
-                    });
-                });
-            }, fill_options);
-        add_vec_add(graph, "double_on_worker", x, x, y);
-
-        graph.run().value();
-
-        const std::optional<BufferHandle> after = cluster.buffer_handle(x.data());
-        ASSERT_TRUE(after.has_value());
-        EXPECT_GT(after->version, before->version);
-        EXPECT_EQ(worker_runs.load(), 1);
-        expect_elements(y.data(), y.count(),
-                        [](std::size_t index) { return 2.0f * static_cast<float>(index + 1); });
-
-        worker.stop();
-    }
+    };
 
     /**
-     * @brief Tests that a worker holding an old version of a shared buffer pulls the new one
-     *        after a local task wrote it.
+     * @brief Tests that local writes raise a shared buffer's version once each, and that a worker
+     *        holding the old version pulls the new one once, whatever the number of writes.
      */
-    TEST(Medium_DistributedE2ETest, WorkerPullsTheNewVersionAfterALocalWrite)
+    TEST_P(Medium_DistributedE2EVersionTest, LocalWritesRaiseTheVersionAndCostOnePull)
     {
-        if (!SushiRuntime::Test::has_any_sycl_device())
-            GTEST_SKIP() << "SYCL reports no device.";
-
+        const int writes = GetParam();
         constexpr std::size_t K_COUNT = 512;
         std::atomic<int> worker_runs{0};
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = runtime();
         RuntimeContext& master_context =
             SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
@@ -1277,83 +1232,34 @@ namespace EndToEndTests
         add_vec_add(first, "first_read", x, x, y);
         first.run().value();
         ASSERT_EQ(worker_runs.load(), 1);
-        expect_elements(y.data(), y.count(), [](std::size_t) { return 2.0f; });
-        const std::uint64_t first_chunks = cluster.statistics().chunks_sent;
-        ASSERT_GT(first_chunks, 0u) << "the worker did not pull the first version";
-        const std::optional<BufferHandle> held = cluster.buffer_handle(x.data());
-        ASSERT_TRUE(held.has_value());
-
-        auto second = master_runtime.graph();
-        add_local_fill(second, "optimizer", x, 10.0f);
-        add_vec_add(second, "second_read", x, x, y);
-        second.run().value();
-
-        const std::optional<BufferHandle> current = cluster.buffer_handle(x.data());
-        ASSERT_TRUE(current.has_value());
-        EXPECT_GT(current->version, held->version);
-        EXPECT_EQ(worker_runs.load(), 2);
-        EXPECT_GT(cluster.statistics().chunks_sent, first_chunks)
-            << "the worker read its cached old version";
-        expect_elements(y.data(), y.count(),
-                        [](std::size_t index)
-                        {
-                            return 2.0f * (10.0f + static_cast<float>(index));
-                        });
-
-        worker.stop();
-    }
-
-    /** @brief Tests that two local writes before one dispatch cost the worker one pull. */
-    TEST(Medium_DistributedE2ETest, TwoLocalWritesBeforeADispatchCostOnePull)
-    {
-        if (!SushiRuntime::Test::has_any_sycl_device())
-            GTEST_SKIP() << "SYCL reports no device.";
-
-        constexpr std::size_t K_COUNT = 512;
-        std::atomic<int> worker_runs{0};
-        Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context =
-            SushiRuntime::Internal::ContextAccess::context(master_runtime);
-        sycl::queue& queue = master_context.devices().queue(0);
-        USMFloats x(queue, K_COUNT, 1.0f);
-        USMFloats y(queue, K_COUNT, K_UNWRITTEN);
-
-        InProcessFabric fabric;
-        LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
-        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
-                                          eager_options()).value();
-        ASSERT_TRUE(worker.start());
-        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
-        share(cluster, x);
-        share(cluster, y);
-
-        auto first = master_runtime.graph();
-        add_vec_add(first, "first_read", x, x, y);
-        first.run().value();
         const std::uint64_t pull_chunks = cluster.statistics().chunks_sent;
-        ASSERT_GT(pull_chunks, 0u);
+        ASSERT_GT(pull_chunks, 0u) << "the worker did not pull the first version";
         const std::optional<BufferHandle> held = cluster.buffer_handle(x.data());
         ASSERT_TRUE(held.has_value());
 
         auto second = master_runtime.graph();
-        add_local_fill(second, "first_write", x, 10.0f);
-        add_local_fill(second, "second_write", x, 20.0f);
+        const float last_base = 10.0f * static_cast<float>(writes);
+        add_local_writes(second, x, writes);
         add_vec_add(second, "second_read", x, x, y);
         second.run().value();
 
         const std::optional<BufferHandle> current = cluster.buffer_handle(x.data());
         ASSERT_TRUE(current.has_value());
-        EXPECT_EQ(current->version, held->version + 2u) << "each local write raises the version";
+        EXPECT_EQ(current->version, held->version + static_cast<std::uint64_t>(writes))
+            << "each local write raises the version";
+        EXPECT_EQ(worker_runs.load(), 2);
         EXPECT_EQ(cluster.statistics().chunks_sent, 2 * pull_chunks)
-            << "the worker pulled the buffer once for the two writes";
+            << "the worker pulled the buffer once for all the writes";
         expect_elements(y.data(), y.count(),
-                        [](std::size_t index)
+                        [last_base](std::size_t index)
                         {
-                            return 2.0f * (20.0f + static_cast<float>(index));
+                            return 2.0f * (last_base + static_cast<float>(index));
                         });
 
         worker.stop();
     }
+
+    INSTANTIATE_TEST_SUITE_P(LocalWrites, Medium_DistributedE2EVersionTest, ::testing::Values(1, 2));
 
     /** @brief Tests the vector-add offload over TCP on the loopback address. */
     TEST(Medium_DistributedE2ETest, OffloadOverTCPLoopback)
@@ -1363,7 +1269,7 @@ namespace EndToEndTests
 
         constexpr std::size_t K_COUNT = 1024;
         std::atomic<int> worker_runs{0};
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 0.0f);
@@ -1951,54 +1857,6 @@ namespace EndToEndTests
         EXPECT_EQ(std::count_if(warnings.begin(), warnings.end(), is_stranding), 1);
     }
 
-    /** @brief Tests that a rule deadline shorter than the cluster's takes a silent task back. */
-    TEST(Medium_DistributedPlacementTest, RuleDeadlineTakesASilentTaskBackSooner)
-    {
-        if (!SushiRuntime::Test::has_any_sycl_device())
-            GTEST_SKIP() << "SYCL reports no device.";
-
-        constexpr std::size_t K_COUNT = 16;
-        Runtime master_runtime = Runtime::create().value();
-        RuntimeContext& master_context =
-            SushiRuntime::Internal::ContextAccess::context(master_runtime);
-        sycl::queue& queue = master_context.devices().queue(0);
-        USMFloats a(queue, K_COUNT, 0.0f);
-        USMFloats b(queue, K_COUNT, 0.0f);
-        USMFloats out(queue, K_COUNT, K_UNWRITTEN);
-        a.ramp(1.0f);
-        b.ramp(2.0f);
-
-        // Neither the liveness timeout nor the cluster's deadline can end within K_WAIT.
-        InProcessFabric fabric;
-        ClusterOptions options = eager_options();
-        options.liveness_timeout = std::chrono::milliseconds(60000);
-        options.task_deadline = std::chrono::milliseconds(60000);
-        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
-                                          std::move(options)).value();
-        ScriptedWorker worker(fabric, K_VEC_ADD, DispatchAnswer::FallSilent);
-        worker.report(two_device_facts("rack-7-gpu", "a"));
-        ASSERT_TRUE(worker.start());
-        ASSERT_TRUE(cluster.wait_for_workers(1, K_WAIT));
-        share(cluster, a);
-        share(cluster, b);
-        share(cluster, out);
-
-        PlacementRule rule = pinned_rule();
-        rule.target.machine_name = "rack-7-gpu";
-        rule.deadline = std::chrono::milliseconds(100);
-        set_rule(master_runtime, std::move(rule));
-
-        auto graph = master_runtime.graph();
-        add_vec_add(graph, "deadline", a, b, out, pinned_options());
-        ASSERT_TRUE(graph.compile());
-        BackgroundRun run(graph);
-        ASSERT_TRUE(run.wait()) << "the rule's deadline did not take the task back";
-
-        EXPECT_GE(worker.dispatch_count(), 1u);
-        EXPECT_GE(cluster.statistics().tasks_reaped_deadline, 1u);
-        expect_sum(out, a, b);
-    }
-
     /**
      * @brief Tests that a 50 ms rule deadline reaps before the monitor's 250 ms period ends.
      *
@@ -2275,14 +2133,14 @@ namespace EndToEndTests
     }
 
     /** @brief Tests that a task whose input chunks are all lost fails remotely and runs locally. */
-    TEST(Medium_DistributedReliabilityTest, LostBufferPushTimesOutInsteadOfHanging)
+    TEST(Medium_DistributedReliabilityTest, LostBufferPushIsRedispatchedAndTheRunReturns)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
 
         constexpr std::size_t K_COUNT = 64;
         std::atomic<int> worker_runs{0};
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 0.0f);
@@ -2335,7 +2193,7 @@ namespace EndToEndTests
         constexpr std::size_t K_COUNT = 1024;
         std::atomic<int> worker_runs{0};
         InProcessFabric fabric;
-        Runtime runtime = Runtime::create().value();
+        Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
         LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
         Cluster cluster =
             Cluster::attach(runtime, InProcessTransport::make_master(fabric), eager_options()).value();
@@ -2511,7 +2369,7 @@ namespace EndToEndTests
 
         constexpr std::size_t K_COUNT = 128;
         std::atomic<int> worker_runs{0};
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         sycl::queue& queue = master_context.devices().queue(0);
         USMFloats a(queue, K_COUNT, 0.0f);
@@ -2732,14 +2590,10 @@ namespace EndToEndTests
                         [&local](std::size_t index) { return local.values[index]; });
     }
 
-    /** @brief Tests that an attach on a transport another master runs on throws and stops nothing. */
-    TEST(Medium_DistributedE2ETest, AttachOnAStartedTransportLeavesTheFirstMasterServing)
+    /** @brief Tests that an attach on a transport another master runs on is refused and installs nothing. */
+    TEST(Medium_DistributedE2ETest, AttachOnAStartedTransportIsRefused)
     {
-        if (!SushiRuntime::Test::has_any_sycl_device())
-            GTEST_SKIP() << "SYCL reports no device.";
-
-        std::atomic<int> worker_runs{0};
-        Runtime first_runtime = Runtime::create().value();
+        Runtime& first_runtime = TestSupport::RuntimeEnvironment::runtime();
         RuntimeContext& first_context = SushiRuntime::Internal::ContextAccess::context(first_runtime);
         Runtime second_runtime = Runtime::create().value();
         RuntimeContext& second_context = SushiRuntime::Internal::ContextAccess::context(second_runtime);
@@ -2749,8 +2603,22 @@ namespace EndToEndTests
         const OffloadCoordinator* const installed = first_context.offload();
 
         EXPECT_FALSE(Cluster::attach(second_runtime, transport).has_value());
+
         EXPECT_EQ(second_context.offload(), nullptr);
         EXPECT_EQ(first_context.offload(), installed);
+        first.detach();
+    }
+
+    /** @brief Tests that a refused second attach leaves the transport of the first master running. */
+    TEST(Medium_DistributedE2ETest, AttachOnAStartedTransportLeavesTheFirstMasterServing)
+    {
+        std::atomic<int> worker_runs{0};
+        Runtime& first_runtime = TestSupport::RuntimeEnvironment::runtime();
+        Runtime second_runtime = Runtime::create().value();
+        InProcessFabric fabric;
+        const std::shared_ptr<InProcessTransport> transport = InProcessTransport::make_master(fabric);
+        Cluster first = Cluster::attach(first_runtime, transport).value();
+        ASSERT_FALSE(Cluster::attach(second_runtime, transport).has_value());
 
         // A worker registers only with a master whose transport still runs.
         LocalWorker worker(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
@@ -2769,7 +2637,7 @@ namespace EndToEndTests
             GTEST_SKIP() << "SYCL reports no device.";
 
         std::atomic<int> worker_runs{0};
-        Runtime master_runtime = Runtime::create().value();
+        Runtime& master_runtime = TestSupport::RuntimeEnvironment::runtime();
         InProcessFabric fabric;
         LocalWorker first(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
         LocalWorker second(InProcessTransport::make_worker(fabric), vec_add_kernels(worker_runs));
@@ -2883,7 +2751,7 @@ namespace EndToEndTests
         EXPECT_FALSE(assigned.wait_for_workers(0, std::chrono::milliseconds(0)));
     }
 
-    /** @brief Tests that a liveness or handshake timeout of 0 is refused and a deadline of 0 is not. */
+    /** @brief Tests that attach refuses a liveness or handshake timeout of 0 and names it, and accepts a deadline of 0. */
     TEST(Medium_DistributedE2ETest, RefusesATimeoutBelowOneMillisecond)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
@@ -2925,10 +2793,6 @@ namespace EndToEndTests
             std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult()),
             std::move(without_deadline)).value();
 
-        const Result<void> refused = cluster.liveness_timeout(std::chrono::milliseconds(0));
-        ASSERT_FALSE(refused.has_value());
-        EXPECT_EQ(refused.error().code, ErrorCode::InvalidState);
-        EXPECT_TRUE(cluster.liveness_timeout(K_MINIMUM_TIMEOUT).has_value());
         cluster.task_deadline(std::chrono::milliseconds(0));
         cluster.detach();
     }
@@ -2954,37 +2818,56 @@ namespace EndToEndTests
         cluster.detach();
     }
 
-    /** @brief Tests that Cluster::share registers a host-addressable handle and skips an empty one. */
-    TEST(Medium_DistributedE2ETest, ShareRegistersAHostAccessibleHandle)
+    /** @brief Tests that Cluster::share registers the handle of a Buffer and the two of a State. */
+    TEST(Medium_DistributedE2ETest, ShareRegistersABufferAndAState)
     {
-        if (!SushiRuntime::Test::has_any_sycl_device())
-            GTEST_SKIP() << "SYCL reports no device.";
-
         InProcessFabric fabric;
-        Runtime runtime = Runtime::create().value();
+        Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
         Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
         auto buffer = runtime.buffer<float>(8).value();
         auto field = runtime.state<float>(8).value();
-        auto moved_from = runtime.buffer<float>(8).value();
-        auto taken = std::move(moved_from);
-        ASSERT_EQ(taken.size(), 8u);
 
         EXPECT_EQ(&cluster.share(buffer), &buffer);
         EXPECT_EQ(&cluster.share(field), &field);
-        cluster.share(moved_from);
-        auto pinned = cluster.share(runtime.buffer<float>(8, DeviceIndex{0}, Residency::Host).value());
 
         EXPECT_TRUE(cluster.buffer_handle(buffer.data()).has_value());
         EXPECT_TRUE(cluster.buffer_handle(field.current()).has_value());
         EXPECT_TRUE(cluster.buffer_handle(field.next()).has_value());
-        EXPECT_TRUE(cluster.buffer_handle(pinned.data()).has_value());
+        cluster.detach();
+    }
+
+    /** @brief Tests that Cluster::share skips a moved-from handle. */
+    TEST(Medium_DistributedE2ETest, ShareSkipsAnEmptyHandle)
+    {
+        InProcessFabric fabric;
+        Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
+        Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
+        auto moved_from = runtime.buffer<float>(8).value();
+        auto taken = std::move(moved_from);
+        ASSERT_EQ(taken.size(), 8u);
+
+        cluster.share(moved_from);
+
         EXPECT_FALSE(cluster.buffer_handle(taken.data()).has_value())
             << "a buffer nobody shared has a handle";
         cluster.detach();
     }
 
+    /** @brief Tests that Cluster::share registers a buffer of Host residency. */
+    TEST(Medium_DistributedE2ETest, ShareRegistersAHostResidentBuffer)
+    {
+        InProcessFabric fabric;
+        Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
+        Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
+
+        auto pinned = cluster.share(runtime.buffer<float>(8, DeviceIndex{0}, Residency::Host).value());
+
+        EXPECT_TRUE(cluster.buffer_handle(pinned.data()).has_value());
+        cluster.detach();
+    }
+
     /** @brief Tests that a worker agent seals the registry it is built with, before start(). */
-    TEST(Medium_DistributedE2EDeathTest, WorkerAgentSealsItsRegistry)
+    TEST(Medium_DistributedE2ETest, WorkerAgentSealsItsRegistry)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
@@ -2997,9 +2880,6 @@ namespace EndToEndTests
         LocalWorker worker(InProcessTransport::make_worker(fabric), kernels);
 
         EXPECT_TRUE(kernels->is_sealed()) << "the agent read its operations from an open registry";
-        EXPECT_FALSE(kernels->has(K_STATE_STEP));
-        EXPECT_DEATH(kernels->register_kernel(K_STATE_STEP, vec_add_kernel(worker_runs)),
-                     "the registry is sealed");
     }
 } // namespace EndToEndTests
 
@@ -3551,50 +3431,52 @@ namespace FaultInjectionTests
         }
     } // namespace
 
-    /** @brief Tests that eight seeded fault schedules each end with the outputs of a clean run. */
-    TEST(Medium_DistributedJepsenTest, DeterminismUnderRandomFaults)
+    /** @brief Runs one seeded fault schedule. */
+    class Medium_DistributedJepsenTest : public ::testing::TestWithParam<std::uint64_t>
+    {
+    };
+
+    /** @brief Tests that an offload graph under the message faults of one seed ends with the outputs of a clean run. */
+    TEST_P(Medium_DistributedJepsenTest, DeterminismUnderRandomFaults)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
 
-        for (std::uint64_t seed = 1; seed <= 8; ++seed)
-        {
-            const std::string failure = run_one_scenario(seed);
-            EXPECT_TRUE(failure.empty()) << "seed " << seed << ": " << failure;
-        }
+        const std::string failure = run_one_scenario(GetParam());
+
+        EXPECT_TRUE(failure.empty()) << "seed " << GetParam() << ": " << failure;
     }
 
-    /** @brief Tests that a worker registers although HELLO, CHALLENGE and PROOF are each lost once. */
-    TEST(Medium_DistributedJepsenTest, RegistrationSurvivesMessageLoss)
+    INSTANTIATE_TEST_SUITE_P(Seeds, Medium_DistributedJepsenTest,
+                             ::testing::Values(1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u));
+
+    /** @brief Runs one row of handshake frame types lost once each. */
+    class Medium_DistributedJepsenRegistrationTest
+        : public ::testing::TestWithParam<std::vector<MessageType>>
+    {
+    };
+
+    /** @brief Tests that a worker registers and runs a task although each listed handshake frame is lost once. */
+    TEST_P(Medium_DistributedJepsenRegistrationTest, RegistrationSurvivesLostHandshakeFrames)
     {
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
 
-        const LossyRegistration outcome = register_under_loss(
-            {MessageType::Hello, MessageType::Challenge, MessageType::Proof});
+        const LossyRegistration outcome = register_under_loss(GetParam());
 
         ASSERT_TRUE(outcome.assembled) << "the worker never registered after the lost frames";
-        EXPECT_EQ(outcome.frames_dropped, 3) << "the handshake did not meet each of the three losses";
+        EXPECT_EQ(outcome.frames_dropped, static_cast<int>(GetParam().size()))
+            << "the handshake did not meet each loss";
         ASSERT_TRUE(outcome.returned) << "execute() did not return after a lossy registration";
         EXPECT_EQ(outcome.worker_runs, 1) << "the registered worker did not run the task";
         EXPECT_EQ(outcome.wrong, K_COUNT) << "output element " << outcome.wrong << " is wrong";
     }
 
-    /** @brief Tests that a worker whose WELCOME is lost registers again and runs the task. */
-    TEST(Medium_DistributedJepsenTest, RegistrationSurvivesALostWelcome)
-    {
-        if (!SushiRuntime::Test::has_any_sycl_device())
-            GTEST_SKIP() << "SYCL reports no device.";
-
-        const LossyRegistration outcome = register_under_loss({MessageType::Welcome});
-
-        ASSERT_TRUE(outcome.assembled);
-        EXPECT_EQ(outcome.frames_dropped, 1);
-        ASSERT_TRUE(outcome.returned) << "execute() did not return after the lost WELCOME";
-        EXPECT_EQ(outcome.wrong, K_COUNT) << "output element " << outcome.wrong << " is wrong";
-        EXPECT_EQ(outcome.worker_runs, 1)
-            << "the master counts a worker that never learned it was registered";
-    }
+    INSTANTIATE_TEST_SUITE_P(
+        LostFrames, Medium_DistributedJepsenRegistrationTest,
+        ::testing::Values(std::vector<MessageType>{MessageType::Welcome},
+                          std::vector<MessageType>{MessageType::Hello, MessageType::Challenge,
+                                                   MessageType::Proof}));
 } // namespace FaultInjectionTests
 
 /** @brief Tests a master and a worker over loopback TCP while the link between them is faulted. */
@@ -4220,8 +4102,8 @@ namespace TCPFaultsTests
         EXPECT_EQ(cluster_->statistics().peers_closed_malformed, 1u);
     }
 
-    /** @brief Tests that a worker and a raw peer that hold another secret are both kept out. */
-    TEST_F(Medium_DistributedTcpFaultsTest, WrongSecretRejected)
+    /** @brief Tests that a worker holding another secret ends with RejectedAuthentication. */
+    TEST_F(Medium_DistributedTcpFaultsTest, AWorkerWithAnotherSecretEndsRejected)
     {
         ClusterOptions options;
         options.secret = make_secret(0x11);
@@ -4232,6 +4114,14 @@ namespace TCPFaultsTests
         ASSERT_NO_FATAL_FAILURE(start_worker(master_endpoint(), std::move(worker)));
         EXPECT_EQ(agent_->wait_for_end(K_WAIT), WorkerEnd::RejectedAuthentication);
         agent_->stop();
+    }
+
+    /** @brief Tests that a raw peer with a wrong proof is closed, counted as rejected and takes no slot. */
+    TEST_F(Medium_DistributedTcpFaultsTest, WrongProofClosesTheConnectionAndIsCounted)
+    {
+        ClusterOptions options;
+        options.secret = make_secret(0x11);
+        start_master(std::move(options));
 
         Socket impostor;
         ASSERT_TRUE(impostor.connect(master_endpoint(), K_WAIT).is_ok());

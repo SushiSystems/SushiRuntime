@@ -6,10 +6,10 @@
 sushiruntime_add_module_tests(
     MODULE distributed
     SOURCES
+        compile_distributed_log_category.cpp
         test_buffer_view.cpp
         test_cluster.cpp
         test_distributed.cpp
-        test_distributed_log_category.cpp
         test_kernel_registry.cpp
         test_registered_task/test_registered_task.cpp
         test_registered_task/test_nested_run_probe.cpp

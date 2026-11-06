@@ -38,30 +38,45 @@
 #include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
-/** @brief Tests that a master with no worker reports none and offloads nothing. */
-TEST(Medium_Cluster, AMasterWithNoWorkerReportsNone)
+/**
+ * @brief Runs the cluster tests on the program's one runtime.
+ */
+class Medium_Cluster : public TestSupport::RuntimeTest
 {
-    auto runtime = Runtime::create().value();
+};
+
+/** @brief Tests that an attached master with no worker reports none and offloads nothing. */
+TEST_F(Medium_Cluster, AMasterWithNoWorkerReportsNone)
+{
     InProcessFabric fabric;
-    Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
+    Cluster cluster = Cluster::attach(runtime(), InProcessTransport::make_master(fabric)).value();
     EXPECT_EQ(cluster.alive_workers(), 0u);
     EXPECT_FALSE(cluster.wait_for_workers(1, std::chrono::milliseconds(0)));
     EXPECT_EQ(cluster.statistics().alive_workers, 0u);
     EXPECT_EQ(cluster.offloaded(), 0u);
     cluster.detach();
+}
+
+/** @brief Tests that a master reports no worker after it is detached. */
+TEST_F(Medium_Cluster, ADetachedMasterReportsNoWorker)
+{
+    InProcessFabric fabric;
+    Cluster cluster = Cluster::attach(runtime(), InProcessTransport::make_master(fabric)).value();
+    cluster.detach();
     EXPECT_EQ(cluster.alive_workers(), 0u);
 }
 
-/** @brief Tests that a shared address gets a valid handle whose version bump_buffer() raises. */
-TEST(Medium_Cluster, ASharedAddressGetsAHandle)
+/** @brief Tests that a shared address gets a valid handle and bump_buffer() raises its version by one. */
+TEST_F(Medium_Cluster, ASharedAddressGetsAHandle)
 {
-    auto runtime = Runtime::create().value();
     InProcessFabric fabric;
-    Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
-    auto buffer = runtime.buffer<float>(16).value();
+    Cluster cluster = Cluster::attach(runtime(), InProcessTransport::make_master(fabric)).value();
+    auto buffer = runtime().buffer<float>(16).value();
     cluster.share(buffer);
 
     const std::optional<BufferHandle> handle = cluster.buffer_handle(buffer.data());
@@ -70,19 +85,33 @@ TEST(Medium_Cluster, ASharedAddressGetsAHandle)
     EXPECT_EQ(handle->size_bytes, 16 * sizeof(float));
     cluster.bump_buffer(buffer.data());
     EXPECT_EQ(cluster.buffer_handle(buffer.data())->version, handle->version + 1);
+    cluster.detach();
+}
 
+/** @brief Tests that an address nobody shared has no handle. */
+TEST_F(Medium_Cluster, AnUnsharedAddressHasNoHandle)
+{
+    InProcessFabric fabric;
+    Cluster cluster = Cluster::attach(runtime(), InProcessTransport::make_master(fabric)).value();
     int unknown = 0;
     EXPECT_FALSE(cluster.buffer_handle(&unknown).has_value());
     cluster.detach();
 }
 
-/** @brief Tests that a liveness timeout under one millisecond is refused and changes nothing. */
-TEST(Medium_Cluster, ALivenessTimeoutBelowTheMinimumIsRefused)
+/** @brief Tests that a liveness timeout under one millisecond is refused. */
+TEST_F(Medium_Cluster, ALivenessTimeoutBelowTheMinimumIsRefused)
 {
-    auto runtime = Runtime::create().value();
     InProcessFabric fabric;
-    Cluster cluster = Cluster::attach(runtime, InProcessTransport::make_master(fabric)).value();
+    Cluster cluster = Cluster::attach(runtime(), InProcessTransport::make_master(fabric)).value();
     EXPECT_FALSE(cluster.liveness_timeout(std::chrono::milliseconds(0)).has_value());
+    cluster.detach();
+}
+
+/** @brief Tests that a liveness timeout of exactly the minimum is accepted. */
+TEST_F(Medium_Cluster, ALivenessTimeoutOfTheMinimumIsAccepted)
+{
+    InProcessFabric fabric;
+    Cluster cluster = Cluster::attach(runtime(), InProcessTransport::make_master(fabric)).value();
     EXPECT_TRUE(cluster.liveness_timeout(K_MINIMUM_TIMEOUT).has_value());
     cluster.detach();
 }

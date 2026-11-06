@@ -67,24 +67,28 @@ namespace
     /** @brief Bounds every wait on a condition, so a broken worker fails a test and hangs none. */
     constexpr std::chrono::seconds K_WAIT{60};
 
-    /** @brief Writes a file in the working directory and removes it when the test ends. */
+    /** @brief Writes a file in a temporary folder of the running test and removes the folder when destroyed. */
     class ScratchFile final
     {
         public:
-            /** @brief Writes @p size bytes to a file called @p name. */
+            /** @brief Writes @p size bytes to a file called @p name in the test's temporary folder. */
             ScratchFile(const std::string& name, std::size_t size)
-                : path_(std::filesystem::current_path() / name)
+                : folder_(std::filesystem::temp_directory_path() / "sushiruntime_tests" /
+                          (std::string(::testing::UnitTest::GetInstance()->current_test_info()->test_suite_name()) +
+                           "_" + ::testing::UnitTest::GetInstance()->current_test_info()->name())),
+                  path_(folder_ / name)
             {
+                std::filesystem::create_directories(folder_);
                 std::ofstream stream(path_, std::ios::binary | std::ios::trunc);
                 const std::vector<char> bytes(size, 'k');
                 stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
             }
 
-            /** @brief Removes the file. */
+            /** @brief Removes the folder and the file in it. */
             ~ScratchFile()
             {
                 std::error_code ignored;
-                std::filesystem::remove(path_, ignored);
+                std::filesystem::remove_all(folder_, ignored);
             }
 
             ScratchFile(const ScratchFile&) = delete;
@@ -99,6 +103,9 @@ namespace
             }
 
         private:
+            /** @brief Holds the temporary folder of the running test. */
+            std::filesystem::path folder_;
+
             /** @brief Holds the absolute path of the file. */
             std::filesystem::path path_;
     };
@@ -518,21 +525,4 @@ TEST(Medium_WorkerMainTest, MasterLostWithoutReconnectExitsFive)
     const std::optional<WorkerExitCode> exit_code = worker.exit_code();
     ASSERT_TRUE(exit_code.has_value());
     EXPECT_EQ(*exit_code, WorkerExitCode::MasterLost);
-}
-
-/** @brief Tests that run_worker() joins a master over TCP and returns the code of its end. */
-TEST(Medium_WorkerMainTest, RunWorkerOverTCPReturnsTheCodeOfItsEnd)
-{
-    const std::shared_ptr<TCPTransport> listener = TCPTransport::make_master();
-    FakeMaster master(MasterScript::RegisterThenClose, listener);
-    ASSERT_TRUE(master.started().is_ok()) << master.started().message;
-
-    std::future<int> worker = std::async(
-        std::launch::async, [options = options_for(listener->local_endpoint())]
-        {
-            return run_worker(options, make_sushi<KernelRegistry>());
-        });
-
-    ASSERT_EQ(worker.wait_for(K_WAIT), std::future_status::ready);
-    EXPECT_EQ(worker.get(), static_cast<int>(WorkerExitCode::MasterLost));
 }

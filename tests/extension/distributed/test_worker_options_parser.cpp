@@ -28,6 +28,9 @@
  * @author Mustafa Garip
  */
 
+#include <chrono>
+#include <filesystem>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -79,27 +82,54 @@ namespace
     };
 }
 
-/** @brief Tests that the master alone gives the defaults of the flag table. */
-TEST(Medium_WorkerOptionsParserTest, MasterAloneGivesTheDefaults)
+/** @brief Holds one default the flag table promises and the check that reads it. */
+struct DefaultRow
+{
+    std::string meaning;                                         /**< What the default means. */
+    std::function<bool(const WorkerOptions&)> holds;             /**< Whether the options carry it. */
+};
+
+/** @brief Names a row of the defaults table for the test report. */
+void PrintTo(const DefaultRow& row, std::ostream* stream)
+{
+    *stream << row.meaning;
+}
+
+/** @brief Runs one row of the defaults table over the master alone. */
+class Small_WorkerDefaultsTest : public ::testing::TestWithParam<DefaultRow>
+{
+};
+
+/** @brief Tests that the master alone leaves each setting at the default the flag table names. */
+TEST_P(Small_WorkerDefaultsTest, TheMasterAloneLeavesTheDefault)
 {
     const WorkerOptionsResult result = parse({"--master", "node7:7000"});
 
     ASSERT_EQ(result.status, WorkerOptionsStatus::Run) << result.message;
-    EXPECT_EQ(result.options.master.host, "node7");
-    EXPECT_EQ(result.options.master.port, 7000);
-    EXPECT_TRUE(result.options.secret_file.empty());
-    EXPECT_TRUE(result.options.name.empty());
-    EXPECT_EQ(result.options.max_jobs, 1024u);
-    EXPECT_EQ(result.options.cache_bytes, 0u);
-    EXPECT_EQ(result.options.heartbeat_interval, std::chrono::milliseconds(1000));
-    EXPECT_EQ(result.options.pull_idle_timeout, std::chrono::milliseconds(5000));
-    EXPECT_EQ(result.options.connect_timeout, std::chrono::seconds(60));
-    EXPECT_TRUE(result.options.reconnect);
-    EXPECT_TRUE(result.options.log_level.empty());
+    EXPECT_TRUE(GetParam().holds(result.options)) << GetParam().meaning;
 }
 
+INSTANTIATE_TEST_SUITE_P(
+    FlagTable, Small_WorkerDefaultsTest,
+    ::testing::Values(
+        DefaultRow{"no secret file", [](const WorkerOptions& o) { return o.secret_file.empty(); }},
+        DefaultRow{"no name", [](const WorkerOptions& o) { return o.name.empty(); }},
+        DefaultRow{"1024 jobs", [](const WorkerOptions& o) { return o.max_jobs == 1024u; }},
+        DefaultRow{"an unbounded cache", [](const WorkerOptions& o) { return o.cache_bytes == 0u; }},
+        DefaultRow{"a heartbeat every second",
+                   [](const WorkerOptions& o)
+                   { return o.heartbeat_interval == std::chrono::milliseconds(1000); }},
+        DefaultRow{"a pull idle timeout of five seconds",
+                   [](const WorkerOptions& o)
+                   { return o.pull_idle_timeout == std::chrono::milliseconds(5000); }},
+        DefaultRow{"a connect timeout of sixty seconds",
+                   [](const WorkerOptions& o)
+                   { return o.connect_timeout == std::chrono::seconds(60); }},
+        DefaultRow{"reconnect on", [](const WorkerOptions& o) { return o.reconnect; }},
+        DefaultRow{"no log level", [](const WorkerOptions& o) { return o.log_level.empty(); }}));
+
 /** @brief Tests every flag, half written `--flag value` and half `--flag=value`. */
-TEST(Medium_WorkerOptionsParserTest, EveryFlagIsRead)
+TEST(Small_WorkerOptionsParserTest, EveryFlagIsRead)
 {
     const WorkerOptionsResult result = parse(
         {"--master", "[::1]:7001", "--secret-file=keys/cluster.key", "--name", "gpu-box",
@@ -122,7 +152,7 @@ TEST(Medium_WorkerOptionsParserTest, EveryFlagIsRead)
 }
 
 /** @brief Tests that each variable of the table fills the setting no flag gives. */
-TEST(Medium_WorkerOptionsParserTest, EnvironmentFillsWhatNoFlagGives)
+TEST(Small_WorkerOptionsParserTest, EnvironmentFillsWhatNoFlagGives)
 {
     const WorkerOptionsResult result = parse(
         {}, {{"SR_MASTER", "10.0.0.5:7002"},
@@ -148,7 +178,7 @@ TEST(Medium_WorkerOptionsParserTest, EnvironmentFillsWhatNoFlagGives)
 }
 
 /** @brief Tests that a flag beats its variable and that a variable behind a flag is unread. */
-TEST(Medium_WorkerOptionsParserTest, FlagBeatsEnvironmentBeatsDefault)
+TEST(Small_WorkerOptionsParserTest, FlagBeatsEnvironmentBeatsDefault)
 {
     const WorkerOptionsResult result = parse(
         {"--master", "flag-host:1", "--max-jobs", "3"},
@@ -164,7 +194,7 @@ TEST(Medium_WorkerOptionsParserTest, FlagBeatsEnvironmentBeatsDefault)
 }
 
 /** @brief Tests that a variable set to nothing leaves the default in place. */
-TEST(Medium_WorkerOptionsParserTest, EmptyVariableCountsAsUnset)
+TEST(Small_WorkerOptionsParserTest, EmptyVariableCountsAsUnset)
 {
     const WorkerOptionsResult result =
         parse({"--master", "node7:7000"}, {{"SR_WORKER_MAX_JOBS", ""}, {"SR_WORKER_NAME", ""}});
@@ -186,45 +216,54 @@ TEST(Medium_WorkerOptionsParserTest, ProcessEnvironmentOverloadReadsTheFlags)
     EXPECT_EQ(result.options.name, "w1");
 }
 
-/** @brief Tests that `--help` wins without a master and that its text names every flag. */
-TEST(Medium_WorkerOptionsParserTest, HelpListsEveryFlagAndVariable)
+/** @brief Runs one flag or variable name through the help text. */
+class Small_WorkerHelpTest : public ::testing::TestWithParam<const char*>
+{
+};
+
+/** @brief Tests that `--help` wins without a master and that its text names the flag or variable. */
+TEST_P(Small_WorkerHelpTest, HelpNamesTheFlagOrVariable)
 {
     const WorkerOptionsResult result = parse({"--help"});
 
     ASSERT_EQ(result.status, WorkerOptionsStatus::Help);
-    for (const char* word : {"--master",
-                             "--secret-file",
-                             "--name",
-                             "--max-jobs",
-                             "--cache-bytes",
-                             "--heartbeat-ms",
-                             "--pull-idle-timeout-ms",
-                             "--connect-timeout-s",
-                             "--no-reconnect",
-                             "--log-level",
-                             "--version",
-                             "--help",
-                             "--label",
-                             "SR_WORKER_LABELS",
-                             "SR_MASTER",
-                             "SR_CLUSTER_SECRET_FILE",
-                             "SR_WORKER_NAME",
-                             "SR_WORKER_MAX_JOBS",
-                             "SR_WORKER_CACHE_BYTES",
-                             "SR_WORKER_HEARTBEAT_MS",
-                             "SR_WORKER_PULL_IDLE_TIMEOUT_MS",
-                             "SR_WORKER_CONNECT_TIMEOUT_S"})
-        EXPECT_NE(result.message.find(word), std::string::npos) << word;
+    EXPECT_NE(result.message.find(GetParam()), std::string::npos) << GetParam();
 }
 
+INSTANTIATE_TEST_SUITE_P(
+    EveryFlagAndVariable, Small_WorkerHelpTest,
+    ::testing::Values(
+        "--master",
+        "--secret-file",
+        "--name",
+        "--max-jobs",
+        "--cache-bytes",
+        "--heartbeat-ms",
+        "--pull-idle-timeout-ms",
+        "--connect-timeout-s",
+        "--no-reconnect",
+        "--log-level",
+        "--version",
+        "--help",
+        "--label",
+        "SR_WORKER_LABELS",
+        "SR_MASTER",
+        "SR_CLUSTER_SECRET_FILE",
+        "SR_WORKER_NAME",
+        "SR_WORKER_MAX_JOBS",
+        "SR_WORKER_CACHE_BYTES",
+        "SR_WORKER_HEARTBEAT_MS",
+        "SR_WORKER_PULL_IDLE_TIMEOUT_MS",
+        "SR_WORKER_CONNECT_TIMEOUT_S"));
+
 /** @brief Tests that `--version` is reported without a master. */
-TEST(Medium_WorkerOptionsParserTest, VersionNeedsNoMaster)
+TEST(Small_WorkerOptionsParserTest, VersionNeedsNoMaster)
 {
     EXPECT_EQ(parse({"--version"}).status, WorkerOptionsStatus::Version);
 }
 
 /** @brief Tests each command line the parser refuses and what its one line names. */
-TEST(Medium_WorkerOptionsParserTest, EachRefusalNamesWhatWasWrong)
+TEST(Small_WorkerOptionsParserTest, EachRefusalNamesWhatWasWrong)
 {
     const std::vector<RefusedCase> cases = {
         {{}, {}, "no master given"},
@@ -261,7 +300,7 @@ TEST(Medium_WorkerOptionsParserTest, EachRefusalNamesWhatWasWrong)
 }
 
 /** @brief Tests that a name HELLO cannot carry is refused with both lengths. */
-TEST(Medium_WorkerOptionsParserTest, NameAbove255BytesIsRefused)
+TEST(Small_WorkerOptionsParserTest, NameAbove255BytesIsRefused)
 {
     const std::string name(256, 'n');
 
@@ -273,7 +312,7 @@ TEST(Medium_WorkerOptionsParserTest, NameAbove255BytesIsRefused)
 }
 
 /** @brief Tests that the variable's labels come first, then the flags', three in all. */
-TEST(Medium_WorkerOptionsParserTest, LabelsComeFromTheVariableAndRepeatedFlags)
+TEST(Small_WorkerOptionsParserTest, LabelsComeFromTheVariableAndRepeatedFlags)
 {
     const WorkerOptionsResult result =
         parse({"--master", "a:1", "--label", "rack=r4", "--label=zone=eu=west"},
@@ -290,7 +329,7 @@ TEST(Medium_WorkerOptionsParserTest, LabelsComeFromTheVariableAndRepeatedFlags)
 }
 
 /** @brief Tests that a variable holding several pairs is split at each comma. */
-TEST(Medium_WorkerOptionsParserTest, TheVariableHoldsPairsSeparatedByCommas)
+TEST(Small_WorkerOptionsParserTest, TheVariableHoldsPairsSeparatedByCommas)
 {
     const WorkerOptionsResult result =
         parse({"--master", "a:1"}, {{"SR_WORKER_LABELS", "role=trainer,gpu=,rack=r4"}});
@@ -303,7 +342,7 @@ TEST(Medium_WorkerOptionsParserTest, TheVariableHoldsPairsSeparatedByCommas)
 }
 
 /** @brief Tests that no label means an empty list, and an empty variable counts as unset. */
-TEST(Medium_WorkerOptionsParserTest, NoLabelGivesAnEmptyList)
+TEST(Small_WorkerOptionsParserTest, NoLabelGivesAnEmptyList)
 {
     const WorkerOptionsResult result =
         parse({"--master", "a:1"}, {{"SR_WORKER_LABELS", ""}});
@@ -313,7 +352,7 @@ TEST(Medium_WorkerOptionsParserTest, NoLabelGivesAnEmptyList)
 }
 
 /** @brief Tests the three label refusals, from a flag and from the variable. */
-TEST(Medium_WorkerOptionsParserTest, ALabelThatBreaksARuleIsRefused)
+TEST(Small_WorkerOptionsParserTest, ALabelThatBreaksARuleIsRefused)
 {
     const std::vector<RefusedCase> cases = {
         {{"--master", "a:1", "--label", "=value"}, {}, "--label: label '=value' has an empty key"},
@@ -345,7 +384,7 @@ TEST(Medium_WorkerOptionsParserTest, ALabelThatBreaksARuleIsRefused)
 }
 
 /** @brief Tests that a key or a value HELLO cannot carry is refused. */
-TEST(Medium_WorkerOptionsParserTest, ALabelAbove255BytesIsRefused)
+TEST(Small_WorkerOptionsParserTest, ALabelAbove255BytesIsRefused)
 {
     const std::string label = "key=" + std::string(256, 'v');
 

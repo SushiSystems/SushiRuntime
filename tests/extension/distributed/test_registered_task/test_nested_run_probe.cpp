@@ -59,6 +59,8 @@
 #include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 
+#include "support/runtime_environment.hpp"
+
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
@@ -339,18 +341,18 @@ namespace
     /**
      * @brief Offloads one nested-run task to a worker whose kernel runs @p inner, and checks
      *        what the kernel saw.
+     * @param master_runtime The runtime the master records and runs its graph on.
      * @param worker_runtime The runtime the worker serves dispatches on.
      * @param outcome Receives how the kernel's run of @p inner ended.
      * @return Whether the master's run returned in time and reported success.
      */
-    [[nodiscard]] bool offload_nested_run(Runtime& worker_runtime, InnerStep& inner,
-                                          NestedOutcome& outcome)
+    [[nodiscard]] bool offload_nested_run(Runtime& master_runtime, Runtime& worker_runtime,
+                                          InnerStep& inner, NestedOutcome& outcome)
     {
         InProcessFabric fabric;
         WorkerAgent agent(worker_runtime, InProcessTransport::make_worker(fabric),
                           nested_run_kernels(inner, outcome));
 
-        Runtime master_runtime = Runtime::create().value();
         Buffer<float> input = master_runtime.buffer<float>(K_COUNT).value();
         Buffer<float> output = master_runtime.buffer<float>(K_COUNT).value();
         Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
@@ -372,28 +374,53 @@ namespace
 } // namespace
 
 /**
+ * @brief Runs the nested-run tests on the program's one runtime, with the two other runtimes the
+ *        promises need made once for the program.
+ */
+class Medium_NestedRunProbe : public TestSupport::RuntimeTest
+{
+    protected:
+        /** @brief Returns the runtime a worker serves its dispatches on, made on first use. */
+        static Runtime& worker_runtime()
+        {
+            static Runtime held = Runtime::create().value();
+            return held;
+        }
+
+        /** @brief Returns the second runtime a kernel runs its inner graph on, made on first use. */
+        static Runtime& inner_runtime()
+        {
+            static Runtime held = Runtime::create(single_thread_config()).value();
+            return held;
+        }
+};
+
+/**
  * @brief Shows that a kernel running on a worker cannot run a graph of the worker's own runtime.
  *
  * The worker runs each dispatch as a task inside Graph::run(), so the engine's run marker is set
  * when the kernel starts, and the run entry refuses with InvalidState before it touches the pool.
- * It does not deadlock, and the worker's runtime is usable again once the dispatch ends.
+ * It does not deadlock.
  */
-TEST(Medium_NestedRunProbe, WorkerKernelRunningAGraphOfItsOwnRuntimeIsRefused)
+TEST_F(Medium_NestedRunProbe, WorkerKernelRunningAGraphOfItsOwnRuntimeIsRefused)
 {
-    if (!SushiRuntime::Test::has_any_sycl_device())
-        GTEST_SKIP() << "SYCL reports no device.";
-
-    Runtime worker_runtime = Runtime::create().value();
-    InnerStep inner(worker_runtime);
+    InnerStep inner(worker_runtime());
     NestedOutcome outcome;
 
-    ASSERT_TRUE(offload_nested_run(worker_runtime, inner, outcome))
+    ASSERT_TRUE(offload_nested_run(runtime(), worker_runtime(), inner, outcome))
         << "the dispatch never ended: the nested run deadlocked the worker";
     ASSERT_TRUE(outcome.is_settled());
     EXPECT_TRUE(outcome.was_refused_with(ErrorCode::InvalidState));
     EXPECT_TRUE(inner.is_untouched());
+}
 
-    // The refusal left the worker's runtime usable: the same graph runs once the dispatch is over.
+/** @brief Shows that the refusal of a nested run leaves the worker's runtime usable. */
+TEST_F(Medium_NestedRunProbe, TheWorkerRuntimeIsUsableAfterTheRefusal)
+{
+    InnerStep inner(worker_runtime());
+    NestedOutcome outcome;
+    ASSERT_TRUE(offload_nested_run(runtime(), worker_runtime(), inner, outcome));
+
     EXPECT_TRUE(inner.run().has_value());
     EXPECT_TRUE(inner.is_doubled());
 }
@@ -401,24 +428,36 @@ TEST(Medium_NestedRunProbe, WorkerKernelRunningAGraphOfItsOwnRuntimeIsRefused)
 /**
  * @brief Shows that a kernel running on a worker can run a graph of a second runtime.
  *
- * The second runtime has its own engine and so its own run marker, which no run holds. It costs a
- * second device context and its own pool threads; the test keeps the pool to one thread.
+ * The second runtime has its own engine and so its own run marker, which no run holds.
  */
-TEST(Medium_NestedRunProbe, WorkerKernelRunsAGraphOfASecondRuntime)
+TEST_F(Medium_NestedRunProbe, WorkerKernelRunsAGraphOfASecondRuntime)
 {
-    if (!SushiRuntime::Test::has_any_sycl_device())
-        GTEST_SKIP() << "SYCL reports no device.";
-
-    Runtime worker_runtime = Runtime::create().value();
-    Runtime inner_runtime = Runtime::create(single_thread_config()).value();
-    InnerStep inner(inner_runtime);
+    InnerStep inner(inner_runtime());
     NestedOutcome outcome;
 
-    ASSERT_TRUE(offload_nested_run(worker_runtime, inner, outcome))
+    ASSERT_TRUE(offload_nested_run(runtime(), worker_runtime(), inner, outcome))
         << "the dispatch never ended: the second runtime's run hung";
     ASSERT_TRUE(outcome.is_settled());
     EXPECT_TRUE(outcome.has_completed());
     EXPECT_TRUE(inner.is_doubled());
+}
+
+/**
+ * @brief Runs the nested-run kernel as the local fallback of a task on the master's runtime.
+ * @param inner The graph the kernel runs from its own body.
+ * @param outcome Receives how the kernel's run of @p inner ended.
+ * @return Whether the master's run returned in time and reported success.
+ */
+[[nodiscard]] static bool run_fallback_nested(Runtime& master_runtime, InnerStep& inner, NestedOutcome& outcome)
+{
+    sushi_ptr<KernelRegistry> kernels = nested_run_kernels(inner, outcome);
+    Buffer<float> input = master_runtime.buffer<float>(K_COUNT).value();
+    Buffer<float> output = master_runtime.buffer<float>(K_COUNT).value();
+
+    Graph graph = master_runtime.graph();
+    record_nested_task(graph, *kernels, input, output);
+    BoundedRun run(graph);
+    return run.wait() && run.succeeded();
 }
 
 /**
@@ -427,31 +466,27 @@ TEST(Medium_NestedRunProbe, WorkerKernelRunsAGraphOfASecondRuntime)
  *
  * The fallback is the task's body inside the master's Graph::run(), the same body a task takes
  * back from a worker, so the engine's run marker is set and the run entry refuses with
- * InvalidState. It does not deadlock, and the runtime is usable again once the run ends.
+ * InvalidState. It does not deadlock.
  */
-TEST(Medium_NestedRunProbe, MasterFallbackRunningAGraphOfItsOwnRuntimeIsRefused)
+TEST_F(Medium_NestedRunProbe, MasterFallbackRunningAGraphOfItsOwnRuntimeIsRefused)
 {
-    if (!SushiRuntime::Test::has_any_sycl_device())
-        GTEST_SKIP() << "SYCL reports no device.";
-
-    Runtime master_runtime = Runtime::create().value();
-    InnerStep inner(master_runtime);
+    InnerStep inner(runtime());
     NestedOutcome outcome;
-    sushi_ptr<KernelRegistry> kernels = nested_run_kernels(inner, outcome);
-    Buffer<float> input = master_runtime.buffer<float>(K_COUNT).value();
-    Buffer<float> output = master_runtime.buffer<float>(K_COUNT).value();
 
-    Graph graph = master_runtime.graph();
-    record_nested_task(graph, *kernels, input, output);
-    BoundedRun run(graph);
-    ASSERT_TRUE(run.wait()) << "the run never ended: the nested run deadlocked the master";
-
-    EXPECT_TRUE(run.succeeded());
+    ASSERT_TRUE(run_fallback_nested(runtime(), inner, outcome))
+        << "the run never ended: the nested run deadlocked the master";
     ASSERT_TRUE(outcome.is_settled());
     EXPECT_TRUE(outcome.was_refused_with(ErrorCode::InvalidState));
     EXPECT_TRUE(inner.is_untouched());
+}
 
-    // The refusal left the runtime usable: the same graph runs once the outer run is over.
+/** @brief Shows that the refusal of a nested run leaves the master's runtime usable. */
+TEST_F(Medium_NestedRunProbe, TheMasterRuntimeIsUsableAfterTheRefusal)
+{
+    InnerStep inner(runtime());
+    NestedOutcome outcome;
+    ASSERT_TRUE(run_fallback_nested(runtime(), inner, outcome));
+
     EXPECT_TRUE(inner.run().has_value());
     EXPECT_TRUE(inner.is_doubled());
 }
@@ -459,28 +494,15 @@ TEST(Medium_NestedRunProbe, MasterFallbackRunningAGraphOfItsOwnRuntimeIsRefused)
 /**
  * @brief Shows that a local fallback running on the master can run a graph of a second runtime.
  *
- * The second runtime has its own engine and so its own run marker. It costs a second device
- * context and its own pool threads; the test keeps the pool to one thread.
+ * The second runtime has its own engine and so its own run marker.
  */
-TEST(Medium_NestedRunProbe, MasterFallbackRunsAGraphOfASecondRuntime)
+TEST_F(Medium_NestedRunProbe, MasterFallbackRunsAGraphOfASecondRuntime)
 {
-    if (!SushiRuntime::Test::has_any_sycl_device())
-        GTEST_SKIP() << "SYCL reports no device.";
-
-    Runtime master_runtime = Runtime::create().value();
-    Runtime inner_runtime = Runtime::create(single_thread_config()).value();
-    InnerStep inner(inner_runtime);
+    InnerStep inner(inner_runtime());
     NestedOutcome outcome;
-    sushi_ptr<KernelRegistry> kernels = nested_run_kernels(inner, outcome);
-    Buffer<float> input = master_runtime.buffer<float>(K_COUNT).value();
-    Buffer<float> output = master_runtime.buffer<float>(K_COUNT).value();
 
-    Graph graph = master_runtime.graph();
-    record_nested_task(graph, *kernels, input, output);
-    BoundedRun run(graph);
-    ASSERT_TRUE(run.wait()) << "the run never ended: the second runtime's run hung";
-
-    EXPECT_TRUE(run.succeeded());
+    ASSERT_TRUE(run_fallback_nested(runtime(), inner, outcome))
+        << "the run never ended: the second runtime's run hung";
     ASSERT_TRUE(outcome.is_settled());
     EXPECT_TRUE(outcome.has_completed());
     EXPECT_TRUE(inner.is_doubled());

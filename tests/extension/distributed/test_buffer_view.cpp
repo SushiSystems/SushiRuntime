@@ -35,13 +35,20 @@
 using namespace SushiRuntime;
 using namespace SushiRuntime::Distributed;
 
-/** @brief Tests that as() returns the address typed, and a default view names nothing. */
-TEST(Medium_BufferView, AsTypesTheAddress)
+/** @brief Tests that as() returns the address of the bytes, typed as the element asked for. */
+TEST(Small_BufferView, AsTypesTheAddress)
 {
     float values[4] = {1.0f, 2.0f, 3.0f, 4.0f};
     const BufferView view{values, sizeof(values)};
     EXPECT_EQ(view.as<float>(), values);
     EXPECT_EQ(view.as<const float>()[2], 3.0f);
     EXPECT_EQ(view.size_bytes, 4 * sizeof(float));
-    EXPECT_EQ(BufferView().data, nullptr);
+}
+
+/** @brief Tests that a default view names no bytes. */
+TEST(Small_BufferView, ADefaultViewNamesNothing)
+{
+    const BufferView view;
+    EXPECT_EQ(view.data, nullptr);
+    EXPECT_EQ(view.size_bytes, 0u);
 }
