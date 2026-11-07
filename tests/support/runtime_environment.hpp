@@ -23,15 +23,18 @@
 
 /**
  * @file runtime_environment.hpp
- * @brief Holds the one runtime and the one device queue of a test program, and the fixture base that hands them out.
+ * @brief Holds the runtimes and the one device queue of a test program, and the fixture base that hands them out.
  * @see tests/README.md
  * @author Mustafa Garip
  */
 
 #pragma once
 
+#include <cstddef>
+#include <map>
 #include <memory>
 #include <optional>
+#include <tuple>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
@@ -43,9 +46,38 @@
  */
 namespace TestSupport
 {
+/**
+ * @brief Names the configuration of a shared runtime: the fields of RuntimeConfig the tests vary.
+ *
+ * The default shape is the default RuntimeConfig, the runtime every medium test shares.
+ */
+struct RuntimeShape
+{
+    bool force_scheduler = false; /**< Whether every run is kept on the scheduler. */
+    std::size_t worker_count = 0; /**< The pool's worker count; 0 is the whole machine. */
+    bool rebalancer = false;      /**< Whether the background rebalancer runs. */
+
+    /** @brief Orders shapes field by field, so a shape can key the environment's runtimes. */
+    [[nodiscard]] friend bool operator<(const RuntimeShape& left, const RuntimeShape& right) noexcept
+    {
+        return std::tie(left.force_scheduler, left.worker_count, left.rebalancer) <
+               std::tie(right.force_scheduler, right.worker_count, right.rebalancer);
+    }
+
+    /** @brief Returns the RuntimeConfig this shape names. */
+    [[nodiscard]] SushiRuntime::RuntimeConfig config() const
+    {
+        SushiRuntime::RuntimeConfig made;
+        made.force_scheduler = force_scheduler;
+        made.worker_count = worker_count;
+        made.rebalancer = rebalancer;
+        return made;
+    }
+};
 
 /**
- * @brief Owns the runtime and the device queue of the program, made on first use and released after the last test.
+ * @brief Owns the runtimes and the device queue of the program, each made on first use and released after the
+ *        last test.
  */
 class RuntimeEnvironment final : public ::testing::Environment
 {
@@ -56,10 +88,33 @@ class RuntimeEnvironment final : public ::testing::Environment
          */
         [[nodiscard]] static SushiRuntime::Runtime& runtime()
         {
-            std::optional<SushiRuntime::Runtime>& held = held_runtime();
-            if (!held)
-                held.emplace(SushiRuntime::Runtime::create().value());
-            return *held;
+            return runtime(RuntimeShape{});
+        }
+
+        /**
+         * @brief Returns the program's runtime of one shape, creating it on the first call for that shape.
+         * @param shape The configuration the runtime is built with.
+         * @return The runtime every medium test that asks for this shape shares.
+         */
+        [[nodiscard]] static SushiRuntime::Runtime& runtime(const RuntimeShape& shape)
+        {
+            std::map<RuntimeShape, SushiRuntime::Runtime>& held = held_runtimes();
+            auto found = held.find(shape);
+            if (found == held.end())
+                found = held.emplace(shape, SushiRuntime::Runtime::create(shape.config()).value()).first;
+            return found->second;
+        }
+
+        /**
+         * @brief Returns the program's runtime that keeps every run on the scheduler, or the default one.
+         * @param force_scheduler True for the runtime forced onto the scheduler, false for the default one.
+         * @return The runtime of a row of the tests that run once on each layer.
+         */
+        [[nodiscard]] static SushiRuntime::Runtime& layer_runtime(bool force_scheduler)
+        {
+            RuntimeShape shape;
+            shape.force_scheduler = force_scheduler;
+            return runtime(shape);
         }
 
         /**
@@ -75,20 +130,20 @@ class RuntimeEnvironment final : public ::testing::Environment
         }
 
         /**
-         * @brief Releases the queue and the runtime after the last test of the program.
+         * @brief Releases the queue and the runtimes after the last test of the program.
          */
         void TearDown() override
         {
             held_queue().reset();
-            held_runtime().reset();
+            held_runtimes().clear();
         }
 
     private:
-        /** @brief Returns the slot of the program's runtime. */
-        static std::optional<SushiRuntime::Runtime>& held_runtime()
+        /** @brief Returns the program's runtimes, keyed by their shape. */
+        static std::map<RuntimeShape, SushiRuntime::Runtime>& held_runtimes()
         {
-            static std::optional<SushiRuntime::Runtime> slot;
-            return slot;
+            static std::map<RuntimeShape, SushiRuntime::Runtime> slots;
+            return slots;
         }
 
         /** @brief Returns the slot of the program's queue. */
@@ -118,4 +173,33 @@ class RuntimeTest : public ::testing::Test
         [[nodiscard]] static sycl::queue& queue() { return RuntimeEnvironment::queue(); }
 };
 
-}
+/**
+ * @brief Hands a fixture the program's runtime of its row: the default one for the in-order chain, the one forced
+ *        onto the scheduler otherwise.
+ */
+class LayerRuntime
+{
+    protected:
+        /** @brief Chooses the runtime of the row; true is the one forced onto the scheduler. */
+        void use_layer(bool force_scheduler) noexcept { force_scheduler_ = force_scheduler; }
+
+        /** @brief Returns the runtime of the row. */
+        [[nodiscard]] SushiRuntime::Runtime& runtime() const
+        {
+            return RuntimeEnvironment::layer_runtime(force_scheduler_);
+        }
+
+    private:
+        bool force_scheduler_ = false; /**< Whether the row runs on the runtime forced onto the scheduler. */
+};
+
+/**
+ * @brief Fixture base of the rows that run once on the in-order chain (false) and once on the scheduler (true).
+ */
+class LayerRuntimeTest : public ::testing::TestWithParam<bool>, protected LayerRuntime
+{
+    protected:
+        /** @brief Chooses the runtime of the row from its parameter. */
+        void SetUp() override { use_layer(GetParam()); }
+};
+} // namespace TestSupport

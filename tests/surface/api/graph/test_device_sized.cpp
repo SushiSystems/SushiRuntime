@@ -31,7 +31,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -207,28 +206,8 @@ class Medium_DeviceSizedLaunch : public TestSupport::RuntimeTest
 /**
  * @brief Fixture of the rows that run a device-sized workload on the in-order chain (false) and on the worker pool (true).
  */
-class Medium_DeviceSizedLayers : public ::testing::TestWithParam<bool>
+class Medium_DeviceSizedLayers : public TestSupport::LayerRuntimeTest
 {
-    protected:
-        /** @brief Makes the runtime of the row: the program's for the chain, one forced onto the pool otherwise. */
-        void SetUp() override
-        {
-            if (GetParam())
-            {
-                RuntimeConfig config;
-                config.force_scheduler = true;
-                pool_.emplace(Runtime::create(config).value());
-            }
-        }
-
-        /** @brief Returns the runtime of the row. */
-        [[nodiscard]] const Runtime& runtime() const
-        {
-            return pool_ ? *pool_ : TestSupport::RuntimeEnvironment::runtime();
-        }
-
-    private:
-        std::optional<Runtime> pool_; /**< The pool runtime of the true row. */
 };
 
 /** @brief Tests that exactly the work-items below the live width run, at every width. */

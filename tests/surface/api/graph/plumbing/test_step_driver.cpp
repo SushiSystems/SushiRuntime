@@ -36,7 +36,6 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <optional>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -322,28 +321,8 @@ class Medium_RunDriverGraphKinds : public TestSupport::RuntimeTest,
 };
 
 /** @brief Fixture of the rows that run the same promise on the in-order chain (false) and on the worker pool (true). */
-class Medium_RunDriverLayers : public ::testing::TestWithParam<bool>
+class Medium_RunDriverLayers : public TestSupport::LayerRuntimeTest
 {
-    protected:
-        /** @brief Makes the runtime of the row: the program's for the chain, one forced onto the pool otherwise. */
-        void SetUp() override
-        {
-            if (GetParam())
-            {
-                RuntimeConfig config;
-                config.force_scheduler = true;
-                pool_.emplace(Runtime::create(config).value());
-            }
-        }
-
-        /** @brief Returns the runtime of the row. */
-        [[nodiscard]] const Runtime& runtime() const
-        {
-            return pool_ ? *pool_ : TestSupport::RuntimeEnvironment::runtime();
-        }
-
-    private:
-        std::optional<Runtime> pool_; /**< The pool runtime of the true row. */
 };
 
 /** @brief Fixture of the rows over the budgets the clock cannot hold. */

@@ -33,7 +33,6 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -169,28 +168,8 @@ namespace
 } // namespace
 
 /** @brief Fixture of the rows that run the two-kernel body on the worker pool (true) and on the in-order chain (false). */
-class Medium_DispatchEvents : public ::testing::TestWithParam<bool>
+class Medium_DispatchEvents : public TestSupport::LayerRuntimeTest
 {
-    protected:
-        /** @brief Makes the runtime of the row: the program's for the chain, one forced onto the pool otherwise. */
-        void SetUp() override
-        {
-            if (GetParam())
-            {
-                RuntimeConfig config;
-                config.force_scheduler = true;
-                pool_.emplace(Runtime::create(config).value());
-            }
-        }
-
-        /** @brief Returns the runtime of the row. */
-        [[nodiscard]] const Runtime& runtime() const
-        {
-            return pool_ ? *pool_ : TestSupport::RuntimeEnvironment::runtime();
-        }
-
-    private:
-        std::optional<Runtime> pool_; /**< The pool runtime of the true row. */
 };
 
 /** @brief Tests that a body handing over two events is timed from the earliest start to the latest end. */

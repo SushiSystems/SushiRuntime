@@ -2,7 +2,8 @@
 
 The tests of the builder surface, the region composer and the step driver. They are part of `sr_surface_tests`;
 [the page of the module's tests](../../README.md) says how to run them. Every test runs on the program's runtime
-through `TestSupport::RuntimeTest`; the rows that need a runtime forced onto the scheduler make it in their fixture.
+through `TestSupport::RuntimeTest`; the rows that need a runtime forced onto the scheduler take the program's one through
+`TestSupport::LayerRuntimeTest`.
 
 ## test_builder_surface.cpp
 

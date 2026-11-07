@@ -247,31 +247,25 @@ TEST_F(Medium_LateCount, DeviceSlotResolvesFromHostResidentBuffer)
 }
 
 /** @brief Fixture of the over-capacity tests; the parameter is whether the runtime is forced onto the scheduler. */
-class Medium_LateCountLayers : public ::testing::TestWithParam<bool>
+class Medium_LateCountLayers : public TestSupport::LayerRuntimeTest
 {
     protected:
-        /** @brief Builds the runtime of the row and the buffers of the tests. */
+        /** @brief Chooses the runtime of the row and builds the buffers of the tests. */
         void SetUp() override
         {
-            RuntimeConfig config;
-            config.force_scheduler = GetParam();
-            runtime_.emplace(Runtime::create(config).value());
-            counter_.emplace(runtime_->buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value());
-            out_.emplace(runtime_->buffer<std::uint32_t>(1).value());
+            TestSupport::LayerRuntimeTest::SetUp();
+            counter_.emplace(runtime().buffer<std::uint32_t>(1, DeviceIndex{0}, Residency::Host).value());
+            out_.emplace(runtime().buffer<std::uint32_t>(1).value());
             (*counter_)[0] = 101;
             (*out_)[0] = K_CANARY;
         }
 
-        /** @brief Drops the buffers, then the runtime. */
+        /** @brief Drops the buffers. */
         void TearDown() override
         {
             out_.reset();
             counter_.reset();
-            runtime_.reset();
         }
-
-        /** @brief The runtime of the row. */
-        std::optional<Runtime> runtime_;
 
         /** @brief The slot the graph reads its count from. */
         std::optional<Buffer<std::uint32_t>> counter_;
@@ -283,7 +277,7 @@ class Medium_LateCountLayers : public ::testing::TestWithParam<bool>
 /** @brief Tests that a device count above its capacity fails the run. */
 TEST_P(Medium_LateCountLayers, DeviceCountAboveCapacityFailsTheRun)
 {
-    auto g = runtime_->graph();
+    auto g = runtime().graph();
     record_live_count_copy(g.recorder(), device_count(*counter_, 100), *out_);
 
     EXPECT_FALSE(g.run().has_value());
@@ -292,11 +286,11 @@ TEST_P(Medium_LateCountLayers, DeviceCountAboveCapacityFailsTheRun)
 /** @brief Tests that a later graph with a count inside the capacity runs clean after a failed run. */
 TEST_P(Medium_LateCountLayers, ALaterGraphRunsCleanAfterAFailedRun)
 {
-    auto failing = runtime_->graph();
+    auto failing = runtime().graph();
     record_live_count_copy(failing.recorder(), device_count(*counter_, 100), *out_);
     static_cast<void>(failing.run());
     (*counter_)[0] = 100;
-    auto valid = runtime_->graph();
+    auto valid = runtime().graph();
     record_live_count_copy(valid.recorder(), device_count(*counter_, 100), *out_);
 
     const auto report = valid.run().value();

@@ -260,9 +260,7 @@ TEST_F(Medium_SteadyStateReuse, ARunIntoAReusedReportSavesAnAllocationPerTick)
 /** @brief Tests that a run forced onto the scheduler does not allocate more per tick as the ticks grow. */
 TEST_F(Medium_SteadyStateReuse, ASchedulerForcedRunDoesNotAllocatePerTick)
 {
-    RuntimeConfig forced;
-    forced.force_scheduler = true;
-    auto scheduled = Runtime::create(forced).value();
+    Runtime& scheduled = TestSupport::RuntimeEnvironment::layer_runtime(true);
     auto buf = scheduled.buffer<float>(N).value();
     TestSupport::fill_with(buf, 0.0f);
     float* p = buf.data();
@@ -294,9 +292,7 @@ TEST_F(Medium_SteadyStateReuse, AnAsyncWaitIntoAReusedReportIsAmortised)
 /** @brief Tests that a profiled run forced onto the scheduler does not allocate more per tick as the ticks grow. */
 TEST_F(Medium_SteadyStateReuse, AProfiledSchedulerForcedRunDoesNotAllocatePerTick)
 {
-    RuntimeConfig forced;
-    forced.force_scheduler = true;
-    auto scheduled = Runtime::create(forced).value();
+    Runtime& scheduled = TestSupport::RuntimeEnvironment::layer_runtime(true);
     auto buf = scheduled.buffer<int>(N).value();
     int* p = buf.data();
     auto observer = std::make_shared<CountingObserver>();

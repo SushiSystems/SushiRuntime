@@ -43,6 +43,7 @@
 #include <SushiRuntime/report/recording_observer.hpp>
 
 #include "observed_pipeline.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using ObserverTests::ObservedPipeline;
@@ -83,7 +84,7 @@ namespace
     /** @brief Returns the label of the table a run of a dynamic graph labelled @p label is observed with. */
     std::string observed_label_of_a_dynamic_graph(const char* label)
     {
-        auto runtime = Runtime::create().value();
+        Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
         auto buffer = runtime.buffer<float>(K_N).value();
         float* data = buffer.data();
         auto world = runtime.dynamic_graph();
@@ -134,7 +135,7 @@ TEST(Medium_GraphLabel, ALabelChangeAppliesAtTheNextBuildAndForcesNone)
 /** @brief Tests that a dynamic graph takes a label too. */
 TEST(Medium_GraphLabel, ADynamicGraphCarriesItsLabel)
 {
-    auto runtime = Runtime::create().value();
+    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
     auto buffer = runtime.buffer<float>(K_N).value();
     float* data = buffer.data();
     auto world = runtime.dynamic_graph();
@@ -152,7 +153,7 @@ TEST(Medium_GraphLabel, ADynamicGraphCarriesItsLabel)
 /** @brief Tests that the origin a caller states is copied when the node is recorded, so its storage may go. */
 TEST(Medium_NodeOptions, OriginIsCopiedAtRecordTime)
 {
-    auto runtime = Runtime::create().value();
+    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
     auto buffer = runtime.buffer<float>(K_N).value();
     float* data = buffer.data();
     auto graph = runtime.graph();
@@ -204,7 +205,7 @@ TEST(Medium_NodeOptions, ANodeThatStatesNoOriginHasNone)
 /** @brief Tests that a run carries the id of its graph, static or dynamic, and no graph shares or has the id 0. */
 TEST(Medium_GraphId, ARunCarriesTheIdOfItsGraph)
 {
-    auto runtime = Runtime::create().value();
+    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
     auto first_buffer = runtime.buffer<float>(K_N).value();
     auto second_buffer = runtime.buffer<float>(K_N).value();
     auto world_buffer = runtime.buffer<float>(K_N).value();
@@ -252,7 +253,7 @@ TEST(Medium_GraphId, AnAsyncStepCarriesTheIdOfItsGraph)
 /** @brief Tests that a graph keeps its id across a move and the moved-from one reports 0. */
 TEST(Medium_GraphId, AMovedFromGraphReportsZero)
 {
-    auto runtime = Runtime::create().value();
+    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
     auto original = runtime.graph();
     const std::uint64_t id = original.id();
     ASSERT_NE(id, 0u);
@@ -278,7 +279,7 @@ namespace
 /** @brief Tests that every graph takes its own id and none takes 0. */
 TEST(Medium_GraphId, NoGraphHasIdZero)
 {
-    auto runtime = Runtime::create().value();
+    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
 
     const std::set<std::uint64_t> ids = ids_of_new_graphs(runtime, 8);
 

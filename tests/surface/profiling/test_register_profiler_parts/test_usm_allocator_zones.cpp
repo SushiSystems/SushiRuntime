@@ -38,6 +38,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "session_pipeline.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using namespace SessionTests;
@@ -76,7 +77,7 @@ namespace
 /** @brief Tests that an allocation writes a memory.allocate zone and a value of its size. */
 TEST(Medium_UsmAllocatorZones, AnAllocationWritesAZoneAndItsSize)
 {
-    auto runtime = Runtime::create().value();
+    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
 
     const RunRecord record = record_one_allocation(runtime, K_COUNT);
 
@@ -90,7 +91,7 @@ TEST(Medium_UsmAllocatorZones, AnAllocationWritesAZoneAndItsSize)
 /** @brief Tests that releasing the buffer writes a memory.release zone. */
 TEST(Medium_UsmAllocatorZones, AReleaseWritesAZone)
 {
-    auto runtime = Runtime::create().value();
+    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
 
     const RunRecord record = record_one_allocation(runtime, K_COUNT);
 
@@ -102,7 +103,7 @@ TEST(Medium_UsmAllocatorZones, AReleaseWritesAZone)
 /** @brief Tests that the value of an allocation is the size of that allocation, one value per allocation. */
 TEST(Medium_UsmAllocatorZones, EachAllocationWritesOneValueOfItsOwnSize)
 {
-    auto runtime = Runtime::create().value();
+    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
 
     const RunRecord record = record_periods_without_source(
         0, 1, [&runtime](std::uint32_t, SushiProfiler::PeriodTimeline&)

@@ -49,6 +49,8 @@
 #include <SushiRuntime/profiling/register_profiler_parts.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/runtime_environment.hpp"
+
 namespace SessionTests
 {
     /** @brief Names the registration index of each node of the three-node pipeline, in recording order. */
@@ -71,13 +73,13 @@ namespace SessionTests
             static constexpr std::size_t K_ELEMENTS = 256;
 
             /**
-             * @brief Builds the runtime from @p config and records the three nodes over @p elements elements.
+             * @brief Takes the program's runtime of @p shape and records the three nodes over @p elements elements.
              * @param device The device whose memory the buffers live in, and so the one the nodes run on.
              */
-            explicit SessionPipeline(const SushiRuntime::RuntimeConfig& config = scheduler_config(),
+            explicit SessionPipeline(const TestSupport::RuntimeShape& shape = scheduler_config(),
                                      SushiRuntime::DeviceIndex device = SushiRuntime::DeviceIndex{0},
                                      std::size_t elements = K_ELEMENTS)
-                : runtime_(SushiRuntime::Runtime::create(config).value()),
+                : runtime_(TestSupport::RuntimeEnvironment::runtime(shape)),
                   first_(runtime_.buffer<float>(elements, device).value()),
                   second_(runtime_.buffer<float>(elements, device).value()),
                   third_(runtime_.buffer<float>(elements, device).value()),
@@ -119,22 +121,22 @@ namespace SessionTests
             /** @brief Returns the graph. */
             SushiRuntime::Graph& graph() noexcept { return graph_; }
 
-            /** @brief Returns a config that keeps every run on the worker pool. */
-            static SushiRuntime::RuntimeConfig scheduler_config()
+            /** @brief Returns the shape of a runtime that keeps every run on the worker pool. */
+            static TestSupport::RuntimeShape scheduler_config()
             {
-                SushiRuntime::RuntimeConfig config;
-                config.force_scheduler = true;
-                return config;
+                TestSupport::RuntimeShape shape;
+                shape.force_scheduler = true;
+                return shape;
             }
 
-            /** @brief Returns a config that lets a chainable plan run as an in-order chain. */
-            static SushiRuntime::RuntimeConfig chain_config()
+            /** @brief Returns the shape of a runtime that lets a chainable plan run as an in-order chain. */
+            static TestSupport::RuntimeShape chain_config()
             {
-                return SushiRuntime::RuntimeConfig{};
+                return TestSupport::RuntimeShape{};
             }
 
         private:
-            SushiRuntime::Runtime runtime_;      /**< The runtime. */
+            SushiRuntime::Runtime& runtime_;     /**< The program\'s runtime of the pipeline\'s shape. */
             SushiRuntime::Buffer<float> first_;  /**< Written by load. */
             SushiRuntime::Buffer<float> second_; /**< Written by scale. */
             SushiRuntime::Buffer<float> third_;  /**< Written by store. */
@@ -156,9 +158,9 @@ namespace SessionTests
             /** @brief Width of every activation and weight vector. */
             static constexpr std::size_t K_WIDTH = 512;
 
-            /** @brief Builds the runtime from @p config and records two nodes per layer. */
-            explicit InferencePipeline(const SushiRuntime::RuntimeConfig& config = SessionPipeline::scheduler_config())
-                : runtime_(SushiRuntime::Runtime::create(config).value()), graph_(runtime_.graph())
+            /** @brief Takes the program's runtime of @p shape and records two nodes per layer. */
+            explicit InferencePipeline(const TestSupport::RuntimeShape& shape = SessionPipeline::scheduler_config())
+                : runtime_(TestSupport::RuntimeEnvironment::runtime(shape)), graph_(runtime_.graph())
             {
                 using namespace SushiRuntime;
                 activations_.reserve(K_LAYERS + 1);
@@ -218,7 +220,7 @@ namespace SessionTests
             const std::vector<std::string>& names() const noexcept { return names_; }
 
         private:
-            SushiRuntime::Runtime runtime_;                          /**< The runtime. */
+            SushiRuntime::Runtime& runtime_;                         /**< The program\'s runtime of the pipeline\'s shape. */
             std::vector<SushiRuntime::Buffer<float>> activations_;   /**< The input and the output of every layer. */
             std::vector<SushiRuntime::Buffer<float>> weights_;       /**< One vector per layer; read only. */
             std::vector<SushiRuntime::Buffer<float>> products_;      /**< What each layer's first node writes. */

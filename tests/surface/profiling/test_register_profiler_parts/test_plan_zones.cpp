@@ -40,6 +40,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "session_pipeline.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using namespace SessionTests;
@@ -164,7 +165,7 @@ TEST(Medium_PlanZones, NoZoneIsWrittenWhileTheGateIsClosed)
 /** @brief Tests that a graph of regions writes region.commit when it composes its plan. */
 TEST(Medium_PlanZones, ADynamicGraphWritesRegionCommit)
 {
-    auto runtime = Runtime::create().value();
+    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
     auto buffer = runtime.buffer<float>(64).value();
     float* data = buffer.data();
     auto graph = runtime.dynamic_graph();

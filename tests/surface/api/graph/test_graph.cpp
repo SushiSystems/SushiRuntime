@@ -37,7 +37,6 @@
 #include <cstring>
 #include <future>
 #include <mutex>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -52,34 +51,6 @@
 #include "support/tolerance.hpp"
 
 using namespace SushiRuntime;
-
-/**
- * @brief Holds the runtime of a row of the layer tests: the program's for the in-order chain, one forced onto the
- *        scheduler otherwise.
- */
-class LayerRuntime
-{
-    protected:
-        /** @brief Makes the runtime of the row. */
-        void make_runtime(bool force_scheduler)
-        {
-            if (force_scheduler)
-            {
-                RuntimeConfig config;
-                config.force_scheduler = true;
-                scheduled_.emplace(Runtime::create(config).value());
-            }
-        }
-
-        /** @brief Returns the runtime of the row. */
-        [[nodiscard]] const Runtime& layer_runtime() const
-        {
-            return scheduled_ ? *scheduled_ : TestSupport::RuntimeEnvironment::runtime();
-        }
-
-    private:
-        std::optional<Runtime> scheduled_; /**< The forced-scheduler runtime of the true row. */
-};
 
 /** @brief Tests add_host(), which runs plain C++ on a worker thread ordered by the data it touches. */
 namespace NativeCpuPathTests
@@ -851,11 +822,11 @@ namespace ChainLayerTests
 
 /** @brief Fixture of the rows that run the workload on a layer, with or without a host task at the end. */
 class Medium_ChainLayerWorkload : public ::testing::TestWithParam<ChainLayerTests::WorkloadRow>,
-                                  protected LayerRuntime
+                                  protected TestSupport::LayerRuntime
 {
     protected:
-        /** @brief Makes the runtime of the row. */
-        void SetUp() override { make_runtime(GetParam().force_scheduler); }
+        /** @brief Chooses the runtime of the row. */
+        void SetUp() override { use_layer(GetParam().force_scheduler); }
 };
 
 /** @brief Fixture of the chain tests that run on the program's runtime. */
@@ -871,7 +842,7 @@ namespace ChainLayerTests
         constexpr std::size_t RUNS  = 2;
         constexpr std::size_t STEPS = 40;
 
-        const Outputs measured = run_workload(layer_runtime(), RUNS, STEPS, GetParam().native_tail);
+        const Outputs measured = run_workload(runtime(), RUNS, STEPS, GetParam().native_tail);
 
         expect_matches_model(measured, workload_model(RUNS * STEPS), RUNS * STEPS);
     }
@@ -1241,17 +1212,17 @@ namespace DeterminismTests
         }
 
         /**
-         * @brief Runs the fixed workload on a runtime built for the given worker count and copies the
+         * @brief Runs the fixed workload on the program's runtime of the given worker count and copies the
          *        results out.
          * @param rebalancer Whether the background rebalancer runs during the workload.
          */
         Outcome run_workload(std::size_t worker_count, bool rebalancer = false)
         {
-            RuntimeConfig config;
-            config.worker_count = worker_count;
-            config.rebalancer   = rebalancer;
+            TestSupport::RuntimeShape shape;
+            shape.worker_count = worker_count;
+            shape.rebalancer   = rebalancer;
 
-            return run_workload(Runtime::create(config).value());
+            return run_workload(TestSupport::RuntimeEnvironment::runtime(shape));
         }
 
         /** @brief Returns whether two float vectors are equal byte for byte. */
@@ -1488,11 +1459,11 @@ namespace ObservabilityTests
     };
 
     /** @brief Fixture of the rows that run a profiled graph on the in-order chain (false) and on the scheduler (true). */
-    class Medium_ObservabilityLayers : public ::testing::TestWithParam<bool>, protected LayerRuntime
+    class Medium_ObservabilityLayers : public ::testing::TestWithParam<bool>, protected TestSupport::LayerRuntime
     {
     protected:
-        /** @brief Makes the runtime of the row. */
-        void SetUp() override { make_runtime(GetParam()); }
+        /** @brief Chooses the runtime of the row. */
+        void SetUp() override { use_layer(GetParam()); }
     };
 
     /** @brief The add() shapes whose node can be named, as the rows of one test. */
@@ -1662,11 +1633,11 @@ namespace ObservabilityTests
     {
         constexpr std::size_t N = 1024;
 
-        Testing::RunRecorder recorder(layer_runtime());
-        auto buf = layer_runtime().buffer<int>(N).value();
+        Testing::RunRecorder recorder(runtime());
+        auto buf = runtime().buffer<int>(N).value();
         int* p = buf.data();
 
-        auto g = layer_runtime().graph();
+        auto g = runtime().graph();
         g.add(N, Reads{}, Writes(buf), [p](std::size_t i) { p[i] = static_cast<int>(i) + 1; });
         g.run(16).value();
         ASSERT_EQ(recorder.count(), 1u);
@@ -1794,27 +1765,27 @@ namespace GraphReplayTests
     } // namespace
 
     /** @brief Fixture of the replay rows that run on the in-order chain (false) and on the scheduler (true). */
-    class Medium_GraphReplay : public ::testing::TestWithParam<bool>, protected LayerRuntime
+    class Medium_GraphReplay : public ::testing::TestWithParam<bool>, protected TestSupport::LayerRuntime
     {
     protected:
-        /** @brief Makes the runtime of the row and turns its rebalancer off. */
+        /** @brief Chooses the runtime of the row and turns its rebalancer off. */
         void SetUp() override
         {
-            make_runtime(GetParam());
-            layer_runtime().set_rebalancer_enabled(false);
+            use_layer(GetParam());
+            runtime().set_rebalancer_enabled(false);
         }
     };
 
     /** @brief Tests that a replayed chain settles to its length, on either layer. */
     TEST_P(Medium_GraphReplay, AChainSettlesToItsLength)
     {
-        EXPECT_EQ(settle_chain(layer_runtime()), static_cast<int>(K_CHAIN_LENGTH));
+        EXPECT_EQ(settle_chain(runtime()), static_cast<int>(K_CHAIN_LENGTH));
     }
 
     /** @brief Tests that every independent root runs on every step of a replay, on either layer. */
     TEST_P(Medium_GraphReplay, EveryIndependentRootRunsOnEveryStep)
     {
-        EXPECT_EQ(count_roots_that_missed_a_step(layer_runtime()), 0u);
+        EXPECT_EQ(count_roots_that_missed_a_step(runtime()), 0u);
     }
 
     INSTANTIATE_TEST_SUITE_P(Rows, Medium_GraphReplay, ::testing::Values(false, true));

@@ -35,6 +35,8 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/runtime_environment.hpp"
+
 namespace ObserverTests
 {
     /** @brief Names the registration index of each node of the pipeline, in recording order. */
@@ -58,9 +60,9 @@ namespace ObserverTests
             /** @brief The element count every node launches over. */
             static constexpr std::size_t K_ELEMENTS = 256;
 
-            /** @brief Builds the runtime from @p config and records the three nodes. */
-            explicit ObservedPipeline(const SushiRuntime::RuntimeConfig& config = scheduler_config())
-                : runtime_(SushiRuntime::Runtime::create(config).value()),
+            /** @brief Takes the program's runtime of @p shape and records the three nodes. */
+            explicit ObservedPipeline(const TestSupport::RuntimeShape& shape = scheduler_config())
+                : runtime_(TestSupport::RuntimeEnvironment::runtime(shape)),
                   first_(runtime_.buffer<float>(K_ELEMENTS).value()),
                   second_(runtime_.buffer<float>(K_ELEMENTS).value()),
                   third_(runtime_.buffer<float>(K_ELEMENTS).value()),
@@ -105,22 +107,22 @@ namespace ObserverTests
             /** @brief Returns the last buffer, which holds 2 * i + 1 after a run. */
             SushiRuntime::Buffer<float>& result() noexcept { return third_; }
 
-            /** @brief Returns a config that keeps every run on the worker pool. */
-            static SushiRuntime::RuntimeConfig scheduler_config()
+            /** @brief Returns the shape of a runtime that keeps every run on the worker pool. */
+            static TestSupport::RuntimeShape scheduler_config()
             {
-                SushiRuntime::RuntimeConfig config;
-                config.force_scheduler = true;
-                return config;
+                TestSupport::RuntimeShape shape;
+                shape.force_scheduler = true;
+                return shape;
             }
 
-            /** @brief Returns a config that lets a chainable plan run as an in-order chain. */
-            static SushiRuntime::RuntimeConfig chain_config()
+            /** @brief Returns the shape of a runtime that lets a chainable plan run as an in-order chain. */
+            static TestSupport::RuntimeShape chain_config()
             {
-                return SushiRuntime::RuntimeConfig{};
+                return TestSupport::RuntimeShape{};
             }
 
         private:
-            SushiRuntime::Runtime runtime_;          /**< The runtime. */
+            SushiRuntime::Runtime& runtime_;         /**< The program\'s runtime of the pipeline\'s shape. */
             SushiRuntime::Buffer<float> first_;      /**< Written by load. */
             SushiRuntime::Buffer<float> second_;     /**< Written by scale. */
             SushiRuntime::Buffer<float> third_;      /**< Written by store. */

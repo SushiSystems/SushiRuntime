@@ -46,6 +46,7 @@
 #include <SushiRuntime/report/recording_observer.hpp>
 
 #include "observed_pipeline.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using ObserverTests::ObservedPipeline;
@@ -260,11 +261,11 @@ TEST(Medium_CollectProfiling, TheRunAfterAnOverflowLosesNothing)
 
 namespace
 {
-    /** @brief Runs two task nodes, each submitting its own kernel, once under @p config; returns what the observer saw. */
-    RunObservation observe_task_bodies(const RuntimeConfig& config)
+    /** @brief Runs two task nodes, each submitting its own kernel, once on the program's runtime of @p shape; returns what the observer saw. */
+    RunObservation observe_task_bodies(const TestSupport::RuntimeShape& shape)
     {
         constexpr std::size_t K_ELEMENTS = 256;
-        auto runtime = Runtime::create(config).value();
+        Runtime& runtime = TestSupport::RuntimeEnvironment::runtime(shape);
         auto first = runtime.buffer<float>(K_ELEMENTS).value();
         auto second = runtime.buffer<float>(K_ELEMENTS).value();
         float* a = first.data();

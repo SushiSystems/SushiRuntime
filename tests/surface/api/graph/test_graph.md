@@ -1,8 +1,8 @@
 # test_graph.cpp
 
 Every test of the file runs on the program's runtime, through `TestSupport::RuntimeTest`. The rows
-that need a runtime forced onto the scheduler make that runtime in their fixture, since
-`RuntimeConfig::force_scheduler` is set at creation. The tests name no layer: which path ran a plan
+that need a runtime forced onto the scheduler take the program's one through `TestSupport::LayerRuntime`,
+since `RuntimeConfig::force_scheduler` is set at creation. The tests name no layer: which path ran a plan
 is an inside detail, and a run must give the right bytes on both.
 
 The file covers the native CPU execution path, work package WP-7 of
@@ -202,8 +202,8 @@ would rewrite one into the other and they would match. It touches no device and 
 ### `OutputIsByteEqualAcrossWorkerCounts`
 
 This test is the core claim of the suite. One worker, two workers and the whole machine must agree
-on every byte of the output. It builds a runtime per worker count in its body, because the count is
-fixed at creation; that waits on the owner's ruling on one device per process.
+on every byte of the output. It asks the program's environment for the runtime of each worker count,
+because the count is fixed at creation; each is made once per program.
 
 The test guards against a vacuous pass: if every configuration collapsed to the same pool, the
 schedule would not have varied at all.

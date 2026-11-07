@@ -29,7 +29,10 @@ The code the tests of several modules share is in internal modules that only the
 bound, so no comparison spells one. `runtime_environment.hpp` registers one `testing::Environment`
 per program that makes the runtime and the device queue on first use and releases them after the
 last test; a medium test that needs either derives its fixture from `TestSupport::RuntimeTest` and
-never builds its own. `buffer_contents.hpp` reads, fills and windows a buffer's contents,
+never builds its own. A test that needs another configuration asks the environment for the runtime
+of a `RuntimeShape` (forced onto the scheduler, a worker count, the rebalancer), made once per
+shape; `LayerRuntimeTest` runs a row on the default runtime (false) and on the one forced onto the
+scheduler (true). `buffer_contents.hpp` reads, fills and windows a buffer's contents,
 `slot_buffers.hpp` makes one device, one shared and one host counter buffer, and
 `adopted_handles.hpp` builds a `Buffer` or `State` over a made-up address with
 `RecordingAllocationOwner`, and `digest_bytes.hpp` views text and byte vectors as byte spans and writes a

@@ -1468,31 +1468,6 @@ namespace LayerEquivalenceTests
     } // namespace
 
 
-    /** @brief Holds the runtime of a row: the program's for the in-order chain, one forced onto the scheduler otherwise. */
-    class LayerRuntime
-    {
-        protected:
-            /** @brief Makes the runtime of the row. */
-            void make_runtime(bool force_scheduler)
-            {
-                if (force_scheduler)
-                {
-                    RuntimeConfig config;
-                    config.force_scheduler = true;
-                    scheduled_.emplace(Runtime::create(config).value());
-                }
-            }
-
-            /** @brief Returns the runtime of the row. */
-            [[nodiscard]] const Runtime& runtime() const
-            {
-                return scheduled_ ? *scheduled_ : TestSupport::RuntimeEnvironment::runtime();
-            }
-
-        private:
-            std::optional<Runtime> scheduled_; /**< The forced-scheduler runtime of the true row. */
-    };
-
     /** @brief The pass chain of one row: the layer it runs on and where its two passes run. */
     struct PassRow
     {
@@ -1502,20 +1477,20 @@ namespace LayerEquivalenceTests
 } // namespace
 
 /** @brief Fixture of the rows that run a workload on the in-order chain (false) and on the scheduler (true). */
-class Medium_LayerEquivalence : public ::testing::TestWithParam<bool>, protected LayerEquivalenceTests::LayerRuntime
+class Medium_LayerEquivalence : public ::testing::TestWithParam<bool>, protected TestSupport::LayerRuntime
 {
     protected:
-        /** @brief Makes the runtime of the row. */
-        void SetUp() override { make_runtime(GetParam()); }
+        /** @brief Chooses the runtime of the row. */
+        void SetUp() override { use_layer(GetParam()); }
 };
 
 /** @brief Fixture of the rows of the pass chain. */
 class Medium_LayerEquivalencePasses : public ::testing::TestWithParam<LayerEquivalenceTests::PassRow>,
-                                      protected LayerEquivalenceTests::LayerRuntime
+                                      protected TestSupport::LayerRuntime
 {
     protected:
-        /** @brief Makes the runtime of the row. */
-        void SetUp() override { make_runtime(GetParam().force_scheduler); }
+        /** @brief Chooses the runtime of the row. */
+        void SetUp() override { use_layer(GetParam().force_scheduler); }
 };
 
 namespace LayerEquivalenceTests

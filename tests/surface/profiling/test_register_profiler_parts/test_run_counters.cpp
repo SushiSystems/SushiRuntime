@@ -41,6 +41,7 @@
 #include <SushiRuntime/report/recording_observer.hpp>
 
 #include "session_pipeline.hpp"
+#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using namespace SessionTests;
@@ -66,7 +67,7 @@ namespace
 /** @brief Tests that a run that copies a known number of bytes writes counters of exactly those bytes. */
 TEST(Medium_RunCounters, TransferBytesMatchTheExplicitCopies)
 {
-    auto runtime = Runtime::create().value();
+    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
     auto buffer = runtime.buffer<float>(256, DeviceIndex{0}, Residency::Device).value();
     const std::vector<float> source(K_WRITTEN, 1.0f);
     auto graph = runtime.graph();
