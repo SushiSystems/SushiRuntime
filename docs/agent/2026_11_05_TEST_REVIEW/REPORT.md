@@ -3604,7 +3604,7 @@ Counted statically from the source, no test run: one case for each `TEST`, `TEST
 | `extension/cluster_monitor` | 18 | 1 | 0 | 0 | 19 | 95% |
 | `extension/dispatch_deduplication` | 3 | 0 | 0 | 0 | 3 | 100% |
 | `extension/dispatch_executor` | 31 | 0 | 0 | 0 | 31 | 100% |
-| `extension/distributed` | 21 | 92 | 0 | 2 | 115 | 18% |
+| `extension/distributed` | 22 | 92 | 0 | 2 | 116 | 19% |
 | `extension/frame_transport` | 14 | 0 | 0 | 0 | 14 | 100% |
 | `extension/in_process_transport` | 2 | 0 | 0 | 0 | 2 | 100% |
 | `extension/link_security` | 12 | 2 | 0 | 0 | 14 | 86% |
@@ -3634,7 +3634,7 @@ Counted statically from the source, no test run: one case for each `TEST`, `TEST
 | `platform/numa_lookup` | 3 | 0 | 0 | 0 | 3 | 100% |
 | `platform/observability` | 31 | 2 | 0 | 0 | 33 | 94% |
 | `platform/topology` | 27 | 16 | 0 | 0 | 43 | 63% |
-| `surface/api` | 425 | 123 | 0 | 4 | 552 | 77% |
+| `surface/api` | 431 | 123 | 0 | 4 | 558 | 77% |
 | `surface/context` | 1 | 0 | 0 | 0 | 1 | 100% |
 | `surface/context_access` | 0 | 0 | 0 | 0 | 0 | 0% |
 | `surface/engine_handles` | 2 | 0 | 0 | 0 | 2 | 100% |
@@ -3642,7 +3642,7 @@ Counted statically from the source, no test run: one case for each `TEST`, `TEST
 | `surface/memory_exchange` | 9 | 4 | 0 | 0 | 13 | 69% |
 | `surface/profiling` | 112 | 51 | 2 | 1 | 166 | 67% |
 | `tools (python)` | 746 | 86 | 0 | 0 | 832 | 90% |
-| **all** | 2209 | 611 | 14 | 54 | 2888 | 76% |
+| **all** | 2216 | 611 | 14 | 54 | 2895 | 77% |
 
 Where the small share is low, the module's medium cases are boundary checks or wait on a seam: `extension/distributed` (the TCP transport, the cluster and the worker main are the sockets and processes it exists to check; its executor and agent logic runs small in `dispatch_executor`, `master_link` and `cluster_monitor`), `extension/network_socket` (sockets are its boundary), `foundation/usm_guard` and `foundation/device_probe` (devices are their boundary), `engine/scheduler` and `engine/execution` (RW-129), `platform/device` and `platform/topology` (platform ports), and `cli (python)`.
 
