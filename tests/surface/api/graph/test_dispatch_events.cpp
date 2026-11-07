@@ -43,6 +43,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/report/recording_observer.hpp>
 
+#include "support/kernel_math.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -104,14 +105,14 @@ namespace
                        const sycl::event first = queue.submit([&](sycl::handler& h)
                        {
                            h.depends_on(after);
-                           h.parallel_for(sycl::range<1>(K_WIDTH), [p](sycl::id<1> i) { p[i] = 1u; });
+                           h.parallel_for(sycl::range<1>(K_WIDTH), [p](sycl::id<1> i) { TestSupport::store_value(p, i[0], 1u); });
                        });
                        if (hand_over)
                            note_dispatch_event(first);
                        const sycl::event second = queue.submit([&](sycl::handler& h)
                        {
                            h.depends_on(first);
-                           h.parallel_for(sycl::range<1>(K_WIDTH), [p](sycl::id<1> i) { p[i] += 1u; });
+                           h.parallel_for(sycl::range<1>(K_WIDTH), [p](sycl::id<1> i) { TestSupport::add_value(p, i[0], 1u); });
                        });
                        if (hand_over)
                            note_dispatch_event(second);

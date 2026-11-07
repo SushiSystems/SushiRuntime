@@ -82,6 +82,12 @@ whole result with a vector, so no body loops.
 | --- | --- |
 | `Extent2DPerElementMap` | `add_untracked(Extent<2>, kernel)` sees a `sycl::id<2>` that covers the whole box and writes a row-major index. |
 | `Small_NdKernelMath.SquareInPlaceSquaresOneElement` | `TestSupport::square_in_place()`, the arithmetic of the tracked `NdRange` kernel, squares the one element it is given. |
+| `Small_NdKernelMath.WriteIndexWritesTheElementsOwnIndex` | `TestSupport::write_index()`, the arithmetic of the raw and range handler kernels, writes an element's own index and no other. |
+| `Small_NdKernelMath.WriteDoubleIndexWritesTwiceTheIndex` | `TestSupport::write_double_index()`, the arithmetic of the raw handler kernel, writes twice an element's index into it. |
+| `Small_NdKernelMath.StoreValueAndAddValueChangeOneElement` | `TestSupport::store_value()` and `add_value()`, the arithmetic of the dispatch, command-group and queue-body kernels, change the one element they are given. |
+| `Small_NdKernelMath.StoreRangeWidthStoresEndMinusBegin` | `TestSupport::store_range_width()`, the arithmetic of the range kernel, stores the width of the range. |
+| `Small_NdKernelMath.StoreDoubledAndStoreSuccessorMapOneElement` | `TestSupport::store_doubled()` and `store_successor()`, the arithmetic of the two-kernel queue bodies, map one element. |
+| `Small_NdKernelMath.StoreOrdinalStoresTheIndexPlusOne` | `TestSupport::store_ordinal()`, the arithmetic of the queue-body kernel, stores an element's index plus one. |
 | `Small_NdKernelMath.WriteLinearIndexWritesTheRowMajorIndex` | `TestSupport::write_linear_index()`, the index math of the tiled kernel, writes the row-major index at column x, row y. |
 | `NdRange2DTiledKernel` | `add_untracked(NdRange<2>, kernel)` runs a tiled kernel in the work-group model; each item writes its global linear index. |
 | `State2DSteppedUpdate` | `add_rule(Extent<2>, state, kernel)` adds the row index to every cell each step, so row y holds `S*y` after S steps. |

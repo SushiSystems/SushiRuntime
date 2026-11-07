@@ -40,6 +40,7 @@
 
 #include "description_runner.hpp"
 #include "support/buffer_contents.hpp"
+#include "support/kernel_math.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -54,7 +55,7 @@ namespace
             return queue.submit([&](sycl::handler& handler)
             {
                 handler.depends_on(dependencies);
-                handler.single_task([value] { *value = 7; });
+                handler.single_task([value] { TestSupport::store_value(value, 0, 7); });
             });
         };
     }

@@ -45,6 +45,7 @@
 #include "recorder_buffers.hpp"
 #include "recorder_fixtures.hpp"
 #include "run_recorder.hpp"
+#include "support/kernel_math.hpp"
 
 using namespace SushiRuntime;
 
@@ -636,13 +637,13 @@ namespace RecorderSemanticsTests
                            {
                                h.depends_on(after);
                                h.parallel_for(sycl::range<1>(K_WIDTH),
-                                              [s, t](sycl::id<1> i) { t[i] = s[i] * 2u; });
+                                              [s, t](sycl::id<1> i) { TestSupport::store_doubled(s, t, i[0]); });
                            });
                            return queue.submit([&](sycl::handler& h)
                            {
                                h.depends_on(doubled);
                                h.parallel_for(sycl::range<1>(K_WIDTH),
-                                              [t, r](sycl::id<1> i) { r[i] = t[i] + 1u; });
+                                              [t, r](sycl::id<1> i) { TestSupport::store_successor(t, r, i[0]); });
                            });
                        });
         graph.add(K_WIDTH, Reads(result), Writes(copied),

@@ -39,7 +39,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/host_runtime.hpp"
-#include "support/nd_kernel_math.hpp"
+#include "support/kernel_math.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -299,7 +299,7 @@ TEST_F(Medium_BuilderSurface, UntrackedKernelRunsOnTheDeviceNamed)
     graph.add_untracked(On(last), [index_words](sycl::handler& handler)
     {
         handler.parallel_for(sycl::range<1>(K_WIDTH),
-                             [index_words](sycl::id<1> i) { index_words[i[0]] += 2u; });
+                             [index_words](sycl::id<1> i) { TestSupport::add_value(index_words, i[0], 2u); });
     });
     EXPECT_EQ(graph.size(), 1u);
     graph.run().value();

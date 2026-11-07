@@ -69,6 +69,7 @@
 #include "support/buffer_contents.hpp"
 #include "support/host_runtime.hpp"
 #include "support/runtime_contract.hpp"
+#include "support/kernel_math.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -725,7 +726,7 @@ TEST_F(Medium_RuntimeEntry, ACallerWaitsAndCopiesThroughTheDeviceQueue)
     sycl::queue& queue = runtime().advanced().queue(values.device_index());
     queue.parallel_for(sycl::range<1>(K_WORDS), [words](sycl::id<1> i)
     {
-        words[i] = static_cast<std::uint32_t>(i[0]) + 1u;
+        TestSupport::store_ordinal(words, i[0]);
     });
     runtime().wait().value();
     std::vector<std::uint32_t> copied(K_WORDS, 0u);

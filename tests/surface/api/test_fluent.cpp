@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -41,7 +42,7 @@
 
 #include "support/buffer_contents.hpp"
 #include "support/host_runtime.hpp"
-#include "support/nd_kernel_math.hpp"
+#include "support/kernel_math.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -158,7 +159,7 @@ TEST_F(Medium_FluentAPI, RawHandlerKernelAdd)
     {
         h.parallel_for(sycl::range<1>(N), [p](sycl::id<1> i)
         {
-            p[i[0]] = static_cast<int>(i[0]) * 2;
+            TestSupport::write_double_index(p, i[0]);
         });
     });
 
@@ -179,7 +180,7 @@ TEST_F(Medium_FluentAPI, RangeKernelAdd)
     {
         h.parallel_for(sycl::range<1>(end - begin), [p, begin](sycl::id<1> idx)
         {
-            p[begin + idx[0]] = static_cast<int>(begin + idx[0]);
+            TestSupport::write_index(p, begin + idx[0]);
         });
     });
 
@@ -223,8 +224,7 @@ TEST_F(Medium_FluentAPI, TrackedRangeKernelOrdering)
     {
         h.parallel_for(sycl::range<1>(end - begin), [p, begin](sycl::id<1> idx)
         {
-            const std::size_t i = begin + idx[0];
-            p[i] = p[i] * p[i];
+            TestSupport::square_in_place(p, begin + idx[0]);
         });
     });
 
@@ -246,7 +246,7 @@ TEST_F(Medium_FluentAPI, TrackedRawKernelOrdering)
     {
         h.parallel_for(sycl::range<1>(N), [p](sycl::id<1> idx)
         {
-            p[idx[0]] = p[idx[0]] * p[idx[0]];
+            TestSupport::square_in_place(p, idx[0]);
         });
     });
 
@@ -687,6 +687,76 @@ TEST(Small_NdKernelMath, SquareInPlaceSquaresOneElement)
     EXPECT_EQ(values[0], 3);
     EXPECT_EQ(values[1], 16);
     EXPECT_EQ(values[2], 5);
+}
+
+/** @brief Tests that the index kernel math writes an element's own index and no other. */
+TEST(Small_NdKernelMath, WriteIndexWritesTheElementsOwnIndex)
+{
+    int values[] = {-1, -1, -1};
+
+    TestSupport::write_index(values, 2);
+
+    EXPECT_EQ(values[2], 2);
+    EXPECT_EQ(values[0], -1);
+}
+
+/** @brief Tests that the doubling kernel math writes twice an element's index into it. */
+TEST(Small_NdKernelMath, WriteDoubleIndexWritesTwiceTheIndex)
+{
+    int values[] = {-1, -1, -1};
+
+    TestSupport::write_double_index(values, 2);
+
+    EXPECT_EQ(values[2], 4);
+    EXPECT_EQ(values[1], -1);
+}
+
+/** @brief Tests that the store and add kernel math change the one element they are given. */
+TEST(Small_NdKernelMath, StoreValueAndAddValueChangeOneElement)
+{
+    std::uint32_t words[] = {5u, 5u};
+
+    TestSupport::store_value(words, 1, 1u);
+    TestSupport::add_value(words, 1, 1u);
+
+    EXPECT_EQ(words[1], 2u);
+    EXPECT_EQ(words[0], 5u);
+}
+
+/** @brief Tests that the range kernel math stores the width of the range in the first element. */
+TEST(Small_NdKernelMath, StoreRangeWidthStoresEndMinusBegin)
+{
+    int words[] = {-1};
+
+    TestSupport::store_range_width(words, 3, 10);
+
+    EXPECT_EQ(words[0], 7);
+}
+
+/** @brief Tests that the mapping kernel math doubles and increments by element. */
+TEST(Small_NdKernelMath, StoreDoubledAndStoreSuccessorMapOneElement)
+{
+    const std::uint32_t source[] = {1u, 4u};
+    std::uint32_t doubled[] = {0u, 0u};
+    std::uint32_t next[] = {0u, 0u};
+
+    TestSupport::store_doubled(source, doubled, 1);
+    TestSupport::store_successor(source, next, 1);
+
+    EXPECT_EQ(doubled[1], 8u);
+    EXPECT_EQ(next[1], 5u);
+    EXPECT_EQ(doubled[0], 0u);
+}
+
+/** @brief Tests that the ordinal kernel math stores an element's index plus one. */
+TEST(Small_NdKernelMath, StoreOrdinalStoresTheIndexPlusOne)
+{
+    std::uint32_t words[] = {0u, 0u, 0u};
+
+    TestSupport::store_ordinal(words, 2);
+
+    EXPECT_EQ(words[2], 3u);
+    EXPECT_EQ(words[0], 0u);
 }
 
 /** @brief Tests that the tiled kernel math writes the row-major linear index at column x, row y. */
