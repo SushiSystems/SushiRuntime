@@ -36,6 +36,7 @@
 #include <sycl/sycl.hpp>
 
 #include <SushiRuntime/device_probe/device_probe.hpp>
+#include <SushiRuntime/usm_guard/in_memory_shared_allocation_source.hpp>
 #include <SushiRuntime/usm_guard/usm_shared.hpp>
 
 #include <support/runtime_environment.hpp>
@@ -81,27 +82,48 @@ TEST_F(Medium_USMShared, TheHostWritesAndReadsEveryElement)
     EXPECT_EQ(read_all(values), (std::vector<int>{0, 3, 6, 9, 12, 15}));
 }
 
-/** @brief Tests that a move construction hands the allocation over and empties the source. */
-TEST_F(Medium_USMShared, AMoveConstructionHandsTheAllocationOver)
+/** @brief Tests that a guard allocates once through its source and frees once when it ends. */
+TEST(Small_USMShared, AGuardFreesItsAllocationOnceThroughItsSource)
 {
-    USMShared<float> source(queue(), 4);
-    float* const address = source.get();
+    InMemorySharedAllocationSource source;
+    {
+        USMShared<int> values(source, 6);
+        ASSERT_TRUE(values);
+        EXPECT_EQ(values.count(), 6u);
+    }
 
-    USMShared<float> target(std::move(source));
-
-    EXPECT_FALSE(source);
-    EXPECT_EQ(target.get(), address);
+    EXPECT_EQ(source.allocations(), 1u);
+    EXPECT_EQ(source.frees(), 1u);
 }
 
-/** @brief Tests that a move assignment hands the allocation over, with its count. */
-TEST_F(Medium_USMShared, AMoveAssignmentHandsTheAllocationOver)
+/** @brief Tests that a move construction hands the allocation over and empties the source. */
+TEST(Small_USMShared, AMoveConstructionHandsTheAllocationOver)
 {
-    USMShared<float> source(queue(), 4);
+    InMemorySharedAllocationSource memory;
+    {
+        USMShared<float> source(memory, 4);
+        float* const address = source.get();
+
+        USMShared<float> target(std::move(source));
+
+        EXPECT_FALSE(source);
+        EXPECT_EQ(target.get(), address);
+    }
+
+    EXPECT_EQ(memory.frees(), 1u);
+}
+
+/** @brief Tests that a move assignment hands the allocation over, with its count, and frees the old one. */
+TEST(Small_USMShared, AMoveAssignmentHandsTheAllocationOver)
+{
+    InMemorySharedAllocationSource memory;
+    USMShared<float> source(memory, 4);
     float* const address = source.get();
-    USMShared<float> other(queue(), 2);
+    USMShared<float> other(memory, 2);
 
     other = std::move(source);
 
     EXPECT_EQ(other.get(), address);
     EXPECT_EQ(other.count(), 4u);
+    EXPECT_EQ(memory.frees(), 1u);
 }

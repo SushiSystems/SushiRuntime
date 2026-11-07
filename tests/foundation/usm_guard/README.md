@@ -14,7 +14,16 @@ The file tests USMShared: an allocation the host reads and writes, freed once, m
 | Test | What it proves |
 | --- | --- |
 | `Medium_USMShared.TheHostWritesAndReadsEveryElement` | The host writes and reads every element; a helper writes the multiples and another reads them back. |
-| `Medium_USMShared.AMoveConstructionHandsTheAllocationOver` | A move construction hands the allocation over and empties the source. |
-| `Medium_USMShared.AMoveAssignmentHandsTheAllocationOver` | A move assignment hands the allocation over, with its count. |
+| `Small_USMShared.AGuardFreesItsAllocationOnceThroughItsSource` | A guard over an in-memory source allocates once and frees once when it ends. |
+| `Small_USMShared.AMoveConstructionHandsTheAllocationOver` | A move construction hands the allocation over, empties the source, and the allocation is freed once. |
+| `Small_USMShared.AMoveAssignmentHandsTheAllocationOver` | A move assignment hands the allocation over, with its count, and frees the one it replaced. |
 
-The queue comes from the fixture base of `tests/support/runtime_environment.hpp`; the fixture skips the test on a machine with no SYCL device.
+The small tests run on an `InMemorySharedAllocationSource`. The medium queue comes from the fixture base of `tests/support/runtime_environment.hpp`; the fixture skips the test on a machine with no SYCL device.
+
+## The source tests
+
+`compile_shared_allocation_source.cpp` compiles the port header alone.
+`Small_InMemorySharedAllocationSource` (`test_in_memory_shared_allocation_source.cpp`) runs
+`SharedAllocationSourceContract` on host memory, and `Medium_QueueSharedAllocationSource`
+(`test_queue_shared_allocation_source.cpp`) on the program's queue, the boundary host memory
+stands in for.

@@ -6,4 +6,7 @@
 sushiruntime_add_module_tests(
     MODULE usm_guard
     SOURCES
+        compile_shared_allocation_source.cpp
+        test_in_memory_shared_allocation_source.cpp
+        test_queue_shared_allocation_source.cpp
         test_usm_shared.cpp)
