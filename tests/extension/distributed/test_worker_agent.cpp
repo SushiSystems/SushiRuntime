@@ -1353,145 +1353,6 @@ TEST(Medium_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
     EXPECT_EQ(calls.load(), 1);
 }
 
-/** @brief Tests that the worker checks the master's proof before it sends its own. */
-TEST(Medium_MasterLinkTest, HandshakeChecksTheMasterBeforeProving)
-{
-    std::atomic<int> calls{0};
-    AgentRig rig;
-    rig.kernels->register_kernel(OperationID(7), counting_kernel(calls));
-    rig.kernels->register_kernel(OperationID(9), counting_kernel(calls));
-    rig.options.cache_bytes = 4096;
-    rig.start();
-
-    rig.master.connect(K_MASTER);
-    ASSERT_TRUE(rig.master.wait_for(MessageType::Hello, 1));
-    const Wire::HelloMessage hello = rig.last_hello();
-    EXPECT_EQ(hello.node_name, "worker-a");
-    EXPECT_FALSE(hello.build_id.empty());
-
-    const std::vector<std::uint8_t> secret = secret_of(K_SECRET_BYTE);
-    rig.master.deliver(K_MASTER, challenge_of(secret, 7, nonce_in(hello)));
-    ASSERT_TRUE(rig.master.wait_for(MessageType::Proof, 1));
-    const Wire::ProofMessage proof =
-        decode<Wire::ProofMessage>(rig.master.frames_of(MessageType::Proof)[0]);
-    const Sha256Digest expected =
-        compute_proof(HandshakeRole::Worker, span<const std::uint8_t>(secret.data(), secret.size()),
-                      nonce_in(hello), K_MASTER_NONCE);
-    EXPECT_EQ(std::memcmp(proof.worker_proof.data(), expected.data(), expected.size()), 0);
-    const std::vector<TrafficEntry> traffic = rig.master.traffic();
-    const auto position_of = [&traffic](FrameDirection direction, MessageType type)
-    {
-        return static_cast<std::size_t>(std::find_if(traffic.begin(), traffic.end(),
-                                                     [direction, type](const TrafficEntry& entry)
-                                                     {
-                                                         return entry.direction == direction &&
-                                                                entry.type == type;
-                                                     }) -
-                                        traffic.begin());
-    };
-    EXPECT_LT(position_of(FrameDirection::MasterToWorker, MessageType::Challenge),
-              position_of(FrameDirection::WorkerToMaster, MessageType::Proof))
-        << "PROOF left before the CHALLENGE";
-    EXPECT_EQ(proof.ops.size(), 2u);
-    EXPECT_EQ(proof.max_jobs, 16u);
-    EXPECT_EQ(proof.cache_budget, 4096u);
-    EXPECT_EQ(rig.agent().statistics().registrations, 0u);
-
-    rig.master.deliver(K_MASTER, welcome_of(K_MASTER, 5000, 4096));
-    ASSERT_TRUE(eventually([&] { return rig.agent().statistics().registrations == 1; }));
-    EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Running);
-}
-
-/** @brief Tests that a master proving another key ends the worker before it proves anything. */
-TEST(Medium_MasterLinkTest, WrongMasterProofEndsTheLink)
-{
-    AgentRig rig;
-    rig.start();
-
-    rig.master.connect(K_MASTER);
-    ASSERT_TRUE(rig.master.wait_for(MessageType::Hello, 1));
-    rig.master.deliver(K_MASTER, challenge_of(secret_of(0x43), 7, nonce_in(rig.last_hello())));
-    EXPECT_EQ(rig.agent().wait_for_end(K_WAIT), WorkerEnd::RejectedAuthentication);
-    // The worker's frames reach the master before it hears the connection close.
-    EXPECT_TRUE(rig.master.wait_for_close(K_MASTER));
-    EXPECT_EQ(rig.master.count(MessageType::Proof), 0u) << "PROOF went to an unproven master";
-    EXPECT_EQ(rig.master.count(MessageType::Hello), 1u) << "an ended link sent HELLO";
-}
-
-/** @brief Tests that an ended link stops its transport, so it connects no more. */
-TEST(Medium_MasterLinkTest, EndedLinkStopsItsTransport)
-{
-    AgentRig rig;
-    rig.start();
-
-    rig.master.connect(K_MASTER);
-    ASSERT_TRUE(rig.master.wait_for(MessageType::Hello, 1));
-    rig.master.deliver(K_MASTER, challenge_of(secret_of(0x43), 7, nonce_in(rig.last_hello())));
-
-    EXPECT_EQ(rig.agent().wait_for_end(K_WAIT), WorkerEnd::RejectedAuthentication);
-    ASSERT_TRUE(eventually([&] { return rig.is_worker_stopped(); }))
-        << "the transport of a rejected link keeps connecting";
-}
-
-/** @brief Tests that a worker answers PING only once WELCOME registered it. */
-TEST(Medium_MasterLinkTest, PingGetsNoPongBeforeRegistration)
-{
-    AgentRig rig;
-    rig.start();
-    Wire::PingMessage early;
-    early.token = 98;
-    Wire::PingMessage registered;
-    registered.token = 99;
-    Wire::PingMessage last;
-    last.token = 100;
-
-    // The master registered this worker on PROOF, but its WELCOME has not arrived.
-    rig.master.connect(K_MASTER);
-    ASSERT_TRUE(rig.master.wait_for(MessageType::Hello, 1));
-    rig.master.deliver(K_MASTER,
-                       challenge_of(secret_of(K_SECRET_BYTE), 7, nonce_in(rig.last_hello())));
-    ASSERT_TRUE(rig.master.wait_for(MessageType::Proof, 1));
-    rig.master.deliver(K_MASTER, early);
-
-    rig.master.deliver(K_MASTER, welcome_of(K_MASTER, 0, 4096));
-    ASSERT_TRUE(eventually([&] { return rig.agent().statistics().registrations == 1; }));
-    rig.master.deliver(K_MASTER, registered);
-    rig.master.deliver(K_MASTER, last);
-
-    // The two PONGs of the registered link come in order; a PONG for the early PING would be first.
-    ASSERT_TRUE(rig.master.wait_for(MessageType::Pong, 2));
-    const std::vector<RecordedFrame> pongs = rig.master.frames_of(MessageType::Pong);
-    EXPECT_EQ(decode<Wire::PongMessage>(pongs[0]).token, 99u)
-        << "a link that is not registered told the master it is alive";
-    EXPECT_EQ(decode<Wire::PongMessage>(pongs[1]).token, 100u);
-}
-
-/** @brief Tests that a CHALLENGE for a HELLO the link forgot is ignored, not taken as wrong. */
-TEST(Medium_MasterLinkTest, LateChallengeForAForgottenHelloIsIgnored)
-{
-    constexpr std::size_t K_HELLOS = 5;
-    AgentRig rig;
-    rig.options.heartbeat_interval = std::chrono::milliseconds(1);
-    rig.start();
-
-    // The link remembers four nonces; the fifth HELLO forgets the nonce of the first.
-    rig.master.connect(K_MASTER);
-    ASSERT_TRUE(rig.master.wait_for(MessageType::Hello, K_HELLOS));
-    const HandshakeNonce first =
-        nonce_in(decode<Wire::HelloMessage>(rig.master.frames_of(MessageType::Hello)[0]));
-
-    rig.master.deliver(K_MASTER, challenge_of(secret_of(K_SECRET_BYTE), 7, first));
-    // An agent that took the CHALLENGE for a wrong secret never connects again.
-    ASSERT_TRUE(rig.master.wait_for_traffic(FrameDirection::MasterToWorker,
-                                            MessageType::Challenge, 1));
-    rig.master.lose(K_MASTER);
-    ASSERT_TRUE(rig.master.wait_for_connections(2))
-        << "a CHALLENGE for a forgotten HELLO was taken for a wrong secret";
-
-    EXPECT_EQ(rig.master.traffic_count(FrameDirection::WorkerToMaster, MessageType::Proof), 0u);
-    EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Running);
-}
-
 /** @brief Tests that an idle worker's HEARTBEAT names the task id it waits for next. */
 TEST(Medium_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskID)
 {
@@ -1511,21 +1372,6 @@ TEST(Medium_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskID)
         rig.master.frames_of(MessageType::Heartbeat).back());
     EXPECT_EQ(heartbeat.oldest_held_task_id, 42u);
     EXPECT_EQ(heartbeat.queue_depth, 0u);
-}
-
-/** @brief Tests that a master silent past its liveness timeout is closed, and may come back. */
-TEST(Medium_MasterLinkTest, SilentMasterIsLost)
-{
-    AgentRig rig;
-    rig.start();
-
-    rig.register_master(K_MASTER, 7, 40);
-    ASSERT_TRUE(rig.master.wait_for_close(K_MASTER)) << "a silent master was never closed";
-
-    // The worker has heard its own close once it connects again.
-    ASSERT_TRUE(rig.master.wait_for_connections(2));
-    EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Running)
-        << "a lost master ended a link that may reconnect";
 }
 
 /** @brief Tests that a new master session clears the cache and the ids seen, a reconnect not. */
@@ -1555,19 +1401,6 @@ TEST(Medium_MasterLinkTest, NewSessionClearsTheCache)
     rig.run(PeerID{3}, dispatch_of(5, op, {}, {}), 3);
     EXPECT_EQ(calls.load(), 3) << "a new session kept the ids of the old one";
     EXPECT_EQ(rig.agent().statistics().reconnects, 2u);
-}
-
-/** @brief Tests that the worker's own close after GOODBYE does not end it as MasterLost. */
-TEST(Medium_MasterLinkTest, LossAfterGoodbyeIsTheWorkersOwn)
-{
-    AgentRig rig;
-    rig.start();
-    rig.register_master(K_MASTER, 7);
-
-    rig.agent().stop();
-
-    EXPECT_EQ(rig.agent().wait_for_end(K_WAIT), WorkerEnd::Stopped)
-        << "a leaving worker ended as MasterLost";
 }
 
 /** @brief Tests that a worker name HELLO cannot carry is refused before the transport starts. */

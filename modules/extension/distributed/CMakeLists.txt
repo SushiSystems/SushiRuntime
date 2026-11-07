@@ -43,4 +43,5 @@ sushiruntime_add_module(
         process_environment
         offload_coordination
         cluster_monitor
+        master_link
     EXTERNAL SushiLog::text)

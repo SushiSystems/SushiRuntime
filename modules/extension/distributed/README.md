@@ -266,7 +266,7 @@ lifetime.
 | --- | --- | --- | --- |
 | `worker_buffer_cache.hpp` | `WorkerBufferCache` | cached buffers, chunk assembly, the byte budget, pins | exec thread asks, reader thread delivers |
 | `dispatch_deduplication/dispatch_deduplicator.hpp` | `DispatchDeduplicator` | the task ids seen | reader thread |
-| `master_link.hpp` | `MasterLink` | the handshake, the heartbeat thread, the master watch, the final `WorkerEnd`, the check that every HELLO fact fits 255 bytes | reader thread and its own thread |
+| `master_link/master_link.hpp` | `MasterLink` | the handshake, the heartbeat thread, the master watch, the final `LinkEnd` the agent reports as `WorkerEnd`, the check that every HELLO fact fits 255 bytes; its own module | reader thread and its own thread |
 | `dispatch_executor.hpp` | `DispatchExecutor` | the job queue, the exec thread, the pins and the device check of each job | reader thread enqueues, its own thread gathers batches |
 | `dispatch_job.hpp` | `DispatchJob`, `DispatchEntry` | one queued dispatch; one job of a batch and the run of its kernel | exec thread builds, the runtime's pool runs the kernel |
 | `dispatch_recorder.hpp` | `DispatchRecorder` | the graph each batch runs on, the borrowed buffers, the run | exec thread |

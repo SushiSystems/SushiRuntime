@@ -63,6 +63,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
     cluster_load    extension
     offload_coordination extension
     cluster_monitor extension
+    master_link extension
     distributed     extension)
 
 # Consumer, then dependency: the edges allowed between two modules of one tier.
@@ -119,8 +120,13 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     cluster_monitor buffer_exchange
     cluster_monitor pending_tasks
     cluster_monitor offload_coordination
+    master_link transport
+    master_link wire
+    master_link link_security
+    master_link frame_transport
     distributed     cluster_load
     distributed     cluster_monitor
+    distributed     master_link
     distributed     offload_coordination
     distributed     buffer_exchange
     distributed     pending_tasks
@@ -155,6 +161,7 @@ set(SUSHIRUNTIME_OPTIONAL_MODULES
     cluster_load    SR_ENABLE_DISTRIBUTED
     offload_coordination SR_ENABLE_DISTRIBUTED
     cluster_monitor SR_ENABLE_DISTRIBUTED
+    master_link SR_ENABLE_DISTRIBUTED
     distributed     SR_ENABLE_DISTRIBUTED)
 
 # Sets <out> to the position of <tier> in SUSHIRUNTIME_TIER_ORDER, or -1.

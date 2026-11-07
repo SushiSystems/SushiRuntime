@@ -64,7 +64,7 @@
 #include <SushiRuntime/dispatch_deduplication/dispatch_deduplicator.hpp>
 
 #include "dispatch_executor.hpp"
-#include "master_link.hpp"
+#include <SushiRuntime/master_link/master_link.hpp>
 #include "worker_buffer_cache.hpp"
 
 namespace SushiRuntime
@@ -86,6 +86,27 @@ namespace SushiRuntime
 
             /** @brief Names the payload of a frame as a handler receives it. */
             using Payload = SushiRuntime::span<const std::byte>;
+
+            /** @brief Returns the end the agent reports for the end of its link. */
+            WorkerEnd worker_end_of(LinkEnd end) noexcept
+            {
+                switch (end)
+                {
+                    case LinkEnd::Running:
+                        return WorkerEnd::Running;
+                    case LinkEnd::Stopped:
+                        return WorkerEnd::Stopped;
+                    case LinkEnd::MasterUnreachable:
+                        return WorkerEnd::MasterUnreachable;
+                    case LinkEnd::RejectedAuthentication:
+                        return WorkerEnd::RejectedAuthentication;
+                    case LinkEnd::ProtocolMismatch:
+                        return WorkerEnd::ProtocolMismatch;
+                    case LinkEnd::MasterLost:
+                        return WorkerEnd::MasterLost;
+                }
+                return WorkerEnd::Running;
+            }
 
             /**
              * @brief Returns the transport after checking it is there.
@@ -311,6 +332,9 @@ namespace SushiRuntime
                 /// @brief The task ids seen in the master's session.
                 DispatchDeduplicator deduplicator_;
 
+                /// @brief The clock the link and the executor read.
+                SteadyClock clock_;
+
                 /// @brief The handshake, the heartbeat and the master watch.
                 MasterLink link_;
 
@@ -331,7 +355,7 @@ namespace SushiRuntime
               cache_(make_cache_allocator(context_->memory()),
                      resolve_cache_budget(*context_, options_.cache_bytes)),
               link_(*transport_, options_.secret.bytes(),
-                    make_link_options(sealed(*require_kernels(kernels)), topology), make_nonce),
+                    make_link_options(sealed(*require_kernels(kernels)), topology), make_nonce, clock_),
               executor_(kernels, cache_, *transport_, context_->devices(), std::move(graph),
                         std::move(interop),
                         DispatchExecutorOptions{options_.max_jobs, options_.pull_idle_timeout,
@@ -603,7 +627,7 @@ namespace SushiRuntime
 
         WorkerEnd WorkerAgent::Impl::wait_for_end(std::chrono::milliseconds timeout)
         {
-            return link_.wait_for_end(timeout);
+            return worker_end_of(link_.wait_for_end(timeout));
         }
 
         WorkerStatistics WorkerAgent::Impl::statistics() const noexcept

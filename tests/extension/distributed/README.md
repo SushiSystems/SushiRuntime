@@ -417,15 +417,8 @@ of the next connection then runs on the same exec thread.
 
 | Test | What it proves |
 | --- | --- |
-| `HandshakeChecksTheMasterBeforeProving` | `HELLO` carries the name and a build id. In the log of the fabric's traffic the `CHALLENGE` comes before the `PROOF`; the `PROOF` then carries the worker's proof, its two operations and its capacity, and `WELCOME` registers the agent. |
-| `WrongMasterProofEndsTheLink` | A `CHALLENGE` proved with another secret ends the agent with `RejectedAuthentication`, sends no `PROOF`, no second `HELLO`, and closes the peer. |
-| `EndedLinkStopsItsTransport` | An agent that ends as `RejectedAuthentication` stops its worker endpoint, so the endpoint sends nothing more and opens no further connection. |
-| `PingGetsNoPongBeforeRegistration` | Between a good `CHALLENGE` and its `WELCOME` the link answers no `PING`: of three pings, one before and two after `WELCOME`, the first two `PONG`s carry the tokens of the two later ones. |
-| `LateChallengeForAForgottenHelloIsIgnored` | With a heartbeat of 1 ms the agent sends a `HELLO` per beat and remembers the nonces of its last four. A `CHALLENGE` proved against the first nonce sends no `PROOF` and does not end the agent, because the proof may answer a `HELLO` it has forgotten. The master then hangs up; an agent that is still running connects again, one that ended does not. |
 | `IdleHeartbeatCarriesTheNextTaskID` | After task 41 finished and nothing is held, the next heartbeat carries `oldest_held_task_id` 42 and a queue depth of 0. |
-| `SilentMasterIsLost` | `WELCOME` carries a liveness timeout of 40 ms and no frame follows. The agent closes the peer, and once it has connected again it is still running. |
 | `NewSessionClearsTheCache` | A reconnect to the same `session_id` keeps the cache and the ids seen, so a dispatch repeated there runs once. A reconnect to another session clears both, and `reconnects` counts 2. |
-| `LossAfterGoodbyeIsTheWorkersOwn` | A registered agent stops. The loss that follows its own close leaves its end `Stopped`, not `MasterLost`. |
 
 ## test_worker_main.cpp
 

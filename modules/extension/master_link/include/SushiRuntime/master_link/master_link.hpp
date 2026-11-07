@@ -25,7 +25,7 @@
  * @file master_link.hpp
  * @brief Declares MasterLink, the worker's side of the handshake, heartbeat and master watch.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/master_link/README.md
  */
 
 #pragma once
@@ -41,17 +41,19 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
+#include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/machine/device_facts.hpp>
 #include <SushiRuntime/machine/node_label.hpp>
 #include <SushiRuntime/machine/operating_system.hpp>
 #include <SushiRuntime/task/task_types.hpp>
-#include <SushiRuntime/distributed/worker_agent.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/link_security/handshake.hpp>
+#include <SushiRuntime/master_link/link_tick.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
 namespace SushiRuntime
@@ -98,6 +100,19 @@ namespace SushiRuntime
         };
 
         /**
+         * @brief Names why a link stopped serving, or that it still serves.
+         */
+        enum class LinkEnd : std::uint8_t
+        {
+            Running,                /**< The link serves, or is between two connections. */
+            Stopped,                /**< stop() was called. */
+            MasterUnreachable,      /**< The transport never reached the master and gave up. */
+            RejectedAuthentication, /**< One side's proof failed: the secrets differ. */
+            ProtocolMismatch,       /**< The peer is another protocol version, or no master. */
+            MasterLost,             /**< The master went away and the transport does not retry. */
+        };
+
+        /**
          * @brief Names what a call changed, so the agent can act on its other bricks.
          */
         enum class LinkChange : std::uint8_t
@@ -106,7 +121,7 @@ namespace SushiRuntime
             Registered,           /**< WELCOME arrived from the session known before. */
             RegisteredNewSession, /**< WELCOME from another session: clear cache and ids. */
             Disconnected,         /**< The master is gone: discard the queued jobs. */
-            Ended,                /**< The link reached a final WorkerEnd; see end(). */
+            Ended,                /**< The link reached a final LinkEnd; see end(). */
         };
 
         /**
@@ -124,9 +139,10 @@ namespace SushiRuntime
                  * @brief Builds a link; no thread runs until start().
                  * @param secret The cluster's key, possibly empty; the bytes outlive the link.
                  * @param nonces Called once per handshake; a test passes a fixed source.
+                 * @param clock Read for every interval of the link; outlives the link.
                  */
                 MasterLink(Transport& transport, SushiRuntime::span<const std::uint8_t> secret,
-                           MasterLinkOptions options, NonceSource nonces);
+                           MasterLinkOptions options, NonceSource nonces, const Clock& clock);
 
                 /** @brief Calls stop(). */
                 ~MasterLink();
@@ -145,6 +161,14 @@ namespace SushiRuntime
 
                 /** @brief Starts the heartbeat thread; called once, before the transport starts. */
                 void start();
+
+                /**
+                 * @brief Does what is due at the clock's time, on the calling thread.
+                 *
+                 * The thread calls it in a loop; a test that owns the clock calls it instead.
+                 * @return When the next watch or heartbeat is due, or nothing when none is.
+                 */
+                std::optional<std::chrono::steady_clock::time_point> step();
 
                 /** @brief Joins the heartbeat thread; a Running end becomes Stopped. */
                 void stop() noexcept;
@@ -207,10 +231,10 @@ namespace SushiRuntime
                 [[nodiscard]] std::uint32_t chunk_bytes() const noexcept;
 
                 /** @brief Returns Running, or the final end. */
-                [[nodiscard]] WorkerEnd end() const noexcept;
+                [[nodiscard]] LinkEnd end() const noexcept;
 
                 /** @brief Blocks until the end is not Running, or the timeout; returns end(). */
-                [[nodiscard]] WorkerEnd wait_for_end(std::chrono::milliseconds timeout);
+                [[nodiscard]] LinkEnd wait_for_end(std::chrono::milliseconds timeout);
 
                 /** @brief Returns how many WELCOME frames this link accepted. */
                 [[nodiscard]] std::uint64_t registrations() const noexcept;
@@ -219,18 +243,11 @@ namespace SushiRuntime
                 [[nodiscard]] std::uint64_t reconnects() const noexcept;
 
             private:
-                /** @brief Names the clock every interval of the link is measured on. */
-                using Clock = std::chrono::steady_clock;
+                /** @brief Names the points the link's intervals are measured in. */
+                using TimePoint = std::chrono::steady_clock::time_point;
 
                 /** @brief Names how far the handshake of the connection has come. */
-                enum class Phase : std::uint8_t
-                {
-                    Idle,       /**< No connection. */
-                    HelloSent,  /**< HELLO went out; CHALLENGE is awaited. */
-                    ProofSent,  /**< PROOF went out; WELCOME is awaited. */
-                    Registered, /**< WELCOME arrived. */
-                    Closing,    /**< The link closed a silent master and waits for the loss. */
-                };
+                using Phase = LinkPhase;
 
                 /** @brief Counts the nonces kept per connection to recognise a late CHALLENGE. */
                 static constexpr std::size_t K_NONCE_HISTORY = 4;
@@ -241,8 +258,11 @@ namespace SushiRuntime
                 /** @brief Returns whether a handshake is under way; mutex held. */
                 [[nodiscard]] bool is_handshaking() const noexcept;
 
+                /** @brief Returns the clock's reading as a point of the steady clock. */
+                [[nodiscard]] TimePoint now() const noexcept;
+
                 /** @brief Returns when the last frame of the watched connection arrived. */
-                [[nodiscard]] Clock::time_point last_frame() const noexcept;
+                [[nodiscard]] TimePoint last_frame() const noexcept;
 
                 /** @brief Records a frame of the watched connection as arriving at this instant. */
                 void stamp_frame() noexcept;
@@ -254,7 +274,7 @@ namespace SushiRuntime
                  * @brief Moves a Running link to its final end and wakes whoever waits for it.
                  * @return False when the link had ended before.
                  */
-                bool finish(WorkerEnd end);
+                bool finish(LinkEnd end);
 
                 /**
                  * @brief Draws a nonce and sends HELLO to a connection whose handshake is open.
@@ -265,6 +285,13 @@ namespace SushiRuntime
 
                 /** @brief Runs the heartbeat and the two watches until stop(). */
                 void run() noexcept;
+
+                /**
+                 * @brief Plans what is due, does it with the mutex released, and returns the wake.
+                 * @param lock Holds the mutex on entry and on return.
+                 * @return The next due time, nothing when none is, and whether anything was done.
+                 */
+                std::pair<std::optional<TimePoint>, bool> tick(std::unique_lock<std::mutex>& lock);
 
                 /// @brief Guards the session state; released before any call out.
                 mutable std::mutex mutex_;
@@ -283,6 +310,9 @@ namespace SushiRuntime
 
                 /// @brief Makes the nonce of each handshake.
                 NonceSource nonces_;
+
+                /// @brief Read for every interval of the link.
+                const Clock& clock_;
 
                 /// @brief The heartbeat thread.
                 std::thread thread_;
@@ -307,7 +337,7 @@ namespace SushiRuntime
                 std::atomic<bool> leaving_{false};
 
                 /// @brief Running, or the final end.
-                std::atomic<WorkerEnd> end_{WorkerEnd::Running};
+                std::atomic<LinkEnd> end_{LinkEnd::Running};
 
                 /// @brief Chunk size of the current session.
                 std::atomic<std::uint32_t> chunk_bytes_{0};
@@ -346,16 +376,16 @@ namespace SushiRuntime
                 std::chrono::milliseconds liveness_{0};
 
                 /// @brief When the newest HELLO went out.
-                Clock::time_point hello_at_{};
+                TimePoint hello_at_{};
 
                 /// @brief When the next HEARTBEAT is due.
-                Clock::time_point heartbeat_at_{};
+                TimePoint heartbeat_at_{};
 
                 /// @brief The value of peer_, read by note_frame() without the mutex.
                 std::atomic<std::uint32_t> watched_peer_{0};
 
                 /// @brief The arrival of the last frame from watched_peer_, in clock ticks.
-                std::atomic<Clock::rep> last_frame_ticks_{0};
+                std::atomic<std::chrono::steady_clock::rep> last_frame_ticks_{0};
         };
 
     } // namespace Distributed

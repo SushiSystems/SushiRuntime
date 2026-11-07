@@ -25,9 +25,10 @@
  * @file master_link.cpp
  * @brief Implements MasterLink: the worker's handshake, its heartbeat and the master watch.
  * @author Mustafa Garip
+ * @see modules/extension/master_link/README.md
  */
 
-#include "master_link.hpp"
+#include <SushiRuntime/master_link/master_link.hpp>
 
 #include <algorithm>
 #include <array>
@@ -39,7 +40,7 @@
 #include <utility>
 
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/distributed/distributed_log_category.hpp>
+#include <SushiRuntime/master_link/master_link_log_category.hpp>
 #include <SushiRuntime/frame_transport/frame_sending.hpp>
 #include <SushiRuntime/wire/wire_codec.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
@@ -123,16 +124,21 @@ namespace SushiRuntime
             return phase_ == Phase::HelloSent || phase_ == Phase::ProofSent;
         }
 
-        MasterLink::Clock::time_point MasterLink::last_frame() const noexcept
+        MasterLink::TimePoint MasterLink::now() const noexcept
         {
-            return Clock::time_point(
-                Clock::duration(last_frame_ticks_.load(std::memory_order_relaxed)));
+            return TimePoint(std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::nanoseconds(clock_.now_ns())));
+        }
+
+        MasterLink::TimePoint MasterLink::last_frame() const noexcept
+        {
+            return TimePoint(std::chrono::steady_clock::duration(
+                last_frame_ticks_.load(std::memory_order_relaxed)));
         }
 
         void MasterLink::stamp_frame() noexcept
         {
-            last_frame_ticks_.store(Clock::now().time_since_epoch().count(),
-                                    std::memory_order_relaxed);
+            last_frame_ticks_.store(now().time_since_epoch().count(), std::memory_order_relaxed);
         }
 
         void MasterLink::forget_connection() noexcept
@@ -145,11 +151,11 @@ namespace SushiRuntime
             watched_peer_.store(0, std::memory_order_relaxed);
         }
 
-        bool MasterLink::finish(WorkerEnd end)
+        bool MasterLink::finish(LinkEnd end)
         {
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
-                WorkerEnd expected = WorkerEnd::Running;
+                LinkEnd expected = LinkEnd::Running;
                 if (!end_.compare_exchange_strong(expected, end))
                     return false;
             }
@@ -162,7 +168,7 @@ namespace SushiRuntime
             const Result<HandshakeNonce> drawn = nonces_();
             if (!drawn)
             {
-                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "cannot draw a handshake nonce for master (peer {}): {}; closing "
+                SR_LOG_ERROR(K_MASTER_LINK_LOG_CATEGORY, "cannot draw a handshake nonce for master (peer {}): {}; closing "
                              "the connection",
                              peer.value, drawn.error().message);
                 transport_.close_peer(peer);
@@ -181,7 +187,7 @@ namespace SushiRuntime
                 sent_nonce_count_ = std::min(sent_nonce_count_ + 1, K_NONCE_HISTORY);
                 ++hello_count_;
                 phase_ = Phase::HelloSent;
-                hello_at_ = Clock::now();
+                hello_at_ = now();
             }
 
             Wire::HelloMessage hello;
@@ -196,15 +202,15 @@ namespace SushiRuntime
                 hello.labels.push_back(Wire::HelloLabel{label.key, label.value});
             const SendStatus status = send_message(transport_, peer, hello);
             if (status != SendStatus::Queued)
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "HELLO to master (peer {}) was not queued (status {})", peer.value,
+                SR_LOG_DEBUG(K_MASTER_LINK_LOG_CATEGORY, "HELLO to master (peer {}) was not queued (status {})", peer.value,
                              static_cast<int>(status));
         }
 
         MasterLink::MasterLink(Transport& transport,
                                SushiRuntime::span<const std::uint8_t> secret,
-                               MasterLinkOptions options, NonceSource nonces)
+                               MasterLinkOptions options, NonceSource nonces, const Clock& clock)
             : transport_(transport), secret_(secret), options_(std::move(options)),
-              nonces_(std::move(nonces))
+              nonces_(std::move(nonces)), clock_(clock)
         {
             options_.heartbeat_interval =
                 std::max(options_.heartbeat_interval, std::chrono::milliseconds(1));
@@ -250,12 +256,12 @@ namespace SushiRuntime
             changed_.notify_all();
             if (thread_.joinable())
                 thread_.join();
-            finish(WorkerEnd::Stopped);
+            finish(LinkEnd::Stopped);
         }
 
         void MasterLink::on_connected(PeerID peer)
         {
-            if (end() != WorkerEnd::Running || leaving_.load(std::memory_order_acquire))
+            if (end() != LinkEnd::Running || leaving_.load(std::memory_order_acquire))
             {
                 transport_.close_peer(peer);
                 return;
@@ -266,7 +272,7 @@ namespace SushiRuntime
                 forget_connection();
                 peer_ = peer;
                 phase_ = Phase::HelloSent;
-                hello_at_ = Clock::now();
+                hello_at_ = now();
                 watched_peer_.store(peer.value, std::memory_order_relaxed);
                 stamp_frame();
             }
@@ -281,7 +287,7 @@ namespace SushiRuntime
             bool has_forgotten_nonce = false;
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
-                if (end() != WorkerEnd::Running || peer_ != peer ||
+                if (end() != LinkEnd::Running || peer_ != peer ||
                     !is_handshaking() || sent_nonce_count_ == 0)
                     return LinkChange::None;
 
@@ -305,7 +311,7 @@ namespace SushiRuntime
             if (answered == nonce_count && has_forgotten_nonce)
             {
                 // The proof may answer a HELLO whose nonce is forgotten, so it proves nothing.
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "CHALLENGE from master (peer {}) matches none of the last {} "
+                SR_LOG_DEBUG(K_MASTER_LINK_LOG_CATEGORY, "CHALLENGE from master (peer {}) matches none of the last {} "
                              "HELLOs and earlier ones are forgotten; ignored, the next HELLO "
                              "runs the handshake",
                              peer.value, nonce_count);
@@ -314,8 +320,8 @@ namespace SushiRuntime
 
             if (answered == nonce_count)
             {
-                if (finish(WorkerEnd::RejectedAuthentication))
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "master (peer {}) did not prove the cluster secret; the secret "
+                if (finish(LinkEnd::RejectedAuthentication))
+                    SR_LOG_ERROR(K_MASTER_LINK_LOG_CATEGORY, "master (peer {}) did not prove the cluster secret; the secret "
                                  "files of the two machines differ; closed, not reconnecting",
                                  peer.value);
                 transport_.close_peer(peer);
@@ -324,7 +330,7 @@ namespace SushiRuntime
 
             if (answered != 0)
             {
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "CHALLENGE from master (peer {}) answers an earlier HELLO; ignored",
+                SR_LOG_DEBUG(K_MASTER_LINK_LOG_CATEGORY, "CHALLENGE from master (peer {}) answers an earlier HELLO; ignored",
                              peer.value);
                 return LinkChange::None;
             }
@@ -349,7 +355,7 @@ namespace SushiRuntime
 
             const SendStatus status = send_message(transport_, peer, proof);
             if (status != SendStatus::Queued)
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "PROOF to master (peer {}) was not queued (status {})", peer.value,
+                SR_LOG_DEBUG(K_MASTER_LINK_LOG_CATEGORY, "PROOF to master (peer {}) was not queued (status {})", peer.value,
                              static_cast<int>(status));
             return LinkChange::None;
         }
@@ -359,7 +365,7 @@ namespace SushiRuntime
             bool new_session = false;
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
-                if (end() != WorkerEnd::Running || peer_ != peer || !proof_sent_ ||
+                if (end() != LinkEnd::Running || peer_ != peer || !proof_sent_ ||
                     !is_handshaking())
                     return LinkChange::None;
 
@@ -370,13 +376,13 @@ namespace SushiRuntime
                 session_ = offered_session_;
                 ever_registered_ = true;
                 liveness_ = std::chrono::milliseconds(welcome.liveness_timeout_ms);
-                heartbeat_at_ = Clock::now() + options_.heartbeat_interval;
+                heartbeat_at_ = now() + options_.heartbeat_interval;
                 stamp_frame();
                 chunk_bytes_.store(welcome.chunk_bytes, std::memory_order_relaxed);
             }
             changed_.notify_all();
 
-            SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "registered with master (peer {}) as worker {}: liveness {} ms, chunks "
+            SR_LOG_INFO(K_MASTER_LINK_LOG_CATEGORY, "registered with master (peer {}) as worker {}: liveness {} ms, chunks "
                         "of {} bytes, {} session",
                         peer.value, welcome.worker_id, welcome.liveness_timeout_ms,
                         welcome.chunk_bytes, new_session ? "new" : "known");
@@ -395,25 +401,25 @@ namespace SushiRuntime
             switch (reject.reason)
             {
                 case Wire::RejectReason::Authentication:
-                    if (finish(WorkerEnd::RejectedAuthentication))
-                        SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "master (peer {}) rejected this worker's secret: {}; the "
+                    if (finish(LinkEnd::RejectedAuthentication))
+                        SR_LOG_ERROR(K_MASTER_LINK_LOG_CATEGORY, "master (peer {}) rejected this worker's secret: {}; the "
                                      "secret files of the two machines differ; not reconnecting",
                                      peer.value, text);
                     return LinkChange::Ended;
                 case Wire::RejectReason::Version:
-                    if (finish(WorkerEnd::ProtocolMismatch))
-                        SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "master (peer {}) speaks protocol v{}, this worker v{}; "
+                    if (finish(LinkEnd::ProtocolMismatch))
+                        SR_LOG_ERROR(K_MASTER_LINK_LOG_CATEGORY, "master (peer {}) speaks protocol v{}, this worker v{}; "
                                      "build both from one commit; not reconnecting",
                                      peer.value, reject.sender_version,
                                      Wire::K_PROTOCOL_VERSION);
                     return LinkChange::Ended;
                 case Wire::RejectReason::Busy:
-                    SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "master (peer {}) takes no more workers: {}; the next "
+                    SR_LOG_WARN(K_MASTER_LINK_LOG_CATEGORY, "master (peer {}) takes no more workers: {}; the next "
                                 "connection tries again",
                                 peer.value, text);
                     return LinkChange::None;
                 case Wire::RejectReason::Malformed:
-                    SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "master (peer {}) could not read this worker's handshake: {}; "
+                    SR_LOG_WARN(K_MASTER_LINK_LOG_CATEGORY, "master (peer {}) could not read this worker's handshake: {}; "
                                 "the next connection tries again",
                                 peer.value, text);
                     return LinkChange::None;
@@ -437,13 +443,13 @@ namespace SushiRuntime
 
             const SendStatus status = send_message(transport_, peer, pong);
             if (status != SendStatus::Queued)
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "PONG to master (peer {}) was not queued (status {})", peer.value,
+                SR_LOG_DEBUG(K_MASTER_LINK_LOG_CATEGORY, "PONG to master (peer {}) was not queued (status {})", peer.value,
                              static_cast<int>(status));
         }
 
         void MasterLink::on_goodbye(PeerID peer, const Wire::GoodbyeMessage& goodbye)
         {
-            SR_LOG_INFO(K_DISTRIBUTED_LOG_CATEGORY, "master (peer {}) is leaving ({}): {}", peer.value,
+            SR_LOG_INFO(K_MASTER_LINK_LOG_CATEGORY, "master (peer {}) is leaving ({}): {}", peer.value,
                         goodbye_reason_name(goodbye.reason), std::string(goodbye.text));
         }
 
@@ -469,7 +475,7 @@ namespace SushiRuntime
 
             if (leaving_.load(std::memory_order_acquire))
             {
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "connection to the master (peer {}) ended while this worker "
+                SR_LOG_DEBUG(K_MASTER_LINK_LOG_CATEGORY, "connection to the master (peer {}) ended while this worker "
                              "leaves: {} {}",
                              peer.value, loss_cause_name(loss.cause), loss.text);
                 return LinkChange::None;
@@ -477,8 +483,8 @@ namespace SushiRuntime
 
             if (loss.cause == PeerLossCause::VersionMismatch)
             {
-                if (finish(WorkerEnd::ProtocolMismatch))
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "master (peer {}) speaks protocol v{}, this worker v{}; build "
+                if (finish(LinkEnd::ProtocolMismatch))
+                    SR_LOG_ERROR(K_MASTER_LINK_LOG_CATEGORY, "master (peer {}) speaks protocol v{}, this worker v{}; build "
                                  "both from one commit; not reconnecting",
                                  peer.value, loss.peer_version, Wire::K_PROTOCOL_VERSION);
                 return LinkChange::Ended;
@@ -486,23 +492,23 @@ namespace SushiRuntime
 
             if (loss.cause == PeerLossCause::BadMagic)
             {
-                if (finish(WorkerEnd::ProtocolMismatch))
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "peer {} is not a SushiRuntime master: {}; not reconnecting",
+                if (finish(LinkEnd::ProtocolMismatch))
+                    SR_LOG_ERROR(K_MASTER_LINK_LOG_CATEGORY, "peer {} is not a SushiRuntime master: {}; not reconnecting",
                                  peer.value, loss.text);
                 return LinkChange::Ended;
             }
 
             if (was_registered)
             {
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "master (peer {}) lost: {}{}{}; queued jobs are dropped and the "
+                SR_LOG_WARN(K_MASTER_LINK_LOG_CATEGORY, "master (peer {}) lost: {}{}{}; queued jobs are dropped and the "
                             "transport decides whether to reconnect",
                             peer.value, loss_cause_name(loss.cause),
                             loss.text.empty() ? "" : " ", loss.text);
                 return LinkChange::Disconnected;
             }
 
-            if (end() == WorkerEnd::Running)
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "master (peer {}) connection ended during the handshake: {}{}{}; a "
+            if (end() == LinkEnd::Running)
+                SR_LOG_WARN(K_MASTER_LINK_LOG_CATEGORY, "master (peer {}) connection ended during the handshake: {}{}{}; a "
                             "protocol or secret mismatch is likely",
                             peer.value, loss_cause_name(loss.cause),
                             loss.text.empty() ? "" : " ", loss.text);
@@ -513,7 +519,7 @@ namespace SushiRuntime
         {
             if (leaving_.load(std::memory_order_acquire))
             {
-                SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "the transport stopped connecting to the master while this worker "
+                SR_LOG_DEBUG(K_MASTER_LINK_LOG_CATEGORY, "the transport stopped connecting to the master while this worker "
                              "leaves");
                 return LinkChange::None;
             }
@@ -524,10 +530,10 @@ namespace SushiRuntime
                 ever_registered = ever_registered_;
             }
 
-            const WorkerEnd end =
-                ever_registered ? WorkerEnd::MasterLost : WorkerEnd::MasterUnreachable;
+            const LinkEnd end =
+                ever_registered ? LinkEnd::MasterLost : LinkEnd::MasterUnreachable;
             if (finish(end))
-                SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "the transport stopped connecting to the master {}; this worker "
+                SR_LOG_ERROR(K_MASTER_LINK_LOG_CATEGORY, "the transport stopped connecting to the master {}; this worker "
                              "serves no one from here on",
                              ever_registered ? "after losing it" : "before reaching it once");
             return LinkChange::Ended;
@@ -548,18 +554,18 @@ namespace SushiRuntime
                 goodbye.text = "worker stopping";
                 const SendStatus status = send_message(transport_, *peer, goodbye);
                 if (status != SendStatus::Queued)
-                    SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "GOODBYE to master (peer {}) was not queued (status {})",
+                    SR_LOG_DEBUG(K_MASTER_LINK_LOG_CATEGORY, "GOODBYE to master (peer {}) was not queued (status {})",
                                  peer->value, static_cast<int>(status));
             }
             catch (const std::exception& error)
             {
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "GOODBYE to the master was not sent: {}; the master finds the "
+                SR_LOG_WARN(K_MASTER_LINK_LOG_CATEGORY, "GOODBYE to the master was not sent: {}; the master finds the "
                             "worker gone when the connection closes",
                             error.what());
             }
             catch (...)
             {
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "GOODBYE to the master was not sent: unknown exception; the master "
+                SR_LOG_WARN(K_MASTER_LINK_LOG_CATEGORY, "GOODBYE to the master was not sent: unknown exception; the master "
                             "finds the worker gone when the connection closes");
             }
         }
@@ -577,17 +583,17 @@ namespace SushiRuntime
             return chunk_bytes_.load(std::memory_order_relaxed);
         }
 
-        WorkerEnd MasterLink::end() const noexcept
+        LinkEnd MasterLink::end() const noexcept
         {
             return end_.load(std::memory_order_acquire);
         }
 
-        WorkerEnd MasterLink::wait_for_end(std::chrono::milliseconds timeout)
+        LinkEnd MasterLink::wait_for_end(std::chrono::milliseconds timeout)
         {
             std::unique_lock<std::mutex> lock(mutex_);
             changed_.wait_for(lock, timeout, [this]
                               {
-                                  return end() != WorkerEnd::Running;
+                                  return end() != LinkEnd::Running;
                               });
             return end();
         }
@@ -603,133 +609,105 @@ namespace SushiRuntime
             return accepted == 0 ? 0 : accepted - 1;
         }
 
+        std::optional<MasterLink::TimePoint> MasterLink::step()
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            return tick(lock).first;
+        }
+
+        std::pair<std::optional<MasterLink::TimePoint>, bool> MasterLink::tick(
+            std::unique_lock<std::mutex>& lock)
+        {
+            const bool is_leaving = leaving_.load(std::memory_order_acquire);
+            LinkTickInput input;
+            input.running = end() == LinkEnd::Running && !is_leaving;
+            input.ended = end() != LinkEnd::Running && !is_leaving;
+            input.transport_stopped = transport_stopped_;
+            input.phase = phase_;
+            input.last_frame = last_frame();
+            input.liveness = liveness_;
+            input.heartbeat_at = heartbeat_at_;
+            input.hello_at = hello_at_;
+            input.heartbeat_interval = options_.heartbeat_interval;
+
+            const TimePoint at = now();
+            const PeerID peer = peer_;
+            const LinkTick plan = plan_link_tick(input, at);
+            transport_stopped_ = plan.transport_stopped;
+            phase_ = plan.phase;
+            heartbeat_at_ = plan.heartbeat_at;
+            hello_at_ = plan.hello_at;
+            if (plan.action == LinkAction::Wait)
+                return {plan.wake, false};
+
+            lock.unlock();
+            try
+            {
+                if (plan.action == LinkAction::StopTransport)
+                {
+                    SR_LOG_DEBUG(K_MASTER_LINK_LOG_CATEGORY, "the link to the master ended; stopping its transport, "
+                                 "which connects no more");
+                    transport_.stop();
+                }
+                else if (plan.action == LinkAction::CloseSilent)
+                {
+                    SR_LOG_WARN(K_MASTER_LINK_LOG_CATEGORY, "no frame from master (peer {}) for {} ms (limit {} ms); "
+                                "closing the connection so the transport can reconnect",
+                                peer.value, plan.silence.count(), plan.limit.count());
+                    transport_.close_peer(peer);
+                }
+                else if (plan.action == LinkAction::Restart)
+                {
+                    SR_LOG_DEBUG(K_MASTER_LINK_LOG_CATEGORY, "no WELCOME from master (peer {}) within {} ms; sending "
+                                 "HELLO again with a fresh nonce",
+                                 peer.value, options_.heartbeat_interval.count());
+                    send_hello(peer);
+                }
+                else
+                {
+                    const Wire::HeartbeatMessage heartbeat =
+                        options_.heartbeat_probe ? options_.heartbeat_probe()
+                                                 : Wire::HeartbeatMessage{};
+                    const SendStatus status = send_message(transport_, peer, heartbeat);
+                    if (status != SendStatus::Queued)
+                        SR_LOG_DEBUG(K_MASTER_LINK_LOG_CATEGORY, "HEARTBEAT to master (peer {}) was not queued (status "
+                                     "{})",
+                                     peer.value, static_cast<int>(status));
+                }
+            }
+            catch (const std::exception& error)
+            {
+                SR_LOG_ERROR(K_MASTER_LINK_LOG_CATEGORY, "the heartbeat thread failed a step toward master (peer {}): "
+                             "{}; the thread keeps running",
+                             peer.value, error.what());
+            }
+            catch (...)
+            {
+                SR_LOG_ERROR(K_MASTER_LINK_LOG_CATEGORY, "the heartbeat thread failed a step toward master (peer {}): "
+                             "unknown exception; the thread keeps running",
+                             peer.value);
+            }
+            lock.lock();
+
+            // A stopped transport reports no loss, so the connection is forgotten here.
+            if (plan.action == LinkAction::StopTransport)
+                forget_connection();
+            return {std::nullopt, true};
+        }
+
         void MasterLink::run() noexcept
         {
-            /** @brief Names what one pass of the thread does once the mutex is released. */
-            enum class Action : std::uint8_t
-            {
-                Wait,          /**< Nothing is due. */
-                StopTransport, /**< Stop the transport of a link that reached a final end. */
-                Heartbeat,     /**< Send HEARTBEAT. */
-                Restart,       /**< Send HELLO again with a fresh nonce. */
-                CloseSilent,   /**< Close a master that sent nothing for the liveness timeout. */
-            };
-
             std::unique_lock<std::mutex> lock(mutex_);
             while (!stopping_)
             {
-                const Clock::time_point now = Clock::now();
-                const PeerID peer = peer_;
-                Action action = Action::Wait;
-                std::optional<Clock::time_point> wake;
-                std::chrono::milliseconds silence{0};
-                std::chrono::milliseconds limit{0};
-
-                const bool is_leaving = leaving_.load(std::memory_order_acquire);
-                const bool running = end() == WorkerEnd::Running && !is_leaving;
-
-                if (end() != WorkerEnd::Running && !is_leaving && !transport_stopped_)
-                {
-                    action = Action::StopTransport;
-                    transport_stopped_ = true;
-                }
-                else if (running && phase_ == Phase::Registered)
-                {
-                    const Clock::time_point last = last_frame();
-                    const bool watched = liveness_ > std::chrono::milliseconds::zero();
-                    if (watched && now - last >= liveness_)
-                    {
-                        action = Action::CloseSilent;
-                        phase_ = Phase::Closing;
-                        silence = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            now - last);
-                        limit = liveness_;
-                    }
-                    else if (now >= heartbeat_at_)
-                    {
-                        action = Action::Heartbeat;
-                        heartbeat_at_ = now + options_.heartbeat_interval;
-                    }
-                    else
-                    {
-                        wake = watched ? std::min(heartbeat_at_, last + liveness_)
-                                       : heartbeat_at_;
-                    }
-                }
-                else if (running && is_handshaking())
-                {
-                    if (now - hello_at_ >= options_.heartbeat_interval)
-                    {
-                        action = Action::Restart;
-                        hello_at_ = now;
-                    }
-                    else
-                    {
-                        wake = hello_at_ + options_.heartbeat_interval;
-                    }
-                }
-
-                if (action == Action::Wait)
-                {
-                    if (wake)
-                        changed_.wait_until(lock, *wake);
-                    else
-                        changed_.wait(lock);
+                const auto [wake, acted] = tick(lock);
+                if (acted)
                     continue;
-                }
 
-                lock.unlock();
-                try
-                {
-                    if (action == Action::StopTransport)
-                    {
-                        SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "the link to the master ended; stopping its transport, "
-                                     "which connects no more");
-                        transport_.stop();
-                    }
-                    else if (action == Action::CloseSilent)
-                    {
-                        SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "no frame from master (peer {}) for {} ms (limit {} ms); "
-                                    "closing the connection so the transport can reconnect",
-                                    peer.value, silence.count(), limit.count());
-                        transport_.close_peer(peer);
-                    }
-                    else if (action == Action::Restart)
-                    {
-                        SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "no WELCOME from master (peer {}) within {} ms; sending "
-                                     "HELLO again with a fresh nonce",
-                                     peer.value, options_.heartbeat_interval.count());
-                        send_hello(peer);
-                    }
-                    else
-                    {
-                        const Wire::HeartbeatMessage heartbeat =
-                            options_.heartbeat_probe ? options_.heartbeat_probe()
-                                                     : Wire::HeartbeatMessage{};
-                        const SendStatus status = send_message(transport_, peer, heartbeat);
-                        if (status != SendStatus::Queued)
-                            SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "HEARTBEAT to master (peer {}) was not queued (status "
-                                         "{})",
-                                         peer.value, static_cast<int>(status));
-                    }
-                }
-                catch (const std::exception& error)
-                {
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "the heartbeat thread failed a step toward master (peer {}): "
-                                 "{}; the thread keeps running",
-                                 peer.value, error.what());
-                }
-                catch (...)
-                {
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "the heartbeat thread failed a step toward master (peer {}): "
-                                 "unknown exception; the thread keeps running",
-                                 peer.value);
-                }
-                lock.lock();
-
-                // A stopped transport reports no loss, so the connection is forgotten here.
-                if (action == Action::StopTransport)
-                    forget_connection();
+                if (wake)
+                    changed_.wait_for(lock, *wake - now());
+                else
+                    changed_.wait(lock);
             }
         }
 
