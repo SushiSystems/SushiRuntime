@@ -43,7 +43,7 @@ namespace HostProgram
     struct DiffusionBackend final
     {
         /** @brief Takes a created runtime, keeps it, and starts an empty graph on it. */
-        explicit DiffusionBackend(SushiRuntime::Runtime created)
+        explicit DiffusionBackend(SushiRuntime::Runtime&& created)
             : owned(std::move(created)), runtime(*owned), graph(runtime.graph())
         {
 
