@@ -41,7 +41,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/report/recording_observer.hpp>
 
-#include "session_pipeline.hpp"
+#include "profiled_pipelines.hpp"
 
 using namespace SushiRuntime;
 using namespace SessionTests;

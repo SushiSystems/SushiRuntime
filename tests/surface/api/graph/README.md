@@ -12,7 +12,7 @@ nothing.
 256 regions, then streams 16 mutations into it between runs, and records the first run's time as a
 property. That each mutation recomposes once, and that every region keeps the count its runs give
 it, are held by `EachOfSeveralStreamedMutationsRecomposesOnce` and
-`EveryRegionKeepsItsRunCountAfterStreamedMutations` in `test_dynamic_graph.cpp`, on 32 regions.
+`EveryRegionKeepsItsRunCountAfterStreamedMutations` in `test_dynamic_graph/test_dynamic_graph_regions.cpp`, on 32 regions.
 
 `Benchmark_RecomposeChurn.AllocationsAndTimePerCommit` is the gate benchmark for the
 "allocation-per-node churn on the recompose path" theme, audit Tier B. The substrate commits work
@@ -104,7 +104,7 @@ runtime calls it.
 | `DeviceCountOverCapacityFailsTheRun` | A producer writes a count one above the capacity. The resolver cannot throw from a kernel, so it writes a fault record and the run fails when the step ends. |
 | `AGraphRunsCleanAfterARunFailedForACountOverTheCapacity` | A second graph on the same runtime, with a count that fits, runs clean after the failed run. |
 
-## test_dynamic_graph.cpp
+## test_dynamic_graph/test_dynamic_graph_regions.cpp
 
 The file covers the dynamic, region-partitioned graph (`Runtime::dynamic_graph()`). Each test
 asserts the numerical outcome and the composition behaviour: regions run together, data dependencies
@@ -117,8 +117,6 @@ never recomposes. The fixtures turn the background rebalancer off, so no thermal
 | `AnUnmutatedMultiStepRunComposesOnce` | A run that mutates nothing composes the combined plan exactly once. |
 | `EachOfSeveralStreamedMutationsRecomposesOnce` | A world of 32 regions composes once, then eight runs each follow one more task streamed into a region; the compose count rises by exactly one per run. |
 | `EveryRegionKeepsItsRunCountAfterStreamedMutations` | After the same eight streamed runs, every region holds one count per run plus one per run after its own second task joined. |
-| `ARuleChangeReplacesARegionsNodeWithoutARecord` | A task recorded once in region 0, inside the scope a rule matches: a `Fail` rule for an absent device fails the run with `InvalidArgument` naming `"ruled"`, and a `Local` set given before the next run lets it run on device 0 with no re-record. |
-| `ARuleToAnAbsentDeviceRefusesTheRun`, `AnUnchangedRuleSetComposesNothing`, `ARuleChangeToDeviceOneRemapsTheNode` | The three other promises of that rule change: the refusal alone, an unchanged set composes nothing more, and on a machine with two devices a rule for device 1 moves the task there and composes once. The last skips below two devices. The fixture clears the rules after each test. |
 
 ### `ARegionObservesTheWritesOfTheRegionBeforeIt`
 
@@ -131,9 +129,6 @@ two regions and three, since the promise is the same and only the number of hops
 | --- | --- |
 | `DropRegionStopsItsWork` | Dropping a region removes its work at the next step boundary. After the drop the surviving region keeps advancing, and the buffer of the dropped region freezes. |
 | `AddRegionBetweenSteps` | Adding a region between steps recomposes exactly once, and the work of the new region takes effect on the next run. |
-| `BuildingAllRegionsComposesOnce` | The fixture records 32 regions and runs three steps; the compose count is one. |
-| `OneMutationRecomposesExactlyOnce` | Mutating one region out of the 32 recomposes once, and `compose_count` advances by exactly one per mutation, not per region. |
-| `EveryRegionHoldsItsRunCountAfterAMutation` | After that mutation the results stay correct: the unchanged regions hold four, the mutated one fourteen. |
 | `FindRegionRecomposesNothing` | Reading a region through `find_region()` is not a mutation. The plan must not recompose on the next run. |
 | `FindRegionDoesNotCreateAnAbsentKey` | An absent key returns `nullptr` where `region()` would create the region. |
 | `ReadReadSharingStaysConsistent` | One producer writes `base`, and two consumer regions both read `base` and write their own outputs. The two readers share no hazard; both see the producer's writes. The observable is correctness: the output of each reader reflects `base`. |
@@ -165,6 +160,8 @@ Boundary ordering on sub-ranges must still produce the right values. Two regions
 halves and a third reads the whole buffer, so the reader overlaps both writers and has to run after
 each of them.
 
+## test_dynamic_graph/test_dynamic_graph_node_events.cpp
+
 The file covers how an added observer reaches a `DynamicGraph` and its registration index, which
 is dense and ordered by ascending region key and then by `add()` order at every recompose. The
 design is sections D, E (item 8) and F.6 of
@@ -192,6 +189,27 @@ call of region 2 once the order follows the key.
 
 Dropping a region and adding it again must not leave a gap in the index space. The next recompose
 renumbers every live region densely from zero.
+
+## test_dynamic_graph/test_dynamic_graph_placement.cpp
+
+The file covers the placement rules as they reach the regions of a `DynamicGraph`. One task is recorded once in region 0, inside the scope a rule matches. The fixture clears the rules after each test.
+
+| Test | What it proves |
+| --- | --- |
+| `ARuleChangeReplacesARegionsNodeWithoutARecord` | A task recorded once in region 0, inside the scope a rule matches: a `Fail` rule for an absent device fails the run with `InvalidArgument` naming `"ruled"`, and a `Local` set given before the next run lets it run on device 0 with no re-record. |
+| `ARuleToAnAbsentDeviceRefusesTheRun`, `AnUnchangedRuleSetComposesNothing`, `ARuleChangeToDeviceOneRemapsTheNode` | The three other promises of that rule change: the refusal alone, an unchanged set composes nothing more, and on a machine with two devices a rule for device 1 moves the task there and composes once. The last skips below two devices. The fixture clears the rules after each test. |
+
+## test_dynamic_graph/test_dynamic_graph_world.cpp
+
+The file covers a world of 32 regions that each add one to their own buffer and have run three steps.
+
+| Test | What it proves |
+| --- | --- |
+| `BuildingAllRegionsComposesOnce` | The fixture records 32 regions and runs three steps; the compose count is one. |
+| `OneMutationRecomposesExactlyOnce` | Mutating one region out of the 32 recomposes once, and `compose_count` advances by exactly one per mutation, not per region. |
+| `EveryRegionHoldsItsRunCountAfterAMutation` | After that mutation the results stay correct: the unchanged regions hold four, the mutated one fourteen. |
+
+## test_dynamic_graph/test_layer_equivalence.cpp
 
 The file compares whole output buffers byte for byte and uses the public API only, so it holds
 across a change of internals. All data is `std::uint32_t`.
@@ -268,10 +286,10 @@ three nodes in recording order with predecessor counts 0, 1 and 1, and each node
 | `ThePlanCarriesTheOptionsANodeStated` | The second node of the same chain was given a name, an operation, a placement class and key, and a determinism; its entry carries each, and the first node's entry carries none. |
 | `AViewOutlivesItsGraph` | The view is read after the graph that returned it is destroyed. |
 
-## test_recorder.cpp
+## test_recorder/test_recorder_semantics.cpp
 
 The file covers what the recorder's words mean: a rule against a node, a name, a move, a region
-access and a liveness observer. `add_increment` adds one rule that adds a step to every word of a
+access and a liveness observer. The fixtures `RecorderTest` and `RecorderHostTest` live in `test_recorder/recorder_fixtures.hpp`, and `zeroed` in `test_recorder/recorder_buffers.hpp`. `add_increment` adds one rule that adds a step to every word of a
 buffer, so a wrong plan shows as a wrong sum. `record_three_node_rule` records three such kernels
 inside one `Recorder::rule()` scope. A `Small_` fixture derives from `RecorderHostTest` (a host runtime per test) and a `Medium_` fixture from
 `RecorderTest` (the program's runtime); both clear the placement rules after each test.
@@ -301,7 +319,6 @@ names no rule.
 | `MovedFromDynamicGraphHasNoRegions`, `TheComposedPlanMovesWithTheTakenDynamicGraph`, `AMovedFromDynamicGraphTakesRegionsAndRunsAgain` | The same three promises for a `DynamicGraph`. The destination also composes again when its region is recorded on, which shows that the region still reports to the graph that owns it after the move. |
 | `ManyNodesOverOneBufferAddUp` | Sixteen rules over one buffer, one over another and one more over the first run in order, and the first buffer holds seventeen. |
 | `ADroppedBufferIsStillDetected`, `ADroppedBufferIsStillDetectedInARegion` | A buffer named by the first and the last of six rules is destroyed after a good run. The next run is refused with `DanglingResource`, on a `Graph` and on a `DynamicGraph`. |
-| `refusal_of` | `refusal_of` clears a recorder, runs a call and returns the `Error` the call left as the recorder's refusal, or nothing when it left none. It clears the recorder again before it returns. |
 
 ### `ATaskOfTwoCommandGroupsIsOrderedByItsAccess`
 
@@ -339,7 +356,12 @@ holds one rule and one node, and the run executes the second node only. `extend(
 scope open around the extension, so a `clear()` that leaves the scope's state as it is records the
 second node into a rule the recorder has already dropped.
 
-### The parameter limit of a named rule
+### `AnExtensionThatRecordsNothingAddsNoRule`
+
+A rule named `integrate` is followed by an extension that records nothing. The graph still holds
+one rule and one node, and the observed run reports the node under `integrate`.
+
+## test_recorder/test_recorder_parameter_limit.cpp
 
 `Small_RecorderParameterLimit` has two rows, `add(count, Reads, Writes, kernel, options)` and
 `add_rule(state, kernel, options)`. In each, a rule with an operation and nine parameters in its
@@ -348,10 +370,9 @@ message holds `9 parameters` and `at most 8`, and the rule is not recorded. The 
 with eight (`EightParametersAreKept`). The graph is not run. The limit as a unit is held by
 `ParametersUpToTheLimitAreAcceptedAndOnePastIsRefused` in `detail/test_node_stamp.cpp`.
 
-### `AnExtensionThatRecordsNothingAddsNoRule`
+`refusal_of` clears a recorder, runs a call and returns the `Error` the call left as the recorder's refusal, or nothing when it left none. It clears the recorder again before it returns.
 
-A rule named `integrate` is followed by an extension that records nothing. The graph still holds
-one rule and one node, and the observed run reports the node under `integrate`.
+## test_recorder/test_recorder_scratch.cpp
 
 The file covers `Recorder::scratch()`. Every case records `record_staged_rule`: a rule of two nodes
 in which the first writes `in[i] + 1` into scratch and the second writes twice that into `out`. A
@@ -383,6 +404,8 @@ address space in bytes, which no device has. `scratch()` returns `AllocationFail
 `ASmallScratchRequestIsGrantedAfterALargeOneFailed` shows that a request of 16 bytes on the same
 recorder is granted.
 
+## test_recorder/test_registration_index.cpp
+
 The file covers the grouping of the nodes of one `Recorder::rule()` scope under one registration
 index, read through the node table of an observed run: a rule takes one row, whose `multiplicity` is
 the number of its nodes. The design is sections D and F5 of
@@ -407,6 +430,22 @@ three rows with indices dense from 0 to 2, and the rule's row still holds its th
 
 The index that follows call order, not compiled order, is held by `NodeIndexIsRegistrationOrder` in
 `test_graph.cpp`.
+
+## test_recorder/test_rule_registration.cpp
+
+The file covers `Graph::rule_registration`, which maps a rule position to the registration index its nodes report. `record` makes a graph of three plain kernels and one rule of three nodes.
+
+| Test | What it proves |
+| --- | --- |
+| `ARuleCarriesNoIndexUntilTheGraphCompiles` | Before the first run every rule reports `K_NO_REGISTRATION`. |
+| `ARuleScopeTakesOneIndexOfItsOwn` | After a run each plain rule has an index of its own, the rule scope has one that no plain rule shares, a position past the last rule names none, and every node of the scope reports that one index. |
+| `EveryNodeEventNamesARecordedRule` | Each node event of a run carries an index that some recorded rule reports. |
+| `ARulesNodesReportOneIndexOnEveryStep` | Over four steps every step has one event per node of the rule scope under the rule's index, and the graph compiles once. |
+| `AVerbReturnsThePositionOfTheRuleItRecorded` | The position a `Recorder` verb returns is the one `last_rule()` and `rule_registration()` take; the nodes of one scope return the same position. |
+
+## test_recorder/test_recorder_placement.cpp
+
+The file covers the placement of the nodes a `Recorder` records: placement scopes, placement scopes over devices, placed tasks and tasks placed by a rule. The fixtures `RecorderTest` and `RecorderHostTest` live in `test_recorder/recorder_fixtures.hpp`.
 
 ### Placement scopes
 

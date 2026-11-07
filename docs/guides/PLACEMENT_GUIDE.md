@@ -40,7 +40,7 @@ does not have to know about placement at all:
         });
 ```
 
-Source: `tests/surface/api/graph/test_recorder.cpp`
+Source: `tests/surface/api/graph/test_recorder/test_recorder_placement.cpp`
 
 Scopes nest and the inner one wins. A node whose own options name a class keeps its own class and
 its own key, even when its own key is none. The scope is a value passed to `within()`, never

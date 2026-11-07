@@ -50,7 +50,7 @@
 #include <SushiRuntime/profiling/register_profiler_parts.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
-#include "session_pipeline.hpp"
+#include "profiled_pipelines.hpp"
 
 using namespace SushiRuntime;
 using namespace SessionTests;

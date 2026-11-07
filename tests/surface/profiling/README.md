@@ -11,7 +11,7 @@ since reading a zone needs a SushiProfiler session and this is the one test fold
 
 A section is named after a test file, and a subsection after the test, helper or topic it describes.
 
-## test_register_profiler_parts/session_pipeline.hpp
+## test_register_profiler_parts/profiled_pipelines.hpp
 
 `SessionPipeline` is a runtime and a graph of three kernel nodes named `load`, `scale` and `store`, with operations, and costs on the first
 two (the second a stated zero of floating-point work). `InferencePipeline` is a stack of four layers of a matmul-like and a relu node
@@ -23,10 +23,8 @@ A session test marks periods around blocking runs, so every span of a run is que
 `linger_ms` of 0 loses nothing. The one test that waits for the consumer thread is
 `AStepWhoseWorkFinishedAfterTheLingerIsCountedInTheDrops`, which holds a step's work for 2.5 s, past the 2 s maximum delay the source asks the consumer to keep a period open.
 
-## test_register_profiler_parts/observed_pipeline.hpp
-
 `ObservedPipeline` is the same three-node graph in the namespace `ObserverTests`, for the tests that add observers and read observations
-with no session.
+with no session. Both pipelines name their nodes with the one `PipelineNode` enum of the namespace `ProfilingPipelines`.
 
 
 ## test_span_loss_tally.cpp

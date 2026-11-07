@@ -45,7 +45,7 @@
 #include <SushiRuntime/test_runner/log_capture.hpp>
 #include <SushiRuntime/report/recording_observer.hpp>
 
-#include "observed_pipeline.hpp"
+#include "profiled_pipelines.hpp"
 #include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 

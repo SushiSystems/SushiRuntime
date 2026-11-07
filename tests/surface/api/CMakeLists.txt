@@ -44,12 +44,21 @@ sushiruntime_add_module_tests(
         graph/test_access.cpp
         graph/test_device_sized.cpp
         graph/test_dispatch_events.cpp
-        graph/test_dynamic_graph.cpp
+        graph/test_dynamic_graph/test_dynamic_graph_regions.cpp
+        graph/test_dynamic_graph/test_dynamic_graph_node_events.cpp
+        graph/test_dynamic_graph/test_dynamic_graph_placement.cpp
+        graph/test_dynamic_graph/test_dynamic_graph_world.cpp
         graph/test_graph.cpp
+        graph/test_dynamic_graph/test_layer_equivalence.cpp
         graph/test_node_options.cpp
         graph/test_plan_view.cpp
-        graph/test_recorder.cpp
+        graph/test_recorder/test_recorder_parameter_limit.cpp
+        graph/test_recorder/test_recorder_placement.cpp
+        graph/test_recorder/test_recorder_scratch.cpp
+        graph/test_recorder/test_recorder_semantics.cpp
         graph/test_region.cpp
+        graph/test_recorder/test_registration_index.cpp
+        graph/test_recorder/test_rule_registration.cpp
         graph/test_run_handle.cpp
         interop/test_host_export.cpp
         interop/test_interop.cpp
@@ -91,12 +100,20 @@ sushiruntime_add_module_tests(
         graph/plumbing/test_step_driver.cpp
         graph/test_device_sized.cpp
         graph/test_dispatch_events.cpp
-        graph/test_dynamic_graph.cpp
+        graph/test_dynamic_graph/test_dynamic_graph_regions.cpp
+        graph/test_dynamic_graph/test_dynamic_graph_node_events.cpp
+        graph/test_dynamic_graph/test_dynamic_graph_world.cpp
         graph/test_graph.cpp
+        graph/test_dynamic_graph/test_layer_equivalence.cpp
         graph/test_node_options.cpp
         graph/test_plan_view.cpp
-        graph/test_recorder.cpp
+        graph/test_recorder/test_recorder_parameter_limit.cpp
+        graph/test_recorder/test_recorder_placement.cpp
+        graph/test_recorder/test_recorder_scratch.cpp
+        graph/test_recorder/test_recorder_semantics.cpp
         graph/test_region.cpp
+        graph/test_recorder/test_registration_index.cpp
+        graph/test_recorder/test_rule_registration.cpp
         graph/test_run_handle.cpp
         interop/test_host_export.cpp
         interop/test_interop.cpp

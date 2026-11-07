@@ -37,7 +37,7 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
-#include "session_pipeline.hpp"
+#include "profiled_pipelines.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;

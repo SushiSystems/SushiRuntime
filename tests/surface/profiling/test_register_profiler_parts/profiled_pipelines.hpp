@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* session_pipeline.hpp                                                   */
+/* profiled_pipelines.hpp                                                 */
 /**************************************************************************/
 /*                          This file is part of:                         */
 /*                              SushiRuntime                              */
@@ -22,8 +22,8 @@
 /**************************************************************************/
 
 /**
- * @file session_pipeline.hpp
- * @brief Declares the graphs and the session helper the profiling tests record runs with.
+ * @file profiled_pipelines.hpp
+ * @brief Declares the pipelines and the session helpers the profiling tests record and observe runs with.
  * @see tests/surface/profiling/README.md
  * @author Mustafa Garip
  */
@@ -51,15 +51,127 @@
 
 #include "support/runtime_environment.hpp"
 
-namespace SessionTests
+namespace ProfilingPipelines
 {
-    /** @brief Names the registration index of each node of the three-node pipeline, in recording order. */
+    /** @brief Names the registration index of each node of the three-node pipelines, in recording order. */
     enum PipelineNode : std::uint32_t
     {
         K_LOAD = 0,  /**< Writes the first buffer; states a cost with floating-point work. */
         K_SCALE = 1, /**< Doubles it into the second; states a cost with no floating-point work. */
         K_STORE = 2  /**< Adds one into the third; states no cost. */
     };
+} // namespace ProfilingPipelines
+
+namespace ObserverTests
+{
+    using ProfilingPipelines::PipelineNode;
+    using ProfilingPipelines::K_LOAD;
+    using ProfilingPipelines::K_SCALE;
+    using ProfilingPipelines::K_STORE;
+
+    /**
+     * @brief Owns a runtime and a graph of three kernel nodes named load, scale and store.
+     *
+     * The nodes carry names, operations and, for the first two, a cost, so a test can join an
+     * observed record to what the caller stated. The pipeline is neither copied nor moved: the
+     * kernels hold the buffers' addresses.
+     */
+    class ObservedPipeline
+    {
+        public:
+            /** @brief The element count every node launches over. */
+            static constexpr std::size_t K_ELEMENTS = 256;
+
+            /** @brief Takes the program's runtime of @p shape and records the three nodes. */
+            explicit ObservedPipeline(const TestSupport::RuntimeShape& shape = scheduler_config())
+                : ObservedPipeline(TestSupport::RuntimeEnvironment::runtime(shape))
+            {
+            }
+
+            /** @brief Records the three nodes on @p runtime, which must outlive the pipeline. */
+            explicit ObservedPipeline(SushiRuntime::Runtime& runtime)
+                : runtime_(runtime),
+                  first_(runtime_.buffer<float>(K_ELEMENTS).value()),
+                  second_(runtime_.buffer<float>(K_ELEMENTS).value()),
+                  third_(runtime_.buffer<float>(K_ELEMENTS).value()),
+                  graph_(runtime_.graph())
+            {
+                using namespace SushiRuntime;
+                float* a = first_.data();
+                float* b = second_.data();
+                float* c = third_.data();
+
+                NodeOptions load;
+                load.name = "load";
+                load.operation = "pipeline.load"_op;
+                load.cost = NodeCost{K_ELEMENTS, K_ELEMENTS * sizeof(float), NodeDType::F32};
+                NodeOptions scale;
+                scale.name = "scale";
+                scale.operation = "pipeline.scale"_op;
+                scale.cost = NodeCost{0, 2 * K_ELEMENTS * sizeof(float), NodeDType::F32};
+                NodeOptions store;
+                store.name = "store";
+                store.operation = "pipeline.store"_op;
+
+                graph_.add(K_ELEMENTS, Reads{}, Writes(first_),
+                           [a](std::size_t i) { a[i] = static_cast<float>(i); }, load);
+                graph_.add(K_ELEMENTS, Reads(first_), Writes(second_),
+                           [a, b](std::size_t i) { b[i] = a[i] * 2.0f; }, scale);
+                graph_.add(K_ELEMENTS, Reads(second_), Writes(third_),
+                           [b, c](std::size_t i) { c[i] = b[i] + 1.0f; }, store);
+            }
+
+            ObservedPipeline(const ObservedPipeline&) = delete;
+            ObservedPipeline& operator=(const ObservedPipeline&) = delete;
+            ObservedPipeline(ObservedPipeline&&) = delete;
+            ObservedPipeline& operator=(ObservedPipeline&&) = delete;
+
+            /** @brief Returns the runtime. */
+            SushiRuntime::Runtime& runtime() noexcept { return runtime_; }
+
+            /** @brief Returns the graph. */
+            SushiRuntime::Graph& graph() noexcept { return graph_; }
+
+            /** @brief Returns the last buffer, which holds 2 * i + 1 after a run. */
+            SushiRuntime::Buffer<float>& result() noexcept { return third_; }
+
+            /** @brief Returns the shape of a runtime that keeps every run on the worker pool. */
+            static TestSupport::RuntimeShape scheduler_config()
+            {
+                TestSupport::RuntimeShape shape;
+                shape.force_scheduler = true;
+                return shape;
+            }
+
+            /** @brief Returns the shape of a second runtime that keeps every run on the worker pool. */
+            static TestSupport::RuntimeShape other_scheduler_config()
+            {
+                TestSupport::RuntimeShape shape = scheduler_config();
+                shape.instance = 1;
+                return shape;
+            }
+
+            /** @brief Returns the shape of a runtime that lets a chainable plan run as an in-order chain. */
+            static TestSupport::RuntimeShape chain_config()
+            {
+                return TestSupport::RuntimeShape{};
+            }
+
+        private:
+            SushiRuntime::Runtime& runtime_;         /**< The program\'s runtime of the pipeline\'s shape. */
+            SushiRuntime::Buffer<float> first_;      /**< Written by load. */
+            SushiRuntime::Buffer<float> second_;     /**< Written by scale. */
+            SushiRuntime::Buffer<float> third_;      /**< Written by store. */
+            SushiRuntime::Graph graph_;              /**< The recorded nodes. */
+    };
+} // namespace ObserverTests
+
+namespace SessionTests
+{
+    using ProfilingPipelines::PipelineNode;
+    using ProfilingPipelines::K_LOAD;
+    using ProfilingPipelines::K_SCALE;
+    using ProfilingPipelines::K_STORE;
 
     /**
      * @brief Owns a runtime and a graph of three kernel nodes named load, scale and store.

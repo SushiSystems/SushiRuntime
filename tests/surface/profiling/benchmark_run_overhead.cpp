@@ -49,7 +49,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/report/recording_observer.hpp>
 
-#include "test_register_profiler_parts/session_pipeline.hpp"
+#include "test_register_profiler_parts/profiled_pipelines.hpp"
 
 using namespace SushiRuntime;
 using SushiRuntime::Test::RunStatistics;

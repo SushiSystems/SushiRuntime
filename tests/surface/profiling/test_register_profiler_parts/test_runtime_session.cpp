@@ -44,7 +44,7 @@
 #include <SushiRuntime/profiling/device_track_name.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
-#include "session_pipeline.hpp"
+#include "profiled_pipelines.hpp"
 
 using namespace SushiRuntime;
 using namespace SessionTests;
