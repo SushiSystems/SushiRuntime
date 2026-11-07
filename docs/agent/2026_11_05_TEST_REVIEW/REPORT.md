@@ -91,6 +91,9 @@ The owner delegated these decisions on 2026-11-05. Each ruling below is final fo
 37. Ruled on 2026-11-07 by the lead, on the SOLID review of 23bf5b2f..25c16ecc: the ten breaches are fixed as the review wrote them, and LAYERED_EXECUTION rulings 20 to 28 hold the shapes. One clause is not met as written: `sycl_usm_source.hpp` still includes `<sycl/sycl.hpp>`, because its factory takes `std::vector<sycl::queue>` and neither DPC++ nor AdaptiveCpp offers a declaration of `sycl::queue` to forward. The SYCL adapter's class left the header, and `usm_allocator.hpp`, which every user of the allocator includes, includes no SYCL header.
 38. Ruled on 2026-11-07 by the lead: the host engine runs on any `Executor`. With a thread-owning executor, `complete()` steps the executor on the calling thread and yields while jobs run elsewhere, and the run's failure, count and ledger sit under one lock.
 39. Ruled on 2026-11-07 by the worker (owner delegated the call): `EpochManager` is an ordinary object, `instance()` is gone, and `EpochGuard` takes the manager it holds. A thread's state is kept per manager, and a link the manager clears before it dies tells a thread that exits later to free its own list. `DependencyTracker` takes a manager from its owner or, by default, makes its own, so each `TaskGraph` has one and shares none. The scheduler's `EpochGuard` is removed: only the tracker retires into a manager, and the scheduler reads nothing the tracker retires, so the guard protected nothing and its module no longer includes `epoch_reclamation.hpp`. `EpochManager::nesting_depth()` replaces the test's read of `Detail::tls_state()`.
+40. Ruled on 2026-11-07 by the worker (owner delegated the call), checking 754279e7: the scheduler reads nothing the `DependencyTracker` retires. `task_scheduler.cpp` and its headers name no tracker, and the tracker retires only the access history of its own `ResourceState` shards into its own `EpochManager`, which the scheduler never touches. The removed `EpochGuard` protected no read, so it stays removed and no guard goes onto the tracker's manager from the scheduler.
+41. Ruled on 2026-11-07 by the worker (RW-127, in part): the `Clock` port stays in `foundation/core` (`clock.hpp`), below the platform layer, because the distributed and engine modules above both read it and `platform` depends on `core` only. `SteadyClock` and `ManualClock` pass the one `ClockContract`: `Small_ManualClock` runs small, `Medium_SteadyClock` stays medium because it reads the machine clock. The loops of the cluster monitor, `MasterLink`, `DispatchExecutor` and `WorkerAgent` are NOT yet on the port. Their classes are private to `modules/extension/distributed/source/`, which no test reaches, so a small test needs each as its own module, and a new module or test file needs a CMake edit that the dispatch block forbids. RW-127 stays open with that reason.
+42. Ruled on 2026-11-07 by the worker (RW-126, in part): an `NdRange` is not run on the host. The index math of its launch is `Detail::shifted_id()` (`emit_launch.hpp`), a host function of plain ids that both `submit_launch` overloads call; the arithmetic of the tests' `nd_item` kernels is `TestSupport::square_in_place`, `write_linear_index` and `clear_word` (`tests/support/nd_kernel_math.hpp`). Small rows call them (`Small_LaunchIndex`, `Small_NdKernelMath`); the existing `Medium_` launch tests stay as the one launch test per kernel family. Raw command groups and queue bodies are not yet split this way; RW-126 stays open for them.
 
 ## Medium audit
 
@@ -3622,14 +3625,14 @@ Counted statically from the source, no test run: one case for each `TEST`, `TEST
 | `platform/numa_lookup` | 3 | 0 | 0 | 0 | 3 | 100% |
 | `platform/observability` | 31 | 2 | 0 | 0 | 33 | 94% |
 | `platform/topology` | 27 | 16 | 0 | 0 | 43 | 63% |
-| `surface/api` | 421 | 123 | 0 | 4 | 548 | 77% |
+| `surface/api` | 425 | 123 | 0 | 4 | 552 | 77% |
 | `surface/context` | 1 | 0 | 0 | 0 | 1 | 100% |
 | `surface/engine_handles` | 2 | 0 | 0 | 0 | 2 | 100% |
 | `surface/interop` | 6 | 0 | 0 | 0 | 6 | 100% |
 | `surface/memory_exchange` | 9 | 4 | 0 | 0 | 13 | 69% |
 | `surface/profiling` | 112 | 51 | 2 | 1 | 166 | 67% |
 | `tools (python)` | 746 | 86 | 0 | 0 | 832 | 90% |
-| **all** | 2143 | 638 | 14 | 54 | 2849 | 75% |
+| **all** | 2147 | 638 | 14 | 54 | 2853 | 75% |
 
 Where the small share is low, the module's medium cases are boundary checks or wait on a seam: `extension/distributed` (RW-127), `extension/network_socket` (sockets are its boundary), `foundation/usm_guard` and `foundation/device_probe` (devices are their boundary), `engine/scheduler` and `engine/execution` (RW-129), `platform/device` and `platform/topology` (platform ports), and `cli (python)`.
 

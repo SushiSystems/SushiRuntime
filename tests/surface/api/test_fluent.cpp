@@ -41,6 +41,7 @@
 
 #include "support/buffer_contents.hpp"
 #include "support/host_runtime.hpp"
+#include "support/nd_kernel_math.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -269,8 +270,7 @@ TEST_F(Medium_FluentAPI, TrackedNdRangeOrdering)
     g.add(NdRange{ sycl::range<1>(N), sycl::range<1>(16) }, Reads(buf), Writes(buf),
           [p](sycl::nd_item<1> it)
     {
-        const std::size_t i = it.get_global_id(0);
-        p[i] = p[i] * p[i];
+        TestSupport::square_in_place(p, it.get_global_id(0));
     });
 
     g.run().value();
@@ -416,9 +416,7 @@ TEST_F(Medium_FluentHardening, NdRange2DTiledKernel)
     auto g = runtime().graph();
     g.add_untracked(NdRange{ sycl::range<2>(W, H), sycl::range<2>(4, 4) }, [p](sycl::nd_item<2> it)
     {
-        const std::size_t x = it.get_global_id(0);
-        const std::size_t y = it.get_global_id(1);
-        p[y * W + x] = static_cast<int>(y * W + x);
+        TestSupport::write_linear_index(p, it.get_global_id(0), it.get_global_id(1), W);
     });
 
     g.run().value();
@@ -677,4 +675,27 @@ TEST_F(Small_FluentLifecycle, DanglingResourceIsReported)
 
     ASSERT_FALSE(r);
     EXPECT_EQ(r.error().code, ErrorCode::DanglingResource);
+}
+
+/** @brief Tests that the squaring kernel math of the NdRange launch squares the element it is given. */
+TEST(Small_NdKernelMath, SquareInPlaceSquaresOneElement)
+{
+    int values[] = {3, 4, 5};
+
+    TestSupport::square_in_place(values, 1);
+
+    EXPECT_EQ(values[0], 3);
+    EXPECT_EQ(values[1], 16);
+    EXPECT_EQ(values[2], 5);
+}
+
+/** @brief Tests that the tiled kernel math writes the row-major linear index at column x, row y. */
+TEST(Small_NdKernelMath, WriteLinearIndexWritesTheRowMajorIndex)
+{
+    int cells[6] = {-1, -1, -1, -1, -1, -1};
+
+    TestSupport::write_linear_index(cells, 2, 1, 3);
+
+    EXPECT_EQ(cells[5], 5);
+    EXPECT_EQ(cells[0], -1);
 }

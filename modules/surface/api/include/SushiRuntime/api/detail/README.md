@@ -254,6 +254,8 @@ capture pointers, or the State fields. A launch is therefore written once, and a
 state, kernel) or add(count, In(a), kernel) exist because the emitters are generic over it and for no
 other reason. The Extent form adds the origin to each id. The NdRange form adds it only for a
 kernel that takes the id as a second parameter.
+The addition is shifted_id(), a function of plain ids that a small test calls without a device; no
+NdRange runs on the host.
 
 ### run_launch_on_host and host_form_of
 

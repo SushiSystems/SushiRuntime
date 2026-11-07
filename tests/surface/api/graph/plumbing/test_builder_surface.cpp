@@ -39,6 +39,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/host_runtime.hpp"
+#include "support/nd_kernel_math.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -141,7 +142,7 @@ TEST_F(Medium_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
     auto graph = rt.graph();
     graph.add(tiles, InOut(target), [](sycl::nd_item<1>, sycl::id<1> index, Word* words)
     {
-        words[index[0]] = 0u;
+        TestSupport::clear_word(words, index[0]);
     });
     graph.run().value();
 

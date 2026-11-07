@@ -108,3 +108,20 @@ TEST_F(Small_LaunchReachRecord, ARefusedLaunchRecordsNoRule)
     ASSERT_NE(graph.refusal(), nullptr) << "a launch that ends past SIZE_MAX was recorded";
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 }
+
+/** @brief Tests that the id a kernel receives is the id the device hands out plus the origin. */
+TEST(Small_LaunchIndex, ShiftedIdAddsTheOriginToEachDimension)
+{
+    const sycl::id<2> shifted = Detail::shifted_id(sycl::id<2>(1, 2), sycl::id<2>(10, 20));
+
+    EXPECT_EQ(shifted[0], 11u);
+    EXPECT_EQ(shifted[1], 22u);
+}
+
+/** @brief Tests that a zero origin leaves the id as the device hands it out. */
+TEST(Small_LaunchIndex, ShiftedIdWithAZeroOriginIsTheDeviceId)
+{
+    const sycl::id<1> shifted = Detail::shifted_id(sycl::id<1>(7), sycl::id<1>(0));
+
+    EXPECT_EQ(shifted[0], 7u);
+}

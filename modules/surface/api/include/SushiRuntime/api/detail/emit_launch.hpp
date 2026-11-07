@@ -232,6 +232,18 @@ namespace SushiRuntime
         }
 
         /**
+         * @brief Returns the id a kernel receives: the id the device hands out plus the launch's origin.
+         * @param index The id the device hands out, counted from zero.
+         * @param origin The launch's origin.
+         * @return The shifted id.
+         */
+        template <int N>
+        sycl::id<N> shifted_id(const sycl::id<N>& index, const sycl::id<N>& origin)
+        {
+            return index + origin;
+        }
+
+        /**
          * @brief Submits an Extent launch: kernel(id, extra...) with the origin added to id.
          * @param extra Values copied into the kernel and passed after the index.
          */
@@ -243,7 +255,7 @@ namespace SushiRuntime
             const sycl::id<N> origin = extent.origin;
             handler.parallel_for(extent.extent, [kernel, origin, extra...](sycl::id<N> index)
             {
-                kernel(index + origin, extra...);
+                kernel(shifted_id(index, origin), extra...);
             });
         }
 
@@ -264,7 +276,7 @@ namespace SushiRuntime
                 handler.parallel_for(range.to_nd_range(),
                                      [kernel, origin, extra...](sycl::nd_item<N> item)
                 {
-                    kernel(item, item.get_global_id() + origin, extra...);
+                    kernel(item, shifted_id(item.get_global_id(), origin), extra...);
                 });
             }
             else

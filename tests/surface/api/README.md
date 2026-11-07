@@ -81,6 +81,8 @@ whole result with a vector, so no body loops.
 | Test | What it proves |
 | --- | --- |
 | `Extent2DPerElementMap` | `add_untracked(Extent<2>, kernel)` sees a `sycl::id<2>` that covers the whole box and writes a row-major index. |
+| `Small_NdKernelMath.SquareInPlaceSquaresOneElement` | `TestSupport::square_in_place()`, the arithmetic of the tracked `NdRange` kernel, squares the one element it is given. |
+| `Small_NdKernelMath.WriteLinearIndexWritesTheRowMajorIndex` | `TestSupport::write_linear_index()`, the index math of the tiled kernel, writes the row-major index at column x, row y. |
 | `NdRange2DTiledKernel` | `add_untracked(NdRange<2>, kernel)` runs a tiled kernel in the work-group model; each item writes its global linear index. |
 | `State2DSteppedUpdate` | `add_rule(Extent<2>, state, kernel)` adds the row index to every cell each step, so row y holds `S*y` after S steps. |
 | `VariadicCoupledThreeInputs` | `add_coupled(Coupled(out, a, b), kernel)` computes `next = cur + a + b` from the data of the previous step. |

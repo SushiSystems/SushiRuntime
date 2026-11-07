@@ -164,6 +164,8 @@ not fit a `std::size_t`, and the refusal made from it.
 | `Small_LaunchReach.ReachSaturatesAtTheLargestSizeWhenTheSumWraps` | The same extent and an `NdRange<1>` at origin `SIZE_MAX - 3` reach `SIZE_MAX`, and `saturated_reach(SIZE_MAX - 7, 8)` is `SIZE_MAX`. |
 | `Small_LaunchReach.ALaunchPastItsHandleIsRefused` | `launch_refusal()` returns an `InvalidGraph` error for a wrapping extent over a handle of 8 elements. |
 | `Small_LaunchReach.ALaunchInsideItsHandleIsNotRefused` | It returns nothing for an extent that fits. |
+| `Small_LaunchIndex.ShiftedIdAddsTheOriginToEachDimension` | `shifted_id()`, the index math of the device launch, adds the origin to the id in each dimension. |
+| `Small_LaunchIndex.ShiftedIdWithAZeroOriginIsTheDeviceId` | A zero origin leaves the id unchanged. |
 | `Small_LaunchReachRecord.ARefusedLaunchRecordsNoRule` | `add_rule(extent, state, kernel)` with a wrapping extent keeps a refusal and records no rule. A wrapped sum would be 4, which is inside the State. |
 
 ## test_emit_state.cpp
