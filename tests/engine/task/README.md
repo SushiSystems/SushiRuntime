@@ -248,3 +248,13 @@ and the unsigned-byte rule the hash applies.
 ### `Small_TaskTypes`
 
 One test stores a value in the first and the last parameter slot and reads each back as its type.
+
+## test_refusing_offload_sink.cpp
+
+The file tests `RefusingOffloadSink` through the `OffloadSink` port, on a node that no graph runs. It
+touches no thread, so every test is small.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_RefusingOffloadSink.ResubmitThrowsARuntimeError` | `resubmit()` throws `std::runtime_error`. |
+| `Small_RefusingOffloadSink.CountsEachRefusal` | `refusals()` is 0 at first and 2 after two refused nodes. |

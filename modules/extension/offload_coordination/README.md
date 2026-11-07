@@ -211,3 +211,4 @@ nodes `HeldNodes` handed out to the same sink. Both catch what the sink throws, 
 module's category and release the node; `reoffer_nodes()` first makes `HeldNodes` forget the node's
 first offer, so a plan rearmed later that reuses the address starts a new wait. The cluster monitor,
 the reader thread and `DistributedCoordinator::stop()` call them.
+

@@ -28,14 +28,18 @@
  * @author Mustafa Garip
  */
 
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include <SushiRuntime/core/span.hpp>
+#include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
+#include <SushiRuntime/transport/recording_transport_events.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 
@@ -46,47 +50,91 @@ using namespace SushiRuntime::Distributed;
 
 namespace
 {
-    /** @brief Keeps the last frame it was asked to send. */
-    class LastFrameTransport final : public Transport
-    {
-        public:
-            TransportResult start(TransportEvents&) override { return TransportResult{}; }
-            void stop() noexcept override {}
-            SendStatus send(PeerID peer, MessageType type, span<const std::byte> payload) override
-            {
-                last_peer = peer;
-                last_type = type;
-                last_payload.assign(payload.begin(), payload.end());
-                ++sends;
-                return SendStatus::Queued;
-            }
-            SendStatus send_stream(PeerID, std::unique_ptr<FrameSource>) override { return SendStatus::Stopped; }
-            void close_peer(PeerID) noexcept override {}
-            TransportExposure exposure() const noexcept override { return TransportExposure::Loopback; }
-            TransportStatistics statistics() const noexcept override { return TransportStatistics{}; }
+    /** @brief Bounds every wait, so a broken transport fails a test and hangs none. */
+    constexpr std::chrono::milliseconds K_WAIT{30000};
 
-            PeerID last_peer{0};                   /**< The peer of the last frame. */
-            MessageType last_type = MessageType::Hello; /**< The type of the last frame. */
-            std::vector<std::byte> last_payload;   /**< The payload of the last frame. */
-            int sends = 0;                         /**< The calls of send(). */
+    /** @brief Holds the token the PING of these tests carries. */
+    constexpr std::uint64_t K_TOKEN = 99;
+
+    /** @brief Joins a master endpoint and a worker endpoint on one in-process fabric. */
+    class Medium_FrameSending : public ::testing::Test
+    {
+        protected:
+            /** @brief Starts both endpoints and waits until the master sees the worker. */
+            void SetUp() override
+            {
+                master_ = InProcessTransport::make_master(fabric_);
+                worker_ = InProcessTransport::make_worker(fabric_);
+                ASSERT_TRUE(master_->start(master_events_).is_ok());
+                ASSERT_TRUE(worker_->start(worker_events_).is_ok());
+                ASSERT_TRUE(master_events_.wait_for_connections(1, K_WAIT));
+                ASSERT_TRUE(worker_events_.wait_for_connections(1, K_WAIT));
+            }
+
+            /** @brief Returns the PING the tests send. */
+            static Wire::PingMessage ping()
+            {
+                Wire::PingMessage message;
+                message.token = K_TOKEN;
+                return message;
+            }
+
+            /** @brief Returns the token a received PING frame carries. */
+            static std::uint64_t token_of(const RecordedFrame& frame)
+            {
+                Wire::PingMessage decoded;
+                EXPECT_TRUE(Wire::PingMessage::decode(
+                                span<const std::byte>(frame.payload.data(), frame.payload.size()),
+                                decoded)
+                                .ok());
+                return decoded.token;
+            }
+
+            /// @brief The fabric the two endpoints share.
+            InProcessFabric fabric_;
+
+            /// @brief What the master endpoint reports; it outlives the endpoint.
+            RecordingTransportEvents master_events_;
+
+            /// @brief What the worker endpoint reports; it outlives the endpoint.
+            RecordingTransportEvents worker_events_;
+
+            /// @brief The endpoint the messages leave from.
+            std::shared_ptr<InProcessTransport> master_;
+
+            /// @brief The endpoint the messages arrive at.
+            std::shared_ptr<InProcessTransport> worker_;
     };
-}
+} // namespace
 
 /** @brief Tests that a PING leaves as one frame of its type whose payload carries its token. */
-TEST(Medium_FrameSending, AMessageLeavesAsOneFrameOfItsType)
+TEST_F(Medium_FrameSending, AMessageLeavesAsOneFrameOfItsType)
 {
-    LastFrameTransport transport;
-    Wire::PingMessage ping;
-    ping.token = 99;
     std::vector<std::byte> scratch;
-    EXPECT_EQ(send_message(transport, PeerID{4}, ping, scratch), SendStatus::Queued);
-    EXPECT_EQ(transport.sends, 1);
-    EXPECT_EQ(transport.last_peer, PeerID{4});
-    EXPECT_EQ(transport.last_type, MessageType::Ping);
 
-    Wire::PingMessage decoded;
-    ASSERT_TRUE(Wire::PingMessage::decode(
-        span<const std::byte>(transport.last_payload.data(), transport.last_payload.size()), decoded).ok());
-    EXPECT_EQ(decoded.token, 99u);
-    EXPECT_EQ(send_message(transport, PeerID{4}, ping), SendStatus::Queued);
+    EXPECT_EQ(send_message(*master_, master_events_.connected().front(), ping(), scratch),
+              SendStatus::Queued);
+
+    ASSERT_TRUE(worker_events_.wait_for_frames(MessageType::Ping, 1, K_WAIT));
+    const std::vector<RecordedFrame> frames = worker_events_.frames();
+    ASSERT_EQ(frames.size(), 1u);
+    EXPECT_EQ(frames.front().type, MessageType::Ping);
+    EXPECT_EQ(frames.front().peer, worker_events_.connected().front());
+    EXPECT_EQ(token_of(frames.front()), K_TOKEN);
+}
+
+/** @brief Tests that the form that owns its buffer queues the same frame. */
+TEST_F(Medium_FrameSending, TheFormWithoutABufferQueuesTheSameFrame)
+{
+    EXPECT_EQ(send_message(*master_, master_events_.connected().front(), ping()),
+              SendStatus::Queued);
+
+    ASSERT_TRUE(worker_events_.wait_for_frames(MessageType::Ping, 1, K_WAIT));
+    EXPECT_EQ(token_of(worker_events_.frames_of(MessageType::Ping).front()), K_TOKEN);
+}
+
+/** @brief Tests that a peer the transport does not know is reported, not queued. */
+TEST_F(Medium_FrameSending, AnUnknownPeerIsReportedAsTheTransportSaidIt)
+{
+    EXPECT_EQ(send_message(*master_, PeerID{999}, ping()), SendStatus::UnknownPeer);
 }

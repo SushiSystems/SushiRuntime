@@ -49,20 +49,24 @@
 #include <SushiLog/log/log_record.hpp>
 
 #include <SushiRuntime/distributed/cluster.hpp>
+#include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/task/in_memory_offload_sink.hpp>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/task/offload_state.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/cluster_load/cluster_statistics.hpp>
+#include <SushiRuntime/cluster_load/in_memory_offload_policy.hpp>
 #include <SushiRuntime/cluster_load/offload_policy.hpp>
 #include <SushiRuntime/machine/node_facts.hpp>
 #include <SushiRuntime/placement/placement_rule.hpp>
 #include <SushiRuntime/placement/placement_rules.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
+#include <SushiRuntime/transport/recording_transport_events.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
@@ -70,6 +74,7 @@
 #include <SushiRuntime/link_security/handshake.hpp>
 #include <SushiRuntime/link_security/sha256.hpp>
 
+#include <SushiRuntime/frame_transport/frame_sending.hpp>
 #include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/offload_dispatcher.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
@@ -82,14 +87,17 @@ namespace OffloadDispatcherTests
 
     namespace
     {
-        /** @brief Names the worker every test registers. */
-        constexpr PeerID K_WORKER{1};
+        /** @brief Bounds every wait, so a broken transport fails a test and hangs none. */
+        constexpr std::chrono::milliseconds K_WAIT{30000};
+
+        /** @brief Holds the control frames a master endpoint queues per peer in most tests. */
+        constexpr std::size_t K_QUEUE_FRAMES = 4096;
+
+        /** @brief Holds the queue of a master endpoint that refuses every send. */
+        constexpr std::size_t K_NO_QUEUE = 0;
 
         /** @brief Names the machine K_WORKER runs on. */
         constexpr const char* K_WORKER_NAME = "worker";
-
-        /** @brief Names a second worker, which only a test of two rule sets registers. */
-        constexpr PeerID K_SECOND_WORKER{2};
 
         /** @brief Names the machine K_SECOND_WORKER runs on. */
         constexpr const char* K_SECOND_WORKER_NAME = "second";
@@ -108,95 +116,6 @@ namespace OffloadDispatcherTests
 
         /** @brief Names the storage of one buffer of a test. */
         using Storage = std::array<float, K_BUFFER_ELEMENTS>;
-
-        /** @brief Holds one frame a test transport was asked to send. */
-        struct OfferedFrame
-        {
-            PeerID peer;                    /**< The peer the frame was for. */
-            MessageType type;               /**< The type of the frame. */
-            std::vector<std::byte> payload; /**< A copy of the payload. */
-        };
-
-        /**
-         * @brief Records every send() and answers it with a status the test sets.
-         */
-        class RecordingTransport final : public Transport
-        {
-            public:
-                /** @brief Reports a start that needs nothing. */
-                [[nodiscard]] TransportResult start(TransportEvents& /*events*/) override
-                {
-                    return TransportResult();
-                }
-
-                /** @brief Does nothing; the transport owns no thread. */
-                void stop() noexcept override
-                {
-
-                }
-
-                /** @brief Keeps a copy of the frame and returns the status set for the test. */
-                [[nodiscard]] SendStatus send(PeerID peer, MessageType type,
-                                              span<const std::byte> payload) override
-                {
-                    OfferedFrame frame{peer, type, std::vector<std::byte>()};
-                    frame.payload.assign(payload.begin(), payload.end());
-                    offered.push_back(std::move(frame));
-                    return answer;
-                }
-
-                /** @brief Refuses every stream; the dispatcher sends none. */
-                [[nodiscard]] SendStatus send_stream(PeerID /*peer*/,
-                                                     std::unique_ptr<FrameSource> /*source*/) override
-                {
-                    return SendStatus::Stopped;
-                }
-
-                /** @brief Does nothing; the transport holds no connection. */
-                void close_peer(PeerID /*peer*/) noexcept override
-                {
-
-                }
-
-                /** @brief Reports a transport only this process reaches. */
-                [[nodiscard]] TransportExposure exposure() const noexcept override
-                {
-                    return TransportExposure::Loopback;
-                }
-
-                /** @brief Reports that no byte moved. */
-                [[nodiscard]] TransportStatistics statistics() const noexcept override
-                {
-                    return TransportStatistics();
-                }
-
-                /** @brief Holds what send() returns. */
-                SendStatus answer = SendStatus::Queued;
-
-                /** @brief Holds every frame send() was given, in order. */
-                std::vector<OfferedFrame> offered;
-        };
-
-        /**
-         * @brief Picks the first worker it is offered and counts how often it was asked.
-         */
-        class FirstWorkerPolicy final : public OffloadPolicy
-        {
-            public:
-                /** @brief Returns the first offered worker, or nothing when none was offered. */
-                std::optional<int> pick_worker(const NodeOptions& /*task*/,
-                                               span<const WorkerLoad> workers,
-                                               std::uint64_t /*est_bytes*/) override
-                {
-                    ++calls;
-                    if (workers.empty())
-                        return std::nullopt;
-                    return workers.begin()->worker_id;
-                }
-
-                /** @brief Counts the calls to pick_worker(). */
-                int calls = 0;
-        };
 
         /** @brief Returns handshake octets as the bytes a wire message carries. */
         template <std::size_t Count>
@@ -233,40 +152,8 @@ namespace OffloadDispatcherTests
             return rules;
         }
 
-        /** @brief Records the errors a Fail rule ends a run with; it never resubmits. */
-        class RecordingSink final : public Internal::Graph::OffloadSink
-        {
-            public:
-                /** @brief Counts a resubmission, which no test here expects. */
-                void resubmit(Internal::Graph::Node& /*node*/) override
-                {
-                    ++resubmitted;
-                }
-
-                /** @brief Counts a remote completion, which no test here expects. */
-                void complete_remote(Internal::Graph::Node& /*node*/) override
-                {
-                    ++completed;
-                }
-
-                /** @brief Keeps the error a run ended with. */
-                void fail(Internal::Graph::Node& /*node*/, Error error) override
-                {
-                    errors.push_back(std::move(error));
-                }
-
-                /** @brief Holds every error fail() was given, in order. */
-                std::vector<Error> errors;
-
-                /** @brief Counts the calls to resubmit(). */
-                int resubmitted = 0;
-
-                /** @brief Counts the calls to complete_remote(). */
-                int completed = 0;
-        };
-
-        /** @brief Returns the dispatch a transport was offered, decoded. */
-        Wire::TaskDispatchMessage decode_dispatch(const OfferedFrame& frame)
+        /** @brief Returns the dispatch a worker received, decoded. */
+        Wire::TaskDispatchMessage decode_dispatch(const RecordedFrame& frame)
         {
             Wire::TaskDispatchMessage dispatch;
             const Wire::DecodeResult decoded = Wire::TaskDispatchMessage::decode(
@@ -277,11 +164,22 @@ namespace OffloadDispatcherTests
 
         /**
          * @brief Builds a dispatcher over a registry, a directory with one worker, a pending
-         *        table and a recording transport, and restores the logger a test changed.
+         *        table and the master endpoint of an in-process fabric, and restores the
+         *        logger a test changed.
+         *
+         * The worker is a real endpoint, so each dispatch reaches a recording receiver.
          */
-        class Medium_OffloadDispatcherTest : public ::testing::Test
+        class DispatcherRig : public ::testing::Test
         {
             protected:
+                /** @brief Builds a master endpoint whose control queue holds @p queue_frames. */
+                explicit DispatcherRig(std::size_t queue_frames)
+                    : master_(InProcessTransport::make_master(fabric_,
+                                                              master_options(queue_frames)))
+                {
+
+                }
+
                 /** @brief Registers the worker and shares two of the three buffers. */
                 void SetUp() override
                 {
@@ -289,7 +187,12 @@ namespace OffloadDispatcherTests
                     SushiLog::set_log_synchronous(true);
                     SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Warn);
 
-                    register_worker(K_WORKER, K_WORKER_NAME);
+                    ASSERT_TRUE(master_->start(master_events_).is_ok());
+                    worker_ = InProcessTransport::make_worker(fabric_);
+                    ASSERT_TRUE(worker_->start(worker_events_).is_ok());
+                    ASSERT_TRUE(master_events_.wait_for_connections(1, K_WAIT));
+                    worker_peer_ = master_events_.connected().front();
+                    register_worker(worker_peer_, K_WORKER_NAME);
                     registry_.register_buffer(first_.data(), sizeof(Storage));
                     registry_.register_buffer(second_.data(), sizeof(Storage));
                 }
@@ -349,20 +252,70 @@ namespace OffloadDispatcherTests
                 }
 
                 /**
+                 * @brief Returns the dispatches @p events received, once every frame the master
+                 *        sent to @p peer before this call has arrived.
+                 *
+                 * Control frames to one peer keep their order, so a PING queued after the
+                 * dispatches arrives after them.
+                 */
+                std::vector<RecordedFrame> dispatches_at(PeerID peer,
+                                                         RecordingTransportEvents& events)
+                {
+                    const std::size_t pings = events.frame_count(MessageType::Ping);
+                    EXPECT_EQ(send_message(*master_, peer, Wire::PingMessage()),
+                              SendStatus::Queued);
+                    EXPECT_TRUE(events.wait_for_frames(MessageType::Ping, pings + 1, K_WAIT));
+                    return events.frames_of(MessageType::TaskDispatch);
+                }
+
+                /** @brief Returns the dispatches the first worker received. */
+                std::vector<RecordedFrame> offered()
+                {
+                    return dispatches_at(worker_peer_, worker_events_);
+                }
+
+                /** @brief Connects and registers a second worker; returns the master's peer for it. */
+                PeerID connect_second_worker()
+                {
+                    second_worker_ = InProcessTransport::make_worker(fabric_);
+                    EXPECT_TRUE(second_worker_->start(second_events_).is_ok());
+                    EXPECT_TRUE(master_events_.wait_for_connections(2, K_WAIT));
+                    second_peer_ = master_events_.connected().back();
+                    register_worker(second_peer_, K_SECOND_WORKER_NAME);
+                    return second_peer_;
+                }
+
+                /**
                  * @brief Offers a node, takes it back from the pending table as a worker's
                  *        result would, and returns the peer its dispatch went to.
                  */
                 PeerID offload_and_return(Internal::Graph::Node& node)
                 {
-                    const std::size_t sent = transport_.offered.size();
+                    const std::size_t at_first = offered().size();
+                    const std::size_t at_second =
+                        second_worker_ == nullptr
+                            ? 0
+                            : dispatches_at(second_peer_, second_events_).size();
                     EXPECT_TRUE(dispatcher_.try_offload(node));
                     std::vector<PendingTask> taken;
                     pending_.drain(taken);
                     EXPECT_EQ(taken.size(), 1u);
                     dispatcher_.complete_remote(node);
-                    EXPECT_EQ(transport_.offered.size(), sent + 1);
-                    return transport_.offered.size() == sent + 1 ? transport_.offered.back().peer
-                                                                 : PeerID{0};
+                    const bool first_got = offered().size() > at_first;
+                    const bool second_got =
+                        second_worker_ != nullptr &&
+                        dispatches_at(second_peer_, second_events_).size() > at_second;
+                    EXPECT_NE(first_got, second_got) << "exactly one worker gets the dispatch";
+                    return first_got ? worker_peer_ : second_peer_;
+                }
+
+                /** @brief Returns the errors the bound sink was given, in call order. */
+                std::vector<Error> errors() const
+                {
+                    std::vector<Error> given;
+                    for (const auto& failure : sink_.failures())
+                        given.push_back(failure.second);
+                    return given;
                 }
 
                 /** @brief Sends the text of every WARN to warnings_ until TearDown(). */
@@ -414,11 +367,47 @@ namespace OffloadDispatcherTests
                 /// @brief The storage of a buffer no test shares.
                 Storage unshared_{};
 
+                /** @brief Returns the options of a master endpoint with the given queue. */
+                static InProcessMasterOptions master_options(std::size_t queue_frames)
+                {
+                    InProcessMasterOptions options;
+                    options.control_queue_frames = queue_frames;
+                    return options;
+                }
+
+                /// @brief The fabric the master and its workers share.
+                InProcessFabric fabric_;
+
+                /// @brief What the master endpoint reports; it outlives the endpoint.
+                RecordingTransportEvents master_events_;
+
+                /// @brief What the first worker endpoint receives; it outlives the endpoint.
+                RecordingTransportEvents worker_events_;
+
+                /// @brief What the second worker endpoint receives; it outlives the endpoint.
+                RecordingTransportEvents second_events_;
+
+                /// @brief The master endpoint the dispatcher sends through.
+                std::shared_ptr<InProcessTransport> master_;
+
+                /// @brief The first worker endpoint, made by SetUp().
+                std::shared_ptr<InProcessTransport> worker_;
+
+                /// @brief The second worker endpoint, made by connect_second_worker().
+                std::shared_ptr<InProcessTransport> second_worker_;
+
+                /// @brief The master's name for the first worker's connection.
+                PeerID worker_peer_;
+
+                /// @brief The master's name for the second worker's connection.
+                PeerID second_peer_;
+
                 /// @brief The registry the dispatcher reads handles from.
                 BufferRegistry registry_;
 
                 /// @brief The policy the directory asks.
-                std::shared_ptr<FirstWorkerPolicy> policy_ = std::make_shared<FirstWorkerPolicy>();
+                std::shared_ptr<InMemoryOffloadPolicy> policy_ =
+                    std::make_shared<InMemoryOffloadPolicy>();
 
                 /// @brief The directory with the one worker.
                 WorkerDirectory directory_{span<const std::uint8_t>(), policy_};
@@ -426,25 +415,44 @@ namespace OffloadDispatcherTests
                 /// @brief The table that takes each dispatched node.
                 PendingTasks pending_;
 
-                /// @brief The transport that records each dispatch.
-                RecordingTransport transport_;
-
                 /// @brief The table that holds a node a rule makes wait.
                 HeldNodes held_;
 
                 /// @brief The dispatcher under test, on a master named after no rule.
                 OffloadDispatcher dispatcher_{
-                    registry_,  directory_, pending_,
-                    transport_, held_,      NodeFacts{"master", OperatingSystem::Unknown, {}, {}}};
+                    registry_, directory_, pending_,
+                    *master_,  held_,      NodeFacts{"master", OperatingSystem::Unknown, {}, {}}};
 
                 /// @brief The WARNs capture_warnings() collected.
                 std::vector<std::string> warnings_;
 
                 /// @brief The sink a test binds when a Fail rule must end a run.
-                RecordingSink sink_;
+                Internal::Graph::InMemoryOffloadSink sink_;
 
                 /// @brief The level the process had when the test began.
                 SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;
+        };
+
+        /** @brief Runs the dispatcher over a master endpoint with the usual control queue. */
+        class Medium_OffloadDispatcherTest : public DispatcherRig
+        {
+            protected:
+                /** @brief Builds the rig with a queue that holds every frame of a test. */
+                Medium_OffloadDispatcherTest() : DispatcherRig(K_QUEUE_FRAMES)
+                {
+
+                }
+        };
+
+        /** @brief Runs the dispatcher over a master endpoint whose queue refuses every send. */
+        class Medium_FullQueueOffloadDispatcherTest : public DispatcherRig
+        {
+            protected:
+                /** @brief Builds the rig with a queue of no frames. */
+                Medium_FullQueueOffloadDispatcherTest() : DispatcherRig(K_NO_QUEUE)
+                {
+
+                }
         };
     } // namespace
 
@@ -462,15 +470,15 @@ namespace OffloadDispatcherTests
         EXPECT_FALSE(dispatcher_.try_offload(*node));
         EXPECT_TRUE(state->offloadable);
         EXPECT_EQ(state->attempts.load(), K_MAXIMUM_OFFLOAD_ATTEMPTS);
-        EXPECT_TRUE(transport_.offered.empty());
-        EXPECT_EQ(policy_->calls, 0);
+        EXPECT_TRUE(offered().empty());
+        EXPECT_EQ(policy_->calls(), 0);
         EXPECT_EQ(dispatcher_.statistics().declined, 1u);
 
         dispatcher_.complete_local(*node);
         EXPECT_EQ(state->attempts.load(), 0u);
 
         EXPECT_TRUE(dispatcher_.try_offload(*node));
-        EXPECT_EQ(transport_.offered.size(), 1u);
+        EXPECT_EQ(offered().size(), 1u);
         EXPECT_EQ(dispatcher_.statistics().offloaded, 1u);
         EXPECT_EQ(pending_.size(), 1u);
 
@@ -481,19 +489,15 @@ namespace OffloadDispatcherTests
     }
 
     /** @brief Tests that a send the transport refuses leaves no task, no load and a false. */
-    TEST_F(Medium_OffloadDispatcherTest, RefusedSendUndoesThePendingEntry)
+    TEST_F(Medium_FullQueueOffloadDispatcherTest, RefusedSendUndoesThePendingEntry)
     {
         const sushi_ptr<Internal::Graph::Node> node =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
         prepare({node});
         const std::uint32_t output_version = version_of(second_.data());
 
-        transport_.answer = SendStatus::QueueFull;
         EXPECT_FALSE(dispatcher_.try_offload(*node));
 
-        ASSERT_EQ(transport_.offered.size(), 1u);
-        EXPECT_EQ(transport_.offered.front().type, MessageType::TaskDispatch);
-        EXPECT_EQ(transport_.offered.front().peer, K_WORKER);
         EXPECT_EQ(pending_.size(), 0u);
         EXPECT_EQ(worker_inflight(), 0u);
 
@@ -517,14 +521,14 @@ namespace OffloadDispatcherTests
         // With only the table closed the worker is picked, then given back.
         pending_.close();
         EXPECT_FALSE(dispatcher_.try_offload(*node));
-        EXPECT_EQ(policy_->calls, 1);
+        EXPECT_EQ(policy_->calls(), 1);
         EXPECT_EQ(worker_inflight(), 0u);
-        EXPECT_TRUE(transport_.offered.empty());
+        EXPECT_TRUE(offered().empty());
 
         directory_.close();
         EXPECT_FALSE(dispatcher_.try_offload(*node));
-        EXPECT_EQ(policy_->calls, 1);
-        EXPECT_TRUE(transport_.offered.empty());
+        EXPECT_EQ(policy_->calls(), 1);
+        EXPECT_TRUE(offered().empty());
         EXPECT_EQ(pending_.size(), 0u);
         EXPECT_EQ(dispatcher_.statistics().declined, 2u);
         EXPECT_TRUE(node->offload_state()->offloadable);
@@ -546,8 +550,8 @@ namespace OffloadDispatcherTests
         const GlobalBufferID second_id = registry_.lookup(second_.data())->id;
 
         ASSERT_TRUE(dispatcher_.try_offload(*node));
-        ASSERT_EQ(transport_.offered.size(), 1u);
-        const Wire::TaskDispatchMessage before_swap = decode_dispatch(transport_.offered[0]);
+        ASSERT_EQ(offered().size(), 1u);
+        const Wire::TaskDispatchMessage before_swap = decode_dispatch(offered()[0]);
         ASSERT_EQ(before_swap.inputs.size(), 1u);
         ASSERT_EQ(before_swap.outputs.size(), 1u);
         EXPECT_EQ(before_swap.inputs[0].id, first_id);
@@ -565,8 +569,8 @@ namespace OffloadDispatcherTests
         state.live_writes->assign(1, static_cast<void*>(first_.data()));
 
         ASSERT_TRUE(dispatcher_.try_offload(*node));
-        ASSERT_EQ(transport_.offered.size(), 2u);
-        const Wire::TaskDispatchMessage after_swap = decode_dispatch(transport_.offered[1]);
+        ASSERT_EQ(offered().size(), 2u);
+        const Wire::TaskDispatchMessage after_swap = decode_dispatch(offered()[1]);
         ASSERT_EQ(after_swap.inputs.size(), 1u);
         ASSERT_EQ(after_swap.outputs.size(), 1u);
         EXPECT_EQ(after_swap.inputs[0].id, second_id);
@@ -695,7 +699,7 @@ namespace OffloadDispatcherTests
      */
     TEST_F(Medium_OffloadDispatcherTest, Regression_EachPlanPlacesByItsOwnRules)
     {
-        register_worker(K_SECOND_WORKER, K_SECOND_WORKER_NAME);
+        connect_second_worker();
 
         const sushi_ptr<Internal::Graph::Node> first_plan =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
@@ -709,10 +713,10 @@ namespace OffloadDispatcherTests
 
         for (int round = 0; round < 2; ++round)
         {
-            EXPECT_EQ(offload_and_return(*first_plan), K_WORKER) << "round " << round;
-            EXPECT_EQ(offload_and_return(*second_plan), K_SECOND_WORKER) << "round " << round;
+            EXPECT_EQ(offload_and_return(*first_plan), worker_peer_) << "round " << round;
+            EXPECT_EQ(offload_and_return(*second_plan), second_peer_) << "round " << round;
         }
-        EXPECT_EQ(policy_->calls, 0);
+        EXPECT_EQ(policy_->calls(), 0);
     }
 
     /** @brief Tests that a Fail rule naming a worker ends the run of an untagged node. */
@@ -727,13 +731,13 @@ namespace OffloadDispatcherTests
         EXPECT_TRUE(node->offload_state()->offloadable);
 
         EXPECT_TRUE(dispatcher_.try_offload(*node));
-        ASSERT_EQ(sink_.errors.size(), 1u);
-        EXPECT_EQ(sink_.errors.front().code, ErrorCode::InvalidArgument);
-        EXPECT_NE(sink_.errors.front().message.find("\"pin\""), std::string::npos)
-            << sink_.errors.front().message;
-        EXPECT_NE(sink_.errors.front().message.find("names no operation"), std::string::npos)
-            << sink_.errors.front().message;
-        EXPECT_TRUE(transport_.offered.empty());
+        ASSERT_EQ(errors().size(), 1u);
+        EXPECT_EQ(errors().front().code, ErrorCode::InvalidArgument);
+        EXPECT_NE(errors().front().message.find("\"pin\""), std::string::npos)
+            << errors().front().message;
+        EXPECT_NE(errors().front().message.find("names no operation"), std::string::npos)
+            << errors().front().message;
+        EXPECT_TRUE(offered().empty());
     }
 
     /**
@@ -765,8 +769,8 @@ namespace OffloadDispatcherTests
 
         EXPECT_EQ(pin_warnings("names no operation"), 1u);
         EXPECT_EQ(pin_warnings("not shared"), 1u);
-        EXPECT_TRUE(sink_.errors.empty());
-        EXPECT_TRUE(transport_.offered.empty());
+        EXPECT_TRUE(errors().empty());
+        EXPECT_TRUE(offered().empty());
     }
 
     /** @brief Tests that a rule-placed node out of attempts follows the rule's absent policy. */
@@ -780,10 +784,10 @@ namespace OffloadDispatcherTests
         prepare({failing}, pin_rules(AbsentAction::Fail));
         failing->offload_state()->attempts.store(K_MAXIMUM_OFFLOAD_ATTEMPTS);
         EXPECT_TRUE(dispatcher_.try_offload(*failing));
-        ASSERT_EQ(sink_.errors.size(), 1u);
-        EXPECT_EQ(sink_.errors.front().code, ErrorCode::InvalidState);
-        EXPECT_NE(sink_.errors.front().message.find("\"pin\""), std::string::npos)
-            << sink_.errors.front().message;
+        ASSERT_EQ(errors().size(), 1u);
+        EXPECT_EQ(errors().front().code, ErrorCode::InvalidState);
+        EXPECT_NE(errors().front().message.find("\"pin\""), std::string::npos)
+            << errors().front().message;
 
         const sushi_ptr<Internal::Graph::Node> local =
             fixed_node(K_KNOWN_OPERATION, first_.data(), second_.data());
@@ -793,8 +797,8 @@ namespace OffloadDispatcherTests
         EXPECT_FALSE(dispatcher_.try_offload(*local));
         EXPECT_EQ(held_.size(), 0u);
         EXPECT_EQ(pin_warnings("every dispatch"), 1u);
-        EXPECT_EQ(sink_.errors.size(), 1u);
-        EXPECT_TRUE(transport_.offered.empty());
+        EXPECT_EQ(errors().size(), 1u);
+        EXPECT_TRUE(offered().empty());
     }
 
     /** @brief Tests that a node no rule places is declined at the cap and never refused. */
@@ -811,7 +815,7 @@ namespace OffloadDispatcherTests
 
         node->offload_state()->attempts.store(K_MAXIMUM_OFFLOAD_ATTEMPTS);
         EXPECT_FALSE(dispatcher_.try_offload(*node));
-        EXPECT_TRUE(sink_.errors.empty());
+        EXPECT_TRUE(errors().empty());
         EXPECT_TRUE(warnings_.empty());
         EXPECT_EQ(dispatcher_.statistics().declined, 1u);
     }

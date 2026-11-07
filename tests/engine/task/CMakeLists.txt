@@ -23,6 +23,7 @@ sushiruntime_add_module_tests(
         test_offload_state.cpp
         test_placement_memory.cpp
         test_recording_task.cpp
+        test_refusing_offload_sink.cpp
         test_region_link.cpp
         test_small_event_vector.cpp
         test_task.cpp

@@ -10,9 +10,12 @@ A section is named after a test file, and a subsection after the test, helper or
 ## test_offload_dispatcher.cpp
 
 The file tests `OffloadDispatcher`
-over a real `BufferRegistry`, `WorkerDirectory` and `PendingTasks`. The transport is a fake that
-records each `send()` and answers with a status the test sets; the policy is a fake that picks the
-first worker offered and counts its calls. Each worker registers through `accept_hello` and
+over a real `BufferRegistry`, `WorkerDirectory` and `PendingTasks`. The transport is the master
+endpoint of an `InProcessFabric`, with a worker endpoint whose `RecordingTransportEvents` keep each
+dispatch the master sent; a test reads them after a `PING` queued behind them has arrived, since
+control frames to one peer keep their order. The policy is `InMemoryOffloadPolicy`, which picks the
+first worker offered and counts its calls, and the sink is `InMemoryOffloadSink`. One test runs on a
+master whose control queue holds no frame, so every send answers `QueueFull`. Each worker registers through `accept_hello` and
 `accept_proof` under the empty secret; every test registers one, named `worker`, and one test adds
 a second, named `second`. A buffer is a `std::array<float, 16>` whose address is
 shared; no byte of it is read, so the file needs no device and no thread.
@@ -23,9 +26,10 @@ shared; no byte of it is read, so the file needs no device and no thread.
 
 ### `RefusedSendUndoesThePendingEntry`
 
-The transport answers `QueueFull`. The frame was offered once, the pending table is empty, the
-worker's inflight count is 0, `try_offload` returned false and `send_queue_full` and `declined` are
-1. The output keeps the version the frame named, one above the version before the call.
+The master's control queue holds no frame, so the transport answers `QueueFull`. The pending table is
+empty, the worker's inflight count is 0, `try_offload` returned false and `send_queue_full` and
+`declined` are 1. The output keeps the version the frame named, one above the version before the
+call.
 
 | Test | What it proves |
 | --- | --- |
@@ -130,12 +134,12 @@ The tests hold real nodes that no graph runs, at fixed points of the steady cloc
 
 ## test_task_resubmission.cpp
 
-The test hands `reoffer_nodes()` a real node that no graph runs and a sink whose `resubmit()`
-throws, at fixed points of the steady clock.
+The test hands `reoffer_nodes()` a real node that no graph runs and a `RefusingOffloadSink`, whose
+`resubmit()` throws, at fixed points of the steady clock.
 
 | Test | What it proves |
 | --- | --- |
-| `Small_TaskResubmission.Regression_ARefusedReofferForgetsTheFirstOffer` | A node whose first offer `HeldNodes` recorded is refused by the sink: `reoffer_nodes()` releases its scheduling reference, and the next `first_offer()` records the new time instead of the old one. |
+| `Small_TaskResubmission.Regression_ARefusedReofferForgetsTheFirstOffer` | A node whose first offer `HeldNodes` recorded is refused by the sink once: `reoffer_nodes()` releases its scheduling reference, and the next `first_offer()` records the new time instead of the old one. |
 
 ## compile_offload_coordination_log_category.cpp
 

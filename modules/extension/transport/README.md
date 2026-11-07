@@ -17,6 +17,7 @@ It depends on `core`. The in-memory adapter of `Transport`, `InProcessTransport`
 | `message_type.hpp` | `MessageType`, `message_type_name()` |
 | `buffer_handle.hpp` | `GlobalBufferID`, `BufferHandle` |
 | `transport.hpp` | `Transport`, `TransportEvents`, `FrameSource`, `PeerID`, `PeerLoss`, `SendStatus`, `TransportResult` |
+| `recording_transport_events.hpp` | `RecordingTransportEvents`, `RecordedFrame`, `RecordedLoss` |
 
 ## transport.hpp
 
@@ -68,6 +69,15 @@ the streams, and the next round of the pump reports the loss.
 **A worker that cannot connect.** `on_connect_abandoned()` is called once when a worker-side
 transport stops trying: the time allowed for the first connection ran out, or the master was lost
 and reconnecting is off.
+
+### Recording the events
+
+`RecordingTransportEvents` is the in-memory adapter of `TransportEvents`. It keeps the connections that
+opened, the frames with a copy of each payload, the losses and the abandoned connects, in the order the
+transport reported them, and it answers nothing. `wait_for_connections()`, `wait_for_frames()` and
+`wait_for_losses()` return when their count is reached or after the time given, so a test that runs a
+transport needs no sleep. Control frames to one peer keep their order, so a frame sent after the ones
+under test and seen to arrive shows that they arrived too.
 
 ### Exposure
 

@@ -13,6 +13,7 @@ It depends on `core`, `api` and `machine`.
 | Header | Holds |
 | --- | --- |
 | `offload_policy.hpp` | `OffloadPolicy`, `WorkerLoad`, `LeastLoadedOffloadPolicy` |
+| `in_memory_offload_policy.hpp` | `InMemoryOffloadPolicy` |
 | `cluster_statistics.hpp` | `ClusterStatistics`, `WorkerSnapshot` |
 | `placement_decision.hpp` | `PlacementDecision` and its outcomes `RunOnWorker`, `RunLocally`, `WaitForTarget`, `FailRun` |
 
@@ -36,6 +37,13 @@ given another value). It skips a worker whose `free_mem` is not 0 and is below t
 Among the rest it picks the lowest cost, in microseconds: `rtt_micros`, plus the input bytes
 divided by 1000, plus 1000 per inflight task. The two constants are in
 `source/offload_policy.cpp`.
+
+## in_memory_offload_policy.hpp
+
+`InMemoryOffloadPolicy` is the in-memory adapter of `OffloadPolicy`: it picks the first worker it is
+offered and counts its calls in `calls()`. The pick depends on the order of the offer alone, so a test
+decides it by the order in which it registers workers. It is a test double, not a policy to run a
+cluster with.
 
 ## placement_decision.hpp
 

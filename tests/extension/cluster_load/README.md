@@ -16,6 +16,17 @@ The tests need no hardware and no cluster, so they are small.
 | Offload policy tests | The policy tests call `pick_worker()` of `LeastLoadedOffloadPolicy` with synthetic `WorkerLoad` and no cluster. They cover the byte gate, the round-trip and backlog terms of the estimate, the free-memory gate, and the worker that is not alive. |
 | `live_worker`, `pick` | `live_worker` builds the `WorkerLoad` of one live worker. `pick` asks a default policy to place a task of a given size on a list of workers. |
 
+## test_in_memory_offload_policy.cpp
+
+The file tests `InMemoryOffloadPolicy` through the `OffloadPolicy` port with synthetic `WorkerLoad`
+values and no cluster, so every test is small.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_InMemoryOffloadPolicy.PicksTheFirstWorkerItIsOffered` | Of two workers the first in the offer is picked, whatever its id. |
+| `Small_InMemoryOffloadPolicy.PicksNothingFromAnEmptyOffer` | An empty offer picks no worker. |
+| `Small_InMemoryOffloadPolicy.CountsEveryCall` | `calls()` is 0 at first and counts a call with an empty offer too. |
+
 ## compile_cluster_statistics.cpp and compile_placement_decision.cpp
 
 Each file includes one header alone, `cluster_statistics.hpp` and `placement_decision.hpp`, so the header

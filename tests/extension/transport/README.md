@@ -36,6 +36,20 @@ The file tests `MessageType`: sixteen types from 1 and the bytes that name none.
 | `Small_MessageTypeByte.IsAMessageTypeOnlyFromOneToSixteen` | Bytes 1 and 16 name a type; bytes 0 and 17 name none. |
 | `Small_MessageTypeUnknownByte.ANameIsUnknown` | `message_type_name` of a byte outside the enumeration is `UNKNOWN`. |
 
+## test_recording_transport_events.cpp
+
+The file tests `RecordingTransportEvents` through the `TransportEvents` port. It calls the port by hand
+and starts no transport, so every test is small; a wait is given no time, so it answers from what was
+recorded.
+
+| Test | What it proves |
+| --- | --- |
+| `Small_RecordingTransportEvents.RecordsAFrameWithACopyOfItsPayload` | A frame keeps its peer, type, flags and payload, and the copy does not change when the caller's bytes do. |
+| `Small_RecordingTransportEvents.SelectsFramesOfOneTypeInArrivalOrder` | `frames_of()` and `frame_count()` select one type and keep the order of arrival. |
+| `Small_RecordingTransportEvents.RecordsConnectionsAndLossesInOrder` | Connections and losses come back in the order they were reported, a loss with its cause and text. |
+| `Small_RecordingTransportEvents.RecordsTheCauseOfAnAbandonedConnect` | The cause of an abandoned connect is kept. |
+| `Small_RecordingTransportEvents.AWaitIsTrueExactlyFromItsCount` | Each wait is true when its count is reached and false one below it, for connections, losses and frames of one type. |
+
 ## test_transport.cpp
 
 The file tests the vocabulary of `transport.hpp`.

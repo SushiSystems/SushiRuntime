@@ -9,4 +9,5 @@ sushiruntime_add_module_tests(
         test_buffer_handle.cpp
         test_endpoint.cpp
         test_message_type.cpp
+        test_recording_transport_events.cpp
         test_transport.cpp)

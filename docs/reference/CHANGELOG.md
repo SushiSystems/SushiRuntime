@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-11-07 — transport: Added `RecordingTransportEvents`, the in-memory adapter of the `TransportEvents` port, beside the port (RW-105, `recording_transport_events.hpp`).
+- 2026-11-07 — task: Added `RefusingOffloadSink`, an `OffloadSink` whose `resubmit()` throws and counts (RW-105, `refusing_offload_sink.hpp`).
+- 2026-11-07 — cluster_load: Added `InMemoryOffloadPolicy`, the in-memory adapter of the `OffloadPolicy` port (RW-105, `in_memory_offload_policy.hpp`).
 - 2026-11-07 — network_socket: Gave `Socket::connect()` and `Listener::accept()` a `SocketOptionSetter` parameter whose default, `set_socket_option()`, calls the system; a call that passes nothing behaves as before (RW-106, `socket.hpp`).
 - 2026-11-07 — core: Added `AssertionHandlerSlot`, which holds a handler and reports a failure without stopping, and a `version_matches()` form over two versions; the existing calls behave as before (RW-101, `assert.hpp`, `version.hpp`).
 - 2026-11-07 — measurement: Made `CompletionSignal::wait_for()` with a zero budget read the flag and no clock; a positive budget behaves as before (RW-101, `completion_signal.hpp`).
