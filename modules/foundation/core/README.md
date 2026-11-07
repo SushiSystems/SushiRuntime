@@ -14,6 +14,7 @@ The eighteen public headers under `include/SushiRuntime/core/`:
 | `allocation.hpp` | `Detail::Allocation`, a move-only owner of an address and its size, and `Detail::AllocationOwner`, the interface that releases the address |
 | `assert.hpp` | `SR_ASSERT`, `SR_VERIFY` and `SR_FATAL`, `AssertionFailure`, `AssertionHandler`, `AssertionHandlerSlot`, `set_assertion_handler()` and `fail_assertion()` |
 | `bit.hpp` | `popcount_u64` and `countr_zero_u64`, two 64-bit bit queries for the C++17 baseline |
+| `clock.hpp` | `Clock`, the port every timed part reads in nanoseconds, with `SteadyClock`, which reads the steady clock, and `ManualClock`, which a test advances |
 | `common.hpp` | The size constants `K_CACHE_LINE_SIZE`, `K_MAX_NUMA_NODES`, `K_MAX_WORKER_THREADS` and `K_DEFAULT_ALIGNMENT` |
 | `delegate.hpp` | `Delegate`, a move-only callable stored inline, with no heap allocation |
 | `determinism.hpp` | `Determinism`, the contract a recorder states for a node's result: `Unstated`, `Bitwise`, `Tolerant` or `Cosmetic` |

@@ -9,6 +9,7 @@ sushiruntime_add_module_tests(
         test_allocation.cpp
         test_assert.cpp
         test_bit.cpp
+        test_clock.cpp
         test_common.cpp
         test_delegate.cpp
         test_determinism.cpp
