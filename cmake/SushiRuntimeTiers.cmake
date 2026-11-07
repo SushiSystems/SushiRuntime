@@ -62,6 +62,7 @@ set(SUSHIRUNTIME_MODULE_TIERS
     process_environment extension
     cluster_load    extension
     offload_coordination extension
+    cluster_monitor extension
     distributed     extension)
 
 # Consumer, then dependency: the edges allowed between two modules of one tier.
@@ -112,7 +113,14 @@ set(SUSHIRUNTIME_SAME_TIER_EDGES
     offload_coordination cluster_load
     offload_coordination buffer_exchange
     offload_coordination pending_tasks
+    cluster_monitor transport
+    cluster_monitor wire
+    cluster_monitor frame_transport
+    cluster_monitor buffer_exchange
+    cluster_monitor pending_tasks
+    cluster_monitor offload_coordination
     distributed     cluster_load
+    distributed     cluster_monitor
     distributed     offload_coordination
     distributed     buffer_exchange
     distributed     pending_tasks
@@ -146,6 +154,7 @@ set(SUSHIRUNTIME_OPTIONAL_MODULES
     process_environment SR_ENABLE_DISTRIBUTED
     cluster_load    SR_ENABLE_DISTRIBUTED
     offload_coordination SR_ENABLE_DISTRIBUTED
+    cluster_monitor SR_ENABLE_DISTRIBUTED
     distributed     SR_ENABLE_DISTRIBUTED)
 
 # Sets <out> to the position of <tier> in SUSHIRUNTIME_TIER_ORDER, or -1.

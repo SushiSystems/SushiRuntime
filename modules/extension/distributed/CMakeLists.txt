@@ -8,7 +8,6 @@ sushiruntime_add_module(
     SYCL
     SOURCES
         cluster.cpp
-        cluster_monitor.cpp
         dispatch_executor.cpp
         dispatch_job.cpp
         dispatch_recorder.cpp
@@ -43,4 +42,5 @@ sushiruntime_add_module(
         dispatch_deduplication
         process_environment
         offload_coordination
+        cluster_monitor
     EXTERNAL SushiLog::text)

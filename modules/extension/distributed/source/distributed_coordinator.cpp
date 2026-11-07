@@ -43,6 +43,7 @@
 
 #include <SushiLog/text/text_format.hpp>
 
+#include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/distributed/distributed_log_category.hpp>
 #include <SushiRuntime/task/node.hpp>
@@ -63,7 +64,8 @@
 #include <SushiRuntime/offload_coordination/task_resubmission.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
 
-#include "cluster_monitor.hpp"
+#include <SushiRuntime/cluster_monitor/cluster_monitor.hpp>
+
 #include "ping_clock.hpp"
 
 namespace SushiRuntime
@@ -191,7 +193,7 @@ namespace SushiRuntime
                   exchange(registry, options.chunk_bytes),
                   dispatcher(registry, directory, pending, *transport, held, std::move(master)),
                   monitor(directory, pending, held, registry, exchange, *transport,
-                          monitor_options(options)),
+                          monitor_options(options), clock),
                   session_id(session)
             {
                 handle(&Impl::on_hello);
@@ -619,6 +621,9 @@ namespace SushiRuntime
 
             /// @brief Marks and dispatches nodes.
             OffloadDispatcher dispatcher;
+
+            /// @brief The clock the monitor reads.
+            SteadyClock clock;
 
             /// @brief The thread for pings, liveness and deadlines.
             ClusterMonitor monitor;

@@ -19,17 +19,18 @@
 /* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
 /* implied. See the License for the specific language governing           */
 /* permissions and limitations under the License.                         */
+/**************************************************************************/
 
 /**
  * @file unsent_frame_log.hpp
  * @brief Declares log_unsent_frame, the DEBUG line of a control frame the transport refused.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/cluster_monitor/README.md
  */
 
 #pragma once
 
-#include <SushiRuntime/distributed/distributed_log_category.hpp>
+#include <SushiRuntime/cluster_monitor/cluster_monitor_log_category.hpp>
 #include <SushiRuntime/log/logger.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 
@@ -66,7 +67,7 @@ namespace SushiRuntime
         {
             if (status == SendStatus::Queued)
                 return;
-            SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY,
+            SR_LOG_DEBUG(K_CLUSTER_MONITOR_LOG_CATEGORY,
                          "{} to worker {} was not queued: {}; the monitor goes on without it",
                          frame, peer.value, send_status_text(status));
         }

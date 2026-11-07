@@ -255,8 +255,7 @@ lifetime.
 | `offload_coordination/held_nodes.hpp` | `HeldNodes` | the nodes a rule holds for an absent or busy target, and each waiting node's first offer | pool worker, reader thread, monitor thread |
 | `offload_coordination/rule_placement.hpp` | `RulePlacement` | the decision for a node that has a winning rule; the master's own facts | pool worker |
 | `offload_coordination/offload_dispatcher.hpp` | `OffloadDispatcher` | `prepare`, `try_offload`, local and remote settlement of a node | compiling thread, pool worker |
-| `cluster_monitor.hpp` | `ClusterMonitor` | the monitor thread | its own thread |
-| `distributed/unsent_frame_log.hpp` | `Detail::log_unsent_frame()`, `Detail::send_status_text()` | the DEBUG line of a `PING` or `GOODBYE` the transport did not queue | monitor thread |
+| `cluster_monitor/cluster_monitor.hpp` | `ClusterMonitor` | the monitor thread; its own module | its own thread |
 | `ping_clock.hpp` | `make_ping_token()`, `ping_round_trip_micros()` | the clock a `PING` token is read from and measured on | monitor thread, reader thread |
 | `offload_coordination/task_resubmission.hpp` | `resubmit_tasks()`, `reoffer_nodes()` | the one sequence that returns a taken task to the scheduler, and the one that offers held nodes again and forgets the first offer of each node the sink refuses | monitor, reader, the thread in `stop()` |
 | `distributed_coordinator.hpp` | `DistributedCoordinator` | the bricks above, the router, start and stop order | every thread of the seam |
@@ -385,38 +384,18 @@ to the sink, so a caller that reads the statistics when its run returns sees the
 log together, for a peer the directory still knows; a peer it has forgotten was counted and logged
 when it was dropped.
 
-## cluster_monitor.hpp
+## The monitor
 
-### A pass
-
-1. `PING` to every alive worker; the token is `make_ping_token()` of `ping_clock.hpp`.
-2. `take_silent()`: each worker listed gets `GOODBYE(liveness)` and `close_peer()`. The
-   transport then reports the loss and the coordinator returns the worker's tasks.
-3. `take_handshake_overdue()`: each peer listed is closed.
-4. `take_overdue()`, then `resubmit_tasks()`. Each cause has its counter. A WARN names the task
-   and the cause, at most one per worker per second.
-5. `HeldNodes::take_expired()`, then `reoffer_nodes()`: a node whose `Wait` bound passed is
-   offered again, and its rule then runs it on the master. After a reap in step 4 every held node
-   is offered again, since the reaped tasks freed slots.
-
-The monitor's mutex guards only its sleep. An exception out of a pass is logged and the next pass
-runs; tasks a failed `take_overdue()` left in the monitor's list are resubmitted by that next pass.
-
-### Period
-
-`period()` is the smaller of `ClusterMonitorOptions::period` (250 ms) and a quarter of the
-tightest timeout in force (the liveness timeout, or the task deadline when it is not 0), and at
-least 1 ms. `set_liveness_timeout()` and `set_task_deadline()` wake the thread, so a shorter
-timeout applies from the next pass. The sleep also ends at `HeldNodes::earliest()`, and
-`wake_by()` wakes the thread when a node is held whose wait ends before the next pass; the
-coordinator calls it after each `try_offload()` that answers true, which costs two atomic loads
-when nothing is held. `WELCOME` carries the period a worker registered under.
+`ClusterMonitor` lives in the `cluster_monitor` module (`modules/extension/cluster_monitor/README.md`):
+the pass, the period and the wake time, the step that decides a pass and the shell that runs it. The
+coordinator builds it with a `SteadyClock` and calls `start()`, `stop()`, `wake_by()`, the two
+setters, `liveness_timeout()`, `period()` and `statistics()`.
 
 ## ping_clock.hpp
 
 `make_ping_token()` reads the steady clock in microseconds, and `ping_round_trip_micros(token)`
 returns the time since a token was made, 0 for a token from the future and the largest `u32` for a
-longer trip. The monitor makes the token of each `PING`; the coordinator measures the `PONG` that
+longer trip. The monitor makes the token of each `PING` from its `Clock` (microseconds of `now_ns()`); the coordinator measures the `PONG` that
 brings it back. Both are header-only.
 
 ## worker_agent.hpp

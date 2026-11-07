@@ -23,13 +23,13 @@
 /**
  * @file test_unsent_frame_log.cpp
  * @brief Tests log_unsent_frame, the line the cluster monitor writes for a refused control frame.
- * @see tests/extension/distributed/README.md
+ * @see tests/extension/cluster_monitor/README.md
  * @author Mustafa Garip
  */
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/distributed/unsent_frame_log.hpp>
+#include <SushiRuntime/cluster_monitor/unsent_frame_log.hpp>
 #include <SushiRuntime/log/sushiruntime_log_project.hpp>
 #include <SushiRuntime/test_runner/log_capture.hpp>
 #include <SushiRuntime/transport/transport.hpp>
@@ -55,7 +55,7 @@ TEST(Small_UnsentFrameLog, ARefusedFrameLogsOneDebugLine)
     Distributed::Detail::log_unsent_frame("GOODBYE", PeerID{7}, SendStatus::UnknownPeer);
 
     ASSERT_EQ(capture.count_at(SushiLog::LogLevel::Debug), 1u);
-    EXPECT_EQ(capture.count_in("distributed"), 1u);
+    EXPECT_EQ(capture.count_in("cluster_monitor"), 1u);
     EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Debug, "GOODBYE to worker 7"));
     EXPECT_TRUE(capture.has_message(SushiLog::LogLevel::Debug, "no open connection"));
 }

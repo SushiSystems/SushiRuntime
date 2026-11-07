@@ -23,61 +23,41 @@
 
 /**
  * @file cluster_monitor.cpp
- * @brief Implements ClusterMonitor, the thread that pings, closes silent peers and reaps tasks.
+ * @brief Implements ClusterMonitor, the shell that runs plan_pass() on a thread.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/cluster_monitor/README.md
  */
 
-#include "cluster_monitor.hpp"
+#include <SushiRuntime/cluster_monitor/cluster_monitor.hpp>
 
 #include <algorithm>
 #include <exception>
 #include <utility>
 
 #include <SushiRuntime/log/logger.hpp>
-#include <SushiRuntime/distributed/distributed_log_category.hpp>
-#include <SushiRuntime/distributed/unsent_frame_log.hpp>
+#include <SushiRuntime/cluster_monitor/cluster_monitor_log_category.hpp>
+#include <SushiRuntime/cluster_monitor/unsent_frame_log.hpp>
 #include <SushiRuntime/core/span.hpp>
 #include <SushiRuntime/task/offload_sink.hpp>
 #include <SushiRuntime/frame_transport/frame_sending.hpp>
 #include <SushiRuntime/wire/wire_messages.hpp>
 #include <SushiRuntime/offload_coordination/task_resubmission.hpp>
 
-#include "ping_clock.hpp"
-
 namespace SushiRuntime
 {
     namespace Distributed
     {
-        namespace
-        {
-            /** @brief Holds the passes that fit into the tightest timeout the monitor applies. */
-            constexpr std::int64_t K_PASSES_PER_TIMEOUT = 4;
-
-            /** @brief Holds the shortest time between two passes, in milliseconds. */
-            constexpr std::int64_t K_MINIMUM_PERIOD_MS = 1;
-
-            /** @brief Holds the time in which one worker gets at most one reap warning. */
-            constexpr std::chrono::seconds K_REAP_WARNING_INTERVAL{1};
-
-            /** @brief Holds the words a log line uses for each ReapCause, by its value. */
-            constexpr const char* K_REAP_CAUSE_WORDS[] = {
-                "no result within the task deadline",
-                "the worker did not acknowledge the dispatch",
-                "the worker's heartbeats stopped listing it",
-            };
-        } // namespace
-
         ClusterMonitor::ClusterMonitor(WorkerDirectory& directory, PendingTasks& pending,
                                        HeldNodes& held, BufferRegistry& registry,
                                        BufferExchange& exchange, Transport& transport,
-                                       const ClusterMonitorOptions& options)
+                                       const ClusterMonitorOptions& options, const Clock& clock)
             : directory_(directory),
               pending_(pending),
               held_(held),
               registry_(registry),
               exchange_(exchange),
               transport_(transport),
+              clock_(clock),
               options_(options),
               liveness_timeout_ms_(options.liveness_timeout.count()),
               task_deadline_ms_(options.task_deadline.count())
@@ -139,14 +119,9 @@ namespace SushiRuntime
 
         std::chrono::milliseconds ClusterMonitor::period() const noexcept
         {
-            std::int64_t tightest = liveness_timeout_ms_.load(std::memory_order_relaxed);
-            const std::int64_t deadline = task_deadline_ms_.load(std::memory_order_relaxed);
-            if (deadline > 0 && deadline < tightest)
-                tightest = deadline;
-
-            const std::int64_t wanted =
-                std::min<std::int64_t>(options_.period.count(), tightest / K_PASSES_PER_TIMEOUT);
-            return std::chrono::milliseconds(std::max(wanted, K_MINIMUM_PERIOD_MS));
+            return pass_period(
+                options_.period, liveness_timeout(),
+                std::chrono::milliseconds(task_deadline_ms_.load(std::memory_order_relaxed)));
         }
 
         ClusterMonitorStatistics ClusterMonitor::statistics() const noexcept
@@ -161,6 +136,13 @@ namespace SushiRuntime
             return snapshot;
         }
 
+        std::chrono::steady_clock::time_point ClusterMonitor::now() const noexcept
+        {
+            return std::chrono::steady_clock::time_point(
+                std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                    std::chrono::nanoseconds(clock_.now_ns())));
+        }
+
         void ClusterMonitor::run() noexcept
         {
             std::unique_lock<std::mutex> lock(mutex_);
@@ -169,16 +151,16 @@ namespace SushiRuntime
                 lock.unlock();
                 try
                 {
-                    run_pass();
+                    run_pass(*sink_);
                 }
                 catch (const std::exception& error)
                 {
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "cluster monitor pass failed: {}; the next pass runs in {} ms",
+                    SR_LOG_ERROR(K_CLUSTER_MONITOR_LOG_CATEGORY, "cluster monitor pass failed: {}; the next pass runs in {} ms",
                                  error.what(), period().count());
                 }
                 catch (...)
                 {
-                    SR_LOG_ERROR(K_DISTRIBUTED_LOG_CATEGORY, "cluster monitor pass failed: unknown exception; the next pass "
+                    SR_LOG_ERROR(K_CLUSTER_MONITOR_LOG_CATEGORY, "cluster monitor pass failed: unknown exception; the next pass "
                                  "runs in {} ms",
                                  period().count());
                 }
@@ -187,39 +169,51 @@ namespace SushiRuntime
                 // A setter's notify ends the wait early, so the next pass reads the new period.
                 if (!stopping_)
                 {
+                    const std::chrono::steady_clock::time_point at = now();
                     const std::chrono::steady_clock::time_point next =
-                        std::min({std::chrono::steady_clock::now() + period(), held_.earliest(),
-                                  pending_.earliest_deadline()});
+                        next_pass_at(at, period(), held_.earliest(), pending_.earliest_deadline());
                     next_pass_.store(next.time_since_epoch().count(), std::memory_order_release);
-                    wake_.wait_until(lock, next);
+                    wake_.wait_for(lock, next - at);
                     next_pass_.store(K_IN_A_PASS, std::memory_order_release);
                 }
             }
         }
 
-        void ClusterMonitor::run_pass()
+        void ClusterMonitor::run_pass(Internal::Graph::OffloadSink& sink)
         {
             ping_workers();
 
-            const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-            close_silent_workers(now);
-            close_handshake_overdue(now);
-            reap_overdue_tasks(now);
-            release_expired_holds(now);
+            const std::chrono::steady_clock::time_point at = now();
+            const MonitorActions actions = plan_pass(state_, gather(at), at);
+
+            close_peers(actions);
+            resubmit_reaped(actions, sink);
+            log_reaped_tasks(actions);
+            release_expired_holds(at, sink);
         }
 
-        void ClusterMonitor::release_expired_holds(std::chrono::steady_clock::time_point now)
+        MonitorFindings ClusterMonitor::gather(std::chrono::steady_clock::time_point at)
         {
-            nodes_.clear();
-            held_.take_expired(now, nodes_);
-            if (nodes_.empty())
-                return;
+            MonitorFindings findings;
 
-            const std::size_t reoffered = reoffer_nodes(nodes_, held_, *sink_);
-            nodes_.clear();
-            SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY,
-                         "{} held nodes waited out their rule's bound and are offered again",
-                         reoffered);
+            peers_.clear();
+            directory_.take_silent(at, liveness_timeout(), peers_);
+            findings.silent = peers_;
+
+            peers_.clear();
+            directory_.take_handshake_overdue(at, options_.handshake_timeout, peers_);
+            findings.handshake_overdue = peers_;
+
+            OverdueLimits limits;
+            limits.task_deadline =
+                std::chrono::milliseconds(task_deadline_ms_.load(std::memory_order_relaxed));
+            limits.acknowledge_timeout = liveness_timeout();
+
+            // tasks_ keeps what a failed call left in it, so the next pass still resubmits it.
+            pending_.take_overdue(at, limits, tasks_);
+            for (const PendingTask& task : tasks_)
+                findings.reaped.push_back(ReapedTask{task.task_id, task.worker, task.cause});
+            return findings;
         }
 
         void ClusterMonitor::ping_workers()
@@ -228,7 +222,7 @@ namespace SushiRuntime
             directory_.list_workers(peers_);
 
             Wire::PingMessage ping;
-            ping.token = make_ping_token();
+            ping.token = clock_.now_ns() / 1000;
             for (const PeerID peer : peers_)
             {
                 // A PING that is not queued costs one sample; liveness counts every frame.
@@ -237,16 +231,12 @@ namespace SushiRuntime
             }
         }
 
-        void ClusterMonitor::close_silent_workers(std::chrono::steady_clock::time_point now)
+        void ClusterMonitor::close_peers(const MonitorActions& actions)
         {
-            const std::chrono::milliseconds limit = liveness_timeout();
-            peers_.clear();
-            directory_.take_silent(now, limit, peers_);
-
             Wire::GoodbyeMessage goodbye;
             goodbye.reason = Wire::GoodbyeReason::Liveness;
             goodbye.text = "no frame within the liveness timeout";
-            for (const PeerID peer : peers_)
+            for (const PeerID peer : actions.goodbye_and_close)
             {
                 // close_peer() gives a queued control frame time to leave, so the worker reads why.
                 Detail::log_unsent_frame("GOODBYE", peer,
@@ -254,87 +244,71 @@ namespace SushiRuntime
                 transport_.close_peer(peer);
             }
 
-            for (const PeerID peer : peers_)
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "worker {} sent no frame for more than {} ms; its connection is "
+            for (const PeerID peer : actions.goodbye_and_close)
+                SR_LOG_WARN(K_CLUSTER_MONITOR_LOG_CATEGORY, "worker {} sent no frame for more than {} ms; its connection is "
                             "closed and its tasks return to the scheduler",
-                            peer.value, limit.count());
-        }
+                            peer.value, liveness_timeout().count());
 
-        void ClusterMonitor::close_handshake_overdue(std::chrono::steady_clock::time_point now)
-        {
-            peers_.clear();
-            directory_.take_handshake_overdue(now, options_.handshake_timeout, peers_);
-
-            for (const PeerID peer : peers_)
+            for (const PeerID peer : actions.close)
                 transport_.close_peer(peer);
 
-            for (const PeerID peer : peers_)
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "peer {} sent no valid handshake in {} ms; closed", peer.value,
+            for (const PeerID peer : actions.close)
+                SR_LOG_WARN(K_CLUSTER_MONITOR_LOG_CATEGORY, "peer {} sent no valid handshake in {} ms; closed", peer.value,
                             options_.handshake_timeout.count());
         }
 
-        void ClusterMonitor::reap_overdue_tasks(std::chrono::steady_clock::time_point now)
+        void ClusterMonitor::resubmit_reaped(const MonitorActions& actions,
+                                             Internal::Graph::OffloadSink& sink)
         {
-            OverdueLimits limits;
-            limits.task_deadline =
-                std::chrono::milliseconds(task_deadline_ms_.load(std::memory_order_relaxed));
-            limits.acknowledge_timeout = liveness_timeout();
-
-            // tasks_ keeps what a failed call left in it, so the next pass still resubmits it.
-            pending_.take_overdue(now, limits, tasks_);
             if (tasks_.empty())
                 return;
 
             // The counters rise before the nodes return, so a run that ends on them reads them.
-            std::atomic<std::uint64_t>* const counters[] = {
-                &reaped_deadline_, &reaped_unacknowledged_, &reaped_lost_result_};
-            for (const PendingTask& task : tasks_)
-                counters[static_cast<std::size_t>(task.cause)]->fetch_add(
-                    1, std::memory_order_relaxed);
+            reaped_deadline_.fetch_add(actions.reaped.deadline, std::memory_order_relaxed);
+            reaped_unacknowledged_.fetch_add(actions.reaped.unacknowledged,
+                                             std::memory_order_relaxed);
+            reaped_lost_result_.fetch_add(actions.reaped.lost_result, std::memory_order_relaxed);
 
             const std::size_t taken = tasks_.size();
             redispatched_.fetch_add(taken, std::memory_order_relaxed);
             const std::size_t resubmitted = resubmit_tasks(
                 SushiRuntime::span<PendingTask>(tasks_.data(), tasks_.size()), registry_,
-                exchange_, directory_, *sink_);
+                exchange_, directory_, sink);
             redispatched_.fetch_sub(taken - resubmitted, std::memory_order_relaxed);
+            tasks_.clear();
+
+            if (!actions.reoffer_held)
+                return;
 
             // The reaped tasks freed slots, which a node held for a busy worker may take.
             nodes_.clear();
             held_.take_all(nodes_);
-            reoffer_nodes(nodes_, held_, *sink_);
+            reoffer_nodes(nodes_, held_, sink);
             nodes_.clear();
-
-            std::vector<PendingTask> reaped;
-            reaped.swap(tasks_);
-
-            log_reaped_tasks(reaped, now);
-
-            reaped.clear();
-            tasks_.swap(reaped);
         }
 
-        void ClusterMonitor::log_reaped_tasks(const std::vector<PendingTask>& reaped,
-                                              std::chrono::steady_clock::time_point now)
+        void ClusterMonitor::release_expired_holds(std::chrono::steady_clock::time_point at,
+                                                   Internal::Graph::OffloadSink& sink)
         {
-            for (auto entry = last_reap_warning_.begin(); entry != last_reap_warning_.end();)
-            {
-                if (now - entry->second >= K_REAP_WARNING_INTERVAL)
-                    entry = last_reap_warning_.erase(entry);
-                else
-                    ++entry;
-            }
+            nodes_.clear();
+            held_.take_expired(at, nodes_);
+            if (nodes_.empty())
+                return;
 
-            for (const PendingTask& task : reaped)
-            {
-                if (!last_reap_warning_.try_emplace(task.worker.value, now).second)
-                    continue;
+            const std::size_t reoffered = reoffer_nodes(nodes_, held_, sink);
+            nodes_.clear();
+            SR_LOG_DEBUG(K_CLUSTER_MONITOR_LOG_CATEGORY,
+                         "{} held nodes waited out their rule's bound and are offered again",
+                         reoffered);
+        }
 
-                SR_LOG_WARN(K_DISTRIBUTED_LOG_CATEGORY, "task {} taken back from worker {}: {}; it is resubmitted to the "
+        void ClusterMonitor::log_reaped_tasks(const MonitorActions& actions) const
+        {
+            for (const ReapWarning& warning : actions.warnings)
+                SR_LOG_WARN(K_CLUSTER_MONITOR_LOG_CATEGORY, "task {} taken back from worker {}: {}; it is resubmitted to the "
                             "scheduler",
-                            task.task_id, task.worker.value,
-                            K_REAP_CAUSE_WORDS[static_cast<std::size_t>(task.cause)]);
-            }
+                            warning.task_id, warning.worker.value,
+                            reap_cause_words(warning.cause));
         }
 
     } // namespace Distributed

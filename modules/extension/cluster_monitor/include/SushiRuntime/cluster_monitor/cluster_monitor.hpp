@@ -25,7 +25,7 @@
  * @file cluster_monitor.hpp
  * @brief Declares ClusterMonitor, the master's thread for pings, liveness and deadlines.
  * @author Mustafa Garip
- * @see modules/extension/distributed/README.md
+ * @see modules/extension/cluster_monitor/README.md
  */
 
 #pragma once
@@ -37,9 +37,9 @@
 #include <cstdint>
 #include <mutex>
 #include <thread>
-#include <unordered_map>
 #include <vector>
 
+#include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/buffer_exchange/buffer_exchange.hpp>
@@ -47,7 +47,7 @@
 #include <SushiRuntime/pending_tasks/pending_tasks.hpp>
 #include <SushiRuntime/offload_coordination/held_nodes.hpp>
 #include <SushiRuntime/offload_coordination/worker_directory.hpp>
-
+#include <SushiRuntime/cluster_monitor/cluster_monitor_step.hpp>
 
 namespace SushiRuntime
 {
@@ -91,19 +91,21 @@ namespace SushiRuntime
         /**
          * @brief Runs the thread that pings workers, closes silent peers and reaps tasks.
          *
-         * A pass: PING every alive worker, with the send time in microseconds as the token;
-         * close_peer() what take_silent() and take_handshake_overdue() list; resubmit_tasks()
-         * what take_overdue() returns; reoffer_nodes() what HeldNodes::take_expired() returns,
-         * also when the earliest held wait ends. The mutex only guards the sleep.
+         * A shell over plan_pass(): a pass pings, gathers what the directory and the table
+         * list, lets plan_pass() decide and applies the actions. It reads the Clock port, so
+         * a test that calls run_pass() moves a ManualClock. The mutex only guards the sleep.
          */
         class SUSHIRUNTIME_API ClusterMonitor final
         {
             public:
-                /** @brief Builds a monitor over bricks that outlive it; no thread runs yet. */
+                /**
+                 * @brief Builds a monitor over bricks that outlive it; no thread runs yet.
+                 * @param clock The clock every pass and sleep reads; outlives the monitor.
+                 */
                 ClusterMonitor(WorkerDirectory& directory, PendingTasks& pending,
                                HeldNodes& held, BufferRegistry& registry,
                                BufferExchange& exchange, Transport& transport,
-                               const ClusterMonitorOptions& options);
+                               const ClusterMonitorOptions& options, const Clock& clock);
 
                 /** @brief Calls stop(). */
                 ~ClusterMonitor();
@@ -118,6 +120,15 @@ namespace SushiRuntime
                  * @param sink Receives the tasks taken back; outlives stop().
                  */
                 void start(Internal::Graph::OffloadSink& sink);
+
+                /**
+                 * @brief Runs one pass on the calling thread, without a thread of the monitor.
+                 *
+                 * The thread's loop calls it; a test that owns the clock calls it instead of
+                 * waiting for the thread.
+                 * @param sink Receives the tasks taken back.
+                 */
+                void run_pass(Internal::Graph::OffloadSink& sink);
 
                 /**
                  * @brief Wakes the thread and joins it; a second call does nothing.
@@ -153,27 +164,28 @@ namespace SushiRuntime
                 /** @brief Runs passes until stop(). */
                 void run() noexcept;
 
-                /** @brief Runs one pass: pings, silent peers, handshake limits, task limits. */
-                void run_pass();
+                /** @brief Returns the clock's reading as a point of the steady clock. */
+                [[nodiscard]] std::chrono::steady_clock::time_point now() const noexcept;
 
                 /** @brief Sends PING to every alive worker, with the send time as the token. */
                 void ping_workers();
 
-                /** @brief Closes the workers silent past the liveness timeout. */
-                void close_silent_workers(std::chrono::steady_clock::time_point now);
+                /** @brief Takes what the directory, the table and the holds report at @p at. */
+                [[nodiscard]] MonitorFindings gather(std::chrono::steady_clock::time_point at);
 
-                /** @brief Closes the peers that did not finish the handshake in time. */
-                void close_handshake_overdue(std::chrono::steady_clock::time_point now);
+                /** @brief Closes the peers the step lists, sending GOODBYE to the silent ones. */
+                void close_peers(const MonitorActions& actions);
 
-                /** @brief Takes the tasks past a limit, resubmits them and counts each cause. */
-                void reap_overdue_tasks(std::chrono::steady_clock::time_point now);
+                /** @brief Counts the reaped tasks and resubmits them; the step's counts rise first. */
+                void resubmit_reaped(const MonitorActions& actions,
+                                     Internal::Graph::OffloadSink& sink);
 
                 /** @brief Re-offers the held nodes whose wait has ended. */
-                void release_expired_holds(std::chrono::steady_clock::time_point now);
+                void release_expired_holds(std::chrono::steady_clock::time_point at,
+                                           Internal::Graph::OffloadSink& sink);
 
-                /** @brief Logs the reaped tasks, at most one line per worker per second. */
-                void log_reaped_tasks(const std::vector<PendingTask>& reaped,
-                                      std::chrono::steady_clock::time_point now);
+                /** @brief Logs the reaped tasks the step kept. */
+                void log_reaped_tasks(const MonitorActions& actions) const;
 
                 /// @brief Sessions, liveness and handshake deadlines.
                 WorkerDirectory& directory_;
@@ -192,6 +204,9 @@ namespace SushiRuntime
 
                 /// @brief Carries the pings and closes peers.
                 Transport& transport_;
+
+                /// @brief Read for every pass and every sleep.
+                const Clock& clock_;
 
                 /// @brief The timings; liveness and deadline are mirrored in the atomics.
                 ClusterMonitorOptions options_;
@@ -236,21 +251,20 @@ namespace SushiRuntime
                 /// @brief Tasks the monitor resubmitted.
                 std::atomic<std::uint64_t> redispatched_{0};
 
-                /// @brief The peers one step of a pass lists; touched by the monitor thread only.
+                /// @brief What the step remembers; touched by the pass runner only.
+                MonitorState state_;
+
+                /// @brief The peers one step of a pass lists; touched by the pass runner only.
                 std::vector<PeerID> peers_;
 
-                /// @brief The held nodes one pass re-offers; touched by the monitor thread only.
+                /// @brief The held nodes one pass re-offers; touched by the pass runner only.
                 std::vector<Internal::Graph::Node*> nodes_;
 
-                /// @brief The tasks one pass took back; touched by the monitor thread only.
+                /// @brief The tasks one pass took back; touched by the pass runner only.
                 std::vector<PendingTask> tasks_;
 
-                /// @brief The encoded PING or GOODBYE; touched by the monitor thread only.
+                /// @brief The encoded PING or GOODBYE; touched by the pass runner only.
                 std::vector<std::byte> payload_;
-
-                /// @brief The time of the last reap warning per worker id value.
-                std::unordered_map<std::uint32_t, std::chrono::steady_clock::time_point>
-                    last_reap_warning_;
         };
 
     } // namespace Distributed
