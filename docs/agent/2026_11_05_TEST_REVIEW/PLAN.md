@@ -41,6 +41,7 @@ writes each add. Nothing in a module job changes production code except a seam a
 | R3 | Split test_recorder.cpp and test_dynamic_graph.cpp, `make_host_context()` in tests/support, merge the profiler pipeline headers, stale test includes, EpochManager off process-wide state | R1 | partly done: the splits and the merge by 26816063, `make_host_context()` by 37246149; EpochManager is off process-wide state (decision 39); the stale includes outside the split files are dropped (30 files, each still passes `clang -fsyntax-only`); the split files keep theirs |
 | R4 | One build, small and medium run after R1 to R3, fixed until green; per-module counts | R2, R3 | todo: build and small 1324 of 1324 green at 37246149; medium 432 of 436, four reconnect timeouts in MasterLink and DispatchExecutor tests, fixed unverified (the ThreadDrive got no timed wake after a loss); medium rerun needed |
 | R5 | Decision 54: the enumerator and placement on a plain `DeviceDescriptor`, the in-memory adapters device-free | R2 | partly done: topology and the in-memory queue factory; placement without queues is RW-131 |
+| R6 | RW-129 rest, the task_scheduler.cpp split, the audit's LOGIC cases left, the per-module recount | R5 | partly done: decisions 55 and 56; left: the raw bodies of test_runtime_context.cpp and test_distributed.cpp, the medium audit's remaining LOGIC cases, the recount |
 
 ## Acceptance
 
