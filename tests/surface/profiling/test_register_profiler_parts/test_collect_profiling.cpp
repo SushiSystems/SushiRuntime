@@ -46,6 +46,7 @@
 #include <SushiRuntime/report/recording_observer.hpp>
 
 #include "observed_pipeline.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -115,10 +116,15 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that every record joins a table row by its node index, and the rows are the nodes the caller named. */
-TEST(Medium_CollectProfiling, TheTableAndTheRecordsJoinByNodeIndex)
+/** @brief Fixture of the collect tests that run on a host runtime. */
+class Small_CollectProfiling : public TestSupport::HostRuntimeTest
 {
-    ObservedPipeline pipeline;
+};
+
+/** @brief Tests that every record joins a table row by its node index, and the rows are the nodes the caller named. */
+TEST_F(Small_CollectProfiling, TheTableAndTheRecordsJoinByNodeIndex)
+{
+    ObservedPipeline pipeline(runtime());
 
     const RunObservation observation = observe_one_run(pipeline);
 
@@ -128,9 +134,9 @@ TEST(Medium_CollectProfiling, TheTableAndTheRecordsJoinByNodeIndex)
 }
 
 /** @brief Tests that the table rows carry the operation and the cost the caller stated, and no cost where none was. */
-TEST(Medium_CollectProfiling, TheTableCarriesTheOperationAndTheCostTheCallerStated)
+TEST_F(Small_CollectProfiling, TheTableCarriesTheOperationAndTheCostTheCallerStated)
 {
-    ObservedPipeline pipeline;
+    ObservedPipeline pipeline(runtime());
 
     const RunObservation observation = observe_one_run(pipeline);
 
@@ -178,9 +184,9 @@ TEST(Medium_CollectProfiling, APlanRunOnTheChainFillsTheSameTable)
 }
 
 /** @brief Tests that a run that lost no dispatch carries zero drops. */
-TEST(Medium_CollectProfiling, CarriesNoDropWhenNoneWasLost)
+TEST_F(Small_CollectProfiling, CarriesNoDropWhenNoneWasLost)
 {
-    ObservedPipeline pipeline;
+    ObservedPipeline pipeline(runtime());
 
     const RunObservation observation = observe_one_run(pipeline);
 
@@ -189,9 +195,9 @@ TEST(Medium_CollectProfiling, CarriesNoDropWhenNoneWasLost)
 }
 
 /** @brief Tests that a run that lost no dispatch logs nothing. */
-TEST(Medium_CollectProfiling, ALossFreeRunLogsNothing)
+TEST_F(Small_CollectProfiling, ALossFreeRunLogsNothing)
 {
-    ObservedPipeline pipeline;
+    ObservedPipeline pipeline(runtime());
     TestRunner::LogCapture capture;
 
     static_cast<void>(observe_one_run(pipeline));
@@ -210,9 +216,9 @@ namespace
 } // namespace
 
 /** @brief Tests that a run longer than its ledger was sized for carries the drops, and a drop plus a record is a dispatch. */
-TEST(Medium_CollectProfiling, CarriesTheDropCountsOfTheRun)
+TEST_F(Small_CollectProfiling, CarriesTheDropCountsOfTheRun)
 {
-    ObservedPipeline pipeline;
+    ObservedPipeline pipeline(runtime());
     const auto observer = std::make_shared<RecordingObserver>();
     const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
 
@@ -228,9 +234,9 @@ TEST(Medium_CollectProfiling, CarriesTheDropCountsOfTheRun)
 }
 
 /** @brief Tests that a run which overflowed its ledger logs one WARN line for the run, not one per dispatch. */
-TEST(Medium_CollectProfiling, AnOverflowedRunLogsOneWarn)
+TEST_F(Small_CollectProfiling, AnOverflowedRunLogsOneWarn)
 {
-    ObservedPipeline pipeline;
+    ObservedPipeline pipeline(runtime());
     const auto observer = std::make_shared<RecordingObserver>();
     const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
     TestRunner::LogCapture capture;
@@ -242,9 +248,9 @@ TEST(Medium_CollectProfiling, AnOverflowedRunLogsOneWarn)
 }
 
 /** @brief Tests that the run after an overflow sizes its ledger for the demand and loses nothing. */
-TEST(Medium_CollectProfiling, TheRunAfterAnOverflowLosesNothing)
+TEST_F(Small_CollectProfiling, TheRunAfterAnOverflowLosesNothing)
 {
-    ObservedPipeline pipeline;
+    ObservedPipeline pipeline(runtime());
     const auto observer = std::make_shared<RecordingObserver>();
     const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
     int calls = 0;

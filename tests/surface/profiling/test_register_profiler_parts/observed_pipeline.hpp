@@ -62,7 +62,13 @@ namespace ObserverTests
 
             /** @brief Takes the program's runtime of @p shape and records the three nodes. */
             explicit ObservedPipeline(const TestSupport::RuntimeShape& shape = scheduler_config())
-                : runtime_(TestSupport::RuntimeEnvironment::runtime(shape)),
+                : ObservedPipeline(TestSupport::RuntimeEnvironment::runtime(shape))
+            {
+            }
+
+            /** @brief Records the three nodes on @p runtime, which must outlive the pipeline. */
+            explicit ObservedPipeline(SushiRuntime::Runtime& runtime)
+                : runtime_(runtime),
                   first_(runtime_.buffer<float>(K_ELEMENTS).value()),
                   second_(runtime_.buffer<float>(K_ELEMENTS).value()),
                   third_(runtime_.buffer<float>(K_ELEMENTS).value()),

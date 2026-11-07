@@ -79,7 +79,18 @@ namespace SessionTests
             explicit SessionPipeline(const TestSupport::RuntimeShape& shape = scheduler_config(),
                                      SushiRuntime::DeviceIndex device = SushiRuntime::DeviceIndex{0},
                                      std::size_t elements = K_ELEMENTS)
-                : runtime_(TestSupport::RuntimeEnvironment::runtime(shape)),
+                : SessionPipeline(TestSupport::RuntimeEnvironment::runtime(shape), device, elements)
+            {
+            }
+
+            /**
+             * @brief Records the three nodes over @p elements elements on @p runtime, which must outlive the pipeline.
+             * @param device The device whose memory the buffers live in, and so the one the nodes run on.
+             */
+            explicit SessionPipeline(SushiRuntime::Runtime& runtime,
+                                     SushiRuntime::DeviceIndex device = SushiRuntime::DeviceIndex{0},
+                                     std::size_t elements = K_ELEMENTS)
+                : runtime_(runtime),
                   first_(runtime_.buffer<float>(elements, device).value()),
                   second_(runtime_.buffer<float>(elements, device).value()),
                   third_(runtime_.buffer<float>(elements, device).value()),

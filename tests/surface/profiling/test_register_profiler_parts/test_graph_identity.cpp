@@ -43,7 +43,7 @@
 #include <SushiRuntime/report/recording_observer.hpp>
 
 #include "observed_pipeline.hpp"
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 using ObserverTests::ObservedPipeline;
@@ -66,9 +66,9 @@ namespace
 namespace
 {
     /** @brief Returns the label of the table a run of a graph labelled @p label is observed with; null label sets none. */
-    std::string observed_label_of_a_graph(const char* label)
+    std::string observed_label_of_a_graph(Runtime& runtime, const char* label)
     {
-        ObservedPipeline pipeline;
+        ObservedPipeline pipeline(runtime);
         if (label != nullptr)
             pipeline.graph().set_label(label);
         const auto observer = std::make_shared<RecordingObserver>();
@@ -82,9 +82,8 @@ namespace
     }
 
     /** @brief Returns the label of the table a run of a dynamic graph labelled @p label is observed with. */
-    std::string observed_label_of_a_dynamic_graph(const char* label)
+    std::string observed_label_of_a_dynamic_graph(Runtime& runtime, const char* label)
     {
-        Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
         auto buffer = runtime.buffer<float>(K_N).value();
         float* data = buffer.data();
         auto world = runtime.dynamic_graph();
@@ -100,18 +99,33 @@ namespace
     }
 } // namespace
 
-/** @brief Tests that the label of a graph, static or dynamic, is the label of the table its runs are observed with, and none is empty. */
-TEST(Medium_GraphLabel, TheTableCarriesTheLabelOfItsGraph)
+/** @brief Fixture of the tests of the label of a graph and of its table, run on a host runtime. */
+class Small_GraphLabel : public TestSupport::HostRuntimeTest
 {
-    EXPECT_EQ(observed_label_of_a_graph("encoder"), "encoder");
-    EXPECT_EQ(observed_label_of_a_graph(nullptr), "") << "a graph with no label has an empty one";
-    EXPECT_EQ(observed_label_of_a_dynamic_graph("world"), "world");
+};
+
+/** @brief Fixture of the tests of the options a node is recorded with, run on a host runtime. */
+class Small_NodeOptions : public TestSupport::HostRuntimeTest
+{
+};
+
+/** @brief Fixture of the tests of the id of a graph, run on a host runtime. */
+class Small_GraphId : public TestSupport::HostRuntimeTest
+{
+};
+
+/** @brief Tests that the label of a graph, static or dynamic, is the label of the table its runs are observed with, and none is empty. */
+TEST_F(Small_GraphLabel, TheTableCarriesTheLabelOfItsGraph)
+{
+    EXPECT_EQ(observed_label_of_a_graph(runtime(), "encoder"), "encoder");
+    EXPECT_EQ(observed_label_of_a_graph(runtime(), nullptr), "") << "a graph with no label has an empty one";
+    EXPECT_EQ(observed_label_of_a_dynamic_graph(runtime(), "world"), "world");
 }
 
 /** @brief Tests that a changed label reaches the table at the next build and forces no rebuild of its own. */
-TEST(Medium_GraphLabel, ALabelChangeAppliesAtTheNextBuildAndForcesNone)
+TEST_F(Small_GraphLabel, ALabelChangeAppliesAtTheNextBuildAndForcesNone)
 {
-    ObservedPipeline pipeline;
+    ObservedPipeline pipeline(runtime());
     pipeline.graph().set_label("first");
     const auto observer = std::make_shared<RecordingObserver>();
     const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
@@ -133,16 +147,15 @@ TEST(Medium_GraphLabel, ALabelChangeAppliesAtTheNextBuildAndForcesNone)
 }
 
 /** @brief Tests that a dynamic graph takes a label too. */
-TEST(Medium_GraphLabel, ADynamicGraphCarriesItsLabel)
+TEST_F(Small_GraphLabel, ADynamicGraphCarriesItsLabel)
 {
-    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
-    auto buffer = runtime.buffer<float>(K_N).value();
+    auto buffer = runtime().buffer<float>(K_N).value();
     float* data = buffer.data();
-    auto world = runtime.dynamic_graph();
+    auto world = runtime().dynamic_graph();
     world.set_label("world");
     world.region(0).add(K_N, Reads{}, Writes(buffer), [data](std::size_t i) { data[i] = 1.0f; });
     const auto observer = std::make_shared<RecordingObserver>();
-    const RunObserverHandle handle = runtime.add_run_observer(observer);
+    const RunObserverHandle handle = runtime().add_run_observer(observer);
 
     ASSERT_TRUE(world.run().has_value());
 
@@ -151,12 +164,11 @@ TEST(Medium_GraphLabel, ADynamicGraphCarriesItsLabel)
 }
 
 /** @brief Tests that the origin a caller states is copied when the node is recorded, so its storage may go. */
-TEST(Medium_NodeOptions, OriginIsCopiedAtRecordTime)
+TEST_F(Small_NodeOptions, OriginIsCopiedAtRecordTime)
 {
-    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
-    auto buffer = runtime.buffer<float>(K_N).value();
+    auto buffer = runtime().buffer<float>(K_N).value();
     float* data = buffer.data();
-    auto graph = runtime.graph();
+    auto graph = runtime().graph();
     {
         std::string origin = "attention";
         NodeOptions options;
@@ -166,7 +178,7 @@ TEST(Medium_NodeOptions, OriginIsCopiedAtRecordTime)
         origin.assign(origin.size(), 'x'); // the caller's storage changes and then goes
     }
     const auto observer = std::make_shared<RecordingObserver>();
-    const RunObserverHandle handle = runtime.add_run_observer(observer);
+    const RunObserverHandle handle = runtime().add_run_observer(observer);
 
     ASSERT_TRUE(graph.run().has_value());
 
@@ -190,9 +202,9 @@ namespace
 } // namespace
 
 /** @brief Tests that a node that states no origin has an empty one. */
-TEST(Medium_NodeOptions, ANodeThatStatesNoOriginHasNone)
+TEST_F(Small_NodeOptions, ANodeThatStatesNoOriginHasNone)
 {
-    ObservedPipeline pipeline;
+    ObservedPipeline pipeline(runtime());
     const auto observer = std::make_shared<RecordingObserver>();
     const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
 
@@ -203,21 +215,20 @@ TEST(Medium_NodeOptions, ANodeThatStatesNoOriginHasNone)
 }
 
 /** @brief Tests that a run carries the id of its graph, static or dynamic, and no graph shares or has the id 0. */
-TEST(Medium_GraphId, ARunCarriesTheIdOfItsGraph)
+TEST_F(Small_GraphId, ARunCarriesTheIdOfItsGraph)
 {
-    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
-    auto first_buffer = runtime.buffer<float>(K_N).value();
-    auto second_buffer = runtime.buffer<float>(K_N).value();
-    auto world_buffer = runtime.buffer<float>(K_N).value();
+    auto first_buffer = runtime().buffer<float>(K_N).value();
+    auto second_buffer = runtime().buffer<float>(K_N).value();
+    auto world_buffer = runtime().buffer<float>(K_N).value();
     float* world_data = world_buffer.data();
-    auto first = runtime.graph();
-    auto second = runtime.graph();
-    auto world = runtime.dynamic_graph();
+    auto first = runtime().graph();
+    auto second = runtime().graph();
+    auto world = runtime().dynamic_graph();
     add_fill(first, first_buffer, "a");
     add_fill(second, second_buffer, "b");
     world.region(0).add(K_N, Reads{}, Writes(world_buffer), [world_data](std::size_t i) { world_data[i] = 1.0f; });
     const auto observer = std::make_shared<RecordingObserver>();
-    const RunObserverHandle handle = runtime.add_run_observer(observer);
+    const RunObserverHandle handle = runtime().add_run_observer(observer);
 
     ASSERT_TRUE(first.run().has_value());
     ASSERT_TRUE(second.run().has_value());
@@ -237,9 +248,9 @@ TEST(Medium_GraphId, ARunCarriesTheIdOfItsGraph)
 }
 
 /** @brief Tests that an async step is observed under the id of the graph that started it. */
-TEST(Medium_GraphId, AnAsyncStepCarriesTheIdOfItsGraph)
+TEST_F(Small_GraphId, AnAsyncStepCarriesTheIdOfItsGraph)
 {
-    ObservedPipeline pipeline;
+    ObservedPipeline pipeline(runtime());
     const auto observer = std::make_shared<RecordingObserver>();
     const RunObserverHandle handle = pipeline.runtime().add_run_observer(observer);
 
@@ -251,10 +262,9 @@ TEST(Medium_GraphId, AnAsyncStepCarriesTheIdOfItsGraph)
 }
 
 /** @brief Tests that a graph keeps its id across a move and the moved-from one reports 0. */
-TEST(Medium_GraphId, AMovedFromGraphReportsZero)
+TEST_F(Small_GraphId, AMovedFromGraphReportsZero)
 {
-    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
-    auto original = runtime.graph();
+    auto original = runtime().graph();
     const std::uint64_t id = original.id();
     ASSERT_NE(id, 0u);
 
@@ -277,11 +287,10 @@ namespace
 } // namespace
 
 /** @brief Tests that every graph takes its own id and none takes 0. */
-TEST(Medium_GraphId, NoGraphHasIdZero)
+TEST_F(Small_GraphId, NoGraphHasIdZero)
 {
-    Runtime& runtime = TestSupport::RuntimeEnvironment::runtime();
 
-    const std::set<std::uint64_t> ids = ids_of_new_graphs(runtime, 8);
+    const std::set<std::uint64_t> ids = ids_of_new_graphs(runtime(), 8);
 
     EXPECT_EQ(ids.size(), 8u) << "every graph takes its own id";
     EXPECT_EQ(ids.count(0), 0u);

@@ -39,7 +39,7 @@
 #include <SushiRuntime/report/recording_observer.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
@@ -82,7 +82,7 @@ namespace
     }
 
     /** @brief Fixture of the contract tests over a Runtime. */
-    class Medium_ContextProfiledRuntime : public TestSupport::RuntimeTest
+    class Small_ContextProfiledRuntime : public TestSupport::HostRuntimeTest
     {
     };
 } // namespace
@@ -126,7 +126,7 @@ TEST(Small_InMemoryProfiledRuntime, AnObserverIsStoodForByAHandle)
 }
 
 /** @brief Tests that the runtime adapter keeps its devices at their indices with a driver each. */
-TEST_F(Medium_ContextProfiledRuntime, KeepsEachDeviceAtItsIndexWithItsDriver)
+TEST_F(Small_ContextProfiledRuntime, KeepsEachDeviceAtItsIndexWithItsDriver)
 {
     const std::shared_ptr<ProfiledRuntime> profiled = profiled_runtime_of(runtime());
 
@@ -134,7 +134,7 @@ TEST_F(Medium_ContextProfiledRuntime, KeepsEachDeviceAtItsIndexWithItsDriver)
 }
 
 /** @brief Tests that the runtime adapter states the node, the devices and the workers the runtime states. */
-TEST_F(Medium_ContextProfiledRuntime, StatesWhatTheRuntimeStates)
+TEST_F(Small_ContextProfiledRuntime, StatesWhatTheRuntimeStates)
 {
     const std::shared_ptr<ProfiledRuntime> profiled = profiled_runtime_of(runtime());
 
@@ -144,7 +144,7 @@ TEST_F(Medium_ContextProfiledRuntime, StatesWhatTheRuntimeStates)
 }
 
 /** @brief Tests that the runtime adapter hands out a handle that stands for its observer. */
-TEST_F(Medium_ContextProfiledRuntime, AnObserverIsStoodForByAHandle)
+TEST_F(Small_ContextProfiledRuntime, AnObserverIsStoodForByAHandle)
 {
     const std::shared_ptr<ProfiledRuntime> profiled = profiled_runtime_of(runtime());
 

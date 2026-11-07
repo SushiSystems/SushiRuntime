@@ -37,12 +37,12 @@
 #include <SushiRuntime/profiling/device_track_name.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Fixture of the tests that need the runtime of the program. */
-class Medium_DeviceTrackName : public TestSupport::RuntimeTest
+/** @brief Fixture of the tests that need a host runtime. */
+class Small_DeviceTrackNameOfARuntime : public TestSupport::HostRuntimeTest
 {
 };
 
@@ -91,7 +91,7 @@ namespace
 } // namespace
 
 /** @brief Tests that the runtime overload builds the same string from the runtime's own node and device. */
-TEST_F(Medium_DeviceTrackName, TheRuntimeOverloadAgreesWithThePartsOverload)
+TEST_F(Small_DeviceTrackNameOfARuntime, TheRuntimeOverloadAgreesWithThePartsOverload)
 {
     const auto& devices = runtime().advanced().devices();
     ASSERT_FALSE(devices.empty());
@@ -101,7 +101,7 @@ TEST_F(Medium_DeviceTrackName, TheRuntimeOverloadAgreesWithThePartsOverload)
 }
 
 /** @brief Tests that an index the runtime does not have names a device called "device". */
-TEST_F(Medium_DeviceTrackName, AnIndexTheRuntimeLacksNamesAGenericDevice)
+TEST_F(Small_DeviceTrackNameOfARuntime, AnIndexTheRuntimeLacksNamesAGenericDevice)
 {
     EXPECT_EQ(device_track_name(runtime(), 99), device_track_name(runtime().topology().name, 99, "device"));
 }

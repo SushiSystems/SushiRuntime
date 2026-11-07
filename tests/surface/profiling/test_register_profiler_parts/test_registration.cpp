@@ -52,6 +52,7 @@
 #include <SushiRuntime/report/recording_observer.hpp>
 
 #include "session_pipeline.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 using SessionTests::SessionPipeline;
@@ -166,10 +167,15 @@ TEST(Medium_RegisterProfilerParts, ASessionRemovesTheObserverWhenItsSourceEnds)
     registered.source->end();
 }
 
-/** @brief Tests that the destructor removes only the observer it added, so another observer keeps its runs. */
-TEST(Medium_RegisterProfilerParts, TheDestructorRemovesItsOwnObserverOnly)
+/** @brief Fixture of the registration tests that run on a host runtime. */
+class Small_RegisterProfilerPartsOnAHostRuntime : public TestSupport::HostRuntimeTest
 {
-    SessionPipeline pipeline;
+};
+
+/** @brief Tests that the destructor removes only the observer it added, so another observer keeps its runs. */
+TEST_F(Small_RegisterProfilerPartsOnAHostRuntime, TheDestructorRemovesItsOwnObserverOnly)
+{
+    SessionPipeline pipeline(runtime());
     const auto other = std::make_shared<RecordingObserver>();
     const RunObserverHandle other_handle = pipeline.runtime().add_run_observer(other);
     SushiProfiler::Registry registry;
@@ -190,10 +196,11 @@ TEST(Medium_RegisterProfilerParts, TheDestructorRemovesItsOwnObserverOnly)
 }
 
 /** @brief Tests that a second runtime may feed the same source when it attaches before a session starts. */
-TEST(Medium_RegisterProfilerParts, AFurtherRuntimeAttachesBeforeASession)
+TEST_F(Small_RegisterProfilerPartsOnAHostRuntime, AFurtherRuntimeAttachesBeforeASession)
 {
-    SessionPipeline first;
-    SessionPipeline second(SessionPipeline::other_scheduler_config());
+    SessionPipeline first(runtime());
+    Runtime second_runtime = Runtime::create_host(HostRuntimeConfig{}).value();
+    SessionPipeline second(second_runtime);
     SushiProfiler::Registry registry;
     RuntimeProfilerParts parts = register_profiler_parts(registry, first.runtime());
     SourceHarness harness;
@@ -210,10 +217,11 @@ TEST(Medium_RegisterProfilerParts, AFurtherRuntimeAttachesBeforeASession)
 }
 
 /** @brief Tests that a further runtime is refused while a session runs. */
-TEST(Medium_RegisterProfilerParts, AFurtherRuntimeIsRefusedDuringASession)
+TEST_F(Small_RegisterProfilerPartsOnAHostRuntime, AFurtherRuntimeIsRefusedDuringASession)
 {
-    SessionPipeline first;
-    SessionPipeline third(SessionPipeline::other_scheduler_config());
+    SessionPipeline first(runtime());
+    Runtime third_runtime = Runtime::create_host(HostRuntimeConfig{}).value();
+    SessionPipeline third(third_runtime);
     SushiProfiler::Registry registry;
     RuntimeProfilerParts parts = register_profiler_parts(registry, first.runtime());
     SourceHarness harness;
@@ -225,10 +233,11 @@ TEST(Medium_RegisterProfilerParts, AFurtherRuntimeIsRefusedDuringASession)
 }
 
 /** @brief Tests that parts whose registration was refused attach nothing. */
-TEST(Medium_RegisterProfilerParts, RefusedPartsAttachNothing)
+TEST_F(Small_RegisterProfilerPartsOnAHostRuntime, RefusedPartsAttachNothing)
 {
-    SessionPipeline first;
-    SessionPipeline other(SessionPipeline::other_scheduler_config());
+    SessionPipeline first(runtime());
+    Runtime other_runtime = Runtime::create_host(HostRuntimeConfig{}).value();
+    SessionPipeline other(other_runtime);
     SushiProfiler::Registry registry;
     const RuntimeProfilerParts accepted = register_profiler_parts(registry, first.runtime());
     RuntimeProfilerParts refused = register_profiler_parts(registry, first.runtime());

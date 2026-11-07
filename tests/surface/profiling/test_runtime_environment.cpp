@@ -44,7 +44,7 @@
 #include <SushiRuntime/profiling/register_profiler_parts.hpp>
 #include <SushiRuntime/sushiruntime.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
@@ -97,8 +97,8 @@ namespace
         const char* stated;  /**< The spelling of the fact. */
     };
 
-    /** @brief Fixture of the tests that read the facts the runtime of the program states. */
-    class Medium_RuntimeEnvironment : public TestSupport::RuntimeTest
+    /** @brief Fixture of the tests that read the facts a host runtime states. */
+    class Small_RuntimeEnvironmentOfARuntime : public TestSupport::HostRuntimeTest
     {
     };
 
@@ -109,7 +109,7 @@ namespace
 } // namespace
 
 /** @brief Tests that the record states how many devices the runtime drives. */
-TEST_F(Medium_RuntimeEnvironment, StatesTheNumberOfDevices)
+TEST_F(Small_RuntimeEnvironmentOfARuntime, StatesTheNumberOfDevices)
 {
     SushiProfiler::Registry registry;
     const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime());
@@ -122,7 +122,7 @@ TEST_F(Medium_RuntimeEnvironment, StatesTheNumberOfDevices)
 }
 
 /** @brief Tests that the record states every device the runtime drives with its class, backend and driver. */
-TEST_F(Medium_RuntimeEnvironment, StatesEveryDeviceOfTheRuntime)
+TEST_F(Small_RuntimeEnvironmentOfARuntime, StatesEveryDeviceOfTheRuntime)
 {
     SushiProfiler::Registry registry;
     const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime());
@@ -196,7 +196,7 @@ TEST(Small_RuntimeEnvironmentFacts, StatesTheBuildTypeAsABuildFact)
 }
 
 /** @brief Tests that a build fact is not stated as an environment fact. */
-TEST_F(Medium_RuntimeEnvironment, ABuildFactIsNotAnEnvironmentFact)
+TEST_F(Small_RuntimeEnvironmentOfARuntime, ABuildFactIsNotAnEnvironmentFact)
 {
     SushiProfiler::Registry registry;
     const RuntimeProfilerParts parts = register_profiler_parts(registry, runtime());

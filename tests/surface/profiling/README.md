@@ -92,8 +92,8 @@ The functions that name the tracks of the device source.
 | `Small_DeviceTrackName.TheHostTrackDiffersFromADeviceTrack` | The host track is not the track of a device called host, whatever its index. |
 | `Small_DeviceTrackName.ADeviceTheListHoldsIsNamedByItsName` | A device the list holds is named by its own name. |
 | `Small_DeviceTrackName.AnIndexTheListLacksNamesAGenericDevice` | An index the list lacks names a device called "device". |
-| `Medium_DeviceTrackName.TheRuntimeOverloadAgreesWithThePartsOverload` | The runtime overload builds the same string from the runtime's own node and device. |
-| `Medium_DeviceTrackName.AnIndexTheRuntimeLacksNamesAGenericDevice` | An index the runtime does not have names a device called "device". |
+| `Small_DeviceTrackNameOfARuntime.TheRuntimeOverloadAgreesWithThePartsOverload` | The runtime overload builds the same string from the runtime's own node and device. |
+| `Small_DeviceTrackNameOfARuntime.AnIndexTheRuntimeLacksNamesAGenericDevice` | An index the runtime does not have names a device called "device". |
 
 
 ## test_device_source.cpp
@@ -147,13 +147,13 @@ The facts the runtime states about its machine, its devices and its build.
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_RuntimeEnvironment.StatesTheNumberOfDevices` | The record states how many devices the runtime drives. |
-| `Medium_RuntimeEnvironment.StatesEveryDeviceOfTheRuntime` | The record states every device the runtime drives with its class, backend and driver. |
+| `Small_RuntimeEnvironmentOfARuntime.StatesTheNumberOfDevices` | The record states how many devices the runtime drives. |
+| `Small_RuntimeEnvironmentOfARuntime.StatesEveryDeviceOfTheRuntime` | The record states every device the runtime drives with its class, backend and driver. |
 | `Small_RuntimeEnvironmentFacts.StatesTheVersionAndTheWorkers` | The runtime states its version and its worker count under its node's name. |
 | `Small_RuntimeEnvironmentRebalancer.StatesTheRebalancer` | The runtime spells the state of its rebalancer on or off. |
 | `Small_RuntimeEnvironmentFacts.StatesADeviceWithItsDriver` | A device the runtime reports is stated with its description and its driver. |
 | `Small_RuntimeEnvironmentFacts.StatesTheBuildTypeAsABuildFact` | The library's own build type is a build fact, so two records of different builds do not compare. |
-| `Medium_RuntimeEnvironment.ABuildFactIsNotAnEnvironmentFact` | A build fact is not stated as an environment fact. |
+| `Small_RuntimeEnvironmentOfARuntime.ABuildFactIsNotAnEnvironmentFact` | A build fact is not stated as an environment fact. |
 
 
 ## compile_in_memory_profiled_runtime.cpp
@@ -171,9 +171,9 @@ The `ProfiledRuntime` contract, held by the in-memory adapter small and by the a
 | `Small_InMemoryProfiledRuntime.ADeviceWithNoStoredDriverReadsUnknown` | A driver nobody set reads "unknown". |
 | `Small_InMemoryProfiledRuntime.AResetHandleRemovesOnlyItsObserver` | A reset handle takes its observer out and leaves the others. |
 | `Small_InMemoryProfiledRuntime.AnObserverIsStoodForByAHandle` | The in-memory runtime hands out a handle that stands for its observer. |
-| `Medium_ContextProfiledRuntime.KeepsEachDeviceAtItsIndexWithItsDriver` | The runtime adapter keeps its devices at their indices with a driver each. |
-| `Medium_ContextProfiledRuntime.StatesWhatTheRuntimeStates` | The runtime adapter states the node, the devices and the workers the runtime states. |
-| `Medium_ContextProfiledRuntime.AnObserverIsStoodForByAHandle` | The runtime adapter hands out a handle that stands for its observer. |
+| `Small_ContextProfiledRuntime.KeepsEachDeviceAtItsIndexWithItsDriver` | The runtime adapter keeps its devices at their indices with a driver each. |
+| `Small_ContextProfiledRuntime.StatesWhatTheRuntimeStates` | The runtime adapter states the node, the devices and the workers the runtime states. |
+| `Small_ContextProfiledRuntime.AnObserverIsStoodForByAHandle` | The runtime adapter hands out a handle that stands for its observer. |
 
 
 ## test_profiling_log_category.cpp
@@ -195,10 +195,10 @@ How the runtime registers its source and contributor, and how it adds and remove
 | `Small_RegisterProfilerParts.TheRegistryMakesTheDeviceSource` | The registered source is the one the registry knows by the runtime's source name. |
 | `Medium_RegisterProfilerParts.ASessionAddsTheObserverWhenItsSourceBegins` | A session adds the observer when its source begins, so a run reaches the source with its records. |
 | `Medium_RegisterProfilerParts.ASessionRemovesTheObserverWhenItsSourceEnds` | A session removes the observer when its source ends, so a run after it reaches nothing. |
-| `Medium_RegisterProfilerParts.TheDestructorRemovesItsOwnObserverOnly` | The destructor removes only the observer it added, so another observer keeps its runs. |
-| `Medium_RegisterProfilerParts.AFurtherRuntimeAttachesBeforeASession` | A second runtime may feed the same source when it attaches before a session starts. |
-| `Medium_RegisterProfilerParts.AFurtherRuntimeIsRefusedDuringASession` | A further runtime is refused while a session runs. |
-| `Medium_RegisterProfilerParts.RefusedPartsAttachNothing` | Parts whose registration was refused attach nothing. |
+| `Small_RegisterProfilerPartsOnAHostRuntime.TheDestructorRemovesItsOwnObserverOnly` | The destructor removes only the observer it added, so another observer keeps its runs. |
+| `Small_RegisterProfilerPartsOnAHostRuntime.AFurtherRuntimeAttachesBeforeASession` | A second runtime may feed the same source when it attaches before a session starts. |
+| `Small_RegisterProfilerPartsOnAHostRuntime.AFurtherRuntimeIsRefusedDuringASession` | A further runtime is refused while a session runs. |
+| `Small_RegisterProfilerPartsOnAHostRuntime.RefusedPartsAttachNothing` | Parts whose registration was refused attach nothing. |
 
 
 ## test_register_profiler_parts/test_run_observer.cpp
@@ -207,25 +207,25 @@ The observers a runtime fans its finished runs out to, and the device timing the
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_RunObserver.SeesEachBlockingRunOnce` | An observer sees each blocking run once. |
-| `Medium_RunObserver.EachObservedRunHoldsTheNodesOfThePlan` | Each observed run holds the nodes the plan holds and one well-ordered record per dispatch. |
-| `Medium_RunObserver.TwoObserversBothReceiveEveryRun` | Two observers both receive every run. |
-| `Medium_RunObserver.RemovingOneLeavesTheOther` | Removing one observer leaves the other receiving runs, and the removed one hears no later run. |
-| `Medium_RunObserver.ADestroyedHandleRemovesItsObserver` | A handle that goes out of scope removes its observer. |
-| `Medium_RunObserver.AHandleThatOutlivesItsRuntimeRemovesNothing` | A handle that outlives its runtime removes nothing and does not crash. |
-| `Medium_RunObserver.AnObserverHearsOnlyItsOwnRuntime` | An observer of one runtime is not called by the runs of another. |
-| `Medium_RunObserver.SeesAnAsyncStepWhenItsWorkFinishesNotWhenItIsWaitedFor` | An async step is observed when its device work finishes, not when it is waited for. |
-| `Medium_RunObserver.AnAsyncStepWithNoObserverStillCompletes` | An async step of a runtime with no observer reports to nobody and still completes. |
-| `Medium_RunObserver.TheFirstRunAfterAnAddOfAPlanBuiltBeforeCarriesRecords` | The first run after an add carries full records even though its plan was built before the add. |
-| `Medium_RunObserver.AddingAnObserverCostsNoRebuild` | Adding an observer costs no plan rebuild, for the first observer and for later ones. |
-| `Medium_RunObserver.RemovingObserversCostsNoRebuild` | Removing an observer, the last one included, costs no plan rebuild. |
-| `Medium_RunObserver.RunsAfterTheLastRemovalReachNoObserver` | The runs after the last observer is removed reach no observer. |
-| `Medium_RunObserver.AnObserverAddedMidRunGetsNoRecordsOfTheCurrentOne` | The run in flight when an observer is added carries no records, as it chose its timing before. |
-| `Medium_RunObserver.AnObserverAddedMidRunStillGetsTheTableOfTheCurrentOne` | The run in flight when an observer is added still hands over the table of its plan. |
-| `Medium_RunObserver.AnObserverAddedMidRunTimesTheNextRun` | The next run after an observer was added midway is timed, with no rebuild. |
-| `Medium_RunObserver.ARunWithNoObserverMakesNoObservation` | A run after the only observer was removed makes no observation and is unchanged. |
+| `Small_RunObserver.SeesEachBlockingRunOnce` | An observer sees each blocking run once. |
+| `Small_RunObserver.EachObservedRunHoldsTheNodesOfThePlan` | Each observed run holds the nodes the plan holds and one well-ordered record per dispatch. |
+| `Small_RunObserver.TwoObserversBothReceiveEveryRun` | Two observers both receive every run. |
+| `Small_RunObserver.RemovingOneLeavesTheOther` | Removing one observer leaves the other receiving runs, and the removed one hears no later run. |
+| `Small_RunObserver.ADestroyedHandleRemovesItsObserver` | A handle that goes out of scope removes its observer. |
+| `Small_RunObserver.AHandleThatOutlivesItsRuntimeRemovesNothing` | A handle that outlives its runtime removes nothing and does not crash. |
+| `Small_RunObserver.AnObserverHearsOnlyItsOwnRuntime` | An observer of one runtime is not called by the runs of another. |
+| `Small_RunObserver.SeesAnAsyncStepWhenItsWorkFinishesNotWhenItIsWaitedFor` | An async step is observed when its device work finishes, not when it is waited for. |
+| `Small_RunObserver.AnAsyncStepWithNoObserverStillCompletes` | An async step of a runtime with no observer reports to nobody and still completes. |
+| `Small_RunObserver.TheFirstRunAfterAnAddOfAPlanBuiltBeforeCarriesRecords` | The first run after an add carries full records even though its plan was built before the add. |
+| `Small_RunObserver.AddingAnObserverCostsNoRebuild` | Adding an observer costs no plan rebuild, for the first observer and for later ones. |
+| `Small_RunObserver.RemovingObserversCostsNoRebuild` | Removing an observer, the last one included, costs no plan rebuild. |
+| `Small_RunObserver.RunsAfterTheLastRemovalReachNoObserver` | The runs after the last observer is removed reach no observer. |
+| `Small_RunObserver.AnObserverAddedMidRunGetsNoRecordsOfTheCurrentOne` | The run in flight when an observer is added carries no records, as it chose its timing before. |
+| `Small_RunObserver.AnObserverAddedMidRunStillGetsTheTableOfTheCurrentOne` | The run in flight when an observer is added still hands over the table of its plan. |
+| `Small_RunObserver.AnObserverAddedMidRunTimesTheNextRun` | The next run after an observer was added midway is timed, with no rebuild. |
+| `Small_RunObserver.ARunWithNoObserverMakesNoObservation` | A run after the only observer was removed makes no observation and is unchanged. |
 | `Medium_RunObserver.ARunOnTheChainPathCarriesTheChainLayer` | A run on the chain path is observed with the chain layer and its records. |
-| `Medium_RunObserver.AMultiStepRunIsOneObservationWithEveryStep` | A multi-step run is one observation holding every step's records. |
+| `Small_RunObserver.AMultiStepRunIsOneObservationWithEveryStep` | A multi-step run is one observation holding every step's records. |
 
 
 ## test_register_profiler_parts/test_collect_profiling.cpp
@@ -234,15 +234,15 @@ What a run's observation holds: the node table, the records, the pairings and th
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_CollectProfiling.TheTableAndTheRecordsJoinByNodeIndex` | Every record joins a table row by its node index, and the rows are the nodes the caller named. |
-| `Medium_CollectProfiling.TheTableCarriesTheOperationAndTheCostTheCallerStated` | The table rows carry the operation and the cost the caller stated, and no cost where none was. |
+| `Small_CollectProfiling.TheTableAndTheRecordsJoinByNodeIndex` | Every record joins a table row by its node index, and the rows are the nodes the caller named. |
+| `Small_CollectProfiling.TheTableCarriesTheOperationAndTheCostTheCallerStated` | The table rows carry the operation and the cost the caller stated, and no cost where none was. |
 | `Medium_CollectProfiling.KernelNodesClaimTheirDevicesPairing` | Each kernel record of a graph names a device the pairing of which is present. |
 | `Medium_CollectProfiling.APlanRunOnTheChainFillsTheSameTable` | The table of a plan on the chain path holds the same rows as on the worker pool. |
-| `Medium_CollectProfiling.CarriesNoDropWhenNoneWasLost` | A run that lost no dispatch carries zero drops. |
-| `Medium_CollectProfiling.ALossFreeRunLogsNothing` | A run that lost no dispatch logs nothing. |
-| `Medium_CollectProfiling.CarriesTheDropCountsOfTheRun` | A run longer than its ledger was sized for carries the drops, and a drop plus a record is a dispatch. |
-| `Medium_CollectProfiling.AnOverflowedRunLogsOneWarn` | A run which overflowed its ledger logs one WARN line for the run, not one per dispatch. |
-| `Medium_CollectProfiling.TheRunAfterAnOverflowLosesNothing` | The run after an overflow sizes its ledger for the demand and loses nothing. |
+| `Small_CollectProfiling.CarriesNoDropWhenNoneWasLost` | A run that lost no dispatch carries zero drops. |
+| `Small_CollectProfiling.ALossFreeRunLogsNothing` | A run that lost no dispatch logs nothing. |
+| `Small_CollectProfiling.CarriesTheDropCountsOfTheRun` | A run longer than its ledger was sized for carries the drops, and a drop plus a record is a dispatch. |
+| `Small_CollectProfiling.AnOverflowedRunLogsOneWarn` | A run which overflowed its ledger logs one WARN line for the run, not one per dispatch. |
+| `Small_CollectProfiling.TheRunAfterAnOverflowLosesNothing` | The run after an overflow sizes its ledger for the demand and loses nothing. |
 | `Medium_CollectProfiling.TaskBodiesOnTheWorkerPoolClaimTheirDevicesPairing` | A plan of task bodies alone, run on the worker pool, pairs the device its records name. |
 | `Medium_CollectProfiling.TaskBodiesOnTheChainClaimTheirDevicesPairing` | A plan of task bodies alone, run as a chain, pairs the device its records name. |
 
@@ -253,15 +253,15 @@ What tells one graph's runs from another's in a profile: its label, its id and i
 
 | Test | What it proves |
 | --- | --- |
-| `Medium_GraphLabel.TheTableCarriesTheLabelOfItsGraph` | The label of a graph, static or dynamic, is the label of the table its runs are observed with, and none is empty. |
-| `Medium_GraphLabel.ALabelChangeAppliesAtTheNextBuildAndForcesNone` | A changed label reaches the table at the next build and forces no rebuild of its own. |
-| `Medium_GraphLabel.ADynamicGraphCarriesItsLabel` | A dynamic graph takes a label too. |
-| `Medium_NodeOptions.OriginIsCopiedAtRecordTime` | The origin a caller states is copied when the node is recorded, so its storage may go. |
-| `Medium_NodeOptions.ANodeThatStatesNoOriginHasNone` | A node that states no origin has an empty one. |
-| `Medium_GraphId.ARunCarriesTheIdOfItsGraph` | A run carries the id of its graph, static or dynamic, and no graph shares or has the id 0. |
-| `Medium_GraphId.AnAsyncStepCarriesTheIdOfItsGraph` | An async step is observed under the id of the graph that started it. |
-| `Medium_GraphId.AMovedFromGraphReportsZero` | A graph keeps its id across a move and the moved-from one reports 0. |
-| `Medium_GraphId.NoGraphHasIdZero` | Every graph takes its own id and none takes 0. |
+| `Small_GraphLabel.TheTableCarriesTheLabelOfItsGraph` | The label of a graph, static or dynamic, is the label of the table its runs are observed with, and none is empty. |
+| `Small_GraphLabel.ALabelChangeAppliesAtTheNextBuildAndForcesNone` | A changed label reaches the table at the next build and forces no rebuild of its own. |
+| `Small_GraphLabel.ADynamicGraphCarriesItsLabel` | A dynamic graph takes a label too. |
+| `Small_NodeOptions.OriginIsCopiedAtRecordTime` | The origin a caller states is copied when the node is recorded, so its storage may go. |
+| `Small_NodeOptions.ANodeThatStatesNoOriginHasNone` | A node that states no origin has an empty one. |
+| `Small_GraphId.ARunCarriesTheIdOfItsGraph` | A run carries the id of its graph, static or dynamic, and no graph shares or has the id 0. |
+| `Small_GraphId.AnAsyncStepCarriesTheIdOfItsGraph` | An async step is observed under the id of the graph that started it. |
+| `Small_GraphId.AMovedFromGraphReportsZero` | A graph keeps its id across a move and the moved-from one reports 0. |
+| `Small_GraphId.NoGraphHasIdZero` | Every graph takes its own id and none takes 0. |
 
 
 ## test_register_profiler_parts/test_runtime_session.cpp
