@@ -91,6 +91,7 @@
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
 #include <SushiRuntime/transport/endpoint.hpp>
+#include <SushiRuntime/transport/recording_transport_events.hpp>
 #include <SushiRuntime/frame_transport/frame_sending.hpp>
 #include <SushiRuntime/link_security/handshake.hpp>
 #include <SushiRuntime/wire/wire_frame.hpp>
@@ -921,79 +922,18 @@ namespace EndToEndTests
         };
 
         /**
-         * @brief Answers start() with a fixed result and reports a fixed exposure; carries no frame.
+         * @brief Returns whether @p transport was never started, then stops it.
+         *
+         * A transport starts once, so a first start() that answers Ok shows that nothing started
+         * it before.
          */
-        class StubTransport final : public Transport
+        bool was_never_started(Transport& transport)
         {
-            public:
-                /** @brief Sets what exposure() and start() return. */
-                StubTransport(TransportExposure exposure, TransportResult start_result)
-                    : exposure_(exposure), start_result_(std::move(start_result))
-                {
-
-                }
-
-                /** @brief Counts the call and returns the fixed result. */
-                [[nodiscard]] TransportResult start(TransportEvents& /*events*/) override
-                {
-                    start_calls_.fetch_add(1, std::memory_order_relaxed);
-                    return start_result_;
-                }
-
-                /** @brief Does nothing; the transport owns no thread. */
-                void stop() noexcept override
-                {
-
-                }
-
-                /** @brief Refuses every frame; the transport has no peer. */
-                [[nodiscard]] SendStatus send(PeerID /*peer*/, MessageType /*type*/,
-                                              span<const std::byte> /*payload*/) override
-                {
-                    return SendStatus::UnknownPeer;
-                }
-
-                /** @brief Refuses every stream; the source is destroyed with the argument. */
-                [[nodiscard]] SendStatus send_stream(PeerID /*peer*/,
-                                                     std::unique_ptr<FrameSource> /*source*/) override
-                {
-                    return SendStatus::UnknownPeer;
-                }
-
-                /** @brief Does nothing; the transport holds no connection. */
-                void close_peer(PeerID /*peer*/) noexcept override
-                {
-
-                }
-
-                /** @brief Returns the fixed exposure. */
-                [[nodiscard]] TransportExposure exposure() const noexcept override
-                {
-                    return exposure_;
-                }
-
-                /** @brief Reports that no byte moved. */
-                [[nodiscard]] TransportStatistics statistics() const noexcept override
-                {
-                    return TransportStatistics();
-                }
-
-                /** @brief Returns how often start() was called. */
-                [[nodiscard]] int start_calls() const noexcept
-                {
-                    return start_calls_.load(std::memory_order_relaxed);
-                }
-
-            private:
-                /// @brief What exposure() returns.
-                TransportExposure exposure_;
-
-                /// @brief What start() returns.
-                TransportResult start_result_;
-
-                /// @brief Calls to start().
-                std::atomic<int> start_calls_{0};
-        };
+            RecordingTransportEvents probe;
+            const bool is_fresh = transport.start(probe).status == TransportStatus::Ok;
+            transport.stop();
+            return is_fresh;
+        }
 
         /**
          * @brief Evolves a distributed State<int> for @p steps steps on a cluster with one
@@ -2468,11 +2408,16 @@ namespace EndToEndTests
         if (!SushiRuntime::Test::has_any_sycl_device())
             GTEST_SKIP() << "SYCL reports no device.";
 
-        const std::string refusal = "cannot listen on 127.0.0.1:9: the stub refuses";
         Runtime master_runtime = Runtime::create().value();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
-        const auto transport = std::make_shared<StubTransport>(
-            TransportExposure::Loopback, TransportResult{TransportStatus::BindFailed, refusal});
+        InProcessFabric taken_fabric;
+        RecordingTransportEvents taken_events;
+        const std::shared_ptr<InProcessTransport> transport =
+            InProcessTransport::make_master(taken_fabric);
+        ASSERT_TRUE(transport->start(taken_events).is_ok());
+        // A transport starts once, so the attach below meets the refusal a second start gives.
+        const std::string refusal = transport->start(taken_events).message;
+        ASSERT_FALSE(refusal.empty());
 
         const Result<Cluster> attached = Cluster::attach(master_runtime, transport);
         ASSERT_FALSE(attached.has_value())
@@ -2480,7 +2425,6 @@ namespace EndToEndTests
         const std::string message = attached.error().message;
 
         EXPECT_NE(message.find(refusal), std::string::npos) << "the error says: " << message;
-        EXPECT_EQ(transport->start_calls(), 1);
         EXPECT_EQ(master_context.offload(), nullptr);
 
         InProcessFabric fabric;
@@ -2549,19 +2493,22 @@ namespace EndToEndTests
 
         Runtime master_runtime = Runtime::create().value();
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
-        const auto exposed =
-            std::make_shared<StubTransport>(TransportExposure::Network, TransportResult());
+        TCPMasterOptions network;
+        network.bind = Endpoint{"0.0.0.0", 0};
+        const std::shared_ptr<TCPTransport> refused = TCPTransport::make_master(network);
+        ASSERT_EQ(refused->exposure(), TransportExposure::Network);
 
-        EXPECT_FALSE(Cluster::attach(master_runtime, exposed).has_value());
-        EXPECT_EQ(exposed->start_calls(), 0) << "the transport was started before the refusal";
+        EXPECT_FALSE(Cluster::attach(master_runtime, refused).has_value());
+        EXPECT_TRUE(was_never_started(*refused)) << "the transport was started before the refusal";
         EXPECT_EQ(master_context.offload(), nullptr);
 
         const std::vector<std::uint8_t> key(SharedSecret::K_MINIMUM_BYTES, 0x42);
         ClusterOptions options;
         options.secret =
             SharedSecret::from_bytes(span<const std::uint8_t>(key.data(), key.size())).value();
+        const std::shared_ptr<TCPTransport> exposed = TCPTransport::make_master(network);
         Cluster cluster = Cluster::attach(master_runtime, exposed, std::move(options)).value();
-        EXPECT_EQ(exposed->start_calls(), 1);
+        EXPECT_FALSE(was_never_started(*exposed)) << "the attach did not start the transport";
         EXPECT_NE(master_context.offload(), nullptr);
         cluster.detach();
     }
@@ -2701,12 +2648,14 @@ namespace EndToEndTests
         BackgroundRun run(graph);
         ASSERT_TRUE(worker.wait_for_dispatches(1));
 
-        const auto second_transport =
-            std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult());
+        InProcessFabric second_fabric;
+        const std::shared_ptr<InProcessTransport> second_transport =
+            InProcessTransport::make_master(second_fabric);
         const Result<Cluster> second = Cluster::attach(master_runtime, second_transport);
         ASSERT_FALSE(second.has_value());
         EXPECT_EQ(second.error().code, ErrorCode::InvalidState);
-        EXPECT_EQ(second_transport->start_calls(), 0) << "the refusal came after a transport start";
+        EXPECT_TRUE(was_never_started(*second_transport))
+            << "the refusal came after a transport start";
         EXPECT_EQ(master_context.offload(), installed);
         EXPECT_EQ(cluster.alive_workers(), 1u) << "the refused attach stopped the installed master";
         EXPECT_EQ(cluster.statistics().pending_tasks, 1u);
@@ -2761,11 +2710,13 @@ namespace EndToEndTests
         RuntimeContext& master_context = SushiRuntime::Internal::ContextAccess::context(master_runtime);
         const auto refusal_of = [&master_runtime](ClusterOptions options)
         {
-            const auto transport =
-                std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult());
+            InProcessFabric refusal_fabric;
+            const std::shared_ptr<InProcessTransport> transport =
+                InProcessTransport::make_master(refusal_fabric);
             const Result<Cluster> attached =
                 Cluster::attach(master_runtime, transport, std::move(options));
-            EXPECT_EQ(transport->start_calls(), 0) << "the transport was started before the refusal";
+            EXPECT_TRUE(was_never_started(*transport))
+                << "the transport was started before the refusal";
             return attached.has_value() ? std::string() : attached.error().message;
         };
 
@@ -2788,10 +2739,9 @@ namespace EndToEndTests
         without_deadline.task_deadline = std::chrono::milliseconds(0);
         without_deadline.liveness_timeout = K_MINIMUM_TIMEOUT;
         without_deadline.handshake_timeout = K_MINIMUM_TIMEOUT;
-        Cluster cluster = Cluster::attach(
-            master_runtime,
-            std::make_shared<StubTransport>(TransportExposure::Loopback, TransportResult()),
-            std::move(without_deadline)).value();
+        InProcessFabric fabric;
+        Cluster cluster = Cluster::attach(master_runtime, InProcessTransport::make_master(fabric),
+                                          std::move(without_deadline)).value();
 
         cluster.task_deadline(std::chrono::milliseconds(0));
         cluster.detach();

@@ -77,7 +77,7 @@ carries the last-chunk flag can only travel in a stream.
 
 | Test | What it proves |
 | --- | --- |
-| `StubTransport` | An `Transport` that carries nothing: `exposure()` and `start()` return what the test set, and `start_calls()` counts the starts. |
+| `was_never_started` | Starts a transport once with a `RecordingTransportEvents` and stops it. The start answers `Ok` only for a transport nothing started before, so a test uses it to show that a refused `attach` left its transport alone. |
 | `eventually` | The master's `stale_writebacks` counter has no event to wait on. `eventually` re-reads a condition, yielding between reads, until it holds or `K_WAIT` passes. No test sleeps. |
 
 ### `OffloadVectorAddRoundTrip`, `FanOutAcrossTwoWorkers`, `OffloadOverTCPLoopback`
@@ -146,9 +146,9 @@ leave the other.
 
 | Test | What it proves |
 | --- | --- |
-| `AttachStartFailureLeavesNothingInstalled` | `attach` on a `StubTransport` whose `start()` returns `BindFailed` must return an error carrying the transport's message, call `start()` once and leave `offload()` null. A second `attach` on the same context must then succeed. |
+| `AttachStartFailureLeavesNothingInstalled` | `attach` on an `InProcessTransport` that was started before must return an error carrying the message a second `start()` gives, and leave `offload()` null. A second `attach` on the same context must then succeed. |
 | `AttemptCapDoesNotOutliveTheRun` | A `Fail` worker fails every dispatch. One graph is compiled once and runs twice. In each run the worker must receive `K_MAXIMUM_OFFLOAD_ATTEMPTS` dispatches before the task runs locally, so the second run proves the cap of the first did not pin the node. `declined` rises by one per run and `redispatched` by the cap. |
-| `RefusesEmptySecretOnNetworkExposure` | On a `StubTransport` that reports `Network`, `attach` with an empty secret must return an error before `start()` is called. With a 32-byte secret the same transport attaches. |
+| `RefusesEmptySecretOnNetworkExposure` | A `TCPTransport` master bound to `0.0.0.0` reports `Network`. `attach` with an empty secret must return an error and leave that transport unstarted. With a 32-byte secret a transport of the same options attaches and is started. |
 | `RegisteredTaskRunsWithAndWithoutAWorker`, `run_registered_sum` | `record_registered_task`, called through `Graph::extend()`, records the vector-add with no lambda. Run with no cluster, the master's own registry runs the kernel once. Run with a worker, the worker's registry runs it once and the master's not at all. Both outputs must be equal. |
 
 ### `AttachOnAStartedTransportIsRefused`, `AttachOnAStartedTransportLeavesTheFirstMasterServing`
@@ -386,10 +386,13 @@ nothing.
 
 ## test_worker_agent.cpp
 
-The tests drive one `WorkerAgent` through its transport and open no socket. `AgentRig` builds the
-agent on a runtime of its own over a fake transport, which records every frame the agent sends and
-every peer it closes, hands it the master's frames, and either pulls an output stream dry on the
-calling thread or keeps it until the test releases it. `register_master` plays a master holding the
+The tests drive one `WorkerAgent` through an `InProcessTransport` and open no socket. `AgentRig` builds
+the agent on a runtime of its own over a worker endpoint. `MasterSide` plays the other end: it owns the
+fabric and the master endpoint, whose `RecordingTransportEvents` keep every frame the agent sends and
+every peer it closes, and it sends the master's frames. A fault policy on the fabric logs the traffic
+in the order it entered and, while `hold_results(true)` is set, parks the agent's chunks and results
+until `release_held()` delivers them in order. The agent connects when the first `connect()` starts the
+master endpoint, and connects again after the master closes a peer. `register_master` plays a master holding the
 same 32-byte secret: it answers the agent's `HELLO` with a `CHALLENGE` proved for the nonce that
 `HELLO` carried, waits for `PROOF` and sends `WELCOME`. The tests read the agent's counters from
 `statistics()`. Every wait is on a condition, bounded at 30 s.
@@ -400,7 +403,7 @@ and read their `TASK_RESULT`s. The link tests play the handshake and the livenes
 
 | Test | What it proves |
 | --- | --- |
-| `ReleaseEvicts` | `BUFFER_RELEASE` frees an unpinned output at once and counts an eviction. An output whose stream waits to be pulled is freed at once too, because the stream holds a copy; the stream then delivers its result. |
+| `ReleaseEvicts` | `BUFFER_RELEASE` frees an unpinned output and counts an eviction. An output whose chunk and result are parked is freed too, because the stream holds a copy; the parked frames then arrive and the result succeeds. |
 | `BudgetEvictsLeastRecentlyUsedUnpinned` | Three outputs of 100 bytes fill a 300-byte budget and the first is read again. A fourth output makes the cache free the second, the one used longest ago: a task that reads it pulls it, and one that reads the first does not. |
 | `PinnedEntryIsNotEvicted` | A 300-byte cache holds one unpinned output. Task 2 pins an output and an input whose pull stays open while tasks 3 and 4 queue, so all three join one batch. Task 3's output evicts the unpinned buffer; task 4 finds every byte pinned and ends as `OutputAllocationFailed`, and nothing pinned was evicted. |
 | `GapInAPulledBufferDiscardsIt` | A chunk at offset 8 after a chunk that ended at 4 ends the pull: the task ends as `InputUnavailable` and the memory is returned. The same buffer is then pulled in three chunks, and the kernel reads every byte the master sent. |
@@ -408,7 +411,7 @@ and read their `TASK_RESULT`s. The link tests play the handshake and the livenes
 | `KernelSeesBufferSizes` | The kernel reads `size_bytes` of its input and its output views: 12 and 20. The input comes from a `BUFFER_REQUEST` the test answers with two chunks, and the output leaves in chunks of 8 bytes. |
 | `GenericLambdaRegistersAsAKernel` | `register_kernel` has one overload, so a lambda whose four parameters are all `auto` registers without a cast. It fills its output with 0x5a, and the four bytes come back in one chunk. |
 | `KernelThatThrowsFailsTheTaskAndTheWorkerLives` | A kernel that throws produces `KernelFailed` with no outputs and no chunk. The next dispatch runs. |
-| `OutputStreamEndsWithTheResult` | The transport keeps the stream. Until it is pulled no `TASK_RESULT` exists, and a `BUFFER_RELEASE` frees the cached output at once. Pulled, the stream gives chunks of 4, 4 and 2 bytes of its own copy, the last one flagged, then `TASK_RESULT`. |
+| `OutputStreamEndsWithTheResult` | The three chunks and the result are parked, so the master has no `TASK_RESULT`, and a `BUFFER_RELEASE` frees the cached output. Released, the frames arrive as chunks of 4, 4 and 2 bytes of the stream's own copy, the last one flagged, then `TASK_RESULT`. |
 | `DispatchRunsOnTheDeviceItNames` | Two dispatches name devices 0 and 1, and the kernel records the device of the queue it is handed: both succeed, on two devices. Skipped on a worker with fewer than two devices. |
 | `DispatchNamingAMissingDeviceFailsTheTask` | A dispatch for a device index the worker lacks ends in `KernelFailed` and its kernel never runs. The next dispatch, on device 0, succeeds. |
 
@@ -435,15 +438,15 @@ of the next connection then runs on the same exec thread.
 
 | Test | What it proves |
 | --- | --- |
-| `HandshakeChecksTheMasterBeforeProving` | `HELLO` carries the name and a build id. No `PROOF` leaves before a `CHALLENGE` whose proof verifies; the `PROOF` then carries the worker's proof, its two operations and its capacity, and `WELCOME` registers the agent. |
-| `WrongMasterProofEndsTheLink` | A `CHALLENGE` proved with another secret ends the agent with `RejectedAuthentication`, sends no `PROOF` and closes the peer. The next connection is closed without a `HELLO`. |
-| `EndedLinkStopsItsTransport` | An agent that ends as `RejectedAuthentication` stops its transport, so the connector opens no further connection. |
-| `PingGetsNoPongBeforeRegistration` | Between a good `CHALLENGE` and its `WELCOME` the link answers no `PING`. After `WELCOME` the same `PING` gets one `PONG` with its token. |
-| `LateChallengeForAForgottenHelloIsIgnored` | With a heartbeat of 1 ms the agent sends a `HELLO` per beat and remembers the nonces of its last four. A `CHALLENGE` proved against the first nonce sends no `PROOF`, leaves the peer open and does not end the agent, because the proof may answer a `HELLO` it has forgotten. |
+| `HandshakeChecksTheMasterBeforeProving` | `HELLO` carries the name and a build id. In the log of the fabric's traffic the `CHALLENGE` comes before the `PROOF`; the `PROOF` then carries the worker's proof, its two operations and its capacity, and `WELCOME` registers the agent. |
+| `WrongMasterProofEndsTheLink` | A `CHALLENGE` proved with another secret ends the agent with `RejectedAuthentication`, sends no `PROOF`, no second `HELLO`, and closes the peer. |
+| `EndedLinkStopsItsTransport` | An agent that ends as `RejectedAuthentication` stops its worker endpoint, so the endpoint sends nothing more and opens no further connection. |
+| `PingGetsNoPongBeforeRegistration` | Between a good `CHALLENGE` and its `WELCOME` the link answers no `PING`: of three pings, one before and two after `WELCOME`, the first two `PONG`s carry the tokens of the two later ones. |
+| `LateChallengeForAForgottenHelloIsIgnored` | With a heartbeat of 1 ms the agent sends a `HELLO` per beat and remembers the nonces of its last four. A `CHALLENGE` proved against the first nonce sends no `PROOF` and does not end the agent, because the proof may answer a `HELLO` it has forgotten. The master then hangs up; an agent that is still running connects again, one that ended does not. |
 | `IdleHeartbeatCarriesTheNextTaskID` | After task 41 finished and nothing is held, the next heartbeat carries `oldest_held_task_id` 42 and a queue depth of 0. |
-| `SilentMasterIsLost` | `WELCOME` carries a liveness timeout of 40 ms and no frame follows. The agent closes the peer, and the loss that follows leaves it running. |
+| `SilentMasterIsLost` | `WELCOME` carries a liveness timeout of 40 ms and no frame follows. The agent closes the peer, and once it has connected again it is still running. |
 | `NewSessionClearsTheCache` | A reconnect to the same `session_id` keeps the cache and the ids seen, so a dispatch repeated there runs once. A reconnect to another session clears both, and `reconnects` counts 2. |
-| `LossAfterGoodbyeIsTheWorkersOwn` | A registered agent stops and says `GOODBYE` once. The loss that follows leaves its end `Stopped`, not `MasterLost`. |
+| `LossAfterGoodbyeIsTheWorkersOwn` | A registered agent stops. The loss that follows its own close leaves its end `Stopped`, not `MasterLost`. |
 
 ## test_worker_main.cpp
 

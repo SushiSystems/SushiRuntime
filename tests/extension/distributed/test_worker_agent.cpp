@@ -23,7 +23,7 @@
 
 /**
  * @file test_worker_agent.cpp
- * @brief Tests WorkerAgent through its transport: handshake, dispatch, cache and liveness.
+ * @brief Tests WorkerAgent over an in-process transport: handshake, dispatch, cache and liveness.
  * @see tests/extension/distributed/README.md
  * @author Mustafa Garip
  */
@@ -53,8 +53,10 @@
 #include <SushiRuntime/distributed/kernel_registry.hpp>
 #include <SushiRuntime/distributed/shared_secret.hpp>
 #include <SushiRuntime/distributed/worker_agent.hpp>
+#include <SushiRuntime/in_process_transport/in_process_transport.hpp>
 #include <SushiRuntime/transport/buffer_handle.hpp>
 #include <SushiRuntime/transport/message_type.hpp>
+#include <SushiRuntime/transport/recording_transport_events.hpp>
 #include <SushiRuntime/transport/transport.hpp>
 #include <SushiRuntime/link_security/handshake.hpp>
 #include <SushiRuntime/link_security/sha256.hpp>
@@ -75,276 +77,293 @@ namespace
     /** @brief Holds the byte every key byte of these tests holds. */
     constexpr std::uint8_t K_SECRET_BYTE = 0x42;
 
-    /** @brief Holds one frame the agent handed to the transport. */
-    struct SentFrame
+    /** @brief Holds one frame as the traffic log keeps it: who sent it and its type. */
+    struct TrafficEntry
     {
-        PeerID peer;                    /**< The connection it was sent to. */
-        MessageType type;               /**< Its type. */
-        std::uint8_t flags = 0;         /**< Its flag byte. */
-        std::vector<std::byte> payload; /**< Its payload. */
+        FrameDirection direction = FrameDirection::MasterToWorker; /**< Who sent the frame. */
+        MessageType type = MessageType::Hello;                     /**< The frame's type. */
+    };
+
+    /** @brief Yields one frame, with the flag byte a control frame cannot carry, as a stream. */
+    class SingleFrame final : public FrameSource
+    {
+        public:
+            /** @brief Takes the frame the stream yields. */
+            explicit SingleFrame(OutboundFrame frame) noexcept : frame_(std::move(frame))
+            {
+
+            }
+
+            /** @brief Hands over the frame on the first call and nothing after. */
+            [[nodiscard]] FrameSourceStatus next(OutboundFrame& frame) noexcept override
+            {
+                if (is_sent_)
+                    return FrameSourceStatus::Finished;
+
+                is_sent_ = true;
+                frame.type = frame_.type;
+                frame.flags = frame_.flags;
+                frame.payload.swap(frame_.payload);
+                return FrameSourceStatus::FinalFrame;
+            }
+
+        private:
+            /// @brief The frame to hand over.
+            OutboundFrame frame_;
+
+            /// @brief Whether next() handed it over.
+            bool is_sent_ = false;
     };
 
     /**
-     * @brief Records what the agent sends and closes, and hands it the master's frames.
+     * @brief Plays the master of a worker agent over an in-process fabric.
      *
-     * A stream is pulled dry on the calling thread, or kept until the test releases it.
+     * It owns the fabric and the master endpoint, records what the worker sends, and can park
+     * the worker's output frames so that a test sees them leave the worker before they arrive.
+     * The worker connects when connect() starts the master endpoint.
      */
-    class FakeTransport final : public Transport
+    class MasterSide final
     {
         public:
-            [[nodiscard]] TransportResult start(TransportEvents& events) override
+            /** @brief Builds the fabric and the master endpoint, which is not started yet. */
+            MasterSide() : master_(InProcessTransport::make_master(fabric_))
             {
-                events_ = &events;
-                return TransportResult{};
+                fabric_.set_fault_policy([this](const FaultedFrame& frame)
+                                         {
+                                             return judge(frame);
+                                         });
             }
 
-            /** @brief Returns whether start() reached this transport. */
-            [[nodiscard]] bool was_started() const noexcept
+            /** @brief Stops the master endpoint before the policy and the recorder go. */
+            ~MasterSide()
             {
-                return events_ != nullptr;
+                master_->stop();
             }
 
-            void stop() noexcept override
+            MasterSide(const MasterSide&) = delete;
+            MasterSide& operator=(const MasterSide&) = delete;
+            MasterSide(MasterSide&&) = delete;
+            MasterSide& operator=(MasterSide&&) = delete;
+
+            /** @brief Returns the fabric the worker endpoint joins. */
+            InProcessFabric& fabric() noexcept
             {
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    ++stops_;
-                }
-                changed_.notify_all();
+                return fabric_;
             }
 
-            [[nodiscard]] SendStatus send(PeerID peer, MessageType type,
-                                          span<const std::byte> payload) override
-            {
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    frames_.push_back(SentFrame{
-                        peer, type, 0, std::vector<std::byte>(payload.begin(), payload.end())});
-                }
-                changed_.notify_all();
-                return SendStatus::Queued;
-            }
-
-            [[nodiscard]] SendStatus send_stream(PeerID peer,
-                                                 std::unique_ptr<FrameSource> source) override
-            {
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    if (keep_streams_)
-                    {
-                        streams_.emplace_back(peer, std::move(source));
-                        source.reset();
-                    }
-                }
-
-                if (source)
-                    pull_dry(peer, std::move(source));
-                changed_.notify_all();
-                return SendStatus::Queued;
-            }
-
-            void close_peer(PeerID peer) noexcept override
-            {
-                {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    closed_.push_back(peer);
-                }
-                changed_.notify_all();
-            }
-
-            [[nodiscard]] TransportExposure exposure() const noexcept override
-            {
-                return TransportExposure::Loopback;
-            }
-
-            [[nodiscard]] TransportStatistics statistics() const noexcept override
-            {
-                return TransportStatistics{};
-            }
-
-            /** @brief Opens a connection to the master, as a worker transport does. */
+            /**
+             * @brief Waits for the worker's next connection, starting the master when it is the
+             *        first, and checks that the master names it @p peer.
+             */
             void connect(PeerID peer)
             {
-                events_->on_peer_connected(peer, PeerDescription{});
+                if (!is_started_)
+                {
+                    ASSERT_TRUE(master_->start(events_).is_ok());
+                    is_started_ = true;
+                }
+                ++connections_;
+                ASSERT_TRUE(events_.wait_for_connections(connections_, K_WAIT));
+                EXPECT_EQ(events_.connected()[connections_ - 1], peer);
             }
 
-            /** @brief Reports a connection lost for a cause. */
-            void lose(PeerID peer, PeerLossCause cause)
+            /** @brief Waits until the worker has made @p count connections in all. */
+            [[nodiscard]] bool wait_for_connections(std::size_t count)
             {
-                PeerLoss loss;
-                loss.cause = cause;
-                events_->on_peer_lost(peer, loss);
+                return events_.wait_for_connections(count, K_WAIT);
             }
 
-            /** @brief Encodes a message and hands it to the agent as a frame of the master. */
+            /** @brief Encodes a message and sends it to the worker as a frame of the master. */
             template <typename Message>
             void deliver(PeerID peer, const Message& message, std::uint8_t flags = 0)
             {
                 std::vector<std::byte> payload;
                 ASSERT_EQ(message.encode(payload), Wire::CodecStatus::Ok);
-                events_->on_frame(peer, Message::K_TYPE, flags,
-                                  span<const std::byte>(payload.data(), payload.size()));
-            }
-
-            /** @brief Makes send_stream() keep later streams, or pull them dry again. */
-            void keep_streams(bool value)
-            {
-                const std::lock_guard<std::mutex> lock(mutex_);
-                keep_streams_ = value;
-            }
-
-            /** @brief Pulls every kept stream dry and destroys it, as a writer thread would. */
-            void release_streams()
-            {
-                std::vector<std::pair<PeerID, std::unique_ptr<FrameSource>>> streams;
+                if (flags == 0)
                 {
-                    const std::lock_guard<std::mutex> lock(mutex_);
-                    streams.swap(streams_);
+                    EXPECT_EQ(master_->send(peer, Message::K_TYPE,
+                                            span<const std::byte>(payload.data(), payload.size())),
+                              SendStatus::Queued);
+                    return;
                 }
-                for (auto& [peer, source] : streams)
-                    pull_dry(peer, std::move(source));
-                changed_.notify_all();
+
+                OutboundFrame frame;
+                frame.type = Message::K_TYPE;
+                frame.flags = flags;
+                frame.payload = std::move(payload);
+                EXPECT_EQ(master_->send_stream(
+                              peer, std::make_unique<SingleFrame>(std::move(frame))),
+                          SendStatus::Queued);
             }
 
-            /** @brief Destroys every kept stream unpulled, as a closed peer would. */
-            void drop_streams()
+            /** @brief Closes the connection from the master's end; the worker hears it end. */
+            void lose(PeerID peer)
             {
-                std::vector<std::pair<PeerID, std::unique_ptr<FrameSource>>> streams;
-                const std::lock_guard<std::mutex> lock(mutex_);
-                streams.swap(streams_);
+                master_->close_peer(peer);
             }
 
-            /** @brief Waits until a number of frames of a type were sent. */
-            [[nodiscard]] bool wait_for(MessageType type, std::size_t count)
+            /** @brief Parks the worker's output frames from now on, or lets them through again. */
+            void hold_results(bool value)
             {
-                std::unique_lock<std::mutex> lock(mutex_);
-                return changed_.wait_for(lock, K_WAIT, [this, type, count]
-                                         {
-                                             return count_locked(type) >= count;
-                                         });
+                is_holding_.store(value);
             }
 
-            /** @brief Waits until a number of streams are kept. */
-            [[nodiscard]] bool wait_for_streams(std::size_t count)
+            /** @brief Waits until @p count output frames are parked. */
+            [[nodiscard]] bool wait_for_held(std::size_t count)
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 return changed_.wait_for(lock, K_WAIT, [this, count]
                                          {
-                                             return streams_.size() >= count;
+                                             return held_ >= count;
                                          });
             }
 
-            /** @brief Waits until a peer was closed. */
+            /** @brief Lets output frames through again and delivers the parked ones in order. */
+            void release_held()
+            {
+                is_holding_.store(false);
+                fabric_.flush_held();
+            }
+
+            /** @brief Waits until a number of frames of a type arrived from the worker. */
+            [[nodiscard]] bool wait_for(MessageType type, std::size_t count)
+            {
+                return events_.wait_for_frames(type, count, K_WAIT);
+            }
+
+            /** @brief Waits until @p count frames of a type and direction entered the fabric. */
+            [[nodiscard]] bool wait_for_traffic(FrameDirection direction, MessageType type,
+                                                std::size_t count)
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                return changed_.wait_for(lock, K_WAIT, [this, direction, type, count]
+                                         {
+                                             return traffic_count_locked(direction, type) >= count;
+                                         });
+            }
+
+            /** @brief Waits until the worker closed a peer. */
             [[nodiscard]] bool wait_for_close(PeerID peer)
             {
-                std::unique_lock<std::mutex> lock(mutex_);
-                return changed_.wait_for(lock, K_WAIT, [this, peer]
-                                         {
-                                             return is_closed_locked(peer);
-                                         });
+                for (std::size_t losses = 1; !is_closed(peer); ++losses)
+                {
+                    if (!events_.wait_for_losses(losses, K_WAIT))
+                        return false;
+                }
+                return true;
             }
 
-            /** @brief Waits until stop() was called. */
-            [[nodiscard]] bool wait_for_stop()
-            {
-                std::unique_lock<std::mutex> lock(mutex_);
-                return changed_.wait_for(lock, K_WAIT, [this] { return stops_ > 0; });
-            }
-
-            /** @brief Returns whether a peer was closed. */
+            /** @brief Returns whether the worker closed a peer. */
             [[nodiscard]] bool is_closed(PeerID peer) const
             {
-                const std::lock_guard<std::mutex> lock(mutex_);
-                return is_closed_locked(peer);
+                const std::vector<RecordedLoss> losses = events_.losses();
+                return std::any_of(losses.begin(), losses.end(), [peer](const RecordedLoss& loss)
+                                   {
+                                       return loss.peer == peer;
+                                   });
             }
 
-            /** @brief Returns the number of frames of a type sent so far. */
+            /** @brief Returns the number of frames of a type that arrived from the worker. */
             [[nodiscard]] std::size_t count(MessageType type) const
             {
-                const std::lock_guard<std::mutex> lock(mutex_);
-                return count_locked(type);
+                return events_.frame_count(type);
             }
 
-            /** @brief Returns the frames of a type in the order they were sent. */
-            [[nodiscard]] std::vector<SentFrame> frames_of(MessageType type) const
+            /** @brief Returns the frames of a type in the order they arrived. */
+            [[nodiscard]] std::vector<RecordedFrame> frames_of(MessageType type) const
             {
-                const std::lock_guard<std::mutex> lock(mutex_);
-                std::vector<SentFrame> frames;
-                for (const SentFrame& frame : frames_)
-                {
-                    if (frame.type == type)
-                        frames.push_back(frame);
-                }
-                return frames;
+                return events_.frames_of(type);
             }
 
-            /** @brief Returns every frame in the order it was sent. */
-            [[nodiscard]] std::vector<SentFrame> frames() const
+            /** @brief Returns every frame in the order it arrived. */
+            [[nodiscard]] std::vector<RecordedFrame> frames() const
+            {
+                return events_.frames();
+            }
+
+            /** @brief Returns how often a frame of a type and direction entered the fabric. */
+            [[nodiscard]] std::size_t traffic_count(FrameDirection direction,
+                                                    MessageType type) const
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
-                return frames_;
+                return traffic_count_locked(direction, type);
+            }
+
+            /** @brief Returns every frame that entered the fabric, in the order it entered. */
+            [[nodiscard]] std::vector<TrafficEntry> traffic() const
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                return traffic_;
             }
 
         private:
-            /** @brief Records every frame of a stream, then destroys the stream. */
-            void pull_dry(PeerID peer, std::unique_ptr<FrameSource> source)
+            /** @brief Logs the frame, and parks the worker's output frames while holding. */
+            FaultAction judge(const FaultedFrame& frame)
             {
-                OutboundFrame frame;
-                for (;;)
+                const bool is_output = frame.direction == FrameDirection::WorkerToMaster &&
+                                       (frame.type == MessageType::BufferChunk ||
+                                        frame.type == MessageType::TaskResult);
+                const bool is_parked = is_output && is_holding_.load();
                 {
-                    const FrameSourceStatus status = source->next(frame);
-                    if (status == FrameSourceStatus::Finished)
-                        break;
-
-                    {
-                        const std::lock_guard<std::mutex> lock(mutex_);
-                        frames_.push_back(SentFrame{peer, frame.type, frame.flags, frame.payload});
-                    }
-                    if (status == FrameSourceStatus::FinalFrame)
-                        break;
+                    const std::lock_guard<std::mutex> lock(mutex_);
+                    traffic_.push_back(TrafficEntry{frame.direction, frame.type});
+                    if (is_parked)
+                        ++held_;
                 }
+                changed_.notify_all();
+                return is_parked ? FaultAction::Hold : FaultAction::Deliver;
             }
 
-            /** @brief Returns the number of frames of a type; mutex held. */
-            [[nodiscard]] std::size_t count_locked(MessageType type) const
+            /** @brief Returns how often a frame of a type and direction entered; mutex held. */
+            [[nodiscard]] std::size_t traffic_count_locked(FrameDirection direction,
+                                                           MessageType type) const
             {
-                return static_cast<std::size_t>(
-                    std::count_if(frames_.begin(), frames_.end(), [type](const SentFrame& frame)
-                                  {
-                                      return frame.type == type;
-                                  }));
+                return static_cast<std::size_t>(std::count_if(
+                    traffic_.begin(), traffic_.end(), [direction, type](const TrafficEntry& entry)
+                    {
+                        return entry.direction == direction && entry.type == type;
+                    }));
             }
 
-            /** @brief Returns whether a peer was closed; mutex held. */
-            [[nodiscard]] bool is_closed_locked(PeerID peer) const
-            {
-                return std::find(closed_.begin(), closed_.end(), peer) != closed_.end();
-            }
+            /// @brief The fabric the master and the worker share.
+            InProcessFabric fabric_;
 
-            /// @brief The agent; set by start().
-            TransportEvents* events_ = nullptr;
+            /// @brief What the master endpoint receives; it outlives the endpoint.
+            RecordingTransportEvents events_;
 
-            /// @brief Guards every member below.
+            /// @brief The master endpoint.
+            std::shared_ptr<InProcessTransport> master_;
+
+            /// @brief Whether the master endpoint was started.
+            bool is_started_ = false;
+
+            /// @brief The connections the test has asked for so far.
+            std::size_t connections_ = 0;
+
+            /// @brief Whether the worker's output frames are parked.
+            std::atomic<bool> is_holding_{false};
+
+            /// @brief Guards the traffic log and the parked count.
             mutable std::mutex mutex_;
 
-            /// @brief Wakes the waits on a frame, a kept stream, a close and a stop.
+            /// @brief Wakes the waits on the traffic log and the parked count.
             std::condition_variable changed_;
 
-            /// @brief Every frame sent.
-            std::vector<SentFrame> frames_;
+            /// @brief Every frame that entered the fabric, in order.
+            std::vector<TrafficEntry> traffic_;
 
-            /// @brief Streams kept unpulled.
-            std::vector<std::pair<PeerID, std::unique_ptr<FrameSource>>> streams_;
-
-            /// @brief Peers closed.
-            std::vector<PeerID> closed_;
-
-            /// @brief Whether send_stream() keeps a stream.
-            bool keep_streams_ = false;
-
-            /// @brief Calls of stop().
-            std::size_t stops_ = 0;
+            /// @brief The frames parked since the last release.
+            std::size_t held_ = 0;
     };
+
+    /** @brief Returns whether @p transport was never started, then stops it. */
+    bool was_never_started(Transport& transport)
+    {
+        RecordingTransportEvents probe;
+        const bool is_fresh = transport.start(probe).status == TransportStatus::Ok;
+        transport.stop();
+        return is_fresh;
+    }
 
     /** @brief Returns a handle. */
     BufferHandle handle_of(std::uint64_t id, std::uint32_t version, std::uint64_t size_bytes)
@@ -379,7 +398,7 @@ namespace
 
     /** @brief Decodes the payload of a recorded frame; the frame outlives the message. */
     template <typename Message>
-    Message decode(const SentFrame& frame)
+    Message decode(const RecordedFrame& frame)
     {
         Message message;
         const Wire::DecodeResult result = Message::decode(
@@ -536,7 +555,8 @@ namespace
     };
 
     /**
-     * @brief Holds a worker agent over a fake transport, and plays its master.
+     * @brief Holds a worker agent over a worker endpoint of an in-process fabric, and plays its
+     *        master.
      *
      * A test registers its kernels and sets the options, then calls start().
      */
@@ -545,7 +565,7 @@ namespace
         public:
             /** @brief Builds the rig; the agent is built by start(). */
             AgentRig()
-                : transport(std::make_shared<FakeTransport>()),
+                : worker(InProcessTransport::make_worker(master.fabric())),
                   kernels(make_sushi<KernelRegistry>())
             {
                 options.name = "worker-a";
@@ -558,12 +578,11 @@ namespace
                         .value();
             }
 
-            /** @brief Stops the agent, then drops the kept streams while its cache lives. */
+            /** @brief Stops the agent, which stops its endpoint. */
             ~AgentRig()
             {
                 if (agent_.has_value())
                     agent_->stop();
-                transport->drop_streams();
             }
 
             AgentRig(const AgentRig&) = delete;
@@ -574,7 +593,7 @@ namespace
             /** @brief Builds and starts the agent with the options and kernels set so far. */
             void start()
             {
-                agent_.emplace(runtime_, transport, kernels, std::move(options));
+                agent_.emplace(runtime_, worker, kernels, std::move(options));
                 const TransportResult started = agent_->start();
                 ASSERT_TRUE(started.is_ok()) << started.message;
             }
@@ -585,10 +604,17 @@ namespace
                 return *agent_;
             }
 
+            /** @brief Returns whether the agent stopped its endpoint, which then sends nothing. */
+            [[nodiscard]] bool is_worker_stopped() const
+            {
+                return worker->send(PeerID{0}, MessageType::Ping, span<const std::byte>()) ==
+                       SendStatus::Stopped;
+            }
+
             /** @brief Returns the HELLO the agent sent last. */
             Wire::HelloMessage last_hello() const
             {
-                const std::vector<SentFrame> hellos = transport->frames_of(MessageType::Hello);
+                const std::vector<RecordedFrame> hellos = master.frames_of(MessageType::Hello);
                 if (hellos.empty())
                 {
                     ADD_FAILURE() << "no HELLO was sent";
@@ -599,21 +625,21 @@ namespace
 
             /**
              * @brief Runs a whole handshake on a new connection.
-             * @param secret_byte The byte of the key the master proves.
+             * @param peer The master's name for the connection.
              */
             void register_master(PeerID peer, std::uint64_t session_id,
                                  std::uint32_t liveness_timeout_ms = 0,
                                  std::uint32_t chunk_bytes = 4096)
             {
-                const std::size_t hellos = transport->count(MessageType::Hello);
-                const std::size_t proofs = transport->count(MessageType::Proof);
-                transport->connect(peer);
-                ASSERT_TRUE(transport->wait_for(MessageType::Hello, hellos + 1));
-                transport->deliver(peer, challenge_of(secret_of(K_SECRET_BYTE), session_id,
-                                                      nonce_in(last_hello())));
-                ASSERT_TRUE(transport->wait_for(MessageType::Proof, proofs + 1));
+                const std::size_t hellos = master.count(MessageType::Hello);
+                const std::size_t proofs = master.count(MessageType::Proof);
+                master.connect(peer);
+                ASSERT_TRUE(master.wait_for(MessageType::Hello, hellos + 1));
+                master.deliver(peer, challenge_of(secret_of(K_SECRET_BYTE), session_id,
+                                                  nonce_in(last_hello())));
+                ASSERT_TRUE(master.wait_for(MessageType::Proof, proofs + 1));
                 const std::uint64_t registrations = agent_->statistics().registrations;
-                transport->deliver(peer, welcome_of(peer, liveness_timeout_ms, chunk_bytes));
+                master.deliver(peer, welcome_of(peer, liveness_timeout_ms, chunk_bytes));
                 ASSERT_TRUE(eventually([&]
                                        {
                                            return agent_->statistics().registrations >
@@ -624,8 +650,7 @@ namespace
             /** @brief Returns the n-th TASK_RESULT sent, counted from 0. */
             [[nodiscard]] Wire::TaskResultMessage result(std::size_t index) const
             {
-                const std::vector<SentFrame> frames =
-                    transport->frames_of(MessageType::TaskResult);
+                const std::vector<RecordedFrame> frames = master.frames_of(MessageType::TaskResult);
                 if (index >= frames.size())
                 {
                     ADD_FAILURE() << "no TASK_RESULT number " << index;
@@ -637,8 +662,8 @@ namespace
             /** @brief Dispatches a task and waits for the result number @p results. */
             void run(PeerID peer, const Wire::TaskDispatchMessage& dispatch, std::size_t results)
             {
-                transport->deliver(peer, dispatch);
-                ASSERT_TRUE(transport->wait_for(MessageType::TaskResult, results));
+                master.deliver(peer, dispatch);
+                ASSERT_TRUE(master.wait_for(MessageType::TaskResult, results));
             }
 
             /** @brief Returns the number of devices the worker's runtime has. */
@@ -663,8 +688,11 @@ namespace
                 return std::nullopt;
             }
 
-            /** @brief Records what the agent sends; shared with the agent. */
-            std::shared_ptr<FakeTransport> transport;
+            /** @brief Plays the master: owns the fabric, sends frames and records the replies. */
+            MasterSide master;
+
+            /** @brief The worker endpoint the agent runs on. */
+            std::shared_ptr<InProcessTransport> worker;
 
             /** @brief The kernels a test registers before start(). */
             sushi_ptr<KernelRegistry> kernels;
@@ -694,22 +722,21 @@ TEST(Medium_WorkerBufferCacheTest, ReleaseEvicts)
     rig.run(K_MASTER, dispatch_of(1, op, {}, {handle_of(1, 1, 64)}), 1);
     EXPECT_EQ(rig.agent().statistics().cache_bytes, 64u);
 
-    rig.transport->deliver(K_MASTER, release_of(1));
+    rig.master.deliver(K_MASTER, release_of(1));
     ASSERT_TRUE(eventually([&] { return rig.agent().statistics().cache_bytes == 0; }));
     EXPECT_EQ(rig.agent().statistics().cache_evictions, 1u);
 
-    // A stream that waits to be sent holds its own copy, not the cached buffer.
-    rig.transport->keep_streams(true);
-    rig.transport->deliver(K_MASTER, dispatch_of(2, op, {}, {handle_of(2, 1, 64)}));
-    ASSERT_TRUE(rig.transport->wait_for_streams(1));
-    rig.transport->deliver(K_MASTER, release_of(2));
-    EXPECT_EQ(rig.agent().statistics().cache_bytes, 0u)
+    // An output that waits to be sent holds its own copy, not the cached buffer.
+    rig.master.hold_results(true);
+    rig.master.deliver(K_MASTER, dispatch_of(2, op, {}, {handle_of(2, 1, 64)}));
+    ASSERT_TRUE(rig.master.wait_for_held(2));
+    rig.master.deliver(K_MASTER, release_of(2));
+    ASSERT_TRUE(eventually([&] { return rig.agent().statistics().cache_bytes == 0; }))
         << "a waiting stream kept its output in the cache";
     EXPECT_EQ(rig.agent().statistics().cache_evictions, 2u);
 
-    rig.transport->keep_streams(false);
-    rig.transport->release_streams();
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    rig.master.release_held();
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskResult, 2));
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
 }
 
@@ -728,7 +755,7 @@ TEST(Medium_WorkerBufferCacheTest, BudgetEvictsLeastRecentlyUsedUnpinned)
     rig.run(K_MASTER, dispatch_of(2, op, {}, {handle_of(2, 1, 100)}), 2);
     rig.run(K_MASTER, dispatch_of(3, op, {}, {handle_of(3, 1, 100)}), 3);
     rig.run(K_MASTER, dispatch_of(4, op, {handle_of(1, 1, 100)}, {}), 4);
-    EXPECT_EQ(rig.transport->count(MessageType::BufferRequest), 0u)
+    EXPECT_EQ(rig.master.count(MessageType::BufferRequest), 0u)
         << "a cached input was pulled";
 
     rig.run(K_MASTER, dispatch_of(5, op, {}, {handle_of(4, 1, 100)}), 5);
@@ -736,20 +763,20 @@ TEST(Medium_WorkerBufferCacheTest, BudgetEvictsLeastRecentlyUsedUnpinned)
     EXPECT_EQ(rig.agent().statistics().cache_bytes, 300u);
 
     rig.run(K_MASTER, dispatch_of(6, op, {handle_of(1, 1, 100)}, {}), 6);
-    EXPECT_EQ(rig.transport->count(MessageType::BufferRequest), 0u)
+    EXPECT_EQ(rig.master.count(MessageType::BufferRequest), 0u)
         << "the buffer used last was evicted";
 
     const std::vector<std::byte> bytes = counting_bytes(100, 1);
     const BufferHandle second = handle_of(2, 1, 100);
-    rig.transport->deliver(K_MASTER, dispatch_of(7, op, {second}, {}));
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 1));
+    rig.master.deliver(K_MASTER, dispatch_of(7, op, {second}, {}));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::BufferRequest, 1));
     EXPECT_EQ(decode<Wire::BufferRequestMessage>(
-                  rig.transport->frames_of(MessageType::BufferRequest)[0])
+                  rig.master.frames_of(MessageType::BufferRequest)[0])
                   .id,
               second.id);
-    rig.transport->deliver(K_MASTER, pull_chunk(second, 0, 100, bytes),
+    rig.master.deliver(K_MASTER, pull_chunk(second, 0, 100, bytes),
                            Wire::K_FRAME_FLAG_LAST_CHUNK);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 7));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskResult, 7));
 }
 
 /** @brief Tests that a buffer a batch holds pinned is never evicted to make room. */
@@ -767,15 +794,15 @@ TEST(Medium_WorkerBufferCacheTest, PinnedEntryIsNotEvicted)
 
     // Task 2 pins its output and its input while the pull is open; tasks 3 and 4 join its batch.
     const BufferHandle input = handle_of(2, 1, 100);
-    rig.transport->deliver(K_MASTER, dispatch_of(2, op, {input}, {handle_of(3, 1, 100)}));
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 1));
-    rig.transport->deliver(K_MASTER, dispatch_of(3, op, {}, {handle_of(4, 1, 100)}));
-    rig.transport->deliver(K_MASTER, dispatch_of(4, op, {}, {handle_of(5, 1, 100)}));
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskAccepted, 4));
+    rig.master.deliver(K_MASTER, dispatch_of(2, op, {input}, {handle_of(3, 1, 100)}));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::BufferRequest, 1));
+    rig.master.deliver(K_MASTER, dispatch_of(3, op, {}, {handle_of(4, 1, 100)}));
+    rig.master.deliver(K_MASTER, dispatch_of(4, op, {}, {handle_of(5, 1, 100)}));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskAccepted, 4));
     const std::vector<std::byte> bytes = counting_bytes(100, 1);
-    rig.transport->deliver(K_MASTER, pull_chunk(input, 0, 100, bytes),
+    rig.master.deliver(K_MASTER, pull_chunk(input, 0, 100, bytes),
                            Wire::K_FRAME_FLAG_LAST_CHUNK);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 4));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskResult, 4));
 
     // Task 3's output took the room of the one unpinned buffer; task 4 found none.
     EXPECT_EQ(rig.result(1).task_id, 4u);
@@ -810,22 +837,22 @@ TEST(Medium_WorkerBufferCacheTest, GapInAPulledBufferDiscardsIt)
     rig.start();
     rig.register_master(K_MASTER, 7);
 
-    rig.transport->deliver(K_MASTER, dispatch_of(1, op, {handle}, {}));
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 1));
-    rig.transport->deliver(K_MASTER, pull_chunk(handle, 0, 4, bytes));
-    rig.transport->deliver(K_MASTER, pull_chunk(handle, 8, 4, bytes),
+    rig.master.deliver(K_MASTER, dispatch_of(1, op, {handle}, {}));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::BufferRequest, 1));
+    rig.master.deliver(K_MASTER, pull_chunk(handle, 0, 4, bytes));
+    rig.master.deliver(K_MASTER, pull_chunk(handle, 8, 4, bytes),
                            Wire::K_FRAME_FLAG_LAST_CHUNK);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 1));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskResult, 1));
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::InputUnavailable);
     EXPECT_EQ(rig.agent().statistics().cache_bytes, 0u) << "a discarded transfer kept its memory";
 
-    rig.transport->deliver(K_MASTER, dispatch_of(2, op, {handle}, {}));
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 2));
-    rig.transport->deliver(K_MASTER, pull_chunk(handle, 0, 4, bytes));
-    rig.transport->deliver(K_MASTER, pull_chunk(handle, 4, 4, bytes));
-    rig.transport->deliver(K_MASTER, pull_chunk(handle, 8, 4, bytes),
+    rig.master.deliver(K_MASTER, dispatch_of(2, op, {handle}, {}));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::BufferRequest, 2));
+    rig.master.deliver(K_MASTER, pull_chunk(handle, 0, 4, bytes));
+    rig.master.deliver(K_MASTER, pull_chunk(handle, 4, 4, bytes));
+    rig.master.deliver(K_MASTER, pull_chunk(handle, 8, 4, bytes),
                            Wire::K_FRAME_FLAG_LAST_CHUNK);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskResult, 2));
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_TRUE(is_equal.load()) << "the kernel read other bytes than the master sent";
 }
@@ -845,7 +872,7 @@ TEST(Medium_DispatchExecutorTest, OutputAllocationFailureFailsTheTask)
     EXPECT_EQ(rig.result(0).task_id, 1u);
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::OutputAllocationFailed);
     EXPECT_EQ(calls.load(), 0);
-    EXPECT_EQ(rig.transport->count(MessageType::BufferChunk), 0u);
+    EXPECT_EQ(rig.master.count(MessageType::BufferChunk), 0u);
 
     rig.run(K_MASTER, dispatch_of(2, op, {}, {handle_of(7, 2, 16)}), 2);
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
@@ -880,24 +907,24 @@ TEST(Medium_DispatchExecutorTest, KernelSeesBufferSizes)
     const BufferHandle input = handle_of(3, 5, 12);
     const BufferHandle output = handle_of(4, 1, 20);
     const std::vector<std::byte> bytes = counting_bytes(12, 1);
-    rig.transport->deliver(K_MASTER, dispatch_of(1, op, {input}, {output}));
+    rig.master.deliver(K_MASTER, dispatch_of(1, op, {input}, {output}));
 
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 1));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::BufferRequest, 1));
     const Wire::BufferRequestMessage request = decode<Wire::BufferRequestMessage>(
-        rig.transport->frames_of(MessageType::BufferRequest)[0]);
+        rig.master.frames_of(MessageType::BufferRequest)[0]);
     EXPECT_EQ(request.id, input.id);
     EXPECT_EQ(request.version, input.version);
 
-    rig.transport->deliver(K_MASTER, pull_chunk(input, 0, 8, bytes));
-    rig.transport->deliver(K_MASTER, pull_chunk(input, 8, 4, bytes),
+    rig.master.deliver(K_MASTER, pull_chunk(input, 0, 8, bytes));
+    rig.master.deliver(K_MASTER, pull_chunk(input, 8, 4, bytes),
                            Wire::K_FRAME_FLAG_LAST_CHUNK);
 
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 1));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskResult, 1));
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(input_size.load(), 12u);
     EXPECT_EQ(output_size.load(), 20u);
 
-    const std::vector<SentFrame> chunks = rig.transport->frames_of(MessageType::BufferChunk);
+    const std::vector<RecordedFrame> chunks = rig.master.frames_of(MessageType::BufferChunk);
     ASSERT_EQ(chunks.size(), 3u);
     const Wire::BufferChunkMessage first = decode<Wire::BufferChunkMessage>(chunks[0]);
     EXPECT_EQ(first.purpose, Wire::ChunkPurpose::TaskOutput);
@@ -959,7 +986,7 @@ TEST(Medium_DispatchExecutorTest, DispatchNamingAMissingDeviceFailsTheTask)
     rig.run(K_MASTER, missing, 1);
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::KernelFailed);
     EXPECT_EQ(calls.load(), 0);
-    EXPECT_EQ(rig.transport->count(MessageType::BufferChunk), 0u);
+    EXPECT_EQ(rig.master.count(MessageType::BufferChunk), 0u);
 
     rig.run(K_MASTER, dispatch_of(2, op, {}, {handle_of(1, 2, 16)}), 2);
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
@@ -984,7 +1011,7 @@ TEST(Medium_DispatchExecutorTest, DispatchOnADeviceOutsideTheCacheContextFailsTh
     rig.run(K_MASTER, dispatch, 1);
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::KernelFailed);
     EXPECT_EQ(calls.load(), 0);
-    EXPECT_EQ(rig.transport->count(MessageType::BufferChunk), 0u);
+    EXPECT_EQ(rig.master.count(MessageType::BufferChunk), 0u);
 }
 
 /** @brief Tests that a generic lambda registers as a kernel and runs. */
@@ -1004,7 +1031,7 @@ TEST(Medium_DispatchExecutorTest, GenericLambdaRegistersAsAKernel)
     rig.run(K_MASTER, dispatch_of(1, op, {}, {handle_of(8, 1, 4)}), 1);
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
 
-    const std::vector<SentFrame> chunks = rig.transport->frames_of(MessageType::BufferChunk);
+    const std::vector<RecordedFrame> chunks = rig.master.frames_of(MessageType::BufferChunk);
     ASSERT_EQ(chunks.size(), 1u);
     const Wire::BufferChunkMessage chunk = decode<Wire::BufferChunkMessage>(chunks[0]);
     ASSERT_EQ(chunk.data.size(), 4u);
@@ -1032,7 +1059,7 @@ TEST(Medium_DispatchExecutorTest, KernelThatThrowsFailsTheTaskAndTheWorkerLives)
     rig.run(K_MASTER, dispatch_of(1, op, {}, {handle_of(5, 1, 16)}), 1);
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::KernelFailed);
     EXPECT_TRUE(rig.result(0).outputs.empty());
-    EXPECT_EQ(rig.transport->count(MessageType::BufferChunk), 0u);
+    EXPECT_EQ(rig.master.count(MessageType::BufferChunk), 0u);
 
     rig.run(K_MASTER, dispatch_of(2, op, {}, {handle_of(5, 2, 16)}), 2);
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
@@ -1059,22 +1086,23 @@ TEST(Medium_DispatchExecutorTest, OutputStreamEndsWithTheResult)
     rig.start();
     rig.register_master(K_MASTER, 7, 0, 4);
 
-    rig.transport->keep_streams(true);
+    rig.master.hold_results(true);
     const BufferHandle output = handle_of(5, 2, 10);
-    rig.transport->deliver(K_MASTER, dispatch_of(9, op, {}, {output}));
-    ASSERT_TRUE(rig.transport->wait_for_streams(1));
+    rig.master.deliver(K_MASTER, dispatch_of(9, op, {}, {output}));
+    // Three chunks and the result are parked, so none of them has reached the master yet.
+    ASSERT_TRUE(rig.master.wait_for_held(4));
 
-    EXPECT_EQ(rig.transport->count(MessageType::TaskResult), 0u);
-    // The stream sends its own copy, so a release frees the cached output at once.
-    rig.transport->deliver(K_MASTER, release_of(5));
-    EXPECT_EQ(rig.agent().statistics().cache_bytes, 0u)
+    EXPECT_EQ(rig.master.count(MessageType::TaskResult), 0u);
+    // The stream sends its own copy, so a release frees the cached output.
+    rig.master.deliver(K_MASTER, release_of(5));
+    ASSERT_TRUE(eventually([&] { return rig.agent().statistics().cache_bytes == 0; }))
         << "the stream kept the cached output pinned";
 
-    rig.transport->keep_streams(false);
-    rig.transport->release_streams();
+    rig.master.release_held();
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskResult, 1));
 
-    std::vector<SentFrame> frames;
-    for (const SentFrame& frame : rig.transport->frames())
+    std::vector<RecordedFrame> frames;
+    for (const RecordedFrame& frame : rig.master.frames())
     {
         if (frame.type == MessageType::TaskAccepted || frame.type == MessageType::BufferChunk ||
             frame.type == MessageType::TaskResult)
@@ -1086,7 +1114,7 @@ TEST(Medium_DispatchExecutorTest, OutputStreamEndsWithTheResult)
     std::uint64_t offset = 0;
     for (std::size_t index = 0; index < 3; ++index)
     {
-        const SentFrame& frame = frames[index + 1];
+        const RecordedFrame& frame = frames[index + 1];
         ASSERT_EQ(frame.type, MessageType::BufferChunk);
         const Wire::BufferChunkMessage chunk = decode<Wire::BufferChunkMessage>(frame);
         EXPECT_EQ(chunk.task_id, 9u);
@@ -1118,13 +1146,13 @@ void deliver_as_one_batch(AgentRig& rig, const Wire::TaskDispatchMessage& first,
                           const Wire::TaskDispatchMessage& second, const BufferHandle& input,
                           const std::vector<std::byte>& bytes)
 {
-    const std::size_t requests = rig.transport->count(MessageType::BufferRequest);
-    const std::size_t accepted = rig.transport->count(MessageType::TaskAccepted);
-    rig.transport->deliver(K_MASTER, first);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, requests + 1));
-    rig.transport->deliver(K_MASTER, second);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskAccepted, accepted + 2));
-    rig.transport->deliver(K_MASTER,
+    const std::size_t requests = rig.master.count(MessageType::BufferRequest);
+    const std::size_t accepted = rig.master.count(MessageType::TaskAccepted);
+    rig.master.deliver(K_MASTER, first);
+    ASSERT_TRUE(rig.master.wait_for(MessageType::BufferRequest, requests + 1));
+    rig.master.deliver(K_MASTER, second);
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskAccepted, accepted + 2));
+    rig.master.deliver(K_MASTER,
                            pull_chunk(input, 0, static_cast<std::size_t>(input.size_bytes), bytes),
                            Wire::K_FRAME_FLAG_LAST_CHUNK);
 }
@@ -1132,7 +1160,7 @@ void deliver_as_one_batch(AgentRig& rig, const Wire::TaskDispatchMessage& first,
 /** @brief Returns the data of the first output chunk a task sent. */
 std::vector<std::byte> first_output_of(const AgentRig& rig, std::uint64_t task_id)
 {
-    for (const SentFrame& frame : rig.transport->frames_of(MessageType::BufferChunk))
+    for (const RecordedFrame& frame : rig.master.frames_of(MessageType::BufferChunk))
     {
         const Wire::BufferChunkMessage chunk = decode<Wire::BufferChunkMessage>(frame);
         if (chunk.task_id == task_id)
@@ -1177,7 +1205,7 @@ TEST(Medium_DispatchExecutorTest, DispatchesOverDisjointBuffersAreInFlightTogeth
     second.device_index = second_device;
     deliver_as_one_batch(rig, first, second, input, counting_bytes(8, 1));
 
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskResult, 2));
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(rendezvous.most(), 2u) << "the second kernel entered only after the first left";
@@ -1218,7 +1246,7 @@ TEST(Medium_DispatchExecutorTest, DispatchesWritingOneBufferRunOneAfterTheOther)
     const Wire::TaskDispatchMessage second = dispatch_of(2, op, {}, {handle_of(6, 2, 16)});
     deliver_as_one_batch(rig, first, second, input, counting_bytes(8, 1));
 
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskResult, 2));
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(rendezvous.most(), 1u) << "the two writers of buffer 6 overlapped";
@@ -1246,10 +1274,10 @@ TEST(Medium_DispatchExecutorTest, OneRunPullsAnInputTwoDispatchesReadOnce)
     deliver_as_one_batch(rig, dispatch_of(1, op, {input}, {}), dispatch_of(2, op, {input}, {}),
                          input, counting_bytes(8, 1));
 
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskResult, 2));
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
-    EXPECT_EQ(rig.transport->count(MessageType::BufferRequest), 1u);
+    EXPECT_EQ(rig.master.count(MessageType::BufferRequest), 1u);
     EXPECT_EQ(calls.load(), 2);
 }
 
@@ -1283,10 +1311,10 @@ TEST(Medium_DispatchExecutorTest, ADispatchReadingAQueuedOutputRunsAfterIt)
                          dispatch_of(2, copy, {produced}, {handle_of(8, 1, 16)}), input,
                          counting_bytes(8, 1));
 
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::TaskResult, 2));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::TaskResult, 2));
     EXPECT_EQ(rig.result(0).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(rig.result(1).status, Wire::TaskResultStatus::Succeeded);
-    EXPECT_EQ(rig.transport->count(MessageType::BufferRequest), 1u)
+    EXPECT_EQ(rig.master.count(MessageType::BufferRequest), 1u)
         << "the reader asked the master for an output this worker makes";
     EXPECT_EQ(first_output_of(rig, 2), std::vector<std::byte>(16, std::byte{0x33}));
 }
@@ -1303,10 +1331,10 @@ TEST(Medium_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
     rig.start();
     rig.register_master(K_MASTER, 7);
 
-    rig.transport->deliver(K_MASTER, dispatch_of(1, op, {handle_of(3, 5, 12)}, {}));
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::BufferRequest, 1));
+    rig.master.deliver(K_MASTER, dispatch_of(1, op, {handle_of(3, 5, 12)}, {}));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::BufferRequest, 1));
 
-    rig.transport->lose(K_MASTER, PeerLossCause::ClosedByPeer);
+    rig.master.lose(K_MASTER);
 
     ASSERT_TRUE(eventually([&]
                            {
@@ -1319,7 +1347,7 @@ TEST(Medium_DispatchExecutorTest, DisconnectEndsAnOpenInputPull)
     // The exec thread is free again: a task of the next connection runs.
     const PeerID next{2};
     rig.register_master(next, 7);
-    const std::size_t results = rig.transport->count(MessageType::TaskResult);
+    const std::size_t results = rig.master.count(MessageType::TaskResult);
     rig.run(next, dispatch_of(2, op, {}, {}), results + 1);
     EXPECT_EQ(rig.result(results).status, Wire::TaskResultStatus::Succeeded);
     EXPECT_EQ(calls.load(), 1);
@@ -1335,28 +1363,41 @@ TEST(Medium_MasterLinkTest, HandshakeChecksTheMasterBeforeProving)
     rig.options.cache_bytes = 4096;
     rig.start();
 
-    rig.transport->connect(K_MASTER);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::Hello, 1));
+    rig.master.connect(K_MASTER);
+    ASSERT_TRUE(rig.master.wait_for(MessageType::Hello, 1));
     const Wire::HelloMessage hello = rig.last_hello();
     EXPECT_EQ(hello.node_name, "worker-a");
     EXPECT_FALSE(hello.build_id.empty());
-    EXPECT_EQ(rig.transport->count(MessageType::Proof), 0u) << "PROOF left before the CHALLENGE";
 
     const std::vector<std::uint8_t> secret = secret_of(K_SECRET_BYTE);
-    rig.transport->deliver(K_MASTER, challenge_of(secret, 7, nonce_in(hello)));
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::Proof, 1));
+    rig.master.deliver(K_MASTER, challenge_of(secret, 7, nonce_in(hello)));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::Proof, 1));
     const Wire::ProofMessage proof =
-        decode<Wire::ProofMessage>(rig.transport->frames_of(MessageType::Proof)[0]);
+        decode<Wire::ProofMessage>(rig.master.frames_of(MessageType::Proof)[0]);
     const Sha256Digest expected =
         compute_proof(HandshakeRole::Worker, span<const std::uint8_t>(secret.data(), secret.size()),
                       nonce_in(hello), K_MASTER_NONCE);
     EXPECT_EQ(std::memcmp(proof.worker_proof.data(), expected.data(), expected.size()), 0);
+    const std::vector<TrafficEntry> traffic = rig.master.traffic();
+    const auto position_of = [&traffic](FrameDirection direction, MessageType type)
+    {
+        return static_cast<std::size_t>(std::find_if(traffic.begin(), traffic.end(),
+                                                     [direction, type](const TrafficEntry& entry)
+                                                     {
+                                                         return entry.direction == direction &&
+                                                                entry.type == type;
+                                                     }) -
+                                        traffic.begin());
+    };
+    EXPECT_LT(position_of(FrameDirection::MasterToWorker, MessageType::Challenge),
+              position_of(FrameDirection::WorkerToMaster, MessageType::Proof))
+        << "PROOF left before the CHALLENGE";
     EXPECT_EQ(proof.ops.size(), 2u);
     EXPECT_EQ(proof.max_jobs, 16u);
     EXPECT_EQ(proof.cache_budget, 4096u);
     EXPECT_EQ(rig.agent().statistics().registrations, 0u);
 
-    rig.transport->deliver(K_MASTER, welcome_of(K_MASTER, 5000, 4096));
+    rig.master.deliver(K_MASTER, welcome_of(K_MASTER, 5000, 4096));
     ASSERT_TRUE(eventually([&] { return rig.agent().statistics().registrations == 1; }));
     EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Running);
 }
@@ -1367,17 +1408,14 @@ TEST(Medium_MasterLinkTest, WrongMasterProofEndsTheLink)
     AgentRig rig;
     rig.start();
 
-    rig.transport->connect(K_MASTER);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::Hello, 1));
-    rig.transport->deliver(K_MASTER, challenge_of(secret_of(0x43), 7, nonce_in(rig.last_hello())));
+    rig.master.connect(K_MASTER);
+    ASSERT_TRUE(rig.master.wait_for(MessageType::Hello, 1));
+    rig.master.deliver(K_MASTER, challenge_of(secret_of(0x43), 7, nonce_in(rig.last_hello())));
     EXPECT_EQ(rig.agent().wait_for_end(K_WAIT), WorkerEnd::RejectedAuthentication);
-    EXPECT_EQ(rig.transport->count(MessageType::Proof), 0u) << "PROOF went to an unproven master";
-    EXPECT_TRUE(rig.transport->is_closed(K_MASTER));
-
-    const PeerID next{2};
-    rig.transport->connect(next);
-    EXPECT_EQ(rig.transport->count(MessageType::Hello), 1u) << "an ended link sent HELLO";
-    EXPECT_TRUE(rig.transport->is_closed(next));
+    // The worker's frames reach the master before it hears the connection close.
+    EXPECT_TRUE(rig.master.wait_for_close(K_MASTER));
+    EXPECT_EQ(rig.master.count(MessageType::Proof), 0u) << "PROOF went to an unproven master";
+    EXPECT_EQ(rig.master.count(MessageType::Hello), 1u) << "an ended link sent HELLO";
 }
 
 /** @brief Tests that an ended link stops its transport, so it connects no more. */
@@ -1386,13 +1424,13 @@ TEST(Medium_MasterLinkTest, EndedLinkStopsItsTransport)
     AgentRig rig;
     rig.start();
 
-    rig.transport->connect(K_MASTER);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::Hello, 1));
-    rig.transport->deliver(K_MASTER, challenge_of(secret_of(0x43), 7, nonce_in(rig.last_hello())));
+    rig.master.connect(K_MASTER);
+    ASSERT_TRUE(rig.master.wait_for(MessageType::Hello, 1));
+    rig.master.deliver(K_MASTER, challenge_of(secret_of(0x43), 7, nonce_in(rig.last_hello())));
 
-    ASSERT_TRUE(rig.transport->wait_for_stop())
-        << "the transport of a rejected link keeps connecting";
     EXPECT_EQ(rig.agent().wait_for_end(K_WAIT), WorkerEnd::RejectedAuthentication);
+    ASSERT_TRUE(eventually([&] { return rig.is_worker_stopped(); }))
+        << "the transport of a rejected link keeps connecting";
 }
 
 /** @brief Tests that a worker answers PING only once WELCOME registered it. */
@@ -1400,26 +1438,32 @@ TEST(Medium_MasterLinkTest, PingGetsNoPongBeforeRegistration)
 {
     AgentRig rig;
     rig.start();
-    Wire::PingMessage ping;
-    ping.token = 99;
+    Wire::PingMessage early;
+    early.token = 98;
+    Wire::PingMessage registered;
+    registered.token = 99;
+    Wire::PingMessage last;
+    last.token = 100;
 
     // The master registered this worker on PROOF, but its WELCOME has not arrived.
-    rig.transport->connect(K_MASTER);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::Hello, 1));
-    rig.transport->deliver(K_MASTER,
-                           challenge_of(secret_of(K_SECRET_BYTE), 7, nonce_in(rig.last_hello())));
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::Proof, 1));
-    rig.transport->deliver(K_MASTER, ping);
-    EXPECT_EQ(rig.transport->count(MessageType::Pong), 0u)
-        << "a link that is not registered told the master it is alive";
+    rig.master.connect(K_MASTER);
+    ASSERT_TRUE(rig.master.wait_for(MessageType::Hello, 1));
+    rig.master.deliver(K_MASTER,
+                       challenge_of(secret_of(K_SECRET_BYTE), 7, nonce_in(rig.last_hello())));
+    ASSERT_TRUE(rig.master.wait_for(MessageType::Proof, 1));
+    rig.master.deliver(K_MASTER, early);
 
-    rig.transport->deliver(K_MASTER, welcome_of(K_MASTER, 0, 4096));
+    rig.master.deliver(K_MASTER, welcome_of(K_MASTER, 0, 4096));
     ASSERT_TRUE(eventually([&] { return rig.agent().statistics().registrations == 1; }));
-    rig.transport->deliver(K_MASTER, ping);
+    rig.master.deliver(K_MASTER, registered);
+    rig.master.deliver(K_MASTER, last);
 
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::Pong, 1));
-    EXPECT_EQ(decode<Wire::PongMessage>(rig.transport->frames_of(MessageType::Pong)[0]).token,
-              99u);
+    // The two PONGs of the registered link come in order; a PONG for the early PING would be first.
+    ASSERT_TRUE(rig.master.wait_for(MessageType::Pong, 2));
+    const std::vector<RecordedFrame> pongs = rig.master.frames_of(MessageType::Pong);
+    EXPECT_EQ(decode<Wire::PongMessage>(pongs[0]).token, 99u)
+        << "a link that is not registered told the master it is alive";
+    EXPECT_EQ(decode<Wire::PongMessage>(pongs[1]).token, 100u);
 }
 
 /** @brief Tests that a CHALLENGE for a HELLO the link forgot is ignored, not taken as wrong. */
@@ -1431,16 +1475,21 @@ TEST(Medium_MasterLinkTest, LateChallengeForAForgottenHelloIsIgnored)
     rig.start();
 
     // The link remembers four nonces; the fifth HELLO forgets the nonce of the first.
-    rig.transport->connect(K_MASTER);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::Hello, K_HELLOS));
+    rig.master.connect(K_MASTER);
+    ASSERT_TRUE(rig.master.wait_for(MessageType::Hello, K_HELLOS));
     const HandshakeNonce first =
-        nonce_in(decode<Wire::HelloMessage>(rig.transport->frames_of(MessageType::Hello)[0]));
+        nonce_in(decode<Wire::HelloMessage>(rig.master.frames_of(MessageType::Hello)[0]));
 
-    rig.transport->deliver(K_MASTER, challenge_of(secret_of(K_SECRET_BYTE), 7, first));
-    EXPECT_EQ(rig.transport->count(MessageType::Proof), 0u);
-    EXPECT_FALSE(rig.transport->is_closed(K_MASTER));
-    EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Running)
+    rig.master.deliver(K_MASTER, challenge_of(secret_of(K_SECRET_BYTE), 7, first));
+    // An agent that took the CHALLENGE for a wrong secret never connects again.
+    ASSERT_TRUE(rig.master.wait_for_traffic(FrameDirection::MasterToWorker,
+                                            MessageType::Challenge, 1));
+    rig.master.lose(K_MASTER);
+    ASSERT_TRUE(rig.master.wait_for_connections(2))
         << "a CHALLENGE for a forgotten HELLO was taken for a wrong secret";
+
+    EXPECT_EQ(rig.master.traffic_count(FrameDirection::WorkerToMaster, MessageType::Proof), 0u);
+    EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Running);
 }
 
 /** @brief Tests that an idle worker's HEARTBEAT names the task id it waits for next. */
@@ -1455,11 +1504,11 @@ TEST(Medium_MasterLinkTest, IdleHeartbeatCarriesTheNextTaskID)
     rig.register_master(K_MASTER, 7);
 
     rig.run(K_MASTER, dispatch_of(41, op, {}, {}), 1);
-    const std::size_t before = rig.transport->count(MessageType::Heartbeat);
-    ASSERT_TRUE(rig.transport->wait_for(MessageType::Heartbeat, before + 1));
+    const std::size_t before = rig.master.count(MessageType::Heartbeat);
+    ASSERT_TRUE(rig.master.wait_for(MessageType::Heartbeat, before + 1));
 
     const Wire::HeartbeatMessage heartbeat = decode<Wire::HeartbeatMessage>(
-        rig.transport->frames_of(MessageType::Heartbeat).back());
+        rig.master.frames_of(MessageType::Heartbeat).back());
     EXPECT_EQ(heartbeat.oldest_held_task_id, 42u);
     EXPECT_EQ(heartbeat.queue_depth, 0u);
 }
@@ -1471,9 +1520,10 @@ TEST(Medium_MasterLinkTest, SilentMasterIsLost)
     rig.start();
 
     rig.register_master(K_MASTER, 7, 40);
-    ASSERT_TRUE(rig.transport->wait_for_close(K_MASTER)) << "a silent master was never closed";
+    ASSERT_TRUE(rig.master.wait_for_close(K_MASTER)) << "a silent master was never closed";
 
-    rig.transport->lose(K_MASTER, PeerLossCause::ClosedLocally);
+    // The worker has heard its own close once it connects again.
+    ASSERT_TRUE(rig.master.wait_for_connections(2));
     EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Running)
         << "a lost master ended a link that may reconnect";
 }
@@ -1491,15 +1541,15 @@ TEST(Medium_MasterLinkTest, NewSessionClearsTheCache)
     rig.run(PeerID{1}, dispatch_of(5, op, {}, {handle_of(1, 1, 32)}), 1);
     EXPECT_EQ(rig.agent().statistics().cache_bytes, 32u);
 
-    rig.transport->lose(PeerID{1}, PeerLossCause::ClosedByPeer);
+    rig.master.lose(PeerID{1});
     rig.register_master(PeerID{2}, 7);
     EXPECT_EQ(rig.agent().statistics().cache_bytes, 32u)
         << "the cache was cleared for the session it was filled in";
-    rig.transport->deliver(PeerID{2}, dispatch_of(5, op, {}, {handle_of(1, 2, 32)}));
+    rig.master.deliver(PeerID{2}, dispatch_of(5, op, {}, {handle_of(1, 2, 32)}));
     rig.run(PeerID{2}, dispatch_of(6, op, {}, {}), 2);
     EXPECT_EQ(calls.load(), 2) << "a dispatch repeated in one session ran twice";
 
-    rig.transport->lose(PeerID{2}, PeerLossCause::ClosedByPeer);
+    rig.master.lose(PeerID{2});
     rig.register_master(PeerID{3}, 8);
     EXPECT_EQ(rig.agent().statistics().cache_bytes, 0u);
     rig.run(PeerID{3}, dispatch_of(5, op, {}, {}), 3);
@@ -1515,10 +1565,8 @@ TEST(Medium_MasterLinkTest, LossAfterGoodbyeIsTheWorkersOwn)
     rig.register_master(K_MASTER, 7);
 
     rig.agent().stop();
-    EXPECT_EQ(rig.transport->count(MessageType::Goodbye), 1u);
 
-    rig.transport->lose(K_MASTER, PeerLossCause::ClosedLocally);
-    EXPECT_EQ(rig.agent().wait_for_end(std::chrono::milliseconds(0)), WorkerEnd::Stopped)
+    EXPECT_EQ(rig.agent().wait_for_end(K_WAIT), WorkerEnd::Stopped)
         << "a leaving worker ended as MasterLost";
 }
 
@@ -1526,7 +1574,8 @@ TEST(Medium_MasterLinkTest, LossAfterGoodbyeIsTheWorkersOwn)
 TEST(Medium_WorkerAgentTest, Regression_ANameAbove255BytesIsRefusedBeforeConnecting)
 {
     Runtime runtime = Runtime::create().value();
-    const auto transport = std::make_shared<FakeTransport>();
+    InProcessFabric fabric;
+    const std::shared_ptr<InProcessTransport> transport = InProcessTransport::make_worker(fabric);
     WorkerAgentOptions options;
     options.name = std::string(256, 'n');
     WorkerAgent agent(runtime, transport, make_sushi<KernelRegistry>(), std::move(options));
@@ -1535,7 +1584,7 @@ TEST(Medium_WorkerAgentTest, Regression_ANameAbove255BytesIsRefusedBeforeConnect
     EXPECT_EQ(started.status, TransportStatus::InvalidArgument);
     EXPECT_NE(started.message.find("worker name"), std::string::npos) << started.message;
     EXPECT_NE(started.message.find("255"), std::string::npos) << started.message;
-    EXPECT_FALSE(transport->was_started());
+    EXPECT_TRUE(was_never_started(*transport)) << "the transport was started before the refusal";
 }
 
 /** @brief Tests that a label value HELLO cannot carry is refused, naming the label. */
@@ -1544,7 +1593,8 @@ TEST(Medium_WorkerAgentTest, Regression_ALabelValueAbove255BytesIsRefusedBeforeC
     RuntimeConfig config;
     config.labels = {NodeLabel{"zone", std::string(300, 'v')}};
     Runtime runtime = Runtime::create(config).value();
-    const auto transport = std::make_shared<FakeTransport>();
+    InProcessFabric fabric;
+    const std::shared_ptr<InProcessTransport> transport = InProcessTransport::make_worker(fabric);
     WorkerAgentOptions options;
     options.name = "worker-a";
     WorkerAgent agent(runtime, transport, make_sushi<KernelRegistry>(), std::move(options));
@@ -1553,5 +1603,5 @@ TEST(Medium_WorkerAgentTest, Regression_ALabelValueAbove255BytesIsRefusedBeforeC
     EXPECT_EQ(started.status, TransportStatus::InvalidArgument);
     EXPECT_NE(started.message.find("label 'zone'"), std::string::npos) << started.message;
     EXPECT_NE(started.message.find("300 bytes"), std::string::npos) << started.message;
-    EXPECT_FALSE(transport->was_started());
+    EXPECT_TRUE(was_never_started(*transport)) << "the transport was started before the refusal";
 }
