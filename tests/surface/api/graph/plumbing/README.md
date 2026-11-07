@@ -129,8 +129,8 @@ The file tests PlanCache through Graph: a plan is compiled once and again only w
 | `Regression_InstallingOrRemovingACoordinatorRecompiles` | Installing a coordinator, and removing it, each make the next run compile again. |
 
 The three regression tests install the in-memory coordinator of `task` through
-`AdvancedControls::install_offload()` for their own scope and remove it after, since the runtime is
-the program's.
+`TestSupport::InstalledOffload`, which calls `AdvancedControls::install_offload()` for their own scope and
+removes it after, since the runtime is the program's.
 
 ## test_step_driver.cpp
 
@@ -192,8 +192,12 @@ not built there. In a release build the move must wait for the step, the handle 
 (`TheDestinationOfAMoveRunsAfterAPendingStepEnded`). The gate is released before the move, so the move returns
 as soon as the task has run.
 
-A coordinator that takes nodes offsite, and a report that counts the dispatches it took in its own run, are
-reached only through `Internal::ContextAccess`; that promise has no test here.
+### `OffloadedCountIsOfThisRun`
+
+`TestSupport::AcceptingOffloadCoordinator` is installed through `AdvancedControls::install_offload()` for the
+test's scope. It takes every node and completes it unrun from its own thread. A graph of one host task then runs
+once, twice and once: the reports count one, two and one dispatches, and the task never runs on the pool. A count
+kept since the install would read four in the third report.
 
 ### `CountedStep`
 

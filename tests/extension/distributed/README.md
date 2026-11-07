@@ -201,7 +201,7 @@ of `Host` residency is registered too.
 ### The per-run offloaded count
 
 No test of this file reads `RunReport`. That `tasks_offloaded_to_network` counts the dispatches
-of one run has no test: installing a coordinator needs an internal name, and RW-107 holds it.
+of one run is held by `OffloadedCountIsOfThisRun` in `tests/surface/api/graph/plumbing/test_step_driver.cpp`.
 
 The file is a soak test in the style of Jepsen. It runs an offload graph under a seeded fault
 policy and a nemesis thread, which between them drop, repeat, park, reorder and partition frames.

@@ -38,6 +38,7 @@
 #include <SushiRuntime/task/in_memory_offload_coordinator.hpp>
 
 #include "hooked_copy_task.hpp"
+#include "support/installed_offload.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -45,30 +46,8 @@ using SushiRuntime::Internal::Graph::InMemoryOffloadCoordinator;
 
 namespace
 {
-    /** @brief Installs a declining in-memory coordinator on a runtime for one scope, and removes it after. */
-    class InstalledCoordinator
-    {
-        public:
-            /** @brief Installs a new coordinator on @p runtime. */
-            explicit InstalledCoordinator(const Runtime& runtime)
-                : controls_(runtime.advanced()), coordinator_(std::make_shared<InMemoryOffloadCoordinator>())
-            {
-                controls_.install_offload(coordinator_);
-            }
-
-            /** @brief Removes the coordinator, so the program's runtime runs with none again. */
-            ~InstalledCoordinator() { controls_.install_offload(nullptr); }
-
-            InstalledCoordinator(const InstalledCoordinator&) = delete;
-            InstalledCoordinator& operator=(const InstalledCoordinator&) = delete;
-
-            /** @brief Returns the installed coordinator. */
-            [[nodiscard]] const InMemoryOffloadCoordinator& coordinator() const noexcept { return *coordinator_; }
-
-        private:
-            AdvancedControls controls_;                                 /**< The runtime it is installed on. */
-            std::shared_ptr<InMemoryOffloadCoordinator> coordinator_;   /**< The installed coordinator. */
-    };
+    /// @brief Installs a declining in-memory coordinator on a runtime for one scope.
+    using InstalledCoordinator = TestSupport::InstalledOffload<InMemoryOffloadCoordinator>;
 } // namespace
 
 /** @brief Fixture of the plan-cache tests, which compile graphs on the program's runtime. */

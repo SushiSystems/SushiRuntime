@@ -47,6 +47,8 @@
 
 #include "refusing_fill.hpp"
 #include "run_recorder.hpp"
+#include "support/accepting_offload_coordinator.hpp"
+#include "support/installed_offload.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -554,6 +556,25 @@ TEST_F(Medium_RunDriver, TheDestinationOfAMoveRunsAfterAPendingStepEnded)
     EXPECT_EQ(buf[0], 14);
 }
 #endif
+
+/** @brief Tests that a report counts the dispatches the coordinator took in its own run, not since the install. */
+TEST_F(Medium_RunDriver, OffloadedCountIsOfThisRun)
+{
+    const TestSupport::InstalledOffload<TestSupport::AcceptingOffloadCoordinator> installed(runtime());
+    auto buf = runtime().buffer<int>(N).value();
+    std::atomic<int> local_runs{0};
+    auto g = runtime().graph();
+    g.add_host(Reads{}, Writes(buf), [&local_runs]() { local_runs.fetch_add(1); });
+
+    const RunReport first = g.run().value();
+    const RunReport second = g.run(std::size_t{2}).value();
+    const RunReport third = g.run().value();
+
+    EXPECT_EQ(first.distributed_statistics.tasks_offloaded_to_network, 1u);
+    EXPECT_EQ(second.distributed_statistics.tasks_offloaded_to_network, 2u);
+    EXPECT_EQ(third.distributed_statistics.tasks_offloaded_to_network, 1u) << "the count ran on from earlier runs";
+    EXPECT_EQ(local_runs.load(), 0) << "a node the coordinator took ran on the pool";
+}
 
 /** @brief Tests that a failed chained run of one step advances no State. */
 TEST_F(Medium_RunDriver, AFailedRunOfOneStepAdvancesNoState)
