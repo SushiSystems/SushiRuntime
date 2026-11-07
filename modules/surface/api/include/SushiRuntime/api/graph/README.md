@@ -270,6 +270,12 @@ A task over borrowed or other unrecorded memory runs on the stated device. The p
 checked and its handle watched as an untracked verb's `On` is. task(access, body) states no
 device, so the owner of its memory decides, else device 0.
 
+### task(access, body, host_form, placement)
+
+The same node as task(access, body, placement), with a nullary `host_form` that does what `body` does
+without a queue. A runtime with no device runs the host form where a device runtime runs the body; a
+task without one is refused on the host runtime as before.
+
 ### record: liveness
 
 record() takes the liveness observers of the typed handles a node names, so a run can detect a

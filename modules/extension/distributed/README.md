@@ -31,7 +31,7 @@ module `transport`; the offload policy and the cluster's statistics are the publ
 | `buffer_view.hpp` | `BufferView`, from the `worker_types` module |
 | `tcp_transport.hpp` | `TCPTransport`, `TCPMasterOptions`, `TCPWorkerOptions` |
 | `kernel_registry.hpp` | `KernelRegistry` and its `Kernel` form, from the `worker_types` module |
-| `worker_agent.hpp` | `WorkerAgent`, `WorkerAgentOptions`, `WorkerEnd` |
+| `worker_agent.hpp` | `WorkerAgent`, `WorkerAgentOptions` (with `own_threads` and a `clock` to inject), `WorkerEnd` |
 | `worker_statistics.hpp` | `WorkerStatistics`, from the `worker_types` module |
 | `worker_main.hpp` | `run_worker()`, `WorkerOptions`, `WorkerExitCode` |
 | `worker_options_parser.hpp` | `parse_worker_options()`, `WorkerOptionsResult`, `WorkerOptionsStatus`, `EnvironmentReader` |

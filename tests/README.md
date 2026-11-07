@@ -38,7 +38,9 @@ scheduler (true). `buffer_contents.hpp` reads, fills and windows a buffer's cont
 `RecordingAllocationOwner`, `installed_offload.hpp` installs an offload coordinator on a runtime for one
 scope, `accepting_offload_coordinator.hpp` takes every node it is offered and completes it from a thread it
 owns, `nd_kernel_math.hpp` holds the index math and arithmetic of the `NdRange` test kernels as host functions
-of plain ids, so a small test calls them and the launch test passes them values out of `sycl::nd_item`, and `recording_transport.hpp` is a `Transport` that records the frames sent and the peers closed and sends none, so a unit that sends control frames is tested without a connection, `digest_bytes.hpp` views text and byte vectors as byte spans and writes a
+of plain ids, so a small test calls them and the launch test passes them values out of `sycl::nd_item`, `worker_wire.hpp` holds the frames and handshake builders a test of a worker plays its master with,
+`heap_cache_allocator.hpp` is the heap adapter of the worker cache's allocator port,
+`executor_fabric.hpp` joins a master and a worker endpoint on `ExecutorDrive`s that a test steps, and `recording_transport.hpp` is a `Transport` that records the frames sent and the peers closed and sends none, so a unit that sends control frames is tested without a connection, `digest_bytes.hpp` views text and byte vectors as byte spans and writes a
 SHA-256 digest as hexadecimal text.
 
 One function, `sushiruntime_add_test_program` in `cmake/SushiRuntimeTests.cmake`, builds every

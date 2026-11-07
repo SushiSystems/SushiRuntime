@@ -36,6 +36,7 @@
 #include <memory>
 #include <string>
 
+#include <SushiRuntime/core/clock.hpp>
 #include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/core/sushi_ptr.hpp>
 #include <SushiRuntime/distributed/kernel_registry.hpp>
@@ -78,6 +79,13 @@ namespace SushiRuntime
              * False leaves them to the caller, who runs what they would run through step().
              */
             bool own_threads = true;
+
+            /**
+             * @brief Holds the clock the link and the executor read; null reads the steady clock.
+             *
+             * A test that drives step() passes a ManualClock and advances it.
+             */
+            std::shared_ptr<const Clock> clock;
         };
 
         /**

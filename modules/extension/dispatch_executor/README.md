@@ -39,3 +39,8 @@ the batch as one run of the executor's `Graph`; `DispatchSettler` reports each j
 the same for one batch on the calling thread, so a caller that owns the cache and the transport
 drives the executor without the thread. The executor reads no time itself: a pull's bound is the
 cache's wait for a chunk, set by `pull_idle_timeout`.
+
+An operation registered with `KernelRegistry::register_host_kernel()` is recorded with a host form
+(`Recorder::task(access, body, host_form, placement)`): on a host runtime the batch runs it where a
+device runtime runs the queue body, so the executor is driven small on `Runtime::create_host()`.
+`DeviceQueueSet::shares_context()` answers the device check without a queue.

@@ -441,9 +441,7 @@ namespace SushiRuntime
         {
             const std::uint32_t device = job.dispatch.device_index;
             const bool shares_context =
-                device < devices_.count() &&
-                devices_.queue(device).get_context() ==
-                    devices_.queue(options_.cache_device).get_context();
+                device < devices_.count() && devices_.shares_context(device, options_.cache_device);
             return judge_job(kernel_known, device, devices_.count(), shares_context);
         }
 
@@ -528,8 +526,10 @@ namespace SushiRuntime
                 inputs.push_back(view);
             }
 
+            const KernelRegistry::HostKernel* host_kernel = kernels_->find_host(dispatch.operation);
             DispatchEntry& entry = batch.add(std::move(job), *kernel, std::move(inputs),
                                         std::move(outputs));
+            entry.host_kernel = host_kernel;
             entry.pins = pins.hand_on();
             recorder_.record(entry);
         }

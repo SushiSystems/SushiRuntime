@@ -101,6 +101,23 @@ namespace SushiRuntime
                 [[nodiscard]] sycl::queue& queue(std::size_t index);
 
                 /**
+                 * @brief Returns whether two devices share one SYCL context.
+                 *
+                 * The devices of a host set share the host's one memory, so the answer is true.
+                 * @pre first and second name devices of the set.
+                 */
+                [[nodiscard]] bool shares_context(std::size_t first, std::size_t second) const;
+
+                /**
+                 * @brief Returns the free memory of a device in bytes, its total when the
+                 *        runtime has no query for it, and 0 when it cannot be read.
+                 *
+                 * A host device answers the memory its description states.
+                 * @pre index names a device of the set.
+                 */
+                [[nodiscard]] std::uint64_t free_memory(std::size_t index) const;
+
+                /**
                  * @brief Returns a device's queue of one flavour, building it on first use.
                  * @param flavour Properties asked for; a device whose plain queue is in-order
                  *                gets an in-order queue whatever is asked.

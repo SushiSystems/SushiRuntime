@@ -40,8 +40,6 @@
 #include <utility>
 #include <vector>
 
-#include <sycl/sycl.hpp>
-
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/error.hpp>
 #include <SushiRuntime/core/version.hpp>
@@ -191,26 +189,6 @@ namespace SushiRuntime
                 allocator.release = [&memory](void* address) { memory.release(address); };
                 return allocator;
             }
-
-            /** @brief Returns the device's free memory, its total when no query exists, else 0. */
-            std::uint64_t read_free_memory(sycl::queue& queue)
-            {
-                try
-                {
-                    const sycl::device device = queue.get_device();
-#if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
-                    if (device.has(sycl::aspect::ext_intel_free_memory))
-                        return device.get_info<sycl::ext::intel::info::device::free_memory>();
-#endif
-                    return device.get_info<sycl::info::device::global_mem_size>();
-                }
-                catch (const std::exception& error)
-                {
-                    SR_LOG_DEBUG(K_DISTRIBUTED_LOG_CATEGORY, "cannot read the free memory of device {}: {}; PONG carries 0",
-                                 K_DEVICE_INDEX, error.what());
-                    return 0;
-                }
-            }
         } // namespace
 
         /**
@@ -336,7 +314,7 @@ namespace SushiRuntime
                 DispatchDeduplicator deduplicator_;
 
                 /// @brief The clock the link and the executor read.
-                SteadyClock clock_;
+                std::shared_ptr<const Clock> clock_;
 
                 /// @brief The handshake, the heartbeat and the master watch.
                 MasterLink link_;
@@ -357,8 +335,9 @@ namespace SushiRuntime
               options_(std::move(options)),
               cache_(make_cache_allocator(context_->memory()),
                      resolve_cache_budget(*context_, options_.cache_bytes)),
+              clock_(options_.clock != nullptr ? options_.clock : std::make_shared<SteadyClock>()),
               link_(*transport_, options_.secret.bytes(),
-                    make_link_options(sealed(*require_kernels(kernels)), topology), make_nonce, clock_),
+                    make_link_options(sealed(*require_kernels(kernels)), topology), make_nonce, *clock_),
               executor_(kernels, cache_, *transport_, context_->devices(), std::move(graph),
                         std::move(interop),
                         DispatchExecutorOptions{options_.max_jobs, options_.pull_idle_timeout,
@@ -391,7 +370,7 @@ namespace SushiRuntime
             };
             link.free_memory_probe = [this]
             {
-                return read_free_memory(context_->devices().queue(K_DEVICE_INDEX));
+                return context_->devices().free_memory(K_DEVICE_INDEX);
             };
             return link;
         }

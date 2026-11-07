@@ -13,4 +13,6 @@ sushiruntime_add_module_tests(
         compile_dispatch_settler.cpp
         compile_held_tasks.cpp
         compile_worker_buffer_cache.cpp
-        test_dispatch_plan.cpp)
+        test_dispatch_executor.cpp
+        test_dispatch_plan.cpp
+        test_worker_buffer_cache.cpp)

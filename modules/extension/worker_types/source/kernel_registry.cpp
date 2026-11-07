@@ -56,7 +56,33 @@ namespace SushiRuntime
                           id.value)
                           .c_str());
 
+            host_kernels_.erase(id.value);
             kernels_[id.value] = std::move(kernel);
+        }
+
+        void KernelRegistry::register_host_kernel(OperationID id, HostKernel kernel)
+        {
+            SR_VERIFY(static_cast<bool>(kernel),
+                      SushiLog::format_text("KernelRegistry::register_host_kernel: the kernel of "
+                                            "operation {} is empty; pass a callable.",
+                                            id.value)
+                          .c_str());
+            SR_VERIFY(!sealed_.load(std::memory_order_relaxed),
+                      SushiLog::format_text(
+                          "KernelRegistry::register_host_kernel: the registry is sealed, so "
+                          "operation {} is not registered; register every kernel before the worker "
+                          "starts.",
+                          id.value)
+                          .c_str());
+
+            kernels_[id.value] = [kernel](sycl::queue&, SushiRuntime::span<const BufferView> inputs,
+                                          SushiRuntime::span<const BufferView> outputs,
+                                          const NodeOptions& options)
+            {
+                kernel(inputs, outputs, options);
+                return sycl::event{};
+            };
+            host_kernels_[id.value] = std::move(kernel);
         }
 
         void KernelRegistry::seal() noexcept
@@ -78,6 +104,12 @@ namespace SushiRuntime
         {
             const auto found = kernels_.find(id.value);
             return found == kernels_.end() ? nullptr : &found->second;
+        }
+
+        const KernelRegistry::HostKernel* KernelRegistry::find_host(OperationID id) const
+        {
+            const auto found = host_kernels_.find(id.value);
+            return found == host_kernels_.end() ? nullptr : &found->second;
         }
 
         std::vector<OperationID> KernelRegistry::known_ops() const

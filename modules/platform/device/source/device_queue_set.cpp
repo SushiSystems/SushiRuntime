@@ -33,6 +33,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <optional>
 #include <string>
 #include <utility>
@@ -269,6 +270,37 @@ namespace SushiRuntime
         {
             require_index(index);
             return infos_[index].kind == DeviceKind::GPU;
+        }
+
+        bool DeviceQueueSet::shares_context(std::size_t first, std::size_t second) const
+        {
+            require_index(first);
+            require_index(second);
+            if (slots_.empty())
+                return true;
+            return plain_slot(first).queue->get_context() == plain_slot(second).queue->get_context();
+        }
+
+        std::uint64_t DeviceQueueSet::free_memory(std::size_t index) const
+        {
+            require_index(index);
+            if (slots_.empty())
+                return infos_[index].memory_bytes;
+            try
+            {
+                const sycl::device device = plain_slot(index).queue->get_device();
+#if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 5
+                if (device.has(sycl::aspect::ext_intel_free_memory))
+                    return device.get_info<sycl::ext::intel::info::device::free_memory>();
+#endif
+                return device.get_info<sycl::info::device::global_mem_size>();
+            }
+            catch (const std::exception& error)
+            {
+                SR_LOG_DEBUG(K_DEVICE_LOG_CATEGORY, "cannot read the free memory of device {}: {}; the answer is 0",
+                             index, error.what());
+                return 0;
+            }
         }
 
         sycl::queue& DeviceQueueSet::queue(std::size_t index)

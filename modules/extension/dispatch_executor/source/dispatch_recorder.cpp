@@ -99,14 +99,20 @@ namespace SushiRuntime
                 }
 
                 // &entry lives in the batch's deque; clear() drops this task before the next batch.
-                graph_.recorder().task(
-                    std::move(access),
-                    [&entry](sycl::queue& queue, const std::vector<sycl::event>& dependencies)
-                    {
+                auto on_queue = [&entry](sycl::queue& queue,
+                                         const std::vector<sycl::event>& dependencies)
+                {
+                    if (entry.host_kernel != nullptr)
+                        entry.execute_host();
+                    else
                         entry.execute(queue, dependencies);
-                        return sycl::event{};
-                    },
-                    On(device));
+                    return sycl::event{};
+                };
+                if (entry.host_kernel == nullptr)
+                    graph_.recorder().task(std::move(access), std::move(on_queue), On(device));
+                else
+                    graph_.recorder().task(std::move(access), std::move(on_queue),
+                                           [&entry]() { entry.execute_host(); }, On(device));
             }
             catch (const std::exception& error)
             {

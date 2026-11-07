@@ -74,7 +74,9 @@ the NUMA routes answer from the descriptions as for any set, and a NUMA node out
 placed on node 0 without a log line. `queue()` in either form, and `queue_or_numa_local()`, stop
 the process through `SR_VERIFY`, naming the device: a host runtime submits nothing to a device.
 `plain_queues()` is empty, and `wait_all()` and `raise_asynchronous_errors()` have nothing to
-visit. No caller asks a set whether it holds queues: a copy goes through `USMAllocator::copy()`
+visit. `shares_context(first, second)` answers whether two devices share a SYCL context, and is true for every
+pair of a host set; `free_memory(index)` answers the device's free memory, or the memory its description
+states for a host device. Neither builds a queue the set does not hold. No caller asks a set whether it holds queues: a copy goes through `USMAllocator::copy()`
 to the memory source, and a device's driver is `DeviceDescription::driver_version`, which the
 device set reads once when it builds the queue.
 

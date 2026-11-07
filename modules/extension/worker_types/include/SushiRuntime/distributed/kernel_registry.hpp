@@ -73,10 +73,29 @@ namespace SushiRuntime
                     const NodeOptions& options)>;
 
                 /**
+                 * @brief Names a kernel that needs no queue: it reads its inputs and writes its
+                 *        outputs on the thread that calls it, and may be run on a host runtime.
+                 *
+                 * The views and options are valid as for Kernel.
+                 */
+                using HostKernel = std::function<void(SushiRuntime::span<const BufferView> inputs,
+                                                      SushiRuntime::span<const BufferView> outputs,
+                                                      const NodeOptions& options)>;
+
+                /**
                  * @brief Sets the kernel of an operation, replacing the one set before.
                  * @pre kernel holds a callable and seal() has not been called.
                  */
                 void register_kernel(OperationID id, Kernel kernel);
+
+                /**
+                 * @brief Sets the host kernel of an operation, replacing the one set before.
+                 *
+                 * find() then answers a kernel that ignores its queue and calls @p kernel, and
+                 * find_host() answers @p kernel itself, so a worker on a host runtime can run it.
+                 * @pre kernel holds a callable and seal() has not been called.
+                 */
+                void register_host_kernel(OperationID id, HostKernel kernel);
 
                 /** @brief Closes the registry to register_kernel(); a second call does nothing. */
                 void seal() noexcept;
@@ -93,12 +112,22 @@ namespace SushiRuntime
                  */
                 [[nodiscard]] const Kernel* find(OperationID id) const;
 
+                /**
+                 * @brief Returns the host kernel of an operation.
+                 * @return Null when the operation was registered with register_kernel() or not at
+                 *         all; valid while the registry lives.
+                 */
+                [[nodiscard]] const HostKernel* find_host(OperationID id) const;
+
                 /** @brief Returns the id of every operation that has a kernel, in no set order. */
                 [[nodiscard]] std::vector<OperationID> known_ops() const;
 
             private:
                 /** @brief Holds the kernels by the value of their operation id. */
                 std::unordered_map<std::uint32_t, Kernel> kernels_;
+
+                /** @brief Holds the host kernels by the value of their operation id. */
+                std::unordered_map<std::uint32_t, HostKernel> host_kernels_;
 
                 /** @brief Set by seal(), before any other thread reads kernels_. */
                 std::atomic<bool> sealed_{false};

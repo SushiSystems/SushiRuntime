@@ -82,11 +82,21 @@ namespace SushiRuntime
              */
             void execute(sycl::queue& queue, const std::vector<sycl::event>& dependencies) noexcept;
 
+            /**
+             * @brief Runs the host kernel on the calling thread and copies each output; never
+             *        throws.
+             * @pre host_kernel is not null.
+             */
+            void execute_host() noexcept;
+
             /// @brief The dispatch and where its replies go.
             DispatchJob job;
 
             /// @brief The kernel of the dispatch's operation.
             const KernelRegistry::Kernel* kernel;
+
+            /// @brief The host form of the kernel; null when the operation has only a queue form.
+            const KernelRegistry::HostKernel* host_kernel = nullptr;
 
             /// @brief One cache pin per input and output; the batch drops them.
             std::vector<GlobalBufferID> pins;

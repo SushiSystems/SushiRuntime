@@ -29,6 +29,11 @@ built with it and sealed from then on, so no thread writes it while the exec thr
 registration on a sealed registry, or of an empty `Kernel`, stops the process with a message that
 names the cause.
 
+`register_host_kernel()` registers a `HostKernel`, which takes the views and the options and no
+queue. `find()` then answers a `Kernel` that ignores its queue and calls it, so a device runtime
+runs it like any other, and `find_host()` answers the host kernel itself. A worker on a host
+runtime, which holds no queue, runs only host kernels.
+
 ## worker_statistics.hpp
 
 `WorkerStatistics` holds a worker's counters since `start()`: the tasks run, the tasks failed by

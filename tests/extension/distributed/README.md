@@ -353,62 +353,49 @@ that header) waits on recorded events with a 10 s limit, never on a sleep.
 | `Medium_TCPTransportStreams.ControlFrameOvertakesStream` | A stream of 8 chunks holds its second chunk until the test has queued a control frame. The control frame must arrive after at most 2 chunks, and the chunks must arrive in order with the last-chunk flag on the eighth only. |
 | `GatedSource` | `GatedSource` is the stream of that test. Its wait stands in for a writer that is busy with one chunk; a production `FrameSource` never waits. |
 
-## test_worker_agent.cpp
+## test_worker_agent/
 
-The tests drive one `WorkerAgent` through an `InProcessTransport` and open no socket. `AgentRig` builds
-the agent on a runtime of its own over a worker endpoint. `MasterSide` plays the other end: it owns the
-fabric and the master endpoint, whose `RecordingTransportEvents` keep every frame the agent sends and
-every peer it closes, and it sends the master's frames. A fault policy on the fabric logs the traffic
-in the order it entered and, while `hold_results(true)` is set, parks the agent's chunks and results
-until `release_held()` delivers them in order. The agent connects when the first `connect()` starts the
-master endpoint, and connects again after the master closes a peer. `register_master` plays a master holding the
-same 32-byte secret: it answers the agent's `HELLO` with a `CHALLENGE` proved for the nonce that
-`HELLO` carried, waits for `PROOF` and sends `WELCOME`. The tests read the agent's counters from
-`statistics()`. Every wait is on a condition, bounded at 30 s.
+The agent's logic runs small and its threads and devices run medium. The cache's promises are in
+`tests/extension/dispatch_executor/test_worker_buffer_cache.cpp` and the executor's in
+`test_dispatch_executor.cpp` there.
 
-The cache tests set `cache_bytes` and fill the cache with the outputs of tasks; a buffer is known to
-be cached when a task that reads it sends no `BUFFER_REQUEST`. The executor tests dispatch tasks
-and read their `TASK_RESULT`s. The link tests play the handshake and the liveness of the master.
+### test_worker_agent_step.cpp
+
+`Small_WorkerAgentStep` runs a `WorkerAgent` with `own_threads` false on `Runtime::create_host()`, over
+the worker endpoint of a `TestSupport::ExecutorFabric`, with the fabric's `ManualClock` as
+`WorkerAgentOptions::clock`. The case sends the master's frames through the fabric, calls
+`WorkerAgent::step()` for the link and one batch, and settles the fabric so the replies reach the
+master end. `register_master` plays a master holding the same 32-byte secret: it answers the newest
+`HELLO` with a `CHALLENGE` proved for its nonce and sends `WELCOME`.
 
 | Test | What it proves |
 | --- | --- |
-| `ReleaseEvicts` | `BUFFER_RELEASE` frees an unpinned output and counts an eviction. An output whose chunk and result are parked is freed too, because the stream holds a copy; the parked frames then arrive and the result succeeds. |
-| `BudgetEvictsLeastRecentlyUsedUnpinned` | Three outputs of 100 bytes fill a 300-byte budget and the first is read again. A fourth output makes the cache free the second, the one used longest ago: a task that reads it pulls it, and one that reads the first does not. |
-| `PinnedEntryIsNotEvicted` | A 300-byte cache holds one unpinned output. Task 2 pins an output and an input whose pull stays open while tasks 3 and 4 queue, so all three join one batch. Task 3's output evicts the unpinned buffer; task 4 finds every byte pinned and ends as `OutputAllocationFailed`, and nothing pinned was evicted. |
-| `GapInAPulledBufferDiscardsIt` | A chunk at offset 8 after a chunk that ended at 4 ends the pull: the task ends as `InputUnavailable` and the memory is returned. The same buffer is then pulled in three chunks, and the kernel reads every byte the master sent. |
-| `OutputAllocationFailureFailsTheTask` | With a 32-byte cache, a task with a 64-byte output ends in a `TASK_RESULT` with `OutputAllocationFailed`, its kernel never runs and no chunk is sent. The next task, whose output fits, succeeds on the same exec thread. |
-| `KernelSeesBufferSizes` | The kernel reads `size_bytes` of its input and its output views: 12 and 20. The input comes from a `BUFFER_REQUEST` the test answers with two chunks, and the output leaves in chunks of 8 bytes. |
-| `GenericLambdaRegistersAsAKernel` | `register_kernel` has one overload, so a lambda whose four parameters are all `auto` registers without a cast. It fills its output with 0x5a, and the four bytes come back in one chunk. |
-| `KernelThatThrowsFailsTheTaskAndTheWorkerLives` | A kernel that throws produces `KernelFailed` with no outputs and no chunk. The next dispatch runs. |
-| `OutputStreamEndsWithTheResult` | The three chunks and the result are parked, so the master has no `TASK_RESULT`, and a `BUFFER_RELEASE` frees the cached output. Released, the frames arrive as chunks of 4, 4 and 2 bytes of the stream's own copy, the last one flagged, then `TASK_RESULT`. |
-| `DispatchRunsOnTheDeviceItNames` | Two dispatches name devices 0 and 1, and the kernel records the device of the queue it is handed: both succeed, on two devices. Skipped on a worker with fewer than two devices. |
-| `DispatchNamingAMissingDeviceFailsTheTask` | A dispatch for a device index the worker lacks ends in `KernelFailed` and its kernel never runs. The next dispatch, on device 0, succeeds. |
+| `Small_WorkerAgentStep.IdleHeartbeatCarriesTheNextTaskID` | After task 41 finished and nothing is held, the heartbeat that falls due carries `oldest_held_task_id` 42 and a queue depth of 0. |
+| `Small_WorkerAgentStep.NewSessionClearsTheCache` | A reconnect to the same `session_id` keeps the cache and the ids seen, so a dispatch repeated there runs once. A reconnect to another session clears both, and `reconnects` counts both. |
+| `Small_WorkerAgentStart.Regression_ANameAbove255BytesIsRefusedBeforeConnecting` | A name `HELLO` cannot carry fails `start()` with `InvalidArgument` naming the limit, and the transport was never started. |
+| `Small_WorkerAgentStart.Regression_ALabelValueAbove255BytesIsRefusedBeforeConnecting` | A label value of 300 bytes fails `start()` naming the label and its length, and the transport was never started. |
 
-### Batches
+### test_worker_agent.cpp
+
+The `Medium_DispatchExecutorTest` cases drive one `WorkerAgent` with its threads through an
+`InProcessTransport` and open no socket. `AgentRig` builds the agent on a runtime of its own over a
+worker endpoint. `MasterSide` plays the other end: it owns the fabric and the master endpoint, whose
+`RecordingTransportEvents` keep every frame the agent sends, and it sends the master's frames. The agent
+connects when the first `connect()` starts the master endpoint. `register_master` plays the handshake with
+the helpers of `tests/support/worker_wire.hpp`. Every wait is on a condition, bounded at 30 s.
+
+| Test | What it proves |
+| --- | --- |
+| `KernelSeesBufferSizes` | The kernel reads `size_bytes` of its input and its output views: 12 and 20. The input comes from a `BUFFER_REQUEST` the test answers with two chunks across the agent's threads, and the output leaves in chunks of 8 bytes. |
+| `DispatchRunsOnTheDeviceItNames` | Two dispatches name devices 0 and 1, and the kernel records the device of the queue it is handed: both succeed, on two devices. Skipped on a worker with fewer than two devices. |
+| `DispatchOnADeviceOutsideTheCacheContextFailsTheTask` | A dispatch for a device that does not share device 0's SYCL context ends in `KernelFailed` and its kernel never runs. Skipped when every device shares one context. |
+| `DispatchesOverDisjointBuffersAreInFlightTogether` | Two dispatches with disjoint outputs, on devices 0 and 1 when the worker has two and both on device 0 otherwise, have both kernels inside the rendezvous at once; with two devices they ran on two. |
+| `DisconnectEndsAnOpenInputPull` | With no pull idle timeout a task asks for its input and the master's connection is lost before any chunk arrives. The task ends as `InputUnavailable`, its kernel never runs and the cache holds no byte of the abandoned pull. A task of the next connection runs on the same exec thread. |
 
 `deliver_as_one_batch` makes two dispatches share one run: the first asks for an input, the second
 is delivered and accepted while that pull is open, and then the input's one chunk arrives.
 `Rendezvous` lets a kernel enter, wait for a partner up to a bound, and leave, and keeps the most
-kernels inside at once. `first_output_of` returns the first output chunk a task sent.
-
-| Test | What it proves |
-| --- | --- |
-| `DispatchesOverDisjointBuffersAreInFlightTogether` | Two dispatches with disjoint outputs, on devices 0 and 1 when the worker has two and both on device 0 otherwise, have both kernels inside the rendezvous at once; with two devices they ran on two. |
-| `DispatchesWritingOneBufferRunOneAfterTheOther` | Two dispatches that write buffer 6 never overlap: the first waits 250 ms for a partner that does not come. They run in dispatch order, and each sends the bytes it wrote, so the second writer did not change the first one's output. |
-| `OneRunPullsAnInputTwoDispatchesReadOnce` | Two dispatches of one batch that read one input version send one `BUFFER_REQUEST`, and both kernels run. |
-| `ADispatchReadingAQueuedOutputRunsAfterIt` | A dispatch that reads the output of a dispatch queued before it opens the next batch, finds that output in the cache, sends no `BUFFER_REQUEST` for it and copies its bytes. |
-
-### `DisconnectEndsAnOpenInputPull`
-
-The agent runs with no pull idle timeout, so a pull ends only when something ends it. A task asks
-for its input and the master's connection is lost before any chunk arrives. The task ends as
-`InputUnavailable`, its kernel never runs and the cache holds no byte of the abandoned pull. A task
-of the next connection then runs on the same exec thread.
-
-| Test | What it proves |
-| --- | --- |
-| `IdleHeartbeatCarriesTheNextTaskID` | After task 41 finished and nothing is held, the next heartbeat carries `oldest_held_task_id` 42 and a queue depth of 0. |
-| `NewSessionClearsTheCache` | A reconnect to the same `session_id` keeps the cache and the ids seen, so a dispatch repeated there runs once. A reconnect to another session clears both, and `reconnects` counts 2. |
+kernels inside at once.
 
 ## test_worker_main.cpp
 

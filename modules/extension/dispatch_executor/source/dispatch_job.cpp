@@ -56,6 +56,18 @@ namespace SushiRuntime
                     dispatch.parameters.data(), dispatch.parameter_count);
                 return options;
             }
+
+            /** @brief Copies each output of an entry so the stream sends what the kernel left. */
+            void copy_outputs(DispatchEntry& entry)
+            {
+                entry.copies.resize(entry.outputs.size());
+                for (std::size_t index = 0; index < entry.outputs.size(); ++index)
+                {
+                    const std::byte* first =
+                        static_cast<const std::byte*>(entry.outputs[index].data);
+                    entry.copies[index].assign(first, first + entry.outputs[index].size_bytes);
+                }
+            }
         } // namespace
 
         DispatchEntry::DispatchEntry(DispatchJob queued, const KernelRegistry::Kernel& registered,
@@ -82,12 +94,7 @@ namespace SushiRuntime
                     options_of(job.dispatch));
                 event.wait_and_throw();
 
-                copies.resize(outputs.size());
-                for (std::size_t index = 0; index < outputs.size(); ++index)
-                {
-                    const std::byte* first = static_cast<const std::byte*>(outputs[index].data);
-                    copies[index].assign(first, first + outputs[index].size_bytes);
-                }
+                copy_outputs(*this);
                 ran = true;
             }
             catch (const std::exception& error)
@@ -99,6 +106,28 @@ namespace SushiRuntime
                 failure = "unknown exception";
             }
         }
+
+        void DispatchEntry::execute_host() noexcept
+        {
+            try
+            {
+                (*host_kernel)(SushiRuntime::span<const BufferView>(inputs.data(), inputs.size()),
+                               SushiRuntime::span<const BufferView>(outputs.data(), outputs.size()),
+                               options_of(job.dispatch));
+
+                copy_outputs(*this);
+                ran = true;
+            }
+            catch (const std::exception& error)
+            {
+                failure = error.what();
+            }
+            catch (...)
+            {
+                failure = "unknown exception";
+            }
+        }
+
 
     } // namespace Distributed
 } // namespace SushiRuntime

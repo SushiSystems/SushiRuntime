@@ -34,6 +34,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -342,6 +343,30 @@ namespace SushiRuntime
                     Detail::task_node(std::move(access.reads), std::move(access.writes),
                                       std::forward<F>(body), options.width);
                 description.device = *device;
+                return record(std::move(description), access.lives, options);
+            }
+
+            /**
+             * @brief Records a task as task(access, body, placement) that also has a host form.
+             *
+             * A runtime with no device runs @p host_form where a device runtime runs @p body.
+             * @param host_form Nullary callable that does what @p body does without a queue.
+             * @see modules/surface/api/include/SushiRuntime/api/graph/README.md
+             */
+            template <class F>
+            std::size_t task(Access access, F&& body, std::function<void()> host_form,
+                             const On& placement, NodeOptions options = {})
+            {
+                const std::optional<std::size_t> device =
+                    placed_device("Recorder::task(access, body, host_form, placement)", placement,
+                                  access.lives);
+                if (!device)
+                    return rule_count();
+                Detail::NodeDescription description =
+                    Detail::task_node(std::move(access.reads), std::move(access.writes),
+                                      std::forward<F>(body), options.width);
+                description.device = *device;
+                description.host_form = std::move(host_form);
                 return record(std::move(description), access.lives, options);
             }
 
