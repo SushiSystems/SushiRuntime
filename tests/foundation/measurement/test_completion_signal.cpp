@@ -37,8 +37,8 @@
 
 using namespace SushiRuntime::Test;
 
-/** @brief Tests that a wait with nothing raised returns false. */
-TEST(Medium_CompletionSignal, AWaitWithNoRaiseTimesOut)
+/** @brief Tests that a wait of no budget with nothing raised returns false; it reads no clock. */
+TEST(Small_CompletionSignal, AWaitWithNoRaiseTimesOut)
 {
     CompletionSignal signal;
     EXPECT_FALSE(signal.wait_for(std::chrono::seconds(0)));
@@ -54,7 +54,7 @@ TEST(Medium_CompletionSignal, ARaiseWakesTheWaiter)
 }
 
 /** @brief Tests that a raised signal stays raised until reset() clears it. */
-TEST(Medium_CompletionSignal, ResetClearsARaisedSignal)
+TEST(Small_CompletionSignal, ResetClearsARaisedSignal)
 {
     CompletionSignal signal;
     signal.raise();

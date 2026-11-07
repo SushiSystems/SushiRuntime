@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-07 — core: Added `AssertionHandlerSlot`, which holds a handler and reports a failure without stopping, and a `version_matches()` form over two versions; the existing calls behave as before (RW-101, `assert.hpp`, `version.hpp`).
+- 2026-11-07 — measurement: Made `CompletionSignal::wait_for()` with a zero budget read the flag and no clock; a positive budget behaves as before (RW-101, `completion_signal.hpp`).
 - 2026-11-07 — execution: Moved the run-observer list out of `RuntimeContext` into `RunObserverRegistry`, so the gate rules run in tests with no device; the context behaves as before (RW-102).
 - 2026-11-07 — task: Added the `PlacementMemory` port with a USM adapter and an in-memory one; `placement_of()` and `classify_chain()` gain forms that take it, and the old forms behave as before (RW-102).
 - 2026-11-07 — scheduler: Gave `WorkloadCoordinator` a constructor that takes a `HeartbeatClock`, and a public `beat()`; the three-argument constructor still sleeps on the system clock (RW-100).

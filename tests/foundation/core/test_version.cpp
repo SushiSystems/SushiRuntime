@@ -30,6 +30,7 @@
 
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -41,13 +42,46 @@ using SushiRuntime::Version;
 
 namespace
 {
-    TEST(Small_Version, TheTestProgramMatchesTheLibraryItLoaded)
+    /** @brief Holds two versions and whether version_matches() takes them for one release. */
+    struct MatchRow
+    {
+        Version headers;  /**< The version the headers declare. */
+        Version loaded;   /**< The version the library reports. */
+        bool matches;     /**< Whether they agree by major and minor. */
+    };
+
+    /** @brief Returns the rows: a patch may differ, a minor or a major may not. */
+    std::vector<MatchRow> match_rows()
+    {
+        return {{Version{0, 4, 0}, Version{0, 4, 0}, true},
+                {Version{0, 4, 0}, Version{0, 4, 7}, true},
+                {Version{0, 4, 0}, Version{0, 5, 0}, false},
+                {Version{0, 4, 0}, Version{0, 3, 9}, false},
+                {Version{0, 9, 0}, Version{1, 9, 0}, false}};
+    }
+
+    /** @brief Runs version_matches() over the rows of match_rows(). */
+    class Small_VersionMatch : public ::testing::TestWithParam<MatchRow>
+    {
+    };
+
+    /** @brief Tests that a patch difference is no mismatch and a minor or major one is. */
+    TEST_P(Small_VersionMatch, MajorAndMinorDecideAndThePatchDoesNot)
+    {
+        EXPECT_EQ(SushiRuntime::version_matches(GetParam().headers, GetParam().loaded),
+                  GetParam().matches);
+    }
+
+    /** @brief Runs the match test over every row. */
+    INSTANTIATE_TEST_SUITE_P(Versions, Small_VersionMatch, ::testing::ValuesIn(match_rows()));
+
+    TEST(Medium_Version, TheTestProgramMatchesTheLibraryItLoaded)
     {
         EXPECT_TRUE(SushiRuntime::version_matches());
         SushiRuntime::require_matching_version();
     }
 
-    TEST(Small_Version, TheHeaderMacrosAndTheLibraryReportOneVersion)
+    TEST(Medium_Version, TheHeaderMacrosAndTheLibraryReportOneVersion)
     {
         const Version loaded = SushiRuntime::runtime_version();
 

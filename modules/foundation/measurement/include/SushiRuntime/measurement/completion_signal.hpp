@@ -61,11 +61,14 @@ namespace SushiRuntime
 
                 /**
                  * @brief Blocks until the signal is raised or the budget runs out.
+                 * @param budget A budget of zero or less reads the flag and does not wait.
                  * @return True when the signal was raised, false on timeout.
                  */
                 [[nodiscard]] bool wait_for(std::chrono::seconds budget)
                 {
                     std::unique_lock<std::mutex> lock(mutex_);
+                    if (budget <= std::chrono::seconds::zero())
+                        return raised_;
                     return raised_changed_.wait_for(lock, budget, [this] { return raised_; });
                 }
 

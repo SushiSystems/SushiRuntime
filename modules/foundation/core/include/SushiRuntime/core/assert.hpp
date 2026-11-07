@@ -29,6 +29,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include <SushiRuntime/core/export.hpp>
 
 /**
@@ -98,6 +100,32 @@ namespace SushiRuntime
      * @brief Names the function a failed check calls before the process stops.
      */
     using AssertionHandler = void (*)(const AssertionFailure& failure);
+
+    /**
+     * @brief Holds one assertion handler and calls it, without stopping the process.
+     *
+     * The process keeps one slot, which set_assertion_handler() and fail_assertion() use. A
+     * caller that owns a slot sees a failure reported and the call return.
+     */
+    class AssertionHandlerSlot final
+    {
+        public:
+            /** @brief Holds the handler that writes the failure to standard error. */
+            SUSHIRUNTIME_API AssertionHandlerSlot() noexcept;
+
+            /**
+             * @brief Holds @p handler and returns the one it replaces.
+             * @param handler Null restores the handler that writes the failure to standard error.
+             */
+            SUSHIRUNTIME_API AssertionHandler exchange(AssertionHandler handler) noexcept;
+
+            /** @brief Calls the held handler with @p failure and returns. */
+            SUSHIRUNTIME_API void report(const AssertionFailure& failure) const noexcept;
+
+        private:
+            /// @brief The held handler; never null.
+            std::atomic<AssertionHandler> handler_;
+    };
 
     /**
      * @brief Installs the handler a failed check calls and returns the one it replaces.

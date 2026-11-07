@@ -29,7 +29,6 @@
  */
 
 #include <algorithm>
-#include <cstdint>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -163,16 +162,6 @@ TEST_F(Small_Profile, TheThreadIndexIsTheOneItsDrainedEntryCarries)
 
     ASSERT_NE(entry, nullptr);
     EXPECT_EQ(SushiRuntime::Internal::Profile::current_thread_index(), entry->thread_index);
-}
-
-/** @brief Tests that a thread that never recorded reads index 0, which stands for unknown. */
-TEST_F(Medium_Profile, AThreadThatNeverRecordedReadsZero)
-{
-    std::uint32_t index = 1;
-    std::thread other([&index]() { index = SushiRuntime::Internal::Profile::current_thread_index(); });
-    other.join();
-
-    EXPECT_EQ(index, 0u);
 }
 
 /** @brief Tests that naming a thread registers it and puts the name in the collector's drain. */

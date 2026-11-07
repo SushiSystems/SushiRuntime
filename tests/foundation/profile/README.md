@@ -41,7 +41,6 @@ The file tests the `SR_ZONE` family at the level this build compiles, and the tw
 | `Small_Profile.ACounterWritesACounterEvent` | A counter writes one event of the counter kind. |
 | `Small_Profile.AnInstantWritesAnInstantEvent` | An instant writes one event of the instant kind. |
 | `Small_Profile.TheThreadIndexIsTheOneItsDrainedEntryCarries` | `current_thread_index()` of a registered thread equals the index its drained entry carries. |
-| `Medium_Profile.AThreadThatNeverRecordedReadsZero` | A thread that never recorded reads 0, which stands for unknown. |
 | `Medium_Profile.NamingAThreadPutsTheNameInTheDrain` | `name_this_thread()` registers the thread and the drain carries the name. |
 | `Small_ProfileLockWait.TheLockIsReleasedAtTheEndOfItsScope` | A lock taken through `SR_LOCK_WAIT` is released at the end of its scope. |
 

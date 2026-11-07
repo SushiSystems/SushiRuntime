@@ -9,12 +9,12 @@ A section is named after a test file, and a subsection after the test, helper or
 
 ## test_completion_signal.cpp
 
-The file tests CompletionSignal: a wait times out, a raise wakes the waiter, and reset clears it. Every
-test is `Medium_`: a wait reads the real clock, and the wake test hands the raise to another thread.
+The file tests CompletionSignal: a wait times out, a raise wakes the waiter, and reset clears it. The
+zero-budget tests are `Small_`, since such a wait reads the flag and no clock; the wake test is `Medium_`, since it hands the raise to another thread.
 
 | Test | What it proves |
 | --- | --- |
-| `AWaitWithNoRaiseTimesOut` | A wait with nothing raised returns false. |
+| `AWaitWithNoRaiseTimesOut` | A wait of no budget with nothing raised returns false. |
 | `ARaiseWakesTheWaiter` | A raise on another thread wakes the waiter. |
 | `ResetClearsARaisedSignal` | A raised signal stays raised, and reset() clears it. |
 

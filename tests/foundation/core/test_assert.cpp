@@ -23,7 +23,7 @@
 
 /**
  * @file test_assert.cpp
- * @brief Tests that each assertion macro stops the process and names its file and line.
+ * @brief Tests that each assertion macro stops the process and names its site, and the handler slot.
  * @see tests/foundation/core/README.md
  * @author Mustafa Garip
  */
@@ -46,11 +46,24 @@ namespace
         return "test_assert\\.cpp:" + std::to_string(line);
     }
 
+    /** @brief Holds the last failure that record_failure saw. */
+    SushiRuntime::AssertionFailure recorded_failure;
+
+    /** @brief Counts the calls of record_failure. */
+    int recorded_call_count = 0;
+
     /** @brief Writes a marker and the failure's line, in place of the default handler. */
     void write_marker(const SushiRuntime::AssertionFailure& failure)
     {
         std::fprintf(stderr, "replaced handler saw line %d\n", failure.line);
         std::fflush(stderr);
+    }
+
+    /** @brief Keeps the failure and counts the call, in place of the default handler. */
+    void record_failure(const SushiRuntime::AssertionFailure& failure)
+    {
+        recorded_failure = failure;
+        ++recorded_call_count;
     }
 
     TEST(Medium_AssertDeathTest, AssertStopsTheProcessAndNamesItsSite)
@@ -79,7 +92,7 @@ namespace
         EXPECT_EQ(evaluations, 2);
     }
 
-    TEST(Medium_AssertDeathTest, AReplacedHandlerIsCalledBeforeTheProcessStops)
+    TEST(Medium_AssertDeathTest, TheProcessWideHandlerIsCalledBeforeTheProcessStops)
     {
         const int line = __LINE__ + 5;
         EXPECT_DEATH(
@@ -91,11 +104,40 @@ namespace
             "replaced handler saw line " + std::to_string(line));
     }
 
-    TEST(Small_Assert, SettingAHandlerReturnsTheOneItReplaces)
+    /** @brief Tests that a report passes the whole failure to the held handler and returns. */
+    TEST(Small_AssertionHandlerSlot, AReportCallsTheHeldHandlerWithTheWholeFailureAndReturns)
     {
-        const SushiRuntime::AssertionHandler original =
-            SushiRuntime::set_assertion_handler(&write_marker);
-        EXPECT_EQ(SushiRuntime::set_assertion_handler(nullptr), &write_marker);
-        EXPECT_EQ(SushiRuntime::set_assertion_handler(original), original);
+        SushiRuntime::AssertionHandlerSlot slot;
+        slot.exchange(&record_failure);
+        recorded_call_count = 0;
+
+        slot.report(SushiRuntime::AssertionFailure{"a == b", "the pair holds", "pair.cpp", 17});
+
+        EXPECT_EQ(recorded_call_count, 1);
+        EXPECT_STREQ(recorded_failure.expression, "a == b");
+        EXPECT_STREQ(recorded_failure.message, "the pair holds");
+        EXPECT_STREQ(recorded_failure.file, "pair.cpp");
+        EXPECT_EQ(recorded_failure.line, 17);
+    }
+
+    /** @brief Tests that exchange() hands back the handler it replaces. */
+    TEST(Small_AssertionHandlerSlot, ExchangeReturnsTheHandlerItReplaces)
+    {
+        SushiRuntime::AssertionHandlerSlot slot;
+        slot.exchange(&write_marker);
+
+        EXPECT_EQ(slot.exchange(&record_failure), &write_marker);
+    }
+
+    /** @brief Tests that exchanging null puts the default handler back. */
+    TEST(Small_AssertionHandlerSlot, ExchangingNullRestoresTheDefaultHandler)
+    {
+        SushiRuntime::AssertionHandlerSlot slot;
+        const SushiRuntime::AssertionHandler default_handler = slot.exchange(&write_marker);
+
+        slot.exchange(nullptr);
+
+        EXPECT_EQ(slot.exchange(&write_marker), default_handler);
+        EXPECT_NE(default_handler, nullptr);
     }
 } // namespace

@@ -47,6 +47,10 @@
 | RW-112 | P3 | open | Move four import refusals of test_interop.cpp to small rows of Small_DescriptorRefusal | A null Win32 handle, an fd above INT_MAX, an offset past the allocation and a UUID mismatch have rows in test_descriptor_refusal.cpp |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 | RW-113 | P3 | decision | Show the chain-versus-bare-SYCL allocation claims through a public queue | The two dropped growth claims of test_sushiruntime.cpp have a public-surface test each or an owner ruling |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 | RW-114 | P3 | decision | Show force_scheduler and the advanced() context link through a public path | The two dropped test_runtime.cpp and test_fluent.cpp promises have a public-surface test each or an owner ruling |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
+| RW-115 | P3 | decision | Give SR_ZONE and SR_LOCK_WAIT a zone sink that SushiProfiler accepts | The four test_profile_gate records and AnUncontendedLockWritesNone run small on a sink, or an owner ruling leaves them medium |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
+| RW-116 | P3 | decision | Show the thread-index zero promise without an Internal name | AThreadThatNeverRecordedReadsZero is tested through a public name, or an owner ruling leaves it untested |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
+| RW-117 | P3 | decision | Give the SR_LOG record fields a clock SushiLog accepts | SinkReceivesEveryFieldAndTheLine and the Fatal delivery test run small on a clock and an executor, or an owner ruling leaves them medium |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
+| RW-118 | P3 | decision | Show the Result stored-error message without stopping the process | The Result accessor message promises run small through a public name, or an owner ruling leaves the death tests medium |  | `docs/agent/2026_11_05_TEST_REVIEW/REPORT.md` | 2026-11-07 |
 
 ## Known issues
 

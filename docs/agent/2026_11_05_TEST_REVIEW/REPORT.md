@@ -107,6 +107,10 @@ dispatch: J16 M7 api graph — sonnet medium, 1 round, passed with a rule gap (s
 dispatch: J16 M7 api data and detail — sonnet medium, 1 round, passed (seams to RW-108, RW-109; wrote two files in /tmp, removed by the lead), rung 1
 dispatch: J16 M7 api rest — sonnet medium, 1 round, passed (seams and dropped promises to RW-110 to RW-114), rung 1
 dispatch: J16 RW-95 tools text seams — haiku high, 1 round, passed, rung 1
+dispatch: J16 RW-98/99 profiling seams — sonnet medium, 1 round, partial (five records outside its scope; one mirror finding fixed by the lead), rung 1
+dispatch: J16 RW-100/102 engine seams — sonnet medium, 2 rounds (sent back for skipping DISPATCH rule 1), partial (executor, topology and queue records left in RW-102), rung 1
+dispatch: J16 RW-101 foundation seams — sonnet medium, 2 rounds (sent back for skipping DISPATCH rules 1 and 2), partial (profile, logger and Result records to RW-115 to RW-118), rung 1
+dispatch: J16 RW-104/105/106 extension — sonnet medium, 1 round, stopped by the owner's shutdown, partial and unreviewed (three new files left uncommitted), rung 1
 
 ## Totals
 

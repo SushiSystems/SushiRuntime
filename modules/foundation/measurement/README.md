@@ -28,4 +28,5 @@ those lines out of the benchmark output.
 
 `CompletionSignal` closes a timed region: the task that finishes the work raises it and the
 test waits on it with a budget, so no polling sleep sits inside a measurement. A region that
-ends on the signal includes one thread wake-up.
+ends on the signal includes one thread wake-up. `wait_for()` with a budget of zero reads the flag and
+reads no clock.

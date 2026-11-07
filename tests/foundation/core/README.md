@@ -22,7 +22,7 @@ dereferenced.
 
 ## test_assert.cpp
 
-The file covers `SR_ASSERT`, `SR_VERIFY`, `SR_FATAL` and `set_assertion_handler()`. It defines
+The file covers `SR_ASSERT`, `SR_VERIFY`, `SR_FATAL`, `set_assertion_handler()` and `AssertionHandlerSlot`. It defines
 `SR_ENABLE_ASSERTIONS` as 1 before the include, so `SR_ASSERT` is checked in a release build of
 the tests too.
 
@@ -33,10 +33,16 @@ stop tests runs its macro in a child process and matches the line the default
 handler writes against the message or the condition's text, followed by `test_assert.cpp:` and
 the line of the macro.
 
-### `AReplacedHandlerIsCalledBeforeTheProcessStops`
+### `TheProcessWideHandlerIsCalledBeforeTheProcessStops`
 
 The handler is installed inside the child process, so the parent keeps the default. The handler
 returns, and the child still dies.
+
+### `Small_AssertionHandlerSlot`
+
+The slot tests run on a slot of their own and touch no process-wide handler. `AReportCallsTheHeldHandlerWithTheWholeFailureAndReturns`
+reports a hand-built failure and reads its four fields back through a recording handler;
+`ExchangeReturnsTheHandlerItReplaces` and `ExchangingNullRestoresTheDefaultHandler` state the exchange rule.
 
 ## test_delegate.cpp
 
@@ -259,7 +265,9 @@ A `release()` on the raw pointer then destroys the object.
 
 ## test_version.cpp
 
-The file covers `version_matches()`, `require_matching_version()` and the comparison behind them.
+The file covers `version_matches()`, `require_matching_version()` and the comparison behind them. The suite
+`Small_VersionMatch` runs `version_matches(headers, loaded)` over rows: the patch may differ, the minor and the major may not.
+The two tests that read the loaded library are `Medium_Version`.
 
 ### `TheTestProgramMatchesTheLibraryItLoaded`
 

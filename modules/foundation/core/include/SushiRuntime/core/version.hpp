@@ -85,14 +85,26 @@ namespace SushiRuntime
     [[nodiscard]] SUSHIRUNTIME_API const char* runtime_version_string() noexcept;
 
     /**
+     * @brief Returns whether two versions agree by major and minor.
+     * @param headers The version the caller's headers declare.
+     * @param loaded  The version the loaded library reports.
+     * @see modules/foundation/core/README.md
+     */
+    [[nodiscard]] inline bool version_matches(const Version& headers,
+                                              const Version& loaded) noexcept
+    {
+        return loaded.major == headers.major && loaded.minor == headers.minor;
+    }
+
+    /**
      * @brief Returns whether the loaded library matches these headers, by major and minor.
      * @see modules/foundation/core/README.md
      */
     [[nodiscard]] inline bool version_matches() noexcept
     {
-        const Version loaded = runtime_version();
-        return loaded.major == SUSHIRUNTIME_VERSION_MAJOR &&
-               loaded.minor == SUSHIRUNTIME_VERSION_MINOR;
+        return version_matches(Version{SUSHIRUNTIME_VERSION_MAJOR, SUSHIRUNTIME_VERSION_MINOR,
+                                       SUSHIRUNTIME_VERSION_PATCH},
+                               runtime_version());
     }
 
     namespace Detail

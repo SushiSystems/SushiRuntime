@@ -29,7 +29,6 @@
 
 #include <SushiRuntime/core/assert.hpp>
 
-#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 
@@ -48,20 +47,40 @@ namespace SushiRuntime
             std::fflush(stderr);
         }
 
-        /// @brief The handler a failed check calls.
-        std::atomic<AssertionHandler> installed_handler{&write_failure_to_standard_error};
+        /** @brief Returns the slot the process-wide macros report to. */
+        AssertionHandlerSlot& process_slot() noexcept
+        {
+            static AssertionHandlerSlot slot;
+            return slot;
+        }
     } // namespace
 
-    AssertionHandler set_assertion_handler(AssertionHandler handler) noexcept
+    AssertionHandlerSlot::AssertionHandlerSlot() noexcept
+        : handler_(&write_failure_to_standard_error)
+    {
+
+    }
+
+    AssertionHandler AssertionHandlerSlot::exchange(AssertionHandler handler) noexcept
     {
         if (handler == nullptr)
             handler = &write_failure_to_standard_error;
-        return installed_handler.exchange(handler, std::memory_order_acq_rel);
+        return handler_.exchange(handler, std::memory_order_acq_rel);
+    }
+
+    void AssertionHandlerSlot::report(const AssertionFailure& failure) const noexcept
+    {
+        handler_.load(std::memory_order_acquire)(failure);
+    }
+
+    AssertionHandler set_assertion_handler(AssertionHandler handler) noexcept
+    {
+        return process_slot().exchange(handler);
     }
 
     void fail_assertion(const AssertionFailure& failure) noexcept
     {
-        installed_handler.load(std::memory_order_acquire)(failure);
+        process_slot().report(failure);
         std::abort();
     }
 

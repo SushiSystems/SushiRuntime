@@ -12,7 +12,7 @@ The eighteen public headers under `include/SushiRuntime/core/`:
 | Header | What it declares |
 | --- | --- |
 | `allocation.hpp` | `Detail::Allocation`, a move-only owner of an address and its size, and `Detail::AllocationOwner`, the interface that releases the address |
-| `assert.hpp` | `SR_ASSERT`, `SR_VERIFY` and `SR_FATAL`, `AssertionFailure`, `AssertionHandler`, `set_assertion_handler()` and `fail_assertion()` |
+| `assert.hpp` | `SR_ASSERT`, `SR_VERIFY` and `SR_FATAL`, `AssertionFailure`, `AssertionHandler`, `AssertionHandlerSlot`, `set_assertion_handler()` and `fail_assertion()` |
 | `bit.hpp` | `popcount_u64` and `countr_zero_u64`, two 64-bit bit queries for the C++17 baseline |
 | `common.hpp` | The size constants `K_CACHE_LINE_SIZE`, `K_MAX_NUMA_NODES`, `K_MAX_WORKER_THREADS` and `K_DEFAULT_ALIGNMENT` |
 | `delegate.hpp` | `Delegate`, a move-only callable stored inline, with no heap allocation |
@@ -28,7 +28,7 @@ The eighteen public headers under `include/SushiRuntime/core/`:
 | `span.hpp` | `span`, a non-owning view of contiguous elements, with conversions to and from `std::span` from C++20 |
 | `strong_id.hpp` | `StrongID`, an integer identifier that is distinct per tag, with a `std::hash` specialisation |
 | `sushi_ptr.hpp` | `sushi_ptr` and `make_sushi`, the intrusive smart pointer and its factory, with a `std::hash` specialisation |
-| `version.hpp` | The version macros, `Version`, `runtime_version()`, `runtime_version_string()`, `version_matches()` and `require_matching_version()` |
+| `version.hpp` | The version macros, `Version`, `runtime_version()`, `runtime_version_string()`, `version_matches()` (two forms) and `require_matching_version()` |
 
 The sections below record why the code is the way it is. Each one is named after a header and the
 symbol or passage it explains, and that header's file block cites this page.
@@ -81,8 +81,11 @@ and the line, and passes it to `fail_assertion()`. The message expression is eva
 `fail_assertion()` calls the installed handler and then `std::abort()`. A handler that returns
 does not keep the process alive. The default handler writes one line to standard error.
 `set_assertion_handler()` installs another, such as one that writes to the consumer's log, and
-returns the one it replaced; a null argument restores the default. The handler is one atomic
-pointer for the whole process. `Runtime::create` installs a handler that logs the failure at
+returns the one it replaced; a null argument restores the default. The handler lives in an
+`AssertionHandlerSlot`, an atomic pointer with `exchange()` and `report()`; the process keeps one
+slot for `set_assertion_handler()` and `fail_assertion()`. `report()` calls the held handler and
+returns, so code that owns a slot sees a failure reported without the process stopping.
+`Runtime::create` installs a handler that logs the failure at
 `FATAL` through SushiLog and then calls the one it replaced (`api/detail/assertion_logging.hpp`);
 `core` itself depends on no logger.
 
@@ -310,7 +313,8 @@ program runs against, and not which headers the program compiled against.
 ### version_matches
 
 `version_matches()` is the check a consumer makes once at startup. It returns true when the loaded
-library is compatible with these headers. A mismatch means the headers and the binary came from
+library is compatible with these headers. `version_matches(headers, loaded)` makes the same comparison over two versions the caller
+gives, and the no-argument form passes it the header macros and `runtime_version()`. A mismatch means the headers and the binary came from
 different releases. One source of a mismatch is an older shared library earlier on the loader path.
 Without the check, the failure is a crash or a wrong answer at a later point, and nothing points
 back at the cause.
@@ -325,7 +329,7 @@ Sources of the `Core` layer that need a translation unit. The headers are in
 
 ### assert.cpp
 
-Holds the handler pointer and the default handler. `fail_assertion()` is compiled into the
+Holds the process-wide `AssertionHandlerSlot`, the default handler and the slot members. `fail_assertion()` is compiled into the
 library, so a failed check costs its caller one call and no formatting code.
 
 ### version.cpp
