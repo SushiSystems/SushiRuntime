@@ -107,8 +107,17 @@ namespace SushiRuntime
             description.reads = std::move(reads);
             description.writes = std::move(writes);
             description.width = launch_count(launch);
+            std::decay_t<F> body(std::forward<F>(kernel));
+            if constexpr (has_host_form_v<Launch>)
+                description.host_form = [body, launch, pointers]()
+                {
+                    std::apply([&body, &launch](auto... pointer)
+                    {
+                        run_launch_on_host(launch, body, pointer...);
+                    }, pointers);
+                };
             description.work = CommandGroupWork(
-                [kernel = std::forward<F>(kernel), launch, pointers](sycl::handler& h)
+                [kernel = std::move(body), launch, pointers](sycl::handler& h)
                 {
                     std::apply([&h, &kernel, &launch](auto... pointer)
                     {

@@ -52,6 +52,7 @@
 #include <SushiRuntime/api/graph/graph.hpp>
 #include <SushiRuntime/api/interop/interop.hpp>
 #include <SushiRuntime/api/runtime/advanced_controls.hpp>
+#include <SushiRuntime/api/runtime/host_runtime_config.hpp>
 #include <SushiRuntime/api/runtime/placement_scope.hpp>
 #include <SushiRuntime/api/runtime/runtime_config.hpp>
 
@@ -86,6 +87,35 @@ namespace SushiRuntime
                 if (!facts)
                     return make_error(std::move(facts.error()));
                 Result<ContextHandle> context = create_context(config);
+                if (!context)
+                    return make_error(std::move(context.error()));
+                Result<void> attached = attach_facts(*context, std::move(*facts));
+                if (!attached)
+                    return make_error(std::move(attached.error()));
+                return Runtime(std::move(*context));
+            }
+
+            /**
+             * @brief Creates a runtime that runs on the host: no device, no queue, no thread.
+             *
+             * Host nodes and launches over a count or an Extent run as jobs of the executor.
+             * @return The runtime, or an InvalidArgument error for a bad label or no device.
+             * @see modules/surface/api/include/SushiRuntime/api/runtime/README.md
+             */
+            [[nodiscard]] static Result<Runtime> create_host(HostRuntimeConfig config = {})
+            {
+                require_matching_version();
+                if (!config.executor)
+                    config.executor = std::make_shared<SeededExecutor>();
+                if (!config.clock)
+                    config.clock = std::make_shared<ManualClock>();
+                RuntimeConfig facts_config;
+                facts_config.node_name = config.node_name;
+                facts_config.labels = config.labels;
+                Result<std::shared_ptr<NodeFacts>> facts = create_topology(facts_config);
+                if (!facts)
+                    return make_error(std::move(facts.error()));
+                Result<ContextHandle> context = create_host_context(config);
                 if (!context)
                     return make_error(std::move(context.error()));
                 Result<void> attached = attach_facts(*context, std::move(*facts));
@@ -257,6 +287,10 @@ namespace SushiRuntime
              */
             [[nodiscard]] SUSHIRUNTIME_API static Result<ContextHandle>
             create_context(const RuntimeConfig& config);
+
+            /** @brief Builds the context of a host runtime; the config's executor and clock are set. */
+            [[nodiscard]] SUSHIRUNTIME_API static Result<ContextHandle>
+            create_host_context(const HostRuntimeConfig& config);
 
             /**
              * @brief Takes ownership of a built context that holds the facts of its machine.

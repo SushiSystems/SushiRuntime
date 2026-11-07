@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <memory>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -70,8 +71,17 @@ namespace SushiRuntime
                 reads.push_back(BufferRegion(static_cast<void*>(view->current)));
                 writes.push_back(BufferRegion(static_cast<void*>(view->next)));
             };
+            std::decay_t<F> body(std::forward<F>(kernel));
+            if constexpr (has_host_form_v<Launch>)
+                description.host_form = [body, view, launch]()
+                {
+                    // The view is read at each run, so the kernel follows the swap.
+                    const T* current = view->current;
+                    T* next = view->next;
+                    run_launch_on_host(launch, body, current, next);
+                };
             description.work = CommandGroupWork(
-                [kernel = std::forward<F>(kernel), view, launch](sycl::handler& h)
+                [kernel = std::move(body), view, launch](sycl::handler& h)
                 {
                     // The view is read at each submit, so the kernel follows the swap.
                     const T* current = view->current;
@@ -106,8 +116,19 @@ namespace SushiRuntime
                 reads.insert(reads.end(), inputs.begin(), inputs.end());
                 writes.push_back(BufferRegion(static_cast<void*>(out_view->next)));
             };
+            std::decay_t<F> body(std::forward<F>(kernel));
+            if constexpr (has_host_form_v<Launch>)
+                description.host_form = [body, out_view, views, launch]()
+                {
+                    const T* current = out_view->current;
+                    T* next = out_view->next;
+                    std::apply([&body, &launch, current, next](auto... input)
+                    {
+                        run_launch_on_host(launch, body, current, next, input...);
+                    }, views_current(views, Seq{}));
+                };
             description.work = CommandGroupWork(
-                [kernel = std::forward<F>(kernel), out_view, views, launch](sycl::handler& h)
+                [kernel = std::move(body), out_view, views, launch](sycl::handler& h)
                 {
                     const T* current = out_view->current;
                     T* next = out_view->next;

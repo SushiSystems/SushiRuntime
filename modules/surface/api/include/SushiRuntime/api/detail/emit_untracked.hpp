@@ -31,6 +31,7 @@
 #pragma once
 
 #include <cstddef>
+#include <type_traits>
 #include <utility>
 
 #include <sycl/sycl.hpp>
@@ -55,8 +56,10 @@ namespace SushiRuntime
             description.kind = NodeKind::Untracked;
             description.device = device;
             description.width = launch_count(launch);
+            std::decay_t<F> body(std::forward<F>(kernel));
+            description.host_form = host_form_of(launch, body);
             description.work = CommandGroupWork(
-                [kernel = std::forward<F>(kernel), launch](sycl::handler& h)
+                [kernel = std::move(body), launch](sycl::handler& h)
                 {
                     submit_launch(h, launch, kernel);
                 });

@@ -32,6 +32,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -274,6 +275,58 @@ namespace SushiRuntime
                     kernel(item, extra...);
                 });
             }
+        }
+        /**
+         * @brief Runs a count launch on the calling thread: kernel(i, extra...) for i in [0, count).
+         * @param extra Values passed after the index, as the device launch passes them.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <class Fn, class... Extra>
+        void run_launch_on_host(std::size_t count, const Fn& kernel, const Extra&... extra)
+        {
+            for (std::size_t index = 0; index < count; ++index)
+                kernel(index, extra...);
+        }
+
+        /**
+         * @brief Runs an Extent launch on the calling thread, the last dimension fastest, with
+         *        the origin added to each index.
+         * @param extra Values passed after the index, as the device launch passes them.
+         */
+        template <int N, class Fn, class... Extra>
+        void run_launch_on_host(const Extent<N>& extent, const Fn& kernel, const Extra&... extra)
+        {
+            const std::size_t total = extent.count();
+            for (std::size_t linear = 0; linear < total; ++linear)
+            {
+                sycl::id<N> index;
+                std::size_t rest = linear;
+                for (int d = N - 1; d >= 0; --d)
+                {
+                    index[d] = rest % extent.extent[d] + extent.origin[d];
+                    rest /= extent.extent[d];
+                }
+                kernel(index, extra...);
+            }
+        }
+
+        /** @brief Tells whether a launch has a host form: a count or an Extent, not an NdRange. */
+        template <class Launch>
+        inline constexpr bool has_host_form_v = !is_nd_range<std::decay_t<Launch>>::value;
+
+        /**
+         * @brief Returns the host form of a launch, or an empty function for an NdRange.
+         * @param extra Copied into the host form, as the device launch copies them.
+         * @see modules/engine/task/README.md
+         */
+        template <class Launch, class Fn, class... Extra>
+        std::function<void()> host_form_of(const Launch& launch, const Fn& kernel,
+                                           Extra... extra)
+        {
+            if constexpr (has_host_form_v<Launch>)
+                return [launch, kernel, extra...]() { run_launch_on_host(launch, kernel, extra...); };
+            else
+                return {};
         }
     } // namespace Detail
 } // namespace SushiRuntime

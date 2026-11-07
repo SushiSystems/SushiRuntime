@@ -188,7 +188,9 @@ namespace SushiRuntime
                                                   std::optional<std::uint32_t> registration)
         {
             const Emitter emit = K_EMITTERS[static_cast<std::size_t>(description.kind)];
-            return emit(backing_graph, description, registration);
+            Internal::Graph::Node& node = emit(backing_graph, description, registration);
+            node.host_form = description.host_form;
+            return node;
         }
 
         void apply_stamp(const NodeStamp& stamp, Internal::Graph::Node& node) noexcept

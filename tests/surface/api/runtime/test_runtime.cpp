@@ -67,6 +67,7 @@
 #include <SushiRuntime/log/sushiruntime_log_project.hpp>
 
 #include "support/buffer_contents.hpp"
+#include "support/runtime_contract.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -944,3 +945,22 @@ TEST_F(Medium_LoggingDefaults, DeviceLineArrivesThroughTheSinkAtInfo)
 
     EXPECT_TRUE(has_info_device_line(records_)) << records_.size() << " records, none an Info device line";
 }
+
+namespace
+{
+    /** @brief Makes the runtime the contract runs on: the program's device runtime. */
+    struct DeviceRuntimeMaker
+    {
+        /** @brief Returns the runtime every medium test of the program shares. */
+        static SushiRuntime::Runtime& runtime(std::optional<SushiRuntime::Runtime>& /*slot*/)
+        {
+            return TestSupport::RuntimeEnvironment::runtime();
+        }
+    };
+} // namespace
+
+namespace TestSupport
+{
+    /** @brief Runs the runtime contract on a device, the boundary the host runtime stands in for. */
+    INSTANTIATE_TYPED_TEST_SUITE_P(Medium_DeviceRuntime, RuntimeContract, ::DeviceRuntimeMaker, );
+} // namespace TestSupport

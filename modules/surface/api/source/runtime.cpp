@@ -176,6 +176,23 @@ namespace SushiRuntime
         return Internal::ContextAccess::handle(std::move(*context));
     }
 
+    Result<ContextHandle> Runtime::create_host_context(const HostRuntimeConfig& config)
+    {
+        Detail::install_fatal_logging();
+        if (config.device_count == 0)
+            return make_error(Error{ErrorCode::InvalidArgument,
+                                    "HostRuntimeConfig::device_count is 0; pass at least 1."});
+        Internal::Execution::HostContextParts parts;
+        parts.device_count = config.device_count;
+        parts.executor = config.executor;
+        parts.clock = config.clock;
+        Result<std::shared_ptr<Internal::Execution::RuntimeContext>> context =
+            Internal::Execution::RuntimeContext::create_host(parts);
+        if (!context)
+            return make_error(std::move(context.error()));
+        return Internal::ContextAccess::handle(std::move(*context));
+    }
+
     const Runtime& Runtime::set_rebalancer_enabled(bool enabled) const
     {
         Internal::ContextAccess::context(context_).execution_engine().set_rebalancer_enabled(

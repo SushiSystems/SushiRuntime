@@ -115,6 +115,12 @@ namespace SushiRuntime
             /** @brief The work: QueueWork for Task, WorkerWork for Host, else a command group. */
             std::variant<CommandGroupWork, QueueWork, WorkerWork> work;
 
+            /**
+             * @brief The launch run as a host loop, for a runtime with no device; empty for an
+             *        NdRange, a raw command group, a queue body and a host node.
+             */
+            WorkerWork host_form;
+
             /** @brief Launch width baked on the node; K_WIDTH_UNKNOWN leaves it unset. */
             std::size_t width = K_WIDTH_UNKNOWN;
 

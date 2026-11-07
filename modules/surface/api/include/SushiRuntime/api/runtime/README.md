@@ -41,6 +41,13 @@ Logging is process state and has no field here; `set_log_level()` and `set_log_s
 The three types are defined by the `machine` module, in `SushiRuntime`. The engine reads and fills
 the same types, so a value passes to it without a conversion.
 
+## host_runtime_config.hpp
+
+### HostRuntimeConfig
+
+The settings `create_host()` reads: the device count, the executor, the clock, the machine's name
+and its labels.
+
 ## advanced_controls.hpp
 
 ### AdvancedControls
@@ -150,6 +157,24 @@ the host cannot give the runtime its memory or its threads. A label that breaks 
 `InvalidArgument` before any context is built; see topology. A program that cannot go on without a
 runtime writes `Runtime::create().value()`, which stops the process with the error's message on
 standard error.
+
+### create_host
+
+`create_host(HostRuntimeConfig)` builds a runtime that makes no device, no queue and no thread,
+for a test or a tool that needs the runtime's logic and not its hardware. Its buffers are host
+memory from `HostUSMSource`; its devices are `config.device_count` host devices named
+`host device <i>`; every run goes to `HostExecutionEngine`, never to the in-order chain, so a
+report's layer is `Scheduler`. Host nodes and launches over a count or an `Extent` run as jobs of
+`config.executor`, on the thread that waits for the run; an `NdRange`, a raw command group, a
+queue body, a device-sized launch and a late-count launch have no host form and fail their run
+with `Unsupported`. `advanced().queue()` stops the process, since there is no queue. Copies to and
+from a buffer are `memcpy`.
+
+The executor and the clock are the caller's to keep: a test holds the `SeededExecutor` to replay
+an order from its seed or to step an asynchronous run, and advances a `ManualClock` to time a
+dispatch. A null executor is one of seed 0, a null clock a `ManualClock` at 0. The machine's name
+is `config.node_name`, "host" unless set, and the host name is never read. A label that breaks a
+rule returns `InvalidArgument`, as for `create()`.
 
 ### topology
 

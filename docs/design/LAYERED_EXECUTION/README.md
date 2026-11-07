@@ -93,6 +93,12 @@ Made on 2026-11-07, in the test review.
 | 11 | Installing an offload coordinator | A runtime starts with no coordinator. `AdvancedControls::install_offload()` installs one or removes it between runs and forwards to the context; the next compile of each graph follows the change |
 | 12 | Seams for tests | A seam a test needs is a constructor or function parameter, or an overload, whose default keeps today's behaviour, so existing callers compile unchanged |
 | 13 | Adapters of the ports | The in-memory adapter of a port ships beside the port: `InMemoryOffloadCoordinator` and `RefusingOffloadSink` in `task`. A coordinator that completes nodes on a thread of its own is test code, in `tests/support/` |
+| 14 | Seams for small tests | The five seams of the industrial-testing spec are built in this repository and are public, so SushiBLAS and SushiAI test on them: a clock, a deterministic executor, a host-only graph and plan core, a threadless transport and a fake device. The earlier rulings that left a test medium for want of a seam are overturned; a logic test moves onto its seam as `Small_` and one `Medium_` test is kept per boundary |
+| 15 | Clock | `Clock` in `core`, with `SteadyClock` and `ManualClock`; a part that times or waits takes one |
+| 16 | Deterministic executor | `SeededExecutor` in `core` runs posted jobs one at a time on the calling thread in an order a seed fixes; a test owns it and steps it |
+| 17 | Fake device | `Runtime::create_host(HostRuntimeConfig)` builds a runtime with no device, queue or thread: host devices in `DeviceQueueSet`, host memory from `HostUSMSource` under `USMAllocator`, and `HostExecutionEngine`, which runs each node as a job of the config's executor and stamps recorded dispatches from its clock. Every run goes to the engine, never to the in-order chain. Host nodes and launches over a count or an `Extent` run, through `Node::host_form`; an `NdRange`, a raw command group, a queue body, a device-sized and a late-count launch fail with `Unsupported`, and their tests stay medium as the kernel boundary |
+| 18 | Host-only graph and plan core | Recording, compiling, plan caching and refusals reach no device, so they run on a host runtime; a test of that logic constructs its own host runtime per test (`tests/support/host_runtime.hpp`) |
+| 19 | Threadless transport | `InProcessTransport` runs on a `SeededExecutor` and a `Clock` given to it, in place of its own thread, and passes `TransportContract` small (RW-87) |
 
 ### Out of scope
 

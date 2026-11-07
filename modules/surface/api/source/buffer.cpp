@@ -31,6 +31,7 @@
 #include <SushiRuntime/api/data/buffer.hpp>
 
 #include <cstddef>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -72,6 +73,12 @@ namespace SushiRuntime
                 Result<void> copied = Internal::SYCL::translate_exceptions(
                     [&runtime, base, device, destination, source, bytes]()
                 {
+                    // A host runtime's memory is host memory, and it holds no queue to copy on.
+                    if (!runtime.devices().holds_queues())
+                    {
+                        std::memcpy(destination, source, bytes);
+                        return;
+                    }
                     const std::optional<std::size_t> owner = runtime.memory().owning_device(base);
                     runtime.devices()
                         .queue(owner.value_or(device.value()))

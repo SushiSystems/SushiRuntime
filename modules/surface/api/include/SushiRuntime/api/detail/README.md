@@ -255,6 +255,14 @@ state, kernel) or add(count, In(a), kernel) exist because the emitters are gener
 other reason. The Extent form adds the origin to each id. The NdRange form adds it only for a
 kernel that takes the id as a second parameter.
 
+### run_launch_on_host and host_form_of
+
+run_launch_on_host() is submit_launch() on the calling thread: a loop over the count, or over the
+Extent with the last dimension fastest and the origin added, handing the kernel the same values
+after its index. host_form_of() wraps it into the `host_form` a node carries for a host runtime.
+An NdRange has none, since an nd_item cannot be built on the host. The State and capture emitters
+build their host form inline, so it reads the State's fields at each run as the command group does.
+
 ### launch_reach and launch_refusal
 
 A State rule or a coupled rule hands its kernel the fields of a State, so the recorder knows the
