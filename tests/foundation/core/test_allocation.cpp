@@ -28,7 +28,6 @@
  * @author Mustafa Garip
  */
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>

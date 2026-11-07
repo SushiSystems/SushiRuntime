@@ -28,7 +28,6 @@
  * @author Mustafa Garip
  */
 
-#include <cstring>
 
 #include <gtest/gtest.h>
 

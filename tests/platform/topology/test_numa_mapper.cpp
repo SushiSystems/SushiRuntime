@@ -33,7 +33,6 @@
 
 #include <gtest/gtest.h>
 
-#include <SushiRuntime/machine/device_filter.hpp>
 #include <SushiRuntime/topology/hw_discovery.hpp>
 #include <SushiRuntime/topology/hwloc_topology_provider.hpp>
 #include <SushiRuntime/topology/numa_mapper.hpp>

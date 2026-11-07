@@ -28,7 +28,6 @@
  * @author Mustafa Garip
  */
 
-#include <cstddef>
 #include <type_traits>
 #include <utility>
 

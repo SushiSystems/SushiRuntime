@@ -29,8 +29,6 @@
  */
 
 #include <cstdint>
-#include <optional>
-#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>

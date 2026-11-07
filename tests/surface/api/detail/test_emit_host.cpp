@@ -28,7 +28,6 @@
  * @author Mustafa Garip
  */
 
-#include <cstddef>
 #include <variant>
 
 #include <gtest/gtest.h>

@@ -28,7 +28,6 @@
  * @author Mustafa Garip
  */
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -45,7 +44,6 @@
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/task/late_bindings.hpp>
 #include <SushiRuntime/task/node.hpp>
-#include <SushiRuntime/task/offload_state.hpp>
 #include <SushiRuntime/task/task_types.hpp>
 #include <SushiRuntime/task/task_work.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>

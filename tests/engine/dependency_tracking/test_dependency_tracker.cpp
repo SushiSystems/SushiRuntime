@@ -28,9 +28,6 @@
  * @author Mustafa Garip
  */
 
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
 
 #include <gtest/gtest.h>
 

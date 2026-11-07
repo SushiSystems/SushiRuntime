@@ -29,7 +29,6 @@
  */
 
 #include <cstdint>
-#include <string>
 
 #include <gtest/gtest.h>
 

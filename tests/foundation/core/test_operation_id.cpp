@@ -28,7 +28,6 @@
  * @author Mustafa Garip
  */
 
-#include <cstdint>
 
 #include <gtest/gtest.h>
 

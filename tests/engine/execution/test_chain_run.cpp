@@ -28,20 +28,17 @@
  * @author Mustafa Garip
  */
 
-#include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
 
-#include <SushiRuntime/graph/chain_plan.hpp>
 #include <SushiRuntime/graph/compiled_graph.hpp>
 #include <SushiRuntime/graph/task_graph.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
 #include <SushiRuntime/memory/usm_request.hpp>
 #include <SushiRuntime/region/buffer_region.hpp>
 #include <SushiRuntime/runtime_assembly/context_factory.hpp>
-#include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/task/task_work.hpp>
 #include <SushiRuntime/core/result.hpp>
 

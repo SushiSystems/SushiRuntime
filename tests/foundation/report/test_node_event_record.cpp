@@ -29,7 +29,6 @@
  */
 
 #include <cstddef>
-#include <cstdint>
 #include <type_traits>
 
 #include <gtest/gtest.h>

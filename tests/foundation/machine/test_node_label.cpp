@@ -28,7 +28,6 @@
  * @see tests/foundation/machine/README.md
  */
 
-#include <string>
 
 #include <gtest/gtest.h>
 

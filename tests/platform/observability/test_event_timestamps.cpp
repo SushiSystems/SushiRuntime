@@ -31,7 +31,6 @@
 #include <cstdint>
 #include <functional>
 #include <string>
-#include <vector>
 
 #include <gtest/gtest.h>
 #include <sycl/sycl.hpp>
