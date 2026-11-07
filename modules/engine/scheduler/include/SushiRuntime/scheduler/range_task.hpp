@@ -101,6 +101,12 @@ namespace SushiRuntime
                 /** @brief Returns the label given at construction. */
                 const char* name() const noexcept override { return name_; }
 
+                /** @brief Returns the range execute() would hand the kernel now: [start, end). */
+                [[nodiscard]] std::pair<size_t, size_t> range() const noexcept
+                {
+                    return {start_.load(std::memory_order_acquire), end_};
+                }
+
                 /** @brief Executes the task for the current valid range. */
                 void execute(sycl::handler& h) override 
                 {

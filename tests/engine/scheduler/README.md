@@ -114,10 +114,10 @@ reversed range. All tests are deterministic.
 | `SplitHandsOffDistinctChunksUntilExhausted` | Repeated splitting hands off a distinct chunk each time until the owner is below the grain. The helper keeps every chunk alive, so a freed and reused address cannot pass for a duplicate. |
 | `AnExhaustedOwnerHandsOffNothing` | Once below the grain, `split()` reports nothing to hand off. |
 | `AnEmptyRangeIsAcceptedAndDoesNotSplit` | An empty range is accepted and does not split. |
-| `Medium_RangeTaskTest.SplitPartsCoverTheRangeExactlyOnce` | The parts of the range [37, 10044) run each once, with no gap and no overlap. `execute()` takes a `sycl::handler`, so each part runs in a submit to the program's queue. |
+| `Small_RangeTask.SplitPartsCoverTheRangeExactlyOnce` | The ranges the parts of [37, 10044) hold, read through `range()`, cover it once, with no gap and no overlap. |
 | `Medium_RangeTaskDeathTest.AReversedRangeStopsAtConstruction` | `RangeTask(8, 4, ...)` stops the process. A death test starts a child process. |
 
-No split tells the owner's own range apart without a handler, so the coverage check stays on the queue.
+`range()` is the range `execute()` hands the kernel, so the coverage check needs no handler.
 
 ## test_run_outcome.cpp
 

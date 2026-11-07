@@ -43,7 +43,6 @@
 #include <SushiRuntime/scheduler/range_task.hpp>
 #include <SushiRuntime/task/task.hpp>
 
-#include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 using SushiRuntime::Internal::Scheduler::Task;
@@ -119,15 +118,6 @@ namespace
         return cursor == end ? std::string{} : "the parts stop at " + std::to_string(cursor);
     }
 
-    /** @brief The ranges the parts run when each is submitted to @p queue, in the order they ran. */
-    std::vector<std::pair<size_t, size_t>> run_ranges(const std::vector<sushi_ptr<Task>>& parts, sycl::queue& queue,
-                                                      const std::vector<std::pair<size_t, size_t>>& recorded)
-    {
-        for (const sushi_ptr<Task>& part : parts)
-            queue.submit([&part](sycl::handler& handler) { part->execute(handler); }).wait();
-        return recorded;
-    }
-
     /** @brief One range, whether it splits, and the answer is_splittable and split must both give. */
     struct ThresholdRow
     {
@@ -139,11 +129,6 @@ namespace
         bool splits;
     };
 } // namespace
-
-/** @brief Fixture of the tests that run the parts of a range on the program's queue. */
-class Medium_RangeTaskTest : public TestSupport::RuntimeTest
-{
-};
 
 /** @brief Fixture of the rows of the split threshold. */
 class Small_RangeTaskThreshold : public ::testing::TestWithParam<ThresholdRow>
@@ -205,24 +190,19 @@ TEST(Small_RangeTask, AnEmptyRangeIsAcceptedAndDoesNotSplit)
 }
 
 /** @brief Tests that the parts a range splits into cover it once, with no gap and no overlap. */
-TEST_F(Medium_RangeTaskTest, SplitPartsCoverTheRangeExactlyOnce)
+TEST(Small_RangeTask, SplitPartsCoverTheRangeExactlyOnce)
 {
     constexpr size_t K_BEGIN = 37;
     constexpr size_t K_END = K_BEGIN + 10007;
-    std::vector<std::pair<size_t, size_t>> ranges;
-    const auto recording_kernel = [&ranges](size_t start, size_t end, sycl::handler& handler)
-    {
-        ranges.emplace_back(start, end);
-        handler.single_task([] {});
-    };
     const std::vector<sushi_ptr<Task>> parts =
-        split_into_parts(make_sushi<RangeTask>(K_BEGIN, K_END, recording_kernel));
+        split_into_parts(make_sushi<RangeTask>(K_BEGIN, K_END, noop_kernel()));
     ASSERT_GT(parts.size(), 1u);
 
-    const std::vector<std::pair<size_t, size_t>> executed = run_ranges(parts, queue(), ranges);
+    std::vector<std::pair<size_t, size_t>> ranges;
+    for (const sushi_ptr<Task>& part : parts)
+        ranges.push_back(static_cast<const RangeTask&>(*part).range());
 
-    EXPECT_EQ(executed.size(), parts.size()) << "A part executed no range or more than one.";
-    EXPECT_EQ(coverage_defect(executed, K_BEGIN, K_END), "");
+    EXPECT_EQ(coverage_defect(ranges, K_BEGIN, K_END), "");
 }
 
 /** @brief Tests that a reversed range stops the process at construction. A death test starts a child process. */

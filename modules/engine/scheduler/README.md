@@ -261,7 +261,7 @@ A range splits when the upper half, the one the owner keeps, holds at least 1024
 range of 2047 or more does. is_splittable() and split() both ask the private can_split(), so a true
 is_splittable() is followed by a chunk unless a concurrent split wins the exchange. The constructor
 stops the process through `SR_VERIFY` for start > end; start == end is an empty range that runs
-nothing.
+nothing. `range()` returns the [start, end) that `execute()` would hand the kernel now.
 
 ## task_scheduler.hpp
 
