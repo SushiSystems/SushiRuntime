@@ -34,6 +34,7 @@
 #include <optional>
 
 #include <SushiRuntime/core/error.hpp>
+#include <SushiRuntime/core/export.hpp>
 #include <SushiRuntime/interop/external_memory.hpp>
 #include <SushiRuntime/interop/interop_capabilities.hpp>
 
@@ -56,7 +57,7 @@ namespace SushiRuntime
          * @param device_index The device named in the message.
          * @return An InvalidAccess error naming the field at fault, or nothing.
          */
-        [[nodiscard]] std::optional<Error> descriptor_refusal(
+        [[nodiscard]] SUSHIRUNTIME_API std::optional<Error> descriptor_refusal(
             const InteropCapabilities& capabilities, const ExternalMemoryDescriptor& descriptor,
             std::size_t bytes, std::size_t device_index);
 
@@ -67,7 +68,7 @@ namespace SushiRuntime
          * @param device_index The device named in the message.
          * @return An InvalidAccess error naming both UUIDs when both exist, or nothing.
          */
-        [[nodiscard]] std::optional<Error> device_refusal(
+        [[nodiscard]] SUSHIRUNTIME_API std::optional<Error> device_refusal(
             const InteropCapabilities& capabilities, const ExternalMemoryDescriptor& descriptor,
             std::size_t device_index);
     } // namespace Internal::MemoryExchange
