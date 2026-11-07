@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-11-07 — api: Added `Runtime::create_host()`, a runtime with host devices, host memory and no thread, whose nodes run as jobs on a seeded executor (RW-124, `e6ec9548`).
+- 2026-11-07 — api: Gave count, `Extent`, dynamic, device-sized and late-count launches a host form the host runtime runs (RW-126, `7d4c949d`).
+- 2026-11-07 — in_process_transport: Made an endpoint given an executor run with no pump thread, its rounds posted as jobs (RW-87, `c156df96`).
 - 2026-11-07 — core: Added `Clock`, the port a timed part reads, with a steady and a manual adapter a test advances (RW-122, `ce70e55b`).
 - 2026-11-07 — memory: Made the allocator take its memory from a `USMSource`, a SYCL one or the host-heap one a small test uses (RW-123, `da4525a5`).
 - 2026-11-07 — device: Gave `DeviceQueueSet` a host form that holds devices and no queue (RW-123, `da4525a5`).

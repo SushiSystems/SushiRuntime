@@ -103,6 +103,69 @@ Read case by case by four workers over the `Medium_` suites at 4af8f95f; the tab
 
 Counts by size before the work, by `git grep` of the suite prefixes at 23bf5b2f: 856 `Small_`, 960 `Medium_`, 14 `Large_`.
 
+Counts by size after the work, by the same `git grep` at e6ec9548: 1380 `Small_`, 470 `Medium_`, 14 `Large_`. The final run, after one `sr build --distributed`: `sr test -l small` passed 1310 of 1310 and `sr test -l medium --distributed` passed 432 of 432 (CTest counts a parameterised row as one test, `git grep` counts its macro once).
+
+| Module | Small / Medium / Large before | Small / Medium / Large after | Small after |
+| --- | --- | --- | --- |
+| applications/examples | 4 / 2 / 0 | 4 / 2 / 0 | 67% |
+| engine/dependency_tracking | 12 / 0 / 0 | 12 / 0 / 0 | 100% |
+| engine/execution | 28 / 35 / 10 | 50 / 22 / 10 | 61% |
+| engine/graph | 23 / 5 / 0 | 26 / 2 / 0 | 93% |
+| engine/probe_tasks | 0 / 3 / 0 | 0 / 3 / 0 | 0% |
+| engine/region_boundary | 4 / 0 / 0 | 4 / 0 / 0 | 100% |
+| engine/runtime_assembly | 0 / 2 / 0 | 0 / 2 / 0 | 0% |
+| engine/scheduler | 63 / 34 / 0 | 64 / 33 / 0 | 66% |
+| engine/task | 70 / 13 / 0 | 74 / 9 / 0 | 89% |
+| engine/work_stealing | 2 / 1 / 0 | 2 / 1 / 0 | 67% |
+| extension/buffer_exchange | 33 / 0 / 0 | 33 / 0 / 0 | 100% |
+| extension/cluster_load | 9 / 0 / 0 | 9 / 0 / 0 | 100% |
+| extension/dispatch_deduplication | 3 / 0 / 0 | 3 / 0 / 0 | 100% |
+| extension/distributed | 22 / 122 / 0 | 22 / 122 / 0 | 15% |
+| extension/frame_transport | 11 / 3 / 0 | 14 / 0 / 0 | 100% |
+| extension/in_process_transport | 0 / 17 / 0 | 16 / 1 / 0 | 94% |
+| extension/link_security | 12 / 2 / 0 | 12 / 2 / 0 | 86% |
+| extension/network_socket | 0 / 16 / 0 | 0 / 16 / 0 | 0% |
+| extension/offload_coordination | 90 / 19 / 0 | 107 / 2 / 0 | 98% |
+| extension/pending_tasks | 24 / 1 / 0 | 24 / 1 / 0 | 96% |
+| extension/process_environment | 4 / 2 / 0 | 4 / 2 / 0 | 67% |
+| extension/transport | 13 / 0 / 0 | 13 / 0 / 0 | 100% |
+| extension/wire | 39 / 0 / 0 | 39 / 0 / 0 | 100% |
+| foundation/core | 83 / 16 / 0 | 90 / 16 / 0 | 85% |
+| foundation/device_probe | 0 / 1 / 0 | 0 / 1 / 0 | 0% |
+| foundation/log | 4 / 2 / 0 | 5 / 2 / 0 | 71% |
+| foundation/machine | 6 / 0 / 0 | 6 / 0 / 0 | 100% |
+| foundation/measurement | 9 / 1 / 0 | 9 / 1 / 0 | 90% |
+| foundation/placement | 26 / 0 / 0 | 26 / 0 / 0 | 100% |
+| foundation/profile | 13 / 1 / 0 | 13 / 1 / 0 | 93% |
+| foundation/region | 9 / 0 / 0 | 9 / 0 / 0 | 100% |
+| foundation/report | 19 / 1 / 0 | 19 / 1 / 0 | 95% |
+| foundation/sycl | 5 / 1 / 0 | 5 / 1 / 0 | 83% |
+| foundation/test_runner | 2 / 0 / 0 | 2 / 0 / 0 | 100% |
+| foundation/thread_barrier | 1 / 1 / 0 | 1 / 1 / 0 | 50% |
+| foundation/usm_guard | 0 / 3 / 0 | 0 / 3 / 0 | 0% |
+| platform/device | 9 / 16 / 0 | 16 / 15 / 0 | 52% |
+| platform/memory | 12 / 35 / 2 | 38 / 12 / 2 | 73% |
+| platform/numa_lookup | 3 / 0 / 0 | 3 / 0 / 0 | 100% |
+| platform/observability | 31 / 2 / 0 | 31 / 2 / 0 | 94% |
+| platform/topology | 24 / 16 / 0 | 24 / 16 / 0 | 60% |
+| surface/api | 51 / 485 / 0 | 421 / 123 / 0 | 77% |
+| surface/context | 1 / 0 / 0 | 1 / 0 / 0 | 100% |
+| surface/engine_handles | 2 / 0 / 0 | 2 / 0 / 0 | 100% |
+| surface/interop | 6 / 0 / 0 | 6 / 0 / 0 | 100% |
+| surface/memory_exchange | 8 / 5 / 0 | 9 / 4 / 0 | 69% |
+| surface/profiling | 66 / 97 / 2 | 112 / 51 / 2 | 68% |
+
+The suite does not meet the spec yet: 19 of 47 modules are below 80% small. The largest gaps and the seam each waits on:
+
+- `extension/distributed` (15%): its endpoints start their own threads; RW-127.
+- `surface/api` (77%): NdRange, raw command groups, queue bodies and the interop queries have no host form; RW-126.
+- `surface/profiling` (68%): a SushiProfiler session takes the process-wide collector; RW-128.
+- `engine/execution` and `engine/scheduler` (61%, 66%): `TaskScheduler` has no executor mode, and `ChainRun` and the task bodies take a `sycl::queue&`; RW-129.
+- `platform/device`, `platform/topology` and `platform/memory` (52%, 60%, 73%): the queue factory, the device enumerator, the hwloc reader of `NUMAMapper` and the `USMShared` allocation source are not built.
+- `extension/network_socket`, `foundation/usm_guard`, `engine/probe_tasks` and `engine/runtime_assembly` (0%): every case is a socket, a death test or a real device.
+
+One small run of the final three stalled: seven consecutive `Small_` cases hit the one-second limit together and passed on the rerun. That was the machine, not the cases, but a one-second ceiling leaves no room for a stall on a shared machine.
+
 ## Dispatches
 
 dispatch: J15 review, 16 chunks — haiku high, 1 round each, passed, rung 1
@@ -144,6 +207,14 @@ dispatch: J16 medium audit D, extension — sonnet medium, 2 rounds (sent back f
 dispatch: J16 V1 api/graph recorder — sonnet medium, 2 rounds (sent back for skipping DISPATCH rule 1), passed, rung 1
 dispatch: J16 V1 api/graph graph — sonnet medium, 1 round, passed (the lead fixed a stale suite name in the page), rung 1
 dispatch: J16 V1 api/graph dynamic graph and the rest — sonnet medium, 1 round, partial (18 logic cases wait on host forms, RW-126), rung 1
+dispatch: J16 V1 api/graph run handle and plumbing — sonnet medium, 1 round, partial (two NdRange and raw cases wait on RW-126), rung 1
+dispatch: J16 V1 api/runtime — sonnet medium, 1 round, partial (pool, pinning, filter and host-name cases stay medium), rung 1
+dispatch: J16 V1 api fluent, data and detail — sonnet medium, 1 round, partial (raw, range and NdRange cases wait on RW-126), rung 1
+dispatch: J16 V1 api vocabulary and interop — sonnet medium, 2 rounds (course correction: device-sized and late-count host forms landed), partial (interop queries have no host path), rung 1
+dispatch: J16 V1 surface/profiling — sonnet medium, 1 round, partial (41 cases wait on RW-128), rung 1
+dispatch: J16 V1 engine and memory_exchange — sonnet medium, 1 round, partial (scheduler and queue seams to RW-129), rung 1
+dispatch: J16 V1 platform, foundation and applications — sonnet medium, 1 round, partial (queue factory, enumerator, hwloc and USMShared seams not built), rung 1
+dispatch: J16 V1 extension rest and device-sized leftovers — sonnet medium, 1 round, passed, rung 1
 
 ## Totals
 
