@@ -57,7 +57,6 @@
 #include <SushiRuntime/topology/topology_view.hpp>
 #include <SushiRuntime/device/device_queue_set.hpp>
 #include <SushiRuntime/memory/usm_allocator.hpp>
-#include <SushiRuntime/memory/epoch_reclamation.hpp>
 #include <SushiRuntime/scheduler/task_scheduler.hpp>
 #include <SushiRuntime/scheduler/failure_naming.hpp>
 #include "dispatch_placement.hpp"
@@ -490,8 +489,6 @@ namespace SushiRuntime
                 Task* task = nullptr;
 
                 {
-                    SushiRuntime::Internal::Memory::EpochGuard epoch_guard;
-
                     // A failed poll fails the run, not the thread (scheduler/README.md).
                     std::optional<Error> polled;
                     Result<void> poll_ran = SYCL::translate_exceptions([&]()
@@ -575,7 +572,6 @@ namespace SushiRuntime
                     if (is_shutdown && active_events.is_empty() && !has_pending_submissions())
                         break;
 
-                    // Backoff runs outside the epoch (modules/engine/scheduler/README.md).
                     spin_count++;
                     const auto bk0 = prof ? sclock::now() : sclock::time_point{};
                     // A worker holding in-flight events never sleeps: its successors wait on its poll.

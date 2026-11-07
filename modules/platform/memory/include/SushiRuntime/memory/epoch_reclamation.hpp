@@ -32,18 +32,23 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <vector>
 #include <SushiRuntime/core/assert.hpp>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/error.hpp>
 
-namespace SushiRuntime 
+namespace SushiRuntime
 {
-    namespace Internal::Memory 
+    namespace Internal::Memory
     {
-        namespace Detail 
+        class EpochManager;
+
+        namespace Detail
         {
-            struct RetiredNode 
+            struct RetiredNode
             {
                 void* ptr;
                 void (*deleter)(void*);
@@ -52,11 +57,39 @@ namespace SushiRuntime
             };
 
             /**
-             * @brief Holds the thread-local state for epoch-based reclamation.
+             * @brief Tells a thread's state whether the manager it belongs to is still alive.
+             *
+             * The manager and every thread state that names it share one link; the manager clears
+             * owner under the mutex before it dies, so a thread that exits later frees its list
+             * itself instead of calling a dead manager.
+             */
+            struct OwnerLink
+            {
+                std::mutex mutex;
+                EpochManager* owner = nullptr;
+            };
+
+            /** @brief Deletes every payload of a retire list and the list itself. */
+            inline void free_retired(RetiredNode* list) noexcept
+            {
+                while (list)
+                {
+                    RetiredNode* const node = list;
+                    list = node->next;
+                    node->deleter(node->ptr);
+                    delete node;
+                }
+            }
+
+            /**
+             * @brief Holds one thread's state for one EpochManager.
              * @see modules/platform/memory/README.md
              */
-            struct EpochThreadLocalState 
+            struct EpochThreadLocalState
             {
+                /** @brief The link of the manager this state belongs to. */
+                std::shared_ptr<OwnerLink> link;
+
                 int id = -1;
 
                 /**
@@ -91,9 +124,9 @@ namespace SushiRuntime
                  * Pop is O(1) and does not touch the global allocator. Falls
                  * back to operator new only when the pool is empty.
                  */
-                inline RetiredNode* acquire_node() 
+                inline RetiredNode* acquire_node()
                 {
-                    if (free_node_pool) 
+                    if (free_node_pool)
                     {
                         RetiredNode* node = free_node_pool;
                         free_node_pool = node->next;
@@ -109,15 +142,15 @@ namespace SushiRuntime
                  * The caller has already invoked the deleter on the underlying
                  * payload. This call only manages the RetiredNode storage itself.
                  */
-                inline void release_node(RetiredNode* node) noexcept 
+                inline void release_node(RetiredNode* node) noexcept
                 {
-                    if (free_node_pool_count < K_FREE_POOL_CAP) 
+                    if (free_node_pool_count < K_FREE_POOL_CAP)
                     {
                         node->next = free_node_pool;
                         free_node_pool = node;
                         ++free_node_pool_count;
-                    } 
-                    else 
+                    }
+                    else
                     {
                         delete node;
                     }
@@ -126,9 +159,9 @@ namespace SushiRuntime
                 /**
                  * @brief Drains the free pool entirely. Called from the destructor.
                  */
-                inline void drain_free_pool() noexcept 
+                inline void drain_free_pool() noexcept
                 {
-                    while (free_node_pool) 
+                    while (free_node_pool)
                     {
                         RetiredNode* next = free_node_pool->next;
                         delete free_node_pool;
@@ -136,14 +169,67 @@ namespace SushiRuntime
                     }
                     free_node_pool_count = 0;
                 }
-                
-                ~EpochThreadLocalState(); 
+
+                ~EpochThreadLocalState();
             };
 
-            inline EpochThreadLocalState& tls_state() 
+            /** @brief Holds the states of the calling thread, one per manager it has used. */
+            struct ThreadBindings
             {
-                thread_local EpochThreadLocalState state{};
-                return state;
+                std::vector<std::unique_ptr<EpochThreadLocalState>> states;
+                EpochThreadLocalState* last = nullptr;
+            };
+
+            /** @brief Returns the calling thread's bindings. */
+            inline ThreadBindings& thread_bindings()
+            {
+                thread_local ThreadBindings bindings;
+                return bindings;
+            }
+
+            /**
+             * @brief Returns the calling thread's state for the manager a link names.
+             * @param link The link of the manager; the state is made on the thread's first use.
+             */
+            inline EpochThreadLocalState& state_for(const std::shared_ptr<OwnerLink>& link)
+            {
+                ThreadBindings& bindings = thread_bindings();
+                if (bindings.last && bindings.last->link == link)
+                    return *bindings.last;
+
+                for (const std::unique_ptr<EpochThreadLocalState>& state : bindings.states)
+                {
+                    if (state->link == link)
+                    {
+                        bindings.last = state.get();
+                        return *state;
+                    }
+                }
+
+                bindings.states.push_back(std::make_unique<EpochThreadLocalState>());
+                bindings.last = bindings.states.back().get();
+                bindings.last->link = link;
+                return *bindings.last;
+            }
+
+            /**
+             * @brief Drops the calling thread's state for a manager that is ending.
+             * @return True when the thread had a state.
+             */
+            inline bool forget_state(const std::shared_ptr<OwnerLink>& link)
+            {
+                ThreadBindings& bindings = thread_bindings();
+                bindings.last = nullptr;
+                for (std::size_t i = 0; i < bindings.states.size(); ++i)
+                {
+                    if (bindings.states[i]->link == link)
+                    {
+                        bindings.states.erase(bindings.states.begin() +
+                                              static_cast<std::ptrdiff_t>(i));
+                        return true;
+                    }
+                }
+                return false;
             }
         }
 
@@ -154,6 +240,15 @@ namespace SushiRuntime
         class EpochManager
         {
         private:
+            /** @brief Tells the thread states that name this manager whether it is alive. */
+            std::shared_ptr<Detail::OwnerLink> link_ = std::make_shared<Detail::OwnerLink>();
+
+            /** @brief Returns the calling thread's state for this manager. */
+            Detail::EpochThreadLocalState& local_state()
+            {
+                return Detail::state_for(link_);
+            }
+
             static constexpr size_t K_MAX_EPOCH_THREADS = K_MAX_WORKER_THREADS + 32;
 
             std::atomic<uint64_t> global_epoch_{1};
@@ -166,9 +261,9 @@ namespace SushiRuntime
                 std::atomic<uint64_t> epoch{0};
                 std::atomic<bool> active{false};
             };
-            
+
             ThreadEpochSlot thread_slots_[K_MAX_EPOCH_THREADS];
-            
+
             std::atomic<int> thread_id_high_water_{0};
             std::atomic<Detail::RetiredNode*> global_orphan_list_{nullptr};
 
@@ -179,16 +274,16 @@ namespace SushiRuntime
              */
             int register_thread()
             {
-                for (int i = 0; i < static_cast<int>(K_MAX_EPOCH_THREADS); ++i) 
+                for (int i = 0; i < static_cast<int>(K_MAX_EPOCH_THREADS); ++i)
                 {
                     bool expected = false;
-                    if (thread_slots_[i].active.compare_exchange_strong(expected, true, std::memory_order_acquire)) 
+                    if (thread_slots_[i].active.compare_exchange_strong(expected, true, std::memory_order_acquire))
                     {
                         thread_slots_[i].epoch.store(0, std::memory_order_relaxed);
                         int current_max = thread_id_high_water_.load(std::memory_order_relaxed);
-                        while (i >= current_max) 
+                        while (i >= current_max)
                         {
-                            if (thread_id_high_water_.compare_exchange_weak(current_max, i + 1, std::memory_order_release)) 
+                            if (thread_id_high_water_.compare_exchange_weak(current_max, i + 1, std::memory_order_release))
                                 break;
                         }
                         return i;
@@ -207,12 +302,12 @@ namespace SushiRuntime
              */
             void check_and_reclaim()
             {
-                auto& tls_state = Detail::tls_state();
+                Detail::EpochThreadLocalState& tls_state = local_state();
                 tls_state.is_reclaiming = true;
                 ++tls_state.scan_count;
 
                 Detail::RetiredNode* orphans = global_orphan_list_.exchange(nullptr, std::memory_order_acquire);
-                if (orphans) 
+                if (orphans)
                 {
                     Detail::RetiredNode* tail = orphans;
                     size_t orphan_count = 1;
@@ -227,18 +322,18 @@ namespace SushiRuntime
                 uint64_t current = global_epoch_.load(std::memory_order_acquire);
                 uint64_t min_active = current;
                 int active_threads = thread_id_high_water_.load(std::memory_order_relaxed);
-                
-                for (int i = 0; i < active_threads; ++i) 
+
+                for (int i = 0; i < active_threads; ++i)
                 {
-                    if (thread_slots_[i].active.load(std::memory_order_acquire)) 
+                    if (thread_slots_[i].active.load(std::memory_order_acquire))
                     {
                         uint64_t t_ep = thread_slots_[i].epoch.load(std::memory_order_acquire);
-                        if (t_ep != 0 && t_ep < min_active) 
+                        if (t_ep != 0 && t_ep < min_active)
                             min_active = t_ep;
                     }
                 }
 
-                if (min_active == current) 
+                if (min_active == current)
                 {
                     uint64_t expected = current;
                     global_epoch_.compare_exchange_strong(expected, current + 1, std::memory_order_release);
@@ -290,19 +385,53 @@ namespace SushiRuntime
             }
 
         public:
-            EpochManager() 
+            /** @brief Makes a manager with no thread slot taken; one manager serves one owner. */
+            EpochManager()
             {
-                for (size_t i = 0; i < K_MAX_EPOCH_THREADS; ++i) 
+                link_->owner = this;
+                for (size_t i = 0; i < K_MAX_EPOCH_THREADS; ++i)
                 {
                     thread_slots_[i].epoch.store(0, std::memory_order_relaxed);
                     thread_slots_[i].active.store(false, std::memory_order_relaxed);
                 }
             }
 
-            static EpochManager& instance() 
+            EpochManager(const EpochManager&) = delete;
+            EpochManager& operator=(const EpochManager&) = delete;
+            EpochManager(EpochManager&&) = delete;
+            EpochManager& operator=(EpochManager&&) = delete;
+
+            /**
+             * @brief Deletes every object still retired: the orphans, and the calling thread's list.
+             *
+             * A thread that exits later frees what it still holds for this manager itself.
+             * @pre No thread is inside a guard of this manager.
+             */
+            ~EpochManager()
             {
-                static EpochManager inst;
-                return inst;
+                {
+                    const std::lock_guard<std::mutex> lock(link_->mutex);
+                    link_->owner = nullptr;
+                }
+
+                bool progressed = true;
+                while (progressed)
+                {
+                    progressed = Detail::forget_state(link_);
+                    Detail::RetiredNode* orphans =
+                        global_orphan_list_.exchange(nullptr, std::memory_order_acquire);
+                    if (orphans)
+                    {
+                        Detail::free_retired(orphans);
+                        progressed = true;
+                    }
+                }
+            }
+
+            /** @brief Returns how many guards of this manager the calling thread holds. */
+            [[nodiscard]] uint32_t nesting_depth()
+            {
+                return local_state().nest_depth;
             }
 
             /**
@@ -314,7 +443,7 @@ namespace SushiRuntime
              */
             inline void enter()
             {
-                auto& tls_state = Detail::tls_state();
+                Detail::EpochThreadLocalState& tls_state = local_state();
                 if (tls_state.id == -1) tls_state.id = register_thread();
 
                 // Only the outermost enter() publishes the slot.
@@ -335,7 +464,7 @@ namespace SushiRuntime
              */
             inline void exit()
             {
-                auto& tls_state = Detail::tls_state();
+                Detail::EpochThreadLocalState& tls_state = local_state();
                 if (tls_state.id == -1) return;
 
                 // Only the outermost exit() clears the slot; an unmatched exit() is ignored.
@@ -355,7 +484,7 @@ namespace SushiRuntime
             void retire(T* ptr)
             {
                 if (!ptr) return;
-                auto& tls_state = Detail::tls_state();
+                Detail::EpochThreadLocalState& tls_state = local_state();
                 if (tls_state.id == -1) tls_state.id = register_thread();
 
                 // A RetiredNode comes from the thread-local pool, or operator new if it is empty.
@@ -364,7 +493,7 @@ namespace SushiRuntime
                 node->deleter = [](void* p) { delete static_cast<T*>(p); };
                 node->epoch = global_epoch_.load(std::memory_order_acquire);
                 node->next = tls_state.retire_list;
-                
+
                 tls_state.retire_list = node;
                 tls_state.retire_count++;
 
@@ -384,44 +513,63 @@ namespace SushiRuntime
                 if (id < 0 || id >= static_cast<int>(K_MAX_EPOCH_THREADS)) return;
 
                 thread_slots_[id].epoch.store(0, std::memory_order_release);
-                
-                if (remaining_nodes) 
+
+                if (remaining_nodes)
                 {
                     Detail::RetiredNode* tail = remaining_nodes;
                     while (tail->next) tail = tail->next;
-                    
+
                     Detail::RetiredNode* old_head = global_orphan_list_.load(std::memory_order_relaxed);
                     do {
                         tail->next = old_head;
-                    } while (!global_orphan_list_.compare_exchange_weak(old_head, remaining_nodes, 
-                                                                      std::memory_order_release, 
+                    } while (!global_orphan_list_.compare_exchange_weak(old_head, remaining_nodes,
+                                                                      std::memory_order_release,
                                                                       std::memory_order_relaxed));
                 }
-                
+
                 thread_slots_[id].active.store(false, std::memory_order_release);
             }
         };
 
         /**
-         * @brief RAII guard that enters the EBR critical section on construction and exits on destruction.
+         * @brief RAII guard that enters the EBR critical section of a manager on construction and
+         *        exits on destruction.
          */
-        struct EpochGuard
+        class EpochGuard
         {
-            EpochGuard() { EpochManager::instance().enter(); }
-            ~EpochGuard() { EpochManager::instance().exit(); }
+        public:
+            /** @param manager The manager whose critical section the guard holds; outlives it. */
+            explicit EpochGuard(EpochManager& manager) : manager_(manager) { manager_.enter(); }
+            ~EpochGuard() { manager_.exit(); }
             EpochGuard(const EpochGuard&) = delete;
             EpochGuard& operator=(const EpochGuard&) = delete;
+            EpochGuard(EpochGuard&&) = delete;
+            EpochGuard& operator=(EpochGuard&&) = delete;
+
+        private:
+            EpochManager& manager_;
         };
 
         inline Detail::EpochThreadLocalState::~EpochThreadLocalState()
         {
-            if (id != -1) 
+            bool owner_alive = false;
+            if (link)
             {
-                EpochManager::instance().unregister_thread(id, retire_list);
-                id = -1;
-                retire_list = nullptr;
-                retire_count = 0;
+                const std::lock_guard<std::mutex> lock(link->mutex);
+                if (link->owner && id != -1)
+                {
+                    link->owner->unregister_thread(id, retire_list);
+                    owner_alive = true;
+                }
             }
+
+            // A dead manager cannot reclaim, and no guard of it can be open, so the list goes now.
+            if (!owner_alive)
+                free_retired(retire_list);
+
+            id = -1;
+            retire_list = nullptr;
+            retire_count = 0;
             // Free pool storage belongs to this thread alone and is released directly.
             drain_free_pool();
         }

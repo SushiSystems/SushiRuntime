@@ -539,8 +539,7 @@ current run fails and the pool stays re-armable.
 
 ##### Backoff
 
-A thread must be outside the epoch during its backoff, so a sleeping thread does not stall
-global memory reclamation. A worker holding in-flight events never sleeps, because its
+A worker holding in-flight events never sleeps, because its
 successors wait on its poll; it yields. Others yield for the first 100 spins and then sleep
 100 microseconds at a time.
 

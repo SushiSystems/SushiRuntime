@@ -36,6 +36,24 @@ namespace SushiRuntime
 {
     namespace Internal::Graph
     {
+        DependencyTracker::DependencyTracker()
+            : owned_epochs_(std::make_unique<SushiRuntime::Internal::Memory::EpochManager>()),
+              epochs_(owned_epochs_.get())
+        {
+
+        }
+
+        DependencyTracker::DependencyTracker(SushiRuntime::Internal::Memory::EpochManager& epochs)
+            : epochs_(&epochs)
+        {
+
+        }
+
+        DependencyTracker::~DependencyTracker()
+        {
+            reset();
+        }
+
         /**
          * @brief Resets the dependency tracker state.
          *
@@ -51,7 +69,7 @@ namespace SushiRuntime
                 while (curr) 
                 {
                     AccessNode* prev = curr->prev;
-                    SushiRuntime::Internal::Memory::EpochManager::instance().retire(curr);
+                    epochs_->retire(curr);
                     curr = prev;
                 }
             }
@@ -65,7 +83,7 @@ namespace SushiRuntime
          */
         void DependencyTracker::resolve(Node* node, const SushiRuntime::BufferRegion& region, bool is_write)
         {
-            SushiRuntime::Internal::Memory::EpochGuard guard;
+            SushiRuntime::Internal::Memory::EpochGuard guard(*epochs_);
 
             size_t idx = shard_index(region.base);
             auto& state = registry[idx];

@@ -37,13 +37,14 @@ after every active thread has advanced past the epoch in which they were retired
 cache-line padded to eliminate false sharing. The manager is thread-safe and lock-free on the fast
 path.
 
-It is a singleton reached through instance().
+It is an ordinary object, not a singleton: its owner builds it and passes it to what retires into it
+(the DependencyTracker takes one or makes its own). A thread's state is kept per manager, and a
+thread that outlives its manager frees what it still held for it when it exits.
 
 ### enter: re-entrancy
 
-enter() is re-entrant: only the outermost enter() publishes the slot. A nested guard, such as
-DependencyTracker::resolve() invoked from a worker task that already holds a dispatch-loop guard,
-must not re-stamp, and its matching exit() must not clear the slot early.
+enter() is re-entrant: only the outermost enter() publishes the slot. A nested guard of the same
+manager must not re-stamp, and its matching exit() must not clear the slot early.
 
 ### enter: the seq_cst fence
 

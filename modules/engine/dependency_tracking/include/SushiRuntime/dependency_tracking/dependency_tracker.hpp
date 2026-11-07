@@ -33,6 +33,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <SushiRuntime/task/node.hpp>
 #include <SushiRuntime/core/common.hpp>
 #include <SushiRuntime/core/export.hpp>
@@ -40,6 +41,11 @@
 
 namespace SushiRuntime 
 {
+    namespace Internal::Memory
+    {
+        class EpochManager;
+    }
+
     namespace Internal::Graph
     {
         struct Node; 
@@ -94,6 +100,12 @@ namespace SushiRuntime
                  */
                 std::array<ResourceState, K_SHARD_COUNT> registry;
 
+                /** @brief Holds the manager this tracker made for itself, or nothing. */
+                std::unique_ptr<SushiRuntime::Internal::Memory::EpochManager> owned_epochs_;
+
+                /** @brief The manager the access history is retired into. */
+                SushiRuntime::Internal::Memory::EpochManager* epochs_;
+
                 /**
                  * @brief Maps an allocation's identity to a shard index with a SplitMix64 hash.
                  * @see modules/engine/dependency_tracking/README.md
@@ -109,17 +121,28 @@ namespace SushiRuntime
 
             public:
                 /**
-                 * @brief Constructs an empty dependency tracker instance.
-                 *
-                 * Initializes the internal registry of shards to a clean state.
+                 * @brief Constructs an empty tracker that owns the epoch manager it retires into.
+                 * @see modules/engine/dependency_tracking/README.md
                  */
-                DependencyTracker() = default;
+                DependencyTracker();
+
+                /**
+                 * @brief Constructs an empty tracker that retires into a manager its owner holds.
+                 * @param epochs The manager that reclaims the access history; outlives the tracker.
+                 * @see modules/engine/dependency_tracking/README.md
+                 */
+                explicit DependencyTracker(SushiRuntime::Internal::Memory::EpochManager& epochs);
+
+                DependencyTracker(const DependencyTracker&) = delete;
+                DependencyTracker& operator=(const DependencyTracker&) = delete;
+                DependencyTracker(DependencyTracker&&) = delete;
+                DependencyTracker& operator=(DependencyTracker&&) = delete;
 
                 /**
                  * @brief Reclaims any access history left behind on destruction.
                  * @see modules/engine/dependency_tracking/README.md
                  */
-                ~DependencyTracker() { reset(); }
+                ~DependencyTracker();
 
                 /**
                  * @brief Resets the dependency tracking states and reclaims memory.

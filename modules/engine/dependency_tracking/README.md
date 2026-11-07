@@ -24,6 +24,13 @@ shard_index() shards on the owning allocation (its base), not the sub-region, so
 one allocation lands in the same chain and can be compared by interval overlap. It applies a fast
 SplitMix64 bitwise hash to distribute allocations uniformly.
 
+### DependencyTracker
+
+A tracker retires its access history into an `EpochManager`. The default constructor makes the
+tracker its own manager, so a `TaskGraph` shares nothing with another graph or with the process. The
+other constructor takes a manager the owner holds, for owners that want one manager for several
+trackers.
+
 ### ~DependencyTracker
 
 compile() normally calls reset() explicitly on its success path. A graph destroyed without ever

@@ -18,8 +18,8 @@ for why such a file stands in for a test.
 
 ## test_epoch_reclamation.cpp
 
-The file covers epoch-based reclamation. `EpochManager` is a process-wide singleton, so the tests
-assert observable contracts: retired objects are eventually deleted once, `EpochGuard` enter and
+The file covers epoch-based reclamation. Every test builds the `EpochManager` it uses, so no test
+sees another's state, and the tests assert observable contracts: retired objects are eventually deleted once, `EpochGuard` enter and
 exit are balanced, and the objects a thread retires before it exits are reclaimed later.
 
 ### `Tracked`

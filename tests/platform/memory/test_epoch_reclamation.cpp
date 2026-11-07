@@ -69,57 +69,60 @@ namespace
      * @brief Retires a count of objects, runs extra guarded passes and returns the number
      *        reclaimed.
      */
-    int retire_and_drain(const Counter& destroyed, int count)
+    int retire_and_drain(EpochManager& manager, const Counter& destroyed, int count)
     {
         for (int i = 0; i < count; ++i)
         {
-            EpochGuard guard;
-            EpochManager::instance().retire(new Tracked(destroyed));
+            EpochGuard guard(manager);
+            manager.retire(new Tracked(destroyed));
         }
         for (int i = 0; i < 512; ++i)
         {
-            EpochGuard guard;
-            EpochManager::instance().retire(new Tracked(destroyed));
+            EpochGuard guard(manager);
+            manager.retire(new Tracked(destroyed));
         }
         return destroyed->load(std::memory_order_relaxed);
     }
 
     /** @brief Retires @p count Tracked objects on the calling thread, each under a guard of its own. */
-    void retire_guarded(const Counter& destroyed, int count)
+    void retire_guarded(EpochManager& manager, const Counter& destroyed, int count)
     {
         for (int i = 0; i < count; ++i)
         {
-            EpochGuard guard;
-            EpochManager::instance().retire(new Tracked(destroyed));
+            EpochGuard guard(manager);
+            manager.retire(new Tracked(destroyed));
         }
     }
 
     /** @brief Retires @p count Tracked objects on the calling thread with no guard open. */
-    void retire_unguarded(const Counter& destroyed, std::size_t count)
+    void retire_unguarded(EpochManager& manager, const Counter& destroyed, std::size_t count)
     {
         for (std::size_t i = 0; i < count; ++i)
-            EpochManager::instance().retire(new Tracked(destroyed));
+            manager.retire(new Tracked(destroyed));
     }
 
     /** @brief Runs @p threads threads that each retire @p per_thread objects, and joins them. */
-    void retire_from_threads(const Counter& destroyed, int threads, int per_thread)
+    void retire_from_threads(EpochManager& manager, const Counter& destroyed, int threads, int per_thread)
     {
         std::vector<std::thread> workers;
         for (int t = 0; t < threads; ++t)
-            workers.emplace_back([destroyed, per_thread] { retire_guarded(destroyed, per_thread); });
+            workers.emplace_back([&manager, destroyed, per_thread]
+            {
+                retire_guarded(manager, destroyed, per_thread);
+            });
         for (std::thread& worker : workers)
             worker.join();
     }
 
     /** @brief Runs @p count threads one after the other, each taking a guard and leaving; returns how many finished. */
-    int run_short_threads(int count)
+    int run_short_threads(EpochManager& manager, int count)
     {
         std::atomic<int> finished{0};
         for (int i = 0; i < count; ++i)
         {
-            std::thread worker([&finished]
+            std::thread worker([&manager, &finished]
             {
-                EpochGuard guard;
+                EpochGuard guard(manager);
                 finished.fetch_add(1);
             });
             worker.join();
@@ -131,21 +134,48 @@ namespace
 /** @brief Tests that nested guards raise the depth of the thread by one each and lower it again on exit. */
 TEST(Small_EpochReclamationTest, NestedGuardsBalanceTheDepthOfTheThread)
 {
-    const uint32_t before = Detail::tls_state().nest_depth;
+    EpochManager manager;
+    const uint32_t before = manager.nesting_depth();
     uint32_t depth_in_inner = 0;
     uint32_t depth_after_inner = 0;
     {
-        EpochGuard outer;
+        EpochGuard outer(manager);
         {
-            EpochGuard inner;
-            depth_in_inner = Detail::tls_state().nest_depth;
+            EpochGuard inner(manager);
+            depth_in_inner = manager.nesting_depth();
         }
-        depth_after_inner = Detail::tls_state().nest_depth;
+        depth_after_inner = manager.nesting_depth();
     }
 
     EXPECT_EQ(depth_in_inner, before + 2);
     EXPECT_EQ(depth_after_inner, before + 1);
-    EXPECT_EQ(Detail::tls_state().nest_depth, before);
+    EXPECT_EQ(manager.nesting_depth(), before);
+}
+
+/** @brief Tests that a guard of one manager does not change the depth another manager reports. */
+TEST(Small_EpochReclamationTest, AGuardCountsOnlyAgainstItsOwnManager)
+{
+    EpochManager first;
+    EpochManager second;
+
+    EpochGuard guard(first);
+
+    EXPECT_EQ(first.nesting_depth(), 1u);
+    EXPECT_EQ(second.nesting_depth(), 0u);
+}
+
+/** @brief Tests that a manager that ends deletes every object it still holds retired. */
+TEST(Small_EpochReclamationTest, ADestroyedManagerDeletesWhatItStillHeld)
+{
+    Counter destroyed = make_counter();
+    {
+        EpochManager manager;
+        EpochGuard guard(manager);
+        manager.retire(new Tracked(destroyed));
+        manager.retire(new Tracked(destroyed));
+    }
+
+    EXPECT_EQ(destroyed->load(), 2);
 }
 
 /**
@@ -155,10 +185,11 @@ TEST(Small_EpochReclamationTest, NestedGuardsBalanceTheDepthOfTheThread)
  */
 TEST(Medium_EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
 {
+    EpochManager manager;
     Counter destroyed = make_counter();
     constexpr int RETIRED = 1024;
 
-    int reclaimed = retire_and_drain(destroyed, RETIRED);
+    int reclaimed = retire_and_drain(manager, destroyed, RETIRED);
 
     // Objects retired in the last epoch may survive, so the bound is loose; see README.md.
     EXPECT_GT(reclaimed, RETIRED) << "Epoch reclamation did not collect retired objects.";
@@ -171,13 +202,14 @@ TEST(Medium_EpochReclamationTest, RetiredObjectsEventuallyReclaimed)
  */
 TEST(Medium_EpochReclamationTest, ThreadExitHandsOffOrphans)
 {
+    EpochManager manager;
     Counter destroyed = make_counter();
     // The exiting thread's destructor gives its retire list to the orphan list; see README.md.
-    std::thread producer([destroyed] { retire_guarded(destroyed, 300); });
+    std::thread producer([&manager, destroyed] { retire_guarded(manager, destroyed, 300); });
     producer.join();
 
     // Each guarded retire adopts orphans and frees those past the safe epoch; see README.md.
-    retire_guarded(make_counter(), 1024);
+    retire_guarded(manager, make_counter(), 1024);
 
     EXPECT_GT(destroyed->load(), 0)
         << "Orphaned nodes from an exited thread were never reclaimed (leak).";
@@ -190,9 +222,10 @@ TEST(Medium_EpochReclamationTest, ThreadExitHandsOffOrphans)
  */
 TEST(Medium_EpochReclamationTest, ConcurrentRetireNoCrash)
 {
+    EpochManager manager;
     Counter destroyed = make_counter();
 
-    retire_from_threads(destroyed, 8, 500);
+    retire_from_threads(manager, destroyed, 8, 500);
 
     EXPECT_GT(destroyed->load(), 0) << "No objects reclaimed under concurrent retire.";
 }
@@ -248,16 +281,17 @@ namespace
     void hold_one_slot_too_many()
     {
         constexpr std::size_t THREADS = K_EPOCH_SLOTS + 1;
+        EpochManager manager;
         ThreadPark park;
 
         std::vector<std::thread> threads;
         threads.reserve(THREADS);
         for (std::size_t i = 0; i < THREADS; ++i)
         {
-            threads.emplace_back([&park]
+            threads.emplace_back([&manager, &park]
             {
                 {
-                    EpochGuard guard;
+                    EpochGuard guard(manager);
                 }
                 // A registered thread keeps its slot until it exits; see README.md.
                 park.report_and_wait();
@@ -282,9 +316,10 @@ TEST(Medium_EpochReclamationDeathTest, AThreadPastTheSlotLimitStopsNamingTheLimi
 /** @brief Tests that a thread that exits returns its slot, so more threads than slots can come one after another. */
 TEST(Medium_EpochReclamationTest, AnExitedThreadReturnsItsSlot)
 {
+    EpochManager manager;
     const int threads = static_cast<int>(K_EPOCH_SLOTS) + 8;
 
-    EXPECT_EQ(run_short_threads(threads), threads);
+    EXPECT_EQ(run_short_threads(manager, threads), threads);
 }
 
 /** @brief Tests that an open reader keeps every object retired after it entered alive. */
@@ -292,16 +327,17 @@ TEST(Medium_EpochReclamationTest, AnOpenReaderKeepsEveryRetiredObjectAlive)
 {
     constexpr std::size_t RETIRED = 10 * Detail::EpochThreadLocalState::K_RETIRE_THRESHOLD;
 
+    EpochManager manager;
     ThreadPark park;
-    std::thread reader([&park]
+    std::thread reader([&manager, &park]
     {
-        EpochGuard guard;
+        EpochGuard guard(manager);
         park.report_and_wait();
     });
     park.wait_for_reports(1);
 
     Counter destroyed = make_counter();
-    retire_unguarded(destroyed, RETIRED);
+    retire_unguarded(manager, destroyed, RETIRED);
 
     // The reader entered before any of these was retired, so none of them is reclaimable.
     EXPECT_EQ(destroyed->load(), 0);
@@ -315,11 +351,12 @@ namespace
     /** @brief Holds a payload whose destructor retires a Tracked child. */
     struct RetiringParent
     {
+        EpochManager& manager;   /**< Receives the child this parent retires. */
         Counter destroyed;       /**< Bumped when this parent is destroyed. */
         Counter child_destroyed; /**< Handed to the child this parent retires. */
 
-        RetiringParent(Counter parent, Counter child)
-            : destroyed(std::move(parent)), child_destroyed(std::move(child))
+        RetiringParent(EpochManager& owner, Counter parent, Counter child)
+            : manager(owner), destroyed(std::move(parent)), child_destroyed(std::move(child))
         {
 
         }
@@ -327,17 +364,18 @@ namespace
         ~RetiringParent()
         {
             destroyed->fetch_add(1, std::memory_order_relaxed);
-            EpochManager::instance().retire(new Tracked(child_destroyed));
+            manager.retire(new Tracked(child_destroyed));
         }
     };
 
     /** @brief Retires @p count RetiringParent objects on the calling thread, each under a guard of its own. */
-    void retire_parents(const Counter& parents, const Counter& children, int count)
+    void retire_parents(EpochManager& manager, const Counter& parents, const Counter& children,
+                         int count)
     {
         for (int i = 0; i < count; ++i)
         {
-            EpochGuard guard;
-            EpochManager::instance().retire(new RetiringParent(parents, children));
+            EpochGuard guard(manager);
+            manager.retire(new RetiringParent(manager, parents, children));
         }
     }
 }
@@ -348,12 +386,13 @@ TEST(Medium_EpochReclamationTest, ADestructorThatRetiresDeletesParentAndChildOnc
     constexpr std::size_t THRESHOLD = Detail::EpochThreadLocalState::K_RETIRE_THRESHOLD;
     constexpr int PARENTS = static_cast<int>(4 * THRESHOLD);
 
+    EpochManager manager;
     Counter parents_destroyed = make_counter();
     Counter children_destroyed = make_counter();
-    retire_parents(parents_destroyed, children_destroyed, PARENTS);
+    retire_parents(manager, parents_destroyed, children_destroyed, PARENTS);
 
     // Each scan advances the epoch once; 32 of them outlast the parents and their children.
-    retire_guarded(make_counter(), static_cast<int>(32 * THRESHOLD));
+    retire_guarded(manager, make_counter(), static_cast<int>(32 * THRESHOLD));
 
     EXPECT_EQ(parents_destroyed->load(), PARENTS);
     EXPECT_EQ(children_destroyed->load(), PARENTS);
@@ -407,12 +446,12 @@ namespace EpochStressTests
          * @param counters Counters the objects report to.
          * @param count Number of objects to retire.
          */
-        void retire_objects(const CountersPtr& counters, int count)
+        void retire_objects(EpochManager& manager, const CountersPtr& counters, int count)
         {
             for (int i = 0; i < count; ++i)
             {
-                EpochGuard guard;
-                EpochManager::instance().retire(new CountedObject(counters));
+                EpochGuard guard(manager);
+                manager.retire(new CountedObject(counters));
             }
         }
 
@@ -422,11 +461,15 @@ namespace EpochStressTests
          * @param threads Number of threads.
          * @param per_thread Number of objects each thread retires.
          */
-        void retire_from_threads(const CountersPtr& counters, int threads, int per_thread)
+        void retire_from_threads(EpochManager& manager, const CountersPtr& counters, int threads,
+                                 int per_thread)
         {
             std::vector<std::thread> workers;
             for (int t = 0; t < threads; ++t)
-                workers.emplace_back([counters, per_thread]() { retire_objects(counters, per_thread); });
+                workers.emplace_back([&manager, counters, per_thread]()
+                {
+                    retire_objects(manager, counters, per_thread);
+                });
             for (auto& worker : workers)
                 worker.join();
         }
@@ -437,11 +480,15 @@ namespace EpochStressTests
          * @param rounds Number of threads to run, one after the other.
          * @param per_round Number of objects each thread retires.
          */
-        void retire_from_short_lived_threads(const CountersPtr& counters, int rounds, int per_round)
+        void retire_from_short_lived_threads(EpochManager& manager, const CountersPtr& counters,
+                                             int rounds, int per_round)
         {
             for (int r = 0; r < rounds; ++r)
             {
-                std::thread shortlived([counters, per_round]() { retire_objects(counters, per_round); });
+                std::thread shortlived([&manager, counters, per_round]()
+                {
+                    retire_objects(manager, counters, per_round);
+                });
                 shortlived.join();
             }
         }
@@ -450,12 +497,12 @@ namespace EpochStressTests
         class BackgroundDrainer final
         {
             public:
-                /** @brief Starts the thread, which retires objects that report to @p counters. */
-                explicit BackgroundDrainer(CountersPtr counters)
-                    : thread_([this, counters]()
+                /** @brief Starts the thread, which retires into @p manager objects that report to @p counters. */
+                BackgroundDrainer(EpochManager& manager, CountersPtr counters)
+                    : thread_([this, &manager, counters]()
                       {
                           while (running_.load(std::memory_order_relaxed))
-                              retire_objects(counters, 1);
+                              retire_objects(manager, counters, 1);
                       })
                 {
                 }
@@ -491,9 +538,10 @@ namespace EpochStressTests
         constexpr int K_PER_THREAD = 20'000;
         constexpr int K_DRAIN      = 4096;
 
+        EpochManager manager;
         CountersPtr counters = make_counters();
-        retire_from_threads(counters, K_THREADS, K_PER_THREAD);
-        retire_objects(make_counters(), K_DRAIN);
+        retire_from_threads(manager, counters, K_THREADS, K_PER_THREAD);
+        retire_objects(manager, make_counters(), K_DRAIN);
 
         const long total = static_cast<long>(K_THREADS) * K_PER_THREAD;
         EXPECT_GT(counters->destroyed.load(), total / 2)
@@ -512,10 +560,11 @@ namespace EpochStressTests
         constexpr int K_ROUNDS    = 64;
         constexpr int K_PER_ROUND = 1000;
 
+        EpochManager manager;
         CountersPtr counters = make_counters();
         {
-            BackgroundDrainer drainer(make_counters());
-            retire_from_short_lived_threads(counters, K_ROUNDS, K_PER_ROUND);
+            BackgroundDrainer drainer(manager, make_counters());
+            retire_from_short_lived_threads(manager, counters, K_ROUNDS, K_PER_ROUND);
         }
 
         EXPECT_GT(counters->destroyed.load(), 0)
