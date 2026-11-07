@@ -569,6 +569,14 @@ releases its successors.
 submit_live_range() applies the offset itself and does not leave it to the caller, so a kernel
 written against absolute indices stays correct whether or not its node happens to carry a base.
 
+### run_late_window_on_host
+
+run_late_window_on_host() is the host form of a late-bound node, the per-step window a dynamic
+launch or a dynamic State rule binds. On a host runtime a device slot is host memory, so it reads
+the count or base from the slot before the loop, resolves the range as resolve_live_range() does
+and calls the kernel once per element. A window that does not fit writes the same fault record and
+runs nothing.
+
 ## node_spec.hpp
 
 ### NodeSpec

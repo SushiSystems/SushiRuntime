@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -100,8 +101,13 @@ namespace SushiRuntime
             description.reads = std::move(reads);
             description.writes = std::move(writes);
             description.width = width;
+            std::decay_t<F> body(std::forward<F>(kernel));
+            description.host_form = [body, capacity, lb, fault]()
+            {
+                run_late_window_on_host(lb.get(), capacity, fault, body);
+            };
             description.work = CommandGroupWork(
-                [kernel = std::forward<F>(kernel), capacity, lb, fault](sycl::handler& h)
+                [kernel = std::move(body), capacity, lb, fault](sycl::handler& h)
                 {
                     submit_late_window(h, lb.get(), capacity, fault, kernel);
                 });
@@ -136,8 +142,19 @@ namespace SushiRuntime
                     reads.insert(reads.end(), slot_reads.begin(), slot_reads.end());
                     writes.push_back(BufferRegion(static_cast<void*>(view->next)));
                 };
+            std::decay_t<F> body(std::forward<F>(kernel));
+            description.host_form = [body, view, lb, capacity, fault]()
+            {
+                const T* current = view->current;
+                T* next = view->next;
+                run_late_window_on_host(lb.get(), capacity, fault,
+                                        [&body, current, next](std::size_t i)
+                                        {
+                                            body(i, current, next);
+                                        });
+            };
             description.work = CommandGroupWork(
-                [kernel = std::forward<F>(kernel), view, lb, capacity, fault](sycl::handler& h)
+                [kernel = std::move(body), view, lb, capacity, fault](sycl::handler& h)
                 {
                     const T* current = view->current;
                     T* next = view->next;

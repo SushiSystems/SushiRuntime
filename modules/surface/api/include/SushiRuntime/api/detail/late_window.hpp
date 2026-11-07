@@ -195,5 +195,30 @@ namespace SushiRuntime
                     kernel(base + i[0]);
             });
         }
+        /**
+         * @brief Runs a late-bound node on the calling thread over the window submit_late_window()
+         *        launches: a device slot is host memory on a host runtime, so it is read here.
+         * @pre fault is not null.
+         * @see modules/surface/api/include/SushiRuntime/api/detail/README.md
+         */
+        template <class F>
+        inline void run_late_window_on_host(const LateControls* controls, std::size_t capacity,
+                                            std::uint32_t* fault, const F& kernel)
+        {
+            const LateWindow window = read_late_window(controls);
+            LateWindow resolved = window;
+            if (window.base_slot != nullptr)
+                resolved.base = static_cast<std::size_t>(*window.base_slot);
+            if (window.count_slot != nullptr)
+            {
+                resolved.count = static_cast<std::size_t>(*window.count_slot);
+                resolved.rest_of_capacity = false;
+            }
+            const std::optional<LiveRange> range = resolve_live_range(resolved, capacity, fault);
+            if (!range)
+                return;
+            for (std::size_t i = 0; i < range->count; ++i)
+                kernel(range->base + i);
+        }
     } // namespace Detail
 } // namespace SushiRuntime
