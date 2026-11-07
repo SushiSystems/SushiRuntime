@@ -275,10 +275,10 @@ The test sets the name with `name()`, which names the rule the verb before it re
 | `UnnamedNodeStillReportsTheDefaultLabel` | A node added without a name keeps the documented default label, so a call site without a label is still visible in the report. |
 | `TransferBytesAttributedToTheRunWindow` | A host node pushes data during the run. The bytes must land in the window of that run, not before it. |
 
-## `Medium_GraphReplay`
+## `Small_GraphReplay`
 
-Replay tests moved here from the benchmark file, each on a small graph, in two rows: the chain and
-a runtime forced onto the scheduler.
+Replay tests moved here from the benchmark file, each on a small graph, run on a host runtime of
+its own.
 
 | Test | What it proves |
 | --- | --- |

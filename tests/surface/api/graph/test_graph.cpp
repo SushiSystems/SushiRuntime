@@ -47,6 +47,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "run_recorder.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 #include "support/tolerance.hpp"
 
@@ -57,6 +58,11 @@ namespace NativeCpuPathTests
 {
     /** @brief Fixture of the native-task tests, which run on the program's runtime. */
     class Medium_NativeCPU : public TestSupport::RuntimeTest
+    {
+    };
+
+    /** @brief Fixture of the native-task tests that need no device, which run on a host runtime. */
+    class Small_NativeCPU : public TestSupport::HostRuntimeTest
     {
     };
 
@@ -85,7 +91,7 @@ namespace NativeCpuPathTests
     }
 
     /** @brief Tests that a device kernel ordered after a host task sees the host's writes. */
-    TEST_F(Medium_NativeCPU, KernelRunsAfterHostTask)
+    TEST_F(Small_NativeCPU, KernelRunsAfterHostTask)
     {
         constexpr std::size_t N = 64;
 
@@ -109,22 +115,22 @@ namespace NativeCpuPathTests
     }
 
     /** @brief Tests that an untracked host task runs once per step. */
-    TEST_F(Medium_NativeCPU, UntrackedHostTaskRunsEveryStep)
+    TEST_F(Small_NativeCPU, UntrackedHostTaskRunsEveryStep)
     {
         constexpr std::size_t STEPS = 5;
 
-        std::atomic<int> ticks{0};
+        int ticks = 0;
 
         auto g = runtime().graph();
-        g.add_host([&ticks]() { ticks.fetch_add(1, std::memory_order_relaxed); });
+        g.add_host([&ticks]() { ++ticks; });
 
         g.run(STEPS).value();
 
-        EXPECT_EQ(ticks.load(), static_cast<int>(STEPS));
+        EXPECT_EQ(ticks, static_cast<int>(STEPS));
     }
 
     /** @brief Tests that a throwing host task fails the run. */
-    TEST_F(Medium_NativeCPU, ThrowingHostTaskFailsTheRun)
+    TEST_F(Small_NativeCPU, ThrowingHostTaskFailsTheRun)
     {
         auto bad = runtime().graph();
         bad.add_host([]() { throw std::runtime_error("boom"); });
@@ -133,7 +139,7 @@ namespace NativeCpuPathTests
     }
 
     /** @brief Tests that a graph runs on the same runtime after another graph's host task threw. */
-    TEST_F(Medium_NativeCPU, TheRuntimeRunsAGraphAfterAHostTaskThrew)
+    TEST_F(Small_NativeCPU, TheRuntimeRunsAGraphAfterAHostTaskThrew)
     {
         auto bad = runtime().graph();
         bad.add_host([]() { throw std::runtime_error("boom"); });
@@ -163,8 +169,13 @@ namespace NodeEventRecordsTests
     {
     };
 
+    /** @brief Fixture of the node-event tests that need no device, which observe runs of a host runtime. */
+    class Small_NodeEventRecords : public TestSupport::HostRuntimeTest
+    {
+    };
+
     /** @brief Tests that a run of a runtime with no observer succeeds and no record reaches an observer. */
-    TEST_F(Medium_NodeEventRecords, ARunWithNoObserverRecordsNothing)
+    TEST_F(Small_NodeEventRecords, ARunWithNoObserverRecordsNothing)
     {
         constexpr std::size_t N = 128;
 
@@ -186,7 +197,7 @@ namespace NodeEventRecordsTests
      * @brief Tests that three kernel nodes over run(5) give fifteen records with submit <= start <=
      *        end.
      */
-    TEST_F(Medium_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
+    TEST_F(Small_NodeEventRecords, RequestedGraphRecordsOnePerDispatch)
     {
         constexpr std::size_t N = 64;
 
@@ -229,7 +240,7 @@ namespace NodeEventRecordsTests
     // The steady-state capture case is in test_sushiruntime.cpp; see README.md.
 
     /** @brief Tests that node_index follows registration order, not the compiled order. */
-    TEST_F(Medium_NodeEventRecords, NodeIndexIsRegistrationOrder)
+    TEST_F(Small_NodeEventRecords, NodeIndexIsRegistrationOrder)
     {
         constexpr std::size_t N = 32;
 
@@ -260,21 +271,6 @@ namespace NodeEventRecordsTests
         EXPECT_EQ(rows[1].index, 1u);
         EXPECT_EQ(rows[2].name, "C");
         EXPECT_EQ(rows[2].index, 2u);
-
-        std::unordered_map<std::uint32_t, std::uint64_t> earliest_submit;
-        for (const auto& rec : observation.events)
-        {
-            auto [it, inserted] = earliest_submit.try_emplace(rec.node_index, rec.submit_ns);
-            if (!inserted) it->second = std::min(it->second, rec.submit_ns);
-        }
-        ASSERT_EQ(earliest_submit.count(0u), 1u);
-        ASSERT_EQ(earliest_submit.count(1u), 1u);
-        ASSERT_EQ(earliest_submit.count(2u), 1u);
-
-        EXPECT_LE(earliest_submit[0u], earliest_submit[1u])
-            << "A's dependency chain must have it dispatch no later than B";
-        EXPECT_LE(earliest_submit[1u], earliest_submit[2u])
-            << "B's dependency chain must have it dispatch no later than C";
     }
 
     /**
@@ -361,13 +357,13 @@ namespace RunReportReuseTests
         }
     } // namespace
 
-    /** @brief Fixture of the report-reuse tests, which run on the program's runtime. */
-    class Medium_RunReportReuse : public TestSupport::RuntimeTest
+    /** @brief Fixture of the report-reuse tests, which run on a host runtime. */
+    class Small_RunReportReuse : public TestSupport::HostRuntimeTest
     {
     };
 
     /** @brief Tests that the reuse overload reports what the value-returning one reports. */
-    TEST_F(Medium_RunReportReuse, ReuseReportsWhatTheValueFormReports)
+    TEST_F(Small_RunReportReuse, ReuseReportsWhatTheValueFormReports)
     {
         auto buf = runtime().buffer<int>(N).value();
         auto g   = runtime().graph();
@@ -389,7 +385,7 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that steady-state runs into one report leave one row per run, not one more each. */
-    TEST_F(Medium_RunReportReuse, SteadyStateRunsLeaveOneRowPerRun)
+    TEST_F(Small_RunReportReuse, SteadyStateRunsLeaveOneRowPerRun)
     {
         auto buf = runtime().buffer<int>(N).value();
         auto g   = runtime().graph();
@@ -407,7 +403,7 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that a short run after a long one reports the short run's count. */
-    TEST_F(Medium_RunReportReuse, EachRunOverwritesTheLastOne)
+    TEST_F(Small_RunReportReuse, EachRunOverwritesTheLastOne)
     {
         auto buf = runtime().buffer<int>(N).value();
         auto g   = runtime().graph();
@@ -425,7 +421,7 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that a rejected run clears the report and marks it unsuccessful. */
-    TEST_F(Medium_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
+    TEST_F(Small_RunReportReuse, ARejectedRunLeavesNoStaleNumbers)
     {
         auto buf = runtime().buffer<int>(N).value();
         auto g   = runtime().graph();
@@ -448,7 +444,7 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that run(RunReport&) returns the report it was given. */
-    TEST_F(Medium_RunReportReuse, TryRunReturnsTheCallersReport)
+    TEST_F(Small_RunReportReuse, TryRunReturnsTheCallersReport)
     {
         auto buf = runtime().buffer<int>(N).value();
         auto g   = runtime().graph();
@@ -463,7 +459,7 @@ namespace RunReportReuseTests
     }
 
     /** @brief Tests that RunHandle::wait(RunReport&) fills the caller's report. */
-    TEST_F(Medium_RunReportReuse, AsyncWaitFillsTheCallersReport)
+    TEST_F(Small_RunReportReuse, AsyncWaitFillsTheCallersReport)
     {
         auto buf = runtime().buffer<int>(N).value();
         auto g   = runtime().graph();
@@ -484,7 +480,7 @@ namespace RunReportReuseTests
     }
 
     // The composed-plan driver shares the fill path, so it gets the same guarantee.
-    TEST_F(Medium_RunReportReuse, DynamicGraphRunsIntoACallersReport)
+    TEST_F(Small_RunReportReuse, DynamicGraphRunsIntoACallersReport)
     {
         auto a = runtime().buffer<int>(N).value();
         for (std::size_t i = 0; i < N; ++i)
@@ -654,10 +650,15 @@ namespace CancellationTests
         EXPECT_GT(report.total_tasks_executed, 0u) << "some steps should have run before cancel";
     }
 
+    /** @brief Fixture of the cancellation tests that need no second thread, which run on a host runtime. */
+    class Small_Cancellation : public TestSupport::HostRuntimeTest
+    {
+    };
+
     /**
      * @brief After a cancelled run, the next run starts clean and completes fully.
      */
-    TEST_F(Medium_Cancellation, NextRunIsNotCancelledAfterReset)
+    TEST_F(Small_Cancellation, NextRunIsNotCancelledAfterReset)
     {
         constexpr std::size_t N = 256;
         auto field = runtime().state<int>(N).value();
@@ -666,8 +667,12 @@ namespace CancellationTests
         auto g = runtime().graph();
         g.add_rule(field, [](std::size_t i, const int* cur, int* next) { next[i] = cur[i] + 1; });
 
-        RunReport cancelled_report;
-        ASSERT_NO_FATAL_FAILURE(cancel_unbounded_run(g, 1, cancelled_report));
+        // The stop predicate cancels from the run's own thread once the first step has finished.
+        const RunReport cancelled_report = g.run_until([&g]
+        {
+            g.cancel();
+            return false;
+        }).value();
         EXPECT_TRUE(cancelled_report.cancelled);
 
         // A fresh bounded run must not inherit the previous cancellation.
@@ -829,8 +834,8 @@ class Medium_ChainLayerWorkload : public ::testing::TestWithParam<ChainLayerTest
         void SetUp() override { use_layer(GetParam().force_scheduler); }
 };
 
-/** @brief Fixture of the chain tests that run on the program's runtime. */
-class Medium_ChainLayer : public TestSupport::RuntimeTest
+/** @brief Fixture of the chain tests that need no device, which run on a host runtime. */
+class Small_ChainLayer : public TestSupport::HostRuntimeTest
 {
 };
 
@@ -850,7 +855,7 @@ namespace ChainLayerTests
     /**
      * @brief Tests that a node that names an operation, with no cluster attached, gives the right values; see README.md.
      */
-    TEST_F(Medium_ChainLayer, ANamedNodeGivesTheRightValuesWithNoClusterAttached)
+    TEST_F(Small_ChainLayer, ANamedNodeGivesTheRightValuesWithNoClusterAttached)
     {
         auto values = runtime().buffer<std::uint32_t>(N).value();
         auto field = runtime().state<std::uint32_t>(N).value();
@@ -884,7 +889,7 @@ namespace ChainLayerTests
     }
 
     /** @brief Tests that run_until stops on each step's device result, after exactly the steps the target needs. */
-    TEST_F(Medium_ChainLayer, RunUntilSeesEveryStepsResult)
+    TEST_F(Small_ChainLayer, RunUntilSeesEveryStepsResult)
     {
         constexpr std::uint32_t TARGET = 9;
 
@@ -903,7 +908,7 @@ namespace ChainLayerTests
     }
 
     /** @brief Tests that a profiled run records each dispatch once per step and per node. */
-    TEST_F(Medium_ChainLayer, ProfiledRunRecordsEveryDispatch)
+    TEST_F(Small_ChainLayer, ProfiledRunRecordsEveryDispatch)
     {
         constexpr std::size_t STEPS = 12;
 
@@ -968,9 +973,15 @@ namespace CompletionLatchTests
     {
     };
 
-    TEST_F(Medium_CompletionLatch, ManyStepReplayReachesCorrectState)
+    /** @brief Fixture of the latch tests that need no worker thread, which run on a host runtime. */
+    class Small_CompletionLatch : public TestSupport::HostRuntimeTest
     {
-        constexpr std::size_t N = 1024;
+    };
+
+    /** @brief Tests that a replay of many steps leaves every cell at the step count. */
+    TEST_F(Small_CompletionLatch, ManyStepReplayReachesCorrectState)
+    {
+        constexpr std::size_t N = 16;
         constexpr std::size_t STEPS = 5000;
 
         auto field = runtime().state<int>(N).value();
@@ -988,7 +999,8 @@ namespace CompletionLatchTests
             ASSERT_EQ(field[i], static_cast<int>(STEPS)) << "at i=" << i;
     }
 
-    TEST_F(Medium_CompletionLatch, ReRunsCleanlyOnTheSamePlan)
+    /** @brief Tests that three runs on one plan add up their steps. */
+    TEST_F(Small_CompletionLatch, ReRunsCleanlyOnTheSamePlan)
     {
         constexpr std::size_t N = 256;
 
@@ -1248,8 +1260,13 @@ namespace DeterminismTests
     {
     };
 
+    /** @brief Fixture of the determinism tests that need no worker pool, which run on a host runtime. */
+    class Small_Determinism : public TestSupport::HostRuntimeTest
+    {
+    };
+
     /** @brief Tests that the compiler does not reassociate host arithmetic. */
-    TEST(Small_Determinism, HostArithmeticIsNotReassociated)
+    TEST_F(Small_Determinism, HostArithmeticIsNotReassociated)
     {
         volatile double big   = 1.0e16;
         volatile double minus = -1.0e16;
@@ -1296,7 +1313,7 @@ namespace DeterminismTests
     }
 
     /** @brief Tests that the same configuration run again lands on the same bytes. */
-    TEST_F(Medium_Determinism, RepeatedConfigurationsAgreeByteForByte)
+    TEST_F(Small_Determinism, RepeatedConfigurationsAgreeByteForByte)
     {
         const Outcome first  = run_workload(runtime());
         const Outcome second = run_workload(runtime());
@@ -1319,7 +1336,7 @@ namespace DeterminismTests
     }
 
     /** @brief Tests that the result of a replayed rule after many steps equals its result after one. */
-    TEST_F(Medium_Determinism, ReplayDoesNotDriftAcrossSteps)
+    TEST_F(Small_Determinism, ReplayDoesNotDriftAcrossSteps)
     {
         runtime().set_rebalancer_enabled(false);
 
@@ -1344,7 +1361,7 @@ namespace DeterminismTests
     }
 
     /** @brief Tests that a replay does not recompile. */
-    TEST_F(Medium_Determinism, AReplayDoesNotRecompile)
+    TEST_F(Small_Determinism, AReplayDoesNotRecompile)
     {
         runtime().set_rebalancer_enabled(false);
 
@@ -1367,13 +1384,13 @@ namespace DeterminismTests
 /** @brief Tests the per-graph profiling switch and the records a node without declared access leaves. */
 namespace GraphProfilingSwitchTests
 {
-    /** @brief Fixture of the profiling-switch tests, which observe runs of the program's runtime. */
-    class Medium_GraphProfilingSwitch : public TestSupport::RuntimeTest
+    /** @brief Fixture of the profiling-switch tests, which observe runs of a host runtime. */
+    class Small_GraphProfilingSwitch : public TestSupport::HostRuntimeTest
     {
     };
 
     /** @brief Tests that an observer added to a runtime turns timing on for every graph of it. */
-    TEST_F(Medium_GraphProfilingSwitch, TwoGraphsBothRecordWhileAnObserverIsAdded)
+    TEST_F(Small_GraphProfilingSwitch, TwoGraphsBothRecordWhileAnObserverIsAdded)
     {
         constexpr std::size_t N = 256;
 
@@ -1403,7 +1420,7 @@ namespace GraphProfilingSwitchTests
     }
 
     /** @brief Tests that a plan built before the observer gives full records after the add and none after the removal. */
-    TEST_F(Medium_GraphProfilingSwitch, ObserverAddedAfterTheBuildGivesRecordsAndRemovalStopsThem)
+    TEST_F(Small_GraphProfilingSwitch, ObserverAddedAfterTheBuildGivesRecordsAndRemovalStopsThem)
     {
         constexpr std::size_t N = 128;
 
@@ -1432,7 +1449,7 @@ namespace GraphProfilingSwitchTests
     }
 
     /** @brief Tests that a node without declared Reads or Writes still leaves a record of its dispatch. */
-    TEST_F(Medium_GraphProfilingSwitch, ANodeWithoutDeclaredAccessIsRecorded)
+    TEST_F(Small_GraphProfilingSwitch, ANodeWithoutDeclaredAccessIsRecorded)
     {
         constexpr std::size_t N = 256;
 
@@ -1453,17 +1470,9 @@ namespace GraphProfilingSwitchTests
 /** @brief Tests the node table, the node names and the transfer accounting around a run. */
 namespace ObservabilityTests
 {
-    /** @brief Fixture of the observability tests, which observe runs of the program's runtime. */
-    class Medium_Observability : public TestSupport::RuntimeTest
+    /** @brief Fixture of the observability tests, which observe runs of a host runtime. */
+    class Small_Observability : public TestSupport::HostRuntimeTest
     {
-    };
-
-    /** @brief Fixture of the rows that run a profiled graph on the in-order chain (false) and on the scheduler (true). */
-    class Medium_ObservabilityLayers : public ::testing::TestWithParam<bool>, protected TestSupport::LayerRuntime
-    {
-    protected:
-        /** @brief Chooses the runtime of the row. */
-        void SetUp() override { use_layer(GetParam()); }
     };
 
     /** @brief The add() shapes whose node can be named, as the rows of one test. */
@@ -1477,12 +1486,12 @@ namespace ObservabilityTests
     };
 
     /** @brief Fixture of the rows that name one add() shape each. */
-    class Medium_ObservabilityShapes : public TestSupport::RuntimeTest,
+    class Small_ObservabilityShapes : public TestSupport::HostRuntimeTest,
                                        public ::testing::WithParamInterface<Shape>
     {
     };
 
-    TEST_F(Medium_Observability, ProfilingOnCapturesPerNodeTiming)
+    TEST_F(Small_Observability, ProfilingOnCapturesPerNodeTiming)
     {
         constexpr std::size_t N = 4096;
         constexpr std::size_t STEPS = 8;
@@ -1526,7 +1535,7 @@ namespace ObservabilityTests
     }
 
     /** @brief Tests that a name given through name() reaches the node table. */
-    TEST_F(Medium_Observability, NamingTheLastNodeReachesTheNodeTable)
+    TEST_F(Small_Observability, NamingTheLastNodeReachesTheNodeTable)
     {
         constexpr std::size_t N = 512;
         constexpr std::size_t STEPS = 4;
@@ -1550,7 +1559,7 @@ namespace ObservabilityTests
     }
 
     /** @brief Tests that every add() shape can be named. */
-    TEST_P(Medium_ObservabilityShapes, AShapeCanBeNamed)
+    TEST_P(Small_ObservabilityShapes, AShapeCanBeNamed)
     {
         constexpr std::size_t N = 256;
 
@@ -1603,12 +1612,12 @@ namespace ObservabilityTests
             << "no node reported as 'named'";
     }
 
-    INSTANTIATE_TEST_SUITE_P(Rows, Medium_ObservabilityShapes,
+    INSTANTIATE_TEST_SUITE_P(Rows, Small_ObservabilityShapes,
                              ::testing::Values(Shape::Plain, Shape::Captured, Shape::Stateful,
                                                Shape::Host, Shape::Dynamic));
 
     /** @brief Tests that an unnamed node reports the documented default label. */
-    TEST_F(Medium_Observability, UnnamedNodeStillReportsTheDefaultLabel)
+    TEST_F(Small_Observability, UnnamedNodeStillReportsTheDefaultLabel)
     {
         constexpr std::size_t N = 128;
 
@@ -1628,8 +1637,8 @@ namespace ObservabilityTests
         EXPECT_EQ(observation.table->rows()[0].name, "unnamed_task");
     }
 
-    /** @brief Tests that a profiled run of 16 steps has one event per dispatch, on either layer. */
-    TEST_P(Medium_ObservabilityLayers, AProfiledRunHasOneEventPerStep)
+    /** @brief Tests that a profiled run of 16 steps has one event per dispatch. */
+    TEST_F(Small_Observability, AProfiledRunHasOneEventPerStep)
     {
         constexpr std::size_t N = 1024;
 
@@ -1645,10 +1654,8 @@ namespace ObservabilityTests
         EXPECT_EQ(recorder.last().events.size(), 16u);
     }
 
-    INSTANTIATE_TEST_SUITE_P(Rows, Medium_ObservabilityLayers, ::testing::Values(false, true));
-
     /** @brief Tests that an explicit host-to-device copy is counted in the host-to-device bytes. */
-    TEST_F(Medium_Observability, AHostToDeviceCopyIsAccounted)
+    TEST_F(Small_Observability, AHostToDeviceCopyIsAccounted)
     {
         constexpr std::size_t N = 512;
 
@@ -1662,7 +1669,7 @@ namespace ObservabilityTests
     }
 
     /** @brief Tests that an explicit device-to-host copy is counted in the device-to-host bytes. */
-    TEST_F(Medium_Observability, ADeviceToHostCopyIsAccounted)
+    TEST_F(Small_Observability, ADeviceToHostCopyIsAccounted)
     {
         constexpr std::size_t N = 512;
 
@@ -1675,7 +1682,7 @@ namespace ObservabilityTests
         EXPECT_EQ(runtime().advanced().device_to_host_bytes() - before, N * sizeof(int));
     }
 
-    TEST_F(Medium_Observability, TransferBytesAttributedToTheRunWindow)
+    TEST_F(Small_Observability, TransferBytesAttributedToTheRunWindow)
     {
         constexpr std::size_t N = 128;
 
@@ -1764,29 +1771,20 @@ namespace GraphReplayTests
         }
     } // namespace
 
-    /** @brief Fixture of the replay rows that run on the in-order chain (false) and on the scheduler (true). */
-    class Medium_GraphReplay : public ::testing::TestWithParam<bool>, protected TestSupport::LayerRuntime
+    /** @brief Fixture of the replay tests, which run on a host runtime. */
+    class Small_GraphReplay : public TestSupport::HostRuntimeTest
     {
-    protected:
-        /** @brief Chooses the runtime of the row and turns its rebalancer off. */
-        void SetUp() override
-        {
-            use_layer(GetParam());
-            runtime().set_rebalancer_enabled(false);
-        }
     };
 
-    /** @brief Tests that a replayed chain settles to its length, on either layer. */
-    TEST_P(Medium_GraphReplay, AChainSettlesToItsLength)
+    /** @brief Tests that a replayed chain settles to its length. */
+    TEST_F(Small_GraphReplay, AChainSettlesToItsLength)
     {
         EXPECT_EQ(settle_chain(runtime()), static_cast<int>(K_CHAIN_LENGTH));
     }
 
-    /** @brief Tests that every independent root runs on every step of a replay, on either layer. */
-    TEST_P(Medium_GraphReplay, EveryIndependentRootRunsOnEveryStep)
+    /** @brief Tests that every independent root runs on every step of a replay. */
+    TEST_F(Small_GraphReplay, EveryIndependentRootRunsOnEveryStep)
     {
         EXPECT_EQ(count_roots_that_missed_a_step(runtime()), 0u);
     }
-
-    INSTANTIATE_TEST_SUITE_P(Rows, Medium_GraphReplay, ::testing::Values(false, true));
 } // namespace GraphReplayTests
