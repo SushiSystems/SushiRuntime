@@ -39,6 +39,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "run_recorder.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -57,14 +58,19 @@ namespace
         }
     }
 
-    /** @brief Fixture of the node-option tests, which record graphs on the program's runtime. */
-    class Medium_NodeOptionsWidth : public TestSupport::RuntimeTest
+    /** @brief Fixture of the node-option tests that need no device, which record graphs on a host runtime. */
+    class Small_NodeOptionsWidth : public TestSupport::HostRuntimeTest
+    {
+    };
+
+    /** @brief Fixture of the node-option test of the late-count and device-sized nodes, which run on the program's runtime. */
+    class Medium_NodeOptionsLateWidth : public TestSupport::RuntimeTest
     {
     };
 } // namespace
 
 /** @brief Tests that each node of a rule reports the width it stated, not a buffer's size. */
-TEST_F(Medium_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
+TEST_F(Small_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
 {
     constexpr std::size_t WIDE = 600;
 
@@ -100,7 +106,7 @@ TEST_F(Medium_NodeOptionsWidth, EachNodeOfARuleReportsItsStatedWidth)
 }
 
 /** @brief Tests that a resolver and a device-sized node report the widths they stated. */
-TEST_F(Medium_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidths)
+TEST_F(Medium_NodeOptionsLateWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidths)
 {
     constexpr std::size_t CAPACITY = 128;
 
@@ -144,7 +150,7 @@ TEST_F(Medium_NodeOptionsWidth, ResolverAndDeviceSizedNodeReportTheirStatedWidth
 }
 
 /** @brief Tests that an observed run reports the name and the operation a node stated. */
-TEST_F(Medium_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
+TEST_F(Small_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
 {
     constexpr std::size_t WIDE = 64;
 
@@ -178,7 +184,7 @@ TEST_F(Medium_NodeOptionsWidth, ANodeReportsTheNameAndTheOperationItStated)
 }
 
 /** @brief Tests that a node's own name is reported in place of the name of its rule. */
-TEST_F(Medium_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
+TEST_F(Small_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
 {
     constexpr std::size_t WIDE = 32;
 
@@ -210,7 +216,7 @@ TEST_F(Medium_NodeOptionsWidth, ANodeNameReplacesTheNameOfItsRule)
 }
 
 /** @brief Tests that an add refused for its parameters records no node. */
-TEST_F(Medium_NodeOptionsWidth, ARefusedAddRecordsNoNode)
+TEST_F(Small_NodeOptionsWidth, ARefusedAddRecordsNoNode)
 {
     constexpr std::size_t WIDE = 8;
 

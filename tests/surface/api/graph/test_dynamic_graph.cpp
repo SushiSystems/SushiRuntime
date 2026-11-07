@@ -45,6 +45,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "run_recorder.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -52,7 +53,12 @@ using namespace SushiRuntime;
 /** @brief Tests the region-partitioned graph that Runtime::dynamic_graph() returns. */
 namespace DynamicGraphTests
 {
-    /** @brief Fixture of the region tests, which run on the program's runtime with the rebalancer off. */
+    /** @brief Fixture of the region tests that need no device, which run on a host runtime. */
+    class Small_DynamicGraph : public TestSupport::HostRuntimeTest
+    {
+    };
+
+    /** @brief Fixture of the region test of real concurrency, which runs on the program's runtime with the rebalancer off. */
     class Medium_DynamicGraph : public TestSupport::RuntimeTest
     {
         protected:
@@ -61,7 +67,7 @@ namespace DynamicGraphTests
     };
 
     /** @brief Fixture of the rows over the number of regions a chain threads a value through. */
-    class Medium_DynamicGraphChain : public Medium_DynamicGraph,
+    class Small_DynamicGraphChain : public Small_DynamicGraph,
                                      public ::testing::WithParamInterface<std::size_t>
     {
     };
@@ -69,7 +75,7 @@ namespace DynamicGraphTests
     /**
      * @brief Fixture of a world of 32 regions that each add one to their own buffer and have run three steps.
      */
-    class Medium_DynamicGraphWorld : public Medium_DynamicGraph
+    class Small_DynamicGraphWorld : public Small_DynamicGraph
     {
         protected:
             static constexpr std::size_t N       = 4;
@@ -78,7 +84,7 @@ namespace DynamicGraphTests
             /** @brief Records the 32 regions and runs three steps. */
             void SetUp() override
             {
-                Medium_DynamicGraph::SetUp();
+                Small_DynamicGraph::SetUp();
                 bufs_.reserve(K_REGIONS);
                 for (std::size_t r = 0; r < K_REGIONS; ++r)
                     bufs_.push_back(runtime().buffer<int>(N).value());
@@ -111,7 +117,7 @@ namespace DynamicGraphTests
     };
 
     /** @brief Tests that two independent regions advance their own buffers over a multi-step run. */
-    TEST_F(Medium_DynamicGraph, IndependentRegionsAdvanceTheirOwnBuffers)
+    TEST_F(Small_DynamicGraph, IndependentRegionsAdvanceTheirOwnBuffers)
     {
         constexpr std::size_t N     = 16;
         constexpr std::size_t STEPS = 5;
@@ -138,7 +144,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that an unmutated multi-step run composes the plan once. */
-    TEST_F(Medium_DynamicGraph, AnUnmutatedMultiStepRunComposesOnce)
+    TEST_F(Small_DynamicGraph, AnUnmutatedMultiStepRunComposesOnce)
     {
         constexpr std::size_t N     = 16;
         constexpr std::size_t STEPS = 5;
@@ -158,7 +164,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that a chain of regions with ascending keys threads a value through every hop. */
-    TEST_P(Medium_DynamicGraphChain, ARegionObservesTheWritesOfTheRegionBeforeIt)
+    TEST_P(Small_DynamicGraphChain, ARegionObservesTheWritesOfTheRegionBeforeIt)
     {
         constexpr std::size_t N = 24;
         const std::size_t regions = GetParam();
@@ -190,12 +196,12 @@ namespace DynamicGraphTests
             ASSERT_EQ(hops[regions - 1][i], static_cast<int>(i + 1) * factor) << "at i=" << i;
     }
 
-    INSTANTIATE_TEST_SUITE_P(Rows, Medium_DynamicGraphChain, ::testing::Values(2u, 3u));
+    INSTANTIATE_TEST_SUITE_P(Rows, Small_DynamicGraphChain, ::testing::Values(2u, 3u));
 
     /**
      * @brief Tests that a dropped region's buffer freezes while the surviving region keeps advancing.
      */
-    TEST_F(Medium_DynamicGraph, DropRegionStopsItsWork)
+    TEST_F(Small_DynamicGraph, DropRegionStopsItsWork)
     {
         constexpr std::size_t N = 8;
 
@@ -227,7 +233,7 @@ namespace DynamicGraphTests
     /**
      * @brief Tests that adding a region between steps recomposes once and takes effect on the next run.
      */
-    TEST_F(Medium_DynamicGraph, AddRegionBetweenSteps)
+    TEST_F(Small_DynamicGraph, AddRegionBetweenSteps)
     {
         constexpr std::size_t N = 8;
 
@@ -255,13 +261,13 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that building all regions composes once. */
-    TEST_F(Medium_DynamicGraphWorld, BuildingAllRegionsComposesOnce)
+    TEST_F(Small_DynamicGraphWorld, BuildingAllRegionsComposesOnce)
     {
         EXPECT_EQ(world_->compose_count(), 1u) << "building all regions once composes once.";
     }
 
     /** @brief Tests that one mutation recomposes exactly once, not once per region. */
-    TEST_F(Medium_DynamicGraphWorld, OneMutationRecomposesExactlyOnce)
+    TEST_F(Small_DynamicGraphWorld, OneMutationRecomposesExactlyOnce)
     {
         mutate_region_seven_and_run();
 
@@ -269,7 +275,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that after one mutation every region holds the count its runs give it. */
-    TEST_F(Medium_DynamicGraphWorld, EveryRegionHoldsItsRunCountAfterAMutation)
+    TEST_F(Small_DynamicGraphWorld, EveryRegionHoldsItsRunCountAfterAMutation)
     {
         mutate_region_seven_and_run();
 
@@ -282,7 +288,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that find_region() is not a mutation: it recomposes nothing. */
-    TEST_F(Medium_DynamicGraph, FindRegionRecomposesNothing)
+    TEST_F(Small_DynamicGraph, FindRegionRecomposesNothing)
     {
         constexpr std::size_t N = 4;
 
@@ -307,7 +313,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that find_region() returns nullptr for an absent key and does not create it. */
-    TEST_F(Medium_DynamicGraph, FindRegionDoesNotCreateAnAbsentKey)
+    TEST_F(Small_DynamicGraph, FindRegionDoesNotCreateAnAbsentKey)
     {
         constexpr std::size_t N = 4;
 
@@ -323,7 +329,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that two regions reading one producer's buffer both see its writes. */
-    TEST_F(Medium_DynamicGraph, ReadReadSharingStaysConsistent)
+    TEST_F(Small_DynamicGraph, ReadReadSharingStaysConsistent)
     {
         constexpr std::size_t N = 24;
 
@@ -354,7 +360,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that a consumer streamed in beside an existing producer sees its writes. */
-    TEST_F(Medium_DynamicGraph, AStreamedInConsumerSeesTheProducersWrites)
+    TEST_F(Small_DynamicGraph, AStreamedInConsumerSeesTheProducersWrites)
     {
         constexpr std::size_t N = 16;
 
@@ -379,7 +385,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that streaming a sharer in recomposes once. */
-    TEST_F(Medium_DynamicGraph, StreamingAConsumerInRecomposesOnce)
+    TEST_F(Small_DynamicGraph, StreamingAConsumerInRecomposesOnce)
     {
         constexpr std::size_t N = 16;
 
@@ -401,7 +407,7 @@ namespace DynamicGraphTests
     }
 
     /** @brief Tests that dropping the producer leaves the consumer runnable with the values it had. */
-    TEST_F(Medium_DynamicGraph, DropProducerLeavesConsumerRunnable)
+    TEST_F(Small_DynamicGraph, DropProducerLeavesConsumerRunnable)
     {
         constexpr std::size_t N = 16;
 
@@ -470,8 +476,11 @@ namespace DynamicGraphTests
                "although their element ranges are disjoint";
     }
 
-    /** @brief Tests that two regions writing the same range of one buffer are still ordered. */
-    TEST_F(Medium_DynamicGraph, OverlappingRangeRegionsStillSerialize)
+    /**
+     * @brief Tests that two regions writing the same range of one buffer are still ordered: starting
+     *        the step posts only the first region's node, and the second sees what the first wrote.
+     */
+    TEST_F(Small_DynamicGraph, OverlappingRangeRegionsStillSerialize)
     {
         constexpr std::size_t N = 64;
 
@@ -479,44 +488,23 @@ namespace DynamicGraphTests
         for (std::size_t i = 0; i < N; ++i) shared[i] = 0;
         int* p = shared.data();
 
-        std::atomic<int> arrived{0};
-        std::atomic<int> saw_both{0};
-
-        auto rendezvous = [&arrived, &saw_both]()
-        {
-            arrived.fetch_add(1, std::memory_order_acq_rel);
-            const auto deadline = std::chrono::steady_clock::now() +
-                                  std::chrono::milliseconds(200);
-            while (arrived.load(std::memory_order_acquire) < 2 &&
-                   std::chrono::steady_clock::now() < deadline)
-                std::this_thread::yield();
-            if (arrived.load(std::memory_order_acquire) >= 2)
-                saw_both.fetch_add(1, std::memory_order_acq_rel);
-        };
-
         auto world = runtime().dynamic_graph();
         world.region(0).add_host(Reads{}, Writes(shared),
-                                 [p, rendezvous]()
-                                 {
-                                     for (std::size_t i = 0; i < N; ++i) p[i] = 1;
-                                     rendezvous();
-                                 });
+                                 [p]() { for (std::size_t i = 0; i < N; ++i) p[i] = 1; });
         world.region(1).add_host(Reads(shared), Writes(shared),
-                                 [p, rendezvous]()
-                                 {
-                                     rendezvous();
-                                     for (std::size_t i = 0; i < N; ++i) p[i] = p[i] * 2 + 1;
-                                 });
-        world.run().value();
+                                 [p]() { for (std::size_t i = 0; i < N; ++i) p[i] = p[i] * 2 + 1; });
 
-        EXPECT_EQ(saw_both.load(), 1)
-            << "overlapping ranges ran concurrently: the cross-region edge was lost";
+        auto step = world.run_async().value();
+        EXPECT_EQ(executor().pending(), 1u)
+            << "the second region's node was a root: the cross-region edge was lost";
+        step.wait().value();
+
         for (std::size_t i = 0; i < N; ++i)
             ASSERT_EQ(shared[i], 3) << "at i=" << i;
     }
 
     /** @brief Tests that a whole-buffer reader runs after both half writers. */
-    TEST_F(Medium_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
+    TEST_F(Small_DynamicGraph, WholeBufferReaderOrdersAfterBothHalfWriters)
     {
         constexpr std::size_t N = 128;
         constexpr std::size_t HALF = N / 2;
@@ -654,16 +642,13 @@ namespace WideDynamicGraphTests
         }
     } // namespace
 
-    /** @brief Fixture of the wide-graph tests, which run on the program's runtime with the rebalancer off. */
-    class Medium_WideDynamicGraph : public TestSupport::RuntimeTest
+    /** @brief Fixture of the wide-graph tests, which run on a host runtime. */
+    class Small_WideDynamicGraph : public TestSupport::HostRuntimeTest
     {
-        protected:
-            /** @brief Turns the background rebalancer off, so no thermal move reorders a region. */
-            void SetUp() override { runtime().set_rebalancer_enabled(false); }
     };
 
     /** @brief Tests that each of several streamed mutations recomposes the world exactly once. */
-    TEST_F(Medium_WideDynamicGraph, EachOfSeveralStreamedMutationsRecomposesOnce)
+    TEST_F(Small_WideDynamicGraph, EachOfSeveralStreamedMutationsRecomposesOnce)
     {
         auto bufs = make_zeroed_buffers(runtime());
         auto world = runtime().dynamic_graph();
@@ -673,7 +658,7 @@ namespace WideDynamicGraphTests
     }
 
     /** @brief Tests that after streamed mutations every region holds the count its runs give it. */
-    TEST_F(Medium_WideDynamicGraph, EveryRegionKeepsItsRunCountAfterStreamedMutations)
+    TEST_F(Small_WideDynamicGraph, EveryRegionKeepsItsRunCountAfterStreamedMutations)
     {
         auto bufs = make_zeroed_buffers(runtime());
         auto world = runtime().dynamic_graph();
@@ -702,16 +687,13 @@ namespace DynamicGraphNodeEventsTests
         }
     } // namespace
 
-    /** @brief Fixture of the node-event tests, which run on the program's runtime with the rebalancer off. */
-    class Medium_DynamicGraphNodeEvents : public TestSupport::RuntimeTest
+    /** @brief Fixture of the node-event tests, which run on a host runtime. */
+    class Small_DynamicGraphNodeEvents : public TestSupport::HostRuntimeTest
     {
-        protected:
-            /** @brief Turns the background rebalancer off, so no thermal move reorders a region. */
-            void SetUp() override { runtime().set_rebalancer_enabled(false); }
     };
 
     /** @brief Tests that every record of an observed run names a node the table of the run describes. */
-    TEST_F(Medium_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRenumberedIndex)
+    TEST_F(Small_DynamicGraphNodeEvents, RequestedGraphProducesRecordsMatchingRenumberedIndex)
     {
         Testing::RunRecorder observed(runtime());
         auto a = runtime().buffer<int>(N).value();
@@ -738,7 +720,7 @@ namespace DynamicGraphNodeEventsTests
     }
 
     /** @brief Tests that the table indices are dense and ordered by ascending region key, then add() order. */
-    TEST_F(Medium_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrder)
+    TEST_F(Small_DynamicGraphNodeEvents, IndexDenseAndOrderedByRegionThenAddOrder)
     {
         Testing::RunRecorder observed(runtime());
         auto a = runtime().buffer<int>(N).value();
@@ -765,7 +747,7 @@ namespace DynamicGraphNodeEventsTests
     }
 
     /** @brief Tests that the index stays dense after a region is dropped and re-added. */
-    TEST_F(Medium_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
+    TEST_F(Small_DynamicGraphNodeEvents, IndexStaysDenseAfterDropAndReAdd)
     {
         Testing::RunRecorder observed(runtime());
         auto a = runtime().buffer<int>(N).value();
@@ -1466,15 +1448,12 @@ namespace LayerEquivalenceTests
             return shot;
         }
     } // namespace
-
-
-    /** @brief The pass chain of one row: the layer it runs on and where its two passes run. */
-    struct PassRow
-    {
-        bool force_scheduler; /**< Whether the runtime is forced onto the scheduler. */
-        PassSite site;        /**< Where the two whole-buffer passes run. */
-    };
 } // namespace
+
+/** @brief Fixture of the equivalence tests that need no device, which run on a host runtime. */
+class Small_LayerEquivalence : public TestSupport::HostRuntimeTest
+{
+};
 
 /** @brief Fixture of the rows that run a workload on the in-order chain (false) and on the scheduler (true). */
 class Medium_LayerEquivalence : public ::testing::TestWithParam<bool>, protected TestSupport::LayerRuntime
@@ -1484,19 +1463,16 @@ class Medium_LayerEquivalence : public ::testing::TestWithParam<bool>, protected
         void SetUp() override { use_layer(GetParam()); }
 };
 
-/** @brief Fixture of the rows of the pass chain. */
-class Medium_LayerEquivalencePasses : public ::testing::TestWithParam<LayerEquivalenceTests::PassRow>,
-                                      protected TestSupport::LayerRuntime
+/** @brief Fixture of the rows of the pass chain: where its two whole-buffer passes run, on a host runtime. */
+class Small_LayerEquivalencePasses : public TestSupport::HostRuntimeTest,
+                                     public ::testing::WithParamInterface<LayerEquivalenceTests::PassSite>
 {
-    protected:
-        /** @brief Chooses the runtime of the row. */
-        void SetUp() override { use_layer(GetParam().force_scheduler); }
 };
 
 namespace LayerEquivalenceTests
 {
     /** @brief Tests that a static graph and a DynamicGraph of four regions both leave the bytes of the host model. */
-    TEST_P(Medium_LayerEquivalence, DynamicRegionsMatchTheHostModel)
+    TEST_F(Small_LayerEquivalence, DynamicRegionsMatchTheHostModel)
     {
         const Script script{{{true, K_RUNS}}, true};
         const Snapshot reference = tile_reference(script);
@@ -1508,7 +1484,7 @@ namespace LayerEquivalenceTests
     }
 
     /** @brief Tests that a region dropped and recorded again leaves the bytes of the host model. */
-    TEST_P(Medium_LayerEquivalence, DroppedAndReaddedRegionMatchesTheHostModel)
+    TEST_F(Small_LayerEquivalence, DroppedAndReaddedRegionMatchesTheHostModel)
     {
         const Script script{{{true, 1}, {false, 1}, {true, 1}}, false};
 
@@ -1517,14 +1493,14 @@ namespace LayerEquivalenceTests
     }
 
     /** @brief Tests that the pass chain leaves the bytes of the host model, with the passes on the host or on the device. */
-    TEST_P(Medium_LayerEquivalencePasses, PassChainMatchesTheHostModel)
+    TEST_P(Small_LayerEquivalencePasses, PassChainMatchesTheHostModel)
     {
-        expect_identical(pass_chain_reference(), run_pass_chain(runtime(), GetParam().site),
+        expect_identical(pass_chain_reference(), run_pass_chain(runtime(), GetParam()),
                          "host model vs pass chain");
     }
 
     /** @brief Tests that N run_async() steps of a static graph leave the bytes of the host model. */
-    TEST_P(Medium_LayerEquivalence, AsyncStepsMatchTheHostModel)
+    TEST_F(Small_LayerEquivalence, AsyncStepsMatchTheHostModel)
     {
         const Script script{{{true, K_RUNS}}, true};
 
@@ -1533,7 +1509,7 @@ namespace LayerEquivalenceTests
     }
 
     /** @brief Tests that a DynamicGraph stepped through run_async() leaves the bytes of the host model. */
-    TEST_P(Medium_LayerEquivalence, AsyncStepsOfADynamicGraphMatchTheHostModel)
+    TEST_F(Small_LayerEquivalence, AsyncStepsOfADynamicGraphMatchTheHostModel)
     {
         const Script script{{{true, 1}, {false, 1}, {true, 1}}, true};
 
@@ -1566,11 +1542,9 @@ namespace LayerEquivalenceTests
 INSTANTIATE_TEST_SUITE_P(Rows, Medium_LayerEquivalence, ::testing::Values(false, true));
 
 INSTANTIATE_TEST_SUITE_P(
-    Rows, Medium_LayerEquivalencePasses,
-    ::testing::Values(LayerEquivalenceTests::PassRow{false, LayerEquivalenceTests::PassSite::Host},
-                      LayerEquivalenceTests::PassRow{true, LayerEquivalenceTests::PassSite::Host},
-                      LayerEquivalenceTests::PassRow{false, LayerEquivalenceTests::PassSite::Device},
-                      LayerEquivalenceTests::PassRow{true, LayerEquivalenceTests::PassSite::Device}));
+    Rows, Small_LayerEquivalencePasses,
+    ::testing::Values(LayerEquivalenceTests::PassSite::Host,
+                      LayerEquivalenceTests::PassSite::Device));
 
 /** @brief Tests that the placement rules place the nodes of a DynamicGraph's regions. */
 namespace DynamicGraphPlacementTests
@@ -1608,8 +1582,16 @@ namespace DynamicGraphPlacementTests
         }
     } // namespace
 
+    /** @brief Fixture of the placement test whose run is refused before any body runs, on a host runtime. */
+    class Small_DynamicGraphPlacement : public TestSupport::HostRuntimeTest
+    {
+        protected:
+            /** @brief Returns the number of devices the runtime drives, which is the first index it lacks. */
+            [[nodiscard]] std::size_t absent_device() { return runtime().advanced().device_count(); }
+    };
+
     /**
-     * @brief Fixture of the placement tests; it hands the program's runtime back with no rules.
+     * @brief Fixture of the placement tests whose task body runs on a device; it hands the program's runtime back with no rules.
      */
     class Medium_DynamicGraphPlacement : public TestSupport::RuntimeTest
     {
@@ -1628,7 +1610,7 @@ namespace DynamicGraphPlacementTests
     };
 
     /** @brief Tests that a Fail rule naming an absent device refuses the run of a region's node. */
-    TEST_F(Medium_DynamicGraphPlacement, ARuleToAnAbsentDeviceRefusesTheRun)
+    TEST_F(Small_DynamicGraphPlacement, ARuleToAnAbsentDeviceRefusesTheRun)
     {
         std::optional<sycl::device> noted;
         auto world = runtime().dynamic_graph();

@@ -66,8 +66,9 @@ tests at the end of `test_graph.cpp`.
 
 The file covers the launches of phase P3 of `docs/design/GRAPH_REPLAY/README.md` (sections D.2 and G): a
 `Recorder::kernel(DeviceSized, ...)` and a `sized_from_device` task, both sized by a count a
-predecessor wrote in the same step. The tests run on the program's runtime; the two rows of
-`Medium_DeviceSizedLayers` run one on the in-order chain and one on a runtime forced onto the scheduler.
+predecessor wrote in the same step. The `sized_from_device` test (`Small_SizedFromDevice`) runs on a host
+runtime. The other tests run on the program's runtime; the two rows of `Medium_DeviceSizedLayers` run
+one on the in-order chain and one on a runtime forced onto the scheduler.
 
 ### `record_marking_rule`
 
@@ -92,7 +93,7 @@ On every step a producer kernel writes a new width, 0 and the capacity included.
 the digest of the whole buffer for each of 48 steps on the host, with `marked` and `digest_of`, and
 the run must record the same digests bit for bit. The digests must also change on more than a
 quarter of the steps, so a match shows the width at work. Both rows of `Medium_DeviceSizedLayers`
-hold the promise: the chain and the forced scheduler each answer to the host model, not to each other.
+hold the promise of the device-sized rule: the chain and the forced scheduler each answer to the host model, not to each other.
 The salt is fixed, since a host provider of the salt would make the model depend on how often the
 runtime calls it.
 
@@ -195,13 +196,14 @@ The file compares whole output buffers byte for byte and uses the public API onl
 across a change of internals. All data is `std::uint32_t`.
 
 Every comparison is against a host model of the work, computed in the same order the kernels are
-recorded, and the rows of `Medium_LayerEquivalence` run it on the in-order chain and on a runtime
-forced onto the scheduler. The layer a run took is not asserted: it is an inside detail, and the
+recorded. The tests of `Small_LayerEquivalence` and `Small_LayerEquivalencePasses` run on a host runtime;
+the rows of `Medium_LayerEquivalence` run it on the in-order chain and on a runtime forced onto the
+scheduler. The layer a run took is not asserted: it is an inside detail, and the
 bytes must be right on both.
 
 Four shapes are covered: the same work as regions of a `DynamicGraph` and as one static `Graph`,
 with a region dropped and recorded again; host tasks among kernels in one dependency chain, with the two whole-buffer passes on the host and on
-the device (`Medium_LayerEquivalencePasses`); steps through `run_async()` against the host model of
+the device (`Small_LayerEquivalencePasses`, one row per site); steps through `run_async()` against the host model of
 `run(n)`; and a 2-D box with an origin offset through each launch form.
 
 `NdRange` has no origin, so its kernels add the offset to the global id themselves.

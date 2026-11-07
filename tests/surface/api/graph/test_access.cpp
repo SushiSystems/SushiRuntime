@@ -37,7 +37,7 @@
 #include <SushiRuntime/sushiruntime.hpp>
 #include <SushiRuntime/api/graph/access.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
@@ -64,12 +64,12 @@ TEST(Small_Access, BareRegionsCarryNoObserver)
 }
 
 /** @brief Fixture of the Access tests that hand out buffers of the program's runtime. */
-class Medium_Access : public TestSupport::RuntimeTest
+class Small_AccessHandles : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that handles given through Reads and Writes bring the observers of both. */
-TEST_F(Medium_Access, HandlesBringTheirObservers)
+TEST_F(Small_AccessHandles, HandlesBringTheirObservers)
 {
     auto in = runtime().buffer<int>(4).value();
     auto out = runtime().buffer<int>(4).value();

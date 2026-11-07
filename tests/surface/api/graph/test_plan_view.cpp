@@ -37,7 +37,7 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
@@ -58,13 +58,13 @@ namespace
     }
 } // namespace
 
-/** @brief Fixture of the plan-view tests, which record graphs on the program's runtime. */
-class Medium_PlanView : public TestSupport::RuntimeTest
+/** @brief Fixture of the plan-view tests, which record graphs on a host runtime. */
+class Small_PlanView : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Fixture of the plan-view tests of a chain of three kernels whose second node states every option. */
-class Medium_PlanViewChain : public TestSupport::RuntimeTest
+class Small_PlanViewChain : public TestSupport::HostRuntimeTest
 {
     protected:
         /** @brief Records the chain. */
@@ -99,7 +99,7 @@ class Medium_PlanViewChain : public TestSupport::RuntimeTest
 };
 
 /** @brief Tests that compile() builds the plan and runs nothing. */
-TEST_F(Medium_PlanView, CompileRunsNothing)
+TEST_F(Small_PlanView, CompileRunsNothing)
 {
     auto target = zeroed(runtime());
     Word* words = target.data();
@@ -112,7 +112,7 @@ TEST_F(Medium_PlanView, CompileRunsNothing)
 }
 
 /** @brief Tests that a plan compile() built, and the graph has not changed since, is not built again. */
-TEST_F(Medium_PlanView, ACurrentPlanIsNotBuiltAgain)
+TEST_F(Small_PlanView, ACurrentPlanIsNotBuiltAgain)
 {
     auto target = zeroed(runtime());
     Word* words = target.data();
@@ -125,7 +125,7 @@ TEST_F(Medium_PlanView, ACurrentPlanIsNotBuiltAgain)
 }
 
 /** @brief Tests that run() after compile() uses the plan compile() built. */
-TEST_F(Medium_PlanView, RunUsesThePlanCompileBuilt)
+TEST_F(Small_PlanView, RunUsesThePlanCompileBuilt)
 {
     auto target = zeroed(runtime());
     Word* words = target.data();
@@ -140,7 +140,7 @@ TEST_F(Medium_PlanView, RunUsesThePlanCompileBuilt)
 }
 
 /** @brief Tests that compile() and plan() return the recorder's InvalidAccess refusal, the one run() returns. */
-TEST_F(Medium_PlanView, CompileReturnsTheRecordersRefusal)
+TEST_F(Small_PlanView, CompileReturnsTheRecordersRefusal)
 {
     auto graph = runtime().graph();
     State<int> empty;
@@ -163,7 +163,7 @@ TEST_F(Medium_PlanView, CompileReturnsTheRecordersRefusal)
 }
 
 /** @brief Tests that compile() on a graph with nothing recorded is InvalidGraph, as run() is. */
-TEST_F(Medium_PlanView, CompileOfAnEmptyGraphIsRefused)
+TEST_F(Small_PlanView, CompileOfAnEmptyGraphIsRefused)
 {
     auto graph = runtime().graph();
 
@@ -173,7 +173,7 @@ TEST_F(Medium_PlanView, CompileOfAnEmptyGraphIsRefused)
 }
 
 /** @brief Tests that compile() on a DynamicGraph composes it once and runs nothing. */
-TEST_F(Medium_PlanView, ACompiledDynamicGraphRunsNothing)
+TEST_F(Small_PlanView, ACompiledDynamicGraphRunsNothing)
 {
     auto target = zeroed(runtime());
     Word* words = target.data();
@@ -187,7 +187,7 @@ TEST_F(Medium_PlanView, ACompiledDynamicGraphRunsNothing)
 }
 
 /** @brief Tests that a DynamicGraph compiled and then run composes once in all. */
-TEST_F(Medium_PlanView, ADynamicGraphCompiledThenRunComposesOnce)
+TEST_F(Small_PlanView, ADynamicGraphCompiledThenRunComposesOnce)
 {
     auto target = zeroed(runtime());
     Word* words = target.data();
@@ -202,7 +202,7 @@ TEST_F(Medium_PlanView, ADynamicGraphCompiledThenRunComposesOnce)
 }
 
 /** @brief Tests that plan() of a chain of three kernels reports its predecessors and regions, and runs nothing. */
-TEST_F(Medium_PlanViewChain, AChainOfThreeKernelsReportsItsPredecessorsAndRegions)
+TEST_F(Small_PlanViewChain, AChainOfThreeKernelsReportsItsPredecessorsAndRegions)
 {
     const auto plan = graph_->plan();
     ASSERT_TRUE(plan);
@@ -228,7 +228,7 @@ TEST_F(Medium_PlanViewChain, AChainOfThreeKernelsReportsItsPredecessorsAndRegion
 }
 
 /** @brief Tests that plan() carries the name, operation, placement and determinism a node stated. */
-TEST_F(Medium_PlanViewChain, ThePlanCarriesTheOptionsANodeStated)
+TEST_F(Small_PlanViewChain, ThePlanCarriesTheOptionsANodeStated)
 {
     const auto plan = graph_->plan();
     ASSERT_TRUE(plan);
@@ -247,7 +247,7 @@ TEST_F(Medium_PlanViewChain, ThePlanCarriesTheOptionsANodeStated)
 }
 
 /** @brief Tests that a PlanView stays readable after its graph is destroyed. */
-TEST_F(Medium_PlanView, AViewOutlivesItsGraph)
+TEST_F(Small_PlanView, AViewOutlivesItsGraph)
 {
     auto target = zeroed(runtime());
     Word* words = target.data();

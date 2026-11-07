@@ -37,6 +37,7 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -200,6 +201,11 @@ namespace
 
 /** @brief Fixture of the device-sized launch tests, which record graphs on the program's runtime. */
 class Medium_DeviceSizedLaunch : public TestSupport::RuntimeTest
+{
+};
+
+/** @brief Fixture of the sized_from_device test, which runs on a host runtime. */
+class Small_SizedFromDevice : public TestSupport::HostRuntimeTest
 {
 };
 
@@ -395,7 +401,7 @@ TEST_P(Medium_DeviceSizedLayers, DeviceSizedRuleMatchesTheHostModelAsTheCountsCh
 }
 
 /** @brief Tests that a sized_from_device task leaves the bytes the host model gives as its count changes. */
-TEST_P(Medium_DeviceSizedLayers, SizedFromDeviceMatchesTheHostModelAsTheCountChanges)
+TEST_F(Small_SizedFromDevice, SizedFromDeviceMatchesTheHostModelAsTheCountChanges)
 {
     constexpr std::size_t CAPACITY = 4096;
 
