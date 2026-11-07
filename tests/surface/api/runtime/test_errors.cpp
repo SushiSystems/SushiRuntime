@@ -39,17 +39,18 @@
 #include <SushiRuntime/sushiruntime.hpp>
 
 #include "support/buffer_contents.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
 
-/** @brief Fixture of the error tests, which run on the program's runtime. */
-class Medium_ErrorIsolation : public TestSupport::RuntimeTest
+/** @brief Fixture of the error tests that run host nodes, on a host runtime of their own. */
+class Small_ErrorIsolation : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that a throwing node is named, with its registration index, in the error run() returns. */
-TEST_F(Medium_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationIndex)
+TEST_F(Small_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationIndex)
 {
     auto g  = runtime().graph();
     g.add_host([] {}).name("healthy");
@@ -63,6 +64,11 @@ TEST_F(Medium_ErrorIsolation, ThrowingNodeIsReportedByNameAndRegistrationIndex)
     EXPECT_NE(message.find("boom"), std::string::npos) << message;
     EXPECT_EQ(message.find("healthy"), std::string::npos) << message;
 }
+
+/** @brief Fixture of the error test whose first graph is a raw command group, which only a device runs. */
+class Medium_ErrorIsolation : public TestSupport::RuntimeTest
+{
+};
 
 /** @brief Tests that a graph runs clean on the same runtime after a graph whose kernel threw failed its run. */
 TEST_F(Medium_ErrorIsolation, AGraphRunsCleanAfterAKernelThrew)

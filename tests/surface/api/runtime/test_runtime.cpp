@@ -67,6 +67,7 @@
 #include <SushiRuntime/log/sushiruntime_log_project.hpp>
 
 #include "support/buffer_contents.hpp"
+#include "support/host_runtime.hpp"
 #include "support/runtime_contract.hpp"
 #include "support/runtime_environment.hpp"
 
@@ -140,12 +141,14 @@ namespace
     }
 } // namespace
 
-/** @brief Fixture of the Runtime tests that run on the program's runtime and give its rebalancer back off. */
+/** @brief Fixture of the Runtime tests that run on a host runtime of their own. */
+class Small_RuntimeEntry : public TestSupport::HostRuntimeTest
+{
+};
+
+/** @brief Fixture of the Runtime tests that need a device, a real host name or the worker pool, on the program's runtime. */
 class Medium_RuntimeEntry : public TestSupport::RuntimeTest
 {
-    protected:
-        /** @brief Turns the rebalancer off, so the next test finds the default. */
-        void TearDown() override { runtime().set_rebalancer_enabled(false); }
 };
 
 /** @brief Tests that the worker count of RuntimeConfig reaches the pool. */
@@ -160,9 +163,9 @@ TEST_F(Medium_RuntimeEntry, TheWorkerCountOfTheConfigReachesThePool)
 }
 
 /** @brief Tests that a view of a Runtime keeps answering after the Runtime is destroyed. */
-TEST_F(Medium_RuntimeEntry, TheViewOutlivesTheRuntime)
+TEST_F(Small_RuntimeEntry, TheViewOutlivesTheRuntime)
 {
-    std::optional<Runtime> rt(Runtime::create().value());
+    std::optional<Runtime> rt(Runtime::create_host().value());
     const AdvancedControls view = rt->advanced();
     const std::size_t device_count = view.device_count();
     ASSERT_GE(device_count, 1u);
@@ -174,7 +177,7 @@ TEST_F(Medium_RuntimeEntry, TheViewOutlivesTheRuntime)
 }
 
 /** @brief Tests that devices() has one entry per device. */
-TEST_F(Medium_RuntimeEntry, DevicesListsOneEntryPerDevice)
+TEST_F(Small_RuntimeEntry, DevicesListsOneEntryPerDevice)
 {
     const AdvancedControls view = runtime().advanced();
 
@@ -209,7 +212,7 @@ TEST_P(Medium_RuntimeDevices, EntryNamesTheDeviceBehindItsQueue)
 INSTANTIATE_TEST_SUITE_P(Devices, Medium_RuntimeDevices, ::testing::Range<std::size_t>(0, 4));
 
 /** @brief Tests that a buffer with no placement lands on the first device of devices(). */
-TEST_F(Medium_RuntimeEntry, ABufferLandsOnTheFirstDevice)
+TEST_F(Small_RuntimeEntry, ABufferLandsOnTheFirstDevice)
 {
     auto landed = runtime().buffer<int>(16).value();
 
@@ -217,35 +220,35 @@ TEST_F(Medium_RuntimeEntry, ABufferLandsOnTheFirstDevice)
 }
 
 /** @brief Tests that topology() names the machine as the config does. */
-TEST_F(Medium_RuntimeEntry, TopologyNamesTheMachineAsTheConfigDoes)
+TEST_F(Small_RuntimeEntry, TopologyNamesTheMachineAsTheConfigDoes)
 {
-    RuntimeConfig config;
+    HostRuntimeConfig config;
     config.node_name = "forge-3";
 
-    const Runtime rt = Runtime::create(config).value();
+    const Runtime rt = Runtime::create_host(config).value();
 
     EXPECT_EQ(rt.topology().name, "forge-3");
 }
 
 /** @brief Tests that topology() reports the operating system the program was built for. */
-TEST_F(Medium_RuntimeEntry, TopologyReportsTheOperatingSystem)
+TEST_F(Small_RuntimeEntry, TopologyReportsTheOperatingSystem)
 {
     EXPECT_EQ(runtime().topology().operating_system, built_for_operating_system());
 }
 
 /** @brief Tests that topology() lists the devices advanced() lists, in order. */
-TEST_F(Medium_RuntimeEntry, TopologyListsTheRuntimesDevices)
+TEST_F(Small_RuntimeEntry, TopologyListsTheRuntimesDevices)
 {
     EXPECT_EQ(device_rows(runtime().topology().devices), device_rows(runtime().advanced().devices()));
 }
 
 /** @brief Tests that topology() carries the labels the config gave, in order. */
-TEST_F(Medium_RuntimeEntry, TopologyCarriesTheConfiguredLabelsInOrder)
+TEST_F(Small_RuntimeEntry, TopologyCarriesTheConfiguredLabelsInOrder)
 {
-    RuntimeConfig config;
+    HostRuntimeConfig config;
     config.labels = {NodeLabel{"zone", "north"}, NodeLabel{"gpu", ""}, NodeLabel{"tier", "a"}};
 
-    const Runtime rt = Runtime::create(config).value();
+    const Runtime rt = Runtime::create_host(config).value();
 
     EXPECT_EQ(label_rows(rt.topology().labels), label_rows(config.labels));
 }
@@ -257,7 +260,7 @@ TEST_F(Medium_RuntimeEntry, TopologyNamesTheMachineByItsHostNameWhenTheConfigGiv
 }
 
 /** @brief Tests that a config with no labels makes topology() report none. */
-TEST_F(Medium_RuntimeEntry, TopologyCarriesNoLabelWhenTheConfigGivesNone)
+TEST_F(Small_RuntimeEntry, TopologyCarriesNoLabelWhenTheConfigGivesNone)
 {
     EXPECT_TRUE(runtime().topology().labels.empty());
 }
@@ -303,13 +306,6 @@ namespace
         return rules;
     }
 
-    /** @brief Blocks until the flag is set. */
-    void wait_for_rules_gate(const std::atomic<bool>& released)
-    {
-        while (!released.load(std::memory_order_acquire))
-            std::this_thread::yield();
-    }
-
     /** @brief Records a replica node and a node with no class, each writing its own buffer, into @p graph. */
     void record_replica_and_plain(Graph& graph, const Buffer<int>& first, const Buffer<int>& second)
     {
@@ -323,19 +319,13 @@ namespace
     }
 } // namespace
 
-/** @brief Fixture of the placement rule tests on the program's runtime, which start and end with no rules in force. */
-class Medium_RuntimePlacementRules : public TestSupport::RuntimeTest
+/** @brief Fixture of the placement rule tests on a host runtime of their own, which starts with no rules in force. */
+class Small_RuntimePlacementRules : public TestSupport::HostRuntimeTest
 {
-    protected:
-        /** @brief Clears the rules an earlier test may have left. */
-        void SetUp() override { static_cast<void>(runtime().clear_placement_rules()); }
-
-        /** @brief Clears the rules this test set. */
-        void TearDown() override { static_cast<void>(runtime().clear_placement_rules()); }
 };
 
 /** @brief Tests that a graph compiled with no rule in force reports no winner for any node. */
-TEST_F(Medium_RuntimePlacementRules, ARunWithNoRulesReportsNoWinner)
+TEST_F(Small_RuntimePlacementRules, ARunWithNoRulesReportsNoWinner)
 {
     auto first = runtime().buffer<int>(4).value();
     auto second = runtime().buffer<int>(4).value();
@@ -351,7 +341,7 @@ TEST_F(Medium_RuntimePlacementRules, ARunWithNoRulesReportsNoWinner)
 }
 
 /** @brief Tests that a node with no class matches no rule that states one. */
-TEST_F(Medium_RuntimePlacementRules, ANodeWithNoClassMatchesNoRuleThatStatesOne)
+TEST_F(Small_RuntimePlacementRules, ANodeWithNoClassMatchesNoRuleThatStatesOne)
 {
     auto first = runtime().buffer<int>(4).value();
     auto second = runtime().buffer<int>(4).value();
@@ -367,7 +357,7 @@ TEST_F(Medium_RuntimePlacementRules, ANodeWithNoClassMatchesNoRuleThatStatesOne)
 }
 
 /** @brief Tests that a new rule set makes the plan stale, so the next run compiles again. */
-TEST_F(Medium_RuntimePlacementRules, ANewRuleSetRecompilesThePlan)
+TEST_F(Small_RuntimePlacementRules, ANewRuleSetRecompilesThePlan)
 {
     auto first = runtime().buffer<int>(4).value();
     auto second = runtime().buffer<int>(4).value();
@@ -382,7 +372,7 @@ TEST_F(Medium_RuntimePlacementRules, ANewRuleSetRecompilesThePlan)
 }
 
 /** @brief Tests that a second compile reports the winner of the new rule set. */
-TEST_F(Medium_RuntimePlacementRules, ASecondCompileReportsTheWinnerOfTheNewRules)
+TEST_F(Small_RuntimePlacementRules, ASecondCompileReportsTheWinnerOfTheNewRules)
 {
     auto first = runtime().buffer<int>(4).value();
     auto second = runtime().buffer<int>(4).value();
@@ -398,7 +388,7 @@ TEST_F(Medium_RuntimePlacementRules, ASecondCompileReportsTheWinnerOfTheNewRules
 }
 
 /** @brief Tests that an unchanged rule set does not rebuild the plan. */
-TEST_F(Medium_RuntimePlacementRules, AnUnchangedRuleSetDoesNotRebuildThePlan)
+TEST_F(Small_RuntimePlacementRules, AnUnchangedRuleSetDoesNotRebuildThePlan)
 {
     auto first = runtime().buffer<int>(4).value();
     auto second = runtime().buffer<int>(4).value();
@@ -414,7 +404,7 @@ TEST_F(Medium_RuntimePlacementRules, AnUnchangedRuleSetDoesNotRebuildThePlan)
 }
 
 /** @brief Tests that clearing the rules makes the next compile report no winner. */
-TEST_F(Medium_RuntimePlacementRules, ClearingTheRulesReportsNoWinner)
+TEST_F(Small_RuntimePlacementRules, ClearingTheRulesReportsNoWinner)
 {
     auto first = runtime().buffer<int>(4).value();
     auto second = runtime().buffer<int>(4).value();
@@ -431,35 +421,23 @@ TEST_F(Medium_RuntimePlacementRules, ClearingTheRulesReportsNoWinner)
 
 namespace
 {
-    /** @brief Holds a run in flight on a host task that waits for a gate, so a test can call the runtime meanwhile. */
-    class GatedRun
+    /** @brief Holds a run in flight whose host task waits in the executor's queue, so a test can call the runtime meanwhile. */
+    class PendingRun
     {
         public:
-            /** @brief Starts a run of a graph whose only task waits for release(). */
-            explicit GatedRun(const Runtime& runtime)
+            /** @brief Starts a run of a graph whose only task stays queued until finish() drains it. */
+            explicit PendingRun(const Runtime& runtime)
                 : target_(runtime.buffer<int>(4).value()), graph_(runtime.graph())
             {
                 int* data = target_.data();
-                std::atomic<bool>* released = &released_;
-                graph_.add_host(Reads{}, Writes(target_), [released, data]()
-                {
-                    wait_for_rules_gate(*released);
-                    data[0] = 7;
-                });
+                graph_.add_host(Reads{}, Writes(target_), [data]() { data[0] = 7; });
                 step_.emplace(graph_.run_async().value());
             }
 
-            /** @brief Opens the gate and waits for the run to end. */
-            void finish()
-            {
-                released_.store(true, std::memory_order_release);
-                step_->wait().value();
-            }
+            /** @brief Runs the queued task and waits for the run to end. */
+            void finish() { step_->wait().value(); }
 
         private:
-            /** @brief Whether the task may finish. */
-            std::atomic<bool> released_{false};
-
             /** @brief The buffer the task writes. */
             Buffer<int> target_;
 
@@ -472,9 +450,9 @@ namespace
 } // namespace
 
 /** @brief Tests that set_placement_rules() is refused as InvalidState while a run is in flight. */
-TEST_F(Medium_RuntimePlacementRules, SettingTheRulesDuringARunIsRefusedAsInvalidState)
+TEST_F(Small_RuntimePlacementRules, SettingTheRulesDuringARunIsRefusedAsInvalidState)
 {
-    GatedRun run(runtime());
+    PendingRun run(runtime());
 
     const Result<void> set = runtime().set_placement_rules(replica_rules());
     run.finish();
@@ -485,9 +463,9 @@ TEST_F(Medium_RuntimePlacementRules, SettingTheRulesDuringARunIsRefusedAsInvalid
 }
 
 /** @brief Tests that clear_placement_rules() is refused as InvalidState while a run is in flight. */
-TEST_F(Medium_RuntimePlacementRules, ClearingTheRulesDuringARunIsRefusedAsInvalidState)
+TEST_F(Small_RuntimePlacementRules, ClearingTheRulesDuringARunIsRefusedAsInvalidState)
 {
-    GatedRun run(runtime());
+    PendingRun run(runtime());
 
     const Result<void> cleared = runtime().clear_placement_rules();
     run.finish();
@@ -497,9 +475,9 @@ TEST_F(Medium_RuntimePlacementRules, ClearingTheRulesDuringARunIsRefusedAsInvali
 }
 
 /** @brief Tests that set and clear both succeed once the run ended. */
-TEST_F(Medium_RuntimePlacementRules, TheRulesCanBeChangedOnceTheRunEnded)
+TEST_F(Small_RuntimePlacementRules, TheRulesCanBeChangedOnceTheRunEnded)
 {
-    GatedRun run(runtime());
+    PendingRun run(runtime());
     run.finish();
 
     const Result<void> set = runtime().set_placement_rules(replica_rules());
@@ -624,6 +602,17 @@ namespace
     };
 } // namespace
 
+/** @brief Fixture of the placement rule race test on the program's runtime, which starts and ends with no rules in force. */
+class Medium_RuntimePlacementRules : public TestSupport::RuntimeTest
+{
+    protected:
+        /** @brief Clears the rules an earlier test may have left. */
+        void SetUp() override { static_cast<void>(runtime().clear_placement_rules()); }
+
+        /** @brief Clears the rules this test set. */
+        void TearDown() override { static_cast<void>(runtime().clear_placement_rules()); }
+};
+
 /** @brief Tests that a rule change racing run starts and scope reads never lands inside a run. */
 TEST_F(Medium_RuntimePlacementRules, Regression_ARuleChangeRacingARunStartNeverLandsInsideTheRun)
 {
@@ -656,17 +645,17 @@ struct RefusedLabels
 };
 
 /** @brief Fixture of the label tests; the parameter is the row. */
-class Medium_RuntimeLabels : public ::testing::TestWithParam<RefusedLabels>
+class Small_RuntimeLabels : public ::testing::TestWithParam<RefusedLabels>
 {
 };
 
 /** @brief Tests that create() refuses a label set that breaks a rule and names what is wrong. */
-TEST_P(Medium_RuntimeLabels, CreateRefusesALabelKeyThatBreaksARule)
+TEST_P(Small_RuntimeLabels, CreateRefusesALabelKeyThatBreaksARule)
 {
-    RuntimeConfig config;
+    HostRuntimeConfig config;
     config.labels = GetParam().labels;
 
-    const auto refused = Runtime::create(config);
+    const auto refused = Runtime::create_host(config);
 
     ASSERT_FALSE(refused.has_value());
     EXPECT_EQ(refused.error().code, ErrorCode::InvalidArgument);
@@ -677,7 +666,7 @@ TEST_P(Medium_RuntimeLabels, CreateRefusesALabelKeyThatBreaksARule)
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Keys, Medium_RuntimeLabels,
+    Keys, Small_RuntimeLabels,
     ::testing::Values(
         RefusedLabels{"AnEmptyKey", {NodeLabel{"zone", "a"}, NodeLabel{"", "b"}}, "position 1"},
         RefusedLabels{"AKeyHoldingEquals", {NodeLabel{"a=b", "c"}}, "\"a=b\""},
@@ -699,30 +688,32 @@ TEST_F(Medium_RuntimeEntry, ThePinningPolicyOfTheConfigReachesThePool)
 }
 
 /** @brief Tests that a view taken before a Runtime moves answers for the moved Runtime. */
-TEST_F(Medium_RuntimeEntry, AMovedRuntimeKeepsTheContextItsViewsShare)
+TEST_F(Small_RuntimeEntry, AMovedRuntimeKeepsTheContextItsViewsShare)
 {
-    Runtime first = Runtime::create().value();
+    Runtime first = Runtime::create_host().value();
     const AdvancedControls view = first.advanced();
+    const std::size_t before = view.live_allocation_count();
 
     const Runtime second = std::move(first);
-    second.set_rebalancer_enabled(true);
+    const auto buffer = second.buffer<int>(8).value();
 
-    EXPECT_TRUE(view.is_rebalancer_enabled());
+    EXPECT_EQ(view.live_allocation_count(), before + 1);
 }
 
 /**
- * @brief Tests that a handle a Runtime hands out reaches the Runtime's own context: a setting
- *        changed on the Runtime is read back through the handle, both ways.
+ * @brief Tests that a handle a Runtime hands out reaches the Runtime's own context: an allocation
+ *        made on the Runtime is read back through the handle, and so is its release.
  */
-TEST_F(Medium_RuntimeEntry, AHandleItHandsOutReachesItsOwnContext)
+TEST_F(Small_RuntimeEntry, AHandleItHandsOutReachesItsOwnContext)
 {
     const AdvancedControls controls = runtime().advanced();
+    const std::size_t before = controls.live_allocation_count();
+    std::optional<Buffer<int>> held(runtime().buffer<int>(8).value());
+    EXPECT_EQ(controls.live_allocation_count(), before + 1);
 
-    runtime().set_rebalancer_enabled(false);
-    EXPECT_FALSE(controls.is_rebalancer_enabled());
+    held.reset();
 
-    runtime().set_rebalancer_enabled(true);
-    EXPECT_TRUE(controls.is_rebalancer_enabled());
+    EXPECT_EQ(controls.live_allocation_count(), before);
 }
 
 /** @brief Tests that a caller waits for device work and copies through the device's queue. */
@@ -773,7 +764,7 @@ TEST_F(Medium_RuntimeEntry, ABufferNoDeviceCanHoldReturnsAllocationFailed)
 }
 
 /** @brief Tests that a state no device can hold comes back as AllocationFailed. */
-TEST_F(Medium_RuntimeEntry, AStateNoDeviceCanHoldReturnsAllocationFailed)
+TEST_F(Small_RuntimeEntry, AStateNoDeviceCanHoldReturnsAllocationFailed)
 {
     const std::size_t count = std::numeric_limits<std::size_t>::max() / 2;
 
@@ -784,7 +775,7 @@ TEST_F(Medium_RuntimeEntry, AStateNoDeviceCanHoldReturnsAllocationFailed)
 }
 
 /** @brief Tests that a failed allocation leaves the runtime able to allocate again. */
-TEST_F(Medium_RuntimeEntry, AFailedAllocationLeavesTheRuntimeUsable)
+TEST_F(Small_RuntimeEntry, AFailedAllocationLeavesTheRuntimeUsable)
 {
     static_cast<void>(runtime().buffer<std::uint8_t>(std::numeric_limits<std::size_t>::max() / 2));
 
@@ -794,7 +785,7 @@ TEST_F(Medium_RuntimeEntry, AFailedAllocationLeavesTheRuntimeUsable)
 }
 
 /** @brief Tests that a buffer adds one live allocation. */
-TEST_F(Medium_RuntimeEntry, ABufferAddsOneLiveAllocation)
+TEST_F(Small_RuntimeEntry, ABufferAddsOneLiveAllocation)
 {
     const std::size_t before = runtime().advanced().live_allocation_count();
 
@@ -804,7 +795,7 @@ TEST_F(Medium_RuntimeEntry, ABufferAddsOneLiveAllocation)
 }
 
 /** @brief Tests that a state adds two live allocations, one per field. */
-TEST_F(Medium_RuntimeEntry, AStateAddsTwoLiveAllocations)
+TEST_F(Small_RuntimeEntry, AStateAddsTwoLiveAllocations)
 {
     const std::size_t before = runtime().advanced().live_allocation_count();
 
@@ -814,7 +805,7 @@ TEST_F(Medium_RuntimeEntry, AStateAddsTwoLiveAllocations)
 }
 
 /** @brief Tests that freeing a buffer and a state returns the live allocation count to what it was. */
-TEST_F(Medium_RuntimeEntry, FreeingABufferAndAStateReturnsTheLiveAllocationCount)
+TEST_F(Small_RuntimeEntry, FreeingABufferAndAStateReturnsTheLiveAllocationCount)
 {
     const std::size_t before = runtime().advanced().live_allocation_count();
     {
@@ -896,8 +887,8 @@ namespace
     }
 } // namespace
 
-/** @brief Fixture of the logging tests: the logger is synchronous and sends its records to a vector, and the level and the sink are put back. */
-class Medium_LoggingDefaults : public ::testing::Test
+/** @brief Base of the logging tests: the logger is synchronous and sends its records to a vector, and the level and the sink are put back. */
+class RecordedLogTest : public ::testing::Test
 {
     protected:
         /** @brief Puts the logger in synchronous mode and installs a sink that keeps what it receives. */
@@ -926,12 +917,22 @@ class Medium_LoggingDefaults : public ::testing::Test
         SushiLog::LogLevel saved_level_ = SushiLog::LogLevel::Warn;
 };
 
+/** @brief Fixture of the logging test that creates a host runtime, which opens no device. */
+class Small_LoggingDefaults : public RecordedLogTest
+{
+};
+
+/** @brief Fixture of the logging test that creates a runtime on the machine's devices. */
+class Medium_LoggingDefaults : public RecordedLogTest
+{
+};
+
 /** @brief Tests that creating a Runtime sends nothing to the sink while the level is Warn. */
-TEST_F(Medium_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
+TEST_F(Small_LoggingDefaults, CreateIsSilentAtTheDefaultLevel)
 {
     SushiLog::set_log_level(K_SUSHIRUNTIME_LOG_PROJECT, SushiLog::LogLevel::Warn);
 
-    create_and_destroy_a_runtime();
+    static_cast<void>(Runtime::create_host().value());
 
     EXPECT_TRUE(records_.empty()) << records_.size() << " records reached the sink at Warn";
 }

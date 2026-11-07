@@ -3,10 +3,14 @@
 The tests of `Runtime`, its configuration, its errors and its logging controls. They are part of `sr_surface_tests`;
 [the page of the module's tests](../README.md) says how to run them.
 
-Each medium test takes the program's runtime from the fixture base `TestSupport::RuntimeTest`. A test
-makes a runtime of its own only where the configuration it passes to `Runtime::create()` is the
-promise, or where the test destroys or moves the runtime. A test that sets state on the shared
-runtime, such as the rebalancer or the placement rules, puts it back in `SetUp` or `TearDown`.
+A `Small_` test takes a host runtime of its own from the fixture base `TestSupport::HostRuntimeTest`, or
+makes one with `Runtime::create_host()` where the configuration it passes is the promise, such as a
+device count, a node name or labels. A `Medium_` test takes the program's runtime from the fixture
+base `TestSupport::RuntimeTest`; it stays medium where the promise is what a real device, its queue,
+the worker pool, the host name or a `RuntimeConfig` passed to `Runtime::create()` does. A test that
+sets state on the shared runtime, such as the placement rules, puts it back in `SetUp` or
+`TearDown`. The host runtime has no rebalancer, worker count or device filter, so the tests of those
+stay medium.
 
 ## test_advanced_controls.cpp
 
@@ -39,22 +43,24 @@ single throw and left the pool dead for good.
 
 The file covers `PlacementScope`, the two overloads of `Runtime::placement_scope()` and the device
 a scope resolves to. The device tests send a class to `advanced().device_count()`, one past the last
-device, which no machine has, so the absent-device cases run on any machine. The shared runtime holds
-the rules, so the fixture clears them before and after each test. The rules of a runtime built with
-labels need a runtime of their own.
+device, which no machine has, so the absent-device cases run on any machine. They run small on a host
+runtime of their own, which starts with no rules; a runtime built with labels or a second device is
+made in the test body with `Runtime::create_host()`. The two medium tests run on the program's
+runtime, so the fixture of the memory test clears the rules before and after it.
 
 | Test | What it proves |
 | --- | --- |
 | `AScopeWithoutARuntimeGivesDeviceZero`, `AScopeWithoutARuntimeRefusesABuffer` | A scope built from a class and a key has no rules to read: `device()` gives 0 and `buffer()` returns `InvalidState`. |
 | `TheStringAndClassOverloadsGiveEqualClasses`, `BothOverloadsKeepAKeyOfZeroAndANoneKey`, `ANameWithoutADotIsAClass` | The string and the `PlacementClass` overloads build equal classes for one name and keep a key of 0 and a none key. A name with no dot is a class. |
-| `AMalformedNameStopsTheProcess` | Rows of an empty name, a name that starts or ends with `.` and a name with two `.` in a row: each stops the process. |
+| `AMalformedNameStopsTheProcess` (medium) | Rows of an empty name, a name that starts or ends with `.` and a name with two `.` in a row: each stops the process. |
 | `ANoRuleScopeGivesDeviceZero`, `ARuleForAnotherClassLeavesDeviceZero` | No rule, or a rule for another class, gives device 0. |
-| `ARuleWithAPresentTargetGivesDeviceZero` | Rows of a machine with no device part, an index, a kind and a least memory the machine has: each gives device 0. |
+| `ARuleWithAPresentTargetGivesDeviceZero` | Rows of a machine with no device part, an index and a kind the host runtime has: each gives device 0. |
+| `AtLeastOneByteOfMemoryGivesDeviceZero` (medium) | A rule asking for one byte of device memory gives device 0 on a real device. A host device reports no memory, so this row stays on the program's runtime. |
 | `LocalGivesDeviceZeroForAnAbsentDevice`, `FailNamesTheRuleAndTheDevice`, `WaitGivesDeviceZeroForAnAbsentDevice` | A rule for an absent device gives device 0 under `Local`, an `InvalidArgument` that holds the rule's name and `device index N` under `Fail`, and device 0 under `Wait`, since a local device never appears. The `Wait` test reads no clock. |
 | `AnotherMachinesNameMakesTheTargetAbsent`, `ALabelNoMachineCarriesMakesTheTargetAbsent`, `LocalFallsBackWhenTheMachineIsAnotherOne` | A machine name or label that is not this machine's makes the target absent, and `Local` falls back to device 0. How a machine part and a device part match is held by `tests/foundation/placement/test_placement_target_matching.cpp`. |
 | `ALabelTheMachineCarriesMakesTheTargetPresent` | A label the runtime's config gave makes the target present. |
 | `AScopeOpenedBeforeARefusingSetIsRefusedByIt`, `AScopeOpenedBeforeTheRulesAreClearedIsNoLongerRefused` | A scope made before `set_placement_rules()` is refused by a `Fail` set, and accepted again after `clear_placement_rules()`. |
-| `LocalPlacesTheBufferOnDeviceZero`, `FailRefusesTheBuffer`, `FailAllocatesNothing`, `ABufferLandsOnTheDeviceTheRuleNames` | `buffer<T>()` allocates on device 0 under `Local`, returns the error of `device()` and allocates nothing under `Fail`, and allocates on device 1 when a rule names it (skipped below two devices). |
+| `LocalPlacesTheBufferOnDeviceZero`, `FailRefusesTheBuffer`, `FailAllocatesNothing`, `ABufferLandsOnTheDeviceTheRuleNames` | `buffer<T>()` allocates on device 0 under `Local`, returns the error of `device()` and allocates nothing under `Fail`, and allocates on device 1 when a rule names it, on a host runtime of two devices. |
 
 The resolution of a rule against the machine facts is decided on values and could run small. It sits in
 `modules/surface/api/source/local_rule_device.hpp` and an anonymous function of `placement_scope.cpp`,
@@ -68,24 +74,26 @@ a copy constructor that returns fails the compile and not a test.
 
 | Test | What it proves |
 | --- | --- |
-| `TheWorkerCountOfTheConfigReachesThePool`, `ThePinningPolicyOfTheConfigReachesThePool` | A `RuntimeConfig` with `worker_count` 2, and one with `pinning` `Float`, give a pool with that count and that policy. The rebalancer reaches the runtime in `RebalancerIsOnWhenRequested`; `force_scheduler` has no public reader, and RW-114 holds it. |
+| `TheWorkerCountOfTheConfigReachesThePool`, `ThePinningPolicyOfTheConfigReachesThePool` (medium) | A `RuntimeConfig` with `worker_count` 2, and one with `pinning` `Float`, give a pool with that count and that policy. The rebalancer reaches the runtime in `RebalancerIsOnWhenRequested`; `force_scheduler` has no public reader, and RW-114 holds it. |
 | `TheViewOutlivesTheRuntime` | A view taken while the `Runtime` lives answers with the same device count after the `Runtime` is destroyed. A view that held a reference would read a destroyed context, which AddressSanitizer reports. |
-| `DevicesListsOneEntryPerDevice`, `EntryNamesTheDeviceBehindItsQueue` | `devices()` holds one entry per device, and rows of entry `i` carry the name of the SYCL device behind the queue of `DeviceIndex{i}`. |
+| `DevicesListsOneEntryPerDevice`, `EntryNamesTheDeviceBehindItsQueue` (medium) | `devices()` holds one entry per device, and rows of entry `i` carry the name of the SYCL device behind the queue of `DeviceIndex{i}`. |
 | `ABufferLandsOnTheFirstDevice` | A buffer allocated with no `DeviceIndex` is on the first entry of `devices()`. |
 | `TopologyNamesTheMachineAsTheConfigDoes`, `TopologyReportsTheOperatingSystem`, `TopologyListsTheRuntimesDevices`, `TopologyCarriesTheConfiguredLabelsInOrder` | `topology()` reports the name and labels the config gave, in order, the operating system the test was built for, and one `DeviceFacts` per entry of `advanced().devices()` with the same kind, name and memory. |
-| `TopologyNamesTheMachineByItsHostNameWhenTheConfigGivesNone`, `TopologyCarriesNoLabelWhenTheConfigGivesNone` | A config with no `node_name` gives the name the operating system reports for the host, read with `GetComputerNameExA` or `gethostname`; a config with no labels gives an empty list. |
-| `CreateRefusesALabelKeyThatBreaksARule` | Rows of an empty key, a key holding `=` and a repeated key: `create()` returns `ErrorCode::InvalidArgument` with a message that names `RuntimeConfig::labels` and the position or the key of the label. |
-| `AMovedRuntimeKeepsTheContextItsViewsShare` | A view taken before a move sees a change made on the moved-to `Runtime`. |
-| `AHandleItHandsOutReachesItsOwnContext` | A setting changed on the Runtime is read back through the `AdvancedControls` it handed out, both ways, so the handle shares the Runtime's own context. This is the public test of `ContextHandleAccess::handle_of`. |
-| `ACallerWaitsAndCopiesThroughTheDeviceQueue` | A kernel submitted on the queue `advanced().queue()` returns is finished when `Runtime::wait()` returns, and a `memcpy` through the same queue brings the values to a host vector. |
-| `AQueueOfAnUnknownDeviceStops` | `advanced().queue()` asked for the device after the last one stops the process. |
-| `ABufferNoDeviceCanHoldReturnsAllocationFailed`, `AStateNoDeviceCanHoldReturnsAllocationFailed`, `AFailedAllocationLeavesTheRuntimeUsable` | `buffer()` and `state()` asked for half the address space in bytes return `AllocationFailed`, the buffer's message holds the element count, and a buffer of 16 bytes is granted afterwards. The memory module has no seam that makes an allocation fail. |
+| `TopologyNamesTheMachineByItsHostNameWhenTheConfigGivesNone` (medium) | A config with no `node_name` gives the name the operating system reports for the host, read with `GetComputerNameExA` or `gethostname`. The host runtime never reads the host name. |
+| `TopologyCarriesNoLabelWhenTheConfigGivesNone` | A config with no labels gives an empty list. |
+| `CreateRefusesALabelKeyThatBreaksARule` | Rows of an empty key, a key holding `=` and a repeated key: `create_host()` returns `ErrorCode::InvalidArgument` with a message that names `RuntimeConfig::labels` and the position or the key of the label. |
+| `AMovedRuntimeKeepsTheContextItsViewsShare` | A view taken before a move sees the allocation made on the moved-to `Runtime`. |
+| `AHandleItHandsOutReachesItsOwnContext` | An allocation made on the Runtime, and its release, are read back through the `AdvancedControls` it handed out, so the handle shares the Runtime's own context. This is the public test of `ContextHandleAccess::handle_of`. |
+| `ACallerWaitsAndCopiesThroughTheDeviceQueue` (medium) | A kernel submitted on the queue `advanced().queue()` returns is finished when `Runtime::wait()` returns, and a `memcpy` through the same queue brings the values to a host vector. |
+| `AQueueOfAnUnknownDeviceStops` (medium) | `advanced().queue()` asked for the device after the last one stops the process. |
+| `ABufferNoDeviceCanHoldReturnsAllocationFailed` (medium) | `buffer()` asked for half the address space in bytes on the machine's devices returns `AllocationFailed`, and the message holds the element count. |
+| `AStateNoDeviceCanHoldReturnsAllocationFailed`, `AFailedAllocationLeavesTheRuntimeUsable` | `state()` asked for half the address space in bytes returns `AllocationFailed` on a host runtime, and a buffer of 16 bytes is granted afterwards. The memory module has no seam that makes an allocation fail. |
 | `ABufferAddsOneLiveAllocation`, `AStateAddsTwoLiveAllocations`, `FreeingABufferAndAStateReturnsTheLiveAllocationCount` | `advanced().live_allocation_count()` rises by one for a buffer and by two for a state, and is back at its first value when both leave their scope. |
 
 ### Placement rules
 
-`Medium_RuntimePlacementRules` runs on the shared runtime and clears the rules before and after each
-test. One graph holds a node of class `sushiai.replica` with key 0 and a node with no class.
+`Small_RuntimePlacementRules` runs on a host runtime of its own; `Medium_RuntimePlacementRules` holds the race
+test on the shared runtime and clears the rules before and after it. One graph holds a node of class `sushiai.replica` with key 0 and a node with no class.
 
 | Test | What it proves |
 | --- | --- |
@@ -95,8 +103,8 @@ test. One graph holds a node of class `sushiai.replica` with key 0 and a node wi
 | `ASecondCompileReportsTheWinnerOfTheNewRules` | After a set that adds a prefix rule `sushiai.*` of higher priority, the plan reports rule 1. |
 | `AnUnchangedRuleSetDoesNotRebuildThePlan` | A run with the same rules leaves `compile_count()` where it was. |
 | `ClearingTheRulesReportsNoWinner` | `clear_placement_rules()` makes the next plan report none. |
-| `SettingTheRulesDuringARunIsRefusedAsInvalidState`, `ClearingTheRulesDuringARunIsRefusedAsInvalidState`, `TheRulesCanBeChangedOnceTheRunEnded` | A host node blocks on a flag while `run_async()` is in flight; `set_placement_rules()` and `clear_placement_rules()` called then each return `ErrorCode::InvalidState`, the first with a message that says to wait, and both succeed after the run ends. The node waits on the flag, not on a deadline. |
-| `Regression_ARuleChangeRacingARunStartNeverLandsInsideTheRun` | A writer thread alternates a refusing set and a cleared set while 2000 runs start and two threads read a scope. A host node asks a scope for its device twice, a yield apart, and the answers never differ: a change is refused while a run is in flight. |
+| `SettingTheRulesDuringARunIsRefusedAsInvalidState`, `ClearingTheRulesDuringARunIsRefusedAsInvalidState`, `TheRulesCanBeChangedOnceTheRunEnded` | A host node stays queued in the executor while the run `run_async()` started is in flight; `set_placement_rules()` and `clear_placement_rules()` called then each return `ErrorCode::InvalidState`, the first with a message that says to wait, and both succeed after the run ends. The test drains the executor by waiting, with no flag and no deadline. |
+| `Regression_ARuleChangeRacingARunStartNeverLandsInsideTheRun` (medium) | A writer thread alternates a refusing set and a cleared set while 2000 runs start and two threads read a scope. A host node asks a scope for its device twice, a yield apart, and the answers never differ: a change is refused while a run is in flight. |
 
 ### Logging
 
@@ -104,13 +112,13 @@ The last tests of the file cover what a program sees of the logger when it creat
 They are here and not in the `log` module because the lines they look for are logged by
 `device` and `topology` while `Runtime::create()` runs.
 
-`Medium_LoggingDefaults` puts the logger in synchronous mode with a sink that keeps the records it
-receives, and afterwards restores the default sink and the level the process had.
+`Small_LoggingDefaults` and `Medium_LoggingDefaults` put a sink that keeps the records it receives on the
+logger, and afterwards restore the default sink and the level the process had.
 
 | Test | What it proves |
 | --- | --- |
-| `CreateIsSilentAtTheDefaultLevel` | At `Warn` no record reaches the sink while a default `Runtime` is created and destroyed. The test sets `Warn` itself, since `SR_LOG_LEVEL` in the environment of the test run would otherwise decide the level. |
-| `DeviceLineArrivesThroughTheSinkAtInfo` | At `Info` the sink receives the `Device: ...` line of `device_queue_set.cpp` at level `Info`, which shows the sink sees what `Runtime::create()` logs. |
+| `CreateIsSilentAtTheDefaultLevel` | At `Warn` no record reaches the sink while a host `Runtime` is created and destroyed. The test sets `Warn` itself, since `SR_LOG_LEVEL` in the environment of the test run would otherwise decide the level. |
+| `DeviceLineArrivesThroughTheSinkAtInfo` (medium) | At `Info` the sink receives the `Device: ...` line of `device_queue_set.cpp` at level `Info`, which shows the sink sees what `Runtime::create()` logs. |
 
 ### `AThreadOutlivingTheRuntimeTearsDownCleanly`
 
