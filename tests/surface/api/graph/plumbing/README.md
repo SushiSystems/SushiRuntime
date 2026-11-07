@@ -1,9 +1,12 @@
 # api tests: graph/plumbing
 
 The tests of the builder surface, the region composer and the step driver. They are part of `sr_surface_tests`;
-[the page of the module's tests](../../README.md) says how to run them. Every test runs on the program's runtime
-through `TestSupport::RuntimeTest`; the rows that need a runtime forced onto the scheduler take the program's one through
-`TestSupport::LayerRuntimeTest`.
+[the page of the module's tests](../../README.md) says how to run them. Every test runs on a host runtime
+through `TestSupport::HostRuntimeTest` (suites `Small_`), except the ones that need a device or a thread. Those run on the program's runtime through
+`TestSupport::RuntimeTest`, and the rows that need a runtime forced onto the scheduler take the program's one through
+`TestSupport::LayerRuntimeTest` (suites `Medium_`). Four cases stay `Medium_`: `NdRangeOriginShiftsTheIDTheKernelReceives`, `UntrackedKernelRunsOnTheDeviceOfTheBufferNamed` and
+`UntrackedKernelRunsOnTheDeviceNamed` (`Medium_BuilderSurface`; an NdRange and a raw handler have no host form), and
+`OffloadedCountIsOfThisRun` (`Medium_RunDriver`; the accepting coordinator completes nodes from its own thread). The two death tests and `Medium_RunDriverLayers` are boundaries.
 
 ## test_builder_surface.cpp
 
@@ -79,7 +82,7 @@ message begins with the spelling of the call the user wrote and `rule 0`, and no
 The file covers the cross-region ordering the composer makes from the pins of
 `region_boundary`, whose own tests are in `tests/engine/region_boundary/`. The plan edges are not
 public, so each case records host tasks on a `DynamicGraph` over a buffer of 20 elements, runs one
-step and asserts the values the ordering makes right. The fixtures turn the rebalancer off.
+step and asserts the values the ordering makes right.
 
 ### `AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers`
 
@@ -130,13 +133,13 @@ The file tests PlanCache through Graph: a plan is compiled once and again only w
 
 The three regression tests install the in-memory coordinator of `task` through
 `TestSupport::InstalledOffload`, which calls `AdvancedControls::install_offload()` for their own scope and
-removes it after, since the runtime is the program's.
+removes it after, since each test owns its host runtime and the install is undone with the test.
 
 ## test_step_driver.cpp
 
 The file covers the run entries `StepDriver` gives `Graph` and `DynamicGraph`: that both types
 expose the same ones, which `ErrorCode` each kind of failure carries, and what a report counts. The
-rows of `Medium_RunDriverGraphKinds` run one body on a `Graph` and on a `DynamicGraph`; `record_host`,
+rows of `Small_RunDriverGraphKinds` run one body on a `Graph` and on a `DynamicGraph`; `record_host`,
 `record_add`, `plan_builds` and `on_graph_of` give the body one spelling for both.
 
 ### `RunEntries`
@@ -171,7 +174,7 @@ budget, and two each from the two `run_until` forms.
 
 ### `ARunWhileAStepIsPendingIsInvalidState`
 
-While a step is held open at a gate, `run()` and `run_async()` must return `InvalidState`. That a
+While a step is pending, `run()` and `run_async()` must return `InvalidState`. That a
 second `wait()` on a settled handle is refused is held by `ASecondWaitIsRefusedAsInvalidState` in
 `../test_run_handle.cpp`.
 
@@ -189,8 +192,8 @@ Moving a graph while its step is pending breaks a precondition. A debug build as
 not built there. In a release build the move must wait for the step, the handle must then report
 `pending()` false and `ready()` true, and its `wait()` must return `InvalidState`
 (`MovingAGraphWithAPendingStepEndsTheStep`); the destination must run
-(`TheDestinationOfAMoveRunsAfterAPendingStepEnded`). The gate is released before the move, so the move returns
-as soon as the task has run.
+(`TheDestinationOfAMoveRunsAfterAPendingStepEnded`). The move returns
+as soon as the executor has run the task.
 
 ### `OffloadedCountIsOfThisRun`
 

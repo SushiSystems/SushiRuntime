@@ -36,7 +36,6 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -48,6 +47,7 @@
 #include "refusing_fill.hpp"
 #include "run_recorder.hpp"
 #include "support/accepting_offload_coordinator.hpp"
+#include "support/host_runtime.hpp"
 #include "support/installed_offload.hpp"
 #include "support/runtime_environment.hpp"
 
@@ -56,7 +56,6 @@ using namespace SushiRuntime;
 namespace
 {
     constexpr std::size_t N = 4;
-    constexpr auto K_GATE_TIMEOUT = std::chrono::milliseconds(2000);
     constexpr const char* K_TASK_FAILURE = "boom";
     constexpr const char* K_BUILD_FAILURE = "no plan";
 
@@ -110,16 +109,6 @@ namespace
 
     template struct RunEntries<Graph>;
     template struct RunEntries<DynamicGraph>;
-
-    /** @brief Blocks until the flag is set or the deadline passes and returns which happened. */
-    bool wait_for_gate(const std::atomic<bool>& released)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + K_GATE_TIMEOUT;
-        while (!released.load(std::memory_order_acquire) &&
-               std::chrono::steady_clock::now() < deadline)
-            std::this_thread::yield();
-        return released.load(std::memory_order_acquire);
-    }
 
     /** @brief Throws what a failing host task throws: a plain std::runtime_error. */
     void fail_the_task()
@@ -311,14 +300,19 @@ namespace
     };
 } // namespace
 
-/** @brief Fixture of the run-driver tests, which run on the program's runtime. */
+/** @brief Fixture of the run-driver test that needs a thread, which runs on the program's runtime. */
 class Medium_RunDriver : public TestSupport::RuntimeTest
 {
 };
 
+/** @brief Fixture of the run-driver tests, which run on a host runtime. */
+class Small_RunDriver : public TestSupport::HostRuntimeTest
+{
+};
+
 /** @brief Fixture of the rows that hold for a Graph and for a DynamicGraph. */
-class Medium_RunDriverGraphKinds : public TestSupport::RuntimeTest,
-                                   public ::testing::WithParamInterface<GraphKind>
+class Small_RunDriverGraphKinds : public TestSupport::HostRuntimeTest,
+                                  public ::testing::WithParamInterface<GraphKind>
 {
 };
 
@@ -328,13 +322,13 @@ class Medium_RunDriverLayers : public TestSupport::LayerRuntimeTest
 };
 
 /** @brief Fixture of the rows over the budgets the clock cannot hold. */
-class Medium_RunDriverBudgets : public TestSupport::RuntimeTest,
-                                public ::testing::WithParamInterface<Overflow>
+class Small_RunDriverBudgets : public TestSupport::HostRuntimeTest,
+                               public ::testing::WithParamInterface<Overflow>
 {
 };
 
 /** @brief Tests that a throwing host task is reported as KernelFailed from every run entry. */
-TEST_P(Medium_RunDriverGraphKinds, AThrowingHostTaskIsKernelFailedFromEveryEntry)
+TEST_P(Small_RunDriverGraphKinds, AThrowingHostTaskIsKernelFailedFromEveryEntry)
 {
     auto buf = runtime().buffer<int>(N).value();
 
@@ -345,11 +339,11 @@ TEST_P(Medium_RunDriverGraphKinds, AThrowingHostTaskIsKernelFailedFromEveryEntry
     });
 }
 
-INSTANTIATE_TEST_SUITE_P(Rows, Medium_RunDriverGraphKinds,
+INSTANTIATE_TEST_SUITE_P(Rows, Small_RunDriverGraphKinds,
                          ::testing::Values(GraphKind::Static, GraphKind::Dynamic));
 
 /** @brief Tests that an exception thrown while the plan is built is CompileFailed. */
-TEST_F(Medium_RunDriver, AThrowingBuildIsCompileFailed)
+TEST_F(Small_RunDriver, AThrowingBuildIsCompileFailed)
 {
     auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();
@@ -370,7 +364,7 @@ TEST_F(Medium_RunDriver, AThrowingBuildIsCompileFailed)
 }
 
 /** @brief Tests that both graph types run through every run entry, each step once. */
-TEST_F(Medium_RunDriver, EveryTryEntryRunsOnBothGraphs)
+TEST_F(Small_RunDriver, EveryTryEntryRunsOnBothGraphs)
 {
     constexpr int STEPS_OF_ALL_ENTRIES = 12;
 
@@ -393,18 +387,13 @@ TEST_F(Medium_RunDriver, EveryTryEntryRunsOnBothGraphs)
 }
 
 /** @brief Tests that a synchronous and an asynchronous run are refused InvalidState while a step is pending. */
-TEST_F(Medium_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
+TEST_F(Small_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
 {
     auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();
-    std::atomic<bool> released{false};
 
     auto g = runtime().graph();
-    g.add_host(Reads{}, Writes(buf), [&released, p]()
-    {
-        wait_for_gate(released);
-        p[0] = 7;
-    });
+    g.add_host(Reads{}, Writes(buf), [p]() { p[0] = 7; });
 
     auto step = g.run_async().value();
 
@@ -416,13 +405,12 @@ TEST_F(Medium_RunDriver, ARunWhileAStepIsPendingIsInvalidState)
     ASSERT_FALSE(second.has_value());
     EXPECT_EQ(second.error().code, ErrorCode::InvalidState);
 
-    released.store(true, std::memory_order_release);
     EXPECT_TRUE(step.wait().has_value());
     EXPECT_EQ(buf[0], 7);
 }
 
 /** @brief Tests that add_run_observer() returns a handle that stands for the observer until it is reset. */
-TEST_F(Medium_RunDriver, AddRunObserverReturnsAHandleThatRemovesIt)
+TEST_F(Small_RunDriver, AddRunObserverReturnsAHandleThatRemovesIt)
 {
     auto observer = std::make_shared<RecordingObserver>();
 
@@ -443,7 +431,7 @@ TEST_F(Medium_RunDriver, AddRunObserverReturnsAHandleThatRemovesIt)
 }
 
 /** @brief Tests that adding and removing observers rebuilds no plan, and each observer sees every run. */
-TEST_P(Medium_RunDriverGraphKinds, AnObserverRebuildsNothing)
+TEST_P(Small_RunDriverGraphKinds, AnObserverRebuildsNothing)
 {
     auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();
@@ -479,7 +467,7 @@ TEST_P(Medium_RunDriverGraphKinds, AnObserverRebuildsNothing)
 }
 
 /** @brief Tests that an observer on a DynamicGraph times the very next run. */
-TEST_F(Medium_RunDriver, AnObserverOnADynamicGraphTimesItsNodes)
+TEST_F(Small_RunDriver, AnObserverOnADynamicGraphTimesItsNodes)
 {
     auto buf = runtime().buffer<int>(N).value();
     for (std::size_t i = 0; i < N; ++i) buf[i] = 0;
@@ -506,22 +494,16 @@ TEST_F(Medium_RunDriver, AnObserverOnADynamicGraphTimesItsNodes)
 
 #ifdef NDEBUG
 /** @brief Tests that moving a graph waits for the pending step and ends the step the handle holds. */
-TEST_F(Medium_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
+TEST_F(Small_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
 {
     auto buf = runtime().buffer<int>(N).value();
     buf[0] = 0;
     int* p = buf.data();
-    std::atomic<bool> released{false};
 
     auto g = runtime().graph();
-    g.add_host(Reads{}, Writes(buf), [&released, p]()
-    {
-        wait_for_gate(released);
-        p[0] += 7;
-    });
+    g.add_host(Reads{}, Writes(buf), [p]() { p[0] += 7; });
 
     auto step = g.run_async().value();
-    released.store(true, std::memory_order_release);
 
     Graph moved = std::move(g);
     EXPECT_EQ(buf[0], 7) << "the move waits for the pending step";
@@ -534,22 +516,16 @@ TEST_F(Medium_RunDriver, MovingAGraphWithAPendingStepEndsTheStep)
 }
 
 /** @brief Tests that the destination of a move runs after the move ended a pending step. */
-TEST_F(Medium_RunDriver, TheDestinationOfAMoveRunsAfterAPendingStepEnded)
+TEST_F(Small_RunDriver, TheDestinationOfAMoveRunsAfterAPendingStepEnded)
 {
     auto buf = runtime().buffer<int>(N).value();
     buf[0] = 0;
     int* p = buf.data();
-    std::atomic<bool> released{false};
 
     auto g = runtime().graph();
-    g.add_host(Reads{}, Writes(buf), [&released, p]()
-    {
-        wait_for_gate(released);
-        p[0] += 7;
-    });
+    g.add_host(Reads{}, Writes(buf), [p]() { p[0] += 7; });
 
     auto step = g.run_async().value();
-    released.store(true, std::memory_order_release);
 
     Graph moved = std::move(g);
     ASSERT_TRUE(moved.run().has_value()) << "the destination must run";
@@ -577,7 +553,7 @@ TEST_F(Medium_RunDriver, OffloadedCountIsOfThisRun)
 }
 
 /** @brief Tests that a failed chained run of one step advances no State. */
-TEST_F(Medium_RunDriver, AFailedRunOfOneStepAdvancesNoState)
+TEST_F(Small_RunDriver, AFailedRunOfOneStepAdvancesNoState)
 {
     CountedStep step(runtime(), K_COUNT_OVER_CAPACITY);
     const int* const before = step.field.current();
@@ -591,7 +567,7 @@ TEST_F(Medium_RunDriver, AFailedRunOfOneStepAdvancesNoState)
 }
 
 /** @brief Tests that a failed run of three steps never advances the State of its failed step. */
-TEST_F(Medium_RunDriver, AFailedRunOfSeveralStepsNeverAdvancesTheFailedStep)
+TEST_F(Small_RunDriver, AFailedRunOfSeveralStepsNeverAdvancesTheFailedStep)
 {
     constexpr std::size_t STEPS = 3;
 
@@ -609,7 +585,7 @@ TEST_F(Medium_RunDriver, AFailedRunOfSeveralStepsNeverAdvancesTheFailedStep)
 }
 
 /** @brief Tests that a budget the clock cannot hold runs until cancelled, not for one step. */
-TEST_P(Medium_RunDriverBudgets, ABudgetPastTheClocksRangeRunsUntilCancelled)
+TEST_P(Small_RunDriverBudgets, ABudgetPastTheClocksRangeRunsUntilCancelled)
 {
     if (GetParam() == Overflow::Hours)
         expect_run_for_lasts_until_cancelled(runtime(), std::chrono::hours::max());
@@ -617,11 +593,11 @@ TEST_P(Medium_RunDriverBudgets, ABudgetPastTheClocksRangeRunsUntilCancelled)
         expect_run_for_lasts_until_cancelled(runtime(), std::chrono::nanoseconds::max());
 }
 
-INSTANTIATE_TEST_SUITE_P(Rows, Medium_RunDriverBudgets,
+INSTANTIATE_TEST_SUITE_P(Rows, Small_RunDriverBudgets,
                          ::testing::Values(Overflow::Hours, Overflow::Nanoseconds));
 
 /** @brief Tests that step hooks feed eight replays of one plan, in the order added. */
-TEST_P(Medium_RunDriverGraphKinds, StepHooksFeedEveryReplayInTheOrderAdded)
+TEST_P(Small_RunDriverGraphKinds, StepHooksFeedEveryReplayInTheOrderAdded)
 {
     constexpr std::size_t K_STEPS = 8;
     constexpr std::uint32_t K_BASE = 100;
@@ -661,7 +637,7 @@ TEST_P(Medium_RunDriverGraphKinds, StepHooksFeedEveryReplayInTheOrderAdded)
 }
 
 /** @brief Tests that a step hook does not rebuild the plan. */
-TEST_P(Medium_RunDriverGraphKinds, AStepHookRebuildsNothing)
+TEST_P(Small_RunDriverGraphKinds, AStepHookRebuildsNothing)
 {
     constexpr std::size_t K_STEPS = 8;
 
@@ -684,7 +660,7 @@ TEST_P(Medium_RunDriverGraphKinds, AStepHookRebuildsNothing)
 }
 
 /** @brief Tests that a new run counts the steps its hooks are given from zero. */
-TEST_P(Medium_RunDriverGraphKinds, ANewRunCountsItsStepsFromZero)
+TEST_P(Small_RunDriverGraphKinds, ANewRunCountsItsStepsFromZero)
 {
     constexpr std::size_t K_STEPS = 8;
 
@@ -708,7 +684,7 @@ TEST_P(Medium_RunDriverGraphKinds, ANewRunCountsItsStepsFromZero)
 }
 
 /** @brief Tests that a moved graph keeps its step hooks. */
-TEST_F(Medium_RunDriver, AMovedGraphKeepsItsStepHooks)
+TEST_F(Small_RunDriver, AMovedGraphKeepsItsStepHooks)
 {
     auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();
@@ -724,7 +700,7 @@ TEST_F(Medium_RunDriver, AMovedGraphKeepsItsStepHooks)
 }
 
 /** @brief Tests that the source of a move has no step hook. */
-TEST_F(Medium_RunDriver, TheSourceOfAMoveHasNoStepHook)
+TEST_F(Small_RunDriver, TheSourceOfAMoveHasNoStepHook)
 {
     auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();
@@ -744,7 +720,7 @@ TEST_F(Medium_RunDriver, TheSourceOfAMoveHasNoStepHook)
 }
 
 /** @brief Tests that a hook too large for the inline storage is held and called. */
-TEST_F(Medium_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
+TEST_F(Small_RunDriver, AStepHookLargerThanTheInlineStorageRuns)
 {
     auto buf = runtime().buffer<int>(N).value();
     int* p = buf.data();

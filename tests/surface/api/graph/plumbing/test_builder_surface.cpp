@@ -38,6 +38,7 @@
 
 #include <SushiRuntime/sushiruntime.hpp>
 
+#include "support/host_runtime.hpp"
 #include "support/runtime_environment.hpp"
 
 using namespace SushiRuntime;
@@ -102,13 +103,18 @@ namespace
     }
 } // namespace
 
-/** @brief Fixture of the builder tests, which record graphs on the program's runtime. */
+/** @brief Fixture of the builder tests that need a device queue, which record graphs on the program's runtime. */
 class Medium_BuilderSurface : public TestSupport::RuntimeTest
 {
 };
 
+/** @brief Fixture of the builder tests that need no device, which record graphs on a host runtime. */
+class Small_BuilderSurface : public TestSupport::HostRuntimeTest
+{
+};
+
 /** @brief Tests that a count launch hands its kernel the pointer of each capture. */
-TEST_F(Medium_BuilderSurface, CountLaunchWithCapturesPassesPointers)
+TEST_F(Small_BuilderSurface, CountLaunchWithCapturesPassesPointers)
 {
     const Runtime& rt = runtime();
     auto source = seeded(rt);
@@ -147,7 +153,7 @@ TEST_F(Medium_BuilderSurface, NdRangeOriginShiftsTheIDTheKernelReceives)
 }
 
 /** @brief Tests that add(count, state, kernel) updates the first count elements and no more. */
-TEST_F(Medium_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
+TEST_F(Small_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
 {
     const Runtime& rt = runtime();
     auto field = seeded_state(rt);
@@ -164,7 +170,7 @@ TEST_F(Medium_BuilderSurface, StateRuleOverACountUpdatesAPrefix)
 }
 
 /** @brief Tests that a launch reaching past its State is refused where add() is called. */
-TEST_F(Medium_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
+TEST_F(Small_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
 {
     const Runtime& rt = runtime();
     auto field = seeded_state(rt);
@@ -184,7 +190,7 @@ TEST_F(Medium_BuilderSurface, ALaunchPastItsStateIsRefusedAtAdd)
 }
 
 /** @brief Tests that a whole-field coupled rule reads the State it names. */
-TEST_F(Medium_BuilderSurface, AWholeFieldCoupledRuleReadsTheStateItNames)
+TEST_F(Small_BuilderSurface, AWholeFieldCoupledRuleReadsTheStateItNames)
 {
     const Runtime& rt = runtime();
     auto whole = seeded_state(rt);
@@ -204,7 +210,7 @@ TEST_F(Medium_BuilderSurface, AWholeFieldCoupledRuleReadsTheStateItNames)
 }
 
 /** @brief Tests that a launch-shaped coupled rule reads its prefix and the second State. */
-TEST_F(Medium_BuilderSurface, ALaunchShapedCoupledRuleReadsItsPrefixAndTheSecondState)
+TEST_F(Small_BuilderSurface, ALaunchShapedCoupledRuleReadsItsPrefixAndTheSecondState)
 {
     const Runtime& rt = runtime();
     auto prefix = seeded_state(rt);
@@ -227,7 +233,7 @@ TEST_F(Medium_BuilderSurface, ALaunchShapedCoupledRuleReadsItsPrefixAndTheSecond
 }
 
 /** @brief Tests that a coupled rule whose input is shorter than its output is refused. */
-TEST_F(Medium_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd)
+TEST_F(Small_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd)
 {
     const Runtime& rt = runtime();
     auto output = seeded_state(rt);
@@ -246,7 +252,7 @@ TEST_F(Medium_BuilderSurface, ACoupledInputSmallerThanTheOutputIsRefusedAtAdd)
 }
 
 /** @brief Tests the late-bound order: Dynamic, capacity, access, callable. */
-TEST_F(Medium_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
+TEST_F(Small_BuilderSurface, DynamicTakesItsCapacityBeforeItsAccess)
 {
     const Runtime& rt = runtime();
     auto target = seeded(rt);
@@ -335,7 +341,7 @@ TEST_F(Medium_BuilderSurfaceDeathTest, AHandlerPlacementOnADeviceTheRuntimeLacks
 }
 
 /** @brief Tests that a graph watches the handle an On() names. */
-TEST_F(Medium_BuilderSurface, PlacementWatchesTheHandleItNames)
+TEST_F(Small_BuilderSurface, PlacementWatchesTheHandleItNames)
 {
     const Runtime& rt = runtime();
     auto graph = rt.graph();
@@ -351,7 +357,7 @@ TEST_F(Medium_BuilderSurface, PlacementWatchesTheHandleItNames)
 }
 
 /** @brief Tests that extend() runs its callable once and counts what it records as one rule of two nodes. */
-TEST_F(Medium_BuilderSurface, ExtendRecordsOneNamedRule)
+TEST_F(Small_BuilderSurface, ExtendRecordsOneNamedRule)
 {
     const Runtime& rt = runtime();
     auto target = seeded(rt);
@@ -373,7 +379,7 @@ TEST_F(Medium_BuilderSurface, ExtendRecordsOneNamedRule)
 }
 
 /** @brief Tests that the kernels an extension recorded add their results and the extension is not replayed at a build. */
-TEST_F(Medium_BuilderSurface, AnExtensionsKernelsRunAndTheExtensionIsNotReplayed)
+TEST_F(Small_BuilderSurface, AnExtensionsKernelsRunAndTheExtensionIsNotReplayed)
 {
     const Runtime& rt = runtime();
     auto target = seeded(rt);
@@ -406,13 +412,13 @@ enum class Overload
 };
 
 /** @brief Fixture of the rows that refuse one overload each. */
-class Medium_BuilderSurfaceRefusals : public TestSupport::RuntimeTest,
+class Small_BuilderSurfaceRefusals : public TestSupport::HostRuntimeTest,
                                       public ::testing::WithParamInterface<Overload>
 {
 };
 
 /** @brief Tests that the refusal of an add() overload names the call the user wrote. */
-TEST_P(Medium_BuilderSurfaceRefusals, ARefusalNamesTheCallTheUserWrote)
+TEST_P(Small_BuilderSurfaceRefusals, ARefusalNamesTheCallTheUserWrote)
 {
     const Runtime& rt = runtime();
     auto field = seeded_state(rt);
@@ -462,12 +468,12 @@ TEST_P(Medium_BuilderSurfaceRefusals, ARefusalNamesTheCallTheUserWrote)
     EXPECT_EQ(graph.size(), 0u) << "a refused rule must not be recorded";
 }
 
-INSTANTIATE_TEST_SUITE_P(Rows, Medium_BuilderSurfaceRefusals,
+INSTANTIATE_TEST_SUITE_P(Rows, Small_BuilderSurfaceRefusals,
                          ::testing::Values(Overload::StateLaunch, Overload::EmptyState,
                                            Overload::Coupled, Overload::CoupledLaunch));
 
 /** @brief Tests that the first refusal is kept, records nothing, and a later one does not replace it. */
-TEST_F(Medium_BuilderSurface, TheFirstRefusalIsKept)
+TEST_F(Small_BuilderSurface, TheFirstRefusalIsKept)
 {
     const Runtime& rt = runtime();
     auto field = seeded_state(rt);
@@ -496,7 +502,7 @@ TEST_F(Medium_BuilderSurface, TheFirstRefusalIsKept)
 }
 
 /** @brief Tests that a run returns the kept refusal and runs nothing until clear(). */
-TEST_F(Medium_BuilderSurface, ARunReturnsTheRefusalAndRunsNothingUntilCleared)
+TEST_F(Small_BuilderSurface, ARunReturnsTheRefusalAndRunsNothingUntilCleared)
 {
     const Runtime& rt = runtime();
     auto field = seeded_state(rt);

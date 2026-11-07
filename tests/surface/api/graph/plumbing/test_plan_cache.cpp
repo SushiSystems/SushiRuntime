@@ -39,7 +39,7 @@
 
 #include "hooked_copy_task.hpp"
 #include "support/installed_offload.hpp"
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 using SushiRuntime::Internal::Graph::InMemoryOffloadCoordinator;
@@ -50,13 +50,13 @@ namespace
     using InstalledCoordinator = TestSupport::InstalledOffload<InMemoryOffloadCoordinator>;
 } // namespace
 
-/** @brief Fixture of the plan-cache tests, which compile graphs on the program's runtime. */
-class Medium_PlanCache : public TestSupport::RuntimeTest
+/** @brief Fixture of the plan-cache tests, which compile graphs on a host runtime. */
+class Small_PlanCache : public TestSupport::HostRuntimeTest
 {
 };
 
 /** @brief Tests that runs reuse the plan, and a new node compiles it again. */
-TEST_F(Medium_PlanCache, CompilesOnlyWhenTheGraphChanges)
+TEST_F(Small_PlanCache, CompilesOnlyWhenTheGraphChanges)
 {
     auto graph = runtime().graph();
     graph.add_untracked(std::size_t{4}, [](std::size_t) {});
@@ -71,7 +71,7 @@ TEST_F(Medium_PlanCache, CompilesOnlyWhenTheGraphChanges)
 }
 
 /** @brief Tests that a rule change made while a plan compiles makes the next run compile again. */
-TEST_F(Medium_PlanCache, ARuleChangeDuringACompileRecompilesOnTheNextRun)
+TEST_F(Small_PlanCache, ARuleChangeDuringACompileRecompilesOnTheNextRun)
 {
     const Runtime& rt = runtime();
     auto target = rt.buffer<int>(1).value();
@@ -93,7 +93,7 @@ TEST_F(Medium_PlanCache, ARuleChangeDuringACompileRecompilesOnTheNextRun)
 }
 
 /** @brief Tests that a coordinator is prepared with the rules the compile read, not with a set changed during it. */
-TEST_F(Medium_PlanCache, Regression_TheCoordinatorSeesTheRulesTheCompileRead)
+TEST_F(Small_PlanCache, Regression_TheCoordinatorSeesTheRulesTheCompileRead)
 {
     const Runtime& rt = runtime();
     const InstalledCoordinator installed(rt);
@@ -117,7 +117,7 @@ TEST_F(Medium_PlanCache, Regression_TheCoordinatorSeesTheRulesTheCompileRead)
 }
 
 /** @brief Tests that a dynamic graph hands the nodes of each rebuilt region to the coordinator. */
-TEST_F(Medium_PlanCache, Regression_ADynamicGraphPreparesTheNodesOfEveryRebuiltRegion)
+TEST_F(Small_PlanCache, Regression_ADynamicGraphPreparesTheNodesOfEveryRebuiltRegion)
 {
     const InstalledCoordinator installed(runtime());
     auto world = runtime().dynamic_graph();
@@ -133,7 +133,7 @@ TEST_F(Medium_PlanCache, Regression_ADynamicGraphPreparesTheNodesOfEveryRebuiltR
 }
 
 /** @brief Tests that installing or removing an offload coordinator makes the plan stale. */
-TEST_F(Medium_PlanCache, Regression_InstallingOrRemovingACoordinatorRecompiles)
+TEST_F(Small_PlanCache, Regression_InstallingOrRemovingACoordinatorRecompiles)
 {
     auto graph = runtime().graph();
     graph.add_untracked(std::size_t{4}, [](std::size_t) {});

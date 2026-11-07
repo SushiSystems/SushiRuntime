@@ -86,6 +86,7 @@ The owner delegated these decisions on 2026-11-05. Each ruling below is final fo
 32. Ruled on 2026-11-07 by the lead (RW-119): a `control_queue_frames` of 0 on an `InProcessTransport` endpoint refuses every control frame with `QueueFull`. The `Outbox` under it holds at least one frame, so the distributed build's run failed `RefusedSendUndoesThePendingEntry`; the endpoint keeps the bound itself, and `AControlQueueOfNoFramesRefusesEverySend` holds it.
 33. Ruled on 2026-11-07 by the orchestrator, with the owner's delegation for public interfaces (RW-124, RW-125): decisions 26, 27 and 28 are overturned where they leave a logic test medium for want of a seam. The five seams of the industrial-testing spec are built and public: `Clock` and `ManualClock` (RW-122), `SeededExecutor`, the fake device `Runtime::create_host()` with `HostExecutionEngine`, `HostUSMSource` and a host `DeviceQueueSet` (RW-123, RW-124), the host-only graph and plan core on that runtime, and the threadless `InProcessTransport` (RW-87). LAYERED_EXECUTION rulings 14 to 19 hold them. Every case the medium audit below rules LOGIC moves onto its seam as `Small_`, and one `Medium_` case is kept per boundary.
 34. Ruled on 2026-11-07 by the orchestrator: a launch has a host form only over a count or an `Extent`. An `NdRange`, a raw command group, a queue body, a device-sized and a late-count launch fail on the host runtime with `Unsupported`, and their tests stay medium as the kernel boundary until a host form is built for them (RW-126).
+35. Ruled on 2026-11-07 by the lead (RW-126, in part): a late-bound dynamic launch and a dynamic State rule get a host form, `run_late_window_on_host()`. A device slot is host memory on a host runtime, so the form reads it before the loop and resolves the window as the device path does. A raw `sycl::queue&` body and a raw command group stay without one: they are SYCL by their signature, and their tests stay medium.
 
 ## Medium audit
 
@@ -139,6 +140,9 @@ dispatch: J16 medium audit A, api/graph — sonnet medium, 1 round, passed, rung
 dispatch: J16 medium audit B, api rest — sonnet medium, 1 round, passed, rung 1
 dispatch: J16 medium audit C, lower tiers — sonnet medium, 1 round, passed, rung 1
 dispatch: J16 medium audit D, extension — sonnet medium, 2 rounds (sent back for skipping two skills of DISPATCH rule 1; no row changed), passed, rung 1
+dispatch: J16 V1 api/graph recorder — sonnet medium, 2 rounds (sent back for skipping DISPATCH rule 1), passed, rung 1
+dispatch: J16 V1 api/graph graph — sonnet medium, 1 round, passed (the lead fixed a stale suite name in the page), rung 1
+dispatch: J16 V1 api/graph dynamic graph and the rest — sonnet medium, 1 round, partial (18 logic cases wait on host forms, RW-126), rung 1
 
 ## Totals
 

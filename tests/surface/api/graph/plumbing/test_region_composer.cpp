@@ -40,7 +40,7 @@
 
 #include "hooked_copy_task.hpp"
 #include "refusing_fill.hpp"
-#include "support/runtime_environment.hpp"
+#include "support/host_runtime.hpp"
 
 using namespace SushiRuntime;
 
@@ -53,16 +53,13 @@ namespace BoundaryAccessTests
         constexpr std::size_t K_ELEMENTS = 20;
     } // namespace
 
-    /** @brief Fixture of the boundary tests, which run on the program's runtime with the rebalancer off. */
-    class Medium_BoundaryAccess : public TestSupport::RuntimeTest
+    /** @brief Fixture of the boundary tests, which run on a host runtime. */
+    class Small_BoundaryAccess : public TestSupport::HostRuntimeTest
     {
-        protected:
-            /** @brief Turns the background rebalancer off, so no thermal move reorders a node. */
-            void SetUp() override { runtime().set_rebalancer_enabled(false); }
     };
 
     /** @brief Tests that an earlier region's writer orders a reader its predecessor half covers. */
-    TEST_F(Medium_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers)
+    TEST_F(Small_BoundaryAccess, AnEarlierWriterOrdersAReaderItsPredecessorHalfCovers)
     {
         const Runtime& rt = runtime();
 
@@ -95,7 +92,7 @@ namespace BoundaryAccessTests
     }
 
     /** @brief Tests that a reader whose predecessor fully covers its range still reads what the earlier writer left. */
-    TEST_F(Medium_BoundaryAccess, AReaderItsPredecessorCoversStillReadsTheNewestValues)
+    TEST_F(Small_BoundaryAccess, AReaderItsPredecessorCoversStillReadsTheNewestValues)
     {
         const Runtime& rt = runtime();
 
@@ -128,7 +125,7 @@ namespace BoundaryAccessTests
     }
 
     /** @brief Tests that an earlier region's reader orders a writer whose predecessor only reads. */
-    TEST_F(Medium_BoundaryAccess, AnEarlierReaderOrdersAWriterBehindAReadingPredecessor)
+    TEST_F(Small_BoundaryAccess, AnEarlierReaderOrdersAWriterBehindAReadingPredecessor)
     {
         const Runtime& rt = runtime();
 
@@ -179,16 +176,13 @@ namespace RegionCommitTests
         }
     } // namespace
 
-    /** @brief Fixture of the commit tests, which run on the program's runtime with the rebalancer off. */
-    class Medium_RegionCommit : public TestSupport::RuntimeTest
+    /** @brief Fixture of the commit tests, which run on a host runtime. */
+    class Small_RegionCommit : public TestSupport::HostRuntimeTest
     {
-        protected:
-            /** @brief Turns the background rebalancer off, so no thermal move reorders a node. */
-            void SetUp() override { runtime().set_rebalancer_enabled(false); }
     };
 
     /** @brief Tests that a commit whose region build throws composes nothing, and a retry leaves the values of every region. */
-    TEST_F(Medium_RegionCommit, AThrowingRegionBuildComposesNothingAndARetryKeepsEveryRegionsValues)
+    TEST_F(Small_RegionCommit, AThrowingRegionBuildComposesNothingAndARetryKeepsEveryRegionsValues)
     {
         const Runtime& rt = runtime();
 
@@ -246,7 +240,7 @@ namespace RegionCommitTests
     }
 
     /** @brief Tests that a rule change made inside a commit makes the next run compose again. */
-    TEST_F(Medium_RegionCommit, Regression_ARuleChangeDuringACommitComposesOnTheNextRun)
+    TEST_F(Small_RegionCommit, Regression_ARuleChangeDuringACommitComposesOnTheNextRun)
     {
         const Runtime& rt = runtime();
         auto target = rt.buffer<int>(1).value();

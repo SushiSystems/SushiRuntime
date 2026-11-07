@@ -479,15 +479,21 @@ The file covers `Graph::run_async()`, `DynamicGraph::run_async()` and the `RunHa
 
 The claim under test is that a step can start without blocking the caller, so that a simulation tick
 overlaps with work that needs no workers, such as a renderer or an audio extract of the previous
-tick. A return value cannot show that a call did not block, so the overlap tests use a rendezvous:
-the step's own task waits for a flag that the caller sets after `run_async()` has returned. If
-`run_async()` blocked, nobody could set the flag in time and the task would time out. Every wait is
-bounded, so a regression reports a failure and does not hang.
+tick. A return value cannot show that a call did not block, so `Medium_AsyncStep` keeps one rendezvous
+test on the program's runtime: the step's own task waits for a flag that the caller sets after
+`run_async()` has returned. If `run_async()` blocked, nobody could set the flag in time and the task
+would time out. Every wait is bounded, so a regression reports a failure and does not hang.
+
+Every other test of the file runs on a host runtime (`Small_AsyncStep`, `Small_AsyncStepDrop`,
+`Small_AsyncStepRerecord`). There `run_async()` posts the step's roots and runs nothing, so a step is
+pending from the return of `run_async()` until the test calls `wait()` or destroys the graph; no gate
+holds it open.
 
 | Test | What it proves |
 | --- | --- |
-| `wait_for_gate` | `wait_for_gate` blocks until the flag is released or the deadline passes, and reports which happened. It is the body of a host task, so a step can be held open while the test does something on the calling thread. |
-| `SubmitReturnsBeforeTheStepFinishes` | `run_async()` must return before the step finishes. The step's host task waits for a flag the caller sets only afterwards, so the task can see the flag only if the caller kept running. |
+| `wait_for_gate` | `wait_for_gate` blocks until the flag is released or the deadline passes, and reports which happened. It is the body of the host task of `SubmitReturnsBeforeTheStepFinishes`, the one test that needs a real worker. |
+| `SubmitReturnsBeforeTheStepFinishes` | `run_async()` must return before the step finishes. The step's host task waits for a flag the caller sets only afterwards, so the task can see the flag only if the caller kept running. It is in `Medium_AsyncStep`. |
+| `SubmitRunsNothingUntilTheCallerWaits` | On a host runtime `run_async()` leaves one root posted on the executor and the step's write unmade until `wait()`. |
 | `WaitConsumesTheHandleAndTheWriteIsVisible` | `wait()` consumes the handle, the step's write is visible afterwards, and the report counts at least one task. |
 | `MatchesTheSynchronousResult` | An asynchronous step must be observationally identical to a synchronous one: the same stepped `State`, driven the same number of times, ends in the same place. |
 | `ReplayingAsynchronouslyDoesNotRecompile` | Six asynchronous steps of one rule leave `compile_count()` at one. |
@@ -499,14 +505,14 @@ bounded, so a regression reports a failure and does not hang.
 | `TheGraphRunsAgainOnceTheStepHasSettled` | Rejection left nothing broken behind: after the step settles the graph runs again. |
 | `TryWaitReportsFailureAsAValue` | A task exception surfaces from `wait()` as an error value, and the handle then owns no step. |
 | `AFailedStepLeavesTheGraphUsable` | One failing step must not turn into a graph that fails forever: the graph accepts another step, and another graph runs after it. |
-| `ReadyTracksTheStep` | `ready()` reports whether a wait would return immediately, and it does so without blocking. It must be false while the step is held open and true once the step has finished. |
+| `ReadyTracksTheStep` | `ready()` reports whether a wait would return immediately, and it does so without blocking. It must be false while the step has not run and true once the step has finished. |
 | `DynamicGraphRunsAsynchronously` | The region-partitioned graph behaves the same way: a step runs its regions. |
 | `ARegionAddedBetweenStepsIsCommittedByTheAsynchronousPath` | A pending structural change is committed before the step is submitted, and the compose count is one per mutation, not per step. |
 
 ### `expect_refused_as_invalid_state`, `AnotherGraphIsRefusedWhileAStepIsPending`
 
 A runtime has one engine, so one graph's pending step occupies it. While the step of the first graph
-is held open at a gate, `run()` and `run_async()` on a second graph of the same
+is pending, `run()` and `run_async()` on a second graph of the same
 runtime must each report `InvalidState` and must not run the second graph's task. The first
 graph's handle must then complete with a successful report. `expect_refused_as_invalid_state` checks
 one `Result` for that code. `TheRuntimeIsFreeOnceTheStepHasSettled` holds the other half: the
@@ -521,7 +527,7 @@ second graph runs once the step is settled.
 ### `expect_step_ended_by_its_graph`, `AGraphDestroyedWithAPendingStepEndsTheStep`, `ADynamicGraphDestroyedWithAPendingStepEndsTheStep`
 
 A handle may outlive its graph. The graph is destroyed in an inner scope while its step is pending,
-with the gate released just before, and the handle is destroyed at the end of the test. The buffer
+and the handle is destroyed at the end of the test. The buffer
 must hold the task's write when the scope closes, which shows that the destructor waited for the
 step before the plan died. `expect_step_ended_by_its_graph` then expects `pending()` false,
 `ready()` true and `InvalidState` from `wait()`, none of which may read the dead graph.
@@ -530,18 +536,18 @@ left behind would refuse.
 
 ### The dropped regions
 
-`Medium_AsyncStepDrop` records two regions that each hold one host task that waits at the gate and
-then adds one to its own buffer, and starts a step. A test drops region 1 while both tasks wait. The
+`Small_AsyncStepDrop` records two regions that each hold one host task that adds one to its own
+buffer, and starts a step. A test drops region 1 while the step is pending. The
 tests guard against a `drop()` that destroys the region at once: the settle then reads a freed
 recorder, which AddressSanitizer reports.
 
 | Test | What it proves |
 | --- | --- |
 | `DropRemovesTheRegionFromTheCount` | After `drop(1)`, `has_region(1)` is false and `region_count()` is one. |
-| `ThePendingStepFinishesTheDroppedTask` | Releasing the gate and settling the handle succeeds with both buffers at one: the dropped region's task finished its write, and settling walked that region's per-step hooks. |
+| `ThePendingStepFinishesTheDroppedTask` | Settling the handle succeeds with both buffers at one: the dropped region's task finished its write, and settling walked that region's per-step hooks. |
 | `TheNextRunDoesNotRunTheDroppedRegionAndComposesOnce` | A following `run()` leaves the dropped region's buffer at one, raises the other to two and brings `compose_count()` to two. |
 
-`Medium_AsyncStepRerecord` drops region 7 while its step waits at the gate, and `region(7)` then
+`Small_AsyncStepRerecord` drops region 7 while its step is pending, and `region(7)` then
 records a task on a second buffer.
 
 | Test | What it proves |
