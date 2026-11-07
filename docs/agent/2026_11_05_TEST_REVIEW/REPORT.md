@@ -3580,7 +3580,7 @@ check_naming: collect skips files under third_party, build, build-asan, build-ts
 check_naming: main checks modules when no path is named | contract | medium
 ```
 
-## Cases per module and size, 2026-11-07
+## Cases per module and size, 2026-11-07, recounted after the executor, cache and agent moves
 
 Counted statically from the source, no test run: one case for each `TEST`, `TEST_F`, `TEST_P`, `TYPED_TEST` and `TYPED_TEST_P` under `tests/`, by the prefix of its suite name (`Small_`, `Medium_`, `Large_`). A parametrised case counts once, not once per row. "Other" holds `Benchmark_`, `Performance_` and `Stress_` suites and suites with no size prefix. The Python rows count `def test_` by the file-level size marker, so a class-level marker reads as other. The share is a reading, never a target (testing skill, "Suite shape"); a module with a low small share holds a boundary or a seam still to build.
 
@@ -3599,17 +3599,21 @@ Counted statically from the source, no test run: one case for each `TEST`, `TEST
 | `engine/work_stealing` | 2 | 1 | 0 | 0 | 3 | 67% |
 | `extension/buffer_exchange` | 33 | 0 | 0 | 0 | 33 | 100% |
 | `extension/cluster_load` | 9 | 0 | 0 | 0 | 9 | 100% |
+| `extension/cluster_monitor` | 18 | 1 | 0 | 0 | 19 | 95% |
 | `extension/dispatch_deduplication` | 3 | 0 | 0 | 0 | 3 | 100% |
-| `extension/distributed` | 22 | 122 | 0 | 2 | 146 | 15% |
+| `extension/dispatch_executor` | 31 | 0 | 0 | 0 | 31 | 100% |
+| `extension/distributed` | 21 | 92 | 0 | 2 | 115 | 18% |
 | `extension/frame_transport` | 14 | 0 | 0 | 0 | 14 | 100% |
-| `extension/in_process_transport` | 17 | 1 | 0 | 0 | 18 | 94% |
+| `extension/in_process_transport` | 2 | 0 | 0 | 0 | 2 | 100% |
 | `extension/link_security` | 12 | 2 | 0 | 0 | 14 | 86% |
+| `extension/master_link` | 25 | 1 | 0 | 0 | 26 | 96% |
 | `extension/network_socket` | 0 | 16 | 0 | 0 | 16 | 0% |
 | `extension/offload_coordination` | 107 | 2 | 0 | 0 | 109 | 98% |
 | `extension/pending_tasks` | 24 | 1 | 0 | 0 | 25 | 96% |
 | `extension/process_environment` | 4 | 2 | 0 | 0 | 6 | 67% |
 | `extension/transport` | 13 | 0 | 0 | 0 | 13 | 100% |
 | `extension/wire` | 39 | 0 | 0 | 0 | 39 | 100% |
+| `extension/worker_types` | 4 | 2 | 0 | 0 | 6 | 67% |
 | `foundation/core` | 89 | 17 | 0 | 0 | 106 | 84% |
 | `foundation/device_probe` | 0 | 1 | 0 | 0 | 1 | 0% |
 | `foundation/log` | 5 | 2 | 0 | 0 | 7 | 71% |
@@ -3630,12 +3634,13 @@ Counted statically from the source, no test run: one case for each `TEST`, `TEST
 | `platform/topology` | 27 | 16 | 0 | 0 | 43 | 63% |
 | `surface/api` | 425 | 123 | 0 | 4 | 552 | 77% |
 | `surface/context` | 1 | 0 | 0 | 0 | 1 | 100% |
+| `surface/context_access` | 0 | 0 | 0 | 0 | 0 | 0% |
 | `surface/engine_handles` | 2 | 0 | 0 | 0 | 2 | 100% |
 | `surface/interop` | 6 | 0 | 0 | 0 | 6 | 100% |
 | `surface/memory_exchange` | 9 | 4 | 0 | 0 | 13 | 69% |
 | `surface/profiling` | 112 | 51 | 2 | 1 | 166 | 67% |
 | `tools (python)` | 746 | 86 | 0 | 0 | 832 | 90% |
-| **all** | 2147 | 638 | 14 | 54 | 2853 | 75% |
+| **all** | 2209 | 611 | 14 | 54 | 2888 | 76% |
 
-Where the small share is low, the module's medium cases are boundary checks or wait on a seam: `extension/distributed` (RW-127), `extension/network_socket` (sockets are its boundary), `foundation/usm_guard` and `foundation/device_probe` (devices are their boundary), `engine/scheduler` and `engine/execution` (RW-129), `platform/device` and `platform/topology` (platform ports), and `cli (python)`.
+Where the small share is low, the module's medium cases are boundary checks or wait on a seam: `extension/distributed` (the TCP transport, the cluster and the worker main are the sockets and processes it exists to check; its executor and agent logic runs small in `dispatch_executor`, `master_link` and `cluster_monitor`), `extension/network_socket` (sockets are its boundary), `foundation/usm_guard` and `foundation/device_probe` (devices are their boundary), `engine/scheduler` and `engine/execution` (RW-129), `platform/device` and `platform/topology` (platform ports), and `cli (python)`.
 
