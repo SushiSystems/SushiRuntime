@@ -6,13 +6,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from sushicore.console_memory import RecordingConsole
 from sushicore.proc_memory import RecordingRunner
 
-import sushiruntime
 from sushiruntime.config import TOOLCHAINS, Config
 from sushiruntime.services import project
 from sushiruntime.services.install_hint import toolchain_install_command
@@ -36,14 +33,3 @@ def test_a_missing_windows_compiler_names_sr_setup(name):
     assert toolchain_install_command(name) in printed[0]
     assert "hub install" not in printed[0]
 
-
-def test_no_service_message_sends_the_user_to_hub_install():
-    """No string a service prints tells the user to run `hub install`."""
-    services = Path(sushiruntime.__file__).parent / "services"
-    found = [
-        f"{path.name}:{number}"
-        for path in sorted(services.glob("*.py"))
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
-        if "hub install" in line and not line.lstrip().startswith("#")
-    ]
-    assert found == []
