@@ -31,7 +31,7 @@ writes each add. Nothing in a module job changes production code except a seam a
 | M11 | the tests of `surface/interop` (4 files): 3 rewrite, 1 split, 5 delete | T1, T2, T3, T4, T5, T6, T7 | done: the default-empty promise lost its test, RW-91 |
 | M12 | the tests of `surface/memory_exchange` (3 files): 5 rewrite, 1 resize, 2 delete | T1, T2, T3, T4, T5, T6, T7 | done, not built: RW-89 applied (decision 10); the GPU skip is RW-90 |
 | M13 | the tests of `surface/profiling` (23 files): 66 rewrite, 10 resize, 9 split, 11 merge, 13 delete | T1, T2, T3, T4, T5, T6, T7 | done, not built: the resizes wait on RW-98 and RW-99 |
-| M14 | the tests of `tools` (5 files): 2 rewrite, 10 resize, 1 split, 18 merge, 5 delete | T1, T2, T3, T4, T5, T6, T7 | partial: `test_test_budget_settings.py` deleted (decision 15); three small resizes wait on RW-95 |
+| M14 | the tests of `tools` (5 files): 2 rewrite, 10 resize, 1 split, 18 merge, 5 delete | T1, T2, T3, T4, T5, T6, T7 | done, not built: `test_test_budget_settings.py` deleted (decision 15); the three resizes applied by 0e276549 (RW-95, decision 16) |
 
 ## Acceptance
 
